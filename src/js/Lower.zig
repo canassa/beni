@@ -6557,6 +6557,25 @@ const Lowerer = struct {
             .int32_shiftLeft => l.binary(.shl, v[0], v[1], p),
             .int32_shiftRight => l.binary(.sar, v[0], v[1], p),
             .int32_shiftRightZero => l.binary(.bit_or, try l.binary(.shr, v[0], v[1], p), try zero.node(l, p), p),
+            .list_at => l.add(.index_get, p, v[0].int(), v[1].int()),
+            .list_identical => l.binary(.strict_eq, v[0], v[1], p),
+            .list_kept => l.condOf(v[0], v[1], v[2], p),
+            .list_half => l.binary(.shr, v[0], try l.numberNode("1", p), p),
+            .list_length => l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
+            // `b[i] = x;` where the call was, then `b`: the builder is read
+            // twice, so a builder that is not a name is bound first, and
+            // the store runs where the call ran, after its operands.
+            .list_put => blk: {
+                var builder = v[0];
+                if (!l.isAtom(builder)) {
+                    const n = try l.fresh(l.well.temp);
+                    try l.constDecl(out, n, builder, p);
+                    builder = try l.ident(n, p);
+                }
+                const slot = try l.add(.index_get, p, builder.int(), v[1].int());
+                try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
+                break :blk builder;
+            },
         };
     }
 

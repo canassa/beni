@@ -24,7 +24,7 @@
 --!
 --! The `foreign` half is first-order and nothing that takes a function is
 --! `foreign`: every function with a callback is a beni loop over the
---! core-private `unsafeGet`, building its result in a core-private
+--! core-private `base`, `offset` and `at`, building its result in a core-private
 --! `Builder`, so a callback that suspends parks the loop (`language.md`
 --! §6.8, *Callbacks*). The `foreign` half is `cons`, `append`, `length`,
 --! the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and
@@ -55,7 +55,7 @@ pub equatable foreign type List a
 
 
 --| What a loop of this module builds its result in: a fresh array that only
---| the loop that made it can see, written in place by `add` and handed over
+--| the loop that made it can see, written in place by `put` and handed over
 --| once by `done` as a plain list (`backend.md` §4, invariant 5). Nothing
 --| outside this module can name one, and each is used linearly, so the
 --| write is never observable.
@@ -207,30 +207,37 @@ foreign pure view : List a, Int -> List a
 
 
 --| The plain array a list is a suffix of, and where in it the list starts
---| (`backend.md` §8, *Scalar views*).
+--| (`backend.md` §8, *Scalar views*): the list itself and 0, a view's
+--| backing array and offset, a trie's plain copy (made once) and 0. Every
+--| loop below reads its list through these two and `at`.
 foreign pure base : List a -> List a
 
 
 foreign pure offset : List a -> Int
 
 
+--| Element `i` of an array `base` returned, `i` below its length: `a[i]`.
+--| The code generator writes it in place (`backend.md` §4, *`List.beni`'s
+--| loops read and write in place*), so every loop has a property access of
+--| its own, which stays monomorphic where one shared function's goes
+--| megamorphic across a program's loops.
+foreign pure at : List a, Int -> a
+
+
 --| A builder with room for `n` elements: a loop that knows how many it will
 --| write fills them by index with `put`, which builds in a third of the
 --| time pushing takes at 100 000 elements, where an array grown by `push`
---| is copied as it grows. `builder 0` is grown by `add`.
+--| is copied as it grows.
 foreign pure builder : Int -> Builder a
 
 
 --| Element `i` of the builder written, `i` below the room it was made with.
+--| Written in place, as `at` is: `b[i] = x`.
 foreign pure put : Builder a, Int, a -> Builder a
 
 
---| The builder with an element pushed at its end.
-foreign pure add : Builder a, a -> Builder a
-
-
 --| The builder handed over as a list of its first `n` elements: `n` is
---| how many a loop `put` (or `add`ed), so a builder made with more room
+--| how many a loop `put`, so a builder made with more room
 --| than it needed — `filter`'s — is cut to what it holds.
 foreign pure done : Builder a, Int -> List a
 
@@ -270,13 +277,14 @@ foreign pure half : Int -> Int
 --| of any length.
 pub foldl : List a, b, (a, b -> b) -> b
 foldl xs acc func =
-    foldlFrom xs 0 (length xs) acc func
+    foldlFrom (base xs) (offset xs) (offset xs + length xs) acc func
 
 
+--| Fold `a[i]`, `a[i + 1]`, … `a[stop - 1]` of an array `base` returned.
 foldlFrom : List a, Int, Int, b, (a, b -> b) -> b
-foldlFrom xs i n acc func =
-    if i < n then
-        foldlFrom xs (i + 1) n (func (unsafeGet xs i) acc) func
+foldlFrom a i stop acc func =
+    if i < stop then
+        foldlFrom a (i + 1) stop (func (at a i) acc) func
     else
         acc
 
@@ -292,15 +300,15 @@ foldlFrom xs i n acc func =
 --| list backwards by index and allocates nothing.
 pub foldr : List a, b, (a, b -> b) -> b
 foldr xs acc func =
-    foldrFrom xs (length xs - 1) acc func
+    foldrFrom (base xs) (offset xs) (offset xs + length xs - 1) acc func
 
 
-foldrFrom : List a, Int, b, (a, b -> b) -> b
-foldrFrom xs i acc func =
-    if i < 0 then
+foldrFrom : List a, Int, Int, b, (a, b -> b) -> b
+foldrFrom a o i acc func =
+    if i < o then
         acc
     else
-        foldrFrom xs (i - 1) (func (unsafeGet xs i) acc) func
+        foldrFrom a o (i - 1) (func (at a i) acc) func
 
 
 --| Create a list with only one element.
@@ -376,20 +384,22 @@ initializeHelp i n func b =
 --| the result reads at O(1).
 pub map : List a, (a -> b) -> List b
 map xs func =
-    mapHelp xs 0 (length xs) func (builder (length xs)) True
+    mapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
 
 
-mapHelp : List a, Int, Int, (a -> b), Builder b, Bool -> List b
-mapHelp xs i n func b same =
+--| Every loop below reads element `i` of its list as `at a (o + i)`, `a`
+--| and `o` being the list's `base` and `offset`.
+mapHelp : List a, List a, Int, Int, Int, (a -> b), Builder b, Bool -> List b
+mapHelp xs a o i n func b same =
     if i < n then
         let
             x =
-                unsafeGet xs i
+                at a (o + i)
 
             y =
                 func x
         in
-        mapHelp xs (i + 1) n func (put b i y) (same && identical x y)
+        mapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
         kept same xs (done b n)
 
@@ -401,20 +411,20 @@ mapHelp xs i n func b same =
 --|     indexedMap [ "a", "b" ] (\i x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a -> b) -> List b
 indexedMap xs func =
-    indexedMapHelp xs 0 (length xs) func (builder (length xs)) True
+    indexedMapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
 
 
-indexedMapHelp : List a, Int, Int, (Int, a -> b), Builder b, Bool -> List b
-indexedMapHelp xs i n func b same =
+indexedMapHelp : List a, List a, Int, Int, Int, (Int, a -> b), Builder b, Bool -> List b
+indexedMapHelp xs a o i n func b same =
     if i < n then
         let
             x =
-                unsafeGet xs i
+                at a (o + i)
 
             y =
                 func i x
         in
-        indexedMapHelp xs (i + 1) n func (put b i y) (same && identical x y)
+        indexedMapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
         kept same xs (done b n)
 
@@ -428,28 +438,35 @@ indexedMapHelp xs i n func b same =
 --| *Identity*). O(n).
 pub filter : List a, (a -> Bool) -> List a
 filter xs isGood =
-    let
-        result =
-            filterHelp xs 0 (length xs) isGood (builder (length xs)) 0
-    in
-    if length result == length xs then
-        xs
+    filterFirst xs (base xs) (offset xs) 0 (length xs) isGood
+
+
+--| Up to the first element `isGood` rejects: nothing is built before it,
+--| and when there is none the result is `xs` itself. The `i` kept before it
+--| are copied into a builder with room for all but the one rejected.
+filterFirst : List a, List a, Int, Int, Int, (a -> Bool) -> List a
+filterFirst xs a o i n isGood =
+    if i < n then
+        if isGood (at a (o + i)) then
+            filterFirst xs a o (i + 1) n isGood
+        else
+            filterHelp a o (i + 1) n isGood (putAll (builder (n - 1)) 0 a o (o + i)) i
     else
-        result
+        xs
 
 
---| `j` is how many were kept: the builder has room for all `n`.
-filterHelp : List a, Int, Int, (a -> Bool), Builder a, Int -> List a
-filterHelp xs i n isGood b j =
+--| `j` is how many were kept: the builder has room for all that are left.
+filterHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Int -> List a
+filterHelp a o i n isGood b j =
     if i < n then
         let
             x =
-                unsafeGet xs i
+                at a (o + i)
         in
         if isGood x then
-            filterHelp xs (i + 1) n isGood (put b j x) (j + 1)
+            filterHelp a o (i + 1) n isGood (put b j x) (j + 1)
         else
-            filterHelp xs (i + 1) n isGood b j
+            filterHelp a o (i + 1) n isGood b j
     else
         done b j
 
@@ -462,18 +479,18 @@ filterHelp xs i n isGood b j =
 --| `func` sees the first element first. O(n).
 pub filterMap : List a, (a -> Maybe b) -> List b
 filterMap xs func =
-    filterMapHelp xs 0 (length xs) func (builder (length xs)) 0
+    filterMapHelp (base xs) (offset xs) 0 (length xs) func (builder (length xs)) 0
 
 
-filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b, Int -> List b
-filterMapHelp xs i n func b j =
+filterMapHelp : List a, Int, Int, Int, (a -> Maybe b), Builder b, Int -> List b
+filterMapHelp a o i n func b j =
     if i < n then
-        case func (unsafeGet xs i) of
+        case func (at a (o + i)) of
             Just y ->
-                filterMapHelp xs (i + 1) n func (put b j y) (j + 1)
+                filterMapHelp a o (i + 1) n func (put b j y) (j + 1)
 
             Nothing ->
-                filterMapHelp xs (i + 1) n func b j
+                filterMapHelp a o (i + 1) n func b j
     else
         done b j
 
@@ -489,13 +506,14 @@ reverse xs =
     if length xs < 2 then
         xs
     else
-        reverseHelp xs 0 (length xs) (builder (length xs))
+        reverseHelp (base xs) (offset xs + length xs - 1) 0 (length xs) (builder (length xs))
 
 
-reverseHelp : List a, Int, Int, Builder a -> List a
-reverseHelp xs i n b =
+--| `top` is the index in `a` of the list's last element.
+reverseHelp : List a, Int, Int, Int, Builder a -> List a
+reverseHelp a top i n b =
     if i < n then
-        reverseHelp xs (i + 1) n (put b i (unsafeGet xs (n - 1 - i)))
+        reverseHelp a top (i + 1) n (put b i (at a (top - i)))
     else
         done b n
 
@@ -526,17 +544,17 @@ all xs isOkay =
 --|     any [] (\n -> modBy n 2 == 0) == False
 pub any : List a, (a -> Bool) -> Bool
 any xs isOkay =
-    anyFrom xs 0 (length xs) isOkay
+    anyFrom (base xs) (offset xs) (offset xs + length xs) isOkay
 
 
 anyFrom : List a, Int, Int, (a -> Bool) -> Bool
-anyFrom xs i n isOkay =
-    if i >= n then
+anyFrom a i stop isOkay =
+    if i >= stop then
         False
-    else if isOkay (unsafeGet xs i) then
+    else if isOkay (at a i) then
         True
     else
-        anyFrom xs (i + 1) n isOkay
+        anyFrom a (i + 1) stop isOkay
 
 
 --| Find the maximum element in a non-empty list of numbers. Elm's version
@@ -550,7 +568,7 @@ maximum xs =
     if isEmpty xs then
         Nothing
     else
-        Just (foldlFrom xs 1 (length xs) (unsafeGet xs 0) max)
+        Just (foldlFrom (base xs) (offset xs + 1) (offset xs + length xs) (unsafeGet xs 0) max)
 
 
 --| Find the minimum element in a non-empty list of numbers.
@@ -562,7 +580,7 @@ minimum xs =
     if isEmpty xs then
         Nothing
     else
-        Just (foldlFrom xs 1 (length xs) (unsafeGet xs 0) min)
+        Just (foldlFrom (base xs) (offset xs + 1) (offset xs + length xs) (unsafeGet xs 0) min)
 
 
 --| Get the sum of the list elements.
@@ -581,21 +599,11 @@ product xs =
     foldl xs 1 (*)
 
 
---| Every element of `xs` from `i` up to `n`, added to builder `b`.
-addAll : Builder a, List a, Int, Int -> Builder a
-addAll b xs i n =
-    if i < n then
-        addAll (add b (unsafeGet xs i)) xs (i + 1) n
-    else
-        b
-
-
---| Every element of `xs` from `i` up to `n`, put into builder `b` from
---| index `j` on.
+--| `a[i]` … `a[stop - 1]`, put into builder `b` from index `j` on.
 putAll : Builder a, Int, List a, Int, Int -> Builder a
-putAll b j xs i n =
-    if i < n then
-        putAll (put b j (unsafeGet xs i)) (j + 1) xs (i + 1) n
+putAll b j a i stop =
+    if i < stop then
+        putAll (put b j (at a i)) (j + 1) a (i + 1) stop
     else
         b
 
@@ -605,117 +613,25 @@ putAll b j xs i n =
 --|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
 --|
 --| When exactly one of the lists is not empty the result is that list
---| itself (`backend.md` §4, *Identity*); otherwise it is a fresh list,
---| O(total).
-pub concat : List (List a) -> List a
-concat lists =
-    concatFirst lists 0 (length lists)
-
-
---| Up to the first list that is not empty.
-concatFirst : List (List a), Int, Int -> List a
-concatFirst lists i n =
-    if i < n then
-        let
-            xs =
-                unsafeGet lists i
-        in
-        if isEmpty xs then
-            concatFirst lists (i + 1) n
-        else
-            concatSecond lists (i + 1) n xs
-    else
-        []
-
-
---| Up to the second, `first` being the first: only then is anything copied.
-concatSecond : List (List a), Int, Int, List a -> List a
-concatSecond lists i n first =
-    if i < n then
-        let
-            xs =
-                unsafeGet lists i
-        in
-        if isEmpty xs then
-            concatSecond lists (i + 1) n first
-        else
-            let
-                total =
-                    foldlFrom lists i n (length first) (\ys count -> count + length ys)
-            in
-            concatRest lists (i + 1) n (putAll (putAll (builder total) 0 first 0 (length first)) (length first) xs 0 (length xs)) (length first + length xs)
-    else
-        first
-
-
---| `j` is how many elements are in the builder, which has room for all.
-concatRest : List (List a), Int, Int, Builder a, Int -> List a
-concatRest lists i n b j =
-    if i < n then
-        let
-            xs =
-                unsafeGet lists i
-        in
-        concatRest lists (i + 1) n (putAll b j xs 0 (length xs)) (j + length xs)
-    else
-        done b j
+--| itself (`backend.md` §4, *Identity*); otherwise it is a fresh list made
+--| its final size, O(total). It takes no function, so it is `foreign`: one
+--| JavaScript loop copies every list, where a beni loop per list paid a
+--| call per list.
+pub foreign pure concat : List (List a) -> List a
 
 
 --| Map a given function onto a list and flatten the resulting lists.
 --|
 --|     concatMap [ 1, 2 ] (\x -> [ x, x ]) == [ 1, 1, 2, 2 ]
 --|
---| `func` is called on the first element first, and once per element. When
---| exactly one of its answers is not empty the result is that answer
---| itself, as `concat (map xs func)` would give — in one pass, without that
---| intermediate list.
+--| `func` is called on the first element first, and once per element. It
+--| is `concat (map xs func)`: when exactly one of the answers is not empty
+--| the result is that answer itself. The answers are kept in a list of
+--| their own first, so the result is made its final size once, which is
+--| faster than growing it as the answers come.
 pub concatMap : List a, (a -> List b) -> List b
 concatMap xs func =
-    concatMapFirst xs 0 (length xs) func
-
-
-concatMapFirst : List a, Int, Int, (a -> List b) -> List b
-concatMapFirst xs i n func =
-    if i < n then
-        let
-            ys =
-                func (unsafeGet xs i)
-        in
-        if isEmpty ys then
-            concatMapFirst xs (i + 1) n func
-        else
-            concatMapSecond xs (i + 1) n func ys
-    else
-        []
-
-
-concatMapSecond : List a, Int, Int, (a -> List b), List b -> List b
-concatMapSecond xs i n func first =
-    if i < n then
-        let
-            ys =
-                func (unsafeGet xs i)
-        in
-        if isEmpty ys then
-            concatMapSecond xs (i + 1) n func first
-        else
-            concatMapRest xs (i + 1) n func (addAll (addAll (builder 0) first 0 (length first)) ys 0 (length ys)) (length first + length ys)
-    else
-        first
-
-
---| The answers' sizes are not known before `func` gives them, so this one
---| builder grows by `add`; `j` is how many it holds.
-concatMapRest : List a, Int, Int, (a -> List b), Builder b, Int -> List b
-concatMapRest xs i n func b j =
-    if i < n then
-        let
-            ys =
-                func (unsafeGet xs i)
-        in
-        concatMapRest xs (i + 1) n func (addAll b ys 0 (length ys)) (j + length ys)
-    else
-        done b j
+    concat (map xs func)
 
 
 --| Places the given value between all members of the given list.
@@ -726,13 +642,13 @@ intersperse xs sep =
     if isEmpty xs then
         []
     else
-        intersperseHelp xs sep 1 (length xs) (put (builder (2 * length xs - 1)) 0 (unsafeGet xs 0))
+        intersperseHelp (base xs) (offset xs) sep 1 (length xs) (put (builder (2 * length xs - 1)) 0 (unsafeGet xs 0))
 
 
-intersperseHelp : List a, a, Int, Int, Builder a -> List a
-intersperseHelp xs sep i n b =
+intersperseHelp : List a, Int, a, Int, Int, Builder a -> List a
+intersperseHelp a o sep i n b =
     if i < n then
-        intersperseHelp xs sep (i + 1) n (put (put b (2 * i - 1) sep) (2 * i) (unsafeGet xs i))
+        intersperseHelp a o sep (i + 1) n (put (put b (2 * i - 1) sep) (2 * i) (at a (o + i)))
     else
         done b (2 * n - 1)
 
@@ -751,13 +667,16 @@ map2 xs ys func =
         n =
             min (length xs) (length ys)
     in
-    map2Help xs ys 0 n func (builder n)
+    map2Help (base xs) (offset xs) (base ys) (offset ys) 0 n func (builder n)
 
 
-map2Help : List a, List b, Int, Int, (a, b -> result), Builder result -> List result
-map2Help xs ys i n func b =
+--| `ax` and `ox` are `xs`'s base and offset, `ay` and `oy` `ys`'s, and so on
+--| for `map3`–`map5`: each is a loop of its own, so that its call of `func`
+--| is too.
+map2Help : List a, Int, List b, Int, Int, Int, (a, b -> result), Builder result -> List result
+map2Help ax ox ay oy i n func b =
     if i < n then
-        map2Help xs ys (i + 1) n func (put b i (func (unsafeGet xs i) (unsafeGet ys i)))
+        map2Help ax ox ay oy (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i))))
     else
         done b n
 
@@ -765,17 +684,37 @@ map2Help xs ys i n func b =
 --| Combine three lists, combining them with the given function.
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
-    initialize
-        (min (length xs) (min (length ys) (length zs)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i))
+    let
+        n =
+            min (length xs) (min (length ys) (length zs))
+    in
+    map3Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) 0 n func (builder n)
+
+
+map3Help : List a, Int, List b, Int, List c, Int, Int, Int, (a, b, c -> result), Builder result -> List result
+map3Help ax ox ay oy az oz i n func b =
+    if i < n then
+        map3Help ax ox ay oy az oz (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i))))
+    else
+        done b n
 
 
 --| Combine four lists, combining them with the given function.
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
-    initialize
-        (min (min (length xs) (length ys)) (min (length zs) (length ws)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i))
+    let
+        n =
+            min (min (length xs) (length ys)) (min (length zs) (length ws))
+    in
+    map4Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) 0 n func (builder n)
+
+
+map4Help : List a, Int, List b, Int, List c, Int, List d, Int, Int, Int, (a, b, c, d -> result), Builder result -> List result
+map4Help ax ox ay oy az oz aw ow i n func b =
+    if i < n then
+        map4Help ax ox ay oy az oz aw ow (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i)) (at aw (ow + i))))
+    else
+        done b n
 
 
 --| Combine five lists, combining them with the given function.
@@ -788,9 +727,34 @@ pub map5 :
     , (a, b, c, d, e -> result)
     -> List result
 map5 xs ys zs ws vs func =
-    initialize
-        (min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i) (unsafeGet vs i))
+    let
+        n =
+            min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
+    in
+    map5Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) (base vs) (offset vs) 0 n func (builder n)
+
+
+map5Help :
+    List a
+    , Int
+    , List b
+    , Int
+    , List c
+    , Int
+    , List d
+    , Int
+    , List e
+    , Int
+    , Int
+    , Int
+    , (a, b, c, d, e -> result)
+    , Builder result
+    -> List result
+map5Help ax ox ay oy az oz aw ow av ov i n func b =
+    if i < n then
+        map5Help ax ox ay oy az oz aw ow av ov (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i)) (at aw (ow + i)) (at av (ov + i))))
+    else
+        done b n
 
 
 --| Sort a list from lowest to highest, by the element type's own `compare`.
@@ -882,7 +846,9 @@ sortRange xs lo hi cmp =
 
 --| Two sorted lists merged. On anything but `GT` the left element wins,
 --| which is what makes `sortWith` stable; what is left of one list when the
---| other runs out is added after.
+--| other runs out is added after. Both are plain arrays — `sortRange`'s
+--| `slice` of at most one element of a longer list, or a `merge` — so they
+--| are read by `at` with no `base`.
 merge : List a, Int, Int, List a, Int, Int, (a, a -> Order), Builder a -> List a
 merge xs i n ys j m cmp b =
     if i >= n then
@@ -892,10 +858,10 @@ merge xs i n ys j m cmp b =
     else
         let
             x =
-                unsafeGet xs i
+                at xs i
 
             y =
-                unsafeGet ys j
+                at ys j
         in
         case cmp x y of
             GT ->
@@ -1016,21 +982,21 @@ update xs i func =
 --| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a -> Bool) -> ( List a, List a )
 partition xs pred =
-    partitionHelp xs 0 (length xs) pred (builder (length xs)) (builder (length xs)) 0
+    partitionHelp (base xs) (offset xs) 0 (length xs) pred (builder (length xs)) (builder (length xs)) 0
 
 
 --| `k` is how many passed: the rest, `i - k`, did not.
-partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a, Int -> ( List a, List a )
-partitionHelp xs i n pred yes no k =
+partitionHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Builder a, Int -> ( List a, List a )
+partitionHelp a o i n pred yes no k =
     if i < n then
         let
             x =
-                unsafeGet xs i
+                at a (o + i)
         in
         if pred x then
-            partitionHelp xs (i + 1) n pred (put yes k x) no (k + 1)
+            partitionHelp a o (i + 1) n pred (put yes k x) no (k + 1)
         else
-            partitionHelp xs (i + 1) n pred yes (put no (i - k) x) k
+            partitionHelp a o (i + 1) n pred yes (put no (i - k) x) k
     else
         ( done yes k, done no (n - k) )
 
@@ -1040,14 +1006,14 @@ partitionHelp xs i n pred yes no k =
 --|     unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )
 pub unzip : List ( a, b ) -> ( List a, List b )
 unzip pairs =
-    unzipHelp pairs 0 (length pairs) (builder (length pairs)) (builder (length pairs))
+    unzipHelp (base pairs) (offset pairs) 0 (length pairs) (builder (length pairs)) (builder (length pairs))
 
 
-unzipHelp : List ( a, b ), Int, Int, Builder a, Builder b -> ( List a, List b )
-unzipHelp pairs i n xs ys =
+unzipHelp : List ( a, b ), Int, Int, Int, Builder a, Builder b -> ( List a, List b )
+unzipHelp a o i n xs ys =
     if i < n then
-        case unsafeGet pairs i of
+        case at a (o + i) of
             ( x, y ) ->
-                unzipHelp pairs (i + 1) n (put xs i x) (put ys i y)
+                unzipHelp a o (i + 1) n (put xs i x) (put ys i y)
     else
         ( done xs n, done ys n )

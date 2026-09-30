@@ -13,7 +13,11 @@
 //! would not, and `Int32.div`, `rem`, `mod` likewise, so they stay calls;
 //! `Int32.mul` is `Math.imul`, a global the renamer would have to be taught,
 //! so it stays one too. `negate` is `0 - n`, not `-n`: the two differ at
-//! zero, where `-0` is a different number.
+//! zero, where `-0` is a different number. `List`'s core-private
+//! primitives are here for a reason of their own: each is what its sibling
+//! export computes, and written in place each loop of `List.beni` has its
+//! own property accesses, where one shared sibling function's go
+//! megamorphic across every loop of a program.
 //!
 //! Keyed on the core package, the module's name and the value's name, never
 //! on a user's spelling: a root-package `Basics` is an ordinary module. The
@@ -57,11 +61,25 @@ pub const Which = enum {
     int32_shiftLeft,
     int32_shiftRight,
     int32_shiftRightZero,
+    // `List`'s core-private primitives, which only `List.beni` can name
+    // (`backend.md` §4, *`List.beni`'s loops read and write in place*):
+    // `at a i` is `a[i]`, `put b i x` is the statement `b[i] = x;` and then
+    // `b`, `identical x y` is `x === y`, `kept s o b` is `s ? o : b`, and
+    // `half n` is `n >>> 1`. And the one `pub` one: `List.length xs` is
+    // `xs.length`, which every form of a list answers (§4, *What a reader
+    // of a list may rely on*).
+    list_at,
+    list_put,
+    list_identical,
+    list_kept,
+    list_half,
+    list_length,
 
     /// How many arguments a saturated call passes.
     pub fn arity(w: Which) u32 {
         return switch (w) {
-            .not, .negate, .int32_fromInt, .int32_toInt, .int32_toUnsignedInt => 1,
+            .not, .negate, .int32_fromInt, .int32_toInt, .int32_toUnsignedInt, .list_half, .list_length => 1,
+            .list_put, .list_kept => 3,
             else => 2,
         };
     }
@@ -79,6 +97,11 @@ const int32 = [_]struct { []const u8, Which }{
     .{ "add", .int32_add },               .{ "sub", .int32_sub },                       .{ "and", .int32_and },
     .{ "or", .int32_or },                 .{ "xor", .int32_xor },                       .{ "shiftLeft", .int32_shiftLeft },
     .{ "shiftRight", .int32_shiftRight }, .{ "shiftRightZero", .int32_shiftRightZero },
+};
+
+const list = [_]struct { []const u8, Which }{
+    .{ "at", .list_at },     .{ "put", .list_put },   .{ "identical", .list_identical },
+    .{ "kept", .list_kept }, .{ "half", .list_half }, .{ "length", .list_length },
 };
 
 /// The operator `inst` names, or null. `module` is the module `bir` is;
@@ -105,6 +128,8 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, m
         &basics
     else if (std.mem.eql(u8, name, "Int32"))
         &int32
+    else if (std.mem.eql(u8, name, "List"))
+        &list
     else
         return null;
     for (table) |row| if (std.mem.eql(u8, row[0], value)) return row[1];

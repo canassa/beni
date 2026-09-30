@@ -4107,3 +4107,67 @@ test "bench/corpus builds as a library for the node platform" {
     try testing.expect(w.exists("out/JsonCodecs.mjs"));
     try testing.expect(w.exists("out/NotesApp.mjs"));
 }
+
+test "core List's loops read and write their arrays in place" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §4, *`List.beni`'s loops read and write in place*: the
+    // core-private `at`, `put`, `identical`, `kept` and `half`, and
+    // `List.length` anywhere, are the JavaScript they compute and never a
+    // call — a call of one shared function from every loop of a program is
+    // what made `map2` 3.5× the cons list's. The claim is about the OUTPUT
+    // TREE (core's emitted module and the one `--release` file), so it is
+    // here and not in `emit/`, whose goldens are of the root package; the
+    // program's answer proves the loops still compute what they did.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import List
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    let
+        \\        xs =
+        \\            List.range 1 10
+        \\
+        \\        kept =
+        \\            List.map xs (\x -> x)
+        \\
+        \\        sorted =
+        \\            List.sortWith (List.filter xs (\x -> x > 2)) (\a b -> Basics.compare b a)
+        \\    in
+        \\    Node.print (String.join (List.map (List.map2 kept sorted (+)) String.fromInt) "," ++ " " ++ String.fromInt (List.length xs))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "11,11,11,11,11,11,11,11 10\n" });
+    try expectBuilt(r);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // No call, and — since nothing names one as a value — no import of the
+    // sibling's export either, which is what `Reach` keeps a declaration
+    // alive by, so `--release` ships none of them.
+    const list_mjs = try w.read("out/_core/List.mjs");
+    const main_mjs = try w.read("out/Main.mjs");
+    const arena = w.arena.allocator();
+    for ([_][]const u8{ "List$at", "List$put", "List$identical", "List$kept", "List$half", "List$length" }) |name| {
+        inline for (.{ "{s}(", "as {s},", "as {s} }}" }) |shape| {
+            const needle = try std.fmt.allocPrint(arena, shape, .{name});
+            for ([_][]const u8{ list_mjs, main_mjs }) |text| {
+                if (std.mem.indexOf(u8, text, needle) != null) {
+                    std.debug.print("expected no `{s}`, found one in:\n{s}\n", .{ needle, text });
+                    return error.NotWrittenInPlace;
+                }
+            }
+        }
+    }
+}

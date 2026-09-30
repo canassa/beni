@@ -782,9 +782,9 @@ pub const Builder = struct {
     /// The `core/List` edges of declaration `d` that no instruction names
     /// (`list_get` and the rest): `unsafeGet` and `view` when it holds a
     /// list pattern, `slice` when one has an item after its spread
-    /// (`[ ...init, last ]`), and `close` when it names `List.cons` — a
-    /// building loop's exit calls it (`backend.md` §8), and every cons step
-    /// is a call of `cons`. Coarse by a little: a pattern that reads no
+    /// (`[ ...init, last ]`), and `close` when it calls `List.cons` in a way
+    /// a building loop's step can (`isBuildingStep`) — the loop's exit
+    /// calls it (`backend.md` §8). Coarse by a little: a pattern that reads no
     /// element or binds no tail still keeps the two alive, which costs
     /// their export and never a wrong program.
     fn listEdges(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, out: *std.ArrayList(Target)) Allocator.Error!void {
@@ -806,15 +806,9 @@ pub const Builder = struct {
                         if (bir.instTag(item) == .pat_spread and k + 1 < items.len) end = true;
                     }
                 },
-                .ext_value => if (!cons and list != null and data.lhs == @intFromEnum(list.?)) {
-                    const cons_node = b.list_cons orelse continue;
-                    if (b.twinOfExt(list.?, data.rhs)) |t| cons = t.index == cons_node.index;
-                },
-                .top => if (!cons and list != null and m == list.?) {
-                    if (b.list_cons) |cons_node| cons = data.lhs == cons_node.index;
-                },
-                .call => if (!append and dispatch.isListAppend(at)) {
-                    append = true;
+                .call => {
+                    if (!append and dispatch.isListAppend(at)) append = true;
+                    if (!cons and list != null) cons = b.isBuildingStep(m, bir, list.?, data);
                 },
                 else => {},
             }
@@ -830,6 +824,35 @@ pub const Builder = struct {
             if (!pick[0]) continue;
             if (pick[1]) |node| try out.append(b.scratch, .{ .node = node, .chain = 0 });
         }
+    }
+
+    /// Whether the call `data` could be a step of a building loop (§8,
+    /// *Tail calls modulo cons, onto an array*), whose exit calls `close`:
+    /// a call of `List.cons` whose tail is itself a call, a `let` or a
+    /// `case` — what a step's tail must be to reach the self-call. A cons
+    /// onto a name, a literal or a parameter (`[ x, ...acc ]`) never is,
+    /// so a program that only prepends onto what it holds ships no `close`.
+    fn isBuildingStep(b: *Builder, m: Graph.Index, bir: *const Bir, list: Graph.Index, data: Bir.Inst.Data) bool {
+        const cons_node = b.list_cons orelse return false;
+        const callee: Bir.Inst.Index = @enumFromInt(data.lhs);
+        if (callee.int() >= bir.insts.len) return false;
+        const named = switch (bir.instTag(callee)) {
+            .ext_value => blk: {
+                const d = bir.instData(callee);
+                if (d.lhs != @intFromEnum(list)) break :blk false;
+                const t = b.twinOfExt(list, d.rhs) orelse break :blk false;
+                break :blk t.index == cons_node.index;
+            },
+            .top => m == list and bir.instData(callee).lhs == cons_node.index,
+            else => false,
+        };
+        if (!named) return false;
+        const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        if (args.len != 2) return false;
+        return switch (bir.instTag(args[1])) {
+            .call, .let, .case => true,
+            else => false,
+        };
     }
 
     /// An edge only a declaration's suspendable body has.

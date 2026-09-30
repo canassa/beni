@@ -51,6 +51,8 @@ const Lim = 256;
 const Wide = 32;
 
 const IsA = Array.isArray;
+// Whether a list is a trie: the one form with a tree.
+const IsTrie = (xs) => xs.T !== undefined;
 
 // ---- Views -------------------------------------------------------------
 
@@ -63,11 +65,26 @@ const View = (b, o) => ({ b, o, length: b.length - o, p: null, $plain: ViewPlain
 
 // ---- The trie's read half ------------------------------------------------
 
-// A trie's `$plain()`: its elements in order, cached on the header.
-const TriePlain = function () {
-  return Flat(this);
+// A trie's `$plain()`: its plain copy, made once per header (invariant 1's
+// cache) — the head backwards, each leaf, then the tail, into an array made
+// its final size. As fast as `concat.apply` over the leaves at 1 000 to
+// 100 000 elements (Node 24), and it needs no list of them.
+const Flat = function () {
+  const a = this;
+  if (a.p !== null) return a.p;
+  const n = a.length;
+  const T = a.T;
+  const b = new Array(n);
+  let j = 0;
+  for (let i = a.hc - 1; i >= 0; i--) b[j++] = a.h[i];
+  for (let i = T.off; i < T.off + T.tc; i += 32) {
+    const leaf = Leaf(T.r, T.s, i);
+    for (let k = 0; k < 32; k++) b[j++] = leaf[k];
+  }
+  for (let i = 0; j < n; i++) b[j++] = a.t[i];
+  return (a.p = b);
 };
-const Mk = (n, h, hc, T, t) => ({ length: n, h, hc, T, t, p: null, $plain: TriePlain });
+const Mk = (n, h, hc, T, t) => ({ length: n, h, hc, T, t, p: null, $plain: Flat });
 const Tree = (r, s, off, tc) => ({ r, s, off, tc });
 const NoTree = { r: [], s: 5, off: 0, tc: 0 };
 
@@ -88,73 +105,31 @@ const Get = (a, i) => {
   i += T.off;
   return Leaf(T.r, T.s, i)[i & 31];
 };
-// The trie's elements as arrays in order: the head reversed (a copy), each
-// leaf, and the tail cut to this version's count.
-const Chunks = (a) => {
-  const out = [];
-  const hc = a.hc;
-  const T = a.T;
-  const e = T.off + T.tc;
-  const n = a.length - hc - T.tc;
-  if (hc > 0) out.push(a.h.slice(0, hc).reverse());
-  for (let i = T.off; i < e; i += 32) out.push(Leaf(T.r, T.s, i));
-  out.push(a.t.length === n ? a.t : a.t.slice(0, n));
-  return out;
-};
-// The trie's plain copy, made once per header (invariant 1's cache).
-// `concat.apply` 8 192 chunks at a time keeps the argument count far below
-// every engine's limit.
-const Flat = (a) => {
-  if (a.p !== null) return a.p;
-  const c = Chunks(a);
-  let out = [];
-  for (let i = 0; i < c.length; i += 8192) out = out.concat.apply(out, c.slice(i, i + 8192));
-  return (a.p = out);
-};
 // Trie a without its first k elements, 0 < k < a.length: a trie sharing the
 // tree, never a flatten (§4, *Removing a prefix*). Inside the head it is a
 // header with a smaller head count; past it, whole leaves go by moving the
-// offset and the rest of the new first leaf becomes the head, a reversed
-// copy of at most 31; with only tail elements left, a fresh plain array.
+// offset and the rest of the new first leaf, all 32 when k falls on a leaf's
+// start, becomes the head; with only tail elements left, a fresh plain
+// array. A tree left with no leaf keeps its root, which no read reaches.
 const Drop = (a, k) => {
   const n = a.length - k;
   const hc = a.hc;
   if (k <= hc) return Mk(n, a.h, hc - k, a.T, a.t);
   const T = a.T;
-  const tc = T.tc;
   k -= hc;
-  if (k >= tc) return a.t.slice(k - tc, a.length - hc - tc);
-  const off = T.off + (k & -32);
-  const left = tc - (k & -32);
-  const r = k & 31;
-  if (r === 0) return Mk(n, [], 0, Tree(T.r, T.s, off, left), a.t);
-  const leaf = Leaf(T.r, T.s, off);
-  const h = [];
-  for (let j = 31; j >= r; j--) h.push(leaf[j]);
-  return Mk(n, h, 32 - r, left === 32 ? NoTree : Tree(T.r, T.s, off + 32, left - 32), a.t);
+  if (k >= T.tc) return a.t.slice(k - T.tc, a.length - hc - T.tc);
+  const i = T.off + (k & -32);
+  return Mk(n, Leaf(T.r, T.s, i).slice(k & 31).reverse(), 32 - (k & 31), Tree(T.r, T.s, i + 32, T.tc - (k & -32) - 32), a.t);
 };
-
-// The plain array a list is a suffix of, and where in it the list starts:
-// (xs, 0) plain, (b, o) a view, (its cached copy, 0) a trie.
-const Base = (xs) => (IsA(xs) ? xs : xs.o !== undefined ? xs.b : Flat(xs));
-const Offset = (xs) => (IsA(xs) || xs.o === undefined ? 0 : xs.o);
 
 // ---- The trie's write half ---------------------------------------------
 
 // The radix positions a root at shift s covers.
 const Span = (s) => 2 ** (s + 5);
-const NullRow = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
 
-// A path copy: node x with the element at radix position i replaced.
-const SetIn = (x, s, i, v) => {
-  const c = x.slice();
-  if (s === 0) c[i & 31] = v;
-  else c[(i >>> s) & 31] = SetIn(x[(i >>> s) & 31], s - 5, i, v);
-  return c;
-};
-// A copy of node x (null: a new node) with `leaf` at radix position i. A
-// gap left of a new child is filled with null, so every node stays a
-// packed array.
+// A path copy: node x (null: a new node) with `leaf` at radix position i,
+// the one write into the tree. A gap left of a new child is filled with
+// null, so every node stays a packed array.
 const PutLeaf = (x, s, i, leaf) => {
   const c = x === null ? [] : x.slice();
   const j = (i >>> s) & 31;
@@ -173,13 +148,68 @@ const PopLeaf = (x, s, i) => {
   y[j] = c;
   return y;
 };
-// Plain array b from index o as a trie: E1t's layout — an empty head, the
-// tree at offset 0, the last 1 to 32 elements the tail. Every array is a
-// copy, so no claim can ever write into a plain list (invariant 2). The
-// slice-based build is the fast one (research/40 §8 rule 11).
+// Tree T with `leaf` added at its right end, radix off + tc: a full tail.
+// An empty tree starts at 0; a root with no room right grows, the old one
+// becoming child 0 of a new one.
+const Right = (T, leaf) => {
+  let r = T.r;
+  let s = T.s;
+  let off = T.off;
+  if (T.tc === 0) {
+    r = [];
+    s = 5;
+    off = 0;
+  }
+  while (off + T.tc >= Span(s)) {
+    r = [r];
+    s += 5;
+  }
+  return Tree(PutLeaf(r, s, off + T.tc, leaf), s, off, T.tc + 32);
+};
+// Tree T with `leaf` added at its left end, radix off - 32: a full head,
+// the mirror of `Right`. An empty tree starts mid-root, at 512; a root
+// with no room left grows, the old one becoming child 16 of a new one, so
+// that there is room on both sides.
+const Left = (T, leaf) => {
+  let r = T.r;
+  let s = T.s;
+  let off = T.off;
+  if (T.tc === 0) {
+    r = [];
+    s = 5;
+    off = 512;
+  }
+  while (off < 32) {
+    r = [...Array(16).fill(null), r];
+    off += 16 * Span(s);
+    s += 5;
+  }
+  return Tree(PutLeaf(r, s, off - 32, leaf), s, off - 32, T.tc + 32);
+};
+// Buffer b of a version that reads its first c elements, with v at index
+// c. THE CLAIM: when this version owns b's end (b.length === c), v is
+// appended to b in place; when b already holds v there — this version is
+// the tail of one that went on with v — b is shared as it is; any other
+// version copies its at most 31.
+const Claim = (b, c, v) => {
+  if (b.length === c) b.push(v);
+  else if (b[c] !== v) (b = b.slice(0, c)).push(v);
+  return b;
+};
+// Buffer b's first c elements with index k set to v: a copy.
+const Changed = (b, c, k, v) => {
+  b = b.slice(0, c);
+  b[k] = v;
+  return b;
+};
+// Plain array b from index o, at least Wide elements, as a trie: E1t's
+// layout — an empty head, the tree at offset 0, the last 1 to 32 elements
+// the tail. Every array is a copy, so no claim can ever write into a plain
+// list (invariant 2). Built level by level from slices: placing it a leaf
+// at a time is 3–4.5× slower (Node 24, 1 000 to 100 000 elements).
 const From = (b, o) => {
   const n = b.length - o;
-  const e = n === 0 ? 0 : ((n - 1) >>> 5) << 5;
+  const e = ((n - 1) >>> 5) << 5;
   if (e === 0) return Mk(n, [], 0, NoTree, b.slice(o));
   let x = [];
   let s = 5;
@@ -192,98 +222,34 @@ const From = (b, o) => {
   }
   return Mk(n, [], 0, Tree(x, s, 0, e), b.slice(o + e));
 };
-// Trie a with element i replaced: a copy of the head, the tail or the path
-// the index falls in; a itself when the element is already v.
+// Trie a with element i replaced: a copy of the head, the tail or the leaf
+// the index falls in, and of the path to that leaf; a itself when the
+// element is already v.
 const TSet = (a, i, v) => {
   if (Get(a, i) === v) return a;
+  const n = a.length;
   const hc = a.hc;
   const T = a.T;
-  const tc = T.tc;
-  if (i < hc) {
-    const h = a.h.slice(0, hc);
-    h[hc - 1 - i] = v;
-    return Mk(a.length, h, hc, T, a.t);
-  }
+  if (i < hc) return Mk(n, Changed(a.h, hc, hc - 1 - i, v), hc, T, a.t);
   i -= hc;
-  if (i >= tc) {
-    const t = a.t.slice(0, a.length - hc - tc);
-    t[i - tc] = v;
-    return Mk(a.length, a.h, hc, T, t);
-  }
-  return Mk(a.length, a.h, hc, Tree(SetIn(T.r, T.s, T.off + i, v), T.s, T.off, tc), a.t);
+  if (i >= T.tc) return Mk(n, a.h, hc, T, Changed(a.t, n - hc - T.tc, i - T.tc, v));
+  i += T.off;
+  return Mk(n, a.h, hc, Tree(PutLeaf(T.r, T.s, i, Changed(Leaf(T.r, T.s, i), 32, i & 31, v)), T.s, T.off, T.tc), a.t);
 };
-// Trie a with v at the end. THE TAIL CLAIM: when this version owns the end
-// of its tail array (t.length === its count < 32), v is appended to that
-// array in place; any other version copies the at most 31 elements its tail
-// owns. A full tail moves into the tree as the leaf at radix off + tc, the
-// root growing right.
+// Trie a with v at the end: the tail claimed; a full tail moves into the
+// tree as a leaf and v starts a new one.
 const TPush = (a, v) => {
-  const n = a.length;
-  const hc = a.hc;
-  const T = a.T;
-  const tc = T.tc;
-  const c = n - hc - tc;
-  const t = a.t;
-  if (c < 32) {
-    if (t.length === c) {
-      t.push(v);
-      return Mk(n + 1, a.h, hc, T, t);
-    }
-    const u = t.slice(0, c);
-    u.push(v);
-    return Mk(n + 1, a.h, hc, T, u);
-  }
-  let r = T.r;
-  let s = T.s;
-  let off = T.off;
-  if (tc === 0) {
-    r = [];
-    s = 5;
-    off = 0;
-  }
-  while (off + tc >= Span(s)) {
-    r = [r];
-    s += 5;
-  }
-  return Mk(n + 1, a.h, hc, Tree(PutLeaf(r, s, off + tc, t), s, off, tc + 32), [v]);
+  const c = a.length - a.hc - a.T.tc;
+  if (c < 32) return Mk(a.length + 1, a.h, a.hc, a.T, Claim(a.t, c, v));
+  return Mk(a.length + 1, a.h, a.hc, Right(a.T, a.t), [v]);
 };
-// Trie a with v at the front. THE HEAD CLAIM, the tail claim mirrored: when
-// this version owns the end of its head array, v is appended to it in
-// place; when the slot past this version's head already holds v — the
-// version is the tail of one that began with v — nothing is written; any
-// other version copies its at most 31 head elements. A full head becomes a
-// fresh leaf, reversed, at radix off - 32, and the offset moves left; below
-// 32 the root first grows LEFT, the old root becoming child 16 of a new one.
-// An empty tree starts mid-root, at 512, with room on both sides.
+// Trie a with v at the front: the head claimed, the tail claim mirrored; a
+// full head moves into the tree as a leaf, reversed back into order, and v
+// starts a new one.
 const Prepend = (a, v) => {
-  const n = a.length;
   const hc = a.hc;
-  const h = a.h;
-  if (hc < 32) {
-    if (h.length === hc) {
-      h.push(v);
-      return Mk(n + 1, h, hc + 1, a.T, a.t);
-    }
-    if (h[hc] === v) return Mk(n + 1, h, hc + 1, a.T, a.t);
-    const c = h.slice(0, hc);
-    c.push(v);
-    return Mk(n + 1, c, hc + 1, a.T, a.t);
-  }
-  const T = a.T;
-  let r = T.r;
-  let s = T.s;
-  let off = T.off;
-  if (T.tc === 0) {
-    r = [];
-    s = 5;
-    off = 512;
-  }
-  while (off < 32) {
-    r = NullRow.concat([r]);
-    off += 16 * Span(s);
-    s += 5;
-  }
-  return Mk(n + 1, [v], 1, Tree(PutLeaf(r, s, off - 32, h.slice(0, 32).reverse()), s, off - 32, T.tc + 32), a.t);
+  if (hc < 32) return Mk(a.length + 1, Claim(a.h, hc, v), hc + 1, a.T, a.t);
+  return Mk(a.length + 1, [v], 1, Left(a.T, a.h.slice(0, 32).reverse()), a.t);
 };
 // Trie a without its last element: a header sharing the tail, or the
 // tree's last leaf made the tail (a root left with one live child
@@ -312,12 +278,6 @@ const TPop = (a) => {
   }
   return Mk(n - 1, a.h, hc, Tree(r, s, off, tc - 32), leaf);
 };
-// A fresh plain array: v, then b[o …]. Below Wide elements only.
-const Onto = (v, b, o) => {
-  const c = [v];
-  for (let j = o; j < b.length; j++) c.push(b[j]);
-  return c;
-};
 
 // ---- The surface ---------------------------------------------------------
 
@@ -326,49 +286,48 @@ export const length = (xs) => xs.length;
 // Element i, 0 <= i < length, which the caller guarantees.
 export const unsafeGet = (xs, i) => (IsA(xs) ? xs[i] : xs.o !== undefined ? xs.b[xs.o + i] : Get(xs, i));
 
+// The plain array a list is a suffix of, and where in it the list starts:
+// (xs, 0) plain, (b, o) a view, (its cached copy, 0) a trie.
+export const base = (xs) => (IsA(xs) ? xs : xs.o !== undefined ? xs.b : xs.$plain());
+export const offset = (xs) => (IsA(xs) || xs.o === undefined ? 0 : xs.o);
+
 // The list without its first k elements, 0 <= k <= length: xs itself at 0,
 // `[]` at the end, a view of a plain list or a view, a trie of a trie.
 export const view = (xs, k) => {
   if (k === 0) return xs;
   if (k >= xs.length) return [];
-  if (IsA(xs)) return View(xs, k);
-  if (xs.o !== undefined) return View(xs.b, xs.o + k);
-  return Drop(xs, k);
+  if (IsTrie(xs)) return Drop(xs, k);
+  return View(base(xs), offset(xs) + k);
 };
 
-export const base = (xs) => Base(xs);
-export const offset = (xs) => Offset(xs);
-
-// `[ h, ...t ]` (§4, *The claimable head*): a fresh plain array onto fewer
-// than Wide elements; onto a view whose backing array holds h just before
-// it, the wider view or the array itself (the runtime re-cons, tested
-// first); onto Wide or more, the list made a trie once and prepended onto;
-// onto a trie, the head claim.
+// `[ h, ...t ]` (§4, *The claimable head*): onto a trie, the head claim;
+// onto a view whose backing array holds h just before it, the wider view or
+// the array itself (the runtime re-cons); onto Wide elements or more, the
+// list made a trie once and prepended onto; onto fewer, a fresh plain
+// array, copied by a loop: below 32 elements it is 1.7× faster than
+// `[h].concat(t)` (Node 24).
 export const cons = (h, t) => {
-  if (IsA(t)) return t.length < Wide ? Onto(h, t, 0) : Prepend(From(t, 0), h);
-  if (t.o !== undefined) {
-    const b = t.b;
-    const o = t.o;
-    if (b[o - 1] === h) return o === 1 ? b : View(b, o - 1);
-    return t.length < Wide ? Onto(h, b, o) : Prepend(From(b, o), h);
-  }
-  return Prepend(t, h);
+  if (IsTrie(t)) return Prepend(t, h);
+  const b = base(t);
+  const o = offset(t);
+  if (o > 0 && b[o - 1] === h) return o === 1 ? b : View(b, o - 1);
+  if (t.length >= Wide) return Prepend(From(b, o), h);
+  const c = [h];
+  for (let i = o; i < b.length; i++) c.push(b[i]);
+  return c;
 };
 
 // `[ ...xs, ...ys ]`: xs when ys is empty, ys when xs is; each element of ys
 // pushed onto xs when xs is a trie, or is Wide long while ys is not, so that
-// `[ ...xs, x ]` costs what `push` does; otherwise a fresh concatenation.
+// `[ ...xs, x ]` costs what `push` does; otherwise a fresh concatenation,
+// by the engine's own `concat`, which is 1.2–3× faster than a loop.
 export const append = (xs, ys) => {
-  const m = ys.length;
-  if (m === 0) return xs;
+  if (ys.length === 0) return xs;
   if (xs.length === 0) return ys;
-  if (IsA(xs) || xs.o !== undefined) {
-    if (xs.length < Wide || m >= Wide) return (IsA(xs) ? xs : xs.$plain()).concat(IsA(ys) ? ys : ys.$plain());
-    xs = From(Base(xs), Offset(xs));
-  }
-  const b = Base(ys);
-  const o = Offset(ys);
-  for (let i = 0; i < m; i++) xs = TPush(xs, b[o + i]);
+  if (!IsTrie(xs) && (xs.length < Wide || ys.length >= Wide)) return (IsA(xs) ? xs : xs.$plain()).concat(IsA(ys) ? ys : ys.$plain());
+  const b = base(ys);
+  const o = offset(ys);
+  for (let i = 0; i < ys.length; i++) xs = push(xs, b[o + i]);
   return xs;
 };
 
@@ -377,9 +336,9 @@ export const append = (xs, ys) => {
 export const set = (xs, i, v) => {
   const n = xs.length;
   if (i < 0 || i >= n) return xs;
-  if (!IsA(xs) && xs.o === undefined) return TSet(xs, i, v);
-  const b = Base(xs);
-  const o = Offset(xs);
+  if (IsTrie(xs)) return TSet(xs, i, v);
+  const b = base(xs);
+  const o = offset(xs);
   if (b[o + i] === v) return xs;
   if (n > Lim) return TSet(From(b, o), i, v);
   const c = b.slice(o);
@@ -388,9 +347,9 @@ export const set = (xs, i, v) => {
 };
 
 export const push = (xs, v) => {
-  if (!IsA(xs) && xs.o === undefined) return TPush(xs, v);
-  const b = Base(xs);
-  const o = Offset(xs);
+  if (IsTrie(xs)) return TPush(xs, v);
+  const b = base(xs);
+  const o = offset(xs);
   if (xs.length >= Wide) return TPush(From(b, o), v);
   const c = b.slice(o);
   c.push(v);
@@ -400,9 +359,9 @@ export const push = (xs, v) => {
 export const pop = (xs) => {
   const n = xs.length;
   if (n === 0) return xs;
-  if (!IsA(xs) && xs.o === undefined) return TPop(xs);
-  const b = Base(xs);
-  const o = Offset(xs);
+  if (IsTrie(xs)) return TPop(xs);
+  const b = base(xs);
+  const o = offset(xs);
   return n > Lim ? TPop(From(b, o)) : b.slice(o, b.length - 1);
 };
 
@@ -415,8 +374,8 @@ export const slice = (xs, from, to) => {
   to = to < 0 ? Math.max(0, n + to) : Math.min(to, n);
   if (from === 0 && to === n) return xs;
   if (from >= to) return [];
-  const o = Offset(xs);
-  return Base(xs).slice(o + from, o + to);
+  const o = offset(xs);
+  return base(xs).slice(o + from, o + to);
 };
 
 // Insert before i, 0 <= i <= length, and remove at i: fresh plain arrays,
@@ -425,15 +384,15 @@ export const slice = (xs, from, to) => {
 export const insertAt = (xs, i, v) => {
   const n = xs.length;
   if (i < 0 || i > n) return xs;
-  const b = Base(xs);
-  const o = Offset(xs);
+  const b = base(xs);
+  const o = offset(xs);
   return b.slice(o, o + i).concat([v], b.slice(o + i, o + n));
 };
 export const removeAt = (xs, i) => {
   const n = xs.length;
   if (i < 0 || i >= n) return xs;
-  const b = Base(xs);
-  const o = Offset(xs);
+  const b = base(xs);
+  const o = offset(xs);
   return b.slice(o, o + i).concat(b.slice(o + i + 1, o + n));
 };
 
@@ -454,20 +413,20 @@ export const swap = (xs, i, j) => {
 export const eq = (m0, xs, ys) => {
   const n = xs.length;
   if (n !== ys.length) return false;
-  const a = Base(xs);
-  const i = Offset(xs);
-  const b = Base(ys);
-  const j = Offset(ys);
+  const a = base(xs);
+  const i = offset(xs);
+  const b = base(ys);
+  const j = offset(ys);
   for (let k = 0; k < n; k++) if (!m0(a[i + k], b[j + k])) return false;
   return true;
 };
 export const compare = (m0, xs, ys) => {
   const n = xs.length;
   const m = ys.length;
-  const a = Base(xs);
-  const i = Offset(xs);
-  const b = Base(ys);
-  const j = Offset(ys);
+  const a = base(xs);
+  const i = offset(xs);
+  const b = base(ys);
+  const j = offset(ys);
   for (let k = 0; k < n && k < m; k++) {
     const o = m0(a[i + k], b[j + k]);
     if (o !== "EQ") return o;
@@ -475,21 +434,38 @@ export const compare = (m0, xs, ys) => {
   return n === m ? "EQ" : n < m ? "LT" : "GT";
 };
 
+// Array b with the elements of list xs written from index j on; the index
+// past them. The one copy loop `close` and `concat` share.
+const Put = (b, j, xs) => {
+  const a = base(xs);
+  const o = offset(xs);
+  for (let i = 0; i < xs.length; i++) b[j + i] = a[o + i];
+  return j + xs.length;
+};
+// `concat`: the lists' elements in one fresh array made its final size, or
+// the one list that is not empty itself, or `[]`. A view is a suffix of its
+// base, so every list's elements end at its base's end.
+export const concat = (ls) => {
+  const a = base(ls);
+  let one = [];
+  let n = 0;
+  for (let i = offset(ls); i < a.length; i++) {
+    if (a[i].length > 0) one = n === 0 ? a[i] : null;
+    n += a[i].length;
+  }
+  if (one !== null) return one;
+  const b = new Array(n);
+  for (let i = offset(ls), j = 0; i < a.length; i++) j = Put(b, j, a[i]);
+  return b;
+};
+
 // The builder of invariant 5: a fresh array one loop of `List.beni` fills
 // and then hands over, once, as a plain list of its first `n` elements.
 // `builder(n)` has room for n, filled by index with `put`: at 100 000
 // elements an array grown by `push` is copied as it grows and builds in
 // about three times the time of one made its size first (Node 24, the
-// flip's measurement); `builder(0)` grows by `add`.
+// flip's measurement).
 export const builder = (n) => new Array(n > 0 ? n : 0);
-export const put = (b, i, x) => {
-  b[i] = x;
-  return b;
-};
-export const add = (b, x) => {
-  b.push(x);
-  return b;
-};
 export const done = (b, n) => {
   if (b.length !== n) b.length = n;
   return b;
@@ -500,17 +476,22 @@ export const done = (b, n) => {
 // nothing. The result is plain either way, as b is.
 export const close = (b, v) => {
   if (b.length === 0) return v;
-  const a = Base(v);
-  const o = Offset(v);
-  for (let i = 0; i < v.length; i++) b.push(a[o + i]);
+  Put(b, b.length, v);
   return b;
 };
 
-// Whether two values are the same reference: what `map` asks to keep its
-// input's identity (§4, *Identity*), which beni's `==` cannot say.
+// `at`, `put`, `identical`, `kept` and `half` are what the code generator
+// writes in place of a call (backend.md §4, *`List.beni`'s loops read and
+// write in place*): `a[i]` of an array `base` returned, a builder's store,
+// `===` (what `map` keeps its input's identity by, which beni's `==` cannot
+// ask), `map`'s answer, and ⌊n / 2⌋, the merge sort's midpoint, which `//`
+// would bring `Basics`' sibling in for. These exports are what a value of
+// one would be, which nothing in `List.beni` passes.
+export const at = (a, i) => a[i];
+export const put = (b, i, x) => {
+  b[i] = x;
+  return b;
+};
 export const identical = (x, y) => x === y;
-// `map`'s answer: its input when every result was the element itself.
 export const kept = (same, xs, ys) => (same ? xs : ys);
-// ⌊n / 2⌋ for a non-negative n: the merge sort's midpoint, which `//`
-// would bring `Basics`' sibling into every program that sorts.
 export const half = (n) => n >>> 1;

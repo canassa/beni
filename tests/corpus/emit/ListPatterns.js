@@ -1,4 +1,4 @@
-import { List$unsafeGet, List$view, List$length, List$cons } from "./_core/List.mjs";
+import { List$unsafeGet, List$view, List$cons } from "./_core/List.mjs";
 import { Basics$append } from "./_core/Basics.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
@@ -14,7 +14,7 @@ const ListPatterns$describe = (xs$1) => {
       const x$3 = List$unsafeGet(xs$1, 0);
       const y$4 = List$unsafeGet(xs$1, 1);
       const rest$5 = List$view(xs$1, 2);
-      return Basics$append(String$fromInt(x$3), Basics$append(", ", Basics$append(String$fromInt(y$4), Basics$append(" and ", Basics$append(String$fromInt(List$length(rest$5)), " more")))));
+      return Basics$append(String$fromInt(x$3), Basics$append(", ", Basics$append(String$fromInt(y$4), Basics$append(" and ", Basics$append(String$fromInt(rest$5.length), " more")))));
     }
   }
 };
@@ -47,7 +47,7 @@ const ListPatterns$nestedHead = (xss$1) => {
         const a$2 = List$unsafeGet(List$unsafeGet(xss$1, 0), 0);
         const inner$3 = List$view(List$unsafeGet(xss$1, 0), 1);
         const outer$4 = List$view(xss$1, 1);
-        return a$2 + List$length(inner$3) + List$length(outer$4);
+        return a$2 + inner$3.length + outer$4.length;
       } else {
         break $j$0$1;
       }
