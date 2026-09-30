@@ -1795,6 +1795,15 @@ platform gains nothing yet: a browser program is The Elm Architecture's, whose e
 commands, and the command type is the browser decisions' (W8–W10), not this spike's. The runtime
 itself is platform-free and is exercised in a browser by the measurements (research 44).
 
+*Amended 2026-10-01: the browser.* The owner's W46–W55 are specified in `boundary.md` §9.8: a
+browser program's `update` returns `( model, Cmd msg )`, a `Cmd` naming direct-style bodies
+`Send msg -> ()` that the platform runs in fibers of the program's root scope, with keys and four
+policies written as fiber code over this API; `Sub.listen` runs one fiber per live key. `Task` gains
+three `impure` operations for it: `running : Fiber a -> Bool`, and `openRoot : () -> Scope` /
+`closeRoot : Scope -> ()`, a scope no function brackets, since a program's outlives every call; a
+fiber spawned into a closed root scope is cancelled before it runs. `Time.sleep`, `Http.get` and
+`Dom.rendered` are the browser's first suspending primitives, each beni over `callback`.
+
 **`let _ = e` is kept.** `backend.md` §9 item 1 drops a binding nothing reads, initialiser and
 all; `let _ = Task.spawn work` is written for the spawn. A `let` whose pattern binds nothing (`_`,
 `()`) over a call whose callee is `impure` or worse is kept by the release optimiser (the

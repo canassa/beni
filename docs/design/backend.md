@@ -4377,3 +4377,33 @@ each the smallest that let the lowering be written against interface 1.0 unchang
   raw bytes more (2026-09-29). The runtime file is almost all of it (20 647 bytes): a sibling is
   copied whole, neither eliminated nor printed compactly by `--release`, which is where W11's
   second half will find its bytes.
+
+*Amended 2026-10-01: the loop with effects* (the owner's W46–W55; `boundary.md` §9.8). What the
+bullets above left to the effects work is specified here; nothing above changes for a program built
+on `Browser.program`, except that its messages now pass through the same dispatcher.
+
+- **Dispatch.** A program's `send` — `$$root`, a delegated handler's target — is the runtime's
+  `dispatch`. It queues the program's render and a flush **before** it runs `update`, so work the
+  message starts runs after the flush that shows it; a message sent while a dispatch runs is queued
+  page-wide and applied, in order, when that dispatch ends (`boundary.md` §9.8.4 rule 2).
+- **A hosted program.** A mount of `Browser.hosted` hands its record's functions the program's
+  `Host`, `{ send, after }`. At mount: `settle(host, init(host))`, then the synchronous render. At a
+  message: `update(host, msg, model)`. In phase (1) of each flush that renders it: `settle(host,
+  model)`, then `view`. The subscription diff lives in `settle`, so it runs once per render.
+- **Phase (2)** runs first the resumes of the fibers waiting in `Dom.rendered`, in the order they
+  waited, then the after-render work queued before the flush began, first queued first, each
+  synchronously. `host.after(f)` queues `f` and a flush. Work queued, or a message sent, during
+  phase (2) is the next flush's, which is queued when this one ends.
+- **`flush`**, the export and `Browser.flush`, does nothing while a dispatch or a flush runs; the
+  flush already queued covers it (W50).
+- **`onRendered(resume)`**, which `Dom.rendered` waits on, calls `resume` at once when no flush is
+  queued and no after-render work waits, and otherwise at phase (2)'s start; its canceller removes
+  it.
+- **How `Browser`'s sibling reaches the loop.** `run(program)` first hands every mount's `h` —
+  a function of `Browser.js`, carried in the `Program` value — the loop `{ flush, rendered }`, then
+  mounts. A sibling may not import another file (§2), so a value is the only way across, and the
+  runtime file gains no export.
+
+*As built, 2026-10-01*: `platforms/browser/runtime.js` (the section *The program and its render
+loop*), `Browser.js`. The pages are `tests/corpus/browser/tea/` (`AfterRenderFocus`,
+`ReentrantSend`, `FlushLatched` and the command and subscription fixtures `boundary.md` §9.8 names).

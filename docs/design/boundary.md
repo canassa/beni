@@ -261,7 +261,9 @@ a mechanism.**
 
 So the recipe is a written contract, not a convention:
 
-- Address foreign objects by value; never hold a reference across an effect boundary.
+- Address foreign objects by value; never hold a reference across an effect boundary. *(Amended
+  2026-10-01, W52: except a handle every operation of which is total on a closed one, declared
+  `equatable foreign type` — §9.8.9.)*
 - Marshal every result to plain data before it crosses back.
 - Every failure the specification defines is a constructor in the result type, not an exception.
 - Every privileged entry point is wrapped in `try`/`catch`.
@@ -511,6 +513,12 @@ whether TEA needs a notion of component identity it does not currently have; whe
 polymorphic equatable or simply `String`; whether `Cmd.cancel` on a key with nothing running is
 silent or warns. And **subscriptions are not designed here** — `Sub msg` is named in §4 as an
 admitted `foreign` shape and nothing more, and a good deal of real cancellation lives in them.
+
+*Superseded 2026-10-01 by §9.8*, the owner's W46–W55. A body is `Send msg -> ()`, not a thunk and
+a tagger (`Cmd.task` is that form, defined over it); `Cmd.keyed k policy body`; keys are
+`compare`-able values of any type, matched by value, and namespaced by a `Cmd.map` whose segment is
+written (W47, amending W7); `Cmd.cancel` with nothing running is silent; and subscriptions are
+§9.8.5's.
 
 ---
 
@@ -1410,6 +1418,267 @@ not a sandbox.
 - **Privilege is a role.** Writing a vocabulary, like writing `foreign`, is what a platform package
   may do and an ordinary module may not (§2). Writing a lowering is what a platform author who builds
   their own beni may do; it adds a way to emit markup, never a rule of the language.
+
+### 9.8 Effects in a page program: commands, subscriptions and the dispatch order
+
+*Added 2026-10-01*, the owner's answers to W46–W55 of
+[`plans/browser-decisions.md`](../../plans/browser-decisions.md) — W46 option (A), W47–W55 as
+recommended — which take [research 45](research/45-effects-in-a-browser-program.md) (R45) as the
+design. This section is normative for `browser`'s `Browser.hosted`, `Hosted`, `Cmd`, `Sub` and its
+first primitives, and for `browser-tea`'s `Tea.element`. It supersedes §5.4's sketch where the two
+differ, and amends W7 as W47 says (§9.8.3).
+
+#### 9.8.1 What `update` returns, and where each piece lives
+
+`update : msg, model -> ( model, Cmd msg )`. **A `Cmd` is inert data**: a list of work items, each
+naming a **body** `Send msg -> ()` — an ordinary direct-style beni function, which may suspend — and,
+for a keyed item, a key path and a **policy**. `Cmd` has no `andThen`, no `map2`, no `sequence`: a
+body sequences with `let` and runs things side by side with `Task.scope`/`spawnIn`, like any other
+function. `update` therefore stays `sync` and a function of its inputs: a test asserts the model and
+the command's items by value, replay drops the commands, and an update computed and thrown away has
+done nothing (R45 §2.1). `subscriptions : model -> Sub msg` says, from the model, what should keep
+running (§9.8.5). Neither `update` nor `view` is demanded *pure* (W54): only `sync`, which they
+inherit from `Browser.hosted`'s `foreign` fields with nothing written (P2 §15.3).
+
+**The layers.** R45 §3.1 put `Cmd` and `Sub` in `browser-tea`. They are **`browser` modules**,
+written in beni with no sibling, because the primitives that return a `Sub` — `Time.every`,
+`Browser.Events.onResize` — need a sibling of their own, and `browser-tea` has no JavaScript
+(§9.1); a module of `browser` cannot import one of `browser-tea`. What stays `browser-tea`'s is what
+R45 gives it: `Tea.element`, whose command table, four policies and subscription diff are beni over
+the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` and `Browser.Events`.
+
+| Module | Package | Is |
+|---|---|---|
+| `Browser` | `browser` | `Program`, `program`, `mountAt`, `programs`; and now `Send msg` (`msg -> ()`), `Host msg`, `hosted`, `flush`, `onRendered` |
+| `Hosted` | `browser`, not re-exported | the typed pieces a `Host` is driven with: `Key`, `Outlet`, `Later`, `Tap`, `Relay` (§9.8.7) |
+| `Cmd` | `browser`, beni | `Cmd msg`, `Policy`, `Send`, `none`, `batch`, `perform`, `keyed`, `cancel`, `cancelAll`, `map`, `afterRender`, `task`, `do`; and `Item msg`, `items` for the architecture that runs them |
+| `Sub` | `browser`, beni | `Sub msg`, `none`, `batch`, `map`, `listen`; and `taps` for the architecture |
+| `Time`, `Dom`, `Http`, `Browser.Events` | `browser` | the first primitives (§9.8.8) |
+| `Tea` | `browser-tea`, beni | `sandbox`, and `element { init : ( model, Cmd msg ), update, view, subscriptions }` |
+
+`Tea.sandbox` stays `Browser.program`, and a page built on it reaches no byte of `Task` (R45 §7).
+
+#### 9.8.2 The command API and the four policies
+
+```elm
+pub type alias Send msg = msg -> ()
+pub type Policy = Restart | Ignore | Queue | Concurrent
+
+pub none : Cmd msg
+pub batch : List (Cmd msg) -> Cmd msg
+pub perform : (Send msg -> ()) -> Cmd msg                        -- a fiber in the program's scope
+pub keyed : k, Policy, (Send msg -> ()) -> Cmd msg               where k.compare : k, k -> Order
+pub cancel : k -> Cmd msg                                         where k.compare : k, k -> Order
+pub cancelAll : Cmd msg                                           -- every keyed body at this path and below
+pub map : Cmd a, k, (a -> msg) -> Cmd msg                         where k.compare : k, k -> Order
+pub afterRender : (Send msg -> ()) -> Cmd msg                     -- §9.8.6
+pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform (\send -> send (tag (work ())))
+pub do : (() -> ()) -> Cmd msg                                    -- perform (\_ -> work ())
+```
+
+A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,
+the fibers not yet ended):
+
+- **`Restart`**: the running bodies' sends are closed at once (§9.8.4), and the new body runs in a
+  fiber that first `Task.cancel`s each of them — so it starts only after their cleanup, an aborted
+  request aborted and a cleared timer cleared (A1's "the interrupter waits").
+- **`Ignore`**: the new body is dropped.
+- **`Queue`**: the new body runs in a fiber that first waits for each running one to end.
+- **`Concurrent`**: the new body starts beside them; the path keeps all of them.
+
+With nothing running under the path, each policy starts the body. `cancel k` closes the sends of
+every body under `k` and cancels their fibers (from a fiber of the program's scope, since `update`
+cannot wait); nothing running, nothing happens. Debounce is `Restart` whose body sleeps first;
+throttle is `Ignore` whose body sleeps last (R45 §3.5).
+
+#### 9.8.3 Keys, and `Cmd.map` (W47, amending W7)
+
+**A key path** is a list of keys, the component's own key last: `keyed k` makes `[ k ]`, and
+`Cmd.map cmd segment tag` puts `segment` in front of every path in `cmd` and passes every message its
+bodies send through `tag`. **The segment is written** — W7's "`Cmd.map` pushes a path segment"
+cannot use the tagger, a new closure on every `update`, which would match nothing from one message
+to the next and make every `Restart` a silent `Concurrent`. There is no unkeyed `map`: a singleton
+child passes `()`, and a component that later has two instances cannot inherit a shared key.
+
+**Keys match by value, never by how their evidence was built** — an implementation obligation, not
+a choice. A key's type must have `compare` (the `where` clause), which is what admits it and keeps
+functions out of keys; the architecture then compares keys of any types with one total order over
+the values themselves (`Hosted.compare`: the kind of value, then numbers and strings by value, then
+a value built of fields by its field names and, in that order, their values), so a key of a
+structural type — a tuple, a `Maybe Int`, a record — whose evidence the emitter builds afresh at
+each call matches the same key built anywhere else. A key type's own `compare` is not what orders
+it there. `tests/corpus/browser/tea/TupleKeyRestart` pins it: a tuple key under `Restart` cancels
+the body a previous message started.
+
+**What a value key cannot tell apart.** Two keys of *different types* built alike — two
+constructors of one name and payload in two modules — are one key. For a command that only merges
+two namespaces a program chose to share; for a subscription it routes one resource's values through
+another's taggers (§9.8.5), which is a silent wrong answer, so **a library that calls `Sub.listen`
+keys it with a type the library declares and names every parameter the body depends on**, as
+`Time.every` does. Closing this for good needs a key that carries its type's identity — a
+fingerprint the compiler supplies — and is open.
+
+#### 9.8.4 Running a command, and the dispatch order (W53)
+
+**The program is a scope.** `Tea.element`'s `init` opens a root scope (`Task.openRoot`), and every
+command body and subscription body is spawned into it with `Task.spawnIn`, never into the fiber
+whose message started it — a later `Restart` of that sender must not kill work it does not own.
+`Task.closeRoot` ends it: every fiber is interrupted, children before parents, finalisers last
+first. Nothing calls it yet (W51: no unmount now; W2's defect teardown is §9.8.9's).
+
+**A body's `send` is bound to it.** Each body is handed a send through an **outlet** of its own
+(`Hosted.outlet`), and the architecture closes the outlet when it cancels the body — at `Restart`,
+`cancel` or `cancelAll`, in the `update` that returned the command, before the fiber has even been
+interrupted. A closed outlet drops what is sent through it, so a stale response cannot land: the
+send belongs to the cancelled body, not to the program. A subscription's relay closes the same way
+when its key leaves the set.
+
+**The ordering contract.**
+
+1. A message is dispatched when `send` is called: `update` runs at once, on the current model, and
+   the commands it returns are started — their fibers spawned — before `send` returns. Messages are
+   applied one at a time, in the order the `send`s happened, each exactly once.
+2. A `send` made while a dispatch is running — from inside `update` through a captured `Send`, or
+   from anything `update` calls — is queued, page-wide, and applied when the running dispatch ends,
+   never re-entrantly. Spawned bodies cannot trigger it: `fork` never runs a child inline.
+3. A `send` through a closed outlet or relay does nothing.
+4. A dispatch queues the program's render **before** `update` runs, so the flush that shows the
+   message's model is queued ahead of the first run of any body it starts: a body that answers at
+   once still lands after that render (`backend.md` §15.11).
+
+`update` always takes the current model, so a message carries data, not a model.
+
+#### 9.8.5 Subscriptions (W48)
+
+```elm
+pub type Sub msg
+pub none : Sub msg
+pub batch : List (Sub msg) -> Sub msg
+pub map : Sub a, (a -> msg) -> Sub msg
+pub listen : k, (Send a -> ()), (a -> msg) -> Sub msg          where k.compare : k, k -> Order
+```
+
+`listen key body tag`: while `key` is in the set, one fiber runs `body`, and each value it sends
+reaches `update` through `tag`.
+
+- **The key is the resource's whole identity.** Two declarations with one key share one fiber; the
+  body that runs is the first declaration's when the key arrived. A subscription has no path
+  segment: sharing is the point, and it is cancelled by leaving the set, not by key.
+- **Every declaration of a live key gets every value through its own, latest tagger**, in
+  declaration order: the fiber's send looks up the taggers of the current declarations, so a tagger
+  that is a new closure each model never restarts the body.
+- **The set is recomputed once per render** — in `settle` (§9.8.7), before the program's `view`, on
+  every flush that renders it — not once per message. The diff is Elm's three-way merge: keys that
+  left have their relay closed and their fiber cancelled; keys that stayed keep their fiber and take
+  their new taggers; keys that arrived are spawned into the program's scope.
+- **`Sub.listen` is public** (rule 7): a subscription the platform did not think of is ordinary beni
+  over a primitive.
+
+A value reaches `update` one fiber resumption after the host produced it, so a subscription cannot
+`preventDefault`; that needs a `sync` filter in the host's dispatch, which is not designed.
+
+#### 9.8.6 After render, the DOM capabilities, `Browser.flush` (W49, W50)
+
+**`Cmd.afterRender body`** queues `body` into phase (2) of the next flush (`backend.md` §15.11):
+after every write of the render, synchronously, before the next message. The body is `sync` — the
+demand arrives from `Hosted.later`'s `sync` parameter through `Cmd.afterRender`'s summary — and it
+may send, which queues the next flush.
+
+**DOM capabilities are `impure`, address a node by its id, and return a `Result`**: `Dom.focus`,
+`Dom.blur`, `Dom.box`, `Dom.scrollTo`, `Dom.scrollIntoView` (`Err (NotFound id)` for a node that is
+not in the page) and `Dom.viewport`. Called outside phase (2) they are still correct — a measurement
+forces a layout, which is slow and right. Research 17 §4.7's `suspends` capabilities are withdrawn.
+**`Dom.rendered : () -> ()`** suspends: at once when no render and no after-render work is queued,
+otherwise until the next flush's after-render phase begins; its fiber goes on at the scheduler's
+next drain, before paint.
+
+**`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
+phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
+so no render sees a half-handled message.
+
+#### 9.8.7 The low-level form: `Browser.hosted` and `Hosted`
+
+```elm
+pub foreign type Host msg
+pub foreign pure hosted :
+    { init : sync (Host msg -> model)
+    , update : sync (Host msg, msg, model -> model)
+    , settle : sync (Host msg, model -> model)
+    , view : sync (model -> Html msg)
+    }
+    -> Program
+pub foreign impure flush : () -> ()
+pub foreign impure onRendered : Resume () -> (() -> ())     -- `Dom.rendered` is `Task.callback` over it
+```
+
+`init` is called once, at mount, with the program's `Host`; `update` for each message; `settle` once
+per render of the program, just before `view`, on the model about to be rendered (and once after
+`init`), returning the model that is rendered. R45 §3.9 sketched `send` and `scopeOf` on the host:
+the scope is the architecture's own (`Task.openRoot` in `init`), and every send goes through an
+outlet or a relay, so the host itself is only `{ send, after }`, reached through `Hosted`:
+
+| `Hosted` | Rung | Is |
+|---|---|---|
+| `Key`, `key : k -> Key where k.compare`, `compare`, `eq` | `pure` | a key of any type, compared by value (§9.8.3) |
+| `Outlet msg`, `outlet : Host msg -> Outlet msg`, `emit`, `close` | `impure` | a closable send into the program |
+| `Later msg`, `later : sync (Send msg -> ()) -> Later msg`, `mapLater`, `afterRender : Host msg, Later msg -> ()` | `impure` (`mapLater` `pure`) | after-render work |
+| `Tap msg`, `tap : (Send a -> ()), sync (a -> msg) -> Tap msg`, `mapTap` | `impure` (`mapTap` `pure`) | a subscription's body and tagger, the payload type hidden |
+| `Relay msg`, `relay : Host msg, Tap msg -> Relay msg`, `retap`, `closeRelay` | `impure` | a live subscription's current taggers |
+| `run : Relay msg -> ()` | `suspends` | run the relay's body in the calling fiber |
+
+A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
+it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is
+given sends what the relay's first did; §9.8.3 says what keeps that true and what does not.
+**A sibling may not import another file**, so `Browser.js` reaches the render loop by value: every
+mount a `Browser` constructor makes carries a function of that file, and `run` hands it the loop
+before mounting anything; `flush` and `onRendered` call it. The platform's runtime file gains no
+export.
+
+**`Task` gains three** (R45 §3.9 item 2): `running : Fiber a -> Bool`, `impure`, `False` once the
+fiber has ended either way; `openRoot : () -> Scope` and `closeRoot : Scope -> ()`, both `impure`,
+a scope no function brackets. A fiber spawned into a closed root scope is cancelled before it runs.
+
+#### 9.8.8 The first primitives
+
+A suspending primitive is beni over `Task.callback` and an `impure` sibling that starts the host's
+operation and returns its canceller (P2 §16.5); one that never parks is `impure`.
+
+| Module | Signature | Rung |
+|---|---|---|
+| `Time` | `Duration` (`millis`, `seconds`, `inMillis`), `Posix` (`toMillis`, `fromMillis`) | — |
+| | `now : () -> Posix` | `impure` |
+| | `sleep : Duration -> ()` | `suspends`; cancelling clears the timer |
+| | `every : Duration, (Posix -> msg) -> Sub msg` | keyed by its interval, one timer per interval |
+| `Dom` | `focus`, `blur`, `scrollIntoView : String -> Result Error ()`; `box : String -> Result Error Box`; `scrollTo : String, Float, Float -> Result Error ()`; `viewport : () -> Viewport` | `impure` |
+| | `rendered : () -> ()` | `suspends` |
+| `Http` | `get : String -> Result Error String`, `post : String, String -> Result Error String`, `getJson`, `postJson` | `suspends`; `fetch` with an `AbortController`, aborted when the fiber is cancelled |
+| | `type Error = BadUrl String \| NetworkError \| BadStatus Int \| BadBody String` | a failure is a value, never an exception (§4.1) |
+| `Browser.Events` | `onResize : (Size -> msg) -> Sub msg`, `onVisibilityChange : (Visibility -> msg) -> Sub msg`, `visibility : () -> Visibility` | the listener added when the key arrives, removed when it leaves |
+
+`getJson`/`postJson` send and accept `application/json` and answer the body's text once it parses
+as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`schema.md`).
+**Still owed** from R45 §5: `Http.send` with a request record and a streaming body, `Time.here`,
+`Browser.nextFrame` and `onAnimationFrame`/`onKeyDown`/`onWindow`, `Random`, `Storage`, `Nav` and
+`Tea.application`, `Ws`, and core's `Queue` (W52 settles its handle rule, below).
+
+#### 9.8.9 The rest of the answers
+
+- **W51, unmount**: not now; the root scope and `Task.closeRoot` are what it would call.
+- **W52, handles in a model**: §4.1's "never hold a reference across an effect boundary" is amended
+  for a handle every operation of which is total on a closed one — each returns a `Result` — and
+  which is declared `equatable foreign type`, so a model holding it keeps its derived `==`. None is
+  built yet; `Queue` will be the first.
+- **W55, faking a service**: through records of functions only (A7); a test passes a record whose
+  functions wait on `Time.sleep`, and the page driver's clock is virtual (`tests/corpus/README.md`,
+  *`browser/`*, the `advance` step).
+- **W2, a defect's teardown**, which R45 §8 item 8 asks to close the program's scope, is **not
+  built**: a `foreign` that throws inside a fiber escapes the scheduler's microtask as an uncaught
+  exception, and nothing yet closes the scope.
+
+*As built, 2026-10-01* (`platforms/browser/`: `Browser.beni`, `Hosted.beni`, `Cmd.beni`,
+`Sub.beni`, `Time.beni`, `Dom.beni`, `Http.beni`, `Browser/Events.beni` and their siblings,
+`runtime.js`; `platforms/browser-tea/Tea.beni`; `core/Task.beni`): as specified above. The pages
+are `tests/corpus/browser/tea/`.
 
 ## Appendix — what is deliberately not done
 
