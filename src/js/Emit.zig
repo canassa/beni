@@ -2458,6 +2458,14 @@ const Emitter = struct {
                         gop.value_ptr.* = props.count() - 1;
                     }
                     pr.* = gop.value_ptr.*;
+                    // A plain name in the session's pool, so that a body
+                    // copied into another module (§9, *Once the whole
+                    // program is in view*) names the same property there.
+                    if (InternPool.Overlay.isOverlay(ir.names[n].base)) ir.setName(@enumFromInt(@as(u32, @intCast(n))), .{
+                        .module = .none,
+                        .base = try e.session.interner.getOrPut(e.gpa, gop.key_ptr.*),
+                        .tag = JsIr.Name.no_tag,
+                    });
                     continue;
                 }
                 const name = try e.poolName(slot, @enumFromInt(@as(u32, @intCast(n))));
@@ -2465,7 +2473,21 @@ const Emitter = struct {
                 if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
                 g.* = gop.value_ptr.*;
             }
-            try modules.append(e.scratch, .{ .ir = ir, .global = global, .prop = prop });
+            // What lowering handed the optimiser, as lists a copied body
+            // extends; written back to the slot after the pass.
+            const tables = try e.scratch.create(Spec.Tables);
+            tables.* = .{};
+            try tables.keep.appendSlice(e.scratch, slot.effect_keep);
+            try tables.discards.appendSlice(e.scratch, slot.pure_discards);
+            try tables.unobserved.appendSlice(e.scratch, slot.unobserved);
+            try tables.mutable.appendSlice(e.scratch, slot.mutable);
+            try modules.append(e.scratch, .{
+                .ir = ir,
+                .global = global,
+                .prop = prop,
+                .tables = tables,
+                .self = e.graph().moduleName(@enumFromInt(i)).toOptional(),
+            });
         }
         // What files the pass cannot see read or call: the entry file's
         // `start` and `flush`, and what the markup runtime imports from the
@@ -2515,7 +2537,20 @@ const Emitter = struct {
             .node_makers = makers.items,
             .escaping = escaping.items,
             .entry = entry_call,
+            .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
         });
+        var k: usize = 0;
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const tables = modules.items[k].tables.?;
+            k += 1;
+            slot.effect_keep = tables.keep.items;
+            slot.pure_discards = tables.discards.items;
+            slot.unobserved = tables.unobserved.items;
+            slot.mutable = tables.mutable.items;
+        }
     }
 
     /// §9 item 2's whole-program namespace, numbered serially and in module

@@ -1,0 +1,29 @@
+-- Called once, from another module: its body names nothing but its own
+-- parameters, so it is written there.
+pub clamp : Int, Int -> Int
+clamp limit n =
+    if n > limit then
+        limit
+
+    else
+        n
+
+
+-- A function that returns a closure, called once at the top level of
+-- another module: the closure is what that module binds.
+pub adder : Int -> (Int -> Int)
+adder n =
+    \x -> x + n
+
+
+-- Called twice before specialisation: one call sits in a branch a
+-- constant decides, and goes with it.
+pub label : Int -> String
+label n =
+    "#${String.fromInt n}"
+
+
+-- Builds a record for a `let` in its one caller.
+pub box : String, Int -> { name : String, size : Int }
+box name size =
+    { name = name, size = size }

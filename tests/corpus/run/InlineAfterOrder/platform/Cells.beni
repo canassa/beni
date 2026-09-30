@@ -1,0 +1,30 @@
+--! Functions another module calls once, which a release build writes where
+--! they are called (`backend.md` §9, *Once the whole program is in view*).
+import Js
+
+
+--| A counter: a closure over a cell. Called once, at the top level of
+--| `Main`, whose top level then holds the cell.
+pub counter : Int -> (() -> Int)
+counter start =
+    let
+        n =
+            Js.ref start
+    in
+    \() ->
+        let
+            _ =
+                Js.write n (Js.read n + 1)
+        in
+        Js.read n
+
+
+--| A loop whose parameters it reassigns: taken in, they are `let`s bound to
+--| the arguments.
+pub sumTo : Int, Int -> Int
+sumTo acc k =
+    if k == 0 then
+        acc
+
+    else
+        sumTo (acc + k) (k - 1)

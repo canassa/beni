@@ -10,7 +10,12 @@
 -- page is specialised to what it passes (backend.md §9). `Browser.program`
 -- is beni too, and the entry's `run(main)` is read as a call (§9, *The
 -- entry's call is a call*), so `run` sees a mount with no `h`: it has no
--- hosted branch, and `flush` no after-render phase.
+-- hosted branch, and `flush` no after-render phase. Every mount is at the
+-- body (its `n` is always `null`), every instance's ends are nodes, so
+-- `first` and `last` are reads — and what the page calls from one place is
+-- written there: `slot` and `parentOf` in their callers, `drop` at the end
+-- of `swap`, and `template`, called once at this module's top level, is its
+-- cell beside the kind that clones it.
 import Browser
 import Html exposing (Html)
 

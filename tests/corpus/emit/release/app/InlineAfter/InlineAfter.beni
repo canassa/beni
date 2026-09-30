@@ -1,0 +1,58 @@
+-- emit: a function called once is written where it is called, once the
+-- whole program is in view (`backend.md` §9, *A function called once …*,
+-- *Once the whole program is in view*) — the cases the per-module rule of
+-- `Lower` cannot take:
+--
+--   * `Helpers.clamp`, `pub` and in another module, is called once, with
+--     atoms: its body, naming only its parameters, is the call — `10`
+--     already folded in as the one limit every call passes (fact 1);
+--   * `Helpers.adder 2` at this module's top level returns a closure, and
+--     `addTwo`, called once, is that closure: `40 + 2`;
+--   * `Helpers.label` is called twice, but `verbose` is always `False`
+--     (fact 1), so one call goes with its branch and the other, whose
+--     argument is a name, is `label`'s body;
+--   * `Helpers.box` builds the record `describe`'s `let` holds;
+--   * `twice` is called from three places and stays a function, and
+--     `describe` from two.
+import Helpers
+import Node exposing (Program)
+
+
+addTwo : Int -> Int
+addTwo =
+    Helpers.adder 2
+
+
+twice : Int -> Int
+twice n =
+    n * 2
+
+
+describe : Bool, Int -> String
+describe verbose n =
+    let
+        b =
+            Helpers.box "item" n
+
+        doubled =
+            twice n
+    in
+    if verbose then
+        "${Helpers.label n} ${b.name}"
+
+    else
+        "${Helpers.label doubled} ${b.name} ${String.fromInt b.size}"
+
+
+main : Program
+main =
+    let
+        fourteen =
+            twice 7
+    in
+    Node.printLines
+        [ describe False 3
+        , describe False 4
+        , String.fromInt (Helpers.clamp 10 fourteen)
+        , String.fromInt (addTwo 40)
+        ]

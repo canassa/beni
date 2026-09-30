@@ -1,0 +1,71 @@
+-- A function called once, written where it is called once the whole
+-- program is in view (`backend.md` §9, *A function called once …*, *Once
+-- the whole program is in view*), printing the same in both builds:
+--
+--   * `Cells.counter 5` at the top level returns a closure over a cell:
+--     three calls count 6, 7, 8 — the cell is one, and it persists;
+--   * `total` returns `Cells.sumTo 0 n`, a loop that reassigns its
+--     parameters: the loop is `total`'s, its parameters `let`s: 10;
+--   * `logged`'s body logs where its call was: after "before" and before
+--     "after", and its argument, a name, was evaluated before them all;
+--   * `shout`, called once from inside a lambda, runs when the lambda does.
+import Cells
+import Node
+
+
+next : () -> Int
+next =
+    Cells.counter 5
+
+
+logged : Int -> Int
+logged n =
+    let
+        _ =
+            Debug.log n "inside"
+    in
+    n + 1
+
+
+shout : String -> String
+shout s =
+    "${s}!"
+
+
+total : Int -> Int
+total n =
+    Cells.sumTo 0 n
+
+
+main : Node.Program
+main =
+    let
+        seed =
+            Debug.log 41 "seed"
+
+        _ =
+            Debug.log 0 "before"
+
+        x =
+            logged seed
+
+        _ =
+            Debug.log x "after"
+
+        a =
+            next ()
+
+        b =
+            next ()
+
+        c =
+            next ()
+
+        later =
+            \w -> shout w
+    in
+    Node.printLines
+        [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"
+        , String.fromInt (total 4)
+        , later "hey"
+        ]

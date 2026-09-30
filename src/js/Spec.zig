@@ -70,6 +70,22 @@ pub const Module = struct {
     /// Per name: its whole-program property-name id when it is a plain name
     /// (a key or a member's name may be one), or `none`.
     prop: []const u32 = &.{},
+    /// The tables lowering handed the optimiser, which a function written
+    /// where it is called (slice 5) extends with each copy of a listed
+    /// node or name. Null: nothing is copied into this module.
+    tables: ?*Tables = null,
+    /// The module's own name, the qualifier of a top-level binding slice 5
+    /// makes here.
+    self: JsIr.Symbol.Optional = .none,
+};
+
+/// `Lower.Result`'s `effect_keep`, `pure_discards`, `unobserved` and
+/// `mutable`, as lists slice 5 may append to.
+pub const Tables = struct {
+    keep: std.ArrayList(Index) = .empty,
+    discards: std.ArrayList(Index) = .empty,
+    unobserved: std.ArrayList(Index) = .empty,
+    mutable: std.ArrayList(NameIndex) = .empty,
 };
 
 pub const Input = struct {
@@ -94,6 +110,10 @@ pub const Input = struct {
     /// (backend.md §9, *The entry's call is a call*): fact 3 reads it as a
     /// call, facts 1 and 2 and `prune` as names that escape.
     entry: ?Entry = null,
+    /// A symbol of the session's pool, the text of every name slice 5
+    /// invents (each told apart by its disambiguator). `.none` turns
+    /// slice 5 off.
+    fresh: JsIr.Symbol.Optional = .none,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -110,6 +130,14 @@ fn eachRoot(in: Input, i: usize) ?u32 {
     const j = i - in.escaping.len;
     if (j == 0) return e.callee;
     return if (j - 1 < e.args.len) e.args[j - 1] else null;
+}
+
+/// Whether whole-program name `g` is one `eachRoot` lists: a file the pass
+/// cannot see names it.
+fn isRoot(in: Input, g: u32) bool {
+    var i: usize = 0;
+    while (eachRoot(in, i)) |r| : (i += 1) if (r == g) return true;
+    return false;
 }
 
 /// How many rounds of facts-then-rewrite the pass takes at most. Each round
@@ -137,6 +165,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
         const pruned = try s.prune();
         if (!rewrote and !pruned) break;
     }
+    // Slice 5, once the facts are spent: what is called from one place is
+    // written there, and reachability drops what it was.
+    if (try s.inlineOnce()) _ = try s.prune();
+    s.releaseKeeps();
     try s.finish();
 }
 
@@ -200,6 +232,11 @@ const Mod = struct {
     index: u32,
     extra: std.ArrayList(u32),
     string_bytes: std.ArrayList(u8),
+    names: std.ArrayList(JsIr.Name),
+    tables: ?*Tables,
+    self: JsIr.Symbol.Optional,
+    /// The next disambiguator no name of the module has (slice 5).
+    next_tag: u32 = 0,
     /// Per node: the value the evaluating walk computed.
     memo: []Lat,
     /// Per literal node: its literal's id, once looked up.
@@ -248,6 +285,32 @@ const Mod = struct {
         const at: u32 = @intCast(m.extra.items.len);
         try m.extra.appendSlice(gpa, words);
         m.ir.extra = m.extra.items;
+        return at;
+    }
+
+    /// Append a node (slice 5, which copies a body into its caller). The
+    /// per-node tables of the facts are not grown: nothing reads them
+    /// after slice 5.
+    fn addNode(m: *Mod, gpa: Allocator, tag: Node.Tag, pos: u32, lhs: u32, rhs: u32) Allocator.Error!Index {
+        var list = m.ir.nodes.toMultiArrayList();
+        try list.append(gpa, .{ .tag = tag, .pos = pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+        m.ir.nodes = list.slice();
+        return @enumFromInt(@as(u32, @intCast(list.len - 1)));
+    }
+
+    /// Append a name, keeping the IR's view of the column current.
+    fn addName(m: *Mod, gpa: Allocator, n: JsIr.Name) Allocator.Error!NameIndex {
+        const at: u32 = @intCast(m.names.items.len);
+        try m.names.append(gpa, n);
+        m.ir.names = m.names.items;
+        return @enumFromInt(at);
+    }
+
+    /// Append string bytes, keeping the IR's view current.
+    fn addBytes(m: *Mod, gpa: Allocator, text: []const u8) Allocator.Error!u32 {
+        const at: u32 = @intCast(m.string_bytes.items.len);
+        try m.string_bytes.appendSlice(gpa, text);
+        m.ir.string_bytes = m.string_bytes.items;
         return at;
     }
 };
@@ -371,6 +434,9 @@ const Spec = struct {
                 .index = @intCast(mi),
                 .extra = .{ .items = @constCast(ir.extra), .capacity = ir.extra.len },
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len },
+                .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len },
+                .tables = src.tables,
+                .self = src.self,
                 .memo = try arena.alloc(Lat, ir.nodes.len),
                 .lit_of = try arena.alloc(u32, ir.nodes.len),
                 .stamp = try arena.alloc(u32, ir.names.len),
@@ -402,6 +468,7 @@ const Spec = struct {
         for (s.mods) |*m| {
             m.ir.extra = try m.extra.toOwnedSlice(s.gpa);
             m.ir.string_bytes = try m.string_bytes.toOwnedSlice(s.gpa);
+            m.ir.names = try m.names.toOwnedSlice(s.gpa);
         }
     }
 
@@ -1890,7 +1957,931 @@ const Spec = struct {
         }
         return any;
     }
+
+    /// A binding lowering kept for what its initialiser might do, whose
+    /// initialiser the facts folded to something that does nothing (a
+    /// literal, a name): kept no more, so the optimiser drops it when
+    /// nothing reads it.
+    fn releaseKeeps(s: *Spec) void {
+        for (s.mods) |*m| {
+            const t = m.tables orelse continue;
+            var kept: usize = 0;
+            for (t.keep.items) |node| {
+                const value: ?Index = switch (m.ir.tag(node)) {
+                    .const_decl => @enumFromInt(m.ir.data(node).rhs),
+                    .let_decl => @as(Node.OptionalIndex, @enumFromInt(m.ir.data(node).rhs)).unwrap(),
+                    else => null,
+                };
+                if (value) |v| if (inert(m.ir, v)) continue;
+                t.keep.items[kept] = node;
+                kept += 1;
+            }
+            t.keep.shrinkRetainingCapacity(kept);
+        }
+    }
+
+    // ---- Slice 5: a function called once, once the whole program is seen ----
+
+    /// `backend.md` §9, *A function called once is written where it is
+    /// called*, *Once the whole program is in view*: every top-level
+    /// function the program calls from exactly one place, written there,
+    /// one at a time, each on the program as the last one left it. After
+    /// the facts, whose per-node tables it does not grow. True when any was.
+    fn inlineOnce(s: *Spec) Allocator.Error!bool {
+        if (s.in.fresh == .none) return false;
+        var any = false;
+        var left: u32 = max_inlines;
+        while (left > 0) : (left -= 1) {
+            if (!try s.inlineOne()) break;
+            any = true;
+        }
+        return any;
+    }
+
+    const CallSite = struct { module: u32, top: Index, call: Index };
+
+    /// Count every whole-program name's mentions, and write in the first
+    /// function, by whole-program id, mentioned once as a callee and fit to
+    /// be written there.
+    fn inlineOne(s: *Spec) Allocator.Error!bool {
+        const n = s.in.globals;
+        const refs = try s.arena.alloc(u32, n);
+        @memset(refs, 0);
+        const sites = try s.arena.alloc(?CallSite, n);
+        @memset(sites, null);
+        const assigned = try s.arena.alloc(bool, n);
+        @memset(assigned, false);
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                stack.clearRetainingCapacity();
+                try stack.append(s.arena, top);
+                while (JsIr.popOperand(&stack)) |node| {
+                    const d = ir.data(node);
+                    switch (ir.tag(node)) {
+                        .ident => if (m.globalOf(@enumFromInt(d.lhs))) |g| {
+                            refs[g] +|= 1;
+                        },
+                        .call => {
+                            const callee: Index = @enumFromInt(d.lhs);
+                            if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| {
+                                sites[g] = .{ .module = @intCast(mi), .top = top, .call = node };
+                            };
+                        },
+                        .assign_stmt => {
+                            const target: Index = @enumFromInt(d.lhs);
+                            if (ir.tag(target) == .ident) if (m.globalOf(@enumFromInt(ir.data(target).lhs))) |g| {
+                                assigned[g] = true;
+                            };
+                        },
+                        else => {},
+                    }
+                    try pushChildren(s.arena, ir, node, &stack);
+                }
+            }
+        }
+        // Which are candidates at all.
+        const fit = try s.arena.alloc(bool, n);
+        @memset(fit, false);
+        for (0..n) |gi| {
+            const g: u32 = @intCast(gi);
+            if (refs[g] != 1) continue;
+            const site = sites[g] orelse continue;
+            const decl = s.decl[g] orelse continue;
+            if (isRoot(s.in, g)) continue;
+            const fm = &s.mods[decl.module];
+            if (fm.ir.tag(decl.stmt) != .const_decl) continue;
+            // Still written: reachability may have dropped it.
+            if (std.mem.indexOfScalar(Index, fm.ir.extraSlice(fm.ir.body, Index), decl.stmt) == null) continue;
+            const value: Index = @enumFromInt(fm.ir.data(decl.stmt).rhs);
+            if (fm.ir.tag(value) != .arrow or fm.ir.data(value).rhs != Node.arrow_plain) continue;
+            if (site.module == decl.module and site.top == decl.stmt) continue;
+            fit[g] = true;
+        }
+        // The innermost first: a function called from inside another
+        // candidate is written there before that one is written anywhere,
+        // where its call may stand where only an expression can.
+        for ([_]bool{ true, false }) |inner| {
+            for (0..n) |gi| {
+                const g: u32 = @intCast(gi);
+                if (!fit[g]) continue;
+                const site = sites[g].?;
+                const in_candidate = blk: {
+                    const cm = &s.mods[site.module];
+                    const t = cm.ir.tag(site.top);
+                    if (t != .const_decl and t != .func_decl) break :blk false;
+                    const h = cm.globalOf(@enumFromInt(cm.ir.data(site.top).lhs)) orelse break :blk false;
+                    break :blk fit[h];
+                };
+                if (in_candidate != inner) continue;
+                const decl = s.decl[g].?;
+                const value: Index = @enumFromInt(s.mods[decl.module].ir.data(decl.stmt).rhs);
+                if (try s.inlineAt(decl, value, site, assigned)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// What `scanBody` learns of a function's body.
+    const BodyScan = struct {
+        nodes: u32 = 0,
+        /// Per name of the module: how many times the function declares it —
+        /// its parameters, its nested functions', `const`, `let`,
+        /// `function`, `for…of` and labels — and those names in the order
+        /// first met.
+        counts: []u32 = &.{},
+        declared: std.ArrayList(u32) = .empty,
+        /// The names its body's own statement list declares, which become
+        /// top-level bindings when that list is written at a module's top.
+        top_names: std.ArrayList(u32) = .empty,
+        /// Every name an `ident` of it reads or assigns.
+        mentioned: std.ArrayList(u32) = .empty,
+        /// Per parameter: reads, and whether the body assigns it.
+        reads: []u32 = &.{},
+        /// Per parameter: a read of it may run more than once — in a loop
+        /// or a nested function.
+        repeated: []bool = &.{},
+        /// How many loops and nested functions the walk is in.
+        repeat: u32 = 0,
+        assigns: []bool = &.{},
+        /// Its own `return`s (not a nested function's): how many, whether
+        /// any says a value, and whether its last statement is one.
+        returns: u32 = 0,
+        valued: bool = false,
+        final_return: bool = false,
+        ok: bool = true,
+    };
+
+    /// Walk the callee's body once; false when it is too big or too deep to
+    /// copy by recursion.
+    fn scanBody(s: *Spec, fm: *Mod, f: JsIr.Func, out: *BodyScan) Allocator.Error!bool {
+        const params = fm.ir.extraSlice(f.params(), NameIndex);
+        out.reads = try s.arena.alloc(u32, params.len);
+        @memset(out.reads, 0);
+        out.repeated = try s.arena.alloc(bool, params.len);
+        @memset(out.repeated, false);
+        out.assigns = try s.arena.alloc(bool, params.len);
+        @memset(out.assigns, false);
+        out.counts = try s.arena.alloc(u32, fm.ir.names.len);
+        @memset(out.counts, 0);
+        for (params) |p| try s.declared(out, p);
+        const body = fm.ir.extraSlice(f.body(), Index);
+        for (body) |stmt| switch (fm.ir.tag(stmt)) {
+            .const_decl, .let_decl, .func_decl, .gen_decl => try out.top_names.append(s.arena, fm.ir.data(stmt).lhs),
+            else => {},
+        };
+        if (body.len != 0 and fm.ir.tag(body[body.len - 1]) == .return_stmt) out.final_return = true;
+        try s.scanList(fm, f.body(), params, out, 0, true);
+        return out.ok;
+    }
+
+    fn declared(s: *Spec, out: *BodyScan, n: NameIndex) Allocator.Error!void {
+        const i = n.unwrap() orelse return;
+        if (i >= out.counts.len) {
+            out.ok = false;
+            return;
+        }
+        if (out.counts[i] == 0) try out.declared.append(s.arena, i);
+        out.counts[i] += 1;
+    }
+
+    fn scanList(s: *Spec, fm: *Mod, range: JsIr.SubRange, params: []const NameIndex, out: *BodyScan, depth: u32, own: bool) Allocator.Error!void {
+        for (fm.ir.extraSlice(range, Index)) |stmt| try s.scanNode(fm, stmt, params, out, depth + 1, own);
+    }
+
+    /// One node of the body; `own` is whether a `return` here is the
+    /// callee's own (not a nested function's).
+    fn scanNode(s: *Spec, fm: *Mod, node: Index, params: []const NameIndex, out: *BodyScan, depth: u32, own: bool) Allocator.Error!void {
+        if (!out.ok) return;
+        out.nodes += 1;
+        if (depth > max_inline_depth or out.nodes > max_inline_nodes) {
+            out.ok = false;
+            return;
+        }
+        const ir = fm.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .ident => {
+                const n: NameIndex = @enumFromInt(d.lhs);
+                try out.mentioned.append(s.arena, d.lhs);
+                if (std.mem.indexOfScalar(NameIndex, params, n)) |i| {
+                    out.reads[i] += 1;
+                    if (out.repeat != 0) out.repeated[i] = true;
+                }
+            },
+            .const_decl => {
+                try s.declared(out, @enumFromInt(d.lhs));
+                try s.scanNode(fm, @enumFromInt(d.rhs), params, out, depth + 1, own);
+            },
+            .let_decl => {
+                try s.declared(out, @enumFromInt(d.lhs));
+                if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try s.scanNode(fm, v, params, out, depth + 1, own);
+            },
+            .func_decl, .gen_decl => {
+                try s.declared(out, @enumFromInt(d.lhs));
+                try s.scanFunc(fm, @enumFromInt(d.rhs), params, out, depth);
+            },
+            .arrow => try s.scanFunc(fm, @enumFromInt(d.lhs), params, out, depth),
+            .assign_stmt => {
+                const target: Index = @enumFromInt(d.lhs);
+                if (ir.tag(target) == .ident) {
+                    const n: NameIndex = @enumFromInt(ir.data(target).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, params, n)) |i| out.assigns[i] = true;
+                }
+                try s.scanNode(fm, target, params, out, depth + 1, own);
+                try s.scanNode(fm, @enumFromInt(d.rhs), params, out, depth + 1, own);
+            },
+            .return_stmt => {
+                if (own) {
+                    out.returns += 1;
+                    if (d.lhs != @intFromEnum(Node.OptionalIndex.none)) out.valued = true;
+                }
+                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try s.scanNode(fm, v, params, out, depth + 1, own);
+            },
+            .if_stmt => {
+                try s.scanNode(fm, @enumFromInt(d.lhs), params, out, depth + 1, own);
+                const b = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                try s.scanList(fm, b.thenBody(), params, out, depth, own);
+                try s.scanList(fm, b.elseBody(), params, out, depth, own);
+            },
+            .while_true, .block_stmt => {
+                const loops = ir.tag(node) == .while_true;
+                if (loops) out.repeat += 1;
+                defer if (loops) {
+                    out.repeat -= 1;
+                };
+                try s.declared(out, @enumFromInt(d.lhs));
+                try s.scanList(fm, ir.subRange(@enumFromInt(d.rhs)), params, out, depth, own);
+            },
+            .for_of => {
+                try s.declared(out, @enumFromInt(d.lhs));
+                const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                try s.scanNode(fm, loop.iterable, params, out, depth + 1, own);
+                out.repeat += 1;
+                defer out.repeat -= 1;
+                try s.scanList(fm, loop.body(), params, out, depth, own);
+            },
+            .switch_stmt => {
+                try s.scanNode(fm, @enumFromInt(d.lhs), params, out, depth + 1, own);
+                try s.scanList(fm, ir.subRange(@enumFromInt(d.rhs)), params, out, depth, own);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try s.scanNode(fm, t, params, out, depth + 1, own);
+                try s.scanList(fm, ir.subRange(@enumFromInt(d.rhs)), params, out, depth, own);
+            },
+            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+            .expr_stmt, .throw_stmt => try s.scanNode(fm, @enumFromInt(d.lhs), params, out, depth + 1, own),
+            .import_stmt, .export_stmt => out.ok = false,
+            else => {
+                var children: std.ArrayList(Index) = .empty;
+                try ir.pushOperands(s.arena, &children, node);
+                for (children.items) |c| try s.scanNode(fm, c, params, out, depth + 1, own);
+            },
+        }
+    }
+
+    fn scanFunc(s: *Spec, fm: *Mod, record: ExtraIndex, params: []const NameIndex, out: *BodyScan, depth: u32) Allocator.Error!void {
+        const f = fm.ir.extraData(record, JsIr.Func);
+        for (fm.ir.extraSlice(f.params(), NameIndex)) |p| try s.declared(out, p);
+        out.repeat += 1;
+        defer out.repeat -= 1;
+        try s.scanList(fm, f.body(), params, out, depth, false);
+    }
+
+    /// Whether argument `a` of a call in top-level statement `top` is an
+    /// atom: a literal, or a name nothing assigns — a whole-program name no
+    /// statement assigns, or a local its declaration never does.
+    fn atomArgument(s: *Spec, m: *Mod, a: Index, top: Index, assigned: []const bool) Allocator.Error!bool {
+        const ir = m.ir;
+        switch (ir.tag(a)) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return true,
+            .ident => {},
+            else => return false,
+        }
+        const n: NameIndex = @enumFromInt(ir.data(a).lhs);
+        if (m.globalOf(n)) |g| return !assigned[g];
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        try stack.append(s.arena, top);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (ir.tag(node) == .assign_stmt) {
+                const target: Index = @enumFromInt(ir.data(node).lhs);
+                if (ir.tag(target) == .ident and ir.data(target).lhs == n.int()) return false;
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        return true;
+    }
+
+    /// Whether every name inert expression `root` reads outside the
+    /// functions in it is an atom (`atomArgument`): nothing can have changed
+    /// it by the time the expression is made later.
+    fn immutableNames(s: *Spec, m: *Mod, root: Index, top: Index, assigned: []const bool) Allocator.Error!bool {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        try stack.append(s.arena, root);
+        while (JsIr.popOperand(&stack)) |node| {
+            switch (m.ir.tag(node)) {
+                .ident => if (!try s.atomArgument(m, node, top, assigned)) return false,
+                .arrow => {},
+                else => try m.ir.pushOperands(s.arena, &stack, node),
+            }
+        }
+        return true;
+    }
+
+    /// Module `m`'s name for whole-program name `g`, when a live statement
+    /// of it mentions `g` — reads, calls or declares it at its top level,
+    /// so the module has it bound in either layout; null otherwise.
+    fn namedIn(s: *Spec, m: *Mod, g: u32) Allocator.Error!?NameIndex {
+        const ir = m.ir;
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        for (ir.extraSlice(ir.body, Index)) |top| {
+            switch (ir.tag(top)) {
+                .import_stmt, .export_stmt => continue,
+                .const_decl, .let_decl, .func_decl, .gen_decl => {
+                    const n: NameIndex = @enumFromInt(ir.data(top).lhs);
+                    if (m.globalOf(n) == g) return n;
+                },
+                else => {},
+            }
+            stack.clearRetainingCapacity();
+            try stack.append(s.arena, top);
+            while (JsIr.popOperand(&stack)) |node| {
+                if (ir.tag(node) == .ident) {
+                    const n: NameIndex = @enumFromInt(ir.data(node).lhs);
+                    if (m.globalOf(n) == g) return n;
+                }
+                try pushChildren(s.arena, ir, node, &stack);
+            }
+        }
+        return null;
+    }
+
+    /// Whether anything reads name `n`, declared in top-level statement
+    /// `top` of module `m`: a whole-program name anywhere, a local there.
+    fn nameRead(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!bool {
+        const g = m.globalOf(n);
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        for (s.mods) |*other| {
+            if (g == null and other != m) continue;
+            const ir = other.ir;
+            stack.clearRetainingCapacity();
+            if (g == null) try stack.append(s.arena, top) else try stack.appendSlice(s.arena, ir.extraSlice(ir.body, Index));
+            while (JsIr.popOperand(&stack)) |node| {
+                if (ir.tag(node) == .ident) {
+                    const x: NameIndex = @enumFromInt(ir.data(node).lhs);
+                    if (g) |want| {
+                        if (other.globalOf(x) == want) return true;
+                    } else if (x == n) return true;
+                }
+                try pushChildren(s.arena, ir, node, &stack);
+            }
+        }
+        return false;
+    }
+
+    /// Where a call stands in its caller.
+    const Place = struct {
+        kind: enum { expr, ret, stmt, decl },
+        /// The statement the call is the whole expression of.
+        stmt: Index = undefined,
+        /// Where that statement's list's range is stored: two words of
+        /// `extra`, or the module body when null.
+        owner: ?u32 = null,
+        /// The statement is the last of a function's body.
+        tail: bool = false,
+        /// The list is the module body.
+        top_level: bool = false,
+    };
+
+    fn placeOf(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
+        if (try s.placeAmong(m, null, &.{site.top}, false, true, site.call, 0)) |p| return p;
+        return null;
+    }
+
+    /// Look for `call` in the statements `list`, whose range lives at
+    /// `owner`.
+    fn placeAmong(s: *Spec, m: *Mod, owner: ?u32, list: []const Index, fn_body: bool, top_level: bool, call: Index, depth: u32) Allocator.Error!?Place {
+        if (depth > max_depth) return null;
+        const ir = m.ir;
+        for (list, 0..) |stmt, i| {
+            const d = ir.data(stmt);
+            const root: ?Index = switch (ir.tag(stmt)) {
+                .expr_stmt, .const_decl => @enumFromInt(if (ir.tag(stmt) == .expr_stmt) d.lhs else d.rhs),
+                .return_stmt => @as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap(),
+                .let_decl => @as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap(),
+                else => null,
+            };
+            if (root) |r| if (r == call) return .{
+                .kind = switch (ir.tag(stmt)) {
+                    .expr_stmt => .stmt,
+                    .return_stmt => .ret,
+                    else => .decl,
+                },
+                .stmt = stmt,
+                .owner = owner,
+                .tail = fn_body and i + 1 == list.len,
+                .top_level = top_level,
+            };
+            if (try s.placeIn(m, stmt, call, depth + 1)) |p| return p;
+        }
+        return null;
+    }
+
+    /// Look for `call` inside statement `stmt`: its lists, and its
+    /// expressions and the functions in them.
+    fn placeIn(s: *Spec, m: *Mod, stmt: Index, call: Index, depth: u32) Allocator.Error!?Place {
+        const ir = m.ir;
+        const d = ir.data(stmt);
+        switch (ir.tag(stmt)) {
+            .func_decl, .gen_decl => {
+                const at = d.rhs;
+                return s.placeAmong(m, at + 2, ir.extraSlice(ir.extraData(@enumFromInt(at), JsIr.Func).body(), Index), true, false, call, depth);
+            },
+            .if_stmt => {
+                if (try s.placeExpr(m, @enumFromInt(d.lhs), call, depth)) |p| return p;
+                const b = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                if (try s.placeAmong(m, d.rhs, ir.extraSlice(b.thenBody(), Index), false, false, call, depth)) |p| return p;
+                return s.placeAmong(m, d.rhs + 2, ir.extraSlice(b.elseBody(), Index), false, false, call, depth);
+            },
+            .while_true, .block_stmt => return s.placeAmong(m, d.rhs, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index), false, false, call, depth),
+            .for_of => {
+                const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                if (try s.placeExpr(m, loop.iterable, call, depth)) |p| return p;
+                return s.placeAmong(m, d.rhs + 1, ir.extraSlice(loop.body(), Index), false, false, call, depth);
+            },
+            .switch_stmt => {
+                if (try s.placeExpr(m, @enumFromInt(d.lhs), call, depth)) |p| return p;
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| {
+                    const cd = ir.data(c);
+                    if (@as(Node.OptionalIndex, @enumFromInt(cd.lhs)).unwrap()) |t| if (try s.placeExpr(m, t, call, depth)) |p| return p;
+                    if (try s.placeAmong(m, cd.rhs, ir.extraSlice(ir.subRange(@enumFromInt(cd.rhs)), Index), false, false, call, depth)) |p| return p;
+                }
+                return null;
+            },
+            .const_decl => return s.placeExpr(m, @enumFromInt(d.rhs), call, depth),
+            .let_decl, .return_stmt => {
+                const v = @as(Node.OptionalIndex, @enumFromInt(if (ir.tag(stmt) == .let_decl) d.rhs else d.lhs)).unwrap() orelse return null;
+                return s.placeExpr(m, v, call, depth);
+            },
+            .assign_stmt => {
+                if (try s.placeExpr(m, @enumFromInt(d.lhs), call, depth)) |p| return p;
+                return s.placeExpr(m, @enumFromInt(d.rhs), call, depth);
+            },
+            .expr_stmt, .throw_stmt => return s.placeExpr(m, @enumFromInt(d.lhs), call, depth),
+            else => return null,
+        }
+    }
+
+    fn placeExpr(s: *Spec, m: *Mod, root: Index, call: Index, depth: u32) Allocator.Error!?Place {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        try stack.append(s.arena, root);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (node == call) return .{ .kind = .expr };
+            if (m.ir.tag(node) == .arrow) {
+                const at = m.ir.data(node).lhs;
+                if (try s.placeAmong(m, at + 2, m.ir.extraSlice(m.ir.extraData(@enumFromInt(at), JsIr.Func).body(), Index), true, false, call, depth + 1)) |p| return p;
+                continue;
+            }
+            try m.ir.pushOperands(s.arena, &stack, node);
+        }
+        return null;
+    }
+
+    /// Write function `value` (declared by `decl`) at its one call `site`,
+    /// when every rule allows; false, with nothing changed, otherwise.
+    fn inlineAt(s: *Spec, decl: Decl, value: Index, site: CallSite, assigned: []const bool) Allocator.Error!bool {
+        const fm = &s.mods[decl.module];
+        const cm = &s.mods[site.module];
+        const cross = decl.module != site.module;
+        const f = fm.ir.extraData(@enumFromInt(fm.ir.data(value).lhs), JsIr.Func);
+        const params = try s.arena.dupe(NameIndex, fm.ir.extraSlice(f.params(), NameIndex));
+        const body = try s.arena.dupe(Index, fm.ir.extraSlice(f.body(), Index));
+        const args = try s.arena.dupe(Index, cm.ir.extraSlice(cm.ir.subRange(@enumFromInt(cm.ir.data(site.call).rhs)), Index));
+        if (args.len != params.len) return false;
+
+        var scan: BodyScan = .{};
+        if (!try s.scanBody(fm, f, &scan)) return false;
+        // A parameter declared again inside is not one name to substitute.
+        for (params) |p| if (p.unwrap()) |i| if (scan.counts[i] > 1) return false;
+        // Another module's function names nothing but its own locals and
+        // whole-program names the caller's module already names — so the
+        // caller needs no import it lacks, in either layout.
+        var outer: std.ArrayList(struct { from: u32, to: u32 }) = .empty;
+        if (cross) for (scan.mentioned.items) |n| {
+            if (n < scan.counts.len and scan.counts[n] != 0) continue;
+            const g = fm.globalOf(@enumFromInt(n)) orelse return false;
+            const to = try s.namedIn(cm, g) orelse return false;
+            try outer.append(s.arena, .{ .from = n, .to = to.int() });
+        };
+        // Arguments: atoms — or an argument that makes a value and nothing
+        // else, of immutable names, whose parameter is read once and not
+        // again by a loop or a later call: it is made where it is read,
+        // once, as it was made once before the body.
+        for (args, 0..) |a, i| {
+            if (try s.atomArgument(cm, a, site.top, assigned)) continue;
+            if (!inert(cm.ir, a) or scan.reads[i] > 1 or scan.repeated[i] or scan.assigns[i]) return false;
+            if (!try s.immutableNames(cm, a, site.top, assigned)) return false;
+        }
+
+        const place = try s.placeOf(cm, site) orelse return false;
+        const single = body.len == 1 and scan.final_return and scan.valued and scan.returns == 1;
+        const Form = enum { expr, ret, stmt, decl };
+        const form: Form = if (single) .expr else switch (place.kind) {
+            .expr => return false,
+            .ret => .ret,
+            .stmt => blk: {
+                if (scan.returns == 0 or (scan.returns == 1 and scan.final_return)) break :blk .stmt;
+                if (place.tail and !scan.valued) break :blk .ret;
+                return false;
+            },
+            .decl => if (scan.returns == 1 and scan.final_return and scan.valued) .decl else return false,
+        };
+        const top = form == .decl and place.top_level;
+        if (top and cm.self == .none) return false;
+        // A call the optimiser drops — a discarded pure call, or a binding
+        // nothing reads whose initialiser may not do anything — would come
+        // back as the body's statements: written as the call it is.
+        if (form == .stmt or form == .ret or form == .decl) if (cm.tables) |t| {
+            if (form == .stmt and std.mem.indexOfScalar(Index, t.discards.items, place.stmt) != null) return false;
+            if (form == .decl and std.mem.indexOfScalar(Index, t.keep.items, place.stmt) == null and
+                !try s.nameRead(cm, site.top, @enumFromInt(cm.ir.data(place.stmt).lhs))) return false;
+        };
+
+        // Each parameter: its argument, written where it is read, or a
+        // binding of its own — where a statement can stand.
+        const bind = try s.arena.alloc(bool, params.len);
+        for (params, args, 0..) |_, a, i| {
+            const long = switch (cm.ir.tag(a)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => literalLen(cm.ir, a) > 5 and scan.reads[i] > 1,
+                else => false,
+            };
+            bind[i] = scan.assigns[i] or long;
+            if (bind[i] and form == .expr) return false;
+        }
+
+        var c: Copy = .{
+            .s = s,
+            .src = fm,
+            .dst = cm,
+            .cross = cross,
+            .renamed = try s.arena.alloc(u32, fm.ir.names.len),
+            .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
+        };
+        @memset(c.renamed, none);
+        @memset(c.subst, .none);
+        for (outer.items) |o| c.renamed[o.from] = o.to;
+        // Fresh names for every name the function declares: its top list's
+        // are the caller module's top-level bindings when that list is
+        // written at the module's top.
+        for (scan.declared.items) |n| {
+            if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(n)) != null) continue;
+            const global = top and std.mem.indexOfScalar(u32, scan.top_names.items, n) != null;
+            try c.fresh(n, global);
+        }
+        var bindings: std.ArrayList(u32) = .empty;
+        for (params, args, bind) |p, a, b| {
+            const pi = p.unwrap() orelse continue;
+            if (b) {
+                try c.fresh(pi, top);
+                const name = c.renamed[pi];
+                const first = try c.atom(a);
+                const tag: Node.Tag = if (scan.assigns[std.mem.indexOfScalar(NameIndex, params, p).?]) .let_decl else .const_decl;
+                try bindings.append(s.arena, (try cm.addNode(s.gpa, tag, Node.no_pos, name, first.int())).int());
+            } else c.subst[pi] = a.toOptional();
+        }
+
+        switch (form) {
+            .expr => {
+                const ret: Index = @enumFromInt(fm.ir.data(body[0]).lhs);
+                const e = try c.expr(ret, 0);
+                cm.copyNode(site.call, e);
+            },
+            .ret => {
+                var out: std.ArrayList(u32) = .empty;
+                try out.appendSlice(s.arena, bindings.items);
+                for (body) |stmt| try out.append(s.arena, (try c.stmt(stmt, 0)).int());
+                try s.splice(cm, place, out.items, false);
+            },
+            .stmt => {
+                var out: std.ArrayList(u32) = .empty;
+                try out.appendSlice(s.arena, bindings.items);
+                for (body, 0..) |stmt, i| {
+                    if (i + 1 == body.len and fm.ir.tag(stmt) == .return_stmt) {
+                        // The last `return`'s value, kept as a statement when
+                        // evaluating it may do something.
+                        const v = @as(Node.OptionalIndex, @enumFromInt(fm.ir.data(stmt).lhs)).unwrap() orelse continue;
+                        if (inert(fm.ir, v)) continue;
+                        const e = try c.expr(v, 0);
+                        try out.append(s.arena, (try cm.addNode(s.gpa, .expr_stmt, Node.no_pos, e.int(), 0)).int());
+                        continue;
+                    }
+                    try out.append(s.arena, (try c.stmt(stmt, 0)).int());
+                }
+                try s.splice(cm, place, out.items, false);
+            },
+            .decl => {
+                var out: std.ArrayList(u32) = .empty;
+                try out.appendSlice(s.arena, bindings.items);
+                for (body[0 .. body.len - 1]) |stmt| try out.append(s.arena, (try c.stmt(stmt, 0)).int());
+                const ret: Index = @enumFromInt(fm.ir.data(body[body.len - 1]).lhs);
+                const e = try c.expr(ret, 0);
+                const d = cm.ir.data(place.stmt);
+                cm.setData(place.stmt, d.lhs, e.int());
+                try out.append(s.arena, place.stmt.int());
+                try s.splice(cm, place, out.items, true);
+            },
+        }
+        return true;
+    }
+
+    /// Put `stmts` where `place.stmt` stands in its list (they include it
+    /// when `kept`).
+    fn splice(s: *Spec, m: *Mod, place: Place, stmts: []const u32, kept: bool) Allocator.Error!void {
+        _ = kept;
+        const list = if (place.owner) |o| m.ir.extraSlice(.{ .start = @enumFromInt(m.extra.items[o]), .end = @enumFromInt(m.extra.items[o + 1]) }, u32) else m.ir.extraSlice(m.ir.body, u32);
+        var out: std.ArrayList(u32) = .empty;
+        for (list) |raw| {
+            if (raw == place.stmt.int()) {
+                try out.appendSlice(s.arena, stmts);
+                continue;
+            }
+            try out.append(s.arena, raw);
+        }
+        const start = try m.append(s.gpa, out.items);
+        const end: u32 = start + @as(u32, @intCast(out.items.len));
+        if (place.owner) |o| {
+            m.extra.items[o] = start;
+            m.extra.items[o + 1] = end;
+        } else m.ir.body = .{ .start = @enumFromInt(start), .end = @enumFromInt(end) };
+    }
+
+    /// A body copied from one module into another (or into itself): every
+    /// node new, every name the function declares fresh, every parameter
+    /// its argument or its binding, and every table entry of a node or a
+    /// name repeated for its copy.
+    const Copy = struct {
+        s: *Spec,
+        src: *Mod,
+        dst: *Mod,
+        cross: bool,
+        /// A declared name of the source, and its new name.
+        renamed: []u32,
+        /// A parameter of the source, and the argument (a node of the
+        /// destination) each read of it is.
+        subst: []Node.OptionalIndex,
+
+        fn gpa(c: *Copy) Allocator {
+            return c.s.gpa;
+        }
+
+        /// A new name for source name `n`: a local, or a top-level binding
+        /// of the destination module.
+        fn fresh(c: *Copy, n: u32, global: bool) Allocator.Error!void {
+            if (n >= c.renamed.len or c.renamed[n] != none) return;
+            if (c.dst.next_tag == 0) {
+                var max: u32 = 0;
+                for (c.dst.names.items) |x| max = @max(max, x.tag);
+                c.dst.next_tag = max + 1;
+            }
+            const tag = c.dst.next_tag;
+            c.dst.next_tag += 1;
+            const name: JsIr.Name = .{
+                .module = if (global) c.dst.self else .none,
+                .base = c.s.in.fresh.unwrap().?,
+                .tag = tag,
+            };
+            const at = try c.dst.addName(c.gpa(), name);
+            c.renamed[n] = at.int();
+            if (c.src.tables) |t| if (std.mem.indexOfScalar(NameIndex, t.mutable.items, @enumFromInt(n)) != null) {
+                if (c.dst.tables) |dt| try dt.mutable.append(c.s.arena, at);
+            };
+        }
+
+        /// A binding's name: the new one of a declared name, else itself.
+        fn binding(c: *Copy, n: NameIndex) Allocator.Error!NameIndex {
+            const i = n.unwrap() orelse return .none;
+            if (i < c.renamed.len and c.renamed[i] != none) return @enumFromInt(c.renamed[i]);
+            return c.property(n);
+        }
+
+        /// A property name: itself in its own module; in another, the
+        /// destination's name of the same text (the session pools every
+        /// plain name before the pass), added when it has none.
+        fn property(c: *Copy, n: NameIndex) Allocator.Error!NameIndex {
+            if (!c.cross or n == .none) return n;
+            const name = c.src.ir.name(n);
+            for (c.dst.names.items, 0..) |x, i| if (x.eql(name)) return @enumFromInt(@as(u32, @intCast(i)));
+            return c.dst.addName(c.gpa(), name);
+        }
+
+        fn node(c: *Copy, from: Index, tag: Node.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
+            const pos: u32 = if (c.cross) Node.no_pos else c.src.ir.pos(from);
+            return c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
+        }
+
+        /// A copy of an argument: an atom of the destination.
+        fn atom(c: *Copy, a: Index) Allocator.Error!Index {
+            const d = c.dst.ir.data(a);
+            return c.dst.addNode(c.gpa(), c.dst.ir.tag(a), c.dst.ir.pos(a), d.lhs, d.rhs);
+        }
+
+        fn bytesOf(c: *Copy, from: Index) Allocator.Error!u32 {
+            const d = c.src.ir.data(from);
+            if (!c.cross) return d.lhs;
+            return c.dst.addBytes(c.gpa(), c.src.ir.bytes(from));
+        }
+
+        fn list(c: *Copy, range: JsIr.SubRange, depth: u32) Allocator.Error!JsIr.SubRange {
+            var out: std.ArrayList(u32) = .empty;
+            for (try c.s.arena.dupe(Index, c.src.ir.extraSlice(range, Index))) |n| try out.append(c.s.arena, (try c.stmt(n, depth + 1)).int());
+            const start = try c.dst.append(c.gpa(), out.items);
+            return .{ .start = @enumFromInt(start), .end = @enumFromInt(start + @as(u32, @intCast(out.items.len))) };
+        }
+
+        /// A `SubRange` record of `extra`: its two words, appended.
+        fn record(c: *Copy, r: JsIr.SubRange) Allocator.Error!u32 {
+            return c.dst.append(c.gpa(), &.{ @intFromEnum(r.start), @intFromEnum(r.end) });
+        }
+
+        fn exprs(c: *Copy, items: []const Index, depth: u32) Allocator.Error!JsIr.SubRange {
+            var out: std.ArrayList(u32) = .empty;
+            for (try c.s.arena.dupe(Index, items)) |n| try out.append(c.s.arena, (try c.expr(n, depth + 1)).int());
+            const start = try c.dst.append(c.gpa(), out.items);
+            return .{ .start = @enumFromInt(start), .end = @enumFromInt(start + @as(u32, @intCast(out.items.len))) };
+        }
+
+        fn func(c: *Copy, record_at: ExtraIndex, depth: u32) Allocator.Error!u32 {
+            const f = c.src.ir.extraData(record_at, JsIr.Func);
+            var params: std.ArrayList(u32) = .empty;
+            for (try c.s.arena.dupe(NameIndex, c.src.ir.extraSlice(f.params(), NameIndex))) |p| try params.append(c.s.arena, (try c.binding(p)).int());
+            const pstart = try c.dst.append(c.gpa(), params.items);
+            const pend = pstart + @as(u32, @intCast(params.items.len));
+            const body = try c.list(f.body(), depth);
+            return c.dst.append(c.gpa(), &.{ pstart, pend, @intFromEnum(body.start), @intFromEnum(body.end) });
+        }
+
+        fn listed(c: *Copy, from: Index, to: Index, which: enum { keep, discards, unobserved }) Allocator.Error!void {
+            const st = c.src.tables orelse return;
+            const dt = c.dst.tables orelse return;
+            const src_list, const dst_list = switch (which) {
+                .keep => .{ st.keep.items, &dt.keep },
+                .discards => .{ st.discards.items, &dt.discards },
+                .unobserved => .{ st.unobserved.items, &dt.unobserved },
+            };
+            if (std.mem.indexOfScalar(Index, src_list, from) != null) try dst_list.append(c.s.arena, to);
+        }
+
+        fn expr(c: *Copy, from: Index, depth: u32) Allocator.Error!Index {
+            const ir = c.src.ir;
+            const d = ir.data(from);
+            const tag = ir.tag(from);
+            switch (tag) {
+                .ident => {
+                    if (d.lhs < c.subst.len) if (c.subst[d.lhs].unwrap()) |a| return c.atom(a);
+                    return c.node(from, .ident, (try c.binding(@enumFromInt(d.lhs))).int(), 0);
+                },
+                .number, .string, .template_chunk => return c.node(from, tag, try c.bytesOf(from), d.rhs),
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return c.node(from, tag, 0, 0),
+                .template, .object, .array => {
+                    const r = try c.exprs(ir.extraSlice(JsIr.inlineRange(d), Index), depth);
+                    return c.node(from, tag, @intFromEnum(r.start), @intFromEnum(r.end));
+                },
+                .property => return c.node(from, .property, (try c.property(@enumFromInt(d.lhs))).int(), (try c.expr(@enumFromInt(d.rhs), depth + 1)).int()),
+                .spread_property => return c.node(from, .spread_property, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), 0),
+                .call, .new_call => {
+                    const callee = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    const args = try c.exprs(ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index), depth);
+                    return c.node(from, tag, callee.int(), try c.record(args));
+                },
+                .member => return c.node(from, .member, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), (try c.property(@enumFromInt(d.rhs))).int()),
+                .index_get => {
+                    const obj = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    const key = try c.expr(@enumFromInt(d.rhs), depth + 1);
+                    return c.node(from, .index_get, obj.int(), key.int());
+                },
+                .arrow => {
+                    const to = try c.node(from, .arrow, try c.func(@enumFromInt(d.lhs), depth), d.rhs);
+                    try c.listed(from, to, .unobserved);
+                    return to;
+                },
+                .cond => {
+                    const cd = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+                    const t = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    const a = try c.expr(cd.consequent, depth + 1);
+                    const b = try c.expr(cd.alternate, depth + 1);
+                    return c.node(from, .cond, t.int(), try c.dst.append(c.gpa(), &.{ a.int(), b.int() }));
+                },
+                .binary => {
+                    const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    const l = try c.expr(b.left, depth + 1);
+                    const r = try c.expr(b.right, depth + 1);
+                    return c.node(from, .binary, try c.dst.append(c.gpa(), &.{ l.int(), r.int() }), d.rhs);
+                },
+                .unary => return c.node(from, .unary, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), d.rhs),
+                else => return c.stmt(from, depth),
+            }
+        }
+
+        fn optional(c: *Copy, v: u32, depth: u32) Allocator.Error!u32 {
+            const o: Node.OptionalIndex = @enumFromInt(v);
+            const n = o.unwrap() orelse return v;
+            return (try c.expr(n, depth + 1)).int();
+        }
+
+        fn stmt(c: *Copy, from: Index, depth: u32) Allocator.Error!Index {
+            const ir = c.src.ir;
+            const d = ir.data(from);
+            const tag = ir.tag(from);
+            switch (tag) {
+                .const_decl => {
+                    const to = try c.node(from, .const_decl, (try c.binding(@enumFromInt(d.lhs))).int(), (try c.expr(@enumFromInt(d.rhs), depth + 1)).int());
+                    try c.listed(from, to, .keep);
+                    return to;
+                },
+                .let_decl => {
+                    const to = try c.node(from, .let_decl, (try c.binding(@enumFromInt(d.lhs))).int(), try c.optional(d.rhs, depth));
+                    try c.listed(from, to, .keep);
+                    return to;
+                },
+                .func_decl, .gen_decl => {
+                    const to = try c.node(from, tag, (try c.binding(@enumFromInt(d.lhs))).int(), try c.func(@enumFromInt(d.rhs), depth));
+                    try c.listed(from, to, .unobserved);
+                    return to;
+                },
+                .assign_stmt => {
+                    const target = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    return c.node(from, .assign_stmt, target.int(), (try c.expr(@enumFromInt(d.rhs), depth + 1)).int());
+                },
+                .return_stmt => return c.node(from, .return_stmt, try c.optional(d.lhs, depth), 0),
+                .if_stmt => {
+                    const b = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    const t = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    const then = try c.list(b.thenBody(), depth);
+                    const els = try c.list(b.elseBody(), depth);
+                    const rec = try c.dst.append(c.gpa(), &.{ @intFromEnum(then.start), @intFromEnum(then.end), @intFromEnum(els.start), @intFromEnum(els.end) });
+                    return c.node(from, .if_stmt, t.int(), rec);
+                },
+                .while_true, .block_stmt => {
+                    const body = try c.list(ir.subRange(@enumFromInt(d.rhs)), depth);
+                    return c.node(from, tag, (try c.binding(@enumFromInt(d.lhs))).int(), try c.record(body));
+                },
+                .for_of => {
+                    const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    const iterable = try c.expr(loop.iterable, depth + 1);
+                    const body = try c.list(loop.body(), depth);
+                    const rec = try c.dst.append(c.gpa(), &.{ iterable.int(), @intFromEnum(body.start), @intFromEnum(body.end) });
+                    return c.node(from, .for_of, (try c.binding(@enumFromInt(d.lhs))).int(), rec);
+                },
+                .break_stmt, .continue_stmt => return c.node(from, tag, (try c.binding(@enumFromInt(d.lhs))).int(), 0),
+                .switch_stmt => {
+                    const disc = try c.expr(@enumFromInt(d.lhs), depth + 1);
+                    const cases = try c.list(ir.subRange(@enumFromInt(d.rhs)), depth);
+                    return c.node(from, .switch_stmt, disc.int(), try c.record(cases));
+                },
+                .switch_case => {
+                    const t = try c.optional(d.lhs, depth);
+                    const body = try c.list(ir.subRange(@enumFromInt(d.rhs)), depth);
+                    return c.node(from, .switch_case, t, try c.record(body));
+                },
+                .expr_stmt => {
+                    const to = try c.node(from, .expr_stmt, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), 0);
+                    try c.listed(from, to, .discards);
+                    return to;
+                },
+                .throw_stmt => return c.node(from, .throw_stmt, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), 0),
+                // `scanBody` refused a body holding one.
+                .import_stmt, .export_stmt => unreachable,
+                else => return c.expr(from, depth),
+            }
+        }
+    };
 };
+
+/// How many functions slice 5 writes where they are called, at most.
+const max_inlines = 256;
+/// The largest body slice 5 copies, in nodes, and its deepest nesting: the
+/// copy recurses.
+const max_inline_nodes = 4096;
+const max_inline_depth = 150;
+
+/// The printed length of a literal node, for slice 5's substitution rule.
+fn literalLen(ir: *const JsIr, node: Index) usize {
+    return switch (ir.tag(node)) {
+        .number => ir.bytes(node).len,
+        .string => ir.bytes(node).len + 2,
+        .true_lit, .null_lit => 4,
+        .false_lit => 5,
+        .undefined_lit => 9,
+        else => 0,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Slice 3: allocation sites

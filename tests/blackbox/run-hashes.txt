@@ -33,10 +33,10 @@ blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it fo
 blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 fabedcb8061df0fb9e6e70f10ee5b9fdbeb2032cd074e7f94e21ae33cb9e4e7a
 build_test.test.--release builds and runs, and --release --source-maps still exits 2 on the source-map line #0 aec9dd418b685babb0a3050bd6ea12566d4a2b976cf41135c209127995f8cec3
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 cd45bc3a81ba420eceb47eabce1911c7fb514ba78a1b4147c008637d71dd1b35
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 4f526976b38c9a182f32c1262be93095f204a7479b40d3ef3922a46d873844fd
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 e5d4e7c6594698c12952a07930aad3d9faf591aa387a352bba963b43a3f388aa
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 bebb219a5bcc4846c0dca1df1932f9cfa5c7cf5253184239565c92ccddc3a868
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 aec9dd418b685babb0a3050bd6ea12566d4a2b976cf41135c209127995f8cec3
-build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 611e8197317e6153b5f51bda2bd67c32c14190e23921c24c1663aadbf7375cb0
+build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 844493b7afbdcfeca4c580e033998903531e32262da80f13abc4909f4859e271
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 579eb30ea66e6153cf0b7cd5fb89ef217688300466fdc7a92457d7c27e73b4f2
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 0c6a7c59b1e04682c6284b1d774098ec92251abe0de11799000c1646f8ecabe2
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 e31baadeb61348f18a6a3edbae0ccde85f9e75fd43bc146907e6f29eeb08d078
@@ -102,7 +102,7 @@ cache_test.test.an imported type of 4 097 parameters compares in the wide form f
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 704065f7c35f9c5fb1f619ff332e5fcd844c2348397c1f734a68702fb6f67bba
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 a26f08c42aed68e052758d54766ce55adfa3f4fd06920292e6aeb6b7810952a3
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 8e61ac32b215076384879687fd52ffbe59be7d97d43b12d8cdd1b57176976be9
-external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 91ba31ce6748fd6f116efcad6bec81253eb7589b0adf1a943e0a3a56205457e3
+external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 4725a5a602dc941de3d6722b5071e13060e3faacafdce312dd8cb22bf8a024de
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 075d581f643659b6af62ecf49bd4abd712bb55ef834ae9a8bb76677d498b399e
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 de9f6f41619fd11342e4ee160ac1f81abf1a98e248166b16e2cdd411cca485e0

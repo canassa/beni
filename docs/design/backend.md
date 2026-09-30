@@ -4639,6 +4639,55 @@ app's bytes did not move. Fixtures: `emit/release/core/InlineOnce` (a loop, an e
 call, and the four that are not taken in), `emit/release/split/EmptyPage`, `run/InlineOnceOrder`
 (red before the argument rule above: an argument whose parameter nothing read lost its effect).
 
+**Once the whole program is in view** (*added 2026-10-02*; the empty page's study, ledger step
+18, which priced every runtime function called once at 112 brotli bytes). The rule above runs in
+`Lower`, one module at a time, before whole-program specialisation: it cannot take in a `pub`
+function, which another module or the markup runtime might call, nor a function whose other calls
+specialisation cut, nor a call from another module. So **after the facts** (*Whole-program
+specialisation*, below; `Spec.inlineOnce`) the same rule runs again over the program's `JsIr`: a
+top-level `const f = (…) => …` whose whole-program name the program mentions exactly once, as the
+callee of a call with as many arguments as it has parameters, that no file the pass cannot see
+names (`Input.escaping`), is written at that call, and not written at all (the pass's reachability
+re-walk drops the declaration). Its locals take new names in the caller, so none meets the
+caller's.
+
+- **Arguments are atoms**, R47-3's rule: a literal, or a name nothing assigns. A parameter is its
+  argument wherever the body reads it — a literal longer than 5 bytes only where it is read once —
+  and one the body assigns is a `let` bound to it first. An argument whose parameter nothing reads
+  is not evaluated, which an atom cannot notice. **One more argument moves**: one that makes a value
+  and does nothing else (an object, array or function literal of atoms — `inert`), whose parameter
+  the body reads once, outside any loop and any function in it, and never assigns — it is made
+  where it is read, once, as it was made once before: `Browser.program { … }` is the array it
+  returns.
+- **Where the call stands** decides what the body may be. In any expression, a body that is one
+  `return e` is `e`. A `return f(…)` is the body, whose `return`s return for the caller. A
+  `const x = f(…)` or `let x = f(…)` is the body's statements, then `x` bound to what its one
+  `return`, its last statement, gives — **at a module's top level too**, which is where a function
+  that returns a closure is called once: `const k = template(…)` becomes the cell `let a = null`
+  beside `const k = () => …`, the cell a top-level binding of the caller. A call that is a
+  statement is the body when it has no `return` but a last one, whose value is kept as a statement
+  when it may do something; and, as the function's last statement, a body whose `return`s say
+  nothing. Anything else keeps the call.
+- **Another module's function** is taken in only when its body names nothing but its own locals,
+  properties, and whole-program names a live statement of the caller's module already names — so
+  the caller's module needs no import it lacks, in the one scope-hoisted file and in the multi-file
+  layout alike.
+- **Every table lowering handed the optimiser follows the copy**: a binding kept for its effect, a
+  discarded statement, an arrow whose result nothing reads, a `let` another declaration assigns —
+  each copy is listed where its original was.
+
+Candidates are tried innermost first — one called from inside another candidate before that one is
+written anywhere — so a loop reaches the `return` it can stand after before its caller becomes an
+expression. And once the pass is done, a binding lowering kept for what its initialiser might do
+is kept no more when the facts folded that initialiser to something that does nothing (a mount
+record's `n` read as `null`), so the optimiser drops it unread. Measured (release, brotli, the whole
+bundle): the empty `browser` page 657 → **615**, `Tea.sandbox` 662 → **615**, `Tea.element`
+1 527 → **1 501**, with effects 5 718 → **5 651**, the `bench/ui` app 5 906 → **5 868**. Fixtures:
+`emit/release/app/InlineAfter` (user code: a function called once, twice before
+specialisation cut a caller; a record-building helper taken into a `let`), `emit/release/split/
+EmptyPage` (`slot`, `parentOf`, `drop` and `template`), `run/InlineAfterOrder` (argument and body
+order, a closure's cell, a `let` the body assigns, in both builds).
+
 ### Whole-program specialisation
 
 *Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; what is built, and where
