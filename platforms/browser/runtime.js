@@ -342,7 +342,7 @@ let stamps = 0;
 const trimmed = (s, items, keyOf, row, same, was, now) => {
   const old = s.u;
   const m = old.length;
-  // A list that was empty or is: the full pass mounts it in one fragment
+  // A list that was empty or is: the full pass mounts it in one walk
   // or empties the parent at once.
   if (m === 0 || items.$ !== 1) return false;
   const stamp = ++stamps;
@@ -423,6 +423,7 @@ const trimmed = (s, items, keyOf, row, same, was, now) => {
   // with the stamp's negation), a key found twice handing over. A row
   // mounted here that the full pass is handed is its key's first row.
   const byKey = s.x;
+  let kept = 0;
   for (let b = bStart; b < bEnd; b++) {
     const key = keyAt(b);
     const h = byKey.get(key);
@@ -435,6 +436,7 @@ const trimmed = (s, items, keyOf, row, same, was, now) => {
     } else if (h.kv === stamp || h.kv === -stamp) return false;
     else {
       h.kv = stamp;
+      kept++;
       next[b] = h;
     }
   }
@@ -456,6 +458,19 @@ const trimmed = (s, items, keyOf, row, same, was, now) => {
     i.y = b;
   }
   for (let a = aStart; a < aEnd; a++) if (old[a].kv !== stamp) byKey.delete(old[a].k);
+  // No row kept, and the rows all the parent holds: a replacement. The
+  // parent is emptied at once, as a clear is, rather than a thousand rows
+  // removed one by one — which is what Solid's `reconcileArrays` does —
+  // and the new rows go in after.
+  if (kept === 0 && !crossed && p === 0 && aOuter === m && bOuter === n) {
+    const parent = parentOf(s);
+    if (parent.firstChild === first(old[0]) && parent.lastChild === last(old[m - 1])) {
+      parent.textContent = "";
+      for (const i of next) put(parent, i, null);
+      s.u = next;
+      return true;
+    }
+  }
   if (crossed || aStart < aEnd || bStart < bEnd) {
     const after = bOuter < n ? first(next[bOuter]) : last(old[m - 1]).nextSibling;
     reconcile(parentOf(s), old, next, p, aOuter, bOuter, after);
@@ -575,9 +590,10 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
     if (moved) {
       const parent = parentOf(s);
       if (old.length === 0) {
-        const f = globalThis.document.createDocumentFragment();
-        for (const i of next) put(f, i, null);
-        parent.insertBefore(f, s.i !== null ? first(s.i) : s.m);
+        // Each row straight into the page, as Solid's `appendNodes` puts
+        // them: a fragment first moved every node twice.
+        const before = s.i !== null ? first(s.i) : s.m;
+        for (const i of next) put(parent, i, before);
       } else if (next.length === 0 && parent.firstChild === first(old[0]) && parent.lastChild === last(old[old.length - 1])) {
         // The rows are all the parent holds: empty it at once, as Solid
         // does, rather than remove a thousand rows one by one.

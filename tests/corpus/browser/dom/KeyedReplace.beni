@@ -1,0 +1,107 @@
+-- A keyed `For` whose rows are all replaced (backend.md §15.5, *a
+-- replacement empties the parent*): when no row is kept, no two rows
+-- changed places at the ends, and the rows are everything their parent
+-- holds, the parent is emptied at once and the new rows mounted into it;
+-- otherwise the reconciler runs, and nothing else in the parent is
+-- touched. `#only` holds nothing but its rows, `#framed` has a child
+-- before and after them. The inputs are not controlled, so typed text and
+-- the focus show which node is where.
+--
+-- The first and the last row changing places move with their nodes, and
+-- the row between them is not moved: it keeps the focus. A row that goes
+-- first while every other is replaced is not moved either, and keeps the
+-- focus. A replacement of every row mounts new rows in both lists, and
+-- `#framed` keeps its first and last child. A replacement that keeps the
+-- middle row keeps its node and its text.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = SwapEnds
+    | Promote
+    | ReplaceAll
+    | KeepMiddle
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, next : Int }
+
+
+fresh : Model, Int -> ( List Row, Int )
+fresh model count =
+    ( List.map (List.range 0 (count - 1)) (\k -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" }), model.next + count )
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        SwapEnds ->
+            case model.rows of
+                [ a, b, c ] ->
+                    { model | rows = [ c, b, a ] }
+
+                _ ->
+                    model
+
+        Promote ->
+            let
+                ( rows, next ) =
+                    fresh model 1
+            in
+            case model.rows of
+                _ :: second :: _ ->
+                    { rows = second :: rows, next = next }
+
+                _ ->
+                    model
+
+        ReplaceAll ->
+            let
+                ( rows, next ) =
+                    fresh model 3
+            in
+            { rows = rows, next = next }
+
+        KeepMiddle ->
+            let
+                ( rows, next ) =
+                    fresh model 2
+            in
+            case ( rows, List.drop model.rows 1 |> List.head ) of
+                ( [ a, b ], Just kept ) ->
+                    { rows = [ a, kept, b ], next = next }
+
+                _ ->
+                    model
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="ends" onClick={SwapEnds}>ends</button>
+        <button id="promote" onClick={Promote}>promote</button>
+        <button id="all" onClick={ReplaceAll}>all</button>
+        <button id="keep" onClick={KeepMiddle}>keep</button>
+        <ul id="only">
+            <For each={model.rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+        </ul>
+        <ol id="framed">
+            <li>first</li>
+            <For each={model.rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+            <li>last</li>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ], next = 10 }
+        , update = update
+        , view = view
+        }

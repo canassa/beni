@@ -3834,6 +3834,22 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   a replacement in the middle, a row at an end whose item is new, rows that show their position, a
   function row whose branch changes at an end and in an end pair, and a key copied into the middle
   from each end), whose golden was recorded on the runtime before this change.
+  *Amended 2026-09-30* (research 39 §13): **a replacement empties the parent.** When the ends match
+  nothing, no two rows changed places at them, and no key in what is left is found in the key map —
+  every row is new — and the old rows are everything their parent holds, the parent is emptied with
+  one `textContent = ""`, as the full pass empties it for a clear, and the new rows are appended.
+  Solid 1's `reconcileArrays` removes the thousand old rows of the benchmark's *replace* one at a
+  time and then inserts the new ones; beni did the same, and it was 8.8 ms of a 13 ms render.
+  Otherwise the reconciler runs as before, so a row that is kept keeps its node, and a parent with
+  other children keeps them. Pinned by `browser/dom/KeyedReplace` (an end swap and a replacement
+  that keep a row the reconciler does not move, which keeps the focus; a replacement of every row;
+  one that keeps the middle row; in a parent that holds only the list and one that holds more),
+  whose golden was recorded on the runtime before this change; a runtime that empties the parent
+  when a row is kept, when two rows changed places at the ends, or when the parent holds more than
+  the rows fails it. **A list mounted where none was** — the full pass's "one fragment" above — now
+  goes straight into the page, row by row before the slot's marker, as Solid 1's `appendNodes`
+  does: the fragment moved every node twice, and the benchmark's *create* spent 0.23 ms more of a
+  4.4 ms render on it (research 39 §13). What the page shows is the same.
 - **By position** (`forPosition`): slot *i* is patched with item *i*.
 - **By reference**: `forKeyed` with the item as its own key. Where the checker recorded the item type
   as primitive-`eq`, that is value keying and correct; otherwise it is Solid's default and `unkeyed_for`

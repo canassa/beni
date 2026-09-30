@@ -33,7 +33,9 @@ edit("    childHtml(s, program.view(model));\n  };", `    const v = program.view
 if (s.includes("    if (s.d && inPlace(s, items, keyOf, row, same)) {")) {
   edit("    if (s.d && inPlace(s, items, keyOf, row, same)) {", `    P.list = ${now};\n    const ip = s.d && inPlace(s, items, keyOf, row, same);\n    P.fast = ${now};\n    if (ip) {`);
 } else {
-  edit("    if (s.d && trimmed(s, items, keyOf, row, same)) {", `    P.list = ${now};\n    const ip = s.d && trimmed(s, items, keyOf, row, same);\n    P.fast = ${now};\n    if (ip) {`);
+  // Since the selector (research 39 §12) it also takes the two probes.
+  const call = s.includes("trimmed(s, items, keyOf, row, same, was, now)") ? "trimmed(s, items, keyOf, row, same, was, now)" : "trimmed(s, items, keyOf, row, same)";
+  edit(`    if (s.d && ${call}) {`, `    P.list = ${now};\n    const ip = s.d && ${call};\n    P.fast = ${now};\n    if (ip) {`);
   edit("  if (p === m && at.$ !== 1) return true;\n", `  P.prefix = ${now};\n  if (p === m && at.$ !== 1) return true;\n`);
   edit("  // What is left: its keys looked up,", `  P.ends = ${now};\n  // What is left: its keys looked up,`);
   edit("  for (let b = p; b < n; b++) {\n    const item = xs[b - p];", `  P.middle = ${now};\n  for (let b = p; b < n; b++) {\n    const item = xs[b - p];`);
