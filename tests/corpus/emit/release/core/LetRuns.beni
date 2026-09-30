@@ -1,0 +1,36 @@
+-- emit: adjacent `let`s join into one declaration under `--release`
+-- (`backend.md` §9, *Compact statements*), as adjacent `const`s do: the
+-- module's two cells are `let a=0,\nb=false;` and `count`'s two locals
+-- one `let`. A `let` never joins a `const`.
+import Js
+
+
+total : Js.Ref Int
+total =
+    Js.ref 0
+
+
+busy : Js.Ref Bool
+busy =
+    Js.ref False
+
+
+pub count : Js.Value -> Int
+count xs =
+    let
+        n =
+            Js.ref 0
+
+        last =
+            Js.ref (Js.get xs "first")
+
+        _ =
+            Js.each xs (\x -> let _ = Js.write n (Js.read n + 1) in Js.write last x)
+
+        _ =
+            Js.write total (Js.read total + Js.read n)
+
+        _ =
+            Js.write busy False
+    in
+    Js.read n

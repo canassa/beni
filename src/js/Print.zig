@@ -160,7 +160,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
             .import_stmt, .export_stmt => continue,
             else => {},
         };
-        if (p.compact and p.ir.tag(body[i]) == .const_decl) {
+        if (p.compact and (p.ir.tag(body[i]) == .const_decl or p.ir.tag(body[i]) == .let_decl)) {
             i = try p.topConstRun(body, i);
             continue;
         }
@@ -544,7 +544,7 @@ const Printer = struct {
             // is `language.md` §6's `let` bindings row unchanged — and no
             // `JsIr` node moves, because it is a printing decision. §8's loop
             // prologue is what reserved it.
-            if (p.compact and p.ir.tag(list[i]) == .const_decl) {
+            if (p.compact and (p.ir.tag(list[i]) == .const_decl or p.ir.tag(list[i]) == .let_decl)) {
                 i = try p.constRun(list, i, level);
                 continue;
             }
@@ -563,29 +563,41 @@ const Printer = struct {
     /// Each member is its own declaration for §9 item 2, so `enter` restarts
     /// the local alphabet per member exactly as it would if they were still
     /// separate statements.
+    ///
+    /// A run of top-level `let`s joins the same way, `let a=[],\nb=false;`
+    /// (`backend.md` §9, *Compact statements*): a `let` run evaluates left to
+    /// right as the separate statements did.
     fn topConstRun(p: *Printer, list: []const Index, from: usize) Allocator.Error!usize {
-        try p.push("const");
+        const tag = p.ir.tag(list[from]);
+        try p.push(if (tag == .let_decl) "let" else "const");
         var last = from;
         var i = from;
         var written: usize = 0;
         while (i < list.len) : (i += 1) {
             if (p.plan.isDropped(list[i])) continue;
-            if (p.ir.tag(list[i]) != .const_decl) break;
+            if (p.ir.tag(list[i]) != tag) break;
             if (written != 0) {
                 try p.push(",");
                 try p.push("\n");
             }
             if (p.rename) |m| try m.enter(list[i]);
-            const d = p.ir.data(list[i]);
-            try p.name(@enumFromInt(d.lhs), .binding);
-            try p.push("=");
-            try p.expression(@enumFromInt(d.rhs), 0, 1);
+            try p.declarator(list[i], 1);
             written += 1;
             last = i;
         }
         try p.push(";");
         try p.push("\n");
         return last;
+    }
+
+    /// `name=value`, or a `let`'s `name` alone when it has no value.
+    fn declarator(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        const d = p.ir.data(node);
+        try p.name(@enumFromInt(d.lhs), .binding);
+        const value: Node.OptionalIndex = @enumFromInt(d.rhs);
+        const v = value.unwrap() orelse return;
+        try p.push("=");
+        try p.expression(v, 0, level);
     }
 
     /// Print the run of `const_decl`s starting at `from` as one declaration,
@@ -595,20 +607,21 @@ const Printer = struct {
     /// not join at all (§9 item 5): §7's `let $t$n;` sits above an `if`/`else`
     /// chain and joining it with a later `const` would move a declaration past
     /// the statements between them.
+    ///
+    /// A run of `let`s joins likewise, `let a=1,b;` — adjacent, so nothing
+    /// moves past anything; a `let` never joins a `const`.
     fn constRun(p: *Printer, list: []const Index, from: usize, level: u32) Allocator.Error!usize {
+        const tag = p.ir.tag(list[from]);
         try p.indent(level);
-        try p.push("const");
+        try p.push(if (tag == .let_decl) "let" else "const");
         var last = from;
         var i = from;
         var written: usize = 0;
         while (i < list.len) : (i += 1) {
             if (p.plan.isDropped(list[i])) continue;
-            if (p.ir.tag(list[i]) != .const_decl) break;
+            if (p.ir.tag(list[i]) != tag) break;
             if (written != 0) try p.push(",");
-            const d = p.ir.data(list[i]);
-            try p.name(@enumFromInt(d.lhs), .binding);
-            try p.push("=");
-            try p.expression(@enumFromInt(d.rhs), 0, level);
+            try p.declarator(list[i], level);
             written += 1;
             last = i;
         }
