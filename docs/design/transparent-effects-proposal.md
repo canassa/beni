@@ -1571,3 +1571,228 @@ a dependency whose rung flips re-checks the importer that hands its value to a `
 - **The chain across modules** stops at the first import (decision 7a); a full chain needs the
   side artifact decision 7 declined.
 - **§3.2's `sync f = …`**, a user-written root, and **`flag_monomorphised`** (§4.3) are not built.
+
+---
+
+## 16. The runtime spike, as specified (2026-09-30)
+
+**Status: normative for the spike** — step 3 of [`plans/effects-plan.md`](../../plans/effects-plan.md)
+§4 (its E3 and E4 together), decision 3(c): `spawn`, `join`, `scope` and `bracket`, plus the one
+primitive a platform needs to suspend at all. It is the first reader of §14's bits in the backend:
+a function that may suspend is emitted in the suspendable form of §7.1, and a fiber runtime this
+language owns runs it. Where this section and §6 or §7 disagree, this section is the later
+position. The measurements are [`research/44`](research/44-effects-runtime-spike.md).
+
+**What must not move.** A program in which nothing may suspend is emitted exactly as before: every
+`emit/` golden and every run hash is unchanged, because every decision below is keyed on a class
+that reached `suspends` or on a class that depends on one that may.
+
+### 16.1 The protocol: one sentinel, one pending suspension
+
+The target cannot capture a stack (§1), so a suspension **unwinds** it, the way Koka's JavaScript
+backend does (`14/koka` §4.2), and the fast path is a comparison:
+
+- A call that parks returns the runtime's one sentinel, **`$Y`**, and leaves one **pending
+  suspension** in the runtime: the registration to perform, and an empty list of continuations.
+- A suspendable function that receives `$Y` from a call hands the runtime **the rest of itself** —
+  one closure over its live values — to append to that list, and returns `$Y` in turn. The list
+  therefore grows innermost first as the stack unwinds, and nothing is allocated unless a call
+  really parked.
+- When `$Y` reaches the fiber's run loop, the loop moves the list onto the fiber's continuation
+  stack and performs the registration. A resumption pops one continuation at a time and calls it
+  with the value, **from the run loop**, so a resumed stack is one frame deep however deep the
+  suspended one was. A continuation that parks again appends to a fresh pending suspension, and the
+  loop splices that list on top of what remains.
+- A call whose callee answered with a value — the synchronous fast path of §7.2 — continues in
+  place. **`$Y` is never a beni value**: it exists only between a `return` and the comparison that
+  consumes it.
+
+The code generator writes two operations of core's `Task` module and nothing else:
+
+```elm
+pub foreign pure andThen : a, sync (a -> b) -> b   -- `$Y`? hand `k` over and return `$Y`; else `k a`
+pub foreign pure isWaiting : a -> Bool              -- `a` is `$Y`
+```
+
+Both are `pub` because the emitted code of every module imports them as it imports any value; both
+are harmless to call by hand — no beni value is `$Y`, so `andThen x k` is `k x`, and the `sync`
+mark keeps a hand-written `k` from suspending under a caller that believes `andThen` pure.
+
+### 16.2 What the checker hands the backend
+
+The checker already knows, per class, the rung it reaches and which classes of its declaration's
+scheme reach it (§14.4). The backend needs three answers, one per instruction, each **`no`, `yes`
+or `poly`** — `poly` meaning *yes exactly when the enclosing declaration's scheme classes may
+suspend*:
+
+- **A call** (`call`, `method_call`, `type_dispatch`): may its callee suspend?
+- **A function** (a lambda, a `let` definition, the declaration's own arrow): is it suspendable?
+- **A reference to a declaration with two bodies** (below), and a method call's target: which body?
+
+A class answers `yes` when its rung is `suspends`, `poly` when one of the enclosing declaration's
+**sensitive** scheme classes reaches it, and `no` otherwise.
+
+**Sensitive classes, and the second body.** A scheme class other than the declaration's own arrow is
+*sensitive* when it reaches, in the declaration's graph, a class the lowering reads — a call's
+callee, a function's own arrow, a sensitive class of a declaration it references — whose rung is
+below `suspends`. A declaration with a sensitive class is emitted **twice** when both are reached
+(§7.6's double translation): its **direct** body, under the name it has always had, where every
+`poly` answer is `no`; and its **suspendable** body, `<name>$s`, where every `poly` answer is `yes`.
+A use takes the `$s` body when the use's copy of some sensitive class reaches `suspends`, and
+follows its own enclosing body when a copy is `poly`. `List.map` with a pure callback therefore
+calls today's `List$map`, and with a suspending one `List$map$s`; a program that never suspends
+reaches no `$s` body, and elimination (`backend.md` §9) writes none.
+
+- **The interface.** A sensitive class is worth writing (§14.6) and its class word carries bit 9:
+  `rung | sync << 8 | sensitive << 9` — interface format 10 → 11, `entry_bytes` 8 → 9. The dumps do
+  not print it.
+- **The table.** The answers ride in the dispatch table as two columns — one row per instruction
+  with a `yes` or `poly` answer, or a call whose callee is `impure` whatever it is called with
+  (§16.5's `let _ =`), and one byte per declaration (its own arrow's answer, and whether it has
+  two bodies) — dispatch sidecar format 6 → 7.
+- **Evidence.** A declaration passed as `where` evidence takes the body the site's callee takes.
+  The `where` types of an imported use are among the classes its choice is read off, and a
+  declaration that calls its evidence has that evidence's class as a sensitive one, so a callee
+  whose evidence may suspend is itself on its `$s` body there. The suspendable body of a function
+  called with arguments that never suspend returns what the direct one does, so erring towards
+  it costs only speed.
+
+### 16.3 The lowering
+
+**A suspension point is a hoist, like `?`** (`backend.md` §4, *`?` is a test and a `return`*). A
+call that may suspend, anywhere but in tail position, is bound to a temporary in the statement list
+the expression is being lowered into, and everything that list later holds becomes the call's
+continuation. `orderedExprs` already pins every value written before a hoist, so evaluation order
+(`language.md` §6) needs nothing new: `f (log a) (fetch b)` evaluates `log a`, then `fetch b`,
+then the call.
+
+```js
+// fetchSum a b = fetch a + fetch b
+const Main$fetchSum = (a$1, b$2) =>
+  Task$andThen(Main$fetch(a$1), ($t$1) =>
+    Task$andThen(Main$fetch(b$2), ($t$2) => Basics$add($t$1, $t$2)));
+```
+
+- **A call in tail position** is returned as it is: `$Y` passes through, and the caller's own
+  continuation is the one that runs. A continuation that only returns its argument is not written.
+- **A non-tail `case` whose branches may suspend** gets a **join point** (§7.1's mandatory one): the
+  rest of the function after the `case` is one named closure, `const $j = ($t) => …`, declared
+  before the tree, and every leaf ends in `return $j(value)`. §7's labelled blocks are not join
+  points (plan §2.3): a `break` cannot leave a closure. A `&&` or `||` whose right operand may
+  suspend is the same `case`.
+- **A tail-call loop** (`backend.md` §8) keeps its loop. At a suspension point in the loop's body
+  the fast path continues **in place** — `const r = call; if (Task$isWaiting(r)) return
+  Task$andThen(r, k);` then the rest of the iteration, `continue` included — and the slow path's
+  continuation `k` is the same rest in which every `continue <label>` has become a call of the
+  function with its slots, `return F($in$0, …)`: plan §2.2's finding that the loop's state *is* the
+  parameter list. The continuation reads the iteration's `const`s, never a slot (§8's rule), since
+  a slot is only read by the prologue. A join inside a loop is written into each leaf, not
+  closed over, so the fast path never calls back into the function.
+- **Tail recursion modulo cons** (`backend.md` §8) is **not applied** in a suspendable body: its
+  destination is two locals a resumption would have to carry into a second entry of the loop, which
+  the spike does not build. A `::` step there is an ordinary call, and its recursion is a real
+  frame on the fast path, as it was before that rewrite.
+- **A `let` function** a continuation's statements declare is hoisted in front of the suspension
+  point when something before the point calls it, so `language.md` §7's "a function may be read
+  anywhere" still holds.
+- **Anything else that would hold a suspension point in a statement list that falls through** — a
+  markup hole whose lowering nests statements, today — is refused at build with `not_implemented`,
+  naming the call, rather than emitted wrongly.
+
+### 16.4 The runtime
+
+One file, core's `Task.js`, shared by every platform: nothing in it is Node's or a browser's
+except the macrotask it escapes to, which it picks by feature (`setImmediate` where it exists, a
+`MessageChannel` otherwise — never `setTimeout(0)`, which a browser clamps).
+
+- **A fiber** is a record of `stack` (its continuations), `outcome`, `observers`, `parent`,
+  `children`, `finalizers`, `masks`, `interrupted` and the `parked` registration: §6.4's list, with
+  the continuation stack §6.4 says comes back under this lowering.
+- **The scheduler** is a FIFO of ready fibers drained in a microtask; after **64** resumptions in
+  one drain it continues in a macrotask (§7.5, `research/16` §5.5). The budget is counted per
+  resumption, never per call, so code that does not suspend is never pre-empted.
+- **Interruption** (§6.2): an interrupt delivered to a parked fiber resumes it at once — the
+  registration's canceller is called, its later resume is dropped (one-shot), the continuations are
+  discarded, the fiber's children are interrupted and awaited, and its finalisers run, last first.
+  An interrupt delivered to a running or ready fiber, or to one inside `uninterruptible`, is latched
+  and delivered at its next suspension point (report 43 §9.2's rule 2), never at the end of a
+  region. Finalisers run uninterruptibly and may suspend (report 43 §9.4).
+- **`Exit a = Done a | Cancelled`**: defects are fatal (the owner's A1) — a `foreign` that throws
+  ends the program with the host's report and a non-zero exit — so a fiber ends in one of two ways.
+- **Outside a fiber** — a top-level value, `main` — nothing can park (§15.2 items 5 and 7), and the
+  runtime's impure operations (`spawn`, a finaliser's push) act on a root record.
+
+### 16.5 The API
+
+```elm
+-- core/Task.beni
+pub type Exit a = Done a | Cancelled
+pub foreign type Fiber a
+pub foreign type Scope
+pub foreign type Resume a
+
+pub foreign suspends callback : sync (Resume a -> (() -> ())) -> a  -- the suspension primitive
+pub foreign impure spawn : (() -> a) -> Fiber a                     -- a child of the current fiber
+pub foreign suspends join : Fiber a -> a                            -- a cancelled child cancels the joiner
+pub foreign suspends wait : Fiber a -> Exit a                       -- observes, never propagates (`await` is reserved in JavaScript)
+pub foreign suspends cancel : Fiber a -> ()                         -- interrupts, then waits for cleanup
+pub foreign suspends yieldNow : () -> ()
+pub scope : (Scope -> a) -> a                                       -- its children are cancelled when it ends
+pub foreign impure spawnIn : Scope, (() -> a) -> Fiber a
+pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a           -- the owner's A3: the release sees the outcome
+pub uninterruptible : (() -> a) -> a
+pub foreign impure start : (() -> a), sync (Exit a -> ()) -> ()     -- a root fiber, for a platform's entry
+```
+
+`scope`, `bracket` and `uninterruptible` are beni over first-order kernel operations (report 43
+§11 item 9), so their bits are inferred: `bracket` with a pure acquire, use and release is pure and
+single-bodied, and its release is pushed onto the fiber's finalisers — run with `Cancelled` if the
+fiber is interrupted, called with `Done a` on success, uninterruptible either way. A child spawned
+with `spawn` belongs to the current fiber and is interrupted when that fiber ends (Effect's
+`forkChild`); one spawned with `spawnIn` belongs to the scope, whose end interrupts it and waits.
+
+A platform writes a suspending primitive in beni over `callback` and an `impure` `foreign` that
+registers the host's callback and returns its canceller:
+
+```elm
+pub sleep : Int -> ()
+sleep ms =
+    Task.callback (\resume -> startTimer ms resume)
+
+foreign impure startTimer : Int, Resume () -> (() -> ())
+```
+
+The `node` platform gains a module of its own, **`Io`**, so that no file an existing program is
+built from changes by a byte: `Io.run : (() -> Program) -> Program`, whose evaluation — `main`'s —
+starts a root fiber with `Task.start` (impure, so permitted where suspending is not, §15.2 item 5)
+and returns the empty program, the fiber writing its own `Program`'s output and exit code when it
+ends, 130 when it is cancelled; `Io.sleep : Int -> ()`; and a promise-backed
+`Io.readFile : String -> Result String String`, cancelled through an `AbortSignal`. The `browser`
+platform gains nothing yet: a browser program is The Elm Architecture's, whose effects are
+commands, and the command type is the browser decisions' (W8–W10), not this spike's. The runtime
+itself is platform-free and is exercised in a browser by the measurements (research 44).
+
+**`let _ = e` is kept.** `backend.md` §9 item 1 drops a binding nothing reads, initialiser and
+all; `let _ = Task.spawn work` is written for the spawn. A `let` whose pattern binds nothing (`_`,
+`()`) over a call whose callee is `impure` or worse is kept by the release optimiser (the
+`impure` answer of §16.2's table, which is the owner's A5 applied where it is load-bearing). A
+*named* binding nothing reads is still dropped, as `run/ReleaseDeadDebug` pins.
+
+### 16.6 Fixtures
+
+`run/` programs, red first: sequencing through a suspension (`Debug.log` order across the fast and
+the slow path); spawn/join results; a scope ending with children still running; `bracket`'s release
+on success, on a cancelled use and when its fiber is cancelled from outside, with its outcome; a
+cancelled child joined; a deep non-tail recursion that suspends at every level; a 1 000 000-step
+loop through a suspending callback on the fast path; `List.map` with a pure and with a suspending
+callback in one program; a join point; a continuation that closes over a loop's iteration. `emit/`
+goldens of the lowered shapes: a sequence, a join, a loop and a twin body.
+
+### 16.7 What the spike does not do
+
+- **The other eleven primitives of §6.5** (decision 3: they come with the adoption).
+- **The browser-side measurement of §7.5's constant** beyond one fan-out and one timer-latency run.
+- **Source maps and logical stack traces** (§7.4): each continuation is a named arrow at its call's
+  position, which is the property §7.4 asks the lowering not to foreclose, and no map is written.
+- **A per-site choice of body for evidence**, and mutual recursion's stack on the fast path
+  (`backend.md` §14 question 5).
