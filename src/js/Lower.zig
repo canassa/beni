@@ -6794,7 +6794,7 @@ const Lowerer = struct {
         };
         const list_at: ?usize = switch (which) {
             .call => 2,
-            .apply => 1,
+            .apply, .construct => 1,
             .array => 0,
             else => null,
         };
@@ -6854,6 +6854,11 @@ const Lowerer = struct {
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
+            W.construct => blk: {
+                const range = try l.b.addRange(rest);
+                const record = try l.b.addRecord(range);
+                break :blk l.add(.new_call, p, v[0].int(), @intFromEnum(record));
+            },
             W.at => l.add(.index_get, p, v[0].int(), v[1].int()),
             // A `Js.Ref` that escapes is a cell, `{ v }` (§4).
             W.ref => l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "v"), v[0], p)}, p),
@@ -8048,6 +8053,9 @@ const Lowerer = struct {
         /// offset (§8, *Scalar views*), whose root node is that offset;
         /// empty when no root is one.
         scalar: []const ?usize = &.{},
+        /// A nested `case` may be one arm of a conditional chain
+        /// (`condChainPossible`): `--release`, in a value position.
+        nested_conds: bool = false,
     };
 
     /// A `case` in expression position: §7's last three rows.
@@ -8065,6 +8073,7 @@ const Lowerer = struct {
         // The conditional-expression shape: no `switch`, no shared leaf,
         // nothing bound, every leaf one expression — `a ? b : c` and nothing
         // more, exactly as today.
+        c.nested_conds = l.in.unit_results;
         if (try l.condChainPossible(&c)) {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) return l.condChain(&c, c.tree.root);
@@ -8797,7 +8806,13 @@ const Lowerer = struct {
             }
             const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
             switch (l.bir.instTag(body)) {
-                .let, .case => return false,
+                // Under `--release`, a nested `case` whose value is wanted
+                // may be a conditional itself (`backend.md` §9, *Compact
+                // statements*): `c ? a : d ? b : e` for an `else if` chain.
+                // `readyIsClean` says whether it came out as one; when it
+                // did not, its statements are this arm's, as for any arm.
+                .case => if (!c.nested_conds) return false,
+                .let => return false,
                 // A call written in place is statements of its own, in the
                 // leaf's position (§9, *A function called once is written
                 // where it is called*).

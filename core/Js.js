@@ -25,6 +25,7 @@ export const set = (o, name, v) => {
 };
 export const call = (o, name, xs) => o[name](...args(xs));
 export const apply = (f, xs) => f(...args(xs));
+export const construct = (c, xs) => new c(...args(xs));
 export const array = (xs) => args(xs);
 export const at = (o, k) => o[k];
 const throw_ = (v) => {

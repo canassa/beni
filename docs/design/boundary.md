@@ -376,6 +376,10 @@ name and a write an assignment — the shape hand-written JavaScript uses for th
 means, and why a closure is not an escape, is `backend.md` §4's *A `Js.Ref` that does not escape is
 a `let`*; the program cannot tell the two shapes apart.
 
+**`construct : Value, List Value -> Value`** (impure, 2026-10-02) is `new c(a, b)`, its arguments a
+list literal as `apply`'s are: what a constructor that must be called with `new` needs (`Map`,
+`URL`), and the shape hand-written JavaScript gives an error, `throw new Error(m)`.
+
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
 function a platform receives through `Js.from` — an event handler, a render callback — returns

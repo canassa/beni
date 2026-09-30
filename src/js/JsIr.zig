@@ -199,6 +199,9 @@ pub const Node = struct {
         global_this,
         /// `f(a, b)`. `lhs` callee, `rhs` extra `SubRange` of arguments.
         call,
+        /// `new C(a, b)`, which only the `Js.construct` intrinsic writes.
+        /// Payload as `call`.
+        new_call,
         /// `obj.name`. `lhs` object, `rhs` a `NameIndex`.
         member,
         /// `obj[index]`. `lhs` object, `rhs` index expression.
@@ -615,7 +618,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)}),
         .index_get => try pushAll(gpa, stack, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
         .property => try pushAll(gpa, stack, &.{@enumFromInt(d.rhs)}),
-        .call => {
+        .call, .new_call => {
             try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Node.Index));
             try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)});
         },
@@ -820,7 +823,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
         .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
-        .call => {
+        .call, .new_call => {
             try ir.verifyChild(@enumFromInt(d.lhs), .expression);
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .expression);
         },
@@ -1233,7 +1236,7 @@ pub const Builder = struct {
                 },
                 .block_stmt => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), w.block, 0),
                 .template => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.member, 0),
-                .call => {
+                .call, .new_call => {
                     try Push.one(&stack, gpa, at, d.lhs, w.call, 0);
                     try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.call, 0);
                 },
@@ -1332,7 +1335,7 @@ pub const Builder = struct {
                 },
                 .block_stmt => try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange))),
                 .template, .object, .array => try stack.appendSlice(gpa, b.rangeWords(inlineRange(d))),
-                .call => {
+                .call, .new_call => {
                     out.call = true;
                     try stack.append(gpa, d.lhs);
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));

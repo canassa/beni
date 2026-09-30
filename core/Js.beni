@@ -79,6 +79,12 @@ pub foreign impure call : Value, String, List Value -> Value
 pub foreign impure apply : Value, List Value -> Value
 
 
+--| `new C(a, b)`: an object made by a constructor, the arguments written
+--| as a list literal. `Js.construct (Js.global "Error") [ Js.from m ]` is
+--| `new Error(m)`.
+pub foreign impure construct : Value, List Value -> Value
+
+
 --| `[a, b]`: a new JavaScript array, its elements written as a list
 --| literal.
 pub foreign impure array : List Value -> Value

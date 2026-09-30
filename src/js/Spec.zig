@@ -1446,6 +1446,22 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
     for (0..ir.nodes.len) |i| {
         const node: Index = @enumFromInt(@as(u32, @intCast(i)));
         const d = ir.data(node);
+        // `!(a === b)` is `a !== b`, and the other way round, anywhere.
+        if (ir.tag(node) == .unary and @as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not) {
+            const inner: Index = @enumFromInt(d.lhs);
+            if (ir.tag(inner) == .binary and refs[inner.int()] == 1) {
+                const flipped: ?JsIr.BinaryOp = switch (@as(JsIr.BinaryOp, @enumFromInt(ir.data(inner).rhs))) {
+                    .strict_eq => .strict_ne,
+                    .strict_ne => .strict_eq,
+                    else => null,
+                };
+                if (flipped) |op| {
+                    ir.nodes.items(.tag)[node.int()] = .binary;
+                    ir.nodes.items(.data)[node.int()] = .{ .lhs = ir.data(inner).lhs, .rhs = @intFromEnum(op) };
+                    continue;
+                }
+            }
+        }
         switch (ir.tag(node)) {
             .if_stmt, .cond => try tests.append(gpa, @enumFromInt(d.lhs)),
             .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not) try tests.append(gpa, @enumFromInt(d.lhs)),

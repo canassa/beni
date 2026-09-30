@@ -131,7 +131,9 @@ swap old i =
 -- `(html, flags)`: a cloner that parses `html` on its first call and clones
 -- the result after that. Flag 1: import rather than clone; 2: the markup is
 -- wrapped in its namespace's root element, which is taken off; 4: several
--- nodes, returned in a fragment.
+-- nodes, returned in a fragment. One function, as the hand-written
+-- runtime's is: the parse is in the cloner, on its first call, and the
+-- cell it fills is rewritten step by step.
 pub template : String, Int -> (() -> V)
 template html flags =
     let
@@ -142,7 +144,42 @@ template html flags =
         let
             _ =
                 if Js.isNull (Js.read node) then
-                    Js.write node (parse html flags)
+                    let
+                        document =
+                            Js.global "document"
+
+                        t =
+                            Js.call document "createElement" [ Js.from "template" ]
+
+                        _ =
+                            Js.set t "innerHTML" (Js.from html)
+
+                        _ =
+                            Js.write node (Js.get t "content")
+
+                        _ =
+                            if Js.bitAnd flags 2 /= 0 then
+                                Js.write node (Js.get (Js.read node) "firstChild")
+
+                            else
+                                ()
+                    in
+                    if Js.bitAnd flags 4 /= 0 then
+                        if Js.bitAnd flags 2 /= 0 then
+                            let
+                                f =
+                                    Js.call document "createDocumentFragment" []
+
+                                _ =
+                                    gather (Js.read node) f
+                            in
+                            Js.write node f
+
+                        else
+                            ()
+
+                    else
+                        Js.write node (Js.get (Js.read node) "firstChild")
 
                 else
                     ()
@@ -154,43 +191,11 @@ template html flags =
             Js.call (Js.read node) "cloneNode" [ Js.from True ]
 
 
-parse : String, Int -> V
-parse html flags =
-    let
-        document =
-            Js.global "document"
-
-        t =
-            Js.call document "createElement" [ Js.from "template" ]
-
-        _ =
-            Js.set t "innerHTML" (Js.from html)
-
-        content =
-            Js.get t "content"
-
-        unwrapped =
-            if Js.bitAnd flags 2 /= 0 then
-                Js.get content "firstChild"
-
-            else
-                content
-    in
-    if Js.bitAnd flags 4 /= 0 then
-        if Js.bitAnd flags 2 /= 0 then
-            gather unwrapped (Js.call document "createDocumentFragment" [])
-
-        else
-            unwrapped
-
-    else
-        Js.get unwrapped "firstChild"
-
-
-gather : V, V -> V
+-- Move every child of `from` into `into`, in order.
+gather : V, V -> ()
 gather from into =
     if Js.isNull (Js.get from "firstChild") then
-        into
+        ()
 
     else
         let
@@ -325,7 +330,7 @@ flush () =
         _ =
             each renders 0
     in
-    if Js.isNull (Js.read phase) then
+    if Js.isNullish (Js.read phase) then
         ()
 
     else
@@ -380,28 +385,39 @@ startOne m =
             else
                 Js.call document "getElementById" [ Js.get m "n" ]
 
+        -- A mount node that is missing, or that holds a program already, is
+        -- a fault of the page, thrown before that program renders anything.
         _ =
-            if Js.isNull root then
-                refuse m root
+            if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
+                let
+                    id : String
+                    id =
+                        Js.to (Js.get m "n")
+                in
+                Js.throw
+                    (Js.construct
+                        (Js.global "Error")
+                        [ Js.from
+                            (if Js.isNull root then
+                                "no element has the id \"${id}\" to mount a program at"
 
-            else if Js.isUndefined (Js.get root "$$root") then
-                ()
+                             else if Js.isNull (Js.get m "n") then
+                                "the page's body already holds a program"
+
+                             else
+                                "the element \"${id}\" already holds a program"
+                            )
+                        ]
+                    )
 
             else
-                refuse m root
+                ()
     in
     if Js.isUndefined (Js.get m "h") then
         mount (Js.get m "a") root
 
     else
         mount (Js.apply (Js.get m "h") [ root, Js.from flush, Js.from (\f -> setPhase f) ]) root
-
-
--- A mount node that is missing, or that holds a program already, is a
--- fault of the page, thrown before that program renders anything.
-refuse : V, V -> ()
-refuse m root =
-    Js.throw (Js.apply (Js.global "Error") [ Js.from (refusal m root) ])
 
 
 setPhase : V -> V
@@ -411,23 +427,6 @@ setPhase f =
             Js.write phase f
     in
     Js.from (Js.read scheduled)
-
-
-refusal : V, V -> String
-refusal m root =
-    let
-        id : String
-        id =
-            Js.to (Js.get m "n")
-    in
-    if Js.isNull root then
-        "no element has the id \"${id}\" to mount a program at"
-
-    else if Js.isNull (Js.get m "n") then
-        "the page's body already holds a program"
-
-    else
-        "the element \"${id}\" already holds a program"
 
 
 -- Render `view init` after the children of `root`, and mark `root` with the

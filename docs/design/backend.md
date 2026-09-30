@@ -4817,9 +4817,38 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `if(c)f()` for `c?f():null`, and a concise body so shaped is a block, `()=>{if(g)j()}`, which is
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
-And under all of them: **a block's last statement has no `;`** (`Print.closeBlock`) — a `}` ends
-a statement as a `;` does. Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916
-for the rest.
+6. **A loop whose first statement leaves it is a `while`** (`Print.whileLoop`): an unlabelled
+   `for(;;){if(c)<exit>;…}`, `<exit>` a `break` or a `return`, is `while(!c){…}` with the `return`
+   written after it — or not at all where the loop ends a function and the `return` says nothing
+   its end does not. The rest of the loop may hold no `break` of its own, which in a `while` would
+   skip that `return`. Fixture: `emit/release/core/WhileLoops`, whose `gather` is research 47's
+   fragment loop, `while(a.firstChild!==null)b.appendChild(a.firstChild)`. The runtime port's
+   `template` is one function because `Rt.beni` now writes the parse in the cloner, as the
+   hand-written runtime does (its cell rewritten step by step), not because of a compiler rule.
+7. **`new`, and an `else if` chain as a value.** `Js.construct c [ … ]` is `new c(…)`
+   (`boundary.md` §4.2; JsIr's `new_call`), so an error is `throw new Error(…)`. Under `--release`
+   a `case` whose value is wanted may have a nested `case` for an arm and still be a conditional
+   (`Lower.condChainPossible`): `c?"a":d?"b":"c"`, not a temporary each arm assigns. Fixture:
+   `emit/release/core/ThrowError`.
+
+And under all of them:
+
+- **A block's last statement has no `;`** (`Print.closeBlock`) — a `}` ends a statement as a `;`
+  does.
+- **An `if` both of whose arms return a value is one `return c?a:b`**, nested for an `else if`
+  chain, and as a function's whole body a concise arrow, `(a)=>a<0?"minus":a===0?"zero":"plus"`
+  (`Print.returnsBoth`). *Measured*: the release corpus −370 brotli, the port's empty page −13, the
+  `bench/ui` app **+16** — from its only two such sites, `(a)=>{if(a.$==="Just")return a.a;return""}`
+  among them; brotli shares the long form with the hand-written runtime's `if(…)return`s. Kept for
+  the corpus and the port; the app is still below its size before this work.
+- **`x = x op e` is `x op= e`** for a name, an arithmetic or bitwise `op`: both read `x`, then
+  `e`, then write.
+- **`!(a === b)` is `a !== b`** (and the other way round) anywhere (`Spec.peephole`).
+
+Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916 for items 5 and 8; with the
+port's `Rt.beni` rewritten for items 5–8 (`isNullish` for the phase, the parse in the cloner, one
+guarded `throw new Error`), items 6 and 7 and the shapes above, **884**, against the hand-written
+runtime's 978.
 
 ## 10. Chunking
 

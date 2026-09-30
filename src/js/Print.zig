@@ -352,6 +352,9 @@ const Printer = struct {
     /// How many pieces the joiner held right after the last statement's
     /// `;` (`terminate`), or 0.
     semicolon: usize = 0,
+    /// The last statement of the function body being printed, its own and
+    /// not a nested function's (`whileLoop`).
+    fn_last: Node.OptionalIndex = .none,
     /// `Options.bare_globals` and `Options.bare_blocked`.
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
@@ -706,17 +709,28 @@ const Printer = struct {
                 try p.tok(" {\n", "{");
                 const saved = p.discarding;
                 p.discarding = std.mem.indexOfScalar(Index, p.unobserved, node) != null;
+                const saved_last = p.fn_last;
+                p.fn_last = p.lastLive(f.body());
                 if (p.discarding) try p.markTails(f.body(), .return_stmt, &p.tail_returns);
                 try p.statements(f.body(), level + 1);
                 p.discarding = saved;
+                p.fn_last = saved_last;
                 try p.indent(level);
                 try p.closeBlock();
                 try p.endLine(level);
             },
             .assign_stmt => {
                 try p.statementExpression(@enumFromInt(d.lhs), level);
-                try p.tok(" = ", "=");
-                try p.expression(@enumFromInt(d.rhs), 0, level);
+                // `x = x + e` is `x += e` under `--release`: for a name, the
+                // two read `x`, then `e`, then write, in that order.
+                if (p.compound(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) |b| {
+                    try p.push(@as(JsIr.BinaryOp, @enumFromInt(p.ir.data(p.resolve(@enumFromInt(d.rhs))).rhs)).text());
+                    try p.push("=");
+                    try p.expression(b.right, 0, level);
+                } else {
+                    try p.tok(" = ", "=");
+                    try p.expression(@enumFromInt(d.rhs), 0, level);
+                }
                 try p.terminate();
                 try p.endLine(level);
             },
@@ -796,6 +810,9 @@ const Printer = struct {
                 }
             },
             .while_true => {
+                if (p.compact and @as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none) {
+                    if (try p.whileLoop(node, level)) return;
+                }
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.name(@enumFromInt(d.lhs), .binding);
                     try p.tok(": ", ":");
@@ -885,6 +902,12 @@ const Printer = struct {
     fn compactIf(p: *Printer, test_expr: Index, branches: JsIr.If, then_live: bool, else_live: bool, single: bool, level: u32) Allocator.Error!void {
         const then_body = branches.thenBody();
         const else_body = branches.elseBody();
+        // Both arms return a value: one `return c?a:b` (`returnTree`).
+        if (p.returnsBoth(branches)) {
+            try p.push("return");
+            try p.returnValue(test_expr, branches, level);
+            return p.terminate();
+        }
         if (then_live and else_live and !single) {
             if (p.jumps(then_body) and p.spliceable(else_body)) {
                 try p.push("if(");
@@ -910,6 +933,157 @@ const Printer = struct {
             return p.armBody(else_body, false, level);
         }
         return p.armBody(if (then_live) then_body else else_body, false, level);
+    }
+
+    /// `for(;;){if(c)return x;…}` as `while(!c){…}return x` (`backend.md`
+    /// §9, *Compact statements*, item 6): an unlabelled loop whose first
+    /// statement is an `if` that leaves it — a `break`, or a `return` then
+    /// written after the loop, or not at all where it ends the function and
+    /// returns nothing — and whose other statements hold no `break` of
+    /// their own, which in a `while` would skip that `return`. False,
+    /// printing nothing, for any other loop.
+    fn whileLoop(p: *Printer, node: Index, level: u32) Allocator.Error!bool {
+        const body = p.ir.subRange(@enumFromInt(p.ir.data(node).rhs));
+        const items = p.ir.extraSlice(body, Index);
+        var first: ?usize = null;
+        for (items, 0..) |s, i| if (!p.skipped(s)) {
+            first = i;
+            break;
+        };
+        const at = first orelse return false;
+        const guard = items[at];
+        if (p.ir.tag(guard) != .if_stmt) return false;
+        const branches = p.ir.extraData(@enumFromInt(p.ir.data(guard).rhs), JsIr.If);
+        const exit = p.onlyLive(branches.thenBody()) orelse return false;
+        switch (p.ir.tag(exit)) {
+            .break_stmt => if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(exit).lhs)) != .none) return false,
+            .return_stmt => if (p.discarding and p.isTailReturn(exit)) return false,
+            else => return false,
+        }
+        // The loop's other statements: the guard's `else` arm, which the
+        // lowering writes the rest of the iteration into, then what follows
+        // the guard.
+        const else_body = branches.elseBody();
+        const rest: JsIr.SubRange = .{ .start = @enumFromInt(@intFromEnum(body.start) + @as(u32, @intCast(at + 1))), .end = body.end };
+        for (p.ir.extraSlice(else_body, Index)) |s| if (p.breaksOut(s)) return false;
+        for (p.ir.extraSlice(rest, Index)) |s| if (p.breaksOut(s)) return false;
+        try p.markLoopTail(body);
+        try p.push("while(");
+        try p.negatedTest(@enumFromInt(p.ir.data(guard).lhs), level);
+        try p.push(")");
+        var live: usize = 0;
+        for (p.ir.extraSlice(else_body, Index)) |s| live += @intFromBool(!p.skipped(s));
+        for (p.ir.extraSlice(rest, Index)) |s| live += @intFromBool(!p.skipped(s));
+        if (live == 1 and !p.anyLive(rest)) {
+            try p.armBody(else_body, false, level);
+        } else if (live == 1) {
+            try p.armBody(rest, false, level);
+        } else {
+            try p.push("{");
+            try p.statements(else_body, level + 1);
+            try p.statements(rest, level + 1);
+            try p.closeBlock();
+        }
+        if (p.ir.tag(exit) == .return_stmt and !p.returnsAtEnd(node, exit)) try p.statement(exit, level);
+        return true;
+    }
+
+    /// The binary of `x = x op e`, when it may be written `x op= e`: under
+    /// `--release`, a name assigned its own value combined by an arithmetic
+    /// or bitwise operator.
+    fn compound(p: *Printer, target: Index, value: Index) ?JsIr.Binary {
+        if (!p.compact) return null;
+        const t = p.resolve(target);
+        const v = p.resolve(value);
+        if (p.ir.tag(t) != .ident or p.ir.tag(v) != .binary) return null;
+        switch (@as(JsIr.BinaryOp, @enumFromInt(p.ir.data(v).rhs))) {
+            .add, .sub, .mul, .div, .rem, .pow, .bit_or, .bit_and, .bit_xor, .shl, .sar, .shr => {},
+            else => return null,
+        }
+        const b = p.ir.extraData(@enumFromInt(p.ir.data(v).lhs), JsIr.Binary);
+        const left = p.resolve(b.left);
+        if (p.ir.tag(left) != .ident or p.ir.data(left).lhs != p.ir.data(t).lhs) return null;
+        return b;
+    }
+
+    /// The last statement of `range` the plan keeps.
+    fn lastLive(p: *Printer, range: JsIr.SubRange) Node.OptionalIndex {
+        var last: Node.OptionalIndex = .none;
+        for (p.ir.extraSlice(range, Index)) |s| {
+            if (!p.plan.isDropped(s)) last = s.toOptional();
+        }
+        return last;
+    }
+
+    /// Whether `exit`, a `return` after loop `node`, says nothing the end of
+    /// the function does not: the loop is the function's last statement and
+    /// the `return` has no value, or one a function whose result nothing
+    /// reads does not write.
+    fn returnsAtEnd(p: *Printer, node: Index, exit: Index) bool {
+        if (p.fn_last != node.toOptional()) return false;
+        const value = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(exit).lhs)).unwrap() orelse return true;
+        return p.discarding and p.ir.tag(p.resolve(value)) == .null_lit;
+    }
+
+    /// Whether statement `node` holds a `break` with no label that is not
+    /// inside a loop or `switch` of its own: one that would leave the loop
+    /// around it.
+    fn breaksOut(p: *Printer, node: Index) bool {
+        const d = p.ir.data(node);
+        return switch (p.ir.tag(node)) {
+            .break_stmt => @as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none,
+            .if_stmt => blk: {
+                const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                for (p.ir.extraSlice(b.thenBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                for (p.ir.extraSlice(b.elseBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                break :blk false;
+            },
+            .block_stmt => blk: {
+                for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    /// Whether both arms of an `if` are a tree of value returns: each one
+    /// live statement, a `return` with a value (not one a function whose
+    /// result nothing reads writes as a statement) or another such `if`.
+    /// Such an `if` is `return c?a:b` — `if(c)return a;return b` less ten
+    /// bytes — and, as a whole function body, a concise arrow.
+    fn returnsBoth(p: *Printer, branches: JsIr.If) bool {
+        return p.returnTree(branches.thenBody(), 0) and p.returnTree(branches.elseBody(), 0);
+    }
+
+    fn returnTree(p: *Printer, range: JsIr.SubRange, depth: u32) bool {
+        if (!p.compact or depth > 32) return false;
+        const only = p.onlyLive(range) orelse return false;
+        const d = p.ir.data(only);
+        return switch (p.ir.tag(only)) {
+            .return_stmt => @as(Node.OptionalIndex, @enumFromInt(d.lhs)) != .none and !(p.discarding and p.isTailReturn(only)),
+            .if_stmt => blk: {
+                const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                break :blk p.returnTree(b.thenBody(), depth + 1) and p.returnTree(b.elseBody(), depth + 1);
+            },
+            else => false,
+        };
+    }
+
+    /// `test ? a : b` of a `returnsBoth` `if`, each side a returned value or
+    /// the conditional of a nested such `if`.
+    fn returnValue(p: *Printer, test_expr: Index, branches: JsIr.If, level: u32) Allocator.Error!void {
+        try p.expression(test_expr, prec_cond + 1, level);
+        try p.push("?");
+        try p.armValue(branches.thenBody(), level);
+        try p.push(":");
+        try p.armValue(branches.elseBody(), level);
+    }
+
+    fn armValue(p: *Printer, range: JsIr.SubRange, level: u32) Allocator.Error!void {
+        const only = p.onlyLive(range).?;
+        const d = p.ir.data(only);
+        if (p.ir.tag(only) == .return_stmt) return p.expression(@enumFromInt(d.lhs), prec_arrow, level);
+        return p.returnValue(@enumFromInt(d.lhs), p.ir.extraData(@enumFromInt(d.rhs), JsIr.If), level);
     }
 
     /// An `if` or `else` body: its one statement unbraced when that is
@@ -965,6 +1139,21 @@ const Printer = struct {
             }
         }
         return true;
+    }
+
+    /// Whether `new` may take `node` as its constructor unbracketed: a name,
+    /// or properties of one, which hold no call whose `(` would be `new`'s.
+    fn newSafe(p: *Printer, node: Index) bool {
+        var n = p.resolve(node);
+        var budget: u32 = 64;
+        while (budget > 0) : (budget -= 1) {
+            switch (p.ir.tag(n)) {
+                .ident, .global_this => return true,
+                .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
+                else => return false,
+            }
+        }
+        return false;
     }
 
     /// Whether `node` is `globalThis.x` for a host global written bare.
@@ -1236,7 +1425,7 @@ const Printer = struct {
             .unary => if (@as(JsIr.UnaryOp, @enumFromInt(p.ir.data(node).rhs)) == .yield) prec_arrow else prec_unary,
             .cond => prec_cond,
             .arrow => prec_arrow,
-            .call, .member, .index_get => prec_call,
+            .call, .new_call, .member, .index_get => prec_call,
             // A numeric literal is not a primary expression for the purpose
             // of what may follow it: `1.a` is a syntax error, because the dot
             // reads as a decimal point. Below `prec_call` is exactly the rule
@@ -1283,8 +1472,17 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
-            .call => {
-                try p.expression(@enumFromInt(d.lhs), prec_call, level);
+            .call, .new_call => {
+                if (p.ir.tag(node) == .new_call) {
+                    try p.tok("new ", "new");
+                    if (p.newSafe(@enumFromInt(d.lhs))) {
+                        try p.expression(@enumFromInt(d.lhs), prec_call, level);
+                    } else {
+                        try p.push("(");
+                        try p.expression(@enumFromInt(d.lhs), 0, level);
+                        try p.push(")");
+                    }
+                } else try p.expression(@enumFromInt(d.lhs), prec_call, level);
                 try p.push("(");
                 for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index), 0..) |arg, i| {
                     if (i != 0) try p.tok(", ", ",");
@@ -1422,6 +1620,16 @@ const Printer = struct {
                 try p.later(.rest(.call_rest, node));
                 return .expr(@enumFromInt(d.lhs), prec_call);
             },
+            .new_call => {
+                // `new ` callee, then `call_rest`; a callee that could hold
+                // a call is bracketed, or its `(` would be `new`'s.
+                try p.tok("new ", "new");
+                try p.later(.rest(.call_rest, node));
+                if (p.newSafe(@enumFromInt(d.lhs))) return .expr(@enumFromInt(d.lhs), prec_call);
+                try p.push("(");
+                try p.later(.piece(.close_paren));
+                return .expr(@enumFromInt(d.lhs), 0);
+            },
             .member => {
                 if (p.bareGlobal(node)) {
                     try p.name(@enumFromInt(d.rhs), .fixed);
@@ -1528,11 +1736,27 @@ const Printer = struct {
         const saved = p.discarding;
         defer p.discarding = saved;
         p.discarding = std.mem.indexOfScalar(Index, p.unobserved, node) != null;
+        const saved_last = p.fn_last;
+        defer p.fn_last = saved_last;
+        p.fn_last = p.lastLive(f.body());
         // The LIVE statements: §9 item 1 can leave a body that was a prologue
         // and a `return` holding only the `return`, and a body that prints
         // concisely should print concisely however it got that way. For a dev
         // build the plan is empty and this is the length of the slice.
         if (p.onlyLive(f.body())) |only| {
+            // A body that is one `if` returning on both sides is a concise
+            // conditional, `(a)=>c?x:y` (`returnsBoth`).
+            if (p.ir.tag(only) == .if_stmt) {
+                const d = p.ir.data(only);
+                const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                if (p.returnsBoth(branches)) {
+                    const braced = p.startsWithBrace(@enumFromInt(d.lhs), prec_cond + 1);
+                    if (braced) try p.push("(");
+                    try p.returnValue(@enumFromInt(d.lhs), branches, level);
+                    if (braced) try p.push(")");
+                    return;
+                }
+            }
             if (p.ir.tag(only) == .return_stmt) concise: {
                 if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(only).lhs)).unwrap()) |value| {
                     const resolved = p.resolve(value);

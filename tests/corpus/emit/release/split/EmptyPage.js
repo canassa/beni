@@ -1,33 +1,30 @@
-const a=(b)=>{if(b.u===null||b.u.length===0)return b.i===null?b.m:l(b.i);return l(b.u[0])},
+const a=(b)=>b.u===null||b.u.length===0?b.i===null?b.m:l(b.i):l(b.u[0]),
 l=(b)=>b.s===null?a(b.q):b.s,
-b=(a)=>{if(a.m===null)return a.u===null||a.u.length===0?w(a.i):w(a.u[a.u.length-1]);return a.m},
+b=(a)=>a.m===null?a.u===null||a.u.length===0?w(a.i):w(a.u[a.u.length-1]):a.m,
 w=(a)=>a.e===null?b(a.q):a.e,
 z=(a,b,c)=>{let d=l(b);const e=w(b);for(;;){const f=d.nextSibling;a.insertBefore(d,c);if(d===e)return;d=f}},
 A=(a)=>{let b=l(a);const c=w(a);for(;;){const d=b.nextSibling;b.remove();if(b===c)return;b=d}},
 c=(a,b)=>{const d=l(a);z(d.parentNode,b,d);A(a)},
-d=()=>{const a=document,b=a.createElement("template");b.innerHTML="<!>";const c=b.content;return c.firstChild},
-e=()=>{let a=null;return()=>{if(a===null)a=d();return a.cloneNode(true)}},
+d=()=>{let a=null;return()=>{if(a===null){const b=document,c=b.createElement("template");c.innerHTML="<!>";a=c.content;a=a.firstChild}return a.cloneNode(true)}},
 B=(a)=>({b:null,cx:null,d:false,i:null,m:null,p:a,u:null,x:null,y:null,z:null}),
 C=(a)=>a.p===null?a.m.parentNode:a.p,
 D=(a,b)=>{const c=a.t.m(a.v,b);c.t=a.t;c.b=a;return c},
 E=(a,b,d)=>{if(b===a.b)return a;if(b.t===a.t){b.t.p(a,b.v);a.b=b;return a}const e=D(b,d);c(a,e);return e},
 F=(a,b)=>{if(a.i===null)z(C(a),b,a.m);else c(a.i,b);a.i=b},
 G=(a,b)=>{if(a.i===null)F(a,D(b,a.cx));else a.i=E(a.i,b,a.cx)};
-let f=[];
-let g=false;
-let h=null;
-const i=(a,b)=>{for(;;){if(b===a.length)return;a[b]();b=b+1}},
-j=()=>{g=false;const a=f;f=[];i(a,0);if(h!==null)h()},
-k=(a,b)=>{const c=a.n;if(b===null)return`no element has the id "${c}" to mount a program at`;return a.n===null?"the page's body already holds a program":`the element "${c}" already holds a program`},
-m=(a,b)=>{throw Error(k(a,b))},
-n=(a,b)=>{const c=B(b);let d=a.init;let e=false;const h=()=>{e=false;G(c,a.view(d))};b.$$root=(i)=>{if(!e){e=true;f.push(h);if(!g){g=true;queueMicrotask(()=>{if(g)j()})}}d=a.update(i,d)};G(c,a.view(d))},
-o=(a)=>{const b=document,c=a.n===null?b.body:b.getElementById(a.n);if(c===null)m(a,c);else if(c.$$root!==undefined)m(a,c);a.h===undefined?n(a.a,c):n(a.h(c,j,(d)=>{h=d;return g}),c)},
-p=(a)=>{let b=0;for(;;){if(b===a.length)return;const c=a[b];o(c);b=b+1}};
-let q=b=>[{a:b,n:null}];
-const r=e(),
-s={m:(a,b)=>{const c=r();return{s:c,q:null,e:c}},p:(d,e)=>{}},
-t={t:s,v:null},
-u=(a)=>t,
-v=q({init:{},update:(a,b)=>b,view:u});
-p(v);
-export{j as flush};
+let e=[];
+let f=false;
+let g=null;
+const h=(a,b)=>{while(b!==a.length){a[b]();b+=1}},
+i=()=>{f=false;const a=e;e=[];h(a,0);g?.()},
+j=(a,b)=>{const c=B(b);let d=a.init;let g=false;const h=()=>{g=false;G(c,a.view(d))};b.$$root=(k)=>{if(!g){g=true;e.push(h);if(!f){f=true;queueMicrotask(()=>{if(f)i()})}}d=a.update(k,d)};G(c,a.view(d))},
+k=(a)=>{const b=document,c=a.n===null?b.body:b.getElementById(a.n);if(c===null||c.$$root!==undefined){const d=a.n;throw new Error(c===null?`no element has the id "${d}" to mount a program at`:a.n===null?"the page's body already holds a program":`the element "${d}" already holds a program`)}a.h===undefined?j(a.a,c):j(a.h(c,i,(e)=>{g=e;return f}),c)},
+m=(a)=>{let b=0;while(b!==a.length){const c=a[b];k(c);b+=1}};
+let o=b=>[{a:b,n:null}];
+const n=d(),
+p={m:(a,b)=>{const c=n();return{s:c,q:null,e:c}},p:(d,e)=>{}},
+q={t:p,v:null},
+r=(a)=>q,
+s=o({init:{},update:(a,b)=>b,view:r});
+m(s);
+export{i as flush};
