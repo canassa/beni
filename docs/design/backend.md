@@ -4939,3 +4939,39 @@ on `Browser.program`, except that its messages now pass through the same dispatc
 *As built, 2026-10-01*: `platforms/browser/runtime.js` (the section *The program and its render
 loop*), `Browser.js`. The pages are `tests/corpus/browser/tea/` (`AfterRenderFocus`,
 `ReentrantSend`, `FlushLatched` and the command and subscription fixtures `boundary.md` §9.8 names).
+
+*Amended 2026-10-02: a page that mounts no hosted program ships none of the hosted loop.* As first
+built, the dispatcher, the after-render queue, the waits and `flush`'s guards were the runtime's,
+named by `run` and the mount, which every page keeps — so the empty `browser` page grew from 1 219
+to 1 541 brotli (`bench/size.mjs`, `--release`) for machinery it never runs. Research 40 §8's rule
+2 now holds for the loop: **the runtime keeps only what every page needs**, and everything a hosted
+program adds lives in `Browser.js`, reached through the mount `Browser.hosted` makes and so
+eliminated with it. The bullets above stand as the behaviour; what moved is where each piece is:
+
+- **The runtime** has the render queue, one microtask flush, `run` and the mount. A plain mount's
+  `send` queues its render (and the flush) and then runs `update`, as every `send` now does. `flush`
+  renders what is queued and ends with the **after-render phase**, a binding that is null until a
+  hosted program mounts. A hosted mount's `h` is called at its mount — not before every mount — with
+  the mount node, `flush`, and one function that sets the phase and answers whether a flush is
+  queued; it returns the record `run` mounts.
+- **`Browser.js`** has the rest. The hosted record's `update` is the dispatcher (the inbox of sends
+  made during a dispatch, page-wide); its `view` settles and renders, the first at mount on
+  `settle(host, init(host))`; the phase resumes the waits and then runs the after-render work.
+  `flush`'s guard is two flags of this file — a dispatch runs, or a hosted program renders or the
+  phase runs — which cover every path by which a program's code can reach `Browser.flush`: only
+  hosted code can, and it runs in one of those three or in a fiber, which never runs inside a flush.
+- **A flush is queued through the mount node's `send`**, with a message no `update` sees: the
+  render it queues finds nothing applied since the last and shows what was shown, without calling
+  `settle` or `view` — so `host.after` and `onRendered` need no scheduler of their own, and a
+  render that follows a real message always settles and renders, as before.
+
+Measured (`bench/size.mjs`'s method, `--release`, brotli): the empty `browser` page 1 541 →
+**1 234**, the empty `Tea.sandbox` page 1 551 → **1 239**, the benchmark app 5 354 → **5 059**
+(1 219, 1 221 and 5 024 before the host, measured the same way). What the plain page still pays
+for the hosted one is the `h` call with its three arguments and the phase binding and its call,
+26 bytes, which no restructuring of the runtime alone removes: `run` must hand a hosted mount the
+loop, and which mounts are hosted is a fact of the `Program` value, read at run time. (The
+compiler knows it statically — whether `Browser.hosted` is reached — but no mechanism lets a build
+choose between two `run`s.) Without them the page would
+be 1 208; one `throw` in `run` and `!= null` in the listener's context walk bought the rest back.
+`build_test`'s *a release page ships the hosted program's loop only when it mounts one* holds it.

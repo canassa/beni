@@ -3266,6 +3266,66 @@ test "a release page ships the browser runtime's map only when it maps" {
     try testing.expect(std.mem.indexOf(u8, mapped_js, "up:") != null);
 }
 
+test "a release page ships the hosted program's loop only when it mounts one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The dispatcher, the after-render phase and `flush`'s guards are a
+    // hosted program's (`boundary.md` §9.8): a page that mounts only
+    // `Browser.program` must not ship them, so the runtime's always-kept
+    // loop may not name them (research 40 §8, rule 2). Each of them
+    // guards with `try`/`finally`, which nothing else an empty page keeps
+    // writes.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("plain/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : Int -> Html msg
+        \\view _ =
+        \\    <></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = 0, update = \msg model -> model, view = view }
+        \\
+    );
+    try w.write("hosted/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : Int -> Html msg
+        \\view _ =
+        \\    <></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.hosted { init = \host -> 0, update = \host msg model -> model, settle = \host model -> model, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=plain-out", "plain/Main.beni" }, .{ .raw_diagnostics = true });
+    const hosted = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=hosted-out", "hosted/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(plain);
+    try expectBuilt(hosted);
+    const plain_js = try w.read("plain-out/_main.mjs");
+    const hosted_js = try w.read("hosted-out/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_js, "finally") == null);
+    try testing.expect(std.mem.indexOf(u8, hosted_js, "finally") != null);
+}
+
 test "a development build copies hand-written JavaScript byte for byte" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

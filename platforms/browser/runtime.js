@@ -752,7 +752,9 @@ const fire = (node, event, key, flags) => {
   if (flags & 1) event.preventDefault();
   const x = node[`${key}X`];
   let msg = x === undefined ? node[key] : node[key](x(event));
-  for (let c = node.$$cx; c !== undefined && c !== null; c = c.up) msg = c.f(msg);
+  // `!= null`: a node outside every `Html.map` has no `$$cx`, and the
+  // outermost context's `up` is null.
+  for (let c = node.$$cx; c != null; c = c.up) msg = c.f(msg);
   let root = node.parentNode;
   while (root !== null && root.$$root === undefined) root = root.parentNode;
   if (root !== null) root.$$root(msg);
@@ -839,139 +841,74 @@ const mapKind = {
 export const map = (html, f) => ({ t: mapKind, v: [html, f] });
 
 // ---- The program and its render loop (backend.md §15.11) -----------------
+//
+// Only what every page needs is here: the render queue, one microtask
+// flush, the mount and its `send`. A hosted program's dispatcher, the
+// after-render phase, `flush`'s guards and the waits on the phase are
+// `Browser.js`'s, reached through the mount `Browser.hosted` makes, so a
+// page that mounts none ships none of them: nothing this file always
+// keeps names them (research 40 §8, rule 2).
 
 // Programs with a render queued, rendered by one microtask flush.
 let queued = [];
 let scheduled = false;
-// After-render work queued since the last flush, and the resumes of the
-// fibers waiting for its phase (`Browser.onRendered`), first queued first.
-let later = [];
-let waiters = [];
-// A flush or a message's dispatch is running: `flush` does nothing more.
-let flushing = false;
-let dispatching = false;
-// Messages sent while one was being dispatched, as program, message pairs.
-let inbox = [];
-
-const schedule = () => {
-  if (scheduled) return;
-  scheduled = true;
-  queueMicrotask(() => {
-    if (scheduled) flush();
-  });
-};
+// The after-render phase, once a hosted program has mounted: `Browser.js`
+// sets it, and every flush ends with it.
+let phase = null;
 
 // Render every program a message is waiting on, then run the after-render
-// work queued before this flush began, first queued first, each at once.
-// A message sent while this runs, or work queued, is the next flush's.
-// During a dispatch or another flush it does nothing: the flush already
-// queued renders what that dispatch did.
+// phase. A message sent while this runs queues the next flush.
 export const flush = () => {
-  if (flushing || dispatching) return;
-  flushing = true;
   scheduled = false;
-  try {
-    const renders = queued;
-    queued = [];
-    for (const render of renders) render();
-    const resumes = waiters;
-    const work = later;
-    waiters = [];
-    later = [];
-    for (const resume of resumes) resume(null);
-    for (const f of work) f();
-  } finally {
-    flushing = false;
-  }
-  if (queued.length !== 0 || later.length !== 0 || waiters.length !== 0) schedule();
-};
-
-// `Browser.onRendered`: at once when no render and no after-render work is
-// queued, otherwise at the start of the next flush's after-render phase.
-const rendered = (resume) => {
-  if (!scheduled && queued.length === 0 && later.length === 0) {
-    resume(null);
-    return null;
-  }
-  waiters.push(resume);
-  schedule();
-  return () => {
-    const i = waiters.indexOf(resume);
-    if (i >= 0) waiters.splice(i, 1);
-    return null;
-  };
-};
-
-const loop = { flush, rendered };
-
-// Apply one message to its program, and every message sent meanwhile after
-// it, in the order they were sent, each exactly once (boundary.md §9.8).
-const dispatch = (p, msg) => {
-  if (dispatching) {
-    inbox.push(p, msg);
-    return;
-  }
-  dispatching = true;
-  try {
-    p.deliver(msg);
-    for (let i = 0; i < inbox.length; i += 2) inbox[i].deliver(inbox[i + 1]);
-  } finally {
-    inbox = [];
-    dispatching = false;
-  }
+  const renders = queued;
+  queued = [];
+  for (const render of renders) render();
+  phase?.();
 };
 
 // `(program)`: start every program the value holds (`Browser.js`: an array
-// of `{ a, n, k, h }`), in order, so one may mount at an element an earlier
+// of `{ a, n, h }`), in order, so one may mount at an element an earlier
 // one rendered. A mount node that is missing, or that holds a program
 // already, is a fault of the page, thrown before that program renders
-// anything. Each mount's `h` is handed the render loop first.
+// anything.
 export const run = (program) => {
   const document = globalThis.document;
-  for (const m of program) m.h(loop);
   for (const m of program) {
     const root = m.n === null ? document.body : document.getElementById(m.n);
-    if (root === null) throw new Error(`no element has the id "${m.n}" to mount a program at`);
-    if (root.$$root !== undefined) {
-      throw new Error(`${m.n === null ? "the page's body" : `the element "${m.n}"`} already holds a program`);
-    }
-    mount(m.a, m.k === 1, root);
+    // (One line, so that compaction keeps no line break before `throw`.)
+    if (root === null || root.$$root !== undefined) throw new Error(root === null ? `no element has the id "${m.n}" to mount a program at` : `${m.n === null ? "the page's body" : `the element "${m.n}"`} already holds a program`);
+    // A hosted mount (`Browser.hosted`) is handed `flush` and a function
+    // that makes its argument the after-render phase and answers whether a
+    // flush is queued, and returns the record to mount.
+    mount(m.h ? m.h(root, flush, (f) => (phase = f, scheduled)) : m.a, root);
   }
 };
 
 // Render `view init` after the children of `root`, and mark `root` with
 // the program's `send`, which puts every message through `update`: the
 // model is rendered on the next flush, however many messages arrive
-// before it. The flush is queued before `update` runs, so work `update`
-// starts runs after it. A hosted program is handed its host, and `settle`
-// runs before each of its renders.
-const mount = (program, hosted, root) => {
+// before it. The render and its flush are queued before `update` runs, so
+// work `update` starts runs after that flush.
+const mount = (program, root) => {
   const s = slot(root, null, null);
-  let model = null;
+  let model = program.init;
   let waiting = false;
-  const host = {
-    send: (msg) => dispatch(p, msg),
-    after: (f) => {
-      later.push(f);
-      schedule();
-    },
-  };
   const render = () => {
     waiting = false;
-    if (hosted) model = program.settle(host, model);
     childHtml(s, program.view(model));
   };
-  const p = {
-    deliver: (msg) => {
-      if (!waiting) {
-        waiting = true;
-        queued.push(render);
-        schedule();
+  root.$$root = (msg) => {
+    if (!waiting) {
+      waiting = true;
+      queued.push(render);
+      if (!scheduled) {
+        scheduled = true;
+        queueMicrotask(() => {
+          if (scheduled) flush();
+        });
       }
-      model = hosted ? program.update(host, msg, model) : program.update(msg, model);
-    },
+    }
+    model = program.update(msg, model);
   };
-  root.$$root = host.send;
-  model = hosted ? program.settle(host, program.init(host)) : program.init;
   childHtml(s, program.view(model));
 };
