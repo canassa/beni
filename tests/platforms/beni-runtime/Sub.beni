@@ -1,0 +1,89 @@
+--! Subscriptions: the work a model needs running (`docs/design/boundary.md`
+--! §9.8). A program says, from its model, which subscriptions should be
+--! live; after each message the page compares that set with the one
+--! before, once per render, and starts what arrived and cancels what left.
+--! No program ever unsubscribes.
+--!
+--! A subscription is a **key** and a **body**: while the key is in the set,
+--! one fiber runs the body, and every value it sends becomes a message
+--! through the tagger of each current declaration of that key. The key is
+--! the resource's whole identity — `Time.every` keys by its interval — so
+--! two declarations of one key share one fiber, and a tagger that changes
+--! from one model to the next never restarts it.
+
+import Browser
+import Hosted exposing (Key, Tap)
+
+
+--| The subscriptions a model needs: `None`, or the declarations of every
+--| `listen` in it, in order. Only `listen` makes a `Listen` from nothing —
+--| `batch` and `map` rebuild one only from one — so a program that never
+--| calls it has no `Listen`, and the architecture's code for one is
+--| eliminated with it (`docs/design/backend.md` §9, *A `case` arm on a
+--| constructor nothing builds*). A program never needs either.
+pub type Sub msg
+    = None
+    | Listen (List ( Key, Tap msg ))
+
+
+--| None.
+pub none : Sub msg
+none =
+    None
+
+
+--| All of these.
+pub batch : List (Sub msg) -> Sub msg
+batch subs =
+    List.foldr subs None both
+
+
+both : Sub msg, Sub msg -> Sub msg
+both sub rest =
+    case sub of
+        None ->
+            rest
+
+        Listen list ->
+            case rest of
+                None ->
+                    Listen list
+
+                Listen more ->
+                    Listen (List.append list more)
+
+
+--| Every declaration, in order: its key and its tap. What the
+--| architecture that runs a program reads; a program never needs it.
+pub taps : Sub msg -> List ( Key, Tap msg )
+taps sub =
+    case sub of
+        None ->
+            []
+
+        Listen list ->
+            list
+
+
+--| The same subscriptions, each message passed through `tag`.
+pub map : Sub a, (a -> msg) -> Sub msg
+map sub tag =
+    case sub of
+        None ->
+            None
+
+        Listen list ->
+            Listen (List.map list (\( k, t ) -> ( k, Hosted.mapTap t tag )))
+
+
+--| While `key` is in the set, one fiber runs `body`, and each value it
+--| sends reaches `update` through `tag`. The key must name everything the
+--| body depends on, and what it sends: two declarations with one key are
+--| one resource, and the body that runs is the one that started it.
+--|
+--|     every interval tag =
+--|         Sub.listen (Every interval) (ticks interval _) tag
+pub listen : k, (Browser.Send a -> ()), (a -> msg) -> Sub msg
+    where k.compare : k, k -> Order
+listen k body tag =
+    Listen [ ( Hosted.key k, Hosted.tap body tag ) ]

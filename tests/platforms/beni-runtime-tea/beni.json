@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "beni-runtime-tea",
+  "platforms": ["../beni-runtime"],
+  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events"]
+}

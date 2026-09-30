@@ -1,0 +1,493 @@
+--! The slot and mount half of `platforms/browser/runtime.js`, written in
+--! beni over core's `Js` (research 47, a spike). Each declaration is the
+--! JavaScript function of the same name, statement for statement where beni
+--! allows it; `splice.mjs` compiles this module and writes the result into
+--! `../beni-runtime/runtime.js` in place of the hand-written half.
+--!
+--! Where beni has no counterpart the port says so: a module-level `let`
+--! is a property of `loop`, a closure's `let` a property of an object of
+--! its own, and a `for` loop a tail call.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- ---- Instances and their nodes ------------------------------------------
+
+
+pub first : V -> V
+first i =
+    if Js.isNull (Js.get i "s") then
+        head (Js.get i "q")
+
+    else
+        Js.get i "s"
+
+
+pub last : V -> V
+last i =
+    if Js.isNull (Js.get i "e") then
+        tail (Js.get i "q")
+
+    else
+        Js.get i "e"
+
+
+-- A slot's first and last node: what it holds, or its marker when it holds
+-- nothing.
+head : V -> V
+head s =
+    if Js.isNull (Js.get s "u") || Js.to (Js.get (Js.get s "u") "length") == 0 then
+        if Js.isNull (Js.get s "i") then
+            Js.get s "m"
+
+        else
+            first (Js.get s "i")
+
+    else
+        first (Js.at (Js.get s "u") 0)
+
+
+tail : V -> V
+tail s =
+    -- (Not `not`, which is a call of `Basics.not`.)
+    if Js.isNull (Js.get s "m") then
+        if Js.isNull (Js.get s "u") || Js.to (Js.get (Js.get s "u") "length") == 0 then
+            last (Js.get s "i")
+
+        else
+            last (Js.at (Js.get s "u") (Js.to (Js.get (Js.get s "u") "length") - 1))
+
+    else
+        Js.get s "m"
+
+
+-- Move an instance's nodes before `before` in `parent`, in order.
+pub put : V, V, V -> ()
+put parent i before =
+    putRun parent (first i) (last i) before
+
+
+putRun : V, V, V, V -> ()
+putRun parent n end before =
+    let
+        next =
+            Js.get n "nextSibling"
+
+        _ =
+            Js.call parent "insertBefore" [ n, before ]
+    in
+    if Js.same n end then
+        ()
+
+    else
+        putRun parent next end before
+
+
+-- Take an instance's nodes out of the page.
+pub drop : V -> ()
+drop i =
+    dropRun (first i) (last i)
+
+
+dropRun : V, V -> ()
+dropRun n end =
+    let
+        next =
+            Js.get n "nextSibling"
+
+        _ =
+            Js.call n "remove" []
+    in
+    if Js.same n end then
+        ()
+
+    else
+        dropRun next end
+
+
+-- Put `i` where `old` is, and take `old` out.
+pub swap : V, V -> ()
+swap old i =
+    let
+        f =
+            first old
+
+        _ =
+            put (Js.get f "parentNode") i f
+    in
+    drop old
+
+
+-- ---- Templates -----------------------------------------------------------
+
+
+-- `(html, flags)`: a cloner that parses `html` on its first call and clones
+-- the result after that. Flag 1: import rather than clone; 2: the markup is
+-- wrapped in its namespace's root element, which is taken off; 4: several
+-- nodes, returned in a fragment.
+pub template : String, Int -> (() -> V)
+template html flags =
+    let
+        cell =
+            Js.from { node = Js.null }
+    in
+    \() -> clone cell html flags
+
+
+clone : V, String, Int -> V
+clone cell html flags =
+    let
+        node =
+            if Js.isNull (Js.get cell "node") then
+                parse cell html flags
+
+            else
+                Js.get cell "node"
+    in
+    if Js.bitAnd flags 1 /= 0 then
+        Js.call (Js.global "document") "importNode" [ node, Js.from True ]
+
+    else
+        Js.call node "cloneNode" [ Js.from True ]
+
+
+parse : V, String, Int -> V
+parse cell html flags =
+    let
+        document =
+            Js.global "document"
+
+        t =
+            Js.call document "createElement" [ Js.from "template" ]
+
+        _ =
+            Js.set t "innerHTML" (Js.from html)
+
+        content =
+            Js.get t "content"
+
+        unwrapped =
+            if Js.bitAnd flags 2 /= 0 then
+                Js.get content "firstChild"
+
+            else
+                content
+
+        node =
+            if Js.bitAnd flags 4 /= 0 then
+                if Js.bitAnd flags 2 /= 0 then
+                    gather unwrapped (Js.call document "createDocumentFragment" [])
+
+                else
+                    unwrapped
+
+            else
+                Js.get unwrapped "firstChild"
+
+        _ =
+            Js.set cell "node" node
+    in
+    node
+
+
+gather : V, V -> V
+gather from into =
+    if Js.isNull (Js.get from "firstChild") then
+        into
+
+    else
+        let
+            _ =
+                Js.call into "appendChild" [ Js.get from "firstChild" ]
+        in
+        gather from into
+
+
+-- ---- Slots ---------------------------------------------------------------
+
+
+-- `(parent, marker, cx)`: a slot, and the mount context what it holds is
+-- mounted with.
+pub slot : V, V, V -> V
+slot parent marker cx =
+    Js.from { p = parent, m = marker, cx = cx, i = Js.null, u = Js.null, b = Js.null, x = Js.null, y = Js.null, z = Js.null, d = False }
+
+
+pub parentOf : V -> V
+parentOf s =
+    if Js.isNull (Js.get s "p") then
+        Js.get (Js.get s "m") "parentNode"
+
+    else
+        Js.get s "p"
+
+
+-- A block mounted on its own: an instance that remembers its kind and the
+-- block it shows.
+pub unit : V, V -> V
+unit b cx =
+    let
+        i =
+            Js.call (Js.get b "t") "m" [ Js.get b "v", cx ]
+
+        _ =
+            Js.set i "t" (Js.get b "t")
+
+        _ =
+            Js.set i "b" b
+    in
+    i
+
+
+-- `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
+-- instance in its place. The instance now shown.
+pub patch : V, V, V -> V
+patch i b cx =
+    if Js.same b (Js.get i "b") then
+        i
+
+    else if Js.same (Js.get b "t") (Js.get i "t") then
+        let
+            _ =
+                Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
+
+            _ =
+                Js.set i "b" b
+        in
+        i
+
+    else
+        let
+            n =
+                unit b cx
+
+            _ =
+                swap i n
+        in
+        n
+
+
+-- Put a new instance in the slot, in place of what it held.
+pub place : V, V -> ()
+place s i =
+    let
+        _ =
+            if Js.isNull (Js.get s "i") then
+                put (parentOf s) i (Js.get s "m")
+
+            else
+                swap (Js.get s "i") i
+    in
+    Js.set s "i" i
+
+
+-- `(slot, block)`: an `Html` hole.
+pub childHtml : V, V -> ()
+childHtml s b =
+    if Js.isNull (Js.get s "i") then
+        place s (unit b (Js.get s "cx"))
+
+    else
+        Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
+
+
+-- ---- The program and its render loop -------------------------------------
+
+
+-- The module's `let`s: the programs with a render queued, whether a flush
+-- is, and the after-render phase a hosted program sets.
+loop : V
+loop =
+    Js.from { queued = Js.array [], scheduled = False, phase = Js.null }
+
+
+-- Render every program a message is waiting on, then run the after-render
+-- phase.
+pub flush : () -> ()
+flush _ =
+    let
+        _ =
+            Js.set loop "scheduled" (Js.from False)
+
+        renders =
+            Js.get loop "queued"
+
+        _ =
+            Js.set loop "queued" (Js.array [])
+
+        _ =
+            each renders 0
+    in
+    if Js.isNull (Js.get loop "phase") then
+        ()
+
+    else
+        Js.to (Js.apply (Js.get loop "phase") [])
+
+
+each : V, Int -> ()
+each fs k =
+    if k == Js.to (Js.get fs "length") then
+        ()
+
+    else
+        let
+            _ =
+                Js.apply (Js.at fs k) []
+        in
+        each fs (k + 1)
+
+
+-- `(program)`: start every program the array holds, in order.
+pub run : V -> ()
+run program =
+    runFrom program 0
+
+
+runFrom : V, Int -> ()
+runFrom program k =
+    if k == Js.to (Js.get program "length") then
+        ()
+
+    else
+        let
+            m =
+                Js.at program k
+
+            _ =
+                startOne m
+        in
+        runFrom program (k + 1)
+
+
+startOne : V -> ()
+startOne m =
+    let
+        document =
+            Js.global "document"
+
+        root =
+            if Js.isNull (Js.get m "n") then
+                Js.get document "body"
+
+            else
+                Js.call document "getElementById" [ Js.get m "n" ]
+
+        _ =
+            if Js.isNull root then
+                refuse m root
+
+            else if Js.isUndefined (Js.get root "$$root") then
+                ()
+
+            else
+                refuse m root
+    in
+    if Js.isUndefined (Js.get m "h") then
+        mount (Js.get m "a") root
+
+    else
+        mount (Js.apply (Js.get m "h") [ root, Js.from flush, Js.from (\f -> setPhase f) ]) root
+
+
+-- A mount node that is missing, or that holds a program already, is a
+-- fault of the page, thrown before that program renders anything.
+refuse : V, V -> ()
+refuse m root =
+    Js.throw (Js.apply (Js.global "Error") [ Js.from (refusal m root) ])
+
+
+setPhase : V -> V
+setPhase f =
+    let
+        _ =
+            Js.set loop "phase" f
+    in
+    Js.get loop "scheduled"
+
+
+refusal : V, V -> String
+refusal m root =
+    let
+        id : String
+        id =
+            Js.to (Js.get m "n")
+    in
+    if Js.isNull root then
+        "no element has the id \"${id}\" to mount a program at"
+
+    else if Js.isNull (Js.get m "n") then
+        "the page's body already holds a program"
+
+    else
+        "the element \"${id}\" already holds a program"
+
+
+-- Render `view init` after the children of `root`, and mark `root` with the
+-- program's `send`.
+mount : V, V -> ()
+mount program root =
+    let
+        s =
+            slot root Js.null Js.null
+
+        state =
+            Js.from { model = Js.get program "init", waiting = False }
+
+        render =
+            \() ->
+                let
+                    _ =
+                        Js.set state "waiting" (Js.from False)
+                in
+                childHtml s (Js.call program "view" [ Js.get state "model" ])
+
+        _ =
+            Js.set root "$$root" (Js.from (\msg -> send program state render msg))
+    in
+    childHtml s (Js.call program "view" [ Js.get state "model" ])
+
+
+send : V, V, (() -> ()), V -> ()
+send program state render msg =
+    let
+        _ =
+            if Js.to (Js.get state "waiting") then
+                ()
+
+            else
+                queue state render
+    in
+    Js.set state "model" (Js.call program "update" [ msg, Js.get state "model" ])
+
+
+queue : V, (() -> ()) -> ()
+queue state render =
+    let
+        _ =
+            Js.set state "waiting" (Js.from True)
+
+        _ =
+            Js.call (Js.get loop "queued") "push" [ Js.from render ]
+    in
+    if Js.to (Js.get loop "scheduled") then
+        ()
+
+    else
+        let
+            _ =
+                Js.set loop "scheduled" (Js.from True)
+        in
+        Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from (\() -> microtask ()) ])
+
+
+microtask : () -> ()
+microtask _ =
+    if Js.to (Js.get loop "scheduled") then
+        flush ()
+
+    else
+        ()

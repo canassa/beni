@@ -1,0 +1,110 @@
+--! What an architecture layered on `browser` builds its commands and
+--! subscriptions from (`docs/design/boundary.md` §9.8): the pieces of a
+--! running program a `Browser.hosted` program is handed, and the typed
+--! pieces of work `Cmd` and `Sub` carry. `browser-tea` is written over
+--! this module in beni and does not re-export it; a program never needs it.
+--!
+--! Every function here that sends is `impure`, and so is every function a
+--! body is handed to send with, so a release build never drops a send.
+
+import Browser exposing (Host)
+
+
+--| A command's or subscription's key, whatever its type: two keys are the
+--| same when their values are, compared by value and never by how the
+--| value's `compare` was built. A key's type must have `compare`, which is
+--| what keeps functions out of keys.
+pub foreign type Key
+
+
+--| Any value as a key.
+pub foreign pure key : k -> Key
+    where k.compare : k, k -> Order
+
+
+foreign pure compareKeys : Key, Key -> Order
+
+
+--| The order of two keys: by value, the same for equal values whatever
+--| built them.
+pub compare : Key, Key -> Order
+compare a b =
+    compareKeys a b
+
+
+--| Whether two keys are the same value.
+pub eq : Key, Key -> Bool
+eq a b =
+    compareKeys a b == EQ
+
+
+--| Where a running body's messages go: its program, until it is closed.
+pub foreign type Outlet msg
+
+
+--| A new open outlet into the program.
+pub foreign impure outlet : Host msg -> Outlet msg
+
+
+--| Send a message through an outlet: its program's `update` runs, now or,
+--| during another message's `update`, right after it. Once the outlet is
+--| closed, nothing happens.
+pub foreign impure emit : Outlet msg, msg -> ()
+
+
+--| Close an outlet: from now on what is sent through it is dropped.
+pub foreign impure close : Outlet msg -> ()
+
+
+--| Work to run after a render, and the function its messages go through.
+pub foreign type Later msg
+
+
+--| After-render work: `body` runs synchronously in the after-render phase
+--| of the flush that follows, handed a function that sends to the program.
+pub foreign impure later : sync (Browser.Send msg -> ()) -> Later msg
+
+
+--| The same work, its messages passed through `tag`.
+pub foreign pure mapLater : Later a, sync (a -> b) -> Later b
+
+
+--| Queue after-render work into the program's next flush.
+pub foreign impure afterRender : Host msg, Later msg -> ()
+
+
+--| A subscription's body and the function each value it sends is turned
+--| into a message with.
+pub foreign type Tap msg
+
+
+--| The body a subscription runs in a fiber, and its tagger. The body is
+--| handed a function that sends values of type `a`.
+pub foreign impure tap : (Browser.Send a -> ()), sync (a -> msg) -> Tap msg
+
+
+--| The same subscription, its messages passed through `tag`.
+pub foreign pure mapTap : Tap a, sync (a -> b) -> Tap b
+
+
+--| A live subscription: the body of the tap it started with, and the
+--| taggers every value it sends goes through, which `retap` replaces.
+pub foreign type Relay msg
+
+
+--| A relay into the program for `tap`'s body, with `tap`'s tagger.
+pub foreign impure relay : Host msg, Tap msg -> Relay msg
+
+
+--| Run the relay's body, in the current fiber, until it returns.
+pub foreign suspends run : Relay msg -> ()
+
+
+--| Replace the relay's taggers with those of `taps`, in order: each value
+--| the body sends becomes one message per tap. Every tap must be one that
+--| sends what the relay's first did — which is what equal keys promise.
+pub foreign impure retap : Relay msg, List (Tap msg) -> ()
+
+
+--| Close a relay: what its body sends from now on is dropped.
+pub foreign impure closeRelay : Relay msg -> ()
