@@ -237,8 +237,11 @@ discharges its §10 item 0. A second constraint found there: the tail-call loop
 had to land **before** effects, because it is what lets `List.foldl`/`foldr`
 leave `foreign`, and until they did the proposal's own headline example
 miscompiled. **Both have now landed**, and the proposal has had its spec pass:
-[`plans/effects-plan.md`](plans/effects-plan.md) holds the slice plan and **eight
-decisions that are the owner's to take before any effects code is written**. One
+[`plans/effects-plan.md`](plans/effects-plan.md) holds the slice plan; the owner took its
+eight decisions on 2026-09-30 (§5). **Effects are being built**: the checker infers
+both bits for every function (`src/check/Effects.zig`, `checker-v2.md` §26), and every
+`foreign` declares its rung (`foreign pure|impure|suspends`); nothing is emitted from
+them yet. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
 `where` clause, so their siblings are JavaScript loops calling beni evidence —
 the shape `foldl` was.
