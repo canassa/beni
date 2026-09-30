@@ -1,0 +1,69 @@
+-- emit: the SHAPES of the suspendable form
+-- (docs/design/transparent-effects-proposal.md §16.3), which running cannot
+-- observe — a program is right whether a continuation is written once or
+-- copied into every branch, and whether a loop's fast path stays in the
+-- loop or recurses at a depth the fixture never reaches.
+--
+--   - `fetch`: a sequence. The call that may suspend is handed to
+--     `Task$andThen` with the rest of the function as one arrow.
+--   - `pick`: a join. The `if` is not in tail position and a branch may
+--     suspend, so what follows it is one `const $k = ($t) => …` written in
+--     front of the tree, and each leaf returns `$k(value)`.
+--   - `total`: a tail-call loop. The fast path stays in the loop — `const`,
+--     `Task$isWaiting`, then the rest of the iteration and `continue` — and
+--     the slow path's arrow is a copy whose `continue` became a call of the
+--     function with its slots.
+--   - `twice`: two bodies. `both` calls it with a function that suspends and
+--     with one that does not, so both are reached: `Main$twice`, exactly as
+--     before, and `Main$twice$s`.
+--   - `plain`: nothing suspends, and nothing about it changes.
+import Io
+import Task
+
+
+pub fetch : Int -> Int
+fetch n =
+    let
+        _ = Io.sleep n
+    in
+    n + 1
+
+
+pub pick : Int -> Int
+pick n =
+    let
+        m =
+            if n > 0 then
+                fetch n
+            else
+                0
+    in
+    m * 2
+
+
+pub total : List Int, Int -> Int
+total xs acc =
+    case xs of
+        [] ->
+            acc
+
+        x :: rest ->
+            total rest (acc + fetch x)
+
+
+twice : (Int -> Int), Int -> Int
+twice f x =
+    f (f x)
+
+
+pub both : Int -> Int
+both n =
+    twice fetch n + twice (\k -> k + 1) n
+
+
+pub plain : Int -> Int
+plain n =
+    if n <= 0 then
+        0
+    else
+        n + plain (n - 1)

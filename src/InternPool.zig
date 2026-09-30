@@ -273,6 +273,12 @@ pub const WellKnown = enum(u32) {
     // three namespace functions answer null for it, so `a` stays an
     // ordinary identifier in every program.
     a,
+    // Core's fiber module and the two of its values the code generator
+    // writes into a function that may suspend
+    // (`docs/design/transparent-effects-proposal.md` §16.1).
+    Task,
+    andThen,
+    isWaiting,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));

@@ -113,9 +113,17 @@ const scan_limit: usize = 64;
 /// per declaration, by a stamp rather than a `@memset`, so the reset is O(1)
 /// and the pass stays linear in the module.
 pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
+    return runKeeping(arena, ir, &.{});
+}
+
+/// `run`, keeping the bindings `keep` names whatever their uses: a
+/// `let _ = <an impure call>` is written for its effect
+/// (transparent-effects-proposal.md §16.3).
+pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index) Allocator.Error!Plan {
     if (ir.nodes.len == 0) return .none;
 
     var o: Opt = .{
+        .keep = keep,
         .ir = ir,
         .arena = arena,
         .uses = try arena.alloc(u32, ir.names.len),
@@ -139,6 +147,9 @@ pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
 
 const Opt = struct {
     ir: *const JsIr,
+    /// Bindings never dropped for want of a use (`runKeeping`). A handful per
+    /// module at most, so a linear look.
+    keep: []const Index = &.{},
     /// Where `stack` grows. The plan's own arena: nothing here is freed early.
     arena: Allocator,
     /// The explicit stack every expression walk shares: each walk
@@ -388,7 +399,7 @@ const Opt = struct {
             if (o.ir.name(n).module != .none) continue;
 
             if (o.readOf(idx, "uses") == 0) {
-                o.drop(stmt);
+                if (std.mem.indexOfScalar(Index, o.keep, stmt) == null) o.drop(stmt);
                 continue;
             }
             if (t != .const_decl) continue;

@@ -1,0 +1,48 @@
+-- run: one higher-order function with a pure callback and with one that
+-- suspends, in one program (docs/design/transparent-effects-proposal.md
+-- §7.6, §16.2; plan §6 row 7). `List.map` has two bodies: the direct one,
+-- exactly as before, which the pure call takes, and `List$map$s`, which the
+-- suspending call takes. `twice` is this program's own function with two
+-- bodies, called both ways, from inside a fiber and from `main`'s
+-- evaluation, where nothing may suspend. A use that took the direct body
+-- with a suspending callback would print a sentinel object instead of a
+-- number, or crash.
+import Io
+import Node exposing (Program)
+import Task
+
+
+twice : (Int -> Int), Int -> Int
+twice f x =
+    f (f x)
+
+
+slowInc : Int -> Int
+slowInc n =
+    let
+        _ = Task.yieldNow ()
+    in
+    n + 1
+
+
+atLoad : Int
+atLoad =
+    twice (\n -> n * 3) 2
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                pure = List.map [ 1, 2, 3 ] (\n -> n * 10)
+                waited = List.map [ 1, 2, 3 ] slowInc
+                both = twice slowInc 5 + twice (\n -> n + 100) 0
+            in
+            Node.printLines
+                [ String.join (List.map pure String.fromInt) ","
+                , String.join (List.map waited String.fromInt) ","
+                , String.fromInt both
+                , String.fromInt atLoad
+                ]
+        )

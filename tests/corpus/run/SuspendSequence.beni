@@ -1,0 +1,57 @@
+-- run: sequencing through a suspension point
+-- (docs/design/transparent-effects-proposal.md §16.1, §16.3). Every call
+-- that may suspend is a hoist, like `?`, so what was written before it is
+-- evaluated before it and what was written after it runs in its
+-- continuation — on the slow path, where `Io.sleep` parks the fiber and a
+-- timer resumes it, and on the fast path, where `Task.join` of a fiber that
+-- has already ended answers at once and nothing parks.
+--
+-- The `Debug.log` lines are the order the source writes: an argument
+-- before a suspending argument of the same call, a record field before a
+-- suspending field, a `let` before and after. A lowering that evaluated the
+-- suspending call first, or dropped what follows it, prints a different
+-- sequence or nothing at all.
+import Debug
+import Io
+import Node exposing (Program)
+import Task
+
+
+slow : String -> Int
+slow label =
+    let
+        _ = Debug.log label "before sleep"
+        _ = Io.sleep 1
+        _ = Debug.log label "after sleep"
+    in
+    String.length label
+
+
+fast : Task.Fiber Int, String -> Int
+fast done label =
+    let
+        _ = Debug.log label "before join"
+        n = Task.join done
+        _ = Debug.log label "after join"
+    in
+    n
+
+
+pair : Int, Int -> Int
+pair a b =
+    a * 100 + b
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                done = Task.spawn (\() -> 7)
+                _ = Io.sleep 1
+                a = pair (Debug.log 1 "first argument") (slow "second argument")
+                b = fast done "joined"
+                r = { x = Debug.log 2 "field x", y = slow "field y" }
+            in
+            Node.printLines [ String.fromInt a, String.fromInt b, String.fromInt (r.x + r.y) ]
+        )

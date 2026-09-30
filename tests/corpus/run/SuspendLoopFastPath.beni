@@ -1,0 +1,40 @@
+-- run: a tail-call loop whose body may suspend, over a million elements,
+-- on the fast path (docs/design/transparent-effects-proposal.md §7.2,
+-- §16.3). `List.foldl`'s callback here joins a fiber that has already
+-- ended, which answers at once: it may suspend, so `List.foldl`'s
+-- suspendable body runs (`List$foldl$s`), and it never does, so every
+-- iteration takes the fast path. The fast path continues the loop in
+-- place: were it to call back into the function instead, a million
+-- iterations would overflow the stack. The slow path is the other half of
+-- the fixture: the same fold with a callback that yields every thousandth
+-- element parks, and resumes the loop through the function's parameters.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                one = Task.spawn (\() -> 1)
+                _ = Io.sleep 1
+                xs = List.range 1 1000000
+                fast = List.foldl xs 0 (\x acc -> acc + x * Task.join one)
+                slow =
+                    List.foldl xs
+                        0
+                        (\x acc ->
+                            let
+                                _ =
+                                    if modBy x 1000 == 0 then
+                                        Task.yieldNow ()
+                                    else
+                                        ()
+                            in
+                            acc + x
+                        )
+            in
+            Node.printLines [ String.fromInt fast, String.fromInt slow ]
+        )

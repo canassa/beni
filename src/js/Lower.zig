@@ -59,6 +59,7 @@ const U32Set = @import("../u32_set.zig").U32Set;
 const stamped = @import("../stamped.zig");
 const Types = @import("../check/Types.zig");
 const MarkupTree = @import("MarkupTree.zig");
+const Suspend = @import("Suspend.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -96,6 +97,10 @@ pub const Result = struct {
     /// The program start data the markup lowering contributed, in the
     /// caller's scratch arena.
     start: []const StartPair = &.{},
+    /// Bindings the release optimiser keeps though nothing reads them
+    /// (`let _ = <an impure call>`, transparent-effects-proposal.md §16.3),
+    /// in the caller's scratch arena.
+    effect_keep: []const Node.Index = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -282,6 +287,7 @@ pub fn lower(
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
         .start = if (l.mk) |st| st.start.items else &.{},
+        .effect_keep = l.effect_keep.items,
     };
 }
 
@@ -375,6 +381,10 @@ const RecordRep = union(enum) {
 };
 
 const StmtList = std.ArrayList(Node.Index);
+
+/// Which body of a declaration is being lowered (transparent-effects-
+/// proposal.md §16.2).
+const Variant = enum { direct, twin };
 
 /// The longest list literal written as nested cells (`backend.md` §4): one
 /// object per element costs `nesting.object` apiece, and 32 of them are 160
@@ -555,6 +565,28 @@ const Lowerer = struct {
     apply_symbol: Symbol.Optional = .none,
     /// This module's markup, while a lowering compiles it.
     mk: ?*MarkupState = null,
+    /// Which body of the declaration being lowered this is
+    /// (transparent-effects-proposal.md §16.2): the direct one, where a
+    /// `poly` answer is no, or the suspendable one, `<name>$s`, where it is
+    /// yes.
+    variant: Variant = .direct,
+    /// The function being lowered is in the suspendable form (§16.3): a
+    /// call that may suspend is a marker for `Suspend` to split at.
+    suspendable: bool = false,
+    /// How many markers the function being lowered has written.
+    markers: u32 = 0,
+    /// The join a non-tail `case` of a suspendable function sends its leaves
+    /// to (§16.3), or `.none`: `tailReturn` writes `return $j(value)`.
+    join: JsIr.NameIndex = .none,
+    /// The two core values the suspendable form calls, imported the first
+    /// time a function needs them.
+    fiber_names: ?Suspend.Names = null,
+    /// Which body a dispatch target named now takes: the choice of the site
+    /// whose callee and evidence are being lowered (§16.2).
+    term_choice: Dispatch.Suspend = .no,
+    /// The bindings of `let _ = <an impure call>` the release optimiser must
+    /// not drop, though nothing reads them (§16.3).
+    effect_keep: std.ArrayList(Node.Index) = .empty,
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -817,6 +849,70 @@ const Lowerer = struct {
         return r.decl(l.in.module, index);
     }
 
+    /// Whether a declaration's suspendable body survived (§16.2).
+    fn liveTwin(l: *Lowerer, index: u32) bool {
+        // No survivor set (a unit test): no suspendable body is asked for.
+        const r = l.in.live orelse return false;
+        return r.twin(l.in.module, index);
+    }
+
+    /// `<base>$s`, the base of a declaration's suspendable body
+    /// (transparent-effects-proposal.md §16.2). `$` cannot appear in a beni
+    /// name, so no declaration can be called that.
+    fn twinBase(l: *Lowerer, base: Symbol) !Symbol {
+        const spelled = try std.fmt.allocPrint(l.scratch, "{s}$s", .{l.text(base)});
+        return l.interner.getOrPut(l.gpa, spelled);
+    }
+
+    /// The base the body being lowered is spelled with.
+    fn variantBase(l: *Lowerer, base: Symbol) !Symbol {
+        return switch (l.variant) {
+            .direct => base,
+            .twin => l.twinBase(base),
+        };
+    }
+
+    /// `<Module>$<base>$s`.
+    fn twinName(l: *Lowerer, module: Symbol, base: Symbol) !JsIr.NameIndex {
+        return l.name(.{ .module = module.toOptional(), .base = try l.twinBase(base), .tag = JsIr.Name.no_tag });
+    }
+
+    /// A reference to this module's declaration `decl`, taking the body the
+    /// answer `body` chooses (§16.2).
+    fn topNameChoosing(l: *Lowerer, decl: u32, body: Dispatch.Suspend) !JsIr.NameIndex {
+        if (!l.suspendsHere(body) or !l.in.dispatch.effectDecl(decl).twin) return l.topName(decl);
+        const base = l.bir.symbol(l.bir.decls[decl].name);
+        try l.requireLive(l.liveTwin(decl), l.text(base));
+        return l.twinName(l.module_name, base);
+    }
+
+    /// The same for another module's value: its suspendable body is exported
+    /// from its module under `<Module>$<base>$s`.
+    fn externalNameChoosing(l: *Lowerer, module: Graph.Index, value: u32, body: Dispatch.Suspend) !JsIr.NameIndex {
+        if (l.suspendsHere(body) and l.externalTwin(module, value)) {
+            const iface = &l.in.interfaces[module.int()];
+            const base = iface.symbols[@intFromEnum(iface.values[value].name)];
+            const twin = try l.twinBase(base);
+            if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.extTwin(module, value), l.text(base));
+            try l.needName(.{ .module = module, .base = twin.toOptional() });
+            return l.name(.{ .module = l.in.graph.moduleName(module).toOptional(), .base = twin, .tag = JsIr.Name.no_tag });
+        }
+        try l.need(module, value);
+        return l.externalName(module, value);
+    }
+
+    /// Whether another module's value has a suspendable body: its effect
+    /// block has a sensitive class (§16.2).
+    fn externalTwin(l: *Lowerer, module: Graph.Index, value: u32) bool {
+        if (module.int() >= l.in.interfaces.len) return false;
+        const iface = &l.in.interfaces[module.int()];
+        if (value >= iface.values.len) return false;
+        const scheme = iface.values[value].scheme;
+        if (scheme == .none) return false;
+        const block = iface.effectBlock(iface.scheme(scheme)) orelse return false;
+        return block.twin();
+    }
+
     fn liveDerived(l: *Lowerer, index: u32) bool {
         const r = l.in.live orelse return true;
         return r.derivedRow(l.in.module, index);
@@ -944,7 +1040,7 @@ const Lowerer = struct {
             // a §9 reachability edge, so the survivors come out in the same
             // relative order they have today and the temporal dead zone
             // stays closed. `requireLive` is the proof, not this loop.
-            if (!l.liveDecl(@intCast(root))) continue;
+            if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
@@ -1023,18 +1119,35 @@ const Lowerer = struct {
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
+        if (d.body == .none) return;
+        // Its direct body, then — a declaration with two (transparent-
+        // effects-proposal.md §16.2) — its suspendable one, each when it
+        // survived elimination.
+        if (l.liveDecl(index)) try l.declarationAs(out, index, .direct);
+        if (l.in.dispatch.effectDecl(index).twin and l.liveTwin(index)) try l.declarationAs(out, index, .twin);
+    }
+
+    fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {
+        const d = l.bir.decls[index];
         const body = d.body.unwrap() orelse return;
         l.locals = l.bir.declLocals(d);
         l.decl_index = index;
         l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
         @memset(l.local_names, .none);
+        l.variant = variant;
+        defer l.variant = .direct;
 
-        const n = try l.name(.{
-            .module = l.module_name.toOptional(),
-            .base = l.bir.symbol(d.name),
-            .tag = JsIr.Name.no_tag,
-        });
+        const n = switch (variant) {
+            .direct => try l.name(.{
+                .module = l.module_name.toOptional(),
+                .base = l.bir.symbol(d.name),
+                .tag = JsIr.Name.no_tag,
+            }),
+            .twin => try l.twinName(l.module_name, l.bir.symbol(d.name)),
+        };
         const p = l.pos(body);
+        // The declaration's own arrow: suspendable, or not (§16.3).
+        const own_suspends = l.suspendsHere(l.in.dispatch.effectDecl(index).own);
         // §8.1: the hidden leading parameters, one per entry of this
         // declaration's `DeclInfo.requirements` (checker-v2.md §13.1), in
         // the canonical order of §7.2. HOW the value is defined around them
@@ -1046,7 +1159,7 @@ const Lowerer = struct {
         switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
@@ -1058,12 +1171,12 @@ const Lowerer = struct {
             .lambda => {
                 const ld = l.bir.instData(body);
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p, l.functionSuspends(body));
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
-            .applied => try l.constDecl(out, n, try l.appliedArrow(out, l.bir.symbol(d.name), evidence, use.arity, body, p), p),
+            .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), p),
             // `($m…) => value`, its value kept per evidence.
-            .thunk => try l.constDecl(out, n, try l.memoArrow(out, l.bir.symbol(d.name), evidence, &.{}, body, p), p),
+            .thunk => try l.constDecl(out, n, try l.memoArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, &.{}, body, p), p),
             .constant => {
                 var stmts: StmtList = .empty;
                 const value = try l.expr(&stmts, body);
@@ -1218,12 +1331,15 @@ const Lowerer = struct {
             // A markup primitive is the markup runtime's, not this module's.
             if (d.kind == .vocab_markup) continue;
             if (d.kind == .value and d.body == .none) continue;
-            if (!l.liveDecl(decl_index.int())) continue;
-            try names.append(l.scratch, try l.name(.{
+            if (l.liveDecl(decl_index.int())) try names.append(l.scratch, try l.name(.{
                 .module = l.module_name.toOptional(),
                 .base = l.bir.symbol(d.name),
                 .tag = JsIr.Name.no_tag,
             }));
+            // Its suspendable body, when it has one that survived (§16.2).
+            if (d.kind == .value and l.in.dispatch.effectDecl(decl_index.int()).twin and l.liveTwin(decl_index.int())) {
+                try names.append(l.scratch, try l.twinName(l.module_name, l.bir.symbol(d.name)));
+            }
         }
         if (names.items.len == 0) return;
         const range = try l.b.addNames(names.items);
@@ -1356,13 +1472,16 @@ const Lowerer = struct {
     /// The `Func` record for `params` and `body`: what both an `arrow` and
     /// a `func_decl` carry, built once so a `let` binding can choose which
     /// of the two it becomes without lowering the body twice.
-    fn functionOf(l: *Lowerer, evidence: u32, ev_let: Inst.OptionalIndex, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
+    fn functionOf(l: *Lowerer, evidence: u32, ev_let: Inst.OptionalIndex, params: []const Inst.Index, body: Inst.Index, suspendable: bool) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
         l.case_depth = 0;
         defer l.case_depth = depth;
+        // And a function of its own for the suspendable form (§16.3).
+        const outer = l.enterFunction(suspendable);
+        defer l.leaveFunction(outer);
         // The evidence parameters come FIRST, before the declaration's own
         // (§8.1): `$m$<k>` for a declaration, `$l<inst>$<k>` for a `let`
         // function binding that generalised (`ev_let`, backend.md §4). A lambda
@@ -1394,7 +1513,236 @@ const Lowerer = struct {
         // `return` is the body's own, which `tailStmts` reads from the
         // instruction — so this no longer takes one.
         try l.tailStmts(&stmts, body, null);
-        return l.funcRecord(names.items, stmts.items);
+        const split = try l.splitSuspensions(stmts.items, null, .closure);
+        return l.funcRecord(names.items, split);
+    }
+
+    // ---- The suspendable form (transparent-effects-proposal.md §16) -----
+
+    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex };
+
+    fn enterFunction(l: *Lowerer, suspendable: bool) FunctionState {
+        const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join };
+        l.suspendable = suspendable;
+        l.markers = 0;
+        l.join = .none;
+        return outer;
+    }
+
+    fn leaveFunction(l: *Lowerer, outer: FunctionState) void {
+        l.suspendable = outer.suspendable;
+        l.markers = outer.markers;
+        l.join = outer.join;
+    }
+
+    /// Whether an answer of §16.2 is yes in the body being lowered.
+    fn suspendsHere(l: *const Lowerer, a: Dispatch.Suspend) bool {
+        return a == .yes or (a == .poly and l.variant == .twin);
+    }
+
+    /// Whether the function a lambda or a `let` definition makes is
+    /// suspendable.
+    fn functionSuspends(l: *const Lowerer, inst: Inst.Index) bool {
+        return l.suspendsHere(l.in.dispatch.effectAt(inst).own);
+    }
+
+    /// A call that may suspend, in a suspendable function: bound to a
+    /// temporary behind a marker (§16.3), which `Suspend` turns into the
+    /// continuation of everything lowered after it into `out`.
+    fn suspension(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index) !Node.Index {
+        if (!l.suspendable) return value;
+        if (!l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return value;
+        const p = l.pos(inst);
+        const temp = try l.fresh(l.well.temp);
+        const marker = try l.ident(try l.fixedName("$$suspend"), p);
+        const node = try l.call(marker, &.{ value, try l.ident(temp, p) }, p);
+        try out.append(l.scratch, try l.add(.expr_stmt, p, node.int(), Node.Data.unused));
+        l.markers += 1;
+        return l.ident(temp, p);
+    }
+
+    /// The function body `stmts` with its markers split (`Suspend`), or
+    /// `stmts` itself when it has none — every function that does not
+    /// suspend.
+    fn splitSuspensions(l: *Lowerer, stmts: []const Node.Index, loop: ?Suspend.Loop, mode: Suspend.Mode) ![]const Node.Index {
+        if (l.markers == 0) return stmts;
+        const names = try l.fiberNames(mode == .loop);
+        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep };
+        return pass.rewrite(stmts, mode) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.FallsThrough => {
+                try l.report(
+                    .not_implemented,
+                    l.region,
+                    \\A call here may suspend, in a position whose code runs on after it in a way
+                    \\the suspendable form cannot yet continue (`docs/design/transparent-effects-proposal.md`
+                    \\§16.3). Bind its result with `let` first, and use the name here.
+                ,
+                    .{},
+                );
+                return stmts;
+            },
+        };
+    }
+
+    /// What a join closes (`joinAround`).
+    const Joined = union(enum) {
+        case: Inst.Index,
+        logical: struct { op: JsIr.BinaryOp, first: Node.Index, right: Inst.Index },
+    };
+
+    /// A `case`, or a short circuit, whose branches may suspend, in a
+    /// suspendable function (§16.3): lowered in tail position with every
+    /// leaf returning `$j(value)`, between the two markers `Suspend` turns
+    /// into `const $j = ($t) => { the rest }` — the join point §7.1 makes
+    /// mandatory. The value is `$t`.
+    fn joinAround(l: *Lowerer, out: *StmtList, region: Inst.Index, what: Joined, p: u32) !Node.Index {
+        const j = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$k"), .tag = l.nextTag() });
+        const t = try l.fresh(l.well.temp);
+        try out.append(l.scratch, try l.markerStmt("$$join", &.{try l.ident(j, p)}, p));
+        const saved = l.join;
+        l.join = j;
+        switch (what) {
+            .case => |inst| try l.tailCase(out, inst, null),
+            .logical => |g| {
+                var taken: StmtList = .empty;
+                try l.tailStmts(&taken, g.right, null);
+                const constant = try l.add(if (g.op == .logical_and) .false_lit else .true_lit, p, Node.Data.unused, Node.Data.unused);
+                const other = [_]Node.Index{try l.returnStmt(try l.call(try l.ident(j, p), &.{constant}, p), p)};
+                const then_list: []const Node.Index = if (g.op == .logical_and) taken.items else &other;
+                const else_list: []const Node.Index = if (g.op == .logical_and) &other else taken.items;
+                const then_range = try l.b.addRange(then_list);
+                const else_range = try l.b.addRange(else_list);
+                const record = try l.b.addRecord(JsIr.If{
+                    .then_start = then_range.start,
+                    .then_end = then_range.end,
+                    .else_start = else_range.start,
+                    .else_end = else_range.end,
+                });
+                try out.append(l.scratch, try l.add(.if_stmt, p, g.first.int(), @intFromEnum(record)));
+            },
+        }
+        l.join = saved;
+        l.region = region;
+        try out.append(l.scratch, try l.markerStmt("$$joined", &.{ try l.ident(j, p), try l.ident(t, p) }, p));
+        l.markers += 1;
+        return l.ident(t, p);
+    }
+
+    fn markerStmt(l: *Lowerer, spelled: []const u8, args: []const Node.Index, p: u32) !Node.Index {
+        const marker = try l.ident(try l.fixedName(spelled), p);
+        const node = try l.call(marker, args, p);
+        return l.add(.expr_stmt, p, node.int(), Node.Data.unused);
+    }
+
+    fn nextTag(l: *Lowerer) u32 {
+        const tag = l.next_tag;
+        l.next_tag += 1;
+        return tag;
+    }
+
+    /// Whether `let <pattern> = <value>` is written for its effect: a pattern
+    /// that binds nothing, over a call that is impure whatever it is called
+    /// with.
+    fn keptForEffect(l: *Lowerer, pattern: Inst.Index, value: Inst.Index) bool {
+        switch (l.bir.instTag(pattern)) {
+            .pat_wild, .pat_unit => {},
+            else => return false,
+        }
+        return switch (l.bir.instTag(value)) {
+            .call, .method_call, .type_dispatch => l.in.dispatch.effectAt(value).impure,
+            else => false,
+        };
+    }
+
+    /// Whether a branch of `case` `inst` may suspend here.
+    fn branchesYield(l: *Lowerer, inst: Inst.Index) bool {
+        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index)) |branch| {
+            if (l.bir.instTag(branch) != .branch) continue;
+            if (l.yields(@enumFromInt(l.bir.instData(branch).rhs))) return true;
+        }
+        return false;
+    }
+
+    /// Whether evaluating `inst` may suspend the function being lowered: a
+    /// call under it that may, outside any function it makes.
+    fn yields(l: *Lowerer, inst: Inst.Index) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .call => {
+                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
+                if (l.yields(@enumFromInt(d.lhs))) return true;
+                return l.anyYields(l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index));
+            },
+            .method_call => {
+                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
+                if (l.yields(@enumFromInt(d.lhs))) return true;
+                const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+                return l.anyYields(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index));
+            },
+            .type_dispatch => {
+                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
+                const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
+                return l.anyYields(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+            },
+            .let => {
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index)) |def| {
+                    const dd = l.bir.instData(def);
+                    switch (l.bir.instTag(def)) {
+                        .let_def => {
+                            const payload = l.bir.extraData(@enumFromInt(dd.lhs), Bir.LetDef);
+                            if (payload.params_end != payload.params_start) continue;
+                            if (l.yields(@enumFromInt(dd.rhs))) return true;
+                        },
+                        .let_pattern => if (l.yields(@enumFromInt(dd.rhs))) return true,
+                        else => {},
+                    }
+                }
+                return l.yields(@enumFromInt(d.rhs));
+            },
+            .case => {
+                if (l.yields(@enumFromInt(d.lhs))) return true;
+                return l.branchesYield(inst);
+            },
+            .@"try", .field_access, .tuple_index => return l.yields(@enumFromInt(d.lhs)),
+            .tuple, .list, .interp => return l.anyYields(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
+            .record => {
+                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.yields(f.value)) return true;
+                return false;
+            },
+            .record_update => {
+                if (l.yields(@enumFromInt(d.lhs))) return true;
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field)) |f| if (l.yields(f.value)) return true;
+                return false;
+            },
+            else => return false,
+        }
+    }
+
+    fn anyYields(l: *Lowerer, insts: []const Inst.Index) bool {
+        for (insts) |inst| if (l.yields(inst)) return true;
+        return false;
+    }
+
+    /// The names `Suspend` writes, each core value imported the first time a
+    /// function needs it: `Task.isWaiting` only for a loop's fast path.
+    fn fiberNames(l: *Lowerer, waiting: bool) !Suspend.Names {
+        var names = l.fiber_names orelse blk: {
+            const and_then = try l.coreValue(.Task, .andThen, Node.no_pos);
+            break :blk Suspend.Names{
+                .marker = try l.fixedName("$$suspend"),
+                .join = try l.fixedName("$$join"),
+                .joined = try l.fixedName("$$joined"),
+                .and_then = @enumFromInt(l.b.nodes.items(.data)[and_then.int()].lhs),
+                .is_waiting = .none,
+            };
+        };
+        if (waiting and names.is_waiting == .none) {
+            const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
+            names.is_waiting = @enumFromInt(l.b.nodes.items(.data)[is_waiting.int()].lhs);
+        }
+        l.fiber_names = names;
+        return names;
     }
 
     fn funcRecord(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index) !JsIr.ExtraIndex {
@@ -1474,6 +1822,9 @@ const Lowerer = struct {
         /// front to back through `root` and `last` (§8, *Tail calls modulo
         /// cons*). Set by `markTails`.
         builds: bool = false,
+        /// A suspendable body never builds (transparent-effects-proposal.md
+        /// §16.3): its `::` steps are ordinary calls.
+        no_cons: bool = false,
         /// `$root`, the cell before the result's first, and `$last`, the
         /// cell whose tail the next step or exit writes. `.none` unless
         /// `builds`.
@@ -1523,6 +1874,7 @@ const Lowerer = struct {
         params: []const Inst.Index,
         body: Inst.Index,
         p: u32,
+        suspendable: bool,
     ) !JsIr.ExtraIndex {
         const slots = try l.scratch.alloc(Loop.Slot, @as(usize, evidence) + params.len);
         for (slots[0..evidence]) |*slot| slot.* = .{};
@@ -1540,13 +1892,17 @@ const Lowerer = struct {
                 slot.carried = true;
             }
         }
-        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots };
-        if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body);
+        // A suspendable body does not build (§16.3): a `::` step there is an
+        // ordinary call.
+        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots, .no_cons = suspendable };
+        if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body, suspendable);
 
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
         l.case_depth = 0;
         defer l.case_depth = depth;
+        const outer = l.enterFunction(suspendable);
+        defer l.leaveFunction(outer);
 
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         for (slots, 0..) |*slot, i| {
@@ -1591,8 +1947,12 @@ const Lowerer = struct {
             before[1] = try l.add(.let_decl, p, @intFromEnum(loop.last), @intFromEnum((try l.ident(loop.root, p)).toOptional()));
         }
         try l.tailStmts(&loop_body, body, &loop);
+        // A suspension point in the loop's body: the fast path stays in the
+        // loop, and the slow path re-enters the function with its slots
+        // (§16.3).
+        const split = try l.splitSuspensions(loop_body.items, .{ .label = label, .callee = label, .params = names.items }, .loop);
 
-        const range = try l.b.addRange(loop_body.items);
+        const range = try l.b.addRange(split);
         const record = try l.b.addRecord(range);
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
@@ -1638,6 +1998,7 @@ const Lowerer = struct {
                 // A cons step: the tail of a `::` in tail position is a tail
                 // position again, and one that reaches a self-call makes the
                 // function build (§8, *Tail calls modulo cons*).
+                if (loop.no_cons) return false;
                 const tail = l.consTail(inst) orelse return false;
                 if (!l.markTails(tail, loop)) return false;
                 loop.builds = true;
@@ -1805,6 +2166,11 @@ const Lowerer = struct {
     /// modulo cons*) writes it into the last cell's tail first and returns
     /// the list the root cell heads; everything else is `return value`.
     fn tailReturn(l: *Lowerer, out: *StmtList, value: Node.Index, loop: ?*const Loop, p: u32) !void {
+        // A leaf of a `case` that joins (transparent-effects-proposal.md
+        // §16.3): the rest of the function is the join, called with it.
+        if (loop == null and l.join != .none) {
+            return out.append(l.scratch, try l.returnStmt(try l.call(try l.ident(l.join, p), &.{value}, p), p));
+        }
         const lp = loop orelse return out.append(l.scratch, try l.returnStmt(value, p));
         if (!lp.builds) return out.append(l.scratch, try l.returnStmt(value, p));
         const b = try l.slotName(1);
@@ -2453,7 +2819,7 @@ const Lowerer = struct {
                 // a `view` of `List.map`s twenty deep would be refused.
                 const height = l.expr_height;
                 l.expr_height = 0;
-                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs));
+                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs), l.functionSuspends(inst));
                 const body = l.expr_height;
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
                 if (body < lambda_spill) {
@@ -2748,6 +3114,9 @@ const Lowerer = struct {
         // has just proved the value takes evidence, so it is not `plain`.
         const use = l.referenceUse(inst);
         const arity = Convention.referenceArity(use) orelse use.arity;
+        const saved_choice = l.term_choice;
+        l.term_choice = l.in.dispatch.effectAt(inst).body;
+        defer l.term_choice = saved_choice;
         return l.etaExpand(value, try l.evidenceArguments(roots, p), arity, p);
     }
 
@@ -2763,7 +3132,7 @@ const Lowerer = struct {
             .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].kind == .vocab_markup)
                 try l.ident(try l.primitiveName(l.module_name, l.bir.symbol(l.bir.decls[d.lhs].name)), p)
             else
-                try l.ident(try l.topName(d.lhs), p),
+                try l.ident(try l.topNameChoosing(d.lhs, l.in.dispatch.effectAt(inst).body), p),
             .ext_value => blk: {
                 const module: Graph.Index = @enumFromInt(d.lhs);
                 if (module.int() < l.in.interfaces.len) {
@@ -2773,8 +3142,7 @@ const Lowerer = struct {
                         break :blk try l.ident(try l.primitiveName(l.in.graph.moduleName(module), base), p);
                     }
                 }
-                try l.need(module, d.rhs);
-                break :blk try l.ident(try l.externalName(module, d.rhs), p);
+                break :blk try l.ident(try l.externalNameChoosing(module, d.rhs, l.in.dispatch.effectAt(inst).body), p);
             },
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
@@ -2811,7 +3179,10 @@ const Lowerer = struct {
         if (try l.refuseEvidence(inst, roots, use.evidence)) {
             return try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
+        const saved_choice = l.term_choice;
+        l.term_choice = l.in.dispatch.effectAt(inst).body;
         const evidence = try l.evidenceArguments(roots, p);
+        l.term_choice = saved_choice;
         const all = try l.scratch.alloc(Node.Index, evidence.len + args.len);
         @memcpy(all[0..evidence.len], evidence);
         @memcpy(all[evidence.len..], args);
@@ -2876,15 +3247,16 @@ const Lowerer = struct {
             // interface's value table without a bounds test, and so does
             // `termArity`. A term naming neither is a malformed table and
             // not a program, so it is an assert.
+            // A target with two bodies takes the one the site's callee takes
+            // (transparent-effects-proposal.md §16.2): `term_choice`.
             .top => |use| blk: {
                 std.debug.assert(use.decl.int() < l.bir.decls.len);
-                break :blk try l.ident(try l.topName(use.decl.int()), p);
+                break :blk try l.ident(try l.topNameChoosing(use.decl.int(), l.term_choice), p);
             },
             .ext => |e| blk: {
                 std.debug.assert(e.module.int() < l.in.interfaces.len);
                 std.debug.assert(@intFromEnum(e.value) < l.in.interfaces[e.module.int()].values.len);
-                try l.need(e.module, @intFromEnum(e.value));
-                break :blk try l.ident(try l.externalName(e.module, @intFromEnum(e.value)), p);
+                break :blk try l.ident(try l.externalNameChoosing(e.module, @intFromEnum(e.value), l.term_choice), p);
             },
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
@@ -5030,6 +5402,9 @@ const Lowerer = struct {
         const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
         const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
         l.region = inst;
+        const saved_choice = l.term_choice;
+        l.term_choice = l.in.dispatch.effectAt(inst).body;
+        defer l.term_choice = saved_choice;
         // checker-v2.md §13.1 gives every `method_call` a callee. None
         // means the checker forgot one — or wrote an `err` site, which the
         // converter turns into no term — and a program that failed to check
@@ -5051,7 +5426,7 @@ const Lowerer = struct {
                 }
                 const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
                 const field_fn = try l.member(values[0], l.bir.symbol(m.name), p);
-                return l.call(field_fn, values[1..], p);
+                return l.suspension(out, inst, try l.call(field_fn, values[1..], p));
             },
             // Never a callee: an `err` site becomes no term at all.
             .undetermined => {
@@ -5096,7 +5471,8 @@ const Lowerer = struct {
                 const evidence = (try l.namedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
-                const value = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
+                const called = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
+                const value = try l.suspension(out, inst, called);
                 // An ordering operator against a non-primitive target is
                 // the `Order` test of §8.3: the method answers `Order` and
                 // the operator answers `Bool`.
@@ -5226,6 +5602,9 @@ const Lowerer = struct {
         const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
         const args: Bir.SubRange = .{ .start = t.args_start, .end = t.args_end };
         l.region = inst;
+        const saved_choice = l.term_choice;
+        l.term_choice = l.in.dispatch.effectAt(inst).body;
+        defer l.term_choice = saved_choice;
         const callee, const roots = (try l.calleeOf(inst)) orelse
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const target = l.in.dispatch.term(callee);
@@ -5257,7 +5636,7 @@ const Lowerer = struct {
         const all = try l.scratch.alloc(Node.Index, evidence.len + rest.len);
         @memcpy(all[0..evidence.len], evidence);
         @memcpy(all[evidence.len..], rest);
-        return l.call(callee_name, all, p);
+        return l.suspension(out, inst, try l.call(callee_name, all, p));
     }
 
     /// §8.3's operator table: a `primitive` target plus the surface origin
@@ -5439,18 +5818,22 @@ const Lowerer = struct {
         const callee = values[0];
         const written = values[1..];
         l.region = inst;
+        // The evidence takes the body its callee takes (§16.2).
+        const saved_choice = l.term_choice;
+        l.term_choice = l.in.dispatch.evidenceChoice(l.bir, inst);
         const evidence = try l.evidenceArguments(roots, p);
-        if (evidence.len == 0) return l.call(callee, written, p);
+        l.term_choice = saved_choice;
+        if (evidence.len == 0) return l.suspension(out, inst, try l.call(callee, written, p));
         // How the evidence is passed is the callee's convention
         // (checker-v2.md §12.5), the answer its definition was built from.
         switch (Convention.call(l.referenceUse(callee_inst).convention)) {
             .flat => {},
-            .applied => return l.call(try l.call(callee, evidence, p), written, p),
+            .applied => return l.suspension(out, inst, try l.call(try l.call(callee, evidence, p), written, p)),
         }
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
         @memcpy(args[evidence.len..], written);
-        return l.call(callee, args, p);
+        return l.suspension(out, inst, try l.call(callee, args, p));
     }
 
     /// `Basics.and` / `Basics.or`, however the reference reached here: an
@@ -5497,6 +5880,13 @@ const Lowerer = struct {
     /// spine of one operator is collected here without recursing and built
     /// to the LEFT, `a && b && c`, which every engine parses as one run.
     fn logicalExpr(l: *Lowerer, out: *StmtList, op: JsIr.BinaryOp, left_inst: Inst.Index, right_inst: Inst.Index, p: u32) !Node.Index {
+        // A right operand that may suspend is a branch like a `case`'s
+        // (transparent-effects-proposal.md §16.3): `a && b` evaluates `a`,
+        // then `b` or `false`, into a join.
+        if (l.suspendable and l.yields(right_inst)) {
+            const first = try l.expr(out, left_inst);
+            return l.joinAround(out, left_inst, .{ .logical = .{ .op = op, .first = first, .right = right_inst } }, p);
+        }
         var operands: std.ArrayList(Inst.Index) = .empty;
         var positions: std.ArrayList(u32) = .empty;
         try operands.append(l.scratch, left_inst);
@@ -5620,6 +6010,7 @@ const Lowerer = struct {
                                 lambda_params,
                                 @enumFromInt(ld.rhs),
                                 lambda_p,
+                                l.functionSuspends(value_inst),
                             );
                             const lambda = try l.add(.arrow, lambda_p, @intFromEnum(lambda_record), Node.Data.unused);
                             try l.constDecl(out, n, lambda, p);
@@ -5633,12 +6024,19 @@ const Lowerer = struct {
                     // `function` (§8's cases table), so the loop is
                     // contained; excluding it would leave the language's
                     // most natural loop idiom overflowing.
-                    const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @enumFromInt(d.rhs), p);
+                    const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @enumFromInt(d.rhs), p, l.functionSuspends(def));
                     try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
                 },
                 .let_pattern => {
                     const value = try l.expr(out, @enumFromInt(d.rhs));
+                    const before = out.items.len;
                     const subject = try l.bindSubject(out, value, p);
+                    // `let _ = <an impure call>` is written for its effect: the
+                    // release optimiser keeps it (transparent-effects-proposal.md
+                    // §16.3).
+                    if (out.items.len == before + 1 and l.keptForEffect(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) {
+                        try l.effect_keep.append(l.scratch, out.items[before]);
+                    }
                     try l.bindings(out, @enumFromInt(d.lhs), subject);
                 },
                 else => {},
@@ -5752,6 +6150,9 @@ const Lowerer = struct {
     /// A `case` in expression position: §7's last three rows.
     fn caseExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
+        // A branch that may suspend: the rest of the function is a join the
+        // leaves call (transparent-effects-proposal.md §16.3).
+        if (l.suspendable and l.branchesYield(inst)) return l.joinAround(out, inst, .{ .case = inst }, p);
         var c = try l.planCase(out, inst) orelse
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const depth = l.case_depth;

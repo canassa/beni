@@ -1,0 +1,8 @@
+acquired: "slowChild"
+acquired: "quickChild"
+quickChild released: done: ()
+slowChild released: cancelled: ()
+scope returned: 42
+acquired: "orphan"
+orphan released: cancelled: ()
+parent done

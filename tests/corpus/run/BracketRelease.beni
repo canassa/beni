@@ -1,0 +1,75 @@
+-- run: `bracket`'s release runs exactly once on every way its use ends
+-- (docs/design/transparent-effects-proposal.md §6.3, §16.4, §16.5), and
+-- sees how it ended (the owner's A3):
+--
+--   - the use returns: `Done` with its value;
+--   - the fiber is cancelled from outside while the use waits: `Cancelled`,
+--     at once — the wait's timer is cleared, so the program does not sit on
+--     a 100-second sleep — and inner brackets release before outer ones;
+--   - the use joins a fiber that was cancelled, which cancels it too:
+--     `Cancelled`, with the release of the joined fiber's own bracket first.
+--
+-- `Task.cancel` returns only after the cancelled fiber's cleanup, so each
+-- release line comes before the line that follows its `cancel`.
+import Debug
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String -> ()
+say line =
+    Debug.log () line
+
+
+describe : Exit Int -> String
+describe exit =
+    case exit of
+        Done n ->
+            "done " ++ String.fromInt n
+
+        Cancelled ->
+            "cancelled"
+
+
+sleepThen : Int -> Int
+sleepThen n =
+    let
+        _ = Io.sleep 100000
+    in
+    n
+
+
+held : String, (() -> Int) -> Int
+held name work =
+    Task.bracket
+        (\() -> say (name ++ " acquired"))
+        (\_ exit -> say (name ++ " released: " ++ describe exit))
+        (\_ -> work ())
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                -- Success.
+                n = held "plain" (\() -> 5)
+                _ = say ("plain returned " ++ String.fromInt n)
+                -- Cancelled from outside, two brackets deep.
+                waiting =
+                    Task.spawn
+                        (\() -> held "outer" (\() -> held "inner" (\() -> sleepThen 0)))
+                _ = Io.sleep 1
+                _ = Task.cancel waiting
+                _ = say "cancel returned"
+                -- Cancelled by joining a cancelled fiber.
+                victim = Task.spawn (\() -> held "victim" (\() -> sleepThen 1))
+                joiner = Task.spawn (\() -> held "joiner" (\() -> Task.join victim))
+                _ = Io.sleep 1
+                _ = Task.cancel victim
+                ended = Task.wait joiner
+                _ = say ("joiner " ++ describe ended)
+            in
+            Node.print "end"
+        )

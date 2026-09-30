@@ -101,8 +101,10 @@ const CtorEq = @import("CtorEq.zig");
 
 const Reach = @This();
 
-/// Which of the two per-module tables a node lives in.
-pub const Kind = enum(u8) { decl, derived };
+/// Which of the per-module tables a node lives in. `twin` is a
+/// declaration's second, suspendable body (transparent-effects-proposal.md
+/// §16.2): a node of its own, so a program that never suspends writes none.
+pub const Kind = enum(u8) { decl, derived, twin };
 
 /// One node of the graph: a declaration of a module, or one of its derived
 /// rows. Flat and comparable; nothing here is a pointer.
@@ -116,11 +118,17 @@ pub const Node = struct {
 pub const Live = struct {
     decls: std.DynamicBitSetUnmanaged,
     derived: std.DynamicBitSetUnmanaged,
+    twins: std.DynamicBitSetUnmanaged = .{},
 
     pub const empty: Live = .{ .decls = .{}, .derived = .{} };
 
     pub fn decl(l: *const Live, index: usize) bool {
         return index < l.decls.bit_length and l.decls.isSet(index);
+    }
+
+    /// Whether a declaration's suspendable body survived.
+    pub fn twin(l: *const Live, index: usize) bool {
+        return index < l.twins.bit_length and l.twins.isSet(index);
     }
 
     pub fn derivedRow(l: *const Live, index: usize) bool {
@@ -130,7 +138,7 @@ pub const Live = struct {
     /// Whether the module has anything left to write (§5, "a module with
     /// nothing reachable is not written at all").
     pub fn any(l: *const Live) bool {
-        return l.decls.count() != 0 or l.derived.count() != 0;
+        return l.decls.count() != 0 or l.derived.count() != 0 or l.twins.count() != 0;
     }
 };
 
@@ -157,6 +165,18 @@ pub const Result = struct {
 
     pub fn derivedRow(r: *const Result, m: Graph.Index, index: usize) bool {
         return r.of(m).derivedRow(index);
+    }
+
+    pub fn twin(r: *const Result, m: Graph.Index, index: usize) bool {
+        return r.of(m).twin(index);
+    }
+
+    /// Whether the suspendable body behind another module's interface value
+    /// survived; `true` when the table cannot say, as `extValue`.
+    pub fn extTwin(r: *const Result, m: Graph.Index, value: u32) bool {
+        if (m.int() >= r.provenance.len) return true;
+        const d = r.provenance[m.int()].valueDecl(value) orelse return true;
+        return r.twin(m, d.int());
     }
 
     /// Whether the declaration behind another module's interface value
@@ -324,6 +344,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
         slot.* = .{
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
+            .twins = try .initEmpty(scratch, in.birOf(m).decls.len),
         };
     }
 
@@ -353,6 +374,7 @@ fn mark(modules: []Live, node: Node) bool {
     const set = switch (node.kind) {
         .decl => &live.decls,
         .derived => &live.derived,
+        .twin => &live.twins,
     };
     if (node.index >= set.bit_length) return false;
     if (set.isSet(node.index)) return false;
@@ -367,11 +389,14 @@ pub const ModuleEdges = struct {
     decl_targets: []const Node = &.{},
     derived_at: []const u32 = &.{},
     derived_targets: []const Node = &.{},
+    twin_at: []const u32 = &.{},
+    twin_targets: []const Node = &.{},
 
     fn targets(e: ModuleEdges, node: Node) []const Node {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },
+            .twin => .{ e.twin_at, e.twin_targets },
         };
         if (node.index + 1 >= at.len) return &.{};
         return list[at[node.index]..at[node.index + 1]];
@@ -426,6 +451,7 @@ pub const Builder = struct {
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Node) = .empty;
+        var twin_extra: std.ArrayList(TwinEdge) = .empty;
         for (bir.decls, 0..) |d, i| {
             decl_at[i] = @intCast(decl_targets.items.len);
             switch (d.kind) {
@@ -442,8 +468,21 @@ pub const Builder = struct {
             // a word at a time.
             try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
             for (b.stream.items) |edge| try b.resolve(m, edge, &decl_targets);
+            try b.effectEdges(m, @intCast(i), decl_at[i], &decl_targets, &twin_extra);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
+
+        // A declaration's suspendable body (§16.2) reaches what its direct
+        // one does, and the suspendable bodies its `poly` answers choose.
+        const twin_at = try b.scratch.alloc(u32, bir.decls.len + 1);
+        var twin_targets: std.ArrayList(Node) = .empty;
+        for (0..bir.decls.len) |i| {
+            twin_at[i] = @intCast(twin_targets.items.len);
+            if (!dispatch.effectDecl(@intCast(i)).twin) continue;
+            try twin_targets.appendSlice(b.scratch, decl_targets.items[decl_at[i]..decl_at[i + 1]]);
+            for (twin_extra.items) |x| if (x.decl == i) try twin_targets.append(b.scratch, x.node);
+        }
+        twin_at[bir.decls.len] = @intCast(twin_targets.items.len);
 
         const derived_at = try b.scratch.alloc(u32, dispatch.derived.len + 1);
         var derived_targets: std.ArrayList(Node) = .empty;
@@ -460,7 +499,99 @@ pub const Builder = struct {
             .decl_targets = decl_targets.items,
             .derived_at = derived_at,
             .derived_targets = derived_targets.items,
+            .twin_at = twin_at,
+            .twin_targets = twin_targets.items,
         };
+    }
+
+    /// An edge only a declaration's suspendable body has.
+    const TwinEdge = struct { decl: u32, node: Node };
+
+    /// The edges the effect answers add (transparent-effects-proposal.md
+    /// §16.2): a reference or a method call that takes a target's
+    /// suspendable body — always (`yes`), into both of `decl`'s bodies, or
+    /// only in its own suspendable one (`poly`, into `twin`) — evidence
+    /// naming a declaration with two bodies, which takes the suspendable one
+    /// wherever it is passed; and core's `Task.andThen` and `Task.isWaiting`,
+    /// which the code of a body that may suspend calls.
+    fn effectEdges(b: *Builder, m: Graph.Index, decl: u32, first: u32, direct: *std.ArrayList(Node), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
+        const bir = b.in.birOf(m);
+        const dispatch = b.in.dispatchOf(m);
+        const d = bir.decls[decl];
+        const sites = dispatch.effectsIn(d.inst_start.int(), d.inst_end.int());
+        const own = dispatch.effectDecl(decl).own;
+        if (sites.len == 0 and own == .no) return;
+        var protocol: Dispatch.Suspend = own;
+        for (sites) |s| {
+            if (s.own == .yes) protocol = .yes else if (s.own == .poly and protocol == .no) protocol = .poly;
+            if (s.body == .no) continue;
+            const target = b.bodyTarget(m, s.inst) orelse continue;
+            if (s.body == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .node = target });
+        }
+        _ = first;
+        // Evidence a site passes takes the body the site's callee takes.
+        for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
+            const choice = dispatch.evidenceChoice(bir, site.inst);
+            if (choice == .no) continue;
+            try b.evidenceTwins(m, dispatch.argsAt(site.evidence), decl, choice, direct, twin);
+        }
+        if (protocol == .no) return;
+        const task = b.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) orelse return;
+        const task_bir = b.in.birOf(task);
+        for (task_bir.decls, 0..) |td, i| {
+            if (td.kind != .foreign_value) continue;
+            const name = task_bir.symbol(td.name);
+            if (name != InternPool.WellKnown.andThen.symbol() and name != InternPool.WellKnown.isWaiting.symbol()) continue;
+            const node: Node = .{ .module = task, .kind = .decl, .index = @intCast(i) };
+            if (protocol == .yes) try direct.append(b.scratch, node) else try twin.append(b.scratch, .{ .decl = decl, .node = node });
+        }
+    }
+
+    /// The suspendable body a reference or a method call at `inst` names.
+    fn bodyTarget(b: *Builder, m: Graph.Index, inst: Bir.Inst.Index) ?Node {
+        const bir = b.in.birOf(m);
+        const dispatch = b.in.dispatchOf(m);
+        const data = bir.instData(inst);
+        return switch (bir.instTag(inst)) {
+            .top => .{ .module = m, .kind = .twin, .index = data.lhs },
+            .ext_value => b.twinOfExt(@enumFromInt(data.lhs), data.rhs),
+            .method_call, .type_dispatch => blk: {
+                const site = dispatch.siteOf(inst) orelse break :blk null;
+                const callee = site.callee.unwrap() orelse break :blk null;
+                break :blk switch (dispatch.term(callee)) {
+                    .top => |u| .{ .module = m, .kind = .twin, .index = u.decl.int() },
+                    .ext => |e| b.twinOfExt(e.module, @intFromEnum(e.value)),
+                    else => null,
+                };
+            },
+            else => null,
+        };
+    }
+
+    fn twinOfExt(b: *Builder, m: Graph.Index, value: u32) ?Node {
+        if (m.int() >= b.in.provenance.len) return null;
+        const d = b.in.provenance[m.int()].valueDecl(value) orelse return null;
+        return .{ .module = m, .kind = .twin, .index = d.int() };
+    }
+
+    /// Every declaration with two bodies that `roots` name, as evidence a
+    /// site passes whose callee takes its suspendable body (`choice`): the
+    /// evidence takes its suspendable body too (§16.2).
+    fn evidenceTwins(b: *Builder, m: Graph.Index, roots: []const Dispatch.TermIndex, decl: u32, choice: Dispatch.Suspend, direct: *std.ArrayList(Node), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
+        if (roots.len == 0) return;
+        const dispatch = b.in.dispatchOf(m);
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(b.scratch);
+        try Edges.termsEdges(&edges, b.scratch, dispatch, roots, false);
+        for (edges.items) |edge| {
+            const node: Node = switch (edge) {
+                .top => |t| .{ .module = m, .kind = .twin, .index = t },
+                .ext => |e| b.twinOfExt(e.module, e.value) orelse continue,
+                else => continue,
+            };
+            if (!b.in.dispatchOf(node.module).effectDecl(node.index).twin) continue;
+            if (choice == .yes) try direct.append(b.scratch, node) else try twin.append(b.scratch, .{ .decl = decl, .node = node });
+        }
     }
 
     fn skipInPlace(context: *const anyopaque, site: Dispatch.Site) bool {

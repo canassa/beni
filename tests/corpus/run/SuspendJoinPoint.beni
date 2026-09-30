@@ -1,0 +1,82 @@
+-- run: a `case`, an `if` and a `&&` whose branches suspend, with code after
+-- them (docs/design/transparent-effects-proposal.md §7.1's mandatory join
+-- point, §16.3). Each is not in tail position, so what follows it is one
+-- join closure its leaves call, written once — never copied into each
+-- branch, and never skipped. `classify` has a branch that suspends, one
+-- that does not and one that suspends twice; `check` short-circuits: its
+-- right operand suspends and is evaluated only when the left is true, so
+-- its log line appears once, for 4. `loop` puts a join inside a tail-call
+-- loop, where the rest is written into each leaf instead, so the loop's
+-- fast path stays in place.
+import Debug
+import Io
+import Node exposing (Program)
+import Task
+
+
+slow : Int -> Int
+slow n =
+    let
+        _ = Task.yieldNow ()
+    in
+    n
+
+
+classify : Int -> String
+classify n =
+    let
+        label =
+            case modBy n 3 of
+                0 ->
+                    "zero " ++ String.fromInt (slow n)
+
+                1 ->
+                    "one"
+
+                _ ->
+                    "two " ++ String.fromInt (slow n + slow 1)
+        size =
+            if n > 4 then
+                slow 100
+            else
+                1
+    in
+    label ++ " / " ++ String.fromInt size
+
+
+check : Int -> Bool
+check n =
+    let
+        ok = n > 3 && Debug.log (slow n) "right operand" > 0
+    in
+    ok
+
+
+loop : Int, Int -> Int
+loop n acc =
+    if n == 0 then
+        acc
+    else
+        let
+            step =
+                if modBy n 2 == 0 then
+                    slow 2
+                else
+                    1
+        in
+        loop (n - 1) (acc + step)
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            Node.printLines
+                [ classify 3
+                , classify 4
+                , classify 5
+                , if check 2 then "yes" else "no"
+                , if check 4 then "yes" else "no"
+                , String.fromInt (loop 10 0)
+                ]
+        )

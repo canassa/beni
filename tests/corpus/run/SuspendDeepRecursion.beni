@@ -1,0 +1,41 @@
+-- run: deep recursion in a function that suspends
+-- (docs/design/transparent-effects-proposal.md §16.1). `depth` is not a
+-- tail call — it adds one after the recursive call returns — so written
+-- without suspending it overflows Node's stack long before 200 000 levels.
+-- Here every level yields to the scheduler first: a suspension unwinds the
+-- JavaScript stack into the fiber's continuations, one per level, on the
+-- heap, and each resumption runs from the scheduler one frame deep. The
+-- stack never holds more than a level or two, whatever the depth.
+--
+-- `countdown` is a tail call that suspends at every step: the loop's slow
+-- path re-enters the function, and so does not grow the stack either.
+import Io
+import Node exposing (Program)
+import Task
+
+
+depth : Int -> Int
+depth n =
+    let
+        _ = Task.yieldNow ()
+    in
+    if n == 0 then
+        0
+    else
+        1 + depth (n - 1)
+
+
+countdown : Int, Int -> Int
+countdown n acc =
+    let
+        _ = Task.yieldNow ()
+    in
+    if n == 0 then
+        acc
+    else
+        countdown (n - 1) (acc + n)
+
+
+main : Program
+main =
+    Io.run (\() -> Node.printLines [ String.fromInt (depth 200000), String.fromInt (countdown 200000 0) ])

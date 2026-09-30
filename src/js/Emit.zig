@@ -2007,7 +2007,7 @@ const Emitter = struct {
             // §9's release optimiser, between `Lower.lower` and
             // `Print.print`: item 1 plans, item 2 names, the printer spends
             // both.
-            const plan = try Opt.run(scratch, &lowered.ir);
+            const plan = try Opt.runKeeping(scratch, &lowered.ir, lowered.effect_keep);
             const kept = w.kept.allocator();
             slot.plan = .{
                 .dropped = try kept.dupe(u32, plan.dropped),

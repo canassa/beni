@@ -1,0 +1,57 @@
+-- run: a scope's children do not outlive it
+-- (docs/design/transparent-effects-proposal.md §16.5). `slowChild` would
+-- sleep a long time; the scope's function returns first, so the scope
+-- cancels it and waits for its cleanup — its `bracket` release runs with
+-- `Cancelled` — before `Task.scope` returns. `quickChild` is joined inside
+-- the scope and ends `Done`. A fiber `Task.spawn` started belongs to its
+-- parent instead, and is cancelled when the parent ends: `orphan`'s release
+-- runs before the program prints its last line.
+import Debug
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done)
+
+
+held : String, (() -> a) -> a
+held name work =
+    Task.bracket
+        (\() -> Debug.log name "acquired")
+        (\_ exit ->
+            case exit of
+                Done _ ->
+                    Debug.log () (name ++ " released: done")
+
+                Cancelled ->
+                    Debug.log () (name ++ " released: cancelled")
+        )
+        (\_ -> work ())
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                answer =
+                    Task.scope
+                        (\s ->
+                            let
+                                _ = Task.spawnIn s (\() -> held "slowChild" (\() -> Io.sleep 100000))
+                                quick = Task.spawnIn s (\() -> held "quickChild" (\() -> 42))
+                            in
+                            Task.join quick
+                        )
+                _ = Debug.log answer "scope returned"
+                parent =
+                    Task.spawn
+                        (\() ->
+                            let
+                                _ = Task.spawn (\() -> held "orphan" (\() -> Io.sleep 100000))
+                                _ = Io.sleep 1
+                            in
+                            "parent done"
+                        )
+                said = Task.join parent
+            in
+            Node.print said
+        )

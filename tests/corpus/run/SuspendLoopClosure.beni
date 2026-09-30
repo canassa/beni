@@ -1,0 +1,26 @@
+-- run: the capture hazard of `docs/design/backend.md` §8, with a
+-- suspension point in the loop (plan §6 row 3,
+-- docs/design/transparent-effects-proposal.md §16.3). Each iteration sleeps
+-- and then conses a closure over `n`. The sleep parks the fiber, so every
+-- iteration after the first runs in a continuation that re-enters the loop
+-- through its parameters. A continuation that read a `$in$<i>` slot, or a
+-- loop that reassigned `n` in place, would give every closure the last
+-- value and print 0, 0, 0; the right answer is 1, 2, 3.
+import Io
+import Node exposing (Program)
+
+
+build : Int, List (Int -> Int) -> List (Int -> Int)
+build n acc =
+    if n <= 0 then
+        acc
+    else
+        let
+            _ = Io.sleep 0
+        in
+        build (n - 1) ((\x -> x + n) :: acc)
+
+
+main : Program
+main =
+    Io.run (\() -> Node.printLines (List.map (build 3 []) (\f -> String.fromInt (f 0))))
