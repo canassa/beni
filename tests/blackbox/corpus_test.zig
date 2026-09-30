@@ -33,6 +33,8 @@
 //!                                   own `.mjs` is the golden (backend.md §12)
 //!   emit/release/X.beni + X.js      the same, with `--release` added: the golden
 //!                                   is a shape claim about the optimiser (§9)
+//!   emit/release/app/X.beni + X.js  a release APPLICATION: the golden is its
+//!                                   one scope-hoisted file, `_main.mjs` (§9)
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   build/bad/X/ (a directory)      a whole project that must FAIL to build:
@@ -475,6 +477,19 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const release_start = fixtures.items.len;
         try collect(arena, release_dir, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
+
+        // `emit/release/app/`: release APPLICATIONS, which are one
+        // scope-hoisted file (`backend.md` §9, *One scope-hoisted file under
+        // `--release`*). The golden is that file, `_main.mjs`, whole: the
+        // claim is the order the pieces are joined in and the names they
+        // are given in one scope, which only the whole file shows.
+        const release_app = try std.fs.path.join(arena, &.{ kind_dir, "release", "app" });
+        const release_app_start = fixtures.items.len;
+        try collect(arena, release_app, false, false, &fixtures, true);
+        for (fixtures.items[release_app_start..]) |*fixture| {
+            fixture.app = true;
+            fixture.release = true;
+        }
     }
     // `dom/`: the fixtures built for the `browser` platform, whose markup
     // the `dom` lowering compiles (`backend.md` §15.10) — `emit/dom/` and
@@ -1009,7 +1024,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1977,7 +1992,11 @@ const Case = struct {
             c.fixture.name
         else
             c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
-        const emitted_path = try std.fmt.allocPrint(c.arena, "out/{s}.mjs", .{stem});
+        // A release application is one file, the entry (`backend.md` §9).
+        const emitted_path = if (c.fixture.app and c.fixture.release)
+            "out/_main.mjs"
+        else
+            try std.fmt.allocPrint(c.arena, "out/{s}.mjs", .{stem});
         const js = c.w.read(emitted_path) catch |err| {
             detail("{s}: the build wrote no {s} ({t})\n", .{ c.fixture.name, emitted_path, err });
             return err;

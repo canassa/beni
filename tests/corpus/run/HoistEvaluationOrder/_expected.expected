@@ -1,0 +1,7 @@
+load: "mid"
+load: "zed after mid"
+load: "alpha after mid"
+load: "main"
+zed after mid
+alpha after mid
+main

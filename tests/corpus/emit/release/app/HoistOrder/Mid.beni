@@ -1,0 +1,3 @@
+pub value : Int
+value =
+    7

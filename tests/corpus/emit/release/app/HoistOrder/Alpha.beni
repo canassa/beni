@@ -1,0 +1,6 @@
+import Mid
+
+
+pub value : Int
+value =
+    Mid.value + 1

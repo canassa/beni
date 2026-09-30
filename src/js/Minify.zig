@@ -46,6 +46,15 @@
 //! `rename` renames nothing in a file with `eval`, `with` or `class`, and
 //! `rewrite` keeps every `const` in a file where it cannot show that no
 //! `const` binding is assigned.
+//!
+//! **A release application's one scope** (`backend.md` §9, *One
+//! scope-hoisted file under `--release`*) reads a file through `hoistable`
+//! — its top-level bindings, exports and imports, the names it keeps as
+//! written and the names it may read unbound — and prints it through
+//! `printHoisted`, with its top-level bindings spelled as the linker in
+//! `Emit` numbered them and its module syntax gone. The same four passes,
+//! the same refusals, and one more: `Hoisted.declines` names what keeps a
+//! file in a module of its own.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -515,7 +524,8 @@ fn verify(arena: Allocator, source: []const u8, tokens: []const Token, plan: Pla
 // Elimination
 // ---------------------------------------------------------------------------
 
-const Unit = struct {
+pub const Unit = struct {
+    kind: Unit.UnitKind,
     start: u32,
     end: u32,
     /// Kept whatever references it: an `import`, or a unit whose
@@ -527,6 +537,11 @@ const Unit = struct {
     exports: []const []const u8,
     /// A `const`, `let` or `var`, whose initialisers decide `root`.
     declaration: bool = false,
+    /// A declaration with a destructuring pattern, whose names `binds` does
+    /// not list.
+    pattern: bool = false,
+
+    pub const UnitKind = enum { import, declaration, function, export_list };
 };
 
 const Shaker = struct {
@@ -579,7 +594,7 @@ const Shaker = struct {
             // Every name an import binds, conservatively: the identifiers
             // in it. None of them may be taken for a global's read.
             for (i..semi) |at| if (s.tokens[at].kind == .ident) try s.bound.put(s.arena, s.text(at), {});
-            try s.units.append(s.arena, .{ .start = @intCast(i), .end = @intCast(semi + 1), .root = true, .binds = &.{}, .exports = &.{} });
+            try s.units.append(s.arena, .{ .kind = .import, .start = @intCast(i), .end = @intCast(semi + 1), .root = true, .binds = &.{}, .exports = &.{} });
             return semi + 1;
         }
         const exported = s.word(i, "export");
@@ -599,7 +614,7 @@ const Shaker = struct {
                 if (s.word(k, "as") and k > at + 1 and s.tokens[k - 1].kind == .ident and !s.word(k - 1, "as")) continue;
                 try names.append(s.arena, s.text(k));
             }
-            try s.units.append(s.arena, .{ .start = @intCast(i), .end = @intCast(close + 2), .root = false, .binds = &.{}, .exports = names.items });
+            try s.units.append(s.arena, .{ .kind = .export_list, .start = @intCast(i), .end = @intCast(close + 2), .root = false, .binds = &.{}, .exports = names.items });
             return close + 2;
         }
         return null;
@@ -616,7 +631,7 @@ const Shaker = struct {
         const end = s.close[body] + 1;
         const names = try s.arena.dupe([]const u8, &.{name});
         try s.bound.put(s.arena, name, {});
-        try s.units.append(s.arena, .{ .start = @intCast(i), .end = @intCast(end), .root = false, .binds = names, .exports = if (exported) names else &.{} });
+        try s.units.append(s.arena, .{ .kind = .function, .start = @intCast(i), .end = @intCast(end), .root = false, .binds = names, .exports = if (exported) names else &.{} });
         return end;
     }
 
@@ -635,22 +650,28 @@ const Shaker = struct {
         }
         var names: std.ArrayList([]const u8) = .empty;
         var root = false;
+        var pattern = false;
         var d = at + 1;
         while (d < semi) {
             const comma = s.find(d, semi, ",") orelse semi;
             if (s.tokens[d].kind == .ident) {
                 try names.append(s.arena, s.text(d));
                 try s.bound.put(s.arena, s.text(d), {});
-            } else root = true; // a destructuring pattern
+            } else {
+                root = true; // a destructuring pattern
+                pattern = true;
+            }
             d = comma + 1;
         }
         try s.units.append(s.arena, .{
+            .kind = .declaration,
             .start = @intCast(i),
             .end = @intCast(semi + 1),
             .root = root,
             .binds = names.items,
             .exports = if (exported) names.items else &.{},
             .declaration = true,
+            .pattern = pattern,
         });
         return semi + 1;
     }
@@ -765,6 +786,21 @@ const Shaker = struct {
 /// Which tokens survive when the file's exports are cut to `keep`, or null
 /// when the file cannot be cut soundly.
 pub fn shake(arena: Allocator, source: []const u8, tokens: []const Token, keep: []const []const u8) Allocator.Error!?[]const bool {
+    const c = try cut(arena, source, tokens, keep) orelse return null;
+    return c.mask;
+}
+
+/// What `shake` decides, with the units it decided it over: the file's
+/// top-level statements, and which of them survive.
+pub const Cut = struct {
+    mask: []bool,
+    units: []const Unit,
+    live: []const bool,
+};
+
+/// `shake`, keeping the units: a scope-hoisted build reads a file's
+/// top-level bindings, exports and imports from them.
+pub fn cut(arena: Allocator, source: []const u8, tokens: []const Token, keep: []const []const u8) Allocator.Error!?Cut {
     // A direct `eval` can name any binding in a string.
     for (tokens, 0..) |t, i| if (isWord(t, source, "eval") and !isProperty(tokens, source, i)) return null;
 
@@ -826,7 +862,7 @@ pub fn shake(arena: Allocator, source: []const u8, tokens: []const Token, keep: 
     const mask = try arena.alloc(bool, tokens.len);
     @memset(mask, false);
     for (units, 0..) |u, index| if (live[index]) @memset(mask[u.start..u.end], true);
-    return mask;
+    return .{ .mask = mask, .units = units, .live = live };
 }
 
 // ---------------------------------------------------------------------------
@@ -986,9 +1022,33 @@ fn rewrite(arena: Allocator, s: *const Structure, shown: []bool, spell: []?[]con
 /// `const i` in another, and with it every `const` of the file.
 fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
     const tokens = s.tokens;
-    // A string `eval` runs, or a `with` object, can assign a name no
-    // token spells.
-    for (tokens, 0..) |_, i| if (s.word(i, "eval") or s.word(i, "with")) return;
+    const assigned = try assignedNames(arena, s) orelse return;
+    var list: std.ArrayList(u32) = .empty;
+
+    // All of the file's `const`s or none: a file that mixes the two
+    // keywords compresses worse than one that keeps `const` throughout
+    // (research 41 measured +9 brotli bytes on the browser runtime, where
+    // a partial rewrite was possible), so a partial rewrite is not made.
+    var consts: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, k| {
+        if (!shown[k] or !s.word(k, "const")) continue;
+        list.clearRetainingCapacity();
+        (try s.declarators(arena, k, &list)) orelse return;
+        for (list.items) |d| {
+            // A pattern's every name, keys included: more than it binds.
+            for (d..s.close[d] + 1) |at| if (s.name(at) and assigned.contains(s.text(at))) return;
+        }
+        try consts.append(arena, @intCast(k));
+    }
+    for (consts.items) |k| spell[k] = "let";
+}
+
+/// Every name the file assigns anywhere, by name and not by scope — or null
+/// when a string `eval` runs or a `with` object can assign a name no token
+/// spells.
+fn assignedNames(arena: Allocator, s: *const Structure) Allocator.Error!?Set {
+    const tokens = s.tokens;
+    for (tokens, 0..) |_, i| if (s.word(i, "eval") or s.word(i, "with")) return null;
 
     // Where a declaration names its bindings, so that `let x = 1` is not
     // read as an assignment to `x`: each simple declarator, and a
@@ -1023,23 +1083,7 @@ fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell:
             null;
         if (pattern_end) |e| for (s.close[e]..e) |at| if (s.name(at)) try assigned.put(arena, s.text(at), {});
     }
-
-    // All of the file's `const`s or none: a file that mixes the two
-    // keywords compresses worse than one that keeps `const` throughout
-    // (research 41 measured +9 brotli bytes on the browser runtime, where
-    // a partial rewrite was possible), so a partial rewrite is not made.
-    var consts: std.ArrayList(u32) = .empty;
-    for (tokens, 0..) |_, k| {
-        if (!shown[k] or !s.word(k, "const")) continue;
-        list.clearRetainingCapacity();
-        (try s.declarators(arena, k, &list)) orelse return;
-        for (list.items) |d| {
-            // A pattern's every name, keys included: more than it binds.
-            for (d..s.close[d] + 1) |at| if (s.name(at) and assigned.contains(s.text(at))) return;
-        }
-        try consts.append(arena, @intCast(k));
-    }
-    for (consts.items) |k| spell[k] = "let";
+    return assigned;
 }
 
 /// Whether the `[` at `open` reads a member (`a[i]`) rather than opening
@@ -1080,6 +1124,114 @@ fn fixedName(text: []const u8) bool {
     return false;
 }
 
+const Set = std.StringHashMapUnmanaged(void);
+
+/// What A2 reads of a file before it renames anything: the names the file
+/// binds, and the three reasons a name may not move.
+const Facts = struct {
+    /// Every name the file binds — a declaration's, a function's, a
+    /// parameter's, a `catch`'s — exported or not.
+    bound: Set = .empty,
+    /// Names that somewhere stand where a property name can (research 40
+    /// §7): renaming one there would rename a key.
+    keyed: Set = .empty,
+    /// Every name an `import` statement spells.
+    imported: Set = .empty,
+    /// Every name an `export` spells: an exported declaration's, and each
+    /// of an `export { … }` list's.
+    exported: Set = .empty,
+
+    /// Whether `text` may be renamed. `hoisted` is a scope-hoisted file
+    /// (`backend.md` §9, *One scope-hoisted file under `--release`*), whose
+    /// exports are not a boundary any more: nothing imports them by name.
+    fn renamable(f: *const Facts, text: []const u8, hoisted: bool) bool {
+        return f.bound.contains(text) and !f.keyed.contains(text) and !f.imported.contains(text) and
+            (hoisted or !f.exported.contains(text)) and !fixedName(text);
+    }
+};
+
+/// A2's reading of the file, or null when it mentions `eval`, `with` or
+/// `class` — or exports a declaration whose names it cannot list — and so
+/// no name in it is renamed.
+fn facts(arena: Allocator, s: *const Structure, shown: []const bool) Allocator.Error!?Facts {
+    const tokens = s.tokens;
+    for (tokens, 0..) |_, i| {
+        if (s.word(i, "eval") or s.word(i, "with") or s.word(i, "class")) return null;
+    }
+
+    var f: Facts = .{};
+    var list: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, i| {
+        // An `import`'s every name, and an `export { … }` list's.
+        if (s.word(i, "import") and !s.punct(i + 1, "(") and !s.punct(i + 1, ".")) {
+            var j = i + 1;
+            while (j < tokens.len and tokens[j].kind != .string and !s.punct(j, ";")) : (j += 1) {
+                if (tokens[j].kind == .ident) try f.imported.put(arena, s.text(j), {});
+            }
+            continue;
+        }
+        if (s.word(i, "export") and s.punct(i + 1, "{")) {
+            for (i + 2..s.close[i + 1]) |j| if (tokens[j].kind == .ident) try f.exported.put(arena, s.text(j), {});
+            continue;
+        }
+        if (!shown[i]) continue;
+        const exported = i > 0 and s.word(i - 1, "export");
+        if (s.word(i, "const") or s.word(i, "let") or s.word(i, "var")) {
+            list.clearRetainingCapacity();
+            const certain = (try s.declarators(arena, i, &list)) != null;
+            // An exported declaration whose names this cannot list keeps
+            // every name in the file.
+            if (exported and !certain) return null;
+            for (list.items) |d| {
+                if (!s.name(d)) continue;
+                try f.bound.put(arena, s.text(d), {});
+                if (exported) try f.exported.put(arena, s.text(d), {});
+            }
+            continue;
+        }
+        if (s.word(i, "function")) {
+            var j = i + 1;
+            if (s.punct(j, "*")) j += 1;
+            if (j < tokens.len and s.name(j)) {
+                const fn_exported = exported or (i > 1 and s.word(i - 1, "async") and s.word(i - 2, "export"));
+                try f.bound.put(arena, s.text(j), {});
+                if (fn_exported) try f.exported.put(arena, s.text(j), {});
+                j += 1;
+            }
+            if (s.punct(j, "(")) try bindParams(arena, s, j, &f.bound);
+            continue;
+        }
+        if (s.word(i, "catch") and s.punct(i + 1, "(")) {
+            try bindParams(arena, s, i + 1, &f.bound);
+            continue;
+        }
+        if (s.punct(i, "(") and s.punct(s.close[i] + 1, "=>")) {
+            try bindParams(arena, s, i, &f.bound);
+            continue;
+        }
+        if (s.name(i) and s.punct(i + 1, "=>")) try f.bound.put(arena, s.text(i), {});
+    }
+
+    // Where a name may be a property key, over every token, shown or not.
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const t = s.text(i);
+        if (s.punct(i + 1, ":")) {
+            // `c ? x : y` and `case x:` read `x`; anything else may be a key
+            // or a label.
+            if (!(i > 0 and (s.punct(i - 1, "?") or s.word(i - 1, "case")))) try f.keyed.put(arena, t, {});
+            continue;
+        }
+        const o = s.outer[i];
+        if (o == Structure.none or !s.punct(o, "{") or s.block[o] or i == 0) continue;
+        const before = s.punct(i - 1, "{") or s.punct(i - 1, ",") or s.punct(i - 1, ";") or s.punct(i - 1, "}") or s.punct(i - 1, "*") or
+            s.word(i - 1, "get") or s.word(i - 1, "set") or s.word(i - 1, "static") or s.word(i - 1, "async");
+        const after = s.punct(i + 1, ",") or s.punct(i + 1, "}") or s.punct(i + 1, "=") or s.punct(i + 1, "(") or s.punct(i + 1, ";");
+        if (before and after) try f.keyed.put(arena, t, {});
+    }
+    return f;
+}
+
 /// A2: every name the file binds, renamed at once to a short name that no
 /// other identifier of the file spells — the most used first, ties by first
 /// occurrence (rule 5). A name keeps its spelling when it is exported or
@@ -1090,100 +1242,44 @@ fn fixedName(text: []const u8) bool {
 /// §7 is the argument: the renaming is injective onto names nothing else
 /// uses, so every use still refers to what it referred to.
 fn rename(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
+    const f = try facts(arena, s, shown) orelse return;
+    try assign(arena, s, shown, spell, &f, null);
+}
+
+/// The spellings a scope-hoisted file's top-level bindings are given from
+/// outside the file, by the name each is written with.
+pub const Forced = std.StringHashMapUnmanaged([]const u8);
+
+/// A2's assignment. With `forced`, the file is scope-hoisted: its exports
+/// are ordinary bindings, a name `forced` lists takes that spelling, and
+/// every other renamed name avoids those spellings as well as the file's
+/// own kept ones, so no inner binding can capture a top-level one.
+fn assign(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8, f: *const Facts, forced: ?*const Forced) Allocator.Error!void {
     const tokens = s.tokens;
-    for (tokens, 0..) |_, i| {
-        if (s.word(i, "eval") or s.word(i, "with") or s.word(i, "class")) return;
-    }
-
-    var bound: std.StringHashMapUnmanaged(void) = .empty;
-    var refused: std.StringHashMapUnmanaged(void) = .empty;
-    var list: std.ArrayList(u32) = .empty;
-    for (tokens, 0..) |_, i| {
-        // An `import`'s every name, and an `export { … }` list's.
-        if (s.word(i, "import") and !s.punct(i + 1, "(") and !s.punct(i + 1, ".")) {
-            var j = i + 1;
-            while (j < tokens.len and tokens[j].kind != .string and !s.punct(j, ";")) : (j += 1) {
-                if (tokens[j].kind == .ident) try refused.put(arena, s.text(j), {});
-            }
-            continue;
-        }
-        if (s.word(i, "export") and s.punct(i + 1, "{")) {
-            for (i + 2..s.close[i + 1]) |j| if (tokens[j].kind == .ident) try refused.put(arena, s.text(j), {});
-            continue;
-        }
-        if (!shown[i]) continue;
-        const exported = i > 0 and s.word(i - 1, "export");
-        if (s.word(i, "const") or s.word(i, "let") or s.word(i, "var")) {
-            list.clearRetainingCapacity();
-            const certain = (try s.declarators(arena, i, &list)) != null;
-            // An exported declaration whose names this cannot list keeps
-            // every name in the file.
-            if (exported and !certain) return;
-            for (list.items) |d| {
-                if (!s.name(d)) continue;
-                try (if (exported) &refused else &bound).put(arena, s.text(d), {});
-            }
-            continue;
-        }
-        if (s.word(i, "function")) {
-            var j = i + 1;
-            if (s.punct(j, "*")) j += 1;
-            if (j < tokens.len and s.name(j)) {
-                const fn_exported = exported or (i > 1 and s.word(i - 1, "async") and s.word(i - 2, "export"));
-                try (if (fn_exported) &refused else &bound).put(arena, s.text(j), {});
-                j += 1;
-            }
-            if (s.punct(j, "(")) try bindParams(arena, s, j, &bound);
-            continue;
-        }
-        if (s.word(i, "catch") and s.punct(i + 1, "(")) {
-            try bindParams(arena, s, i + 1, &bound);
-            continue;
-        }
-        if (s.punct(i, "(") and s.punct(s.close[i] + 1, "=>")) {
-            try bindParams(arena, s, i, &bound);
-            continue;
-        }
-        if (s.name(i) and s.punct(i + 1, "=>")) try bound.put(arena, s.text(i), {});
-    }
-
-    // Where a name may be a property key, over every token, shown or not.
-    for (tokens, 0..) |_, i| {
-        if (!s.name(i)) continue;
-        const t = s.text(i);
-        if (s.punct(i + 1, ":")) {
-            // `c ? x : y` and `case x:` read `x`; anything else may be a key
-            // or a label.
-            if (!(i > 0 and (s.punct(i - 1, "?") or s.word(i - 1, "case")))) try refused.put(arena, t, {});
-            continue;
-        }
-        const o = s.outer[i];
-        if (o == Structure.none or !s.punct(o, "{") or s.block[o] or i == 0) continue;
-        const before = s.punct(i - 1, "{") or s.punct(i - 1, ",") or s.punct(i - 1, ";") or s.punct(i - 1, "}") or s.punct(i - 1, "*") or
-            s.word(i - 1, "get") or s.word(i - 1, "set") or s.word(i - 1, "static") or s.word(i - 1, "async");
-        const after = s.punct(i + 1, ",") or s.punct(i + 1, "}") or s.punct(i + 1, "=") or s.punct(i + 1, "(") or s.punct(i + 1, ";");
-        if (before and after) try refused.put(arena, t, {});
-    }
-
+    const hoisted = forced != null;
     // The candidates, with how often the shown tokens use each.
     const Candidate = struct { text: []const u8, count: u32, first: u32 };
     var index: std.StringHashMapUnmanaged(u32) = .empty;
     var candidates: std.ArrayList(Candidate) = .empty;
-    var taken: std.StringHashMapUnmanaged(void) = .empty;
+    var taken: Set = .empty;
     for (tokens, 0..) |_, i| {
         if (!s.name(i)) continue;
         const t = s.text(i);
-        const renamable = bound.contains(t) and !refused.contains(t) and !fixedName(t);
-        if (!renamable) {
+        if (!f.renamable(t, hoisted)) {
             try taken.put(arena, t, {});
             continue;
         }
+        if (forced) |fixed| if (fixed.contains(t)) continue;
         const slot = try index.getOrPut(arena, t);
         if (!slot.found_existing) {
             slot.value_ptr.* = @intCast(candidates.items.len);
             try candidates.append(arena, .{ .text = t, .count = 0, .first = @intCast(i) });
         }
         if (shown[i]) candidates.items[slot.value_ptr.*].count += 1;
+    }
+    if (forced) |fixed| {
+        var it = fixed.valueIterator();
+        while (it.next()) |v| try taken.put(arena, v.*, {});
     }
     std.mem.sort(Candidate, candidates.items, {}, struct {
         fn lessThan(_: void, a: Candidate, b: Candidate) bool {
@@ -1206,8 +1302,237 @@ fn rename(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?
     }
     for (tokens, 0..) |_, i| {
         if (!s.name(i)) continue;
-        if (fresh.get(s.text(i))) |new| spell[i] = new;
+        const t = s.text(i);
+        if (forced) |fixed| if (f.renamable(t, true)) if (fixed.get(t)) |new| {
+            spell[i] = new;
+            continue;
+        };
+        if (fresh.get(t)) |new| spell[i] = new;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Scope hoisting (`backend.md` §9, *One scope-hoisted file under `--release`*)
+// ---------------------------------------------------------------------------
+
+/// A hand-written file read for a scope-hoisted build: cut to the exports
+/// the build imports, with what the linker needs to put it in one module
+/// scope with every other file of the program. `hoistable` returns null
+/// where it cannot read the file exactly; `Hoisted.declines` says why a
+/// file it read must still keep a module of its own.
+pub const Hoisted = struct {
+    source: []const u8,
+    tokens: []const Token,
+    structure: Structure,
+    cut: Cut,
+    /// A2's reading; null when the file mentions `eval`, `with` or `class`.
+    facts: ?Facts,
+    /// The surviving top-level bindings, in source order, which the linker
+    /// numbers them in.
+    tops: []const Top,
+    /// Every export a surviving unit makes, with the binding it names.
+    exports: []const Export,
+    /// The surviving `import` statements, in order.
+    imports: []const Import,
+    /// Spellings the file writes and keeps: a top-level binding renamed into
+    /// it would be captured wherever one of them is a binding.
+    taken: Set,
+    /// Names the file may read without binding them: nothing else in the
+    /// one scope may be spelled like one.
+    free: Set,
+    /// Names the file assigns anywhere, or null when it cannot tell.
+    assigned: ?Set,
+    /// Every surviving unit but an `import` is inert (`shake`'s roots), so
+    /// the file can be evaluated at any point without anyone seeing when.
+    inert: bool,
+    /// A surviving declaration destructures a pattern, whose names are
+    /// top-level bindings the units do not list.
+    patterned: bool,
+    /// It mentions `import` outside a top-level `import` statement —
+    /// `import.meta`, `import()` — whose meaning depends on the file it is in.
+    located: bool,
+
+    pub const Top = struct {
+        name: []const u8,
+        /// A2 may give it another spelling. One it may not keeps its own,
+        /// which the linker must then keep unique in the one scope.
+        renamable: bool,
+    };
+
+    pub const Export = struct { name: []const u8, binding: []const u8 };
+
+    pub const Import = struct {
+        unit: Unit,
+        /// The specifier, without its quotes.
+        specifier: []const u8,
+        /// Every identifier the statement spells but its keywords: more than
+        /// it binds, never less.
+        names: []const []const u8,
+    };
+
+    /// The binding an export names, or null.
+    pub fn exportBinding(h: *const Hoisted, name: []const u8) ?[]const u8 {
+        for (h.exports) |x| if (std.mem.eql(u8, x.name, name)) return x.binding;
+        return null;
+    }
+
+    /// Why the file must keep a module of its own, or null when it can join
+    /// the one scope.
+    pub fn declines(h: *const Hoisted) ?[]const u8 {
+        if (h.facts == null) return "it mentions `eval`, `with` or `class`, so no name in it can move";
+        if (h.patterned) return "a top-level declaration destructures a pattern";
+        if (h.located) return "it reads where it is, through `import.meta` or `import()`";
+        for (h.imports) |imp| {
+            if (!std.mem.startsWith(u8, imp.specifier, "node:")) return "it imports a module other than a `node:` built-in";
+        }
+        return null;
+    }
+};
+
+/// Read `source` for a scope-hoisted build, cut to the exports `keep` names.
+/// Null when the tokenizer or elimination refuses it, as `minify` does.
+pub fn hoistable(arena: Allocator, source: []const u8, keep: []const []const u8) Allocator.Error!?Hoisted {
+    const tokens = tokenize(arena, source) catch |err| switch (err) {
+        error.Unsupported => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const c = try cut(arena, source, tokens, keep) orelse return null;
+    const s: Structure = try .init(arena, source, tokens);
+    const f = try facts(arena, &s, c.mask);
+
+    var tops: std.ArrayList(Hoisted.Top) = .empty;
+    var exports: std.ArrayList(Hoisted.Export) = .empty;
+    var imports: std.ArrayList(Hoisted.Import) = .empty;
+    var inert = true;
+    var patterned = false;
+    // Where a unit that is not the body's — an `import`, an `export { … }`
+    // list — sits, so its names are neither read nor bound by the body.
+    const outside = try arena.alloc(bool, tokens.len);
+    @memset(outside, false);
+    for (c.units, c.live) |u, live| {
+        if (!live) continue;
+        switch (u.kind) {
+            .import => {
+                @memset(outside[u.start..u.end], true);
+                var names: std.ArrayList([]const u8) = .empty;
+                var specifier: []const u8 = "";
+                for (u.start..u.end) |i| {
+                    const t = tokens[i];
+                    if (t.kind == .string) specifier = t.text(source)[1 .. t.text(source).len - 1];
+                    if (t.kind != .ident) continue;
+                    const w = t.text(source);
+                    if (std.mem.eql(u8, w, "import") or std.mem.eql(u8, w, "from") or std.mem.eql(u8, w, "as")) continue;
+                    try names.append(arena, w);
+                }
+                try imports.append(arena, .{ .unit = u, .specifier = specifier, .names = names.items });
+            },
+            .export_list => {
+                @memset(outside[u.start..u.end], true);
+                // `a as b` exports `b` and names `a`; `a` alone, both.
+                var k: usize = u.start + 2;
+                while (k < u.end) : (k += 1) {
+                    if (tokens[k].kind != .ident) continue;
+                    const local = tokens[k].text(source);
+                    if (k + 2 < u.end and isWord(tokens[k + 1], source, "as")) {
+                        try exports.append(arena, .{ .name = tokens[k + 2].text(source), .binding = local });
+                        k += 2;
+                    } else try exports.append(arena, .{ .name = local, .binding = local });
+                }
+            },
+            .declaration, .function => {
+                if (u.root) inert = false;
+                if (u.pattern) patterned = true;
+                for (u.binds) |name| try tops.append(arena, .{
+                    .name = name,
+                    .renamable = if (f) |ff| ff.renamable(name, true) else false,
+                });
+                for (u.exports) |name| try exports.append(arena, .{ .name = name, .binding = name });
+            },
+        }
+    }
+
+    // What the file keeps as written, and what it may read unbound.
+    var taken: Set = .empty;
+    var free: Set = .empty;
+    var located = false;
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const t = s.text(i);
+        const moves = if (f) |ff| ff.renamable(t, true) else false;
+        if (!moves) try taken.put(arena, t, {});
+        if (c.mask[i] and !outside[i] and std.mem.eql(u8, t, "import")) located = true;
+        if (!c.mask[i] or outside[i] or Print.isReservedWord(t)) continue;
+        // `{ a: …` and `, a: …` are a key or a label: never a read.
+        if (s.punct(i + 1, ":") and i > 0 and (s.punct(i - 1, "{") or s.punct(i - 1, ","))) continue;
+        // A name the file imports is the import's wherever the file reads
+        // it; one it only declares may still be read as a host's global
+        // somewhere its declaration does not reach, which check 3 cannot
+        // see, so a host's name is free even then.
+        const imported = if (f) |ff| ff.imported.contains(t) else false;
+        const binds = if (f) |ff| ff.bound.contains(t) else false;
+        if (!imported and (!binds or fixedName(t))) try free.put(arena, t, {});
+    }
+
+    return .{
+        .source = source,
+        .tokens = tokens,
+        .structure = s,
+        .cut = c,
+        .facts = f,
+        .tops = tops.items,
+        .exports = exports.items,
+        .imports = imports.items,
+        .taken = taken,
+        .free = free,
+        .assigned = try assignedNames(arena, &s),
+        .inert = inert,
+        .patterned = patterned,
+        .located = located,
+    };
+}
+
+/// A hoisted file's text: its body, and its `import` statements apart, for
+/// the top of the one file.
+pub const Printed = struct {
+    body: []const u8,
+    imports: []const []const u8,
+};
+
+/// Print a file `Hoisted.declines` accepted, with its top-level bindings
+/// spelled as `forced` says and every other name renamed by A2 around them:
+/// no `import`, no `export` keyword and no `export { … }` list in the body,
+/// the `import` statements apart. Research 40's rewrites run as in `minify`.
+pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) Allocator.Error!Printed {
+    const tokens = h.tokens;
+    const shown = try arena.dupe(bool, h.cut.mask);
+    const spell = try arena.alloc(?[]const u8, tokens.len);
+    @memset(spell, null);
+    try assign(arena, &h.structure, shown, spell, &h.facts.?, forced);
+    var imports: std.ArrayList([]const u8) = .empty;
+    const alone = try arena.alloc(bool, tokens.len);
+    for (h.cut.units, h.cut.live) |u, live| {
+        if (!live) continue;
+        switch (u.kind) {
+            .import => {
+                @memset(alone, false);
+                @memset(alone[u.start..u.end], true);
+                const plan: Plan = .{ .shown = alone, .spell = spell };
+                const text = try print(arena, h.source, tokens, plan);
+                if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, text);
+                try imports.append(arena, text);
+                @memset(shown[u.start..u.end], false);
+            },
+            .export_list => @memset(shown[u.start..u.end], false),
+            .declaration, .function => if (isWord(tokens[u.start], h.source, "export")) {
+                shown[u.start] = false;
+            },
+        }
+    }
+    try rewrite(arena, &h.structure, shown, spell);
+    const plan: Plan = .{ .shown = shown, .spell = spell };
+    const body = try print(arena, h.source, tokens, plan);
+    if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, body);
+    return .{ .body = body, .imports = imports.items };
 }
 
 /// The names a parameter list at `open` binds: each element's identifier,
@@ -1435,6 +1760,73 @@ test "a file elimination cannot delimit is only compacted" {
     try expectMinified("const a = b\nconst c = 1;\n", &.{}, "const a=b\nconst c=1;\n");
 }
 
+test "hoisting: top-level names take the linker's spellings, and the file's module syntax leaves its body" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const h = (try hoistable(arena,
+        \\import process from "node:process";
+        \\const helper = (value) => value + 1;
+        \\export const run = (a) => process.exit(helper(a));
+        \\const unused = () => 2;
+        \\export { helper as step };
+        \\
+    , &.{ "run", "step" })).?;
+    try testing.expect(h.declines() == null);
+    try testing.expect(h.inert);
+    try testing.expectEqual(@as(usize, 2), h.tops.len);
+    try testing.expectEqualStrings("helper", h.exportBinding("step").?);
+    try testing.expectEqualStrings("node:process", h.imports[0].specifier);
+    // `process` is read as the import binds it; `exit` is a property.
+    try testing.expect(h.taken.contains("process"));
+    try testing.expect(!h.free.contains("process"));
+    try testing.expect(!h.free.contains("exit"));
+
+    var forced: Forced = .empty;
+    try forced.put(arena, "helper", "a");
+    try forced.put(arena, "run", "b");
+    const printed = try printHoisted(arena, &h, &forced);
+    try testing.expectEqualStrings("import process from\"node:process\";\n", printed.imports[0]);
+    // The locals avoid `a` and `b`, which a local would capture.
+    try testing.expectEqualStrings("let a=c=>c+1;let b=d=>process.exit(a(d));\n", printed.body);
+}
+
+test "hoisting: a name read unbound is free, and a key after { or , is not" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const h = (try hoistable(arena, "export const f = (x) => ({ a: x, b: document.title, c: x ? y : z });\n", &.{"f"})).?;
+    try testing.expect(h.free.contains("document"));
+    try testing.expect(h.free.contains("y"));
+    try testing.expect(h.free.contains("z"));
+    try testing.expect(!h.free.contains("a"));
+    try testing.expect(!h.free.contains("b"));
+    try testing.expect(!h.free.contains("title"));
+    try testing.expect(!h.free.contains("x"));
+}
+
+test "hoisting: what cannot join one scope says why" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const cases = [_][]const u8{
+        // A2 renames nothing in a file with a class.
+        "export const f = () => new (class {})();\n",
+        // `import.meta` means the file it is in.
+        "export const f = () => import.meta.url;\n",
+        // A pattern binds names the units do not list.
+        "export const { f } = { f: 1 };\n",
+        // A package might do anything when it is evaluated.
+        "import x from \"pkg\";\nexport const f = () => x;\n",
+    };
+    for (cases) |source| {
+        const h = (try hoistable(arena, source, &.{"f"})) orelse return error.Refused;
+        try testing.expect(h.declines() != null);
+    }
+    // A top-level call is a unit this pass cannot delimit: not read at all.
+    try testing.expect(try hoistable(arena, "f();\nexport const g = 1;\n", &.{"g"}) == null);
+}
+
 /// One file that ships in the box: it must be neither refused by the
 /// tokenizer nor left uncut by elimination, or a release build would copy
 /// it whole without saying so.
@@ -1452,6 +1844,14 @@ fn expectCompacted(path: []const u8, source: []const u8) !void {
     }
     const got = (try minify(arena, source, null, release)).?;
     try testing.expect(got.len < source.len);
+    // And it joins a release application's one scope rather than keeping a
+    // module of its own (`backend.md` §9, *One scope-hoisted file under
+    // `--release`*).
+    const h = (try hoistable(arena, source, &.{})).?;
+    if (h.declines()) |why| {
+        std.debug.print("{s} cannot be scope-hoisted: {s}\n", .{ path, why });
+        return error.Refused;
+    }
 }
 
 test "every hand-written file that ships in the box is compacted and cut" {
@@ -1470,6 +1870,12 @@ test "every hand-written file that ships in the box is compacted and cut" {
     };
     // A zero would mean the embedding broke and this looked at nothing.
     try testing.expect(seen >= 10);
+    // The derived-comparison engine a release build writes (`Emit`), which
+    // is hand-written JavaScript too, minified already.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const engine = (try hoistable(arena_state.allocator(), @embedFile("derived_runtime.min.mjs"), &.{ "deep", "listEq", "listCompare" })).?;
+    try testing.expect(engine.declines() == null);
 }
 
 test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
@@ -1506,5 +1912,14 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
         // bracket that changed how the rest lexes, panics here.
         _ = try minify(a.allocator(), buf.items, null, release);
         _ = try minify(a.allocator(), buf.items, &.{"a"}, release);
+        // A scope-hoisted file: its top-level bindings forced to names no
+        // piece spells, and `verify` holding the body to the plan.
+        if (try hoistable(a.allocator(), buf.items, &.{"a"})) |h| if (h.declines() == null) {
+            var forced: Forced = .empty;
+            for (h.tops, 0..) |top, i| if (top.renamable) {
+                try forced.put(a.allocator(), top.name, try std.fmt.allocPrint(a.allocator(), "Q{d}", .{i}));
+            };
+            _ = try printHoisted(a.allocator(), &h, &forced);
+        };
     }
 }

@@ -47,7 +47,7 @@
 
 import { Console } from "node:console";
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import process from "node:process";
 import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -401,9 +401,11 @@ const phase = async (title, act) => {
 
 // The program runtime, as the entry file names it: `import { run } from …`,
 // or under `--release`, when `start` comes from the same file,
-// `import{run,start}from…`.
+// `import{run,start}from…`. A `--release` application is one scope-hoisted
+// file that imports no runtime (backend.md §9): the runtime is inside it, and
+// the file itself exports the runtime's `flush`.
 const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?(?:, ?start ?)?\} ?from ?"([^"]+)";$/m);
-const runtime = runtimeImport === null ? null : runtimeImport[1];
+const runtime = runtimeImport === null ? `./${basename(entry)}` : runtimeImport[1];
 
 if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
   let ok = true;

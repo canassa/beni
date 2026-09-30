@@ -588,8 +588,10 @@ fn wideLiteralCase(flag: []const u8, scrutinee: []const u8, stdout: []const u8) 
         // └─────────────────────────────────────┘
         // The module's one `case` is ⌈16 401 / 16 384⌉ = 2 `switch`es, none
         // over the bound: every label between two `switch`es is counted
-        // against the one before.
-        const js = try w.read("out/Main.mjs");
+        // against the one before. A `--release` application is one
+        // scope-hoisted file (`backend.md` §9), and no hand-written file it
+        // holds writes a `switch`.
+        const js = try w.read(if (std.mem.eql(u8, flag, "--release")) "out/_main.mjs" else "out/Main.mjs");
         var switches: usize = 0;
         var labels: usize = 0;
         var worst: usize = 0;

@@ -107,6 +107,11 @@ pub const Options = struct {
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
     recursion_limit: u32 = 256,
+    /// A scope-hoisted build (§9, *One scope-hoisted file under
+    /// `--release`*): the module's `import` and `export` statements are not
+    /// printed, because every name they carry is already one binding of the
+    /// one scope. Everything else prints exactly as it would.
+    hoisted: bool = false,
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -139,6 +144,10 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
     var i: usize = 0;
     while (i < body.len) : (i += 1) {
         if (p.plan.isDropped(body[i])) continue;
+        if (options.hoisted) switch (p.ir.tag(body[i])) {
+            .import_stmt, .export_stmt => continue,
+            else => {},
+        };
         if (p.compact and p.ir.tag(body[i]) == .const_decl) {
             i = try p.topConstRun(body, i);
             continue;

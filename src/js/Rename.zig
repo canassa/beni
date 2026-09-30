@@ -123,26 +123,70 @@ pub const Globals = struct {
     /// The next ordinal to hand out. A counter and never a hash order, which
     /// is what makes the table deterministic even though it is a hash map.
     next: u32 = 0,
+    /// A scope-hoisted build (§9, *One scope-hoisted file under
+    /// `--release`*): spellings no ordinal may take, because a hand-written
+    /// file in the one scope reads that name without binding it, or binds it
+    /// under that spelling itself. Null everywhere else, where the table is
+    /// exactly what it always was.
+    skip: ?*const Spellings = null,
+    /// Ordinals an `internAvoiding` passed over for its own name only, in
+    /// ascending order: the next name without that constraint takes the
+    /// first of them, so a constraint costs a place in the order and not a
+    /// spelling.
+    holes: std.ArrayList(u32) = .empty,
 
-    const Key = struct { module: u32, base: u32, tag: u32 };
+    pub const Spellings = std.StringHashMapUnmanaged(void);
 
-    fn key(n: JsIr.Name) Key {
+    pub const Key = struct { module: u32, base: u32, tag: u32 };
+
+    pub fn key(n: JsIr.Name) Key {
         return .{ .module = @intFromEnum(n.module), .base = @intFromEnum(n.base), .tag = n.tag };
     }
 
     pub fn deinit(g: *Globals, gpa: Allocator) void {
         g.map.deinit(gpa);
+        g.holes.deinit(gpa);
         g.* = undefined;
     }
 
     /// This name's ordinal, assigning one on first encounter.
     pub fn intern(g: *Globals, gpa: Allocator, n: JsIr.Name) Allocator.Error!u32 {
+        return g.internAvoiding(gpa, n, null);
+    }
+
+    /// `intern`, where the name may not be spelled like anything in `avoid`:
+    /// a hand-written file's top-level binding, which is renamed throughout
+    /// its file to this spelling and must not meet a name the file writes
+    /// and keeps (§9, *One scope-hoisted file under `--release`*).
+    pub fn internAvoiding(g: *Globals, gpa: Allocator, n: JsIr.Name, avoid: ?*const Spellings) Allocator.Error!u32 {
         const got = try g.map.getOrPut(gpa, key(n));
         if (got.found_existing) return got.value_ptr.*;
-        const ordinal = usable(g.next);
-        g.next = ordinal + 1;
-        got.value_ptr.* = ordinal;
-        return ordinal;
+        var buf: [8]u8 = undefined;
+        for (g.holes.items, 0..) |hole, i| {
+            if (avoid) |set| if (set.contains(spell(hole, &buf))) continue;
+            _ = g.holes.orderedRemove(i);
+            got.value_ptr.* = hole;
+            return hole;
+        }
+        while (true) {
+            const ordinal = g.usableGlobal(g.next);
+            g.next = ordinal + 1;
+            if (avoid) |set| if (set.contains(spell(ordinal, &buf))) {
+                try g.holes.append(gpa, ordinal);
+                continue;
+            };
+            got.value_ptr.* = ordinal;
+            return ordinal;
+        }
+    }
+
+    /// The first ordinal at or after `from` a whole-program name may take.
+    fn usableGlobal(g: *const Globals, from: u32) u32 {
+        var o = usable(from);
+        const set = g.skip orelse return o;
+        var buf: [8]u8 = undefined;
+        while (set.contains(spell(o, &buf))) o = usable(o + 1);
+        return o;
     }
 
     /// This name's ordinal, or null when nothing has assigned one. The entry

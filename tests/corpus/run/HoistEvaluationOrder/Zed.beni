@@ -1,0 +1,6 @@
+import Mid
+
+
+pub value : String
+value =
+    Debug.log ("zed after " ++ Mid.value) "load"

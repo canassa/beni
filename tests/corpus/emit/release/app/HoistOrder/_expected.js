@@ -1,0 +1,10 @@
+import process from"node:process";
+let i=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};
+let j=d=>{let b=[];for(let c=d;c.$===1;c=c.b)b.push(c.a);return b};let a=e=>{let b=j(e);return{code:0,out:b.length===0?"":`${b.join("\n")}\n`}};
+let d=e=>String(e);
+let c=(a,b)=>a+b;let f=(a,b)=>a*b;
+const b=7;
+const e=f(b,3);
+const g=c(b,1);
+const h=a({$:1,a:d(c(e,g)),b:{$:0,a:null,b:null}});
+i(h);

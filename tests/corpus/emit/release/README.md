@@ -22,3 +22,10 @@ A directory is a multi-module project, exactly as under `emit/app/`: every
 `.beni` in it is copied into one build and `_expected.js` is the module named
 after the directory. That is how a claim about two files agreeing — an
 `import` specifier and the `export` it reads — is goldened at all.
+
+**`app/` holds release APPLICATIONS** — `--release` without `--library`,
+rooted at `main` — and their golden is the whole of `_main.mjs`, because a
+release application is one scope-hoisted file (`backend.md` §9, *One
+scope-hoisted file under `--release`*): every module, sibling and runtime
+of the program in ES module evaluation order, in one module scope. A
+directory there is a project as above, its entry module named after it.

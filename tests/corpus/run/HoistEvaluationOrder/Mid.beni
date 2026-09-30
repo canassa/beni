@@ -1,0 +1,3 @@
+pub value : String
+value =
+    Debug.log "mid" "load"

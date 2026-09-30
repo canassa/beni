@@ -450,7 +450,9 @@ fn expectSameTree(w: *World, a_dir: []const u8, b_dir: []const u8) !void {
     const arena = w.arena.allocator();
     const written = try treeOf(w, a_dir);
     try testing.expectEqualDeep(written, try treeOf(w, b_dir));
-    try testing.expect(written.len >= 4);
+    // Not an empty tree: a module and the entry, or under `--release` the one
+    // scope-hoisted file (`backend.md` §9), and the manifest.
+    try testing.expect(written.len >= 2);
     for (written) |name| {
         const a = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ a_dir, name }));
         const b = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ b_dir, name }));
@@ -2545,21 +2547,20 @@ test "a stale path that is the same file as a written one under case folding is 
     defer w.deinit();
     try writeCaseRename(&w);
     const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}/out", .{try w.projectPath()});
-    const first = try w.run(&.{ "build", "--platform=node", "--release", out, "--root=one", "one" });
+    const first = try w.run(&.{ "build", "--platform=node", "--release", "--library", out, "--root=one", "one" });
     try testing.expectEqual(@as(u8, 0), first.exit_code);
     try w.hardLink("out/Zz.mjs", "out/ZZ.mjs");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const second = try w.run(&.{ "build", "--platform=node", "--release", out, "--root=two", "two" });
+    const second = try w.run(&.{ "build", "--platform=node", "--release", "--library", out, "--root=two", "two" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), second.exit_code);
     try testing.expectEqualStrings("", second.stderr);
-    try w.expectProgram("out/_main.mjs", .{ .stdout = "1\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -2582,14 +2583,14 @@ test "a stale path equal to a written one under case folding but another file is
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeCaseRename(&w);
-    const first = try w.run(&.{ "build", "--platform=node", "--release", "--out=out", "--root=one", "one" });
+    const first = try w.run(&.{ "build", "--platform=node", "--release", "--library", "--out=out", "--root=one", "one" });
     try testing.expectEqual(@as(u8, 0), first.exit_code);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const second = try w.run(&.{ "build", "--platform=node", "--release", "--out=out", "--root=two", "two" });
-    const fresh = try w.run(&.{ "build", "--platform=node", "--release", "--out=fresh", "--root=two", "two" });
+    const second = try w.run(&.{ "build", "--platform=node", "--release", "--library", "--out=out", "--root=two", "two" });
+    const fresh = try w.run(&.{ "build", "--platform=node", "--release", "--library", "--out=fresh", "--root=two", "two" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -2609,10 +2610,12 @@ test "a stale path equal to a written one under case folding but another file is
 }
 
 /// Two projects that differ only by the case of one module's name, `Zz` and
-/// `ZZ`, with byte-identical `--release` output for it. Both sort
+/// `ZZ`, with byte-identical `--release --library` output for it. Both sort
 /// after `Main`, so their one export gets the same short name; `Ab` and `AB`
 /// do not (`const b` against `const c`), and a hash would then tell them
-/// apart where APFS does not.
+/// apart where APFS does not. `--library`, because a release APPLICATION is
+/// one scope-hoisted file and writes no module file to collide
+/// (`backend.md` §9).
 fn writeCaseRename(w: *World) !void {
     const lib = "pub one : Int\none =\n    1\n";
     try w.write("one/Zz.beni", lib);
@@ -2883,17 +2886,17 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     try testing.expect(!w.exists("maps"));
 }
 
-test "a release application exports only what another file imports; --library keeps every export" {
+test "a release application is one file with no import or export; --library keeps every module and export" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `Twice.twice` is `pub` and reachable, and so is `Twice.inc`, which
     // only `twice` calls. In a development build both are exported. Under
-    // `--release` an application's output tree is the whole program, so an
-    // export nothing imports is bytes no file can ask for: `Twice.mjs`
-    // exports `twice` alone, and `Main.mjs` exports `main`, which the entry
-    // file imports (research 40). A `--library` build's exports are its
-    // public surface (`backend.md` §9's *Roots*) and are all kept.
+    // `--release` an application's output tree is the whole program, and it
+    // is ONE scope-hoisted file (`backend.md` §9): no module imports another,
+    // so nothing is exported at all, and the runtime's `node:process` is the
+    // only `import`. A `--library` build's exports are its public surface
+    // (`backend.md` §9's *Roots*) and are all kept, one module to a file.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Twice.beni",
@@ -2930,8 +2933,14 @@ test "a release application exports only what another file imports; --library ke
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
     try expectBuilt(lib);
-    const twice = try w.read("out/Twice.mjs");
-    try testing.expect(std.mem.endsWith(u8, twice, "\nexport{c};\n"));
+    const tree = try treeOf(&w, "out");
+    try testing.expectEqual(@as(usize, 2), tree.len);
+    try testing.expectEqualStrings("_main.mjs", tree[0]);
+    try testing.expectEqualStrings("_manifest.txt", tree[1]);
+    const one = try w.read("out/_main.mjs");
+    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";\n"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
+    try testing.expect(std.mem.indexOf(u8, one, "export") == null);
     try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), "\nexport{f,c};\n"));
 
     // ┌─────────────────────────────────────────┐
@@ -3021,24 +3030,35 @@ test "a release build compacts hand-written JavaScript and cuts it to what the p
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
-    // The regular expression and both template literals are as written;
-    // `upper` survives because a substitution names it; `shout`, `exclaim`
-    // and every comment are gone. Every name the file binds and does not
-    // export is renamed, the most used first — `line`, then `spaces`,
-    // `upper` and `s` — and `text`, an object key, is not a binding
-    // (research 40's A2). `const` is `let`, and a lone parameter has no
-    // brackets (A3).
+    // One scope-hoisted file (`backend.md` §9, *One scope-hoisted file
+    // under `--release`*), in the order ES would evaluate the multi-file
+    // layout: the runtime, which the entry file imports first, then the
+    // sibling, then `Main`, then the entry's own call.
+    //
+    // Names: the emitted modules' first — `say` as `Main` imports it, `a`,
+    // and `main`, `b` — then the hand-written files' top-level bindings in
+    // file order and source order: the runtime's `run`, `c`, the sibling's
+    // `spaces` and `upper`, `d` and `e`. Every other name of a hand-written
+    // file is renamed around its file's (research 40's A2).
+    //
+    // The runtime: `run` is what the entry file calls; `unused` is nobody's.
+    // Its `import` of `node:process` goes to the top of the file, and
+    // `process`, bound by it, keeps its name. The block loses its last `;`
+    // (A3).
+    //
+    // The sibling: the regular expression and both template literals are
+    // as written; `upper` survives because a substitution names it; `shout`,
+    // `exclaim` and every comment are gone; `text`, an object key, is not a
+    // binding.
     try testing.expectEqualStrings(
-        \\let b=/ +/g;let c=d=>d.toUpperCase();export let say=a=>({text:`[${c(a.replace(b," "))}] ${`(${a.length})`}`,});
+        \\import process from"node:process";
+        \\let c=a=>{process.stdout.write(a.text+"\n")};
+        \\let d=/ +/g;let e=c=>c.toUpperCase();let a=b=>({text:`[${e(b.replace(d," "))}] ${`(${b.length})`}`,});
+        \\const b=a("a  b   c");
+        \\c(b);
         \\
-    , try w.read("out/_platform/Hand.foreign.mjs"));
-    // `run` is what the entry file imports; `unused` is nobody's, and the
-    // `import` stays because it evaluates a module. `process` is bound by
-    // the `import` and keeps its name; the block loses its last `;` (A3).
-    try testing.expectEqualStrings(
-        \\import process from"node:process";export let run=a=>{process.stdout.write(a.text+"\n")};
-        \\
-    , try w.read("out/_platform/run.foreign.mjs"));
+    , try w.read("out/_main.mjs"));
+    try testing.expectEqual(@as(usize, 2), (try treeOf(&w, "out")).len);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -3046,65 +3066,142 @@ test "a release build compacts hand-written JavaScript and cuts it to what the p
     try w.expectProgram(world.entry_file, .{ .stdout = "[A B C] (8)\n" });
 }
 
-test "a release page ships the browser runtime's map only when it maps" {
+test "a sibling whose names cannot move keeps its own module in a release application" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `Html.map`'s runtime export is cut from a program that never maps
-    // (backend.md §9; research 41 §5.4): no other binding of the runtime
-    // may share its name, since a lexical pass counts every mention of a
-    // name as a use. The page has a keyed list, so the reconciler that
-    // once declared a local `map` is kept.
+    // A sibling that mentions `class` is one A2 renames nothing in
+    // (research 40 §7), so its top-level names could collide with the one
+    // scope's. It is declined: written as the multi-file layout writes it,
+    // and imported by the one file. Evaluating it does nothing (every
+    // top-level statement is a function), so evaluating it before the rest
+    // of the program rather than where it stood is invisible (`backend.md`
+    // §9, *One scope-hoisted file under `--release`*).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const page =
-        \\import Browser
-        \\import Html exposing (Html)
+    try writeHandPlatform(&w);
+    try w.write("hand/Hand.js",
+        \\export const say = (line) => {
+        \\  const Line = class {};
+        \\  return Object.assign(new Line(), { text: `<${line}>` });
+        \\};
         \\
-        \\
-        \\view : List Int -> Html msg
-        \\view xs =
-        \\    <ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>
-        \\
-        \\
-        \\main : Browser.Program
-        \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
-        \\
-    ;
-    try w.write("plain/Main.beni", page);
-    try w.write("mapped/Main.beni",
-        \\import Browser
-        \\import Html exposing (Html)
-        \\
-        \\
-        \\view : List Int -> Html msg
-        \\view xs =
-        \\    Html.map (<ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>) (\msg -> msg)
-        \\
-        \\
-        \\main : Browser.Program
-        \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\export const shout = (line) => ({ text: line });
         \\
     );
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=plain-out", "plain/Main.beni" }, .{ .raw_diagnostics = true });
-    const mapped = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=mapped-out", "mapped/Main.beni" }, .{ .raw_diagnostics = true });
+    const r = try w.runWith(&.{ "build", "--platform=hand", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectBuilt(plain);
-    try expectBuilt(mapped);
-    const plain_runtime = try w.read("plain-out/_platform/runtime.foreign.mjs");
-    const mapped_runtime = try w.read("mapped-out/_platform/runtime.foreign.mjs");
-    try testing.expect(std.mem.indexOf(u8, plain_runtime, "export const forKeyed=") != null);
-    try testing.expect(std.mem.indexOf(u8, plain_runtime, "export const map=") == null);
-    try testing.expect(std.mem.indexOf(u8, mapped_runtime, "export const map=") != null);
+    try expectBuilt(r);
+    try testing.expectEqualStrings(
+        \\import process from"node:process";
+        \\import{say as a}from"./_platform/Hand.foreign.mjs";
+        \\let c=a=>{process.stdout.write(a.text+"\n")};
+        \\const b=a("a  b   c");
+        \\c(b);
+        \\
+    , try w.read("out/_main.mjs"));
+    try testing.expect(w.exists("out/_platform/Hand.foreign.mjs"));
+    try testing.expectEqual(@as(usize, 3), (try treeOf(&w, "out")).len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "<a  b   c>\n" });
+}
+
+test "a sibling that must keep its module and does something when evaluated keeps the multi-file layout" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // As above, but the sibling's `started` calls a function when the
+    // sibling is evaluated. A module of its own is evaluated before the
+    // whole of the one file, which moves that call; `backend.md` §9 then
+    // writes the program as it would without hoisting, one module per file.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHandPlatform(&w);
+    try w.write("hand/Hand.js",
+        \\const started = Date.now();
+        \\
+        \\export const say = (line) => {
+        \\  const Line = class {};
+        \\  return Object.assign(new Line(), { text: started > 0 ? line : "" });
+        \\};
+        \\
+        \\export const shout = (line) => ({ text: line });
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=hand", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    try testing.expect(w.exists("out/Main.mjs"));
+    try testing.expect(w.exists("out/_platform/run.foreign.mjs"));
+    try testing.expect(std.mem.startsWith(u8, try w.read("out/_main.mjs"), "import{run}from\"./_platform/run.foreign.mjs\";\n"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "a  b   c\n" });
+}
+
+test "a sibling export that is also an object key keeps its name and is aliased in a release application" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `say` stands before `:` as a key, where renaming the name would rename
+    // the key, so A2 keeps it as written (research 40 §7). In the one scope
+    // it is `say`, and `Main`, which imports it under a short name, reads it
+    // through `let <short>=say;` after the sibling (`backend.md` §9) — a
+    // copy, sound because nothing assigns `say`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHandPlatform(&w);
+    try w.write("hand/Hand.js",
+        \\const table = { say: "!" };
+        \\
+        \\export const say = (line) => ({ text: line + table.say });
+        \\
+        \\export const shout = (line) => ({ text: line });
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=hand", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    try testing.expectEqualStrings(
+        \\import process from"node:process";
+        \\let c=a=>{process.stdout.write(a.text+"\n")};
+        \\let d={say:"!"};let say=a=>({text:a+d.say});
+        \\let a=say;
+        \\const b=a("a  b   c");
+        \\c(b);
+        \\
+    , try w.read("out/_main.mjs"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "a  b   c!\n" });
 }
 
 test "a development build copies hand-written JavaScript byte for byte" {

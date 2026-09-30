@@ -24,20 +24,35 @@ export function subjectPage(subject) {
     case "beni":
       return `${head(subject.name)}<body><script type="module" src="/out/${subject.dir}/_main.mjs"></script></body></html>`;
     // A beni program started by hand rather than by its entry file, so the
-    // page can time the mount and reach the runtime's `flush`.
+    // page can time the mount and reach the runtime's `flush`. A release
+    // build is one scope-hoisted file that starts itself (backend.md §9), so
+    // there the page preloads it — fetched and compiled — and times its
+    // evaluation, which is the mount plus the program's top-level values,
+    // and reads `flush` from its one export.
     case "beni-micro":
       return `${head(subject.name)}<body><script type="module">
 const dir = "/out/${subject.dir}/";
 const entry = await (await fetch(dir + "_main.mjs")).text();
-const name = /import\\s*\\{\\s*(\\S+?)\\s*\\}\\s*from\\s*"\\.\\/Main\\.mjs"/.exec(entry)[1];
-const data = JSON.parse(/start\\((.*)\\);/.exec(entry)[1]);
-const rt = await import(dir + "_platform/_browser/runtime.foreign.mjs");
-const main = (await import(dir + "Main.mjs"))[name];
-const t0 = performance.now();
-rt.start(data);
-rt.run(main);
-window.__mount = performance.now() - t0;
-window.__flush = rt.flush;
+const imported = /import\\s*\\{\\s*(\\S+?)\\s*\\}\\s*from\\s*"\\.\\/Main\\.mjs"/.exec(entry);
+if (imported === null) {
+  const link = document.createElement("link");
+  link.rel = "modulepreload";
+  link.href = dir + "_main.mjs";
+  await new Promise((done) => { link.onload = done; document.head.append(link); });
+  const t0 = performance.now();
+  const one = await import(dir + "_main.mjs");
+  window.__mount = performance.now() - t0;
+  window.__flush = one.flush;
+} else {
+  const data = JSON.parse(/start\\((.*)\\);/.exec(entry)[1]);
+  const rt = await import(dir + "_platform/_browser/runtime.foreign.mjs");
+  const main = (await import(dir + "Main.mjs"))[imported[1]];
+  const t0 = performance.now();
+  rt.start(data);
+  rt.run(main);
+  window.__mount = performance.now() - t0;
+  window.__flush = rt.flush;
+}
 </script></body></html>`;
     case "solid":
       // Solid 2 is an ES module per page; Solid 1 is js-framework-benchmark's IIFE.

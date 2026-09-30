@@ -6,8 +6,9 @@
 //! **Development output is one ESM file per source module, mirroring the
 //! source tree** (§2). Nothing is eliminated and every name is readable,
 //! because this is the mode the §2 warm-rebuild budget of 15 ms is measured
-//! against: one edit rewrites one small file. Release output as chunks is
-//! future work (§10).
+//! against: one edit rewrites one small file. A `--release` APPLICATION is
+//! one scope-hoisted file instead (§9; `planHoist` and after), the one-entry
+//! case of the chunks §10 will make.
 //!
 //! Layout under `--out`:
 //!
@@ -329,8 +330,12 @@ pub fn run(
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
     try e.emitModules(entry);
-    try e.copyAssets();
-    if (entry) |at| try e.emitEntry(at);
+    // A scope-hoisted build wrote the hand-written files and the entry into
+    // its one file already (§9, *One scope-hoisted file under `--release`*).
+    if (!e.hoisted) {
+        try e.copyAssets();
+        if (entry) |at| try e.emitEntry(at);
+    }
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
@@ -411,6 +416,9 @@ const Emitter = struct {
     /// Whether a module written imports the markup runtime, which the
     /// build then copies (`backend.md` §15.1).
     uses_markup_runtime: bool = false,
+    /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
+    /// file under `--release`*), decided after lowering.
+    hoisted: bool = false,
     /// The markup runtime's exports the modules written import, in
     /// module order and with repeats: what `--release` cuts the runtime file
     /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
@@ -1818,15 +1826,47 @@ const Emitter = struct {
         try Lower.internFixedNames(e.gpa, &e.session.interner);
         const context: Task = .{ .e = e, .slots = slots, .entry = entry };
         try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+
+        // What the lowerings report beyond their trees, in module order,
+        // whatever order the workers finished in.
+        var uses_runtime = false;
+        var lowered_clean = true;
+        for (todo.items) |i| {
+            const slot = &slots[i];
+            if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
+                lowered_clean = false;
+                continue;
+            };
+            uses_runtime = uses_runtime or slot.uses_runtime;
+            e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+            try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
+            for (slot.start) |pair| try e.start.append(e.scratch, .{
+                .key = try e.scratch.dupe(u8, pair.key),
+                .value = try e.scratch.dupe(u8, pair.value),
+            });
+        }
+
+        var hoist: ?Hoist = null;
         if (e.options.release) {
-            try e.numberGlobals(slots, todo.items);
-            if (!e.options.library) try e.markImported(slots, todo.items, entry);
+            // §9's *One scope-hoisted file under `--release`*: an
+            // application whose every hand-written file can join one scope
+            // is written as one file, and its names are numbered in that
+            // file's order. Anything else is the multi-file layout.
+            if (!e.options.library and lowered_clean) if (entry) |at| {
+                hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime);
+            };
+            if (hoist) |*h| {
+                try e.numberHoisted(slots, h);
+            } else {
+                try e.numberGlobals(slots, todo.items);
+                if (!e.options.library) try e.markImported(slots, todo.items, entry);
+            }
+            e.hoisted = hoist != null;
             try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
         }
 
         // Diagnostics and files in module order, whatever order the workers
         // finished in.
-        var uses_runtime = false;
         for (todo.items) |i| {
             const slot = &slots[i];
             const m: Graph.Index = @enumFromInt(i);
@@ -1844,19 +1884,17 @@ const Emitter = struct {
                 lowered.diagnostics = &.{};
                 continue;
             };
-            uses_runtime = uses_runtime or slot.uses_runtime;
-            e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
-            try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
-            for (slot.start) |pair| try e.start.append(e.scratch, .{
-                .key = try e.scratch.dupe(u8, pair.key),
-                .value = try e.scratch.dupe(u8, pair.value),
-            });
             if (slot.rename_failure) |failure| try e.reportRenameFailure(&slot.lowered.?.ir, &slot.overlay, file, failure);
+            // A hoisted module's bytes are a piece of the one file, joined
+            // below; the slot keeps them until then.
+            if (hoist != null) continue;
             const text = slot.text orelse continue;
             slot.text = null;
             try e.produceOwned(paths[i], text, e.session.store.path(file));
         }
-        if (uses_runtime) try e.emitDerivedRuntime();
+        if (hoist) |*h| {
+            if (e.diagnostics.items.len == 0) try e.linkHoisted(slots, h);
+        } else if (uses_runtime) try e.emitDerivedRuntime();
     }
 
     /// One module's way from `Bir` to bytes. Written by the one worker that
@@ -1985,7 +2023,8 @@ const Emitter = struct {
                 .plan = &slot.plan,
                 .rename = &renamer,
                 .compact = true,
-                .imported = if (e.options.library) null else &e.imported,
+                .imported = if (e.options.library or e.hoisted) null else &e.imported,
+                .hoisted = e.hoisted,
             });
             slot.rename_failure = renamer.failure;
         }
@@ -1998,26 +2037,526 @@ const Emitter = struct {
     /// first, because two modules name one function by the same TEXT and
     /// the table is keyed by symbol.
     fn numberGlobals(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        for (todo) |i| try e.numberModule(&slots[i]);
+    }
+
+    /// One module's turn of `numberGlobals`.
+    fn numberModule(e: *Emitter, slot: *ModuleSlot) Allocator.Error!void {
+        const lowered = &(slot.lowered orelse return);
+        if (lowered.diagnostics.len != 0) return;
+        for (slot.met) |n| _ = try e.globals.intern(e.scratch, try e.poolName(slot, n));
+    }
+
+    /// A whole-program name of `slot`'s module, moved out of the module's
+    /// overlay into the session's pool when the lowering invented it there:
+    /// the table is keyed by symbol, and two modules that name one function
+    /// spell it with the same text.
+    fn poolName(e: *Emitter, slot: *ModuleSlot, n: JsIr.NameIndex) Allocator.Error!JsIr.Name {
         const interner = &e.session.interner;
+        const ir = &slot.lowered.?.ir;
+        var name = ir.name(n);
+        var moved = false;
+        if (name.module.unwrap()) |module| if (InternPool.Overlay.isOverlay(module)) {
+            name.module = (try interner.getOrPut(e.gpa, slot.overlay.slice(module))).toOptional();
+            moved = true;
+        };
+        if (InternPool.Overlay.isOverlay(name.base)) {
+            name.base = try interner.getOrPut(e.gpa, slot.overlay.slice(name.base));
+            moved = true;
+        }
+        if (moved) ir.setName(n, name);
+        return name;
+    }
+
+    // ---- One scope-hoisted file (§9) -------------------------------------
+    //
+    // `backend.md` §9, *One scope-hoisted file under `--release`*: an
+    // application's release build is every file of the multi-file layout —
+    // the modules, the siblings, the derived-comparison engine, the markup
+    // and program runtimes — in ES module evaluation order, in one module
+    // scope. `planHoist` reads the files and decides, `numberHoisted` gives
+    // every top-level name of the one scope its spelling, and `linkHoisted`
+    // writes the file. A chunk of §10 is one such file; this is the case of
+    // one entry, and the three steps take the pieces they join as a list so
+    // that a chunker can hand them a subset.
+
+    /// A hand-written file of a scope-hoisted build.
+    const HandFile = struct {
+        /// Where the multi-file layout writes it, and what it is read from.
+        out: []const u8,
+        origin: []const u8,
+        bytes: []const u8,
+        /// The exports the build imports, with repeats: what it is cut to.
+        keep: std.ArrayList([]const u8) = .empty,
+        /// Every import of one of its exports by an emitted module, in
+        /// module order: the export and the whole-program name it is
+        /// imported as.
+        uses: std.ArrayList(Use) = .empty,
+        read: Minify.Hoisted = undefined,
+        /// It keeps a module of its own, imported by the one file.
+        declined: bool = false,
+        /// Its renamed top-level bindings' spellings in the one scope.
+        forced: Minify.Forced = .empty,
+
+        const Use = struct { name: []const u8, local: JsIr.Name };
+
+        /// The first use of the binding an export names: the import whose
+        /// name the binding itself is given. Every other is an alias.
+        fn primary(f: *const HandFile, binding: []const u8) ?JsIr.Name {
+            for (f.uses.items) |u| {
+                const b = f.read.exportBinding(u.name) orelse continue;
+                if (std.mem.eql(u8, b, binding)) return u.local;
+            }
+            return null;
+        }
+
+        /// A binding's spelling in the one scope.
+        fn spelling(f: *const HandFile, binding: []const u8) []const u8 {
+            return f.forced.get(binding) orelse binding;
+        }
+    };
+
+    /// One piece of the one file: an emitted module (its index) or a
+    /// hand-written file (its index in `Hoist.files`).
+    const Piece = union(enum) { module: u32, file: u32 };
+
+    const Hoist = struct {
+        entry: Entry,
+        files: []HandFile,
+        /// ES module evaluation order of the multi-file layout.
+        order: []const Piece,
+        runtime: u32,
+        /// The program start call (`boundary.md` §9.4.5): the file whose
+        /// `start` it calls, and its argument.
+        start: ?struct { file: u32, data: []const u8 },
+        /// Spellings no whole-program name may take (`Rename.Globals.skip`).
+        skip: Rename.Globals.Spellings = .empty,
+    };
+
+    /// Read every hand-written file the build writes and decide whether the
+    /// build is one scope-hoisted file. Null keeps the multi-file layout:
+    /// a file that cannot be read exactly, or one that must keep a module
+    /// of its own and might do something when it is evaluated.
+    fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+        const scratch = e.scratch;
+        var files: std.ArrayList(HandFile) = .empty;
+
+        // What `copyAssets` writes: each sibling with a surviving `foreign`,
+        // the program runtime, the markup runtime when it is another file,
+        // and the derived-comparison engine when a module imports it.
+        const sibling_of = try scratch.alloc(?u32, slots.len);
+        @memset(sibling_of, null);
+        for (todo) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            const b = e.bir(m);
+            var surviving = false;
+            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.live.decl(m, index));
+            if (!surviving) continue;
+            const source = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
+            const bytes = e.readAsset(source) orelse return null;
+            sibling_of[i] = @intCast(files.items.len);
+            try files.append(scratch, .{ .out = try e.siblingOutputPath(m), .origin = source, .bytes = bytes });
+        }
+        const runtime = e.options.platform.runtime orelse return null;
+        const runtime_source = try std.fmt.allocPrint(scratch, "{s}/{s}", .{ e.options.platform.runtime_root, runtime });
+        const runtime_index: u32 = @intCast(files.items.len);
+        try files.append(scratch, .{
+            .out = try e.runtimeOutputPath(),
+            .origin = runtime_source,
+            .bytes = e.readAsset(runtime_source) orelse return null,
+        });
+        try files.items[runtime_index].keep.appendSlice(scratch, &.{"run"});
+        var markup_index: ?u32 = null;
+        if (e.markupRuntimeIsProgramRuntime()) {
+            markup_index = runtime_index;
+        } else if (e.uses_markup_runtime) if (try e.markupRuntimePath()) |source| {
+            markup_index = @intCast(files.items.len);
+            try files.append(scratch, .{
+                .out = (try e.markupRuntimeOutputPath()).?,
+                .origin = source,
+                .bytes = e.readAsset(source) orelse return null,
+            });
+        };
+        var derived_index: ?u32 = null;
+        if (uses_runtime) {
+            derived_index = @intCast(files.items.len);
+            try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact });
+        }
+
+        var module_at: std.StringHashMapUnmanaged(u32) = .empty;
+        for (todo) |i| try module_at.put(scratch, paths[i], i);
+        var file_at: std.StringHashMapUnmanaged(u32) = .empty;
+        for (files.items, 0..) |f, x| try file_at.put(scratch, f.out, @intCast(x));
+
+        // Each module's imports, in the order its statements are printed,
+        // which is the order ES evaluates what they name.
+        const module_edges = try scratch.alloc([]const Piece, slots.len);
+        @memset(module_edges, &.{});
         for (todo) |i| {
             const slot = &slots[i];
-            const lowered = &(slot.lowered orelse continue);
-            if (lowered.diagnostics.len != 0) continue;
-            for (slot.met) |n| {
-                var name = lowered.ir.name(n);
-                var moved = false;
-                if (name.module.unwrap()) |module| if (InternPool.Overlay.isOverlay(module)) {
-                    name.module = (try interner.getOrPut(e.gpa, slot.overlay.slice(module))).toOptional();
-                    moved = true;
-                };
-                if (InternPool.Overlay.isOverlay(name.base)) {
-                    name.base = try interner.getOrPut(e.gpa, slot.overlay.slice(name.base));
-                    moved = true;
+            const ir = &slot.lowered.?.ir;
+            var edges: std.ArrayList(Piece) = .empty;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (ir.tag(stmt) != .import_stmt or slot.plan.isDropped(stmt)) continue;
+                const imp = ir.extraData(@enumFromInt(ir.data(stmt).lhs), JsIr.Import);
+                const source = ir.string_bytes[imp.source_start..][0..imp.source_len];
+                const target: ?u32 = if (std.mem.eql(u8, source, slot.sibling))
+                    sibling_of[i]
+                else if (std.mem.eql(u8, source, slot.derived_runtime))
+                    derived_index
+                else if (slot.markup != null and std.mem.eql(u8, source, slot.markup.?.runtime))
+                    markup_index
+                else
+                    null;
+                if (target) |x| {
+                    try edges.append(scratch, .{ .file = x });
+                    const f = &files.items[x];
+                    for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                        const name = try scratch.dupe(u8, slot.overlay.slice(ir.name(spec.imported).base));
+                        try f.keep.append(scratch, name);
+                        try f.uses.append(scratch, .{ .name = name, .local = try e.poolName(slot, spec.local) });
+                    }
+                    continue;
                 }
-                if (moved) lowered.ir.setName(n, name);
-                _ = try e.globals.intern(e.scratch, name);
+                // Another emitted module: its output path, behind the
+                // `./` or the `../`s that climb to the root (`relativeSpecifier`).
+                var rest = source;
+                if (std.mem.startsWith(u8, rest, "./")) rest = rest[2..];
+                while (std.mem.startsWith(u8, rest, "../")) rest = rest[3..];
+                const m = module_at.get(rest) orelse return null;
+                try edges.append(scratch, .{ .module = m });
+            }
+            module_edges[i] = edges.items;
+        }
+
+        // The entry file's own imports, in `emitEntry`'s order.
+        var entry_edges: std.ArrayList(Piece) = .empty;
+        try entry_edges.append(scratch, .{ .file = runtime_index });
+        var start: @FieldType(Hoist, "start") = null;
+        if (try e.startData()) |s| {
+            const x = file_at.get(s.path) orelse return null;
+            if (x != runtime_index) try entry_edges.append(scratch, .{ .file = x });
+            try files.items[x].keep.append(scratch, "start");
+            start = .{ .file = x, .data = s.data };
+        }
+        try entry_edges.append(scratch, .{ .module = @intFromEnum(entry.module) });
+
+        for (files.items) |*f| {
+            f.read = try Minify.hoistable(scratch, f.bytes, f.keep.items) orelse return null;
+            for (f.keep.items) |name| if (f.read.exportBinding(name) == null) return null;
+            f.declined = f.read.declines() != null;
+        }
+
+        // Post-order, depth first, from the entry file: each piece after
+        // everything it imports, each once — ES module evaluation order.
+        var order: std.ArrayList(Piece) = .empty;
+        {
+            const seen_module = try scratch.alloc(bool, slots.len);
+            @memset(seen_module, false);
+            const seen_file = try scratch.alloc(bool, files.items.len);
+            @memset(seen_file, false);
+            const Frame = struct { piece: ?Piece, edges: []const Piece, next: usize = 0 };
+            var stack: std.ArrayList(Frame) = .empty;
+            try stack.append(scratch, .{ .piece = null, .edges = entry_edges.items });
+            while (stack.items.len != 0) {
+                const top = &stack.items[stack.items.len - 1];
+                if (top.next == top.edges.len) {
+                    if (top.piece) |p| try order.append(scratch, p);
+                    _ = stack.pop();
+                    continue;
+                }
+                const p = top.edges[top.next];
+                top.next += 1;
+                switch (p) {
+                    .module => |i| {
+                        if (seen_module[i]) continue;
+                        seen_module[i] = true;
+                        try stack.append(scratch, .{ .piece = p, .edges = module_edges[i] });
+                    },
+                    .file => |x| {
+                        if (seen_file[x]) continue;
+                        seen_file[x] = true;
+                        try stack.append(scratch, .{ .piece = p, .edges = &.{} });
+                    },
+                }
             }
         }
+
+        // Names the one scope holds as written: a top-level binding A2 may
+        // not rename, and what a host `import` binds. Each must be unique,
+        // and none may be a name another file reads unbound; a file whose
+        // would not be keeps a module of its own. Declining a file only
+        // removes names, so this settles.
+        var settled = false;
+        while (!settled) {
+            settled = true;
+            var owner: std.StringHashMapUnmanaged(struct { file: u32, statement: ?[]const u8 }) = .empty;
+            for (order.items) |p| {
+                const x = switch (p) {
+                    .file => |x| x,
+                    .module => continue,
+                };
+                const f = &files.items[x];
+                if (f.declined) continue;
+                const refused = try e.claimNames(f, x, &owner);
+                if (refused) {
+                    f.declined = true;
+                    settled = false;
+                    break;
+                }
+            }
+            if (!settled) continue;
+            var it = owner.iterator();
+            while (it.next()) |claimed| {
+                for (order.items) |p| {
+                    const y = switch (p) {
+                        .file => |y| y,
+                        .module => continue,
+                    };
+                    if (y == claimed.value_ptr.file or files.items[y].declined) continue;
+                    if (!files.items[y].read.free.contains(claimed.key_ptr.*)) continue;
+                    files.items[claimed.value_ptr.file].declined = true;
+                    settled = false;
+                    break;
+                }
+                if (!settled) break;
+            }
+        }
+
+        // A declined file is evaluated before the whole of the one file,
+        // not where it stood: that is invisible only when evaluating it does
+        // nothing (`Minify.shake`'s roots) and it imports only `node:`
+        // built-ins.
+        var skip: Rename.Globals.Spellings = .empty;
+        for (files.items, 0..) |*f, x| {
+            if (!f.declined) {
+                var it = f.read.free.keyIterator();
+                while (it.next()) |k| try skip.put(scratch, k.*, {});
+                for (f.read.tops) |top| if (!top.renamable) try skip.put(scratch, top.name, {});
+                for (f.read.imports) |imp| for (imp.names) |n| try skip.put(scratch, n, {});
+                continue;
+            }
+            if (!f.read.inert) return null;
+            for (f.read.imports) |imp| if (!std.mem.startsWith(u8, imp.specifier, "node:")) return null;
+            // `run` and `start` are imported from a declined runtime as
+            // written, for the harness that reads the entry file's import.
+            if (x == runtime_index or (start != null and start.?.file == x)) {
+                for ([_][]const u8{ "run", "start" }) |w| {
+                    for (files.items) |g| if (!g.declined and g.read.free.contains(w)) return null;
+                    try skip.put(scratch, w, {});
+                }
+            }
+        }
+
+        return .{
+            .entry = entry,
+            .files = files.items,
+            .order = order.items,
+            .runtime = runtime_index,
+            .start = start,
+            .skip = skip,
+        };
+    }
+
+    /// Put the names hoisted file `f` holds as written into `owner`, or say
+    /// that it cannot join the one scope: one is already another file's, or
+    /// an alias would copy a binding the file assigns.
+    fn claimNames(e: *Emitter, f: *const HandFile, x: u32, owner: anytype) !bool {
+        const scratch = e.scratch;
+        for (f.read.tops) |top| {
+            if (!top.renamable) {
+                if (owner.get(top.name)) |o| if (o.file != x) return true;
+                try owner.put(scratch, top.name, .{ .file = x, .statement = null });
+            }
+        }
+        // An import of an export under a name the binding does not take is
+        // `let <name>=<binding>` after the file: a copy, which a binding
+        // the file assigns would not track.
+        for (f.uses.items) |u| {
+            const binding = f.read.exportBinding(u.name).?;
+            const renamed = for (f.read.tops) |top| {
+                if (std.mem.eql(u8, top.name, binding)) break top.renamable;
+            } else false;
+            const aliased = !renamed or !f.primary(binding).?.eql(u.local);
+            if (!aliased) continue;
+            const assigned = f.read.assigned orelse return true;
+            if (assigned.contains(binding)) return true;
+        }
+        for (f.read.imports) |imp| {
+            const t = f.read.tokens;
+            const statement = f.bytes[t[imp.unit.start].start..t[imp.unit.end - 1].end];
+            for (imp.names) |n| {
+                if (owner.get(n)) |o| if (o.file != x and !(o.statement != null and std.mem.eql(u8, o.statement.?, statement))) return true;
+                try owner.put(scratch, n, .{ .file = x, .statement = statement });
+            }
+        }
+        return false;
+    }
+
+    /// §9 item 2's whole-program table for a scope-hoisted build. The
+    /// emitted modules' names first, module by module in the one file's
+    /// order and each in print order, exactly as a multi-file build numbers
+    /// them; then each hand-written file's top-level bindings, file by file
+    /// in that order and each file in source order. A binding an emitted
+    /// module imports is spelled as the name it is imported as, and that
+    /// name, numbered with its importer, avoids every name the binding's
+    /// file keeps as written (`Globals.internAvoiding`), as every other
+    /// binding of the file does. Measured on the benchmark app, emitted
+    /// names first is 30 brotli bytes smaller than numbering every piece in
+    /// place, and a file's own order 30 smaller than A2's most-used-first
+    /// (research 41 §8).
+    fn numberHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
+        e.globals.skip = &h.skip;
+        var avoid: std.AutoHashMapUnmanaged(Rename.Globals.Key, *const Rename.Globals.Spellings) = .empty;
+        for (h.files) |*f| {
+            if (f.declined) continue;
+            for (f.read.tops) |top| {
+                if (!top.renamable) continue;
+                if (f.primary(top.name)) |n| try avoid.put(e.scratch, Rename.Globals.key(n), &f.read.taken);
+            }
+        }
+        for (h.order) |p| switch (p) {
+            .module => |i| {
+                const slot = &slots[i];
+                for (slot.met) |n| {
+                    const name = try e.poolName(slot, n);
+                    _ = try e.globals.internAvoiding(e.scratch, name, avoid.get(Rename.Globals.key(name)));
+                }
+            },
+            .file => {},
+        };
+        for (h.order) |p| switch (p) {
+            .module => {},
+            .file => |x| {
+                const f = &h.files[x];
+                if (f.declined) continue;
+                for (f.read.tops) |top| {
+                    if (!top.renamable) continue;
+                    const name = f.primary(top.name) orelse try e.hoistedName(x, top.name);
+                    const ordinal = try e.globals.internAvoiding(e.scratch, name, &f.read.taken);
+                    var buf: [8]u8 = undefined;
+                    try f.forced.put(e.scratch, top.name, try e.scratch.dupe(u8, Rename.spell(ordinal, &buf)));
+                }
+            },
+        };
+    }
+
+    /// The table's key for a hand-written top-level binding nothing imports:
+    /// qualified by `$hoist$<file>`, which no module name can spell.
+    fn hoistedName(e: *Emitter, x: u32, binding: []const u8) !JsIr.Name {
+        const interner = &e.session.interner;
+        const module = try interner.getOrPut(e.gpa, try std.fmt.allocPrint(e.scratch, "$hoist${d}", .{x}));
+        return JsIr.Name.qualified(module, try interner.getOrPut(e.gpa, binding));
+    }
+
+    /// Write the one file: host `import`s, then an `import` of each declined
+    /// file, then every piece in evaluation order — a hoisted file followed
+    /// by the aliases its imports need — then the entry file's own calls,
+    /// then an `export` of whatever else of the program runtime survived.
+    fn linkHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
+        const scratch = e.scratch;
+        const printed = try scratch.alloc(?Minify.Printed, h.files.len);
+        @memset(printed, null);
+        for (h.order) |p| switch (p) {
+            .file => |x| if (!h.files[x].declined) {
+                printed[x] = try Minify.printHoisted(scratch, &h.files[x].read, &h.files[x].forced);
+            },
+            .module => {},
+        };
+
+        var out: std.ArrayList(u8) = .empty;
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        for (h.order) |p| switch (p) {
+            .file => |x| if (printed[x]) |pr| for (pr.imports) |text| {
+                if ((try seen.getOrPut(scratch, text)).found_existing) continue;
+                try out.appendSlice(scratch, text);
+            },
+            .module => {},
+        };
+        for (h.order) |p| switch (p) {
+            .file => |x| if (h.files[x].declined) try e.importDeclined(&out, h, x),
+            .module => {},
+        };
+
+        for (h.order) |p| switch (p) {
+            .module => |i| if (slots[i].text) |text| try out.appendSlice(scratch, text),
+            .file => |x| if (printed[x]) |pr| {
+                const f = &h.files[x];
+                try out.appendSlice(scratch, pr.body);
+                var aliased: std.ArrayList(JsIr.Name) = .empty;
+                for (f.uses.items) |u| {
+                    const binding = f.read.exportBinding(u.name).?;
+                    if (f.forced.contains(binding) and f.primary(binding).?.eql(u.local)) continue;
+                    const already = for (aliased.items) |a| {
+                        if (a.eql(u.local)) break true;
+                    } else false;
+                    if (already) continue;
+                    try out.appendSlice(scratch, if (aliased.items.len == 0) "let " else ",");
+                    try aliased.append(scratch, u.local);
+                    var buf: [8]u8 = undefined;
+                    try out.appendSlice(scratch, Rename.spell(e.globals.lookup(u.local).?, &buf));
+                    try out.append(scratch, '=');
+                    try out.appendSlice(scratch, f.spelling(binding));
+                }
+                if (aliased.items.len != 0) try out.appendSlice(scratch, ";\n");
+            },
+        };
+
+        // The entry file's calls, by the names the bindings have here.
+        const runtime = &h.files[h.runtime];
+        // `main` is a declaration of an emitted module, so the table has it.
+        const main_name = e.entryName(h.entry) orelse unreachable;
+        if (h.start) |s| {
+            const f = &h.files[s.file];
+            const callee = if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
+            try out.print(scratch, "{s}({s});\n", .{ callee, s.data });
+        }
+        const run_name = if (runtime.declined) "run" else runtime.spelling(runtime.read.exportBinding("run").?);
+        try out.print(scratch, "{s}({s});\n", .{ run_name, main_name });
+
+        // The program runtime's `flush` (§15.11) is the page's to call, not
+        // the program's: a test harness (`tests/browser/driver.mjs`) or an
+        // embedding page flushes a render at once through it. It stays an
+        // export of the module the page loads, which is now this one, when
+        // the runtime's render loop kept it.
+        if (!runtime.declined) if (runtime.read.exportBinding("flush")) |binding| {
+            const spelled = runtime.spelling(binding);
+            if (std.mem.eql(u8, spelled, "flush"))
+                try out.appendSlice(scratch, "export{flush};\n")
+            else
+                try out.print(scratch, "export{{{s} as flush}};\n", .{spelled});
+        };
+        try e.produce(e.options.platform.entry, out.items, try e.manifestPath());
+    }
+
+    /// A declined file keeps its module, written as the multi-file layout
+    /// writes it, and the one file imports from it what the build uses.
+    fn importDeclined(e: *Emitter, out: *std.ArrayList(u8), h: *const Hoist, x: u32) !void {
+        const scratch = e.scratch;
+        const f = &h.files[x];
+        try e.produceHandWritten(f.out, f.bytes, f.origin, f.keep.items);
+        // `run` and `start` in a statement of their own, in the form the
+        // multi-file entry file writes and `tests/browser/driver.mjs` reads.
+        const runs = x == h.runtime;
+        const starts = h.start != null and h.start.?.file == x;
+        if (runs or starts) try out.print(scratch, "import{{{s}{s}{s}}}from\"./{s}\";\n", .{
+            if (runs) "run" else "",
+            if (runs and starts) "," else "",
+            if (starts) "start" else "",
+            f.out,
+        });
+        var done: std.ArrayList(JsIr.Name) = .empty;
+        for (f.uses.items) |u| {
+            const already = for (done.items) |d| {
+                if (d.eql(u.local)) break true;
+            } else false;
+            if (already) continue;
+            try out.appendSlice(scratch, if (done.items.len == 0) "import{" else ",");
+            try done.append(scratch, u.local);
+            var buf: [8]u8 = undefined;
+            try out.print(scratch, "{s} as {s}", .{ u.name, Rename.spell(e.globals.lookup(u.local).?, &buf) });
+        }
+        if (done.items.len != 0) try out.print(scratch, "}}from\"./{s}\";\n", .{f.out});
     }
 
     /// Every whole-program name some file of the build imports, into

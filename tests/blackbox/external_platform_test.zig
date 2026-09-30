@@ -75,14 +75,17 @@ test "an external platform's markup lowering compiles a view the program then pr
     , entry);
 }
 
-test "a release entry file imports run and start in one statement when they share a file" {
+test "a release application calls the runtime's start and run inside its one file" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The toy runtime is the program runtime and the markup runtime both,
-    // so `run` and `start` are exports of one file, and under `--release`
-    // the entry file names them in one `import` rather than two (research
-    // 40). The development build keeps its two lines, pinned above.
+    // The toy runtime is the program runtime and the markup runtime both.
+    // Under `--release` an application is one scope-hoisted file
+    // (`backend.md` §9, *One scope-hoisted file under `--release`*): the
+    // runtime, the toy sibling and `Main`, in the order the entry file would
+    // have evaluated them, then the entry's `start` and `run` calls by the
+    // names those bindings have in the one scope. The development build keeps
+    // its two `import` lines, pinned above.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -117,10 +120,14 @@ test "a release entry file imports run and start in one statement when they shar
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(
-        \\import{run,start}from"./_platform/runtime.foreign.mjs";
-        \\import{e}from"./Main.mjs";
-        \\start({"tag":["p"]});
-        \\run(e);
+        \\import process from"node:process";
+        \\let g=[];let h=a=>{g=a.tag};let i=c=>{process.stdout.write(`${c.html.t}\ntags: ${g.join(" ")}\n`)};let b=d=>`"${d}"`;
+        \\let a=html=>({html});
+        \\function c(a,b){return a+"["+b+"]";}
+        \\const d=(a)=>({t:c("p","\"Hi \""+" "+b(a))}),
+        \\e=a(d("you"));
+        \\h({"tag":["p"]});
+        \\i(e);
         \\
     , try w.read("out/_main.mjs"));
 }

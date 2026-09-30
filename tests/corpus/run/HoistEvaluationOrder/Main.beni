@@ -1,0 +1,20 @@
+-- run: every module's top-level values are evaluated in ES module evaluation
+-- order — depth first from the entry, each module after what it imports, in
+-- the order the importing module names them, and each once — in a release
+-- build's one scope-hoisted file exactly as in the development build's
+-- separate modules (`backend.md` §9, *One scope-hoisted file under
+-- `--release`*). A `Debug.log` in a top-level value runs when the value is
+-- evaluated, so the log is the order.
+--
+-- `Main` names `Zed` before `Alpha`; both import `Mid`. The order is `Mid`,
+-- `Zed`, `Alpha`, `Main`: not the modules' sorted order (`Alpha`, `Main`,
+-- `Mid`, `Zed`), and not a topological order that takes the modules in
+-- sorted order (`Alpha` before `Zed`), which a concatenation might use.
+import Alpha
+import Node exposing (Program)
+import Zed
+
+
+main : Program
+main =
+    Node.printLines [ Zed.value, Alpha.value, Debug.log "main" "load" ]

@@ -1,0 +1,21 @@
+-- emit: a release application is one scope-hoisted file (`backend.md` §9,
+-- *One scope-hoisted file under `--release`*), and this golden is all of it.
+-- The runtime's `import` of `node:process` comes first, then every piece in
+-- ES module evaluation order: the program runtime, which the entry file
+-- imports first; then this module's imports depth first, in the order its
+-- emitted code first names them — `Node`'s sibling, `String`'s, `Basics`'
+-- for `+` (and `*`, which `Zed` names), then `Zed` after the `Mid` it
+-- imports, then `Alpha`, which finds `Mid` done — then this module; then
+-- the entry's `run` call. No `import` or `export` joins them. The emitted
+-- modules' names are numbered first, in that order, and the hand-written
+-- files' top-level bindings after them, each spelled as the name its
+-- importer gives it where it has one.
+import Alpha
+import Node exposing (Program)
+import String
+import Zed
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (Zed.value + Alpha.value) ]
