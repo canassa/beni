@@ -70,6 +70,15 @@ pub fn fill(in: Input) Error!void {
     for (values, 0..) |*v, i| {
         const decl = prov.valueDecl(i);
         const root = if (decl) |d| publishedRoot(cx.bir, in.report, in.decl_scheme, d) else null;
+        // Its summary, as the scheme's effect block (transparent-effects-
+        // proposal.md §14.6): a function of the declaration alone, so a
+        // declaration whose failure bit is set publishes none.
+        writer.effects = if (decl) |d| blk: {
+            const e = cx.effects orelse break :blk null;
+            if (d.int() < in.report.failed.bit_length and in.report.failed.isSet(d.int())) break :blk null;
+            break :blk .{ .effects = e, .decl = d.int() };
+        } else null;
+        defer writer.effects = null;
         v.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.values));

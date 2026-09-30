@@ -32,6 +32,7 @@ const int_hash = @import("int_hash.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
+const Effects = @import("Effects.zig");
 
 const Schemes = @This();
 
@@ -134,6 +135,10 @@ pub const Writer = struct {
     /// Set while a body is written: a variable that is not one of the
     /// alias's parameters is `err`, never a new quantifier.
     in_body: bool = false,
+    /// The declaration whose summary the next `add` writes as the scheme's
+    /// effect block (transparent-effects-proposal.md §14.6); null writes
+    /// none, as for everything that is not a value.
+    effects: ?Effects.Publication = null,
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -224,11 +229,13 @@ pub const Writer = struct {
         const count = w.quantified_count;
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
+        const effects = if (w.effects) |p| try w.writeEffects(p, v) else Interface.no_terms;
         const index: u32 = @intCast(w.schemes.items.len);
         try w.schemes.append(w.gpa, .{
             .quantified_start = flags_start,
             .quantified_count = count,
             .body = body,
+            .effects = effects,
         });
         try w.finish(mark);
         return @enumFromInt(index);
@@ -458,6 +465,27 @@ pub const Writer = struct {
         w.quantified_count = 0;
         w.pending_flags.clearRetainingCapacity();
         w.pending_roots.clearRetainingCapacity();
+    }
+
+    /// The effect block of the scheme `add` just wrote (transparent-effects-
+    /// proposal.md §14.6): its `where` types in the order the record wrote
+    /// them — quantifiers in discovery order, each one's constraints by name
+    /// text, as `writeConstraints` did.
+    fn writeEffects(w: *Writer, p: Effects.Publication, v: Var) Error!u32 {
+        if (!p.effects.publishes(p.decl)) return Interface.no_terms;
+        var where_types: std.ArrayList(Var) = .empty;
+        defer where_types.deinit(w.gpa);
+        for (w.pending_roots.items) |root| {
+            const set = w.store.flagsOf(root).constraints;
+            const n = w.store.constraintCount(set);
+            if (n == 0) continue;
+            const sorted = try w.gpa.alloc(TypeStore.MethodConstraint, n);
+            defer w.gpa.free(sorted);
+            for (sorted, 0..) |*c, j| c.* = w.store.constraintAt(set, @intCast(j));
+            std.mem.sort(TypeStore.MethodConstraint, sorted, w.interner, constraintNameLessThan);
+            for (sorted) |c| try where_types.append(w.gpa, c.fn_var);
+        }
+        return p.effects.writeBlock(p.decl, v, where_types.items, w.gpa, &w.extra, w, symbolIndex);
     }
 
     /// Write every quantifier's constraint block and patch its two words

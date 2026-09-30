@@ -135,6 +135,11 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
             m.check = reading.check.toOptional();
             m.rigids = reading.rigids;
             if (g.cx.keep_display) m.display = (try displayReading(g, annotation, reading.rigids)).toOptional();
+            // The dump's reading is one class with the scheme too
+            // (§14.3 rule 5; `rigidReading` pairs the body's).
+            if (g.cx.effects) |e| {
+                if (m.display.unwrap()) |display| try e.zip(scheme, display);
+            }
         } else {
             const v = try g.freshFlex();
             m.check = v.toOptional();
@@ -174,6 +179,12 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
     defer b.deinit();
     const check = try g.cx.readAnnotation(&b, annotation, @intFromEnum(g.decl));
     if (top) |d| try attachWhere(g.cx, d, &b, @intFromEnum(g.decl));
+    // The annotation promises no bits: this reading and the scheme are one
+    // class position by position (transparent-effects-proposal.md §14.3
+    // rule 5); a `let`'s, whose scheme was read just before, is zipped.
+    if (g.cx.effects) |e| {
+        if (top != null) try e.checkReading(@intFromEnum(g.decl), mark, g.storeMark(), scheme, check) else try e.zip(scheme, check);
+    }
     try g.adoptSince(mark);
     const rigids_start: u32 = @intCast(g.tree.extra.items.len);
     for (b.scope.items) |scoped| try g.tree.extra.append(g.gpa, @intFromEnum(scoped.v));
@@ -217,14 +228,24 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
     const params = bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
     const annotated = d.annotation != .none;
     const category: Category = .{ .tag = if (annotated) .annotation else .general };
-    if (params.len == 0) return Expr.expr(g, body, target, category);
+    // What a call in the body joins (transparent-effects-proposal.md §14.3
+    // rule 1): the declaration's own arrow, or, for a value with no
+    // parameters, its evaluation class.
+    const outer = g.ambient;
+    defer g.ambient = outer;
+    if (params.len == 0) {
+        g.ambient = if (g.cx.effects) |e| try e.evalNode(@intFromEnum(g.decl)) else null;
+        return Expr.expr(g, body, target, category);
+    }
     const param_vars = try g.cx.scratch.alloc(Var, params.len);
     defer g.cx.scratch.free(param_vars);
     for (param_vars) |*v| v.* = try g.freshFlex();
     const result = try g.freshFlex();
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
-    try parts.append(g.cx.scratch, try g.equal(target, try g.func(param_vars, result), body, category));
+    const arrow = try g.func(param_vars, result);
+    g.ambient = arrow;
+    try parts.append(g.cx.scratch, try g.equal(target, arrow, body, category));
     for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
     // A `?` in the body that names no `let` definition returns from here.
     g.decl_result = result;
@@ -385,8 +406,13 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             const result = try g.freshFlex();
             var parts: std.ArrayList(Constraint) = .empty;
             defer parts.deinit(g.cx.scratch);
-            try parts.append(g.cx.scratch, try g.equal(check, try g.func(param_vars, result), m, category));
+            const arrow = try g.func(param_vars, result);
+            try parts.append(g.cx.scratch, try g.equal(check, arrow, m, category));
             for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
+            // The body's calls join this definition's own arrow (§14.3 rule 1).
+            const outer = g.ambient;
+            g.ambient = arrow;
+            defer g.ambient = outer;
             // A `?` in the body returns from this definition (§8.6).
             try g.targets.append(g.gpa, .{ .inst = m, .result = result });
             defer _ = g.targets.pop();

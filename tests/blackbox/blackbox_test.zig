@@ -725,7 +725,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // because what they measure is a graph and a constraint tree, not a
     // span of source. Per module and not per run, because "this module was
     // not re-checked" is what the incrementality tests have to see.
-    var per_module_seen: [files.len][11]bool = @splat(@splat(false));
+    var per_module_seen: [files.len][12]bool = @splat(@splat(false));
     var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
     // `cache_load` and `dep_digest` are per MODULE, not serial
@@ -735,9 +735,10 @@ test "--self-profile records every phase of every file and every counter, exactl
     // (`fast-compiler.md` §8). Both are emitted with or without a cache
     // directory, so that there is one code path rather than two. `derived`,
     // `elaborate`, `publish` and `finish` are the checker's P5, P6, P8 and P9
-    // (`checker-v2.md` §5), nested in `check`, and the scenario below pins
-    // their nesting.
-    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "elaborate", "publish", "finish", "cache_load", "dep_digest" };
+    // (`checker-v2.md` §5), and `effects` the effect solve between P5 and P6
+    // (§26), all nested in `check`, and the scenario below pins their
+    // nesting.
+    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "effects", "elaborate", "publish", "finish", "cache_load", "dep_digest" };
     // `types` is serial and once per run (checker.md §5): numbering every
     // declared type and settling equatability. It is in the trace because
     // it can DOMINATE a build — a project of long alias chains spent 1.3 s
@@ -797,7 +798,7 @@ test "--self-profile records every phase of every file and every counter, exactl
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([files.len][11]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([files.len][12]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
     try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
@@ -864,7 +865,7 @@ test "--self-profile records P5, P6, P8 and P9 once per module, inside its check
     const text = try w.read("trace.json");
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, text, .{ .ignore_unknown_fields = true });
     defer parsed.deinit();
-    const phases = [_][]const u8{ "check", "derived", "elaborate", "publish", "finish" };
+    const phases = [_][]const u8{ "check", "derived", "effects", "elaborate", "publish", "finish" };
     var found: [files.len][phases.len]?Event = @splat(@splat(null));
     for (parsed.value.traceEvents) |e| {
         if (!std.mem.eql(u8, e.ph, "X")) continue;
@@ -3106,12 +3107,14 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     // lie to print `number` twice. `shift` prints its annotation as written;
     // its parameter `p` took the name `Point` and then met the record `p.x`
     // asks for, so it shows the expansion (checker-v2.md §7.1, §21.1).
+    // `apply` calls `f`, so its own arrow's effect class is `f`'s, `!e1`,
+    // printed on the local too (transparent-effects-proposal.md §14.7).
     try testing.expectEqualStrings(
         \\module Main
         \\  shift : Point -> Point
         \\    p : { x : Int, y : Int }
-        \\  apply : (a -> b), a -> b
-        \\    f : a -> b
+        \\  apply : (a -> b !e1), a -> b !e1
+        \\    f : a -> b !e1
         \\    x : a
         \\  total : List number -> number
         \\    xs : List number

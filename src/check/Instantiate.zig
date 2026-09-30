@@ -78,11 +78,28 @@ unpaired: u32 = 0,
 /// The interface term memo every imported scheme and constructor is read
 /// through (`Schemes.TermMemo`).
 term_memo: Schemes.TermMemo = .{},
+/// Set by `copyRecorded` for the copy in progress: effect inference is told
+/// which scheme variable each copied function type came from
+/// (transparent-effects-proposal.md §14.3 rules 3 and 4), with the
+/// declaration whose body the reference is in.
+record_owner: ?u32 = null,
+/// The quantifiers the last imported value read made, for its effect block.
+quantified: std.ArrayList(Var) = .empty,
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
     in.made.deinit(in.cx.gpa);
     in.term_memo.deinit(in.cx.gpa);
+    in.quantified.deinit(in.cx.gpa);
+}
+
+/// `copy`, telling effect inference what the copy is a copy of: a
+/// reference to an own declaration or a generalised local, made in the body
+/// of declaration `owner` (`Effects.no_owner` for none).
+pub fn copyRecorded(in: *Instantiate, v: Var, owner: u32) Error!Var {
+    in.record_owner = owner;
+    defer in.record_owner = null;
+    return in.copy(v);
 }
 
 fn frame(in: *Instantiate) *Generalize.Frame {
@@ -144,6 +161,11 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     // The requirements it copied become wanteds, in canonical order,
     // read off the scheme while the memo still maps it to the copy.
     if (in.entries != 0) try in.wantInOrder(root, true);
+    // And effect inference learns the copy's origin, while the memo holds it.
+    if (in.record_owner) |owner| {
+        in.record_owner = null;
+        if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..]);
+    }
     const result = store.copy(root).unwrap().?;
     for (in.copied.items[start..]) |r| store.setCopy(r, .none);
     in.copied.shrinkRetainingCapacity(start);
@@ -384,9 +406,12 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     };
     if (scheme == .none) return null;
     const mark = cx.store.count();
-    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, &in.term_memo, cx.gpa);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, &in.term_memo, cx.gpa, &in.quantified);
     try in.adoptSince(mark);
     try in.wantImported(mark, v);
+    // A value's summary, read from its record (transparent-effects-proposal.md
+    // §14.3 rule 3): the use's classes get its rungs and dependencies now.
+    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@intFromEnum(scheme)], v, in.quantified.items);
     return v;
 }
 
@@ -401,7 +426,19 @@ fn importedCtor(in: *Instantiate, module: Graph.Index, index: u32) Error!?Var {
     const mark = cx.store.count();
     const v = try Schemes.instantiateCtorWith(iface, cx.types.refIds(module), cx.store, index, type_id, in.frame().rank, cx.scratch, &in.term_memo, cx.gpa) orelse return null;
     try in.adoptSince(mark);
+    try in.constructed(v);
     return v;
+}
+
+/// A constructor's type just built for a use: its fields' function types
+/// join the class of the type it constructs (transparent-effects-proposal.md
+/// §14.5). A nullary constructor has no field to join.
+fn constructed(in: *Instantiate, v: Var) Error!void {
+    const e = in.cx.effects orelse return;
+    const f = Walk.function(in.cx.store, v) orelse return;
+    const args = try in.cx.scratch.dupe(Var, f.params);
+    defer in.cx.scratch.free(args);
+    try e.constructor(f.result, args);
 }
 
 /// A constructor of THIS module, built fresh at the frame's rank — which is
@@ -441,6 +478,7 @@ fn ownCtor(in: *Instantiate, index: u32, region: Bir.Inst.Index) Error!?Var {
     const range = try cx.store.addVars(arg_vars);
     const fun = try cx.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, rank);
     try in.adoptSince(mark);
+    if (cx.effects) |e| try e.constructor(result, arg_vars);
     return fun;
 }
 

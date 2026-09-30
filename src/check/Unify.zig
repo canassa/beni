@@ -48,6 +48,7 @@ const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
 const Obligations = @import("Obligations.zig");
 const Evidence = @import("Evidence.zig");
+const Effects = @import("Effects.zig");
 
 const Unify = @This();
 
@@ -108,6 +109,10 @@ stacks: *Walk.Stacks,
 /// one name is answered `alias(older)`), and marks those meeting `err`
 /// failed. It never resolves one (§7.1).
 evidence: *Evidence,
+/// Told when two names of one alias are one class although their
+/// expansions never met, so their function types are one class too
+/// (transparent-effects-proposal.md §14.3 rule 2).
+effects: ?*Effects = null,
 /// Rule-U1 joins whose two method types did not unify. `unify` itself
 /// succeeded — the variables merged — and the caller reports each one as
 /// `method_constraint_mismatch`, since `unify` never
@@ -734,6 +739,10 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
         const ya, _ = st.resolved(na);
         const yb, _ = st.resolved(nb);
         if (ya == yb) return true;
+        // The two expansions never meet, so their function types are one
+        // effect class by position (transparent-effects-proposal.md §14.3
+        // rule 2).
+        if (u.effects) |e| try e.zip(ya, yb);
         // One name, agreed: one class, unless either is a shared generalised
         // alias, which is never rewritten (`takeName`).
         if (st.rank(na) == TypeStore.generalized or st.rank(nb) == TypeStore.generalized) return true;

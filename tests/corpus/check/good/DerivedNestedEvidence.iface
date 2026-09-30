@@ -1,4 +1,4 @@
 module DerivedNestedEvidence
-  value inferred : a, a -> Bool where a.eq : a, a -> Bool
+  value inferred : a, a -> Bool !e1 where a.eq : a, a -> Bool !e1
   value ints : Bool
-  value same : List (List (Box a)), List (List (Box a)) -> Bool where a.eq : a, a -> Bool
+  value same : List (List (Box a)), List (List (Box a)) -> Bool !e1 where a.eq : a, a -> Bool !e1

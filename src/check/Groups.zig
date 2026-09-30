@@ -444,7 +444,7 @@ pub fn demanded(s: *Solve, node: Tree.Node) Error!void {
         return;
     }
     const copy = switch (got) {
-        .scheme => |v| try s.instantiate.copy(v),
+        .scheme => |v| try s.instantiate.copyRecorded(v, s.instantiate.decl orelse std.math.maxInt(u32)),
         .in_flight => |v| v,
         .refused, .missing => unreachable,
     };

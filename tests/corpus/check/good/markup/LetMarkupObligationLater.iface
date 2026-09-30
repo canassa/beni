@@ -1,2 +1,2 @@
 module LetMarkupObligationLater
-  value input : (String -> a) -> ( Html a, a )
+  value input : (String -> a !e1) -> ( Html a, a ) !e1

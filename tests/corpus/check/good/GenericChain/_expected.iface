@@ -1,7 +1,7 @@
 module Lib
-  value inner : a, Int -> a where a.scale : a, Int -> a
-  value middle : a, Int -> a where a.scale : a, Int -> a
-  value outer : a, Int -> a where a.scale : a, Int -> a
+  value inner : a, Int -> a !e1 where a.scale : a, Int -> a !e1
+  value middle : a, Int -> a !e1 where a.scale : a, Int -> a !e1
+  value outer : a, Int -> a !e1 where a.scale : a, Int -> a !e1
 module Main
   type Metre
     Metre/1

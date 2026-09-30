@@ -196,6 +196,7 @@ pub fn init(s: *Solve, cx: *const Context, report: *Report, retained: *Retained)
         .ready_queue = &s.ready_queue,
         .stacks = &s.stacks,
         .evidence = &s.evidence,
+        .effects = cx.effects,
     };
     s.instantiate = .{ .cx = cx, .frames = &s.frames, .stacks = &s.stacks, .evidence = &s.evidence, .seq = &s.obligations.seq, .queue = &s.obligations.current_queue };
     s.marker = .{ .cx = cx, .obligations = &s.obligations, .contexts = &s.contexts, .solve = s };
@@ -360,7 +361,10 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
             .instantiate => {
                 s.instantiate.origin = node.region;
                 s.instantiate.made.clearRetainingCapacity();
-                const copy = try s.instantiate.copy(@enumFromInt(node.b));
+                // A top-level or local reference: effect inference learns
+                // which scheme it copied (transparent-effects-proposal.md
+                // §14.3 rules 3 and 4).
+                const copy = try s.instantiate.copyRecorded(@enumFromInt(node.b), s.instantiate.decl orelse std.math.maxInt(u32));
                 try s.instantiated(node.region);
                 _ = try s.unify(@enumFromInt(node.a), copy, node.region, node.category);
             },

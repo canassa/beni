@@ -265,7 +265,9 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
             s.instantiate.origin = w.origin;
             s.instantiate.parent = id.toOptional();
             defer s.instantiate.parent = .none;
-            const copy = try s.instantiate.copy(scheme);
+            // The use's declaration owns the copy, for effect inference's
+            // order (transparent-effects-proposal.md §14.4).
+            const copy = try s.instantiate.copyRecorded(scheme, w.decl);
             try s.paired(w.origin);
             // The sub-wanteds are the use's: its declaration owns their failures.
             for (s.instantiate.made.items) |sub| s.evidence.ptr(sub).decl = w.decl;
@@ -330,6 +332,11 @@ fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entr
     defer s.cx.scratch.free(args);
     const made = &s.instantiate.made;
     made.clearRetainingCapacity();
+    // Each quantifier's sub-wanted's method type, for the method's effect
+    // summary (transparent-effects-proposal.md §14.3 rule 3).
+    const sub_types = try s.cx.scratch.alloc(Var.Optional, args.len);
+    defer s.cx.scratch.free(sub_types);
+    @memset(sub_types, .none);
     for (args, 0..) |arg, i| {
         if (plain.mask & (@as(u64, 1) << @intCast(i)) == 0) continue;
         const method_type = try Resolve.wellKnownType(s, w.method, arg);
@@ -337,6 +344,14 @@ fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entr
         // The sub-wanteds are the use's: its declaration owns their failures.
         s.evidence.ptr(sub).decl = w.decl;
         try made.append(gpa, sub);
+        sub_types[i] = method_type.toOptional();
+    }
+    // The fast path reads no scheme, so the summary is applied by position:
+    // taking it never changes a bit (checker-v2.md §26).
+    if (s.cx.effects) |e| {
+        const iface = s.cx.iface(entry.module);
+        const index = iface.values[@intFromEnum(value)].scheme;
+        if (index != .none) try e.applyPlain(iface, iface.scheme(index), w.method_type, sub_types);
     }
     // Readied as the binding of each quantifier would ready it, in order.
     for (made.items) |sub| {
@@ -1014,7 +1029,7 @@ fn publishedMethodTypes(s: *Solve, id: WantedId, iface: *const Interface, module
     const cx = s.cx;
     if (@intFromEnum(scheme) >= iface.schemes.len) return .malformed;
     const mark = cx.store.count();
-    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa, null);
     try s.instantiate.adoptSince(mark);
     if (s.store().resolvedContent(v) == .err) return .poisoned;
     const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
@@ -1122,6 +1137,10 @@ fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     // The FIELD first, against an open record, so a name the record lacks is
     // `unknown_field` and not an arity message about a type nobody wrote.
     const callee = try s.fresh(.{ .flex = .{} });
+    // The call is the field's: what it may do reaches the dot-call's own
+    // arrow, which the generator joined into the caller
+    // (transparent-effects-proposal.md §14.3 rule 1).
+    if (s.cx.effects) |e| try e.call(callee, w.method_type);
     var pairs = [_]TypeStore.Field{.{ .name = w.method, .value = callee }};
     const range = try st.addFields(&pairs);
     const ext = try s.fresh(.{ .flex = .{} });

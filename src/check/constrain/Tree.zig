@@ -312,8 +312,20 @@ pub const Generator = struct {
     /// The `let` definitions with parameters being generated, innermost
     /// last, and their result variables: what a `?` inside one returns from.
     targets: std.ArrayList(Target) = .empty,
+    /// The class a call made here joins (transparent-effects-proposal.md
+    /// §14.3 rule 1): the arrow of the function whose body is being
+    /// generated, or a top-level value's evaluation class. Null where
+    /// nothing calls (a schema's conversions are typed, never run here).
+    ambient: ?Var = null,
 
     pub const Target = struct { inst: Bir.Inst.Index, result: Var };
+
+    /// Record `callee ⊑ ambient` for a call generated now (§14.3 rule 1).
+    pub fn called(g: *Generator, callee: Var) Error!void {
+        const ambient = g.ambient orelse return;
+        const effects = g.cx.effects orelse return;
+        try effects.call(callee, ambient);
+    }
 
     pub const max_depth = Parse.max_depth + 104;
 

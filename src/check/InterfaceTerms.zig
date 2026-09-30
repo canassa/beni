@@ -272,10 +272,13 @@ pub fn instantiate(
 ) Error!Var {
     var memo: TermMemo = .{};
     defer memo.deinit(scratch);
-    return instantiateWith(iface, type_ids, store, scheme_index, rank, scratch, &memo, scratch);
+    return instantiateWith(iface, type_ids, store, scheme_index, rank, scratch, &memo, scratch, null);
 }
 
-/// `instantiate` with the caller's memo, allocated with `gpa`.
+/// `instantiate` with the caller's memo, allocated with `gpa`. When
+/// `quantified` is given, it receives the variable made for each
+/// quantifier, in the scheme's order: what an effect block's `where` roots
+/// are read against (transparent-effects-proposal.md §14.6).
 pub fn instantiateWith(
     iface: *const Interface,
     type_ids: []const TypeStore.TypeId,
@@ -285,6 +288,7 @@ pub fn instantiateWith(
     scratch: Allocator,
     memo: *TermMemo,
     gpa: Allocator,
+    quantified: ?*std.ArrayList(Var),
 ) Error!Var {
     const s = iface.schemes[scheme_index];
     const fresh = try scratch.alloc(Var, s.quantified_count);
@@ -330,6 +334,10 @@ pub fn instantiateWith(
             .equatable = flags.equatable,
             .constraints = set.toOptional(),
         } });
+    }
+    if (quantified) |out| {
+        out.clearRetainingCapacity();
+        try out.appendSlice(gpa, fresh);
     }
     return body;
 }

@@ -80,7 +80,9 @@ pub const magic = "BENIIFC\x00";
 /// 8: a value may be a markup primitive (bit 1 of its flag byte), and a
 /// vocabulary module has three tables, `elements`, `attributes` and
 /// `events` (§25.8).
-pub const format_version: u32 = 8;
+/// 9: a scheme row grows 12 → 16 bytes: the `extra` offset of its effect
+/// block, or `no_terms` (transparent-effects-proposal.md §14.6).
+pub const format_version: u32 = 9;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -116,7 +118,7 @@ pub const Column = enum(u32) {
             .values => 12,
             .types => 32,
             .ctors => 28,
-            .schemes => 12,
+            .schemes => 16,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 16,
@@ -302,10 +304,11 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@intFromEnum(Column.schemes)]..];
         for (iface.schemes, 0..) |s, i| {
-            const row = out[i * 12 ..][0..12];
+            const row = out[i * 16 ..][0..16];
             std.mem.writeInt(u32, row[0..4], s.quantified_start, .little);
             std.mem.writeInt(u32, row[4..8], s.quantified_count, .little);
             std.mem.writeInt(u32, row[8..12], @intFromEnum(s.body), .little);
+            std.mem.writeInt(u32, row[12..16], s.effects, .little);
         }
     }
     if (iface.terms.len != 0) {
@@ -624,11 +627,12 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const schemes = try gpa.alloc(Interface.Scheme, lengths[@intFromEnum(Column.schemes)]);
         iface.schemes = schemes;
         for (schemes, 0..) |*s, i| {
-            const row = in[i * 12 ..][0..12];
+            const row = in[i * 16 ..][0..16];
             s.* = .{
                 .quantified_start = std.mem.readInt(u32, row[0..4], .little),
                 .quantified_count = std.mem.readInt(u32, row[4..8], .little),
                 .body = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .effects = std.mem.readInt(u32, row[12..16], .little),
             };
         }
     }
@@ -855,6 +859,20 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
             for (0..len) |j| {
                 if (iface.extra[start + j * 2] >= symbols) return false;
                 if (!isTerm(terms, iface.extra[start + j * 2 + 1])) return false;
+            }
+        }
+        // The effect block (transparent-effects-proposal.md §14.6): it fits,
+        // its classes and steps are in range, and a field step names a
+        // symbol slot.
+        if (s.effects != Interface.no_terms) {
+            if (s.effects >= iface.extra.len) return false;
+            const words = iface.extra[s.effects..];
+            const len = Interface.EffectBlock.measure(words) orelse return false;
+            var sites = (Interface.EffectBlock{ .words = words[0..len] }).sites();
+            while (sites.next()) |site| {
+                for (site.steps) |step| {
+                    if (Interface.EffectBlock.stepKind(step) == 4 and Interface.EffectBlock.stepIndex(step) >= symbols) return false;
+                }
             }
         }
     }

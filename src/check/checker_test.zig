@@ -213,8 +213,8 @@ test "inference: the principal type of an unannotated definition" {
         \\module M
         \\  identity : a -> a
         \\    x : a
-        \\  apply : (a -> b), a -> b
-        \\    f : a -> b
+        \\  apply : (a -> b !e1), a -> b !e1
+        \\    f : a -> b !e1
         \\    x : a
         \\  count : List a -> Int
         \\    xs : List a

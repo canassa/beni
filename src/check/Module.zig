@@ -9,6 +9,7 @@
 //! | P3    | the own-name index: every value by name, for the module rule                            |
 //! | P4    | per top-level group in SCC order, or nested at demand: generate, solve, boundary (`Groups`) |
 //! | P5    | every derived context settled (`Contexts`, §11.2), and the eager rows it gives (`Eager`) |
+//! | P5½   | the effect bits: every recorded class joined and solved (`Effects.run`, checker-v2 §26) |
 //! | P6    | elaboration: the dispatch table's trees (`Elaborate`)                                  |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
 //! | P8    | the interface, through one publication routine (`Publish`); then `nesting_too_deep`s    |
@@ -62,6 +63,7 @@ const Walk = @import("Walk.zig");
 const Vocab = @import("Vocab.zig");
 const Markup = @import("Markup.zig");
 const Retained = @import("Retained.zig");
+const Effects = @import("Effects.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -156,6 +158,12 @@ pub fn check(in: Input) Error!Check.Counters {
         .too_deep = &too_deep,
         .keep_display = in.keep != null,
     };
+    // Effect inference records beside every phase and solves after P5
+    // (transparent-effects-proposal.md §14, checker-v2.md §26).
+    var effects: Effects = try .init(gpa, store, in.types, in.interner, bir.decls.len);
+    var effects_kept = false;
+    defer if (!effects_kept) effects.deinit();
+    cx.effects = &effects;
     var report: Report = undefined;
     try report.init(&cx, in.diagnostics, quiet, decl_scheme, local_type);
     defer report.deinit();
@@ -171,11 +179,13 @@ pub fn check(in: Input) Error!Check.Counters {
         const annotation = d.annotation.unwrap() orelse continue;
         var b = cx.builder(.flex, TypeStore.generalized);
         defer b.deinit();
+        const reading_start = store.count();
         decl_scheme[i] = (try cx.readAnnotation(&b, annotation, @intCast(i))).toOptional();
         // The `where` clause is read with the SAME builder, so a variable a
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.
         try Decl.attachWhere(&cx, d, &b, @intCast(i));
+        effects.schemeReading(@intCast(i), reading_start, store.count());
         // An Elm curried annotation over a definition of as many
         // parameters is one mistake, reported at the body; its callers are
         // not held to a promise the author did not mean (checker.md §8.7).
@@ -243,6 +253,11 @@ pub fn check(in: Input) Error!Check.Counters {
     const p5_token = if (in.profile) |p| p.begin() else null;
     try eager.build(&solver);
     if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
+    // Every group, nested check and derived context has recorded its
+    // edges: the summaries now (§14.4), before P6 and P8 read them.
+    const effects_token = if (in.profile) |p| p.begin() else null;
+    try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
+    if (in.profile) |p| p.end(in.tid, effects_token.?, .effects, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
     // The markup section (§25.7), for a module that checked clean: every
@@ -331,6 +346,8 @@ pub fn check(in: Input) Error!Check.Counters {
         k.decl_display = decl_display;
         k.local_type = local_type;
         tables_kept = true;
+        k.effects = effects;
+        effects_kept = true;
     }
     return .{
         .unifications = solver.unifier.unifications,
@@ -338,6 +355,42 @@ pub fn check(in: Input) Error!Check.Counters {
         .instantiations = solver.instantiate.instantiations,
         .derived_context_runs = solver.contexts.runs_total,
     };
+}
+
+/// Effect inference's solve (transparent-effects-proposal.md §14.4): each
+/// declaration's binding group, so the members of one are solved together,
+/// and what every answered wanted means for the bits — a derived answer's
+/// arguments flow into it (§14.3 rule 7), a joined one is the wanted it
+/// names.
+fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence) Error!void {
+    const unit = try scratch.alloc(u32, bir.decls.len);
+    defer scratch.free(unit);
+    for (unit, 0..) |*u, d| {
+        const g = groups.group_of[d];
+        u.* = if (g == Groups.none) Groups.none else groups.root(g);
+    }
+    var edges: std.ArrayList(Effects.Pair) = .empty;
+    defer edges.deinit(scratch);
+    var joins: std.ArrayList(Effects.Pair) = .empty;
+    defer joins.deinit(scratch);
+    for (evidence.wanteds.items, evidence.answers.items) |w, answer| {
+        if (w.state != .answered) continue;
+        switch (answer) {
+            .derived => |a| for (evidence.argsOf(a.args)) |sub| {
+                try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
+            },
+            .alias => |other| try joins.append(scratch, .{ .a = evidence.get(other).method_type, .b = w.method_type }),
+            else => {},
+        }
+    }
+    try effects.run(.{
+        .scratch = scratch,
+        .bir = bir,
+        .decl_scheme = decl_scheme,
+        .unit = unit,
+        .wanted_edges = edges.items,
+        .wanted_joins = joins.items,
+    });
 }
 
 /// The build's markup type (`boundary.md` §9.2), when the chain names one.

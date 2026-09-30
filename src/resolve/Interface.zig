@@ -190,7 +190,108 @@ pub const Scheme = struct {
     quantified_start: u32,
     quantified_count: u32,
     body: TermIndex,
+    /// The `extra` offset of the scheme's effect block
+    /// (transparent-effects-proposal.md §14.6), or `no_terms` when every
+    /// class of the scheme is pure and independent — no function in it
+    /// may do anything, and none depends on another.
+    effects: u32 = no_terms,
 };
+
+/// An effect block's words, read (transparent-effects-proposal.md §14.6).
+/// Built over a block `iface_bytes` validated, so every read stays inside
+/// `extra`.
+pub const EffectBlock = struct {
+    words: []const u32,
+
+    pub const Class = struct { rung: u32, deps: []const u32 };
+    pub const Site = struct { class: u32, root: u32, steps: []const u32 };
+
+    pub fn classCount(b: EffectBlock) u32 {
+        return b.words[0];
+    }
+
+    /// Class `i`, walking the class table from its start: a block holds a
+    /// handful of classes.
+    pub fn class(b: EffectBlock, i: u32) Class {
+        var at: u32 = 1;
+        var k: u32 = 0;
+        while (true) : (k += 1) {
+            const deps = b.words[at + 1];
+            if (k == i) return .{ .rung = b.words[at], .deps = b.words[at + 2 ..][0..deps] };
+            at += 2 + deps;
+        }
+    }
+
+    /// Where the site table starts: its count.
+    fn sitesAt(b: EffectBlock) u32 {
+        var at: u32 = 1;
+        for (0..b.classCount()) |_| at += 2 + b.words[at + 1];
+        return at;
+    }
+
+    pub const Sites = struct {
+        words: []const u32,
+        at: u32,
+        left: u32,
+
+        pub fn next(it: *Sites) ?Site {
+            if (it.left == 0) return null;
+            it.left -= 1;
+            const n = it.words[it.at + 2];
+            const site: Site = .{ .class = it.words[it.at], .root = it.words[it.at + 1], .steps = it.words[it.at + 3 ..][0..n] };
+            it.at += 3 + n;
+            return site;
+        }
+    };
+
+    pub fn sites(b: EffectBlock) Sites {
+        const at = b.sitesAt();
+        return .{ .words = b.words, .at = at + 1, .left = b.words[at] };
+    }
+
+    /// The step word's kind (`Walk.StepKind`) and index.
+    pub fn stepKind(word: u32) u32 {
+        return word >> 28;
+    }
+
+    pub fn stepIndex(word: u32) u32 {
+        return word & ((1 << 28) - 1);
+    }
+
+    /// The block's length in words, or null when it leaves `words` or is
+    /// malformed: a class out of range, or a step of an unknown kind. What
+    /// `iface_bytes` validates a record read from disk with.
+    pub fn measure(words: []const u32) ?u32 {
+        if (words.len == 0) return null;
+        const classes = words[0];
+        var at: u64 = 1;
+        for (0..classes) |_| {
+            if (at + 2 > words.len) return null;
+            const deps = words[@intCast(at + 1)];
+            if (at + 2 + deps > words.len) return null;
+            for (words[@intCast(at + 2)..][0..deps]) |d| if (d >= classes) return null;
+            at += 2 + deps;
+        }
+        if (at + 1 > words.len) return null;
+        const count = words[@intCast(at)];
+        at += 1;
+        for (0..count) |_| {
+            if (at + 3 > words.len) return null;
+            if (words[@intCast(at)] >= classes) return null;
+            const n = words[@intCast(at + 2)];
+            if (at + 3 + n > words.len) return null;
+            for (words[@intCast(at + 3)..][0..n]) |s| if (stepKind(s) > 6) return null;
+            at += 3 + n;
+        }
+        return @intCast(at);
+    }
+};
+
+/// The effect block of `s`, or null when it has none.
+pub fn effectBlock(iface: *const Interface, s: Scheme) ?EffectBlock {
+    if (s.effects == no_terms or s.effects >= iface.extra.len) return null;
+    return .{ .words = iface.extra[s.effects..] };
+}
 
 /// One quantified variable: its ad-hoc constraint (the closed set of
 /// `fast-compiler.md` §3.1 and nothing else) and the name the annotation
@@ -1520,7 +1621,7 @@ test "a foreign value is marked, and an unexported type contributes nothing" {
         \\    = Hidden
         \\
         \\
-        \\pub foreign add : Int -> Int -> Int
+        \\pub foreign pure add : Int -> Int -> Int
         \\
         \\
         \\pub twice : Int -> Int

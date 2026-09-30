@@ -1,7 +1,7 @@
 //! What one module's check reads, shared by the generator, the solver
 //! and publication (checker-v2.md §5). One per module, built by
 //! `Module.check` in P1 and never written after it except through the
-//! pointers it holds (`store`, `too_deep`).
+//! pointers it holds (`store`, `too_deep`, `effects`).
 //!
 //! It deliberately has no `local_var`, no `inst_result` and no "current
 //! declaration", so the solver cannot read generation-time context through
@@ -49,8 +49,13 @@ keep_display: bool = false,
 /// §25.2), when it writes markup and the build has one. Set after the
 /// vocabulary declarations are checked and before any value group.
 markup: ?*Markup = null,
+/// Where the generator, the solver and instantiation record what effect
+/// inference solves after P5 (transparent-effects-proposal.md §14,
+/// checker-v2.md §26); null in a unit test that builds no module.
+effects: ?*Effects = null,
 
 const Markup = @import("Markup.zig");
+const Effects = @import("Effects.zig");
 
 /// One written or inferred type too deep to finish: where the message points,
 /// and the declaration whose failure bit it sets (§15.2).

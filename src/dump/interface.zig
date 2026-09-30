@@ -54,6 +54,7 @@ const Render = @import("../check/Render.zig");
 const Schemes = @import("../check/Schemes.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
+const Effects = @import("../check/Effects.zig");
 
 pub const Error = std.Io.Writer.Error || Allocator.Error;
 
@@ -347,7 +348,11 @@ pub fn writeRaw(
         });
     }
     for (iface.schemes, 0..) |sch, i| {
-        try w.print("scheme {d} body={d} quantified={d}\n", .{ i, @intFromEnum(sch.body), sch.quantified_count });
+        try w.print("scheme {d} body={d} quantified={d}", .{ i, @intFromEnum(sch.body), sch.quantified_count });
+        // The effect block's offset (transparent-effects-proposal.md §14.6);
+        // its words are the `extra` lines below.
+        if (sch.effects != Interface.no_terms) try w.print(" effects={d}", .{sch.effects});
+        try w.writeByte('\n');
         for (0..sch.quantified_count) |q| {
             const info = iface.quantified(sch, @intCast(q));
             try w.print("  q {d} kind={d} equatable={} name={s} constraints={d}\n", .{
@@ -450,14 +455,21 @@ fn writeSchemeIndexMaybeExpanded(
     defer store.deinit();
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
-    var v = try Schemes.instantiate(
+    var memo: Schemes.TermMemo = .{};
+    defer memo.deinit(arena.allocator());
+    var quantified: std.ArrayList(TypeStore.Var) = .empty;
+    const body = try Schemes.instantiateWith(
         iface,
         type_ids,
         &store,
         @intFromEnum(index),
         TypeStore.generalized,
         arena.allocator(),
+        &memo,
+        arena.allocator(),
+        &quantified,
     );
+    var v = body;
     if (expand_outer_alias) {
         const root = store.find(v);
         switch (store.content(root)) {
@@ -465,8 +477,12 @@ fn writeSchemeIndexMaybeExpanded(
             else => {},
         }
     }
+    // The classes the scheme's effect block gives it
+    // (transparent-effects-proposal.md §14.7).
+    var view = try Effects.View.forBlock(gpa, &store, iface, scheme, body, quantified.items);
+    defer view.deinit();
     var namer: Render.Namer = .init(gpa);
     defer namer.deinit();
     namer.budget = Render.Namer.unlimited;
-    try Render.writeScheme(w, .{ .store = &store, .types = types, .interner = interner }, &namer, v);
+    try Render.writeScheme(w, .{ .store = &store, .types = types, .interner = interner, .effects = &view }, &namer, v);
 }

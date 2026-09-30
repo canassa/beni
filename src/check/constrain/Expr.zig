@@ -260,6 +260,7 @@ fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected
     params[0] = recv;
     @memcpy(params[1..], arg_vars);
     const method_type = try g.func(params, expected);
+    try g.called(method_type);
     const payload = try g.addExtra(Tree.Method{
         .name = bir.symbol(m.name),
         .receiver = recv,
@@ -300,6 +301,7 @@ fn wellKnownCall(
         else => try g.primitive(wk.order),
     };
     const method_type = try g.func(&.{ operand, operand }, method_result);
+    try g.called(method_type);
     const name = (origin.method() orelse InternPool.WellKnown.eq).symbol();
     const payload = try g.addExtra(Tree.Method{
         .name = name,
@@ -346,6 +348,7 @@ fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expect
     for (arg_vars) |*v| v.* = try g.freshFlex();
     // No receiver: the method's type is `arg₁, …, argₙ -> result` (§4.2).
     const method_type = try g.func(arg_vars, expected);
+    try g.called(method_type);
     const payload = try g.addExtra(Tree.Method{
         .name = bir.symbol(t.name),
         .receiver = rigid,
@@ -370,6 +373,7 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     const bir = g.cx.bir;
     const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
     const callee = try g.freshFlex();
+    try g.called(callee);
     const arg_vars = try g.cx.scratch.alloc(Var, args.len);
     defer g.cx.scratch.free(arg_vars);
     for (arg_vars) |*v| v.* = try g.freshFlex();
@@ -422,9 +426,15 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
 
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
-    try parts.append(g.cx.scratch, try g.equal(expected, try g.func(param_vars, result), inst, category));
+    const arrow = try g.func(param_vars, result);
+    try parts.append(g.cx.scratch, try g.equal(expected, arrow, inst, category));
     const binders: u32 = @intCast(g.tree.binders.items.len);
     for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
+    // The body's calls join the lambda's own arrow, never the enclosing
+    // function's (§14.3 rule 1): passing a lambda along calls nothing.
+    const outer = g.ambient;
+    g.ambient = arrow;
+    defer g.ambient = outer;
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.rhs), result, .{ .tag = .general }));
     // Elm's placement: the lambda's own header, checked before anything
     // outside it meets the lambda's type (§6.3).

@@ -89,7 +89,21 @@ pub const Module = struct {
     decl_display: []Var.Optional,
     /// Type per local, indexed exactly like `Bir.locals`.
     local_type: []Var.Optional,
+    /// What effect inference solved over `store`, for the dump's classes
+    /// (transparent-effects-proposal.md §14.7); null for a module the run
+    /// did not check.
+    effects: ?Effects = null,
+
+    pub fn release(m: *Module, gpa: Allocator) void {
+        if (m.effects) |*e| e.deinit();
+        m.store.deinit();
+        gpa.free(m.decl_scheme);
+        gpa.free(m.decl_display);
+        gpa.free(m.local_type);
+    }
 };
+
+const Effects = @import("Effects.zig");
 
 /// Owned. The session-wide type table.
 types: Types,
@@ -115,12 +129,7 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
     check.types.deinit(gpa);
     for (check.diagnostics) |d| gpa.free(d.message);
     gpa.free(check.diagnostics);
-    for (check.modules) |*m| {
-        m.store.deinit();
-        gpa.free(m.decl_scheme);
-        gpa.free(m.decl_display);
-        gpa.free(m.local_type);
-    }
+    for (check.modules) |*m| m.release(gpa);
     gpa.free(check.modules);
     for (check.dispatch) |*d| d.deinit(gpa);
     gpa.free(check.dispatch);
@@ -313,12 +322,7 @@ pub fn run(
     // the list itself is not enough: the modules that DID finish have to
     // give theirs back, or the failure leaks one arena per checked module.
     errdefer {
-        for (kept.items) |*m| {
-            m.store.deinit();
-            gpa.free(m.decl_scheme);
-            gpa.free(m.decl_display);
-            gpa.free(m.local_type);
-        }
+        for (kept.items) |*m| m.release(gpa);
         kept.deinit(gpa);
     }
     if (options.keep_stores) {

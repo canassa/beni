@@ -13,7 +13,9 @@
 //!   `Derivable.foreignDerives` and `Publish` alone: §11.2's derived contexts
 //!   (`Contexts.zig`) are the one answer to "does this type derive". The
 //!   table's other two bits, `comparable` and `has_function`, have no reader
-//!   in the checker at all (the cache's digest reads them). A read is any
+//!   in the checker but one: effect inference asks `has_function` which
+//!   nominal applications carry a class (transparent-effects-proposal.md
+//!   §14.5), and the cache's digest reads both. A read is any
 //!   field access of one of the three names whose receiver is not a
 //!   variable's flags or an interface quantifier, however the receiver is
 //!   spelled, and the rule reads `src/js` and `src/cache` as well.
@@ -46,6 +48,7 @@ const files = [_]File{
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
     .{ .path = "Eager.zig", .text = @embedFile("Eager.zig") },
     .{ .path = "Edges.zig", .text = @embedFile("Edges.zig") },
+    .{ .path = "Effects.zig", .text = @embedFile("Effects.zig") },
     .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },
     .{ .path = "Env.zig", .text = @embedFile("Env.zig") },
     .{ .path = "Evidence.zig", .text = @embedFile("Evidence.zig") },
@@ -156,7 +159,7 @@ const Bit = struct { name: []const u8, readers: []const []const u8 };
 const bits = [_]Bit{
     .{ .name = "equatable", .readers = &.{ "check/Derivable.zig", "check/Publish.zig", "cache/Digest.zig" } },
     .{ .name = "comparable", .readers = &.{"cache/Digest.zig"} },
-    .{ .name = "has_function", .readers = &.{"cache/Digest.zig"} },
+    .{ .name = "has_function", .readers = &.{ "check/Effects.zig", "cache/Digest.zig" } },
     .{ .name = "holds_markup", .readers = &.{ "check/Vocab.zig", "cache/Digest.zig" } },
 };
 

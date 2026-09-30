@@ -275,6 +275,98 @@ pub fn recordFields(store: *const TypeStore, record: TypeStore.Structure.Record)
     return store.fields(record.fields);
 }
 
+/// A step of an effect site's path (transparent-effects-proposal.md §14.6):
+/// what an interface's effect block says to reach one function type or
+/// nominal application of a scheme from its root. The values are the
+/// record's `kind` field and never move.
+pub const StepKind = enum(u4) {
+    param = 0,
+    result = 1,
+    argument = 2,
+    element = 3,
+    /// `index` is the field's name: a `Symbol` here, a `SymbolIndex` in the
+    /// record.
+    field = 4,
+    extension = 5,
+    expansion = 6,
+};
+
+/// One child of a node with the step that reaches it.
+pub const Stepped = struct { v: Var, kind: StepKind, index: u32 };
+
+/// The `n`th child of `root` (a union-find root) on an effect site's path,
+/// or null past the end: a function's parameters then its result, an
+/// application's arguments, a tuple's elements, a record's own fields in
+/// SYMBOL order then its extension, and an alias's expansion — never its
+/// arguments, which the expansion holds wherever they matter. The effect
+/// walk orders a record's fields by text itself.
+pub fn stepped(store: *const TypeStore, root: Var, n: u32) ?Stepped {
+    switch (store.content(root)) {
+        .err, .flex, .rigid => return null,
+        .alias => |a| return if (n == 0) .{ .v = a.actual, .kind = .expansion, .index = 0 } else null,
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => return null,
+            .func => |f| {
+                const params = store.vars(f.params);
+                if (n < params.len) return .{ .v = params[n], .kind = .param, .index = n };
+                return if (n == params.len) .{ .v = f.result, .kind = .result, .index = 0 } else null;
+            },
+            .app => |a| {
+                const args = store.vars(a.args);
+                return if (n < args.len) .{ .v = args[n], .kind = .argument, .index = n } else null;
+            },
+            .tuple => |t| {
+                const elements = store.vars(t);
+                return if (n < elements.len) .{ .v = elements[n], .kind = .element, .index = n } else null;
+            },
+            .record => |r| {
+                const fields = store.fields(r.fields);
+                if (n < fields.len) return .{ .v = fields[n].value, .kind = .field, .index = @intFromEnum(fields[n].name) };
+                return if (n == fields.len) .{ .v = r.ext, .kind = .extension, .index = 0 } else null;
+            },
+        },
+    }
+}
+
+/// The child of `root` (a union-find root) that one path step names, or
+/// null when `root` has no such child — a record read from disk that does
+/// not describe this type. `index` of a `field` step is the field's `Symbol`.
+pub fn follow(store: *const TypeStore, root: Var, kind: StepKind, index: u32) ?Var {
+    switch (store.content(root)) {
+        .err, .flex, .rigid => return null,
+        .alias => |a| return if (kind == .expansion) a.actual else null,
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => return null,
+            .func => |f| {
+                const params = store.vars(f.params);
+                return switch (kind) {
+                    .param => if (index < params.len) params[index] else null,
+                    .result => f.result,
+                    else => null,
+                };
+            },
+            .app => |a| {
+                const args = store.vars(a.args);
+                return if (kind == .argument and index < args.len) args[index] else null;
+            },
+            .tuple => |t| {
+                const elements = store.vars(t);
+                return if (kind == .element and index < elements.len) elements[index] else null;
+            },
+            .record => |r| switch (kind) {
+                .field => {
+                    for (store.fields(r.fields)) |f| {
+                        if (@intFromEnum(f.name) == index) return f.value;
+                    }
+                    return null;
+                },
+                .extension => return r.ext,
+                else => return null,
+            },
+        },
+    }
+}
+
 /// One DFS frame: a node and which of its successors is next.
 pub const Frame = struct { v: Var, cursor: u32 };
 

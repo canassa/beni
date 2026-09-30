@@ -1,2 +1,2 @@
 module TypeDispatch
-  value decode : String -> Result String a where a.decode : String -> Result String a
+  value decode : String -> Result String a !e1 where a.decode : String -> Result String a !e1

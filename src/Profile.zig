@@ -113,6 +113,11 @@ pub const Phase = enum {
     /// interface record, and P9's round trips, cycle check, evidence assert
     /// and schema plan.
     derived,
+    /// Effect inference's solve (transparent-effects-proposal.md §14.4),
+    /// after `derived` and before `elaborate`: its own row because it is
+    /// new work on every module, which program uses effects or not, and its
+    /// cost is a budget (`plans/effects-plan.md` §3).
+    effects,
     elaborate,
     publish,
     finish,

@@ -42,6 +42,7 @@ const InternPool = @import("../InternPool.zig");
 const Exhaustive = @import("Exhaustive.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Effects = @import("Effects.zig");
 
 const Render = @This();
 
@@ -192,7 +193,25 @@ pub const Context = struct {
     store: *TypeStore,
     types: *const Types,
     interner: *const InternPool.Global,
+    /// The dumps' effect classes (transparent-effects-proposal.md §14.7):
+    /// each function type and function-holding application prints its
+    /// class after it. Null in every diagnostic, whose text never shows one.
+    effects: ?*Effects.View = null,
 };
+
+/// The class `v` prints after it (§14.7), owned by the caller, or null for
+/// none.
+fn effectSuffix(cx: Context, v: Var) Allocator.Error!?[]u8 {
+    const view = cx.effects orelse return null;
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(view.gpa);
+    try view.suffix(cx.store, v, &out);
+    if (out.items.len == 0) {
+        out.deinit(view.gpa);
+        return null;
+    }
+    return try out.toOwnedSlice(view.gpa);
+}
 
 /// Mark for qualification (`Namer.qualified`) every named type in `roots`
 /// that shares its name with a different one there: `T` against `T` from two
@@ -440,7 +459,15 @@ fn write(
             const preferred = preferredName(cx.interner, flags);
             try w.writeAll(try namer.name(root, preferred));
         },
-        .alias => |a| try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), prec, depth),
+        .alias => |a| {
+            const suffix = try effectSuffix(cx, root);
+            defer if (suffix) |t| cx.effects.?.gpa.free(t);
+            const wrap = suffix != null and prec != .top;
+            if (wrap) try w.writeByte('(');
+            try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), if (wrap) .top else prec, depth);
+            if (suffix) |t| try w.writeAll(t);
+            if (wrap) try w.writeByte(')');
+        },
         .structure => |s| switch (s) {
             .unit => try w.writeAll("()"),
             // A bare extension variable that closed: only reachable as a
@@ -460,12 +487,32 @@ fn write(
                     try write(w, cx, namer, param, .arg, depth + 1);
                 }
                 try w.writeAll(" -> ");
+                // The dumps' class of this arrow (§14.7 of
+                // transparent-effects-proposal.md), printed after the result:
+                // a function-typed result is then parenthesised, so its own
+                // class cannot be read as this one.
+                const suffix = try effectSuffix(cx, root);
+                defer if (suffix) |t| cx.effects.?.gpa.free(t);
                 // The result stays at `top`, which is what makes
                 // `a, b -> c -> d` right-associate with no parentheses.
-                try write(w, cx, namer, f.result, .top, depth + 1);
+                const result_is_function = switch (cx.store.resolvedContent(f.result)) {
+                    .structure => |r| r == .func,
+                    else => false,
+                };
+                const result_prec: Prec = if (suffix != null and result_is_function) .arg else .top;
+                try write(w, cx, namer, f.result, result_prec, depth + 1);
+                if (suffix) |t| try w.writeAll(t);
                 if (wrap) try w.writeByte(')');
             },
-            .app => |a| try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), prec, depth),
+            .app => |a| {
+                const suffix = try effectSuffix(cx, root);
+                defer if (suffix) |t| cx.effects.?.gpa.free(t);
+                const wrap = suffix != null and prec != .top;
+                if (wrap) try w.writeByte('(');
+                try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), if (wrap) .top else prec, depth);
+                if (suffix) |t| try w.writeAll(t);
+                if (wrap) try w.writeByte(')');
+            },
             // Elements print at `.arg`, which parenthesises exactly the
             // function-typed ones. A tuple element may not contain a bare
             // `->` (language.md §3), so `( Int -> Int, Int )` is not this

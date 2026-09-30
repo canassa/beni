@@ -270,6 +270,8 @@ const Walker = struct {
         const range = try g.cx.store.addFields(pairs);
 
         const callee = try g.freshFlex();
+        // Rendering the component calls it (transparent-effects-proposal.md §14.3 rule 1).
+        try g.called(callee);
         try w.expr(c.callee, callee, .{ .tag = .general });
         const argument: Var = if (c.spread.unwrap()) |spread| blk: {
             // Record update over the spread value (§6.5): the base must

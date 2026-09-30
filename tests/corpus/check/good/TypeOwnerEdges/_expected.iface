@@ -1,5 +1,5 @@
 module Literals
-  value bigger : a, a -> Bool where a.compare : a, a -> Order
+  value bigger : a, a -> Bool !e1 where a.compare : a, a -> Order !e1
   value initial : Char
   value label : String
   value sizes : List number
