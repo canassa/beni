@@ -9,6 +9,7 @@
 --! model once, on one microtask after the messages of a task, writing only
 --! the holes whose values changed.
 import Html exposing (Html)
+import Task
 
 
 --| What `main` is: the programs of a page, and where each mounts.
@@ -44,3 +45,45 @@ pub foreign pure mountAt : Program, String -> Program
 --|     main =
 --|         Browser.programs [ page, Browser.mountAt cart "cart" ]
 pub foreign pure programs : List Program -> Program
+
+
+--| A function that sends a message to a running program: what a command's
+--| or a subscription's body is handed. Calling it runs `update` and never
+--| waits.
+pub type alias Send msg =
+    msg -> ()
+
+
+--| A running program, as a `hosted` program's `init`, `update` and
+--| `settle` are handed it: where its messages go, and its after-render
+--| queue. What an architecture layered on `browser` is built from, with
+--| the `Hosted` module; a program never meets one.
+pub foreign type Host msg
+
+
+--| A program that is handed its `Host`: `init` makes the first model once
+--| it is mounted, `update` handles each message, and `settle` runs once
+--| per render, just before `view`, on the model about to be rendered, and
+--| returns the model that is. All four are `sync`: the page calls them
+--| while it handles an event or renders.
+pub foreign pure hosted :
+    { init : sync (Host msg -> model)
+    , update : sync (Host msg, msg, model -> model)
+    , settle : sync (Host msg, model -> model)
+    , view : sync (model -> Html msg)
+    }
+    -> Program
+
+
+--| Render every program with a message waiting, now, rather than on the
+--| flush the page has queued, and run the after-render work of those
+--| messages. During a message's `update` or a render it does nothing more
+--| than the flush already queued, so no render ever sees a half-handled
+--| message.
+pub foreign impure flush : () -> ()
+
+
+--| How `Dom.rendered` waits: `resume` is called at the start of the
+--| after-render phase of the flush the page has queued, or at once when
+--| none is queued. Returns what stops the wait.
+pub foreign impure onRendered : Task.Resume () -> (() -> ())

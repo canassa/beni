@@ -94,6 +94,24 @@ pub foreign suspends yieldNow : () -> ()
 pub foreign impure spawnIn : Scope, (() -> a) -> Fiber a
 
 
+--| Whether a fiber is still running: `False` once it has ended, either
+--| way. A fiber that has been cancelled but is still running its cleanup
+--| is still running.
+pub foreign impure running : Fiber a -> Bool
+
+
+--| A scope that no function brackets, for a platform whose program
+--| outlives every call: a page program's commands and subscriptions run
+--| in one. `closeRoot` ends it; nothing else does.
+pub foreign impure openRoot : () -> Scope
+
+
+--| Cancel every fiber of a scope `openRoot` made, without waiting for
+--| their cleanup, which runs as each is resumed. A fiber started in the
+--| scope afterwards is cancelled before it runs.
+pub foreign impure closeRoot : Scope -> ()
+
+
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
 --| platform's entry point uses; a program asks its platform instead.
 pub foreign impure start : (() -> a), sync (Exit a -> ()) -> ()

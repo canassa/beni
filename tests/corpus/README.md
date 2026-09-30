@@ -91,6 +91,23 @@ in a project) against it, one step per line, `#` for a comment:
                                 it to the live `.value`, then `input`
     key <selector> <key>        `keydown` and `keyup` with that `key`
     focus <selector>            `.focus()`
+    advance <ms>                move the page's virtual clock on by `ms`,
+                                firing each timer that comes due, earliest
+                                first, the page settling after each
+    event <window|document> <name> [<n>]
+                                `n` (default 1) plain `Event`s of that
+                                name on the window or the document, in one
+                                task
+
+**The page's clock is virtual.** The driver replaces `setTimeout`,
+`clearTimeout` and `Date.now` before the program loads: `Date.now()` is 0
+until an `advance` step moves it, and a timer fires only when an `advance`
+step reaches its time, so a debounce of 250 ms costs no wall-clock time and
+a fixture about timing is deterministic in both DOMs. After each timer the
+page settles — the fibers it resumed run, and may set the next timer —
+before the next fires. A service a program waits on (`Http`, a search API)
+is faked with a record of functions that sleep on this clock
+(`boundary.md` §9.8.9).
 
 A selector is one CSS selector without spaces and must match an element.
 The two lines in parentheses are logged when the step's own task ends,

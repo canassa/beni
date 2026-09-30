@@ -31,6 +31,16 @@
 //                               it does between two keystrokes
 //   key <selector> <key>        `keydown` then `keyup` KeyboardEvents with that `key`
 //   focus <selector>            `.focus()`
+//   advance <ms>                move the page's virtual clock on by `ms`,
+//                               firing each timer that comes due, in
+//                               order, the page settling after each
+//   event <window|document> <name> [<n>]
+//                               `n` (default 1) plain `Event`s of that name
+//                               on the window or the document, in one task
+//
+// The page's clock is virtual from the start: `Date.now()` is 0 until an
+// `advance` step moves it, and a `setTimeout` callback runs only when an
+// `advance` step reaches its time.
 //
 // The two lines are written when the step's own task ends, before any
 // microtask it queued, so what the page logged before and after them says
@@ -61,6 +71,22 @@ import { pathToFileURL } from "node:url";
 function prelude() {
   const record = { log: [], errors: [] };
   globalThis.__beniHarness = record;
+  // The page's clock is virtual: `Date.now()` starts at 0 and moves only
+  // when an `advance` step moves it, and a `setTimeout` callback runs only
+  // when an `advance` step reaches its time. The driver keeps the real
+  // timer for itself.
+  const clock = { now: 0, next: 1, timers: [], real: globalThis.setTimeout.bind(globalThis) };
+  record.clock = clock;
+  globalThis.setTimeout = (fn, ms, ...args) => {
+    const id = clock.next++;
+    const wait = Number(ms);
+    clock.timers.push({ id, due: clock.now + (wait > 0 ? wait : 0), fn, args });
+    return id;
+  };
+  globalThis.clearTimeout = (id) => {
+    clock.timers = clock.timers.filter((t) => t.id !== id);
+  };
+  Date.now = () => clock.now;
   const show = (value) => {
     if (typeof value === "string") return value;
     try {
@@ -105,8 +131,37 @@ async function load({ url, runtime }) {
   }
 }
 
-// Run one step. Returns null, or why the step could not run.
+// Run one step. Returns null, or why the step could not run — or, for
+// `advance`, a promise of one.
 function step(s) {
+  if (s.command === "advance") {
+    // Fire every timer due by the target time, earliest first (by when it
+    // was set, among timers due at once), with the clock at its time, and
+    // let the page settle after each, so the work a timer resumed runs —
+    // and may set the next timer — before the next one fires.
+    const clock = globalThis.__beniHarness.clock;
+    const target = clock.now + s.ms;
+    return (async () => {
+      for (;;) {
+        let t = null;
+        for (const c of clock.timers) {
+          if (c.due <= target && (t === null || c.due < t.due || (c.due === t.due && c.id < t.id))) t = c;
+        }
+        if (t === null) break;
+        clock.timers = clock.timers.filter((c) => c !== t);
+        clock.now = t.due;
+        t.fn(...t.args);
+        await new Promise((done) => clock.real(done, 0));
+      }
+      clock.now = target;
+      return null;
+    })();
+  }
+  if (s.command === "event") {
+    const on = s.selector === "window" ? globalThis : document;
+    for (let n = 0; n < s.count; n++) on.dispatchEvent(new Event(s.name));
+    return null;
+  }
   const target = document.querySelector(s.selector);
   if (target === null) return `no element matches \`${s.selector}\``;
   const init = { bubbles: true, cancelable: true, composed: true };
@@ -148,7 +203,7 @@ function step(s) {
 // Let everything the last phase queued run: its microtasks, then one turn
 // of the event loop.
 function settle() {
-  return new Promise((done) => setTimeout(done, 0));
+  return new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
 }
 
 // What the phase logged and threw, taken out of the record.
@@ -232,7 +287,17 @@ if (stepsPath !== undefined) {
     if (!m) usage(`${where}: \`${line}\` is not \`<command> <selector> [<argument>]\``);
     const [, command, selector, argument] = m;
     const s = { line, where, command, selector };
-    if (command === "click" && argument !== undefined) {
+    if (command === "advance") {
+      if (argument !== undefined || !/^[0-9]+$/.test(selector)) usage(`${where}: \`advance\` takes a number of milliseconds`);
+      s.ms = Number(selector);
+    } else if (command === "event") {
+      const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
+      if ((selector !== "window" && selector !== "document") || e === null) {
+        usage(`${where}: \`event\` takes \`window\` or \`document\`, an event name and at most a count`);
+      }
+      s.name = e[1];
+      s.count = e[2] === undefined ? 1 : Number(e[2]);
+    } else if (command === "click" && argument !== undefined) {
       if (!/^[1-9][0-9]*$/.test(argument)) usage(`${where}: \`click\` takes a selector and at most a count`);
       s.count = Number(argument);
     } else if (command === "click" || command === "focus" || command === "flush") {

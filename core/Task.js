@@ -322,6 +322,7 @@ const fork = (parent, work, scope) => {
   if (scope !== null) {
     fiber.scope = scope;
     scope.children.add(fiber);
+    if (scope.closed) fiber.interrupted = true;
   } else if (parent !== null) {
     if (parent.children === null) parent.children = new Set();
     parent.children.add(fiber);
@@ -386,7 +387,7 @@ export const yieldNow = (unit) => {
 };
 
 export const openScope = (unit) => {
-  const scope = { children: new Set(), finalizer: null };
+  const scope = { children: new Set(), finalizer: null, closed: false };
   scope.finalizer = () => cancelAll([...scope.children], null);
   const fiber = here();
   if (fiber.finalizers === null) fiber.finalizers = [];
@@ -413,6 +414,18 @@ export const closeScope = (scope, value) => {
     return value;
   });
   return Y;
+};
+
+export const running = (fiber) => fiber.outcome === null;
+
+// A scope that no fiber's finalisers close, for a platform whose program
+// outlives every call: one literal, the shape of `openScope`'s.
+export const openRoot = (unit) => ({ children: new Set(), finalizer: null, closed: false });
+
+export const closeRoot = (scope) => {
+  scope.closed = true;
+  for (const f of [...scope.children]) interrupt(f);
+  return null;
 };
 
 export const mask = (unit) => {
