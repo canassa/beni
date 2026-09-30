@@ -1,0 +1,76 @@
+--! The rendered page's nodes, by id (`docs/design/boundary.md` §9.8.6):
+--! focus, measure, scroll. Each is `impure` and answers at once; a node
+--! that is not in the page is `Err (NotFound id)`, never a crash.
+--!
+--! Where the node was rendered by the message being handled, ask for the
+--! work after the render: `Cmd.afterRender` runs it once the page is
+--! patched, and a fiber waits for that moment with `rendered`.
+--!
+--!     Edit id ->
+--!         ( { model | editing = Just id }, Cmd.afterRender (focusEditor id _) )
+--!
+--!     focusEditor id send =
+--!         case Dom.focus "edit-${id}" of
+--!             Ok () -> ()
+--!             Err why -> send (FocusFailed why)
+
+import Browser
+import Task
+
+
+--| Why a node could not be used.
+pub type Error
+    = NotFound String
+
+
+--| A node's box in the viewport, in CSS pixels.
+pub type alias Box =
+    x : Float
+    y : Float
+    width : Float
+    height : Float
+
+
+--| The viewport: its size, and how far the page is scrolled.
+pub type alias Viewport =
+    x : Float
+    y : Float
+    width : Float
+    height : Float
+
+
+--| Focus the element with this id.
+pub foreign impure focus : String -> Result Error ()
+
+
+--| Take the focus away from the element with this id.
+pub foreign impure blur : String -> Result Error ()
+
+
+--| The box of the element with this id (`getBoundingClientRect`).
+pub foreign impure box : String -> Result Error Box
+
+
+--| Scroll the element with this id to `x` and `y`.
+pub foreign impure scrollTo : String, Float, Float -> Result Error ()
+
+
+--| Scroll the page until the element with this id is in view.
+pub foreign impure scrollIntoView : String -> Result Error ()
+
+
+--| The viewport now.
+pub foreign impure viewport : () -> Viewport
+
+
+--| Wait until what has been sent is on the page: at once when no render is
+--| queued, otherwise until the after-render phase of the flush that is.
+--|
+--|     let
+--|         _ = send (Opened id)
+--|         _ = Dom.rendered ()
+--|     in
+--|     Dom.focus "edit-${id}"
+pub rendered : () -> ()
+rendered () =
+    Task.callback (\resume -> Browser.onRendered resume)

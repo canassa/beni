@@ -1,0 +1,62 @@
+-- `Browser.Events` subscriptions add a listener when their key arrives
+-- and remove it when it leaves (boundary.md §9.8.8). While `on`, each
+-- `resize` of the window and each `visibilitychange` of the document
+-- reaches `update`; turned off, the listeners are gone and the same
+-- events do nothing. The size itself is the DOM's, so only the count is
+-- shown.
+import Browser.Events exposing (Visible)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Resized Browser.Events.Size
+    | Seen Browser.Events.Visibility
+    | Toggle
+
+
+type alias Model =
+    on : Bool
+    resizes : Int
+    visible : Int
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Resized _ ->
+            ( { model | resizes = model.resizes + 1 }, Cmd.none )
+
+        Seen v ->
+            ( { model | visible = model.visible + (if v == Visible then 1 else 0) }, Cmd.none )
+
+        Toggle ->
+            ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch [ Browser.Events.onResize Resized, Browser.Events.onVisibilityChange Seen ]
+    else
+        Sub.none
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p>resizes {model.resizes}, visible {model.visible}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { on = True, resizes = 0, visible = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

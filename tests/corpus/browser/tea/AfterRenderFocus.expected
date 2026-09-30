@@ -1,0 +1,51 @@
+-- load
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <button id="open">"open"</button>
+    <button id="missing">"missing"</button>
+    <span></span>
+    <!---->
+    <span></span>
+    <p>""</p>
+  </main>
+</body>
+-- click #edit
+console.log: focused first: ()
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <button id="open">"open"</button>
+    <button id="missing">"missing"</button>
+    <input id="first" .value="" :focus>
+    <!---->
+    <span></span>
+    <p>""</p>
+  </main>
+</body>
+-- click #open
+console.log: waiting for the render: ()
+console.log: focused second: ()
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <button id="open">"open"</button>
+    <button id="missing">"missing"</button>
+    <input id="first" .value="">
+    <!---->
+    <input id="second" .value="" :focus>
+    <p>""</p>
+  </main>
+</body>
+-- click #missing
+<body>
+  <main>
+    <button id="edit">"edit"</button>
+    <button id="open">"open"</button>
+    <button id="missing">"missing"</button>
+    <input id="first" .value="">
+    <!---->
+    <input id="second" .value="" :focus>
+    <p>"not found: nowhere"</p>
+  </main>
+</body>

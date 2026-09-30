@@ -1,0 +1,48 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "resizes "
+      "0"
+      <!---->
+      ", visible "
+      "0"
+      <!---->
+    </p>
+  </main>
+</body>
+-- event window resize
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "resizes "
+      "1"
+      <!---->
+      ", visible "
+      "0"
+      <!---->
+    </p>
+  </main>
+</body>
+-- event document visibilitychange
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "resizes "
+      "1"
+      <!---->
+      ", visible "
+      "1"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #toggle
+(the DOM did not change)
+-- event window resize
+(the DOM did not change)
+-- event document visibilitychange
+(the DOM did not change)

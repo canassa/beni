@@ -1,0 +1,54 @@
+--! HTTP requests from a page (`docs/design/boundary.md` §9.8.8). A request
+--! waits in the calling fiber only, and a failure is a value: every way a
+--! request can fail is a constructor of `Error`. Cancelling the fiber that
+--! waits aborts the request, so a `Restart` releases the connection at
+--! once rather than ignoring the answer when it comes.
+--!
+--! A program that should be testable without a network takes its requests
+--! as a record of functions, and a test passes one that answers itself.
+
+import Task exposing (Resume)
+
+
+--| How a request failed: a URL `fetch` refuses, no answer (the network,
+--| CORS, an unreachable host), an answer whose status is not 2xx, or a
+--| body that is not what was asked for.
+pub type Error
+    = BadUrl String
+    | NetworkError
+    | BadStatus Int
+    | BadBody String
+
+
+--| `GET` the URL: its body as text.
+pub get : String -> Result Error String
+get url =
+    request "GET" url "" "" False
+
+
+--| `POST` the text to the URL: the answer's body as text.
+pub post : String, String -> Result Error String
+post url body =
+    request "POST" url "text/plain;charset=UTF-8" body False
+
+
+--| `GET` JSON from the URL: the body's text, once it parses as JSON, and
+--| `BadBody` when it does not.
+pub getJson : String -> Result Error String
+getJson url =
+    request "GET" url "" "" True
+
+
+--| `POST` JSON text to the URL: the answer's body's text, once it parses
+--| as JSON, and `BadBody` when it does not.
+pub postJson : String, String -> Result Error String
+postJson url body =
+    request "POST" url "application/json" body True
+
+
+request : String, String, String, String, Bool -> Result Error String
+request method url contentType body json =
+    Task.callback (\resume -> start method url contentType body json resume)
+
+
+foreign impure start : String, String, String, String, Bool, Resume (Result Error String) -> (() -> ())

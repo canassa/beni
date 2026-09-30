@@ -1,0 +1,69 @@
+-- Every way `Http` answers is a value (boundary.md §4.1, §9.8.8): a body,
+-- `BadBody` for text asked for as JSON, and `BadUrl` for a URL `fetch`
+-- cannot parse. The requests are to `data:` URLs, so the page needs no
+-- network; each result is sent back as a message and shown, sorted,
+-- since the order the answers arrive in is the host's.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Fetch
+    | Got String (Result Http.Error String)
+
+
+show : Result Http.Error String -> String
+show result =
+    case result of
+        Ok text ->
+            "ok ${text}"
+
+        Err (Http.BadUrl url) ->
+            "bad url ${url}"
+
+        Err Http.NetworkError ->
+            "network error"
+
+        Err (Http.BadStatus code) ->
+            "bad status ${String.fromInt code}"
+
+        Err (Http.BadBody why) ->
+            "bad body: ${why}"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Fetch ->
+            ( lines
+            , Cmd.batch
+                [ Cmd.task (\() -> Http.get "data:text/plain,hello") (Got "text" _)
+                , Cmd.task (\() -> Http.getJson "data:application/json,[1,2]") (Got "json" _)
+                , Cmd.task (\() -> Http.getJson "data:text/plain,hello") (Got "not json" _)
+                , Cmd.task (\() -> Http.get "http://[::1") (Got "bad url" _)
+                ]
+            )
+
+        Got label result ->
+            ( lines ++ [ "${label}: ${show result}" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="fetch" onClick={Fetch}>fetch</button>
+        <ul><For each={List.sort lines} keyed={False}>{\s -> <li>{s}</li>}</For></ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

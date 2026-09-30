@@ -1,0 +1,6 @@
+event window resize
+event document visibilitychange
+# Off: the listeners are removed.
+click #toggle
+event window resize
+event document visibilitychange

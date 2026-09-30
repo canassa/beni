@@ -1,0 +1,90 @@
+-- Focus after render (boundary.md §9.8.6; backend.md §15.11 phase 2).
+--
+--   - "edit": `update` shows an input the page has not rendered yet and
+--     asks, with `Cmd.afterRender`, to focus it; the work runs after the
+--     patch, in the same flush, so the input exists and is focused.
+--   - "open": a fiber sends `Opened`, waits with `Dom.rendered` until the
+--     render that shows the second input has been written, then focuses
+--     it — straight-line code.
+--   - "missing": focusing an id nothing rendered is `Err (NotFound id)`,
+--     a value the after-render body sends back, never a crash.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Edit
+    | Open
+    | Opened
+    | Missing
+    | Failed Dom.Error
+
+
+type alias Model =
+    editing : Bool
+    opened : Bool
+    failure : String
+
+
+focus : String, Cmd.Send Msg -> ()
+focus id send =
+    case Dom.focus id of
+        Ok () ->
+            Debug.log () "focused ${id}"
+
+        Err why ->
+            send (Failed why)
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Edit ->
+            ( { model | editing = True }, Cmd.afterRender (focus "first" _) )
+
+        Open ->
+            ( model, Cmd.perform openThenFocus )
+
+        Opened ->
+            ( { model | opened = True }, Cmd.none )
+
+        Missing ->
+            ( model, Cmd.afterRender (focus "nowhere" _) )
+
+        Failed (Dom.NotFound id) ->
+            ( { model | failure = "not found: ${id}" }, Cmd.none )
+
+
+openThenFocus : Cmd.Send Msg -> ()
+openThenFocus send =
+    let
+        _ = send Opened
+        _ = Debug.log () "waiting for the render"
+        _ = Dom.rendered ()
+    in
+    focus "second" send
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="edit" onClick={Edit}>edit</button>
+        <button id="open" onClick={Open}>open</button>
+        <button id="missing" onClick={Missing}>missing</button>
+        {if model.editing then <input id="first" /> else <span />}
+        {if model.opened then <input id="second" /> else <span />}
+        <p>{model.failure}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { editing = False, opened = False, failure = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

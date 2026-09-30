@@ -1,0 +1,85 @@
+--! Subscriptions to the page's own events (`docs/design/boundary.md`
+--! §9.8.8): the window's size and whether the page is visible. Each is a
+--! `Sub.listen` whose body adds one listener when its key arrives and
+--! removes it when the key leaves; events that arrive faster than the
+--! program takes them are coalesced into the latest state.
+
+import Browser
+import Sub exposing (Sub)
+import Task exposing (Exit, Resume)
+
+
+--| The window's inner size, in CSS pixels.
+pub type alias Size =
+    width : Int
+    height : Int
+
+
+--| Whether the page can be seen.
+pub type Visibility
+    = Visible
+    | Hidden
+
+
+type Key
+    = Resize
+    | VisibilityChange
+
+
+--| The window's inner size, now.
+pub foreign impure size : () -> Size
+
+
+foreign impure hidden : () -> Bool
+
+
+--| Whether the page can be seen, now.
+pub visibility : () -> Visibility
+visibility () =
+    if hidden () then Hidden else Visible
+
+
+--| The window's new size, each time it is resized.
+pub onResize : (Size -> msg) -> Sub msg
+onResize tag =
+    Sub.listen Resize (watch "window" "resize" size _) tag
+
+
+--| Whether the page can be seen, each time that changes.
+pub onVisibilityChange : (Visibility -> msg) -> Sub msg
+onVisibilityChange tag =
+    Sub.listen VisibilityChange (watch "document" "visibilitychange" visibility _) tag
+
+
+-- A listener: the events of one name on the window or the document,
+-- counted until a fiber takes them.
+foreign type Listener
+
+
+foreign impure listen : String, String -> Listener
+
+
+foreign impure unlisten : Listener -> ()
+
+
+foreign impure onEvent : Listener, Resume () -> (() -> ())
+
+
+-- Wait for at least one event since the last wait.
+next : Listener -> ()
+next l =
+    Task.callback (\resume -> onEvent l resume)
+
+
+watch : String, String, (() -> a), Browser.Send a -> ()
+watch target name read emit =
+    Task.bracket (\() -> listen target name) (\l _ -> unlisten l) (\l -> forward l read emit)
+
+
+forward : Listener, (() -> a), Browser.Send a -> ()
+forward l read emit =
+    let
+        _ = next l
+        _ = emit (read ())
+    in
+    forward l read emit

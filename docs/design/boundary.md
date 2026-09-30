@@ -1678,7 +1678,16 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
 *As built, 2026-10-01* (`platforms/browser/`: `Browser.beni`, `Hosted.beni`, `Cmd.beni`,
 `Sub.beni`, `Time.beni`, `Dom.beni`, `Http.beni`, `Browser/Events.beni` and their siblings,
 `runtime.js`; `platforms/browser-tea/Tea.beni`; `core/Task.beni`): as specified above. The pages
-are `tests/corpus/browser/tea/`.
+are `tests/corpus/browser/tea/`: `DebouncedSearch` (a `Restart` debounce, a stale answer's send
+dropped, the new body after the old one's cleanup), `Policies`, `TupleKeyRestart`, `OwnedByProgram`,
+`ReentrantSend`, `FlushLatched`, `ClockStops`, `LatestTagger`, `AfterRenderFocus`, `HttpResults` and
+`WindowEvents`; `run/TaskRootScope` is the root scope under Node. **Measured** (`bench/size.mjs`,
+`--release`, brotli): the empty `Tea.sandbox` page 1 551 bytes and it reaches no `Task`; the empty
+`Tea.element` 5 496 — declaration-granular elimination keeps the command table, the diff and the
+fiber runtime whenever `element` is reached, so R45 §7's "must not reach `Task`" holds for
+`sandbox` only; a page on a keyed `Restart` `Http.get` and a `Time.every`, 6 144. A message
+dispatched to a counter costs about 30 ns under `Tea.element` against 13 ns under `Tea.sandbox`
+(happy-dom in Node, the update and the dispatcher, one render per thousand messages).
 
 ## Appendix — what is deliberately not done
 
