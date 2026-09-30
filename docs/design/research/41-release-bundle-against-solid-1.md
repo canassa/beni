@@ -328,3 +328,27 @@ node bench/ui/sizes.mjs                    # §0.1's rows
 node bench/ui/anatomy.mjs                  # §0.2, §2 and §3.4's tables
 node bench/size.mjs                        # §4
 ```
+
+## 8. Addendum, 2026-09-30: §5.2 and §5.4 built
+
+Both were built on top of research 39 §12's selector, which had put the app at **5 674** brotli
+(`anatomy.mjs`, release, 11 files, 15 947 raw):
+
+| change | raw | brotli | Δ brotli |
+|---|--:|--:|--:|
+| the selector (research 39 §12), the starting point | 15 947 | 5 674 | |
+| §5.4: the reconciler's local `map` renamed `indices` | 15 731 | 5 545 | **−129** |
+| §5.2: a helper's constant arguments neither kept nor compared | 14 853 | 5 328 | **−217** |
+
+- **§5.4** (`platforms/browser/runtime.js`): `Html.map`'s export and `mapKind` now leave every
+  browser program that does not map; −129 against the −116 priced, because the selector's
+  runtime is the same file. Pinned by `build_test.zig`'s "a release page ships the browser
+  runtime's map only when it maps", which fails with the local named `map` again.
+- **§5.2** (`boundary.md` §9.4.6 interface 1.4, `Tree.constant`; `backend.md` §15.4): a value the
+  compiler knows is the same on every evaluation — a literal, a fieldless constructor, a top-level
+  value or function — is not kept in the instance or compared by a helper call's or a component's
+  guard, and a call all of whose arguments are constant is made at mount only. `view`'s container
+  keeps `c0`–`c6` and nothing else, and its `p` is the `For` alone. −217 against the −192 priced:
+  the six `p` guards went with the fields. Pinned by `emit/dom/DomHelpers` and
+  `emit/dom/DomComponents`; `browser/dom/NullaryHelperSkip` shows the same calls made as before.
+- The app is **5 328** brotli against Solid 1's 4 382 in the same `anatomy.mjs` run (1.22×).
