@@ -54,131 +54,106 @@ const DomSelectorNearMiss$table = (model$1) => {
   const $t$14 = model$1.rows;
   const $t$16 = ($p$15) => $p$15.id;
   return { t: DomSelectorNearMiss$k202, v: [$t$1, $t$3, { m: (item$34, position$35, cx$36) => {
-    const $t$37 = model$1.selected.$ === "Just" && model$1.selected.a === item$34.parent ? "on" : "";
-    const $t$38 = item$34.label;
-    const r$39 = DomSelectorNearMiss$t68();
-    const w$40 = r$39.firstChild;
-    r$39.setAttribute("class", $t$37);
-    w$40.data = $t$38;
-    return { s: r$39, q: null, e: r$39, w0: r$39, w1: w$40, a0: $t$37, a1: $t$38 };
-  }, p: (i$41, item$42, position$43) => {
-    const $t$44 = model$1.selected.$ === "Just" && model$1.selected.a === item$42.parent ? "on" : "";
-    if ($t$44 !== i$41.a0) {
-      i$41.w0.setAttribute("class", $t$44);
-      i$41.a0 = $t$44;
+    const r$37 = DomSelectorNearMiss$t68();
+    const w$38 = r$37.firstChild;
+    return { s: r$37, q: null, e: r$37, w0: r$37, w1: w$38, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$39, item$40, position$41) => {
+    const $t$42 = model$1.selected.$ === "Just" && model$1.selected.a === item$40.parent ? "on" : "";
+    if ($t$42 !== i$39.a0) {
+      i$39.w0.setAttribute("class", $t$42);
+      i$39.a0 = $t$42;
     }
-    if (item$42 !== i$41.x) {
-      const $t$45 = item$42.label;
-      if ($t$45 !== i$41.a1) {
-        i$41.a1 = $t$45;
-        i$41.w1.data = $t$45;
+    if (item$40 !== i$39.x) {
+      const $t$43 = item$40.label;
+      if ($t$43 !== i$39.a1) {
+        i$39.a1 = $t$43;
+        i$39.w1.data = $t$43;
       }
     }
-  }, i: false, f: null }, [model$1.selected], $t$4, $t$6, { m: (item$46, position$47, cx$48) => {
-    const $t$49 = model$1.selected.$ === "Just" && model$1.selected.a === item$46.id ? "on" : "";
-    const $t$50 = Maybe$withDefault(model$1.selected, 0);
-    const r$51 = DomSelectorNearMiss$t98();
-    const w$52 = r$51.firstChild;
-    r$51.setAttribute("class", $t$49);
-    w$52.data = $t$50;
-    return { s: r$51, q: null, e: r$51, w0: r$51, w1: w$52, a0: $t$49, a1: $t$50 };
-  }, p: (i$53, item$54, position$55) => {
-    const $t$56 = model$1.selected.$ === "Just" && model$1.selected.a === item$54.id ? "on" : "";
-    const $t$57 = Maybe$withDefault(model$1.selected, 0);
-    if ($t$56 !== i$53.a0) {
-      i$53.w0.setAttribute("class", $t$56);
-      i$53.a0 = $t$56;
+  }, w: true, i: false, f: null }, [model$1.selected], $t$4, $t$6, { m: (item$44, position$45, cx$46) => {
+    const r$47 = DomSelectorNearMiss$t98();
+    const w$48 = r$47.firstChild;
+    return { s: r$47, q: null, e: r$47, w0: r$47, w1: w$48, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$49, item$50, position$51) => {
+    const $t$52 = model$1.selected.$ === "Just" && model$1.selected.a === item$50.id ? "on" : "";
+    const $t$53 = Maybe$withDefault(model$1.selected, 0);
+    if ($t$52 !== i$49.a0) {
+      i$49.w0.setAttribute("class", $t$52);
+      i$49.a0 = $t$52;
     }
-    if ($t$57 !== i$53.a1) {
-      i$53.a1 = $t$57;
-      i$53.w1.data = $t$57;
+    if ($t$53 !== i$49.a1) {
+      i$49.a1 = $t$53;
+      i$49.w1.data = $t$53;
     }
-  }, i: false, f: null }, [model$1.selected], $t$7, $t$9, { m: (item$58, position$59, cx$60) => {
+  }, w: true, i: false, f: null }, [model$1.selected], $t$7, $t$9, { m: (item$54, position$55, cx$56) => {
+    const r$57 = DomSelectorNearMiss$t127();
+    const w$58 = r$57.firstChild;
+    return { s: r$57, q: null, e: r$57, w0: r$57, w1: w$58, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$59, item$60, position$61) => {
     const sel$8 = model$1.selected;
-    const $t$61 = sel$8.$ === "Just" && sel$8.a === item$58.id ? "on" : "";
-    const $t$62 = item$58.label;
-    const r$63 = DomSelectorNearMiss$t127();
-    const w$64 = r$63.firstChild;
-    r$63.setAttribute("class", $t$61);
-    w$64.data = $t$62;
-    return { s: r$63, q: null, e: r$63, w0: r$63, w1: w$64, a0: $t$61, a1: $t$62 };
-  }, p: (i$65, item$66, position$67) => {
-    const sel$8 = model$1.selected;
-    const $t$68 = sel$8.$ === "Just" && sel$8.a === item$66.id ? "on" : "";
-    if ($t$68 !== i$65.a0) {
-      i$65.w0.setAttribute("class", $t$68);
-      i$65.a0 = $t$68;
+    const $t$62 = sel$8.$ === "Just" && sel$8.a === item$60.id ? "on" : "";
+    if ($t$62 !== i$59.a0) {
+      i$59.w0.setAttribute("class", $t$62);
+      i$59.a0 = $t$62;
     }
-    if (item$66 !== i$65.x) {
-      const $t$69 = item$66.label;
-      if ($t$69 !== i$65.a1) {
-        i$65.a1 = $t$69;
-        i$65.w1.data = $t$69;
+    if (item$60 !== i$59.x) {
+      const $t$63 = item$60.label;
+      if ($t$63 !== i$59.a1) {
+        i$59.a1 = $t$63;
+        i$59.w1.data = $t$63;
       }
     }
-  }, i: false, f: null }, [model$1.selected], $t$10, { m: (item$70, position$71, cx$72) => {
-    const $t$73 = model$1.selected.$ === "Just" && model$1.selected.a === item$70.id ? "on" : "";
-    const $t$74 = item$70.label;
-    const r$75 = DomSelectorNearMiss$t152();
-    const w$76 = r$75.firstChild;
-    r$75.setAttribute("class", $t$73);
-    w$76.data = $t$74;
-    return { s: r$75, q: null, e: r$75, w0: r$75, w1: w$76, a0: $t$73, a1: $t$74 };
-  }, p: (i$77, item$78, position$79) => {
-    const $t$80 = model$1.selected.$ === "Just" && model$1.selected.a === item$78.id ? "on" : "";
-    if ($t$80 !== i$77.a0) {
-      i$77.w0.setAttribute("class", $t$80);
-      i$77.a0 = $t$80;
+  }, w: true, i: false, f: null }, [model$1.selected], $t$10, { m: (item$64, position$65, cx$66) => {
+    const r$67 = DomSelectorNearMiss$t152();
+    const w$68 = r$67.firstChild;
+    return { s: r$67, q: null, e: r$67, w0: r$67, w1: w$68, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$69, item$70, position$71) => {
+    const $t$72 = model$1.selected.$ === "Just" && model$1.selected.a === item$70.id ? "on" : "";
+    if ($t$72 !== i$69.a0) {
+      i$69.w0.setAttribute("class", $t$72);
+      i$69.a0 = $t$72;
     }
-    if (item$78 !== i$77.x) {
-      const $t$81 = item$78.label;
-      if ($t$81 !== i$77.a1) {
-        i$77.a1 = $t$81;
-        i$77.w1.data = $t$81;
+    if (item$70 !== i$69.x) {
+      const $t$73 = item$70.label;
+      if ($t$73 !== i$69.a1) {
+        i$69.a1 = $t$73;
+        i$69.w1.data = $t$73;
       }
     }
-  }, i: false, f: null }, [model$1.selected], $t$11, $t$13, { m: (item$82, position$83, cx$84) => {
-    const $t$88 = DomSelectorNearMiss$eq$r$at(($p$85, $p$86, $p$87) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$85, $p$86, $p$87), { at: { $: "Just", a: item$82.id } }, model$1.pick) ? "on" : "";
-    const $t$89 = item$82.label;
-    const r$90 = DomSelectorNearMiss$t180();
+  }, w: true, i: false, f: null }, [model$1.selected], $t$11, $t$13, { m: (item$74, position$75, cx$76) => {
+    const r$77 = DomSelectorNearMiss$t180();
+    const w$78 = r$77.firstChild;
+    return { s: r$77, q: null, e: r$77, w0: r$77, w1: w$78, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$79, item$80, position$81) => {
+    const $t$85 = DomSelectorNearMiss$eq$r$at(($p$82, $p$83, $p$84) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$82, $p$83, $p$84), { at: { $: "Just", a: item$80.id } }, model$1.pick) ? "on" : "";
+    if ($t$85 !== i$79.a0) {
+      i$79.w0.setAttribute("class", $t$85);
+      i$79.a0 = $t$85;
+    }
+    if (item$80 !== i$79.x) {
+      const $t$86 = item$80.label;
+      if ($t$86 !== i$79.a1) {
+        i$79.a1 = $t$86;
+        i$79.w1.data = $t$86;
+      }
+    }
+  }, w: true, i: false, f: null }, [model$1.pick], $t$14, $t$16, { m: (item$87, position$88, cx$89) => {
+    const r$90 = DomSelectorNearMiss$t200();
     const w$91 = r$90.firstChild;
-    r$90.setAttribute("class", $t$88);
-    w$91.data = $t$89;
-    return { s: r$90, q: null, e: r$90, w0: r$90, w1: w$91, a0: $t$88, a1: $t$89 };
+    return { s: r$90, q: null, e: r$90, w0: r$90, w1: w$91, a0: undefined, a1: undefined, x: undefined };
   }, p: (i$92, item$93, position$94) => {
-    const $t$98 = DomSelectorNearMiss$eq$r$at(($p$95, $p$96, $p$97) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$95, $p$96, $p$97), { at: { $: "Just", a: item$93.id } }, model$1.pick) ? "on" : "";
-    if ($t$98 !== i$92.a0) {
-      i$92.w0.setAttribute("class", $t$98);
-      i$92.a0 = $t$98;
+    const $t$95 = DomSelectorNearMiss$isOn(model$1.selected, Basics$add(item$93.id, 1));
+    if ($t$95 !== i$92.a0) {
+      i$92.w0.setAttribute("class", $t$95);
+      i$92.a0 = $t$95;
     }
     if (item$93 !== i$92.x) {
-      const $t$99 = item$93.label;
-      if ($t$99 !== i$92.a1) {
-        i$92.a1 = $t$99;
-        i$92.w1.data = $t$99;
+      const $t$96 = item$93.label;
+      if ($t$96 !== i$92.a1) {
+        i$92.a1 = $t$96;
+        i$92.w1.data = $t$96;
       }
     }
-  }, i: false, f: null }, [model$1.pick], $t$14, $t$16, { m: (item$100, position$101, cx$102) => {
-    const $t$103 = DomSelectorNearMiss$isOn(model$1.selected, Basics$add(item$100.id, 1));
-    const $t$104 = item$100.label;
-    const r$105 = DomSelectorNearMiss$t200();
-    const w$106 = r$105.firstChild;
-    r$105.setAttribute("class", $t$103);
-    w$106.data = $t$104;
-    return { s: r$105, q: null, e: r$105, w0: r$105, w1: w$106, a0: $t$103, a1: $t$104 };
-  }, p: (i$107, item$108, position$109) => {
-    const $t$110 = DomSelectorNearMiss$isOn(model$1.selected, Basics$add(item$108.id, 1));
-    if ($t$110 !== i$107.a0) {
-      i$107.w0.setAttribute("class", $t$110);
-      i$107.a0 = $t$110;
-    }
-    if (item$108 !== i$107.x) {
-      const $t$111 = item$108.label;
-      if ($t$111 !== i$107.a1) {
-        i$107.a1 = $t$111;
-        i$107.w1.data = $t$111;
-      }
-    }
-  }, i: false, f: null }, [model$1.selected]] };
+  }, w: true, i: false, f: null }, [model$1.selected]] };
 };
 export { DomSelectorNearMiss$table };

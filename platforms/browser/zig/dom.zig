@@ -325,6 +325,9 @@ const Fn = struct {
     texts: []?m.Name = &.{},
     /// A row's function or block operand, made once per function.
     made: []?m.Name = &.{},
+    /// `m` of a row that mounts through its patch (§15.5): it writes only
+    /// what `p` never does, and leaves every kept value `undefined`.
+    through: bool = false,
 };
 
 const Gen = struct {
@@ -490,16 +493,6 @@ const Gen = struct {
                 var b = try g.plan(&.{body.node}, body.site.inst);
                 const t = try g.template(&b, try g.print("t{d}", .{body.site.inst}));
 
-                const cx = try g.cx.fresh("cx");
-                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx };
-                _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
-                try js.@"return"(mount.block, try g.writeMount(&b, &mount, t));
-                try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, mount.block) });
-
-                const i = try g.cx.fresh("i");
-                const item2 = try g.cx.fresh("item");
-                const position2 = try g.cx.fresh("position");
-                var patch: Fn = .{ .block = try js.block(), .v = null, .i = i };
                 // What reads only the item is computed and written under
                 // one test of the item, so a row patched because an input
                 // changed leaves it alone (language.md §11.11).
@@ -507,6 +500,21 @@ const Gen = struct {
                 // patched only when its item changed: nothing to guard.
                 const apart = try g.itemOnlyOps(&b);
                 if (row.inputs.len == 0 and row.arity == 1) @memset(apart, false);
+                // A row whose `p` writes what `m` would, in the same order,
+                // mounts through it: the runtime calls `p` on the instance
+                // `m` returns (§15.5, *a row mounts through its patch*).
+                const through = try g.mountsThroughPatch(&b, body, apart);
+
+                const cx = try g.cx.fresh("cx");
+                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through };
+                if (!through) _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
+                try js.@"return"(mount.block, try g.writeMount(&b, &mount, t));
+                try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, mount.block) });
+
+                const i = try g.cx.fresh("i");
+                const item2 = try g.cx.fresh("item");
+                const position2 = try g.cx.fresh("position");
+                var patch: Fn = .{ .block = try js.block(), .v = null, .i = i };
                 const apart_block = try js.block();
                 _ = try g.cx.rowValuesApart(patch.block, apart_block, f.row, item2, if (row.arity == 2) position2 else null, &.{}, try g.apartValues(&b, apart));
                 try g.writePatch(&b, &patch, apart, false);
@@ -518,6 +526,7 @@ const Gen = struct {
                     try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.member(try g.ident(i), "x")), apart_block, null);
                 }
                 try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
+                if (through) try props.append(g.a(), .{ .key = "w", .value = try js.literal(.true) });
             },
             .lambda, .function => {
                 const body = try js.block();
@@ -1125,7 +1134,11 @@ const Gen = struct {
 
         // The writes, in source order.
         var fields: std.ArrayList(m.Property) = .empty;
-        for (b.ops.items, 0..) |op, k| try g.mountOp(b, f, op, @intCast(k), &fields);
+        for (b.ops.items, 0..) |op, k| {
+            if (f.through) try g.mountOnlyOp(f, op, @intCast(k), &fields) else try g.mountOp(b, f, op, @intCast(k), &fields);
+        }
+        // Not yet shown with any item: `p`'s test of the item holds.
+        if (f.through) try fields.append(a_, .{ .key = "x", .value = try js.literal(.undefined) });
 
         var props: std.ArrayList(m.Property) = .empty;
         const first: m.Expr, const q: m.Expr = switch (b.first.?) {
@@ -1194,27 +1207,7 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .event => |x| {
-                const facts = g.tree.eventFacts(x.item.event);
-                const dom_name = g.tree.string(facts.dom_name);
-                const key = try g.print("$${s}", .{dom_name});
-                try js.assign(f.block, try g.member(try g.node(f, x.t), key), try g.read(b, f, x.handler));
-                if (x.item.form == .payload) {
-                    const extract = try g.cx.extractor(x.index) orelse try g.jsb().name(try g.cx.runtime("identity"));
-                    try js.assign(f.block, try g.member(try g.node(f, x.t), try g.print("{s}X", .{key})), extract);
-                }
-                var flags: u32 = 0;
-                if (facts.prevent_default) flags |= 1;
-                if (facts.stop_propagation) flags |= 2;
-                if (facts.delegated) {
-                    if (flags != 0) try js.assign(f.block, try g.member(try g.node(f, x.t), try g.print("{s}F", .{key})), try g.num(flags));
-                } else {
-                    try js.expression(f.block, try g.rt("listen", &.{ try g.node(f, x.t), try g.str(dom_name), try g.num(flags) }));
-                }
-                if (x.context) {
-                    const then = try js.block();
-                    try js.assign(then, try g.member(try g.node(f, x.t), "$$cx"), try g.ident(f.cx.?));
-                    try js.@"if"(f.block, try js.binary(.strict_ne, try g.ident(f.cx.?), try g.nul()), then, null);
-                }
+                try g.mountEvent(f, x, try g.read(b, f, x.handler));
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.handler) });
             },
             .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.ident(f.slots[k].?), x.value)),
@@ -1253,6 +1246,89 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}v", .{k}), .value = try g.ident(shown) });
                 for (x.inputs, 0..) |in, j| try fields.append(a_, .{ .key = try g.print("a{d}i{d}", .{ k, j }), .value = try g.read(b, f, in) });
             },
+        }
+    }
+
+    /// Whether a row's `m` can leave its writes to `p` (§15.5, *a row mounts
+    /// through its patch*): every op one whose guarded write in `p` is the
+    /// write `m` makes, in a template that is cloned, not imported — a
+    /// custom element's upgrade could see the order of its attributes —
+    /// and `p` evaluating the values and writing in the order `m` does,
+    /// which holds when the item-only ops, and the values placed apart for
+    /// them, come after all the others (language.md §6, §11.11).
+    fn mountsThroughPatch(g: *Gen, b: *const Body, body: m.Root, apart: []const bool) m.Error!bool {
+        if (b.flags & 1 != 0 or b.ops.items.len == 0) return false;
+        var seen = false;
+        for (b.ops.items, apart) |op, x| {
+            switch (op.what) {
+                .placeholder, .style, .event => {},
+                .attribute => |at| {
+                    if (at.constant or g.stateful(at.item)) return false;
+                    if (at.item.class == .class_list or at.item.class == .style_list) return false;
+                    if (at.item.kind == .attribute and at.item.attribute != .none and g.tree.attributeFacts(at.item.attribute).raw) return false;
+                },
+                else => return false,
+            }
+            if (x) seen = true else if (seen) return false;
+        }
+        // The values the ops write, in evaluation order: those placed apart
+        // must come after the others. A value no op writes — a class or
+        // style list split in place — is not evaluated as a whole.
+        const placed = try g.apartValues(b, apart);
+        var written: std.ArrayList(m.Value.Index) = .empty;
+        for (b.ops.items) |op| for ((try g.opOperands(op)).?) |k| switch (b.operands.items[k]) {
+            .value => |v| try written.append(g.a(), v),
+            else => {},
+        };
+        seen = false;
+        for (0..body.values.len) |k| {
+            const v = body.values.at(@intCast(k));
+            if (std.mem.indexOfScalar(m.Value.Index, placed, v) != null) {
+                seen = true;
+            } else if (seen and std.mem.indexOfScalar(m.Value.Index, written.items, v) != null) return false;
+        }
+        return true;
+    }
+
+    /// What `m` writes of an op when `p` writes its value: an event's
+    /// extractor, flags, listener and mount context. Every kept value is
+    /// `undefined`, which no beni value is, so `p` writes it.
+    fn mountOnlyOp(g: *Gen, f: *Fn, op: Op, k: u32, fields: *std.ArrayList(m.Property)) m.Error!void {
+        const js = g.jsb();
+        const a_ = g.a();
+        if (op.node != .none) g.cx.at(op.node);
+        switch (op.what) {
+            .placeholder, .style, .attribute => {},
+            .event => |x| try g.mountEvent(f, x, null),
+            else => unreachable,
+        }
+        try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try js.literal(.undefined) });
+    }
+
+    /// An event's writes at mount: its handler, unless `p` writes it, and
+    /// its extractor, flags or listener, and mount context.
+    fn mountEvent(g: *Gen, f: *Fn, x: @FieldType(Op.What, "event"), handler: ?m.Expr) m.Error!void {
+        const js = g.jsb();
+        const facts = g.tree.eventFacts(x.item.event);
+        const dom_name = g.tree.string(facts.dom_name);
+        const key = try g.print("$${s}", .{dom_name});
+        if (handler) |h| try js.assign(f.block, try g.member(try g.node(f, x.t), key), h);
+        if (x.item.form == .payload) {
+            const extract = try g.cx.extractor(x.index) orelse try g.jsb().name(try g.cx.runtime("identity"));
+            try js.assign(f.block, try g.member(try g.node(f, x.t), try g.print("{s}X", .{key})), extract);
+        }
+        var flags: u32 = 0;
+        if (facts.prevent_default) flags |= 1;
+        if (facts.stop_propagation) flags |= 2;
+        if (facts.delegated) {
+            if (flags != 0) try js.assign(f.block, try g.member(try g.node(f, x.t), try g.print("{s}F", .{key})), try g.num(flags));
+        } else {
+            try js.expression(f.block, try g.rt("listen", &.{ try g.node(f, x.t), try g.str(dom_name), try g.num(flags) }));
+        }
+        if (x.context) {
+            const then = try js.block();
+            try js.assign(then, try g.member(try g.node(f, x.t), "$$cx"), try g.ident(f.cx.?));
+            try js.@"if"(f.block, try js.binary(.strict_ne, try g.ident(f.cx.?), try g.nul()), then, null);
         }
     }
 

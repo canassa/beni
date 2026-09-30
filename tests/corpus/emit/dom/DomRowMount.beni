@@ -1,0 +1,50 @@
+-- A row compiled in place that mounts through its patch (backend.md
+-- §15.5): `m` clones, walks and writes only an event's extras — here the
+-- payload extractor of `onInput` — and returns the instance with every
+-- kept value `undefined`; the row carries `w: true`, and the runtime
+-- calls `p` on it, which writes every value. `after`'s class reads the
+-- model and comes before its item-only values, so `p` evaluates and
+-- writes them in the order `m` did.
+--
+-- Two rows that keep their own `m`: `before`, whose item-only title comes
+-- before the class that reads the model, so `p` would evaluate them in
+-- the other order; and `toggled`, whose class toggle `m` writes only when
+-- it is on.
+import Html exposing (Html)
+
+
+type Msg
+    = Pick Int
+    | Typed Int String
+
+
+type alias Model =
+    { rows : List { id : Int, label : String }, picked : Int }
+
+
+pub after : Model -> Html Msg
+after model =
+    <ul>
+        <For each={model.rows} keyed={.id}>
+            {\row ->
+                <li class={if model.picked == row.id then "on" else ""} style={[ ( "order", String.fromInt row.id ) ]}>
+                    <a onClick={Pick row.id}>{row.label}</a>
+                    <input onInput={Typed row.id _} />
+                </li>
+            }
+        </For>
+    </ul>
+
+
+pub before : Model -> Html Msg
+before model =
+    <ul>
+        <For each={model.rows} keyed={.id}>{\row -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}</For>
+    </ul>
+
+
+pub toggled : Model -> Html Msg
+toggled model =
+    <ul>
+        <For each={model.rows} keyed={.id}>{\row -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}</For>
+    </ul>

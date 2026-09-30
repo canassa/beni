@@ -45,129 +45,105 @@ const DomSelector$table = (model$1) => {
   const $t$10 = model$1.rows;
   const $t$12 = ($p$11) => $p$11.id;
   return { t: DomSelector$k173, v: [$t$1, $t$3, { m: (item$28, position$29, cx$30) => {
-    const $t$31 = DomSelector$rowClass(model$1, item$28);
-    const $t$32 = { $: "Select", a: item$28.id };
-    const $t$33 = item$28.label;
-    const r$34 = DomSelector$t83();
-    const w$35 = r$34.firstChild;
+    const r$31 = DomSelector$t83();
+    const w$32 = r$31.firstChild;
     $markup$delegate(["click"]);
-    r$34.setAttribute("class", $t$31);
-    r$34.$$click = $t$32;
     if (cx$30 !== null) {
-      r$34.$$cx = cx$30;
+      r$31.$$cx = cx$30;
     }
-    w$35.data = $t$33;
-    return { s: r$34, q: null, e: r$34, w0: r$34, w1: w$35, a0: $t$31, a1: $t$32, a2: $t$33 };
-  }, p: (i$36, item$37, position$38) => {
-    const $t$39 = DomSelector$rowClass(model$1, item$37);
-    if ($t$39 !== i$36.a0) {
-      i$36.w0.setAttribute("class", $t$39);
-      i$36.a0 = $t$39;
+    return { s: r$31, q: null, e: r$31, w0: r$31, w1: w$32, a0: undefined, a1: undefined, a2: undefined, x: undefined };
+  }, p: (i$33, item$34, position$35) => {
+    const $t$36 = DomSelector$rowClass(model$1, item$34);
+    if ($t$36 !== i$33.a0) {
+      i$33.w0.setAttribute("class", $t$36);
+      i$33.a0 = $t$36;
     }
-    if (item$37 !== i$36.x) {
-      const $t$40 = { $: "Select", a: item$37.id };
-      const $t$41 = item$37.label;
-      if ($t$40 !== i$36.a1) {
-        i$36.a1 = $t$40;
-        i$36.w0.$$click = $t$40;
+    if (item$34 !== i$33.x) {
+      const $t$37 = { $: "Select", a: item$34.id };
+      const $t$38 = item$34.label;
+      if ($t$37 !== i$33.a1) {
+        i$33.a1 = $t$37;
+        i$33.w0.$$click = $t$37;
       }
-      if ($t$41 !== i$36.a2) {
-        i$36.a2 = $t$41;
-        i$36.w1.data = $t$41;
-      }
-    }
-  }, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$4, $t$5, { m: (item$42, position$43, cx$44) => {
-    const id$5 = item$42.id;
-    const label$6 = item$42.label;
-    const $t$45 = model$1.selected.$ === "Just" && model$1.selected.a === id$5 ? "on" : "";
-    const r$46 = DomSelector$t108();
-    const w$47 = r$46.firstChild;
-    r$46.setAttribute("class", $t$45);
-    w$47.data = label$6;
-    return { s: r$46, q: null, e: r$46, w0: r$46, w1: w$47, a0: $t$45, a1: label$6 };
-  }, p: (i$48, item$49, position$50) => {
-    const id$5 = item$49.id;
-    const label$6 = item$49.label;
-    const $t$51 = model$1.selected.$ === "Just" && model$1.selected.a === id$5 ? "on" : "";
-    if ($t$51 !== i$48.a0) {
-      i$48.w0.setAttribute("class", $t$51);
-      i$48.a0 = $t$51;
-    }
-    if (item$49 !== i$48.x) {
-      if (label$6 !== i$48.a1) {
-        i$48.a1 = label$6;
-        i$48.w1.data = label$6;
+      if ($t$38 !== i$33.a2) {
+        i$33.a2 = $t$38;
+        i$33.w1.data = $t$38;
       }
     }
-  }, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$6, { m: (item$52, position$53, cx$54) => {
-    const $t$55 = item$52 !== model$1.cursor ? "" : "at";
-    const r$56 = DomSelector$t127();
-    const w$57 = r$56.firstChild;
-    r$56.setAttribute("class", $t$55);
-    w$57.data = item$52;
-    return { s: r$56, q: null, e: r$56, w0: r$56, w1: w$57, a0: $t$55, a1: item$52 };
-  }, p: (i$58, item$59, position$60) => {
-    const $t$61 = item$59 !== model$1.cursor ? "" : "at";
-    if ($t$61 !== i$58.a0) {
-      i$58.w0.setAttribute("class", $t$61);
-      i$58.a0 = $t$61;
+  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$4, $t$5, { m: (item$39, position$40, cx$41) => {
+    const r$42 = DomSelector$t108();
+    const w$43 = r$42.firstChild;
+    return { s: r$42, q: null, e: r$42, w0: r$42, w1: w$43, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$44, item$45, position$46) => {
+    const id$5 = item$45.id;
+    const label$6 = item$45.label;
+    const $t$47 = model$1.selected.$ === "Just" && model$1.selected.a === id$5 ? "on" : "";
+    if ($t$47 !== i$44.a0) {
+      i$44.w0.setAttribute("class", $t$47);
+      i$44.a0 = $t$47;
     }
-    if (item$59 !== i$58.x) {
-      if (item$59 !== i$58.a1) {
-        i$58.a1 = item$59;
-        i$58.w1.data = item$59;
+    if (item$45 !== i$44.x) {
+      if (label$6 !== i$44.a1) {
+        i$44.a1 = label$6;
+        i$44.w1.data = label$6;
       }
     }
-  }, i: false, f: null, g: 0, z: model$1.cursor }, [model$1.cursor], $t$7, $t$9, { m: (item$62, position$63, cx$64) => {
-    const $t$65 = model$1.theme;
-    const $t$66 = model$1.cursor === item$62.id ? "at" : "";
-    const $t$67 = item$62.label;
-    const r$68 = DomSelector$t154();
-    const w$69 = r$68.firstChild;
-    const w$70 = w$69.firstChild;
-    r$68.setAttribute("class", $t$65);
-    w$69.setAttribute("class", $t$66);
-    w$70.data = $t$67;
-    return { s: r$68, q: null, e: r$68, w0: r$68, w1: w$69, w2: w$70, a0: $t$65, a1: $t$66, a2: $t$67 };
-  }, p: (i$71, item$72, position$73) => {
-    const $t$74 = model$1.theme;
-    const $t$75 = model$1.cursor === item$72.id ? "at" : "";
-    if ($t$74 !== i$71.a0) {
-      i$71.w0.setAttribute("class", $t$74);
-      i$71.a0 = $t$74;
+  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected], $t$6, { m: (item$48, position$49, cx$50) => {
+    const r$51 = DomSelector$t127();
+    const w$52 = r$51.firstChild;
+    return { s: r$51, q: null, e: r$51, w0: r$51, w1: w$52, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$53, item$54, position$55) => {
+    const $t$56 = item$54 !== model$1.cursor ? "" : "at";
+    if ($t$56 !== i$53.a0) {
+      i$53.w0.setAttribute("class", $t$56);
+      i$53.a0 = $t$56;
     }
-    if ($t$75 !== i$71.a1) {
-      i$71.w1.setAttribute("class", $t$75);
-      i$71.a1 = $t$75;
-    }
-    if (item$72 !== i$71.x) {
-      const $t$76 = item$72.label;
-      if ($t$76 !== i$71.a2) {
-        i$71.a2 = $t$76;
-        i$71.w2.data = $t$76;
+    if (item$54 !== i$53.x) {
+      if (item$54 !== i$53.a1) {
+        i$53.a1 = item$54;
+        i$53.w1.data = item$54;
       }
     }
-  }, i: false, f: null, g: 1, z: model$1.cursor }, [model$1.theme, model$1.cursor], $t$10, $t$12, { m: (item$77, position$78, cx$79) => {
-    const $t$80 = DomSelector$isOn(model$1.selected, item$77.id);
-    const $t$81 = item$77.label;
-    const r$82 = DomSelector$t171();
-    const w$83 = r$82.firstChild;
-    r$82.setAttribute("class", $t$80);
-    w$83.data = $t$81;
-    return { s: r$82, q: null, e: r$82, w0: r$82, w1: w$83, a0: $t$80, a1: $t$81 };
-  }, p: (i$84, item$85, position$86) => {
-    const $t$87 = DomSelector$isOn(model$1.selected, item$85.id);
-    if ($t$87 !== i$84.a0) {
-      i$84.w0.setAttribute("class", $t$87);
-      i$84.a0 = $t$87;
+  }, w: true, i: false, f: null, g: 0, z: model$1.cursor }, [model$1.cursor], $t$7, $t$9, { m: (item$57, position$58, cx$59) => {
+    const r$60 = DomSelector$t154();
+    const w$61 = r$60.firstChild;
+    const w$62 = w$61.firstChild;
+    return { s: r$60, q: null, e: r$60, w0: r$60, w1: w$61, w2: w$62, a0: undefined, a1: undefined, a2: undefined, x: undefined };
+  }, p: (i$63, item$64, position$65) => {
+    const $t$66 = model$1.theme;
+    const $t$67 = model$1.cursor === item$64.id ? "at" : "";
+    if ($t$66 !== i$63.a0) {
+      i$63.w0.setAttribute("class", $t$66);
+      i$63.a0 = $t$66;
     }
-    if (item$85 !== i$84.x) {
-      const $t$88 = item$85.label;
-      if ($t$88 !== i$84.a1) {
-        i$84.a1 = $t$88;
-        i$84.w1.data = $t$88;
+    if ($t$67 !== i$63.a1) {
+      i$63.w1.setAttribute("class", $t$67);
+      i$63.a1 = $t$67;
+    }
+    if (item$64 !== i$63.x) {
+      const $t$68 = item$64.label;
+      if ($t$68 !== i$63.a2) {
+        i$63.a2 = $t$68;
+        i$63.w2.data = $t$68;
       }
     }
-  }, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
+  }, w: true, i: false, f: null, g: 1, z: model$1.cursor }, [model$1.theme, model$1.cursor], $t$10, $t$12, { m: (item$69, position$70, cx$71) => {
+    const r$72 = DomSelector$t171();
+    const w$73 = r$72.firstChild;
+    return { s: r$72, q: null, e: r$72, w0: r$72, w1: w$73, a0: undefined, a1: undefined, x: undefined };
+  }, p: (i$74, item$75, position$76) => {
+    const $t$77 = DomSelector$isOn(model$1.selected, item$75.id);
+    if ($t$77 !== i$74.a0) {
+      i$74.w0.setAttribute("class", $t$77);
+      i$74.a0 = $t$77;
+    }
+    if (item$75 !== i$74.x) {
+      const $t$78 = item$75.label;
+      if ($t$78 !== i$74.a1) {
+        i$74.a1 = $t$78;
+        i$74.w1.data = $t$78;
+      }
+    }
+  }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
 };
 export { DomSelector$Msg$$compare, DomSelector$Msg$$eq, DomSelector$table };

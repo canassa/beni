@@ -1,0 +1,78 @@
+-- The order a keyed row's values are evaluated in when it is mounted and
+-- when it is patched (language.md §6, §11.11; backend.md §15.5, *a row
+-- mounts through its patch*): `Debug.log` in each value shows it. At
+-- mount every row's values run in source order, whether the row mounts
+-- through its patch or not; on a patch that only an input caused, the
+-- values that read only the item do not run.
+--
+-- `#after` writes the value that reads the model first and the item-only
+-- one after it, `#before` the other way round, `#toggled` has a class
+-- toggle. A new row mounts in each list; then the mark changes, which
+-- patches every row without running an item-only value; then a row's
+-- item changes, which runs both of its values, the model's first.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+    | Mark
+    | Rename
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, mark : String }
+
+
+marked : Model, Row -> String
+marked model r =
+    Debug.log "${model.mark}${String.fromInt r.id}" "mark"
+
+
+named : String, Row -> String
+named list r =
+    Debug.log r.label "${list} label"
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Add ->
+            { model | rows = model.rows ++ [ { id = 3, label = "c" } ] }
+
+        Mark ->
+            { model | mark = "*" }
+
+        Rename ->
+            { model | rows = List.map model.rows (\r -> if r.id == 1 then { r | label = "A" } else r) }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <ul id="after">
+            <For each={model.rows} keyed={.id}>{\r -> <li class={marked model r}>{named "after" r}</li>}</For>
+        </ul>
+        <ul id="before">
+            <For each={model.rows} keyed={.id}>{\r -> <li title={named "before" r} class={marked model r} />}</For>
+        </ul>
+        <ul id="toggled">
+            <For each={model.rows} keyed={.id}>{\r -> <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>{named "toggled" r}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" } ], mark = "" }
+        , update = update
+        , view = view
+        }

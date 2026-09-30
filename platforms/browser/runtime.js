@@ -183,8 +183,16 @@ export const childList = (s, list) => {
 // says whether the row reads its position; `f` is the fallback's block or
 // null. The row's inputs are an array compared by identity, or null.
 
+// A row with `w` mounts through its patch (backend.md §15.5): `m` clones
+// and walks, and `p`, meeting nothing written yet, writes every value — so
+// the code an edit runs is the code every mount ran, as a Solid effect's is.
 const mountRow = (row, item, position, cx) => {
-  const i = row.b === undefined ? row.m(item, position, cx) : unit(row.b(item, position), cx);
+  let i;
+  if (row.b !== undefined) i = unit(row.b(item, position), cx);
+  else {
+    i = row.m(item, position, cx);
+    if (row.w === true) row.p(i, item, position);
+  }
   i.x = item;
   i.y = position;
   i.k = null;

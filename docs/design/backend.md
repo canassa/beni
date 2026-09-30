@@ -3850,6 +3850,25 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   goes straight into the page, row by row before the slot's marker, as Solid 1's `appendNodes`
   does: the fragment moved every node twice, and the benchmark's *create* spent 0.23 ms more of a
   4.4 ms render on it (research 39 §13). What the page shows is the same.
+- **A row mounts through its patch** (*amended 2026-09-30*, research 39 §13): Solid's row writes
+  its dynamic parts with one effect, whose first run is the mount, so the code a label edit runs
+  has run a thousand times by the first edit. A `markup` row's `m` and `p` were two functions, and
+  the benchmark's *update every 10th* met `p` nearly cold — its warm-up runs it 300 times — and
+  lost to Solid 1 by 1.20× though it is ahead when both are warm. Now, where it changes nothing a
+  program can observe, `m` clones, walks, and writes only what `p` never writes — an event's
+  payload extractor, its flags, `listen`, `$$cx` — and returns the instance with every kept value
+  `undefined`, which no beni value is, and `x: undefined`; the row object says so with `w: true`,
+  and the runtime's `mountRow` calls `p` on the fresh instance, which then writes every value as a
+  change. **Where**: a row compiled in place whose template is cloned rather than imported (no
+  custom element: an upgrade could see its attributes arrive in another order), each of whose ops
+  is a text placeholder, a style entry, an event, or an attribute that is not constant, `raw`, a
+  class or style list, or a `stateful` property — so `p`'s guarded write is what `m` would have
+  written — and whose item-only values (§15.5 above, *What reads only the item*) come after every
+  other value and every item-only write after every other write, so `p` evaluates the values in
+  the order `m` did and writes in the order `m` did (`language.md` §6, §11.11). Any other row keeps
+  the two functions. Pinned by `emit/dom/DomRowMount` (a row that mounts through its patch, one
+  whose item-only value comes first, and one with a toggle) and `browser/dom/RowMountOrder`, whose
+  `Debug.log`s show each row's values in source order at mount, recorded before this change.
 - **By position** (`forPosition`): slot *i* is patched with item *i*.
 - **By reference**: `forKeyed` with the item as its own key. Where the checker recorded the item type
   as primitive-`eq`, that is value keying and correct; otherwise it is Solid's default and `unkeyed_for`
