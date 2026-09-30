@@ -93,6 +93,9 @@ const Constraint = Tree.Constraint;
 const Category = Tree.Category;
 const Frame = Generalize.Frame;
 
+/// A `++` and the variable of its result (`appends`).
+pub const Append = struct { inst: Bir.Inst.Index, result: Var };
+
 cx: *const Context,
 report: *Report,
 /// The worker's lists, which this module borrows (`init`, `deinit`).
@@ -110,6 +113,10 @@ marker: Marker = undefined,
 /// The shape every `?` was decided as, for the dispatch table (`checker.md`
 /// §6.5): P9 sorts them by instruction.
 tries: std.ArrayList(Dispatch.Try) = .empty,
+/// Every call of core's `Basics.append` — every `++` — with the variable
+/// of its result: P9 keeps the ones that solved to a `List` as the dispatch
+/// table's `appends`, once every type is final.
+appends: std.ArrayList(Append) = .empty,
 /// What each markup obligation was decided as (checker-v2.md §25.7), by the
 /// record it is about: P9 builds the table's markup section from it.
 markup_decisions: std.ArrayList(MarkupDecide.Decision) = .empty,
@@ -219,6 +226,7 @@ pub fn deinit(s: *Solve) void {
     s.unifier.deinit();
     s.marker.deinit();
     s.tries.deinit(gpa);
+    s.appends.deinit(gpa);
     s.markup_decisions.deinit(gpa);
     s.carriers.deinit(gpa);
     for (s.queues.items) |*q| q.deinit(gpa);
@@ -624,6 +632,22 @@ fn rigidOf(s: *Solve, expected: Var, actual: Var) ?Report.Rigid {
 // Calls: checker.md §8.3
 // ---------------------------------------------------------------------------
 
+/// Whether the `call` at `inst` calls core's `Basics.append`: what `++`
+/// lowers to (language.md §6.5). Keyed on the core package, the module and
+/// the well-known symbol, never on a spelling.
+fn isBasicsAppend(s: *Solve, inst: Bir.Inst.Index) bool {
+    const bir = s.cx.bir;
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .call) return false;
+    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    if (bir.instTag(callee) != .ext_value) return false;
+    const d = bir.instData(callee);
+    const basics = s.cx.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return false;
+    if (d.lhs != basics.int()) return false;
+    const iface = s.cx.iface(basics);
+    if (d.rhs >= iface.values.len) return false;
+    return iface.symbols[@intFromEnum(iface.values[d.rhs].name)] == InternPool.WellKnown.append.symbol();
+}
+
 fn call(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Call);
     const scratch = s.cx.scratch;
@@ -636,6 +660,10 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
     // solved just before the call node and the arguments just after, so a
     // row for the callee's instruction is the last one now.
     const callee_row = s.calleeRow(node.region);
+    // A `++`: whether it is on lists is read once every type is final.
+    if (info.flavor == .call and s.isBasicsAppend(node.region)) {
+        try s.appends.append(s.cx.gpa, .{ .inst = node.region, .result = info.result });
+    }
 
     // A nullary constructor pattern: the constructor's type is the
     // pattern's. The callee must be nullary too, or §8.3's message is lost.

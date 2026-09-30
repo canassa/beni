@@ -1,0 +1,41 @@
+-- emit: `++` on lists is a call of `List.append` (`backend.md` §4; the
+-- manager's decision O6 of `plans/list-arrays.md`), so `a ++ b` and
+-- `[ ...a, ...b ]` are the same call and cost the same: `List.append` pushes
+-- onto a list that has been written to where `Basics.append`, a sibling
+-- that cannot reach the list's representation, would copy. A `++` on
+-- strings, and one generic over `appendable`, stays `Basics$append`.
+-- `grow` is the loop the decision is for: `acc ++ [ x ]` in a tail call.
+import Node exposing (Program)
+
+
+pub lists : List Int, List Int -> List Int
+lists a b =
+    a ++ b
+
+
+pub spread : List Int, List Int -> List Int
+spread a b =
+    [ ...a, ...b ]
+
+
+pub strings : String, String -> String
+strings a b =
+    a ++ b
+
+
+pub generic : appendable, appendable -> appendable
+generic a b =
+    a ++ b
+
+
+pub grow : Int, List Int -> List Int
+grow n acc =
+    if n <= 0 then
+        acc
+    else
+        grow (n - 1) (acc ++ [ n ])
+
+
+main : Program
+main =
+    Node.printLines []

@@ -13,7 +13,8 @@
 //   Int, Float   a number            Bool          true / false
 //   Char         a one-scalar string String        a native string
 //   ()           null                tuple         { a, b, … }
-//   record       a plain object      List          { $: 0 } / { $: 1, a, b }
+//   record       a plain object      List          an array, a view or a trie,
+//                                                    read by backend.md §4's protocol
 //   constructor  { $: "Tag", a, … }, or the bare tag string when every
 //                constructor of the type is nullary (`Order` is "LT").
 //
@@ -49,17 +50,17 @@ export const and = (a, b) => a && b;
 export const or = (a, b) => a || b;
 
 // `++` over the two appendable representations. One definition over both is
-// the other reason Basics.beni lists it as foreign.
+// the other reason Basics.beni lists it as foreign. A `++` the checker
+// knows to be on lists calls `List.append` instead (backend.md §4), so
+// this list half serves the code that is generic over `appendable`: read
+// by the protocol of backend.md §4 — `length`, `Array.isArray`,
+// `$plain()` — since a sibling cannot reach core/List.js, and a fresh
+// plain array unless one side is empty, which returns the other itself.
 export const append = (a, b) => {
   if (typeof a === "string") return a + b;
-  // A list: copy the left spine onto the right one. Iterative, because a
-  // long list would exhaust the stack (the failure mode §9.4 names for cons
-  // cells).
-  const items = [];
-  for (let at = a; at.$ === 1; at = at.b) items.push(at.a);
-  let out = b;
-  for (let i = items.length - 1; i >= 0; i--) out = { $: 1, a: items[i], b: out };
-  return out;
+  if (b.length === 0) return a;
+  if (a.length === 0) return b;
+  return (Array.isArray(a) ? a : a.$plain()).concat(Array.isArray(b) ? b : b.$plain());
 };
 
 export const toFloat = (a) => a;

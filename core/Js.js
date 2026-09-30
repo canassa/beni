@@ -2,11 +2,9 @@
 // of one is compiled in place and never reaches this file; it is here for
 // check 2, and for a declaration passed as a value.
 
-const args = (xs) => {
-  const out = [];
-  for (let at = xs; at.$ === 1; at = at.b) out.push(at.a);
-  return out;
-};
+// A list's elements as a fresh array, which the host may keep and write
+// (boundary.md §4: a list crosses as a plain array, read by the protocol).
+const args = (xs) => (Array.isArray(xs) ? xs : xs.$plain()).slice();
 
 const null_ = null;
 export { null_ as null };

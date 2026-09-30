@@ -1,0 +1,70 @@
+-- run: re-consing what a pattern matched is O(1) on the array-backed
+-- `List` (`backend.md` §7, *List patterns over arrays*, the runtime
+-- re-cons), at 100 000 elements. Two Elm-shaped functions put back the
+-- head they matched:
+--
+--   * `pairwise`, `[ ( a, b ), ...pairwise [ b, ...rest ] ]` after
+--     matching `[ a, b, ...rest ]`: its argument is `b` re-consed onto the
+--     view it came from;
+--   * a `merge` that re-conses the head it did not take.
+--
+-- On a view whose backing array holds the element just before it, `cons`
+-- hands back the wider view, so each step is O(1); a copy there would make
+-- each O(n), and the program quadratic. The guard was proved by a scratch
+-- core whose `cons` always copies: this program then exceeds the test
+-- budget. Both functions build their result with a cons step, so both are
+-- also a loop and stack-safe (`backend.md` §8).
+import List
+import Node exposing (Program)
+import String
+
+
+size : Int
+size =
+    100000
+
+
+pairwise : List Int -> List ( Int, Int )
+pairwise xs =
+    case xs of
+        [ a, b, ...rest ] ->
+            [ ( a, b ), ...pairwise [ b, ...rest ] ]
+
+        _ ->
+            []
+
+
+merge : List Int, List Int -> List Int
+merge xs ys =
+    case ( xs, ys ) of
+        ( [ x, ...xt ], [ y, ...yt ] ) ->
+            if x <= y then
+                [ x, ...merge xt [ y, ...yt ] ]
+            else
+                [ y, ...merge [ x, ...xt ] yt ]
+
+        ( [], _ ) ->
+            ys
+
+        ( _, [] ) ->
+            xs
+
+
+main : Program
+main =
+    let
+        pairs =
+            pairwise (List.range 1 size)
+
+        merged =
+            merge (List.map (List.range 1 (size // 2)) (\n -> n * 2)) (List.map (List.range 0 (size // 2 - 1)) (\n -> n * 2 + 1))
+    in
+    Node.printLines
+        [ String.fromInt (List.length pairs)
+        , Debug.toString (List.head pairs)
+        , Debug.toString (List.last pairs)
+        , String.fromInt (List.foldl pairs 0 (\( a, b ) acc -> acc + b - a))
+        , String.fromInt (List.length merged)
+        , Debug.toString (List.take merged 5)
+        , String.fromInt (List.foldl (List.indexedMap merged (\i x -> if i + 1 == x then 0 else 1)) 0 (+))
+        ]

@@ -1,0 +1,166 @@
+-- run: one list in each of the forms the array-backed `List` takes
+-- (`backend.md` §4, *Lists are arrays*) — a plain array, a view (a
+-- pattern's `rest`), a trie built by `push` (an empty head, its tree at
+-- radix 0), a trie built by prepending (a head, its tree left of 0), and
+-- the tail of each trie — answers every question the same way. §4: the
+-- representation is not canonical, and no result a program can compute
+-- depends on which form a list is in.
+--
+-- Every form holds 1 to 40. Each line is one form against all six: `==`
+-- and `compare` with each (all `True` and `EQ`), `compare` with a list one
+-- element longer and one element larger (`LT` both), `++` with each and
+-- `[ ...a, ...b ]` with each (the length and the sum, which pin the order
+-- through the weighted sum), and its `Debug.toString`. Then the other
+-- readers: `String.join` and `String.fromList` of a trie and a view,
+-- `Dict.fromList` of a trie, and `List.foldr`, `List.reverse`, `List.sort`
+-- and a pattern with items after its spread on each.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+plain : List Int
+plain =
+    List.range 1 40
+
+
+view : List Int
+view =
+    case List.range 0 40 of
+        [ _, ...rest ] ->
+            rest
+
+        [] ->
+            []
+
+
+pushed : List Int
+pushed =
+    List.foldl (List.range 1 40) [] (\n acc -> List.push acc n)
+
+
+prepended : List Int
+prepended =
+    List.foldr (List.range 1 40) [] (\n acc -> [ n, ...acc ])
+
+
+pushedTail : List Int
+pushedTail =
+    case List.foldl (List.range 0 40) [] (\n acc -> List.push acc n) of
+        [ _, ...rest ] ->
+            rest
+
+        [] ->
+            []
+
+
+prependedTail : List Int
+prependedTail =
+    case List.foldr (List.range 0 40) [] (\n acc -> [ n, ...acc ]) of
+        [ _, ...rest ] ->
+            rest
+
+        [] ->
+            []
+
+
+forms : List ( String, List Int )
+forms =
+    [ ( "plain", plain )
+    , ( "view", view )
+    , ( "pushed", pushed )
+    , ( "prepended", prepended )
+    , ( "pushed tail", pushedTail )
+    , ( "prepended tail", prependedTail )
+    ]
+
+
+weighted : List Int -> Int
+weighted xs =
+    List.foldl (List.indexedMap xs (\i x -> (i + 1) * x)) 0 (+)
+
+
+bools : List Bool -> String
+bools bs =
+    String.concat (List.map bs (\b -> if b then "T" else "F"))
+
+
+line : ( String, List Int ) -> String
+line ( name, xs ) =
+    let
+        others =
+            List.map forms (\( _, ys ) -> ys)
+    in
+    String.join
+        [ name
+        , bools (List.map others (\ys -> xs == ys))
+        , String.join (List.map others (\ys -> Debug.toString (xs.compare ys))) ","
+        , Debug.toString (xs.compare [ ...plain, 41 ])
+        , Debug.toString (xs.compare (List.set plain 39 41))
+        , String.join (List.map others (\ys -> String.fromInt (List.length (xs ++ ys)) ++ "/" ++ String.fromInt (weighted (xs ++ ys)))) ","
+        , String.join (List.map others (\ys -> String.fromInt (weighted [ ...ys, ...xs ]))) ","
+        , Debug.toString xs
+        ]
+        " "
+
+
+readers : ( String, List Int ) -> String
+readers ( name, xs ) =
+    let
+        ends =
+            case xs of
+                [ first, ...middle, last ] ->
+                    String.fromInt first ++ ".." ++ String.fromInt (List.length middle) ++ ".." ++ String.fromInt last
+
+                _ ->
+                    "short"
+    in
+    String.join
+        [ name
+        , String.fromInt (List.foldr xs 0 (\x acc -> acc * 3 + x |> modBy 1000003))
+        , String.fromInt (weighted (List.reverse xs))
+        , String.fromInt (weighted (List.sortWith xs (\a b -> compare b a)))
+        , ends
+        ]
+        " "
+
+
+-- A pattern's `rest` of a plain list: a view.
+afterFirst : List a -> List a
+afterFirst xs =
+    case xs of
+        [ _, ...more ] ->
+            more
+
+        [] ->
+            []
+
+
+letterTrie : List Char
+letterTrie =
+    List.foldl (String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN") [] (\c acc -> List.push acc c)
+
+
+letterView : List Char
+letterView =
+    afterFirst (String.toList "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN")
+
+
+words : List String
+words =
+    List.map (List.range 1 40) String.fromInt
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map forms line
+            ++ List.map forms readers
+            ++ [ String.fromList letterTrie
+               , String.fromList letterView
+               , String.join (List.foldl words [] (\w acc -> List.push acc w)) "-"
+               , String.join (afterFirst [ "x", ...words ]) "+"
+               , Debug.toString (Dict.toList (Dict.fromList (List.map pushed (\n -> ( modBy n 7, n )))))
+               ]
+        )

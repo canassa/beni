@@ -4,5 +4,5 @@ const c=(a,b)=>{for(;;){if(a<=0){return b;}else{b=b+a;a=a-1;}}},
 d=(b)=>{a(b,"say");},
 e=(a)=>{d(1);if(a)d(7);return 2;},
 f=(a)=>a,
-g=b({$:0,a:null,b:null});
+g=b([]);
 export{g,c,e,f};

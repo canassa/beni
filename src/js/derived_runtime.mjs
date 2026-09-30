@@ -43,42 +43,44 @@ export const deep = (g, d) => {
 
 // `List.eq` and `List.compare` as derived code calls them: the loops of
 // core/List.js, handing their depth to every element, or their steps to
-// `deep` when asked.
+// `deep` when asked. A list is read by backend.md §4's protocol: the array
+// itself, or a view's or a trie's plain copy.
+const plain = (xs) => (Array.isArray(xs) ? xs : xs.$plain());
+
 export const listEq = (m0, xs, ys, depth) => {
   if (depth >= request) return listSteps(m0, xs, ys, true);
-  let a = xs;
-  let b = ys;
-  while (a.$ === 1 && b.$ === 1) {
-    if (!m0(a.a, b.a, depth)) return false;
-    a = a.b;
-    b = b.b;
-  }
-  return a.$ === b.$;
+  const n = xs.length;
+  if (n !== ys.length) return false;
+  const a = plain(xs);
+  const b = plain(ys);
+  for (let i = 0; i < n; i++) if (!m0(a[i], b[i], depth)) return false;
+  return true;
 };
 
 export const listCompare = (m0, xs, ys, depth) => {
   if (depth >= request) return listSteps(m0, xs, ys, false);
-  let a = xs;
-  let b = ys;
-  while (a.$ === 1 && b.$ === 1) {
-    const o = m0(a.a, b.a, depth);
+  const n = xs.length;
+  const m = ys.length;
+  const a = plain(xs);
+  const b = plain(ys);
+  for (let i = 0; i < n && i < m; i++) {
+    const o = m0(a[i], b[i], depth);
     if (o !== "EQ") return o;
-    a = a.b;
-    b = b.b;
   }
-  if (a.$ === b.$) return "EQ";
-  return a.$ === 0 ? "LT" : "GT";
+  return n === m ? "EQ" : n < m ? "LT" : "GT";
 };
 
-const listSteps = function* (m0, a, b, eq) {
-  while (a.$ === 1 && b.$ === 1) {
-    let o = m0(a.a, b.a, request);
+const listSteps = function* (m0, xs, ys, eq) {
+  const n = xs.length;
+  const m = ys.length;
+  if (eq && n !== m) return false;
+  const a = plain(xs);
+  const b = plain(ys);
+  for (let i = 0; i < n && i < m; i++) {
+    let o = m0(a[i], b[i], request);
     if (typeof o === "object") o = yield o;
     if (eq ? !o : o !== "EQ") return o;
-    a = a.b;
-    b = b.b;
   }
-  if (eq) return a.$ === b.$;
-  if (a.$ === b.$) return "EQ";
-  return a.$ === 0 ? "LT" : "GT";
+  if (eq) return true;
+  return n === m ? "EQ" : n < m ? "LT" : "GT";
 };

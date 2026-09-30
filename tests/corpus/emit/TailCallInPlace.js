@@ -46,5 +46,5 @@ const TailCallInPlace$closures = ($in$0, $in$1) => {
     }
   }
 };
-const TailCallInPlace$main = Node$printLines({ $: 0, a: null, b: null });
+const TailCallInPlace$main = Node$printLines([]);
 export { TailCallInPlace$main, TailCallInPlace$sum, TailCallInPlace$swap, TailCallInPlace$logged, TailCallInPlace$closures };

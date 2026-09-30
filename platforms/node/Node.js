@@ -5,11 +5,9 @@
 // holds a reference to anything of Node's. That is §4.1's first two rules,
 // and it is what lets `runtime.js` be the only file that touches the host.
 
-const spine = (list) => {
-  const items = [];
-  for (let at = list; at.$ === 1; at = at.b) items.push(at.a);
-  return items;
-};
+// A list's elements, read by the protocol of backend.md §4: the array
+// itself, or a view's or a trie's plain copy. Read, never written.
+const spine = (list) => (Array.isArray(list) ? list : list.$plain());
 
 export const print = (line) => ({ code: 0, out: `${line}\n` });
 

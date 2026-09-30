@@ -5,9 +5,11 @@
 // writes to the console. That is stated in boundary.md §4 rather than
 // discovered here, and it is why `Debug` is not for shipping code.
 
+// A list in any of its forms, read by the protocol of backend.md §4.
 const showList = (list, seen) => {
+  const items = Array.isArray(list) ? list : list.$plain();
   const parts = [];
-  for (let at = list; at.$ === 1; at = at.b) parts.push(show(at.a, seen));
+  for (let i = 0; i < items.length; i++) parts.push(show(items[i], seen));
   return `[${parts.join(",")}]`;
 };
 
@@ -19,7 +21,10 @@ const show = (value, seen) => {
   if (seen.has(value)) return "<cycle>";
   seen.add(value);
   try {
-    if (value.$ === 0 || value.$ === 1) return showList(value, seen);
+    // A value is a list exactly when it is an array or has a `$plain`
+    // function: no other beni value is an array, and no record can have a
+    // field called `$plain` (backend.md §4).
+    if (Array.isArray(value) || typeof value.$plain === "function") return showList(value, seen);
     const keys = Object.keys(value);
     if (typeof value.$ === "string") {
       const args = keys.filter((k) => k !== "$" && value[k] !== null).map((k) => show(value[k], seen));

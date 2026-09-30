@@ -9,5 +9,5 @@ const EvidenceParameters$inner = ($m$0, x$1, factor$2) => $m$0(x$1, factor$2);
 const EvidenceParameters$middle = ($m$0, x$1, factor$2) => EvidenceParameters$inner($m$0, x$1, factor$2);
 const EvidenceParameters$outer = ($m$0, x$1, factor$2) => EvidenceParameters$middle($m$0, x$1, factor$2);
 const EvidenceParameters$grow = (m$1) => EvidenceParameters$outer(EvidenceParameters$scale, m$1, 3);
-const EvidenceParameters$main = Node$printLines({ $: 0, a: null, b: null });
+const EvidenceParameters$main = Node$printLines([]);
 export { EvidenceParameters$Metre$$compare, EvidenceParameters$Metre$$eq, EvidenceParameters$main, EvidenceParameters$scale, EvidenceParameters$grow };

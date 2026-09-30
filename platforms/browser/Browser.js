@@ -21,7 +21,8 @@ export const mountAt = (program, id) => program.map((m) => ({ a: m.a, n: id, h: 
 
 export const programs = (list) => {
   const all = [];
-  for (let at = list; at.$ === 1; at = at.b) for (const m of at.a) all.push(m);
+  const items = Array.isArray(list) ? list : list.$plain();
+  for (let k = 0; k < items.length; k++) for (const m of items[k]) all.push(m);
   return all;
 };
 

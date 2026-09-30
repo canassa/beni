@@ -1,14 +1,11 @@
 // The sibling JavaScript of `Page.beni` (docs/design/boundary.md §4): a
 // view is plain data, and only `runtime.js` touches the page.
 //
-// A `List` is read as every sibling reads one: cons cells, `$ === 1` for a
-// cell with `a` its head and `b` its tail.
+// A `List` is read as every sibling reads one (backend.md §4's protocol):
+// the array itself, or `$plain()` of a view or a trie. The view keeps a
+// copy, which nothing else holds.
 
-const spine = (list) => {
-  const items = [];
-  for (let at = list; at.$ === 1; at = at.b) items.push(at.a);
-  return items;
-};
+const spine = (list) => (Array.isArray(list) ? list : list.$plain()).slice();
 
 export const element = (tag, attributes, children) => ({ tag, attributes: spine(attributes), children: spine(children) });
 

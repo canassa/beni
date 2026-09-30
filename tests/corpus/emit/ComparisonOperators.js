@@ -9,5 +9,5 @@ const ComparisonOperators$before = ($m$0, x$1, y$2) => $m$0(x$1, y$2) === "LT";
 const ComparisonOperators$notAfter = ($m$0, x$1, y$2) => $m$0(x$1, y$2) !== "GT";
 const ComparisonOperators$after = ($m$0, x$1, y$2) => $m$0(x$1, y$2) === "GT";
 const ComparisonOperators$notBefore = ($m$0, x$1, y$2) => $m$0(x$1, y$2) !== "LT";
-const ComparisonOperators$main = Node$printLines({ $: 0, a: null, b: null });
+const ComparisonOperators$main = Node$printLines([]);
 export { ComparisonOperators$main, ComparisonOperators$ints, ComparisonOperators$chars, ComparisonOperators$strings, ComparisonOperators$same, ComparisonOperators$different, ComparisonOperators$before, ComparisonOperators$notAfter, ComparisonOperators$after, ComparisonOperators$notBefore };

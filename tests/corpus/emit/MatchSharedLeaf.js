@@ -57,5 +57,5 @@ const MatchSharedLeaf$report = (x$1, y$2, flag$3) => {
   }
   return String$append("> ", $t$1);
 };
-const MatchSharedLeaf$main = Node$printLines({ $: 0, a: null, b: null });
+const MatchSharedLeaf$main = Node$printLines([]);
 export { MatchSharedLeaf$Flag$$compare, MatchSharedLeaf$Flag$$eq, MatchSharedLeaf$main, MatchSharedLeaf$verdict, MatchSharedLeaf$report };

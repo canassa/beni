@@ -20,10 +20,11 @@
 //!     become `return <function>(<parameters>)` — the loop's state is its
 //!     parameter list (plan §2.2), and the copy reads only the iteration's
 //!     `const`s and the slots the jump just assigned. A loop that BUILDS
-//!     (`backend.md` §8, *Tail calls modulo cons*) has a destination too, so
-//!     its `continue` becomes `return Task$andThen(<function>(<parameters>),
-//!     ($built) => { $last.b = $built; return $root.b; })`: the re-entry
-//!     builds the rest in a list of its own, and the continuation links it.
+//!     (`backend.md` §8, *Tail calls modulo cons, onto an array*) has a
+//!     destination too, so its `continue` becomes `return
+//!     Task$andThen(<function>(<parameters>), ($built) => List$close($root,
+//!     $built))`: the re-entry builds the rest in a list of its own, and the
+//!     continuation pushes it after what this call pushed.
 //!
 //! A **join** (`$$join($j)` … `$$joined($j, $t)`) closes a non-tail `case`
 //! whose branches may suspend: in closure mode the rest after it becomes
@@ -63,12 +64,11 @@ pub const Loop = struct {
     callee: NameIndex,
     params: []const NameIndex,
     /// A building loop's destination (`backend.md` §8, *Tail calls modulo
-    /// cons*): `$root`, `$last`, the cell's tail field and the parameter of
-    /// the continuation that links a re-entry's list into `$last`. `.none`
-    /// for a loop that does not build.
+    /// cons, onto an array*): `$root`, the `List$close` that hands it over
+    /// with a list added after it, and the parameter of the continuation
+    /// that adds a re-entry's list. `.none` for a loop that does not build.
     root: NameIndex = .none,
-    last: NameIndex = .none,
-    tail: NameIndex = .none,
+    close: NameIndex = .none,
     built: NameIndex = .none,
 };
 
@@ -365,14 +365,13 @@ pub const Pass = struct {
                 if (lp.root == .none) return p.ret(reentry, at);
                 // A building loop: the re-entry builds the rest of the list
                 // in a destination of its own, and this call's list is
-                // whole once that rest is its last cell's tail —
-                // `Task$andThen(F(…), ($built) => { $last.b = $built;
-                // return $root.b; })`. The cells written so far are still
-                // reachable only from this continuation, which runs once.
-                const hole = try p.add(.member, at, (try p.ident(lp.last, at)).int(), @intFromEnum(lp.tail));
-                const link = try p.add(.assign_stmt, at, hole.int(), (try p.ident(lp.built, at)).int());
-                const whole = try p.add(.member, at, (try p.ident(lp.root, at)).int(), @intFromEnum(lp.tail));
-                const k = try p.arrow(&.{lp.built}, &.{ link, try p.ret(whole, at) }, at);
+                // whole once that rest is pushed after what it holds —
+                // `Task$andThen(F(…), ($built) => List$close($root,
+                // $built))`, a copy of the rest once per park. The array
+                // written so far is still reachable only from this
+                // continuation, which runs once.
+                const closed = try p.call(try p.ident(lp.close, at), &.{ try p.ident(lp.root, at), try p.ident(lp.built, at) }, at);
+                const k = try p.arrow(&.{lp.built}, &.{try p.ret(closed, at)}, at);
                 return p.ret(try p.call(try p.ident(p.names.and_then, at), &.{ reentry, k }, at), at);
             },
             .if_stmt => {

@@ -23,5 +23,5 @@ const DiscardedStatements$pureDiscard = (n$1) => {
   n$1 * 2;
   return n$1;
 };
-const DiscardedStatements$main = Node$printLines({ $: 0, a: null, b: null });
+const DiscardedStatements$main = Node$printLines([]);
 export { DiscardedStatements$main, DiscardedStatements$kept, DiscardedStatements$pureDiscard };

@@ -3,5 +3,5 @@ const b=(a)=>{const c=a*2,d=c*3,e=d*4;return c+d+e;},
 c=(a)=>a>0?a*2:a-1,
 d=(a,b)=>{for(;;){if(a<=0){return b;}else{b=b+a;a=a-1;}}},
 e=(a)=>({count:a,label:a*2}),
-f=a({$:0,a:null,b:null});
+f=a([]);
 export{f,b,c,d,e};

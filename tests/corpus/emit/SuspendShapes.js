@@ -1,5 +1,6 @@
 import { Io$sleep } from "./_platform/Io.mjs";
 import { Task$andThen, Task$isWaiting } from "./_core/Task.mjs";
+import { List$unsafeGet, List$view, List$close } from "./_core/List.mjs";
 const SuspendShapes$fetch = (n$1) => Task$andThen(Io$sleep(n$1), ($t$1) => n$1 + 1);
 const SuspendShapes$pick = (n$1) => {
   const $k$2 = ($t$3) => {
@@ -16,11 +17,11 @@ const SuspendShapes$total = ($in$0, $in$1) => {
   SuspendShapes$total: for (;;) {
     const xs$1 = $in$0;
     const acc$2 = $in$1;
-    if (xs$1.$ === 0) {
+    if (xs$1.length === 0) {
       return acc$2;
     } else {
-      const x$3 = xs$1.a;
-      const rest$4 = xs$1.b;
+      const x$3 = List$unsafeGet(xs$1, 0);
+      const rest$4 = List$view(xs$1, 1);
       const $t$5 = SuspendShapes$fetch(x$3);
       if (Task$isWaiting($t$5)) {
         return Task$andThen($t$5, ($t$5) => {
@@ -35,30 +36,23 @@ const SuspendShapes$total = ($in$0, $in$1) => {
   }
 };
 const SuspendShapes$fetchAll = ($in$0) => {
-  const $root = { $: 1, a: null, b: null };
-  let $last = $root;
+  const $root = [];
   SuspendShapes$fetchAll: for (;;) {
     const xs$1 = $in$0;
-    if (xs$1.$ === 0) {
-      $last.b = { $: 0, a: null, b: null };
-      return $root.b;
+    if (xs$1.length === 0) {
+      return $root;
     } else {
-      const x$2 = xs$1.a;
-      const rest$3 = xs$1.b;
+      const x$2 = List$unsafeGet(xs$1, 0);
+      const rest$3 = List$view(xs$1, 1);
       const $t$6 = SuspendShapes$fetch(x$2);
       if (Task$isWaiting($t$6)) {
         return Task$andThen($t$6, ($t$6) => {
-          $last.b = { $: 1, a: $t$6, b: null };
-          $last = $last.b;
+          $root.push($t$6);
           $in$0 = rest$3;
-          return Task$andThen(SuspendShapes$fetchAll($in$0), ($built) => {
-            $last.b = $built;
-            return $root.b;
-          });
+          return Task$andThen(SuspendShapes$fetchAll($in$0), ($built) => List$close($root, $built));
         });
       }
-      $last.b = { $: 1, a: $t$6, b: null };
-      $last = $last.b;
+      $root.push($t$6);
       $in$0 = rest$3;
     }
   }

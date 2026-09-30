@@ -710,9 +710,27 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     // shape is the one thing about a `?` the backend cannot work out.
     const sorted = try gpa.dupe(Dispatch.Try, solver.tries.items);
     std.mem.sort(Dispatch.Try, sorted, {}, tryLessThan);
+    // Every `++` whose result solved to a `List` (`Dispatch.appends`): read
+    // here, where every type is final, so no order of solving can change
+    // which function a `++` calls.
+    var appends: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer appends.deinit(gpa);
+    const list_type = solver.cx.types.well_known.list;
+    for (solver.appends.items) |a| {
+        if (list_type == .none) break;
+        switch (store.resolvedContent(a.result)) {
+            .structure => |flat| switch (flat) {
+                .app => |app| if (app.type == list_type) try appends.append(gpa, a.inst),
+                else => {},
+            },
+            else => {},
+        }
+    }
+    std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
     in.dispatch.* = .{
         .decls = decls,
         .tries = sorted,
+        .appends = try appends.toOwnedSlice(gpa),
         .lets = lets,
         .requirements = try requirements.toOwnedSlice(gpa),
         .terms = out.terms,
@@ -855,6 +873,10 @@ fn letRowLessThan(_: void, a: Resolve.LetRow, b: Resolve.LetRow) bool {
 
 fn tryLessThan(_: void, a: Dispatch.Try, b: Dispatch.Try) bool {
     return a.inst.int() < b.inst.int();
+}
+
+fn instLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
+    return a.int() < b.int();
 }
 
 /// P3 (§5): every value of the module by name, sorted by symbol, so

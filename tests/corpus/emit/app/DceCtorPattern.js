@@ -17,5 +17,5 @@ const DceCtorPattern$describe = (s$1) => {
       }
   }
 };
-const DceCtorPattern$main = Node$printLines({ $: 1, a: DceCtorPattern$describe(DceCtorPattern$Red), b: { $: 1, a: DceCtorPattern$describe(DceCtorPattern$Amber), b: { $: 1, a: DceCtorPattern$describe({ $: "Go", a: 3 }), b: { $: 0, a: null, b: null } } } });
+const DceCtorPattern$main = Node$printLines([DceCtorPattern$describe(DceCtorPattern$Red), DceCtorPattern$describe(DceCtorPattern$Amber), DceCtorPattern$describe({ $: "Go", a: 3 })]);
 export { DceCtorPattern$main, DceCtorPattern$describe };

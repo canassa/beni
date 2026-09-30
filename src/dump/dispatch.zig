@@ -96,6 +96,11 @@ pub fn write(
     for (dispatch.tries) |t| {
         try w.print("  try {d} {s}\n", .{ t.inst.int(), @tagName(t.shape) });
     }
+    // Each `++` on lists, which calls `List.append` (`Dispatch.appends`),
+    // ascending by instruction.
+    for (dispatch.appends) |inst| {
+        try w.print("  append {d} List\n", .{inst.int()});
+    }
     // Derived functions in the emission order of §8.5 (by printed name
     // text): the context — its evidence parameters — then, for a nominal
     // type, one `body` term per constructor argument position.

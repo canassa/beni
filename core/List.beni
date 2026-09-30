@@ -2,6 +2,15 @@
 --! used all over the place. This module has a bunch of functions to help you
 --! work with them.
 --!
+--! A list is **array-backed** (`language.md` §6.8, `backend.md` §4, *Lists
+--! are arrays*): reading an element by index is O(1) — O(log₃₂ n), "near
+--! O(1)", on a list that has been written to — `length` is O(1), and a list
+--! grows at either end in amortised O(1): `push` at the end, `[ x, ...xs ]`
+--! at the front. Each function's doc comment says what it costs, and which
+--! results are the very list it was given rather than an equal copy
+--! (`backend.md` §4, *Identity*), which is what lets a view skip what did
+--! not change.
+--!
 --! Argument order here is **subject first and function last**: the value the
 --! function is about comes first, so `xs |> map f` inserts it at the front,
 --! and the function comes last, so a lambda you write inline is the final
@@ -13,18 +22,13 @@
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
---! Three declarations here are `foreign`, and nothing else is:
---!
---!   - `cons : a, List a -> List a` — `[ x, ...xs ]` desugars to a call of
---!     this function, so a beni definition of it would call itself. Its
---!     order is the syntax's, element before list, not a pipeline's.
---!   - `eq : List a, List a -> Bool where a.eq` — what `==` on a list means.
---!     `List a` has no constructors, so the compiler has nothing to derive a
---!     body from, and the shape of a cons cell belongs to the code generator
---!     rather than to beni.
---!   - `compare : List a, List a -> Order where a.compare` — what `<` and
---!     its three relatives on a list mean, for the same two reasons, and a
---!     loop for the same reason `foldr` is one.
+--! The `foreign` half is first-order and nothing that takes a function is
+--! `foreign`: every function with a callback is a beni loop over the
+--! core-private `unsafeGet`, building its result in a core-private
+--! `Builder`, so a callback that suspends parks the loop (`language.md`
+--! §6.8, *Callbacks*). The `foreign` half is `cons`, `append`, `length`,
+--! the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and
+--! `eq` and `compare`, whose `where` evidence is called from JavaScript.
 --!
 --! `List a` is equal to another list when they have the same elements in the
 --! same order, by each element's own `eq` — which is what makes `==` on a
@@ -50,47 +54,45 @@
 pub equatable foreign type List a
 
 
+--| What a loop of this module builds its result in: a fresh array that only
+--| the loop that made it can see, written in place by `add` and handed over
+--| once by `done` as a plain list (`backend.md` §4, invariant 5). Nothing
+--| outside this module can name one, and each is used linearly, so the
+--| write is never observable.
+foreign type Builder a
+
+
 --| Add an element to the front of a list.
 --|
 --|     cons 1 [ 2, 3 ] == [ 1, 2, 3 ]
 --|
 --| This is what `[ x, ...xs ]` desugars to, which is why the element comes
 --| first here while every other function in this module takes the list first.
+--|
+--| Amortised O(1), as `push` is at the other end: a list that has been
+--| written to keeps a claimable head. At most 31 elements are copied when
+--| `xs` was prepended onto before, and a list of 32 or more that nothing has
+--| written to is converted once, O(n) (`backend.md` §4, *The claimable head*).
 pub foreign pure cons : a, List a -> List a
 
 
---| Reduce a list from the left, starting from an initial value.
+--| Put two lists together. `[ ...xs, ...ys ]` is this function, and `++` on
+--| two lists calls it too.
 --|
---|     foldl [ 1, 2, 3 ] [] cons == [ 3, 2, 1 ]
+--|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
 --|
---| The recursive call is in tail position, so the code generator turns it
---| into a loop (`backend.md` §8) and this walks a list of any length.
-pub foldl : List a, b, (a, b -> b) -> b
-foldl xs acc func =
-    case xs of
-        [] ->
-            acc
-
-        [ x, ...rest ] ->
-            foldl rest (func x acc) func
+--| `append xs []` is `xs` itself and `append [] ys` is `ys` itself. When `xs`
+--| has been written to, or has 32 elements or more while `ys` has fewer,
+--| each element of `ys` is pushed onto it: O(length of `ys`), so
+--| `[ ...xs, x ]` costs what `push xs x` does. Otherwise the result is a
+--| fresh list, O(length of both).
+pub foreign pure append : List a, List a -> List a
 
 
---| Reduce a list from the right, starting from an initial value.
+--| Determine the length of a list. O(1).
 --|
---|     foldr [ 1, 2, 3 ] [] cons == [ 1, 2, 3 ]
---|
---| This is the one function here that calls its callback back to front, and
---| that is its contract rather than an accident of how it is written
---| (`checker.md` Appendix B): the last element is handed to `func` first.
---| Nothing built on it may inherit that order — see `map`.
---|
---| Reverse, then fold from the left — exact for this argument order, and
---| `reverse` is itself a `foldl`, so there is no cycle. It costs one extra
---| list of n cells per call, which is not a regression: the JavaScript this
---| replaced materialised the whole list into an array to fold it backwards.
-pub foldr : List a, b, (a, b -> b) -> b
-foldr xs acc func =
-    foldl (reverse xs) acc func
+--|     length [ 1, 2, 3 ] == 3
+pub foreign pure length : List a -> Int
 
 
 --| Two lists are equal when they have the same elements, in the same order,
@@ -99,9 +101,7 @@ foldr xs acc func =
 --|     [ 1, 2 ] == [ 1, 2 ]
 --|
 --| This is what `==` on a list calls. It is written here rather than derived
---| because `List a` has no constructors for the compiler to walk, and it is
---| written in JavaScript because the representation of a list is the code
---| generator's rather than beni's.
+--| because `List a` has no constructors for the compiler to walk. O(n).
 pub foreign pure eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
 
@@ -113,11 +113,182 @@ pub foreign pure eq : List a, List a -> Bool
 --|     compare [ 1, 2 ] [ 1, 2, 3 ] == LT
 --|
 --| This is what `<`, `<=`, `>` and `>=` on a list call. Like `eq` it is
---| written here rather than derived, for the same two reasons: `List a` has
---| no constructors to walk, and the shape of a cons cell belongs to the
---| code generator.
+--| written here rather than derived, because `List a` has no constructors
+--| to walk.
 pub foreign pure compare : List a, List a -> Order
     where a.compare : a, a -> Order
+
+
+--| Replace the element at an index. Out of range — a negative index, or one
+--| not less than the length — the result is the list itself, and so it is
+--| when the element there is already `value` (the same value, not an equal
+--| one).
+--|
+--|     set [ 1, 2, 3 ] 1 9 == [ 1, 9, 3 ]
+--|     set [ 1, 2, 3 ] 3 9 == [ 1, 2, 3 ]
+--|
+--| A copy up to 256 elements; above, near O(1) after one O(n) conversion
+--| per list.
+pub foreign pure set : List a, Int, a -> List a
+
+
+--| Add an element at the end of a list, which is where a list grows.
+--|
+--|     push [ 1, 2 ] 3 == [ 1, 2, 3 ]
+--|
+--| A copy below 32 elements; above, amortised O(1) after one O(n) conversion
+--| per list. Pushing twice onto one version (after an undo) copies at most
+--| 31 elements, never the list. A loop that builds a list with `push` keeps
+--| the order the elements arrived in, so it needs no `reverse`.
+pub foreign pure push : List a, a -> List a
+
+
+--| Remove the last element of a list. `pop []` is the empty list itself.
+--|
+--|     pop [ 1, 2, 3 ] == [ 1, 2 ]
+--|
+--| The cost of `set`.
+pub foreign pure pop : List a -> List a
+
+
+--| The elements from index `from` up to but not including `to`, as Elm's
+--| `Array.slice`: a negative index counts from the end, both are clamped to
+--| the list, and `from` at or past `to` is `[]`. A slice of the whole list
+--| is the list itself.
+--|
+--|     slice [ 0, 1, 2, 3, 4 ] 1 3 == [ 1, 2 ]
+--|     slice [ 0, 1, 2, 3, 4 ] 1 (-1) == [ 1, 2, 3 ]
+--|     slice [ 0, 1, 2, 3, 4 ] (-2) 5 == [ 3, 4 ]
+--|
+--| O(length of the result), a fresh list.
+pub foreign pure slice : List a, Int, Int -> List a
+
+
+--| Insert an element before an index, so that it is at that index in the
+--| result. At the length it is added at the end; out of range — negative,
+--| or past the length — the result is the list itself.
+--|
+--|     insertAt [ 1, 2, 3 ] 1 9 == [ 1, 9, 2, 3 ]
+--|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
+--|
+--| O(n), a fresh list.
+pub foreign pure insertAt : List a, Int, a -> List a
+
+
+--| Remove the element at an index. Out of range the result is the list
+--| itself.
+--|
+--|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
+--|
+--| O(n), a fresh list.
+pub foreign pure removeAt : List a, Int -> List a
+
+
+--| Exchange the elements at two indexes. When either is out of range, or
+--| they are the same index, the result is the list itself.
+--|
+--|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
+--|
+--| Two `set`s.
+pub foreign pure swap : List a, Int, Int -> List a
+
+
+--| Element `i`, for `0 <= i < length xs`, which the caller guarantees: out
+--| of range it would read `undefined` as a value of any type, which is why
+--| it is not `pub` (`backend.md` §4). The code generator imports it for a
+--| list pattern's elements.
+foreign pure unsafeGet : List a, Int -> a
+
+
+--| The list without its first `k` elements, `0 <= k <= length`: the list
+--| itself at 0, `[]` at the end, O(1) otherwise. What a pattern's
+--| `[ x, ...rest ]` binds `rest` to; the code generator imports it.
+foreign pure view : List a, Int -> List a
+
+
+--| The plain array a list is a suffix of, and where in it the list starts
+--| (`backend.md` §8, *Scalar views*).
+foreign pure base : List a -> List a
+
+
+foreign pure offset : List a -> Int
+
+
+foreign pure builder : Int -> Builder a
+
+
+foreign pure add : Builder a, a -> Builder a
+
+
+foreign pure done : Builder a -> List a
+
+
+--| A building loop's exit (`backend.md` §8, *Tail calls modulo cons, onto
+--| an array*): the loop's own destination with `rest`'s elements pushed
+--| after it, or `rest` itself when the destination is empty. The code
+--| generator writes the calls, and the destination is the loop's alone
+--| until this hands it over, which is what makes the push sound.
+foreign pure close : List a, List a -> List a
+
+
+--| Whether two values are the same reference, which beni's `==` cannot
+--| ask: what `map` keeps its input's identity by. Of two types, because
+--| `map`'s element and result types are two, and the same reference in
+--| both is exactly the case it is asked about.
+foreign pure identical : a, b -> Bool
+
+
+--| `original` when `same`, otherwise `built`: `map`'s answer. `same` says
+--| every element of `built` is the element of `original` at its index —
+--| `identical` held for each — so `original` has `built`'s elements and is
+--| a `List b` at run time, which the type checker cannot see.
+foreign pure kept : Bool, List a, List b -> List b
+
+
+--| `n // 2` for a non-negative `n`, without `Basics`' sibling.
+foreign pure half : Int -> Int
+
+
+--| Reduce a list from the left, starting from an initial value.
+--|
+--|     foldl [ 1, 2, 3 ] [] cons == [ 3, 2, 1 ]
+--|
+--| `func` sees the first element first. The loop is a tail call, which the
+--| code generator turns into a loop (`backend.md` §8), so this walks a list
+--| of any length.
+pub foldl : List a, b, (a, b -> b) -> b
+foldl xs acc func =
+    foldlFrom xs 0 (length xs) acc func
+
+
+foldlFrom : List a, Int, Int, b, (a, b -> b) -> b
+foldlFrom xs i n acc func =
+    if i < n then
+        foldlFrom xs (i + 1) n (func (unsafeGet xs i) acc) func
+    else
+        acc
+
+
+--| Reduce a list from the right, starting from an initial value.
+--|
+--|     foldr [ 1, 2, 3 ] [] cons == [ 1, 2, 3 ]
+--|
+--| This is the one function here that calls its callback back to front, and
+--| that is its contract rather than an accident of how it is written
+--| (`checker.md` Appendix B): the last element is handed to `func` first.
+--| Nothing built on it may inherit that order — see `map`. It walks the
+--| list backwards by index and allocates nothing.
+pub foldr : List a, b, (a, b -> b) -> b
+foldr xs acc func =
+    foldrFrom xs (length xs - 1) acc func
+
+
+foldrFrom : List a, Int, b, (a, b -> b) -> b
+foldrFrom xs i acc func =
+    if i < 0 then
+        acc
+    else
+        foldrFrom xs (i - 1) (func (unsafeGet xs i) acc) func
 
 
 --| Create a list with only one element.
@@ -133,15 +304,15 @@ singleton value =
 --|     repeat 0 3 == [ 0, 0, 0 ]
 pub repeat : a, Int -> List a
 repeat value n =
-    repeatHelp [] n value
+    repeatHelp value n (builder n)
 
 
-repeatHelp : List a, Int, a -> List a
-repeatHelp result n value =
+repeatHelp : a, Int, Builder a -> List a
+repeatHelp value n b =
     if n <= 0 then
-        result
+        done b
     else
-        repeatHelp [ value, ...result ] (n - 1) value
+        repeatHelp value (n - 1) (add b value)
 
 
 --| Create a list of numbers, every element increasing by one. You give the
@@ -152,15 +323,34 @@ repeatHelp result n value =
 --|     range 6 3 == []
 pub range : Int, Int -> List Int
 range lo hi =
-    rangeHelp lo hi []
+    rangeHelp lo hi (builder 0)
 
 
-rangeHelp : Int, Int, List Int -> List Int
-rangeHelp lo hi list =
-    if lo <= hi then
-        rangeHelp lo (hi - 1) [ hi, ...list ]
+rangeHelp : Int, Int, Builder Int -> List Int
+rangeHelp lo hi b =
+    if lo > hi then
+        done b
     else
-        list
+        rangeHelp (lo + 1) hi (add b lo)
+
+
+--| Create a list of `n` elements, calling `func` on each index from 0 to
+--| `n - 1` in that order. A count of zero or less is `[]`.
+--|
+--|     initialize 4 (\i -> i * i) == [ 0, 1, 4, 9 ]
+--|
+--| O(n).
+pub initialize : Int, (Int -> a) -> List a
+initialize n func =
+    initializeHelp 0 n func (builder n)
+
+
+initializeHelp : Int, Int, (Int -> a), Builder a -> List a
+initializeHelp i n func b =
+    if i < n then
+        initializeHelp (i + 1) n func (add b (func i))
+    else
+        done b
 
 
 --| Apply a function to every element of a list.
@@ -168,41 +358,53 @@ rangeHelp lo hi list =
 --|     map [ 1, 4, 9 ] negate == [ -1, -4, -9 ]
 --|
 --| `func` is called on the first element first (`checker.md` Appendix B).
---|
---| This is the plain recursion, `[ func x, ...map rest func ]`, and it walks
---| a list of any length: a self-call spread last is a **cons step**, which the
---| code generator compiles to one loop that builds the result front to back
---| (`backend.md` §8, *Tail calls modulo cons*) — n cells, no `reverse`, no
---| stack. The head is evaluated before the loop moves on, so `func` sees
---| the elements in list order, as the recursion would. Every function below
---| that builds a list is written the same way.
+--| When every result is the very element it was given, the result is `xs`
+--| itself and not an equal copy (`backend.md` §4, *Identity*): one
+--| comparison per element, and a view showing the list skips it. O(n), and
+--| the result reads at O(1).
 pub map : List a, (a -> b) -> List b
 map xs func =
-    case xs of
-        [] ->
-            []
+    mapHelp xs 0 (length xs) func (builder (length xs)) True
 
-        [ x, ...rest ] ->
-            [ func x, ...map rest func ]
+
+mapHelp : List a, Int, Int, (a -> b), Builder b, Bool -> List b
+mapHelp xs i n func b same =
+    if i < n then
+        let
+            x =
+                unsafeGet xs i
+
+            y =
+                func x
+        in
+        mapHelp xs (i + 1) n func (add b y) (same && identical x y)
+    else
+        kept same xs (done b)
 
 
 --| Same as `map` but the function is also given the index of each element,
---| starting at zero.
+--| starting at zero. The result is `xs` itself when every result is the
+--| element it was given, as `map`'s is.
 --|
 --|     indexedMap [ "a", "b" ] (\i x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a -> b) -> List b
 indexedMap xs func =
-    indexedMapHelp xs 0 func
+    indexedMapHelp xs 0 (length xs) func (builder (length xs)) True
 
 
-indexedMapHelp : List a, Int, (Int, a -> b) -> List b
-indexedMapHelp xs index func =
-    case xs of
-        [] ->
-            []
+indexedMapHelp : List a, Int, Int, (Int, a -> b), Builder b, Bool -> List b
+indexedMapHelp xs i n func b same =
+    if i < n then
+        let
+            x =
+                unsafeGet xs i
 
-        [ x, ...rest ] ->
-            [ func index x, ...indexedMapHelp rest (index + 1) func ]
+            y =
+                func i x
+        in
+        indexedMapHelp xs (i + 1) n func (add b y) (same && identical x y)
+    else
+        kept same xs (done b)
 
 
 --| Keep the elements that pass the test.
@@ -210,60 +412,33 @@ indexedMapHelp xs index func =
 --|     filter [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == [ 2, 4 ]
 --|
 --| `isGood` is asked about the first element first. When it keeps every
---| element the result is `list` itself, not an equal copy (`backend.md` §4,
---| *Identity*): until the first element it drops, the walk only remembers
---| the kept ones, backwards, and puts them back in front of the rest once
---| something is dropped. That is written without arithmetic on purpose, so
---| that a program calling `filter` does not ship `Basics`' for it.
+--| element the result is `xs` itself, not an equal copy (`backend.md` §4,
+--| *Identity*). O(n).
 pub filter : List a, (a -> Bool) -> List a
-filter list isGood =
-    filterKept list list [] isGood
-
-
---| `rest` is what is left of `list` after the elements of `keptBackwards`,
---| every one of which `isGood` kept.
-filterKept : List a, List a, List a, (a -> Bool) -> List a
-filterKept list rest keptBackwards isGood =
-    case rest of
-        [] ->
-            list
-
-        [ x, ...more ] ->
-            if isGood x then
-                filterKept list more [ x, ...keptBackwards ] isGood
-            else
-                foldl keptBackwards (filterFresh more isGood) cons
-
-
---| The filter proper, once an element has been dropped. A dropped element
---| is an ordinary tail call, so it costs no cell.
-filterFresh : List a, (a -> Bool) -> List a
-filterFresh list isGood =
-    case list of
-        [] ->
-            []
-
-        [ x, ...rest ] ->
-            if isGood x then
-                [ x, ...filterFresh rest isGood ]
-            else
-                filterFresh rest isGood
-
-
---| The first `n` elements of `list`, copied, in front of `rest`, which is
---| shared. A cons step (see `map`), so it walks a list of any length. Every
---| indexed write below is this copy of the elements before the index.
-prefixOnto : List a, Int, List a -> List a
-prefixOnto list n rest =
-    if n <= 0 then
-        rest
+filter xs isGood =
+    let
+        result =
+            filterHelp xs 0 (length xs) isGood (builder 0)
+    in
+    if length result == length xs then
+        xs
     else
-        case list of
-            [] ->
-                rest
+        result
 
-            [ x, ...more ] ->
-                [ x, ...prefixOnto more (n - 1) rest ]
+
+filterHelp : List a, Int, Int, (a -> Bool), Builder a -> List a
+filterHelp xs i n isGood b =
+    if i < n then
+        let
+            x =
+                unsafeGet xs i
+        in
+        if isGood x then
+            filterHelp xs (i + 1) n isGood (add b x)
+        else
+            filterHelp xs (i + 1) n isGood b
+    else
+        done b
 
 
 --| Filter out certain values. For example, to get all the heads of a list of
@@ -271,28 +446,23 @@ prefixOnto list n rest =
 --|
 --|     filterMap [ [ 1, 2 ], [], [ 3 ] ] head == [ 1, 3 ]
 --|
---| `func` sees the first element first.
+--| `func` sees the first element first. O(n).
 pub filterMap : List a, (a -> Maybe b) -> List b
 filterMap xs func =
-    case xs of
-        [] ->
-            []
-
-        [ x, ...rest ] ->
-            case func x of
-                Just value ->
-                    [ value, ...filterMap rest func ]
-
-                Nothing ->
-                    filterMap rest func
+    filterMapHelp xs 0 (length xs) func (builder 0)
 
 
---| Determine the length of a list.
---|
---|     length [ 1, 2, 3 ] == 3
-pub length : List a -> Int
-length xs =
-    foldl xs 0 (\_ n -> n + 1)
+filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b -> List b
+filterMapHelp xs i n func b =
+    if i < n then
+        case func (unsafeGet xs i) of
+            Just y ->
+                filterMapHelp xs (i + 1) n func (add b y)
+
+            Nothing ->
+                filterMapHelp xs (i + 1) n func b
+    else
+        done b
 
 
 --| Reverse a list.
@@ -300,18 +470,21 @@ length xs =
 --|     reverse [ 1, 2, 3 ] == [ 3, 2, 1 ]
 --|
 --| A list of fewer than two elements is its own reverse, and is returned
---| itself (`backend.md` §4, *Identity*).
+--| itself (`backend.md` §4, *Identity*). O(n).
 pub reverse : List a -> List a
-reverse list =
-    case list of
-        [] ->
-            list
+reverse xs =
+    if length xs < 2 then
+        xs
+    else
+        reverseHelp xs (length xs - 1) (builder (length xs))
 
-        [ _ ] ->
-            list
 
-        _ ->
-            foldl list [] cons
+reverseHelp : List a, Int, Builder a -> List a
+reverseHelp xs i b =
+    if i < 0 then
+        done b
+    else
+        reverseHelp xs (i - 1) (add b (unsafeGet xs i))
 
 
 --| Figure out whether a list contains a value. The element type has to have
@@ -330,8 +503,8 @@ member xs value =
 --|     all [ 2, 4 ] (\n -> modBy n 2 == 0) == True
 --|     all [] (\n -> modBy n 2 == 0) == True
 pub all : List a, (a -> Bool) -> Bool
-all list isOkay =
-    not (any list (\x -> not (isOkay x)))
+all xs isOkay =
+    not (any xs (\x -> not (isOkay x)))
 
 
 --| Determine if any elements satisfy some test.
@@ -339,16 +512,18 @@ all list isOkay =
 --|     any [ 2, 3 ] (\n -> modBy n 2 == 0) == True
 --|     any [] (\n -> modBy n 2 == 0) == False
 pub any : List a, (a -> Bool) -> Bool
-any list isOkay =
-    case list of
-        [] ->
-            False
+any xs isOkay =
+    anyFrom xs 0 (length xs) isOkay
 
-        [ x, ...rest ] ->
-            if isOkay x then
-                True
-            else
-                any rest isOkay
+
+anyFrom : List a, Int, Int, (a -> Bool) -> Bool
+anyFrom xs i n isOkay =
+    if i >= n then
+        False
+    else if isOkay (unsafeGet xs i) then
+        True
+    else
+        anyFrom xs (i + 1) n isOkay
 
 
 --| Find the maximum element in a non-empty list of numbers. Elm's version
@@ -358,13 +533,11 @@ any list isOkay =
 --|     maximum [ 1, 4, 2 ] == Just 4
 --|     maximum [] == Nothing
 pub maximum : List number -> Maybe number
-maximum list =
-    case list of
-        [ x, ...rest ] ->
-            Just (foldl rest x max)
-
-        [] ->
-            Nothing
+maximum xs =
+    if isEmpty xs then
+        Nothing
+    else
+        Just (foldlFrom xs 1 (length xs) (unsafeGet xs 0) max)
 
 
 --| Find the minimum element in a non-empty list of numbers.
@@ -372,13 +545,11 @@ maximum list =
 --|     minimum [ 3, 2, 1 ] == Just 1
 --|     minimum [] == Nothing
 pub minimum : List number -> Maybe number
-minimum list =
-    case list of
-        [ x, ...rest ] ->
-            Just (foldl rest x min)
-
-        [] ->
-            Nothing
+minimum xs =
+    if isEmpty xs then
+        Nothing
+    else
+        Just (foldlFrom xs 1 (length xs) (unsafeGet xs 0) min)
 
 
 --| Get the sum of the list elements.
@@ -397,96 +568,124 @@ product xs =
     foldl xs 1 (*)
 
 
---| Put two lists together. `++` does the same thing.
---|
---|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
---|
---| `ys` is not copied: it is the result's tail, and `append xs []` is `xs`
---| itself.
-pub append : List a, List a -> List a
-append xs ys =
-    case ys of
-        [] ->
-            xs
-
-        _ ->
-            appendHelp xs ys
-
-
-appendHelp : List a, List a -> List a
-appendHelp xs ys =
-    case xs of
-        [] ->
-            ys
-
-        [ x, ...rest ] ->
-            [ x, ...appendHelp rest ys ]
+--| Every element of `xs` from `i` up to `n`, added to builder `b`.
+addAll : Builder a, List a, Int, Int -> Builder a
+addAll b xs i n =
+    if i < n then
+        addAll (add b (unsafeGet xs i)) xs (i + 1) n
+    else
+        b
 
 
 --| Concatenate a bunch of lists into a single list.
 --|
 --|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
 --|
---| The last list that is not empty is not copied: it is the result's tail,
---| as it was when this was `append` folded from the right, so `concat [ xs
---| ]` is `xs` itself.
+--| When exactly one of the lists is not empty the result is that list
+--| itself (`backend.md` §4, *Identity*); otherwise it is a fresh list,
+--| O(total).
 pub concat : List (List a) -> List a
 concat lists =
-    concatHelp [] [] lists
+    concatFirst lists 0 (length lists)
 
 
---| `copying` is what is left of the list being copied, `pending` the last
---| non-empty list met, not yet copied because it may turn out to be the
---| last and then is shared instead.
-concatHelp : List a, List a, List (List a) -> List a
-concatHelp copying pending lists =
-    case copying of
-        [ x, ...more ] ->
-            [ x, ...concatHelp more pending lists ]
+--| Up to the first list that is not empty.
+concatFirst : List (List a), Int, Int -> List a
+concatFirst lists i n =
+    if i < n then
+        let
+            xs =
+                unsafeGet lists i
+        in
+        if isEmpty xs then
+            concatFirst lists (i + 1) n
+        else
+            concatSecond lists (i + 1) n xs
+    else
+        []
 
-        [] ->
-            case lists of
-                [] ->
-                    pending
 
-                [ [], ...rest ] ->
-                    concatHelp [] pending rest
+--| Up to the second, `first` being the first: only then is anything copied.
+concatSecond : List (List a), Int, Int, List a -> List a
+concatSecond lists i n first =
+    if i < n then
+        let
+            xs =
+                unsafeGet lists i
+        in
+        if isEmpty xs then
+            concatSecond lists (i + 1) n first
+        else
+            concatRest lists (i + 1) n (addAll (addAll (builder 0) first 0 (length first)) xs 0 (length xs))
+    else
+        first
 
-                [ next, ...rest ] ->
-                    concatHelp pending next rest
+
+concatRest : List (List a), Int, Int, Builder a -> List a
+concatRest lists i n b =
+    if i < n then
+        let
+            xs =
+                unsafeGet lists i
+        in
+        concatRest lists (i + 1) n (addAll b xs 0 (length xs))
+    else
+        done b
 
 
 --| Map a given function onto a list and flatten the resulting lists.
 --|
 --|     concatMap [ 1, 2 ] (\x -> [ x, x ]) == [ 1, 1, 2, 2 ]
 --|
---| `func` is called on the first element first, and the last list it
---| answers that is not empty is shared rather than copied, exactly as
---| `concat (map list func)` shares it — in one pass, without that
+--| `func` is called on the first element first, and once per element. When
+--| exactly one of its answers is not empty the result is that answer
+--| itself, as `concat (map xs func)` would give — in one pass, without that
 --| intermediate list.
 pub concatMap : List a, (a -> List b) -> List b
-concatMap list func =
-    concatMapHelp [] [] list func
+concatMap xs func =
+    concatMapFirst xs 0 (length xs) func
 
 
-concatMapHelp : List b, List b, List a, (a -> List b) -> List b
-concatMapHelp copying pending list func =
-    case copying of
-        [ x, ...more ] ->
-            [ x, ...concatMapHelp more pending list func ]
+concatMapFirst : List a, Int, Int, (a -> List b) -> List b
+concatMapFirst xs i n func =
+    if i < n then
+        let
+            ys =
+                func (unsafeGet xs i)
+        in
+        if isEmpty ys then
+            concatMapFirst xs (i + 1) n func
+        else
+            concatMapSecond xs (i + 1) n func ys
+    else
+        []
 
-        [] ->
-            case list of
-                [] ->
-                    pending
 
-                [ y, ...rest ] ->
-                    case func y of
-                        [] ->
-                            concatMapHelp [] pending rest func
+concatMapSecond : List a, Int, Int, (a -> List b), List b -> List b
+concatMapSecond xs i n func first =
+    if i < n then
+        let
+            ys =
+                func (unsafeGet xs i)
+        in
+        if isEmpty ys then
+            concatMapSecond xs (i + 1) n func first
+        else
+            concatMapRest xs (i + 1) n func (addAll (addAll (builder 0) first 0 (length first)) ys 0 (length ys))
+    else
+        first
 
-                        next ->
-                            concatMapHelp pending next rest func
+
+concatMapRest : List a, Int, Int, (a -> List b), Builder b -> List b
+concatMapRest xs i n func b =
+    if i < n then
+        let
+            ys =
+                func (unsafeGet xs i)
+        in
+        concatMapRest xs (i + 1) n func (addAll b ys 0 (length ys))
+    else
+        done b
 
 
 --| Places the given value between all members of the given list.
@@ -494,22 +693,18 @@ concatMapHelp copying pending list func =
 --|     intersperse [ "turtles", "turtles" ] "on" == [ "turtles", "on", "turtles" ]
 pub intersperse : List a, a -> List a
 intersperse xs sep =
-    case xs of
-        [] ->
-            []
-
-        [ hd, ...tl ] ->
-            [ hd, ...intersperseHelp tl sep ]
+    if isEmpty xs then
+        []
+    else
+        intersperseHelp xs sep 1 (length xs) (add (builder 0) (unsafeGet xs 0))
 
 
-intersperseHelp : List a, a -> List a
-intersperseHelp xs sep =
-    case xs of
-        [] ->
-            []
-
-        [ x, ...rest ] ->
-            [ sep, x, ...intersperseHelp rest sep ]
+intersperseHelp : List a, a, Int, Int, Builder a -> List a
+intersperseHelp xs sep i n b =
+    if i < n then
+        intersperseHelp xs sep (i + 1) n (add (add b sep) (unsafeGet xs i))
+    else
+        done b
 
 
 --| Combine two lists, combining them with the given function. If one list is
@@ -518,40 +713,39 @@ intersperseHelp xs sep =
 --|     map2 [ 1, 2, 3 ] [ 10, 20 ] (+) == [ 11, 22 ]
 --|
 --| `func` is called on the first elements first, and not at all for the tail
---| the shorter list does not reach. `[ func x y, ...map2 … ]` was once the
---| spelling that died at about 5 700 elements, because it recursed to the
---| length of the list; it is a cons step now, compiled to a loop (see
---| `map`). `map3`–`map5` are the same shape, one argument wider each.
+--| the shorter list does not reach. `map3`–`map5` are the same, one list
+--| wider each.
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
-    case ( xs, ys ) of
-        ( [ x, ...xrest ], [ y, ...yrest ] ) ->
-            [ func x y, ...map2 xrest yrest func ]
+    let
+        n =
+            min (length xs) (length ys)
+    in
+    map2Help xs ys 0 n func (builder n)
 
-        _ ->
-            []
+
+map2Help : List a, List b, Int, Int, (a, b -> result), Builder result -> List result
+map2Help xs ys i n func b =
+    if i < n then
+        map2Help xs ys (i + 1) n func (add b (func (unsafeGet xs i) (unsafeGet ys i)))
+    else
+        done b
 
 
 --| Combine three lists, combining them with the given function.
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
-    case ( xs, ys, zs ) of
-        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ] ) ->
-            [ func x y z, ...map3 xrest yrest zrest func ]
-
-        _ ->
-            []
+    initialize
+        (min (length xs) (min (length ys) (length zs)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i))
 
 
 --| Combine four lists, combining them with the given function.
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
-    case ( xs, ys, zs, ws ) of
-        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ], [ w, ...wrest ] ) ->
-            [ func x y z w, ...map4 xrest yrest zrest wrest func ]
-
-        _ ->
-            []
+    initialize
+        (min (min (length xs) (length ys)) (min (length zs) (length ws)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i))
 
 
 --| Combine five lists, combining them with the given function.
@@ -564,12 +758,9 @@ pub map5 :
     , (a, b, c, d, e -> result)
     -> List result
 map5 xs ys zs ws vs func =
-    case ( xs, ys, zs, ws, vs ) of
-        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ], [ w, ...wrest ], [ v, ...vrest ] ) ->
-            [ func x y z w v, ...map5 xrest yrest zrest wrest vrest func ]
-
-        _ ->
-            []
+    initialize
+        (min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i) (unsafeGet vs i))
 
 
 --| Sort a list from lowest to highest, by the element type's own `compare`.
@@ -598,10 +789,9 @@ sort xs =
 --| list, and not at all for a one-element one — so an expensive key was
 --| recomputed and an effectful one would run its effect a number of times
 --| nobody could predict. The COMPARATOR's order and count stay unspecified,
---| which is inherent to a sort. Both `map`s are loops (see `map`), so the
---| decoration is as stack-safe as the merge.
+--| which is inherent to a sort.
 --|
---| Ties are `EQ` on the key, and `mergeWith` takes the left element on `EQ`,
+--| Ties are `EQ` on the key, and the merge takes the left element on `EQ`,
 --| so this is as stable as `sortWith` is. A list of fewer than two elements
 --| is returned itself, after its one key is read (`backend.md` §4,
 --| *Identity*).
@@ -612,17 +802,12 @@ sortBy xs toKey =
         decorated =
             map xs (\x -> ( toKey x, x ))
     in
-    case decorated of
-        [] ->
-            xs
-
-        [ _ ] ->
-            xs
-
-        _ ->
-            map
-                (sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right))
-                (\( _, x ) -> x)
+    if length decorated < 2 then
+        xs
+    else
+        map
+            (sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right))
+            (\( _, x ) -> x)
 
 
 --| Sort values with an ordering function you write yourself, which is how
@@ -632,83 +817,62 @@ sortBy xs toKey =
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in, and that is a contract rather than an accident of the merge
---| (`checker.md` Appendix B) — `mergeWith` takes the LEFT element on
---| anything but `GT`, and the front half, the first ⌊n / 2⌋ elements, stays
---| in front. The order in which `cmp` is asked, and how many times, stays
---| unspecified. A list of fewer than two elements is returned itself
---| (`backend.md` §4, *Identity*).
+--| (`checker.md` Appendix B) — the merge takes the LEFT element on anything
+--| but `GT`, and the front half, the first ⌊n / 2⌋ elements, stays in front.
+--| The order in which `cmp` is asked, and how many times, stays unspecified.
+--| A list of fewer than two elements is returned itself (`backend.md` §4,
+--| *Identity*). O(n log n), recursing to a depth of log₂ n.
 pub sortWith : List a, (a, a -> Order) -> List a
-sortWith list cmp =
-    case list of
-        [] ->
-            list
-
-        [ _ ] ->
-            list
-
-        _ ->
-            mergeWith
-                (sortWith (frontHalf list list) cmp)
-                (sortWith (backHalf list list) cmp)
-                cmp
+sortWith xs cmp =
+    if length xs < 2 then
+        xs
+    else
+        sortRange xs 0 (length xs) cmp
 
 
---| The first ⌊n / 2⌋ elements of a list of n: a slow pointer taking one
---| element for every two the fast one passes, built front to back (see
---| `map`).
-frontHalf : List a, List a -> List a
-frontHalf slow fast =
-    case fast of
-        [ _, _, ...fastRest ] ->
-            case slow of
-                [ x, ...slowRest ] ->
-                    [ x, ...frontHalf slowRest fastRest ]
+--| Elements `lo` up to `hi` of `xs`, sorted: the front half first, then the
+--| back half, then the two merged.
+sortRange : List a, Int, Int, (a, a -> Order) -> List a
+sortRange xs lo hi cmp =
+    if hi - lo < 2 then
+        slice xs lo hi
+    else
+        let
+            mid =
+                lo + half (hi - lo)
 
-                [] ->
-                    []
+            left =
+                sortRange xs lo mid cmp
 
-        _ ->
-            []
-
-
---| What `frontHalf` leaves: the list itself, not a copy, after ⌊n / 2⌋
---| elements.
-backHalf : List a, List a -> List a
-backHalf slow fast =
-    case fast of
-        [ _, _, ...fastRest ] ->
-            case slow of
-                [ _, ...slowRest ] ->
-                    backHalf slowRest fastRest
-
-                [] ->
-                    slow
-
-        _ ->
-            slow
+            right =
+                sortRange xs mid hi cmp
+        in
+        merge left 0 (length left) right 0 (length right) cmp (builder (hi - lo))
 
 
---| Merge two sorted lists into one. On `EQ` the left element wins, which is
---| what makes `sortWith` stable. What is left of one list when the other
---| runs out is the result's tail, not a copy.
-mergeWith : List a, List a, (a, a -> Order) -> List a
-mergeWith left right cmp =
-    case left of
-        [] ->
-            right
+--| Two sorted lists merged. On anything but `GT` the left element wins,
+--| which is what makes `sortWith` stable; what is left of one list when the
+--| other runs out is added after.
+merge : List a, Int, Int, List a, Int, Int, (a, a -> Order), Builder a -> List a
+merge xs i n ys j m cmp b =
+    if i >= n then
+        done (addAll b ys j m)
+    else if j >= m then
+        done (addAll b xs i n)
+    else
+        let
+            x =
+                unsafeGet xs i
 
-        [ x, ...xrest ] ->
-            case right of
-                [] ->
-                    left
+            y =
+                unsafeGet ys j
+        in
+        case cmp x y of
+            GT ->
+                merge xs i n ys (j + 1) m cmp (add b y)
 
-                [ y, ...yrest ] ->
-                    case cmp x y of
-                        GT ->
-                            [ y, ...mergeWith left yrest cmp ]
-
-                        _ ->
-                            [ x, ...mergeWith xrest right cmp ]
+            _ ->
+                merge xs (i + 1) n ys j m cmp (add b x)
 
 
 --| Determine if a list is empty.
@@ -716,12 +880,7 @@ mergeWith left right cmp =
 --|     isEmpty [] == True
 pub isEmpty : List a -> Bool
 isEmpty xs =
-    case xs of
-        [] ->
-            True
-
-        _ ->
-            False
+    length xs == 0
 
 
 --| Extract the first element of a list.
@@ -729,27 +888,25 @@ isEmpty xs =
 --|     head [ 1, 2, 3 ] == Just 1
 --|     head [] == Nothing
 pub head : List a -> Maybe a
-head list =
-    case list of
-        [ x, ..._ ] ->
-            Just x
-
-        [] ->
-            Nothing
+head xs =
+    get xs 0
 
 
 --| Extract the rest of the list.
 --|
 --|     tail [ 1, 2, 3 ] == Just [ 2, 3 ]
 --|     tail [] == Nothing
+--|
+--| O(1): the rest is a view of the list, sharing its elements, which keeps
+--| the whole list alive as a substring may. Of a list that has been written
+--| to it is the same list without its first element, sharing its structure,
+--| and prepending onto it is as cheap as onto the list itself.
 pub tail : List a -> Maybe (List a)
-tail list =
-    case list of
-        [ _, ...xs ] ->
-            Just xs
-
-        [] ->
-            Nothing
+tail xs =
+    if isEmpty xs then
+        Nothing
+    else
+        Just (view xs 1)
 
 
 --| Take the first `n` members of a list.
@@ -757,50 +914,26 @@ tail list =
 --|     take [ 1, 2, 3 ] 2 == [ 1, 2 ]
 --|
 --| When `n` covers the whole list the result is the list itself
---| (`backend.md` §4, *Identity*).
+--| (`backend.md` §4, *Identity*). O(n), a fresh list otherwise.
 pub take : List a, Int -> List a
-take list n =
-    case drop list n of
-        [] ->
-            list
-
-        _ ->
-            prefixOnto list n []
+take xs n =
+    if n <= 0 then
+        []
+    else
+        slice xs 0 n
 
 
 --| Drop the first `n` members of a list.
 --|
 --|     drop [ 1, 2, 3 ] 2 == [ 3 ]
+--|
+--| O(1), as `tail` is, and `drop xs 0` is `xs` itself.
 pub drop : List a, Int -> List a
-drop list n =
+drop xs n =
     if n <= 0 then
-        list
+        xs
     else
-        case list of
-            [] ->
-                list
-
-            [ _, ...xs ] ->
-                drop xs (n - 1)
-
-
---| Create a list of `n` elements, calling `func` on each index from 0 to
---| `n - 1` in that order. A count of zero or less is `[]`.
---|
---|     initialize 4 (\i -> i * i) == [ 0, 1, 4, 9 ]
---|
---| O(n).
-pub initialize : Int, (Int -> a) -> List a
-initialize n func =
-    initializeHelp 0 n func
-
-
-initializeHelp : Int, Int, (Int -> a) -> List a
-initializeHelp index n func =
-    if index < n then
-        [ func index, ...initializeHelp (index + 1) n func ]
-    else
-        []
+        view xs (min n (length xs))
 
 
 --| The element at an index, counting from 0, or `Nothing` when the index is
@@ -809,19 +942,13 @@ initializeHelp index n func =
 --|     get [ 10, 20, 30 ] 1 == Just 20
 --|     get [ 10, 20, 30 ] 3 == Nothing
 --|
---| O(index) today, over cons cells; near O(1) once lists are arrays
---| (`language.md` §6.8).
+--| Near O(1).
 pub get : List a, Int -> Maybe a
-get list index =
-    if index < 0 then
-        Nothing
+get xs i =
+    if 0 <= i && i < length xs then
+        Just (unsafeGet xs i)
     else
-        case drop list index of
-            [ x, ..._ ] ->
-                Just x
-
-            [] ->
-                Nothing
+        Nothing
 
 
 --| Extract the last element of a list.
@@ -829,40 +956,10 @@ get list index =
 --|     last [ 1, 2, 3 ] == Just 3
 --|     last [] == Nothing
 --|
---| O(n) today, over cons cells; near O(1) once lists are arrays.
+--| Near O(1).
 pub last : List a -> Maybe a
-last list =
-    case list of
-        [] ->
-            Nothing
-
-        [ x ] ->
-            Just x
-
-        [ _, ...rest ] ->
-            last rest
-
-
---| Replace the element at an index. Out of range — a negative index, or one
---| not less than the length — the result is the list itself.
---|
---|     set [ 1, 2, 3 ] 1 9 == [ 1, 9, 3 ]
---|     set [ 1, 2, 3 ] 3 9 == [ 1, 2, 3 ]
---|
---| O(index) today, over cons cells: the elements before the index are
---| copied and the ones after it shared. Once lists are arrays it is a copy
---| up to 256 elements and near O(1) above (`language.md` §6.8).
-pub set : List a, Int, a -> List a
-set list index value =
-    if index < 0 then
-        list
-    else
-        case drop list index of
-            [ _, ...after ] ->
-                prefixOnto list index [ value, ...after ]
-
-            [] ->
-                list
+last xs =
+    get xs (length xs - 1)
 
 
 --| Replace the element at an index with what `func` makes of it. `func` is
@@ -871,147 +968,13 @@ set list index value =
 --|
 --|     update [ 1, 2, 3 ] 1 (\x -> x * 10) == [ 1, 20, 3 ]
 --|
---| The cost of `set`.
+--| The cost of `set`, and its identities.
 pub update : List a, Int, (a -> a) -> List a
-update list index func =
-    if index < 0 then
-        list
+update xs i func =
+    if 0 <= i && i < length xs then
+        set xs i (func (unsafeGet xs i))
     else
-        case drop list index of
-            [ x, ...after ] ->
-                prefixOnto list index [ func x, ...after ]
-
-            [] ->
-                list
-
-
---| Add an element at the end of a list, which is where a list grows.
---|
---|     push [ 1, 2 ] 3 == [ 1, 2, 3 ]
---|
---| O(n) today, over cons cells; amortised O(1) once lists are arrays
---| (`language.md` §6.8), which is why a loop that builds a list should
---| `push` and not prepend and `reverse`.
-pub push : List a, a -> List a
-push list value =
-    prefixOnto list (length list) [ value ]
-
-
---| Remove the last element of a list. `pop []` is the empty list itself.
---|
---|     pop [ 1, 2, 3 ] == [ 1, 2 ]
---|
---| O(n) today, over cons cells; the cost of `set` once lists are arrays.
-pub pop : List a -> List a
-pop list =
-    case list of
-        [] ->
-            list
-
-        _ ->
-            prefixOnto list (length list - 1) []
-
-
---| The elements from index `from` up to but not including `to`, as Elm's
---| `Array.slice`: a negative index counts from the end, both are clamped to
---| the list, and `from` at or past `to` is `[]`. A slice of the whole list
---| is the list itself.
---|
---|     slice [ 0, 1, 2, 3, 4 ] 1 3 == [ 1, 2 ]
---|     slice [ 0, 1, 2, 3, 4 ] 1 (-1) == [ 1, 2, 3 ]
---|     slice [ 0, 1, 2, 3, 4 ] (-2) 5 == [ 3, 4 ]
---|
---| O(n) today, over cons cells; O(length of the result) once lists are
---| arrays.
-pub slice : List a, Int, Int -> List a
-slice list from to =
-    let
-        n =
-            length list
-
-        lo =
-            sliceIndex n from
-
-        hi =
-            sliceIndex n to
-    in
-    if lo == 0 && hi == n then
-        list
-    else if lo >= hi then
-        []
-    else
-        prefixOnto (drop list lo) (hi - lo) []
-
-
---| An index of `slice`: counted from the end when negative, then clamped to
---| `0 … n`.
-sliceIndex : Int, Int -> Int
-sliceIndex n index =
-    if index < 0 then
-        max 0 (n + index)
-    else
-        min n index
-
-
---| Insert an element before an index, so that it is at that index in the
---| result. At the length it is added at the end; out of range — negative,
---| or past the length — the result is the list itself.
---|
---|     insertAt [ 1, 2, 3 ] 1 9 == [ 1, 9, 2, 3 ]
---|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
---|
---| O(index) today, over cons cells; O(n) once lists are arrays.
-pub insertAt : List a, Int, a -> List a
-insertAt list index value =
-    if index < 0 then
-        list
-    else if index == 0 then
-        [ value, ...list ]
-    else
-        case drop list (index - 1) of
-            [ _, ...after ] ->
-                prefixOnto list index [ value, ...after ]
-
-            [] ->
-                list
-
-
---| Remove the element at an index. Out of range the result is the list
---| itself.
---|
---|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
---|
---| O(index) today, over cons cells; O(n) once lists are arrays.
-pub removeAt : List a, Int -> List a
-removeAt list index =
-    if index < 0 then
-        list
-    else
-        case drop list index of
-            [ _, ...after ] ->
-                prefixOnto list index after
-
-            [] ->
-                list
-
-
---| Exchange the elements at two indexes. When either is out of range, or
---| they are the same index, the result is the list itself.
---|
---|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
---|
---| Two `set`s.
-pub swap : List a, Int, Int -> List a
-swap list i j =
-    if i == j then
-        list
-    else
-        case ( get list i, get list j ) of
-            ( Just atI, Just atJ ) ->
-                set (set list i atJ) j atI
-
-            _ ->
-                list
+        xs
 
 
 --| Partition a list based on some test. The first list contains all values
@@ -1020,26 +983,25 @@ swap list i j =
 --|
 --|     partition [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
 --|
---| `pred` is asked about each element once, the first element first. This
---| one function still accumulates and reverses: it builds two lists, and a
---| cons step has one destination. Its two accumulators are parameters of
---| the loop rather than a pair rebuilt per element.
+--| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a -> Bool) -> ( List a, List a )
-partition list pred =
-    partitionHelp list pred [] []
+partition xs pred =
+    partitionHelp xs 0 (length xs) pred (builder 0) (builder 0)
 
 
-partitionHelp : List a, (a -> Bool), List a, List a -> ( List a, List a )
-partitionHelp list pred trues falses =
-    case list of
-        [] ->
-            ( reverse trues, reverse falses )
-
-        [ x, ...rest ] ->
-            if pred x then
-                partitionHelp rest pred [ x, ...trues ] falses
-            else
-                partitionHelp rest pred trues [ x, ...falses ]
+partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a -> ( List a, List a )
+partitionHelp xs i n pred yes no =
+    if i < n then
+        let
+            x =
+                unsafeGet xs i
+        in
+        if pred x then
+            partitionHelp xs (i + 1) n pred (add yes x) no
+        else
+            partitionHelp xs (i + 1) n pred yes (add no x)
+    else
+        ( done yes, done no )
 
 
 --| Decompose a list of tuples into a tuple of lists.
@@ -1047,4 +1009,14 @@ partitionHelp list pred trues falses =
 --|     unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )
 pub unzip : List ( a, b ) -> ( List a, List b )
 unzip pairs =
-    ( map pairs (\( x, _ ) -> x), map pairs (\( _, y ) -> y) )
+    unzipHelp pairs 0 (length pairs) (builder (length pairs)) (builder (length pairs))
+
+
+unzipHelp : List ( a, b ), Int, Int, Builder a, Builder b -> ( List a, List b )
+unzipHelp pairs i n xs ys =
+    if i < n then
+        case unsafeGet pairs i of
+            ( x, y ) ->
+                unzipHelp pairs (i + 1) n (add xs x) (add ys y)
+    else
+        ( done xs, done ys )

@@ -320,6 +320,15 @@ contexts: []const ContextEntry = &.{},
 derived: []const Derived = &.{},
 /// One per `try` instruction that solved, ascending by instruction.
 tries: []const Try = &.{},
+/// Every `++` — a call of core's `Basics.append` — whose operands the
+/// checker solved to a `List`, ascending by instruction. The backend calls
+/// `List.append` for it, as `==` on a list calls `List.eq`, so `++` and
+/// `[ ...xs, ...ys ]` cost the same (`backend.md` §4; the manager's
+/// decision on the owner's delegation, 2026-10-01, `plans/list-arrays.md`
+/// O6). Like `tries`, a decision the backend cannot make, since it sees no
+/// types: a `++` over `appendable`, which may be a `String`, keeps
+/// `Basics.append`.
+appends: []const Bir.Inst.Index = &.{},
 /// The names `Shape.record` ranges over.
 symbols: []const Symbol = &.{},
 /// One row per markup node the checker decided something about, markup
@@ -342,6 +351,7 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.contexts);
     gpa.free(d.derived);
     gpa.free(d.tries);
+    gpa.free(d.appends);
     gpa.free(d.symbols);
     gpa.free(d.markup);
     gpa.free(d.effect_sites);
@@ -394,7 +404,16 @@ pub fn effectsIn(d: *const Dispatch, start: u32, end: u32) []const EffectSite {
 /// Whether the table holds anything at all. A module with no dispatch prints
 /// its `module` line and nothing else.
 pub fn isEmpty(d: *const Dispatch) bool {
-    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.markup.len == 0;
+    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0;
+}
+
+/// Whether the `++` at `inst` is on lists (`appends`). One binary search.
+pub fn isListAppend(d: *const Dispatch, inst: Bir.Inst.Index) bool {
+    return std.sort.binarySearch(Bir.Inst.Index, d.appends, inst, struct {
+        fn order(key: Bir.Inst.Index, item: Bir.Inst.Index) std.math.Order {
+            return std.math.order(key.int(), item.int());
+        }
+    }.order) != null;
 }
 
 pub fn term(d: *const Dispatch, i: TermIndex) Term {

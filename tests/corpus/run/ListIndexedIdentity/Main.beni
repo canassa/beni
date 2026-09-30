@@ -16,12 +16,13 @@
 -- The trailing `copied` lines are the other side of each rule: a write in
 -- range, a partial `slice` and a `filter` that drops one are new lists.
 --
--- `set` of the value already there (by `===`) is also an identity of
--- `backend.md` §4, but beni code cannot ask `===`, so the cons-cell core
--- this was written against cannot keep it; it arrives with the `foreign`
--- `set` of the array representation (`plans/list-arrays.md`, slice 2).
--- `map` returning its input is the owner's open question O4 and is not
--- pinned either way.
+-- Since lists became arrays (`plans/list-arrays.md`, slice 2) two more
+-- rules hold, and are pinned here: `set`, `update` and `swap` that write
+-- the value already there (the same value, `===`, not an equal one) return
+-- the list itself, on a plain list and on a list written to past its
+-- threshold alike; and `map` and `indexedMap` whose every result is the
+-- element they were given return their input (O4, taken as recommended).
+-- The cons-cell core could keep neither: beni code cannot ask `===`.
 import Identity
 import List
 import Node
@@ -46,6 +47,13 @@ main =
 
         one =
             [ 7 ]
+
+        pair =
+            [ 4, 4 ]
+
+        -- Past `push`'s threshold: a list that has been written to.
+        wide =
+            List.foldl (List.range 1 40) [] (\n acc -> List.push acc n)
     in
     Node.printLines
         [ show "set -1" (Identity.refEq (List.set xs (-1) 9) xs)
@@ -71,8 +79,17 @@ main =
         , show "sort []" (Identity.refEq (List.sort empty) empty)
         , show "sortWith one" (Identity.refEq (List.sortWith one (\a b -> Basics.compare a b)) one)
         , show "sortBy one" (Identity.refEq (List.sortBy one (\a -> a)) one)
+        , show "set same" (Identity.refEq (List.set xs 1 2) xs)
+        , show "update same" (Identity.refEq (List.update xs 1 (\x -> x)) xs)
+        , show "swap equal" (Identity.refEq (List.swap pair 0 1) pair)
+        , show "set same written" (Identity.refEq (List.set wide 35 36) wide)
+        , show "map identity" (Identity.refEq (List.map xs (\x -> x)) xs)
+        , show "indexedMap identity" (Identity.refEq (List.indexedMap xs (\_ x -> x)) xs)
+        , show "map identity written" (Identity.refEq (List.map wide (\x -> x)) wide)
         , show "set in range" (Identity.refEq (List.set xs 1 9) xs)
         , show "insertAt length" (Identity.refEq (List.insertAt xs 3 0) xs)
         , show "slice part" (Identity.refEq (List.slice xs 0 2) xs)
         , show "filter one out" (Identity.refEq (List.filter xs (\x -> x > 1)) xs)
+        , show "set written" (Identity.refEq (List.set wide 35 0) wide)
+        , show "map one changed" (Identity.refEq (List.map xs (\x -> if x == 2 then 20 else x)) xs)
         ]

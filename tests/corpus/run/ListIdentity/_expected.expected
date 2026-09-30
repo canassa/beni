@@ -5,9 +5,9 @@ append element same
 concat element same
 append xs [] same
 append [] ys same
-xs ++ ys tail same
+xs ++ ys tail copied
 concat one same
-concat last same
+concat last copied
 concatMap alone same
-concatMap last same
+concatMap last copied
 sort one same

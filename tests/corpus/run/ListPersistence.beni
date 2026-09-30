@@ -1,0 +1,356 @@
+-- run: the array-backed `List` is persistent through its two in-place
+-- writes (`backend.md` §4, invariant 1, *The claimable head: E1tp*). `push`
+-- onto the version that owns the end of a trie's tail array appends to that
+-- array in place, and a prepend onto the version that owns the end of its
+-- head array does the same at the front; every other version sharing the
+-- array reads only its own count of it, so none may see the write. A slot
+-- of a head is written at most once, which is what lets a prepend that
+-- finds its element already past a version's head take it without writing.
+--
+-- A seeded generator applies prepends, runtime re-conses, pushes, pops,
+-- sets, tails (`[ _, ...rest ]`), drops of k below, at and past a head's
+-- count, `++` and `[ ...xs, ...ys ]` to randomly chosen OLD versions —
+-- lists two levels of trie deep, over 1 056 elements — and checks each
+-- version it made or read against a model, a `Dict Int Int` from position
+-- to element with a movable start, so a prepend is a key below the start.
+-- Two deterministic runs grow a trie's root to the LEFT both ways it can
+-- be: 33 prepends onto a trie `push` made, whose tree starts at radix 0,
+-- and 600 onto a short list, whose tree starts mid-root at 512; then a
+-- walk by tails that re-conses every 97th step. Every version kept along
+-- the way is checked again at the end.
+--
+-- Each check was proved by breaking `core/List.js` in a scratch build: the
+-- tail claim taken without `t.length === c`, the head claim without
+-- `h.length === hc`, and the already-there test `h[hc] === x` replaced by
+-- sharing unconditionally — each makes this print a mismatch.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Model =
+    { start : Int
+    , len : Int
+    , items : Dict Int Int
+    }
+
+
+type alias Version =
+    { list : List Int
+    , model : Model
+    }
+
+
+type alias State =
+    { seed : Int
+    , versions : Dict Int Version
+    , count : Int
+    , bad : List String
+    , checks : Int
+    }
+
+
+-- MINSTD: every product stays below 2^53, so the sequence is exact.
+next : Int -> Int
+next seed =
+    modBy (seed * 48271) 2147483647
+
+
+pick : Int, Int -> Int
+pick seed n =
+    if n <= 0 then
+        0
+    else
+        modBy (seed // 256) n
+
+
+empty : Model
+empty =
+    { start = 0, len = 0, items = Dict.empty }
+
+
+modelPush : Model, Int -> Model
+modelPush m x =
+    { m | len = m.len + 1, items = Dict.insert m.items (m.start + m.len) x }
+
+
+modelPrepend : Model, Int -> Model
+modelPrepend m x =
+    { m | start = m.start - 1, len = m.len + 1, items = Dict.insert m.items (m.start - 1) x }
+
+
+modelDrop : Model, Int -> Model
+modelDrop m k =
+    let
+        d =
+            min m.len (max 0 k)
+    in
+    { m | start = m.start + d, len = m.len - d }
+
+
+modelPop : Model -> Model
+modelPop m =
+    { m | len = max 0 (m.len - 1) }
+
+
+modelSet : Model, Int, Int -> Model
+modelSet m i x =
+    if 0 <= i && i < m.len then
+        { m | items = Dict.insert m.items (m.start + i) x }
+    else
+        m
+
+
+at : Model, Int -> Int
+at m i =
+    Dict.get m.items (m.start + i) |> Maybe.withDefault (-1)
+
+
+-- Every element by index, the first by a pattern, and the length; a
+-- mismatch names the step and the index.
+check : String, Version -> Maybe String
+check label v =
+    if List.length v.list /= v.model.len then
+        Just (label ++ ": length " ++ String.fromInt (List.length v.list) ++ " vs " ++ String.fromInt v.model.len)
+    else
+        case firstBad v 0 of
+            Just i ->
+                Just (label ++ ": element " ++ String.fromInt i ++ " of " ++ String.fromInt v.model.len)
+
+            Nothing ->
+                case v.list of
+                    [ x, ..._ ] ->
+                        if x == at v.model 0 then
+                            Nothing
+                        else
+                            Just (label ++ ": the pattern's head")
+
+                    [] ->
+                        Nothing
+
+
+firstBad : Version, Int -> Maybe Int
+firstBad v i =
+    if i >= v.model.len then
+        Nothing
+    else if List.get v.list i /= Just (at v.model i) then
+        Just i
+    else
+        firstBad v (i + 1)
+
+
+note : State, String, Version -> State
+note s label v =
+    case check label v of
+        Just message ->
+            { s | bad = [ message, ...s.bad ], checks = s.checks + 1 }
+
+        Nothing ->
+            { s | checks = s.checks + 1 }
+
+
+keep : State, Version -> State
+keep s v =
+    { s | versions = Dict.insert s.versions s.count v, count = s.count + 1 }
+
+
+-- A list of `n` pushes of `from`, `from + 1`, …: a trie past 32.
+pushes : Version, Int, Int -> Version
+pushes v from n =
+    if n <= 0 then
+        v
+    else
+        pushes { list = List.push v.list from, model = modelPush v.model from } (from + 1) (n - 1)
+
+
+prepends : Version, Int, Int -> Version
+prepends v from n =
+    if n <= 0 then
+        v
+    else
+        prepends { list = [ from, ...v.list ], model = modelPrepend v.model from } (from + 1) (n - 1)
+
+
+-- One random operation on one random version, old ones included: the
+-- newest few most of the time, so lineages grow deep, any of them a third
+-- of the time, so old versions are written to.
+step : State, Int -> State
+step s n =
+    let
+        seed1 =
+            next s.seed
+
+        seed2 =
+            next seed1
+
+        seed3 =
+            next seed2
+
+        which =
+            if pick seed1 3 == 0 then
+                pick seed2 s.count
+            else
+                max 0 (s.count - 1 - pick seed2 4)
+
+        v =
+            Dict.get s.versions which |> Maybe.withDefault { list = [], model = empty }
+
+        op =
+            pick seed3 14
+
+        x =
+            n * 7 + 1
+
+        len =
+            v.model.len
+
+        made =
+            if op <= 3 then
+                { list = [ x, ...v.list ], model = modelPrepend v.model x }
+            else if op == 4 then
+                case v.list of
+                    [ h, ...t ] ->
+                        { list = [ h, ...t ], model = v.model }
+
+                    [] ->
+                        v
+            else if op <= 6 then
+                { list = List.push v.list x, model = modelPush v.model x }
+            else if op == 7 then
+                { list = List.pop v.list, model = modelPop v.model }
+            else if op == 8 then
+                let
+                    i =
+                        pick seed1 (len + 1)
+                in
+                { list = List.set v.list i (0 - x), model = modelSet v.model i (0 - x) }
+            else if op == 9 then
+                case v.list of
+                    [ _, ...rest ] ->
+                        { list = rest, model = modelDrop v.model 1 }
+
+                    [] ->
+                        v
+            else if op == 10 then
+                let
+                    k =
+                        pick seed1 (len + 3)
+                in
+                { list = List.drop v.list k, model = modelDrop v.model k }
+            else if op == 11 then
+                let
+                    extra =
+                        List.range x (x + pick seed1 40)
+                in
+                { list = v.list ++ extra, model = List.foldl extra v.model (\item m -> modelPush m item) }
+            else if op == 12 then
+                let
+                    extra =
+                        List.range x (x + pick seed2 3)
+                in
+                { list = [ ...v.list, ...extra ], model = List.foldl extra v.model (\item m -> modelPush m item) }
+            else
+                { list = List.push (List.push v.list x) (x + 1), model = modelPush (modelPush v.model x) (x + 1) }
+
+        label =
+            "step " ++ String.fromInt n ++ " op " ++ String.fromInt op
+    in
+    note (note (keep { s | seed = seed3 } made) label made) (label ++ " (its input)") v
+
+
+run : State, Int, Int -> State
+run s n total =
+    if n >= total then
+        s
+    else
+        run (step s n) (n + 1) total
+
+
+-- Every `every`th version kept, checked again.
+recheck : State, Int, Int -> State
+recheck s i every =
+    if i >= s.count then
+        s
+    else
+        case Dict.get s.versions i of
+            Just v ->
+                recheck (note s ("kept " ++ String.fromInt i) v) (i + every) every
+
+            Nothing ->
+                recheck s (i + every) every
+
+
+-- A walk by tails, re-consing every 97th step onto the list it just left.
+walk : State, Version, Int -> State
+walk s v n =
+    if n <= 0 then
+        s
+    else
+        case v.list of
+            [ h, ...rest ] ->
+                let
+                    tail =
+                        { list = rest, model = modelDrop v.model 1 }
+
+                    s2 =
+                        if modBy n 97 == 0 then
+                            note s ("re-cons at " ++ String.fromInt n) { list = [ h, ...rest ], model = v.model }
+                        else
+                            s
+                in
+                walk (keep s2 tail) tail (n - 1)
+
+            [] ->
+                s
+
+
+main : Program
+main =
+    let
+        base =
+            pushes { list = [], model = empty } 1 1100
+
+        short =
+            prepends { list = [ 1, 2, 3 ], model = modelPush (modelPush (modelPush empty 1) 2) 3 } 10 0
+
+        start =
+            { seed = 4711
+            , versions = Dict.empty
+            , count = 0
+            , bad = []
+            , checks = 0
+            }
+                |> (\s -> keep s { list = [], model = empty })
+                |> (\s -> keep s base)
+                |> (\s -> keep s short)
+
+        -- The root grown left from a trie `push` made: its tree starts at
+        -- radix 0, so the 33rd prepend finds no room left of it.
+        left =
+            prepends base 5000 33
+
+        -- ...and from a short list: the tree starts mid-root, at 512.
+        wide =
+            prepends short 9000 600
+
+        grown =
+            start
+                |> (\s -> note s "33 prepends onto a pushed trie" left)
+                |> (\s -> note s "600 prepends onto a short list" wide)
+                |> (\s -> keep (keep s left) wide)
+                |> (\s -> walk s wide 700)
+
+        done =
+            recheck (run grown 0 2500) 0 7
+    in
+    Node.printLines
+        [ "checks " ++ (if done.checks > 5000 then "done" else "too few: " ++ String.fromInt done.checks)
+        , "versions " ++ (if done.count > 3000 then "kept" else "too few: " ++ String.fromInt done.count)
+        , case List.reverse done.bad of
+            [] ->
+                "every version intact"
+
+            [ first, ..._ ] ->
+                first
+        ]

@@ -1,16 +1,19 @@
--- emit: the SHAPE of a list pattern with items after its spread on cons
--- cells (`backend.md` §7, *List patterns with elements after the spread*),
--- which running cannot tell from any other correct compilation.
+-- emit: the SHAPE of a list pattern with items after its spread on the
+-- array-backed `List` (`backend.md` §7, *List patterns with elements after
+-- the spread*, its *After the flip*), which running cannot tell from any
+-- other correct compilation.
 --
 -- The golden pins, in `lastOr`: the scrutinee bound once; the column split
--- by length as a chain of the two-way cell tests a cons column writes,
--- `xs.$ === 0` then down the spine; and the trailing item read through
--- `List$drop(xs, List$length(xs) - 1)`. `middle` binds its spread as the
--- `List$take` of the tail after `first`, and its last item from that tail's
--- end. `endsInZero` tests a trailing literal through the same last-cells
--- occurrence. `headOr` is the control: `[ x, ...rest ]` is `x :: rest`, a
--- column with nothing after its spread compiles exactly as `::` did, with
--- no call at all.
+-- by length as a chain of two-way length tests, `xs.length === 0`, then
+-- `xs.length === 1`, one comparison each and no walk; and the trailing item
+-- read at `xs.length - 1` through `List$unsafeGet`. `init` is not read, so
+-- it is not bound (§7: a spread's list is an allocation). `middle` binds
+-- its spread as `List$slice(xs, 1, xs.length - 1)` — a copy, the choice
+-- `plans/list-arrays.md` left to this slice, since a view is a suffix — and
+-- its last item from the end. `endsInZero` tests a trailing literal at the
+-- same index. `headOr` is the control: `[ x, ...rest ]`, a column with
+-- nothing after its spread, reads element 0, and binds no view for the
+-- `rest` it never reads.
 import Node exposing (Program)
 
 

@@ -261,9 +261,8 @@ pub fn lower(
             .cp_left = try interner.getOrPut(gpa, "$a"),
             .cp_right = try interner.getOrPut(gpa, "$b"),
             .code_point_at = try interner.getOrPut(gpa, "codePointAt"),
-            .reduce_right = try interner.getOrPut(gpa, "reduceRight"),
-            .list_tail = try interner.getOrPut(gpa, "$l"),
-            .list_head = try interner.getOrPut(gpa, "$h"),
+            .push = try interner.getOrPut(gpa, "push"),
+            .length = try interner.getOrPut(gpa, "length"),
         },
     };
     defer l.diagnostics.deinit(gpa);
@@ -334,7 +333,7 @@ pub fn lower(
 /// name per module saved. What a name is interned as reaches no output.
 pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Error!void {
     const fixed = [_][]const u8{
-        "$t", "$x", "$p", "$",  "$y", "$a",    "$b",       "codePointAt", "reduceRight",
+        "$t", "$x", "$p", "$",  "$y", "$a",    "$b",       "codePointAt", "push",     "length",
         "$l", "$h", "$d", "$e", "$m", "apply", "_derived", "$markup",     "children",
     };
     for (fixed) |text| _ = try global.getOrPut(gpa, text);
@@ -360,11 +359,12 @@ const WellKnown = struct {
     /// because `Char` ordering is a code-point comparison and not `<`
     /// (§8.3, §9.1, A.26).
     code_point_at: Symbol,
-    /// `reduceRight`, and the two parameters of its step: how a long list
-    /// literal builds its cells (`flatList`).
-    reduce_right: Symbol,
-    list_tail: Symbol,
-    list_head: Symbol,
+    /// `push`: a building loop's destination is a plain array the loop
+    /// pushes its heads onto (§8, *Tail calls modulo cons, onto an array*).
+    push: Symbol,
+    /// `length`: what a list pattern tests (§7, *List patterns over
+    /// arrays*), the one field every form of a list answers.
+    length: Symbol,
 };
 
 /// How a constructor of one type is represented in JavaScript.
@@ -386,10 +386,10 @@ const WellKnown = struct {
 ///     `Maybe`. Splitting on whether the type has any payload at all
 ///     satisfies §9.4 where it matters (a type that is actually tested by
 ///     shape) and §4 where it costs nothing (an enumeration).
-///  3. **`List` is cons cells**, `{$: 1, a: head, b: tail}` and a padded
-///     empty cell, as §4 requires. `List` is a `foreign type`, so it has no
-///     beni constructors and the representation is the emitter's, shared
-///     with `core/List.js` by contract.
+///  3. **`List` is array-backed** (§4, *Lists are arrays*): a literal is an
+///     array literal, and everything else about a list — views, tries — is
+///     `core/List.js`'s. `List` is a `foreign type`, so it has no beni
+///     constructors, and it is not a `CtorRep` at all.
 const CtorRep = union(enum) {
     /// `Basics.Bool`.
     boolean: bool,
@@ -421,12 +421,6 @@ const StmtList = std.ArrayList(Node.Index);
 /// Which body of a declaration is being lowered (transparent-effects-
 /// proposal.md §16.2).
 const Variant = enum { direct, twin };
-
-/// The longest list literal written as nested cells (`backend.md` §4): one
-/// object per element costs `nesting.object` apiece, and 32 of them are 160
-/// units, under `nesting.spill`, so one literal never needs binding by itself.
-/// Longer ones are `flatList`'s array.
-const max_cons_elements = 32;
 
 /// How many terms of a derived `&&` print as one flat run before the next
 /// run starts inside parentheses (`backend.md` §4): the JavaScriptCore of
@@ -665,6 +659,12 @@ const Lowerer = struct {
     /// How many functions enclose what is being lowered: 0 in a top-level
     /// constant, where a body written in place would need a called arrow.
     function_depth: u32 = 0,
+    /// Per local: whether any instruction reads it (`localRead`), made the
+    /// first time a list pattern asks whether its tail is read.
+    read_locals: ?std.DynamicBitSetUnmanaged = null,
+    /// The declaration `read_locals` is of: a body written in place
+    /// (`enterInline`) switches the locals under it.
+    read_locals_decl: u32 = std.math.maxInt(u32),
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -1284,6 +1284,7 @@ const Lowerer = struct {
         const body = d.body.unwrap() orelse return;
         l.locals = l.bir.declLocals(d);
         l.decl_index = index;
+        l.read_locals = null;
         l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
         @memset(l.local_names, .none);
         l.local_tag_base = 0;
@@ -1510,6 +1511,19 @@ const Lowerer = struct {
             // Its suspendable body, when it has one that survived (§16.2).
             if (d.kind == .value and l.in.dispatch.effectDecl(decl_index.int()).twin and l.liveTwin(decl_index.int())) {
                 try names.append(l.scratch, try l.twinName(l.module_name, l.bir.symbol(d.name)));
+            }
+        }
+        // `core/List`'s core-private values the emitter calls from other
+        // modules (`corePrivate`, `backend.md` §4): in no interface, so no
+        // program names them, and exported when they survive — which is
+        // exactly when some module's code calls one.
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (d.is_pub or d.kind != .foreign_value) continue;
+                const symbol = l.bir.symbol(d.name);
+                if (symbol != InternPool.WellKnown.unsafeGet.symbol() and symbol != InternPool.WellKnown.view.symbol() and
+                    symbol != InternPool.WellKnown.close.symbol()) continue;
+                if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
             }
         }
         if (names.items.len == 0) return;
@@ -2059,16 +2073,14 @@ const Lowerer = struct {
         /// for a declaration's `$m…` (backend.md §4).
         ev_let: Inst.OptionalIndex = .none,
         slots: []Slot,
-        /// Whether the function has a CONS STEP — a `::` in tail position
-        /// whose tail reaches a tail self-call — and so builds its result
-        /// front to back through `root` and `last` (§8, *Tail calls modulo
-        /// cons*). Set by `markTails`.
+        /// Whether the function has a CONS STEP — a `[ h, ...t ]` in tail
+        /// position whose tail reaches a tail self-call — and so builds its
+        /// result front to back in `root` (§8, *Tail calls modulo cons,
+        /// onto an array*). Set by `markTails`.
         builds: bool = false,
-        /// `$root`, the cell before the result's first, and `$last`, the
-        /// cell whose tail the next step or exit writes. `.none` unless
-        /// `builds`.
+        /// `$root`, the fresh array every step pushes its heads onto and
+        /// every exit hands over. `.none` unless `builds`.
         root: JsIr.NameIndex = .none,
-        last: JsIr.NameIndex = .none,
         /// What the jumps wrote that `functionOrLoop` rewrites when the loop
         /// reassigns its parameters in place (§8, *In place, when nothing
         /// captures*).
@@ -2211,28 +2223,26 @@ const Lowerer = struct {
                 else => try l.bindings(&loop_body, pattern, try l.ident(slot.body, l.pos(pattern))),
             }
         }
-        // A building loop's destination (§8, *Tail calls modulo cons*): the
-        // root cell before the result's first, which has the cons shape so
-        // every cell stays one hidden class, and the last cell written.
-        var before: [2]Node.Index = undefined;
+        // A building loop's destination (§8, *Tail calls modulo cons, onto
+        // an array*): one fresh array, a builder in §4's sense (invariant
+        // 5) — pushed onto by the steps, handed over once by an exit.
+        var before: Node.Index = undefined;
         if (loop.builds) {
             loop.root = try l.fixedName("$root");
-            loop.last = try l.fixedName("$last");
-            before[0] = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.consNode(try l.nullNode(p), try l.nullNode(p), p)).int());
-            before[1] = try l.add(.let_decl, p, @intFromEnum(loop.last), @intFromEnum((try l.ident(loop.root, p)).toOptional()));
+            before = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.arrayNode(&.{}, p)).int());
         }
         try l.tailStmts(&loop_body, body, loop);
         // A suspension point in the loop's body: the fast path stays in the
         // loop, and the slow path re-enters the function with its slots
         // (§16.3). A building loop's slow path goes on writing into the same
         // destination: its re-entry builds the rest as a list of its own,
-        // which a continuation links into `$last` (§8, *Tail calls modulo
-        // cons*, *What it owes the fiber lowering*).
+        // which a continuation adds after what this call pushed (§8, *Tail
+        // calls modulo cons, onto an array*; transparent-effects-proposal.md
+        // §16.3's amendment of 2026-10-01).
         var reentry: Suspend.Loop = .{ .label = label, .callee = label, .params = names.items };
         if (loop.builds and l.markers != 0) {
             reentry.root = loop.root;
-            reentry.last = loop.last;
-            reentry.tail = try l.name(.{ .module = .none, .base = try l.slotName(1), .tag = JsIr.Name.no_tag });
+            reentry.close = try l.closeName(p);
             reentry.built = try l.fixedName("$built");
         }
         // **In place, when nothing captures** (§8): a body that makes no
@@ -2279,7 +2289,7 @@ const Lowerer = struct {
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
         const while_node = try l.add(.while_true, p, @intFromEnum(loop_label), @intFromEnum(record));
-        if (loop.builds) return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{ before[0], before[1], while_node }) };
+        if (loop.builds) return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{ before, while_node }) };
         return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{while_node}) };
     }
 
@@ -2518,8 +2528,11 @@ const Lowerer = struct {
     }
 
     /// Leave the function with `value`. A building loop (§8, *Tail calls
-    /// modulo cons*) writes it into the last cell's tail first and returns
-    /// the list the root cell heads; everything else is `return value`.
+    /// modulo cons, onto an array*) hands over its destination: `return
+    /// $root` when the value is the literal `[]`, and otherwise `return
+    /// List$close($root, value)` — the value's elements pushed after what
+    /// the steps pushed, or the value itself when they pushed nothing;
+    /// everything else is `return value`.
     fn tailReturn(l: *Lowerer, out: *StmtList, value: Node.Index, loop: ?*const Loop, p: u32) !void {
         // A leaf of a `case` that joins (transparent-effects-proposal.md
         // §16.3): the rest of the function is the join, called with it.
@@ -2528,33 +2541,28 @@ const Lowerer = struct {
         }
         const lp = loop orelse return out.append(l.scratch, try l.returnStmt(value, p));
         if (!lp.builds) return out.append(l.scratch, try l.returnStmt(value, p));
-        const b = try l.slotName(1);
-        const hole = try l.member(try l.ident(lp.last, p), b, p);
-        try out.append(l.scratch, try l.add(.assign_stmt, p, hole.int(), value.int()));
-        try out.append(l.scratch, try l.returnStmt(try l.member(try l.ident(lp.root, p), b, p), p));
+        const root = try l.ident(lp.root, p);
+        if (l.isEmptyArray(value)) return out.append(l.scratch, try l.returnStmt(root, p));
+        const closed = try l.call(try l.ident(try l.closeName(p), p), &.{ root, value }, p);
+        try out.append(l.scratch, try l.returnStmt(closed, p));
     }
 
-    /// A cons step and every cons step directly under it, `a :: b :: go
-    /// rest`: one fresh cell per head, written into the last cell's tail and
-    /// becoming the last cell, then whatever the innermost tail is — a jump,
-    /// a `case`, a `let` — lowered in tail position.
+    /// A cons step and every cons step directly under it, `[ a, b, ...go
+    /// rest ]`: one `$root.push(h)` per head, then whatever the innermost
+    /// tail is — a jump, a `case`, a `let` — lowered in tail position.
     ///
-    /// **Each head is evaluated in its own cell's statement, before the next
-    /// head and before the self-call's arguments**, which is the order the
+    /// **Each head is evaluated in its own statement, before the next head
+    /// and before the self-call's arguments**, which is the order the
     /// recursive version evaluates them in. A head that hoists statements
-    /// (a `case`) emits them here, after the cells written before it.
+    /// (a `case`) emits them here, after the pushes written before it.
     fn consStep(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
-        const b = try l.slotName(1);
         var at = inst;
         while (true) {
             const p = l.pos(at);
             const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(at).rhs)), Inst.Index);
             const head = try l.expr(out, args[0]);
-            const cell = try l.consNode(head, try l.nullNode(p), p);
-            const hole = try l.member(try l.ident(loop.last, p), b, p);
-            try out.append(l.scratch, try l.add(.assign_stmt, p, hole.int(), cell.int()));
-            const next = try l.member(try l.ident(loop.last, p), b, p);
-            try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(loop.last, p)).int(), next.int()));
+            const push = try l.call(try l.member(try l.ident(loop.root, p), l.well.push, p), &.{head}, p);
+            try out.append(l.scratch, try l.add(.expr_stmt, p, push.int(), Node.Data.unused));
             if (l.isConsStep(args[1], loop)) {
                 at = args[1];
                 continue;
@@ -2963,58 +2971,112 @@ const Lowerer = struct {
 
     // ---- Lists ------------------------------------------------------------
     //
-    // `List` is a `foreign type`, so it has no beni constructors and the
-    // representation is the emitter's: `{$: 1, a: head, b: tail}` for a
-    // cell and `{$: 0, a: null, b: null}` for the empty list, padded to one
-    // shape as §9.4 requires. `core/List.js` and `core/String.js` build and
-    // walk the same shape by contract; that contract is what `backend.md`
-    // §4's "the empty singleton" names without saying where it comes from.
+    // `List` is array-backed (`backend.md` §4, *Lists are arrays*): a
+    // literal is an array literal, `[]` a fresh empty one at each use, and
+    // every other form a list takes — a view, a trie — is `core/List.js`'s.
+    // The emitter reads a list through `.length` and calls `core/List` for
+    // the rest: `unsafeGet` and `view` for a pattern (§7), `slice` for a
+    // spread with items after it, `close` for a building loop's exit (§8).
 
-    fn nilNode(l: *Lowerer, p: u32) !Node.Index {
-        const zero = try l.numberNode("0", p);
-        const a = try l.slotName(0);
-        const bslot = try l.slotName(1);
-        return l.object(&.{
-            try l.property(l.well.tag, zero, p),
-            try l.property(a, try l.nullNode(p), p),
-            try l.property(bslot, try l.nullNode(p), p),
-        }, p);
-    }
-
-    fn consNode(l: *Lowerer, head: Node.Index, tail: Node.Index, p: u32) !Node.Index {
-        const one = try l.numberNode("1", p);
-        const a = try l.slotName(0);
-        const bslot = try l.slotName(1);
-        return l.object(&.{
-            try l.property(l.well.tag, one, p),
-            try l.property(a, head, p),
-            try l.property(bslot, tail, p),
-        }, p);
-    }
-
-    /// A list literal longer than `max_cons_elements`, as ONE array whose
-    /// cells are built by a loop (`backend.md` §4, *Emitted JavaScript nests
-    /// only as deep as the source*):
-    ///
-    ///     [e1, e2, …].reduceRight(($l, $h) => ({ $: 1, a: $h, b: $l }), { $: 0, a: null, b: null })
-    ///
-    /// The nested literal is one object per element, so a written list of a
-    /// few thousand elements — which the parser does not charge, being
-    /// width and not depth — would be a module no engine would load. An
-    /// array literal is flat in every engine at any length measured, its
-    /// elements are evaluated left to right as the nested literal's were,
-    /// and the cells are the same `{$, a, b}` shape in the same key order,
-    /// so they share one hidden class with every other cons cell (§9.4).
-    /// It is also smaller: a few bytes an element against about twenty.
-    fn flatList(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
+    /// An array literal of `elements`, evaluated left to right. It nests at
+    /// no length (§4's list row), so a written list of any size is flat.
+    fn arrayNode(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(elements);
-        const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
-        const tail = try l.fresh(l.well.list_tail);
-        const head = try l.fresh(l.well.list_head);
-        const cell = try l.consNode(try l.ident(head, p), try l.ident(tail, p), p);
-        const step = try l.arrowOf(&.{ tail, head }, &.{try l.returnStmt(cell, p)}, p);
-        const method = try l.member(array, l.well.reduce_right, p);
-        return l.call(method, &.{ step, try l.nilNode(p) }, p);
+        return l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+    }
+
+    /// Whether `value` is the literal `[]`: an array literal of nothing.
+    fn isEmptyArray(l: *Lowerer, value: Node.Index) bool {
+        if (l.b.nodes.items(.tag)[value.int()] != .array) return false;
+        const d = l.b.nodes.items(.data)[value.int()];
+        return d.lhs == d.rhs;
+    }
+
+    /// `List$close`, core-private (`core/List.beni`): a building loop's
+    /// exit, and a suspended building loop's continuation.
+    fn closeName(l: *Lowerer, p: u32) !JsIr.NameIndex {
+        return l.identName(try l.corePrivate(.close, p));
+    }
+
+    /// The name an `ident` node spells.
+    fn identName(l: *Lowerer, n: Node.Index) JsIr.NameIndex {
+        std.debug.assert(l.b.nodes.items(.tag)[n.int()] == .ident);
+        return @enumFromInt(l.b.nodes.items(.data)[n.int()].lhs);
+    }
+
+    /// One of `core/List`'s values the emitter calls by well-known symbol:
+    /// `coreValue` names a `pub` one, this the core-private `unsafeGet`,
+    /// `view` and `close` (§4, *The emitter's imports of the core-private
+    /// exports*). They are in no interface — no program may name them — so
+    /// another module imports each by its printed name, as it imports a
+    /// derived function (`needDerived`), and `core/List` exports what
+    /// survives of them (`exports`).
+    fn corePrivate(l: *Lowerer, function: InternPool.WellKnown, p: u32) !Node.Index {
+        const module = l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) orelse
+            return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "there is no such module in the core package");
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (l.bir.symbol(d.name) != function.symbol()) continue;
+                return l.ident(try l.topName(@intCast(i)), p);
+            }
+            return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "this module IS that module, and it does not declare it");
+        }
+        const entry: Needed = .{ .module = module, .base = function.symbol().toOptional() };
+        try l.needName(entry);
+        return l.ident(try l.neededName(entry), p);
+    }
+
+    /// Whether `pattern`, a spread's operand, binds a name something reads:
+    /// §7's rule that a tail is bound only on a leaf that reads it, since a
+    /// view is an allocation.
+    fn bindsRead(l: *Lowerer, pattern: Inst.Index) Allocator.Error!bool {
+        return switch (l.bir.instTag(pattern)) {
+            .pat_wild => false,
+            .pat_var => l.localRead(l.bir.instData(pattern).lhs),
+            else => true,
+        };
+    }
+
+    /// Whether any `local` instruction of the declaration being lowered reads
+    /// its local `index` (a local index is the declaration's own).
+    fn localRead(l: *Lowerer, index: u32) Allocator.Error!bool {
+        const decl = l.decl_index orelse return true;
+        if (l.read_locals == null or l.read_locals_decl != decl) {
+            l.read_locals_decl = decl;
+            var set = try std.DynamicBitSetUnmanaged.initEmpty(l.scratch, l.locals.len);
+            const d = l.bir.decls[decl];
+            const start = d.inst_start.int();
+            const end = @min(d.inst_end.int(), l.bir.insts.len);
+            const tags = l.bir.insts.items(.tag)[start..end];
+            const datas = l.bir.insts.items(.data)[start..end];
+            for (tags, datas) |tag, data| {
+                if (tag == .local and data.lhs < set.bit_length) set.set(data.lhs);
+            }
+            l.read_locals = set;
+        }
+        const set = l.read_locals.?;
+        return index >= set.bit_length or set.isSet(index);
+    }
+
+    /// `List$unsafeGet(list, index)`: an element a pattern reads.
+    fn listElement(l: *Lowerer, list: Node.Index, index: Node.Index, p: u32) !Node.Index {
+        return l.call(try l.corePrivate(.unsafeGet, p), &.{ list, index }, p);
+    }
+
+    /// The integer `k` as a node.
+    fn intNode(l: *Lowerer, k: u32, p: u32) !Node.Index {
+        var buf: [10]u8 = undefined;
+        return l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{k}) catch unreachable, p);
+    }
+
+    /// `list.length`, which every form answers (§4's protocol).
+    fn lengthOf(l: *Lowerer, list: Node.Index, p: u32) !Node.Index {
+        return l.member(list, l.well.length, p);
+    }
+
+    /// `list.length - count`: where the last `count` elements start.
+    fn lengthMinus(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
+        return l.binary(.sub, try l.lengthOf(list, p), try l.intNode(count, p), p);
     }
 
     // ---- Expressions ------------------------------------------------------
@@ -3175,10 +3237,7 @@ const Lowerer = struct {
         return switch (l.bir.instTag(inst)) {
             .call, .method_call, .type_dispatch => w.object,
             .record, .record_update, .tuple => w.object,
-            .list => blk: {
-                const n = Bir.inlineRange(l.bir.instData(inst)).len();
-                break :blk if (n > max_cons_elements) w.call + w.array else w.object * (n + 1);
-            },
+            .list => w.array,
             .field_access, .tuple_index, .interp => w.member,
             .case => w.cond,
             .lambda => w.arrow,
@@ -3239,17 +3298,7 @@ const Lowerer = struct {
                 }
                 return l.object(properties.items, p);
             },
-            .list => {
-                const elements = try l.exprList(out, Bir.inlineRange(d));
-                if (elements.len > max_cons_elements) return l.flatList(elements, p);
-                var node = try l.nilNode(p);
-                var i: usize = elements.len;
-                while (i > 0) {
-                    i -= 1;
-                    node = try l.consNode(elements[i], node, p);
-                }
-                return node;
-            },
+            .list => return l.arrayNode(try l.exprList(out, Bir.inlineRange(d)), p),
             .record => return l.recordNode(out, Bir.inlineRange(d), p),
             .record_update => {
                 // The base, then the updated fields in written order
@@ -4115,28 +4164,6 @@ const Lowerer = struct {
     /// `String.compare`, however this module reaches it.
     fn stringCompare(l: *Lowerer, p: u32) !Node.Index {
         return l.coreValue(.String, .compare, p);
-    }
-
-    /// `List$drop(list, List$length(list) - count)`: the list made of the
-    /// last `count` cells of `list`, shared rather than copied, which is
-    /// where a pattern's items after its spread are read (§7, *List
-    /// patterns with elements after the spread*). O(n), and the caller has
-    /// already proved `list` at least `count` long.
-    fn listLast(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
-        return l.call(try l.coreValue(.List, .drop, p), &.{ list, try l.lengthMinus(list, count, p) }, p);
-    }
-
-    /// `List$take(list, List$length(list) - count)`: every cell but the last
-    /// `count`, a copy — what a spread with items after it binds.
-    fn listInit(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
-        return l.call(try l.coreValue(.List, .take, p), &.{ list, try l.lengthMinus(list, count, p) }, p);
-    }
-
-    fn lengthMinus(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
-        var buf: [10]u8 = undefined;
-        const digits = std.fmt.bufPrint(&buf, "{d}", .{count}) catch unreachable;
-        const length = try l.call(try l.coreValue(.List, .length, p), &.{list}, p);
-        return l.binary(.sub, length, try l.numberNode(digits, p), p);
     }
 
     // ---- Derived functions (static-dispatch-spike.md §9) ------------------
@@ -6290,6 +6317,16 @@ const Lowerer = struct {
             }
         }
 
+        // A `++` the checker solved to lists calls `List.append`, as `==`
+        // on a list calls `List.eq` (`Dispatch.appends`; backend.md §4), so
+        // `a ++ b` costs what `[ ...a, ...b ]` does. `Basics.append` is a
+        // reference with nothing to evaluate, so dropping it changes no
+        // order.
+        if (arg_insts.len == 2 and roots.len == 0 and l.in.dispatch.isListAppend(inst)) {
+            const values = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            return l.suspension(out, inst, try l.call(try l.coreValue(.List, .append, p), values, p));
+        }
+
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {
@@ -8127,7 +8164,8 @@ const Lowerer = struct {
     fn fanDiscriminant(l: *Lowerer, c: *Case, fan: Decision.Fan) !Node.Index {
         const subject = try l.occNode(c, fan.occ);
         switch (fan.kind) {
-            .list => return l.member(subject, l.well.tag, c.p),
+            // Two alternatives, so an `if` (`edgeTest`) and never a switch.
+            .list => return l.lengthOf((try l.listPos(c, fan.occ)).base, c.p),
             .ctor => {
                 const rep = l.fanRep(c, fan) orelse return subject;
                 return switch (rep) {
@@ -8145,8 +8183,17 @@ const Lowerer = struct {
     /// `x === false` is `!x`: the one place a readable `if` is worth a
     /// special case, because every `if` in the language goes through here.
     fn edgeTest(l: *Lowerer, c: *Case, fan: Decision.Fan, edge: Decision.Edge) !Node.Index {
-        const subject = try l.occNode(c, fan.occ);
         const p = l.edgePos(c, edge);
+        // A list occurrence is a list and a depth, `(r, k)` (§7, *List
+        // patterns over arrays*): `[]` is `r.length === k` and `::` is
+        // `r.length > k`, the two complementary on every path that reaches
+        // `(r, k)`, which has already found `r` at least `k` long.
+        if (fan.kind == .list) {
+            const at = try l.listPos(c, fan.occ);
+            const op: JsIr.BinaryOp = if (edge.order == 0) .strict_eq else .gt;
+            return l.binary(op, try l.lengthOf(at.base, p), try l.posIndex(at, p), p);
+        }
+        const subject = try l.occNode(c, fan.occ);
         if (fan.kind == .ctor) {
             if (edge.ref.unwrap()) |ref| {
                 if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
@@ -8164,6 +8211,7 @@ const Lowerer = struct {
     fn edgeKey(l: *Lowerer, c: *Case, fan: Decision.Fan, edge: Decision.Edge) !Node.Index {
         const p = l.edgePos(c, edge);
         switch (fan.kind) {
+            // Never a `case` label: a list node is always an `if`.
             .list => return l.numberNode(if (edge.order == 0) "0" else "1", p),
             .ctor => {
                 const ref = edge.ref.unwrap() orelse return l.nullNode(p);
@@ -8208,12 +8256,53 @@ const Lowerer = struct {
         const o = c.tree.occs[occ];
         const node = if (o.parent == Decision.Occ.no_parent)
             c.roots[o.root]
-        else if (o.kind == .last)
-            try l.listLast(try l.occNode(c, o.parent), o.slot, c.p)
-        else
-            try l.member(try l.occNode(c, o.parent), try l.argName(o.via.unwrap(), o.slot), c.p);
+        else switch (o.kind) {
+            .slot => try l.member(try l.occNode(c, o.parent), try l.argName(o.via.unwrap(), o.slot), c.p),
+            // An element: `List$unsafeGet(r, k)`, O(1) on a plain list or
+            // a view, and near O(1) on a trie.
+            .head => blk: {
+                const at = try l.listPos(c, o.parent);
+                break :blk try l.listElement(at.base, try l.posIndex(at, c.p), c.p);
+            },
+            // A list the tree only tests is never built (`listPos`); one a
+            // column needs as a value is a view of it.
+            .tail, .last => blk: {
+                const at = try l.listPos(c, occ);
+                break :blk try l.call(try l.corePrivate(.view, c.p), &.{ at.base, try l.posIndex(at, c.p) }, c.p);
+            },
+        };
         c.occ_nodes[occ] = node.toOptional();
         return node;
+    }
+
+    /// Where a list occurrence is (§7, *List patterns over arrays*): the
+    /// list `base` without its first `k` elements — or, with `from_end`
+    /// not 0, the last `from_end` elements of `base` without their first
+    /// `k`, where a pattern's items after its spread are read. A chain of
+    /// tails is a position in the list it started from, so nothing is
+    /// built for a tail the tree only tests: `(x :: y :: rest)` is `r` at
+    /// 0, 1 and 2.
+    const ListPos = struct { base: Node.Index, k: u32, from_end: u32 = 0 };
+
+    fn listPos(l: *Lowerer, c: *Case, occ: u32) Allocator.Error!ListPos {
+        const o = c.tree.occs[occ];
+        if (o.parent == Decision.Occ.no_parent) return .{ .base = try l.occNode(c, occ), .k = 0 };
+        return switch (o.kind) {
+            .tail => blk: {
+                var at = try l.listPos(c, o.parent);
+                at.k += 1;
+                break :blk at;
+            },
+            .last => .{ .base = (try l.listPos(c, o.parent)).base, .k = 0, .from_end = o.slot },
+            .slot, .head => .{ .base = try l.occNode(c, occ), .k = 0 },
+        };
+    }
+
+    /// The index a position's first element is at: `k`, or, counted from
+    /// the end, `base.length - (from_end - k)`.
+    fn posIndex(l: *Lowerer, at: ListPos, p: u32) !Node.Index {
+        if (at.from_end == 0) return l.intNode(at.k, p);
+        return l.lengthMinus(at.base, at.from_end - at.k, p);
     }
 
     // ---- Shapes and labels -------------------------------------------------
@@ -8331,27 +8420,36 @@ const Lowerer = struct {
                 }
             },
             .pat_list => {
-                var walk = subject;
+                // By index (§7, *List patterns over arrays*): item `i` before
+                // the spread is element `i`, item `j` after it element
+                // `length - s + j`. `...rest` with nothing after it is the
+                // view from its index — O(1), but an object, so written only
+                // when the leaf reads `rest` (§7: a tail is bound only where
+                // it is read) — and with items after it the elements
+                // between, a `slice`.
                 const elements = l.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                const spread: ?usize = for (elements, 0..) |element, i| {
+                    if (l.bir.instTag(element) == .pat_spread) break i;
+                } else null;
+                const after: u32 = if (spread) |s| @intCast(elements.len - s - 1) else 0;
                 for (elements, 0..) |element, i| {
-                    if (l.bir.instTag(element) == .pat_spread) {
-                        // `...rest`: with nothing after it, the tail the walk
-                        // has reached, shared, as `x :: rest` bound it; with
-                        // items after it, a copy of all but the last of
-                        // them, which are read from the end (§7).
+                    if (spread) |s| if (i == s) {
                         const operand: Inst.Index = @enumFromInt(l.bir.instData(element).lhs);
-                        const after: u32 = @intCast(elements.len - i - 1);
-                        if (after == 0) return l.bindings(out, operand, walk);
-                        if (l.bir.instTag(operand) != .pat_wild) try l.bindings(out, operand, try l.listInit(walk, after, p));
-                        var last = try l.listLast(walk, after, p);
-                        for (elements[i + 1 ..]) |trailing| {
-                            try l.bindings(out, trailing, try l.member(last, try l.slotName(0), p));
-                            last = try l.member(last, try l.slotName(1), p);
-                        }
-                        return;
-                    }
-                    try l.bindings(out, element, try l.member(walk, try l.slotName(0), p));
-                    walk = try l.member(walk, try l.slotName(1), p);
+                        if (!try l.bindsRead(operand)) continue;
+                        const from = try l.intNode(@intCast(s), p);
+                        const value = if (after == 0)
+                            try l.call(try l.corePrivate(.view, p), &.{ subject, from }, p)
+                        else
+                            try l.call(try l.coreValue(.List, .slice, p), &.{ subject, from, try l.lengthMinus(subject, after, p) }, p);
+                        try l.bindings(out, operand, value);
+                        continue;
+                    };
+                    if (l.bindCount(element.toOptional()) == 0) continue;
+                    const index = if (spread != null and i > spread.?)
+                        try l.lengthMinus(subject, @intCast(elements.len - i), p)
+                    else
+                        try l.intNode(@intCast(i), p);
+                    try l.bindings(out, element, try l.listElement(subject, index, p));
                 }
             },
             .pat_record => {
@@ -8538,13 +8636,7 @@ const Lowerer = struct {
                         try l.property(try l.slotName(1), value_node, p),
                     }, p));
                 }
-                var list = try l.nilNode(p);
-                var i = cells.items.len;
-                while (i > 0) {
-                    i -= 1;
-                    list = try l.consNode(cells.items[i], list, p);
-                }
-                return list;
+                return l.arrayNode(cells.items, p);
             },
             .string => |bytes| return l.stringNode(bytes, p),
             .true => return l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
@@ -9477,11 +9569,11 @@ test "a type whose constructors are all nullary is a bare tag, and Bool is a Jav
     );
 }
 
-test "a record's keys are sorted, and a list is cons cells" {
+test "a record's keys are sorted, and a list is an array" {
     try expectJs(
         \\const M$point = { x: 1, y: 2 };
-        \\const M$xs = { $: 1, a: 1, b: { $: 1, a: 2, b: { $: 0, a: null, b: null } } };
-        \\const M$none = { $: 0, a: null, b: null };
+        \\const M$xs = [1, 2];
+        \\const M$none = [];
         \\const M$first = M$point.x;
         \\export { M$point, M$xs, M$none, M$first };
         \\

@@ -1,0 +1,91 @@
+-- emit: the SHAPE of a list pattern on the array-backed `List` (`backend.md`
+-- §7, *List patterns over arrays*), which running cannot tell from any
+-- other correct compilation. An occurrence of a list is a root and a
+-- depth, `(r, k)`, and nothing is built for a tail the tree only tests.
+--
+--   * `describe`: `[]` is `r.length === 0`; `[ x ]` is `r.length === 1`
+--     with `x` at index 0; `[ x, y, ...rest ]` is `r.length > 1`, `x` and
+--     `y` at 0 and 1, and `rest` the view `List$view(r, 2)`.
+--   * `exact` against `atLeast`: `[ x, y ]` beside `[ x, y, ..._ ]`, one
+--     length test between them and no view, since `..._` binds nothing.
+--   * `nestedHead`: `[ [ a, ...inner ], ...outer ]`, the head of the list
+--     a root of its own, `List$unsafeGet(r, 0)`, tested by its own length.
+--   * `aliased`: an `as` on a list pattern, `(r, 0)`, is `r` itself — a
+--     spread's operand is only a name or `_`, so this is where an `as`
+--     meets a list.
+--   * `firstOnly`: a leaf that reads no tail, `[ x, ...rest ] -> x`, binds
+--     no view (§7: a tail is bound only on a leaf that reads it).
+--   * `second`: a tail tested twice deep, `(r, 2)`, as `r.length > 1`.
+import Node exposing (Program)
+import String
+
+
+pub describe : List Int -> String
+describe xs =
+    case xs of
+        [] ->
+            "empty"
+
+        [ x ] ->
+            "one " ++ String.fromInt x
+
+        [ x, y, ...rest ] ->
+            String.fromInt x ++ ", " ++ String.fromInt y ++ " and " ++ String.fromInt (List.length rest) ++ " more"
+
+
+pub exact : List Int -> Int
+exact xs =
+    case xs of
+        [ x, y ] ->
+            x + y
+
+        [ x, y, ..._ ] ->
+            x - y
+
+        _ ->
+            0
+
+
+pub nestedHead : List (List Int) -> Int
+nestedHead xss =
+    case xss of
+        [ [ a, ...inner ], ...outer ] ->
+            a + List.length inner + List.length outer
+
+        _ ->
+            0
+
+
+pub aliased : List Int -> List Int
+aliased xs =
+    case xs of
+        ([ x, ..._ ]) as whole ->
+            [ x, ...whole ]
+
+        [] ->
+            []
+
+
+pub firstOnly : List Int -> Int
+firstOnly xs =
+    case xs of
+        [ x, ...rest ] ->
+            x
+
+        [] ->
+            0
+
+
+pub second : List Int -> Maybe Int
+second xs =
+    case xs of
+        [ _, y, ..._ ] ->
+            Just y
+
+        _ ->
+            Nothing
+
+
+main : Program
+main =
+    Node.printLines []

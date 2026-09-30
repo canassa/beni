@@ -1,0 +1,149 @@
+-- run: a spread builds a NEW list and leaves the one it spreads unchanged,
+-- in every form a list takes and on both sides of every threshold
+-- (`backend.md` §4, *The claimable head: E1tp*; `language.md` §6.8).
+--
+-- `[ x, ...xs ]` onto: a plain list below 32 elements and at 32 (where it
+-- becomes a trie with a head); a view below and at 32; the newest version
+-- of a trie, whose head it claims in place; an OLDER version — two
+-- prepends of different values onto one list, both kept, the second of
+-- which must copy the head rather than write over the first's; a head
+-- that is full after 32 prepends, which becomes a leaf; and the runtime
+-- re-cons, the element a view's backing array already holds just before
+-- it. `[ ...xs, x ]` and `[ ...xs, ...ys ]` on the same forms, below and at
+-- `List.append`'s thresholds (a trie, or 32 elements or more against fewer
+-- than 32), where the elements of `ys` are pushed.
+--
+-- Each line prints the input after the operation next to the result, by
+-- length and a weighted sum that pins the order, so a write into a shared
+-- array shows as an input that changed.
+import List
+import Node exposing (Program)
+import String
+
+
+summary : List Int -> String
+summary xs =
+    String.fromInt (List.length xs)
+        ++ ":"
+        ++ String.fromInt (List.foldl (List.indexedMap xs (\i x -> (i + 1) * x)) 0 (+))
+
+
+tail : List Int -> List Int
+tail xs =
+    case xs of
+        [ _, ...more ] ->
+            more
+
+        [] ->
+            []
+
+
+prependMany : List Int, Int, Int -> List Int
+prependMany xs from n =
+    if n <= 0 then
+        xs
+    else
+        prependMany [ from, ...xs ] (from + 1) (n - 1)
+
+
+pushMany : List Int, Int, Int -> List Int
+pushMany xs from n =
+    if n <= 0 then
+        xs
+    else
+        pushMany (List.push xs from) (from + 1) (n - 1)
+
+
+both : String, List Int, List Int -> String
+both label input result =
+    label ++ " " ++ summary input ++ " -> " ++ summary result
+
+
+forms : List ( String, List Int )
+forms =
+    [ ( "plain 5", List.range 1 5 )
+    , ( "plain 31", List.range 1 31 )
+    , ( "plain 32", List.range 1 32 )
+    , ( "view 5", tail (List.range 0 5) )
+    , ( "view 31", tail (List.range 0 31) )
+    , ( "view 32", tail (List.range 0 32) )
+    , ( "pushed 40", pushMany [] 1 40 )
+    , ( "prepended 40", prependMany [] 1 40 )
+    , ( "prepended tail", tail (prependMany [] 1 40) )
+    , ( "pushed tail", tail (pushMany [] 1 40) )
+    ]
+
+
+prepends : ( String, List Int ) -> String
+prepends ( label, xs ) =
+    let
+        one =
+            [ 100, ...xs ]
+
+        two =
+            [ 200, 201, ...xs ]
+    in
+    String.join [ both label xs one, summary two, summary [ 300, ...one ], summary [ 400, ...one ] ] " "
+
+
+appends : ( String, List Int ) -> String
+appends ( label, xs ) =
+    String.join
+        [ both label xs [ ...xs, 7 ]
+        , summary [ ...xs, 8, 9 ]
+        , summary [ ...xs, ...List.range 50 80 ]
+        , summary [ ...xs, ...List.range 50 81 ]
+        , summary (xs ++ [ 7 ])
+        , summary (List.append xs (List.range 50 60))
+        , summary xs
+        ]
+        " "
+
+
+main : Program
+main =
+    let
+        base =
+            pushMany [] 1 40
+
+        -- Two prepends onto one version, both kept: the second may not
+        -- write the head slot the first claimed.
+        first =
+            [ 1000, ...base ]
+
+        second =
+            [ 2000, ...base ]
+
+        third =
+            [ 3000, ...first ]
+
+        -- 32 prepends fill the head; the 33rd makes it a leaf.
+        full =
+            prependMany base 500 32
+
+        fuller =
+            [ 999, ...full ]
+
+        -- The runtime re-cons: the view's backing array holds 0 just
+        -- before it, so `[ 0, ...v ]` is the wider list.
+        v =
+            tail (List.range 0 40)
+
+        again =
+            [ 0, ...v ]
+
+        other =
+            [ 5, ...v ]
+    in
+    Node.printLines
+        (List.map forms prepends
+            ++ List.map forms appends
+            ++ [ both "old version first" base first
+               , both "old version second" base second
+               , summary first ++ " " ++ summary third
+               , both "full head" base full
+               , summary full ++ " " ++ summary fuller
+               , both "re-cons" v again
+               , summary other ++ " " ++ summary (List.range 0 40)
+               ]
+        )

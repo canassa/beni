@@ -85,11 +85,14 @@ pub const Occ = struct {
     /// argument `slot` is the alias's field `slot` in declaration order and
     /// not the positional `a`, `b`, … every other constructor uses.
     via: Inst.OptionalIndex = .none,
-    /// `.slot` is the parent's slot `slot`. `.last` is the list made of the
-    /// parent list's last `slot` cells — where a pattern's items after its
-    /// spread are read from (`backend.md` §7, *List patterns with elements
-    /// after the spread*); the emitter walks to it.
-    kind: enum(u8) { slot, last } = .slot,
+    /// `.slot` is the parent's slot `slot`. `.head` and `.tail` are the
+    /// parent list's first element and the list after it — a `::`'s two
+    /// columns — which the emitter reads as an index into the list the
+    /// chain of tails started from (`backend.md` §7, *List patterns over
+    /// arrays*). `.last` is the list made of the parent list's last `slot`
+    /// elements — where a pattern's items after its spread are read from
+    /// (*List patterns with elements after the spread*).
+    kind: enum(u8) { slot, head, tail, last } = .slot,
 
     pub const no_parent: u32 = std.math.maxInt(u32);
 };
@@ -356,6 +359,12 @@ const Builder = struct {
         return b.internOcc(parent, slot, via, .slot);
     }
 
+    /// The head (`slot` 0) or the tail (`slot` 1) of the list at `parent`,
+    /// the two columns a `::` specialises into.
+    fn listOcc(b: *Builder, parent: u32, slot: u32) !u32 {
+        return b.internOcc(parent, slot, .none, if (slot == 0) .head else .tail);
+    }
+
     fn internOcc(b: *Builder, parent: u32, slot: u32, via: Inst.OptionalIndex, kind: @FieldType(Occ, "kind")) !u32 {
         for (b.occs.items, 0..) |o, i| {
             if (o.parent == parent and o.slot == slot and o.kind == kind) return @intCast(i);
@@ -612,7 +621,7 @@ const Builder = struct {
         try b.nodes.append(b.arena, .{ .fan = fan_index });
         try b.fans.append(b.arena, .{ .occ = spine, .kind = .list, .edges_start = 0, .edges_end = 0 });
         const exact = try b.compile(try b.lengthMatrix(m, col, shapes, lens, depth));
-        const longer = try b.lengthNode(m, col, shapes, lens, depth + 1, try b.subOcc(spine, 1, .none));
+        const longer = try b.lengthNode(m, col, shapes, lens, depth + 1, try b.listOcc(spine, 1));
         const start: u32 = @intCast(b.edges.items.len);
         if (exact != no_node) try b.edges.append(b.arena, .{ .order = 0, .child = exact });
         if (longer != no_node) try b.edges.append(b.arena, .{ .order = 1, .child = longer });
@@ -634,14 +643,14 @@ const Builder = struct {
         @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
         var spine = m.cols[col];
         for (0..lead) |i| {
-            cols[col + i] = try b.subOcc(spine, 0, .none);
-            spine = try b.subOcc(spine, 1, .none);
+            cols[col + i] = try b.listOcc(spine, 0);
+            spine = try b.listOcc(spine, 1);
         }
         if (at_least and lens.suffix != 0) {
             var last = try b.internOcc(m.cols[col], lens.suffix, .none, .last);
             for (0..lens.suffix) |j| {
-                cols[col + lead + j] = try b.subOcc(last, 0, .none);
-                last = try b.subOcc(last, 1, .none);
+                cols[col + lead + j] = try b.listOcc(last, 0);
+                last = try b.listOcc(last, 1);
             }
         }
 
@@ -780,7 +789,10 @@ const Builder = struct {
             .ctor => |c| c.ref.toOptional(),
             else => .none,
         };
-        for (0..arity) |i| cols[col + i] = try b.subOcc(m.cols[col], @intCast(i), via);
+        for (0..arity) |i| cols[col + i] = switch (key) {
+            .list => try b.listOcc(m.cols[col], @intCast(i)),
+            else => try b.subOcc(m.cols[col], @intCast(i), via),
+        };
         @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
 
         const rows = try b.arena.alloc(MRow, keyed.len + wild.len);

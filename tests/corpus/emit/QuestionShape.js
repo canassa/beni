@@ -29,5 +29,5 @@ const QuestionShape$twice = (a$1, b$2) => {
   }
   return { $: "Just", a: $t$2 + b$2.a };
 };
-const QuestionShape$main = Node$printLines({ $: 0, a: null, b: null });
+const QuestionShape$main = Node$printLines([]);
 export { QuestionShape$main, QuestionShape$maybe, QuestionShape$result, QuestionShape$atom, QuestionShape$twice };

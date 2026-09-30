@@ -1,0 +1,32 @@
+-- dispatch: which `++` the checker found to be on lists (`Dispatch.appends`;
+-- `backend.md` §4, the manager's decision O6 of `plans/list-arrays.md`).
+-- `++` is `Basics.append` over `appendable`, which serves strings too and
+-- cannot reach the list's representation, so a `++` whose operands SOLVED
+-- to a `List` is listed — the backend calls `List.append` for it, as `==`
+-- on a list calls `List.eq` — and every other `++` is not: `joinWords`'s
+-- strings, and `glue`'s, which is generic over `appendable` and may be
+-- either. `later`'s is inside a `let` whose binding has no annotation of
+-- its own: the table is read once every type is final, not at the call, so
+-- no order of solving changes which function a `++` calls.
+pub joinWords : String, String -> String
+joinWords a b =
+    a ++ b
+
+
+pub joinLists : List Int, List Int -> List Int
+joinLists a b =
+    a ++ b
+
+
+pub glue : appendable, appendable -> appendable
+glue a b =
+    a ++ b
+
+
+pub later : List Int -> List Int
+later xs =
+    let
+        doubled =
+            xs ++ xs
+    in
+    List.reverse doubled

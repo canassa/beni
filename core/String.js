@@ -12,19 +12,10 @@
 // answers are indices a caller hands back to `slice`, so counting them in
 // code units was a wrong answer at exit 0 rather than an internal detail.
 
-const nil = { $: 0, a: null, b: null };
-
-const fromArray = (items) => {
-  let out = nil;
-  for (let i = items.length - 1; i >= 0; i--) out = { $: 1, a: items[i], b: out };
-  return out;
-};
-
-const toArray = (list) => {
-  const items = [];
-  for (let at = list; at.$ === 1; at = at.b) items.push(at.a);
-  return items;
-};
+// A `List` crosses as a plain array (boundary.md §4, *How a sibling sees a
+// `List`*): every list returned here is the fresh array its function made,
+// which nothing else holds, and a list argument is read by the protocol —
+// `Array.isArray`, or `$plain()` for the other forms.
 
 const codePoints = (s) => Array.from(s);
 
@@ -70,10 +61,10 @@ export const trimRight = (s) => s.trimEnd();
 
 export const words = (s) => {
   const parts = s.split(/\s+/).filter((w) => w.length !== 0);
-  return fromArray(parts);
+  return parts;
 };
 
-export const lines = (s) => fromArray(s.split(/\r\n|\r|\n/));
+export const lines = (s) => s.split(/\r\n|\r|\n/);
 
 // Subject first: the string being split, then the separator.
 //
@@ -82,8 +73,8 @@ export const lines = (s) => fromArray(s.split(/\r\n|\r|\n/));
 // them a character. That is the one separator for which the UTF-16 mismatch
 // shows, so it is answered in code points like everything else here.
 export const split = (s, separator) => {
-  if (separator.length === 0) return fromArray(codePoints(s));
-  return fromArray(s.split(separator));
+  if (separator.length === 0) return codePoints(s);
+  return s.split(separator);
 };
 
 // Subject first: the string being searched, then the needle.
@@ -100,7 +91,7 @@ export const split = (s, separator) => {
 // `indexes "aaaa" "aa"` is `[ 0, 2 ]`. A combining mark is a code point of
 // its own, so `indexes "éx" "x"` is `[ 2 ]` and not `[ 1 ]`.
 export const indexes = (haystack, needle) => {
-  if (needle.length === 0) return nil;
+  if (needle.length === 0) return [];
   const found = [];
   // `scanned` is a UTF-16 offset and `point` the number of code points
   // before it. Both only ever move forward.
@@ -118,7 +109,7 @@ export const indexes = (haystack, needle) => {
     if (scanned === at) found.push(point);
     at = haystack.indexOf(needle, at + needle.length);
   }
-  return fromArray(found);
+  return found;
 };
 
 // Every specification-defined failure is a constructor (§4.1), so a string
@@ -147,5 +138,5 @@ export const fromFloat = (n) => {
 };
 
 export const fromChar = (c) => c;
-export const toList = (s) => fromArray(codePoints(s));
-export const fromList = (list) => toArray(list).join("");
+export const toList = (s) => codePoints(s);
+export const fromList = (list) => (Array.isArray(list) ? list : list.$plain()).join("");

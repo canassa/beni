@@ -108,7 +108,8 @@ export const run = (r) =>
 
 export const retap = (r, list) => {
   const taggers = [];
-  for (let at = list; at.$ === 1; at = at.b) taggers.push(at.a.t);
+  const items = Array.isArray(list) ? list : list.$plain();
+  for (let k = 0; k < items.length; k++) taggers.push(items[k].t);
   r.t = taggers;
   return null;
 };

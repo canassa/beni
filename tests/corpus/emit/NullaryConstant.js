@@ -34,5 +34,5 @@ const NullaryConstant$both = (b$1) => b$1 ? { a: NullaryConstant$Run, b: { $: "A
 const NullaryConstant$none = (n$1) => n$1 > 0 ? { $: "Just", a: n$1 } : NullaryConstant$Maybe$Nothing;
 const NullaryConstant$isRun = (m$1) => m$1.$ === "Run" ? true : false;
 const NullaryConstant$order = "LT";
-const NullaryConstant$main = Node$printLines({ $: 0, a: null, b: null });
+const NullaryConstant$main = Node$printLines([]);
 export { NullaryConstant$Msg$$compare, NullaryConstant$Msg$$eq, NullaryConstant$main, NullaryConstant$idle, NullaryConstant$button, NullaryConstant$both, NullaryConstant$none, NullaryConstant$isRun, NullaryConstant$order };

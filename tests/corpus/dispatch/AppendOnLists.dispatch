@@ -1,0 +1,7 @@
+module AppendOnLists
+  decl joinWords evidence=0 arity=2 convention=plain
+  decl joinLists evidence=0 arity=2 convention=plain
+  decl glue evidence=0 arity=2 convention=plain
+  decl later evidence=0 arity=1 convention=plain
+  append 25 List
+  append 48 List

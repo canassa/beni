@@ -146,5 +146,5 @@ const DerivedEqNominal$eq$prim = ($x, $y) => $x === $y;
 const DerivedEqNominal$sameShape = (a$1, b$2) => DerivedEqNominal$Shape$$eq(a$1, b$2);
 const DerivedEqNominal$sameTree = (a$1, b$2) => DerivedEqNominal$Tree$$eq(a$1, b$2);
 const DerivedEqNominal$sameBoxes = (a$1, b$2) => DerivedEqNominal$Box$$eq(DerivedEqNominal$eq$prim, a$1, b$2);
-const DerivedEqNominal$main = Node$printLines({ $: 0, a: null, b: null });
+const DerivedEqNominal$main = Node$printLines([]);
 export { DerivedEqNominal$Box$$compare, DerivedEqNominal$Box$$eq, DerivedEqNominal$Colour$$compare, DerivedEqNominal$Colour$$eq, DerivedEqNominal$Metre$$compare, DerivedEqNominal$Metre$$eq, DerivedEqNominal$Shape$$compare, DerivedEqNominal$Shape$$eq, DerivedEqNominal$Tree$$compare, DerivedEqNominal$Tree$$eq, DerivedEqNominal$main, DerivedEqNominal$sameShape, DerivedEqNominal$sameTree, DerivedEqNominal$sameBoxes };

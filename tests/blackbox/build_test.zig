@@ -1816,14 +1816,11 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
         \\export { triple as thrice };
         \\
         \\export const allEq = (m0, xs, ys) => {
-        \\  let a = xs;
-        \\  let b = ys;
-        \\  while (a.$ === 1 && b.$ === 1) {
-        \\    if (!m0(a.a, b.a)) return false;
-        \\    a = a.b;
-        \\    b = b.b;
-        \\  }
-        \\  return a.$ === b.$;
+        \\  const a = Array.isArray(xs) ? xs : xs.$plain();
+        \\  const b = Array.isArray(ys) ? ys : ys.$plain();
+        \\  if (a.length !== b.length) return false;
+        \\  for (let i = 0; i < a.length; i++) if (!m0(a[i], b[i])) return false;
+        \\  return true;
         \\};
         \\
     );
@@ -1920,14 +1917,11 @@ test "a constrained `foreign` in value position inside its own module keeps its 
         \\export const say = (line) => ({ text: line });
         \\
         \\export const eq = (m0, left, right) => {
-        \\  let a = left.a;
-        \\  let b = right.a;
-        \\  while (a.$ === 1 && b.$ === 1) {
-        \\    if (!m0(a.a, b.a)) return false;
-        \\    a = a.b;
-        \\    b = b.b;
-        \\  }
-        \\  return a.$ === b.$;
+        \\  const a = Array.isArray(left.a) ? left.a : left.a.$plain();
+        \\  const b = Array.isArray(right.a) ? right.a : right.a.$plain();
+        \\  if (a.length !== b.length) return false;
+        \\  for (let i = 0; i < a.length; i++) if (!m0(a[i], b[i])) return false;
+        \\  return true;
         \\};
         \\
     );

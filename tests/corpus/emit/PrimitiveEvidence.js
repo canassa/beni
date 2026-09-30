@@ -13,5 +13,5 @@ const PrimitiveEvidence$ints = (a$1, b$2) => PrimitiveEvidence$before(PrimitiveE
 const PrimitiveEvidence$chars = (a$1, b$2) => PrimitiveEvidence$before(PrimitiveEvidence$compare$char, a$1, b$2);
 const PrimitiveEvidence$strings = (a$1, b$2) => PrimitiveEvidence$before(String$compare, a$1, b$2);
 const PrimitiveEvidence$sameInts = (a$1, b$2) => PrimitiveEvidence$sameAs(PrimitiveEvidence$eq$prim, a$1, b$2);
-const PrimitiveEvidence$main = Node$printLines({ $: 0, a: null, b: null });
+const PrimitiveEvidence$main = Node$printLines([]);
 export { PrimitiveEvidence$main, PrimitiveEvidence$ints, PrimitiveEvidence$chars, PrimitiveEvidence$strings, PrimitiveEvidence$sameInts };

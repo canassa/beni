@@ -1,0 +1,116 @@
+-- run: every Elm-shaped way of building a list by prepending is linear on
+-- the array-backed `List` (`language.md` §6.8, *`[ x, ...xs ]` is cheap*;
+-- `backend.md` §4, *The claimable head: E1tp*), at 100 000 elements:
+--
+--   * an accumulator built with `[ x, ...acc ]` and then `List.reverse`;
+--   * `List.foldr` whose callback prepends;
+--   * a persistent stack pushed and popped at its FRONT, old versions kept
+--     and read at the end;
+--   * `[ ...acc, x ]` in a loop, which `List.append` answers by pushing,
+--     and `acc ++ [ x ]`, which calls `List.append` too since `++` on
+--     lists does (`plans/list-arrays.md` O6).
+--
+-- Under E1t, where a prepend copied, each of the first three was
+-- quadratic — 5 × 10⁹ element copies here — and the last copied too. The
+-- guard was proved by a scratch core whose `cons` always copies and whose
+-- `append` never pushes: this program then exceeds the test budget.
+import List
+import Node exposing (Program)
+import String
+
+
+size : Int
+size =
+    100000
+
+
+prependAll : Int, List Int -> List Int
+prependAll n acc =
+    if n <= 0 then
+        acc
+    else
+        prependAll (n - 1) [ size - n + 1, ...acc ]
+
+
+growBack : Int, List Int -> List Int
+growBack n acc =
+    if n <= 0 then
+        acc
+    else
+        growBack (n - 1) [ ...acc, size - n + 1 ]
+
+
+-- `++` on lists calls `List.append` (O6), so this is `growBack`'s cost.
+growPlus : Int, List Int -> List Int
+growPlus n acc =
+    if n <= 0 then
+        acc
+    else
+        growPlus (n - 1) (acc ++ [ size - n + 1 ])
+
+
+type alias Stack =
+    { top : List Int
+    , kept : List (List Int)
+    }
+
+
+-- Two pushes and a pop at the front, over and over; every 10 000th
+-- version kept.
+churn : Int, Stack -> Stack
+churn i s =
+    if i >= size then
+        s
+    else
+        let
+            top =
+                case modBy i 3 of
+                    2 ->
+                        case s.top of
+                            [ _, ...rest ] ->
+                                rest
+
+                            [] ->
+                                []
+
+                    _ ->
+                        [ i, ...s.top ]
+
+            kept =
+                if modBy i 10000 == 0 then
+                    List.push s.kept top
+                else
+                    s.kept
+        in
+        churn (i + 1) { top = top, kept = kept }
+
+
+summary : List Int -> String
+summary xs =
+    String.join
+        [ String.fromInt (List.length xs)
+        , Debug.toString (List.head xs)
+        , Debug.toString (List.last xs)
+        , String.fromInt (List.sum xs)
+        ]
+        " "
+
+
+main : Program
+main =
+    let
+        backwards =
+            prependAll size []
+
+        stack =
+            churn 0 { top = [], kept = [] }
+    in
+    Node.printLines
+        [ summary backwards
+        , summary (List.reverse backwards)
+        , summary (List.foldr backwards [] (\x acc -> [ x * 2, ...acc ]))
+        , summary (growBack size [])
+        , summary (growPlus size [])
+        , summary stack.top
+        , String.join (List.map stack.kept summary) " | "
+        ]

@@ -46,5 +46,5 @@ const DerivedEmissionOrder$eq$prim = ($x, $y) => $x === $y;
 const DerivedEmissionOrder$eq$r$hue$name = ($m$0, $m$1, $x, $y) => $m$0($x.hue, $y.hue) && $m$1($x.name, $y.name);
 const DerivedEmissionOrder$sorted = (a$1, b$2) => DerivedEmissionOrder$compare$r$hue$name(DerivedEmissionOrder$compare$prim, String$compare, a$1, b$2) === "LT";
 const DerivedEmissionOrder$same = (a$1, b$2) => DerivedEmissionOrder$eq$r$hue$name(DerivedEmissionOrder$eq$prim, DerivedEmissionOrder$eq$prim, a$1, b$2);
-const DerivedEmissionOrder$main = Node$printLines({ $: 0, a: null, b: null });
+const DerivedEmissionOrder$main = Node$printLines([]);
 export { DerivedEmissionOrder$Amber$$compare, DerivedEmissionOrder$Amber$$eq, DerivedEmissionOrder$Zinc$$compare, DerivedEmissionOrder$Zinc$$eq, DerivedEmissionOrder$main, DerivedEmissionOrder$sorted, DerivedEmissionOrder$same };

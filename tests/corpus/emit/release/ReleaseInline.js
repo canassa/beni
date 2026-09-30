@@ -5,5 +5,5 @@ d=(a)=>a.a+a.b,
 e=(a)=>({$:"Pair",a:a.b,b:a.a}),
 f=(a)=>{const b=a.a;return b*b;},
 g=(a)=>{const b=d(a);return b+1;},
-h=a({$:0,a:null,b:null});
+h=a([]);
 export{b,c,h,d,e,f,g};

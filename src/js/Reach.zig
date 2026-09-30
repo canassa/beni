@@ -605,10 +605,19 @@ pub const Builder = struct {
     /// header).
     string_compare: ?Node = null,
     basics_eq: ?Node = null,
-    /// `List.length`, `List.drop` and `List.take`, which `Lower` calls to
-    /// read the end of a list for a pattern with elements after its spread
-    /// (`backend.md` §7): an edge of every declaration that writes one.
-    list_ends: [3]?Node = .{ null, null, null },
+    /// The `core/List` values `Lower` calls with no reference of the
+    /// program's own to them (`backend.md` §7, §8): `unsafeGet` and `view`
+    /// for a list pattern, `slice` for a spread with items after it, and
+    /// `close` for a building loop's exit — an edge of every declaration
+    /// that writes one. `cons` is how a building loop is recognised.
+    list_get: ?Node = null,
+    list_view: ?Node = null,
+    list_slice: ?Node = null,
+    list_close: ?Node = null,
+    list_cons: ?Node = null,
+    /// `List.append`, which a `++` on lists calls in place of
+    /// `Basics.append` (`Dispatch.appends`).
+    list_append: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -625,7 +634,12 @@ pub const Builder = struct {
             .scratch = scratch,
             .string_compare = in.coreDecl(.String, .compare),
             .basics_eq = in.coreDecl(.Basics, .eq),
-            .list_ends = .{ in.coreDecl(.List, .length), in.coreDecl(.List, .drop), in.coreDecl(.List, .take) },
+            .list_get = in.coreDecl(.List, .unsafeGet),
+            .list_view = in.coreDecl(.List, .view),
+            .list_slice = in.coreDecl(.List, .slice),
+            .list_close = in.coreDecl(.List, .close),
+            .list_cons = in.coreDecl(.List, .cons),
+            .list_append = in.coreDecl(.List, .append),
         };
     }
 
@@ -690,7 +704,7 @@ pub const Builder = struct {
             }
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
-            if (hasListEnd(bir, d)) for (b.list_ends) |node| if (node) |n| try decl_targets.append(b.scratch, .{ .node = n, .chain = 0 });
+            try b.listEdges(m, bir, d, &decl_targets);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
@@ -737,13 +751,18 @@ pub const Builder = struct {
     /// and `undefined` wherever they stand. Empty without an interner.
     fn jsInPlace(b: *Builder, bir: *const Bir, m: Graph.Index) Allocator.Error![]const bool {
         const interner = b.in.interner orelse return &.{};
+        const dispatch = b.in.dispatchOf(m);
         const tags = bir.insts.items(.tag);
         const data = bir.insts.items(.data);
         const marks = try b.scratch.alloc(bool, bir.insts.len);
         @memset(marks, false);
         for (tags, data, 0..) |tag, d, i| switch (tag) {
             .call => if (d.lhs < marks.len) {
-                if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
+                // A `++` on lists calls `List.append` (`listEdges`), and
+                // its `Basics.append` is no reference.
+                if (dispatch.isListAppend(@enumFromInt(i))) {
+                    marks[d.lhs] = true;
+                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
                     marks[d.lhs] = true;
                 } else if (Operator.of(b.in.graph, b.in.interfaces, bir, m, @enumFromInt(d.lhs), interner)) |which| {
                     // An operator is written in place when the call passes
@@ -760,20 +779,57 @@ pub const Builder = struct {
         return marks;
     }
 
-    /// Whether declaration `d` holds a list pattern with an item after its
-    /// spread, `[ ...init, last ]`: its `pat_spread` is not its list's last
-    /// item.
-    fn hasListEnd(bir: *const Bir, d: Bir.Decl) bool {
+    /// The `core/List` edges of declaration `d` that no instruction names
+    /// (`list_get` and the rest): `unsafeGet` and `view` when it holds a
+    /// list pattern, `slice` when one has an item after its spread
+    /// (`[ ...init, last ]`), and `close` when it names `List.cons` — a
+    /// building loop's exit calls it (`backend.md` §8), and every cons step
+    /// is a call of `cons`. Coarse by a little: a pattern that reads no
+    /// element or binds no tail still keeps the two alive, which costs
+    /// their export and never a wrong program.
+    fn listEdges(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, out: *std.ArrayList(Target)) Allocator.Error!void {
+        var pattern = false;
+        var end = false;
+        var cons = false;
+        var append = false;
+        const dispatch = b.in.dispatchOf(m);
+        const list = b.in.graph.lookup(.core, InternPool.WellKnown.List.symbol());
         var inst = d.inst_start.int();
         while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
             const at: Bir.Inst.Index = @enumFromInt(inst);
-            if (bir.instTag(at) != .pat_list) continue;
-            const items = bir.extraSlice(Bir.inlineRange(bir.instData(at)), Bir.Inst.Index);
-            for (items, 0..) |item, k| {
-                if (bir.instTag(item) == .pat_spread and k + 1 < items.len) return true;
+            const data = bir.instData(at);
+            switch (bir.instTag(at)) {
+                .pat_list => {
+                    pattern = true;
+                    const items = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
+                    for (items, 0..) |item, k| {
+                        if (bir.instTag(item) == .pat_spread and k + 1 < items.len) end = true;
+                    }
+                },
+                .ext_value => if (!cons and list != null and data.lhs == @intFromEnum(list.?)) {
+                    const cons_node = b.list_cons orelse continue;
+                    if (b.twinOfExt(list.?, data.rhs)) |t| cons = t.index == cons_node.index;
+                },
+                .top => if (!cons and list != null and m == list.?) {
+                    if (b.list_cons) |cons_node| cons = data.lhs == cons_node.index;
+                },
+                .call => if (!append and dispatch.isListAppend(at)) {
+                    append = true;
+                },
+                else => {},
             }
         }
-        return false;
+        const picks = [_]struct { bool, ?Node }{
+            .{ pattern, b.list_get },
+            .{ pattern, b.list_view },
+            .{ end, b.list_slice },
+            .{ cons, b.list_close },
+            .{ append, b.list_append },
+        };
+        for (picks) |pick| {
+            if (!pick[0]) continue;
+            if (pick[1]) |node| try out.append(b.scratch, .{ .node = node, .chain = 0 });
+        }
     }
 
     /// An edge only a declaration's suspendable body has.

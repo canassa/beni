@@ -12,5 +12,5 @@ const OperatorsInPlace$divide = (a$1, b$2) => Basics$idiv(a$1, b$2) + Basics$mod
 const OperatorsInPlace$wrap = (a$1, b$2) => (a$1 - b$2 | 0) + (1 | 0) | 0;
 const OperatorsInPlace$bits = (a$1, b$2) => a$1 & b$2 ^ (a$1 << 3 | (b$2 >>> 2 | 0));
 const OperatorsInPlace$product = (a$1, b$2) => Int32$mul(a$1 >> 1, b$2) >>> 0;
-const OperatorsInPlace$main = Node$printLines({ $: 0, a: null, b: null });
+const OperatorsInPlace$main = Node$printLines([]);
 export { OperatorsInPlace$main, OperatorsInPlace$arithmetic, OperatorsInPlace$floats, OperatorsInPlace$power, OperatorsInPlace$powerLeft, OperatorsInPlace$powerOfNegation, OperatorsInPlace$byName, OperatorsInPlace$notBoth, OperatorsInPlace$divide, OperatorsInPlace$wrap, OperatorsInPlace$bits, OperatorsInPlace$product };

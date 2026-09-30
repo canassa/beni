@@ -175,5 +175,5 @@ function* DerivedCompareNominal$Tree$$eq$$steps($x, $y) {
 }
 const DerivedCompareNominal$Wrapper$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DerivedCompareNominal$Wrapper$$eq = ($x, $y) => $x.a === $y.a;
-const DerivedCompareNominal$main = Node$printLines({ $: 0, a: null, b: null });
+const DerivedCompareNominal$main = Node$printLines([]);
 export { DerivedCompareNominal$Colour$$compare, DerivedCompareNominal$Colour$$eq, DerivedCompareNominal$Label$$compare, DerivedCompareNominal$Label$$eq, DerivedCompareNominal$Outcome$$compare, DerivedCompareNominal$Outcome$$eq, DerivedCompareNominal$Shape$$compare, DerivedCompareNominal$Shape$$eq, DerivedCompareNominal$Tree$$compare, DerivedCompareNominal$Tree$$eq, DerivedCompareNominal$Wrapper$$compare, DerivedCompareNominal$Wrapper$$eq, DerivedCompareNominal$main };

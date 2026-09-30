@@ -76,7 +76,8 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 7;
+/// 8 since the `appends` column (`Dispatch.appends`, a `++` on lists).
+pub const format_version: u32 = 8;
 
 pub const Column = enum(u32) {
     terms,
@@ -88,6 +89,7 @@ pub const Column = enum(u32) {
     contexts,
     derived,
     tries,
+    appends,
     markup,
     effect_sites,
     effect_decls,
@@ -111,6 +113,7 @@ pub const Column = enum(u32) {
             .contexts => 8,
             .derived => 32,
             .tries => 8,
+            .appends => 4,
             .markup => 20,
             .effect_sites => 8,
             .effect_decls => 4,
@@ -264,6 +267,10 @@ pub fn write(
         row[4] = @intFromEnum(t.shape);
     }
 
+    const appends = try gpa.alloc(u8, d.appends.len * Column.appends.width());
+    defer gpa.free(appends);
+    for (d.appends, 0..) |inst, i| std.mem.writeInt(u32, appends[i * 4 ..][0..4], @intFromEnum(inst), .little);
+
     const markup = try gpa.alloc(u8, d.markup.len * Column.markup.width());
     defer gpa.free(markup);
     for (d.markup, 0..) |n, i| {
@@ -327,6 +334,7 @@ pub fn write(
         contexts,
         derived,
         tries,
+        appends,
         markup,
         effect_sites,
         effect_decls,
@@ -345,6 +353,7 @@ pub fn write(
         @intCast(d.contexts.len),
         @intCast(d.derived.len),
         @intCast(d.tries.len),
+        @intCast(d.appends.len),
         @intCast(d.markup.len),
         @intCast(d.effect_sites.len),
         @intCast(d.effect_decls.len),
@@ -722,6 +731,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
+        const in_bytes = col(bytes, offsets, .appends);
+        const appends = try gpa.alloc(Bir.Inst.Index, lengths[@intFromEnum(Column.appends)]);
+        out.table.appends = appends;
+        for (appends, 0..) |*a, i| a.* = @enumFromInt(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little));
+    }
+    {
         const in_bytes = col(bytes, offsets, .markup);
         const markup = try gpa.alloc(Dispatch.Markup, lengths[@intFromEnum(Column.markup)]);
         out.table.markup = markup;
@@ -1020,6 +1035,7 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqualSlices(Dispatch.TermIndex, a.args, b.args);
     try testing.expectEqualSlices(Dispatch.Site, a.sites, b.sites);
     try testing.expectEqualSlices(Dispatch.Try, a.tries, b.tries);
+    try testing.expectEqualSlices(Bir.Inst.Index, a.appends, b.appends);
     try testing.expectEqualSlices(Dispatch.Markup, a.markup, b.markup);
     try testing.expectEqualSlices(Dispatch.EffectSite, a.effect_sites, b.effect_sites);
     try testing.expectEqualSlices(Dispatch.EffectDecl, a.effect_decls, b.effect_decls);
@@ -1160,6 +1176,24 @@ test "every table of a project round-trips: sites, evidence, derived, tries and 
     try testing.expect(any_sites);
     try testing.expect(any_derived);
     try testing.expect(any_evidence);
+}
+
+test "the appends column round-trips" {
+    // A `++` on lists needs `core/List`, which a `TestProject` switches off,
+    // so the table is written by hand: two instructions, in order.
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const table: Dispatch = .{ .appends = &.{ @enumFromInt(3), @enumFromInt(17) } };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try testing.expectEqualSlices(Bir.Inst.Index, table.appends, loaded.table.appends);
+    try testing.expect(loaded.table.isListAppend(@enumFromInt(17)));
+    try testing.expect(!loaded.table.isListAppend(@enumFromInt(4)));
 }
 
 test "a string the session never interned is UnknownSymbol, not a miss" {

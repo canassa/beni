@@ -1,10 +1,11 @@
 import{a}from"./_platform/Io.mjs";
 import{b,c}from"./_core/Task.mjs";
-const d=(c)=>b(a(c),(e)=>c+1),
-e=(a)=>{const c=(f)=>f*2;if(a>0){return b(d(a),(h)=>c(h));}else{return c(0);}},
-f=(a,e)=>{f:for(;;){const g=a,h=e;if(g.$===0){return h;}else{const j=g.b,k=d(g.a);if(c(k))return b(k,(k)=>{a=j;e=h+k;return f(a,e);});a=j;e=h+k;}}},
-g=(a,b)=>a(a(b)),
-h=(a,c)=>b(a(c),(d)=>a(d)),
-i=(a)=>b(h(d,a),(c)=>c+g((e)=>e+1,a)),
-j=(a)=>a<=0?0:a+j(a-1);
-export{d,e,f,i,j};
+import{d,e}from"./_core/List.mjs";
+const f=(c)=>b(a(c),(d)=>c+1),
+g=(a)=>{const c=(d)=>d*2;if(a>0){return b(f(a),(h)=>c(h));}else{return c(0);}},
+h=(a,g)=>{h:for(;;){const i=a,j=g;if(i.length===0){return j;}else{const k=d(i,0),l=e(i,1),m=f(k);if(c(m))return b(m,(m)=>{a=l;g=j+m;return h(a,g);});a=l;g=j+m;}}},
+i=(a,b)=>a(a(b)),
+j=(a,c)=>b(a(c),(d)=>a(d)),
+k=(a)=>b(j(f,a),(c)=>c+i((d)=>d+1,a)),
+l=(a)=>a<=0?0:a+l(a-1);
+export{f,g,h,k,l};

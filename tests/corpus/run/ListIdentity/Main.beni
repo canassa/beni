@@ -5,12 +5,19 @@
 --
 --   * The ELEMENTS a function passes through — `filter`, `take`,
 --     `partition`, `append`, `concat` — are the input's own values.
---   * `append xs []` is `xs`, `append [] ys` is `ys`, and `xs ++ ys` shares
---     `ys` as its tail.
---   * `concat` shares its last non-empty list, however many empty ones
---     follow it, and `concatMap` does the same with the last non-empty list
---     its callback answered — the list `concat (map …)` answered before.
+--   * `append xs []` is `xs` and `append [] ys` is `ys`.
+--   * `concat` of one list is that list, and `concatMap` whose callback
+--     answered one non-empty list is that list.
 --   * `sort` of one element is the list itself.
+--
+-- Three lines print `copied`, and did not until lists became arrays
+-- (`backend.md` §4, *Identity*; `plans/list-arrays.md` §3): `xs ++ ys`
+-- shared `ys` as its tail, and `concat` and `concatMap` shared their last
+-- non-empty list, which only a cons list can do. An array cannot share a
+-- tail, so `List.drop (a ++ b) 2` is an equal list and not `b` itself; the
+-- identity that survives is the one above, a single non-empty list. The
+-- three were recorded failing against the array core before this comment
+-- and their goldens changed.
 --
 -- `filter` keeping everything returns the list itself (`backend.md` §4,
 -- *Identity*); `run/ListIndexedIdentity` pins it with the other identities

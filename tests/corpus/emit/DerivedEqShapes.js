@@ -9,5 +9,5 @@ const DerivedEqShapes$samePair = (a$1, b$2) => DerivedEqShapes$eq$t2(DerivedEqSh
 const DerivedEqShapes$sameMixed = (a$1, b$2) => DerivedEqShapes$eq$t2(DerivedEqShapes$eq$prim, DerivedEqShapes$eq$prim, a$1, b$2);
 const DerivedEqShapes$sameUnit = (a$1, b$2) => DerivedEqShapes$eq$unit(a$1, b$2);
 const DerivedEqShapes$differs = (a$1, b$2) => !DerivedEqShapes$eq$r$x$y(DerivedEqShapes$eq$prim, DerivedEqShapes$eq$prim, a$1, b$2);
-const DerivedEqShapes$main = Node$printLines({ $: 0, a: null, b: null });
+const DerivedEqShapes$main = Node$printLines([]);
 export { DerivedEqShapes$main, DerivedEqShapes$samePoint, DerivedEqShapes$sameLabel, DerivedEqShapes$samePair, DerivedEqShapes$sameMixed, DerivedEqShapes$sameUnit, DerivedEqShapes$differs };

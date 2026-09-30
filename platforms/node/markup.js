@@ -3,8 +3,11 @@
 // markup primitives. Markup under `ssr` is `{ t: string }`, HTML already
 // escaped, so a rendered string is never escaped twice.
 //
-// It reads a `List` as every sibling reads one — cons cells, `$ === 1` for
-// a cell with `a` its head and `b` its tail — and a tuple as `{ a, b }`.
+// It reads a `List` as every sibling reads one — backend.md §4's protocol:
+// the array itself, or `$plain()` of a view or a trie (`Elements`) — and a
+// tuple as `{ a, b }`.
+
+const Elements = (list) => (Array.isArray(list) ? list : list.$plain());
 
 const replacements = { "&": "&amp;", "<": "&lt;", '"': "&quot;", "\r": "&#13;" };
 const replace = (c) => replacements[c];
@@ -25,13 +28,10 @@ export const safeUrl = (url) => (scriptUrl.test(url) ? "" : url);
 // The rows of `items` concatenated, each `row(item, position)` a block; the
 // fallback's text when there are none.
 export const list = (items, row, fallback) => {
-  if (items.$ !== 1) return fallback === null ? "" : fallback.t;
+  if (items.length === 0) return fallback === null ? "" : fallback.t;
+  const a = Elements(items);
   let out = "";
-  let position = 0;
-  for (let at = items; at.$ === 1; at = at.b) {
-    out += row(at.a, position).t;
-    position += 1;
-  }
+  for (let position = 0; position < a.length; position++) out += row(a[position], position).t;
   return out;
 };
 
@@ -40,9 +40,10 @@ export const list = (items, row, fallback) => {
 export const classes = (entries) => {
   const seen = new Set();
   const names = [];
-  for (let at = entries; at.$ === 1; at = at.b) {
-    if (!at.a.b) continue;
-    for (const name of at.a.a.split(/[\t\n\f\r ]+/)) {
+  const a = Elements(entries);
+  for (let k = 0; k < a.length; k++) {
+    if (!a[k].b) continue;
+    for (const name of a[k].a.split(/[\t\n\f\r ]+/)) {
       if (name === "" || seen.has(name)) continue;
       seen.add(name);
       names.push(name);
@@ -55,7 +56,8 @@ export const classes = (entries) => {
 // its last value; an empty last value removes it.
 export const styles = (entries) => {
   const values = new Map();
-  for (let at = entries; at.$ === 1; at = at.b) values.set(at.a.a, at.a.b);
+  const a = Elements(entries);
+  for (let k = 0; k < a.length; k++) values.set(a[k].a, a[k].b);
   let out = "";
   for (const [name, value] of values) if (value !== "") out += `${name}:${value};`;
   return out;

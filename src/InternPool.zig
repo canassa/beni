@@ -279,13 +279,16 @@ pub const WellKnown = enum(u32) {
     Task,
     andThen,
     isWaiting,
-    // NOT prelude names either: the three `core/List` values the code
-    // generator calls for a list pattern with elements after its spread,
-    // `[ ...init, last ]` (`docs/design/backend.md` §7, *List patterns with
-    // elements after the spread*).
-    length,
-    drop,
-    take,
+    // NOT prelude names either: the `core/List` values the code generator
+    // calls. For a list pattern (`docs/design/backend.md` §7, *List
+    // patterns over arrays*): an element, the list after a spread with
+    // nothing behind it, and the elements a spread covers when items follow
+    // it; and a building loop's exit (§8, *Tail calls modulo cons, onto an
+    // array*). `unsafeGet`, `view` and `close` are core-private.
+    unsafeGet,
+    view,
+    slice,
+    close,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));
@@ -654,7 +657,7 @@ test "Local.init shares the well-known prefix with Global, so merge is the ident
     try testing.expect(local.hasWellKnown());
     try testing.expect(!Local.empty.hasWellKnown());
     try testing.expectEqual(WellKnown.Just.symbol(), try local.getOrPut(testing.allocator, "Just"));
-    const view = try local.getOrPut(testing.allocator, "view");
+    const view = try local.getOrPut(testing.allocator, "scene");
     const remap = try mergeAllForTest(&global, testing.allocator, &local);
     defer testing.allocator.free(remap);
     for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @intFromEnum(g));
@@ -665,14 +668,14 @@ test "an overlay answers global text with the global symbol and keeps new text t
     const gpa = testing.allocator;
     var global = try Global.init(gpa);
     defer global.deinit(gpa);
-    const view = try global.getOrPut(gpa, "view");
+    const view = try global.getOrPut(gpa, "scene");
     const before = global.count();
 
     var a: Overlay = .init(&global);
     defer a.deinit(gpa);
     var b: Overlay = .init(&global);
     defer b.deinit(gpa);
-    try testing.expectEqual(view, try a.getOrPut(gpa, "view"));
+    try testing.expectEqual(view, try a.getOrPut(gpa, "scene"));
     try testing.expect(!Overlay.isOverlay(view));
 
     // New text: an overlay symbol, stable within its overlay, spelled back
@@ -681,7 +684,7 @@ test "an overlay answers global text with the global symbol and keeps new text t
     try testing.expect(Overlay.isOverlay(x));
     try testing.expectEqual(x, try a.getOrPut(gpa, "$m$3"));
     try testing.expectEqualStrings("$m$3", a.slice(x));
-    try testing.expectEqualStrings("view", a.slice(view));
+    try testing.expectEqualStrings("scene", a.slice(view));
     try testing.expectEqual(@as(?Symbol, x), a.find("$m$3"));
     try testing.expectEqual(@as(?Symbol, null), a.find("absent"));
     try testing.expectEqual(before, global.count());
@@ -697,13 +700,13 @@ test "an overlay answers global text with the global symbol and keeps new text t
 test "Local dedups equal bytes and distinguishes different ones" {
     var local: Local = .empty;
     defer local.deinit(testing.allocator);
-    const a = try local.getOrPut(testing.allocator, "view");
+    const a = try local.getOrPut(testing.allocator, "scene");
     const b = try local.getOrPut(testing.allocator, "model");
-    const c = try local.getOrPut(testing.allocator, "view");
+    const c = try local.getOrPut(testing.allocator, "scene");
     try testing.expectEqual(a, c);
     try testing.expect(a != b);
     try testing.expectEqual(@as(u32, 2), local.count());
-    try testing.expectEqualStrings("view", local.slice(a));
+    try testing.expectEqualStrings("scene", local.slice(a));
     try testing.expectEqualStrings("model", local.slice(b));
 }
 
@@ -745,10 +748,10 @@ test "merge remaps every local symbol and shares across workers" {
     var w1: Local = .empty;
     defer w1.deinit(testing.allocator);
 
-    const w0_view = try w0.getOrPut(testing.allocator, "view");
+    const w0_view = try w0.getOrPut(testing.allocator, "scene");
     const w0_main = try w0.getOrPut(testing.allocator, "main");
     const w1_update = try w1.getOrPut(testing.allocator, "update");
-    const w1_view = try w1.getOrPut(testing.allocator, "view");
+    const w1_view = try w1.getOrPut(testing.allocator, "scene");
 
     const remap0 = try mergeAllForTest(&global, testing.allocator, &w0);
     defer testing.allocator.free(remap0);

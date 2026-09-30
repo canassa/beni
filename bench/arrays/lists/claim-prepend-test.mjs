@@ -3,7 +3,9 @@
 // `append` and `slice` on randomly chosen OLD versions, every version checked against a plain-array
 // model (by `toJs`, `unsafeGet`, `$hd`, the runtime's walk and `chunks`) after every step; then long
 // single-lineage runs that grow the root left and right past three levels. `node lists/claim-prepend-test.mjs`
-import * as E from '../ports/first-tail-prepend.js';
+// tests the prototype; `node lists/claim-prepend-test.mjs core` tests the shipped core/List.js
+// through lists/core-shipped.mjs.
+const E = process.argv[2] === 'core' ? await import('./core-shipped.mjs') : await import('../ports/first-tail-prepend.js');
 
 let seed = 4711;
 const rnd = (k) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed >>> 8) % k; }; // high bits: an LCG's low bits cycle fast
@@ -39,6 +41,7 @@ for (let step = 0; step < 60000; step++) {
   else if (op < 17 && m.length) { const i = rnd(m.length); nv = E.set(v, i, 1e9 + step); nm = m.slice(); nm[i] = 1e9 + step; }
   else if (op < 18) { const extra = Array.from({ length: rnd(step % 11 === 0 ? 3000 : 40) }, (_, j) => step * 100000 + j); nv = E.append(v, extra); nm = [...m, ...extra]; }
   else if (op < 19 && m.length) { const a = rnd(m.length + 1), b = rnd(m.length + 1); nv = E.slice(v, Math.min(a, b), Math.max(a, b)); nm = m.slice(Math.min(a, b), Math.max(a, b)); }
+  else if (m.length > 1 && E.view && rnd(2)) { const k = rnd(m.length + 1); nv = E.view(v, k); nm = m.slice(k); } // the shipped core: a tail k deep at once (List.drop)
   else if (m.length > 1) { let w = v; const k = 1 + rnd(Math.min(m.length - 1, 80)); for (let j = 0; j < k; j++) w = E.$tl(w); nv = w; nm = m.slice(k); } // a walk that stops
   else continue;
   const tr = `${NAMES[op]} ${E.kind(v)}`; seen[tr] = (seen[tr] ?? 0) + 1;

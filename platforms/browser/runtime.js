@@ -22,8 +22,8 @@
 // to append). What it holds is an instance `i`, a list of instances `u`,
 // or both for a `For` showing its fallback.
 //
-// A `List` is read as every sibling reads one — cons cells, `$ === 1` for
-// a cell with `a` its head and `b` its tail — and a tuple as `{ a, b }`.
+// A `List` is read as every sibling reads one — by backend.md §4's
+// protocol, `Elements` below — and a tuple as `{ a, b }`.
 //
 // The page is reached through `globalThis`, a capability of this file
 // alone: the code the compiler emits touches only the nodes this file
@@ -158,16 +158,22 @@ export const childMaybe = (s, b) => {
   }
 };
 
+// A list's elements, by backend.md §4's protocol: the array itself, or a
+// view's or a trie's plain copy (made once per list and cached). Read, never
+// written.
+const Elements = (list) => (Array.isArray(list) ? list : list.$plain());
+
 // `(slot, list)`: a `List Html` hole, its blocks matched by position.
 export const childList = (s, list) => {
   if (list === s.b) return;
   s.b = list;
   const u = s.u ?? (s.u = []);
+  const a = Elements(list);
   let k = 0;
-  for (let at = list; at.$ === 1; at = at.b, k++) {
-    if (k < u.length) u[k] = patch(u[k], at.a, s.cx);
+  for (; k < a.length; k++) {
+    if (k < u.length) u[k] = patch(u[k], a[k], s.cx);
     else {
-      const i = unit(at.a, s.cx);
+      const i = unit(a[k], s.cx);
       put(parentOf(s), i, s.m);
       u.push(i);
     }
@@ -353,13 +359,13 @@ const trimmed = (s, items, keyOf, row, same, was, now) => {
   const m = old.length;
   // A list that was empty or is: the full pass mounts it in one walk
   // or empties the parent at once.
-  if (m === 0 || items.$ !== 1) return false;
+  if (m === 0 || items.length === 0) return false;
   const stamp = ++stamps;
+  const a = Elements(items);
   let p = 0;
-  let at = items;
-  for (; at.$ === 1 && p < m; at = at.b, p++) {
+  for (; p < a.length && p < m; p++) {
     let i = old[p];
-    const item = at.a;
+    const item = a[p];
     if (i.x !== item) {
       if (i.k !== (keyOf === null ? item : keyOf(item))) break;
     } else if (same && i.k !== was && i.k !== now) {
@@ -376,10 +382,9 @@ const trimmed = (s, items, keyOf, row, same, was, now) => {
     i.x = item;
     i.kv = stamp;
   }
-  if (p === m && at.$ !== 1) return true;
+  if (p === m && p === a.length) return true;
   // The rest of the items, each key asked for once and only if needed.
-  const xs = [];
-  for (; at.$ === 1; at = at.b) xs.push(at.a);
+  const xs = a.slice(p);
   const n = p + xs.length;
   const ks = new Array(xs.length);
   const keyAt = (b) => {
@@ -539,7 +544,7 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
     s.b = items;
     s.y = inputs;
     if (s.d && trimmed(s, items, keyOf, row, same, was, now)) {
-      fallback(s, items.$ !== 1, row.f);
+      fallback(s, items.length === 0, row.f);
       return;
     }
     const stamp = ++stamps;
@@ -548,9 +553,9 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
     const byKey = s.x ?? (s.x = new Map());
     const next = [];
     let moved = false;
-    let position = 0;
-    for (let at = items; at.$ === 1; at = at.b, position++) {
-      const item = at.a;
+    const a = Elements(items);
+    for (let position = 0; position < a.length; position++) {
+      const item = a[position];
       const key = keyOf === null ? item : keyOf(item);
       const h = byKey.get(key);
       // The key's first item in this render: the chain starts again.
@@ -613,7 +618,7 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
     s.u = next;
     s.d = distinct;
   }
-  fallback(s, items.$ !== 1, row.f);
+  fallback(s, items.length === 0, row.f);
 };
 
 // `(slot, items, row, inputs)`: the list matched by position; row `k`
@@ -624,9 +629,10 @@ export const forPosition = (s, items, row, inputs) => {
     s.b = items;
     s.y = inputs;
     const u = s.u ?? (s.u = []);
+    const a = Elements(items);
     let k = 0;
-    for (let at = items; at.$ === 1; at = at.b, k++) {
-      const item = at.a;
+    for (; k < a.length; k++) {
+      const item = a[k];
       if (k < u.length) {
         const i = u[k];
         if (!same || i.x !== item) {
@@ -641,7 +647,7 @@ export const forPosition = (s, items, row, inputs) => {
     }
     while (u.length > k) drop(u.pop());
   }
-  fallback(s, items.$ !== 1, row.f);
+  fallback(s, items.length === 0, row.f);
 };
 
 // `(slot, key, block)`: a keyed `Show` showing its body. A new key, or a
@@ -683,9 +689,10 @@ export const attrNS = (el, namespace, name, value) => {
 // The names whose flag is `True`, a name holding whitespace being several.
 const classSet = (list) => {
   const names = new Set();
-  for (let at = list; at.$ === 1; at = at.b) {
-    if (!at.a.b) continue;
-    for (const name of at.a.a.split(/[\t\n\f\r ]+/)) if (name !== "") names.add(name);
+  const a = Elements(list);
+  for (let k = 0; k < a.length; k++) {
+    if (!a[k].b) continue;
+    for (const name of a[k].a.split(/[\t\n\f\r ]+/)) if (name !== "") names.add(name);
   }
   return names;
 };
@@ -702,7 +709,8 @@ export const classes = (el, list, previous) => {
 // Each property's last value.
 const styleMap = (list) => {
   const values = new Map();
-  for (let at = list; at.$ === 1; at = at.b) values.set(at.a.a, at.a.b);
+  const a = Elements(list);
+  for (let k = 0; k < a.length; k++) values.set(a[k].a, a[k].b);
   return values;
 };
 

@@ -6,5 +6,5 @@ const ConstantMethodCall$bump = (c$1, step$2) => {
   return { $: "Counter", a: n$3 + step$2 };
 };
 const ConstantMethodCall$bumped = ConstantMethodCall$bump({ $: "Counter", a: 1 }, 2);
-const ConstantMethodCall$main = Node$printLines({ $: 0, a: null, b: null });
+const ConstantMethodCall$main = Node$printLines([]);
 export { ConstantMethodCall$Counter$$compare, ConstantMethodCall$Counter$$eq, ConstantMethodCall$main, ConstantMethodCall$bumped, ConstantMethodCall$bump };

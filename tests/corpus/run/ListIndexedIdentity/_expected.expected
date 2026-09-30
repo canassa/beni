@@ -21,7 +21,16 @@ reverse [] same
 sort [] same
 sortWith one same
 sortBy one same
+set same same
+update same same
+swap equal same
+set same written same
+map identity same
+indexedMap identity same
+map identity written same
 set in range copied
 insertAt length copied
 slice part copied
 filter one out copied
+set written copied
+map one changed copied
