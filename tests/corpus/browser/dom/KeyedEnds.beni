@@ -57,7 +57,7 @@ swapAt rows i j =
 
 insertAt : List Row, Int, Row -> List Row
 insertAt rows k r =
-    List.take rows k ++ (r :: List.drop rows k)
+    List.take rows k ++ [ r, ...List.drop rows k ]
 
 
 lastOf : List Row -> Row
@@ -91,14 +91,14 @@ update msg rows =
 
         CopyFirst ->
             case rows of
-                first :: _ ->
+                [ first, ..._ ] ->
                     insertAt rows 2 first
 
                 [] ->
                     rows
 
         Dedupe ->
-            List.foldr rows [] (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else r :: kept)
+            List.foldr rows [] (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else [ r, ...kept ])
 
         Flip ->
             List.indexedMap (swapAt rows 0 (List.length rows - 1)) (\k r -> if k == List.length rows - 1 then { r | done = not r.done } else r)

@@ -295,7 +295,7 @@ update msg model =
 
 addError : String, Model -> Model
 addError message model =
-    { model | errors = message :: List.take model.errors 4 }
+    { model | errors = [ message, ...List.take model.errors 4 ] }
 
 
 updateCard : Int, (Card -> Card), Model -> Model
@@ -313,7 +313,7 @@ toggleLabel label card =
     if List.member card.labels label then
         { card | labels = List.filter card.labels (\l -> l /= label) }
     else
-        { card | labels = label :: card.labels }
+        { card | labels = [ label, ...card.labels ] }
 
 
 commitEdit : Model -> Model

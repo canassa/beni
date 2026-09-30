@@ -35,10 +35,10 @@ main : Program
 main =
     let
         listLeft =
-            List.foldl [ 1, 2, 3 ] [] (\x acc -> note "List.foldl" x :: acc)
+            List.foldl [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldl" x, ...acc ])
 
         listRight =
-            List.foldr [ 1, 2, 3 ] [] (\x acc -> note "List.foldr" x :: acc)
+            List.foldr [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldr" x, ...acc ])
 
         stringLeft =
             String.foldl "abc" "" (\ch acc -> String.cons acc (noteChar "String.foldl" ch))
@@ -47,16 +47,16 @@ main =
             String.foldr "abc" "" (\ch acc -> String.cons acc (noteChar "String.foldr" ch))
 
         dictLeft =
-            Dict.foldl numbers [] (\k _ acc -> note "Dict.foldl" k :: acc)
+            Dict.foldl numbers [] (\k _ acc -> [ note "Dict.foldl" k, ...acc ])
 
         dictRight =
-            Dict.foldr numbers [] (\k _ acc -> note "Dict.foldr" k :: acc)
+            Dict.foldr numbers [] (\k _ acc -> [ note "Dict.foldr" k, ...acc ])
 
         setLeft =
-            Set.foldl members [] (\v acc -> note "Set.foldl" v :: acc)
+            Set.foldl members [] (\v acc -> [ note "Set.foldl" v, ...acc ])
 
         setRight =
-            Set.foldr members [] (\v acc -> note "Set.foldr" v :: acc)
+            Set.foldr members [] (\v acc -> [ note "Set.foldr" v, ...acc ])
     in
     Node.printLines
         [ Debug.toString listLeft

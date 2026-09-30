@@ -71,7 +71,7 @@ oneOf parsers =
                 [] ->
                     Err "no alternative matched"
 
-                first :: rest ->
+                [ first, ...rest ] ->
                     case first.run input of
                         Ok result ->
                             Ok result

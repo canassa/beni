@@ -15,5 +15,5 @@ pub firstOf xs ifEmpty =
         [] ->
             ifEmpty
 
-        x :: rest ->
+        [ x, ...rest ] ->
             x

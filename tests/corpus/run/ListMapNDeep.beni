@@ -5,7 +5,7 @@
 -- `indexedMap` was `map2`. Their self-calls were not in tail position, so
 -- they were written the way `map` was: `foldl` plus `reverse`, an
 -- accumulator loop (`backend.md` §8). Since 2026-09-30 each is
--- `func x y :: map2 …` again, a cons step the code generator compiles to a
+-- `[ func x y, ...map2 … ]` again, a cons step the code generator compiles to a
 -- loop that builds front to back (§8, *Tail calls modulo cons*).
 --
 -- Everything the rewrite had to keep is pinned below, because an accumulator

@@ -145,6 +145,11 @@ markup_drift: u32 = 0,
 /// one, a `</` is the enclosing element's closing tag reached before the
 /// `}`; outside every one, it is a closing tag with no element open.
 markup_holes: u32 = 0,
+/// The last `::` node built and its `cons_removed` report (language.md
+/// §6.8): a chain is right-associative, so its inner `::` is built first,
+/// and the one around it takes over that report — one message per chain,
+/// at its first `::`, spanning all of it.
+last_cons: ?struct { node: Index, report: ?u32 } = null,
 /// True while the `Type` of a TOP-LEVEL annotation or `foreign` value is
 /// being parsed: the only two positions a `where` clause may follow
 /// (static-dispatch-spike.md §2.1). It is what makes `where` a CONTEXTUAL
@@ -391,6 +396,35 @@ fn unary(p: *Parse, tag: Node.Tag, main_token: TokenIndex, operand: Index) Alloc
 
 fn binary(p: *Parse, tag: Node.Tag, main_token: TokenIndex, lhs: Index, rhs: Index) Allocator.Error!Index {
     return p.addNode(.{ .tag = tag, .main_token = main_token, .data = .{ .lhs = lhs.int(), .rhs = rhs.int() } });
+}
+
+/// `lhs :: rhs`, an expression (`cons`) or a pattern (`pat_cons`), from
+/// `first` to the last token consumed: built as it always was, so the tree
+/// stays whole, and reported as `cons_removed` (language.md §6.8) — the
+/// message writes the chain in brackets, from the text `[first, last]`
+/// spans (`Diagnostics.writeBracketForm`).
+fn consRemoved(p: *Parse, tag: Node.Tag, op: TokenIndex, lhs: Index, rhs: Index, first: TokenIndex) Allocator.Error!Index {
+    @branchHint(.cold);
+    const node = try p.binary(tag, op, lhs, rhs);
+    const last = p.tok_i -| 1;
+    var item = p.itemAtToken(.cons_removed, op);
+    item.head_start = p.starts[first];
+    item.head_end = p.tokenEnd(last);
+    // `a :: (b :: rest)` is one chain too: look through the parentheses.
+    var tail = rhs;
+    while (p.nodes.items(.tag)[tail.int()] == .paren or p.nodes.items(.tag)[tail.int()] == .pat_paren) {
+        tail = @enumFromInt(p.nodes.items(.data)[tail.int()].lhs);
+    }
+    if (p.last_cons) |inner| {
+        if (inner.node == tail) {
+            // The chain's inner `::` reported first: it becomes this one.
+            if (inner.report) |r| p.errors.items[r] = item;
+            p.last_cons = .{ .node = node, .report = inner.report };
+            return node;
+        }
+    }
+    p.last_cons = .{ .node = node, .report = try p.report(item) };
+    return node;
 }
 
 fn rangeNode(p: *Parse, tag: Node.Tag, main_token: TokenIndex, range: SubRange) Allocator.Error!Index {
@@ -2095,6 +2129,7 @@ fn conflicting(tag: Tag) Tag {
 /// `min_bp` is the lowest binding power this call may consume; `banned` is
 /// an operator that a right-associative caller at the same level forbids.
 fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
+    const first = p.tok_i;
     var lhs = try p.parsePostfix();
     var banned_prec: i16 = -1;
     var last_op: Tag = .invalid;
@@ -2141,7 +2176,10 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
             };
         };
         if (info.tag == .pipe_right) try p.checkPipeRhs(rhs);
-        lhs = try p.binary(info.tag, op_token, lhs, rhs);
+        lhs = if (info.tag == .cons)
+            try p.consRemoved(.cons, op_token, lhs, rhs, first)
+        else
+            try p.binary(info.tag, op_token, lhs, rhs);
         banned_prec = if (info.assoc == .none) info.prec else -1;
         last_op = tok;
     }
@@ -3024,6 +3062,12 @@ fn parseParens(p: *Parse) Allocator.Error!Index {
             @branchHint(.cold);
             return p.errorNode(.error_expr, p.itemAtToken(.operator_not_a_function, op));
         }
+        // `(::)` left with `::` (language.md §6.8); its message names
+        // `List.cons`. The node stays, for `fmt --migrate-cons`.
+        if (op_tag == .op_colon_colon) {
+            @branchHint(.cold);
+            _ = try p.report(p.itemAtToken(.cons_removed, op));
+        }
         return p.leaf(.op_fn, op);
     }
     try p.pushBracket(.r_paren);
@@ -3469,8 +3513,8 @@ fn applyArgs(p: *const Parse, node: Index) []const u32 {
 }
 
 /// The HALF of §7's irrefutability rule that types cannot change: a
-/// literal, a list and a `::` match some values of their type and not
-/// others whatever that type turns out to be, so they are rejected here,
+/// literal and a list, with a spread or without, match some values of their
+/// type and not others whatever that type turns out to be, so they are rejected here,
 /// early and cheaply, in every irrefutable position — a `let` pattern, a
 /// `<-` bound pattern, and the parameters of a definition, a `let`-bound
 /// function or a lambda. `code` says which position found it.
@@ -3479,7 +3523,7 @@ fn applyArgs(p: *const Parse, node: Index) []const u32 {
 /// matches depends on how many constructors `Box`'s type has, which is a
 /// question about types; the checker asks it with the same usefulness
 /// analysis a `case` gets (`checker.md` §6.6) and raises the same two
-/// codes. So this walk descends THROUGH a constructor's arguments — a `::`
+/// codes. So this walk descends THROUGH a constructor's arguments — a list
 /// inside one is still hopeless — without judging the constructor itself.
 fn checkIrrefutable(p: *Parse, node: Index, code: diagnostic.Code) Allocator.Error!void {
     const tags = p.nodes.items(.tag);
@@ -3491,6 +3535,8 @@ fn checkIrrefutable(p: *Parse, node: Index, code: diagnostic.Code) Allocator.Err
     if (tag.isError()) return;
     switch (tag) {
         .pat_wild, .pat_var, .pat_unit, .pat_record => {},
+        // A `::`: already `cons_removed` (language.md §6.8).
+        .pat_cons => {},
         .pat_paren, .pat_as => try p.checkIrrefutable(@enumFromInt(data[node.int()].lhs), code),
         .pat_tuple, .pat_ctor => {
             const range: SubRange = .{ .start = @enumFromInt(data[node.int()].lhs), .end = @enumFromInt(data[node.int()].rhs) };
@@ -3564,14 +3610,17 @@ fn parsePattern(p: *Parse) Allocator.Error!Index {
     return inner;
 }
 
-/// PatCons := PatCtor ('::' PatCons)?    (right associative)
+/// PatCtor, and — withdrawn with `::` on 2026-10-01 (language.md §3, §6.8)
+/// — `PatCtor '::' …`, still read as the right-associative chain it was so
+/// that one `cons_removed` covers it and the branch goes on.
 fn parsePatCons(p: *Parse) Allocator.Error!Index {
+    const first = p.tok_i;
     const head = try p.parsePatCtor();
     if (p.eat(.op_colon_colon)) |cons| {
         if (try p.enter()) |placeholder| return placeholder;
         defer p.leave();
         const tail = try p.parsePatCons();
-        return p.binary(.pat_cons, cons, head, tail);
+        return p.consRemoved(.pat_cons, cons, head, tail, first);
     }
     return head;
 }
@@ -4221,7 +4270,7 @@ test "types: the comma is the parameter separator and the arrow right-associates
 
 test "every atom: literals, names, brackets, operator functions, strings, multiline" {
     try expectClean(
-        \\v = ( (+), (::), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", \a b -> a, if a then b else c )
+        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", \a b -> a, if a then b else c )
         \\m =
         \\    \\a
         \\    \\b
@@ -4232,7 +4281,7 @@ test "every atom: literals, names, brackets, operator functions, strings, multil
         \\  (definition v
         \\    (tuple
         \\      (op_fn +)
-        \\      (op_fn ::)
+        \\      (op_fn ++)
         \\      (op_fn ^)
         \\      (unit)
         \\      (paren
@@ -4278,7 +4327,7 @@ test "every atom: literals, names, brackets, operator functions, strings, multil
 test "precedence and associativity: every case of §6.5" {
     try expectTree(
         \\a1 a b c = a - b - c
-        \\a2 a b c = a :: b :: c
+        \\a2 a b c = a ++ b ++ c
         \\a3 a b c = a ^ b ^ c
         \\a4 f g x = f <| g <| x
         \\a5 x f g = x |> f |> g
@@ -4306,9 +4355,9 @@ test "precedence and associativity: every case of §6.5" {
         \\    (pat_var a)
         \\    (pat_var b)
         \\    (pat_var c)
-        \\    (cons
+        \\    (append
         \\      (ident a)
-        \\      (cons
+        \\      (append
         \\        (ident b)
         \\        (ident c))))
         \\  (definition a3
@@ -5241,7 +5290,7 @@ test "layout errors: a continuation on column 1, misaligned let bindings and cas
 
 // ---- Patterns --------------------------------------------------------------
 
-test "every pattern form, `as` binding loosest, cons right associative" {
+test "every pattern form, `as` binding loosest, a spread before, between and after items" {
     try expectClean(
         \\p1 x = case x of
         \\  _ -> 0
@@ -5259,9 +5308,11 @@ test "every pattern form, `as` binding loosest, cons right associative" {
         \\  [] -> 0
         \\  [a, b] -> 0
         \\  { a, b } -> 0
-        \\  a :: b :: c -> 0
+        \\  [a, b, ...c] -> 0
         \\  Just x as m -> 0
-        \\  x :: xs as all -> 0
+        \\  [x, ...xs] as all -> 0
+        \\  [...init, _] -> 0
+        \\  [a, ..._, z] -> 0
         \\  Node (Leaf) _ (Leaf) -> 0
         \\
     ,
@@ -5323,10 +5374,10 @@ test "every pattern form, `as` binding loosest, cons right associative" {
         \\        (pat_record a b)
         \\        (int 0))
         \\      (branch
-        \\        (pat_cons
+        \\        (pat_list
         \\          (pat_var a)
-        \\          (pat_cons
-        \\            (pat_var b)
+        \\          (pat_var b)
+        \\          (pat_spread
         \\            (pat_var c)))
         \\        (int 0))
         \\      (branch
@@ -5336,9 +5387,23 @@ test "every pattern form, `as` binding loosest, cons right associative" {
         \\        (int 0))
         \\      (branch
         \\        (pat_as all
-        \\          (pat_cons
+        \\          (pat_list
         \\            (pat_var x)
-        \\            (pat_var xs)))
+        \\            (pat_spread
+        \\              (pat_var xs))))
+        \\        (int 0))
+        \\      (branch
+        \\        (pat_list
+        \\          (pat_spread
+        \\            (pat_var init))
+        \\          (pat_wild))
+        \\        (int 0))
+        \\      (branch
+        \\        (pat_list
+        \\          (pat_var a)
+        \\          (pat_spread
+        \\            (pat_wild))
+        \\          (pat_var z))
         \\        (int 0))
         \\      (branch
         \\        (pat_ctor Node
@@ -5364,7 +5429,7 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         \\        _ = flag
         \\        Just y = m
         \\        1 = n
-        \\        (h :: r) = l
+        \\        [ h, ...r ] = l
         \\    in
         \\    y
         \\
@@ -5405,9 +5470,9 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         \\        (pat_int 1)
         \\        (ident n))
         \\      (let_pattern
-        \\        (pat_paren
-        \\          (pat_cons
-        \\            (pat_var h)
+        \\        (pat_list
+        \\          (pat_var h)
+        \\          (pat_spread
         \\            (pat_var r)))
         \\        (ident l))
         \\      (ident y))))
@@ -5415,9 +5480,9 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         // `Just y` on line 9 is NOT reported here: whether a constructor
         // always matches depends on how many its type has, which the
         // parser does not know, so §7 leaves it to the checker. The
-        // literal and the `::` can never match everything whatever the
+        // literal and the list can never match everything whatever the
         // types are, so those two stay parse errors.
-    , &.{ .{ .code = .refutable_let_pattern, .line = 10, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 11, .col = 12 } });
+    , &.{ .{ .code = .refutable_let_pattern, .line = 10, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 11, .col = 9 } });
 }
 
 // ---- Doc comments ----------------------------------------------------------

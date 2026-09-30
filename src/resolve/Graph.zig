@@ -714,7 +714,6 @@ const minted_bits: [256]u8 = blk: {
         .{ .type_dispatch, basics },
         .{ .list, list },
         .{ .pat_list, list },
-        .{ .pat_cons, list },
         .{ .string, string },
         .{ .chunk, string },
         .{ .interp, string },

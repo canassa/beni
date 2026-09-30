@@ -1,12 +1,13 @@
--- `docs/design/backend.md` §7: `[]`, `[ x ]`, `[ 1 ]`, `x :: y :: rest` and
--- `1 :: 2 :: rest` in one match — `classify`, the second program of §7's
--- before-table.
+-- `docs/design/backend.md` §7: `[]`, `[ x ]`, `[ 1 ]`, `[ x, y, ...rest ]`
+-- and `[ 1, 2, ...rest ]` in one match — `classify`, the second program of
+-- §7's before-table.
 --
--- A fixed-length list pattern is NORMALISED to `a :: b :: []` before the
--- matrix is built (§7's table), so `[ 1 ]` and `1 :: 2 :: rest` are rows of
--- one language and not two shapes tested separately. The one-element rows
--- and the two-element rows disagree about the same cell — `[ 1 ]` wants the
--- tail empty where `1 :: 2 :: rest` wants it a cons — which is the case the
+-- A fixed-length list pattern is NORMALISED to a chain of cells ending in
+-- `[]` before the matrix is built (§7's table), so `[ 1 ]` and
+-- `[ 1, 2, ...rest ]` are rows of one language and not two shapes tested
+-- separately. The one-element rows and the two-element rows disagree about
+-- the same cell — `[ 1 ]` wants the tail empty where `[ 1, 2, ...rest ]`
+-- wants it a cons — which is the case the
 -- linear chain got right only by re-testing the whole spine per branch.
 import List
 import Node exposing (Program)
@@ -25,10 +26,10 @@ classify xs =
         [ x ] ->
             "single ${String.fromInt x}"
 
-        1 :: 2 :: rest ->
+        [ 1, 2, ...rest ] ->
             "twelve then ${String.fromInt (List.length rest)}"
 
-        x :: y :: rest ->
+        [ x, y, ...rest ] ->
             "${String.fromInt (x + y)} then ${String.fromInt (List.length rest)}"
 
 

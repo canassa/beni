@@ -9,7 +9,7 @@
 -- argument is assigned, and an exit that writes its value into `$last.b`
 -- and returns `$root.b`. `twice` is two cells in one step, in head order.
 -- `filterRec` mixes a cons step with an ordinary tail self-call, which
--- writes nothing and jumps. `plain` is the control: a `::` whose tail does
+-- writes nothing and jumps. `plain` is the control: a spread whose operand does
 -- not reach a self-call is an ordinary returned value, and the function is
 -- unchanged, byte for byte.
 import Node exposing (Program)
@@ -21,8 +21,8 @@ mapRec xs f =
         [] ->
             []
 
-        x :: rest ->
-            f x :: mapRec rest f
+        [ x, ...rest ] ->
+            [ f x, ...mapRec rest f ]
 
 
 pub twice : List a -> List a
@@ -31,8 +31,8 @@ twice xs =
         [] ->
             []
 
-        x :: rest ->
-            x :: x :: twice rest
+        [ x, ...rest ] ->
+            [ x, x, ...twice rest ]
 
 
 pub filterRec : List a, (a -> Bool) -> List a
@@ -41,16 +41,16 @@ filterRec xs keep =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                x :: filterRec rest keep
+                [ x, ...filterRec rest keep ]
             else
                 filterRec rest keep
 
 
 pub plain : Int, List Int -> List Int
 plain n xs =
-    n :: xs
+    [ n, ...xs ]
 
 
 main : Program

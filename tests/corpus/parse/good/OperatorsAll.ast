@@ -61,9 +61,10 @@
       (append
         (ident xs)
         (ident ys))
-      (cons
+      (list
         (ident x)
-        (ident xs))))
+        (spread
+          (ident xs)))))
   (definition pipes
     (pat_var f)
     (pat_var x)
@@ -95,20 +96,11 @@
       (op_fn &&)
       (op_fn ||)))
   (definition asRest
-    (tuple
-      (op_fn ++)
-      (op_fn ::)))
+    (op_fn ++))
   (definition folded
     (pat_var xs)
     (apply
       (ident List.foldl)
       (ident xs)
       (int 0)
-      (op_fn +)))
-  (definition consed
-    (pat_var xs)
-    (apply
-      (ident List.foldr)
-      (ident xs)
-      (list)
-      (op_fn ::))))
+      (op_fn +))))

@@ -1574,7 +1574,9 @@ not a word, and the letter is what the reader sees. Elm prints *"a"* every time 
 **A cons pattern inside a constructor.** `missing_patterns` prints a constructor with
 arguments in parentheses only in ARGUMENT position (`Just (Node a b)`), never at the head of a
 `::`: `Group (Circle _ :: _)`, not `Group ((Circle _) :: _)`. This is Elm's `patternToDoc`, whose
-`Head` context adds no parentheses to a constructor (`Pattern.hs` lines 139–165).
+`Head` context adds no parentheses to a constructor (`Pattern.hs` lines 139–165). *Amended
+2026-10-01:* with `::` gone a list prints in brackets, `Group [ Circle _, ..._ ]`, and an item needs
+no parentheses at all (`language.md` §6.8; `check/bad/MissingPatternConsRendering`).
 
 **A constructor with its type's name.** The `exposing (T(..))` hint lists
 the type and then every constructor the imported module exposes — except one that shares the

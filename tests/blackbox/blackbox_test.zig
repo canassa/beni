@@ -1319,8 +1319,8 @@ test "three lexical errors in one file yield exactly three diagnostics in positi
             .title = "INVALID CHARACTER",
             .message = "I found `@`, which is not part of the language's syntax.\n" ++
                 "\n" ++
-                "The symbols are ( ) [ ] { } , : = -> \\ | _ ? and the operators are\n" ++
-                "+ - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>.",
+                "The symbols are ( ) [ ] { } , : = -> \\ | _ ? ... and the operators are\n" ++
+                "+ - * / // ^ ++ == /= < > <= >= && || |> <|.",
         },
     }), r.diagnostics);
 }
@@ -1730,6 +1730,43 @@ test "fmt --stdout prints the canonical form of an ugly module and writes nothin
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(ugly_module, try w.read("Main.beni"));
+}
+
+test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout and says nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // language.md §6.8: `::` is `cons_removed`, and the hidden flag is its
+    // fix — every chain written in brackets, nothing else touched (the
+    // ugly spacing of `y` stays), and the `cons_removed`s it fixes are not
+    // reported. `check` on the same file refuses it, one message a chain.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const before = "x xs = 1 :: 2 :: xs\ny   =   case [] of\n  a :: _ -> a\n  _ -> 0\n";
+    try w.write("Main.beni", before);
+    const refused = try w.run(&.{ "check", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 2), refused.diagnostics.len);
+    for (refused.diagnostics) |d| try testing.expectEqual(diagnostic.Code.cons_removed, d.code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-cons", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        "x xs = [ 1, 2, ...xs ]\ny   =   case [] of\n  [ a, ..._ ] -> a\n  _ -> 0\n",
+        try w.read("Main.beni"),
+    );
 }
 
 test "fmt --check on a canonical file exits 0 with nothing on either stream" {
@@ -5696,7 +5733,7 @@ test "schema field recovery keeps the next sibling and top-level declaration" {
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 30 }, .end = .{ .line = 2, .col = 31 } },
         .title = "INVALID CHARACTER",
-        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = -> \\ | _ ? and the operators are\n+ - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>.",
+        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = -> \\ | _ ? ... and the operators are\n+ - * / // ^ ++ == /= < > <= >= && || |> <|.",
     }}), r.diagnostics);
 }
 
@@ -6225,7 +6262,7 @@ test "a record merge past a proved `err` row end voids the proofs" {
         \\            [ q, { a = 1, b = ee } ]
         \\    in
         \\    case p of
-        \\        r :: _ ->
+        \\        [ r, ..._ ] ->
         \\            List.length [ r.b, [ r.b ] ]
         \\
         \\        [] ->
@@ -6244,7 +6281,7 @@ test "a record merge past a proved `err` row end voids the proofs" {
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
-        infiniteType("p/Main.beni", 21, 9, 1, "for `r`", "a = List a"),
+        infiniteType("p/Main.beni", 21, 11, 1, "for `r`", "a = List a"),
         unknownNope(),
     }), r.diagnostics);
 }

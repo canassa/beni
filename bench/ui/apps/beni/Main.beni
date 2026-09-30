@@ -92,7 +92,7 @@ buildFrom id first seed rows =
             label =
                 "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
         in
-        buildFrom (id - 1) first n ({ id = id, label = label } :: rows)
+        buildFrom (id - 1) first n [ { id = id, label = label }, ...rows ]
 
 
 replace : Model, Int -> Model

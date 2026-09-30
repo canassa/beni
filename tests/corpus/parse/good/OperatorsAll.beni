@@ -15,7 +15,7 @@ logic a b =
 
 
 sequences x xs ys =
-    ( xs ++ ys, x :: xs )
+    ( xs ++ ys, [ x, ...xs ] )
 
 
 pipes f x =
@@ -35,12 +35,8 @@ asLogic =
 
 
 asRest =
-    ( (++), (::) )
+    (++)
 
 
 folded xs =
     List.foldl xs 0 (+)
-
-
-consed xs =
-    List.foldr xs [] (::)

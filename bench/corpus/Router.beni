@@ -164,7 +164,7 @@ parsePair pair =
             else
                 Just ( decodeSegment key, "" )
 
-        key :: rest ->
+        [ key, ...rest ] ->
             Just ( decodeSegment key, decodeSegment (String.join rest "=") )
 
         [] ->

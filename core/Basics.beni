@@ -6,8 +6,8 @@
 --! operators of §6.5 desugar to live: `a + b` is `add a b`, `a == b` is
 --! `eq a b`, and likewise `-` `*` `/` `//` `^` `/=` `<` `>` `<=` `>=` `&&`
 --! `||` and `++`, with the prefix `-` desugaring to `negate`. Those are all
---! of them: `::` desugars to `List.cons`, and `|>` and `<|` are pure syntax
---! with no function behind them — `x |> f a` rewrites to the direct call
+--! of them: a list's spread is `List.cons` and `List.append`, and `|>` and
+--! `<|` are pure syntax with no function behind them — `x |> f a` rewrites to the direct call
 --! `f x a`, and `f <| x` to `f x` (§6.5, §6.7). The operators are syntax, so
 --! these names are never written by hand — but they are what the checker
 --! types and what the code generator emits.

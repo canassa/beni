@@ -1,0 +1,21 @@
+-- `::` left the language (language.md §6.8): each chain is ONE
+-- cons_removed, at its first `::`, whose message is the chain written in
+-- brackets from the author's own text — an expression chain ending in a
+-- name (8:7), one ending in a literal, whose items it takes (12:11), a
+-- pattern chain ending in `_` (17:18), and `(::)`, which names `List.cons`
+-- (21:31). The rest of each declaration parses, so nothing else is said.
+cons x xs =
+    x :: f xs :: xs
+
+
+literal x y =
+    x + 1 :: [ y, 2 ]
+
+
+pairs xs =
+    case xs of
+        ( a, b ) :: _ ->
+            a
+
+        _ ->
+            List.foldr xs [] (::)

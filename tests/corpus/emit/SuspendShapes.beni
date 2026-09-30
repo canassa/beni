@@ -52,7 +52,7 @@ total xs acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             total rest (acc + fetch x)
 
 
@@ -62,8 +62,8 @@ fetchAll xs =
         [] ->
             []
 
-        x :: rest ->
-            fetch x :: fetchAll rest
+        [ x, ...rest ] ->
+            [ fetch x, ...fetchAll rest ]
 
 
 twice : (Int -> Int), Int -> Int

@@ -8,15 +8,6 @@
         (ident a)
         (ident b))
       (ident c)))
-  (definition rightCons
-    (pat_var a)
-    (pat_var b)
-    (pat_var c)
-    (cons
-      (ident a)
-      (cons
-        (ident b)
-        (ident c))))
   (definition rightApply
     (pat_var f)
     (pat_var g)
@@ -65,15 +56,16 @@
       (mul
         (ident b)
         (ident c))))
-  (definition appendAndConsSameLevel
+  (definition spreadOverAppend
     (pat_var a)
     (pat_var b)
     (pat_var c)
-    (append
-      (ident a)
-      (cons
-        (ident b)
-        (ident c))))
+    (list
+      (spread
+        (append
+          (ident a)
+          (ident b)))
+      (ident c)))
   (definition orOverAnd
     (pat_var a)
     (pat_var b)

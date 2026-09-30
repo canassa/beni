@@ -240,9 +240,9 @@
                 (pat_var rest)))
             (apply
               (ident go)
-              (paren
-                (cons
-                  (ident value)
+              (list
+                (ident value)
+                (spread
                   (ident acc)))
               (ident rest)))
           (branch
@@ -288,11 +288,12 @@
                     (string
                       (chunk "no parser matched"))))
                 (branch
-                  (pat_cons
+                  (pat_list
                     (pat_paren
                       (pat_ctor Parser
                         (pat_var p)))
-                    (pat_var rest))
+                    (pat_spread
+                      (pat_var rest)))
                   (case
                     (apply
                       (ident p)

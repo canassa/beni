@@ -53,7 +53,7 @@ fibAll ns cache =
                 ( value, c1 ) =
                     fib n c
             in
-            ( value :: acc, c1 )
+            ( [ value, ...acc ], c1 )
     in
     List.foldl ns ( [], cache ) step
         |> (\( values, final ) -> ( List.reverse values, final ))

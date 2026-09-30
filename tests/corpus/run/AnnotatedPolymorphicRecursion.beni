@@ -13,7 +13,7 @@ depth xs =
         [] ->
             0
 
-        _ :: rest ->
+        [ _, ...rest ] ->
             1
                 + depth rest
                 + (if False then
@@ -32,7 +32,7 @@ inner u =
                 [] ->
                     0
 
-                _ :: rest ->
+                [ _, ...rest ] ->
                     1
                         + d rest
                         + (if False then

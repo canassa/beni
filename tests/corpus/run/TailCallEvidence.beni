@@ -30,7 +30,7 @@ countEq xs value acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if x == value then
                 countEq rest value (acc + 1)
             else

@@ -123,8 +123,9 @@ str_start str_chunk interp_start interp_end str_end   (§2.6)
 multiline_line     \\ …to end of line                 (§2.7)
 char               'a'  '\n'  '\u{1F600}'
 keywords           if then else case of let in type alias pub opaque import as exposing foreign
-symbols            ( ) [ ] { } , : = -> <- \ | _ ? ..
-operators          + - * / // ^ ++ :: == /= < > <= >= && || |> <|
+symbols            ( ) [ ] { } , : = -> <- \ | _ ? .. ...
+operators          + - * / // ^ ++ == /= < > <= >= && || |> <|
+                   (and `::`, lexed only to be refused, §6.8)
 eof
 ```
 
@@ -989,7 +990,11 @@ two.
 `cons_removed` — one error for a whole chain, reported at its first `::`, whose message is the
 bracket form of what was written: `a :: b :: rest` as `[ a, b, ...rest ]`, `x :: []` as `[ x ]`,
 `x :: [ y ]` as `[ x, y ]`, and `(::)` as `List.cons`. The parser reads the chain as it always did
-and goes on, so one mistake is one message. A second spread in a pattern is
+and goes on, so one mistake is one message. `beni fmt --migrate-cons <path>…` (a hidden flag,
+`frontend.md` §1) applies that rewrite to every `::` of a file and changes nothing else — an edit,
+not a formatting, so the file keeps its layout; it is how the repository moved, and a chain it
+cannot write (a comment between items, a pattern tail that is not a name, `_` or a list) is left
+for a person. A second spread in a pattern is
 `two_spreads_in_pattern` at the second one. A spread outside a list's brackets, or a spread operand
 in a pattern that is not a name or `_`, is `unexpected_token` with a message that says where a spread
 goes (`[ ...xs ]`, `...rest`, `..._`).

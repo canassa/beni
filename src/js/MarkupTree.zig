@@ -966,7 +966,7 @@ const Builder = struct {
                 try out.append(b.arena, d.lhs);
                 try out.appendSlice(b.arena, extra[extra[d.rhs]..extra[d.rhs + 1]]);
             },
-            .let_pattern, .branch, .pat_cons => {
+            .let_pattern, .branch => {
                 try out.append(b.arena, d.lhs);
                 try out.append(b.arena, d.rhs);
             },

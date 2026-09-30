@@ -77,7 +77,7 @@ const listEdits = [
 ];
 
 // `beni-cons`: the two as beni source writes them as cons steps —
-// `x :: filter rest isGood`, `func i x :: indexedMapFrom rest (i + 1) func`
+// `[ x, ...filter rest isGood ]`, `[ func i x, ...indexedMapFrom rest (i + 1) func ]`
 // — in exactly the loop the compiler emits for that source since tail
 // calls modulo cons (backend.md §8), copied from a build of it. No tail is
 // shared: one pass, n cells, no `reverse`.

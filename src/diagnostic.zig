@@ -488,7 +488,7 @@ pub fn title(code: Code) []const u8 {
         .sync_boundary => "SUSPENDING CALLBACK",
         .must_not_suspend => "MUST NOT SUSPEND",
         .js_outside_platform => "JS OUTSIDE PLATFORM",
-        .cons_removed => "NO MORE CONS OPERATOR",
+        .cons_removed => "REMOVED OPERATOR",
         .two_spreads_in_pattern => "TWO SPREADS IN ONE PATTERN",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",

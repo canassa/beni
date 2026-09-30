@@ -148,7 +148,7 @@ foldl (Set dict) initial func =
 
 --| Fold over the values in a set, in order from highest to lowest.
 --|
---|     foldr (fromList [ "b", "a" ]) [] (\name acc -> name :: acc) == [ "a", "b" ]
+--|     foldr (fromList [ "b", "a" ]) [] (\name acc -> [ name, ...acc ]) == [ "a", "b" ]
 pub foldr : Set t, b, (t, b -> b) -> b
 foldr (Set dict) initial func =
     Dict.foldr dict initial (\key _ acc -> func key acc)

@@ -454,7 +454,7 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
                 [] ->
                     ( list, rightStep rKey rValue result )
 
-                ( lKey, lValue ) :: rest ->
+                [ ( lKey, lValue ), ...rest ] ->
                     case lKey.compare rKey of
                         LT ->
                             stepState rKey rValue ( rest, leftStep lKey lValue result )
@@ -525,7 +525,7 @@ foldlTree tree acc func =
 --| Fold over the key-value pairs in a dictionary from highest key to lowest
 --| key.
 --|
---|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (\key _ names -> key :: names) == [ "a", "b" ]
+--|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (\key _ names -> [ key, ...names ]) == [ "a", "b" ]
 pub foldr : Dict k v, b, (k, v, b -> b) -> b
 foldr (Dict tree) acc func =
     foldrTree tree acc func
@@ -581,7 +581,7 @@ partition (Dict tree) isGood =
 --|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
 pub keys : Dict k v -> List k
 keys dict =
-    foldr dict [] (\key _ keyList -> key :: keyList)
+    foldr dict [] (\key _ keyList -> [ key, ...keyList ])
 
 
 --| Get all of the values in a dictionary, in the order of their keys.
@@ -589,7 +589,7 @@ keys dict =
 --|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
 pub values : Dict k v -> List v
 values dict =
-    foldr dict [] (\_ value valueList -> value :: valueList)
+    foldr dict [] (\_ value valueList -> [ value, ...valueList ])
 
 
 --| Convert a dictionary into an association list of key-value pairs, sorted
@@ -599,7 +599,7 @@ values dict =
 --|         == [ ( "a", 0 ), ( "b", 1 ) ]
 pub toList : Dict k v -> List ( k, v )
 toList dict =
-    foldr dict [] (\key value list -> ( key, value ) :: list)
+    foldr dict [] (\key value list -> [ ( key, value ), ...list ])
 
 
 --| Convert an association list into a dictionary, ordered by the key type's

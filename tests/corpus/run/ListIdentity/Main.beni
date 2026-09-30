@@ -43,7 +43,7 @@ main =
 
         firstOf xs =
             case xs of
-                x :: _ ->
+                [ x, ..._ ] ->
                     Identity.refEq x (headOr rows)
 
                 [] ->
@@ -101,7 +101,7 @@ main =
 headOr : List Row -> Row
 headOr xs =
     case xs of
-        x :: _ ->
+        [ x, ..._ ] ->
             x
 
         [] ->

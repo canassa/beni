@@ -6,7 +6,7 @@ sumHelp xs acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             sumHelp rest (acc + x)
 
 

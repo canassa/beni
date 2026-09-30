@@ -4,10 +4,6 @@ leftMinus a b c =
     a - b - c
 
 
-rightCons a b c =
-    a :: b :: c
-
-
 rightApply f g x =
     f <| g <| x
 
@@ -28,8 +24,8 @@ mulOverAdd a b c =
     a + b * c
 
 
-appendAndConsSameLevel a b c =
-    a ++ b :: c
+spreadOverAppend a b c =
+    [ ...a ++ b, c ]
 
 
 orOverAnd a b c =

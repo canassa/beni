@@ -89,10 +89,10 @@
           (ident a)
           (ident b)))
       (branch
-        (pat_cons
+        (pat_list
           (pat_var first)
-          (pat_cons
-            (pat_var second)
+          (pat_var second)
+          (pat_spread
             (pat_var rest)))
         (add
           (add
@@ -113,27 +113,29 @@
     (case
       (ident ms)
       (branch
-        (pat_cons
+        (pat_list
           (pat_ctor Just
             (pat_var x))
-          (pat_wild))
+          (pat_spread
+            (pat_wild)))
         (ident x))
       (branch
-        (pat_cons
+        (pat_list
           (pat_ctor Nothing)
-          (pat_cons
-            (pat_ctor Just
-              (pat_var y))
+          (pat_ctor Just
+            (pat_var y))
+          (pat_spread
             (pat_wild)))
         (ident y))
       (branch
-        (pat_cons
+        (pat_list
           (pat_paren
             (pat_as whole
               (pat_paren
                 (pat_ctor Just
                   (pat_var z)))))
-          (pat_wild))
+          (pat_spread
+            (pat_wild)))
         (add
           (ident z)
           (apply

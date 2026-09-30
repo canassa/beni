@@ -46,6 +46,11 @@ leaving it off is an honest `unknown_module`. `fmt` does not take it: formatting
 resolves nothing — and it derives no module name either, so `beni fmt notes.beni` formats a file
 whose path names no module, while `beni check` on that same file still says `invalid_module_path`.
 
+*Added 2026-10-01:* `fmt` has one hidden flag, **`--migrate-cons`**, which writes every `::` chain of
+a file in the list syntax (`language.md` §6.8) instead of formatting it — an edit that keeps the
+file's own layout, applied to files whose only syntax errors are `cons_removed`, which it does not
+report. It is `Format.migrateCons`, and it is how the repository moved off `::`.
+
 That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
 closing paragraph naming the flag **when, and only when, the module it could not find is a module of
 a platform that ships in the binary and no `--platform` was given**. The hint can be honest about
@@ -414,7 +419,8 @@ per list, and `dump --stage=bir` prints it as `pat_spread ...%n`, one of its lis
 pattern is refused by the parser and lowers to `error`, as does a `::` expression. A list
 **expression** with a spread adds no tag; it lowers to the `List.cons`/`List.append` calls of
 `language.md` §8, each stamped with its spread's `...` token. The frontend artifact's format version
-moves to 11 for the new token use, node kinds, instruction tag and codes.
+moves to 11 for the new token use, node kinds, instruction tag and codes, and to 12 when
+`pat_cons` left the tag set.
 
 **Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
 `method_call` and `type_dispatch` join the tag set; a declaration stores its `where` clause as a

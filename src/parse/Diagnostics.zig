@@ -584,7 +584,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .operator_not_a_function => try w.print(
             \\I found `({s})`, but `{s}` is not a function.
             \\
-            \\`(+)`, `(::)` and the rest name the 2-ary function the operator desugars to. `|>`
+            \\`(+)`, `(++)` and the rest name the 2-ary function the operator desugars to. `|>`
             \\and `<|` desugar to nothing: they rearrange the call they are written in — `x |> f a`
             \\is `f x a` and `f <| x` is `f x` — so there is no function to pass around. Write the
             \\lambda you meant, or name the argument.
@@ -625,8 +625,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .refutable_let_pattern => try w.print(
             \\I found `{s}` in a `let` pattern, but a `let` pattern must always match.
             \\
-            \\A literal, a list and a `::` each match some values of their type and not others,
-            \\whatever that type turns out to be, so none of them can be bound in a `let`. A
+            \\A literal and a list, with a spread or without, each match some values of their
+            \\type and not others, whatever that type turns out to be, so neither can be bound
+            \\in a `let`. A
             \\CONSTRUCTOR can, when its type has only that one — `let (Box n) = b` is fine and
             \\`let (Just n) = m` is not, and I say which after I have checked the types. To
             \\match on more than one shape, use `case`.
@@ -634,8 +635,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .refutable_parameter_pattern => try w.print(
             \\I found `{s}` in a parameter, but a parameter must always match.
             \\
-            \\A literal, a list and a `::` each match some arguments and not others, whatever
-            \\their type turns out to be, and there is nowhere for the rest to go. (A
+            \\A literal and a list, with a spread or without, each match some arguments and not
+            \\others, whatever their type turns out to be, and there is nowhere for the rest to
+            \\go. (A
             \\CONSTRUCTOR is allowed here when its type has only that one; I say which after I
             \\have checked the types.) Take the argument whole and `case` on it:
             \\
@@ -742,6 +744,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\
                 \\`[ x, ...xs ]` is `x` followed by the elements of `xs`, and as a pattern it
                 \\matches a list of at least one element, binding its first element and the rest.
+                \\`beni fmt --migrate-cons <file>` writes every `::` of a file this way.
             );
         } else try w.writeAll(
             \\`(::)` is no longer part of beni, with the `::` operator it named. The function is
@@ -930,6 +933,33 @@ test "message: layout errors quote both columns" {
         "I was parsing the bindings of this `let` and ran into `y` on column 3.\n\nEvery binding must start on the same column as the first one, `x` on column 5,\nand `in` ends the list.",
         .{ .code = .unexpected_token, .start = 2, .end = 3, .context = .let_bindings, .construct = .binding, .required_col = 5, .head_start = 4, .head_end = 5 },
         "  y x",
+    );
+}
+
+/// `cons_removed`'s fix-it for the chain `source` holds whole.
+fn expectBracketForm(source: []const u8, expected: []const u8) !void {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try writeBracketForm(&out.writer, source);
+    try testing.expectEqualStrings(expected, out.written());
+}
+
+test "message: `cons_removed` writes the chain in brackets" {
+    try expectBracketForm("x :: xs", "[ x, ...xs ]");
+    try expectBracketForm("a :: b :: rest", "[ a, b, ...rest ]");
+    try expectBracketForm("f x :: go rest", "[ f x, ...go rest ]");
+    try expectBracketForm("x :: []", "[ x ]");
+    try expectBracketForm("x :: [ y, 2 ]", "[ x, y, 2 ]");
+    try expectBracketForm("a :: (b :: [])", "[ a, b ]");
+    try expectBracketForm("( a, b ) :: _", "[ ( a, b ), ..._ ]");
+    // A `::` inside brackets or a string is not the chain's.
+    try expectBracketForm("[ \"a::b\", c ] :: g (x :: y)", "[ [ \"a::b\", c ], ...g (x :: y) ]");
+    // Line breaks inside the chain become spaces.
+    try expectBracketForm("x\n        :: xs", "[ x, ...xs ]");
+    try expectMessage(
+        "`(::)` is no longer part of beni, with the `::` operator it named. The function is\n`List.cons`:\n\n    List.cons x xs\n\nand `[ x, ...xs ]` is the same list written in brackets.",
+        .{ .code = .cons_removed, .start = 1, .end = 3, .context = .parens },
+        "(::)",
     );
 }
 

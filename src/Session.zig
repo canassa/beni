@@ -172,6 +172,9 @@ pub const Options = struct {
     /// honoured as given, up to the files and modules there are, which is
     /// what lets a test cross a real parallel run with a serial one.
     size_by_work: bool = false,
+    /// `beni fmt --migrate-cons` (hidden): write each file's `::` chains in
+    /// the list syntax and touch nothing else (`Format.migrateCons`).
+    migrate_cons: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -910,6 +913,8 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     var message: Io.Writer.Allocating = .init(gpa);
     defer message.deinit();
     for (tree.errors) |item| {
+        // `fmt --migrate-cons` is the fix for these: it rewrites them.
+        if (session.options.migrate_cons and item.code == .cons_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1299,14 +1304,23 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     try parsePhase(session, worker, file);
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
-    if (tree.errors.len != 0) return;
+    if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree))) return;
 
     const gpa = session.gpa;
     const text = session.store.bytes(file);
     const format_token = session.profile.begin();
     var out: Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
-    Format.format(
+    var skipped: u32 = 0;
+    (if (session.options.migrate_cons) Format.migrateCons(
+        worker.arena.allocator(),
+        tree,
+        session.artifacts.tokens(file),
+        session.artifacts.comments(file),
+        text,
+        &out.writer,
+        &skipped,
+    ) else Format.format(
         worker.arena.allocator(),
         tree,
         session.artifacts.tokens(file),
@@ -1314,7 +1328,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         text,
         session.store.lineStarts(file),
         &out.writer,
-    ) catch |err| switch (err) {
+    )) catch |err| switch (err) {
         // Guarded above; belt and braces, and the file is left alone.
         error.SyntaxErrors => {
             out.deinit();

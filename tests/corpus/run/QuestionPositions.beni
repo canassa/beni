@@ -37,7 +37,7 @@ sumUntil xs acc =
         [] ->
             Just acc
 
-        first :: rest ->
+        [ first, ...rest ] ->
             sumUntil rest (acc + first?)
 
 

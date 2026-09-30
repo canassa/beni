@@ -48,7 +48,7 @@ largest xs m =
         [] ->
             m
 
-        x :: r ->
+        [ x, ...r ] ->
             largest r
                 (if x > m then
                     x
@@ -75,7 +75,7 @@ findMax xs best =
         [] ->
             best
 
-        x :: r ->
+        [ x, ...r ] ->
             step r x best
 
 
@@ -92,7 +92,7 @@ a1 xs ys =
         [] ->
             0
 
-        x :: r ->
+        [ x, ...r ] ->
             (if List.member ys x then
                 1
 
@@ -107,7 +107,7 @@ b1 xs ys =
         [] ->
             a1 xs []
 
-        y :: r ->
+        [ y, ...r ] ->
             if y < y then
                 99
 

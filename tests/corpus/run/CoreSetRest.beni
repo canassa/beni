@@ -62,7 +62,7 @@ main =
         , show (Set.diff right left)
         , show (Set.diff left left)
         , String.fromInt (Set.foldl left 0 (\v acc -> String.length v + acc))
-        , String.join (Set.foldr left [] (\v acc -> v :: acc)) ","
+        , String.join (Set.foldr left [] (\v acc -> [ v, ...acc ])) ","
         , show (Set.filter left (\v -> v == "a"))
         , show (Set.map left (\v -> v ++ "!"))
         ]

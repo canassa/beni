@@ -64,7 +64,7 @@ join docs separator =
         [ only ] ->
             only
 
-        first :: rest ->
+        [ first, ...rest ] ->
             Concat first (Concat separator (join rest separator))
 
 
@@ -104,40 +104,44 @@ layout w column items acc =
         [] ->
             acc
 
-        item :: rest ->
+        [ item, ...rest ] ->
             case item.doc of
                 Empty ->
                     layout w column rest acc
 
                 Text s ->
-                    layout w (column + String.length s) rest (s :: acc)
+                    layout w (column + String.length s) rest [ s, ...acc ]
 
                 Line ->
-                    layout w item.indent rest (newline item.indent :: acc)
+                    layout w item.indent rest [ newline item.indent, ...acc ]
 
                 SoftLine ->
                     case item.mode of
                         Flat ->
-                            layout w (column + 1) rest (" " :: acc)
+                            layout w (column + 1) rest [ " ", ...acc ]
 
                         Break ->
-                            layout w item.indent rest (newline item.indent :: acc)
+                            layout w item.indent rest [ newline item.indent, ...acc ]
 
                 Nest n inner ->
-                    layout w column ({ item | indent = item.indent + n, doc = inner } :: rest) acc
+                    layout
+                        w
+                        column
+                        [ { item | indent = item.indent + n, doc = inner }, ...rest ]
+                        acc
 
                 Concat left right ->
-                    layout w column ({ item | doc = left } :: { item | doc = right } :: rest) acc
+                    layout w column [ { item | doc = left }, { item | doc = right }, ...rest ] acc
 
                 Group inner ->
                     let
                         flat =
                             { item | mode = Flat, doc = inner }
                     in
-                    if fits (w - column) (flat :: rest) then
-                        layout w column (flat :: rest) acc
+                    if fits (w - column) [ flat, ...rest ] then
+                        layout w column [ flat, ...rest ] acc
                     else
-                        layout w column ({ item | mode = Break, doc = inner } :: rest) acc
+                        layout w column [ { item | mode = Break, doc = inner }, ...rest ] acc
 
 
 fits : Int, List Item -> Bool
@@ -149,7 +153,7 @@ fits remaining items =
             [] ->
                 True
 
-            item :: rest ->
+            [ item, ...rest ] ->
                 case item.doc of
                     Empty ->
                         fits remaining rest
@@ -169,13 +173,13 @@ fits remaining items =
                                 True
 
                     Nest n inner ->
-                        fits remaining ({ item | indent = item.indent + n, doc = inner } :: rest)
+                        fits remaining [ { item | indent = item.indent + n, doc = inner }, ...rest ]
 
                     Concat left right ->
-                        fits remaining ({ item | doc = left } :: { item | doc = right } :: rest)
+                        fits remaining [ { item | doc = left }, { item | doc = right }, ...rest ]
 
                     Group inner ->
-                        fits remaining ({ item | mode = Flat, doc = inner } :: rest)
+                        fits remaining [ { item | mode = Flat, doc = inner }, ...rest ]
 
 
 newline : Int -> String

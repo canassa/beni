@@ -20,7 +20,7 @@ type Wrapped
 head : List Int -> String
 head xs =
     case xs of
-        (a :: _) as whole ->
+        [ a, ..._ ] as whole ->
             "${String.fromInt a} of ${String.fromInt (List.length whole)}"
 
         [] ->

@@ -88,8 +88,8 @@ clampAll =
             [] ->
                 []
 
-            x :: rest ->
-                maxOf x cap :: clampAll rest cap
+            [ x, ...rest ] ->
+                [ maxOf x cap, ...clampAll rest cap ]
 
 
 biggest : List a, a -> a
@@ -105,7 +105,7 @@ go xs acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             biggest rest (maxOf x acc)
 
 

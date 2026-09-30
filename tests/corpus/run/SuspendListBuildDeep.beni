@@ -5,7 +5,7 @@
 -- each function's suspendable body runs (`List$map$s`, …), and it never
 -- does, so every element takes the fast path. That path must stay in the
 -- building loop: were the suspendable body the plain recursion
--- `func x :: map rest func` is, 100 000 elements would overflow the stack.
+-- `[ func x, ...map rest func ]` is, 100 000 elements would overflow the stack.
 --
 -- The second half parks: its callback yields every thousandth element, so
 -- the loop leaves through a continuation that must go on writing into the

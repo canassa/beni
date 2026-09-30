@@ -1,6 +1,7 @@
 -- BIR: every binary operator desugars into a call of the corresponding core
 -- function (§8.2): `a + b` -> `add a b` and so on, marked as builtins;
--- `::` and `++` too. `<|`, `|>`, `_` and `<-` have their own fixtures.
+-- `++` too, and a list with a spread its `List.cons` and `List.append`
+-- calls (language.md §6.8). `<|`, `|>`, `_` and `<-` have their own fixtures.
 arith a b =
     ( a + b, a - b, a * b, a / b, a // b, a ^ b )
 
@@ -14,7 +15,7 @@ logic a b =
 
 
 sequences x xs ys =
-    ( xs ++ ys, x :: xs )
+    ( xs ++ ys, [ x, ...xs ] )
 
 
 negation x =

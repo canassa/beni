@@ -43,7 +43,7 @@ walk xs visit =
         [] ->
             ()
 
-        x :: rest ->
+        [ x, ...rest ] ->
             let
                 () =
                     visit x

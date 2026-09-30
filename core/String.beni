@@ -259,7 +259,7 @@ join chunks sep =
         [] ->
             ""
 
-        first :: rest ->
+        [ first, ...rest ] ->
             List.foldl rest first (\chunk acc -> append (append acc sep) chunk)
 
 
@@ -384,7 +384,7 @@ cons str char =
 pub uncons : String -> Maybe ( Char, String )
 uncons str =
     case toList str of
-        char :: rest ->
+        [ char, ...rest ] ->
             Just ( char, fromList rest )
 
         [] ->

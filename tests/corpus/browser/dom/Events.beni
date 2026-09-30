@@ -37,10 +37,10 @@ update msg model =
                 { model | draft = text }
 
         Focused ->
-            { model | log = "focused" :: model.log }
+            { model | log = [ "focused", ...model.log ] }
 
         Wrapped text ->
-            { model | log = text :: model.log }
+            { model | log = [ text, ...model.log ] }
 
 
 leaf : Html String

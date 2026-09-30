@@ -1,4 +1,4 @@
--- Matching on the list spine: `::`, the empty list, and a fixed-length list
+-- Matching on the list spine: `[ x, ...rest ]`, the empty list, and a fixed-length list
 -- pattern. Each is a different test against the cons-cell representation.
 import List
 import Node exposing (Program)
@@ -11,7 +11,7 @@ sumOf xs =
         [] ->
             0
 
-        first :: rest ->
+        [ first, ...rest ] ->
             first + sumOf rest
 
 
@@ -27,7 +27,7 @@ shape xs =
         [ a, b ] ->
             "two: ${String.fromInt (a + b)}"
 
-        a :: _ :: _ :: _ ->
+        [ a, _, _, ..._ ] ->
             "many, starting ${String.fromInt a}"
 
 

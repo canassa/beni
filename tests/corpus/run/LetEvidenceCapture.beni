@@ -46,7 +46,7 @@ loops u =
                 [] ->
                     acc
 
-                y :: rest ->
+                [ y, ...rest ] ->
                     go rest (if y == y then acc + 1 else acc)
     in
     ( go [ 1, 2, 3 ] 0, go [ "a" ] 0 )
@@ -59,7 +59,7 @@ mutual u =
                 [] ->
                     False
 
-                y :: rest ->
+                [ y, ...rest ] ->
                     y == x || notIn x rest
 
         notIn x ys =
@@ -67,7 +67,7 @@ mutual u =
                 [] ->
                     False
 
-                _ :: rest ->
+                [ _, ...rest ] ->
                     isIn x rest
     in
     ( isIn 2 [ 1, 2 ], isIn "z" [ "a" ] )

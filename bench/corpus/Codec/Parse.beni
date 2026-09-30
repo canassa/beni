@@ -24,7 +24,7 @@ parse input =
         [] ->
             Ok value
 
-        c :: _ ->
+        [ c, ..._ ] ->
             Err (unexpected c "the end of the input" (consumed chars rest))
 
 
@@ -41,28 +41,28 @@ unexpected c wanted at =
 parseValue : List Char -> Step Value
 parseValue chars =
     case skipSpace chars of
-        'n' :: 'u' :: 'l' :: 'l' :: rest ->
+        [ 'n', 'u', 'l', 'l', ...rest ] ->
             Ok ( Null, rest )
 
-        't' :: 'r' :: 'u' :: 'e' :: rest ->
+        [ 't', 'r', 'u', 'e', ...rest ] ->
             Ok ( Boolean True, rest )
 
-        'f' :: 'a' :: 'l' :: 's' :: 'e' :: rest ->
+        [ 'f', 'a', 'l', 's', 'e', ...rest ] ->
             Ok ( Boolean False, rest )
 
-        '"' :: rest ->
+        [ '"', ...rest ] ->
             parseString rest []
                 |> Result.map (\( s, after ) -> ( Text s, after ))
 
-        '[' :: rest ->
+        [ '[', ...rest ] ->
             parseArray (skipSpace rest)
 
-        '{' :: rest ->
+        [ '{', ...rest ] ->
             parseObject (skipSpace rest)
 
-        c :: rest ->
+        [ c, ...rest ] ->
             if c == '-' || Char.isDigit c then
-                parseNumber (c :: rest)
+                parseNumber [ c, ...rest ]
             else
                 Err "unexpected '${c}', expecting a value"
 
@@ -73,16 +73,16 @@ parseValue chars =
 skipSpace : List Char -> List Char
 skipSpace chars =
     case chars of
-        ' ' :: rest ->
+        [ ' ', ...rest ] ->
             skipSpace rest
 
-        '\n' :: rest ->
+        [ '\n', ...rest ] ->
             skipSpace rest
 
-        '\r' :: rest ->
+        [ '\r', ...rest ] ->
             skipSpace rest
 
-        '\t' :: rest ->
+        [ '\t', ...rest ] ->
             skipSpace rest
 
         _ ->
@@ -92,44 +92,44 @@ skipSpace chars =
 parseString : List Char, List Char -> Step String
 parseString chars acc =
     case chars of
-        '"' :: rest ->
+        [ '"', ...rest ] ->
             Ok ( String.fromList (List.reverse acc), rest )
 
-        '\\' :: escaped :: rest ->
+        [ '\\', escaped, ...rest ] ->
             case escaped of
                 'n' ->
-                    parseString rest ('\n' :: acc)
+                    parseString rest [ '\n', ...acc ]
 
                 't' ->
-                    parseString rest ('\t' :: acc)
+                    parseString rest [ '\t', ...acc ]
 
                 'r' ->
-                    parseString rest ('\r' :: acc)
+                    parseString rest [ '\r', ...acc ]
 
                 'b' ->
-                    parseString rest (Char.fromCode 8 :: acc)
+                    parseString rest [ Char.fromCode 8, ...acc ]
 
                 'f' ->
-                    parseString rest (Char.fromCode 12 :: acc)
+                    parseString rest [ Char.fromCode 12, ...acc ]
 
                 'u' ->
                     let
                         ( code, after ) =
                             parseHex4 rest?
                     in
-                    parseString after (Char.fromCode code :: acc)
+                    parseString after [ Char.fromCode code, ...acc ]
 
                 _ ->
                     if escaped == '"' || escaped == '\\' || escaped == '/' then
-                        parseString rest (escaped :: acc)
+                        parseString rest [ escaped, ...acc ]
                     else
                         Err "unknown escape '\\${escaped}' in a string"
 
-        c :: rest ->
+        [ c, ...rest ] ->
             if Char.toCode c < 32 then
                 Err "a control character must be escaped in a string"
             else
-                parseString rest (c :: acc)
+                parseString rest [ c, ...acc ]
 
         [] ->
             Err "unexpected end of input inside a string"
@@ -138,7 +138,7 @@ parseString chars acc =
 parseHex4 : List Char -> Step Int
 parseHex4 chars =
     case chars of
-        a :: b :: c :: d :: rest ->
+        [ a, b, c, d, ...rest ] ->
             let
                 digits =
                     [ a, b, c, d ]
@@ -193,9 +193,9 @@ span items predicate =
     let
         go taken remaining =
             case remaining of
-                x :: rest ->
+                [ x, ...rest ] ->
                     if predicate x then
-                        go (x :: taken) rest
+                        go [ x, ...taken ] rest
                     else
                         ( List.reverse taken, remaining )
 
@@ -208,7 +208,7 @@ span items predicate =
 parseArray : List Char -> Step Value
 parseArray chars =
     case chars of
-        ']' :: rest ->
+        [ ']', ...rest ] ->
             Ok ( Array [], rest )
 
         _ ->
@@ -222,13 +222,13 @@ parseElements chars acc =
             parseValue chars?
     in
     case skipSpace rest of
-        ',' :: more ->
-            parseElements more (item :: acc)
+        [ ',', ...more ] ->
+            parseElements more [ item, ...acc ]
 
-        ']' :: more ->
-            Ok ( Array (List.reverse (item :: acc)), more )
+        [ ']', ...more ] ->
+            Ok ( Array (List.reverse [ item, ...acc ]), more )
 
-        c :: _ ->
+        [ c, ..._ ] ->
             Err "unexpected '${c}' in an array, expecting ',' or ']'"
 
         [] ->
@@ -238,7 +238,7 @@ parseElements chars acc =
 parseObject : List Char -> Step Value
 parseObject chars =
     case chars of
-        '}' :: rest ->
+        [ '}', ...rest ] ->
             Ok ( Object [], rest )
 
         _ ->
@@ -248,25 +248,25 @@ parseObject chars =
 parseMembers : List Char, List ( String, Value ) -> Step Value
 parseMembers chars acc =
     case skipSpace chars of
-        '"' :: afterQuote ->
+        [ '"', ...afterQuote ] ->
             let
                 ( key, afterKey ) =
                     parseString afterQuote []?
             in
             case skipSpace afterKey of
-                ':' :: afterColon ->
+                [ ':', ...afterColon ] ->
                     let
                         ( item, rest ) =
                             parseValue afterColon?
                     in
                     case skipSpace rest of
-                        ',' :: more ->
-                            parseMembers more (( key, item ) :: acc)
+                        [ ',', ...more ] ->
+                            parseMembers more [ ( key, item ), ...acc ]
 
-                        '}' :: more ->
-                            Ok ( Object (List.reverse (( key, item ) :: acc)), more )
+                        [ '}', ...more ] ->
+                            Ok ( Object (List.reverse [ ( key, item ), ...acc ]), more )
 
-                        c :: _ ->
+                        [ c, ..._ ] ->
                             Err "unexpected '${c}' in an object, expecting ',' or '}'"
 
                         [] ->
@@ -275,7 +275,7 @@ parseMembers chars acc =
                 _ ->
                     Err "expecting ':' after the field name \"${key}\""
 
-        c :: _ ->
+        [ c, ..._ ] ->
             Err "unexpected '${c}', expecting a field name"
 
         [] ->

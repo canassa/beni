@@ -30,7 +30,7 @@ update : Msg, Model -> Model
 update msg model =
     case msg of
         Toggle ->
-            { on = not model.on, status = Busy (List.length model.items + 1), items = "x" :: model.items }
+            { on = not model.on, status = Busy (List.length model.items + 1), items = [ "x", ...model.items ] }
 
 
 badge : String -> Html msg

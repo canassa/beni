@@ -22,16 +22,14 @@ logged xs =
         [] ->
             []
 
-        x :: rest ->
-            Debug.log x "head"
-                :: (case x of
+        [ x, ...rest ] ->
+            [ Debug.log x "head", (case x of
                         2 ->
                             Debug.log 20 "case"
 
                         _ ->
                             Debug.log 0 "case"
-                   )
-                :: logged (Debug.log rest "arg")
+                   ), ...logged (Debug.log rest "arg") ]
 
 
 adders : List Int -> List (Int -> Int)
@@ -40,8 +38,8 @@ adders xs =
         [] ->
             []
 
-        x :: rest ->
-            (\y -> y + x) :: adders rest
+        [ x, ...rest ] ->
+            [ (\y -> y + x), ...adders rest ]
 
 
 main : Program

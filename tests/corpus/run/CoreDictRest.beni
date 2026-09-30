@@ -66,6 +66,6 @@ main =
         , "[" ++ pairs (Dict.diff left left) ++ "]"
         , pairs (Dict.fromList [ ( "a", 1 ), ( "a", 2 ) ])
         , String.fromInt (Dict.foldr left 0 (\_ v acc -> v + acc))
-        , String.join (Dict.foldr left [] (\k _ acc -> k :: acc)) ","
-        , String.join (Dict.foldl left [] (\k _ acc -> k :: acc)) ","
+        , String.join (Dict.foldr left [] (\k _ acc -> [ k, ...acc ])) ","
+        , String.join (Dict.foldl left [] (\k _ acc -> [ k, ...acc ])) ","
         ]

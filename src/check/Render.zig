@@ -33,7 +33,7 @@
 //! the type renderer for the same reason the type renderer exists once: a
 //! message and a dump must spell the same value the same way, and the only
 //! way to keep two printers agreeing is not to have two. The output is
-//! SOURCE SYNTAX — `Just _`, `[]`, `( Nothing, _ )`, `x :: xs` — so an
+//! SOURCE SYNTAX — `Just _`, `[]`, `( Nothing, _ )`, `[ x, ..._ ]` — so an
 //! example can be pasted into the `case` as a branch.
 
 const std = @import("std");

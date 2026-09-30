@@ -2987,7 +2987,6 @@ const Lowerer = struct {
             .pat_unit,
             .pat_tuple,
             .pat_list,
-            .pat_cons,
             .pat_spread,
             .pat_record,
             .pat_as,
@@ -6580,7 +6579,6 @@ const Lowerer = struct {
         const d = l.bir.instData(pattern);
         return switch (l.bir.instTag(pattern)) {
             .pat_as => l.hasListEnd(@enumFromInt(d.lhs)),
-            .pat_cons => l.hasListEnd(@enumFromInt(d.lhs)) or l.hasListEnd(@enumFromInt(d.rhs)),
             .pat_tuple, .pat_list => for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |el, i| {
                 if (l.bir.instTag(pattern) == .pat_list and l.bir.instTag(el) == .pat_spread and
                     i + 1 < Bir.inlineRange(d).len()) break true;
@@ -6632,8 +6630,6 @@ const Lowerer = struct {
                 }
                 break :blk total;
             },
-            .pat_cons => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()) +
-                l.bindCount(@as(Inst.Index, @enumFromInt(d.rhs)).toOptional()),
             .pat_spread => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()),
             else => 0,
         };
@@ -7138,10 +7134,6 @@ const Lowerer = struct {
                 for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, i| {
                     try l.bindings(out, arg, try l.member(subject, try l.argName(ref, @intCast(i)), p));
                 }
-            },
-            .pat_cons => {
-                try l.bindings(out, @enumFromInt(d.lhs), try l.member(subject, try l.slotName(0), p));
-                try l.bindings(out, @enumFromInt(d.rhs), try l.member(subject, try l.slotName(1), p));
             },
             .pat_list => {
                 var walk = subject;

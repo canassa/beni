@@ -192,6 +192,94 @@ pub fn format(
     try p.root();
 }
 
+/// `beni fmt --migrate-cons`: `source` with every outermost `::` chain
+/// written in the list syntax (language.md §6.8), and nothing else touched
+/// — not a canonical formatting, an edit, so a file keeps its own layout.
+/// `a :: b :: rest` is `[ a, b, ...rest ]`, a chain ending in a literal
+/// takes its items (`x :: []` is `[ x ]`), a pattern chain ending in `_` is
+/// `..._`, a chain in parentheses loses them (the brackets group it), and
+/// `(::)` is `List.cons`. Operands are copied byte for byte from the
+/// source; a chain nested inside an operand is left for the next run, which
+/// the caller repeats until nothing changes. A chain it cannot write — a
+/// pattern tail that is not a name, `_` or a list, a comment between its
+/// items — is left alone and counted in `skipped`. A file whose only syntax
+/// errors are `cons_removed` is what it is for; any other error leaves the
+/// file alone, as `format` does.
+pub fn migrateCons(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    w: *Io.Writer,
+    skipped: *u32,
+) Error!void {
+    if (!onlyConsRemoved(tree)) return error.SyntaxErrors;
+    const n = tree.nodes.len;
+    var m: Measurer = .{
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = try scratch.alloc(u32, n),
+        .firsts = try scratch.alloc(u32, n),
+        .lasts = try scratch.alloc(u32, n),
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+    const tags = tokens.items(.tag);
+
+    // Every `::` node with its byte span; an outermost one is inside no
+    // other's.
+    const Chain = struct { node: Index, start: u32, end: u32 };
+    var chains: std.ArrayList(Chain) = .empty;
+    for (0..n) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const tag = tree.nodeTag(node);
+        const is_cons = tag == .cons or tag == .pat_cons or
+            (tag == .op_fn and tags[tree.nodeMainToken(node)] == .op_colon_colon);
+        if (!is_cons) continue;
+        var first = m.first(node);
+        var last = m.last(node);
+        // A chain the parentheses only group: the brackets will.
+        if (tag != .op_fn and first > 0 and tags[first - 1] == .l_paren and last + 1 < tags.len and tags[last + 1] == .r_paren) {
+            first -= 1;
+            last += 1;
+        }
+        try chains.append(scratch, .{ .node = node, .start = m.starts[first], .end = Tokenizer.tokenEnd(source, tags[last], m.starts[last]) });
+    }
+    std.mem.sort(Chain, chains.items, {}, struct {
+        fn lessThan(_: void, a: Chain, b: Chain) bool {
+            return a.start < b.start or (a.start == b.start and a.end > b.end);
+        }
+    }.lessThan);
+
+    var at: u32 = 0;
+    for (chains.items) |c| {
+        if (c.start < at) continue; // inside a chain already written
+        var text: std.ArrayList(u8) = .empty;
+        if (!try m.bracketForm(c.node, c.start, c.end, &text)) {
+            skipped.* += 1;
+            continue;
+        }
+        try w.writeAll(source[at..c.start]);
+        try w.writeAll(text.items);
+        at = c.end;
+    }
+    try w.writeAll(source[at..]);
+}
+
+/// Whether every syntax error of `tree` is a `::` (`migrateCons`' input).
+pub fn onlyConsRemoved(tree: *const Ast) bool {
+    for (tree.errors) |e| {
+        if (e.code != .cons_removed) return false;
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Operator tables (language.md §6.5)
 // ---------------------------------------------------------------------------
@@ -373,6 +461,83 @@ const Measurer = struct {
 
     fn first(m: *const Measurer, n: Index) u32 {
         return m.firsts[n.int()];
+    }
+
+    /// The source text of `n`, byte for byte.
+    fn sourceOf(m: *const Measurer, n: Index) []const u8 {
+        const last_tok = m.last(n);
+        return m.source[m.starts[m.first(n)]..Tokenizer.tokenEnd(m.source, m.tags[last_tok], m.starts[last_tok])];
+    }
+
+    /// `migrateCons`' rewrite of the `::` chain `n`, spanning source bytes
+    /// `[start, end)`, into `out`; false when it cannot be written.
+    fn bracketForm(m: *const Measurer, n: Index, start: u32, end: u32, out: *std.ArrayList(u8)) Error!bool {
+        const tree = m.tree;
+        if (tree.nodeTag(n) == .op_fn) {
+            try out.appendSlice(m.scratch, "List.cons");
+            return true;
+        }
+        var items: std.ArrayList(Index) = .empty;
+        var tail = n;
+        while (true) {
+            const tag = tree.nodeTag(tail);
+            if (tag == .cons or tag == .pat_cons) {
+                const d = tree.nodeData(tail);
+                try items.append(m.scratch, @enumFromInt(d.lhs));
+                tail = @enumFromInt(d.rhs);
+            } else if ((tag == .paren or tag == .pat_paren) and
+                (tree.nodeTag(tree.operand(tail)) == .cons or tree.nodeTag(tree.operand(tail)) == .pat_cons))
+            {
+                tail = tree.operand(tail);
+            } else break;
+        }
+        // A comment between the items would be lost with the operators.
+        var covered: u32 = 0;
+        for (m.comments) |cm| {
+            if (cm.start >= start and cm.start < end) covered += 1;
+        }
+        var inside: u32 = 0;
+        for (items.items) |item| inside += m.commentsWithin(item);
+        inside += m.commentsWithin(tail);
+        if (covered != inside) return false;
+
+        try out.appendSlice(m.scratch, "[ ");
+        for (items.items, 0..) |item, i| {
+            if (i != 0) try out.appendSlice(m.scratch, ", ");
+            try out.appendSlice(m.scratch, m.sourceOf(item));
+        }
+        var bare = tail;
+        while (tree.nodeTag(bare) == .paren or tree.nodeTag(bare) == .pat_paren) bare = tree.operand(bare);
+        switch (tree.nodeTag(bare)) {
+            .list, .pat_list => for (tree.children(bare)) |item| {
+                try out.appendSlice(m.scratch, ", ");
+                try out.appendSlice(m.scratch, m.sourceOf(item));
+            },
+            .pat_var, .pat_wild => {
+                try out.appendSlice(m.scratch, ", ...");
+                try out.appendSlice(m.scratch, m.sourceOf(bare));
+            },
+            else => {
+                // A pattern spread's operand is a name or `_` (§6.8).
+                if (tree.nodeTag(n) == .pat_cons) return false;
+                try out.appendSlice(m.scratch, ", ...");
+                try out.appendSlice(m.scratch, m.sourceOf(tail));
+            },
+        }
+        try out.appendSlice(m.scratch, " ]");
+        return true;
+    }
+
+    /// How many comments start inside `n`'s span.
+    fn commentsWithin(m: *const Measurer, n: Index) u32 {
+        const start = m.starts[m.first(n)];
+        const last_tok = m.last(n);
+        const end = Tokenizer.tokenEnd(m.source, m.tags[last_tok], m.starts[last_tok]);
+        var count: u32 = 0;
+        for (m.comments) |cm| {
+            if (cm.start >= start and cm.start < end) count += 1;
+        }
+        return count;
     }
 
     fn last(m: *const Measurer, n: Index) u32 {
@@ -3653,7 +3818,7 @@ test "access chains, question marks, accessor functions and operator functions" 
         \\f r t = Ok ( r.a.b + t.0.1 + List.length ( List.map .name [] ) )
         \\g s = Ok ( parse s? + parse s?.field?  )
         \\plus = ( + )
-        \\cons = (::)
+        \\append = (++)
         \\
     ,
         \\f r t =
@@ -3668,10 +3833,56 @@ test "access chains, question marks, accessor functions and operator functions" 
         \\    (+)
         \\
         \\
-        \\cons =
-        \\    (::)
+        \\append =
+        \\    (++)
         \\
     );
+}
+
+/// `migrateCons` over `source`, which may hold `::` and nothing else wrong.
+fn expectMigrated(source: [:0]const u8, expected: []const u8, expected_skipped: u32) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var interner: InternPool.Local = .empty;
+    var out: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(arena, source, &interner, &out);
+    const tree = try Parse.parse(arena, arena, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
+    var text: Io.Writer.Allocating = .init(arena);
+    var skipped: u32 = 0;
+    try migrateCons(arena, &tree, &out.tokens, out.comments.items, source, &text.writer, &skipped);
+    try testing.expectEqualStrings(expected, text.written());
+    try testing.expectEqual(expected_skipped, skipped);
+}
+
+test "migrating `::` writes each chain in brackets and touches nothing else" {
+    // Layout, spacing and the other operators are the author's: this is an
+    // edit, not a formatting (language.md §6.8).
+    try expectMigrated(
+        \\f x xs = x::xs
+        \\g a b rest = (a :: b :: rest) ++ [ 0 ]
+        \\h x y =  x :: [ y ]  -- one literal
+        \\k x = case x of
+        \\  a :: (b :: _) -> [ a, b ]
+        \\  y :: [] -> [ y ]
+        \\  _ -> List.foldr x [] (::)
+        \\m xs = case xs of
+        \\  x :: (rest as r) -> r
+        \\  _ -> xs
+        \\
+    ,
+        \\f x xs = [ x, ...xs ]
+        \\g a b rest = [ a, b, ...rest ] ++ [ 0 ]
+        \\h x y =  [ x, y ]  -- one literal
+        \\k x = case x of
+        \\  [ a, b, ..._ ] -> [ a, b ]
+        \\  [ y ] -> [ y ]
+        \\  _ -> List.foldr x [] List.cons
+        \\m xs = case xs of
+        \\  x :: (rest as r) -> r
+        \\  _ -> xs
+        \\
+    , 1);
 }
 
 test "strings, chars, numbers, interpolations and multiline strings are printed byte for byte" {
@@ -3712,10 +3923,10 @@ test "strings, chars, numbers, interpolations and multiline strings are printed 
 test "every pattern form with canonical spacing" {
     try check(
         \\f v = case v of
-        \\  (a,b)::rest -> a
+        \\  [(a,b),...rest] -> a
         \\  [x,y] -> x
-        \\  ({c} as r)::_ -> c
-        \\  Just(Just(z)) :: [] -> z
+        \\  [({c} as r) , ... _] -> c
+        \\  [...init,Just(Just(z))] -> z
         \\  Maybe.Just 'c' -> 1
         \\  ( -1 ) -> 2
         \\  "s" -> 3
@@ -3728,13 +3939,13 @@ test "every pattern form with canonical spacing" {
     ,
         \\f v =
         \\    case v of
-        \\        ( a, b ) :: rest ->
+        \\        [ ( a, b ), ...rest ] ->
         \\            a
         \\        [ x, y ] ->
         \\            x
-        \\        ({ c } as r) :: _ ->
+        \\        [ ({ c } as r), ..._ ] ->
         \\            c
-        \\        Just (Just (z)) :: [] ->
+        \\        [ ...init, Just (Just (z)) ] ->
         \\            z
         \\        Maybe.Just 'c' ->
         \\            1
@@ -4170,7 +4381,7 @@ const stress_decls = [_][]const u8{
     "m{d} =\n    \\\\a\n    \\\\b   \n",
     "p{d} (Just x) { a } ( b, c ) = -x\n",
     "u{d} m = { m | count = m.count + 1, aVeryLongFieldNameToMakeItWide = m.aVeryLongFieldNameToMakeItWide + 1 }\n",
-    "op{d} = ( + ) 1 2 + (::) 1 [] + ( ^ ) 1 2\n",
+    "op{d} = ( + ) 1 2 + (++) [ 1 ] [ ...[], 2 ] + ( ^ ) 1 2\n",
     "app{d} = List.foldl (\\item acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
     "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
     "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)\n",

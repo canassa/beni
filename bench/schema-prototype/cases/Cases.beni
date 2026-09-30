@@ -287,12 +287,12 @@ decodeNodes context nodes =
     case nodes of
         [] ->
             Ok []
-        first :: rest ->
+        [ first, ...rest ] ->
             let
                 decoded <- Result.andThen (decodeNode context first)
                 decodedRest <- Result.andThen (decodeNodes context rest)
             in
-            Ok (decoded :: decodedRest)
+            Ok [ decoded, ...decodedRest ]
 
 
 encodeNode : Schema.Context, ProgramNode -> Result (List Schema.Issue) WireNode
@@ -309,12 +309,12 @@ encodeNodes context nodes =
     case nodes of
         [] ->
             Ok []
-        first :: rest ->
+        [ first, ...rest ] ->
             let
                 encoded <- Result.andThen (encodeNode context first)
                 encodedRest <- Result.andThen (encodeNodes context rest)
             in
-            Ok (encoded :: encodedRest)
+            Ok [ encoded, ...encodedRest ]
 
 
 badConversionEndpoint : Schema.Endpoint String

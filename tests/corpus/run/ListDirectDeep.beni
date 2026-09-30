@@ -1,5 +1,5 @@
 -- run: every `core/List` function that builds a list, over 100 000
--- elements. They are written as cons steps — `func x :: map rest func` —
+-- elements. They are written as cons steps — `[ func x, ...map rest func ]` —
 -- which recursing would overflow Node's stack at about 8 000 cells; the code
 -- generator compiles each to one loop that builds front to back
 -- (`backend.md` §8, *Tail calls modulo cons*). A function the rewrite left

@@ -92,7 +92,9 @@ pub const magic = "BENIFE\x00\x00";
 /// 11 (2026-10-01): the list syntax (language.md §6.8) — `Bir.Inst.Tag`
 /// gained `pat_spread`, which shifted every later pattern tag, and the
 /// parser has two new codes, `cons_removed` and `two_spreads_in_pattern`.
-pub const format_version: u32 = 11;
+/// 12 (2026-10-01): `::` left the language, and `Bir.Inst.Tag` lost
+/// `pat_cons`, which shifted every later pattern tag back.
+pub const format_version: u32 = 12;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

@@ -16,7 +16,10 @@
 //! (§7's table): `_`, a variable and a record pattern are *anything*; `p as
 //! x` is `p`; a tuple and `()` are the sole constructor of a one-constructor
 //! union, so they never become a test and only widen the matrix; `[ a, b ]`
-//! is `a :: b :: []` over the two constructors of the list union; and an
+//! is a cons of `a` onto a cons of `b` onto the empty list, over the two
+//! alternatives of a list cell, and `[ a, ...rest ]` a cons of `a` onto
+//! `rest` — while a column holding items AFTER a spread is split by length
+//! instead (`lengthSplit`, backend.md §7); and an
 //! `Int`, `Char` or `String` literal has infinitely many alternatives, so
 //! its node always keeps a default edge.
 //!
@@ -385,7 +388,6 @@ const Builder = struct {
             .pat_int => .{ .literal = .{ .pat = pat, .kind = .int } },
             .pat_char => .{ .literal = .{ .pat = pat, .kind = .char } },
             .pat_string => .{ .literal = .{ .pat = pat, .kind = .string } },
-            .pat_cons => .{ .list = true },
             .pat_list => blk: {
                 const len = Bir.inlineRange(d).len();
                 // `[ a, b, ...rest ]` is `a :: b :: rest` (§7's table): a
@@ -541,45 +543,26 @@ const Builder = struct {
     };
 
     /// `cell` as a `Shape`, or null when it is no list pattern — a wildcard,
-    /// or a pattern this tree cannot read. A `pat_cons` chain's heads lead,
-    /// and it ends in the list it names, or in a name or `_` (a spread).
+    /// or a pattern this tree cannot read. The items start at `cell.from`,
+    /// the leading items a cons column has already consumed.
     fn listShape(b: *Builder, cell: Cell) Allocator.Error!?Shape {
         const bir = b.cx.bir;
-        var pat = unwrapAs(bir, cell.pat.unwrap() orelse return null);
-        var from = cell.from;
+        const pat = unwrapAs(bir, cell.pat.unwrap() orelse return null);
+        if (pat.int() >= bir.insts.len or bir.instTag(pat) != .pat_list) return null;
         var items: std.ArrayList(Cell) = .empty;
         var prefix: u32 = 0;
-        while (pat.int() < bir.insts.len) {
-            const d = bir.instData(pat);
-            switch (bir.instTag(pat)) {
-                .pat_cons => {
-                    try items.append(b.arena, .{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() });
-                    prefix += 1;
-                    pat = unwrapAs(bir, @enumFromInt(d.rhs));
-                    from = 0;
-                },
-                .pat_list => {
-                    var spread = false;
-                    var suffix: u32 = 0;
-                    const elements = bir.extraSlice(Bir.inlineRange(d), Inst.Index);
-                    for (elements[@min(from, elements.len)..]) |el| {
-                        if (bir.instTag(el) == .pat_spread) {
-                            spread = true;
-                            continue;
-                        }
-                        try items.append(b.arena, .{ .pat = el.toOptional() });
-                        if (spread) suffix += 1 else prefix += 1;
-                    }
-                    return .{ .items = items.items, .prefix = prefix, .suffix = suffix, .spread = spread };
-                },
-                .pat_var, .pat_wild => {
-                    if (items.items.len == 0) return null;
-                    return .{ .items = items.items, .prefix = prefix, .suffix = 0, .spread = true };
-                },
-                else => return null,
+        var suffix: u32 = 0;
+        var spread = false;
+        const elements = bir.extraSlice(Bir.inlineRange(bir.instData(pat)), Inst.Index);
+        for (elements[@min(cell.from, elements.len)..]) |el| {
+            if (bir.instTag(el) == .pat_spread) {
+                spread = true;
+                continue;
             }
+            try items.append(b.arena, .{ .pat = el.toOptional() });
+            if (spread) suffix += 1 else prefix += 1;
         }
-        return null;
+        return .{ .items = items.items, .prefix = prefix, .suffix = suffix, .spread = spread };
     }
 
     /// Whether a row of column `col` names elements after a spread: only
@@ -861,12 +844,6 @@ const Builder = struct {
             .pat_tuple => {
                 for (bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |element, i| {
                     if (i < out.len) out[i] = .{ .pat = element.toOptional() };
-                }
-            },
-            .pat_cons => {
-                if (out.len == 2) {
-                    out[0] = .{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() };
-                    out[1] = .{ .pat = @as(Inst.Index, @enumFromInt(d.rhs)).toOptional() };
                 }
             },
             .pat_list => {

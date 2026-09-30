@@ -124,7 +124,7 @@
     (pipe_right
       (apply
         (ident fold)
-        (op_fn ::)
+        (ident List.cons)
         (list)
         (ident tree))
       (ident List.reverse)))

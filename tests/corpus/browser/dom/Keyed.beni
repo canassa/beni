@@ -34,7 +34,7 @@ rotate xs =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             rest ++ [ x ]
 
 
@@ -51,7 +51,7 @@ update msg model =
             { model | rows = List.map model.rows (\row -> if row.id == 2 then { row | label = "two" } else row) }
 
         Duplicate ->
-            { model | tags = "a" :: model.tags }
+            { model | tags = [ "a", ...model.tags ] }
 
 
 view : Model -> Html Msg

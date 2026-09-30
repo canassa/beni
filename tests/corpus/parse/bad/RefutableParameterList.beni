@@ -1,9 +1,9 @@
--- refutable_parameter_pattern at 6:9 and 11:7: neither `::` nor a fixed-length
--- list pattern covers every list, WHATEVER its element type is, so the parser
--- refuses both without waiting for the checker (§7). The `as` is there to show
--- the walk looks through one. Before this rule `head []` returned `null`.
+-- refutable_parameter_pattern at 6:6 and 11:7: neither a list pattern with a
+-- spread nor a fixed-length one covers every list, WHATEVER its element type
+-- is, so the parser refuses both without waiting for the checker (§7). The
+-- `as` is there to show the walk looks through one. Before this rule `head []` returned `null`.
 head : List Int -> Int
-head (x :: _) =
+head [ x, ..._ ] =
     x
 
 

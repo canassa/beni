@@ -27,7 +27,7 @@ update msg model =
 
         Pressed key ->
             if key == "Enter" then
-                { draft = "", saved = model.draft :: model.saved }
+                { draft = "", saved = [ model.draft, ...model.saved ] }
 
             else
                 model

@@ -60,7 +60,7 @@ object fields =
 --| A dictionary as an object, its keys turned into field names.
 pub dict : Dict k v, (k -> String), (v -> Value) -> Value
 dict entries toKey encoder =
-    Dict.foldr entries [] (\key item fields -> ( toKey key, encoder item ) :: fields)
+    Dict.foldr entries [] (\key item fields -> [ ( toKey key, encoder item ), ...fields ])
         |> Object
 
 

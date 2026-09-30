@@ -39,7 +39,7 @@ step : Int, Model -> Model
 step delta model =
     { model
         | count = model.count + delta
-        , history = model.count :: model.history
+        , history = [ model.count, ...model.history ]
     }
 
 

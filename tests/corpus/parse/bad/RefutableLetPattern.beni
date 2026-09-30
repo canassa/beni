@@ -1,11 +1,11 @@
 -- The first corpus fixture for `refutable_let_pattern`, which until now had
 -- only an in-source parser test. It is the half of §7 that needs no types: a
--- literal, a list and a `::` match some values of their type and not others
--- whatever that type is, so the parser refuses them in a `let` without
--- waiting for the checker. A CONSTRUCTOR there is admitted and decided by the
--- checker instead (`check/bad/RefutableLetCtor`).
+-- literal and a list, with a spread or without, match some values of their
+-- type and not others whatever that type is, so the parser refuses them in a
+-- `let` without waiting for the checker. A CONSTRUCTOR there is admitted and
+-- decided by the checker instead (`check/bad/RefutableLetCtor`).
 --
--- refutable_let_pattern at 13:9, 21:9 and 29:12; refutable_parameter_pattern
+-- refutable_let_pattern at 13:9, 21:9 and 29:9; refutable_parameter_pattern
 -- at 42:9, because §6.7 desugars `p <- e` into a callback whose parameter is
 -- `p`, so that position is named as a parameter wherever it is caught.
 literal m =
@@ -24,9 +24,9 @@ listLiteral m =
     x
 
 
-cons l =
+spread l =
     let
-        (h :: r) =
+        [ h, ...r ] =
             l
     in
     h

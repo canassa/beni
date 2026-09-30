@@ -143,11 +143,11 @@ update msg model =
 
         Undo ->
             case model.history of
-                previous :: rest ->
+                [ previous, ...rest ] ->
                     { model
                         | notes = previous
                         , history = rest
-                        , future = model.notes :: model.future
+                        , future = [ model.notes, ...model.future ]
                     }
 
                 [] ->
@@ -155,11 +155,11 @@ update msg model =
 
         Redo ->
             case model.future of
-                next :: rest ->
+                [ next, ...rest ] ->
                     { model
                         | notes = next
                         , future = rest
-                        , history = model.notes :: model.history
+                        , history = [ model.notes, ...model.history ]
                     }
 
                 [] ->
@@ -180,7 +180,7 @@ update msg model =
 pushHistory : Model -> Model
 pushHistory model =
     { model
-        | history = List.take (model.notes :: model.history) 50
+        | history = List.take [ model.notes, ...model.history ] 50
         , future = []
     }
 
@@ -307,16 +307,16 @@ viewSidebar model =
 viewTags : Model -> Html Msg
 viewTags model =
     ul [ class "tags" ]
-        (li [ onClick (FilterTag Nothing) ] [ text "all" ]
-            :: List.map (allTags model)
-                (\( tag, n ) ->
-                    li
-                        [ classList [ ( "active", model.activeTag == Just tag ) ]
-                        , onClick (FilterTag (Just tag))
-                        ]
-                        [ text "${tag} (${n})" ]
-                )
-        )
+        [ li [ onClick (FilterTag Nothing) ] [ text "all" ]
+        , ...List.map (allTags model)
+            (\( tag, n ) ->
+                li
+                    [ classList [ ( "active", model.activeTag == Just tag ) ]
+                    , onClick (FilterTag (Just tag))
+                    ]
+                    [ text "${tag} (${n})" ]
+            )
+        ]
 
 
 viewNoteItem : Maybe Int, Note -> Html Msg

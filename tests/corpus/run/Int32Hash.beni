@@ -80,7 +80,7 @@ xorshiftRun seed count =
             next =
                 xorshift32 seed
         in
-        next :: xorshiftRun next (count - 1)
+        [ next, ...xorshiftRun next (count - 1) ]
 
 
 fmix32 : Int32 -> Int32

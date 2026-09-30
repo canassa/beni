@@ -619,13 +619,14 @@
     (pat_var model)
     (record_update model
       (field errors
-        (cons
+        (list
           (ident message)
-          (apply
-            (ident List.take)
-            (field_access .errors
-              (ident model))
-            (int 4))))))
+          (spread
+            (apply
+              (ident List.take)
+              (field_access .errors
+                (ident model))
+              (int 4)))))))
   (annotation updateCard
     (type_fn
       (type_con Int)
@@ -690,10 +691,11 @@
                   (ident label)))))))
       (record_update card
         (field labels
-          (cons
+          (list
             (ident label)
-            (field_access .labels
-              (ident card)))))))
+            (spread
+              (field_access .labels
+                (ident card))))))))
   (annotation commitEdit
     (type_fn
       (type_con Model)

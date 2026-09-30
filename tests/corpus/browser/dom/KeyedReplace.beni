@@ -54,8 +54,8 @@ update msg model =
                     fresh model 1
             in
             case model.rows of
-                _ :: second :: _ ->
-                    { rows = second :: rows, next = next }
+                [ _, second, ..._ ] ->
+                    { rows = [ second, ...rows ], next = next }
 
                 _ ->
                     model

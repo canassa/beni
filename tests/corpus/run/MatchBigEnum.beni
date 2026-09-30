@@ -60,31 +60,31 @@ total ts acc =
         [] ->
             acc
 
-        Plus :: rest ->
+        [ Plus, ...rest ] ->
             total rest (acc + 1)
 
-        Minus :: rest ->
+        [ Minus, ...rest ] ->
             total rest (acc + 2)
 
-        Times :: rest ->
+        [ Times, ...rest ] ->
             total rest (acc + 3)
 
-        Over :: rest ->
+        [ Over, ...rest ] ->
             total rest (acc + 4)
 
-        Open :: rest ->
+        [ Open, ...rest ] ->
             total rest (acc + 5)
 
-        Close :: rest ->
+        [ Close, ...rest ] ->
             total rest (acc + 6)
 
-        Comma :: rest ->
+        [ Comma, ...rest ] ->
             total rest (acc + 7)
 
-        Semi :: rest ->
+        [ Semi, ...rest ] ->
             total rest (acc + 8)
 
-        Dot :: rest ->
+        [ Dot, ...rest ] ->
             total rest (acc + 9)
 
 

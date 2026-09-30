@@ -5,7 +5,7 @@
 -- (`String.toUpper (List.head g …)` is refused) and so is its name.
 --
 pub g =
-    1 :: []
+    [ 1 ]
 
 
 pub h =
@@ -17,4 +17,4 @@ pub f u =
         p1 =
             []
     in
-    1 :: p1
+    [ 1, ...p1 ]

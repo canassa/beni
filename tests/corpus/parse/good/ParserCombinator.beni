@@ -79,7 +79,7 @@ many (Parser p) =
         go acc input =
             case p input of
                 Ok ( value, rest ) ->
-                    go (value :: acc) rest
+                    go [ value, ...acc ] rest
 
                 Err _ ->
                     Ok ( List.reverse acc, input )
@@ -97,7 +97,7 @@ oneOf parsers =
                         [] ->
                             Err "no parser matched"
 
-                        (Parser p) :: rest ->
+                        [ (Parser p), ...rest ] ->
                             case p input of
                                 Ok result ->
                                     Ok result

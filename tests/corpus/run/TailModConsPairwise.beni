@@ -1,9 +1,11 @@
 -- run: `pairwise`, the shape that puts the element it matched back on the
--- front of the rest before recursing, `( a, b ) :: pairwise (b :: rest)`
--- (`docs/design/backend.md` §8, *Tail calls modulo cons*). The argument of
--- the self-call is itself a `::`, which is an ordinary expression there and
--- not a second step of the loop; only the `::` whose TAIL is the self-call
--- builds into the result. It overflowed the stack at 100 000 elements.
+-- front of the rest before recursing,
+-- `[ ( a, b ), ...pairwise [ b, ...rest ] ]` (`docs/design/backend.md` §8,
+-- *Tail calls modulo cons*, *A cons step in the bracket spelling*). The
+-- argument of the self-call is itself a list with a spread, an ordinary
+-- expression there and not a second step of the loop; only the spread of the
+-- self-call, last in its list, builds into the result. It overflowed the
+-- stack at 100 000 elements.
 import List
 import Node exposing (Program)
 import String
@@ -12,8 +14,8 @@ import String
 pairwise : List a -> List ( a, a )
 pairwise xs =
     case xs of
-        a :: b :: rest ->
-            ( a, b ) :: pairwise (b :: rest)
+        [ a, b, ...rest ] ->
+            [ ( a, b ), ...pairwise [ b, ...rest ] ]
 
         _ ->
             []

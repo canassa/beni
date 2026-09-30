@@ -286,6 +286,9 @@ pub const Fmt = struct {
     common: Common = .{},
     check: bool = false,
     stdout: bool = false,
+    /// `--migrate-cons`, hidden: rewrite `::` in the list syntax
+    /// (`Format.migrateCons`) instead of formatting.
+    migrate_cons: bool = false,
     paths: []const []const u8,
 };
 
@@ -662,9 +665,14 @@ const FmtSpecific = struct {
     consumed: bool = false,
     check: bool = false,
     stdout: bool = false,
+    migrate_cons: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--check")) {
+        if (std.mem.eql(u8, name, "--migrate-cons")) {
+            if (value != null) return noValue(name);
+            self.migrate_cons = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--check")) {
             if (value != null) return noValue(name);
             self.check = true;
             self.consumed = true;
@@ -696,6 +704,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .common = s.common,
         .check = s.specific.check,
         .stdout = s.specific.stdout,
+        .migrate_cons = s.specific.migrate_cons,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

@@ -47,10 +47,10 @@ errorToStringHelp : Error, List String -> String
 errorToStringHelp error context =
     case error of
         Field name inner ->
-            errorToStringHelp inner (".${name}" :: context)
+            errorToStringHelp inner [ ".${name}", ...context ]
 
         Index i inner ->
-            errorToStringHelp inner ("[${i}]" :: context)
+            errorToStringHelp inner [ "[${i}]", ...context ]
 
         OneOf errors ->
             case errors of
@@ -65,8 +65,9 @@ errorToStringHelp error context =
                         numbered i problem =
                             "(${i + 1}) " ++ indent (errorToString problem)
                     in
-                    ("Every possibility failed" ++ atPath context ++ ":")
-                        :: List.indexedMap errors numbered
+                    [ ("Every possibility failed" ++ atPath context ++ ":")
+                    , ...List.indexedMap errors numbered
+                    ]
                         |> String.join "\n\n"
 
         Failure message value ->
@@ -230,10 +231,10 @@ listHelp decoder i items acc =
         [] ->
             Ok (List.reverse acc)
 
-        item :: rest ->
+        [ item, ...rest ] ->
             case decodeValue decoder item of
                 Ok decoded ->
-                    listHelp decoder (i + 1) rest (decoded :: acc)
+                    listHelp decoder (i + 1) rest [ decoded, ...acc ]
 
                 Err error ->
                     Err (Index i error)
@@ -262,10 +263,10 @@ pairsHelp decoder fields acc =
         [] ->
             Ok (List.reverse acc)
 
-        ( name, item ) :: rest ->
+        [ ( name, item ), ...rest ] ->
             case decodeValue decoder item of
                 Ok decoded ->
-                    pairsHelp decoder rest (( name, decoded ) :: acc)
+                    pairsHelp decoder rest [ ( name, decoded ), ...acc ]
 
                 Err error ->
                     Err (Field name error)
@@ -298,13 +299,13 @@ oneOfHelp decoders value errors =
         [] ->
             Err (OneOf (List.reverse errors))
 
-        decoder :: rest ->
+        [ decoder, ...rest ] ->
             case decodeValue decoder value of
                 Ok decoded ->
                     Ok decoded
 
                 Err error ->
-                    oneOfHelp rest value (error :: errors)
+                    oneOfHelp rest value [ error, ...errors ]
 
 
 -- Combinators

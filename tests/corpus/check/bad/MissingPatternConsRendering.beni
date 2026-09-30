@@ -24,8 +24,8 @@ name shape =
         Group [] ->
             "empty"
 
-        Group (Square _ :: _) ->
+        Group [ Square _, ..._ ] ->
             "squares"
 
-        Group (Group _ :: _) ->
+        Group [ Group _, ..._ ] ->
             "groups"

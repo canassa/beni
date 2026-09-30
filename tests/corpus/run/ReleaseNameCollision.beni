@@ -132,7 +132,7 @@ siblings xs =
         [ v ] ->
             v * 100
 
-        v :: rest ->
+        [ v, ...rest ] ->
             v + List.length rest
 
         [] ->

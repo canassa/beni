@@ -18,7 +18,7 @@ build n acc =
     if n <= 0 then
         acc
     else
-        build (n - 1) ((\x -> x + n) :: acc)
+        build (n - 1) [ (\x -> x + n), ...acc ]
 
 
 main : Program

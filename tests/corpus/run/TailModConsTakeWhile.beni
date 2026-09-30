@@ -14,9 +14,9 @@ takeWhile xs keep =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                x :: takeWhile rest keep
+                [ x, ...takeWhile rest keep ]
             else
                 []
 

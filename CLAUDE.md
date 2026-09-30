@@ -21,7 +21,11 @@ rebuilds.
   members await checker support. [`schema.md`](docs/design/schema.md) owns the
   contract and open choices. Record alias and schema declaration bodies accept
   layout sugar for braces; their formatter always emits vertical layout
-  (`language.md` §3–§4/§9, `schema.md` §2/A.5).
+  (`language.md` §3–§4/§9, `schema.md` §2/A.5). **`::` is gone** (the owner,
+  2026-10-01): lists are written, built and matched with brackets and a `...`
+  spread — `[ x, ...rest ]`, `[ ...init, last ]`, `[ ...a, ...b ]`
+  (`language.md` §6.8, *The list syntax*); `beni fmt --migrate-cons` rewrites
+  old code.
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is

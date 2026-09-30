@@ -2193,6 +2193,8 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             // the operator means any more. Every other operator is still the
             // reference to its core function.
             if (Bir.WellKnown.fromOperator(l.tags[main_token])) |origin| return l.operatorLambda(origin);
+            // `(::)`: `cons_removed`, reported by the parser (§6.8).
+            if (l.tags[main_token] == .op_colon_colon) return l.errorInst(.cons_removed);
             return l.operatorRef(l.tags[main_token]);
         },
         .unit => return l.addInst(.unit, 0, 0),
@@ -2283,7 +2285,11 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // the six comparisons, which are method calls on the type of their
         // left operand and carry the operator they were written as
         // (static-dispatch-spike.md §3.1).
-        .add, .sub, .mul, .div, .int_div, .pow, .append, .cons, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
+        // `::` left the language (language.md §6.8): the parser reported
+        // the chain as `cons_removed`, and it lowers to the poison that
+        // report stands for.
+        .cons => return l.errorInst(.cons_removed),
+        .add, .sub, .mul, .div, .int_div, .pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
             const b = l.tree.fullBinop(node);
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
@@ -2405,11 +2411,10 @@ fn operatorLambda(l: *Lower, origin: Bir.WellKnown) Allocator.Error!Index {
 }
 
 /// The core function of language.md §6.5's table for an operator token,
-/// **with the module that defines it**. Almost every operator is a
-/// `Basics` function, but not all of them: `::` is `List.cons` (Elm's
-/// `(::)` is `List.cons`, and core puts it there), so the home module is
-/// per operator rather than assumed — checker.md §4.3. Getting this wrong
-/// is invisible until name resolution looks the function up in the wrong
+/// **with the module that defines it**. Every operator is a `Basics`
+/// function since `::`, whose home was `List`, left (language.md §6.8),
+/// but the module stays per operator rather than assumed — checker.md
+/// §4.3. Getting this wrong is invisible until name resolution looks the function up in the wrong
 /// interface, which is why the corpus goldens print the module.
 const OperatorFunction = struct { module: WellKnown, function: WellKnown };
 
@@ -2422,7 +2427,6 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
         .op_slash_slash => .{ .module = .Basics, .function = .idiv },
         .op_caret => .{ .module = .Basics, .function = .pow },
         .op_plus_plus => .{ .module = .Basics, .function = .append },
-        .op_colon_colon => .{ .module = .List, .function = .cons },
         .op_eq_eq => .{ .module = .Basics, .function = .eq },
         .op_slash_eq => .{ .module = .Basics, .function = .neq },
         .op_lt => .{ .module = .Basics, .function = .lt },
@@ -4212,7 +4216,7 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
             try out.append(gpa, d.lhs);
             try out.appendSlice(gpa, extra[extra[d.rhs]..extra[d.rhs + 1]]);
         },
-        .let_pattern, .branch, .pat_cons => {
+        .let_pattern, .branch => {
             try out.append(gpa, d.lhs);
             try out.append(gpa, d.rhs);
         },
@@ -4357,10 +4361,13 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             l.setInstData(inst, @intFromEnum(range.start), @intFromEnum(range.end));
             return inst;
         },
+        // A `::` pattern: `cons_removed`, reported by the parser. Its
+        // names are still bound — to nothing, so a body that reads them is
+        // poisoned rather than full of `unbound_variable`s.
         .pat_cons => {
-            const head = try l.lowerPattern(@enumFromInt(data.lhs), set_start, .pattern);
-            const tail = try l.lowerPattern(@enumFromInt(data.rhs), set_start, .pattern);
-            return l.addInst(.pat_cons, head.int(), tail.int());
+            _ = try l.lowerPattern(@enumFromInt(data.lhs), set_start, .pattern);
+            _ = try l.lowerPattern(@enumFromInt(data.rhs), set_start, .pattern);
+            return l.errorInst(.cons_removed);
         },
         .pat_spread => {
             const operand = try l.lowerPattern(l.tree.operand(node), set_start, .pattern);
@@ -4714,7 +4721,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try checkInstList(bir, d, params);
             try checkInDecl(d, @enumFromInt(data.rhs));
         },
-        .let_pattern, .branch, .pat_cons => {
+        .let_pattern, .branch => {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkInDecl(d, @enumFromInt(data.rhs));
         },
@@ -4790,7 +4797,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
 test "operators become calls of their core functions, `(+)` the function itself, `-x` a negate call" {
     try expectDecls(
         \\f a b =
-        \\    ( a + b, a // b, a :: [], (+), -a )
+        \\    ( a + b, a // b, [ a, ...[] ], (+), -a )
         \\
     ,
         \\decl 0: value f
@@ -4904,15 +4911,15 @@ test "every binary operator maps to the §6.5 core function, except the six comp
     , &.{});
 }
 
-test "`::` desugars to List.cons, not Basics.cons" {
-    // checker.md §4.3: `::` is `List.cons` and `++` is `Basics.append`,
-    // matching Elm, where `(::)` is `List.cons`. Assuming `Basics` for
-    // every operator emitted `import_value Basics.cons` — a name no
-    // interface has — and nothing noticed, because name resolution against
-    // interfaces came later. The home module is per operator for this reason.
+test "a leading element and a spread desugar to List.cons, not Basics.cons" {
+    // language.md §6.8: `[ x, ...xs ]` is `List.cons x xs`, the call `::`
+    // made, and `++` is `Basics.append`, matching Elm, where `(::)` is
+    // `List.cons`. Assuming `Basics` for every desugaring once emitted
+    // `import_value Basics.cons` — a name no interface has — and nothing
+    // noticed, because name resolution against interfaces came later.
     try expectDecls(
         \\f x xs =
-        \\    x :: xs
+        \\    [ x, ...xs ]
         \\
     ,
         \\decl 0: value f
@@ -4933,22 +4940,22 @@ test "`::` desugars to List.cons, not Basics.cons" {
     , &.{});
 }
 
-test "the operator table gives every operator a home module, and only `::` leaves Basics" {
+test "the operator table gives every operator a home module, Basics" {
+    // `::`, the one operator whose home was `List`, left on 2026-10-01
+    // (language.md §6.8); a list's spread names `List.cons` itself.
     const ops = [_]Token.Tag{
-        .op_plus,        .op_minus,    .op_star,      .op_slash,
-        .op_slash_slash, .op_caret,    .op_plus_plus, .op_colon_colon,
-        .op_eq_eq,       .op_slash_eq, .op_lt,        .op_gt,
-        .op_lte,         .op_gte,      .op_and_and,   .op_or_or,
+        .op_plus,        .op_minus,   .op_star,      .op_slash,
+        .op_slash_slash, .op_caret,   .op_plus_plus, .op_eq_eq,
+        .op_slash_eq,    .op_lt,      .op_gt,        .op_lte,
+        .op_gte,         .op_and_and, .op_or_or,
     };
     for (ops) |op| {
         const f = operatorFunction(op);
-        const expected: InternPool.WellKnown = if (op == .op_colon_colon) .List else .Basics;
-        testing.expectEqual(expected, f.module) catch |err| {
+        testing.expectEqual(InternPool.WellKnown.Basics, f.module) catch |err| {
             std.debug.print("operator {t} resolved to module {t}\n", .{ op, f.module });
             return err;
         };
     }
-    try testing.expectEqualDeep(OperatorFunction{ .module = .List, .function = .cons }, operatorFunction(.op_colon_colon));
     try testing.expectEqualDeep(OperatorFunction{ .module = .Basics, .function = .append }, operatorFunction(.op_plus_plus));
 }
 
@@ -5282,7 +5289,7 @@ test "every pattern kind lowers, binding its variables as locals of the right ki
     try expectDecls(
         \\f p =
         \\    case p of
-        \\        ( Just (x :: rest) as whole, { a, b }, [ 1, -2, 'c', "s", () ], _ ) ->
+        \\        ( Just [ x, ...rest ] as whole, { a, b }, [ 1, -2, 'c', "s", () ], _ ) ->
         \\            x
         \\
         \\        _ ->
@@ -5295,33 +5302,34 @@ test "every pattern kind lowers, binding its variables as locals of the right ki
         \\  %2 = import_ctor Maybe.Just
         \\  %3 = pat_var local 1 (x)
         \\  %4 = pat_var local 2 (rest)
-        \\  %5 = pat_cons %3 :: %4
-        \\  %6 = pat_ctor %2 [%5]
-        \\  %7 = pat_as %6 as local 3 (whole)
-        \\  %8 = pat_record [local 4 (a), local 5 (b)]
-        \\  %9 = pat_int 1
-        \\  %10 = pat_int -2
-        \\  %11 = pat_char 'c'
-        \\  %12 = pat_string "s"
-        \\  %13 = pat_unit
-        \\  %14 = pat_list [%9, %10, %11, %12, %13]
-        \\  %15 = pat_wild
-        \\  %16 = pat_tuple [%7, %8, %14, %15]
-        \\  %17 = local 1 (x)
-        \\  %18 = branch %16 -> %17
-        \\  %19 = pat_wild
-        \\  %20 = int 0
-        \\  %21 = branch %19 -> %20
-        \\  %22 = case %1 [%18, %21]
+        \\  %5 = pat_spread ...%4
+        \\  %6 = pat_list [%3, %5]
+        \\  %7 = pat_ctor %2 [%6]
+        \\  %8 = pat_as %7 as local 3 (whole)
+        \\  %9 = pat_record [local 4 (a), local 5 (b)]
+        \\  %10 = pat_int 1
+        \\  %11 = pat_int -2
+        \\  %12 = pat_char 'c'
+        \\  %13 = pat_string "s"
+        \\  %14 = pat_unit
+        \\  %15 = pat_list [%10, %11, %12, %13, %14]
+        \\  %16 = pat_wild
+        \\  %17 = pat_tuple [%8, %9, %15, %16]
+        \\  %18 = local 1 (x)
+        \\  %19 = branch %17 -> %18
+        \\  %20 = pat_wild
+        \\  %21 = int 0
+        \\  %22 = branch %20 -> %21
+        \\  %23 = case %1 [%19, %22]
         \\  params [%0]
-        \\  body %22
+        \\  body %23
         \\  locals
         \\    0 p param %0
         \\    1 x pattern %3
         \\    2 rest pattern %4
-        \\    3 whole pattern %7
-        \\    4 a pattern %8
-        \\    5 b pattern %8
+        \\    3 whole pattern %8
+        \\    4 a pattern %9
+        \\    5 b pattern %9
         \\  refs
         \\    import_ctor Maybe.Just
         \\

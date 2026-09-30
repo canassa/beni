@@ -154,7 +154,7 @@ firstOf validators =
             [] ->
                 Valid value
 
-            validator :: rest ->
+            [ validator, ...rest ] ->
                 case validator field value of
                     Valid v ->
                         (firstOf rest) field v

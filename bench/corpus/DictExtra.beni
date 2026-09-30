@@ -19,7 +19,7 @@ groupBy items key =
                 (\existing ->
                     case existing of
                         Just group ->
-                            Just (item :: group)
+                            Just [ item, ...group ]
 
                         Nothing ->
                             Just [ item ]
@@ -41,7 +41,7 @@ groupOrder items key =
             if Set.member seen k then
                 ( seen, order )
             else
-                ( Set.insert seen k, k :: order )
+                ( Set.insert seen k, [ k, ...order ] )
 
         walked =
             List.foldl items ( Set.empty, [] ) step
@@ -223,7 +223,7 @@ pub nested : Dict String (Dict String Int) -> List ( String, String, Int )
 nested outer =
     Dict.foldl outer
         []
-        (\a inner acc -> Dict.foldl inner acc (\b n acc2 -> ( a, b, n ) :: acc2))
+        (\a inner acc -> Dict.foldl inner acc (\b n acc2 -> [ ( a, b, n ), ...acc2 ]))
         |> List.reverse
 
 

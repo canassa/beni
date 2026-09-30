@@ -782,7 +782,7 @@ lookup target fields =
     case fields of
         [] ->
             Nothing
-        ( key, value ) :: rest ->
+        [ ( key, value ), ...rest ] ->
             if key == target then
                 Just value
             else
@@ -813,8 +813,9 @@ unknown context known fields =
                                             found
 
                                     AllErrors ->
-                                        issue (atKey context key) UnknownField "unknown field"
-                                            :: found
+                                        [ issue (atKey context key) UnknownField "unknown field"
+                                        , ...found
+                                        ]
                         )
             in
             if issues == [] then
@@ -843,10 +844,10 @@ traverseHelp context values func index results issues =
                 Ok (List.reverse results)
             else
                 Err (List.reverse issues)
-        value :: rest ->
+        [ value, ...rest ] ->
             case func (atIndex context index) value of
                 Ok result ->
-                    traverseHelp context rest func (index + 1) (result :: results) issues
+                    traverseHelp context rest func (index + 1) [ result, ...results ] issues
                 Err found ->
                     case context.options.errors of
                         FirstError ->

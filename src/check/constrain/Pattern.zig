@@ -81,15 +81,6 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
             }
             return g.conj(parts.items);
         },
-        .pat_cons => {
-            const element = try g.freshFlex();
-            const list = try g.applied(wk.list, &.{element});
-            return g.conj(&.{
-                try g.equal(expected, list, inst, .{ .tag = .case_pattern }),
-                try patternAgainst(g, @enumFromInt(data.lhs), element),
-                try patternAgainst(g, @enumFromInt(data.rhs), list),
-            });
-        },
         .pat_record => {
             const locals = bir.extraSlice(Bir.inlineRange(data), u32);
             const pairs = try g.cx.scratch.alloc(TypeStore.Field, locals.len);

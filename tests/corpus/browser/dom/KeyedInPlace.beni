@@ -45,7 +45,7 @@ rotate xs =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             rest ++ [ x ]
 
 

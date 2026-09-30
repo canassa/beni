@@ -1,4 +1,4 @@
--- Lists are cons cells (`backend.md` §4): `[ … ]`, `::` and `++` all build
+-- Lists are cons cells (`backend.md` §4): `[ … ]`, a spread and `++` all build
 -- the same shape, and `==` compares them structurally.
 import List
 import Node exposing (Program)
@@ -14,7 +14,7 @@ main : Program
 main =
     Node.printLines
         [ show [ 1, 2, 3 ]
-        , show (1 :: [ 2, 3 ])
+        , show [ 1, 2, 3 ]
         , show ([ 1, 2 ] ++ [ 3, 4 ])
         , show (List.range 1 5)
         , show (List.repeat 7 3)

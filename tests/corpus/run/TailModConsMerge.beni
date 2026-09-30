@@ -30,8 +30,8 @@ split xs left right =
         [] ->
             ( left, right )
 
-        x :: rest ->
-            split rest right (x :: left)
+        [ x, ...rest ] ->
+            split rest right [ x, ...left ]
 
 
 merge : List Int, List Int -> List Int
@@ -43,11 +43,11 @@ merge xs ys =
         ( _, [] ) ->
             xs
 
-        ( x :: xt, y :: yt ) ->
+        ( [ x, ...xt ], [ y, ...yt ] ) ->
             if x <= y then
-                x :: merge xt (y :: yt)
+                [ x, ...merge xt [ y, ...yt ] ]
             else
-                y :: merge (x :: xt) yt
+                [ y, ...merge [ x, ...xt ] yt ]
 
 
 show : List Int -> String

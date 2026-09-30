@@ -876,11 +876,14 @@ test "exhaustiveness: literals are infinite, so a wildcard is the only way to co
     );
 }
 
-test "exhaustiveness: a list is `[]` and `::`, in both spellings" {
-    try expectCodes(&.{}, listCase("[]", "x :: rest"));
+test "exhaustiveness: a list column is split by length" {
+    try expectCodes(&.{}, listCase("[]", "[ x, ...rest ]"));
     try expectCodes(&.{.missing_patterns}, listCase("[]", "[ x ]"));
     try expectCodes(&.{.missing_patterns}, listCase("[ x ]", "[ x2, y ]"));
-    // `[]`, `[ x ]` and `x :: y :: rest` between them are every list.
+    // Items after a spread: every non-empty list ends somewhere.
+    try expectCodes(&.{}, listCase("[]", "[ ...init, last ]"));
+    try expectCodes(&.{.missing_patterns}, listCase("[ ...init, 0 ]", "[]"));
+    // `[]`, `[ x ]` and `[ x2, y, ...rest ]` between them are every list.
     try expectCodes(&.{},
         \\pub f : List Int -> Int
         \\f xs =
@@ -891,7 +894,7 @@ test "exhaustiveness: a list is `[]` and `::`, in both spellings" {
         \\        [ x ] ->
         \\            x
         \\
-        \\        x2 :: y :: rest ->
+        \\        [ x2, y, ...rest ] ->
         \\            y
         \\
     );
@@ -906,10 +909,10 @@ test "exhaustiveness: a list is `[]` and `::`, in both spellings" {
         \\        [ x ] ->
         \\            x
         \\
-        \\        x2 :: y :: rest ->
+        \\        [ x2, y, ...rest ] ->
         \\            y
         \\
-        \\        z :: more ->
+        \\        [ ...more, z ] ->
         \\            z
         \\
     );

@@ -14,9 +14,9 @@ eq (Sorted l) (Sorted r) =
                 _ ->
                     False
 
-        x :: _ ->
+        [ x, ..._ ] ->
             case r of
-                y :: _ ->
+                [ y, ..._ ] ->
                     not (x < y) && not (y < x)
 
                 [] ->

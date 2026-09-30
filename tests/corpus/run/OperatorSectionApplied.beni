@@ -22,7 +22,7 @@ allSame xs =
         [] ->
             True
 
-        x :: r ->
+        [ x, ...r ] ->
             List.all r ((==) x _)
 
 
@@ -31,14 +31,14 @@ allSame2 xs =
         [] ->
             True
 
-        x :: r ->
+        [ x, ...r ] ->
             List.all r ((==) x _)
 
 
 sorted xs =
     case xs of
-        a :: b :: r ->
-            (<=) a b && sorted (b :: r)
+        [ a, b, ...r ] ->
+            (<=) a b && sorted [ b, ...r ]
 
         _ ->
             True

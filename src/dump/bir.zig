@@ -696,12 +696,6 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.refList(bir.subRange(@enumFromInt(data.rhs)));
             },
-            .pat_cons => {
-                try d.w.writeByte(' ');
-                try d.ref(data.lhs);
-                try d.w.writeAll(" :: ");
-                try d.ref(data.rhs);
-            },
             .pat_record => {
                 try d.w.writeAll(" [");
                 for (bir.extraSlice(Bir.inlineRange(data), u32), 0..) |li, k| {

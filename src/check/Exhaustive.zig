@@ -624,46 +624,23 @@ pub const Analysis = struct {
         return an.node(.{ .tag = .list, .lhs = 0, .rhs = at });
     }
 
-    /// A `pat_list`, or a `pat_cons` chain, as one `list` node. A chain is
-    /// walked, not recursed into: `a :: b :: rest` is two leading items and
-    /// a spread, and `a :: [ b, ...m, z ]` three items around one — the tail
-    /// of a chain is the list it ends in, a name (the spread) or `_`.
+    /// A `pat_list` as one `list` node: its items before the spread, its
+    /// items after it, and whether it has one (language.md §6.8).
     fn simplifyList(an: *Analysis, inst: Bir.Inst.Index, depth: u32) Fail!PatIndex {
         const bir = an.cx.bir;
         var prefix: std.ArrayList(PatIndex) = .empty;
         var suffix: std.ArrayList(PatIndex) = .empty;
         var spread = false;
-        var at = inst;
-        while (true) {
-            try an.spend(1);
-            if (at.int() >= bir.insts.len) return error.Malformed;
-            const data = bir.instData(at);
-            switch (bir.instTag(at)) {
-                .pat_cons => {
-                    try prefix.append(an.arena, try an.simplify(@enumFromInt(data.lhs), depth + 1));
-                    at = @enumFromInt(data.rhs);
-                },
-                // Only ever a chain's tail: an `as` binds, it does not test.
-                .pat_as => at = @enumFromInt(data.lhs),
-                .pat_var, .pat_wild => {
-                    spread = true;
-                    break;
-                },
-                .pat_list => {
-                    for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
-                        if (bir.instTag(el) == .pat_spread) {
-                            // The parser refused a second one.
-                            if (spread) return error.Malformed;
-                            spread = true;
-                            continue;
-                        }
-                        const item = try an.simplify(el, depth + 1);
-                        try (if (spread) &suffix else &prefix).append(an.arena, item);
-                    }
-                    break;
-                },
-                else => return error.Malformed,
+        for (bir.extraSlice(Bir.inlineRange(bir.instData(inst)), Bir.Inst.Index)) |el| {
+            if (el.int() >= bir.insts.len) return error.Malformed;
+            if (bir.instTag(el) == .pat_spread) {
+                // The parser refused a second one.
+                if (spread) return error.Malformed;
+                spread = true;
+                continue;
             }
+            const item = try an.simplify(el, depth + 1);
+            try (if (spread) &suffix else &prefix).append(an.arena, item);
         }
         return an.makeList(prefix.items, suffix.items, spread);
     }
@@ -704,7 +681,7 @@ pub const Analysis = struct {
                 const un = try an.tupleUnion(@intCast(elements.len));
                 return an.makeCtor(un, an.pats.unionAt(un).alts_start, args);
             },
-            .pat_list, .pat_cons => return an.simplifyList(inst, depth),
+            .pat_list => return an.simplifyList(inst, depth),
             .pat_ctor => {
                 const found = try an.ctorUnion(@enumFromInt(data.lhs));
                 const arg_insts = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);

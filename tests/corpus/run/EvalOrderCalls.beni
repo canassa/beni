@@ -73,7 +73,7 @@ main =
             s "append.left" "a" ++ s "append.right" "b"
 
         consed =
-            n "cons.head" 1 :: [ n "cons.tail" 2 ]
+            [ n "cons.head" 1, n "cons.tail" 2 ]
 
         looped =
             swapLoop 3 1 2

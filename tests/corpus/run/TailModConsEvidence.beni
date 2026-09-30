@@ -21,11 +21,11 @@ removeAll xs value =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if x == value then
                 removeAll rest value
             else
-                x :: removeAll rest value
+                [ x, ...removeAll rest value ]
 
 
 type Box
@@ -42,13 +42,14 @@ tagged xs value n =
             [] ->
                 []
 
-            x :: _ ->
-                (if x == value then
-                    1
-                 else
-                    0
-                )
-                    :: tagged [ Box 1 ] (Box 1) (n - 1)
+            [ x, ..._ ] ->
+                [ (if x == value then
+                      1
+                   else
+                      0
+                  )
+                , ...tagged [ Box 1 ] (Box 1) (n - 1)
+                ]
 
 
 main : Program

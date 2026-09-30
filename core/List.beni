@@ -6,18 +6,18 @@
 --! function is about comes first, so `xs |> map f` inserts it at the front,
 --! and the function comes last, so a lambda you write inline is the final
 --! argument. Two kinds of declaration sit outside that sentence, in opposite
---! directions. `cons` is ordered by the operator instead — `::` desugars to a
---! call of it, so it is element before list rather than something you pipe
---! into. And the builders take no list at all, so "the list comes first"
+--! directions. `cons` is ordered by the list syntax instead — `[ x, ...xs ]`
+--! is a call of it, so it is element before list rather than something you
+--! pipe into. And the builders take no list at all, so "the list comes first"
 --! cannot be what subject first means for them: `repeat` is still subject
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
 --! Three declarations here are `foreign`, and nothing else is:
 --!
---!   - `cons : a, List a -> List a` — `::` desugars to a call of this
---!     function, so a beni definition of it would call itself. Its order is
---!     the operator's, element before list, not a pipeline's.
+--!   - `cons : a, List a -> List a` — `[ x, ...xs ]` desugars to a call of
+--!     this function, so a beni definition of it would call itself. Its
+--!     order is the syntax's, element before list, not a pipeline's.
 --!   - `eq : List a, List a -> Bool where a.eq` — what `==` on a list means.
 --!     `List a` has no constructors, so the compiler has nothing to derive a
 --!     body from, and the shape of a cons cell belongs to the code generator
@@ -40,11 +40,11 @@
 --! yourself, which is how you sort by something that is not the type's own
 --! order.
 
---| A list of values, all of the same type. `[]` is the empty list and `::`
---| puts one more value on the front.
+--| A list of values, all of the same type. `[]` is the empty list, and a
+--| spread puts the elements of one list into another.
 --|
 --|     [ 1, 2, 3 ]
---|     1 :: [ 2, 3 ]
+--|     [ 1, ...[ 2, 3 ] ]
 --|
 --| Equatable when the element type is.
 pub equatable foreign type List a
@@ -54,8 +54,8 @@ pub equatable foreign type List a
 --|
 --|     cons 1 [ 2, 3 ] == [ 1, 2, 3 ]
 --|
---| This is what `::` desugars to, which is why the element comes first here
---| while every other function in this module takes the list first.
+--| This is what `[ x, ...xs ]` desugars to, which is why the element comes
+--| first here while every other function in this module takes the list first.
 pub foreign pure cons : a, List a -> List a
 
 
@@ -71,7 +71,7 @@ foldl xs acc func =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             foldl rest (func x acc) func
 
 
@@ -141,7 +141,7 @@ repeatHelp result n value =
     if n <= 0 then
         result
     else
-        repeatHelp (value :: result) (n - 1) value
+        repeatHelp [ value, ...result ] (n - 1) value
 
 
 --| Create a list of numbers, every element increasing by one. You give the
@@ -158,7 +158,7 @@ range lo hi =
 rangeHelp : Int, Int, List Int -> List Int
 rangeHelp lo hi list =
     if lo <= hi then
-        rangeHelp lo (hi - 1) (hi :: list)
+        rangeHelp lo (hi - 1) [ hi, ...list ]
     else
         list
 
@@ -169,8 +169,8 @@ rangeHelp lo hi list =
 --|
 --| `func` is called on the first element first (`checker.md` Appendix B).
 --|
---| This is the plain recursion, `func x :: map rest func`, and it walks a
---| list of any length: a self-call under `::` is a **cons step**, which the
+--| This is the plain recursion, `[ func x, ...map rest func ]`, and it walks
+--| a list of any length: a self-call spread last is a **cons step**, which the
 --| code generator compiles to one loop that builds the result front to back
 --| (`backend.md` §8, *Tail calls modulo cons*) — n cells, no `reverse`, no
 --| stack. The head is evaluated before the loop moves on, so `func` sees
@@ -182,8 +182,8 @@ map xs func =
         [] ->
             []
 
-        x :: rest ->
-            func x :: map rest func
+        [ x, ...rest ] ->
+            [ func x, ...map rest func ]
 
 
 --| Same as `map` but the function is also given the index of each element,
@@ -201,8 +201,8 @@ indexedMapHelp xs index func =
         [] ->
             []
 
-        x :: rest ->
-            func index x :: indexedMapHelp rest (index + 1) func
+        [ x, ...rest ] ->
+            [ func index x, ...indexedMapHelp rest (index + 1) func ]
 
 
 --| Keep the elements that pass the test.
@@ -228,9 +228,9 @@ filterKept list rest keptBackwards isGood =
         [] ->
             list
 
-        x :: more ->
+        [ x, ...more ] ->
             if isGood x then
-                filterKept list more (x :: keptBackwards) isGood
+                filterKept list more [ x, ...keptBackwards ] isGood
             else
                 foldl keptBackwards (filterFresh more isGood) cons
 
@@ -243,9 +243,9 @@ filterFresh list isGood =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if isGood x then
-                x :: filterFresh rest isGood
+                [ x, ...filterFresh rest isGood ]
             else
                 filterFresh rest isGood
 
@@ -262,8 +262,8 @@ prefixOnto list n rest =
             [] ->
                 rest
 
-            x :: more ->
-                x :: prefixOnto more (n - 1) rest
+            [ x, ...more ] ->
+                [ x, ...prefixOnto more (n - 1) rest ]
 
 
 --| Filter out certain values. For example, to get all the heads of a list of
@@ -278,10 +278,10 @@ filterMap xs func =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             case func x of
                 Just value ->
-                    value :: filterMap rest func
+                    [ value, ...filterMap rest func ]
 
                 Nothing ->
                     filterMap rest func
@@ -344,7 +344,7 @@ any list isOkay =
         [] ->
             False
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if isOkay x then
                 True
             else
@@ -360,7 +360,7 @@ any list isOkay =
 pub maximum : List number -> Maybe number
 maximum list =
     case list of
-        x :: rest ->
+        [ x, ...rest ] ->
             Just (foldl rest x max)
 
         [] ->
@@ -374,7 +374,7 @@ maximum list =
 pub minimum : List number -> Maybe number
 minimum list =
     case list of
-        x :: rest ->
+        [ x, ...rest ] ->
             Just (foldl rest x min)
 
         [] ->
@@ -419,8 +419,8 @@ appendHelp xs ys =
         [] ->
             ys
 
-        x :: rest ->
-            x :: appendHelp rest ys
+        [ x, ...rest ] ->
+            [ x, ...appendHelp rest ys ]
 
 
 --| Concatenate a bunch of lists into a single list.
@@ -441,18 +441,18 @@ concat lists =
 concatHelp : List a, List a, List (List a) -> List a
 concatHelp copying pending lists =
     case copying of
-        x :: more ->
-            x :: concatHelp more pending lists
+        [ x, ...more ] ->
+            [ x, ...concatHelp more pending lists ]
 
         [] ->
             case lists of
                 [] ->
                     pending
 
-                [] :: rest ->
+                [ [], ...rest ] ->
                     concatHelp [] pending rest
 
-                next :: rest ->
+                [ next, ...rest ] ->
                     concatHelp pending next rest
 
 
@@ -472,15 +472,15 @@ concatMap list func =
 concatMapHelp : List b, List b, List a, (a -> List b) -> List b
 concatMapHelp copying pending list func =
     case copying of
-        x :: more ->
-            x :: concatMapHelp more pending list func
+        [ x, ...more ] ->
+            [ x, ...concatMapHelp more pending list func ]
 
         [] ->
             case list of
                 [] ->
                     pending
 
-                y :: rest ->
+                [ y, ...rest ] ->
                     case func y of
                         [] ->
                             concatMapHelp [] pending rest func
@@ -498,8 +498,8 @@ intersperse xs sep =
         [] ->
             []
 
-        hd :: tl ->
-            hd :: intersperseHelp tl sep
+        [ hd, ...tl ] ->
+            [ hd, ...intersperseHelp tl sep ]
 
 
 intersperseHelp : List a, a -> List a
@@ -508,8 +508,8 @@ intersperseHelp xs sep =
         [] ->
             []
 
-        x :: rest ->
-            sep :: x :: intersperseHelp rest sep
+        [ x, ...rest ] ->
+            [ sep, x, ...intersperseHelp rest sep ]
 
 
 --| Combine two lists, combining them with the given function. If one list is
@@ -518,15 +518,15 @@ intersperseHelp xs sep =
 --|     map2 [ 1, 2, 3 ] [ 10, 20 ] (+) == [ 11, 22 ]
 --|
 --| `func` is called on the first elements first, and not at all for the tail
---| the shorter list does not reach. `func x y :: map2 …` was once the
+--| the shorter list does not reach. `[ func x y, ...map2 … ]` was once the
 --| spelling that died at about 5 700 elements, because it recursed to the
 --| length of the list; it is a cons step now, compiled to a loop (see
 --| `map`). `map3`–`map5` are the same shape, one argument wider each.
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
     case ( xs, ys ) of
-        ( x :: xrest, y :: yrest ) ->
-            func x y :: map2 xrest yrest func
+        ( [ x, ...xrest ], [ y, ...yrest ] ) ->
+            [ func x y, ...map2 xrest yrest func ]
 
         _ ->
             []
@@ -536,8 +536,8 @@ map2 xs ys func =
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
     case ( xs, ys, zs ) of
-        ( x :: xrest, y :: yrest, z :: zrest ) ->
-            func x y z :: map3 xrest yrest zrest func
+        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ] ) ->
+            [ func x y z, ...map3 xrest yrest zrest func ]
 
         _ ->
             []
@@ -547,8 +547,8 @@ map3 xs ys zs func =
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
     case ( xs, ys, zs, ws ) of
-        ( x :: xrest, y :: yrest, z :: zrest, w :: wrest ) ->
-            func x y z w :: map4 xrest yrest zrest wrest func
+        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ], [ w, ...wrest ] ) ->
+            [ func x y z w, ...map4 xrest yrest zrest wrest func ]
 
         _ ->
             []
@@ -565,8 +565,8 @@ pub map5 :
     -> List result
 map5 xs ys zs ws vs func =
     case ( xs, ys, zs, ws, vs ) of
-        ( x :: xrest, y :: yrest, z :: zrest, w :: wrest, v :: vrest ) ->
-            func x y z w v :: map5 xrest yrest zrest wrest vrest func
+        ( [ x, ...xrest ], [ y, ...yrest ], [ z, ...zrest ], [ w, ...wrest ], [ v, ...vrest ] ) ->
+            [ func x y z w v, ...map5 xrest yrest zrest wrest vrest func ]
 
         _ ->
             []
@@ -659,10 +659,10 @@ sortWith list cmp =
 frontHalf : List a, List a -> List a
 frontHalf slow fast =
     case fast of
-        _ :: _ :: fastRest ->
+        [ _, _, ...fastRest ] ->
             case slow of
-                x :: slowRest ->
-                    x :: frontHalf slowRest fastRest
+                [ x, ...slowRest ] ->
+                    [ x, ...frontHalf slowRest fastRest ]
 
                 [] ->
                     []
@@ -676,9 +676,9 @@ frontHalf slow fast =
 backHalf : List a, List a -> List a
 backHalf slow fast =
     case fast of
-        _ :: _ :: fastRest ->
+        [ _, _, ...fastRest ] ->
             case slow of
-                _ :: slowRest ->
+                [ _, ...slowRest ] ->
                     backHalf slowRest fastRest
 
                 [] ->
@@ -697,18 +697,18 @@ mergeWith left right cmp =
         [] ->
             right
 
-        x :: xrest ->
+        [ x, ...xrest ] ->
             case right of
                 [] ->
                     left
 
-                y :: yrest ->
+                [ y, ...yrest ] ->
                     case cmp x y of
                         GT ->
-                            y :: mergeWith left yrest cmp
+                            [ y, ...mergeWith left yrest cmp ]
 
                         _ ->
-                            x :: mergeWith xrest right cmp
+                            [ x, ...mergeWith xrest right cmp ]
 
 
 --| Determine if a list is empty.
@@ -731,7 +731,7 @@ isEmpty xs =
 pub head : List a -> Maybe a
 head list =
     case list of
-        x :: _ ->
+        [ x, ..._ ] ->
             Just x
 
         [] ->
@@ -745,7 +745,7 @@ head list =
 pub tail : List a -> Maybe (List a)
 tail list =
     case list of
-        _ :: xs ->
+        [ _, ...xs ] ->
             Just xs
 
         [] ->
@@ -780,7 +780,7 @@ drop list n =
             [] ->
                 list
 
-            _ :: xs ->
+            [ _, ...xs ] ->
                 drop xs (n - 1)
 
 
@@ -798,7 +798,7 @@ initialize n func =
 initializeHelp : Int, Int, (Int -> a) -> List a
 initializeHelp index n func =
     if index < n then
-        func index :: initializeHelp (index + 1) n func
+        [ func index, ...initializeHelp (index + 1) n func ]
     else
         []
 
@@ -817,7 +817,7 @@ get list index =
         Nothing
     else
         case drop list index of
-            x :: _ ->
+            [ x, ..._ ] ->
                 Just x
 
             [] ->
@@ -839,7 +839,7 @@ last list =
         [ x ] ->
             Just x
 
-        _ :: rest ->
+        [ _, ...rest ] ->
             last rest
 
 
@@ -858,8 +858,8 @@ set list index value =
         list
     else
         case drop list index of
-            _ :: after ->
-                prefixOnto list index (value :: after)
+            [ _, ...after ] ->
+                prefixOnto list index [ value, ...after ]
 
             [] ->
                 list
@@ -878,8 +878,8 @@ update list index func =
         list
     else
         case drop list index of
-            x :: after ->
-                prefixOnto list index (func x :: after)
+            [ x, ...after ] ->
+                prefixOnto list index [ func x, ...after ]
 
             [] ->
                 list
@@ -966,11 +966,11 @@ insertAt list index value =
     if index < 0 then
         list
     else if index == 0 then
-        value :: list
+        [ value, ...list ]
     else
         case drop list (index - 1) of
-            _ :: after ->
-                prefixOnto list index (value :: after)
+            [ _, ...after ] ->
+                prefixOnto list index [ value, ...after ]
 
             [] ->
                 list
@@ -988,7 +988,7 @@ removeAt list index =
         list
     else
         case drop list index of
-            _ :: after ->
+            [ _, ...after ] ->
                 prefixOnto list index after
 
             [] ->
@@ -1035,11 +1035,11 @@ partitionHelp list pred trues falses =
         [] ->
             ( reverse trues, reverse falses )
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if pred x then
-                partitionHelp rest pred (x :: trues) falses
+                partitionHelp rest pred [ x, ...trues ] falses
             else
-                partitionHelp rest pred trues (x :: falses)
+                partitionHelp rest pred trues [ x, ...falses ]
 
 
 --| Decompose a list of tuples into a tuple of lists.

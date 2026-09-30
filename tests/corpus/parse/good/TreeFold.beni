@@ -40,7 +40,7 @@ fromList xs =
 
 pub toList : Tree a -> List a
 toList tree =
-    fold (::) [] tree |> List.reverse
+    fold List.cons [] tree |> List.reverse
 
 
 pub size : Tree a -> Int

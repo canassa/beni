@@ -59,20 +59,20 @@ sumList xs =
         [ a, b ] ->
             a + b
 
-        first :: second :: rest ->
+        [ first, second, ...rest ] ->
             first + second + sumList rest
 
 
 heads : List (Maybe Int) -> Int
 heads ms =
     case ms of
-        Just x :: _ ->
+        [ Just x, ..._ ] ->
             x
 
-        Nothing :: Just y :: _ ->
+        [ Nothing, Just y, ..._ ] ->
             y
 
-        ((Just z) as whole) :: _ ->
+        [ ((Just z) as whole), ..._ ] ->
             z + List.length [ whole ]
 
         _ ->

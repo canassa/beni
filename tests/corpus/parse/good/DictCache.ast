@@ -132,9 +132,10 @@
               (ident n)
               (ident c)))
           (tuple
-            (cons
+            (list
               (ident value)
-              (ident acc))
+              (spread
+                (ident acc)))
             (ident c1))))
       (pipe_right
         (apply

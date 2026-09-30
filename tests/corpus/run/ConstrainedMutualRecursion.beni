@@ -33,7 +33,7 @@ largest xs best =
         [] ->
             best
 
-        x :: rest ->
+        [ x, ...rest ] ->
             step rest x best
 
 

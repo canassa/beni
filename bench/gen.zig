@@ -1217,7 +1217,7 @@ const Module = struct {
         try g.line(8, "[] ->", .{});
         try g.line(12, "0", .{});
         try g.blank();
-        try g.line(8, "first :: rest ->", .{});
+        try g.line(8, "[ first, ...rest ] ->", .{});
         try g.line(12, "first + sum{d} rest", .{g.index});
     }
 

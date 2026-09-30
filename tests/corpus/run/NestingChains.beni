@@ -9,10 +9,12 @@
 --                 has a `case` among its operands, which needs statements —
 --                 everything after it runs only when the operands before it
 --                 said so
---   `+` `++` `::`  70 terms: past `nesting.spill` the chain is bound to a
+--   `+` `++`       70 terms: past `nesting.spill` the chain is bound to a
 --                 `const` every 64 or so calls. Operands still run in written
---                 order, `++` and `::` included, although they group to the
---                 right
+--                 order, `++` included, although it groups to the right
+--   `[ … ]`        70 elements, which were a chain of `::` until the list
+--                 syntax (`language.md` §6.8) made them one literal, in
+--                 written order
 --   `|>` / nested  70 calls deep, innermost first
 import Node exposing (Program)
 
@@ -62,7 +64,7 @@ main =
             s "a1" "b" ++ s "a2" "c" ++ s "a3" "d" ++ s "a4" "e" ++ s "a5" "f" ++ s "a6" "g" ++ s "a7" "h" ++ s "a8" "i" ++ s "a9" "j" ++ s "a10" "k" ++ s "a11" "l" ++ s "a12" "m" ++ s "a13" "n" ++ s "a14" "o" ++ s "a15" "p" ++ s "a16" "q" ++ s "a17" "r" ++ s "a18" "s" ++ s "a19" "t" ++ s "a20" "u" ++ s "a21" "v" ++ s "a22" "w" ++ s "a23" "x" ++ s "a24" "y" ++ s "a25" "z" ++ s "a26" "a" ++ s "a27" "b" ++ s "a28" "c" ++ s "a29" "d" ++ s "a30" "e" ++ s "a31" "f" ++ s "a32" "g" ++ s "a33" "h" ++ s "a34" "i" ++ s "a35" "j" ++ s "a36" "k" ++ s "a37" "l" ++ s "a38" "m" ++ s "a39" "n" ++ s "a40" "o" ++ s "a41" "p" ++ s "a42" "q" ++ s "a43" "r" ++ s "a44" "s" ++ s "a45" "t" ++ s "a46" "u" ++ s "a47" "v" ++ s "a48" "w" ++ s "a49" "x" ++ s "a50" "y" ++ s "a51" "z" ++ s "a52" "a" ++ s "a53" "b" ++ s "a54" "c" ++ s "a55" "d" ++ s "a56" "e" ++ s "a57" "f" ++ s "a58" "g" ++ s "a59" "h" ++ s "a60" "i" ++ s "a61" "j" ++ s "a62" "k" ++ s "a63" "l" ++ s "a64" "m" ++ s "a65" "n" ++ s "a66" "o" ++ s "a67" "p" ++ s "a68" "q" ++ s "a69" "r" ++ s "a70" "s"
 
         consed =
-            n "c1" 1 :: n "c2" 2 :: n "c3" 3 :: n "c4" 4 :: n "c5" 5 :: n "c6" 6 :: n "c7" 7 :: n "c8" 8 :: n "c9" 9 :: n "c10" 10 :: n "c11" 11 :: n "c12" 12 :: n "c13" 13 :: n "c14" 14 :: n "c15" 15 :: n "c16" 16 :: n "c17" 17 :: n "c18" 18 :: n "c19" 19 :: n "c20" 20 :: n "c21" 21 :: n "c22" 22 :: n "c23" 23 :: n "c24" 24 :: n "c25" 25 :: n "c26" 26 :: n "c27" 27 :: n "c28" 28 :: n "c29" 29 :: n "c30" 30 :: n "c31" 31 :: n "c32" 32 :: n "c33" 33 :: n "c34" 34 :: n "c35" 35 :: n "c36" 36 :: n "c37" 37 :: n "c38" 38 :: n "c39" 39 :: n "c40" 40 :: n "c41" 41 :: n "c42" 42 :: n "c43" 43 :: n "c44" 44 :: n "c45" 45 :: n "c46" 46 :: n "c47" 47 :: n "c48" 48 :: n "c49" 49 :: n "c50" 50 :: n "c51" 51 :: n "c52" 52 :: n "c53" 53 :: n "c54" 54 :: n "c55" 55 :: n "c56" 56 :: n "c57" 57 :: n "c58" 58 :: n "c59" 59 :: n "c60" 60 :: n "c61" 61 :: n "c62" 62 :: n "c63" 63 :: n "c64" 64 :: n "c65" 65 :: n "c66" 66 :: n "c67" 67 :: n "c68" 68 :: n "c69" 69 :: n "c70" 70 :: []
+            [ n "c1" 1, n "c2" 2, n "c3" 3, n "c4" 4, n "c5" 5, n "c6" 6, n "c7" 7, n "c8" 8, n "c9" 9, n "c10" 10, n "c11" 11, n "c12" 12, n "c13" 13, n "c14" 14, n "c15" 15, n "c16" 16, n "c17" 17, n "c18" 18, n "c19" 19, n "c20" 20, n "c21" 21, n "c22" 22, n "c23" 23, n "c24" 24, n "c25" 25, n "c26" 26, n "c27" 27, n "c28" 28, n "c29" 29, n "c30" 30, n "c31" 31, n "c32" 32, n "c33" 33, n "c34" 34, n "c35" 35, n "c36" 36, n "c37" 37, n "c38" 38, n "c39" 39, n "c40" 40, n "c41" 41, n "c42" 42, n "c43" 43, n "c44" 44, n "c45" 45, n "c46" 46, n "c47" 47, n "c48" 48, n "c49" 49, n "c50" 50, n "c51" 51, n "c52" 52, n "c53" 53, n "c54" 54, n "c55" 55, n "c56" 56, n "c57" 57, n "c58" 58, n "c59" 59, n "c60" 60, n "c61" 61, n "c62" 62, n "c63" 63, n "c64" 64, n "c65" 65, n "c66" 66, n "c67" 67, n "c68" 68, n "c69" 69, n "c70" 70 ]
 
         piped =
             n "seed" 0 |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc

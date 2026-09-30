@@ -26,10 +26,10 @@ type alias Row =
 swap : List Row -> List Row
 swap rows =
     case rows of
-        first :: rest ->
+        [ first, ...rest ] ->
             case List.reverse rest of
-                last :: middle ->
-                    last :: List.reverse middle ++ [ first ]
+                [ last, ...middle ] ->
+                    [ last, ...List.reverse middle ++ [ first ] ]
 
                 [] ->
                     rows
@@ -54,7 +54,7 @@ update msg rows =
             List.filter rows (\row -> row.id /= 2)
 
         AddF ->
-            { id = 2, label = "f" } :: rows
+            [ { id = 2, label = "f" }, ...rows ]
 
 
 view : List Row -> Html Msg

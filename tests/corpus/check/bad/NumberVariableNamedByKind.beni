@@ -3,7 +3,7 @@
 -- message says `List number`, never "This argument is: `List a` … One of
 -- those has to be a number", which contradicts itself.
 g =
-    1 :: []
+    [ 1 ]
 
 
 bad : String

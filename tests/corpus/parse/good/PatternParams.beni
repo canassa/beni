@@ -2,7 +2,7 @@
 -- records, wildcards, unit, a parenthesised constructor pattern, `as`, and
 -- nesting; the type used is declared after its first use. A constructor
 -- parameter PARSES here whatever its type is — §7 leaves "does it match
--- everything?" to the checker — while a list or `::` parameter can never
+-- everything?" to the checker — while a list parameter, with a spread or not, can never
 -- match everything and is a parse error (`parse/bad/RefutableParameterList`).
 first ( a, _ ) =
     a

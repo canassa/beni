@@ -1,7 +1,7 @@
 -- run: the fail-first fixture of tail recursion modulo cons
 -- (`docs/design/backend.md` §8, *Tail calls modulo cons*). `mapRec` is the
--- textbook `map` an Elm programmer writes, `f x :: mapRec rest f`: the
--- self-call is not a tail call, it is the TAIL of a `::` in return position,
+-- textbook `map` an Elm programmer writes, `[ f x, ...mapRec rest f ]`: the
+-- self-call is not a tail call, it is spread last in a list in return position,
 -- so without the rewrite every element is a stack frame and Node's default
 -- stack overflows long before 100 000 of them. `filterRec` mixes the two
 -- kinds of step in one loop: the kept branch conses, the dropping branch is
@@ -21,8 +21,8 @@ mapRec xs f =
         [] ->
             []
 
-        x :: rest ->
-            f x :: mapRec rest f
+        [ x, ...rest ] ->
+            [ f x, ...mapRec rest f ]
 
 
 filterRec : List a, (a -> Bool) -> List a
@@ -31,9 +31,9 @@ filterRec xs keep =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                x :: filterRec rest keep
+                [ x, ...filterRec rest keep ]
             else
                 filterRec rest keep
 

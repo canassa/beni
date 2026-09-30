@@ -2,10 +2,10 @@
 -- constructor with parenthesised argument — in `case`, `let` and lambda
 -- parameters; expected: canonical spacing, structure unchanged.
 f v = case v of
-  (a,b)::rest -> a
+  [ (a,b), ...rest ] -> a
   [x,y] -> x
-  ({c} as r)::_ -> c
-  Just(Just(z)) :: [] -> z
+  [ ({c} as r), ..._ ] -> c
+  [ Just(Just(z)) ] -> z
   _ -> 0
 g p = let (a,b)=p in a
 h = \(a,b)->a

@@ -13,7 +13,7 @@ describe m =
         Just [ x ] ->
             "one: ${x}"
 
-        Just ((first :: _ :: rest) as whole) ->
+        Just ([ first, _, ...rest ] as whole) ->
             case rest of
                 [] ->
                     "two starting ${first}"

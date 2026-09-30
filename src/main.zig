@@ -63,7 +63,11 @@ pub fn main(init: std.process.Init) u8 {
         },
         .build => |build| return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build),
         .check => |check| return beni.check.Command.run(gpa, io, stdout, stderr, sessionOptions(check.common), check),
-        .fmt => |fmt| return beni.fmt.Command.run(gpa, io, stdout, stderr, sessionOptions(fmt.common), fmt),
+        .fmt => |fmt| {
+            var options = sessionOptions(fmt.common);
+            options.migrate_cons = fmt.migrate_cons;
+            return beni.fmt.Command.run(gpa, io, stdout, stderr, options, fmt);
+        },
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }
 }
