@@ -15,8 +15,8 @@ chainPaths n =
                 [] ->
                     [ [ i ] ]
 
-                parent :: _ ->
-                    (i :: parent) :: paths
+                [ parent, ..._ ] ->
+                    [ [ i, ...parent ], ...paths ]
         )
 
 
@@ -37,12 +37,12 @@ undoSession n =
         (\i ( current, history ) ->
             if modBy i 4 == 0 then
                 case history of
-                    previous :: older ->
+                    [ previous, ...older ] ->
                         ( previous, older )
 
                     [] ->
                         ( current, history )
 
             else
-                ( i, current :: history )
+                ( i, [ current, ...history ] )
         )

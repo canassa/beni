@@ -21,7 +21,7 @@ mapRecHelp xs f acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             mapRecHelp rest f (List.push acc (f x))
 
 
@@ -36,7 +36,7 @@ filterRecHelp xs keep acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
                 filterRecHelp rest keep (List.push acc x)
 
@@ -78,7 +78,7 @@ sumHelp xs acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             sumHelp rest (acc + x)
 
 
@@ -99,7 +99,7 @@ takeWhileHelp xs keep acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
                 takeWhileHelp rest keep (List.push acc x)
 
@@ -117,9 +117,9 @@ pairwise xs =
 pairwiseHelp : List a, List ( a, a ) -> List ( a, a )
 pairwiseHelp xs acc =
     case xs of
-        a :: rest ->
+        [ a, ...rest ] ->
             case rest of
-                b :: _ ->
+                [ b, ..._ ] ->
                     pairwiseHelp rest (List.push acc ( a, b ))
 
                 [] ->
@@ -157,7 +157,7 @@ merge xs ys acc =
         ( _, [] ) ->
             acc ++ xs
 
-        ( x :: xt, y :: yt ) ->
+        ( [ x, ...xt ], [ y, ...yt ] ) ->
             if x <= y then
                 merge xt ys (List.push acc x)
 

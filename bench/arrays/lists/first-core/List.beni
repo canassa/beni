@@ -114,7 +114,7 @@ last xs =
 pub tail : List a -> Maybe (List a)
 tail xs =
     case xs of
-        _ :: rest ->
+        [ _, ...rest ] ->
             Just rest
 
         [] ->
@@ -308,7 +308,7 @@ anyHelp xs i n isOkay =
 pub maximum : List number -> Maybe number
 maximum xs =
     case xs of
-        x :: rest ->
+        [ x, ...rest ] ->
             Just (foldl rest x max)
 
         [] ->
@@ -318,7 +318,7 @@ maximum xs =
 pub minimum : List number -> Maybe number
 minimum xs =
     case xs of
-        x :: rest ->
+        [ x, ...rest ] ->
             Just (foldl rest x min)
 
         [] ->
@@ -369,7 +369,7 @@ intersperse xs sep =
         [] ->
             xs
 
-        hd :: tl ->
+        [ hd, ...tl ] ->
             done (foldl tl (add (builder 0) hd) (\x b -> add (add b sep) x))
 
 

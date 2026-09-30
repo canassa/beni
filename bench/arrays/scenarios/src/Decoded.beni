@@ -90,7 +90,7 @@ pageHelp items i start acc =
     else
         case Array.get items i of
             Just it ->
-                pageHelp items (i - 1) start (it.name :: acc)
+                pageHelp items (i - 1) start [ it.name, ...acc ]
 
             Nothing ->
                 pageHelp items (i - 1) start acc

@@ -110,7 +110,7 @@ initializeHelp i acc func =
     if i < 0 then
         acc
     else
-        initializeHelp (i - 1) (func i :: acc) func
+        initializeHelp (i - 1) [ func i, ...acc ] func
 
 
 pub repeat : a, Int -> Array a
@@ -120,7 +120,7 @@ repeat value n =
 
 pub map : Array a, (a -> b) -> Array b
 map arr func =
-    fromList (List.reverse (foldl arr [] (\x acc -> func x :: acc)))
+    fromList (List.reverse (foldl arr [] (\x acc -> [ func x, ...acc ])))
 
 
 pub indexedMap : Array a, (Int, a -> b) -> Array b
@@ -133,7 +133,7 @@ indexedMapHelp arr i n acc func =
     if i >= n then
         acc
     else
-        indexedMapHelp arr (i + 1) n (func i (unsafeGet arr i) :: acc) func
+        indexedMapHelp arr (i + 1) n [ func i (unsafeGet arr i), ...acc ] func
 
 
 --| Keeps the input's identity when every element is kept (report 38 §7).
@@ -141,7 +141,7 @@ pub filter : Array a, (a -> Bool) -> Array a
 filter arr isGood =
     let
         kept =
-            foldr arr [] (\x acc -> if isGood x then x :: acc else acc)
+            foldr arr [] (\x acc -> if isGood x then [ x, ...acc ] else acc)
 
         n =
             List.length kept

@@ -16,7 +16,7 @@ start n =
 
 pub edit : History, Int, Int -> History
 edit h i v =
-    { current = Array.set h.current i v, past = List.take (h.current :: h.past) 100 }
+    { current = Array.set h.current i v, past = List.take [ h.current, ...h.past ] 100 }
 
 
 pub undo : History -> History
@@ -25,7 +25,7 @@ undo h =
         [] ->
             h
 
-        prev :: rest ->
+        [ prev, ...rest ] ->
             { current = prev, past = rest }
 
 

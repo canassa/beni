@@ -11,7 +11,7 @@ get xs i =
 
 pub set : List a, Int, a -> List a
 set xs i v =
-    List.take xs i ++ (v :: List.drop xs (i + 1))
+    List.take xs i ++ [ v, ...List.drop xs (i + 1) ]
 
 
 pub push : List a, a -> List a
@@ -36,7 +36,7 @@ concat xs ys =
 
 pub insert : List a, Int, a -> List a
 insert xs i v =
-    List.take xs i ++ (v :: List.drop xs i)
+    List.take xs i ++ [ v, ...List.drop xs i ]
 
 
 pub remove : List a, Int -> List a

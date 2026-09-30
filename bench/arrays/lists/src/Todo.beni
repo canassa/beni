@@ -46,7 +46,7 @@ update msg model =
     case msg of
         Add ->
             { model
-                | items = { id = model.nextId, label = "todo", done = False } :: model.items
+                | items = [ { id = model.nextId, label = "todo", done = False }, ...model.items ]
                 , nextId = model.nextId + 1
             }
 

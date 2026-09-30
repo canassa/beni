@@ -9,7 +9,7 @@ import List
 --| `foldr` building a list, the Elm idiom for an order-keeping map.
 pub foldrBuild : List Int -> List Int
 foldrBuild xs =
-    List.foldr xs [] (\x acc -> x * 2 :: acc)
+    List.foldr xs [] (\x acc -> [ x * 2, ...acc ])
 
 
 pub foldrSum : List Int -> Int
@@ -64,7 +64,7 @@ libFilter xs =
 --| The accumulator is the fold's own state.
 pub prependFold : List Int -> List Int
 prependFold xs =
-    List.reverse (List.foldl xs [] (\x acc -> x * 2 :: acc))
+    List.reverse (List.foldl xs [] (\x acc -> [ x * 2, ...acc ]))
 
 
 type alias Scan =
@@ -77,7 +77,7 @@ pub recordFold : List Int -> List Int
 recordFold xs =
     let
         final =
-            List.foldl xs { seen = [], count = 0 } (\x st -> { st | seen = x * 2 :: st.seen, count = st.count + 1 })
+            List.foldl xs { seen = [], count = 0 } (\x st -> { st | seen = [ x * 2, ...st.seen ], count = st.count + 1 })
     in
     List.reverse final.seen
 
@@ -90,8 +90,8 @@ partitionFold xs =
             case pair of
                 ( evens, odds ) ->
                     if modBy x 2 == 0 then
-                        ( x :: evens, odds )
+                        ( [ x, ...evens ], odds )
 
                     else
-                        ( evens, x :: odds )
+                        ( evens, [ x, ...odds ] )
         )

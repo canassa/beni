@@ -14,8 +14,8 @@ mapRec xs f =
         [] ->
             []
 
-        x :: rest ->
-            f x :: mapRec rest f
+        [ x, ...rest ] ->
+            [ f x, ...mapRec rest f ]
 
 
 --| The textbook `filter`, also not a tail call on the kept branch.
@@ -25,9 +25,9 @@ filterRec xs keep =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                x :: filterRec rest keep
+                [ x, ...filterRec rest keep ]
 
             else
                 filterRec rest keep
@@ -45,8 +45,8 @@ mapAccHelp xs f acc =
         [] ->
             List.reverse acc
 
-        x :: rest ->
-            mapAccHelp rest f (f x :: acc)
+        [ x, ...rest ] ->
+            mapAccHelp rest f [ f x, ...acc ]
 
 
 pub filterAcc : List a, (a -> Bool) -> List a
@@ -60,9 +60,9 @@ filterAccHelp xs keep acc =
         [] ->
             List.reverse acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                filterAccHelp rest keep (x :: acc)
+                filterAccHelp rest keep [ x, ...acc ]
 
             else
                 filterAccHelp rest keep acc
@@ -82,7 +82,7 @@ sumHelp xs acc =
         [] ->
             acc
 
-        x :: rest ->
+        [ x, ...rest ] ->
             sumHelp rest (acc + x)
 
 
@@ -98,9 +98,9 @@ takeWhile xs keep =
         [] ->
             []
 
-        x :: rest ->
+        [ x, ...rest ] ->
             if keep x then
-                x :: takeWhile rest keep
+                [ x, ...takeWhile rest keep ]
 
             else
                 []
@@ -111,8 +111,8 @@ takeWhile xs keep =
 pub pairwise : List a -> List ( a, a )
 pairwise xs =
     case xs of
-        a :: b :: rest ->
-            ( a, b ) :: pairwise (b :: rest)
+        [ a, b, ...rest ] ->
+            [ ( a, b ), ...pairwise [ b, ...rest ] ]
 
         _ ->
             []
@@ -141,8 +141,8 @@ split xs left right =
         [] ->
             ( left, right )
 
-        x :: rest ->
-            split rest right (x :: left)
+        [ x, ...rest ] ->
+            split rest right [ x, ...left ]
 
 
 --| The merge Elm programmers write: match both lists at once, and put the
@@ -156,9 +156,9 @@ merge xs ys =
         ( _, [] ) ->
             xs
 
-        ( x :: xt, y :: yt ) ->
+        ( [ x, ...xt ], [ y, ...yt ] ) ->
             if x <= y then
-                x :: merge xt (y :: yt)
+                [ x, ...merge xt [ y, ...yt ] ]
 
             else
-                y :: merge (x :: xt) yt
+                [ y, ...merge [ x, ...xt ] yt ]
