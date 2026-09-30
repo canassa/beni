@@ -1211,7 +1211,7 @@ modules, publishes them in the interface and prints them in the dumps. **Nothing
 No diagnostic depends on them, and no emitted byte: every `emit/` golden and every run hash is
 unchanged by this section. The `sync` check is the next slice and is not specified here. Where
 this section and §3.1 or §4 disagree, this section is the later position; the Effect v4 evidence
-it leans on is [`research/39`](research/39-effect-v4-and-the-inferred-bits.md).
+it leans on is [`research/43`](research/43-effect-v4-and-the-inferred-bits.md).
 
 ### 14.1 The `foreign` keyword
 
@@ -1228,7 +1228,7 @@ Rung    := 'pure' | 'impure' | 'suspends'
   by the parser at the name; a word other than the three, `foreign pur name : T`, is
   `unknown_foreign_effect` at the word. Both are errors of the declaration, which is otherwise
   read as written, so the rest of the file still checks.
-- **`pure` means total and non-throwing** (report 39 §9.3). A `foreign` that can throw or stop the
+- **`pure` means total and non-throwing** (report 43 §9.3). A `foreign` that can throw or stop the
   program is at least `impure`, because an optimiser that drops an unused pure call must not be
   able to delete a crash. So `Debug.todo` is `impure`, with `Debug.log`.
 - **What each existing `foreign` declares.** Everything in `core/` and the platforms is `pure`
@@ -1285,7 +1285,7 @@ every group of the module has been checked (§14.4).
    type in a *positive* position of the signature (one the host makes and hands back: a returned
    function, a callback's own argument) gets the rung too. Every other function type in the
    signature — a beni function handed to the host, which may spawn it, store it or call it later
-   — is independent of the call (report 39 §9.6). That is unsound for exactly one kind, a callback
+   — is independent of the call (report 43 §9.6). That is unsound for exactly one kind, a callback
    the host calls synchronously during the call; the `sync` step closes it, since such a callback
    must be `sync` (`plans/browser-decisions.md` W8). For `impure` alone the gap stays open until
    then, and nothing reads `impure` before it.
@@ -1318,10 +1318,10 @@ summary is rule 6; every other declaration's is read off the graph of its body.
 A function type written in a **constructor field** of a `type` declaration is fixed at the
 declaration; it is not an argument that unification can carry from the value that went in to the
 function that comes out. `type Parser a = Parser (String -> Maybe ( a, String ))`, a decoder, a
-generator, a capability record behind an opaque type all store functions that way. Report 39 §9.7
+generator, a capability record behind an opaque type all store functions that way. Report 43 §9.7
 weighs three answers: a constant `suspends` saturates the standard library; a constant `pure`
 checked at the constructor forbids the capability the type exists to hold; a hidden class per use
-of the type is precise. **This step takes the third**, report 39's recommendation:
+of the type is precise. **This step takes the third**, report 43's recommendation:
 
 - **Every application of a nominal type is a class**, `Parser Int` included, like a function type.
 - **A constructor joins its fields into its type.** Where a constructor's type is built for a use

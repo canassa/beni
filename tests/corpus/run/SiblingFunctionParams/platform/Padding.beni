@@ -2,4 +2,4 @@
 
 
 --| `text` right-aligned in `width` characters.
-pub foreign pad : String, Int -> String
+pub foreign pure pad : String, Int -> String

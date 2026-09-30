@@ -2963,10 +2963,10 @@ fn writeHandPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign shout : String -> Program
+        \\pub foreign pure shout : String -> Program
         \\
     );
     try w.write("hand/Hand.js", hand_sibling);
