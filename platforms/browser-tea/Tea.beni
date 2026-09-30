@@ -160,7 +160,7 @@ keyed host path policy body state =
             put state path [ spawn host state.scope (\send -> after (List.foldl old () (\j _ -> ended (Task.wait j.fiber))) (body send)) ]
 
         ( Concurrent, _ ) ->
-            put state path (spawn host state.scope body :: old)
+            put state path [ spawn host state.scope body, ...old ]
 
 
 -- Start a body in a fiber of the program's scope, with an outlet of its
@@ -226,7 +226,7 @@ startsWith path prefix =
         ( _, [] ) ->
             True
 
-        ( p :: ps, q :: qs ) ->
+        ( [ p, ...ps ], [ q, ...qs ] ) ->
             if p == q then startsWith ps qs else False
 
         _ ->
@@ -291,7 +291,7 @@ keep scope wanted k l d =
 arrive : Host msg, Scope, Key, List (Tap msg), Dict Key (Live msg) -> Dict Key (Live msg)
 arrive host scope k taps d =
     case ( Dict.member d k, taps ) of
-        ( False, first :: _ ) ->
+        ( False, [ first, ..._ ] ) ->
             let
                 r = Hosted.relay host first
                 _ = Hosted.retap r taps
