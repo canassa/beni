@@ -1312,6 +1312,15 @@ input reruns all thousand (P3's selector recognition). Priced, not built: a tail
 and a one-pass `indexedMap` in core take remove to 0.73× Solid 1; swap's model half is `List`'s shape
 and waits on `core/Array`. Size: 6 195 brotli released against Solid 1's 4 356 (1.42×).
 
+*Measured, 2026-09-30, after the selector was built* (research 39 §12): a keyed row input read only
+to compare with the row's key is recognised by the compiler (`language.md` §11.9, interface 1.3),
+and `forKeyed` patches only the old and new selection's rows from its key map — Solid's
+`createSelector` with no syntax. Same batch (load 2–18), script medians: **select 2.52 → 1.74**,
+0.86× Solid 1 (2.03) and 0.49× Solid 2; alone at n = 20, 0.88× Solid 1 with the ranges apart;
+in the page, the render 1.80 → 0.94 ms. Nothing else moved, and the static-heavy pages did not
+regress. Against Solid 1, still behind: remove (1.12×, `List`'s model half) and update every 10th
+(1.10×, ranges overlapping).
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

@@ -1,0 +1,806 @@
+{
+ "chrome": "Chrome/153.0.8010.36",
+ "n": 20,
+ "samples": [
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.9050000905990601,
+   "micro": 1.0099999904632568,
+   "total": 1.915000081062317,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.4549999237060547,
+   "micro": 2.075000047683716,
+   "total": 2.5299999713897705,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.774999976158142,
+   "micro": 0.05500006675720215,
+   "total": 2.8300000429153442,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.5850000381469727,
+   "micro": 3.2350000143051147,
+   "total": 4.820000052452087,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.159999966621399,
+   "micro": 0.05000007152557373,
+   "total": 2.2100000381469727,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.7699999809265137,
+   "micro": 1.4049999713897705,
+   "total": 2.174999952316284,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.684999942779541,
+   "micro": 0.05000007152557373,
+   "total": 2.7350000143051147,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.4249999523162842,
+   "micro": 3.024999976158142,
+   "total": 4.449999928474426,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.975000023841858,
+   "micro": 0.05000007152557373,
+   "total": 3.0250000953674316,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.44999992847442627,
+   "micro": 0.75,
+   "total": 1.1999999284744263,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.2949999570846558,
+   "micro": 0.05000007152557373,
+   "total": 2.3450000286102295,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.0549999475479126,
+   "micro": 2.809999942779541,
+   "total": 3.8649998903274536,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.200000047683716,
+   "micro": 0.8600000143051147,
+   "total": 3.0600000619888306,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.12000000476837158,
+   "micro": 0.9249999523162842,
+   "total": 1.0449999570846558,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.7300000190734863,
+   "micro": 2.2699999809265137,
+   "total": 3,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.5099999904632568,
+   "micro": 3.15500009059906,
+   "total": 4.665000081062317,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.75,
+   "micro": 0.05000007152557373,
+   "total": 2.8000000715255737,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.6700000762939453,
+   "micro": 0.9549999237060547,
+   "total": 1.625,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.4099999666213989,
+   "micro": 1.524999976158142,
+   "total": 1.934999942779541,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.5100001096725464,
+   "micro": 0.04999995231628418,
+   "total": 2.5600000619888306,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.0199999809265137,
+   "micro": 0.05000007152557373,
+   "total": 2.0700000524520874,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.8999999761581421,
+   "micro": 0.7150000333786011,
+   "total": 1.6150000095367432,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.8949999809265137,
+   "micro": 1.809999942779541,
+   "total": 2.7049999237060547,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.0149999856948853,
+   "micro": 0.6749999523162842,
+   "total": 2.6899999380111694,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 0.815000057220459,
+   "micro": 3.559999942779541,
+   "total": 4.375,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.7750000953674316,
+   "micro": 0.9449999332427979,
+   "total": 1.7200000286102295,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.7850000858306885,
+   "micro": 2.9950000047683716,
+   "total": 3.78000009059906,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.6850000619888306,
+   "micro": 0.7249999046325684,
+   "total": 3.409999966621399,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 2.1799999475479126,
+   "micro": 4.2799999713897705,
+   "total": 6.459999918937683,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 3.7149999141693115,
+   "micro": 0.0700000524520874,
+   "total": 3.784999966621399,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.18500006198883057,
+   "micro": 2.7450000047683716,
+   "total": 2.930000066757202,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.805000066757202,
+   "micro": 0.06499993801116943,
+   "total": 2.8700000047683716,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.8000000715255737,
+   "micro": 3.115000009536743,
+   "total": 4.915000081062317,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 3.340000033378601,
+   "micro": 0.6700000762939453,
+   "total": 4.010000109672546,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.9249999523162842,
+   "micro": 1.0099999904632568,
+   "total": 1.934999942779541,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.759999990463257,
+   "micro": 0.6850000619888306,
+   "total": 3.4450000524520874,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.1050000190734863,
+   "micro": 4.105000019073486,
+   "total": 5.210000038146973,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.5950000286102295,
+   "micro": 0.06500005722045898,
+   "total": 2.6600000858306885,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.8550000190734863,
+   "micro": 1.0699999332427979,
+   "total": 1.9249999523162842,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.4700000286102295,
+   "micro": 3.0749999284744263,
+   "total": 3.5449999570846558,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.1399999856948853,
+   "micro": 4.180000066757202,
+   "total": 5.320000052452087,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.78000009059906,
+   "micro": 0.4849998950958252,
+   "total": 3.2649999856948853,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.9150000810623169,
+   "micro": 1.034999966621399,
+   "total": 1.9500000476837158,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.6100000143051147,
+   "micro": 1.9900000095367432,
+   "total": 2.600000023841858,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.2949999570846558,
+   "micro": 0.5750000476837158,
+   "total": 2.8700000047683716,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.6399999856948853,
+   "micro": 0.875,
+   "total": 3.5149999856948853,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.8049999475479126,
+   "micro": 1.0800000429153442,
+   "total": 1.8849999904632568,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.6799999475479126,
+   "micro": 2.3600000143051147,
+   "total": 3.0399999618530273,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.9399999380111694,
+   "micro": 0.06500005722045898,
+   "total": 3.0049999952316284,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.1850000619888306,
+   "micro": 2.8299999237060547,
+   "total": 4.014999985694885,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.5449999570846558,
+   "micro": 0.4950000047683716,
+   "total": 1.0399999618530273,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.875,
+   "micro": 1.6200000047683716,
+   "total": 2.4950000047683716,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.0200001001358032,
+   "micro": 0.039999961853027344,
+   "total": 2.0600000619888306,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.340000033378601,
+   "micro": 2.009999990463257,
+   "total": 3.350000023841858,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 1.8450000286102295,
+   "micro": 0.039999961853027344,
+   "total": 1.8849999904632568,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.75,
+   "micro": 1.7400000095367432,
+   "total": 2.490000009536743,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.2400000095367432,
+   "micro": 0.940000057220459,
+   "total": 2.180000066757202,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.0950000286102295,
+   "micro": 1.684999942779541,
+   "total": 2.7799999713897705,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.0399999618530273,
+   "micro": 0.03500008583068848,
+   "total": 2.075000047683716,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.6399999856948853,
+   "micro": 0.1549999713897705,
+   "total": 0.7949999570846558,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.2999999523162842,
+   "micro": 0.03500008583068848,
+   "total": 1.3350000381469727,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.0149999856948853,
+   "micro": 2.1549999713897705,
+   "total": 3.1699999570846558,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 1.965000033378601,
+   "micro": 0.040000081062316895,
+   "total": 2.005000114440918,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.11000001430511475,
+   "micro": 0.940000057220459,
+   "total": 1.0500000715255737,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.7949999570846558,
+   "micro": 1.3550000190734863,
+   "total": 2.149999976158142,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 0.7350000143051147,
+   "micro": 2.069999933242798,
+   "total": 2.8049999475479126,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.075000047683716,
+   "micro": 0.04499995708465576,
+   "total": 2.1200000047683716,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.684999942779541,
+   "micro": 0.8250000476837158,
+   "total": 1.5099999904632568,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.3999999761581421,
+   "micro": 1.784999966621399,
+   "total": 2.184999942779541,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 2.0049999952316284,
+   "micro": 0.039999961853027344,
+   "total": 2.0449999570846558,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.1449999809265137,
+   "micro": 0.2200000286102295,
+   "total": 2.365000009536743,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.10500001907348633,
+   "micro": 0.9200000762939453,
+   "total": 1.0250000953674316,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.16499996185302734,
+   "micro": 1.7599999904632568,
+   "total": 1.9249999523162842,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.4950000047683716,
+   "micro": 0.034999966621398926,
+   "total": 1.5299999713897705,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.3799999952316284,
+   "micro": 1.9900000095367432,
+   "total": 3.3700000047683716,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.9099999666213989,
+   "micro": 0.15000009536743164,
+   "total": 1.0600000619888306,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.4249999523162842,
+   "micro": 1.1549999713897705,
+   "total": 1.5799999237060547,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.7950000762939453,
+   "micro": 0.43999993801116943,
+   "total": 2.2350000143051147,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.100000023841858,
+   "micro": 1.9449999332427979,
+   "total": 3.0449999570846558,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 1.90500009059906,
+   "micro": 0.039999961853027344,
+   "total": 1.9450000524520874,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.11999988555908203,
+   "micro": 1.915000081062317,
+   "total": 2.034999966621399,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.3249999284744263,
+   "micro": 0.8000000715255737,
+   "total": 2.125,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.225000023841858,
+   "micro": 1.7949999570846558,
+   "total": 3.0199999809265137,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2,
+   "micro": 0.7450000047683716,
+   "total": 2.7450000047683716,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.6650000810623169,
+   "micro": 0.7899999618530273,
+   "total": 1.4550000429153442,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.3250000476837158,
+   "micro": 0.039999961853027344,
+   "total": 1.3650000095367432,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 0.9300000667572021,
+   "micro": 2.3049999475479126,
+   "total": 3.2350000143051147,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.5199999809265137,
+   "micro": 0.04999995231628418,
+   "total": 2.569999933242798,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.14499998092651367,
+   "micro": 1.475000023841858,
+   "total": 1.6200000047683716,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.4650000333786011,
+   "micro": 2.3049999475479126,
+   "total": 2.7699999809265137,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 0.7950000762939453,
+   "micro": 2.9199999570846558,
+   "total": 3.715000033378601,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.0950000286102295,
+   "micro": 0.0549999475479126,
+   "total": 2.149999976158142,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.125,
+   "micro": 0.9450000524520874,
+   "total": 1.0700000524520874,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.8700000047683716,
+   "micro": 1.6449999809265137,
+   "total": 2.5149999856948853,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.774999976158142,
+   "micro": 0.05500006675720215,
+   "total": 1.8300000429153442,
+   "probe": null
+  },
+  {
+   "subject": "p2",
+   "benchmark": "04_select1k",
+   "click": 2.0399999618530273,
+   "micro": 0.05000007152557373,
+   "total": 2.090000033378601,
+   "probe": null
+  },
+  {
+   "subject": "beni",
+   "benchmark": "04_select1k",
+   "click": 0.125,
+   "micro": 1.1800000667572021,
+   "total": 1.3050000667572021,
+   "probe": null
+  },
+  {
+   "subject": "beni-before",
+   "benchmark": "04_select1k",
+   "click": 0.12000000476837158,
+   "micro": 1.565000057220459,
+   "total": 1.6850000619888306,
+   "probe": null
+  },
+  {
+   "subject": "solid1",
+   "benchmark": "04_select1k",
+   "click": 1.5749999284744263,
+   "micro": 0.04500007629394531,
+   "total": 1.6200000047683716,
+   "probe": null
+  },
+  {
+   "subject": "solid2",
+   "benchmark": "04_select1k",
+   "click": 1.2350000143051147,
+   "micro": 2.7249999046325684,
+   "total": 3.959999918937683,
+   "probe": null
+  }
+ ]
+}

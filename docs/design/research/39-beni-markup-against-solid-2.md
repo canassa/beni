@@ -677,3 +677,105 @@ Re-run: `node bench/ui/build.mjs` and `node bench/ui/experiments.mjs`; then, und
 `nix develop .#browser`, `node bench/ui/halves.mjs --taskset=8-15`, `node bench/ui/probe.mjs` followed
 by `halves.mjs --subjects=beni-probe`, and `node bench/ui/bench.mjs --n=15 --taskset=8-15
 --subjects=beni,beni-release,solid2,solid1,p2,vanillajs,beni-list`.
+
+## 12. Addendum, 2026-09-30: select, and the selector recognised
+
+§11.6 left select behind Solid 1 by 1.23–1.32×, the ranges apart, and named the cause: a new
+selection ran the `p` of all thousand rows, because `model.selected` is a row input. This section
+reads what Solid does, prices the fix, builds it, and measures it.
+
+### 12.1 What Solid does
+
+- **Solid 1.9.15**'s `createSelector(source)` (`solid-js/dist/solid.js`) keeps a `Map` from key to
+  the `Set` of computations that asked `isSelected(key)`; every row registers one at mount (and an
+  `onCleanup` to unregister). When `source` changes, 1.9 walks **every** entry of the map and marks
+  stale the computations of the keys whose `fn(key, value)` answer changed — two rows' class
+  effects run, but the walk visits all thousand keys. The js-framework-benchmark app writes
+  `class={isSelected(rowId) ? "danger" : ""}`.
+- **Solid 2.0.0-rc.9** has no `createSelector`; the port uses `createProjection`, a store written
+  as `s[prev]` deleted and `s[id] = true`, so exactly two property signals notify
+  (`apps/solid2/src/bench.jsx`).
+- Both are written by the programmer. beni's row already has the key map Solid's selector builds:
+  `forKeyed`'s own, from a key to its first row (§11.4). Research 29 §7.2 called the same thing
+  P3's rung 4: "maintain the key→instance index it already has for reconciliation".
+
+### 12.2 The design
+
+No syntax and no change to what `view` means (`language.md` §11.9, §11.11, *amended 2026-09-30*;
+`backend.md` §15.5; `boundary.md` §9.4.6 interface 1.3). The compiler recognises a **selector**: a
+keyed row's input that every read in the row — directly, or through the same-module functions it
+is passed to, as the row's inputs are already followed — compares with `==` or `/=` against the
+row's list key written through the item, or `Just` of it, where the comparison is `===` or
+`backend.md` §4's tag and field test. `rowClass model row` qualifies. It hands the lowering the
+input's position and a **probe**, `s.$ === "Just" ? s.a : s`: the one key the comparison can hold
+for, or an object, which no key is. `dom` writes both on the row object (`g`, `z`); `forKeyed` keeps
+last render's probe and, when the probe is all that changed, patches the rows of the old probe's
+key and the new one's from its key map and visits no other row. With an edit in the same render,
+a row whose item and other inputs did not change is patched only if its key is one of the two
+probes. A row the compiler does not recognise behaves as before. Near misses — a key that is not
+the list key, the input also read another way, a `let`, a position-keyed list, another module's
+function — are pinned as not recognised by `emit/dom/DomSelectorNearMiss`; behaviour by
+`browser/dom/Selector` (selection moving, the same id twice, an id no row has, none, duplicate
+keys, a selection and an edit in one render, the selected row removed, reference keying with
+`/=`), whose `Debug.log` in the class shows which rows run. Red first: against the runtime before
+this change it logs every row on each selection and fails.
+
+**Priced before it was built** (`halves.mjs`, n = 20, CPUs 8–15, load 0.67), a hand-edited copy of
+the development build with the new runtime and `g`/`z` written in: select's render microtask
+1.197 → **0.550** ms, the whole in-page select 1.702 → **1.040**, against Solid 1's 1.632.
+
+### 12.3 The table
+
+One batch, n = 15, CPUs 8–15, Chromium 153.0.8010.36, **1-minute load 2.1–17.8** at the
+benchmarks' starts (other sessions were running; 15.7 at remove and 17.8 at clear) —
+`results/2026-09-30-table-selector.json`. `beni-before` is the same build with the row object's
+`g` and `z` removed and the runtime before this change, which is exactly the previous compiler's
+output. Script medians [IQR], ms:
+
+| operation | **beni** | beni `--release` | beni-before | **Solid 2** | **Solid 1** | **P2** | beni ÷ S1 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| create 1k | 5.21 [5.03–5.65] | 5.05 | 5.07 | 6.18 [6.13–6.23] | 5.06 [5.00–5.18] | 4.13 | 1.03 |
+| replace 1k | 13.5 [12.4–13.8] | 13.6 | 13.6 | 15.6 [15.1–15.8] | 13.8 [13.1–14.3] | 11.9 | 0.98 |
+| update every 10th | 2.08 [1.87–2.18] | 2.01 | 2.02 | 2.71 [2.52–2.88] | 1.88 [1.71–2.23] | 1.09 | 1.10 |
+| **select** | **1.74** [1.46–1.87] | **1.56** [1.49–1.72] | 2.52 [2.23–2.88] | 3.58 [3.26–3.84] | 2.03 [1.84–2.28] | 2.11 [2.00–2.65] | **0.86** |
+| swap | 1.81 [1.61–1.95] | 1.74 | 1.77 | 2.45 [2.04–2.84] | 2.09 [1.91–2.51] | 1.07 | 0.86 |
+| remove | 0.99 [0.95–1.03] | 0.94 | 0.97 | 1.12 [1.09–1.40] | 0.88 [0.65–0.96] | 0.81 | 1.12 |
+| create 10k | 65.8 [62.3–69.3] | 64.5 | 64.4 | 83.2 [81.0–88.2] | 67.8 [65.9–69.4] | 53.5 | 0.97 |
+| append 1k | 6.93 [6.75–8.81] | 6.63 | 6.72 | 8.57 [8.20–12.7] | 6.71 [6.49–10.2] | 5.61 | 1.03 |
+| clear | 31.8 [30.2–40.3] | 37.1 | 33.6 | 39.2 [36.4–43.7] | 36.5 [31.9–41.7] | 34.8 | 0.87 |
+
+Select again on its own, n = 20, load 7.7 (`results/2026-09-30-select-selector.json`): beni
+**2.30** [2.08–2.45], `--release` 1.96 [1.81–2.26], beni-before 3.34 [3.10–3.54], Solid 2 5.12
+[4.90–5.37], **Solid 1 2.60** [2.48–2.87], P2 2.93 [2.78–3.04] — every absolute number is higher
+under the load, the order is the same, and beni's range and Solid 1's are apart.
+
+In the page (`halves.mjs`, n = 20, load 6.9, `results/2026-09-30-halves-select.json`): beni's
+render microtask **1.797 → 0.942** ms, its whole select 2.505 → **1.483** against Solid 1's 2.290
+and P2's 2.467.
+
+- **Select now beats Solid 1**: 0.86× in the batch (1.74 against 2.03, the ranges touching at
+  1.84–1.87), 0.88× on its own with the ranges apart; `--release` 0.77×. Against Solid 2 it is
+  0.45–0.49×, and it is ahead of P2, whose select walks every row (0.82×).
+- **Nothing else moved**: every other beni median is within beni-before's range. Create 1k, the
+  operation that mounts every row's object, is 5.21 against 5.07, inside both ranges.
+- **Against Solid 1**, what the batch still puts behind it: remove (1.12×, ranges apart; §11.6's
+  model half, not built) and update every 10th (1.10×, ranges overlapping). Level within the
+  ranges on create 1k, replace, append, create 10k and clear (clear's lower median under a load
+  of 17.8 is not a claim); ahead on select and swap (0.86×, the ranges just touching).
+
+### 12.4 The static-heavy pages
+
+`micro.mjs`, 5 pages × 20 samples × 100 messages, load 5.7, against the same pages on the runtime
+before this change (`results/2026-09-30-static-page-selector.json`); they have no list, and the
+change reaches them only through the slot's extra field. µs per message, 1× / 4×: one `view`
+5.85 / 23.0 against 6.08 / 23.5 before; helper functions 6.30 / 24.8 against 7.30 / 24.9 before;
+Solid 2 inline 9.22 / 37.0, P2 5.25 / 17.1. **No regression.**
+
+### 12.5 Re-run
+
+`node bench/ui/build.mjs`; then, under `nix develop .#browser`, `node bench/ui/bench.mjs --n=15
+--taskset=8-15 --subjects=beni,beni-release,solid2,solid1,p2`, `node bench/ui/bench.mjs --n=20
+--benchmarks=04_select1k …`, `node bench/ui/halves.mjs --benchmarks=04_select1k` and `node
+bench/ui/micro.mjs`. `beni-before` is not rebuilt by the scripts: it was the development build
+with `, g: 0, z: …` removed from `Main.mjs` and the previous `runtime.js` copied in, registered in
+`out/extra-subjects.json`.
