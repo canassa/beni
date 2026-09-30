@@ -330,6 +330,22 @@ every kept technique into one of three bins and say which in the report:
    initialisers, one statement per droppable unit. Research 40 §8 is the list; add
    to it rather than restating it.
 
+**Closure-style optimisation of beni code is the compiler's, not a hand pass.**
+For code beni emits (and a runtime written in beni), Closure ADVANCED's work is
+built in under `--release` (`backend.md` §9): single-use inlining, local and
+top-level (`Opt.zig`, only where it cannot grow output); constant `let`s and
+literals replacing names where the literal cannot grow output; whole-program
+specialisation — constant arguments substituted and their parameters dropped,
+folded branches, `case` arms on constructors nothing builds removed, never-read
+object keys dropped, then reachability rerun (`Spec.zig`). Missing: property
+renaming (type-directed, `backend.md` §9 item 4 — never by hand). Inlining a
+function called more than once duplicates distinct text and V8 inlines small hot
+functions anyway: do not. *Introducing* a name for a repeated literal hurts (§3
+table); *inlining* a named constant into its uses is the compiler's job and
+usually helps. A hand pass over emitted code therefore measures what the compiler
+missed and turns it into a compiler rule (bin 2 or an `Opt`/`Spec` rule), never a
+hand-kept patch.
+
 Anything that needs a JavaScript parser (terser's `compress`: inlining, dead
 branches, `if`→`&&`) is out for siblings: `boundary.md` §4's wall exists to avoid
 one, and on a file written to the source rules it buys 7–12 bytes (research 40 A6/A7).
