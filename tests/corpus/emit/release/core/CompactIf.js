@@ -1,7 +1,6 @@
-import{a}from"./_core/Basics.mjs";
-import{b}from"./_core/String.mjs";
-const c=(a,b,d)=>{for(;;){if(d===a.length)return 0-1;if(a[d]===b)return d;d+=1}},
-d=(c)=>{if(c<0){const e=0-c;return a("minus ",b(e))}if(c===0)return"zero";const f=b(c);return a("plus ",f)},
-e=(a)=>{if(a.v!==null)throw"set twice";a.v=1;a.n=0;a.done=true},
-f=(a)=>{if(a!==null)if(a.a===undefined)a.a=1;else a.b=2};
-export{c,d,e,f};
+import{a}from"./_core/String.mjs";
+const b=(a,c,d)=>{for(;;){if(d===a.length)return 0-1;if(a[d]===c)return d;d+=1}},
+c=(b)=>{if(b<0){const d=0-b;return"minus "+a(d)}if(b===0)return"zero";const e=a(b);return"plus "+e},
+d=(a)=>{if(a.v!==null)throw"set twice";a.v=1;a.n=0;a.done=true},
+e=(a)=>{if(a!==null)if(a.a===undefined)a.a=1;else a.b=2};
+export{b,c,d,e};

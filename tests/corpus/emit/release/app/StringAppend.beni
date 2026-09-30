@@ -1,0 +1,16 @@
+-- emit: a `++` of strings is `+` under `--release` (`backend.md` §9,
+-- *Compact statements*): `greet`'s operands include a literal, so both are
+-- strings and the call of `Basics.append` is `"Hello, "+(a+"!")`. With no
+-- call of it left, the hand-written `append` — mostly its list half — is
+-- not written.
+import Node exposing (Program)
+
+
+greet : String -> String
+greet name =
+    "Hello, " ++ name ++ "!"
+
+
+main : Program
+main =
+    Node.printLines [ greet "you", greet "me" ]

@@ -4887,6 +4887,11 @@ And under all of them:
 - **`x = x op e` is `x op= e`** for a name, an arithmetic or bitwise `op`: both read `x`, then
   `e`, then write.
 - **`!(a === b)` is `a !== b`** (and the other way round) anywhere (`Spec.peephole`).
+- **A `++` of strings is `+`** (`Lower.stringy`): a `++` the checker did not solve to lists, one
+  of whose operands is a string literal, an interpolation or another such `++`, is on strings —
+  the two operands have one type — and `Basics.append` of two strings is `+`. With no call of it
+  left, the hand-written `append`, mostly its list half, is not written. Fixture:
+  `emit/release/app/StringAppend`.
 - **`x = x` is not written** (`Print.skipped`): a loop assigns every variable it carries, and one
   an iteration passes unchanged is its own value. Fixture: `emit/release/ListScalarView`.
 - **Adjacent `let`s join**, as adjacent `const`s do (§9 item 5), and a run of top-level ones keeps

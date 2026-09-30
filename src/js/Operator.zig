@@ -135,3 +135,27 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, m
     for (table) |row| if (std.mem.eql(u8, row[0], value)) return row[1];
     return null;
 }
+
+/// Whether `inst` names core's `Basics.append`, the `++` the checker did not
+/// solve to lists (`Lower`'s string `++`, `backend.md` §9, *Compact
+/// statements*). Not an operator of the table above: which JavaScript it is
+/// depends on its operands, so `Reach` keeps its edge.
+pub fn isBasicsAppend(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, module: Graph.Index, inst: Inst.Index, interner: anytype) bool {
+    const d = bir.instData(inst);
+    const owner: Graph.Index, const value: []const u8 = switch (bir.instTag(inst)) {
+        .top => blk: {
+            if (d.lhs >= bir.decls.len) return false;
+            break :blk .{ module, interner.slice(bir.symbol(bir.decls[d.lhs].name)) };
+        },
+        .ext_value => blk: {
+            const m: Graph.Index = @enumFromInt(d.lhs);
+            if (m.int() >= interfaces.len) return false;
+            const iface = &interfaces[m.int()];
+            if (d.rhs >= iface.values.len) return false;
+            break :blk .{ m, interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]) };
+        },
+        else => return false,
+    };
+    if (graph.module(owner).package != .core) return false;
+    return std.mem.eql(u8, interner.slice(graph.moduleName(owner)), "Basics") and std.mem.eql(u8, value, "append");
+}

@@ -6685,6 +6685,19 @@ const Lowerer = struct {
             const values = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
             return l.suspension(out, inst, try l.call(try l.coreValue(.List, .append, p), values, p));
         }
+        // Under `--release`, a `++` one of whose operands is a string —
+        // a literal, an interpolation, or another such `++` — is on
+        // strings, since both operands have one type, and `Basics.append`
+        // of two strings is `+` (`backend.md` §9, *Compact statements*): the
+        // hand-written `append`, whose list half is most of it, then ships
+        // only for a `++` whose type the lowering cannot see.
+        if (arg_insts.len == 2 and roots.len == 0 and l.in.unit_results and
+            Operator.isBasicsAppend(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner) and
+            (l.stringy(arg_insts[0], 0) or l.stringy(arg_insts[1], 0)))
+        {
+            const v = try l.orderedExprs(out, arg_insts, false);
+            return l.binary(.add, v[0], v[1], p);
+        }
 
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
@@ -6925,6 +6938,24 @@ const Lowerer = struct {
 
     /// The core function `inst` names that is written as an operator, or null
     /// (`Operator`).
+    /// Whether `inst` is a `String` by its shape alone: a string literal, an
+    /// interpolation, or a `++` of which an operand is one.
+    fn stringy(l: *Lowerer, inst: Inst.Index, depth: u32) bool {
+        if (depth > 16) return false;
+        return switch (l.bir.instTag(inst)) {
+            .string, .interp => true,
+            .call => blk: {
+                const d = l.bir.instData(inst);
+                const callee: Inst.Index = @enumFromInt(d.lhs);
+                if (!Operator.isBasicsAppend(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee, l.interner)) break :blk false;
+                const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                if (args.len != 2) break :blk false;
+                break :blk l.stringy(args[0], depth + 1) or l.stringy(args[1], depth + 1);
+            },
+            else => false,
+        };
+    }
+
     fn operatorOf(l: *Lowerer, inst: Inst.Index) ?Operator.Which {
         return Operator.of(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.interner);
     }

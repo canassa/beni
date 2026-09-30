@@ -37,14 +37,15 @@ const hello =
 ;
 
 /// The same output as `hello`, from a program that emits different
-/// JavaScript.
+/// JavaScript in both builds — a call, which a release build cannot fold
+/// into the literal `hello` has (it did fold `"hel" ++ "lo"`).
 const hello_joined =
     \\import Node exposing (Program)
     \\
     \\
     \\main : Program
     \\main =
-    \\    Node.printLines [ "hel" ++ "lo" ]
+    \\    Node.printLines [ String.toLower "HELLO" ]
     \\
 ;
 
