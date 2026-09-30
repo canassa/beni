@@ -380,6 +380,12 @@ every cold build and loaded by nothing. M5's LSP is the one consumer that will w
 it wants it for the file being edited, which is a miss by construction. The same reasoning excludes
 `comments`, whose only readers after lowering are the same two commands.
 
+*Amended 2026-10-01* (`language.md` §6.8, *The list syntax*). Two node kinds: **`spread`**, an item
+of a `list` (`main_token` the `...`, `lhs` the operand expression), and **`pat_spread`**, an item of
+a `pat_list` (`main_token` the `...`, `lhs` a `pat_var` or `pat_wild`). `dump --stage=ast` prints
+them as `(spread …)` and `(pat_spread …)`. The `cons` and `pat_cons` kinds stay, as what the parser
+builds for a `::` it has reported as `cons_removed`, so that recovery keeps the tree whole.
+
 ### 3.6 BIR
 
 Per file, arena-owned until merged. `Bir.zig` defines: a `MultiArrayList(Inst)` with
@@ -401,6 +407,14 @@ name it shadows) until it shrinks back to 32; below that it is still scanned. §
 check reads each binding's own edges and resets only what it set, and a `let_def`'s local is
 recorded where phase 1 binds it. The Bir is byte-identical; a `perf_test.zig` scenario holds it
 linear.
+
+**The list syntax added one instruction tag and removed one** (2026-10-01, `language.md` §6.8, §8).
+`pat_spread` — `lhs` the `pat_var` or `pat_wild` it binds — is an item of a `pat_list`, at most one
+per list, and `dump --stage=bir` prints it inside the list as `...%n`. `pat_cons` is gone: a `::`
+pattern is refused by the parser and lowers to `error`, as does a `::` expression. A list
+**expression** with a spread adds no tag; it lowers to the `List.cons`/`List.append` calls of
+`language.md` §8, each stamped with its spread's `...` token. The frontend artifact's format version
+moves to 11 for the new token use, node kinds, instruction tag and codes.
 
 **Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
 `method_call` and `type_dispatch` join the tag set; a declaration stores its `where` clause as a
@@ -637,6 +651,13 @@ come between them: `{...x}`, `{ ...x }` and a `{` whose `...` is on the next lin
 `ellipsis`; `...` anywhere else — later in the hole, in a `children` hole, in ordinary code — lexes exactly as
 it does today, as an error. Whether a spread is allowed
 where it stands is lowering's (`spread_on_element`, `spread_not_first`, §9.7), not the lexer's.
+
+*Amended 2026-10-01* (`language.md` §2.2, §6.8): **`...` is `ellipsis` in every mode that lexes
+code** — `normal`, `interp` and `hole` alike, at any depth — because a list spread (`[ ...xs ]`) is
+ordinary code. The paragraph above still describes the one place a *markup* spread is recognised
+(the parser's `'{' ellipsis Expr '}'` in an opening tag), but the lexer no longer decides it: a
+`...` in a `children` hole or later in a tag's hole is the same token, and the parser reports it
+where no list surrounds it.
 
 **A comment in a hole runs to the end of the line**, as every comment does (`language.md` §2.3), `}`
 included. So `{-- note}` leaves the hole open, and the lexer does nothing special about it: the

@@ -492,6 +492,38 @@ as `Just ( a, b )` covers it, and leaves only `Nothing` missing. Missing pattern
 never match → `redundant_pattern` at the branch.
 This runs only on modules with no type errors in that declaration, so it never sees `err`.
 
+*Amended 2026-10-01* (`language.md` §6.8, *The list syntax*). **A list column is split by length,
+not into `[]`/`::`.** A list pattern may now name elements after its spread (`[ ...init, last ]`),
+and no finite set of `[]`/`::` rows says "the last element is `0`", so the two-constructor union is
+withdrawn and a list pattern is its own node in the simplified language: its *p* items before the
+spread, its *s* items after it, and whether it has a spread at all (a pattern with none is *exact*,
+of length *p*). The alternatives of a list column are computed **per column, when it is
+specialised** — Rust's slice patterns, which are Maranget's constructors with a length for a name:
+
+- Let *F* be the longest exact pattern in the column (−1 when there is none), and *P* and *S* the
+  largest *p* and *s* among its patterns with a spread (0 when there are none). *L* =
+  max(*P* + *S*, *F* + 1), and when *F* + 1 is the larger, *P* is raised to *L* − *S*.
+- The alternatives are **`exact ℓ`** for ℓ = 0 … *L* − 1, of arity ℓ, and **`at least L`**, of
+  arity *P* + *S* — its first *P* and its last *S* elements, which cannot overlap since *L* ≥
+  *P* + *S*. Together they partition the lists.
+- An exact pattern of length ℓ is `exact ℓ` and nothing else. A pattern with a spread covers every
+  `exact ℓ` with ℓ ≥ *p* + *s* — its sub-patterns there are its *p* leading items, ℓ − *p* − *s*
+  wildcards and its *s* trailing items — and covers `at least L`, with its *p* leading items, *P* −
+  *p* wildcards, *S* − *s* wildcards and its *s* trailing items. A wildcard covers every
+  alternative.
+- `isUseful` with a list pattern first tries it against each alternative it covers, and with a
+  wildcard first against each alternative of the column; `isExhaustive` recurses into every
+  alternative and rebuilds each counterexample from the alternative's cells: `exact ℓ` prints as
+  `[ _, _ ]`, `at least L` as `[ _, ..._, _ ]` with the spread after the first *P*. So `case xs of []
+  -> …` is missing `[ _, ..._ ]`, as it was missing `_ :: _`.
+
+Nothing else moves: a column is still one type's alternatives, the budget is charged per row visit
+as before, and `Flat`'s lookup-table path declines a list pattern, whose alternatives depend on the
+column. The results are the old ones wherever the old algorithm could state the question — `[]`
+and `[ x, ...rest ]` are exhaustive, `[]`, `[ x ]`, `[ x, y, ...rest ]` are — and new where it could
+not: `[]` and `[ ...init, last ]` are exhaustive, `[ ...init, 0 ]` alone is missing `[]` and
+`[ ..._, _ ]`, and `[ x, ...rest ]` below `[ ...init, last ]` is `redundant_pattern`.
+
 **The same analysis decides `language.md` §7's irrefutable positions** — the parameters of a
 declaration, of a `let`-bound function and of a lambda, a `let` pattern, and a `<-` bound pattern,
 which lowering has already turned into a lambda parameter. Each is run as a **one-row match**: is

@@ -692,6 +692,15 @@ guarantees on each function:
 No list carries a `$` tag, so no list test is a tag test and nothing in §4's constructor rows or
 §9.4's padding applies to a list any more.
 
+*Amended 2026-10-01, the owner's list syntax* (`language.md` §6.8, *The list syntax*). **`::` is
+gone and the backend never sees a spread.** Lowering has already written a literal with a spread as
+calls (`language.md` §8): `[ e, ...t ]` is `List.cons(e, t)` — the `e :: t` row above, folding
+included, since `[ e1, …, ek, ...[ l1, … ] ]` is only ever written `[ e1, …, ek, l1, … ]` — and
+`[ ...a, b1, … ]` is `List.append(a, [b1, …])`, which the flip implements like `++` (its row above;
+a fresh plain array, `a` itself when the rest is empty). So the table stands with each `::` read as
+its bracket spelling, and on today's cons cells nothing is emitted that `::` and `++` did not emit
+before: the corpus's run outputs, migrated from `::`, are the differential test that it is so.
+
 #### `--release`, the hoisted file and the read/write split
 
 - **The list primitives are `pure` `foreign`s** (`boundary.md` §4's rung), so §9 item 1 treats a
@@ -1513,6 +1522,8 @@ simplifies them, and the vocabulary is deliberately shared with it:
 | record `{ a, b }` | *anything*, with one binding per named field: a record type has no alternatives | none |
 | `[]`, `x :: xs` | the two constructors of the list union on the emitter's `{$:0}`/`{$:1}` shape (§4) | `subj.$ === 0` / `=== 1`. *Amended 2026-10-01:* `r.length === k` / `r.length > k` on an array (*List patterns over arrays*, below) |
 | `[ a, b, c ]` | **normalised to `a :: b :: c :: []`** before the matrix is built | the cons tests |
+| `[ a, b, ...rest ]`, `[ a, ..._ ]` | *Added 2026-10-01:* **normalised to `a :: b :: rest`** and `a :: _`, exactly what `::` was, so a column of these compiles as it always did | the cons tests |
+| `[ ...init, z ]`, `[ a, ...m, z ]` | *Added 2026-10-01:* a column holding any pattern with elements **after** its spread is split by length, as `checker.md` §6.6 splits it (*List patterns with elements after the spread*, below) | the cons tests down the spine, and the last cells through `List.length`/`List.drop` |
 | `Int`, `Char`, `String` literal | a literal with infinitely many alternatives, so the node always keeps a default edge | `===` against the literal |
 
 The matrix is `js/Decision.zig`, which reads those forms off `Bir` and knows no representation at
@@ -1733,6 +1744,55 @@ Fixtures, owed by `plans/list-arrays.md`'s second slice: `emit/ListPatterns` (ev
 tail) and every existing `run/Match*` fixture unchanged in output; R5 in the third slice with
 `run/ListRecons` (`pairwise` and a re-consing `merge` at 100 000 elements, which exceed the test
 budget as O(n²) copies and so are red before it) and `emit/ListRecons`.
+
+### List patterns with elements after the spread
+
+*Added 2026-10-01, the owner's list syntax* (`language.md` §6.8, *The list syntax*); built on
+today's cons cells the same day. A pattern with nothing after its spread is the `::` it replaced —
+`[ a, b, ...rest ]` is `a :: b :: rest`, `[ a, ..._ ]` is `a :: _` — and compiles exactly as it did,
+so nothing in this section applies to a column that holds only those, `[]` and exact lists, and no
+golden of such a `case` moves. A pattern with elements **after** its spread (`[ ...init, last ]`,
+`[ a, ...m, z ]`) says something about the end of the list, which a chain of cells cannot reach
+without walking, so a column that holds one — at any depth, in any row — is compiled **by length**,
+with `checker.md` §6.6's split:
+
+- The column's *L*, *P* and *S* are the checker's, from the rows that reach this node, and its
+  alternatives are `exact ℓ` for ℓ < *L* and `at least L`. A row covers the alternatives the
+  checker's does, with the same sub-patterns; a wildcard row joins every one.
+- **The tree tests the spine**, one two-way list node per cell: at the column's occurrence `o`, `o.$
+  === 0` is `exact 0`; under its `::` edge, `o.b.$ === 0` is `exact 1`; and so on down to depth *L*,
+  whose `::` edge is `at least L`. Each node is the `if` a list node always was, so a length split
+  is a chain of the tests a cons column writes, ending as soon as the rows under an edge are decided.
+- **Leading elements** are the spine's heads, `o.a`, `o.b.a`, …, as for `::`. **Trailing
+  elements** hang off a new occurrence, *the last S cells of `o`*, emitted as
+  `List$drop(o, List$length(o) - S)` — shared cells, no copy — whose heads are the trailing
+  elements in order. An occurrence is rebuilt at each read (§7), so every test of a trailing element
+  walks the list again: O(n) per read, correct, and the price of asking a cons list about its end.
+
+**Bindings at the leaf** follow the pattern, as every binding does. After the *p* leading items the
+walk has reached `t`, the rest of the list. With *s* ≥ 1 items after the spread, trailing item *j*
+is bound under `List$drop(t, List$length(t) - s)` walked *j* cells on, and the spread's name is
+`List$take(t, List$length(t) - s)`, a copy of the n − p − s cells in between; with *s* = 0 the
+spread binds `t` itself, shared, as `x :: rest` did; `..._` binds nothing. The scrutinee is bound to
+a name whenever one of the `case`'s patterns has elements after a spread, because these reads name
+it more than once.
+
+**The three functions** are `core/List`'s `length`, `drop` and `take`, which the emitter names by
+well-known symbol through `coreValue`, as it names `Task.andThen` (§8, *What it owes the fiber
+lowering*). §9's reachability gives a declaration whose body holds such a pattern an edge to each,
+so a program that never writes one ships none of them on its account.
+
+**After the flip** (§7, *List patterns over arrays*), the same split reads the length directly: an
+occurrence `(r, k)` tests `r.length === k + ℓ` for `exact ℓ` and `r.length >= k + L` for `at least
+L` — one comparison per alternative instead of a walk — trailing item *j* is
+`List$unsafeGet(r, r.length - s + j)`, and the spread binds a view of `r` from `k + p` to
+`r.length - s`: O(1) for every form. §4's `view` has only a start today; a view with an end, or a
+`slice` until it has one, is `plans/list-arrays.md` slice 2's to choose.
+
+Fixtures: `run/ListSpreadPatterns` (every row of `language.md` §6.8's pattern table at its edges —
+the empty list, one element, exactly *p* + *s*, one more — nested lists, literal and constructor
+items after a spread, a spread bound and ignored) and `emit/ListSpreadPatterns` (the spine chain,
+the last-cells occurrence, the bindings, and a `[ x, ...rest ]` column beside it that did not move).
 
 ### Sharing a leaf reached from two paths
 
@@ -2398,6 +2458,31 @@ per park where the cons version linked in O(1). One-shot resumption is still wha
 shared tails, which §4's *Identity* withdraws (`plans/list-arrays.md` records the lines);
 `emit/TailModConsLoop`, `emit/release/TailModConsLoop` and `emit/SuspendShapes` are re-recorded to
 the shape above.
+
+### A cons step in the bracket spelling
+
+*Added 2026-10-01, the owner's list syntax* (`language.md` §6.8, *The list syntax*). With `::` gone
+the owner withdrew the question of keeping tail calls modulo cons "for `::`" (W35, O2), and what
+the rewrite now recognises has to be said again. **The rewrite stays, and it retargets to a literal
+whose last item is a spread of a self-call**: `[ f x, ...go rest ]`, `[ a, b, ...go rest ]`. That
+is the shape Elm programmers write most, it overflows the stack at 100 000 elements without the
+rewrite, and a stack overflow in a well-typed program is a runtime exception the language promises
+not to have — so this is still §8's *mandatory*, not an optimisation.
+
+It needs no recognition of its own. Lowering writes `[ h1, …, hk, ...t ]` as `List.cons h1 (… (List.cons
+hk t))` (`language.md` §8), so **a literal whose last item is a spread is exactly k cons steps**,
+and everything above — what a step is, what *reaches* means, evaluation order, evidence, closures,
+the suspendable body, the destination on cons cells and on an array — applies unchanged. The
+fixtures that pinned `f x :: go rest` pin `[ f x, ...go rest ]`, and their outputs did not move.
+
+What is **not** a cons step, spelled out because the new syntax makes it easy to write:
+
+- **A spread anywhere but last.** `[ ...go rest, x ]` is `List.append (go rest) [ x ]`: the
+  self-call is an argument of an ordinary call, so it is a frame per element, and the append copies
+  — `go rest ++ [ x ]` as it always was. `[ ...go a, ...go b ]` likewise. A program that builds at
+  the end writes an accumulator and `List.push`, which is linear and needs no rewrite.
+- **A spread of anything but the self-call's result**: `[ x, ...rest ]` returned as a value is an
+  ordinary returned value, as `x :: rest` was.
 
 ### Scalar views
 

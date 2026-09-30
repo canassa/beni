@@ -46,6 +46,13 @@ day, not built: `List` is array-backed and is beni's only sequence type. The syn
 `x :: rest` pattern is an O(1) view, `x :: xs` as an expression copies, and a list grows at its end
 with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the representation.
 
+**Brackets and a spread, and no `::`.** Decided by the owner on 2026-10-01 (W35's second
+amendment), specified and built the same day on today's cons cells: `::` leaves the language, as an
+operator, as a pattern and as `(::)`. A list is written, built and matched with brackets and a `...`
+spread, as in JavaScript — `[ x, ...rest ]` and `[ ...init, last ]` as patterns, `[ 0, ...xs ]`,
+`[ ...xs, 4 ]` and `[ ...a, ...b ]` as expressions. §6.8, *The list syntax*, is the contract; where
+the text of §6.8 and `backend.md` written before it still says `x :: rest`, read `[ x, ...rest ]`.
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
@@ -73,10 +80,11 @@ with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the 
 | `andThen` pyramids in a `let` | `let x <- f a` binds the rest of the block | §3, §6.7 |
 | `div [ class "a" ] [ text name ]` | `<div class="a">{name}</div>`, typed against a platform's vocabulary; an untouched record field keeps its identity | §11 |
 | `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*) | §6.8 |
+| `x :: xs`, `x :: rest ->`, `(::)` | `[ x, ...xs ]`, `[ x, ...rest ] ->`, `List.cons`; and what Elm cannot write, `[ ...xs, x ]`, `[ ...a, ...b ]`, `[ ...init, last ] ->`, `[ first, ...middle, last ] ->` (*2026-10-01, built*) | §6.8 |
 
 Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
 `if … then … else`, records, record update, lists, tuples, type aliases, custom types, `as`
-patterns, `::` patterns, `.field` accessors — is Elm's.
+patterns, `.field` accessors — is Elm's. (`::` patterns were on this list until 2026-10-01, §6.8.)
 
 ## 1. Files and modules
 
@@ -128,6 +136,8 @@ eof
 | `<-` | legal only in a `let` binding (§6.7), and `unexpected_token` anywhere else |
 | markup | inside markup the lexer has four more modes and eight more token kinds, and `<` before a letter opens a tag only where no operand has just ended (§11.2; `frontend.md` §9.1–§9.3) |
 | `..` | one token that no construct uses: it exists so that Elm's `exposing (T(..))` is one diagnostic (§5.2) rather than one per dot. Anywhere else it is `unexpected_token` |
+| `...` | *Added 2026-10-01.* One token, `ellipsis`, wherever code is lexed — longest match, so `...` is never `..` and `.`. It is the spread of a list (§6.8) and, as the first token of a hole in a tag, the spread of a component's attributes (§11.5), which is where it was a token before. Anywhere else it is `unexpected_token`, with a message that says where a spread goes |
+| `::` | *Amended 2026-10-01.* Still one token, `op_colon_colon`, but no construct uses it: it is lexed only so that the parser can report `cons_removed` with the bracket form in the message (§6.8, §10), once for a whole `a :: b :: rest` |
 
 ### 2.3 Comments
 
@@ -296,22 +306,23 @@ Atom        := literal                                           -- int float ch
              | '(' Expr ')'
              | '(' Expr (',' Expr)+ ')'                          -- tuple
              | '(' operator ')'                                  -- operator as function
-             | '[' ']' | '[' Expr (',' Expr)* ']'
+             | '[' ']' | '[' ListItem (',' ListItem)* ']'        -- list (§6.8)
              | '{' '}' | '{' Field (',' Field)* '}'              -- record
              | '{' lower_ident '|' Field (',' Field)* '}'        -- record update
              | Atom dot_lower                                    -- field access, no space
              | Atom dot_index                                    -- tuple access, no space
 Field       := lower_ident '=' Expr
+ListItem    := Expr | '...' Expr                                 -- a spread, any number (§6.8)
 
-Pattern     := PatCons ('as' lower_ident)?                       -- `as` binds loosest
-PatCons     := PatCtor ('::' PatCons)?                           -- right assoc
+Pattern     := PatCtor ('as' lower_ident)?                       -- `as` binds loosest
 PatCtor     := (upper_ident | qualified_upper) PatAtom+ | PatAtom
 PatAtom     := '_' | lower_ident
              | upper_ident | qualified_upper                     -- nullary constructor
              | int | char | string-without-interpolation | '-' int
              | '(' ')' | '(' Pattern ')' | '(' Pattern (',' Pattern)+ ')'
-             | '[' ']' | '[' Pattern (',' Pattern)* ']'
+             | '[' ']' | '[' PatItem (',' PatItem)* ']'          -- list (§6.8)
              | '{' lower_ident (',' lower_ident)* '}'            -- record pattern
+PatItem     := Pattern | '...' (lower_ident | '_')              -- at most one spread (§6.8)
 LetPattern  := '_' | lower_ident | '(' ')' | '(' LetPattern ')'  -- irrefutable only (§7)
              | '(' LetPattern (',' LetPattern)+ ')'
              | '{' lower_ident (',' lower_ident)* '}'
@@ -331,6 +342,11 @@ There is **no float pattern**: a float's `==` is not something a `case` should p
 `0.1 + 0.2` would miss a `0.3` branch. A float literal where a pattern is expected (`-1.5` too) is
 `unexpected_token` at the literal with a message of its own, suggesting a comparison, and the
 `case` goes on with its other branches (the owner's decision on float patterns, `checker-v2.md` §21).
+
+*Amended 2026-10-01* (§0, §6.8): `ListItem`, `PatItem` and the two list lines are new, and
+`PatCons := PatCtor ('::' PatCons)?` is withdrawn with the `::` operator, so a `Pattern` is a
+`PatCtor` with an optional `as`. A `::` where an operator or a pattern could continue is parsed as
+it was and reported as `cons_removed` (§10); nothing else in the grammar changed.
 
 The rest of this section constrains the grammar above. Rules belonging to one construct are stated
 where it is: records §6.3, operators and negation §6.5, `?` §6.6, `_`, `|>` and `<-` §6.7, §7
@@ -634,7 +650,7 @@ non-associative operators reject a second operator of the same precedence withou
 | 2 | `\|\|` | right |
 | 3 | `&&` | right |
 | 4 | `==` `/=` `<` `>` `<=` `>=` | non-assoc |
-| 5 | `++` `::` | right |
+| 5 | `++` | right (`::` stood here until 2026-10-01, §6.8) |
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `//` | left |
 | 8 | `^` | right |
@@ -645,7 +661,7 @@ non-associative operators reject a second operator of the same precedence withou
 | mixing `<\|` and `\|>` | at precedence 0 without parentheses it is `non_associative_chain`: they associate in opposite directions, so a mixed chain has no predictable reading, and Elm rejects the same pair. `<<` and `>>` are removed, and with them the precedence-9 case of this rule and the composition idiom, which is replaced by naming the argument. |
 | **negation** | `-` directly followed (no whitespace) by an atom, where the parser expects the *start* of an operand: `-x`, `-(a + b)`, `-1`, `[ -1, -2 ]`. The operand is one atom with its access chain, so `-r.value` is `-(r.value)` and `-f x` is `(-f) x`, as in Elm. Negation of an integer literal in a *pattern* is a literal pattern (`-1 ->`). `- x` with a space in prefix position is `negation_with_space`; `a - -b` is allowed. |
 | `f -1` | **not** negation: in argument position the parser has parsed `f` and sees `-` where either an argument or an operator may follow, and **it is the binary operator**, as in Elm, so `f -1` is `f - 1`. Write `f (-1)`. |
-| **operators as functions** | `(+)`, `(::)`, `(==)` and so on: any operator from the table that lowers to a call or to a method call, each being the 2-ary function it lowers to. The six comparison operators lower to a lambda over a marked method call, not to a reference to `Basics.eq` — so `(==)` is `\a b -> a.eq b` with the operator's own pinning rule, not structural equality (spec §3.1). Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
+| **operators as functions** | `(+)`, `(++)`, `(==)` and so on (`(::)` went with `::` on 2026-10-01 and is `cons_removed`, whose message names `List.cons`): any operator from the table that lowers to a call or to a method call, each being the 2-ary function it lowers to. The six comparison operators lower to a lambda over a marked method call, not to a reference to `Basics.eq` — so `(==)` is `\a b -> a.eq b` with the operator's own pinning rule, not structural equality (spec §3.1). Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
 
 **The six comparison operators are method calls, not `Basics` calls** (§0). `a == b` and `a /= b`
 lower to a call of `eq` on `a`'s type; `a < b`, `a <= b`, `a > b`, `a >= b` to a call of `compare`,
@@ -740,12 +756,12 @@ observable today; effects will make them observable in what a program *does*.
 |---|---|
 | application `f a b` | **the callee, then the arguments left to right.** The callee is an expression like any other, so `(pick k) a b` evaluates `pick k` first |
 | method call `x.m a` | the receiver, then the arguments left to right. The evidence parameters a constraint adds are leading (`backend.md` §4) but are not expressions the program wrote, and no order is observable through them |
-| binary operator `a ⊕ b` | **the left operand, then the right**, whatever the operator desugars to — a `Basics` call (`+`), a method call (`==`, `<`, §6.5) or `List.cons` (`::`). The desugaring is an application, so this is the row above and not a separate rule |
+| binary operator `a ⊕ b` | **the left operand, then the right**, whatever the operator desugars to — a `Basics` call (`+`), a method call (`==`, `<`, §6.5) or `Basics.append` (`++`). The desugaring is an application, so this is the row above and not a separate rule |
 | `&&`, `\|\|` | the left operand, then the right **only when the left does not decide it**. This is why `Basics.and` and `Basics.or` are `foreign`: a call would evaluate both (`backend.md` §4, correction 3). A right operand that needs statements of its own gets them inside the branch |
 | `\|>`, `<\|` | **pipes rewrite before anything runs** (§6.7, §8), and the rewritten form's order is what holds. For `\|>` the two agree: `e \|> f a` is `f e a`, so `e` — written first — is evaluated first. For `<\|`, `f a <\| e` is `f a e` and `a` precedes `e`, which is again source order |
 | `_` placeholder | **the lambda evaluates nothing when it is built.** `f (g x) _` is `\p -> f (g x) p` (§6.7), so `g x` runs on *every* call of that lambda, and after that call's own argument. Bind `g x` to a name first if it should run once |
 | `let x <- e` | `let x <- f a in rest` is `f a (\x -> rest)`: `f`, then `a`, then the call; `rest` runs if and when and as often as `f` calls the callback |
-| tuple literal, list literal | element by element, left to right |
+| tuple literal, list literal | element by element, left to right. *Amended 2026-10-01:* a spread's operand is an element for this row — `[ a, ...f x, b ]` evaluates `a`, then `f x`, then `b` — and every element and operand is evaluated before the list is built (§6.8) |
 | constructor | argument by argument, left to right |
 | **record literal** | **field by field, in the order the fields are written** — `{ z = p, a = q }` evaluates `p` then `q`. `backend.md` §4 sorts the emitted object's *keys* so that one record type has one hidden class; that is a representation decision, and it does not move an evaluation |
 | record update `{ r \| a = p, b = q }` | `r`, then the updated fields in written order |
@@ -873,40 +889,138 @@ writes. The representation, its invariants and the runtime are [`backend.md`](ba
 [`plans/list-arrays.md`](../../plans/list-arrays.md). Until that plan's second slice lands, lists
 are cons cells and the costs below that differ from Elm's do not hold yet.
 
-**The syntax, and what each form costs.**
+**The syntax, and what each form costs.** *Restated 2026-10-01 in the bracket spelling* (*The list
+syntax*, below); the costs are the array's, after the flip.
 
 | Written | Means | Cost |
 |---|---|---|
 | `[]`, `[ a, b, c ]` | a list of those elements, evaluated left to right | O(length) |
 | `case xs of [] -> …` | `xs` is empty | O(1) |
-| `x :: rest ->`, `a :: b :: rest ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies |
+| `[ x, ...rest ] ->`, `[ a, b, ...rest ] ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies |
+| `[ ...init, last ] ->` | `xs` has at least one element; `last` is the last one, `init` a view of the ones before it | O(1) |
 | `[ x, y ] ->` | `xs` has exactly two elements | O(1) |
-| `x :: xs` as an expression | a **new list**: `x`, then every element of `xs` | **O(length of `xs`)** — a copy |
-| `xs ++ ys` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | O(length of both) |
+| `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | **O(length of `xs`)** — a copy |
+| `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | O(length of `xs`) — `List.push xs x` is the amortised O(1) way |
+| `xs ++ ys`, `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | O(length of both) |
 
-**`x :: xs` stays legal, and it copies.** It is the right thing to write once — a TEA `update` that
-puts a new row first pays one copy per message, which the render walk dwarfs. It is the wrong thing
-to write in a loop: prepending onto an accumulator is O(n) per step and O(n²) in all, where the cons
-list was O(1). **A list grows at its end**: `List.push acc x`, amortised O(1), keeps the order the
-elements arrived in, so the `List.reverse` that Elm code writes after a prepending loop is not
-needed. Three places where `::` does not copy, because the compiler sees what it means:
+**`[ x, ...xs ]` is legal, and it copies.** It is the right thing to write once — a TEA `update`
+that puts a new row first pays one copy per message, which the render walk dwarfs. It is the wrong
+thing to write in a loop: prepending onto an accumulator is O(n) per step and O(n²) in all, where
+the cons list was O(1). **A list grows at its end**: `List.push acc x`, amortised O(1), keeps the
+order the elements arrived in, so the `List.reverse` that Elm code writes after a prepending loop is
+not needed. Two places where a leading spread does not copy, because the compiler sees what it
+means:
 
-- **A function's result `f x :: go rest`**, where `go` is the function itself, is compiled to a loop
-  that builds the result front to back, O(1) per element and no stack (`backend.md` §8, *Tail calls
-  modulo cons, onto an array*). Elm-shaped `map`, `filter` and `takeWhile` written by hand stay
-  linear and stack-safe.
-- **Re-consing what a pattern matched**, `h :: t` right after matching `h :: t`, is the list that
-  was matched (`backend.md` §7, *List patterns over arrays*).
-- **`e :: [ … ]`**, onto a literal, is one literal.
+- **A function's result `[ f x, ...go rest ]`**, where `go` is the function itself, is compiled to a
+  loop that builds the result front to back, O(1) per element and no stack (`backend.md` §8, *Tail
+  calls modulo cons, onto an array*). Elm-shaped `map`, `filter` and `takeWhile` written by hand
+  stay linear and stack-safe.
+- **Re-consing what a pattern matched**, `[ h, ...t ]` right after matching `[ h, ...t ]`, is the
+  list that was matched (`backend.md` §7, *List patterns over arrays*).
 
-*Proposed, the owner's decision (`plans/list-arrays.md` §1, O1):* **the warning
-`prepend_in_loop`**, on by default for the root package only, as `ambiguous_method_receiver` is. It
-fires on a `::` expression, or an `acc ++ [ e ]`, that none of the three rules above rewrites and
-whose result becomes an argument of a tail self-call of the enclosing function, or the result of a
-lambda passed directly to a fold whose accumulator parameter is its right operand — the two
-spellings of an accumulator built by prepending. It says the list is copied at every step and
-names `List.push`. It is a warning and not an error because no guarantee is at stake: the program
-is correct, only slow (CLAUDE.md rule 7).
+(A third, "`e :: [ … ]` onto a literal is one literal", has nothing left to say: `[ e, … ]` is
+written as the one literal it always was.) *The warning `prepend_in_loop` proposed here was
+withdrawn by the owner on 2026-10-01 (W35's second amendment, O1).*
+
+#### The list syntax: brackets and a spread
+
+*Added 2026-10-01, the owner's decision (`plans/browser-decisions.md` W35, second amendment); built
+the same day on today's cons cells.* **`::` leaves the language.** A list is written, built and
+matched with brackets and a `...` **spread**, as in JavaScript. This holds whatever the prepend
+benchmark finds: it is a decision about spelling, not about cost, and each form's cost on both
+representations is in the table at the end of this subsection.
+
+**Expressions.** A list literal's items are expressions and **spreads**, `...e`, in any number and
+any order. A spread's operand `e` is any expression (`[ ...f x, 0 ]`, `[ ...xs ++ ys ]` — the comma
+ends it) whose type is `List a` for the literal's own element type `a`.
+
+| Written | Is |
+|---|---|
+| `[ x, ...xs ]` | `x`, then the elements of `xs` — Elm's `x :: xs` |
+| `[ a, b, ...xs ]` | Elm's `a :: b :: xs` |
+| `[ ...xs, x ]` | the elements of `xs`, then `x` |
+| `[ ...a, ...b ]` | `a ++ b` |
+| `[ ...a, x, ...b ]` | the elements of `a`, then `x`, then those of `b` |
+| `[ ...xs ]` | `xs` itself — not a copy of it |
+
+**Evaluation** is §6's *Evaluation order* for a list literal: every item — an element, or a spread's
+operand — is evaluated once, left to right, and then the list is built. What a literal with a spread
+**means** is the calls lowering writes for it (§8), built from the right: the plain items after the
+last spread are one literal (none, if the spread is last); going leftwards, a spread `...s` in front
+of what is built so far is `List.append s <that>` (or `s` alone when nothing is built yet), and an
+element `e` is `List.cons e <that>`. So `[ x, ...a, y ]` is `List.cons x (List.append a [ y ])` —
+which evaluates `x`, `a`, `y` in that order, because a call evaluates its arguments left to right,
+and builds nothing a program can observe before all three are known. The two functions are
+`core/List`'s, named by the compiler and not by the file, so a module may declare its own `cons`.
+
+**Patterns.** A list pattern's items are patterns and **at most one** spread, `...name` or `..._`.
+
+| Written | Matches | Binds |
+|---|---|---|
+| `[]` | the empty list | — |
+| `[ a, b ]` | a list of exactly two elements | the two elements |
+| `[ x, ...rest ]` | a list of at least one element — Elm's `x :: rest` | the first element; the list after it |
+| `[ a, b, ...rest ]` | at least two | the first two; the list after them |
+| `[ x, ..._ ]` | at least one | the first element only |
+| `[ ...init, last ]` | at least one | the list before the last element; the last element |
+| `[ first, ...middle, last ]` | at least two | the first; the ones between; the last |
+| `[ ...rest ]` | every list | the list itself, as `rest` would |
+
+The rule behind the table: a list pattern with *n* items besides its spread matches lists of
+**exactly** *n* elements when it has no spread and of **at least** *n* when it has one; the items
+before the spread match the first elements in order, the items after it the last ones in order, and
+the spread binds the elements in between. A long enough list is needed for both ends, so the two
+ends never overlap. Every item except the spread is an ordinary pattern — `[ ( k, v ), ...rest ]`,
+`[ Just x, ..._, 0 ]` — while **the spread's operand is a name or `_`**: the elements the spread
+covers are matched by the items around it, so `[ x, ...[ y, z ] ]` would only be `[ x, y, z ]`
+spelled twice. A second spread would make the split ambiguous (`[ ...a, x, ...b ]` has as many
+readings as `x` has positions), so it is `two_spreads_in_pattern`. A list pattern is refutable, a
+spread's included, so none may stand in an irrefutable position (§7) — `[ ...xs ]` there says
+nothing `xs` does not.
+
+**Exhaustiveness** (`checker.md` §6.6, *amended 2026-10-01*) reads a list column by length: `[]`
+and `[ x, ...rest ]` cover every list, as `[]`/`::` did; so do `[]`, `[ x ]` and
+`[ x, y, ...rest ]`; `[ ...init, last ]` covers every non-empty list, so `[]` and it are a complete
+`case`, and `[ x, ...rest ]` below `[ ...init, last ]` is `redundant_pattern`. A missing example
+prints in this syntax: `[ _, ..._ ]` for "a list of at least one element", `[ _, _ ]` for exactly
+two.
+
+**Diagnostics** (§10). `::` where an operator or a pattern could continue, and `(::)`, is
+`cons_removed` — one error for a whole chain, reported at its first `::`, whose message is the
+bracket form of what was written: `a :: b :: rest` as `[ a, b, ...rest ]`, `x :: []` as `[ x ]`,
+`x :: [ y ]` as `[ x, y ]`, and `(::)` as `List.cons`. The parser reads the chain as it always did
+and goes on, so one mistake is one message. A second spread in a pattern is
+`two_spreads_in_pattern` at the second one. A spread outside a list's brackets, or a spread operand
+in a pattern that is not a name or `_`, is `unexpected_token` with a message that says where a spread
+goes (`[ ...xs ]`, `...rest`, `..._`).
+
+**Formatting** (§9). A spread is one item of the list for §9's one-line-or-vertical rule, printed
+with `...` directly against its operand: `[ x, ...rest ]`, and vertically
+
+    [ header
+    , ...rows
+    , footer
+    ]
+
+**What each form costs.** Today's list is cons cells; `plans/list-arrays.md`'s flip makes it an
+array. *n* is the length of the list read or copied, *k* the number of items written.
+
+| Form | Cons cells (today) | Arrays (after the flip) |
+|---|---|---|
+| `[ a, b ]` | O(k): k cells | O(k): one array literal |
+| `[ x, ...xs ]`, `[ a, b, ...xs ]` | O(k): the cells share `xs` | O(n + k): a copy, except a cons step (`backend.md` §8) and a re-cons (§7) |
+| `[ ...xs, x ]` | O(n): `xs` is copied | O(n): a fresh array (`List.push` is amortised O(1)) |
+| `[ ...a, ...b ]`, `[ ...a, x, ...b ]` | O(length of `a`); `b` is shared | O(length of both) |
+| `[ ...xs ]` | O(1): `xs` | O(1): `xs` |
+| pattern `[]`, `[ a, b ]` | O(k) tag reads | O(1): one length test |
+| pattern `[ x, ...rest ]`, `[ x, ..._ ]` | O(k); `rest` is the shared tail | O(1); `rest` a view |
+| pattern `[ ...init, last ]`, `[ first, ...middle, last ]` | O(n): the length is counted and the last elements found by a walk, and `init`/`middle` is a copy of n − k elements | O(1): a length test and indexed reads; `init`/`middle` a view |
+
+The O(n) row is the one place where the new syntax says something the cons list could only do by
+walking, and it is honest about it: correct today, O(1) after the flip (`backend.md` §7, *List
+patterns with elements after the spread*).
+
+#### `core/List`
 
 **`core/List`.** Elm's `List` module, subject first and uncurried as all of `core/` is, plus
 the indexed operations Elm keeps in `Array`, plus `pop`, `insertAt`, `removeAt` and `swap`, which a
@@ -928,7 +1042,7 @@ million elements — and is what an indexed read costs on a list that has been w
 | `pop : List a -> List a` | as `set` | *new*; the last element removed; `[]` unchanged |
 | `swap : List a, Int, Int -> List a` | two `set`s | *new*; out of range, unchanged |
 | `insertAt : List a, Int, a -> List a`, `removeAt : List a, Int -> List a` | O(n) | *new*; `insertAt` at `length` appends; out of range, unchanged |
-| `cons` (`::`), `append` (`++`), `concat`, `concatMap`, `intersperse` | O(total) | |
+| `cons` (`[ x, ...xs ]`), `append` (`++`, `[ ...xs, ...ys ]`), `concat`, `concatMap`, `intersperse` | O(total) | |
 | `map`, `indexedMap`, `filter`, `filterMap`, `map2`–`map5`, `partition`, `unzip` | O(n) | the result is fresh and reads at O(1) |
 | `foldl`, `foldr`, `any`, `all`, `member`, `sum`, `product`, `maximum`, `minimum` | O(n) | `foldr` walks backwards and allocates nothing (it was `reverse` then `foldl`) |
 | `reverse` | O(n) | |
@@ -959,7 +1073,7 @@ function is `foreign`.
 | Rule | Detail |
 |---|---|
 | **irrefutable positions**, and what irrefutable means | **one rule for five positions**: the parameters of a top-level definition, of a `let`-bound function and of a lambda, a `let` pattern, and the pattern of a `let p <- e` — in all five, the pattern must **match every value of its type**. It is Elm's rule, and it keeps exhaustiveness out of everything but `case`. A pattern qualifies when it is a name, `_`, `()`, a record, a tuple of qualifying patterns, one of those with `as`, or **a constructor of a type that has only that one constructor**, whose arguments all qualify (`LetPattern` in §3). So `unwrap (Box x) = x` and `let (Box x) = b` are both legal and `un (Just n) = n` is not. |
-| how it is decided, and by whom | **the rule is type-directed, so it is enforced in two places and they cannot disagree.** A literal, a list and a `::` fail it whatever the types are, so the **parser** refuses those, early and cheaply. A **constructor** is admitted by the parser and settled by the **checker**, which runs the pattern through the same usefulness analysis a `case` gets, as a one-row match (`checker.md` §6.6) — so nesting (`Pair (Box a) b`), a type with no constructors, and an opaque imported type all fall out of one algorithm rather than a second single-constructor test that could drift from the first. |
+| how it is decided, and by whom | **the rule is type-directed, so it is enforced in two places and they cannot disagree.** A literal and a list — a list with a spread included, and until 2026-10-01 a `::` — fail it whatever the types are, so the **parser** refuses those, early and cheaply. A **constructor** is admitted by the parser and settled by the **checker**, which runs the pattern through the same usefulness analysis a `case` gets, as a one-row match (`checker.md` §6.6) — so nesting (`Pair (Box a) b`), a type with no constructors, and an opaque imported type all fall out of one algorithm rather than a second single-constructor test that could drift from the first. |
 | the two codes | `refutable_let_pattern` for a `let` pattern, `refutable_parameter_pattern` for the other four. **A `<-` bound pattern is a parameter**, because §6.7 desugars it into the callback's parameter; naming it that way is what keeps the parser and the checker from labelling one position two ways. Each code has a parse-time and a check-time source (§10); only the check-time one can name the constructors that are missing. The backend may therefore destructure any of these positions with no test (`backend.md` §4). |
 | provenance | Manager decision of 2026-09-18, owner offline; reversible. The alternative considered and rejected was the purely **syntactic** rule — refuse every constructor in these positions, as the parser alone can — which is simpler and needs no checker pass. It was built first and withdrawn: it rejected 40 existing declarations, 27 of them in `core` (`Dict`, `Set`, `Never` unwrapping their one constructor), none of them a real refutability risk, and it left beni with no way to unwrap an opaque newtype except `case`. |
 | what binds, and where | every binding introduces a name into a lexical scope: function parameters, lambda parameters, `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression — mutual recursion is allowed), pattern variables in `case` branches and destructuring. Top-level names are all in scope in every body; order does not matter. **Being in scope is not being initialised**, which is the next row. |
@@ -980,7 +1094,7 @@ file's bytes: nothing in it depends on another module. Lowering:
 |---|---|
 | 1 | Resolves every name per §6.2 into one of `local(index)`, `top(index)` (this module), `import_value(module, name)`, `import_ctor(module, name)`, `ctor(index)` (this module), `qualified(alias → module, name)`, and records the set of top-level names each declaration references (§9.1 of the design doc: the DCE graph is a byproduct). |
 | 2, ordered | Desugars operators into calls of the corresponding core functions (`a + b` → `add a b`, marked as a `number`-typed builtin — the M2 checker resolves the builtin) — **except the six comparison operators, which become method calls** carrying the operator they were written as, and are resolved by the checker rather than by lowering (§6.5). Then, **in this order**, because the readings disagree otherwise (§6.7): `\|>` into a call whose **first** argument is the left operand (`e \|> f a` → `f e a`, looking through grouping parentheses) and `<\|` into direct application, so every pipeline is a saturated call; then `_` into a lambda over the innermost enclosing application; then `x <- e` into a call of `e` whose last argument is a lambda over the rest of the block. |
-| 2, order-independent | `?` into a `try` instruction, which STANDS FOR `case e of Ok v -> v; Err x -> return (Err x)` without being one: the choice between that shape and the `Maybe` one is the checker's (§6.6), and it needs an instruction of its own to hang on. `backend.md` §4 emits the test and the early `return` from it directly. String interpolation into an `interp` node listing chunks and expressions; `if` into a two-branch `case` on `True`/`False`; `.field` accessor functions into one-parameter lambdas. Multi-parameter lambdas stay n-ary; record update, tuples and lists stay as nodes; field access and tuple index stay as nodes (the checker needs them). Calls are n-ary in BIR and always were; what the spec pass changes is that a `call` node is now the *only* reading of an application. |
+| 2, order-independent | `?` into a `try` instruction, which STANDS FOR `case e of Ok v -> v; Err x -> return (Err x)` without being one: the choice between that shape and the `Maybe` one is the checker's (§6.6), and it needs an instruction of its own to hang on. `backend.md` §4 emits the test and the early `return` from it directly. String interpolation into an `interp` node listing chunks and expressions; `if` into a two-branch `case` on `True`/`False`; `.field` accessor functions into one-parameter lambdas. Multi-parameter lambdas stay n-ary; record update, tuples and lists stay as nodes; field access and tuple index stay as nodes (the checker needs them). *Amended 2026-10-01:* a list literal **with a spread** does not stay a node: it becomes the `List.cons` and `List.append` calls §6.8 spells out (`[ x, ...xs ]` is `call(import_value List.cons, x, xs)`, `[ ...xs ]` is `xs`), each call and its callee stamped with the spread's `...` token, so a cons step (`backend.md` §8) and every diagnostic about the call see the calls `::` and `++` gave them. A list **pattern** stays a node: `pat_list`, whose range may hold one `pat_spread` whose operand is the `pat_var` or `pat_wild` it binds (`frontend.md` §3.6). Calls are n-ary in BIR and always were; what the spec pass changes is that a `call` node is now the *only* reading of an application. |
 | 3 | Emits the module's **interface skeleton**: the `pub` names, aliases, types, and constructor lists — lexically computable, no inference (§8.1 of the design doc). |
 | 4 | Reports the diagnostics of §5.3, §6.2 and §7. |
 
@@ -1034,7 +1148,7 @@ layout: this overrides the one-line/source-break choice for these bodies.
 | `case` | `case x of` alone on a line; branches indented 4; `->` at line end; body indented 4 more |
 | `if` | `if c then` / `a` / `else` / `b`, always vertical; `else if` chains continue at the same indentation |
 | **Expressions** | |
-| lists, records, tuples | on one line when they fit and were written on one line, with elm-format's inner spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r \| a = 1 }`, empty ones as `[]`, `{}`, `()` — else elm-format's vertical form `[ a`, `, b`, `]` with the delimiter leading each line |
+| lists, records, tuples | on one line when they fit and were written on one line, with elm-format's inner spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r \| a = 1 }`, empty ones as `[]`, `{}`, `()` — else elm-format's vertical form `[ a`, `, b`, `]` with the delimiter leading each line. *Amended 2026-10-01:* a spread is one item, printed with `...` against its operand, in expressions and patterns alike: `[ x, ...rest ]` (§6.8) |
 | operator chains | those that do not fit, or that the author broke, break before the operator, one operator per line, operands indented 4. A chain flattens one precedence level only. |
 | applications | the arguments written on the head line stay there when they fit (`div [ class "app" ]`, `Decode.map4 User`); from the first source line break onward every remaining argument goes on its own line indented 4; an application with no source break that does not fit breaks after the function, every argument on its own line. Constructor argument lists in `type` declarations follow the same rule. **`_`** is an ordinary argument that takes ordinary application spacing; it never forces a break. |
 | **a trailing `<\|` followed by a lambda** | **does not indent**: the lambda's body continues at the indentation of the line the `<\|` is on. This is the one elm-format rule research 14 found to be the binding constraint in Elm (`14/elm` §0.2). |
@@ -1104,6 +1218,7 @@ untyped_event_attribute
 invalid_attribute_name  untyped_srcdoc_attribute
 foreign_effect_missing  unknown_foreign_effect
 misplaced_sync  sync_boundary  must_not_suspend
+cons_removed  two_spreads_in_pattern
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1135,6 +1250,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | the last line | markup again | appended on 2026-09-29, again never inserted, with the owner's decision to close the escape's other script sinks (§11.5). `invalid_attribute_name` is lowering's: a quoted name holding whitespace, a quote, `=`, `/`, `>` or a control character, or empty, which a page would end early and follow with an attribute the vocabulary never sees (`"x onclick"`); `untyped_srcdoc_attribute` is the checker's, beside `untyped_event_attribute`: a quoted `srcdoc`, in any case, a whole document the page runs, scripts included |
 | `foreign_effect_missing`, `unknown_foreign_effect` | effects | appended on 2026-09-30, again never inserted, with the first slice of effects ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14.1). Both are the parser's: every `foreign` value states its rung — `pure`, `impure` or `suspends` — between `foreign` and its name, because a `foreign` has no body to infer from and a default of `pure` would let a clock read claim it may be duplicated. `foreign_effect_missing` is at a name that follows `foreign` directly; `unknown_foreign_effect` at a word that is not one of the three. The declaration is otherwise read as written |
 | `misplaced_sync`, `sync_boundary`, `must_not_suspend` | effects again | appended on 2026-09-30, again never inserted, with the `sync` step ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15). `misplaced_sync` is lowering's: a `sync` in a `foreign` signature that does not mark a function type written out, or marks one the platform hands back rather than receives. The other two are the checker's, and they are the guarantee the feature exists for — a function that may suspend never reaches a caller that cannot wait for it, where it would return a suspension object in place of a value, well typed and wrong at exit 0. `sync_boundary` is at the argument: a function handed to a `sync` parameter, a markup handler, row or key function, or a `foreign`'s evidence. `must_not_suspend` is at a declaration that is a boundary itself: `main`, and a type's `eq` or `compare`. Both name the calls that make it suspend, within the module (§15.4) |
+| `cons_removed`, `two_spreads_in_pattern` | the list syntax | appended on 2026-10-01, again never inserted, with the owner's decision that `::` leaves the language (§6.8, *The list syntax*). Both are the parser's. `cons_removed` is at the first `::` of a chain — in an expression, in a pattern, or as `(::)` — and its message is the bracket form of the whole chain, built from the text the author wrote (`[ a, b, ...rest ]`, `[ x ]`, `List.cons`); the chain is parsed as before and lowered to an error, so it costs one message. `two_spreads_in_pattern` is at a list pattern's second spread, which would make the split between the leading and trailing items ambiguous. A spread outside a list and a pattern spread whose operand is not a name or `_` reuse `unexpected_token`, with messages of their own |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment

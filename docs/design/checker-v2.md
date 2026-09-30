@@ -4133,7 +4133,10 @@ such a call is never an operator's desugaring (`Reporter.operatorCallee`).
 ## 16. Exhaustiveness, cycles and the schema plan
 
 - **`Exhaustive.zig` is kept verbatim.** Only its gate input changes, to failure bits.
-  `checker.md` §6.6's sentence about solved types is corrected: it reads none.
+  `checker.md` §6.6's sentence about solved types is corrected: it reads none. *Amended
+  2026-10-01:* its list union is replaced by the length split of `checker.md` §6.6's amendment of
+  that date, for `language.md` §6.8's list syntax; the pattern checks of §6 give a `pat_spread`'s
+  operand the list's own type.
 - **`Cycles.zig`** is adapted to `Convention` and the tree walk. Its algorithm and messages are
   unchanged.
 - **The schema plan** is built in P9 after `Cycles`, gated on "no error in the module", and reads

@@ -29,6 +29,16 @@ One sequence type; `List` array-backed with E1t's representation; no `Array`, no
 literals and `x :: rest` patterns stay, the pattern an O(1) view; programs build at the end with
 `push`; the compiler rule that turns an `x :: rest` walk into an index loop ships with it.
 
+**Amended 2026-10-01, the owner's second amendment of W35: the list syntax.** `::` leaves the
+language. Lists are written, built and matched with brackets and a `...` spread, as in JavaScript:
+`[ x, ...rest ]`, `[ ...init, last ]` and `[ first, ...middle, last ]` as patterns, `[ 0, ...xs ]`,
+`[ ...xs, 4 ]` and `[ ...a, ...b ]` as expressions, whatever the prepend benchmark finds. O1 and O2
+are withdrawn; O3–O5 are taken as recommended (§1.3). Everywhere below, `x :: rest` is read as
+`[ x, ...rest ]` and `f x :: go rest` as `[ f x, ...go rest ]`. **This change is slice 0, and it has
+landed on today's cons cells** (§4): the contract is `language.md` §6.8 *The list syntax*,
+`checker.md` §6.6's amendment of 2026-10-01, and `backend.md` §7 *List patterns with elements after
+the spread* and §8 *A cons step in the bracket spelling*.
+
 ### 1.2 Made by this specification, with the reason
 
 | Choice | Reason |
@@ -36,7 +46,9 @@ literals and `x :: rest` patterns stay, the pattern an O(1) view; programs build
 | **Tail calls modulo cons are kept, retargeted to a builder**, not removed | Without them `f x :: go rest` on an array is a copy per step *and* a frame per element: O(n²) and a stack overflow at 100 000 (research 38 §16, candidate B). A stack overflow breaks a guarantee, so the rewrite is still mandatory (`backend.md` §8). Research 46 §0.4 measured it at 1.4–2.4× the best on E1t |
 | **Re-consing a match is free** (research 38's R5) | It keeps Elm-shaped `pairwise` and `merge` linear, and it is a local, syntactic rule |
 | **A tail is bound only where it is read** | Research 38 §17.2's hazard at its source: a view is an allocation |
-| **`e :: [ … ]` folds into one literal** | Free, and same evaluation order |
+| **`e :: [ … ]` folds into one literal** | Free, and same evaluation order. *2026-10-01:* moot — `[ e, … ]` is written as the literal it is |
+| **Tail calls modulo cons retarget to `[ h, ...self-call ]`** (2026-10-01) | Lowering writes that literal as `List.cons` calls, so it is the same cons step and needs nothing new (`backend.md` §8, *A cons step in the bracket spelling*); `[ ...go rest, x ]` is an append, not a step |
+| **A suffix pattern is a length split** (2026-10-01) | `[ ...init, last ]` cannot be `[]`/`::` rows; the checker and the tree split a column by length as Rust's slice patterns do. On cons cells it walks (O(n)); after the flip it is a length test and indexed reads (`backend.md` §7) |
 | **A reader protocol of three points** (`length`, `Array.isArray`, `$plain()`) instead of a shared helper | A sibling cannot import another file (`backend.md` §2), and the backend reads no types, so it cannot convert at a `foreign` call site |
 | **`$plain` is a field holding a shared function**, not a prototype method | `Minify` declines a file with `class` or a top-level expression statement, and no core file may be declined |
 | **`++` is O(n + m) always**, a fresh plain array unless one side is empty | `Basics.append` is a sibling and cannot reach `core/List.js`'s trie code. The cost is Elm's own `++` class; `acc ++ [ x ]` in a loop stays quadratic, as it is today on cons cells, and `push` is the way to grow. Research 46 counted `acc ++ [x]` linear under E1t only because its array-first programs wrote `push` |
@@ -46,6 +58,10 @@ literals and `x :: rest` patterns stay, the pattern an O(1) view; programs build
 | **The trie's leaf walk in `For` is measured, not assumed** | `$plain()` is cached per header and measured at 13 µs per 10 000 against an 82 µs render (research 38 §15.9); the leaf walk needs a fourth protocol point |
 
 ### 1.3 Open, the owner's
+
+*Decided 2026-10-01 (W35's second amendment):* **O1 and O2 are withdrawn** — with `::` gone there is
+no `::` to warn about or to keep a rewrite for; the rewrite itself stays under its new spelling
+(§1.2). **O3, O4 and O5 are taken as recommended**, reversibly. The table is kept as the record.
 
 | | Question | Recommendation |
 |---|---|---|
@@ -76,7 +92,8 @@ literals and `x :: rest` patterns stay, the pattern an O(1) view; programs build
 | benches | `bench/arrays/` | a `beni` candidate (the real compiler, no list-syntax rewrite); the rewritten programs pinned to a pre-flip compiler (`BENI_BEFORE`) so research 46 reproduces |
 
 The checker, BIR, the parser and the formatter do not change, except the warning of O1 (BIR
-diagnostics, slice 3) if the owner takes it.
+diagnostics, slice 3) if the owner takes it. *2026-10-01:* O1 is withdrawn, and the list syntax
+changed all four in slice 0, before the flip.
 
 ---
 
@@ -108,6 +125,23 @@ moves for any other reason is a finding (CLAUDE.md, *Development output did not 
 
 Each slice passes `zig build gates` on its own; the flip is one slice because a representation
 cannot change in half the files. `-Dllvm` gates on slices 2 and 3 (layouts, recursion depth).
+
+### Slice 0 — the list syntax, on today's cons cells (2026-10-01, landed)
+
+**Scope.** The owner's second amendment of W35: `[ x, ...rest ]`, `[ ...init, last ]` and the rest of
+`language.md` §6.8's syntax through the lexer (`...` in every mode), parser, formatter, BIR (the
+`pat_spread` instruction; a spread expression lowers to `List.cons`/`List.append` calls), checker
+(the spread's type; the length split for exhaustiveness) and backend (a column with elements after
+a spread split by length down the cons spine, `List.length`/`drop`/`take` for its end). Then every
+`::` in `core/`, `platforms/`, `tests/corpus/`, `bench/` and the skills migrated to the bracket
+spelling by a one-off formatter mode, and `::` made the parse error `cons_removed`, whose message
+is the bracket form of what was written.
+
+**What it leaves the flip.** The desugaring of spreads stays, so slice 2's `List.cons` and
+`List.append` are what `[ x, ...xs ]` and `[ ...xs, x ]` cost. The length split's emission (§7 of
+`backend.md`, *List patterns with elements after the spread*) moves from a walk to a length test and
+indexed reads, and the spread in the middle of a pattern needs a view with an end, or `slice`: slice
+2 decides which and adds it to `backend.md` §4's protocol if it is a view.
 
 ### Slice 1 — the API, on today's cons cells
 
