@@ -1321,6 +1321,19 @@ in the page, the render 1.80 → 0.94 ms. Nothing else moved, and the static-hea
 regress. Against Solid 1, still behind: remove (1.12×, `List`'s model half) and update every 10th
 (1.10×, ranges overlapping).
 
+*Measured, 2026-09-30, after create, replace and update were taken apart* (research 39 §13): in the
+page beni was already level or ahead of Solid 1 on all four trailing operations; the trace's gap was
+in three renderer differences and the model half. Built (`backend.md` §15.5): **a replacement
+empties the parent** with one `textContent` instead of a thousand `remove()`s; **a first mount goes
+straight into the page**, as Solid's `appendNodes` does, not through a fragment; and **a row mounts
+through its patch**, as a Solid effect's first run is its mount, so the code an edit runs is warm.
+One batch, script medians against Solid 1: create 1k **0.97×** and replace **0.90×** (ranges apart;
+they were 1.02× and 0.98× in the batch), update every 10th **0.97×** (overlapping; 1.12× in a second
+batch, also overlapping), select 0.88×, create 10k 0.93×, swap, append and clear level; **remove
+1.06–1.36× behind**, its render 0.15 ms against Solid 1's whole 0.57. Ahead of Solid 2 on all nine,
+ranges apart. Priced, not built: a cons-step `filter` and `indexedMap` in core — what the compiler
+already turns into loops — take remove to 0.95× and update to 0.91× Solid 1.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

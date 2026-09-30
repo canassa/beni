@@ -779,3 +779,202 @@ Solid 2 inline 9.22 / 37.0, P2 5.25 / 17.1. **No regression.**
 bench/ui/micro.mjs`. `beni-before` is not rebuilt by the scripts: it was the development build
 with `, g: 0, z: …` removed from `Main.mjs` and the previous `runtime.js` copied in, registered in
 `out/extra-subjects.json`.
+
+## 13. Addendum, 2026-09-30: create, replace and update taken apart, and the model half priced
+
+§12.3 left beni behind Solid 1 on *update every 10th* (1.10×, the ranges overlapping) and *remove*
+(1.12×, the ranges apart), and §11.5 had *create 1k* and *replace 1k* medians 1.07–1.14× behind.
+The owner's rule is to find what Solid does differently and adopt it. This section times the two
+halves of each (§11.2's `halves.mjs`), reads Solid 1's code for each, builds the three renderer
+changes that measured, and prices the model half on `List` without changing core.
+
+### 13.1 The halves, before
+
+`halves.mjs`, n = 20 fresh pages per cell, CPUs 8–15, medians [IQR], ms. Create and replace ran
+under load 3.0–17 from other sessions and update under 6.4, so compare within a table only
+(`results/2026-09-30-halves-before.json`, `…-halves-model.json`). `beni-before` is the session's
+starting build.
+
+| operation | subject | click (update) | microtask (render) | both |
+|---|---|--:|--:|--:|
+| create 1k, 1× | beni-before | 0.550 | 5.060 | 5.600 [5.344–5.729] |
+| | Solid 1 | 5.480 | 0.040 | 5.518 [5.226–5.758] |
+| replace 1k, 1× | beni-before | 0.548 | 11.055 | 11.567 [11.284–13.552] |
+| | Solid 1 | 11.397 | 0.045 | 11.438 [11.292–13.243] |
+| update every 10th, 4× | beni-before | 0.540 [0.135–0.760] | 1.063 | 1.480 [1.400–1.721] |
+| | Solid 1 | 1.493 | 0.035 | 1.657 [1.514–1.843] |
+| remove, 2× | beni-before | 0.373 [0.285–0.386] | 0.147 | 0.517 [0.505–0.536] |
+| | Solid 1 | 0.527 | 0.040 | 0.570 [0.550–0.716] |
+
+**In the page beni was already level or ahead on all four**; what the trace table adds is the
+dispatch around the click, the second task and the garbage collections an operation's allocation
+triggers, and those land differently per sample (a GC scavenge moves between the two halves, which
+is why the click column's ranges are bimodal). `probe.mjs` (updated here for the selector's
+`trimmed` signature) put create's render at 4.41 ms of mounting rows (the full pass) and 1.51 of
+moving them into the page; replace's at 4.0 ms of mounting and **8.8 ms of reconcile**, removing
+the thousand old rows one by one and inserting the new ones; update's at 0.75 ms of the start walk,
+100 row patches in it.
+
+### 13.2 What Solid 1 does, and where beni spent more
+
+Read in `solid-js` 1.9.15 (`web/dist/web.js`, `dist/solid.js`) and the row the benchmark's JSX
+compiles to (babel-preset-solid, the harness's own build):
+
+- **The row is one template clone and one render effect.** `_el$10.textContent = rowId` and the two
+  click handlers (closures over `rowId`, never rewritten) are set once; `createRenderEffect` then
+  writes the class (`className`) and the label (`.data`), comparing each with the last value it
+  kept, **and its first run is the mount**. So the function an edit runs has run once per row
+  before the first edit. beni's row had two functions, `m` and `p`, and a thousand mounts ran only
+  `m`: *update every 10th*, after a warm-up of three updates, met a `p` that had run 300 times.
+  Warm, the difference is the other way: `profile.mjs --op=update`, 200 updates in one page at 4×,
+  is **0.860 ms per update for beni and 0.965 for Solid 1**, with beni's `p` and Solid's effect
+  each about 40 % of the samples.
+- **Create**: `mapArray`'s path for a list that was empty maps every item with no `Map`
+  (`solid.js`, *len === 0*), and `insertExpression` hands the rows to `appendNodes`, one
+  `insertBefore` per row straight into the `tbody` (`web.js:591–597`, `:637`). beni built a
+  `DocumentFragment`, moved every row into it, then moved the fragment: every node was inserted
+  twice. beni also records each key in its key map, which Solid does not do here (it builds a
+  `createSelector` entry per row instead).
+- **Replace**: the same as beni. `mapArray` finds no common end, and `reconcileArrays` (`web.js:135`)
+  removes each of the thousand old rows with `remove()` and inserts each new one. Neither empties
+  the `tbody` at once, which a clear does in both.
+- **Update**: `batch` over a hundred `setLabel`s, then a hundred effects, each one `.data` write.
+  beni's render walks the thousand rows' start (§11.4) and patches the hundred whose item changed:
+  a class comparison, the label's `.data`, and two handler messages rebuilt and written, since
+  `Select row.id` is a new object whenever the item is.
+- **Remove**: `toSpliced` on an array and one row disposed; §11.3 has the rest.
+
+### 13.3 What was built
+
+Specified first in `backend.md` §15.5 (three *amended 2026-09-30* paragraphs).
+
+1. **A replacement empties the parent** (`runtime.js`, `trimmed`). When the ends match nothing, no
+   two rows changed places at them, no key is found in the key map, and the rows are all their
+   parent holds, the parent is emptied with one `textContent = ""` and the new rows appended. This
+   is not what Solid does; it is what Solid's clear does, and it is beni's own clear. Otherwise
+   the reconciler runs as before. `browser/dom/KeyedReplace` was recorded on the runtime before
+   the change and fails against three mutations: emptying the parent when a row is kept, when two
+   rows changed places at the ends (the row between them loses the focus), or when the parent
+   holds other children.
+2. **A list mounted where none was goes straight into the page**, row by row before the slot's
+   marker, as `appendNodes` does. The probe's insert step fell 1.51 → 1.05 ms.
+3. **A row mounts through its patch** (`dom.zig`, `mountsThroughPatch`; `runtime.js`, `mountRow`):
+   where `p`'s guarded writes are exactly what `m` writes — text placeholders, style entries,
+   events, attributes that are not constant, `raw`, class or style lists or `stateful` — and `p`
+   evaluates the values and writes them in the order `m` did (the item-only ones after the
+   others), `m` clones, walks and sets only an event's extractor, flags, listener and mount
+   context, returns the instance with every kept value `undefined`, and the row says `w: true`;
+   `mountRow` calls `p` on it. The benchmark's row qualifies. `emit/dom/DomRowMount` pins the shape
+   and two rows that keep their own `m` (an item-only value first; a class toggle);
+   `browser/dom/RowMountOrder`, recorded before, pins with `Debug.log` that values evaluate in
+   source order at mount and that an input-only patch still leaves item-only values alone, and
+   fails when the order checks are removed. Three `emit/dom` goldens changed shape
+   (`DomRowItemOnly`, `DomSelector`, `DomSelectorNearMiss`); no behaviour fixture moved.
+
+**Priced and not built** (`results/2026-09-30-renderer-experiments.json`, the table harness, n = 15,
+load 2.0–4.4, hand-edited copies of the development build):
+
+| subject | create 1k | replace 1k | update every 10th |
+|---|--:|--:|--:|
+| beni (session start) | 5.80 [5.11–5.88] | 11.8 [11.6–12.2] | 2.12 [1.89–2.41] |
+| the runtime's seven row fields in `m`'s object literal | 5.76 | 11.6 | 1.97 |
+| rows straight into the page (built, item 2) | **5.49** [5.14–5.70] | 11.6 | 2.24 |
+| replacement empties the parent (built, item 1) | 5.88 | **10.6** [10.5–10.8] | 2.31 |
+| handler messages compared by field, not identity | 5.84 | 11.7 | 2.20 |
+| Solid 1 | 5.75 [5.63–5.88] | 11.9 [11.8–13.1] | 2.01 [1.78–2.26] |
+
+Neither the literal (no hidden-class growth after `m`) nor skipping the two handler rewrites moved
+any operation beyond its range, so neither was built; update's spread in that batch was ±0.3 ms.
+Item 3 was priced the same way (`…-row-mount-priced.json`, n = 20, load 1.9–2.5): update 2.20 →
+**1.95**, select 1.74 → **1.52** (the selector's two rows run `p` too), create 5.25 → 5.24.
+
+### 13.4 The model half
+
+The click column is `update` plus the delegated dispatch. **Create** spends 0.54 ms there
+(`buildFrom` and three `pick`s per row, each a `List.drop`, a `Just` and a `withDefault`), against a
+4.1 ms render. **Update's** `List.indexedMap` is `length`, `range`, `map2Help` and `reverse`: four
+walks and about 3 000 cells for a thousand rows. **Remove's** `List.filter` is `foldl` and `reverse`.
+Two hand-edited copies of the build price core rewritten, core untouched (`experiments.mjs`):
+`beni-cons`, `filter` and `indexedMap` written in beni as cons steps and compiled to the loop
+`backend.md` §8's *tail calls modulo cons* emits (copied from a build of that source: one pass, n
+cells, no `reverse`); and `beni-list`, §11.6's tail-sharing `filter` and one-pass `indexedMap`.
+
+In the page (`results/2026-09-30-halves-final.json`, the final build, n = 20, load 1.2–2.0), the
+whole operation, since the collections move between the halves:
+
+| operation | beni | beni-cons | beni-list | Solid 1 | P2 |
+|---|--:|--:|--:|--:|--:|
+| create 1k, 1× | **4.640** [4.595–4.684] | 4.645 | 4.655 | 4.868 [4.821–4.926] | 3.998 |
+| update every 10th, 4× | 1.320 [1.140–1.454] | **1.155** [1.057–1.405] | 1.125 | 1.528 [1.304–1.807] | 0.985 |
+| remove, 2× | 0.517 [0.510–0.531] | **0.455** [0.450–0.460] | 0.448 | 0.570 [0.559–0.598] | 0.540 |
+
+In the table harness (`…-model-half.json`, n = 20, load 0.9–2.0), script medians [IQR]:
+
+| operation | beni | `--release` | beni-cons | beni-list | Solid 1 | Solid 2 | P2 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| update every 10th | 1.89 [1.61–2.01] | 1.57 | **1.52** [1.44–1.72] | 1.66 | 1.68 [1.49–1.95] | 2.63 | 1.05 |
+| swap | 1.50 [1.36–1.69] | 1.40 | 1.27 | 1.22 | 1.91 [1.49–1.99] | 1.87 | 0.91 |
+| remove | 0.61 [0.59–0.76] | 0.57 | **0.54** [0.52–0.66] | 0.54 | 0.57 [0.56–0.69] | 0.95 | 0.52 |
+
+- **Remove's gap is the model half, as §11.6 said**: the render is 0.15 ms against Solid 1's
+  whole 0.57, and a direct-building `filter` — the plain `x :: filter rest isGood` that the
+  compiler already turns into a loop — takes remove from 0.61 to **0.54, 0.95× Solid 1**, and in the
+  page 0.517 → 0.455. Sharing the tail after the last dropped element (`beni-list`) buys nothing
+  more measurable here (0.54, 0.448 in the page).
+- **Update's model half** is 0.17 ms in the page at 4×; with a one-pass `indexedMap` the table
+  median is 1.52, 0.91× Solid 1.
+- These are core's to change (`backend.md` §8 already measured core's accumulator-and-`reverse`
+  functions 2.4–7× slower than their cons-step versions), not built here; and the decision pending
+  on replacing `List` with an array-backed sequence (report 38 §17) would change them anyway —
+  Elm's own benchmark entry removes with `Array.filter` and swaps with two `Array.set`s.
+
+### 13.5 The table
+
+One batch, the final build, n = 15, CPUs 8–15, Chromium 153.0.8010.36, 1-minute load 1.1–2.7 at
+each benchmark's start except swap (8.5) and remove (8.9), when another session ran
+(`results/2026-09-30-table-row-mount.json`). `beni-before` is the session's starting build, re-run in
+the batch. Script medians [IQR], ms:
+
+| operation | **beni** | `--release` | beni-before | **Solid 2** | **Solid 1** | **P2** | ÷ S1 | ÷ S2 |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| create 1k | **4.81** [4.78–4.89] | 4.75 | 5.04 | 6.05 [6.04–6.13] | 4.94 [4.91–4.99] | 4.07 | **0.97** | 0.79 |
+| replace 1k | **10.5** [10.4–10.6] | 10.5 | 11.5 | 13.3 [13.1–13.5] | 11.7 [11.7–11.8] | 10.1 | **0.90** | 0.79 |
+| update every 10th | **1.71** [1.57–1.88] | 1.83 | 1.97 | 2.71 [2.55–2.79] | 1.76 [1.70–1.91] | 1.06 | **0.97** | 0.63 |
+| select | 1.51 [1.33–1.73] | 1.41 | 1.83 | 3.51 [3.03–4.10] | 1.72 [1.53–1.96] | 1.92 | 0.88 | 0.43 |
+| swap | 1.41 [1.25–1.63] | 1.23 | 1.29 | 1.96 [1.76–2.03] | 1.40 [1.28–1.75] | 0.97 | 1.01 | 0.72 |
+| remove | 0.77 [0.65–0.85] | 0.58 | 0.66 | 0.95 [0.94–0.97] | 0.57 [0.56–0.57] | 0.53 | 1.36 | 0.81 |
+| create 10k | 51.7 [51.3–51.9] | 51.5 | 54.1 | 68.5 [67.2–69.3] | 55.3 [54.9–56.1] | 43.3 | 0.93 | 0.75 |
+| append 1k | 5.32 [5.30–5.36] | 5.27 | 5.41 | 6.55 [6.52–6.62] | 5.20 [5.18–5.29] | 4.31 | 1.02 | 0.81 |
+| clear | 22.2 [19.7–22.3] | 22.1 | 22.4 | 24.2 [23.8–24.3] | 22.8 [22.7–23.2] | 21.7 | 0.97 | 0.92 |
+
+- **Against Solid 1**: create 1k is 0.97× with the ranges apart (5.04 before), replace **0.90×**
+  apart (11.5 before, 0.98×), create 10k 0.93× apart. Update every 10th is 0.97× with the ranges
+  overlapping (1.97 before); §13.4's separate batch had it at 1.12×, also overlapping — **level**,
+  and ahead once the model half is one pass. Select 0.88×, clear 0.97× and append 1.02× within
+  the ranges. Swap is level (1.01×) and 0.78× in the calmer §13.4 batch, where it was 1.50 against
+  1.91. **Remove is behind**: 1.36× here under load 8.9 and 1.06× in §13.4's batch (0.61 against
+  0.57, the ranges overlapping); `--release` is 1.01–1.03×. What remains of it is §13.4's model half.
+- **Against Solid 2: beni is ahead on all nine**, from 0.43× (select) to 0.92× (clear), the ranges
+  apart on every one.
+- **Against P2**: within 5 % on replace and clear; ahead on select.
+- Between the two slices (`…-table-replace.json`, load 0.7–1.6, after items 1–2 only): create 4.79
+  against Solid 1's 4.95, replace 10.6 against 11.9, the other seven within their ranges of this
+  table's.
+
+**Size.** The benchmark app's `--release` build is 5 345 bytes brotli as served (Solid 1: 4 356);
+a row that mounts through its patch writes its values once, in `p`, instead of in both functions.
+
+**Could not determine.** Why the trace puts update behind Solid 1 in some batches when the page
+never does (§13.1): the dispatch, the second task and where a scavenge lands were not separated.
+
+### 13.6 Re-run
+
+`node bench/ui/build.mjs` and `node bench/ui/experiments.mjs` (`beni-cons`, `beni-list`); then,
+under `nix develop .#browser`, `node bench/ui/halves.mjs --taskset=8-15
+--benchmarks=01_run1k,02_replace1k,03_update10th1k_x16,06_remove-one-1k
+--subjects=beni,beni-cons,beni-list,solid1,solid2,p2`, `node bench/ui/probe.mjs` and the same with
+`--subjects=beni-probe`, `node bench/ui/bench.mjs --n=15 --taskset=8-15
+--subjects=beni,beni-release,solid2,solid1,p2`, and `node bench/ui/profile.mjs --subject=beni
+--op=update` for the warm figure. `beni-before` was the build of `95312a62` kept in
+`out/beni-before/` and registered in `out/extra-subjects.json`; the renderer experiments of §13.3
+were hand edits of `out/beni-dev/` and are not scripted.

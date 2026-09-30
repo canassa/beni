@@ -7,6 +7,9 @@
 //               type: `filter` asks `isGood` once per element, in order,
 //               and shares the tail after the last element it drops;
 //               `indexedMap` is one pass and one reverse-free build
+//   beni-cons   the same two written in beni as cons steps, in the loop
+//               the compiler emits for them (backend.md §8, tail calls
+//               modulo cons): one pass each, no tail shared
 //
 // (Research 39's `beni-eqmsg` and `beni-reuse` were built into the compiler
 // and the runtime on 2026-09-29; their edits no longer apply.)
@@ -73,7 +76,65 @@ const listEdits = [
   ],
 ];
 
-const subjects = [mk("beni-list", "beni-dev", "_core/List.mjs", listEdits)];
+// `beni-cons`: the two as beni source writes them as cons steps —
+// `x :: filter rest isGood`, `func i x :: indexedMapFrom rest (i + 1) func`
+// — in exactly the loop the compiler emits for that source since tail
+// calls modulo cons (backend.md §8), copied from a build of it. No tail is
+// shared: one pass, n cells, no `reverse`.
+const consEdits = [
+  [
+    "const List$indexedMap = (xs$1, func$2) => List$map2(List$range(0, Basics$sub(List$length(xs$1), 1)), xs$1, func$2);",
+    `const List$indexedMapFrom = ($in$0, $in$1, func$3) => {
+  const $root = { $: 1, a: null, b: null };
+  let $last = $root;
+  List$indexedMapFrom: while (true) {
+    const xs$1 = $in$0;
+    const i$2 = $in$1;
+    if (xs$1.$ === 0) {
+      $last.b = { $: 0, a: null, b: null };
+      return $root.b;
+    } else {
+      const x$4 = xs$1.a;
+      const rest$5 = xs$1.b;
+      $last.b = { $: 1, a: func$3(i$2, x$4), b: null };
+      $last = $last.b;
+      $in$0 = rest$5;
+      $in$1 = Basics$add(i$2, 1);
+      continue List$indexedMapFrom;
+    }
+  }
+};
+const List$indexedMap = (xs$1, func$2) => List$indexedMapFrom(xs$1, 0, func$2);`,
+  ],
+  [
+    "const List$filter = (list$1, isGood$2) => List$reverse(List$foldl(list$1, { $: 0, a: null, b: null }, (x$3, xs$4) => isGood$2(x$3) ? List$cons(x$3, xs$4) : xs$4));",
+    `const List$filter = ($in$0, isGood$2) => {
+  const $root = { $: 1, a: null, b: null };
+  let $last = $root;
+  List$filter: while (true) {
+    const list$1 = $in$0;
+    if (list$1.$ === 0) {
+      $last.b = { $: 0, a: null, b: null };
+      return $root.b;
+    } else {
+      const x$3 = list$1.a;
+      const rest$4 = list$1.b;
+      if (isGood$2(x$3)) {
+        $last.b = { $: 1, a: x$3, b: null };
+        $last = $last.b;
+        $in$0 = rest$4;
+        continue List$filter;
+      } else {
+        $in$0 = rest$4;
+        continue List$filter;
+      }
+    }
+  }
+};`,
+  ],
+];
+
+const subjects = [mk("beni-list", "beni-dev", "_core/List.mjs", listEdits), mk("beni-cons", "beni-dev", "_core/List.mjs", consEdits)];
 const extra = new URL("./out/extra-subjects.json", import.meta.url);
 const kept = existsSync(extra) ? JSON.parse(readFileSync(extra, "utf8")).filter((x) => !subjects.some((s) => s.name === x.name)) : [];
 writeFileSync(extra, JSON.stringify([...kept, ...subjects]));
