@@ -431,6 +431,7 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             const outer_site = g.ambient_site;
             g.ambient = arrow;
             g.ambient_site = @intFromEnum(m);
+            if (g.cx.effects) |e| try e.function(@intFromEnum(m), arrow);
             defer {
                 g.ambient = outer;
                 g.ambient_site = outer_site;

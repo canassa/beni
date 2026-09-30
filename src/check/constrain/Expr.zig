@@ -436,6 +436,7 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     const outer_site = g.ambient_site;
     g.ambient = arrow;
     g.ambient_site = @intFromEnum(inst);
+    if (g.cx.effects) |e| try e.function(@intFromEnum(inst), arrow);
     defer {
         g.ambient = outer;
         g.ambient_site = outer_site;

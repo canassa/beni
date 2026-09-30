@@ -203,14 +203,28 @@ pub const Scheme = struct {
 pub const EffectBlock = struct {
     words: []const u32,
 
-    /// A class word is `rung | sync << 8` (transparent-effects-proposal.md
-    /// §15.5): the rung, and whether a use must not let the class suspend.
-    pub const Class = struct { rung: u32, sync: bool, deps: []const u32 };
+    /// A class word is `rung | sync << 8 | sensitive << 9`
+    /// (transparent-effects-proposal.md §15.5, §16.2): the rung, whether a
+    /// use must not let the class suspend, and whether the declaration's body
+    /// reads it — so that the declaration has a second, suspendable body.
+    pub const Class = struct { rung: u32, sync: bool, sensitive: bool = false, deps: []const u32 };
 
     pub const sync_bit: u32 = 1 << 8;
+    pub const sensitive_bit: u32 = 1 << 9;
 
     fn validWord(word: u32) bool {
-        return word & ~(sync_bit | 0xff) == 0 and word & 0xff <= 2;
+        return word & ~(sync_bit | sensitive_bit | 0xff) == 0 and word & 0xff <= 2;
+    }
+
+    /// Whether the declaration has a second, suspendable body (§16.2): some
+    /// class of its block is sensitive.
+    pub fn twin(b: EffectBlock) bool {
+        var at: u32 = 1;
+        for (0..b.classCount()) |_| {
+            if (b.words[at] & sensitive_bit != 0) return true;
+            at += 2 + b.words[at + 1];
+        }
+        return false;
     }
     pub const Site = struct { class: u32, root: u32, steps: []const u32 };
 
@@ -225,7 +239,7 @@ pub const EffectBlock = struct {
         var k: u32 = 0;
         while (true) : (k += 1) {
             const deps = b.words[at + 1];
-            if (k == i) return .{ .rung = b.words[at] & 0xff, .sync = b.words[at] & sync_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
+            if (k == i) return .{ .rung = b.words[at] & 0xff, .sync = b.words[at] & sync_bit != 0, .sensitive = b.words[at] & sensitive_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
             at += 2 + deps;
         }
     }

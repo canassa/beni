@@ -48,6 +48,8 @@ const files = [_]File{
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
     .{ .path = "Eager.zig", .text = @embedFile("Eager.zig") },
     .{ .path = "Edges.zig", .text = @embedFile("Edges.zig") },
+    .{ .path = "EffectPlan.zig", .text = @embedFile("EffectPlan.zig") },
+    .{ .path = "EffectsBlock.zig", .text = @embedFile("EffectsBlock.zig") },
     .{ .path = "Effects.zig", .text = @embedFile("Effects.zig") },
     .{ .path = "EffectsView.zig", .text = @embedFile("EffectsView.zig") },
     .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },

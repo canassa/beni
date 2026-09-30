@@ -59,7 +59,7 @@ pub fn write(
     // A module with no dispatch at all prints its `module` line and nothing
     // else; one with any prints every value declaration in SOURCE order, so
     // the requirement lists read as the parameter lists they are.
-    if (dispatch.isEmpty()) return;
+    if (dispatch.isEmpty()) return writeEffects(w, bir, dispatch, interner);
     // Which terms more than one owner names: the table shares
     // terms, and a tree printed as a tree is exponential in a doubling DAG.
     // The same count `js/Lower.zig`'s `readTable` takes.
@@ -139,6 +139,32 @@ pub fn write(
     // The markup section (checker-v2.md §25.7): one line per node, roots in
     // instruction order, each tree depth first.
     for (dispatch.markup) |n| try cx.writeMarkup(w, n);
+    try writeEffects(w, bir, dispatch, interner);
+}
+
+/// What the lowering reads of the effect bits
+/// (transparent-effects-proposal.md §16.2), only for a module in which
+/// something does suspend — a higher-order function alone has `poly`
+/// answers in a module that never suspends, and its dump is unchanged:
+/// `effect decl` for a declaration with an answer, `effect <inst> <tag>` for
+/// an instruction.
+fn writeEffects(w: *std.Io.Writer, bir: *const Bir, dispatch: *const Dispatch, interner: *const InternPool.Global) Error!void {
+    const suspends = for (dispatch.effect_sites) |s| {
+        if (s.own == .yes or s.body == .yes) break true;
+    } else for (dispatch.effect_decls) |e| {
+        if (e.own == .yes) break true;
+    } else false;
+    if (!suspends) return;
+    for (dispatch.effect_decls, 0..) |e, i| {
+        if (e.own == .no and !e.twin) continue;
+        try w.print("  effect decl {s} own={s}{s}\n", .{ interner.slice(bir.symbol(bir.decls[i].name)), @tagName(e.own), if (e.twin) " twin" else "" });
+    }
+    for (dispatch.effect_sites) |s| {
+        try w.print("  effect {d} {s}", .{ s.inst.int(), @tagName(bir.instTag(s.inst)) });
+        if (s.own != .no) try w.print(" own={s}", .{@tagName(s.own)});
+        if (s.body != .no) try w.print(" body={s}", .{@tagName(s.body)});
+        try w.writeByte('\n');
+    }
 }
 
 const Context = struct {

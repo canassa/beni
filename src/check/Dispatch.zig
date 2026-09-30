@@ -273,6 +273,32 @@ pub const Markup = struct {
     pub const ShowMode = enum(u8) { key, identity };
 };
 
+/// What the lowering needs of the effect bits (transparent-effects-proposal.md
+/// §16.2): `no`, `yes`, or `poly` — yes in a declaration's suspendable body
+/// and no in its direct one.
+pub const Suspend = enum(u8) { no, yes, poly };
+
+/// One instruction with an answer that is not `no`. `own`: a call's
+/// callee may suspend, or a function (a lambda, a `let` definition) is
+/// suspendable. `body`: a reference or a method call takes the target's
+/// suspendable body.
+pub const EffectSite = struct {
+    inst: Bir.Inst.Index,
+    own: Suspend = .no,
+    body: Suspend = .no,
+    /// A call whose callee is `impure` or worse whatever it is called with:
+    /// `let _ = <it>` is kept by the release optimiser (§16.3).
+    impure: bool = false,
+};
+
+/// One per `Bir.Decl` (or none at all, for a module whose table carries
+/// no answer): its own arrow's answer, and whether it has a second,
+/// suspendable body.
+pub const EffectDecl = struct {
+    own: Suspend = .no,
+    twin: bool = false,
+};
+
 terms: []const Term = &.{},
 /// Term indices: every `args`, `Site.evidence` and `Derived.body` range
 /// points in here.
@@ -296,6 +322,10 @@ symbols: []const Symbol = &.{},
 /// One row per markup node the checker decided something about, markup
 /// roots in instruction order and each tree depth first (§25.7).
 markup: []const Markup = &.{},
+/// Ascending by instruction (§16.2).
+effect_sites: []const EffectSite = &.{},
+/// One per `Bir.Decl`, or empty when no declaration has an answer.
+effect_decls: []const EffectDecl = &.{},
 
 pub const empty: Dispatch = .{};
 
@@ -311,7 +341,51 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.tries);
     gpa.free(d.symbols);
     gpa.free(d.markup);
+    gpa.free(d.effect_sites);
+    gpa.free(d.effect_decls);
     d.* = .empty;
+}
+
+/// The effect answers of one instruction (§16.2): `no` twice when it has
+/// none. One binary search.
+pub fn effectAt(d: *const Dispatch, inst: Bir.Inst.Index) EffectSite {
+    var lo: usize = 0;
+    var hi: usize = d.effect_sites.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = d.effect_sites[mid].inst;
+        if (at == inst) return d.effect_sites[mid];
+        if (at.int() < inst.int()) lo = mid + 1 else hi = mid;
+    }
+    return .{ .inst = inst };
+}
+
+/// Which body the evidence the dispatch site at `inst` passes takes: its
+/// callee's (§16.2) — the callee reference of a `call`, the instruction
+/// itself for anything else.
+pub fn evidenceChoice(d: *const Dispatch, bir: *const Bir, inst: Bir.Inst.Index) Suspend {
+    const at: Bir.Inst.Index = if (bir.instTag(inst) == .call) @enumFromInt(bir.instData(inst).lhs) else inst;
+    return d.effectAt(at).body;
+}
+
+/// A declaration's effect answers (§16.2).
+pub fn effectDecl(d: *const Dispatch, decl: u32) EffectDecl {
+    if (decl >= d.effect_decls.len) return .{};
+    return d.effect_decls[decl];
+}
+
+/// Whether any instruction of `[start, end)` has an answer: a declaration
+/// whose range has none is lowered exactly as it always was.
+pub fn effectsIn(d: *const Dispatch, start: u32, end: u32) []const EffectSite {
+    var lo: usize = 0;
+    var hi: usize = d.effect_sites.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (d.effect_sites[mid].inst.int() < start) lo = mid + 1 else hi = mid;
+    }
+    var end_at = lo;
+    while (end_at < d.effect_sites.len and d.effect_sites[end_at].inst.int() < end) end_at += 1;
+    return d.effect_sites[lo..end_at];
 }
 
 /// Whether the table holds anything at all. A module with no dispatch prints

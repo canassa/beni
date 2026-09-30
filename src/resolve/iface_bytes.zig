@@ -84,7 +84,9 @@ pub const magic = "BENIIFC\x00";
 /// block, or `no_terms` (transparent-effects-proposal.md §14.6).
 /// 10: a class word of an effect block carries a demand in bit 8, `rung |
 /// sync << 8` (§15.5).
-pub const format_version: u32 = 10;
+/// 11: and whether the declaration's body reads the class, in bit 9: a
+/// declaration with such a class has a second, suspendable body (§16.2).
+pub const format_version: u32 = 11;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

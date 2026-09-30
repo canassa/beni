@@ -65,6 +65,7 @@ const Markup = @import("Markup.zig");
 const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
 const Sync = @import("Sync.zig");
+const EffectPlan = @import("EffectPlan.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -271,7 +272,21 @@ pub fn check(in: Input) Error!Check.Counters {
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.
     const effects_token = if (in.profile) |p| p.begin() else null;
-    try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
+    const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
+    // What the lowering reads of the bits (transparent-effects-proposal.md
+    // §16.2), before P8 publishes the sensitive classes it finds.
+    const effect_plan = try EffectPlan.build(&effects, .{
+        .gpa = gpa,
+        .scratch = scratch,
+        .bir = bir,
+        .decl_scheme = decl_scheme,
+        .unit = effect_units,
+    });
+    var effect_plan_kept = false;
+    defer if (!effect_plan_kept) {
+        gpa.free(effect_plan.sites);
+        gpa.free(effect_plan.decls);
+    };
     // The `sync` check (transparent-effects-proposal.md §15.4), in a module
     // with no error so far: a poisoned type says nothing about a bit.
     if (!quiet and report.errors == 0) try Sync.check(&effects, .{ .cx = &cx, .report = &report, .decl_scheme = decl_scheme });
@@ -283,6 +298,14 @@ pub fn check(in: Input) Error!Check.Counters {
     if (cx.markup) |view| if (!quiet and report.errors == 0) {
         in.dispatch.markup = try view.section(gpa, solver.markup_decisions.items);
     };
+    // The effect answers (§16.2), for a module that checked clean.
+    if (!quiet and report.errors == 0) {
+        gpa.free(in.dispatch.effect_sites);
+        gpa.free(in.dispatch.effect_decls);
+        in.dispatch.effect_sites = effect_plan.sites;
+        in.dispatch.effect_decls = effect_plan.decls;
+        effect_plan_kept = true;
+    }
     if (in.profile) |p| p.end(in.tid, p6_token.?, .elaborate, file.int(), 0);
 
     // P7.
@@ -380,9 +403,9 @@ pub fn check(in: Input) Error!Check.Counters {
 /// and what every answered wanted means for the bits — a derived answer's
 /// arguments flow into it (§14.3 rule 7), a joined one is the wanted it
 /// names.
-fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence) Error!void {
+fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence) Error![]const u32 {
+    // Each declaration's binding group, kept in `scratch` for `EffectPlan`.
     const unit = try scratch.alloc(u32, bir.decls.len);
-    defer scratch.free(unit);
     for (unit, 0..) |*u, d| {
         const g = groups.group_of[d];
         u.* = if (g == Groups.none) Groups.none else groups.root(g);
@@ -409,6 +432,7 @@ fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_sch
         .wanted_edges = edges.items,
         .wanted_joins = joins.items,
     });
+    return unit;
 }
 
 /// The build's markup type (`boundary.md` §9.2), when the chain names one.

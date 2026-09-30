@@ -27,6 +27,8 @@
 //! many positions. Version 5 adds the `markup` column, one 20-byte row per
 //! markup node (checker-v2.md §25.7). Version 6 gives an escape row's byte 11
 //! a second bit, `url` (language.md §11.5).
+//! Version 7 adds the effect lowering columns, `effect_sites` and
+//! `effect_decls` (transparent-effects-proposal.md §16.2).
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -74,7 +76,7 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 6;
+pub const format_version: u32 = 7;
 
 pub const Column = enum(u32) {
     terms,
@@ -87,6 +89,8 @@ pub const Column = enum(u32) {
     derived,
     tries,
     markup,
+    effect_sites,
+    effect_decls,
     symbols,
     module_refs,
     type_refs,
@@ -108,6 +112,8 @@ pub const Column = enum(u32) {
             .derived => 32,
             .tries => 8,
             .markup => 20,
+            .effect_sites => 8,
+            .effect_decls => 4,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -272,6 +278,25 @@ pub fn write(
         std.mem.writeInt(u32, row[16..20], n.extractor, .little);
     }
 
+    const effect_sites = try gpa.alloc(u8, d.effect_sites.len * Column.effect_sites.width());
+    defer gpa.free(effect_sites);
+    @memset(effect_sites, 0);
+    for (d.effect_sites, 0..) |s, i| {
+        const row = effect_sites[i * 8 ..][0..8];
+        std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
+        row[4] = @intFromEnum(s.own);
+        row[5] = @intFromEnum(s.body);
+        row[6] = @intFromBool(s.impure);
+    }
+    const effect_decls = try gpa.alloc(u8, d.effect_decls.len * Column.effect_decls.width());
+    defer gpa.free(effect_decls);
+    @memset(effect_decls, 0);
+    for (d.effect_decls, 0..) |e, i| {
+        const row = effect_decls[i * 4 ..][0..4];
+        row[0] = @intFromEnum(e.own);
+        row[1] = @intFromBool(e.twin);
+    }
+
     // The two reference tables are complete only now, because writing a
     // term or a shape is what appends to them.
     const module_refs = try gpa.alloc(u8, w.module_refs.items.len * Column.module_refs.width());
@@ -303,6 +328,8 @@ pub fn write(
         derived,
         tries,
         markup,
+        effect_sites,
+        effect_decls,
         symbols,
         module_refs,
         type_refs,
@@ -319,6 +346,8 @@ pub fn write(
         @intCast(d.derived.len),
         @intCast(d.tries.len),
         @intCast(d.markup.len),
+        @intCast(d.effect_sites.len),
+        @intCast(d.effect_decls.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -712,6 +741,37 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             };
         }
     }
+    {
+        const in_bytes = col(bytes, offsets, .effect_sites);
+        const sites = try gpa.alloc(Dispatch.EffectSite, lengths[@intFromEnum(Column.effect_sites)]);
+        out.table.effect_sites = sites;
+        for (sites, 0..) |*s, i| {
+            const row = in_bytes[i * 8 ..][0..8];
+            s.* = .{
+                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .own = std.enums.fromInt(Dispatch.Suspend, row[4]) orelse return error.BadSidecar,
+                .body = std.enums.fromInt(Dispatch.Suspend, row[5]) orelse return error.BadSidecar,
+                .impure = switch (row[6]) {
+                    0 => false,
+                    1 => true,
+                    else => return error.BadSidecar,
+                },
+            };
+        }
+    }
+    {
+        const in_bytes = col(bytes, offsets, .effect_decls);
+        const decls = try gpa.alloc(Dispatch.EffectDecl, lengths[@intFromEnum(Column.effect_decls)]);
+        out.table.effect_decls = decls;
+        for (decls, 0..) |*e, i| {
+            const row = in_bytes[i * 4 ..][0..4];
+            if (row[1] > 1) return error.BadSidecar;
+            e.* = .{
+                .own = std.enums.fromInt(Dispatch.Suspend, row[0]) orelse return error.BadSidecar,
+                .twin = row[1] == 1,
+            };
+        }
+    }
 
     if (!verify(&out)) return error.BadSidecar;
     return out;
@@ -840,6 +900,12 @@ pub fn verify(l: *const Loaded) bool {
         if (s.callee.unwrap()) |c| if (c.int() >= terms) return false;
         if (!rootsOk(d, s.evidence)) return false;
     }
+    // The effect answers are looked up by binary search, so they ascend; and
+    // there is one per declaration or none.
+    for (d.effect_sites, 0..) |s, i| {
+        if (i != 0 and d.effect_sites[i - 1].inst.int() >= s.inst.int()) return false;
+    }
+    if (d.effect_decls.len != 0 and d.effect_decls.len != d.decls.len) return false;
     for (d.derived) |row| {
         if (!rangeOk(row.context, d.contexts.len)) return false;
         if (!rootsOk(d, row.body)) return false;
@@ -955,6 +1021,8 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqualSlices(Dispatch.Site, a.sites, b.sites);
     try testing.expectEqualSlices(Dispatch.Try, a.tries, b.tries);
     try testing.expectEqualSlices(Dispatch.Markup, a.markup, b.markup);
+    try testing.expectEqualSlices(Dispatch.EffectSite, a.effect_sites, b.effect_sites);
+    try testing.expectEqualSlices(Dispatch.EffectDecl, a.effect_decls, b.effect_decls);
     try testing.expectEqualSlices(Dispatch.DeclInfo, a.decls, b.decls);
     try testing.expectEqualSlices(Dispatch.LetInfo, a.lets, b.lets);
     try testing.expectEqualSlices(Dispatch.Derived, a.derived, b.derived);
