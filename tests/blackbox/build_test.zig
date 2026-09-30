@@ -3326,6 +3326,55 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     try testing.expect(std.mem.indexOf(u8, hosted_js, "finally") != null);
 }
 
+test "a page with no delegated event calls no start and ships no listener" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Start data with no pair is no call (`boundary.md` §9.4.5, amended
+    // 2026-10-02): `start({})` did nothing, and kept the delegated
+    // listener that `start` names, the one `addEventListener` of an
+    // empty page.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const head =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\type Msg
+        \\    = Clicked
+        \\
+        \\
+        \\view : Int -> Html Msg
+        \\view _ =
+        \\
+    ;
+    const tail =
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = 0, update = \msg model -> model + 1, view = view }
+        \\
+    ;
+    try w.write("quiet/Main.beni", head ++ "    <p>still</p>" ++ tail);
+    try w.write("clicks/Main.beni", head ++ "    <button onClick={Clicked}>go</button>" ++ tail);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const quiet = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=quiet-out", "quiet/Main.beni" }, .{ .raw_diagnostics = true });
+    const clicks = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=clicks-out", "clicks/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(quiet);
+    try expectBuilt(clicks);
+    try testing.expect(std.mem.indexOf(u8, try w.read("quiet-out/_main.mjs"), "addEventListener") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("clicks-out/_main.mjs"), "addEventListener") != null);
+}
+
 test "an element whose commands are all Cmd.none ships no fiber runtime" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

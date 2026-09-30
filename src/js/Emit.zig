@@ -2998,6 +2998,11 @@ const Emitter = struct {
         for (lowering.runtime) |r| declares = declares or std.mem.eql(u8, r.name, "start");
         if (!declares) return null;
         const pairs = e.start.items;
+        // No pair, no call (`boundary.md` §9.4.5, amended 2026-10-02): a
+        // lowering is already correct without `start`, since a `--library`
+        // build never calls it, so `start({})` does nothing a lowering may
+        // rely on — and it keeps whatever the runtime's `start` names.
+        if (pairs.len == 0) return null;
         std.mem.sort(Lower.StartPair, pairs, {}, struct {
             fn lessThan(_: void, x: Lower.StartPair, y: Lower.StartPair) bool {
                 return switch (std.mem.order(u8, x.key, y.key)) {

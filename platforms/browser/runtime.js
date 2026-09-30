@@ -243,7 +243,8 @@ const none = {};
 // The rows whose key is `key` — its first row and the chain of rows that
 // share it — patched with the item and position they show.
 const reselect = (s, row, key) => {
-  for (let i = s.x.get(key); i !== undefined && i !== null; i = i.n) row.p(i, i.x, i.y);
+  // `!= null`: the map answers undefined for no row, and a chain ends in null.
+  for (let i = s.x.get(key); i != null; i = i.n) row.p(i, i.x, i.y);
 };
 
 // A `For`'s fallback: shown while the list is empty.

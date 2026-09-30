@@ -1231,7 +1231,11 @@ of strings**: `start({ delegate: ["click", "input"] })`. The shape is fixed here
 with a module-level `delegateEvents` call — which beni cannot do, because loading a module must do
 nothing (research 36 §0 item 9c; `backend.md` §9). A `--library` build writes no entry file and calls
 no `start`, so a lowering must stay correct without it; `cx.build.library` tells it which build it is
-(`backend.md` §15.3 says how `dom` does).
+(`backend.md` §15.3 says how `dom` does). *(Amended 2026-10-02: nor does a build whose modules
+contribute no pair. `start({})` did nothing a lowering could rely on — it must already be correct
+without the call — and calling it kept everything the runtime's `start` names: for `dom`, the
+delegated listener and the message dispatch from a node to its program, 250 bytes of brotli of the
+empty page's 1 234.)*
 
 #### 9.4.6 Versioning
 
@@ -1761,12 +1765,14 @@ dispatched to a counter costs about 30 ns under `Tea.element` against 13 ns unde
 Measured (`bench/size.mjs`, `--release`, brotli): the empty `browser` page **1 234**, the empty
 `Tea.sandbox` **1 239**, the empty `Tea.element` **1 945** with no fiber runtime
 (`reaches_task` false; `build_test`'s *an element whose commands are all `Cmd.none` ships no fiber
-runtime*), and the `Http` + `Time` page **5 427**. What the last still ships, each group priced by
+runtime*), and the `Http` + `Time` page **5 427** — and, once a build with no start data calls no
+`start` (§9.4.5's amendment), **980**, **993**, **1 697** and **5 190**, none of these pages
+having a delegated event. What the `Http` + `Time` page still ships, each group priced by
 leaving it out of the file: the fiber runtime (about 1 150: the scheduler, suspension, spawn into
 a scope, cancellation and its wait), the keyed-`Restart` table and the subscription diff (about
 520), `Dict` (about 370: `get`, `insert` and `foldl`, for the table and the diff), `Http`'s
 request (about 280) and `Hosted.compare` (about 190, the order keys are matched by). Each is used
-by what the page does; the rest is the 1 234 of any page.
+by what the page does; the rest is the 980 of any page, and `Time`'s.
 
 ## Appendix — what is deliberately not done
 
