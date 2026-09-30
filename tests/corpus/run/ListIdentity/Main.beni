@@ -12,8 +12,9 @@
 --     its callback answered — the list `concat (map …)` answered before.
 --   * `sort` of one element is the list itself.
 --
--- `filter` keeping everything is NOT pinned either way: the old
--- `foldl`-and-`reverse` built a new list, and so does the loop.
+-- `filter` keeping everything returns the list itself (`backend.md` §4,
+-- *Identity*); `run/ListIndexedIdentity` pins it with the other identities
+-- of `core/List`.
 import Identity
 import List
 import Node

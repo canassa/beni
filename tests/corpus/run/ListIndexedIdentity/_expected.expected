@@ -1,0 +1,27 @@
+set -1 same
+set length same
+update -1 same
+update length same
+swap -1 same
+swap length same
+swap i i same
+insertAt -1 same
+insertAt past length same
+removeAt -1 same
+removeAt length same
+slice all same
+slice clamped same
+take all same
+take more same
+drop 0 same
+pop [] same
+filter all same
+reverse one same
+reverse [] same
+sort [] same
+sortWith one same
+sortBy one same
+set in range copied
+insertAt length copied
+slice part copied
+filter one out copied

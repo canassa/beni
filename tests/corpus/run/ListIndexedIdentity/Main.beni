@@ -1,0 +1,78 @@
+-- The operations of `core/List` that return their input ITSELF when the
+-- result would equal it (`backend.md` §4, *Identity*; `language.md` §6.8),
+-- observed through a test platform's `refEq`: a markup lowering skips a
+-- hole or a row only for the very same value, so a list a program did not
+-- change must not come back as an equal copy.
+--
+--   * every write out of range: `set`, `update`, `swap`, `insertAt`,
+--     `removeAt`, with a negative index and one at or past the end
+--     (`insertAt` at `length` is in range: it appends);
+--   * `swap xs i i`;
+--   * `slice` and `take` covering the whole list, `drop xs 0`;
+--   * `pop []`;
+--   * `filter` keeping every element;
+--   * `reverse`, `sort` and `sortWith` of fewer than two elements.
+--
+-- The trailing `copied` lines are the other side of each rule: a write in
+-- range, a partial `slice` and a `filter` that drops one are new lists.
+--
+-- `set` of the value already there (by `===`) is also an identity of
+-- `backend.md` §4, but beni code cannot ask `===`, so the cons-cell core
+-- this was written against cannot keep it; it arrives with the `foreign`
+-- `set` of the array representation (`plans/list-arrays.md`, slice 2).
+-- `map` returning its input is the owner's open question O4 and is not
+-- pinned either way.
+import Identity
+import List
+import Node
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ " same"
+    else
+        label ++ " copied"
+
+
+main : Node.Program
+main =
+    let
+        xs =
+            [ 1, 2, 3 ]
+
+        empty =
+            List.drop xs 3
+
+        one =
+            [ 7 ]
+    in
+    Node.printLines
+        [ show "set -1" (Identity.refEq (List.set xs (-1) 9) xs)
+        , show "set length" (Identity.refEq (List.set xs 3 9) xs)
+        , show "update -1" (Identity.refEq (List.update xs (-1) (\x -> x + 1)) xs)
+        , show "update length" (Identity.refEq (List.update xs 3 (\x -> x + 1)) xs)
+        , show "swap -1" (Identity.refEq (List.swap xs (-1) 0) xs)
+        , show "swap length" (Identity.refEq (List.swap xs 0 3) xs)
+        , show "swap i i" (Identity.refEq (List.swap xs 1 1) xs)
+        , show "insertAt -1" (Identity.refEq (List.insertAt xs (-1) 0) xs)
+        , show "insertAt past length" (Identity.refEq (List.insertAt xs 4 0) xs)
+        , show "removeAt -1" (Identity.refEq (List.removeAt xs (-1)) xs)
+        , show "removeAt length" (Identity.refEq (List.removeAt xs 3) xs)
+        , show "slice all" (Identity.refEq (List.slice xs 0 3) xs)
+        , show "slice clamped" (Identity.refEq (List.slice xs (-9) 9) xs)
+        , show "take all" (Identity.refEq (List.take xs 3) xs)
+        , show "take more" (Identity.refEq (List.take xs 9) xs)
+        , show "drop 0" (Identity.refEq (List.drop xs 0) xs)
+        , show "pop []" (Identity.refEq (List.pop empty) empty)
+        , show "filter all" (Identity.refEq (List.filter xs (\x -> x > 0)) xs)
+        , show "reverse one" (Identity.refEq (List.reverse one) one)
+        , show "reverse []" (Identity.refEq (List.reverse empty) empty)
+        , show "sort []" (Identity.refEq (List.sort empty) empty)
+        , show "sortWith one" (Identity.refEq (List.sortWith one (\a b -> Basics.compare a b)) one)
+        , show "sortBy one" (Identity.refEq (List.sortBy one (\a -> a)) one)
+        , show "set in range" (Identity.refEq (List.set xs 1 9) xs)
+        , show "insertAt length" (Identity.refEq (List.insertAt xs 3 0) xs)
+        , show "slice part" (Identity.refEq (List.slice xs 0 2) xs)
+        , show "filter one out" (Identity.refEq (List.filter xs (\x -> x > 1)) xs)
+        ]

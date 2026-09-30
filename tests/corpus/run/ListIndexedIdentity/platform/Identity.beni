@@ -1,0 +1,7 @@
+--! A test platform's one capability: whether two values are the very same
+--! JavaScript value (`backend.md` §15.8). No program may ask that — beni has
+--! no reference equality — and only a platform may write `foreign`.
+
+
+--| Whether the two are one value, not two equal ones.
+pub foreign pure refEq : a, a -> Bool

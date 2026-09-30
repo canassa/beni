@@ -209,20 +209,61 @@ indexedMapHelp xs index func =
 --|
 --|     filter [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == [ 2, 4 ]
 --|
---| `isGood` is asked about the first element first. A dropped element is an
---| ordinary tail call, so it costs no cell; the result is a new list even
---| when nothing was dropped.
+--| `isGood` is asked about the first element first. When it keeps every
+--| element the result is `list` itself, not an equal copy (`backend.md` §4,
+--| *Identity*): until the first element it drops, the walk only remembers
+--| the kept ones, backwards, and puts them back in front of the rest once
+--| something is dropped. That is written without arithmetic on purpose, so
+--| that a program calling `filter` does not ship `Basics`' for it.
 pub filter : List a, (a -> Bool) -> List a
 filter list isGood =
+    filterKept list list [] isGood
+
+
+--| `rest` is what is left of `list` after the elements of `keptBackwards`,
+--| every one of which `isGood` kept.
+filterKept : List a, List a, List a, (a -> Bool) -> List a
+filterKept list rest keptBackwards isGood =
+    case rest of
+        [] ->
+            list
+
+        x :: more ->
+            if isGood x then
+                filterKept list more (x :: keptBackwards) isGood
+            else
+                foldl keptBackwards (filterFresh more isGood) cons
+
+
+--| The filter proper, once an element has been dropped. A dropped element
+--| is an ordinary tail call, so it costs no cell.
+filterFresh : List a, (a -> Bool) -> List a
+filterFresh list isGood =
     case list of
         [] ->
             []
 
         x :: rest ->
             if isGood x then
-                x :: filter rest isGood
+                x :: filterFresh rest isGood
             else
-                filter rest isGood
+                filterFresh rest isGood
+
+
+--| The first `n` elements of `list`, copied, in front of `rest`, which is
+--| shared. A cons step (see `map`), so it walks a list of any length. Every
+--| indexed write below is this copy of the elements before the index.
+prefixOnto : List a, Int, List a -> List a
+prefixOnto list n rest =
+    if n <= 0 then
+        rest
+    else
+        case list of
+            [] ->
+                rest
+
+            x :: more ->
+                x :: prefixOnto more (n - 1) rest
 
 
 --| Filter out certain values. For example, to get all the heads of a list of
@@ -257,9 +298,20 @@ length xs =
 --| Reverse a list.
 --|
 --|     reverse [ 1, 2, 3 ] == [ 3, 2, 1 ]
+--|
+--| A list of fewer than two elements is its own reverse, and is returned
+--| itself (`backend.md` §4, *Identity*).
 pub reverse : List a -> List a
 reverse list =
-    foldl list [] cons
+    case list of
+        [] ->
+            list
+
+        [ _ ] ->
+            list
+
+        _ ->
+            foldl list [] cons
 
 
 --| Figure out whether a list contains a value. The element type has to have
@@ -550,18 +602,27 @@ sort xs =
 --| decoration is as stack-safe as the merge.
 --|
 --| Ties are `EQ` on the key, and `mergeWith` takes the left element on `EQ`,
---| so this is as stable as `sortWith` is.
+--| so this is as stable as `sortWith` is. A list of fewer than two elements
+--| is returned itself, after its one key is read (`backend.md` §4,
+--| *Identity*).
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
     let
         decorated =
             map xs (\x -> ( toKey x, x ))
-
-        sorted =
-            sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
     in
-    map sorted (\( _, x ) -> x)
+    case decorated of
+        [] ->
+            xs
+
+        [ _ ] ->
+            xs
+
+        _ ->
+            map
+                (sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right))
+                (\( _, x ) -> x)
 
 
 --| Sort values with an ordering function you write yourself, which is how
@@ -574,12 +635,13 @@ sortBy xs toKey =
 --| (`checker.md` Appendix B) — `mergeWith` takes the LEFT element on
 --| anything but `GT`, and the front half, the first ⌊n / 2⌋ elements, stays
 --| in front. The order in which `cmp` is asked, and how many times, stays
---| unspecified.
+--| unspecified. A list of fewer than two elements is returned itself
+--| (`backend.md` §4, *Identity*).
 pub sortWith : List a, (a, a -> Order) -> List a
 sortWith list cmp =
     case list of
         [] ->
-            []
+            list
 
         [ _ ] ->
             list
@@ -693,17 +755,17 @@ tail list =
 --| Take the first `n` members of a list.
 --|
 --|     take [ 1, 2, 3 ] 2 == [ 1, 2 ]
+--|
+--| When `n` covers the whole list the result is the list itself
+--| (`backend.md` §4, *Identity*).
 pub take : List a, Int -> List a
 take list n =
-    if n <= 0 then
-        []
-    else
-        case list of
-            [] ->
-                []
+    case drop list n of
+        [] ->
+            list
 
-            x :: xs ->
-                x :: take xs (n - 1)
+        _ ->
+            prefixOnto list n []
 
 
 --| Drop the first `n` members of a list.
@@ -720,6 +782,236 @@ drop list n =
 
             _ :: xs ->
                 drop xs (n - 1)
+
+
+--| Create a list of `n` elements, calling `func` on each index from 0 to
+--| `n - 1` in that order. A count of zero or less is `[]`.
+--|
+--|     initialize 4 (\i -> i * i) == [ 0, 1, 4, 9 ]
+--|
+--| O(n).
+pub initialize : Int, (Int -> a) -> List a
+initialize n func =
+    initializeHelp 0 n func
+
+
+initializeHelp : Int, Int, (Int -> a) -> List a
+initializeHelp index n func =
+    if index < n then
+        func index :: initializeHelp (index + 1) n func
+    else
+        []
+
+
+--| The element at an index, counting from 0, or `Nothing` when the index is
+--| negative or not less than the length.
+--|
+--|     get [ 10, 20, 30 ] 1 == Just 20
+--|     get [ 10, 20, 30 ] 3 == Nothing
+--|
+--| O(index) today, over cons cells; near O(1) once lists are arrays
+--| (`language.md` §6.8).
+pub get : List a, Int -> Maybe a
+get list index =
+    if index < 0 then
+        Nothing
+    else
+        case drop list index of
+            x :: _ ->
+                Just x
+
+            [] ->
+                Nothing
+
+
+--| Extract the last element of a list.
+--|
+--|     last [ 1, 2, 3 ] == Just 3
+--|     last [] == Nothing
+--|
+--| O(n) today, over cons cells; near O(1) once lists are arrays.
+pub last : List a -> Maybe a
+last list =
+    case list of
+        [] ->
+            Nothing
+
+        [ x ] ->
+            Just x
+
+        _ :: rest ->
+            last rest
+
+
+--| Replace the element at an index. Out of range — a negative index, or one
+--| not less than the length — the result is the list itself.
+--|
+--|     set [ 1, 2, 3 ] 1 9 == [ 1, 9, 3 ]
+--|     set [ 1, 2, 3 ] 3 9 == [ 1, 2, 3 ]
+--|
+--| O(index) today, over cons cells: the elements before the index are
+--| copied and the ones after it shared. Once lists are arrays it is a copy
+--| up to 256 elements and near O(1) above (`language.md` §6.8).
+pub set : List a, Int, a -> List a
+set list index value =
+    if index < 0 then
+        list
+    else
+        case drop list index of
+            _ :: after ->
+                prefixOnto list index (value :: after)
+
+            [] ->
+                list
+
+
+--| Replace the element at an index with what `func` makes of it. `func` is
+--| called once in range and not at all out of range, where the result is
+--| the list itself.
+--|
+--|     update [ 1, 2, 3 ] 1 (\x -> x * 10) == [ 1, 20, 3 ]
+--|
+--| The cost of `set`.
+pub update : List a, Int, (a -> a) -> List a
+update list index func =
+    if index < 0 then
+        list
+    else
+        case drop list index of
+            x :: after ->
+                prefixOnto list index (func x :: after)
+
+            [] ->
+                list
+
+
+--| Add an element at the end of a list, which is where a list grows.
+--|
+--|     push [ 1, 2 ] 3 == [ 1, 2, 3 ]
+--|
+--| O(n) today, over cons cells; amortised O(1) once lists are arrays
+--| (`language.md` §6.8), which is why a loop that builds a list should
+--| `push` and not prepend and `reverse`.
+pub push : List a, a -> List a
+push list value =
+    prefixOnto list (length list) [ value ]
+
+
+--| Remove the last element of a list. `pop []` is the empty list itself.
+--|
+--|     pop [ 1, 2, 3 ] == [ 1, 2 ]
+--|
+--| O(n) today, over cons cells; the cost of `set` once lists are arrays.
+pub pop : List a -> List a
+pop list =
+    case list of
+        [] ->
+            list
+
+        _ ->
+            prefixOnto list (length list - 1) []
+
+
+--| The elements from index `from` up to but not including `to`, as Elm's
+--| `Array.slice`: a negative index counts from the end, both are clamped to
+--| the list, and `from` at or past `to` is `[]`. A slice of the whole list
+--| is the list itself.
+--|
+--|     slice [ 0, 1, 2, 3, 4 ] 1 3 == [ 1, 2 ]
+--|     slice [ 0, 1, 2, 3, 4 ] 1 (-1) == [ 1, 2, 3 ]
+--|     slice [ 0, 1, 2, 3, 4 ] (-2) 5 == [ 3, 4 ]
+--|
+--| O(n) today, over cons cells; O(length of the result) once lists are
+--| arrays.
+pub slice : List a, Int, Int -> List a
+slice list from to =
+    let
+        n =
+            length list
+
+        lo =
+            sliceIndex n from
+
+        hi =
+            sliceIndex n to
+    in
+    if lo == 0 && hi == n then
+        list
+    else if lo >= hi then
+        []
+    else
+        prefixOnto (drop list lo) (hi - lo) []
+
+
+--| An index of `slice`: counted from the end when negative, then clamped to
+--| `0 … n`.
+sliceIndex : Int, Int -> Int
+sliceIndex n index =
+    if index < 0 then
+        max 0 (n + index)
+    else
+        min n index
+
+
+--| Insert an element before an index, so that it is at that index in the
+--| result. At the length it is added at the end; out of range — negative,
+--| or past the length — the result is the list itself.
+--|
+--|     insertAt [ 1, 2, 3 ] 1 9 == [ 1, 9, 2, 3 ]
+--|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
+--|
+--| O(index) today, over cons cells; O(n) once lists are arrays.
+pub insertAt : List a, Int, a -> List a
+insertAt list index value =
+    if index < 0 then
+        list
+    else if index == 0 then
+        value :: list
+    else
+        case drop list (index - 1) of
+            _ :: after ->
+                prefixOnto list index (value :: after)
+
+            [] ->
+                list
+
+
+--| Remove the element at an index. Out of range the result is the list
+--| itself.
+--|
+--|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
+--|
+--| O(index) today, over cons cells; O(n) once lists are arrays.
+pub removeAt : List a, Int -> List a
+removeAt list index =
+    if index < 0 then
+        list
+    else
+        case drop list index of
+            _ :: after ->
+                prefixOnto list index after
+
+            [] ->
+                list
+
+
+--| Exchange the elements at two indexes. When either is out of range, or
+--| they are the same index, the result is the list itself.
+--|
+--|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
+--|
+--| Two `set`s.
+pub swap : List a, Int, Int -> List a
+swap list i j =
+    if i == j then
+        list
+    else
+        case ( get list i, get list j ) of
+            ( Just atI, Just atJ ) ->
+                set (set list i atJ) j atI
+
+            _ ->
+                list
 
 
 --| Partition a list based on some test. The first list contains all values

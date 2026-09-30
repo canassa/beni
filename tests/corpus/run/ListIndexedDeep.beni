@@ -1,0 +1,49 @@
+-- run: every indexed function of `core/List` (`language.md` §6.8) once on
+-- 100 000 elements, each at an index near the far end, and `initialize`
+-- building 100 000. §6.8 promises that every function walks a list of any
+-- length without growing the stack; over cons cells each one that builds is
+-- a cons step compiled to a loop (`backend.md` §8, *Tail calls modulo
+-- cons*), so one left recursing would throw `RangeError` here, and one that
+-- built backwards would print the wrong ends.
+import List
+import Node exposing (Program)
+import String
+
+
+size : Int
+size =
+    100000
+
+
+cells : List Int
+cells =
+    List.initialize size (\i -> i + 1)
+
+
+ends : List Int -> String
+ends xs =
+    String.join
+        [ String.fromInt (List.length xs)
+        , Debug.toString (List.head xs)
+        , Debug.toString (List.last xs)
+        , Debug.toString (List.get xs (size - 2))
+        , String.fromInt (List.sum xs)
+        ]
+        " "
+
+
+main : Program
+main =
+    Node.printLines
+        [ ends cells
+        , Debug.toString (List.get cells (size - 1))
+        , Debug.toString (List.last cells)
+        , ends (List.set cells (size - 1) 0)
+        , ends (List.update cells (size - 1) (\x -> x * 2))
+        , ends (List.push cells 0)
+        , ends (List.pop cells)
+        , ends (List.slice cells 1 (-1))
+        , ends (List.insertAt cells (size - 1) 0)
+        , ends (List.removeAt cells (size - 1))
+        , ends (List.swap cells 0 (size - 1))
+        ]

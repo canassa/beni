@@ -1,0 +1,143 @@
+-- run: the indexed half of `core/List` (`language.md` §6.8) — `initialize`,
+-- `get`, `last`, `set`, `update`, `push`, `pop`, `slice`, `insertAt`,
+-- `removeAt` and `swap` — at each of their edges: the empty list, index 0,
+-- the last index, -1, `length` and past it. `slice` follows Elm's
+-- `Array.slice`: a negative index counts from the end, both ends are clamped
+-- to the list, and `from >= to` is `[]`. Every write out of range is the
+-- list unchanged; `insertAt` at `length` appends.
+--
+-- The callbacks of `initialize` and `update` are pinned by `Debug.log`:
+-- `initialize` calls its callback once per index in index order, and
+-- `update` calls its callback exactly once in range and never out of it.
+--
+-- These meanings were written over cons cells first, so that the flip to
+-- arrays (`plans/list-arrays.md`, slice 2) is checked against this output.
+import List
+import Node exposing (Program)
+import String
+
+
+xs : List Int
+xs =
+    [ 10, 20, 30 ]
+
+
+show : List Int -> String
+show list =
+    Debug.toString list
+
+
+maybe : Maybe Int -> String
+maybe m =
+    Debug.toString m
+
+
+line : String, List String -> String
+line label parts =
+    label ++ ": " ++ String.join parts " | "
+
+
+main : Program
+main =
+    let
+        built =
+            List.initialize 4 (\i -> Debug.log (i * i) "initialize")
+
+        updated =
+            List.update xs 1 (\x -> Debug.log (x + 1) "update in range")
+
+        missed =
+            List.update xs 3 (\x -> Debug.log (x + 1) "update out of range")
+    in
+    Node.printLines
+        [ line "initialize"
+            [ show built
+            , show (List.initialize 0 (\i -> i))
+            , show (List.initialize (-1) (\i -> i))
+            , show (List.initialize 1 (\i -> i + 7))
+            ]
+        , line "get"
+            [ maybe (List.get xs 0)
+            , maybe (List.get xs 2)
+            , maybe (List.get xs (-1))
+            , maybe (List.get xs 3)
+            , maybe (List.get xs 4)
+            , maybe (List.get [] 0)
+            ]
+        , line "last"
+            [ maybe (List.last xs)
+            , maybe (List.last [ 5 ])
+            , maybe (List.last [])
+            ]
+        , line "set"
+            [ show (List.set xs 0 1)
+            , show (List.set xs 2 3)
+            , show (List.set xs (-1) 9)
+            , show (List.set xs 3 9)
+            , show (List.set [] 0 9)
+            ]
+        , line "update"
+            [ show updated
+            , show missed
+            , show (List.update xs 0 (\x -> x * 2))
+            , show (List.update xs 2 (\x -> x * 2))
+            , show (List.update xs (-1) (\x -> x * 2))
+            , show (List.update [] 0 (\x -> x * 2))
+            ]
+        , line "push"
+            [ show (List.push xs 40)
+            , show (List.push [] 1)
+            , show (List.push (List.push [ 1 ] 2) 3)
+            ]
+        , line "pop"
+            [ show (List.pop xs)
+            , show (List.pop [ 1 ])
+            , show (List.pop [])
+            ]
+        , line "slice"
+            [ show (List.slice xs 0 3)
+            , show (List.slice xs 1 2)
+            , show (List.slice xs 0 1)
+            , show (List.slice xs 2 3)
+            , show (List.slice xs (-2) 3)
+            , show (List.slice xs 0 (-1))
+            , show (List.slice xs (-1) (-1))
+            , show (List.slice xs (-9) 9)
+            , show (List.slice xs 2 1)
+            , show (List.slice xs 3 5)
+            , show (List.slice xs (-5) (-3))
+            , show (List.slice [] 0 1)
+            ]
+        , line "insertAt"
+            [ show (List.insertAt xs 0 1)
+            , show (List.insertAt xs 1 15)
+            , show (List.insertAt xs 2 25)
+            , show (List.insertAt xs 3 40)
+            , show (List.insertAt xs 4 50)
+            , show (List.insertAt xs (-1) 0)
+            , show (List.insertAt [] 0 1)
+            , show (List.insertAt [] 1 1)
+            ]
+        , line "removeAt"
+            [ show (List.removeAt xs 0)
+            , show (List.removeAt xs 1)
+            , show (List.removeAt xs 2)
+            , show (List.removeAt xs 3)
+            , show (List.removeAt xs (-1))
+            , show (List.removeAt [] 0)
+            ]
+        , line "swap"
+            [ show (List.swap xs 0 2)
+            , show (List.swap xs 2 0)
+            , show (List.swap xs 0 1)
+            , show (List.swap xs 1 1)
+            , show (List.swap xs 0 3)
+            , show (List.swap xs (-1) 0)
+            , show (List.swap [] 0 0)
+            ]
+        , line "methods"
+            [ show (xs.push 40)
+            , maybe (xs.get 1)
+            , show (xs.slice 1 3)
+            ]
+        ]

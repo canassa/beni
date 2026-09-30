@@ -59,7 +59,7 @@ build_test.test.a sibling whose names cannot move keeps its own module in a rele
 build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 e743b7da76425f9b57850d8f902d1751a95d52f07da638dc476b8e0e2b1af739
 build_test.test.a view formatted renders the page the view rendered #0 64accb0044622dd99e978a581edec7023f65ec5450240e6195e6b5aa06c00d88
 build_test.test.a view formatted renders the page the view rendered #1 a8ab5533a80f63cc625181d488a793979cb32e656680d7444b8f7687f720ee5c
-build_test.test.an unannotated pub function constant with a constraint builds and runs #0 0561af8ddbb95e3f688b7e3c7306457489fff4028486c5c678b8251b4b363192
+build_test.test.an unannotated pub function constant with a constraint builds and runs #0 aa71de4b4b576eebd20193b056e5fc8ee610fe3f5d431e1a833a73138e480cab
 build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 c52f262271bbef3f044a4cc2823ccd78008b323cec5686e4cf15b10abef3e1d1
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 586e52a841ee599be7af26dc3fb160800b031b26172141d6d5762b8a0353fdfc
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 453a4bab4a9058992f5712af64f2221ef28f0d0bb992c3acb309c3f8981b9f45
@@ -100,7 +100,7 @@ cache_test.test.a warm rebuild is a cold build: the custom eq and compare remove
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #0 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 eb37fe87548da26b0d0ff9b2116634f72f890755e15521b0c3f1dbd83bc24993
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 d3b270266df53462b5c6f1cc454947179a4884493f78afa04e0e8c4df1af5b5e
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 ab4a76a61fb02d492d4494d002927511a8c3cf61f53adabfe02f366513db2941
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 b7fdf1fec546fa5376083e45ac86041e2c05a0011a1c974137173088b7de1854
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
