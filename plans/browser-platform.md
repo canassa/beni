@@ -1334,6 +1334,13 @@ batch, also overlapping), select 0.88×, create 10k 0.93×, swap, append and cle
 ranges apart. Priced, not built: a cons-step `filter` and `indexedMap` in core — what the compiler
 already turns into loops — take remove to 0.95× and update to 0.91× Solid 1.
 
+*Measured, 2026-09-30, after `core/List` was built front to back* (research 39 §14; `backend.md`
+§8): `map`, `filter`, `indexedMap`, `append` and their kin are cons steps compiled to one loop, n
+cells and no `reverse`, 1.25–9× faster per call in Node. One batch, script medians against Solid
+1: **remove 0.78×** (1.73 → 1.22 ms; it was 1.11× in the batch) and **update every 10th 0.88×**
+(4.95 → 4.29, ranges apart), create 1k and replace 0.93×, select 0.82×, swap 0.70×, create 10k
+0.92×, clear 0.87×; append 1k unresolved (every subject bimodal). Ahead of Solid 2 on all nine.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

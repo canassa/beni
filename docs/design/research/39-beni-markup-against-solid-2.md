@@ -978,3 +978,60 @@ under `nix develop .#browser`, `node bench/ui/halves.mjs --taskset=8-15
 --op=update` for the warm figure. `beni-before` was the build of `95312a62` kept in
 `out/beni-before/` and registered in `out/extra-subjects.json`; the renderer experiments of §13.3
 were hand edits of `out/beni-dev/` and are not scripted.
+
+## 14. Addendum, 2026-09-30: `core/List` built front to back
+
+§13.4 priced the model half and left it to core. Core has now changed (`backend.md` §8, *Tail
+calls modulo cons*, amended 2026-09-30): `map`, `filter`, `filterMap`, `indexedMap`, `take`,
+`append`, `concat`, `concatMap`, `intersperse`, `unzip`, `map2`–`map5` and `sortWith`'s merge are
+the recursion Elm writes, each a cons step the compiler turns into one loop building n cells, with
+no `reverse`. The benchmark application uses `filter` (remove), `indexedMap` (update every 10th,
+where it was `length`, `range`, `map2` and `reverse`) and `++` (append). This is the `beni-cons`
+experiment of §13.4 built for real, in beni, with no `foreign`.
+
+### 14.1 The table
+
+One batch, n = 15, Chromium 153.0.8010.36, pinned to CPUs 0–3 and 6–7 because another session held
+8–15; 1-minute load 10.7–13.5 at each benchmark's start (other sessions), so the absolute figures
+are about twice §13.5's and only this batch's ratios are comparable. `beni-before` is the same
+compiler with the previous core (`--core-root`), so the two builds differ in `_core/List.mjs`
+alone (`results/2026-09-30-list-direct.json`). Script medians [IQR], ms:
+
+| operation | **beni** | `--release` | beni-before | before `--release` | **Solid 1** | **Solid 2** | ÷ S1 | ÷ S2 |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| create 1k | 11.2 [10.9–11.7] | 11.7 | 11.2 | 12.4 | 12.0 [11.0–12.9] | 15.1 [14.0–15.3] | 0.93 | 0.74 |
+| replace 1k | 27.6 [25.1–28.6] | 27.3 | 27.4 | 25.5 | 29.6 [27.2–32.4] | 32.0 [30.5–35.2] | 0.93 | 0.86 |
+| update every 10th | **4.29** [4.01–4.70] | 4.28 | 4.95 [4.68–5.09] | 4.71 | 4.88 [4.61–5.26] | 7.64 [6.98–8.55] | **0.88** | 0.56 |
+| select | 3.70 [3.32–4.05] | 3.29 | 3.77 | 3.35 | 4.52 [4.25–4.89] | 8.59 [8.08–9.21] | 0.82 | 0.43 |
+| swap | 2.87 [2.57–3.18] | 2.75 | 3.10 | 2.99 | 4.10 [3.64–5.00] | 5.00 [4.47–5.24] | 0.70 | 0.57 |
+| remove | **1.22** [1.15–1.51] | 1.10 [1.05–1.23] | 1.73 [1.62–1.93] | 1.54 [1.31–1.63] | 1.56 [1.48–1.64] | 2.16 [2.08–2.39] | **0.78** | 0.56 |
+| create 10k | 131.9 [123.1–147.6] | 120.8 | 137.0 | 141.7 | 142.8 [135.7–156.7] | 171.4 [156.4–203.6] | 0.92 | 0.77 |
+| append 1k | 9.42 [5.41–11.9] | 7.42 | 6.74 [5.30–12.0] | 6.76 | 6.38 [5.57–11.6] | 11.4 [7.51–13.8] | 1.48 | 0.83 |
+| clear | 52.9 [48.8–57.0] | 53.6 | 54.3 | 57.3 | 60.8 [53.4–64.5] | 56.7 [50.9–62.2] | 0.87 | 0.93 |
+
+- **Remove**, the operation §13 left behind Solid 1: 1.73 → **1.22 ms**, from 1.11× Solid 1 to
+  **0.78×**, beni's range [1.15–1.51] below the old one's and all but touching Solid 1's
+  [1.48–1.64]; `--release` 1.54 → 1.10, 0.71×. The whole gain is `filter`: one loop and 999 cells
+  where `foldl` and `reverse` made two walks and 1 998.
+- **Update every 10th**: 4.95 → **4.29 ms**, 1.01× → **0.88× Solid 1**, the ranges apart from both
+  the old build's and Solid 1's; `indexedMap` is one loop and a thousand cells where it was four
+  walks and about 3 000.
+- **Append 1k** is bimodal for every subject (each IQR spans 5.3 to 11–12 ms, a collection landing
+  in the sample or not), so its medians order nothing here: beni's 9.42 and the old build's 6.74
+  sit in the same range as Solid 1's. `++` of a thousand onto a thousand is now one loop too.
+- The other six did not change beyond their ranges, as expected: they do not reach the rewritten
+  functions on the click path, or only for a list of one.
+- **Against Solid 2, beni is ahead on all nine**; against Solid 1, ahead or level on all nine, with
+  append unresolved by this batch.
+
+**Size**: the application's `--release` build is 5 024 bytes brotli, from 5 093: the one-pass
+`indexedMap` no longer reaches `range`, `length` and `map2`.
+
+### 14.2 Re-run
+
+`node bench/ui/build.mjs --no-solid`, then build the previous core's subjects with `beni build
+--platform=browser-tea [--release] --no-cache --core-root=<old core> --out=out/beni-before[-rel]
+apps/beni/Main.beni` and register them in `out/extra-subjects.json`; then, under
+`nix develop .#browser`, `node bench/ui/bench.mjs --n=15 --taskset=0-3,6-7
+--subjects=beni,beni-release,beni-before,beni-before-release,solid1,solid2`. The per-function
+figures are `node bench/list/run.mjs --before-rev=<rev>` (`backend.md` §8).
