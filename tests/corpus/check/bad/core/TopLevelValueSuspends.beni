@@ -1,0 +1,29 @@
+-- check/bad (core): a top-level value other than a function must not
+-- suspend (transparent-effects-proposal.md §15.2 item 7, decided
+-- 2026-09-30). Like `main`, it is evaluated once, when its module is
+-- loaded, outside any fiber, where nothing can wait for it. `answer` calls
+-- `fetch`, which suspends, so it is refused at its name, and so is `total`,
+-- whose chain runs through the function `twice`. A function is not
+-- evaluated at load: `twice`, and `later`, a value whose body is a lambda,
+-- suspend only when something calls them, so neither is refused.
+pub foreign suspends fetch : Int -> Int
+
+
+answer : Int
+answer =
+    fetch 42
+
+
+twice : Int -> Int
+twice n =
+    fetch n + fetch n
+
+
+total : Int
+total =
+    twice 1 + 2
+
+
+later : () -> Int
+later =
+    \() -> fetch 1

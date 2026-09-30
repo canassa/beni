@@ -6,7 +6,8 @@
 -- `eq` that suspends only through the function a value holds is not
 -- refused at `eq` — it suspends for no value of its own — but its summary
 -- demands that the held function not suspend, so the `==` on a `Check`
--- holding one is refused at the value.
+-- holding one is refused at the value. The uses are functions of `()`, so
+-- that no top-level value is refused for suspending at load (§15.2 item 7).
 pub foreign suspends get : Int -> Bool
 
 
@@ -23,8 +24,8 @@ probe (Item n) =
     get n
 
 
-count : Int
-count =
+count : () -> Int
+count () =
     countWhere [ Item 1 ]
 
 
@@ -37,11 +38,11 @@ eq (Check f) (Check g) =
     f 0 == g 0
 
 
-same : Bool
-same =
+same : () -> Bool
+same () =
     Check (\n -> get n) == Check (\n -> n > 0)
 
 
-fine : Bool
-fine =
+fine : () -> Bool
+fine () =
     Check (\n -> n < 0) == Check (\n -> n > 0)

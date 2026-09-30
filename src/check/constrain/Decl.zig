@@ -245,10 +245,13 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
         // `main` is evaluated once, when the program starts, outside any
         // fiber: its evaluation is a `sync` boundary
         // (transparent-effects-proposal.md §15.2 item 5), for the `main` of
-        // a module of the root package, where a build looks for it.
-        if (g.cx.effects) |e| if (bir.symbol(d.name) == InternPool.WellKnown.main.symbol() and g.cx.graph.modulePackage(g.cx.module) == .app) {
-            try e.demand(.{ .v = g.ambient.?, .kind = .main, .site = @intFromEnum(d.inst_start), .decl = @intFromEnum(g.decl) });
-        };
+        // a module of the root package, where a build looks for it. Every
+        // other top-level value is evaluated once too, when its module is
+        // loaded, and is a boundary of the same kind (§15.2 item 7).
+        if (g.cx.effects) |e| {
+            const is_main = bir.symbol(d.name) == InternPool.WellKnown.main.symbol() and g.cx.graph.modulePackage(g.cx.module) == .app;
+            try e.demand(.{ .v = g.ambient.?, .kind = if (is_main) .main else .value, .site = @intFromEnum(d.inst_start), .decl = @intFromEnum(g.decl) });
+        }
         return Expr.expr(g, body, target, category);
     }
     const param_vars = try g.cx.scratch.alloc(Var, params.len);

@@ -64,7 +64,8 @@ pub const no_owner = std.math.maxInt(u32);
 pub const Site = struct { call: u32 = none, ambient: u32 = none };
 
 /// Which boundary put a demand on its class (§15.2).
-pub const DemandKind = enum(u8) { argument, handler, row, key, main, method };
+/// `.value` is a top-level value other than `main` (§15.2 item 7).
+pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, method };
 
 /// "This class must not suspend" (§15.1), recorded before the run: `v`
 /// carries the class, `site` is the instruction it is attributed to.
@@ -72,7 +73,7 @@ pub const DemandKind = enum(u8) { argument, handler, row, key, main, method };
 /// `param` and, inside that, the record field `field` (a `Symbol`), or the
 /// `where` method `method` (a `Symbol`) — as far as a site of the summary
 /// says, and `holder` when the class is a nominal application's rather
-/// than a function type's. `.main` and `.method`: the declaration, and for
+/// than a function type's. `.main`, `.value` and `.method`: the declaration, and for
 /// a method the name of the type it is written for, in `field`.
 pub const Demand = struct {
     v: Var,
@@ -690,11 +691,15 @@ pub fn run(e: *Effects, in: Input) Error!void {
     defer work.deinit(scratch);
     for (e.seeds.items) |sd| try e.raise(try e.nodeFor(sd.v), sd.rung, &work, scratch);
     try e.propagate(&work, scratch);
-    // The demands recorded so far, on their nodes (§15.2). `main`'s is on
-    // its evaluation class, which is no type; every other one is on a
-    // function type or a nominal application, and a handler in its value
-    // form, which is neither, demands nothing.
+    // The demands recorded so far, on their nodes (§15.2). `main`'s and a
+    // top-level value's are on its evaluation class, which is no type; every
+    // other one is on a function type or a nominal application, and a
+    // handler in its value form, which is neither, demands nothing.
     for (e.demands.items) |d| {
+        // A top-level value's evaluation class is module-local and no
+        // summary reaches it, so its demand is placed after the summaries
+        // (below), where it costs them no walk.
+        if (d.kind == .value) continue;
         if (d.kind != .main) {
             const r, _ = e.store.resolved(d.v);
             if (!e.carries(r)) continue;
@@ -731,6 +736,14 @@ pub fn run(e: *Effects, in: Input) Error!void {
     for (s.classes.items) |*c| {
         c.rung = s.level.items[c.node];
         if (c.rung == .suspends) c.sync = false;
+    }
+    // Top-level values' demands (§15.2 item 7), only where one is broken:
+    // an evaluation class is on no path a summary reads.
+    for (e.demands.items) |d| {
+        if (d.kind != .value) continue;
+        const node = try e.nodeFor(d.v);
+        if (s.level.items[node] != .suspends) continue;
+        try e.addSource(.{ .node = node, .demand = d });
     }
 }
 

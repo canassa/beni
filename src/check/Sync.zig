@@ -64,7 +64,7 @@ pub fn check(e: *Effects, in: Input) Error!void {
     @memset(sync.roots, false);
     for (picked.items) |p| {
         const src = s.sources.items[p.source];
-        if (src.demand.kind == .main or src.demand.kind == .method) sync.roots[s.find(src.node)] = true;
+        if (src.demand.kind == .main or src.demand.kind == .value or src.demand.kind == .method) sync.roots[s.find(src.node)] = true;
     }
     for (picked.items) |*p| {
         const src = &s.sources.items[p.source];
@@ -80,7 +80,7 @@ pub fn check(e: *Effects, in: Input) Error!void {
         const text = (try sync.message(src)) orelse continue;
         defer in.cx.gpa.free(text);
         const code: diagnostic.Code = switch (src.demand.kind) {
-            .main, .method => .must_not_suspend,
+            .main, .value, .method => .must_not_suspend,
             else => .sync_boundary,
         };
         try in.report.emitText(code, @enumFromInt(p.region), p.token, text);
@@ -253,7 +253,7 @@ const Sync = struct {
         const bir = y.in.cx.bir;
         const d = src.demand;
         switch (d.kind) {
-            .main, .method => {
+            .main, .value, .method => {
                 const decl = bir.decls[d.decl];
                 return .{ @intFromEnum(decl.inst_start), decl.name_token };
             },
@@ -364,7 +364,7 @@ const Sync = struct {
         var steps: std.ArrayList(Step) = .empty;
         defer steps.deinit(y.scratch);
         const end = try y.chain(y.e.solved.find(src.node), &steps);
-        const root = src.demand.kind == .main or src.demand.kind == .method;
+        const root = src.demand.kind == .main or src.demand.kind == .value or src.demand.kind == .method;
         if (!root and y.through_root) return null;
         const gpa = y.in.cx.gpa;
         var out: std.Io.Writer.Allocating = .init(gpa);
@@ -386,6 +386,13 @@ const Sync = struct {
             .main => return w.writeAll(
                 "`main` must not suspend: it is evaluated once, when the program starts, where nothing can wait for it.",
             ),
+            .value => {
+                const decl = cx.bir.decls[d.decl];
+                return w.print(
+                    "`{s}` must not suspend: it is a value, evaluated once, when its module is loaded, where nothing can wait for it.",
+                    .{cx.interner.slice(cx.bir.symbol(decl.name))},
+                );
+            },
             .method => {
                 const decl = cx.bir.decls[d.decl];
                 const name = cx.interner.slice(cx.bir.symbol(decl.name));
@@ -498,7 +505,7 @@ const Sync = struct {
                         return w.print("`{s}`", .{cx.interner.slice(bir.symbol(bir.locals[local].name))});
                     }
                 }
-            } else if (first and src.demand.kind != .main and src.demand.kind != .method) {
+            } else if (first and src.demand.kind != .main and src.demand.kind != .value and src.demand.kind != .method) {
                 // The first call made inside the function the error points at.
                 return w.writeAll(if (src.demand.holder) "the function it holds" else "it");
             }
@@ -584,6 +591,9 @@ const Sync = struct {
         switch (src.demand.kind) {
             .main => try w.writeAll(
                 "Hint: `main` only describes the program. A value that may suspend can only be computed by a function the platform runs, never while `main` is evaluated.",
+            ),
+            .value => try w.writeAll(
+                "Hint: make it a function — `\\() -> …` or a parameter — and call it where waiting is possible, from a function the platform runs.",
             ),
             .method => try w.writeAll(
                 "Hint: compare what the values hold, and do the work that suspends before comparing them.",
