@@ -33,6 +33,7 @@ elm mutative: 354 checks, all agree
 elm immer: 354 checks, all agree
 elm elm: 354 checks, all agree
 elm cons-raw: 354 checks, all agree
+elm beni: 354 checks, all agree
 first native: 354 checks, 79 differ (it writes in place); 3 list cells need persistence and are skipped: append two; add to front, first; paths sharing tails, all kept
 first nativecow: 354 checks, all agree
 first cow: 354 checks, all agree
@@ -49,6 +50,7 @@ first mori: 354 checks, all agree
 first mutative: 354 checks, all agree
 first immer: 354 checks, all agree
 first elm: 354 checks, all agree
+first beni: 354 checks, all agree
 
 identity of no-op writes (§7), per check in order; not compared:
 arr native: true true true true true true
@@ -86,6 +88,7 @@ elm mutative: false false false false false false false false
 elm immer: false false false false false false false false
 elm elm: false false false false false false false false
 elm cons-raw: false false false false false false false false
+elm beni: false false false false false false false false
 first native: true true true true true true true true
 first nativecow: false false false false false false false false
 first cow: true true true true true true true true
@@ -102,3 +105,4 @@ first mori: false false false false false false false false
 first mutative: true true true true true true true true
 first immer: true true true true true true true true
 first elm: false false false false false false false false
+first beni: true true true true true true true true

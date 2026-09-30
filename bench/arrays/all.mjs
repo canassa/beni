@@ -36,6 +36,14 @@ process.chdir(here);
 const repo = path.resolve(here, '../..');
 const OUT = path.join(here, 'dist/all');
 const beniBin = path.join(repo, 'zig-out/bin/beni');
+// The three programs below are cons-cell code with their list syntax rewritten into calls
+// (lib/rewrite.js), which only a compiler from before the array-backed `List` emits: since the
+// flip, `BENI_BEFORE` names such a compiler (and `BENI_BEFORE_CORE` its core, by default the
+// `core/` two directories above its `zig-out/bin`), so report 46's figures still reproduce. The
+// `beni` candidate is this repository's own compiler and core, unrewritten.
+const beniBefore = process.env.BENI_BEFORE ? path.resolve(process.env.BENI_BEFORE) : beniBin;
+const coreBefore = process.env.BENI_BEFORE_CORE ? path.resolve(process.env.BENI_BEFORE_CORE)
+  : process.env.BENI_BEFORE ? path.resolve(beniBefore, '../../../core') : path.join(repo, 'core');
 const mode = process.argv[2];
 
 // ---------------------------------------------------------------------------------------------
@@ -66,6 +74,9 @@ export const CANDS = {
   // the rewrite of the list syntax must change nothing but the representation: the cons list over
   // beni's own output, unrewritten, on the Elm-style programs, against `cons` over the rewrite
   'cons-raw': { core: 'cons', idiom: 'elm', full: true, raw: true, only: 'elm', check: true },
+  // the shipped array-backed List: both list programs compiled by this repository's compiler over
+  // its own core/List, nothing rewritten (plans/list-arrays.md, the flip)
+  beni: { beni: true, full: true, only: 'list' },
 };
 const MAIN = Object.keys(CANDS).filter((c) => !CANDS[c].check);
 const idiom = (c) => CANDS[c].idiom ?? 'first';
@@ -85,8 +96,8 @@ const STYLES = ['first', 'elm'];
 // ---------------------------------------------------------------------------------------------
 // build
 
-function beni(args) {
-  const r = spawnSync(beniBin, ['build', '--platform=node', '--library', '--no-cache', ...args], { encoding: 'utf8' });
+function beni(args, bin = beniBefore) {
+  const r = spawnSync(bin, ['build', '--platform=node', '--library', '--no-cache', ...args], { encoding: 'utf8' });
   if (r.status !== 0) { process.stdout.write(r.stdout); process.stderr.write(r.stderr); throw new Error('beni build failed'); }
 }
 const mjsFiles = (dir) => [...fs.readdirSync(dir).filter((f) => f.endsWith('.mjs')), ...fs.readdirSync(`${dir}/_core`).filter((f) => f.endsWith('.mjs')).map((f) => `_core/${f}`)];
@@ -101,15 +112,19 @@ function build() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
   // arr: core plus the experimental Array of §15
-  fs.cpSync(path.join(repo, 'core'), `${OUT}/core-arr`, { recursive: true });
+  fs.cpSync(coreBefore, `${OUT}/core-arr`, { recursive: true });
   for (const f of ['Array.beni', 'Array.js']) fs.copyFileSync(`scenarios/${f}`, `${OUT}/core-arr/${f}`);
   const arrSrc = copySources(['scenarios/src'], `${OUT}/src-arr`);
   beni([`--core-root=${OUT}/core-arr`, `--root=${OUT}/src-arr`, `--out=${OUT}/arr`, ...arrSrc]);
-  // elm: today's core
+  // elm: the cons-cell core
   const elmSrc = copySources(['lists/src', 'ops/elm'], `${OUT}/src-elm`);
-  beni([`--root=${OUT}/src-elm`, `--out=${OUT}/elm-raw`, ...elmSrc]);
+  beni([`--core-root=${coreBefore}`, `--root=${OUT}/src-elm`, `--out=${OUT}/elm-raw`, ...elmSrc]);
+  // beni: both list programs as they are, over the shipped core
+  beni([`--root=${OUT}/src-elm`, `--out=${OUT}/elm-beni`, ...elmSrc], beniBin);
+  const firstSrcBeni = copySources(['lists/first', 'ops/first'], `${OUT}/src-first-beni`);
+  beni([`--root=${OUT}/src-first-beni`, `--out=${OUT}/first-beni`, ...firstSrcBeni], beniBin);
   // first: core with the array-first List
-  fs.cpSync(path.join(repo, 'core'), `${OUT}/core-first`, { recursive: true });
+  fs.cpSync(coreBefore, `${OUT}/core-first`, { recursive: true });
   for (const f of ['List.beni', 'List.js']) fs.copyFileSync(`lists/first-core/${f}`, `${OUT}/core-first/${f}`);
   const firstSrc = copySources(['lists/first', 'ops/first'], `${OUT}/src-first`);
   beni([`--core-root=${OUT}/core-first`, `--root=${OUT}/src-first`, `--out=${OUT}/first-raw`, ...firstSrc]);
@@ -121,7 +136,7 @@ function build() {
       fs.writeFileSync(`${OUT}/${t}/${f}`, rewriteModule(fs.readFileSync(`${OUT}/${t}-raw/${f}`, 'utf8')));
     }
   }
-  console.log(`built ${path.relative(here, OUT)}/{arr,elm,first} with ${path.relative(here, beniBin)}`);
+  console.log(`built ${path.relative(here, OUT)}/{arr,elm,first} with ${path.relative(here, beniBefore)}, {elm,first}-beni with ${path.relative(here, beniBin)}`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -129,7 +144,19 @@ function build() {
 // monomorphic (research/38 §1)
 
 function plugin(cand, prog) {
-  const c = CANDS[cand], tree = path.join(OUT, prog === 'elm-raw' ? 'elm-raw' : prog);
+  const c = CANDS[cand];
+  if (c.beni) {
+    // the shipped List: its own sibling, and the hooks read it by the reader protocol
+    const tree = path.join(OUT, `${prog}-beni`);
+    return {
+      name: 'beni-own',
+      setup(b) {
+        b.onResolve({ filter: /^beni-out\// }, (a) => ({ path: path.join(tree, a.path.slice('beni-out/'.length)) }));
+        b.onResolve({ filter: /^(list-rt|list-syntax)$/ }, () => ({ path: path.join(here, 'lists/beni-rt.mjs') }));
+      },
+    };
+  }
+  const tree = path.join(OUT, prog === 'elm-raw' ? 'elm-raw' : prog);
   const sibling = c.sibling ? path.join(here, c.sibling) : path.join(here, 'seq/surface.js');
   const basics = path.join(OUT, `basics-${prog}.mjs`);
   if (prog !== 'arr') fs.writeFileSync(basics, `export * from ${JSON.stringify(path.join(tree, '_core/Basics.foreign.mjs'))};\nexport { basicsAppend as append } from 'list-rt';\n`);
@@ -200,7 +227,7 @@ function chains(cands, L) {
     }
     const byOp = new Map();
     for (const [sc, op, n] of L.arr.filter((c) => c[2] <= ARR_MAX)) { const k = `${sc}|${op}`; if (!byOp.has(k)) byOp.set(k, []); byOp.get(k).push(n); }
-    for (const [k, ns] of byOp) { const [sc, op] = k.split('|'); out.push({ cand, group: 'arr', style: 'index', prog: 'arr', sc, op, sizes: ns.sort((a, b) => a - b) }); }
+    if (CANDS[cand].only !== 'list') for (const [k, ns] of byOp) { const [sc, op] = k.split('|'); out.push({ cand, group: 'arr', style: 'index', prog: 'arr', sc, op, sizes: ns.sort((a, b) => a - b) }); }
     if (CANDS[cand].only === 'arr') continue;
     for (const group of ['list', 'ops']) for (const style of STYLES) for (const op of L[group]) out.push({ cand, group, style, prog: style, op, sizes: SIZES[group] });
   }
@@ -550,6 +577,7 @@ async function modeSize() {
     b.onResolve({ filter: /^surf-out\// }, (a) => ({ path: path.join(surf, 'first', a.path.slice('surf-out/'.length)) }));
   } });
   for (const cand of MAIN) {
+    if (CANDS[cand].beni) continue; // bench/size.mjs measures the shipped List through the real build
     const sib = await measure(cand, `export { ${SIB} } from './seq/surface.js';`);
     const whole = await (async () => {
       const r = await esbuild.build({

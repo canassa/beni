@@ -16,6 +16,10 @@
 // build, and the figure is the median over rounds of each round's median.
 // One JSON line per (workload, size), then a table.
 //
+// `--before-beni=<beni>` builds the "before" side with another compiler:
+// across a change of the list's REPRESENTATION (the array-backed `List`),
+// the core and the emitter that agree on it have to be used together.
+//
 // Pin it (`taskset -c 8`) and quote the load average: this is a
 // microbenchmark, and a busy machine moves it by tens of percent.
 
@@ -27,6 +31,7 @@ import { pathToFileURL } from "node:url";
 
 const options = {
   beni: "./zig-out/bin/beni",
+  beforeBeni: null,
   before: null,
   beforeRev: null,
   after: "core",
@@ -39,6 +44,7 @@ const options = {
 for (const arg of process.argv.slice(2)) {
   const [key, value] = arg.replace(/^--/, "").split("=");
   if (key === "beni") options.beni = value;
+  else if (key === "before-beni") options.beforeBeni = value;
   else if (key === "before") options.before = value;
   else if (key === "before-rev") options.beforeRev = value;
   else if (key === "after") options.after = value;
@@ -76,17 +82,17 @@ if (!beforeCore) {
   beforeCore = join(work, "core");
 }
 
-async function build(name, core) {
+async function build(name, core, beni = options.beni) {
   const out = join(work, name);
   mkdirSync(out, { recursive: true });
-  run(options.beni, [
+  run(beni, [
     "build", "--no-cache", "--library", "--platform=node",
     `--core-root=${resolve(core)}`, `--out=${out}`, "bench/list/ListBench.beni",
   ]);
   return import(pathToFileURL(join(out, "ListBench.mjs")).href);
 }
 
-const before = await build("before", beforeCore);
+const before = await build("before", beforeCore, options.beforeBeni ?? options.beni);
 const after = await build("after", options.after);
 
 // Each workload: how to make its input from a size, and how to call it.
@@ -106,6 +112,22 @@ const workloads = [
   ["unzip", (m, n) => m.ListBench$pairs(n), (m, xs) => m.ListBench$unzip(xs)],
   ["intersperse", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$intersperse(xs)],
   ["sortWith", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$sortWith(xs)],
+  ["foldl", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$foldl(xs)],
+  ["foldr", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$foldr(xs)],
+  ["sum", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$sum(xs)],
+  ["reverse", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$reverse(xs)],
+  ["length", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$length(xs)],
+  ["member (absent)", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$member(xs)],
+  ["== itself", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$equal(xs)],
+  ["range", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$range(n)],
+  ["get (near end)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$get(xs, n)],
+  ["last", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$last(xs)],
+  ["set (middle)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$set(xs, n)],
+  ["push", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$push(xs)],
+  ["pop", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$pop(xs)],
+  ["slice (a quarter)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$slice(xs, n)],
+  ["drop (half)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$drop(xs, n)],
+  ["[ x, ...xs ]", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$cons(xs)],
 ];
 
 let sink = 0;

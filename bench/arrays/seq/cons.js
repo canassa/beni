@@ -1,11 +1,38 @@
 // cons: today's `List`, cons cells `{ $: 1, a, b }` and `{ $: 0, a: null, b: null }` (core/List.js),
 // the whole surface written over cells. The list syntax and the tail-call loop are what beni emits
-// inline; `eq`, `compare` and `++` are core/List.js's and core/Basics.js's own. The indexed half (the
-// array-first core's first-order sibling, and §15's `Array`) is what a linked list can do: `length`
-// and `unsafeGet` walk, a write copies the cells before it and shares the rest.
+// inline; `eq`, `compare` and `++` are core/List.js's and core/Basics.js's own as they were before
+// `List` became array-backed, copied here since. The indexed half (the array-first core's
+// first-order sibling, and §15's `Array`) is what a linked list can do: `length` and `unsafeGet`
+// walk, a write copies the cells before it and shares the rest.
 export const FULL = true;
-export { eq, compare } from '../../../core/List.js';
-export { append as basicsAppend } from '../../../core/Basics.js';
+export const eq = (m0, xs, ys) => {
+  let a = xs, b = ys;
+  while (a.$ === 1 && b.$ === 1) {
+    if (!m0(a.a, b.a)) return false;
+    a = a.b;
+    b = b.b;
+  }
+  return a.$ === b.$;
+};
+export const compare = (m0, xs, ys) => {
+  let a = xs, b = ys;
+  while (a.$ === 1 && b.$ === 1) {
+    const o = m0(a.a, b.a);
+    if (o !== 'EQ') return o;
+    a = a.b;
+    b = b.b;
+  }
+  if (a.$ === b.$) return 'EQ';
+  return a.$ === 0 ? 'LT' : 'GT';
+};
+export const basicsAppend = (a, b) => {
+  if (typeof a === 'string') return a + b;
+  const items = [];
+  for (let at = a; at.$ === 1; at = at.b) items.push(at.a);
+  let out = b;
+  for (let i = items.length - 1; i >= 0; i--) out = { $: 1, a: items[i], b: out };
+  return out;
+};
 
 export const $nil = { $: 0, a: null, b: null };
 export const $isNil = (x) => x.$ === 0;
