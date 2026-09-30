@@ -1374,6 +1374,69 @@ fn expectSchemaEdit(before: []const u8, after: []const u8, checked: u64, hash_mo
     }
 }
 
+// ---------------------------------------------------------------------------
+// An effect bit across the interface firewall
+// ---------------------------------------------------------------------------
+
+test "a body edit that flips an effect bit crosses the firewall, and the warm importer reads the new bit" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An ANNOTATED body edit moves no type, so without effects `Lib`'s record
+    // would stay put and `App` would be a hit (the leaf scenario above). A
+    // log added to `step`'s body flips its `impure` bit, which the record's
+    // effect block carries (transparent-effects-proposal.md §14.6): `Lib`'s
+    // interface hash moves, `App` is re-checked, and `App`'s own hash moves
+    // with the bit it now inherits. The warm run must say exactly what a
+    // cold one says, hashes included, or a cached importer kept a stale bit.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni",
+        \\pub step : Int -> Int
+        \\step n =
+        \\    n + 1
+        \\
+    );
+    try w.write("src/App.beni",
+        \\import Lib
+        \\
+        \\
+        \\pub run : Int -> Int
+        \\run n =
+        \\    Lib.step (Lib.step n)
+        \\
+    );
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--cache-dir=cache", "src" }, "bit-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const hashes_before = try parseKeys(arena, cold.result.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Lib.beni",
+        \\pub step : Int -> Int
+        \\step n =
+        \\    Debug.log (n + 1) "step"
+        \\
+    );
+    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--cache-dir=cache", "src" }, "bit-warm.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--no-cache", "src" }, "bit-plain.json");
+    const hashes_after = try parseKeys(arena, warm.result.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(plain.result.stderr, warm.result.stderr);
+    // Both re-checked: the edited module and the importer its record moved.
+    try testing.expectEqual(@as(u64, 2), warm.counters.checked);
+    try expectMoved("a flipped effect bit", hashes_before, hashes_after, &.{ "app:App", "app:Lib" });
+}
+
 test "a private schema conversion body stops at the interface firewall" {
     // The conversion is private, so its body is in no record: `Models` is
     // re-checked and `Consumer` is not.

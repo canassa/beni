@@ -1,0 +1,49 @@
+-- check/good: the using side (see `Lib.beni`). Every bit here comes from
+-- `Lib`'s record, never its source: `twice` calls a rung, `viaApply` and
+-- `viaHandler` pass a logging function where `Lib` calls it, `viaApi` hands
+-- over a record whose `log` logs, and `countLoud` answers `countEq`'s
+-- requirement with a logging `eq`. The pure uses stay pure.
+import Lib
+
+
+pub type Loud
+    = Loud Int
+
+
+pub eq : Loud, Loud -> Bool
+eq a b =
+    case ( a, b ) of
+        ( Loud x, Loud y ) ->
+            Debug.log (x == y) "eq"
+
+
+pub twice x =
+    Lib.logged (Lib.logged x)
+
+
+pub viaApply n =
+    Lib.apply (\x -> Debug.log x "x") n
+
+
+pub pureApply n =
+    Lib.apply (\x -> x + 1) n
+
+
+pub viaHandler n =
+    Lib.runHandler (\x -> Debug.log x "h") n
+
+
+pub viaApi n =
+    Lib.callApi { log = \s -> Debug.log () s, size = n }
+
+
+pub quietApi n =
+    Lib.callApi { log = \s -> (), size = n }
+
+
+pub countLoud xs =
+    Lib.countEq xs (Loud 1)
+
+
+pub countInts xs =
+    Lib.countEq xs 1

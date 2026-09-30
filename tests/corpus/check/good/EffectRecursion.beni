@@ -1,0 +1,60 @@
+-- check/good: effect bits through recursion
+-- (transparent-effects-proposal.md §14.3 rule 8, §14.4). `isEven` and
+-- `isOdd` are annotated, so each is its own binding group and they depend on
+-- each other only through their annotations: the summaries are solved
+-- together to the least fixpoint, and the log in `isOdd` reaches `isEven`.
+-- `ping` and `pong` are unannotated and one binding group, sharing their
+-- variables until it is generalised: `pong` logs, and `ping` gets it. `walk`
+-- calls itself through its own annotation and is bit-polymorphic in its
+-- callback; `countdown` calls itself and nothing else, and stays pure.
+pub isEven : Int -> Bool
+isEven n =
+    if n == 0 then
+        True
+
+    else
+        isOdd (n - 1)
+
+
+pub isOdd : Int -> Bool
+isOdd n =
+    if n == 0 then
+        Debug.log False "odd"
+
+    else
+        isEven (n - 1)
+
+
+pub ping n =
+    if n == 0 then
+        0
+
+    else
+        pong (n - 1)
+
+
+pub pong n =
+    Debug.log (ping n) "pong"
+
+
+pub walk : List a, (a -> ()) -> ()
+walk xs visit =
+    case xs of
+        [] ->
+            ()
+
+        x :: rest ->
+            let
+                () =
+                    visit x
+            in
+            walk rest visit
+
+
+pub countdown : Int -> Int
+countdown n =
+    if n == 0 then
+        0
+
+    else
+        countdown (n - 1)

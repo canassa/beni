@@ -3125,6 +3125,73 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
+test "dump --stage=types prints a declaration's effect classes, its locals', and a value's evaluation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // transparent-effects-proposal.md §14.7, the one place the evaluation
+    // class of a top-level value is printed (§14.3 rule 1): `counter`
+    // logs when it is evaluated, which is not a property of its type and
+    // is in no interface. `later` is a lambda: evaluating it does nothing,
+    // and calling it logs. `each`'s local `visit` is named by the class of
+    // `each`'s parameter it calls, and `quiet`, whose callback is pure, has
+    // no class to print.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\logged x =
+        \\    Debug.log x "x"
+        \\
+        \\
+        \\counter =
+        \\    logged 3
+        \\
+        \\
+        \\later =
+        \\    \() -> logged 4
+        \\
+        \\
+        \\each f xs =
+        \\    let
+        \\        visit x =
+        \\            f x
+        \\    in
+        \\    List.map xs visit
+        \\
+        \\
+        \\quiet xs =
+        \\    List.map xs (\x -> x + 1)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=types", "src/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  logged : a -> a !impure
+        \\    x : a
+        \\  counter : number  -- evaluates: impure
+        \\  later : () -> number !impure
+        \\  each : (a -> b !e1), List a -> List b !e1
+        \\    f : a -> b !e1
+        \\    xs : List a
+        \\    visit : a -> b !e1
+        \\    x : a
+        \\  quiet : List number -> List number
+        \\    xs : List number
+        \\    x : number
+        \\
+    , r.stdout);
+}
+
 test "a derived compare compiles, and so does List's" {
     // The two ends of §9's `compare`, both closed: S6a emits every derived
     // body and S6b gives `List a` the `pub foreign compare` of §5.2.
@@ -4239,7 +4306,16 @@ fn writeRecordShapes(w: *World) !void {
                 \\pub near{d} a b =
                 \\    a.close b 1
                 \\
-            , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n }),
+                \\
+                \\pub type alias Api{d} =
+                \\    {{ zulu : Int -> Int, alpha : String -> Int }}
+                \\
+                \\
+                \\pub call{d} : Api{d}, String -> Int
+                \\call{d} api s =
+                \\    Debug.log (api.zulu (api.alpha s)) "call"
+                \\
+            , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n }),
         );
     }
 }
@@ -4289,6 +4365,11 @@ test "the interface record is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, raw[0], "    where compare term=") != null);
     try testing.expect(std.mem.indexOf(u8, raw[0], "    where eq term=") != null);
     try testing.expect(std.mem.indexOf(u8, raw[0], "    where close term=") != null);
+    // And the effect blocks (transparent-effects-proposal.md §14.6): `call`'s
+    // sites reach `api.alpha` and `api.zulu` through the alias's expansion
+    // by field NAME, so their order is by text too, and `near`'s own arrow
+    // depends on its inferred `where` type.
+    try testing.expect(std.mem.indexOf(u8, raw[0], " effects=") != null);
 }
 
 test "a record's fields are laid out in the record by name text, not by symbol id" {

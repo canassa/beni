@@ -1,0 +1,44 @@
+-- check/good: the declaring side of effect bits read across a module
+-- boundary (transparent-effects-proposal.md §14.3 rule 3, §14.6). Each
+-- summary is published in the record's effect block, and `Main` reads it:
+-- a rung (`logged`), a polymorphic arrow (`apply`), a function type behind an
+-- alias (`runHandler`, whose site's path goes through the alias's
+-- expansion), a record of functions (`callApi`, whose arrow depends on the
+-- record's `log` field), and a `where` requirement (`countEq`).
+pub type alias Handler =
+    Int -> Int
+
+
+pub type alias Api =
+    { log : String -> ()
+    , size : Int
+    }
+
+
+pub logged : a -> a
+logged x =
+    Debug.log x "logged"
+
+
+pub apply f x =
+    f x
+
+
+pub runHandler : Handler, Int -> Int
+runHandler h x =
+    h x
+
+
+pub callApi : Api -> Int
+callApi api =
+    let
+        () =
+            api.log "called"
+    in
+    api.size
+
+
+pub countEq : List a, a -> Int
+    where a.eq : a, a -> Bool
+countEq xs x =
+    List.length (List.filter xs (\y -> y == x))

@@ -1,0 +1,45 @@
+-- check/good: effect bits through higher-order calls
+-- (transparent-effects-proposal.md §14.3 rules 1, 3 and 4). `apply` and
+-- `compose` are bit-polymorphic: their own arrow is the class of the
+-- functions they call (`!e1`, `!(e1 | e2)`). `List.map` is one definition
+-- for both callers: `sizes` passes a pure function and stays pure, `loud` a
+-- logging one and is `!impure`, through `map`'s summary read from `core`'s
+-- interface. `hand` passes a logging lambda along and returns it uncalled:
+-- its own arrow is pure and the function it returns is `!impure`. `withLog`
+-- logs itself and calls `f`, so it is `!(impure | e1)`.
+-- `shared` binds a local function once: a local does not generalise its bits
+-- (rule 4), so its one class is its body's and every use's.
+pub apply f x =
+    f x
+
+
+pub compose f g x =
+    f (g x)
+
+
+pub sizes xs =
+    List.map xs String.length
+
+
+pub loud xs =
+    List.map xs (\x -> Debug.log x "x")
+
+
+pub hand x =
+    apply (\y -> y) (\z -> Debug.log z "z")
+
+
+pub withLog f x =
+    let
+        _ =
+            Debug.log "calling" "f"
+    in
+    f x
+
+
+pub shared n =
+    let
+        step y =
+            Debug.log y "step"
+    in
+    ( step n, step "twice" )

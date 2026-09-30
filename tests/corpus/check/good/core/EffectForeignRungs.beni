@@ -1,0 +1,57 @@
+-- check/good (core): the base case of effect inference
+-- (transparent-effects-proposal.md §14.1, §14.3 rules 1 and 6). Each
+-- `foreign` states its rung, and a function that calls one gets it: `tick`
+-- `!impure`, `fetch` `!suspends`, `both` the join, `suspends`. A pure
+-- `foreign` gives nothing. A function type in a positive position of a
+-- `foreign`'s signature (`makeClock`'s result) has the rung; a beni function
+-- handed to the host (`later`'s callback) is independent of the call, so
+-- `schedule` is impure and not `!suspends` although its callback suspends.
+-- `where` evidence joins the call (`compareAll`), which the interface shows
+-- as the evidence's class `e1`.
+pub foreign pure double : Int -> Int
+
+
+pub foreign impure now : () -> Int
+
+
+pub foreign suspends get : Int -> Int
+
+
+pub foreign impure makeClock : () -> (() -> Int)
+
+
+pub foreign impure later : (() -> Int) -> ()
+
+
+pub foreign pure compareAll : List a, List a -> Bool
+    where a.eq : a, a -> Bool
+
+
+pub quiet : Int -> Int
+quiet n =
+    double n
+
+
+pub tick : () -> Int
+tick u =
+    now u
+
+
+pub fetch : Int -> Int
+fetch id =
+    get id
+
+
+pub both : Int -> Int
+both id =
+    get (now ())
+
+
+pub schedule : () -> ()
+schedule u =
+    later (\() -> get 1)
+
+
+pub reading : () -> Int
+reading u =
+    (makeClock ()) ()

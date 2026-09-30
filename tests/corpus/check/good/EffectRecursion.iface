@@ -1,0 +1,7 @@
+module EffectRecursion
+  value countdown : Int -> Int
+  value isEven : Int -> Bool !impure
+  value isOdd : Int -> Bool !impure
+  value ping : number -> number2 !impure
+  value pong : number -> number2 !impure
+  value walk : List a, (a -> () !e1) -> () !e1

@@ -1,0 +1,62 @@
+-- check/good: a function stored in a constructor field
+-- (transparent-effects-proposal.md §14.5). `Parser a` holds a function its
+-- declaration writes, so each use of the type is a class, joined with that
+-- function: `run` calls the function it takes out, so its own arrow is its
+-- parser argument's class (`!e1`). `loudParser` stores a logging function
+-- and is `Parser a !impure`, so `useLoud` is impure; `useQuiet` builds a
+-- pure parser and stays pure. `Stream` names itself in its own field, and
+-- the inner stream shares the outer one's class: `nth` is `!e1` in its
+-- argument's. `Box a` holds only a type parameter, so a function in it
+-- travels by the argument (`openBox` is `!e1` in the box's function).
+pub type Parser a
+    = Parser (String -> Maybe a)
+
+
+pub type Stream
+    = Stream (() -> ( Int, Stream ))
+
+
+pub type Box a
+    = Box a
+
+
+pub run : Parser a, String -> Maybe a
+run p s =
+    case p of
+        Parser f ->
+            f s
+
+
+pub loudParser : Parser String
+loudParser =
+    Parser (\s -> Debug.log (Just s) "parse")
+
+
+pub useLoud : String -> Maybe String
+useLoud s =
+    run loudParser s
+
+
+pub useQuiet : String -> Maybe String
+useQuiet s =
+    run (Parser (\x -> Just x)) s
+
+
+pub nth : Stream, Int -> Int
+nth stream n =
+    case stream of
+        Stream next ->
+            case next () of
+                ( value, rest ) ->
+                    if n == 0 then
+                        value
+
+                    else
+                        nth rest (n - 1)
+
+
+pub openBox : Box (Int -> Int), Int -> Int
+openBox box x =
+    case box of
+        Box f ->
+            f x

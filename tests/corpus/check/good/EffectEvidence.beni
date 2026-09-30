@@ -1,0 +1,49 @@
+-- check/good: effect bits through `where` evidence
+-- (transparent-effects-proposal.md §14.3 rules 3 and 7). `Loud` declares an
+-- `eq` that logs, so `==` on it is `!impure` (`sameLoud`). `count`'s
+-- annotation asks for `a.eq`, and its own arrow is that evidence's class
+-- (`!e1`), so a caller that passes a `Loud` (`countLoud`) is impure and one
+-- that passes an `Int` (`countInts`) is not. A derived `eq` calls its
+-- context's evidence: `Maybe Loud` compares its payloads with `Loud.eq`
+-- (`sameMaybe`), and `List Loud`, whose `eq` is `core`'s foreign loop over
+-- the evidence, does too (`sameList`).
+pub type Loud
+    = Loud Int
+
+
+pub eq : Loud, Loud -> Bool
+eq a b =
+    case ( a, b ) of
+        ( Loud x, Loud y ) ->
+            Debug.log (x == y) "Loud.eq"
+
+
+pub sameLoud : Loud, Loud -> Bool
+sameLoud a b =
+    a == b
+
+
+pub count : List a, a -> Int
+    where a.eq : a, a -> Bool
+count xs x =
+    List.length (List.filter xs (\y -> y == x))
+
+
+pub countLoud : List Loud -> Int
+countLoud xs =
+    count xs (Loud 1)
+
+
+pub countInts : List Int -> Int
+countInts xs =
+    count xs 1
+
+
+pub sameMaybe : Maybe Loud, Maybe Loud -> Bool
+sameMaybe a b =
+    a == b
+
+
+pub sameList : List Loud, List Loud -> Bool
+sameList a b =
+    a == b
