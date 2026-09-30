@@ -12,4 +12,9 @@ const JsIntrinsics$flag = (flags$1) => (flags$1 & 2) !== 0;
 const JsIntrinsics$pair = (x$1) => [x$1, null, undefined];
 const JsIntrinsics$callback = (f$1) => f$1((n$2) => Basics$add(n$2, 1));
 const JsIntrinsics$back = (v$1) => v$1;
-export { JsIntrinsics$read, JsIntrinsics$readIndexed, JsIntrinsics$write, JsIntrinsics$insert, JsIntrinsics$make, JsIntrinsics$tests, JsIntrinsics$flag, JsIntrinsics$pair, JsIntrinsics$callback, JsIntrinsics$back };
+const JsIntrinsics$second = (xs$1) => xs$1[1];
+const JsIntrinsics$fail = (message$1) => {
+  throw globalThis.Error(message$1);
+  return undefined;
+};
+export { JsIntrinsics$read, JsIntrinsics$readIndexed, JsIntrinsics$write, JsIntrinsics$insert, JsIntrinsics$make, JsIntrinsics$tests, JsIntrinsics$flag, JsIntrinsics$pair, JsIntrinsics$callback, JsIntrinsics$back, JsIntrinsics$second, JsIntrinsics$fail };

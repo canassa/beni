@@ -82,3 +82,11 @@ pub foreign impure apply : Value, List Value -> Value
 --| `[a, b]`: a new JavaScript array, its elements written as a list
 --| literal.
 pub foreign impure array : List Value -> Value
+
+
+--| `o[k]`: an element of an array, or of anything indexed by number.
+pub foreign impure at : Value, Int -> Value
+
+
+--| `throw v`, a statement. Nothing after it runs.
+pub foreign impure throw : Value -> a

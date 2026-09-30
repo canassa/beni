@@ -32,6 +32,8 @@ pub const Which = enum {
     call,
     apply,
     array,
+    at,
+    throw,
 };
 
 /// The intrinsic `inst` names, or null: an `ext_value` of core's `Js`.

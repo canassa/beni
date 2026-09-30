@@ -2,7 +2,8 @@
 -- (research 47): no call, no wrapper, no import of core's `Js`. A property
 -- name that is an identifier is `.name`, any other `[name]`; `set` is a
 -- statement and its value `null`; a list literal of arguments is spread into
--- the call; `global` is `globalThis`; `from` and `to` are nothing at all.
+-- the call; `global` is `globalThis`; `at` is `[k]`; `throw` a statement;
+-- `from` and `to` are nothing at all.
 -- Built with `--core`, which is what lets a root-package module import `Js`.
 import Js
 
@@ -55,3 +56,13 @@ callback f =
 pub back : Js.Value -> Int
 back v =
     Js.to v
+
+
+pub second : Js.Value -> Js.Value
+second xs =
+    Js.at xs 1
+
+
+pub fail : String -> Int
+fail message =
+    Js.throw (Js.apply (Js.global "Error") [ Js.from message ])

@@ -6032,6 +6032,11 @@ const Lowerer = struct {
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
+            W.at => l.add(.index_get, p, v[0].int(), v[1].int()),
+            W.throw => blk: {
+                try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
+                break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
             W.array => blk: {
                 const range = try l.b.addRange(rest);
                 break :blk l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
