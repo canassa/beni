@@ -160,8 +160,11 @@ mounted at `document.body` unless `Browser.mountAt` names an element;
 `emit/dom/` pins its shapes, and `tests/oracle/` compares its templates and
 walks with dom-expressions' own output, every difference listed. The Elm
 Architecture is the `browser-tea` platform layered on it, beni with no
-JavaScript of its own: `Tea.sandbox` until effects bring commands and
-subscriptions (`boundary.md` §9.1, pages in `tests/corpus/browser/tea/`).
+JavaScript of its own: `Tea.sandbox`, and `Tea.element` whose `update` returns
+`( model, Cmd msg )` — keyed commands run as fibers with Restart/Queue/Ignore/Concurrent
+policies, subscriptions diffed once per render, after-render work — over `Browser.hosted`,
+with `Time`, `Dom`, `Http` and window events (`boundary.md` §9.1, §9.8; pages in
+`tests/corpus/browser/tea/`, whose driver has a virtual clock).
 `--release` compacts hand-written JavaScript and keeps only the exports a build
 imports (`backend.md` §9, `src/js/Minify.zig`): the empty mounted page is
 1.4 kB brotli (`bench/size.mjs`'s `page` lines).
