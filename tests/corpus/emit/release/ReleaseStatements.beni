@@ -7,7 +7,9 @@
 --     and `say`, a private function whose result nothing reads, ends with
 --     its last statement and no `return`;
 --   * `quiet`'s pure discard is dropped whole, as its `const` was;
---   * `tick`'s `()` parameter is not written, and `tick ()` passes nothing.
+--   * `tick`, called from one place, is written there as its `7` (§9, *A
+--     function called once is written where it is called*); its `()`
+--     parameter unwritten is `emit/UnitParameters`'s.
 --
 -- `Debug.log` is the impure call, which `--allow-debug` lets a release
 -- golden hold (this directory's README).

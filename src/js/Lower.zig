@@ -200,6 +200,10 @@ pub const Input = struct {
     derived_runtime: []const u8 = "./_core/_derived.mjs",
     /// The build's markup lowering (`boundary.md` §9.4), when it has one.
     markup: ?Markup = null,
+    /// `--release`: a function of this module called from one place is
+    /// written at that place (`backend.md` §9, *A function called once is
+    /// written where it is called*).
+    inline_once: bool = false,
 };
 
 pub const Markup = struct {
@@ -268,6 +272,7 @@ pub fn lower(
     try l.findDeadArms();
     try l.findUnobserved();
     try l.findRefs();
+    try l.findInlines();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -640,6 +645,26 @@ const Lowerer = struct {
     /// The JavaScript names of those bindings. A read of one is not an
     /// atom (`isAtom`): a write may come between it and where it lands.
     mutable_names: std.ArrayList(JsIr.NameIndex) = .empty,
+    /// Per declaration: a function called from one place, written there
+    /// under `--release` (`findInlines`), and whether a call took it in.
+    inline_candidate: []bool = &.{},
+    inlined: []bool = &.{},
+    /// Per declaration: a candidate that calls itself, in tail position
+    /// only, and so is written in place as its loop, where its call is in
+    /// tail position of a function that is no loop.
+    inline_loops: []bool = &.{},
+    /// The declarations whose bodies are being written in place, innermost
+    /// last: none is written inside itself.
+    inline_stack: std.ArrayList(u32) = .empty,
+    /// Added to a local's disambiguator (`localName`): 0 for the
+    /// declaration's own, past every local already named for a body
+    /// written in place, so two declarations' `x$1` never meet in one
+    /// function. `local_tag_next` is the next free base.
+    local_tag_base: u32 = 0,
+    local_tag_next: u32 = 0,
+    /// How many functions enclose what is being lowered: 0 in a top-level
+    /// constant, where a body written in place would need a called arrow.
+    function_depth: u32 = 0,
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -1058,15 +1083,31 @@ const Lowerer = struct {
 
     fn declarations(l: *Lowerer, out: *StmtList) !void {
         const order = try l.emissionOrder();
-        for (order) |index| {
-            const before = out.items.len;
-            const nodes = l.b.nodes.len;
-            try l.declaration(out, index);
-            // Fewer nodes than this cannot be over either budget, and
-            // measuring is a walk of every node: most declarations skip it.
-            if (l.b.nodes.len - nodes < JsIr.nesting.could_exceed) continue;
-            try l.refuseTooDeep(out.items[before..], index);
+        // Every declaration is lowered where it stands, a function called
+        // from one place (`findInlines`) too: whether its call takes it in
+        // is known only once its caller is lowered, and lowering it here
+        // first keeps every order lowering discovers — the imports, the
+        // hoisted templates, the constants — exactly the one a build that
+        // takes nothing in has. Its statements are left out afterwards when
+        // a call did take it in; what they referenced, the body written in
+        // place references too.
+        const parts = try l.scratch.alloc([]const Node.Index, order.len);
+        for (order, parts) |index, *part| part.* = try l.declarationPart(index);
+        for (order, parts) |index, part| {
+            if (index < l.inlined.len and l.inlined[index]) continue;
+            try out.appendSlice(l.scratch, part);
         }
+    }
+
+    /// One declaration's statements, measured against the nesting budget.
+    fn declarationPart(l: *Lowerer, index: u32) ![]const Node.Index {
+        var part: StmtList = .empty;
+        const nodes = l.b.nodes.len;
+        try l.declaration(&part, index);
+        // Fewer nodes than this cannot be over either budget, and
+        // measuring is a walk of every node: most declarations skip it.
+        if (l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
+        return part.items;
     }
 
     /// The one nesting `Lower` cannot take out (`backend.md` §4, *Emitted
@@ -1245,6 +1286,8 @@ const Lowerer = struct {
         l.decl_index = index;
         l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
         @memset(l.local_names, .none);
+        l.local_tag_base = 0;
+        l.local_tag_next = @intCast(l.locals.len);
         l.variant = variant;
         defer l.variant = .direct;
 
@@ -1694,6 +1737,7 @@ const Lowerer = struct {
         const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join };
         l.suspendable = suspendable;
         l.markers = 0;
+        l.function_depth += 1;
         l.join = .none;
         return outer;
     }
@@ -1702,6 +1746,7 @@ const Lowerer = struct {
         l.suspendable = outer.suspendable;
         l.markers = outer.markers;
         l.join = outer.join;
+        l.function_depth -= 1;
     }
 
     /// Whether an answer of §16.2 is yes in the body being lowered.
@@ -2117,7 +2162,19 @@ const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(suspendable);
         defer l.leaveFunction(outer);
+        const built = try l.loopOf(&loop, body, p);
+        return l.funcRecord(built.names, built.stmts);
+    }
 
+    /// A loop's parameter names and its statements (§8): `functionOrLoop`'s
+    /// function, or the loop a function called once is written as in its
+    /// caller (§9, *A function called once is written where it is called*).
+    fn loopOf(l: *Lowerer, loop: *Loop, body: Inst.Index, p: u32) !struct { names: []const JsIr.NameIndex, stmts: []const Node.Index } {
+        const slots = loop.slots;
+        const evidence = loop.evidence;
+        const ev_let = loop.ev_let;
+        const label = loop.label;
+        const jumps = loop.jumps;
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         for (slots, 0..) |*slot, i| {
             const index: u32 = @intCast(i);
@@ -2164,7 +2221,7 @@ const Lowerer = struct {
             before[0] = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.consNode(try l.nullNode(p), try l.nullNode(p), p)).int());
             before[1] = try l.add(.let_decl, p, @intFromEnum(loop.last), @intFromEnum((try l.ident(loop.root, p)).toOptional()));
         }
-        try l.tailStmts(&loop_body, body, &loop);
+        try l.tailStmts(&loop_body, body, loop);
         // A suspension point in the loop's body: the fast path stays in the
         // loop, and the slow path re-enters the function with its slots
         // (§16.3). A building loop's slow path goes on writing into the same
@@ -2222,8 +2279,8 @@ const Lowerer = struct {
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
         const while_node = try l.add(.while_true, p, @intFromEnum(loop_label), @intFromEnum(record));
-        if (loop.builds) return l.funcRecord(names.items, &.{ before[0], before[1], while_node });
-        return l.funcRecord(names.items, &.{while_node});
+        if (loop.builds) return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{ before[0], before[1], while_node }) };
+        return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{while_node}) };
     }
 
     /// Whether no `lambda` and no `let` function lies among the instructions
@@ -2445,6 +2502,10 @@ const Lowerer = struct {
                     if (l.isSelfCall(inst, lp)) return l.tailJump(out, inst, lp);
                     if (l.isConsStep(inst, lp)) return l.consStep(out, inst, lp);
                 }
+                if (try l.tailInline(inst, loop)) |index| {
+                    if (!l.inline_loops[index]) return l.inlineTail(out, inst, index, loop);
+                    if (try l.inlineLoop(out, inst, index)) return;
+                }
             },
             else => {},
         }
@@ -2641,7 +2702,7 @@ const Lowerer = struct {
         const n = if (local.name.unwrap()) |symbol| try l.name(.{
             .module = .none,
             .base = l.bir.symbols[symbol],
-            .tag = index + 1,
+            .tag = l.local_tag_base + index + 1,
         }) else try l.fresh(l.well.param);
         l.local_names[index] = n;
         return n;
@@ -6257,6 +6318,13 @@ const Lowerer = struct {
             return l.ctorValue(rep, tag, args, p);
         }
 
+        // A function called from this one place is written here (§9, *A
+        // function called once is written where it is called*).
+        // Only a body that is an expression itself: one that needs
+        // statements would need a temporary assigned in each arm, which
+        // costs more than the call it replaces.
+        if (l.inlineTarget(inst)) |index| if (!l.inline_loops[index] and l.isExpressionBody(index) and l.atomArguments(inst)) return l.inlineExpr(out, inst, index);
+
         // Everything else is one direct n-ary call (`backend.md` §6). The
         // callee and the arguments are ONE sequence, because JavaScript
         // evaluates the callee first and so does beni, and either side may
@@ -6875,6 +6943,385 @@ const Lowerer = struct {
         }
     }
 
+    /// Which declarations are written where their one call is, under
+    /// `--release` (`backend.md` §9, *A function called once is written where
+    /// it is called*): a live function of this module, not `pub`, not the
+    /// entry, named by no dispatch answer, with no evidence, no second body
+    /// and nothing in it that may suspend, whose every reference in the
+    /// module — and nothing outside the module can name it — is ONE call,
+    /// saturated, with no evidence, that cannot suspend, in another
+    /// declaration that has no second body.
+    fn findInlines(l: *Lowerer) !void {
+        const decls = l.bir.decls;
+        l.inline_candidate = try l.scratch.alloc(bool, decls.len);
+        @memset(l.inline_candidate, false);
+        l.inlined = try l.scratch.alloc(bool, decls.len);
+        @memset(l.inlined, false);
+        if (!l.in.inline_once) return;
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        // The call each callee instruction is the callee of.
+        const call_of = try l.scratch.alloc(Inst.OptionalIndex, tags.len);
+        @memset(call_of, .none);
+        for (tags, data, 0..) |tag, d, i| {
+            if (tag == .call and d.lhs < call_of.len) call_of[d.lhs] = @as(Inst.Index, @enumFromInt(i)).toOptional();
+        }
+        const named = try l.scratch.alloc(bool, decls.len);
+        @memset(named, false);
+        for (l.in.dispatch.terms) |t| switch (t) {
+            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
+                named[@intFromEnum(u.decl)] = true;
+            },
+            else => {},
+        };
+        if (l.in.entry_decl) |index| if (index < decls.len) {
+            named[index] = true;
+        };
+        const uses = try l.scratch.alloc(u32, decls.len);
+        @memset(uses, 0);
+        const self_uses = try l.scratch.alloc(u32, decls.len);
+        @memset(self_uses, 0);
+        const good = try l.scratch.alloc(bool, decls.len);
+        @memset(good, false);
+        l.inline_loops = try l.scratch.alloc(bool, decls.len);
+        @memset(l.inline_loops, false);
+        for (decls, 0..) |caller, c| {
+            const caller_twin = l.in.dispatch.effectDecl(@intCast(c)).twin;
+            var at = caller.inst_start.int();
+            while (at < caller.inst_end.int()) : (at += 1) {
+                if (tags[at] != .top or data[at].lhs >= decls.len) continue;
+                const callee = data[at].lhs;
+                // A reference of a function to itself: every one must be a
+                // tail self-call, which the loop it is written as takes.
+                if (callee == c) {
+                    self_uses[callee] += 1;
+                    continue;
+                }
+                uses[callee] += 1;
+                const site = call_of[at].unwrap() orelse continue;
+                if (caller_twin) continue;
+                const args = l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)).len();
+                if (args != l.paramsOf(callee).len) continue;
+                if (l.rootsOf(site).len != 0) continue;
+                if (l.in.dispatch.effectAt(site).own != .no) continue;
+                good[callee] = true;
+            }
+        }
+        for (decls, 0..) |d, i| {
+            const index: u32 = @intCast(i);
+            if (d.kind != .value or d.is_pub or named[i] or uses[i] != 1 or !good[i]) continue;
+            if (!l.liveDecl(index)) continue;
+            const ed = l.in.dispatch.effectDecl(index);
+            if (ed.twin or ed.own != .no) continue;
+            if (Convention.ofDecl(l.in.dispatch, l.bir, index).evidence != 0) continue;
+            switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+                .params, .lambda => {},
+                else => continue,
+            }
+            const suspends = for (l.in.dispatch.effectsIn(d.inst_start.int(), d.inst_end.int())) |site| {
+                if (site.own != .no or site.body != .no) break true;
+            } else false;
+            if (suspends) continue;
+            // A `?` that returns from the declaration returns from wherever
+            // its body is written, which is the caller.
+            // Markup would be lowered twice (`declarations`), its templates
+            // hoisted twice.
+            const returns = for (tags[d.inst_start.int()..d.inst_end.int()], data[d.inst_start.int()..d.inst_end.int()]) |tag, x| {
+                if (tag == .@"try" and @as(Inst.OptionalIndex, @enumFromInt(x.rhs)) == .none) break true;
+                if (tag == .markup) break true;
+            } else false;
+            if (returns) continue;
+            if (self_uses[i] != 0) {
+                if (self_uses[i] != l.tailSelfCalls(index, l.bodyOf(index))) continue;
+                l.inline_loops[i] = true;
+            }
+            l.inline_candidate[i] = true;
+        }
+    }
+
+    /// How many calls of declaration `index` stand in the tail positions of
+    /// `inst` (§8: a `let`'s body, a `case`'s branches).
+    fn tailSelfCalls(l: *Lowerer, index: u32, inst: Inst.Index) u32 {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.tailSelfCalls(index, @enumFromInt(d.rhs)),
+            .case => {
+                var n: u32 = 0;
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    n += l.tailSelfCalls(index, @enumFromInt(l.bir.instData(branch).rhs));
+                }
+                return n;
+            },
+            .call => {
+                const callee: Inst.Index = @enumFromInt(d.lhs);
+                return @intFromBool(l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index);
+            },
+            else => return 0,
+        }
+    }
+
+    /// The parameter patterns and the body of a declaration defined with
+    /// parameters or as a lambda (`Convention.definitionOf`), or none.
+    fn paramsOf(l: *Lowerer, index: u32) []const Inst.Index {
+        const d = l.bir.decls[index];
+        return switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+            .params => l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index),
+            .lambda => l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(d.body.unwrap().?).lhs)), Inst.Index),
+            else => &.{},
+        };
+    }
+
+    /// Whether every argument of call `site` is an atom of `Bir`: a name
+    /// of a local or a declaration, or a literal — nothing a body written
+    /// in place would have to bind first.
+    fn atomArguments(l: *Lowerer, site: Inst.Index) bool {
+        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index)) |arg| {
+            switch (l.bir.instTag(arg)) {
+                .local, .int, .float, .string, .char, .unit => {},
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// Whether declaration `index`'s body is neither a `let` nor a `case`
+    /// (an `if` is one): what may be written in place of a call in
+    /// expression position.
+    fn isExpressionBody(l: *Lowerer, index: u32) bool {
+        return switch (l.bir.instTag(l.bodyOf(index))) {
+            .let, .case => false,
+            else => true,
+        };
+    }
+
+    fn bodyOf(l: *Lowerer, index: u32) Inst.Index {
+        const d = l.bir.decls[index];
+        const body = d.body.unwrap().?;
+        return switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+            .lambda => @enumFromInt(l.bir.instData(body).rhs),
+            else => body,
+        };
+    }
+
+    /// The declaration `site` calls, when it is to be written in place
+    /// here: a candidate (`findInlines`) not already being written.
+    fn inlineTarget(l: *Lowerer, site: Inst.Index) ?u32 {
+        if (l.inline_candidate.len == 0) return null;
+        const callee: Inst.Index = @enumFromInt(l.bir.instData(site).lhs);
+        if (l.bir.instTag(callee) != .top) return null;
+        const index = l.bir.instData(callee).lhs;
+        if (index >= l.inline_candidate.len or !l.inline_candidate[index]) return null;
+        if (std.mem.indexOfScalar(u32, l.inline_stack.items, index) != null) return null;
+        if (l.decl_index == null or l.function_depth == 0) return null;
+        return index;
+    }
+
+    /// What a body written in place saves of the declaration around it.
+    const InlineSaved = struct {
+        locals: []const Bir.Local,
+        local_names: []JsIr.NameIndex,
+        decl_index: ?u32,
+        tag_base: u32,
+    };
+
+    /// Evaluate call `site`'s arguments in order, as the call would, bind them to
+    /// declaration `index`'s parameters, and enter its body's context: its
+    /// locals, named past every local named so far in this function.
+    fn enterInline(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32) !InlineSaved {
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        // Each argument lowered and bound before the next is lowered: the
+        // order the call evaluated them in, with nothing left to pin.
+        const values = try l.scratch.alloc(Node.Index, args.len);
+        for (args, values) |arg, *value| {
+            value.* = try l.expr(out, arg);
+            if (l.isAtom(value.*)) continue;
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, value.*, l.pos(arg));
+            // Read by nothing or not, an argument that may have an effect is
+            // evaluated: the release optimiser keeps it.
+            if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+            value.* = try l.ident(n, l.pos(arg));
+        }
+        const saved: InlineSaved = .{
+            .locals = l.locals,
+            .local_names = l.local_names,
+            .decl_index = l.decl_index,
+            .tag_base = l.local_tag_base,
+        };
+        const d = l.bir.decls[index];
+        l.locals = l.bir.declLocals(d);
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.decl_index = index;
+        l.local_tag_base = l.local_tag_next;
+        l.local_tag_next += @intCast(l.locals.len);
+        try l.inline_stack.append(l.scratch, index);
+        l.inlined[index] = true;
+        const p = l.pos(site);
+        for (l.paramsOf(index), values) |param, value| {
+            switch (l.bir.instTag(param)) {
+                // Every argument is an atom now: a name — an immutable one,
+                // a temporary or the caller's own — is the parameter, and a
+                // literal is bound once, here.
+                .pat_var => {
+                    const local = l.bir.instData(param).lhs;
+                    const tags = l.b.nodes.items(.tag);
+                    if (tags[value.int()] == .ident and local < l.local_names.len) {
+                        l.local_names[local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+                    } else try l.constDecl(out, try l.localName(local), value, p);
+                },
+                .pat_wild, .pat_unit => {},
+                else => try l.bindings(out, param, value),
+            }
+        }
+        return saved;
+    }
+
+    fn leaveInline(l: *Lowerer, saved: InlineSaved) void {
+        l.locals = saved.locals;
+        l.local_names = saved.local_names;
+        l.decl_index = saved.decl_index;
+        l.local_tag_base = saved.tag_base;
+        _ = l.inline_stack.pop();
+    }
+
+    /// A call of a function written in place, in expression position: its
+    /// body's value.
+    fn inlineExpr(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32) Allocator.Error!Node.Index {
+        const saved = try l.enterInline(out, site, index);
+        defer l.leaveInline(saved);
+        return l.expr(out, l.bodyOf(index));
+    }
+
+    /// A call, in tail position of a function that is no loop, of a
+    /// function written in place that is one: its arguments bound to `let`s
+    /// the loop reassigns, then the loop, whose exits return for the caller
+    /// (§8's shape, `loopOf`). False, with nothing written, when it is not a
+    /// loop this can write — one that builds a list — or the caller may
+    /// suspend.
+    /// The loop a looping candidate is written as at call `site`, before
+    /// anything is lowered, or null when it is not one `inlineLoop` writes:
+    /// the caller may suspend, the loop builds a list, or a variable the loop
+    /// reassigns would first be given a name the caller already has — a copy
+    /// of it, where the call is the shorter form.
+    fn inlineLoopPlan(l: *Lowerer, site: Inst.Index, index: u32) Allocator.Error!?Loop {
+        if (l.suspendable) return null;
+        const params = l.paramsOf(index);
+        const slots = try l.scratch.alloc(Loop.Slot, params.len);
+        const written = l.writtenParams(params);
+        for (params, slots, 0..) |param, *slot, i| {
+            slot.* = .{ .pattern = param.toOptional(), .unwritten = i >= written };
+            if (l.bir.instTag(param) == .pat_var) slot.local = l.bir.instData(param).lhs else slot.carried = true;
+        }
+        const jumps = try l.scratch.create(Loop.Jumps);
+        jumps.* = .{};
+        var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps };
+        if (!l.markTails(l.bodyOf(index), &loop) or loop.builds) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        for (slots, args) |slot, arg| {
+            if (!slot.carried or slot.unwritten) continue;
+            switch (l.bir.instTag(arg)) {
+                .local, .top => return null,
+                else => {},
+            }
+        }
+        return loop;
+    }
+
+    /// The candidate a call in tail position is written in place of, or
+    /// null: `tailStmts` and `condChainPossible` ask the one question. A
+    /// body written in place binds each argument that is not an atom, which
+    /// costs what the call saved, so only a call of atoms is taken in —
+    /// except a loop's, whose arguments are its variables' first values,
+    /// bound either way, and only in a function that is no loop itself.
+    fn tailInline(l: *Lowerer, site: Inst.Index, loop: ?*const Loop) Allocator.Error!?u32 {
+        const index = l.inlineTarget(site) orelse return null;
+        if (!l.inline_loops[index]) return if (l.atomArguments(site)) index else null;
+        if (loop != null) return null;
+        return if (try l.inlineLoopPlan(site, index) != null) index else null;
+    }
+
+    fn inlineLoop(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32) Allocator.Error!bool {
+        var loop = try l.inlineLoopPlan(site, index) orelse return false;
+        const slots = loop.slots;
+        const params = l.paramsOf(index);
+        const body = l.bodyOf(index);
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
+        loop.ready = l.mayGoInPlace(params, body);
+        loop.label = try l.topName(index);
+        // As `enterInline`: each argument lowered, and bound when it is not
+        // an atom, before the next — kept when it may have an effect.
+        const values = try l.scratch.alloc(Node.Index, args.len);
+        // The `const` each argument that is not an atom was bound by, which
+        // becomes its slot's own binding below.
+        const bound = try l.scratch.alloc(?Node.Index, args.len);
+        for (args, values, bound) |arg, *value, *stmt| {
+            stmt.* = null;
+            value.* = try l.expr(out, arg);
+            if (l.isAtom(value.*)) continue;
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, value.*, l.pos(arg));
+            stmt.* = out.items[out.items.len - 1];
+            if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, stmt.*.?);
+            value.* = try l.ident(n, l.pos(arg));
+        }
+        const saved: InlineSaved = .{
+            .locals = l.locals,
+            .local_names = l.local_names,
+            .decl_index = l.decl_index,
+            .tag_base = l.local_tag_base,
+        };
+        const d = l.bir.decls[index];
+        l.locals = l.bir.declLocals(d);
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.decl_index = index;
+        l.local_tag_base = l.local_tag_next;
+        l.local_tag_next += @intCast(l.locals.len);
+        try l.inline_stack.append(l.scratch, index);
+        l.inlined[index] = true;
+        defer l.leaveInline(saved);
+        const p = l.pos(site);
+        // A parameter no jump reassigns, passed a name of the caller that is
+        // immutable, is that name, as `enterInline` makes it.
+        const aliased = try l.scratch.alloc(bool, slots.len);
+        for (slots, values, bound, aliased) |slot, value, stmt, *alias| {
+            alias.* = stmt == null and !slot.carried and !slot.unwritten and slot.local != Loop.no_local and slot.local < l.local_names.len and
+                l.b.nodes.items(.tag)[value.int()] == .ident and !l.isMutable(value);
+            if (alias.*) l.local_names[slot.local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+        }
+        const built = try l.loopOf(&loop, body, p);
+        var k: usize = 0;
+        for (slots, values, bound, aliased) |slot, value, stmt, alias| {
+            if (slot.unwritten) continue;
+            defer k += 1;
+            if (alias) continue;
+            // The argument's own binding becomes the slot's: a `const`, or
+            // the `let` a jump reassigns.
+            if (stmt) |node| {
+                l.b.nodes.items(.data)[node.int()].lhs = @intFromEnum(built.names[k]);
+                if (slot.carried) l.b.nodes.items(.tag)[node.int()] = .let_decl;
+                continue;
+            }
+            if (!slot.carried) {
+                try l.constDecl(out, built.names[k], value, p);
+                continue;
+            }
+            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(built.names[k]), @intFromEnum(value.toOptional())));
+        }
+        try out.appendSlice(l.scratch, built.stmts);
+        return true;
+    }
+
+    /// A call of a function written in place, in tail position: its body in
+    /// tail position, returning — or jumping — for the caller.
+    fn inlineTail(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32, loop: ?*const Loop) Allocator.Error!void {
+        const saved = try l.enterInline(out, site, index);
+        defer l.leaveInline(saved);
+        return l.tailStmts(out, l.bodyOf(index), loop);
+    }
+
     /// Whether `inst` is a saturated `Js.ref e`.
     fn isRefCall(l: *Lowerer, inst: Inst.Index) bool {
         if (l.bir.instTag(inst) != .call) return false;
@@ -6966,7 +7413,7 @@ const Lowerer = struct {
         l.case_depth += 1;
         defer l.case_depth = depth;
         c.sink = .{ .discard = .{ .result = .none } };
-        if (l.condChainPossible(&c)) {
+        if (try l.condChainPossible(&c)) {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) return l.discardValue(out, try l.condChain(&c, c.tree.root), c.p);
         }
@@ -7132,7 +7579,7 @@ const Lowerer = struct {
         // The conditional-expression shape: no `switch`, no shared leaf,
         // nothing bound, every leaf one expression — `a ? b : c` and nothing
         // more, exactly as today.
-        if (l.condChainPossible(&c)) {
+        if (try l.condChainPossible(&c)) {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) return l.condChain(&c, c.tree.root);
         }
@@ -7189,7 +7636,7 @@ const Lowerer = struct {
         // A chain of two-way tests over expression leaves stays the
         // conditional expression it is today: `return a ? b : c` is shorter
         // than two `return`s and says the same thing.
-        if (l.condChainPossible(&c)) {
+        if (try l.condChainPossible(&c)) {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) {
                 const value = try l.condChain(&c, c.tree.root);
@@ -7477,7 +7924,7 @@ const Lowerer = struct {
         defer l.case_depth = depth;
         c.sink = sink;
         c.flat_else = true;
-        if (l.condChainPossible(&c)) {
+        if (try l.condChainPossible(&c)) {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) {
                 try l.finishLeaf(&c, out, try l.condChain(&c, c.tree.root), c.p);
@@ -7776,7 +8223,7 @@ const Lowerer = struct {
     /// `case` or a tail self-call — the three that need statements of their
     /// own. Whether the bodies really lower without statements is only known
     /// after they are lowered, which is what `readyIsClean` answers.
-    fn condChainPossible(l: *Lowerer, c: *Case) bool {
+    fn condChainPossible(l: *Lowerer, c: *Case) Allocator.Error!bool {
         if (c.tree.hasSwitch() or c.tree.hasShared()) return false;
         for (c.branches, 0..) |branch, i| {
             if (c.tree.uses[i] == 0) continue;
@@ -7786,9 +8233,13 @@ const Lowerer = struct {
             const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
             switch (l.bir.instTag(body)) {
                 .let, .case => return false,
+                // A call written in place is statements of its own, in the
+                // leaf's position (§9, *A function called once is written
+                // where it is called*).
                 .call => switch (c.sink) {
-                    .tail => |loop| if (loop) |lp| {
-                        if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
+                    .tail => |loop| {
+                        if (loop) |lp| if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
+                        if (try l.tailInline(body, loop) != null) return false;
                     },
                     .value, .discard => {},
                 },

@@ -1,0 +1,46 @@
+-- Functions called from one place, which `--release` writes at that place
+-- (`backend.md` §9, *A function called once is written where it is
+-- called*), evaluate as the call did: the arguments once each, in order,
+-- before the body — an argument a parameter ignores included, and one
+-- whose named parameter nothing reads — the body's `let`s where the call
+-- was, and a loop written in its caller runs to its end. `Debug.log` shows
+-- the order in both builds.
+import Node exposing (Program)
+
+
+pick : Int, Int -> Int
+pick a _ =
+    let
+        _ =
+            Debug.log a "body"
+    in
+    a + a
+
+
+countDown : Int, Int -> Int
+countDown n acc =
+    if n == 0 then
+        acc
+
+    else
+        countDown (n - 1) (acc + Debug.log n "step")
+
+
+total : Int -> Int
+total n =
+    countDown n 0
+
+
+first : Int, Int -> Int
+first a unread =
+    a
+
+
+run : () -> Int
+run () =
+    pick (Debug.log 1 "first") (Debug.log 2 "second") + total 3 + first 0 (Debug.log 4 "unread")
+
+
+main : Program
+main =
+    Node.print (String.fromInt (run ()))

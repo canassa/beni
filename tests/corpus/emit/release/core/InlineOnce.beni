@@ -1,0 +1,92 @@
+-- emit/release: a function of the module called from one place is written
+-- at that place (`backend.md` §9, *A function called once is written where
+-- it is called*; research 47 §6 item 6).
+--
+--   * `put` calls `putRun` once, in tail position, and `putRun` is a loop:
+--     `put` is the loop, its carried argument a `let`, the other two the
+--     names the caller passed — research 47 §4.3's hand-written `put`;
+--   * `label` calls `double` once in an argument, with names: `double`'s
+--     body, an expression, is written where the call was;
+--   * `shout` calls `exclaim` in tail position, with names: `exclaim`'s
+--     arms return for `shout`;
+--   * `grade` calls `describe` with an argument that is not a name: binding
+--     it would cost what the call saves, so the call stays;
+--   * `twice` is called from two places and `answer` is a top-level constant,
+--     and `exported` is `pub`: none is taken in.
+import Js
+
+
+pub put : Js.Value, Js.Value, Js.Value -> ()
+put parent i before =
+    putRun parent (Js.get i "first") (Js.get i "last") before
+
+
+putRun : Js.Value, Js.Value, Js.Value, Js.Value -> ()
+putRun parent n end before =
+    let
+        next =
+            Js.get n "nextSibling"
+
+        _ =
+            Js.call parent "insertBefore" [ n, before ]
+    in
+    if Js.same n end then
+        ()
+    else
+        putRun parent next end before
+
+
+double : Int -> Int
+double n =
+    n * 2 + 1
+
+
+pub label : Int, String -> String
+label n unit =
+    String.append (String.fromInt (double n)) unit
+
+
+exclaim : String, Bool -> String
+exclaim s loud =
+    if loud then
+        String.append s "!"
+    else
+        s
+
+
+pub shout : String, Bool -> String
+shout s loud =
+    exclaim s loud
+
+
+describe : Int -> String
+describe n =
+    if n == 0 then
+        "none"
+    else
+        "some"
+
+
+pub grade : Int -> String
+grade n =
+    describe (n - 1)
+
+
+twice : Int -> Int
+twice n =
+    n * 2
+
+
+pub both : Int -> Int
+both n =
+    twice n + twice (n + 1)
+
+
+pub exported : Int -> Int
+exported n =
+    n + 1
+
+
+pub answer : Int
+answer =
+    exported 41

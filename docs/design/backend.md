@@ -4510,10 +4510,23 @@ suspend, in another declaration that has no second body, inside a function (a to
 expression would need a called arrow to hold the statements). A declaration that refers to itself
 qualifies only when every such reference is a tail self-call: it is a loop (§8).
 
+**Which calls take it in — R47-3's rule, measured.** A body written in place has to bind every
+argument that is not an atom to a `const` of its own, which costs about what dropping the call and
+the declaration saves; measured on the `bench/ui` app, taking such calls in grew it by 6 brotli
+bytes. So **a call is taken in only when every argument is an atom** of `Bir` — a local, a
+declaration, a literal — and, in expression position, only when the body is an expression itself
+(neither a `let` nor a `case`, which would need a temporary assigned in each arm). **A loop is the
+exception**, at a tail call: its arguments are its variables' first values, bound either way, so it
+is taken in unless a variable it reassigns would first be given a name the caller already has (a
+copy, where the call is the shorter form). The decision is one predicate (`Lower.tailInline`), asked
+by the tail position and by the `case` that decides whether its arms are an expression.
+
 **How it is written.** The call's arguments are evaluated as the call evaluated them — once each, in
-order, before the body (`orderedExprs`) — and bound to the parameters: a parameter passed an
-immutable name IS that name, one ignored (`_`, `()`) has its argument evaluated for what it does,
-and any other is a `const`. The body is then lowered where the call stood, in the caller's
+order, before the body: each argument that is not an atom is bound to a `const` before the next is
+lowered, and that `const` is kept by the release optimiser whenever the argument may have an effect,
+whether or not the body reads its parameter (a parameter nothing reads is not an argument nothing
+evaluates). A parameter is then the name its argument is — the caller's own, when it is immutable,
+or the `const` — and a literal is bound once. The body is then lowered where the call stood, in the caller's
 function, with the callee's locals named past every local named so far in that function (their
 disambiguator is offset), so two declarations' `x$1` never meet: in tail position its tail positions
 return (or jump, when the caller is a loop and the body tail-calls it) for the caller; anywhere else
@@ -4521,20 +4534,27 @@ its value is the call's. **A loop** is written only at a tail call of a function
 a loop and cannot suspend: its carried parameters become `let`s, the others `const`s or the names
 passed, then §8's `for (;;)`, whose exits return for the caller — research 47 §4.3's hand-written
 `put`, statement for statement. Anywhere else — a loop called in expression position — the
-declaration is written as before. Whatever a call did not take in is lowered where it stands in the
-emission order, after the rest, so the rule can decline at any site and cost bytes, never a program.
+declaration is written as before. **Every declaration is still lowered where it stands**, in the
+emission order, and a candidate's statements are left out afterwards when its call took it in: so
+every order lowering discovers — the imports, the hoisted templates, the nullary constants, and
+with them the one scope's evaluation order and names — is the one a build that takes nothing in has,
+and the rule can decline at any site and cost bytes, never a program. (Lowering candidates last
+instead moved those orders and cost 18 brotli bytes on the `element` page for nothing taken in.) A
+body holding markup is never taken in: its templates would be hoisted twice.
 
 **What cannot change.** `language.md` §6's order is the call's: arguments before the body, each
 once, and the body's `let`s where the call was. `run/InlineOnceOrder` observes that in both builds;
 every `run/` and `browser/` fixture's release pass is the differential test.
 
-**Measured** on 2026-10-02: `bench/size.mjs`'s release total 246 993 → **246 778** brotli
-(−0.09 %); the `bench/ui` app **5 032 → 5 032** (13 968 → 13 963 raw: its beni is the TEA layer,
-which has few such helpers); the empty pages of `browser` and `browser-tea` unchanged (980, 993),
-`element` 1 668 → 1 666, `effects` 5 165 → 5 171; research 47's empty page with the runtime module
-(`boundary.md` §9.2) **1 058 → 1 037**, against the hand-written 980. Fixtures:
-`emit/release/core/InlineOnce` (a loop, an expression, a tail call, and the three that are not taken
-in), `emit/release/split/EmptyPage`, `run/InlineOnceOrder`.
+**Measured** on 2026-10-02: `bench/size.mjs`'s release total 246 993 → **246 933** brotli; the
+`bench/ui` app **5 032 → 5 032**, byte for byte (its beni is the TEA layer, whose helpers are called
+with expressions); every empty page of `browser` and `browser-tea` unchanged (980, 993, 1 668,
+5 165); research 47's empty page with the runtime module (`boundary.md` §9.2) **1 058 → 1 043**,
+against the hand-written 980 — `put`, `drop` and `run` are their loops, `template`'s parser still a
+function of its own (its call passes expressions). Speed was not measured again: the `bench/ui`
+app's bytes did not move. Fixtures: `emit/release/core/InlineOnce` (a loop, an expression, a tail
+call, and the four that are not taken in), `emit/release/split/EmptyPage`, `run/InlineOnceOrder`
+(red before the argument rule above: an argument whose parameter nothing read lost its effect).
 
 ### Whole-program specialisation
 
@@ -4545,7 +4565,7 @@ file allows (*Hand-written JavaScript under `--release`* cuts whole exports, nev
 empty page never passes `template` a flag, never mounts a hosted program, never holds a list; this
 is how it stops paying for them. Research 47 §5.1's `v3` hand-applied it: the empty page **975 →
 772** brotli against the hand-written 980, the only step that makes a beni runtime *smaller* than
-the one it replaces (R47-3). The page with the runtime module is at 1 037 today (*A function called
+the one it replaces (R47-3). The page with the runtime module is at 1 043 today (*A function called
 once …*, above); `emit/release/split/EmptyPage` is the golden the slices below move.
 
 **Where.** `--release` application builds, after every module is lowered and before any is printed,
@@ -4911,7 +4931,7 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   with `tests/platforms/beni-runtime` (the port as its runtime module, the rest of the runtime as
   its file): **1 107 → 1 058** brotli against the same port spliced in ahead of the program, which
   kept every function of the module; the hand-written runtime's page is 980. With §9's *A function
-  called once is written where it is called*, 1 037. The rest of the gap is research 47 §6's item 8,
+  called once is written where it is called*, 1 043. The rest of the gap is research 47 §6's item 8,
   specialisation (§9, *Whole-program specialisation*), which `emit/release/split/EmptyPage` shows:
   `template`'s flag branches for flags the page never passes, the list half of `first` and `last`,
   and a slot's fields only list code reads.
