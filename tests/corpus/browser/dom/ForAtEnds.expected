@@ -1,0 +1,261 @@
+-- load
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"plain"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+(the DOM did not change)
+-- click #empty
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"plain"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+(the DOM did not change)
+-- click #grow
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"row 0"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <li>"row 0"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"row 0"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"plain"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"trailing's first"</li>
+      <li>"row 0"</li>
+      <!---->
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="grow">"grow"</button>
+    <button id="empty">"empty"</button>
+    <ul>
+      <li>"before"</li>
+      <li>"row 0"</li>
+      <li>"leading's last"</li>
+      <li>"after"</li>
+    </ul>
+  </main>
+</body>
+-- click #next
+(the DOM did not change)

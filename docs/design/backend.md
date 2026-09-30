@@ -5993,6 +5993,15 @@ plain `foreign` calls; a `dom` fixture is built for `browser` instead, as that s
 beni, against Solid 2 re-run in the same batch, judged on per-operation script medians and never on
 a geometric mean, plus research 29's static-heavy page and a helper-heavy one.
 
+*Added 2026-10-02 (the empty page's study found it missing): an instance whose first or last node
+is a list.* `browser/dom/ForAtEnds` switches a hole between components that begin with a `For`, end
+with one, are one, have none, and two `Html.map`s of them, with rows and with none, so an instance's
+ends are a list's first and last rows, its marker, and a map's markup through a slot with no marker.
+Against a copy of the runtime with `head`'s list arm reading the second row, `head` taking an empty
+list for a full one, or `tail` reading a marker-less slot's marker, it fails; `tail`'s list arm is
+reached by no construct today (a slot with no marker holds a list only inside an element, never at
+an instance's end), and a mutant of it survives.
+
 ### 15.11 The `browser` runtime: program, mount and render loop
 
 The owner's W28 answer is Solid 2's loop (`plans/browser-decisions.md`, W28; research 27 §3.1–§3.6).

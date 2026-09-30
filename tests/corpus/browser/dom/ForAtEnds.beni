@@ -1,0 +1,104 @@
+-- A component whose first or last node is a `For` (backend.md §15.5): an
+-- instance's ends are then its list's first and last rows, or the list's
+-- marker when the list is empty, so the instance moves and goes with
+-- exactly its own nodes. A hole switches between six components, each a
+-- site of its own, so every switch puts the new one before the old one's
+-- first node and takes out the old one's nodes: `leading` begins with its
+-- list, `trailing` ends with it, `only` is its list and nothing else,
+-- `plain` has no list, and two are `Html.map`s of `trailing` and `leading`,
+-- whose ends are their markup's, through a slot with no marker. The `li`s
+-- around the hole show that nothing outside it moves or goes. Each switch
+-- is made with rows, and again with none.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Next
+    | Grow
+    | Empty
+
+
+type alias Model =
+    { shape : Int, items : List String }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Next ->
+            { model | shape = if model.shape == 5 then 0 else model.shape + 1 }
+
+        Grow ->
+            { model | items = model.items ++ [ "row ${String.fromInt (List.length model.items)}" ] }
+
+        Empty ->
+            { model | items = [] }
+
+
+leading : List String -> Html msg
+leading items =
+    <>
+        <For each={items}>{\s -> <li>{s}</li>}</For>
+        <li>leading's last</li>
+    </>
+
+
+trailing : List String -> Html msg
+trailing items =
+    <>
+        <li>trailing's first</li>
+        <For each={items}>{\s -> <li>{s}</li>}</For>
+    </>
+
+
+only : List String -> Html msg
+only items =
+    <>
+        <For each={items}>{\s -> <li>{s}</li>}</For>
+    </>
+
+
+plain : Html msg
+plain =
+    <li>plain</li>
+
+
+shape : Model -> Html msg
+shape model =
+    if model.shape == 0 then
+        leading model.items
+
+    else if model.shape == 1 then
+        trailing model.items
+
+    else if model.shape == 2 then
+        only model.items
+
+    else if model.shape == 3 then
+        plain
+
+    else if model.shape == 4 then
+        Html.map (trailing model.items) (\m -> m)
+
+    else
+        Html.map (leading model.items) (\m -> m)
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="next" onClick={Next}>next</button>
+        <button id="grow" onClick={Grow}>grow</button>
+        <button id="empty" onClick={Empty}>empty</button>
+        <ul>
+            <li>before</li>
+            {shape model}
+            <li>after</li>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { shape = 0, items = [ "a", "b" ] }, update = update, view = view }

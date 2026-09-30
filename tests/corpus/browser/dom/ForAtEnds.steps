@@ -1,0 +1,24 @@
+# With two rows: leading, trailing, only, plain, the two maps, and back to
+# leading.
+click #next
+click #next
+click #next
+click #next
+click #next
+click #next
+# With none: each list is its marker.
+click #empty
+click #next
+click #next
+click #next
+click #next
+click #next
+click #next
+# A row again, then round once more.
+click #grow
+click #next
+click #next
+click #next
+click #next
+click #next
+click #next
