@@ -1,0 +1,1 @@
+{ "platform": true, "name": "views", "platforms": ["node"], "reexports": ["Node"], "markup": { "lowering": "ssr", "runtime": "markup.js", "module": "Rt" } }

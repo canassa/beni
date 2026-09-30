@@ -164,6 +164,11 @@ pub fn resolveChain(arena: Allocator, io: Io, requested: []const u8, failure: *?
             .lowering = chain.layers[lowering.layer].name,
             .runtime = chain.layers[runtime.layer].name,
         } });
+        // The runtime module is the runtime's other half, of its package.
+        if (chain.firstMarkup("module")) |module| if (module.layer != runtime.layer) return r.fail(.{ .markup_split = .{
+            .lowering = chain.layers[lowering.layer].name,
+            .runtime = chain.layers[module.layer].name,
+        } });
     };
     return chain;
 }
@@ -410,6 +415,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .lowering_root = if (lowering) |l| chain.layers[l.layer].root else chain.top().root,
             .markup_runtime = if (markup_runtime) |r| r.value else null,
             .markup_runtime_dir = if (markup_runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
+            .markup_module = if (chain.firstMarkup("module")) |m| m.value else null,
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };

@@ -1,0 +1,22 @@
+-- The empty page built for tests/platforms/beni-runtime, whose markup
+-- runtime is the beni module `Rt` beside a hand-written file that imports it
+-- (boundary.md §9.2, *A runtime module*; backend.md §15.1): one file under
+-- `--release`, in which the module's functions are compiled with the program
+-- and only the ones the page reaches are written — `template`, `childHtml`
+-- and what they call, the render loop, `run` and the mount — and nothing of
+-- the hand-written half, which the empty page does not reach. `run(…)` and
+-- `export{… as flush}` name the module's declarations. The golden is set
+-- beside the hand-written runtime's empty page, `--platform=browser`, which
+-- is the shape each function copies (research 47 §4.3).
+import Browser
+import Html exposing (Html)
+
+
+view : {} -> Html {}
+view _ =
+    <></>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = {}, update = \_ m -> m, view = view }

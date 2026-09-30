@@ -41,7 +41,9 @@
 //!   its own down the chain: `vocabulary` (the module holding the vocabulary
 //!   declarations), `type` (the module-qualified markup type), `lowering` (a
 //!   markup lowering this binary has) and `runtime` (the JavaScript file that
-//!   implements it).
+//!   implements it) — and, since 2026-10-02, `module`: a beni module of the
+//!   runtime's package whose `pub` values supply runtime exports in the
+//!   file's place (§9.2, *A runtime module*).
 //!
 //! An unknown key is ignored rather than rejected: a manifest is a forward
 //! compatibility surface, and packages will add to it.
@@ -76,6 +78,9 @@ pub const Markup = struct {
     type: ?[]const u8 = null,
     lowering: ?[]const u8 = null,
     runtime: ?[]const u8 = null,
+    /// A beni module of the same package whose `pub` values supply runtime
+    /// exports in the file's place (§9.2, *A runtime module*).
+    module: ?[]const u8 = null,
 };
 
 pub const ParseError = error{

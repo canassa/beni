@@ -1,8 +1,10 @@
 --! The slot and mount half of `platforms/browser/runtime.js`, written in
 --! beni over core's `Js` (research 47, a spike). Each declaration is the
 --! JavaScript function of the same name, statement for statement where beni
---! allows it; `splice.mjs` compiles this module and writes the result into
---! `../beni-runtime/runtime.js` in place of the hand-written half.
+--! allows it. It is this platform's runtime module (`boundary.md` §9.2, *A
+--! runtime module*): its `pub` values stand in for the markup runtime's
+--! exports of their names, `runtime.js` holds the rest and imports what it
+--! calls from here, and both are compiled with the program.
 --!
 --! Where beni has no counterpart the port says so: a `for` loop is a tail
 --! call. A `let` the JavaScript assigns is a `Js.Ref`, which the compiler

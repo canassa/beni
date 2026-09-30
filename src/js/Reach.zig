@@ -267,6 +267,10 @@ pub const Input = struct {
     /// payload extractor is one of its values, reached by the markup leg
     /// (`checker-v2.md` §25.7).
     vocabulary: ?Graph.Index = null,
+    /// Roots beside the build's own: the runtime module's values that the
+    /// hand-written runtime or the entry file reads, or that a lowering
+    /// imports (`backend.md` §15.1, *The runtime module*).
+    extra_roots: []const Node = &.{},
 
     fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -319,6 +323,7 @@ pub const Input = struct {
     /// for a `main` (`missing_main` does not fire, and its type is not
     /// checked against the platform's `Program`) and the entry file.
     fn collectRoots(in: Input, scratch: Allocator, out: *std.ArrayList(Node)) Allocator.Error!void {
+        try out.appendSlice(scratch, in.extra_roots);
         if (!in.library) {
             if (in.entry) |node| try out.append(scratch, node);
             return;

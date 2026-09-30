@@ -96,6 +96,9 @@ pub const Result = struct {
     /// The markup runtime's exports the module imports, by name, in the
     /// caller's scratch arena.
     markup_exports: []const []const u8 = &.{},
+    /// The runtime exports the module took from the runtime module instead
+    /// (`boundary.md` §9.2), by name, in the caller's scratch arena.
+    markup_module_uses: []const []const u8 = &.{},
     /// The program start data the markup lowering contributed, in the
     /// caller's scratch arena.
     start: []const StartPair = &.{},
@@ -208,6 +211,14 @@ pub const Markup = struct {
     /// file.
     runtime: []const u8,
     build: beni_markup.Build,
+    /// The runtime module (`boundary.md` §9.2, *A runtime module*), and the
+    /// runtime exports it supplies in the file's place.
+    module: ?Graph.Index = null,
+    supplied: []const Supplied = &.{},
+
+    /// A runtime export the module supplies: its name, its declaration in
+    /// the module, and its row among the module's interface values.
+    pub const Supplied = struct { name: []const u8, decl: u32, value: u32 };
 };
 
 /// Lower one checked module. `scratch` is the caller's arena — every
@@ -302,6 +313,7 @@ pub fn lower(
         .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
+        .markup_module_uses = l.markup_module_uses.items,
         .start = if (l.mk) |st| st.start.items else &.{},
         .effect_keep = l.effect_keep.items,
         .pure_discards = l.pure_discards.items,
@@ -634,6 +646,9 @@ const Lowerer = struct {
     /// The same exports by name, for `--release`'s cut of the runtime
     /// file to what the build imports (`backend.md` §9).
     markup_exports: std.ArrayList([]const u8) = .empty,
+    /// The runtime exports this module took from the runtime module
+    /// (`markupRuntime`), by name, in first-use order.
+    markup_module_uses: std.ArrayList([]const u8) = .empty,
 
     /// A constructor, this module's (`ext` false: a `Bir.ctors` index) or
     /// another's (an interface constructor row of `module`).
@@ -8262,6 +8277,17 @@ const Lowerer = struct {
 
     fn markupRuntime(l: *Lowerer, export_name: []const u8) (Allocator.Error || error{Reported})!JsIr.NameIndex {
         const st = l.mk.?;
+        // An export the runtime module supplies is that module's value
+        // (`backend.md` §15.1, *The runtime module*).
+        if (l.in.markup) |mk| if (mk.module) |module| for (mk.supplied) |s| {
+            if (!std.mem.eql(u8, s.name, export_name)) continue;
+            var known = false;
+            for (l.markup_module_uses.items) |u| known = known or std.mem.eql(u8, u, s.name);
+            if (!known) try l.markup_module_uses.append(l.scratch, s.name);
+            if (module == l.in.module) return l.topName(s.decl);
+            try l.need(module, s.value);
+            return l.externalName(module, s.value);
+        };
         for (st.lowering.runtime) |declared| {
             if (!std.mem.eql(u8, declared.name, export_name)) continue;
             const base = try l.interner.getOrPut(l.gpa, export_name);

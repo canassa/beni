@@ -163,6 +163,12 @@ own. The differential oracle against dom-expressions' fixtures is a
 separate, DOM-free comparison of template strings and walks:
 `tests/oracle/`, run by `tests/blackbox/oracle_test.zig`.
 
+**`split/`** — `browser/split/` pages and `emit/release/split/` release
+applications, whose golden is `_main.mjs` whole — are built with
+`--platform=tests/platforms/beni-runtime`, the `dom` lowering over a markup
+runtime that is the beni module `Rt` and a hand-written file importing it
+(`boundary.md` §9.2, *A runtime module*).
+
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).
 

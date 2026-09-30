@@ -1154,6 +1154,13 @@ const Facts = struct {
 /// `class` — or exports a declaration whose names it cannot list — and so
 /// no name in it is renamed.
 fn facts(arena: Allocator, s: *const Structure, shown: []const bool) Allocator.Error!?Facts {
+    return factsIgnoring(arena, s, shown, null);
+}
+
+/// `facts`, reading nothing of the tokens `ignore` marks: a scope-hoisted
+/// markup runtime's imports of its runtime module (`hoistableWith`), whose
+/// braces are no object literal and whose names are no import's.
+fn factsIgnoring(arena: Allocator, s: *const Structure, shown: []const bool, ignore: ?[]const bool) Allocator.Error!?Facts {
     const tokens = s.tokens;
     for (tokens, 0..) |_, i| {
         if (s.word(i, "eval") or s.word(i, "with") or s.word(i, "class")) return null;
@@ -1162,6 +1169,7 @@ fn facts(arena: Allocator, s: *const Structure, shown: []const bool) Allocator.E
     var f: Facts = .{};
     var list: std.ArrayList(u32) = .empty;
     for (tokens, 0..) |_, i| {
+        if (ignore) |skip| if (skip[i]) continue;
         // An `import`'s every name, and an `export { … }` list's.
         if (s.word(i, "import") and !s.punct(i + 1, "(") and !s.punct(i + 1, ".")) {
             var j = i + 1;
@@ -1214,6 +1222,7 @@ fn facts(arena: Allocator, s: *const Structure, shown: []const bool) Allocator.E
 
     // Where a name may be a property key, over every token, shown or not.
     for (tokens, 0..) |_, i| {
+        if (ignore) |skip| if (skip[i]) continue;
         if (!s.name(i)) continue;
         const t = s.text(i);
         if (s.punct(i + 1, ":")) {
@@ -1315,6 +1324,90 @@ fn assign(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?
 // Scope hoisting (`backend.md` §9, *One scope-hoisted file under `--release`*)
 // ---------------------------------------------------------------------------
 
+/// `import { a, b } from "<specifier>";` in a markup runtime, where the
+/// specifier names the build's runtime module (`boundary.md` §9.2, *A
+/// runtime module*): the statement's tokens and bytes, and the names it
+/// imports. The file's own names ARE the module's: no `as`.
+pub const ProgramImport = struct {
+    /// Token range `[start, end)` of the statement.
+    start: u32,
+    end: u32,
+    /// Its byte range.
+    bytes_start: u32,
+    bytes_end: u32,
+    names: []const Named,
+    /// Where an `as` is written in the braces, which is refused.
+    renamed: ?u32 = null,
+
+    pub const Named = struct { name: []const u8, offset: u32 };
+};
+
+/// Every `import { … } from "<specifier>"` statement of `source`, in order.
+/// Null when the tokenizer refuses the file. A statement of another form
+/// that names the specifier is not listed, and check 3 then finds its names
+/// unbound or the build finds nothing to rewrite.
+pub fn programImports(arena: Allocator, source: []const u8, tokens: []const Token, specifier: []const u8) Allocator.Error![]const ProgramImport {
+    var out: std.ArrayList(ProgramImport) = .empty;
+    var i: usize = 0;
+    while (i + 4 < tokens.len) : (i += 1) {
+        if (!isWord(tokens[i], source, "import") or !isPunct(tokens[i + 1], source, "{")) continue;
+        if (i > 0 and !(isPunct(tokens[i - 1], source, ";") or isPunct(tokens[i - 1], source, "}"))) continue;
+        var names: std.ArrayList(ProgramImport.Named) = .empty;
+        var renamed: ?u32 = null;
+        var j = i + 2;
+        while (j < tokens.len and !isPunct(tokens[j], source, "}")) : (j += 1) {
+            if (tokens[j].kind != .ident) continue;
+            if (isWord(tokens[j], source, "as")) {
+                renamed = renamed orelse tokens[j].start;
+                continue;
+            }
+            try names.append(arena, .{ .name = tokens[j].text(source), .offset = tokens[j].start });
+        }
+        if (j + 2 >= tokens.len or !isWord(tokens[j + 1], source, "from") or tokens[j + 2].kind != .string) continue;
+        const quoted = tokens[j + 2].text(source);
+        if (!std.mem.eql(u8, quoted[1 .. quoted.len - 1], specifier)) continue;
+        var end = j + 3;
+        if (end < tokens.len and isPunct(tokens[end], source, ";")) end += 1;
+        try out.append(arena, .{
+            .start = @intCast(i),
+            .end = @intCast(end),
+            .bytes_start = tokens[i].start,
+            .bytes_end = tokens[end - 1].end,
+            .names = names.items,
+            .renamed = renamed,
+        });
+        i = end - 1;
+    }
+    return out.items;
+}
+
+/// The names the program imports of `source` that the part of it `keep`'s
+/// exports reach mentions, or every one of them when `keep` is null (a file
+/// copied whole). Null when the file cannot be cut, which keeps it whole.
+pub fn programUses(arena: Allocator, source: []const u8, specifier: []const u8, keep: ?[]const []const u8) Allocator.Error!?[]const []const u8 {
+    const tokens = tokenize(arena, source) catch |err| switch (err) {
+        error.Unsupported => return null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const imports = try programImports(arena, source, tokens, specifier);
+    var names: std.StringArrayHashMapUnmanaged(bool) = .empty;
+    for (imports) |imp| for (imp.names) |n| try names.put(arena, n.name, keep == null);
+    if (keep) |wanted| {
+        const c = try cut(arena, source, tokens, wanted) orelse return null;
+        const inside = try arena.alloc(bool, tokens.len);
+        @memset(inside, false);
+        for (imports) |imp| @memset(inside[imp.start..imp.end], true);
+        for (tokens, 0..) |t, at| {
+            if (!c.mask[at] or inside[at] or t.kind != .ident or isProperty(tokens, source, at)) continue;
+            if (names.getPtr(t.text(source))) |used| used.* = true;
+        }
+    }
+    var out: std.ArrayList([]const u8) = .empty;
+    var it = names.iterator();
+    while (it.next()) |entry| if (entry.value_ptr.*) try out.append(arena, entry.key_ptr.*);
+    return out.items;
+}
+
 /// A hand-written file read for a scope-hoisted build: cut to the exports
 /// the build imports, with what the linker needs to put it in one module
 /// scope with every other file of the program. `hoistable` returns null
@@ -1351,6 +1444,9 @@ pub const Hoisted = struct {
     /// It mentions `import` outside a top-level `import` statement —
     /// `import.meta`, `import()` — whose meaning depends on the file it is in.
     located: bool,
+    /// Its `import`s of the runtime module (`hoistableWith`): not imports
+    /// of the one file, and printed as nothing.
+    program: []const ProgramImport = &.{},
 
     pub const Top = struct {
         name: []const u8,
@@ -1392,13 +1488,31 @@ pub const Hoisted = struct {
 /// Read `source` for a scope-hoisted build, cut to the exports `keep` names.
 /// Null when the tokenizer or elimination refuses it, as `minify` does.
 pub fn hoistable(arena: Allocator, source: []const u8, keep: []const []const u8) Allocator.Error!?Hoisted {
+    return hoistableWith(arena, source, keep, null);
+}
+
+/// `hoistable`, for the markup runtime of a build with a runtime module
+/// (`boundary.md` §9.2): an `import { … } from "<program>"` is no import
+/// the one file keeps but names of the program's own scope, which the file
+/// binds as the linker spells them (`Hoisted.program`, `backend.md` §15.1).
+pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const u8, program: ?[]const u8) Allocator.Error!?Hoisted {
     const tokens = tokenize(arena, source) catch |err| switch (err) {
         error.Unsupported => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
     const c = try cut(arena, source, tokens, keep) orelse return null;
     const s: Structure = try .init(arena, source, tokens);
-    const f = try facts(arena, &s, c.mask);
+    const program_imports: []const ProgramImport = if (program) |spec| try programImports(arena, source, tokens, spec) else &.{};
+    const ignore = try arena.alloc(bool, tokens.len);
+    @memset(ignore, false);
+    for (program_imports) |imp| @memset(ignore[imp.start..imp.end], true);
+    var f = try factsIgnoring(arena, &s, c.mask, ignore);
+    for (program_imports) |imp| {
+        if (imp.renamed != null) return null;
+        // Bound by the file as far as renaming goes: the linker gives each
+        // the spelling of the declaration it names.
+        if (f) |*ff| for (imp.names) |n| try ff.bound.put(arena, n.name, {});
+    }
 
     var tops: std.ArrayList(Hoisted.Top) = .empty;
     var exports: std.ArrayList(Hoisted.Export) = .empty;
@@ -1414,6 +1528,10 @@ pub fn hoistable(arena: Allocator, source: []const u8, keep: []const []const u8)
         switch (u.kind) {
             .import => {
                 @memset(outside[u.start..u.end], true);
+                const of_program = for (program_imports) |imp| {
+                    if (imp.start == u.start) break true;
+                } else false;
+                if (of_program) continue;
                 var names: std.ArrayList([]const u8) = .empty;
                 var specifier: []const u8 = "";
                 for (u.start..u.end) |i| {
@@ -1488,6 +1606,7 @@ pub fn hoistable(arena: Allocator, source: []const u8, keep: []const []const u8)
         .inert = inert,
         .patterned = patterned,
         .located = located,
+        .program = program_imports,
     };
 }
 
@@ -1514,6 +1633,13 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
         if (!live) continue;
         switch (u.kind) {
             .import => {
+                const of_program = for (h.program) |imp| {
+                    if (imp.start == u.start) break true;
+                } else false;
+                if (of_program) {
+                    @memset(shown[u.start..u.end], false);
+                    continue;
+                }
                 @memset(alone, false);
                 @memset(alone[u.start..u.end], true);
                 const plan: Plan = .{ .shown = alone, .spell = spell };

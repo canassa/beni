@@ -1,0 +1,13 @@
+-- `boundary.md` §9.2's runtime module: the platform `views` names `ssr` with
+-- a runtime split between `markup.js` and the module `Rt`. `Rt`'s `list`
+-- stands in for the lowering's three-argument export and takes two —
+-- `foreign_arity_mismatch` at the declaration — and `markup.js` imports
+-- `missing` from `beni:Rt`, which `Rt` does not declare —
+-- `foreign_unbound_reference` at the name. `escape`, which `Rt` supplies
+-- and `markup.js` does not export, is no mismatch. Nothing is written.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"

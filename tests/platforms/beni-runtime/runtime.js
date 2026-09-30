@@ -1,3 +1,11 @@
+// The browser platform's runtime (platforms/browser/runtime.js) with its
+// slot and mount half — instances and their nodes, templates, slots, the
+// render loop and the mount — written in beni over core's `Js`, in
+// `Rt.beni`, this platform's runtime module (`boundary.md` §9.2, *A runtime
+// module*; research 47). The rest, from `childMaybe` on, is the hand-written
+// runtime's, and reads the beni half through the import below.
+import { first, last, put, drop, slot, parentOf, unit, patch, place, childHtml } from "beni:Rt";
+
 export const childMaybe = (s, b) => {
   if (b !== null) childHtml(s, b);
   else if (s.i !== null) {

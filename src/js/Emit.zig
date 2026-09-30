@@ -157,6 +157,10 @@ pub const Platform = struct {
     /// output directory of that package (`boundary.md` §9.2).
     markup_runtime: ?[]const u8 = null,
     markup_runtime_dir: []const u8 = platform_dir,
+    /// The chain's `"markup".module` (`boundary.md` §9.2, *A runtime
+    /// module*): a module of the runtime's package whose `pub` values supply
+    /// runtime exports in the file's place.
+    markup_module: ?[]const u8 = null,
 };
 
 /// The markup lowerings compiled into this binary (`boundary.md` §9.5),
@@ -307,6 +311,7 @@ pub fn run(
     var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
     defer pool.deinit();
     e.pool = &pool;
+    e.extra_roots = try e.coarseRuntimeRoots();
     try e.eliminate(entry);
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -416,6 +421,18 @@ const Emitter = struct {
     /// Whether a module written imports the markup runtime, which the
     /// build then copies (`backend.md` §15.1).
     uses_markup_runtime: bool = false,
+    /// The runtime module (`boundary.md` §9.2, *A runtime module*), the
+    /// exports it supplies, and what the markup runtime imports from it:
+    /// every name, and the names its kept part mentions. Found by
+    /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
+    runtime_module: ?Graph.Index = null,
+    supplied: []const Lower.Markup.Supplied = &.{},
+    program_names: []const []const u8 = &.{},
+    program_uses: []const []const u8 = &.{},
+    /// The supplied exports some module's lowering took, by name.
+    module_uses: std.ArrayList([]const u8) = .empty,
+    /// Reachability's roots beside the build's own (`Reach.Input`).
+    extra_roots: []const Reach.Node = &.{},
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1093,6 +1110,8 @@ const Emitter = struct {
                 });
             }
         }
+        // The runtime module supplies what it declares; the file, the rest.
+        try e.takeSupplied(&expected, lowering.name);
 
         const bytes = e.readAsset(path) orelse {
             try e.reportInFile(
@@ -1109,6 +1128,7 @@ const Emitter = struct {
             return;
         };
         const found = try Sibling.scan(e.scratch, bytes);
+        try e.checkProgramImports(path, bytes);
         for (expected.items) |want| {
             const got = find(found.exports, want.name) orelse {
                 if (want.primitive) |p| {
@@ -1210,6 +1230,256 @@ const Emitter = struct {
                 .{specifier.text},
             );
         }
+    }
+
+    // ---- boundary.md §9.2: the runtime module -----------------------------
+
+    /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
+    /// runtime module*).
+    fn markupModule(e: *Emitter) !?Graph.Index {
+        const name = e.options.platform.markup_module orelse return null;
+        return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
+    }
+
+    /// `beni:<Module>`, the specifier the markup runtime imports it by.
+    fn programSpecifier(e: *Emitter) !?[]const u8 {
+        const name = e.options.platform.markup_module orelse return null;
+        return try std.fmt.allocPrint(e.scratch, "beni:{s}", .{name});
+    }
+
+    /// The declaration of the runtime module's `pub` value `name` that has
+    /// a body, or null.
+    fn moduleValue(e: *Emitter, module: Graph.Index, name: []const u8) ?u32 {
+        const b = e.bir(module);
+        for (b.decls, 0..) |d, index| {
+            if (d.kind != .value or !d.is_pub or d.body == .none) continue;
+            if (std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), name)) return @intCast(index);
+        }
+        return null;
+    }
+
+    /// Take out of `expected` every export the runtime module supplies, held
+    /// to its count (`boundary.md` §9.2): no evidence, and the declared
+    /// count of parameters, a trailing run of `()` counted or not, as check
+    /// 4 counts a sibling's. A markup primitive is always the file's.
+    fn takeSupplied(e: *Emitter, expected: *std.ArrayList(Expected), lowering_name: []const u8) !void {
+        const name = e.options.platform.markup_module orelse return;
+        const module = try e.markupModule() orelse {
+            try e.reportInFile(
+                .foreign_sibling_missing,
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                \\I cannot find the runtime module `{s}`.
+                \\
+                \\A platform's manifest may name, in `"markup"` `"module"`, a beni module of its
+                \\own whose `pub` values stand in for markup runtime exports
+                \\(`docs/design/boundary.md` §9.2), and this platform has no module of that name.
+            ,
+                .{name},
+            );
+            return;
+        };
+        if (module.int() >= e.session.resolution.interfaces.len) return;
+        const b = e.bir(module);
+        const file = e.graph().moduleFile(module);
+        const dispatch = e.dispatchOf(module);
+        const iface = &e.session.resolution.interfaces[module.int()];
+        var supplied: std.ArrayList(Lower.Markup.Supplied) = .empty;
+        var k: usize = 0;
+        while (k < expected.items.len) {
+            const want = expected.items[k];
+            const decl = if (want.primitive == null) e.moduleValue(module, want.name) else null;
+            const index = decl orelse {
+                k += 1;
+                continue;
+            };
+            _ = expected.orderedRemove(k);
+            const d = b.decls[index];
+            const use = Convention.ofDecl(dispatch, b, index);
+            const units = unitTail(b, d.annotation, use.arity);
+            if (use.evidence != 0 or want.arity > use.arity or want.arity + units < use.arity) {
+                try e.report(
+                    .foreign_arity_mismatch,
+                    file,
+                    d.name_token,
+                    \\`{s}` stands in for the markup runtime's export of that name, and the markup
+                    \\lowering `{s}` calls it with {d} argument{s}.
+                    \\
+                    \\Every call emitted code makes is saturated (`docs/design/backend.md` §6), so a
+                    \\runtime module's value must take exactly what its lowering passes, and no
+                    \\`where` evidence (`docs/design/boundary.md` §9.2).
+                ,
+                    .{ want.name, lowering_name, want.arity, plural(want.arity) },
+                );
+                continue;
+            }
+            const value = iface.findValue(&e.session.interner, b.symbol(d.name)) orelse continue;
+            try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @intFromEnum(value) });
+        }
+        e.runtime_module = module;
+        e.supplied = supplied.items;
+    }
+
+    /// The runtime module's export `name` supplies, or null.
+    fn suppliedAs(e: *const Emitter, name: []const u8) ?Lower.Markup.Supplied {
+        for (e.supplied) |s| if (std.mem.eql(u8, s.name, name)) return s;
+        return null;
+    }
+
+    /// The markup runtime's `import { … } from "beni:<Module>"`: every name
+    /// must be one of the module's `pub` values, written as it declares it
+    /// (`boundary.md` §9.2). The names are the file's coarse roots.
+    fn checkProgramImports(e: *Emitter, path: []const u8, bytes: []const u8) !void {
+        const spec = try e.programSpecifier() orelse return;
+        const module = e.runtime_module orelse return;
+        const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            // Copied as written; an import it holds is then check 3's.
+            error.Unsupported => return,
+        };
+        var names: std.ArrayList([]const u8) = .empty;
+        for (try Minify.programImports(e.scratch, bytes, tokens, spec)) |imp| {
+            if (imp.renamed) |offset| try e.reportInFile(
+                .not_implemented,
+                inSibling(path, bytes, offset, 2),
+                \\This file imports from its runtime module under a name of its own.
+                \\
+                \\The runtime module's values are written in the markup runtime by the names the
+                \\module declares (`docs/design/boundary.md` §9.2). Drop the `as`.
+            ,
+                .{},
+            );
+            for (imp.names) |n| {
+                if (e.moduleValue(module, n.name) == null) {
+                    try e.reportInFile(
+                        .foreign_unbound_reference,
+                        inSibling(path, bytes, n.offset, @intCast(n.name.len)),
+                        \\This file imports `{s}` from `{s}`, whose module declares no `pub` value of that name.
+                        \\
+                        \\A markup runtime may import the `pub` values of its runtime module
+                        \\(`docs/design/boundary.md` §9.2).
+                    ,
+                        .{ n.name, spec },
+                    );
+                    continue;
+                }
+                try names.append(e.scratch, n.name);
+            }
+        }
+        e.program_names = names.items;
+    }
+
+    /// The runtime module's roots (`backend.md` §15.1, *The runtime
+    /// module*), coarse: every export it supplies and every value the file
+    /// imports from it.
+    fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
+        const module = e.runtime_module orelse return &.{};
+        var out: std.ArrayList(Reach.Node) = .empty;
+        for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
+        for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
+            try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
+        };
+        return out.items;
+    }
+
+    /// The runtime module's roots once every module is lowered: the values
+    /// a lowering imported, `run` and `start` where the entry file calls
+    /// them, and the values the kept part of the file imports.
+    fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
+        const module = e.runtime_module orelse return &.{};
+        var names: std.ArrayList([]const u8) = .empty;
+        try names.appendSlice(e.scratch, e.module_uses.items);
+        if (entry != null) {
+            if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
+            if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
+        }
+        const uses = try e.programUses(entry);
+        try names.appendSlice(e.scratch, uses);
+        e.program_uses = uses;
+        var out: std.ArrayList(Reach.Node) = .empty;
+        for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
+            try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
+        };
+        return out.items;
+    }
+
+    /// The values of the runtime module the markup runtime's kept part
+    /// imports: all of them when the file is copied whole, none when it is
+    /// not written.
+    fn programUses(e: *Emitter, entry: ?Entry) ![]const []const u8 {
+        const spec = try e.programSpecifier() orelse return &.{};
+        const source = try e.markupRuntimePath() orelse return &.{};
+        const program_runtime = e.markupRuntimeIsProgramRuntime();
+        if (!e.uses_markup_runtime and !program_runtime) return &.{};
+        const bytes = e.readAsset(source) orelse return &.{};
+        if (!e.options.release) return e.program_names;
+        var keep: std.ArrayList([]const u8) = .empty;
+        try keep.appendSlice(e.scratch, e.markup_exports.items);
+        if (program_runtime and entry != null) {
+            if (e.suppliedAs("run") == null) try keep.append(e.scratch, "run");
+            if (e.suppliedAs("start") == null) try keep.append(e.scratch, "start");
+        }
+        return try Minify.programUses(e.scratch, bytes, spec, keep.items) orelse e.program_names;
+    }
+
+    /// The whole-program name of the runtime module's value `name`.
+    fn moduleName(e: *Emitter, module: Graph.Index, name: []const u8) !JsIr.Name {
+        return .{
+            .module = e.graph().moduleName(module).toOptional(),
+            .base = try e.session.interner.getOrPut(e.gpa, name),
+            .tag = JsIr.Name.no_tag,
+        };
+    }
+
+    /// How the build spells the runtime module's value `name` where another
+    /// file imports it: `Rt$first` in a development build, its short name
+    /// under `--release`.
+    fn moduleSpelling(e: *Emitter, module: Graph.Index, name: []const u8) ![]const u8 {
+        if (e.options.release) {
+            // Rooted, so live, so its module named it and the table has it.
+            const ordinal = e.globals.lookup(try e.moduleName(module, name)).?;
+            var buf: [8]u8 = undefined;
+            return try e.scratch.dupe(u8, Rename.spell(ordinal, &buf));
+        }
+        var text: std.ArrayList(u8) = .empty;
+        for (e.session.interner.slice(e.graph().moduleName(module))) |c| try text.append(e.scratch, if (c == '.') '$' else c);
+        try text.append(e.scratch, '$');
+        try text.appendSlice(e.scratch, name);
+        return text.items;
+    }
+
+    /// The markup runtime as it is written in a build that is not one file:
+    /// each `import { … } from "beni:<Module>"` an import of the names the
+    /// kept part of the file mentions, spelled as the build spells them,
+    /// from the module's file (`backend.md` §15.1, *The runtime module*).
+    fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) ![]const u8 {
+        const spec = try e.programSpecifier() orelse return bytes;
+        const module = e.runtime_module orelse return bytes;
+        const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Unsupported => return bytes,
+        };
+        const imports = try Minify.programImports(e.scratch, bytes, tokens, spec);
+        if (imports.len == 0) return bytes;
+        const target = try relativeSpecifier(e.scratch, out, try e.outputPath(module));
+        var text: std.ArrayList(u8) = .empty;
+        var at: usize = 0;
+        for (imports) |imp| {
+            try text.appendSlice(e.scratch, bytes[at..imp.bytes_start]);
+            var first = true;
+            for (imp.names) |n| {
+                const used = for (e.program_uses) |u| {
+                    if (std.mem.eql(u8, u, n.name)) break true;
+                } else false;
+                if (!used) continue;
+                try text.appendSlice(e.scratch, if (first) "import { " else ", ");
+                first = false;
+                try text.print(e.scratch, "{s} as {s}", .{ try e.moduleSpelling(module, n.name), n.name });
+            }
+            if (!first) try text.print(e.scratch, " }} from \"{s}\";", .{target});
+            at = imp.bytes_end;
+        }
+        try text.appendSlice(e.scratch, bytes[at..]);
+        return text.items;
     }
 
     fn dispatchOf(e: *Emitter, m: Graph.Index) *const Dispatch {
@@ -1598,6 +1868,7 @@ const Emitter = struct {
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
             .vocabulary = e.graph().markup.vocabulary,
+            .extra_roots = e.extra_roots,
         };
         // Every module's edges on the workers, each into its own slot and
         // its worker's `kept` arena, then the walk here.
@@ -1831,57 +2102,87 @@ const Emitter = struct {
         else
             null;
 
-        // What each worker needs of the shared arena is made here, first:
-        // the arena is the calling thread's alone.
-        const slots = try e.scratch.alloc(ModuleSlot, count);
-        @memset(slots, .{ .overlay = .init(&e.session.interner) });
-        defer for (slots) |*slot| slot.deinit(e.gpa);
+        var slots: []ModuleSlot = &.{};
         var todo: std.ArrayList(u32) = .empty;
         var insts: usize = 0;
-        for (slots, 0..) |*slot, i| {
-            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
-            // §5: a module with nothing reachable is not written at all,
-            // and nothing imports it, because imports are use-driven and a
-            // use is an edge.
-            if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
-            const source_path = e.session.store.path(e.graph().moduleFile(m));
-            slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
-            slot.sibling = try e.siblingSpecifier(source_path);
-            slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
-            if (lowering != null and vocabulary != null and markup_output != null) slot.markup = .{
-                .lowering = lowering.?,
-                .vocabulary = vocabulary.?,
-                .runtime = try relativeSpecifier(e.scratch, paths[i], markup_output.?),
-                .build = .{ .release = e.options.release, .library = e.options.library },
-            };
-            try todo.append(e.scratch, @intCast(i));
-            insts += e.bir(m).insts.len;
-        }
-
-        // The last write to the session's pool until every module is
-        // lowered: from here on the workers only read it.
-        try Lower.internFixedNames(e.gpa, &e.session.interner);
-        const context: Task = .{ .e = e, .slots = slots, .entry = entry };
-        try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
-
-        // What the lowerings report beyond their trees, in module order,
-        // whatever order the workers finished in.
         var uses_runtime = false;
         var lowered_clean = true;
-        for (todo.items) |i| {
-            const slot = &slots[i];
-            if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
-                lowered_clean = false;
-                continue;
-            };
-            uses_runtime = uses_runtime or slot.uses_runtime;
-            e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
-            try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
-            for (slot.start) |pair| try e.start.append(e.scratch, .{
-                .key = try e.scratch.dupe(u8, pair.key),
-                .value = try e.scratch.dupe(u8, pair.value),
-            });
+        // A build with a runtime module lowers a second time when what the
+        // first lowering used of the module reaches less than the coarse
+        // roots did (`backend.md` §15.1, *The runtime module*).
+        var refined = false;
+        while (true) {
+            // What each worker needs of the shared arena is made here, first:
+            // the arena is the calling thread's alone.
+            slots = try e.scratch.alloc(ModuleSlot, count);
+            @memset(slots, .{ .overlay = .init(&e.session.interner) });
+            todo = .empty;
+            insts = 0;
+            for (slots, 0..) |*slot, i| {
+                const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+                // §5: a module with nothing reachable is not written at all,
+                // and nothing imports it, because imports are use-driven and a
+                // use is an edge.
+                if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
+                const source_path = e.session.store.path(e.graph().moduleFile(m));
+                slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
+                slot.sibling = try e.siblingSpecifier(source_path);
+                slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
+                if (lowering != null and vocabulary != null and markup_output != null) slot.markup = .{
+                    .lowering = lowering.?,
+                    .vocabulary = vocabulary.?,
+                    .runtime = try relativeSpecifier(e.scratch, paths[i], markup_output.?),
+                    .build = .{ .release = e.options.release, .library = e.options.library },
+                    .module = e.runtime_module,
+                    .supplied = e.supplied,
+                };
+                try todo.append(e.scratch, @intCast(i));
+                insts += e.bir(m).insts.len;
+            }
+
+            // The last write to the session's pool until every module is
+            // lowered: from here on the workers only read it.
+            try Lower.internFixedNames(e.gpa, &e.session.interner);
+            const context: Task = .{ .e = e, .slots = slots, .entry = entry };
+            try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+
+            // What the lowerings report beyond their trees, in module order,
+            // whatever order the workers finished in.
+            uses_runtime = false;
+            lowered_clean = true;
+            e.uses_markup_runtime = false;
+            e.markup_exports.clearRetainingCapacity();
+            e.start.clearRetainingCapacity();
+            e.module_uses.clearRetainingCapacity();
+            for (todo.items) |i| {
+                const slot = &slots[i];
+                if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
+                    lowered_clean = false;
+                    continue;
+                };
+                uses_runtime = uses_runtime or slot.uses_runtime;
+                e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+                try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
+                for (slot.markup_module_uses) |name| {
+                    var known = false;
+                    for (e.module_uses.items) |u| known = known or std.mem.eql(u8, u, name);
+                    if (!known) try e.module_uses.append(e.scratch, try e.scratch.dupe(u8, name));
+                }
+                for (slot.start) |pair| try e.start.append(e.scratch, .{
+                    .key = try e.scratch.dupe(u8, pair.key),
+                    .value = try e.scratch.dupe(u8, pair.value),
+                });
+            }
+            if (refined or e.runtime_module == null or !lowered_clean) break;
+            refined = true;
+            const precise = try e.preciseRuntimeRoots(entry);
+            if (sameNodes(precise, e.extra_roots)) break;
+            e.extra_roots = precise;
+            for (slots) |*slot| slot.deinit(e.gpa);
+            try e.eliminate(entry);
         }
+        defer for (slots) |*slot| slot.deinit(e.gpa);
+        const context: Task = .{ .e = e, .slots = slots, .entry = entry };
 
         var hoist: ?Hoist = null;
         if (e.options.release) {
@@ -1956,6 +2257,9 @@ const Emitter = struct {
         /// The markup runtime's exports it imports, by name, in the
         /// lowering worker's `kept` arena.
         markup_exports: []const []const u8 = &.{},
+        /// The runtime exports it took from the runtime module instead,
+        /// likewise (`Lower.Result.markup_module_uses`).
+        markup_module_uses: []const []const u8 = &.{},
         /// The program start data its markup lowering contributed, in the
         /// lowering worker's `kept` arena.
         start: []const Lower.StartPair = &.{},
@@ -2018,6 +2322,9 @@ const Emitter = struct {
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
             for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
             slot.markup_exports = exports;
+            const module_uses = try w.kept.allocator().alloc([]const u8, lowered.markup_module_uses.len);
+            for (module_uses, lowered.markup_module_uses) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
+            slot.markup_module_uses = module_uses;
             // Read in module order once every module is lowered; the
             // lowering's own copy goes with its tree.
             const start = try w.kept.allocator().alloc(Lower.StartPair, lowered.start.len);
@@ -2170,7 +2477,7 @@ const Emitter = struct {
         runtime: u32,
         /// The program start call (`boundary.md` §9.4.5): the file whose
         /// `start` it calls, and its argument.
-        start: ?struct { file: u32, data: []const u8 },
+        start: ?struct { file: ?u32, data: []const u8 },
         /// Spellings no whole-program name may take (`Rename.Globals.skip`).
         skip: Rename.Globals.Spellings = .empty,
     };
@@ -2207,7 +2514,9 @@ const Emitter = struct {
             .origin = runtime_source,
             .bytes = e.readAsset(runtime_source) orelse return null,
         });
-        try files.items[runtime_index].keep.appendSlice(scratch, &.{"run"});
+        // `run` and `start` are the file's unless the runtime module supplies
+        // them (`backend.md` §15.1, *The runtime module*).
+        if (e.suppliedAs("run") == null) try files.items[runtime_index].keep.appendSlice(scratch, &.{"run"});
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
@@ -2274,19 +2583,40 @@ const Emitter = struct {
         // The entry file's own imports, in `emitEntry`'s order.
         var entry_edges: std.ArrayList(Piece) = .empty;
         try entry_edges.append(scratch, .{ .file = runtime_index });
+        const module_piece: ?Piece = if (e.runtime_module) |rt|
+            (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
+        else
+            null;
+        if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
         var start: @FieldType(Hoist, "start") = null;
         if (try e.startData()) |s| {
-            const x = file_at.get(s.path) orelse return null;
-            if (x != runtime_index) try entry_edges.append(scratch, .{ .file = x });
-            try files.items[x].keep.append(scratch, "start");
-            start = .{ .file = x, .data = s.data };
+            if (e.suppliedAs("start") != null) {
+                try entry_edges.append(scratch, module_piece orelse return null);
+                start = .{ .file = null, .data = s.data };
+            } else {
+                const x = file_at.get(s.path) orelse return null;
+                if (x != runtime_index) try entry_edges.append(scratch, .{ .file = x });
+                try files.items[x].keep.append(scratch, "start");
+                start = .{ .file = x, .data = s.data };
+            }
         }
         try entry_edges.append(scratch, .{ .module = @intFromEnum(entry.module) });
 
-        for (files.items) |*f| {
-            f.read = try Minify.hoistable(scratch, f.bytes, f.keep.items) orelse return null;
+        const program = try e.programSpecifier();
+        for (files.items, 0..) |*f, x| {
+            const of_markup = markup_index != null and markup_index.? == x;
+            f.read = try Minify.hoistableWith(scratch, f.bytes, f.keep.items, if (of_markup) program else null) orelse return null;
             for (f.keep.items) |name| if (f.read.exportBinding(name) == null) return null;
             f.declined = f.read.declines() != null;
+        }
+        // A file that reads the runtime module's values is evaluated after
+        // the module (`backend.md` §15.1).
+        const file_edges = try scratch.alloc([]const Piece, files.items.len);
+        @memset(file_edges, &.{});
+        for (files.items, 0..) |*f, x| {
+            if (f.read.program.len == 0) continue;
+            const piece = module_piece orelse return null;
+            file_edges[x] = try scratch.dupe(Piece, &.{piece});
         }
 
         // Post-order, depth first, from the entry file: each piece after
@@ -2318,7 +2648,7 @@ const Emitter = struct {
                     .file => |x| {
                         if (seen_file[x]) continue;
                         seen_file[x] = true;
-                        try stack.append(scratch, .{ .piece = p, .edges = &.{} });
+                        try stack.append(scratch, .{ .piece = p, .edges = file_edges[x] });
                     },
                 }
             }
@@ -2382,7 +2712,7 @@ const Emitter = struct {
             for (f.read.imports) |imp| if (!std.mem.startsWith(u8, imp.specifier, "node:")) return null;
             // `run` and `start` are imported from a declined runtime as
             // written, for the harness that reads the entry file's import.
-            if (x == runtime_index or (start != null and start.?.file == x)) {
+            if (x == runtime_index or (start != null and start.?.file == @as(?u32, @intCast(x)))) {
                 for ([_][]const u8{ "run", "start" }) |w| {
                     for (files.items) |g| if (!g.declined and g.read.free.contains(w)) return null;
                     try skip.put(scratch, w, {});
@@ -2456,6 +2786,12 @@ const Emitter = struct {
                 if (!top.renamable) continue;
                 if (f.primary(top.name)) |n| try avoid.put(e.scratch, Rename.Globals.key(n), &f.read.taken);
             }
+            // A runtime module's value the file reads by its own name is
+            // spelled in the file as the declaration is in the one scope,
+            // so it avoids what the file keeps as written, too.
+            if (e.runtime_module) |module| for (f.read.program) |imp| for (imp.names) |n| {
+                try avoid.put(e.scratch, Rename.Globals.key(try e.moduleName(module, n.name)), &f.read.taken);
+            };
         }
         for (h.order) |p| switch (p) {
             .module => |i| {
@@ -2472,6 +2808,11 @@ const Emitter = struct {
             .file => |x| {
                 const f = &h.files[x];
                 if (f.declined) continue;
+                if (e.runtime_module) |module| for (f.read.program) |imp| for (imp.names) |n| {
+                    const ordinal = e.globals.lookup(try e.moduleName(module, n.name)) orelse continue;
+                    var buf: [8]u8 = undefined;
+                    try f.forced.put(e.scratch, n.name, try e.scratch.dupe(u8, Rename.spell(ordinal, &buf)));
+                };
                 for (f.read.tops) |top| {
                     if (!top.renamable) continue;
                     const name = f.primary(top.name) orelse try e.hoistedName(x, top.name);
@@ -2549,19 +2890,29 @@ const Emitter = struct {
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
         if (h.start) |s| {
-            const f = &h.files[s.file];
-            const callee = if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
+            const callee = if (s.file) |x| blk: {
+                const f = &h.files[x];
+                break :blk if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
+            } else try e.moduleSpelling(e.runtime_module.?, "start");
             try out.print(scratch, "{s}({s});\n", .{ callee, s.data });
         }
-        const run_name = if (runtime.declined) "run" else runtime.spelling(runtime.read.exportBinding("run").?);
+        const run_name = if (e.suppliedAs("run") != null)
+            try e.moduleSpelling(e.runtime_module.?, "run")
+        else if (runtime.declined) "run" else runtime.spelling(runtime.read.exportBinding("run").?);
         try out.print(scratch, "{s}({s});\n", .{ run_name, main_name });
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
         // embedding page flushes a render at once through it. It stays an
         // export of the module the page loads, which is now this one, when
-        // the runtime's render loop kept it.
-        if (!runtime.declined) if (runtime.read.exportBinding("flush")) |binding| {
+        // the runtime's render loop kept it — or the runtime module's, when
+        // it supplies `flush` and something reached it.
+        if (e.suppliedAs("flush") != null) {
+            if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "flush"))) |ordinal| {
+                var buf: [8]u8 = undefined;
+                try out.print(scratch, "export{{{s} as flush}};\n", .{Rename.spell(ordinal, &buf)});
+            }
+        } else if (!runtime.declined) if (runtime.read.exportBinding("flush")) |binding| {
             const spelled = runtime.spelling(binding);
             if (std.mem.eql(u8, spelled, "flush"))
                 try out.appendSlice(scratch, "export{flush};\n")
@@ -2624,6 +2975,18 @@ const Emitter = struct {
                     const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
                     e.imported.set(ordinal);
                 }
+            }
+        }
+        // What the markup runtime and the entry file import from the
+        // runtime module (`backend.md` §15.1, *The runtime module*).
+        if (e.runtime_module) |module| {
+            var names: std.ArrayList([]const u8) = .empty;
+            try names.appendSlice(e.scratch, e.program_uses);
+            if (entry != null) for ([_][]const u8{ "run", "start", "flush" }) |w| {
+                if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
+            };
+            for (names.items) |n| {
+                if (e.globals.lookup(try e.moduleName(module, n))) |ordinal| e.imported.set(ordinal);
             }
         }
         if (entry) |at| {
@@ -2915,7 +3278,9 @@ const Emitter = struct {
         var keep: std.ArrayList([]const u8) = .empty;
         try keep.appendSlice(e.scratch, &.{ "run", "start" });
         if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
-        try e.produceHandWritten(try e.runtimeOutputPath(), bytes, runtime_source, keep.items);
+        const out = try e.runtimeOutputPath();
+        const text = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else bytes;
+        try e.produceHandWritten(out, text, runtime_source, keep.items);
     }
 
     /// A hand-written file — a sibling, a runtime: copied as written, or
@@ -2937,7 +3302,8 @@ const Emitter = struct {
         const source = try e.markupRuntimePath() orelse return;
         // A missing file was reported by `checkMarkupRuntime` already.
         const bytes = e.readAsset(source) orelse return;
-        try e.produceHandWritten((try e.markupRuntimeOutputPath()).?, bytes, source, e.markup_exports.items);
+        const out = (try e.markupRuntimeOutputPath()).?;
+        try e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), source, e.markup_exports.items);
     }
 
     /// Where the markup runtime is written: its package's output directory,
@@ -2965,6 +3331,7 @@ const Emitter = struct {
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
         const start = try e.startData();
+        if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
         // document decided the shape of a file the user did not write. Under
@@ -3019,14 +3386,77 @@ const Emitter = struct {
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
     }
 
+    /// `emitEntry` for a build with a runtime module (`backend.md` §15.1):
+    /// `run` and `start` are imported from the module when it supplies
+    /// them, one statement per file, `run`'s first.
+    fn emitEntryWithModule(e: *Emitter, entry: Entry, module: Graph.Index, imported: []const u8, start: ?StartData) !void {
+        const release = e.options.release;
+        const module_path = try e.outputPath(module);
+        const runtime_path = try e.runtimeOutputPath();
+        const Import = struct { path: []const u8, names: std.ArrayList(u8) = .empty };
+        var imports: std.ArrayList(Import) = .empty;
+        const Add = struct {
+            fn one(em: *Emitter, list: *std.ArrayList(Import), path: []const u8, name: []const u8) !void {
+                for (list.items) |*i| if (std.mem.eql(u8, i.path, path)) {
+                    try i.names.appendSlice(em.scratch, if (em.options.release) "," else ", ");
+                    try i.names.appendSlice(em.scratch, name);
+                    return;
+                };
+                var names: std.ArrayList(u8) = .empty;
+                try names.appendSlice(em.scratch, name);
+                try list.append(em.scratch, .{ .path = path, .names = names });
+            }
+        };
+        const as = " as ";
+        if (e.suppliedAs("run") != null) {
+            try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, "run"), as }));
+        } else try Add.one(e, &imports, runtime_path, "run");
+        if (start) |s| {
+            if (e.suppliedAs("start") != null) {
+                try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(module, "start"), as }));
+            } else try Add.one(e, &imports, s.path, "start");
+        }
+        var text: std.ArrayList(u8) = .empty;
+        if (!release) try text.appendSlice(e.scratch,
+            \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+            \\// the platform's output shape asks for.
+            \\
+        );
+        for (imports.items) |i| {
+            if (release)
+                try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ i.names.items, i.path })
+            else
+                try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n", .{ i.names.items, i.path });
+        }
+        if (release)
+            try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ imported, try e.outputPath(entry.module) })
+        else
+            try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n\n", .{ imported, try e.outputPath(entry.module) });
+        if (start) |s| try text.print(e.scratch, "start({s});\n", .{s.data});
+        try text.print(e.scratch, "run({s});\n", .{imported});
+        // The page's `flush` (§15.11), from the module the page loads when
+        // the runtime module supplies it: the entry file imports `run` from
+        // no program runtime, so it is the one a harness reads.
+        if (e.suppliedAs("flush")) |s| if (e.live.decl(module, s.decl)) {
+            const spelled = try e.moduleSpelling(module, "flush");
+            if (release)
+                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
+            else
+                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+        };
+        try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
+    }
+
+    const StartData = struct { path: []const u8, data: []const u8 };
+
     /// The program start call's import path and its argument, when the
     /// build's markup lowering declares a `start` export and a module
     /// written imports the markup runtime (`boundary.md` §9.4.5): one object
     /// whose keys are sorted, each an array of its sorted, distinct values.
     /// A build with no markup, or a lowering with no `start`, calls none,
     /// so its entry file does not move by a byte.
-    fn startData(e: *Emitter) !?struct { path: []const u8, data: []const u8 } {
-        if (!e.uses_markup_runtime) return null;
+    fn startData(e: *Emitter) !?StartData {
+        if (!e.uses_markup_runtime and e.module_uses.items.len == 0) return null;
         const lowering = findLowering(e.options.platform.lowering orelse return null) orelse return null;
         var declares = false;
         for (lowering.runtime) |r| declares = declares or std.mem.eql(u8, r.name, "start");
@@ -3511,6 +3941,19 @@ fn entryNameIsLegal(name: []const u8) bool {
 }
 
 /// `name` without `extension`, or `name` when it does not end in one.
+/// Whether two root lists name the same nodes, repeats aside.
+fn sameNodes(a: []const Reach.Node, b: []const Reach.Node) bool {
+    const Of = struct {
+        fn in(x: Reach.Node, list: []const Reach.Node) bool {
+            for (list) |y| if (std.meta.eql(x, y)) return true;
+            return false;
+        }
+    };
+    for (a) |x| if (!Of.in(x, b)) return false;
+    for (b) |x| if (!Of.in(x, a)) return false;
+    return true;
+}
+
 fn stripExtension(name: []const u8, extension: []const u8) []const u8 {
     return if (std.mem.endsWith(u8, name, extension))
         name[0 .. name.len - extension.len]
