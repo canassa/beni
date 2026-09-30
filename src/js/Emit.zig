@@ -867,6 +867,14 @@ const Emitter = struct {
         const arity = found.arity;
         const params = entry.params orelse return;
         const expected = entry.evidence + params;
+        // The export agrees, which is every export of a sibling that builds:
+        // done before `positionIn`, which reads the file from its start and
+        // would make checking a sibling quadratic in its exports.
+        const agrees = if (!entry.wantsFunction()) arity == .opaque_value else switch (arity) {
+            .function => |written| written == expected,
+            else => false,
+        };
+        if (agrees) return;
         const at = positionIn(sibling_source, found.offset);
         const site = try std.fmt.allocPrint(e.scratch, "{s}:{d}:{d}", .{ sibling_path, at.line, at.col });
         // A `foreign` that is not a function binds to a VALUE, so any

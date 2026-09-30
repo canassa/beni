@@ -625,21 +625,30 @@ fn regexAllowed(items: []const Token) bool {
 }
 
 fn isKeyword(text: []const u8) bool {
-    const words = [_][]const u8{
-        "await",    "break",    "case",      "catch",   "class",      "const",
-        "continue", "debugger", "default",   "delete",  "do",         "else",
-        "export",   "extends",  "false",     "finally", "for",        "from",
-        "function", "if",       "import",    "in",      "instanceof", "let",
-        "new",      "null",     "of",        "return",  "super",      "switch",
-        "this",     "throw",    "true",      "try",     "typeof",     "var",
-        "void",     "while",    "with",      "yield",   "as",         "static",
-        "get",      "set",      "undefined",
-    };
-    for (words) |word| {
-        if (eql(word, text)) return true;
-    }
-    return false;
+    return keyword_set.has(text);
 }
+
+const keyword_set = setOf(&keyword_words);
+
+/// One `StaticStringMap` from a list of words, built at compile time: a
+/// scan asks it of every identifier of every sibling.
+fn setOf(comptime words: []const []const u8) std.StaticStringMap(void) {
+    @setEvalBranchQuota(100_000);
+    var kvs: [words.len]struct { []const u8 } = undefined;
+    for (words, 0..) |w, i| kvs[i] = .{w};
+    return .initComptime(kvs);
+}
+
+const keyword_words = [_][]const u8{
+    "await",    "break",    "case",      "catch",   "class",      "const",
+    "continue", "debugger", "default",   "delete",  "do",         "else",
+    "export",   "extends",  "false",     "finally", "for",        "from",
+    "function", "if",       "import",    "in",      "instanceof", "let",
+    "new",      "null",     "of",        "return",  "super",      "switch",
+    "this",     "throw",    "true",      "try",     "typeof",     "var",
+    "void",     "while",    "with",      "yield",   "as",         "static",
+    "get",      "set",      "undefined",
+};
 
 /// Globals a sibling file may reach without importing anything: the
 /// ECMAScript intrinsics, plus the web-standard capabilities boundary.md
@@ -648,30 +657,30 @@ fn isKeyword(text: []const u8) bool {
 /// are exactly the edges check 3 exists to make visible, and importing
 /// `node:process` is the fix.
 pub fn isStandardGlobal(text: []const u8) bool {
-    const globals = [_][]const u8{
-        "Array",           "ArrayBuffer",        "BigInt",          "Boolean",
-        "DataView",        "Date",               "Error",           "EvalError",
-        "Float32Array",    "Float64Array",       "Function",        "Infinity",
-        "Int8Array",       "Int16Array",         "Int32Array",      "Intl",
-        "JSON",            "Map",                "Math",            "NaN",
-        "Number",          "Object",             "Promise",         "Proxy",
-        "RangeError",      "ReferenceError",     "Reflect",         "RegExp",
-        "Set",             "String",             "Symbol",          "SyntaxError",
-        "TypeError",       "URIError",           "Uint8Array",      "Uint16Array",
-        "Uint32Array",     "WeakMap",            "WeakSet",         "globalThis",
-        "isFinite",        "isNaN",              "parseFloat",      "parseInt",
-        "decodeURI",       "decodeURIComponent", "encodeURI",       "encodeURIComponent",
-        "structuredClone", "queueMicrotask",     "AbortController", "TextDecoder",
-        "TextEncoder",     "URL",                "URLSearchParams", "atob",
-        "btoa",            "console",            "crypto",          "fetch",
-        "setTimeout",      "clearTimeout",       "setInterval",     "clearInterval",
-        "performance",     "Uint8ClampedArray",  "BigInt64Array",   "BigUint64Array",
-    };
-    for (globals) |global| {
-        if (eql(global, text)) return true;
-    }
-    return false;
+    return global_set.has(text);
 }
+
+const global_set = setOf(&global_words);
+
+const global_words = [_][]const u8{
+    "Array",           "ArrayBuffer",        "BigInt",          "Boolean",
+    "DataView",        "Date",               "Error",           "EvalError",
+    "Float32Array",    "Float64Array",       "Function",        "Infinity",
+    "Int8Array",       "Int16Array",         "Int32Array",      "Intl",
+    "JSON",            "Map",                "Math",            "NaN",
+    "Number",          "Object",             "Promise",         "Proxy",
+    "RangeError",      "ReferenceError",     "Reflect",         "RegExp",
+    "Set",             "String",             "Symbol",          "SyntaxError",
+    "TypeError",       "URIError",           "Uint8Array",      "Uint16Array",
+    "Uint32Array",     "WeakMap",            "WeakSet",         "globalThis",
+    "isFinite",        "isNaN",              "parseFloat",      "parseInt",
+    "decodeURI",       "decodeURIComponent", "encodeURI",       "encodeURIComponent",
+    "structuredClone", "queueMicrotask",     "AbortController", "TextDecoder",
+    "TextEncoder",     "URL",                "URLSearchParams", "atob",
+    "btoa",            "console",            "crypto",          "fetch",
+    "setTimeout",      "clearTimeout",       "setInterval",     "clearInterval",
+    "performance",     "Uint8ClampedArray",  "BigInt64Array",   "BigUint64Array",
+};
 
 // ---------------------------------------------------------------------------
 // Tests
