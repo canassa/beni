@@ -1,4 +1,4 @@
-decl 0: pub foreign value add
+decl 0: pub foreign value pure add
   doc "Add two numbers."
   %0 = type_var number
   %1 = type_var number
@@ -12,7 +12,7 @@ decl 1: pub foreign type List
   type params a
   interface foreign type List
 
-decl 2: foreign value unsafeLength
+decl 2: foreign value pure unsafeLength
   %0 = type_top 1 (List)
   %1 = type_var a
   %2 = type_app %0 [%1]

@@ -1,4 +1,4 @@
-decl 0: pub foreign value sorted
+decl 0: pub foreign value pure sorted
   %0 = type_import List.List
   %1 = type_var a
   %2 = type_app %0 [%1]
@@ -17,7 +17,7 @@ decl 0: pub foreign value sorted
     import_type Basics.Order
   interface foreign value sorted
 
-decl 1: pub foreign value paired
+decl 1: pub foreign value pure paired
   %0 = type_import List.List
   %1 = type_var a
   %2 = type_app %0 [%1]

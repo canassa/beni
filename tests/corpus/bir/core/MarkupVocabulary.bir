@@ -48,7 +48,7 @@ decl 6: pub markup map
     type_top 0 (Html)
   interface markup map
 
-decl 7: foreign value targetValue
+decl 7: foreign value pure targetValue
   %0 = type_top 1 (Event)
   %1 = type_import String.String
   %2 = type_fn [%0] -> %1

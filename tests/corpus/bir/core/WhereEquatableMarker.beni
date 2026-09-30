@@ -3,11 +3,11 @@
 -- is legal at a variable's FIRST occurrence, and `a`'s occurrences in the
 -- annotated type are not the clause's — nor is one constraint's occurrence
 -- the next constraint's. Core only, like every `equatable` marker.
-pub foreign sorted : List a -> List a
+pub foreign pure sorted : List a -> List a
     where a.compare : equatable a, a -> Order
 
 
-pub foreign paired : List a, List b -> Bool
+pub foreign pure paired : List a, List b -> Bool
     where
         a.eq : equatable a, a -> Bool
         , b.eq : equatable b, b -> Bool

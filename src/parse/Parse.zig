@@ -1408,12 +1408,30 @@ fn parseConstructor(p: *Parse) Allocator.Error!Index {
     return p.rangeNode(.constructor, name, try p.listToRange(p.scratchSince(mark)));
 }
 
-/// Foreign := 'foreign' lower_ident ':' Type WhereClause?
-/// (language.md §5.4; the clause is static-dispatch-spike.md §2.1, §5.2.)
+/// Foreign := 'foreign' Rung lower_ident ':' Type WhereClause?
+/// Rung    := 'pure' | 'impure' | 'suspends'
+/// (language.md §5.4; the clause is static-dispatch-spike.md §2.1, §5.2; the
+/// rung is transparent-effects-proposal.md §14.1.)
+///
+/// The rung is a contextual word, like `equatable`: it is the rung only as
+/// the lower identifier right after `foreign` that another lower identifier
+/// follows, so the name stays the token before the `:`, where the AST's
+/// `main_token` points, and the rung is the one before it. A name straight
+/// after `foreign` is `foreign_effect_missing`; any other word there is
+/// `unknown_foreign_effect`. Either way the declaration is read on as
+/// written.
 fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index {
     p.context = .foreign;
     var header = header_in;
     _ = p.next(); // foreign
+    if (p.peek() == .lower_ident and p.peekAt(1) == .lower_ident) {
+        const word = p.next();
+        if (!isRung(Tokenizer.slice(p.source, p.tags[word], p.starts[word]))) {
+            _ = try p.report(p.itemAtToken(.unknown_foreign_effect, word));
+        }
+    } else if (p.peek() == .lower_ident) {
+        _ = try p.report(p.itemAtToken(.foreign_effect_missing, p.tok_i));
+    }
     const name = switch (try p.expectDeclName(.lower_ident)) {
         .name => |n| n,
         .placeholder => |node| return node,
@@ -1656,6 +1674,12 @@ fn insideParens(p: *const Parse) bool {
 /// True when token `t` is the contextual word `equatable` (checker.md
 /// Appendix A). Compared by TEXT, not by symbol: the parser has no
 /// interner of its own and the tokenizer already knows the extent.
+/// One of the three rungs a `foreign` value declares
+/// (transparent-effects-proposal.md §14.1; `Bir.Rung` is the lowered form).
+fn isRung(text: []const u8) bool {
+    return std.mem.eql(u8, text, "pure") or std.mem.eql(u8, text, "impure") or std.mem.eql(u8, text, "suspends");
+}
+
 fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
     return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "equatable");
 }
@@ -4014,7 +4038,7 @@ test "every declaration kind with visibility, docs and type parameters" {
         \\pub type alias P a b = { a | x : Int, y : ( a, b ), z : (), w : {} }
         \\pub opaque type T a = | A | B (List a) { r : a }
         \\type U = C
-        \\foreign f : Int -> Int
+        \\foreign pure f : Int -> Int
         \\pub foreign type L a
         \\f : (a -> b), List a -> List b
         \\f g xs = xs
@@ -4047,7 +4071,7 @@ test "every declaration kind with visibility, docs and type parameters" {
         \\          (type_var a)))))
         \\  (type_decl U
         \\    (constructor C))
-        \\  (foreign_value f
+        \\  (foreign_value pure f
         \\    (type_fn
         \\      (type_con Int)
         \\      (type_con Int)))
@@ -5599,13 +5623,13 @@ test "the soft declaration errors: annotation without definition, pub on definit
         \\    (int 2)))
         \\
     , &.{ .{ .code = .pub_on_definition, .line = 2, .col = 1 }, .{ .code = .pub_on_definition, .line = 4, .col = 1 } });
-    try expectTree("pub opaque type alias Id = Int\npub opaque a = 1\npub opaque foreign b : Int\n",
+    try expectTree("pub opaque type alias Id = Int\npub opaque a = 1\npub opaque foreign pure b : Int\n",
         \\(module
         \\  (type_alias pub opaque Id
         \\    (type_con Int))
         \\  (definition pub opaque a
         \\    (int 1))
-        \\  (foreign_value pub opaque b
+        \\  (foreign_value pub opaque pure b
         \\    (type_con Int)))
         \\
     , &.{ .{ .code = .opaque_not_on_type, .line = 1, .col = 5 }, .{ .code = .opaque_not_on_type, .line = 2, .col = 5 }, .{ .code = .unexpected_token, .line = 3, .col = 12 } });
@@ -5775,7 +5799,7 @@ const fragment_pieces = [_][]const u8{
     "type alias Layout =\n    x : Int\n    nested :\n        y : String\n",
     "g : Int -> Int\n",
     "pub opaque type Q = Q Int\n",
-    "foreign h : Int\n",
+    "foreign pure h : Int\n",
     "--| doc\n",
     "v =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
     "w =\n    let\n        a = 1\n        b = 2\n    in\n    a + b\n",

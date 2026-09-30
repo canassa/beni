@@ -79,7 +79,7 @@ pub equatable foreign type Int32
 --| is truncated towards zero, and a NaN or an infinity is `zero`.
 --|
 --|     toInt (fromInt (truncate 3.7)) == 3
-pub foreign fromInt : Int -> Int32
+pub foreign pure fromInt : Int -> Int32
 
 
 --| Read an `Int32` back as an `Int`, SIGNED — so a value with the top bit
@@ -90,7 +90,7 @@ pub foreign fromInt : Int -> Int32
 --|     toInt (fromInt 0xffffffff) == -1
 --|
 --| This never loses anything: every 32-bit value fits an `Int` exactly.
-pub foreign toInt : Int32 -> Int
+pub foreign pure toInt : Int32 -> Int
 
 
 --| Read an `Int32` back as an `Int`, UNSIGNED — always in 0 to 4294967295.
@@ -103,7 +103,7 @@ pub foreign toInt : Int32 -> Int
 --| Hash functions, checksums and binary formats are published in unsigned
 --| terms, so this is what you print a result with when you want to compare
 --| it against someone else's test vectors.
-pub foreign toUnsignedInt : Int32 -> Int
+pub foreign pure toUnsignedInt : Int32 -> Int
 
 
 --| Add, wrapping at 32 bits.
@@ -111,7 +111,7 @@ pub foreign toUnsignedInt : Int32 -> Int
 --|     toInt (add (fromInt 1) (fromInt 2)) == 3
 --|     add maxValue one == minValue
 --|     add minValue (fromInt (-1)) == maxValue
-pub foreign add : Int32, Int32 -> Int32
+pub foreign pure add : Int32, Int32 -> Int32
 
 
 --| Subtract, wrapping at 32 bits.
@@ -119,7 +119,7 @@ pub foreign add : Int32, Int32 -> Int32
 --|     toInt (sub (fromInt 3) (fromInt 1)) == 2
 --|     sub minValue one == maxValue
 --|     sub maxValue (fromInt (-1)) == minValue
-pub foreign sub : Int32, Int32 -> Int32
+pub foreign pure sub : Int32, Int32 -> Int32
 
 
 --| Multiply, wrapping at 32 bits — the operation `Int` cannot fake.
@@ -135,7 +135,7 @@ pub foreign sub : Int32, Int32 -> Int32
 --|     toInt (mul maxValue maxValue) == 1
 --|     toInt (mul (fromInt 123456789) (fromInt 987654321)) == -67153019
 --|     mul minValue (fromInt (-1)) == minValue
-pub foreign mul : Int32, Int32 -> Int32
+pub foreign pure mul : Int32, Int32 -> Int32
 
 
 --| Integer division, truncated towards zero. **Division by zero is `zero`**,
@@ -151,7 +151,7 @@ pub foreign mul : Int32, Int32 -> Int32
 --| else here.
 --|
 --|     div minValue (fromInt (-1)) == minValue
-pub foreign div : Int32, Int32 -> Int32
+pub foreign pure div : Int32, Int32 -> Int32
 
 
 --| Remainder, taking the sign of the DIVIDEND, like `Basics.remainderBy`
@@ -161,7 +161,7 @@ pub foreign div : Int32, Int32 -> Int32
 --|     toInt (rem (fromInt (-7)) (fromInt 3)) == -1
 --|     rem (fromInt 7) zero == zero
 --|     rem minValue (fromInt (-1)) == zero
-pub foreign rem : Int32, Int32 -> Int32
+pub foreign pure rem : Int32, Int32 -> Int32
 
 
 --| Modulus, taking the sign of the DIVISOR, like `Basics.modBy`. Zero for a
@@ -171,28 +171,28 @@ pub foreign rem : Int32, Int32 -> Int32
 --|     toInt (mod (fromInt 7) (fromInt 3)) == 1
 --|     toInt (mod (fromInt (-7)) (fromInt 3)) == 2
 --|     mod (fromInt 7) zero == zero
-pub foreign mod : Int32, Int32 -> Int32
+pub foreign pure mod : Int32, Int32 -> Int32
 
 
 --| Bitwise and.
 --|
 --|     toInt (and (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0x0f000f00
 --|     and (fromInt 0xdeadbeef) zero == zero
-pub foreign and : Int32, Int32 -> Int32
+pub foreign pure and : Int32, Int32 -> Int32
 
 
 --| Bitwise or.
 --|
 --|     toUnsignedInt (or (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xff0fff0f
 --|     or (fromInt 0xdeadbeef) zero == fromInt 0xdeadbeef
-pub foreign or : Int32, Int32 -> Int32
+pub foreign pure or : Int32, Int32 -> Int32
 
 
 --| Bitwise exclusive or.
 --|
 --|     toUnsignedInt (xor (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xf00ff00f
 --|     xor (fromInt 0xdeadbeef) (fromInt 0xdeadbeef) == zero
-pub foreign xor : Int32, Int32 -> Int32
+pub foreign pure xor : Int32, Int32 -> Int32
 
 
 --| Shift left, filling with zeros. **The count is taken modulo 32**, which
@@ -203,7 +203,7 @@ pub foreign xor : Int32, Int32 -> Int32
 --|     shiftLeft one 31 == minValue
 --|     shiftLeft one 32 == one
 --|     shiftLeft one 33 == fromInt 2
-pub foreign shiftLeft : Int32, Int -> Int32
+pub foreign pure shiftLeft : Int32, Int -> Int32
 
 
 --| Shift right, ARITHMETIC: the sign bit is copied into the top, so a
@@ -212,7 +212,7 @@ pub foreign shiftLeft : Int32, Int -> Int32
 --|     toInt (shiftRight (fromInt 16) 4) == 1
 --|     toInt (shiftRight (fromInt (-16)) 4) == -1
 --|     shiftRight (fromInt (-1)) 31 == fromInt (-1)
-pub foreign shiftRight : Int32, Int -> Int32
+pub foreign pure shiftRight : Int32, Int -> Int32
 
 
 --| Shift right, LOGICAL: zeros are shifted into the top, so the result of a
@@ -228,7 +228,7 @@ pub foreign shiftRight : Int32, Int -> Int32
 --| of 0 is therefore the identity rather than a conversion.
 --|
 --|     shiftRightZero (fromInt (-1)) 0 == fromInt (-1)
-pub foreign shiftRightZero : Int32, Int -> Int32
+pub foreign pure shiftRightZero : Int32, Int -> Int32
 
 
 --| Zero.

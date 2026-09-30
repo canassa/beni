@@ -965,7 +965,7 @@ test "a vocabulary module's tables and markup primitives travel through the form
         \\pub foreign type Event
         \\
         \\
-        \\pub foreign targetValue : Event -> String
+        \\pub foreign pure targetValue : Event -> String
         \\
         \\
         \\pub markup map : Html a, (a -> b) -> Html b

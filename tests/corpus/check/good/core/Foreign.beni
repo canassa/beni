@@ -9,7 +9,7 @@ pub equatable foreign type Handle
 pub foreign type Opaque a
 
 
-pub foreign make : Int -> Handle
+pub foreign pure make : Int -> Handle
 
 
 pub same : Handle, Handle -> Bool

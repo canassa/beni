@@ -82,7 +82,10 @@ pub const magic = "BENIFE\x00\x00";
 /// diagnostic's `markup` byte, and the `bir_flags` section (frontend.md §9.7).
 /// 8 (2026-09-29): a lowering diagnostic carries the ranges of a `Show`'s
 /// `when`, body and `fallback`, which its message writes as a `case`.
-pub const format_version: u32 = 8;
+/// 9 (2026-09-30): a declaration row carries the rung a `foreign` value
+/// declares (`Bir.Decl.rung`, transparent-effects-proposal.md §14.1), and
+/// the parser has two codes for a missing or unknown one.
+pub const format_version: u32 = 9;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -831,7 +834,8 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 12 and 9, `Import` 24 and 21. The estimate was therefore high for
     // three of the rows it counted, and §11 reports what the bytes actually
     // came to.
-    try testing.expectEqual(@as(u32, 92), rowBytes(Bir.Decl));
+    // 93 since a declaration carries a `foreign` value's rung, one byte.
+    try testing.expectEqual(@as(u32, 93), rowBytes(Bir.Decl));
     try testing.expectEqual(@as(u32, 20), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Local));

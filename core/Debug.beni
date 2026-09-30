@@ -20,7 +20,7 @@
 --| into a pipeline costs nothing but the step itself:
 --|
 --|     total = prices |> Debug.log "prices" |> List.sum
-pub foreign log : a, String -> a
+pub foreign impure log : a, String -> a
 
 
 --| Say that some code is not done yet, with a message about what is missing.
@@ -29,7 +29,7 @@ pub foreign log : a, String -> a
 --|
 --|     view model =
 --|         Debug.todo "render the settings page"
-pub foreign todo : String -> a
+pub foreign impure todo : String -> a
 
 
 --| Turn any value into a string for debugging.
@@ -38,4 +38,4 @@ pub foreign todo : String -> a
 --|
 --| The exact text is not a promise and will change. For output a user reads,
 --| write the conversion yourself.
-pub foreign toString : a -> String
+pub foreign pure toString : a -> String

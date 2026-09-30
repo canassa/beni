@@ -32,7 +32,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign twice : Int -> Int
+    \\pub foreign pure twice : Int -> Int
     \\
     \\
     \\pub one : Int
@@ -393,7 +393,7 @@ test "the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
     const base = try baselineKeys(&w, arena);
     const iface_before = try ifaceHashes(&w, arena);
     try w.write("src/Leaf.beni",
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub one : Int
@@ -421,7 +421,7 @@ test "a pub signature in Leaf moves Leaf, Mid and Top, and its interface too" {
     const base = try baselineKeys(&w, arena);
     const iface_before = try ifaceHashes(&w, arena);
     try w.write("src/Leaf.beni",
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub one : Float
@@ -1267,7 +1267,7 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
 
     _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     try w.write(leaf_file,
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub one : Int
@@ -1927,7 +1927,7 @@ test "a module with a type error is never written, and its importers are not eit
     defer w.deinit();
     try writeProject(&w);
     try w.write("src/Leaf.beni",
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub one : Int
@@ -3155,7 +3155,7 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
     const rows = [_]Row{
         // A body edit.
         .{ .what = "a body edit", .source =
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub one : Int

@@ -56,7 +56,7 @@ pub equatable foreign type List a
 --|
 --| This is what `::` desugars to, which is why the element comes first here
 --| while every other function in this module takes the list first.
-pub foreign cons : a, List a -> List a
+pub foreign pure cons : a, List a -> List a
 
 
 --| Reduce a list from the left, starting from an initial value.
@@ -102,7 +102,7 @@ foldr xs acc func =
 --| because `List a` has no constructors for the compiler to walk, and it is
 --| written in JavaScript because the representation of a list is the code
 --| generator's rather than beni's.
-pub foreign eq : List a, List a -> Bool
+pub foreign pure eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
 
 
@@ -116,7 +116,7 @@ pub foreign eq : List a, List a -> Bool
 --| written here rather than derived, for the same two reasons: `List a` has
 --| no constructors to walk, and the shape of a cons cell belongs to the
 --| code generator.
-pub foreign compare : List a, List a -> Order
+pub foreign pure compare : List a, List a -> Order
     where a.compare : a, a -> Order
 
 

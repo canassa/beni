@@ -187,8 +187,12 @@ pub const Node = struct {
         /// One constructor of a `type`. `main_token` is the upper
         /// identifier; `lhs..rhs` is the `SubRange` of argument type nodes.
         constructor,
-        /// `foreign name : Type` (language.md §5.4). `lhs` is the
-        /// `ExtraIndex` of a `DeclHeader`; `rhs` is the type node.
+        /// `foreign rung name : Type` (language.md §5.4). `lhs` is the
+        /// `ExtraIndex` of a `DeclHeader`; `rhs` is the type node. The rung
+        /// (`pure`, `impure`, `suspends`; transparent-effects-proposal.md
+        /// §14.1) is the lower identifier just before the name, and
+        /// `foreign` the token before that; with no rung, which the parser
+        /// reported, `foreign` is just before the name.
         foreign_value,
         /// `foreign type Name a b`. `lhs` is the `ExtraIndex` of a
         /// `ForeignType` (header, then the parameter token range); `rhs`

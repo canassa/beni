@@ -4,4 +4,4 @@
 
 
 --| Whether the two are one value, not two equal ones.
-pub foreign refEq : a, a -> Bool
+pub foreign pure refEq : a, a -> Bool

@@ -18,19 +18,19 @@ type Plain
     = Plain (List Plain) Int
 
 
-pub foreign inRecord : { h : Html () } -> String
+pub foreign pure inRecord : { h : Html () } -> String
 
-pub foreign inAlias : Rec -> String
+pub foreign pure inAlias : Rec -> String
 
-pub foreign inCustom : Wrap -> String
+pub foreign pure inCustom : Wrap -> String
 
-pub foreign inRecursive : Tree -> String
+pub foreign pure inRecursive : Tree -> String
 
-pub foreign plain : Int -> String
+pub foreign pure plain : Int -> String
 
-pub foreign recursive : Plain -> String
+pub foreign pure recursive : Plain -> String
 
-pub foreign inWide : ( Html (), W13 ) -> String
+pub foreign pure inWide : ( Html (), W13 ) -> String
 
 
 type alias W0 =

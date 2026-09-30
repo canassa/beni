@@ -599,7 +599,7 @@ test "a foreign that mentions the markup type is legal in the platform that name
         \\import Html exposing (Html)
         \\
         \\
-        \\pub foreign render : Html msg -> String
+        \\pub foreign pure render : Html msg -> String
         \\
     );
     try w.write("top/Render.js", "export const render = (html) => String(html);\n");

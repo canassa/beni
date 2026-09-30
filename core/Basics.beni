@@ -86,38 +86,38 @@ pub type Never
 --|     add 3 4 == 7
 --|
 --| This is what `+` desugars to.
-pub foreign add : number, number -> number
+pub foreign pure add : number, number -> number
 
 
 --| Subtract the second number from the first. What `-` desugars to.
 --|
 --|     sub 4 3 == 1
-pub foreign sub : number, number -> number
+pub foreign pure sub : number, number -> number
 
 
 --| Multiply two numbers. What `*` desugars to.
 --|
 --|     mul 2 3 == 6
-pub foreign mul : number, number -> number
+pub foreign pure mul : number, number -> number
 
 
 --| Floating-point division. What `/` desugars to.
 --|
 --|     fdiv 3 2 == 1.5
-pub foreign fdiv : Float, Float -> Float
+pub foreign pure fdiv : Float, Float -> Float
 
 
 --| Integer division, truncated towards zero. What `//` desugars to.
 --|
 --|     idiv 3 2 == 1
 --|     idiv (-3) 2 == -1
-pub foreign idiv : Int, Int -> Int
+pub foreign pure idiv : Int, Int -> Int
 
 
 --| Exponentiation. What `^` desugars to.
 --|
 --|     pow 3 2 == 9
-pub foreign pow : number, number -> number
+pub foreign pure pow : number, number -> number
 
 
 --| Check if two values are equal. Equality is structural: two values of the
@@ -128,13 +128,13 @@ pub foreign pow : number, number -> number
 --|
 --| The `equatable` marker rules out the one case that cannot be decided:
 --| comparing functions is a compile error, not a crash. What `==` desugars to.
-pub foreign eq : equatable a, a -> Bool
+pub foreign pure eq : equatable a, a -> Bool
 
 
 --| Check if two values are not equal. What `/=` desugars to.
 --|
 --|     neq 1 2 == True
-pub foreign neq : equatable a, a -> Bool
+pub foreign pure neq : equatable a, a -> Bool
 
 
 --| Check if the first number is less than the second. What `<` desugars to.
@@ -142,41 +142,41 @@ pub foreign neq : equatable a, a -> Bool
 --|     lt 1 2 == True
 --|
 --| Numbers only. `String.compare` orders text.
-pub foreign lt : number, number -> Bool
+pub foreign pure lt : number, number -> Bool
 
 
 --| Check if the first number is greater than the second. What `>` desugars to.
 --|
 --|     gt 2 1 == True
-pub foreign gt : number, number -> Bool
+pub foreign pure gt : number, number -> Bool
 
 
 --| Check if the first number is less than or equal to the second. What `<=`
 --| desugars to.
 --|
 --|     le 1 1 == True
-pub foreign le : number, number -> Bool
+pub foreign pure le : number, number -> Bool
 
 
 --| Check if the first number is greater than or equal to the second. What `>=`
 --| desugars to.
 --|
 --|     ge 1 1 == True
-pub foreign ge : number, number -> Bool
+pub foreign pure ge : number, number -> Bool
 
 
 --| The logical AND, short-circuiting: the second argument is evaluated only
 --| when the first is `True`. What `&&` desugars to.
 --|
 --|     and True False == False
-pub foreign and : Bool, Bool -> Bool
+pub foreign pure and : Bool, Bool -> Bool
 
 
 --| The logical OR, short-circuiting: the second argument is evaluated only
 --| when the first is `False`. What `||` desugars to.
 --|
 --|     or True False == True
-pub foreign or : Bool, Bool -> Bool
+pub foreign pure or : Bool, Bool -> Bool
 
 
 --| Put two appendable values together. `appendable` is `String` or `List a`.
@@ -185,39 +185,39 @@ pub foreign or : Bool, Bool -> Bool
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
 --|
 --| What `++` desugars to.
-pub foreign append : appendable, appendable -> appendable
+pub foreign pure append : appendable, appendable -> appendable
 
 
 --| Convert an integer into a float.
 --|
 --|     toFloat 5 == 5.0
-pub foreign toFloat : Int -> Float
+pub foreign pure toFloat : Int -> Float
 
 
 --| Round a number to the nearest integer.
 --|
 --|     round 1.5 == 2
 --|     round (-1.5) == -1
-pub foreign round : Float -> Int
+pub foreign pure round : Float -> Int
 
 
 --| Floor a number, rounding down.
 --|
 --|     floor 1.9 == 1
-pub foreign floor : Float -> Int
+pub foreign pure floor : Float -> Int
 
 
 --| Ceiling a number, rounding up.
 --|
 --|     ceiling 1.1 == 2
-pub foreign ceiling : Float -> Int
+pub foreign pure ceiling : Float -> Int
 
 
 --| Truncate a number, dropping the decimal part.
 --|
 --|     truncate 1.9 == 1
 --|     truncate (-1.9) == -1
-pub foreign truncate : Float -> Int
+pub foreign pure truncate : Float -> Int
 
 
 --| Perform modular arithmetic: the number first, then the modulus. The
@@ -227,7 +227,7 @@ pub foreign truncate : Float -> Int
 --|     modBy 11 4 == 3
 --|
 --| The number comes first so a pipeline reads: `n |> modBy 2` is `modBy n 2`.
-pub foreign modBy : Int, Int -> Int
+pub foreign pure modBy : Int, Int -> Int
 
 
 --| Get the remainder after dividing the first number by the second. The
@@ -235,71 +235,71 @@ pub foreign modBy : Int, Int -> Int
 --|
 --|     remainderBy (-1) 4 == -1
 --|     remainderBy 11 4 == 3
-pub foreign remainderBy : Int, Int -> Int
+pub foreign pure remainderBy : Int, Int -> Int
 
 
 --| Take the square root of a number.
 --|
 --|     sqrt 9 == 3
-pub foreign sqrt : Float -> Float
+pub foreign pure sqrt : Float -> Float
 
 
 --| Calculate the logarithm of a number in a given base: the number first,
 --| then the base.
 --|
 --|     logBase 100 10 == 2
-pub foreign logBase : Float, Float -> Float
+pub foreign pure logBase : Float, Float -> Float
 
 
 --| An approximation of Euler's constant.
-pub foreign e : Float
+pub foreign pure e : Float
 
 
 --| An approximation of pi.
-pub foreign pi : Float
+pub foreign pure pi : Float
 
 
 --| Figure out the cosine of an angle in radians.
-pub foreign cos : Float -> Float
+pub foreign pure cos : Float -> Float
 
 
 --| Figure out the sine of an angle in radians.
-pub foreign sin : Float -> Float
+pub foreign pure sin : Float -> Float
 
 
 --| Figure out the tangent of an angle in radians.
-pub foreign tan : Float -> Float
+pub foreign pure tan : Float -> Float
 
 
 --| Figure out the arccosine of a number, in radians.
-pub foreign acos : Float -> Float
+pub foreign pure acos : Float -> Float
 
 
 --| Figure out the arcsine of a number, in radians.
-pub foreign asin : Float -> Float
+pub foreign pure asin : Float -> Float
 
 
 --| Figure out the arctangent of a number, in radians. Prefer `atan2` when you
 --| have both sides of the triangle: it can tell the quadrants apart.
-pub foreign atan : Float -> Float
+pub foreign pure atan : Float -> Float
 
 
 --| Figure out the arctangent of `y / x` in radians, keeping the signs of both
 --| arguments so the answer lands in the right quadrant.
-pub foreign atan2 : Float, Float -> Float
+pub foreign pure atan2 : Float, Float -> Float
 
 
 --| Determine whether a float is an undefined or unrepresentable number.
 --|
 --|     isNaN (0 / 0) == True
 --|     isNaN (sqrt (-1)) == True
-pub foreign isNaN : Float -> Bool
+pub foreign pure isNaN : Float -> Bool
 
 
 --| Determine whether a float is positive or negative infinity.
 --|
 --|     isInfinite (1 / 0) == True
-pub foreign isInfinite : Float -> Bool
+pub foreign pure isInfinite : Float -> Bool
 
 
 --| Negate a number.

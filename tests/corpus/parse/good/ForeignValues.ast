@@ -1,19 +1,19 @@
 (module
-  (foreign_value pub add
+  (foreign_value pub pure add
     (doc "Add two numbers.")
     (type_fn
       (type_var number)
       (type_var number)
       (type_var number)))
-  (foreign_value pub length
+  (foreign_value pub pure length
     (type_fn
       (type_con String)
       (type_con Int)))
-  (foreign_value unsafeCoerce
+  (foreign_value pure unsafeCoerce
     (type_fn
       (type_var a)
       (type_var b)))
-  (foreign_value origin
+  (foreign_value pure origin
     (doc "Private, documented, record-typed.")
     (type_record
       (record_type_field x

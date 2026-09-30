@@ -3,9 +3,9 @@
 -- It has no body, so it never reaches a binding group — its evidence list
 -- has to be recorded where its scheme is read, or the declaration the
 -- backend must give a hidden parameter to has no `decl` line at all.
-pub foreign eq : List a, List a -> Bool
+pub foreign pure eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
 
 
-pub foreign compare : List a, List a -> Order
+pub foreign pure compare : List a, List a -> Order
     where a.compare : a, a -> Order

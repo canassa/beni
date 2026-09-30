@@ -29,7 +29,7 @@ fn writeUserPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1045,7 +1045,7 @@ test "an app package may declare itself a platform, and then `foreign` is legal 
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Prim.beni", "pub foreign double : Int -> Int\n");
+    try w.write("Prim.beni", "pub foreign pure double : Int -> Int\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1064,7 +1064,7 @@ test "an app package may declare itself a platform, and then `foreign` is legal 
     try testing.expectEqualDeep(diagnostic.Diagnostic{
         .code = .foreign_outside_platform,
         .severity = .@"error",
-        .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 19 } },
+        .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 24 } },
         .title = "FOREIGN OUTSIDE PLATFORM",
         .message = "This `foreign` declaration is outside a platform package.\n" ++
             "\n" ++
@@ -1098,10 +1098,10 @@ test "check 2: the sibling file must export exactly the declared names" {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign shout : String -> Program
+        \\pub foreign pure shout : String -> Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1229,7 +1229,7 @@ test "a fault in a PACKAGE sibling names that package's file, with its own excer
     try w.write("mycore/Basics.js", "export {};\n");
     try w.write("mycore/String.beni", "pub equatable foreign type String\n");
     try w.write("mycore/String.js", "export {};\n");
-    try w.write("mycore/List.beni", "pub equatable foreign type List a\n\n\npub foreign length : List a -> Int\n");
+    try w.write("mycore/List.beni", "pub equatable foreign type List a\n\n\npub foreign pure length : List a -> Int\n");
     try w.write("mycore/List.js", "export const length = (xs) => xs.length + process.pid;\n");
     try writeUserPlatform(&w);
     try w.write("Main.beni", "pub x : Int\nx =\n    1\n");
@@ -1361,7 +1361,7 @@ test "the sibling file must exist at all" {
     try w.write("beni.json",
         \\{ "platform": true }
     );
-    try w.write("Extra.beni", "pub foreign helper : Int -> Int\n");
+    try w.write("Extra.beni", "pub foreign pure helper : Int -> Int\n");
     try w.write("Main.beni",
         \\import Extra
         \\import Prog exposing (Program)
@@ -1400,7 +1400,7 @@ test "check 1: a foreign value must be a function or a concrete value" {
     try w.write("beni.json",
         \\{ "platform": true }
     );
-    try w.write("Bad.beni", "pub foreign anything : a\n");
+    try w.write("Bad.beni", "pub foreign pure anything : a\n");
     try w.write("Bad.js", "export const anything = null;\n");
     try w.write("Main.beni",
         \\import Bad
@@ -1442,7 +1442,7 @@ test "a concrete foreign constant is allowed, because core's own `pi` is one" {
     try w.write("beni.json",
         \\{ "platform": true }
     );
-    try w.write("Tau.beni", "pub foreign tau : Float\n");
+    try w.write("Tau.beni", "pub foreign pure tau : Float\n");
     try w.write("Tau.js", "export const tau = 6.283185307179586;\n");
     try w.write("Main.beni",
         \\import Prog exposing (Program)
@@ -1484,10 +1484,10 @@ test "check 4: a constrained foreign whose sibling forgot the evidence parameter
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign allEq : List a, List a -> Bool
+        \\pub foreign pure allEq : List a, List a -> Bool
         \\    where a.eq : a, a -> Bool
         \\
     );
@@ -1559,10 +1559,10 @@ test "check 4: a foreign typed through an alias counts the alias's parameters, a
         \\    Int -> Bool
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign isPos : IntPred
+        \\pub foreign pure isPos : IntPred
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1626,7 +1626,7 @@ test "check 4: a plain arity mismatch is the same defect and the same diagnostic
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String, String -> Program
+        \\pub foreign pure say : String, String -> Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1673,7 +1673,7 @@ test "check 4: a foreign that is not a function may not be written as one" {
     try w.write("beni.json",
         \\{ "platform": true }
     );
-    try w.write("Tau.beni", "pub foreign tau : Float\n");
+    try w.write("Tau.beni", "pub foreign pure tau : Float\n");
     try w.write("Tau.js", "export const tau = () => 6.283185307179586;\n");
     try w.write("Main.beni",
         \\import Prog exposing (Program)
@@ -1718,10 +1718,10 @@ test "check 4: a parameter list that is not at the export is refused" {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign shout : String -> Program
+        \\pub foreign pure shout : String -> Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1779,25 +1779,25 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign zero : Int
+        \\pub foreign pure zero : Int
         \\
         \\
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
-        \\pub foreign plus : Int, Int -> Int
+        \\pub foreign pure plus : Int, Int -> Int
         \\
         \\
-        \\pub foreign pick : Int -> Int
+        \\pub foreign pure pick : Int -> Int
         \\
         \\
-        \\pub foreign thrice : Int -> Int
+        \\pub foreign pure thrice : Int -> Int
         \\
         \\
-        \\pub foreign allEq : List a, List a -> Bool
+        \\pub foreign pure allEq : List a, List a -> Bool
         \\    where a.eq : a, a -> Bool
         \\
     );
@@ -1890,14 +1890,14 @@ test "a constrained `foreign` in value position inside its own module keeps its 
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
         \\pub type Bag a
         \\    = Bag (List a)
         \\
         \\
-        \\pub foreign eq : Bag a, Bag a -> Bool
+        \\pub foreign pure eq : Bag a, Bag a -> Bool
         \\    where a.eq : a, a -> Bool
         \\
         \\
@@ -2007,17 +2007,17 @@ test "an unconstrained `foreign` in value position inside its own module is the 
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         \\
         \\pub type Box
         \\    = Box Int
         \\
         \\
-        \\pub foreign eq : Box, Box -> Bool
+        \\pub foreign pure eq : Box, Box -> Bool
         \\
         \\
         \\pub doubled : List Int -> List Int

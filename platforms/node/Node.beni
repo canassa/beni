@@ -29,7 +29,7 @@ pub foreign type Program
 --|     main : Program
 --|     main =
 --|         Node.print "hello"
-pub foreign print : String -> Program
+pub foreign pure print : String -> Program
 
 
 --| A program that writes each string as its own line and exits 0.
@@ -37,7 +37,7 @@ pub foreign print : String -> Program
 --|     main : Program
 --|     main =
 --|         Node.printLines [ "one", "two" ]
-pub foreign printLines : List String -> Program
+pub foreign pure printLines : List String -> Program
 
 
 --| A program that writes one line and exits with the code you give it. A
@@ -54,7 +54,7 @@ pub foreign printLines : List String -> Program
 --|     main : Program
 --|     main =
 --|         formatError err |> Node.exitWith 1
-pub foreign exitWith : String, Int -> Program
+pub foreign pure exitWith : String, Int -> Program
 
 
 --| A program that writes nothing and exits 0.

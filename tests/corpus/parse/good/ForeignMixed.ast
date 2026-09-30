@@ -4,12 +4,12 @@
     (exposed Bool))
   (foreign_type pub Char
     (doc "The primitive character type."))
-  (foreign_value pub toCode
+  (foreign_value pub pure toCode
     (doc "Code point of a character.")
     (type_fn
       (type_con Char)
       (type_con Int)))
-  (foreign_value pub fromCode
+  (foreign_value pub pure fromCode
     (doc "Build a character from a code point.")
     (type_fn
       (type_con Int)

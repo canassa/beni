@@ -1593,7 +1593,7 @@ test "a module's own names resolve to its own declarations, not through an inter
         \\pub foreign type Int
         \\
         \\
-        \\foreign add : Int -> Int -> Int
+        \\foreign pure add : Int -> Int -> Int
         \\
         \\
         \\pub twice : Int -> Int

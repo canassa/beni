@@ -573,8 +573,11 @@ const Measurer = struct {
                 const f = tree.fullForeignValue(n);
                 try m.measure(f.type_expr);
                 const pub_width: u32 = if (f.header.pub_token != .none) 4 else 0;
-                const width = pub_width + 8 + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr);
-                m.set(n, width, m.headerFirst(f.header, main - 1), try m.whereClause(f.header, m.last(f.type_expr)));
+                // `foreign ` and, when present, the rung and its space.
+                const has_rung = m.tags[main - 1] == .lower_ident;
+                const rung_width: u32 = if (has_rung) m.tokenWidth(main - 1) + 1 else 0;
+                const width = pub_width + 8 + rung_width + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr);
+                m.set(n, width, m.headerFirst(f.header, if (has_rung) main - 2 else main - 1), try m.whereClause(f.header, m.last(f.type_expr)));
                 if (f.header.where_end != f.header.where_start) m.widths[n.int()] = no_fit;
             },
             .foreign_type => {
@@ -1483,7 +1486,15 @@ const Printer = struct {
             .foreign_value => {
                 const f = tree.fullForeignValue(n);
                 try p.header(f.header);
-                try p.tok(main - 1); // `foreign`
+                // `foreign`, then the rung when the parser found one
+                // (transparent-effects-proposal.md §14.1).
+                if (p.tags[main - 1] == .lower_ident) {
+                    try p.tok(main - 2);
+                    try p.space();
+                    try p.tok(main - 1);
+                } else {
+                    try p.tok(main - 1);
+                }
                 try p.space();
                 try p.tok(f.name);
                 try p.space();
@@ -3091,7 +3102,7 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\type   alias   Point   =   { x : Float, y : Float }
         \\pub type alias Handler model msg = msg -> model -> ( model, List msg )
         \\--|Add.
-        \\pub   foreign   add : number ->
+        \\pub   foreign   pure   add : number ->
         \\    number -> number
         \\foreign   type   Table   k   v
         \\
@@ -3118,7 +3129,7 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\
         \\
         \\--| Add.
-        \\pub foreign add :
+        \\pub foreign pure add :
         \\    number
         \\    -> number
         \\    -> number
@@ -4118,7 +4129,7 @@ const stress_decls = [_][]const u8{
     "type T{d} a = A{d} | B{d} a (List a) | C{d} { x : Int, y : a }\n",
     "type alias P{d} = { x : Int, y : Int, name : String }\n",
     "pub opaque type Q{d} = Q{d} Int\n",
-    "foreign h{d} : Int -> Int\n",
+    "foreign pure h{d} : Int -> Int\n",
     "foreign type Ft{d} a b\n",
     "c{d} m =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
     "c2{d} m = case m of\n  Just n -> n\n  Nothing -> 0\n",

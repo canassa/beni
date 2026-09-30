@@ -1039,7 +1039,15 @@ fn declareValue(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) Allo
     const index = try l.newDecl(kind, name_token, header);
     try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = annotation });
     try l.declareName(&l.values, l.tokenSymbol(name_token), name_token, index, .duplicate_declaration, true);
-    if (tag == .foreign_value) try l.checkForeign(header, name_token, name_token - 1);
+    if (tag == .foreign_value) {
+        // The rung is the lower identifier before the name, when the
+        // parser found one there (transparent-effects-proposal.md §14.1);
+        // `foreign` is then the token before it. A missing or unknown rung
+        // was reported by the parser, and the declaration stays `pure`.
+        const has_rung = l.tags[name_token - 1] == .lower_ident;
+        if (has_rung) l.decls.items[index].rung = Bir.Rung.fromText(l.tokenText(name_token - 1)) orelse .pure;
+        try l.checkForeign(header, name_token, if (has_rung) name_token - 2 else name_token - 1);
+    }
 }
 
 fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
@@ -5693,7 +5701,7 @@ test "type variables must be parameters in type bodies, and are free in annotati
 test "foreign declarations are rejected without --core and accepted with it" {
     const source =
         \\--| Doc.
-        \\pub foreign add : Int, Int -> Int
+        \\pub foreign pure add : Int, Int -> Int
         \\
         \\
         \\foreign type Handle
@@ -5704,7 +5712,7 @@ test "foreign declarations are rejected without --core and accepted with it" {
         .{ .code = .foreign_outside_platform, .line = 5, .col = 1 },
     });
     try expectWholeDump(source, .{ .core = true },
-        \\decl 0: pub foreign value add
+        \\decl 0: pub foreign value pure add
         \\  doc "Doc."
         \\  %0 = type_import Basics.Int
         \\  %1 = type_import Basics.Int

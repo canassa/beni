@@ -13,4 +13,4 @@ import Html exposing (Html)
 --|     main : Node.Program
 --|     main =
 --|         Node.print (Ssr.render (view model))
-pub foreign render : Html msg -> String
+pub foreign pure render : Html msg -> String

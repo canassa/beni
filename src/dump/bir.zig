@@ -380,6 +380,8 @@ const Dumper = struct {
         if (decl_.is_opaque) try d.w.writeAll("opaque ");
         if (decl_.is_equatable) try d.w.writeAll("equatable ");
         try d.w.print("{s} ", .{kindText(decl_.kind)});
+        // The rung a `foreign` value declares (transparent-effects-proposal.md §14.1).
+        if (decl_.kind == .foreign_value) try d.w.print("{t} ", .{decl_.rung});
         try d.declHeading(decl_);
         if (decl_.kind == .value and decl_.annotation != .none) try d.w.writeAll(" (annotated)");
     }

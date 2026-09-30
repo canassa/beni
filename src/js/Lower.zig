@@ -7285,28 +7285,28 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign add : number, number -> number
+    \\pub foreign pure add : number, number -> number
     \\
     \\
-    \\pub foreign sub : number, number -> number
+    \\pub foreign pure sub : number, number -> number
     \\
     \\
-    \\pub foreign mul : number, number -> number
+    \\pub foreign pure mul : number, number -> number
     \\
     \\
-    \\pub foreign lt : number, number -> Bool
+    \\pub foreign pure lt : number, number -> Bool
     \\
     \\
-    \\pub foreign eq : equatable a, a -> Bool
+    \\pub foreign pure eq : equatable a, a -> Bool
     \\
     \\
-    \\pub foreign and : Bool, Bool -> Bool
+    \\pub foreign pure and : Bool, Bool -> Bool
     \\
     \\
-    \\pub foreign or : Bool, Bool -> Bool
+    \\pub foreign pure or : Bool, Bool -> Bool
     \\
     \\
-    \\pub foreign append : appendable, appendable -> appendable
+    \\pub foreign pure append : appendable, appendable -> appendable
     \\
     \\
     \\pub identity : a -> a
@@ -7318,10 +7318,10 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign cons : a, List a -> List a
+    \\pub foreign pure cons : a, List a -> List a
     \\
     \\
-    \\pub foreign foldl : (a, b -> b), b, List a -> b
+    \\pub foreign pure foldl : (a, b -> b), b, List a -> b
     \\
     },
     .{ .path = "Maybe.beni", .package = .core, .source =
@@ -7336,9 +7336,9 @@ const test_core = [_]TestProject.Module{
     \\    | Err x
     \\
     },
-    .{ .path = "String.beni", .package = .core, .source = "pub equatable foreign type String\n\n\npub foreign fromInt : Int -> String\n" },
-    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign isDigit : Char -> Bool\n" },
-    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign todo : String -> a\n" },
+    .{ .path = "String.beni", .package = .core, .source = "pub equatable foreign type String\n\n\npub foreign pure fromInt : Int -> String\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char -> Bool\n" },
+    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String -> a\n" },
 };
 
 /// Lower `source` as the module `M` and return the printed JavaScript.
@@ -7760,10 +7760,10 @@ test "a foreign value is imported from the sibling file under its bare name" {
         .path = "M.beni",
         .package = .core,
         .source =
-        \\pub foreign now : Float
+        \\pub foreign pure now : Float
         \\
         \\
-        \\pub foreign twice : Int -> Int
+        \\pub foreign pure twice : Int -> Int
         \\
         ,
     });

@@ -921,6 +921,24 @@ fn itemValues(bir: *const Bir, gpa: Allocator, start: ExtraIndex, end: ExtraInde
 /// type never exceeds it.
 pub const max_type_params: u32 = std.math.maxInt(u16);
 
+/// The ladder a `foreign` value's declaration states and the checker's
+/// effect inference joins over: `pure ⊏ impure ⊏ suspends`
+/// (transparent-effects-proposal.md §14.1, §14.2). `suspends` implies
+/// `impure`, so one point of the ladder carries both of §2's bits.
+pub const Rung = enum(u8) {
+    pure,
+    impure,
+    suspends,
+
+    pub fn fromText(text: []const u8) ?Rung {
+        return std.meta.stringToEnum(Rung, text);
+    }
+
+    pub fn join(a: Rung, b: Rung) Rung {
+        return @enumFromInt(@max(@intFromEnum(a), @intFromEnum(b)));
+    }
+};
+
 pub const Decl = struct {
     kind: Kind,
     name: SymbolIndex,
@@ -935,6 +953,12 @@ pub const Decl = struct {
     /// ordinary `type` is equatable when its fields are, which is the
     /// checker's question, not a lexical one.
     is_equatable: bool,
+    /// `foreign pure|impure|suspends name : T`: what calling a `foreign`
+    /// value may do, as its declaration states it
+    /// (transparent-effects-proposal.md §14.1). `pure` on every other
+    /// declaration, and on a `foreign` whose rung was missing or unknown,
+    /// which the parser reported.
+    rung: Rung = .pure,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block
     /// (plain comments inside the range are trivia).
     doc_start: u32,

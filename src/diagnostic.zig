@@ -309,6 +309,11 @@ pub const Code = enum {
     invalid_attribute_name,
     /// And beside it: a quoted `srcdoc`, a document the page runs.
     untyped_srcdoc_attribute,
+    /// Appended with the first slice of effects: a `foreign` value with no
+    /// rung, or with a word that is not one
+    /// (transparent-effects-proposal.md §14.1).
+    foreign_effect_missing,
+    unknown_foreign_effect,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -461,6 +466,8 @@ pub fn title(code: Code) []const u8 {
         .untyped_event_attribute => "UNTYPED EVENT ATTRIBUTE",
         .invalid_attribute_name => "INVALID ATTRIBUTE NAME",
         .untyped_srcdoc_attribute => "UNTYPED SRCDOC ATTRIBUTE",
+        .foreign_effect_missing => "FOREIGN WITHOUT EFFECT",
+        .unknown_foreign_effect => "UNKNOWN FOREIGN EFFECT",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

@@ -1,4 +1,4 @@
 -- `foreign_bad_shape` (boundary.md §4, check 1): a `foreign` value must be
 -- a function or a value of a type with no variables in it. A polymorphic
 -- one promises whatever the caller asks for, which no JavaScript can honour.
-pub foreign anything : a
+pub foreign pure anything : a

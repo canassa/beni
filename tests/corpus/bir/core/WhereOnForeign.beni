@@ -1,5 +1,5 @@
 -- BIR: a `pub foreign` value may carry a `where` clause (§2.1, §5.2), and
 -- the clause is stored on its declaration exactly as an annotation's is.
 -- Core only, like every `foreign` (language.md §5.4).
-pub foreign sort : List a -> List a
+pub foreign pure sort : List a -> List a
     where a.compare : a, a -> Order

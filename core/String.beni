@@ -43,7 +43,7 @@ pub equatable foreign type String
 --|
 --|     length "innumerable" == 11
 --|     length "" == 0
-pub foreign length : String -> Int
+pub foreign pure length : String -> Int
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
@@ -51,13 +51,13 @@ pub foreign length : String -> Int
 --|
 --|     slice "snakes on a plane!" 7 9 == "on"
 --|     slice "snakes on a plane!" 0 (-7) == "snakes on a"
-pub foreign slice : String, Int, Int -> String
+pub foreign pure slice : String, Int, Int -> String
 
 
 --| Append two strings. `++` does the same thing.
 --|
 --|     append "butter" "fly" == "butterfly"
-pub foreign append : String, String -> String
+pub foreign pure append : String, String -> String
 
 
 --| Compare two strings lexicographically, by Unicode scalar value.
@@ -67,50 +67,50 @@ pub foreign append : String, String -> String
 --|
 --| This is the replacement for Elm's `"a" < "b"`, which does not compile in
 --| beni: comparison operators are numbers only.
-pub foreign compare : String, String -> Order
+pub foreign pure compare : String, String -> Order
 
 
 --| Convert a string to all upper case. Useful for case-insensitive
 --| comparisons and VIRTUAL YELLING.
 --|
 --|     toUpper "skinner" == "SKINNER"
-pub foreign toUpper : String -> String
+pub foreign pure toUpper : String -> String
 
 
 --| Convert a string to all lower case.
 --|
 --|     toLower "X" == "x"
-pub foreign toLower : String -> String
+pub foreign pure toLower : String -> String
 
 
 --| Get rid of whitespace on both sides of a string.
 --|
 --|     trim "  hats \n" == "hats"
-pub foreign trim : String -> String
+pub foreign pure trim : String -> String
 
 
 --| Get rid of whitespace on the left of a string.
 --|
 --|     trimLeft "  hats \n" == "hats \n"
-pub foreign trimLeft : String -> String
+pub foreign pure trimLeft : String -> String
 
 
 --| Get rid of whitespace on the right of a string.
 --|
 --|     trimRight "  hats \n" == "  hats"
-pub foreign trimRight : String -> String
+pub foreign pure trimRight : String -> String
 
 
 --| Break a string into words, splitting on chunks of whitespace.
 --|
 --|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
-pub foreign words : String -> List String
+pub foreign pure words : String -> List String
 
 
 --| Break a string into lines, splitting on newlines.
 --|
 --|     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
-pub foreign lines : String -> List String
+pub foreign pure lines : String -> List String
 
 
 --| Split a string using a given separator. The string being split comes
@@ -126,7 +126,7 @@ pub foreign lines : String -> List String
 --|
 --|     split "" "" == []
 --|     split "" "," == [ "" ]
-pub foreign split : String, String -> List String
+pub foreign pure split : String, String -> List String
 
 
 --| Get all of the indexes for a substring in a string. The string being
@@ -147,7 +147,7 @@ pub foreign split : String, String -> List String
 --|     indexes "aaaa" "aa" == [ 0, 2 ]
 --|     indexes "abc" "" == []
 --|     indexes "" "" == []
-pub foreign indexes : String, String -> List Int
+pub foreign pure indexes : String, String -> List Int
 
 
 --| Try to convert a string into an int, failing on improperly formatted
@@ -155,13 +155,13 @@ pub foreign indexes : String, String -> List Int
 --|
 --|     toInt "123" == Just 123
 --|     toInt "1.3" == Nothing
-pub foreign toInt : String -> Maybe Int
+pub foreign pure toInt : String -> Maybe Int
 
 
 --| Convert an `Int` to a `String`.
 --|
 --|     fromInt 123 == "123"
-pub foreign fromInt : Int -> String
+pub foreign pure fromInt : Int -> String
 
 
 --| Try to convert a string into a float, failing on improperly formatted
@@ -169,31 +169,31 @@ pub foreign fromInt : Int -> String
 --|
 --|     toFloat "123" == Just 123.0
 --|     toFloat "abc" == Nothing
-pub foreign toFloat : String -> Maybe Float
+pub foreign pure toFloat : String -> Maybe Float
 
 
 --| Convert a `Float` to a `String`.
 --|
 --|     fromFloat 1.5 == "1.5"
-pub foreign fromFloat : Float -> String
+pub foreign pure fromFloat : Float -> String
 
 
 --| Create a string from a given character.
 --|
 --|     fromChar 'a' == "a"
-pub foreign fromChar : Char -> String
+pub foreign pure fromChar : Char -> String
 
 
 --| Convert a string to a list of characters.
 --|
 --|     toList "abc" == [ 'a', 'b', 'c' ]
-pub foreign toList : String -> List Char
+pub foreign pure toList : String -> List Char
 
 
 --| Convert a list of characters into a string.
 --|
 --|     fromList [ 'a', 'b', 'c' ] == "abc"
-pub foreign fromList : List Char -> String
+pub foreign pure fromList : List Char -> String
 
 
 --| Determine if a string is empty.

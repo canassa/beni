@@ -24,25 +24,25 @@ pub equatable foreign type Char
 --|
 --|     toCode 'A' == 0x41
 --|     toCode 'π' == 0x03C0
-pub foreign toCode : Char -> Int
+pub foreign pure toCode : Char -> Int
 
 
 --| Convert a Unicode code point to a character.
 --|
 --|     fromCode 0x41 == 'A'
-pub foreign fromCode : Int -> Char
+pub foreign pure fromCode : Int -> Char
 
 
 --| Convert to upper case.
 --|
 --|     toUpper 'a' == 'A'
-pub foreign toUpper : Char -> Char
+pub foreign pure toUpper : Char -> Char
 
 
 --| Convert to lower case.
 --|
 --|     toLower 'A' == 'a'
-pub foreign toLower : Char -> Char
+pub foreign pure toLower : Char -> Char
 
 
 --| Detect upper case ASCII characters.

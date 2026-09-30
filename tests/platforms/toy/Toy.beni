@@ -12,4 +12,4 @@ pub foreign type Program
 
 --| A program that prints the view: legal, because this platform names the
 --| lowering whose markup it reads (`boundary.md` §9.3).
-pub foreign show : Html msg -> Program
+pub foreign pure show : Html msg -> Program

@@ -36,11 +36,11 @@ pub markup map : Html a, (a -> b) -> Html b
 
 
 --| The value of the form control an event came from.
-pub foreign targetValue : Event -> String
+pub foreign impure targetValue : Event -> String
 
 
 --| Whether the checkbox an event came from is checked.
-pub foreign targetChecked : Event -> Bool
+pub foreign impure targetChecked : Event -> Bool
 
 
 -- Elements. A `void` element takes no children.

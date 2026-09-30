@@ -240,6 +240,9 @@ const Dumper = struct {
                 const f = tree.fullForeignValue(n);
                 try d.openTag(tag, main);
                 try d.visibility(f.header);
+                // The rung, the lower identifier before the name when the
+                // parser found one (transparent-effects-proposal.md §14.1).
+                if (d.tags[f.name - 1] == .lower_ident) try d.w.print(" {s}", .{d.text(f.name - 1)});
                 try d.w.print(" {s}", .{d.text(f.name)});
                 try d.docs(f.header, inner);
                 try d.child(f.type_expr, inner);

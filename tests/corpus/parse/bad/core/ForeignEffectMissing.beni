@@ -1,0 +1,10 @@
+-- foreign_effect_missing at 5:13: a `foreign` value states its rung between
+-- `foreign` and its name (transparent-effects-proposal.md §14.1), and a name
+-- straight after `foreign` has none. The declaration is read as written
+-- otherwise, so `twice` below checks against it and reports nothing more.
+pub foreign add : Int, Int -> Int
+
+
+twice : Int -> Int
+twice n =
+    add n n

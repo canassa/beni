@@ -47,7 +47,7 @@ fn writeUserPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
     );
     try w.write("myplat/Prog.js",

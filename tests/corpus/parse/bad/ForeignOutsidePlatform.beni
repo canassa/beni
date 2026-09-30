@@ -1,7 +1,7 @@
 -- foreign_outside_platform at 4:1 (a foreign value) and 7:1 (a foreign type):
 -- `foreign` declarations parse everywhere but lowering rejects them unless
 -- the compiler runs with `--core` (§5.4). `double` on line 10 is valid.
-pub foreign add : Int, Int -> Int
+pub foreign pure add : Int, Int -> Int
 
 
 foreign type Handle

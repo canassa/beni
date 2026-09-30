@@ -11,11 +11,11 @@ pub foreign type Char
 
 
 --| Code point of a character.
-pub foreign toCode : Char -> Int
+pub foreign pure toCode : Char -> Int
 
 
 --| Build a character from a code point.
-pub foreign fromCode : Int -> Char
+pub foreign pure fromCode : Int -> Char
 
 
 pub isUpper : Char -> Bool

@@ -4,13 +4,13 @@
 -- resolves to `top(index)` like any top-level name; private foreigns are
 -- absent from the interface.
 --| Add two numbers.
-pub foreign add : number -> number -> number
+pub foreign pure add : number -> number -> number
 
 
 pub foreign type List a
 
 
-foreign unsafeLength : List a -> Int
+foreign pure unsafeLength : List a -> Int
 
 
 pub length : List a -> Int

@@ -38,7 +38,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign twice : Int -> Int
+    \\pub foreign pure twice : Int -> Int
     \\
     \\
     \\-- A PRIVATE type a `pub` signature names, so its NAME is in the record

@@ -18,7 +18,7 @@ pub foreign type Program
 --| A page with a model: `init` is rendered first, and every message a
 --| handler sends goes through `update` before the next render. It mounts
 --| at `document.body` unless `mountAt` gives it another node.
-pub foreign program : { init : model, update : msg, model -> model, view : model -> Html msg } -> Program
+pub foreign pure program : { init : model, update : msg, model -> model, view : model -> Html msg } -> Program
 
 
 --| The same program, mounted at the element whose `id` is the string
@@ -29,7 +29,7 @@ pub foreign program : { init : model, update : msg, model -> model, view : model
 --|     main : Program
 --|     main =
 --|         Browser.mountAt (Browser.program app) "cart"
-pub foreign mountAt : Program, String -> Program
+pub foreign pure mountAt : Program, String -> Program
 
 
 --| Several programs on one page, started in the order of the list, so a
@@ -39,4 +39,4 @@ pub foreign mountAt : Program, String -> Program
 --|     main : Program
 --|     main =
 --|         Browser.programs [ page, Browser.mountAt cart "cart" ]
-pub foreign programs : List Program -> Program
+pub foreign pure programs : List Program -> Program

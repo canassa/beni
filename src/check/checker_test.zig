@@ -49,25 +49,25 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign add : number, number -> number
+    \\pub foreign pure add : number, number -> number
     \\
     \\
-    \\pub foreign sub : number, number -> number
+    \\pub foreign pure sub : number, number -> number
     \\
     \\
-    \\pub foreign mul : number, number -> number
+    \\pub foreign pure mul : number, number -> number
     \\
     \\
-    \\pub foreign lt : number, number -> Bool
+    \\pub foreign pure lt : number, number -> Bool
     \\
     \\
-    \\pub foreign eq : equatable a, a -> Bool
+    \\pub foreign pure eq : equatable a, a -> Bool
     \\
     \\
-    \\pub foreign append : appendable, appendable -> appendable
+    \\pub foreign pure append : appendable, appendable -> appendable
     \\
     \\
-    \\pub foreign toFloat : Int -> Float
+    \\pub foreign pure toFloat : Int -> Float
     \\
     \\
     \\pub identity : a -> a
@@ -84,16 +84,16 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign cons : a, List a -> List a
+    \\pub foreign pure cons : a, List a -> List a
     \\
     \\
-    \\pub foreign map : (a -> b), List a -> List b
+    \\pub foreign pure map : (a -> b), List a -> List b
     \\
     \\
-    \\pub foreign foldl : (a, b -> b), b, List a -> b
+    \\pub foreign pure foldl : (a, b -> b), b, List a -> b
     \\
     \\
-    \\pub foreign length : List a -> Int
+    \\pub foreign pure length : List a -> Int
     \\
     },
     .{ .path = "Maybe.beni", .package = .core, .source =
@@ -112,14 +112,14 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type String
     \\
     \\
-    \\pub foreign length : String -> Int
+    \\pub foreign pure length : String -> Int
     \\
     \\
-    \\pub foreign fromInt : Int -> String
+    \\pub foreign pure fromInt : Int -> String
     \\
     },
-    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign isDigit : Char -> Bool\n" },
-    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign todo : String -> a\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char -> Bool\n" },
+    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String -> a\n" },
 };
 
 /// Run the checker over `source` as the module `M`, and compare

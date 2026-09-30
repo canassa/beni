@@ -60,7 +60,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign twice : Int -> Int
+    \\pub foreign pure twice : Int -> Int
     \\
     \\
     \\type Hidden

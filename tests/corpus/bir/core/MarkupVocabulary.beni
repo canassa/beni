@@ -24,4 +24,4 @@ pub event "onInput" delegated via targetValue : String
 pub markup map : Html a, (a -> b) -> Html b
 
 
-foreign targetValue : Event -> String
+foreign pure targetValue : Event -> String

@@ -2223,7 +2223,7 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     // module shadows it for the whole project (checker.md §2), and a file
     // called `Basics.beni` would therefore shadow the prelude's own home
     // and make `Int` unresolvable. That rule has its own scenario below.
-    try w.write("Prim.beni", "pub foreign add : Int -> Int -> Int\n");
+    try w.write("Prim.beni", "pub foreign pure add : Int -> Int -> Int\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -2241,7 +2241,7 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
         .code = .foreign_outside_platform,
         .severity = .@"error",
-        .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 16 } },
+        .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 21 } },
         .title = "FOREIGN OUTSIDE PLATFORM",
         .message = "This `foreign` declaration is outside a platform package.\n" ++
             "\n" ++
@@ -2523,7 +2523,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
     // Not `Basics.beni`: a module of the app package named like a core
     // module shadows it (checker.md §2), and `Bool` would then be
     // unresolvable. The declared `Verdict` keeps this about the marker.
-    try w.write("Eq.beni", "pub type Verdict\n    = Yes\n\n\npub foreign eq : equatable a -> equatable a -> Verdict\n");
+    try w.write("Eq.beni", "pub type Verdict\n    = Yes\n\n\npub foreign pure eq : equatable a -> equatable a -> Verdict\n");
 
     const r = try w.run(&.{ "check", "--core", "Eq.beni" });
 
@@ -2532,7 +2532,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
     try testing.expectEqualDeep(diagnostic.Diagnostic{
         .code = .equatable_not_first_occurrence,
         .severity = .@"error",
-        .span = .{ .file = "Eq.beni", .start = .{ .line = 5, .col = 33 }, .end = .{ .line = 5, .col = 42 } },
+        .span = .{ .file = "Eq.beni", .start = .{ .line = 5, .col = 38 }, .end = .{ .line = 5, .col = 47 } },
         .title = "EQUATABLE MARKER REPEATED",
         .message = "This type variable is already marked `equatable`.\n" ++
             "\n" ++
@@ -2677,7 +2677,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try w.write("myplat/beni.json",
         \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
     );
-    try w.write("myplat/Prog.beni", "pub foreign type Program\n\n\npub foreign say : Int -> Program\n");
+    try w.write("myplat/Prog.beni", "pub foreign type Program\n\n\npub foreign pure say : Int -> Program\n");
     try w.write("myplat/Prog.js", "export const say = (n) => ({ n });\n");
     try w.write("myplat/run.js", "export const run = (program) => {};\n");
     try w.write("Main.beni",
@@ -3882,10 +3882,10 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign say : String -> Program
+        \\pub foreign pure say : String -> Program
         \\
         \\
-        \\pub foreign twice : a, Int -> a
+        \\pub foreign pure twice : a, Int -> a
         \\    where a.scale : a, Int -> a
         \\
     );

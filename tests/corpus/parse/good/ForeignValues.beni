@@ -1,18 +1,18 @@
--- `foreign name : Type` declarations (§5.4): private and `pub`, with and
+-- `foreign pure name : Type` declarations (§5.4): private and `pub`, with and
 -- without a doc comment, with type variables, function and record types.
 -- Parsing is legal in every file; only lowering cares about `--core`.
 --| Add two numbers.
-pub foreign add : number, number -> number
+pub foreign pure add : number, number -> number
 
 
-pub foreign length : String -> Int
+pub foreign pure length : String -> Int
 
 
-foreign unsafeCoerce : a -> b
+foreign pure unsafeCoerce : a -> b
 
 
 --| Private, documented, record-typed.
-foreign origin : { x : Float, y : Float }
+foreign pure origin : { x : Float, y : Float }
 
 
 double : Int -> Int

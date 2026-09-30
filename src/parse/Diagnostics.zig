@@ -462,6 +462,23 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\When a definition has an annotation, `pub` goes on the annotation line, like
             \\`pub {s} : ...`. Remove it from the definition.
         , .{ head, head, head }),
+        .foreign_effect_missing => try w.print(
+            \\This `foreign` declaration does not say what calling `{s}` may do.
+            \\
+            \\A `foreign` value has no body to infer that from, so it states it between
+            \\`foreign` and its name, as one of three words:
+            \\
+            \\    foreign pure {s} : ...        -- total, never throws, no side effect
+            \\    foreign impure {s} : ...      -- a side effect, but never waits
+            \\    foreign suspends {s} : ...    -- may wait: a timer, the network
+        , .{ text, text, text, text }),
+        .unknown_foreign_effect => try w.print(
+            \\`{s}` is not something a `foreign` declaration can say about itself.
+            \\
+            \\Between `foreign` and the name goes one of three words: `pure` (total, never
+            \\throws, no side effect), `impure` (a side effect, but never waits) or `suspends`
+            \\(may wait: a timer, the network).
+        , .{text}),
         .opaque_not_on_type => try w.writeAll(
             \\`opaque` can only go on a custom type: `pub opaque type T = ...`.
             \\
