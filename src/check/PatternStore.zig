@@ -28,6 +28,15 @@ pub const Tag = enum(u8) {
     /// One alternative of a finite union. `lhs` indexes `unions`, `rhs` is
     /// an `extra` offset holding `[alt, arg_count, args…]`.
     ctor,
+    /// A list pattern (language.md §6.8): its items before a spread, its
+    /// items after it, and whether it has one — `[ a, b ]` is two leading
+    /// items and no spread, `[ x, ...rest ]` one leading item and a spread,
+    /// `[ ...init, z ]` one trailing item. `rhs` is an `extra` offset
+    /// holding `[prefix, suffix, spread, items…]`, the leading items first.
+    /// Its alternatives depend on the column it stands in, so they are
+    /// computed when the column is specialised (checker.md §6.6, amended
+    /// 2026-10-01), not interned as a union.
+    list,
 };
 
 /// One node. Three fixed-size columns and one shared sidecar, like every
@@ -39,8 +48,9 @@ pub const Node = struct {
 };
 
 /// Which surface form a union came from, so the renderer can print `( a, b )`
-/// and `x :: xs` rather than the invented constructor names Elm uses.
-pub const Shape = enum(u8) { adt, unit, tuple, list };
+/// rather than the invented constructor names Elm uses. A list is not a
+/// union any more (`Tag.list`).
+pub const Shape = enum(u8) { adt, unit, tuple };
 
 /// A finite set of alternatives: `alts[alts_start..alts_end]`.
 pub const Union = struct {
@@ -135,6 +145,25 @@ pub const Patterns = struct {
     pub fn args(p: *const Patterns, c: Ctor) []const PatIndex {
         return @ptrCast(p.extra.items[c.args_start..][0..c.args_len]);
     }
+
+    /// A `list` node's shape and item RANGE, for `ctor`'s reason.
+    pub fn list(p: *const Patterns, i: PatIndex) List {
+        const at = p.nodes.items(.rhs)[i.int()];
+        return .{
+            .prefix = p.extra.items[at],
+            .suffix = p.extra.items[at + 1],
+            .spread = p.extra.items[at + 2] != 0,
+            .items_start = at + 3,
+        };
+    }
+
+    /// The items of `l`, leading then trailing, valid until the next append
+    /// to `extra`.
+    pub fn items(p: *const Patterns, l: List) []const PatIndex {
+        return @ptrCast(p.extra.items[l.items_start..][0 .. l.prefix + l.suffix]);
+    }
+
+    pub const List = struct { prefix: u32, suffix: u32, spread: bool, items_start: u32 };
 
     pub fn unionAt(p: *const Patterns, index: u32) Union {
         return p.unions.items[index];

@@ -1,0 +1,11 @@
+-- A spread belongs inside a list's brackets (language.md §6.8): `...xs` as
+-- an expression (5:5) and as a pattern (10:9) is unexpected_token with the
+-- stray-spread message, which shows both bracketed forms.
+whole xs =
+    ...xs
+
+
+first xs =
+    case xs of
+        ...rest ->
+            0

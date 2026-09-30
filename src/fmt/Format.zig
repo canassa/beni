@@ -658,6 +658,13 @@ const Measurer = struct {
                 try m.measure(e);
                 m.set(n, 1 +| m.w(e), main, m.last(e));
             },
+            // `...xs` and `...rest`: the `...` against its operand
+            // (language.md §6.8, §9).
+            .spread, .pat_spread => {
+                const e = tree.operand(n);
+                try m.measure(e);
+                m.set(n, 3 +| m.w(e), main, m.last(e));
+            },
             .apply => {
                 const all = tree.children(n);
                 try m.measure(all[0]);
@@ -2082,7 +2089,7 @@ const Printer = struct {
                     try p.tok(t);
                 }
             },
-            .negate => {
+            .negate, .spread => {
                 try p.tok(main);
                 try p.expr(tree.operand(n), indent);
             },
@@ -2865,6 +2872,10 @@ const Printer = struct {
                 try p.tok(a.name - 1); // `as`
                 try p.space();
                 try p.tok(a.name);
+            },
+            .pat_spread => {
+                try p.tok(main);
+                try p.pat(tree.operand(n), indent);
             },
             else => return error.SyntaxErrors,
         }

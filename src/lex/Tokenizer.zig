@@ -375,15 +375,12 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             // name Elm's `exposing (T(..))` in one diagnostic instead of the
             // lexer reporting each dot.
             '.' => {
-                // A spread (frontend.md §9.1): `...` as the first token of a
-                // hole opened in a tag — depth 1, straight after its `{`,
-                // whatever whitespace or comments came between. Anywhere
-                // else `...` is `..` and a stray `.`, as it always was.
-                if (src[t.index + 2] == '.' and t.mode == .hole and t.depth == 1 and
-                    t.prevTag() == .l_brace and t.modeBelow() == .tag)
-                {
-                    break :state t.take(3, .ellipsis);
-                }
+                // A spread: `...` is one token wherever code is lexed
+                // (frontend.md §9.1, amended 2026-10-01) — a list's
+                // `[ x, ...rest ]` (language.md §6.8) and a component's
+                // `{...props}` alike. Longest match, so never `..` and `.`;
+                // whether a spread may stand where it does is the parser's.
+                if (src[t.index + 2] == '.') break :state t.take(3, .ellipsis);
                 break :state t.take(2, .dot_dot);
             },
             'a'...'z' => {

@@ -139,6 +139,10 @@ pub const Construct = enum {
     /// For `unclosed_delimiter`: the hole's element closed before its `}`,
     /// whose closing tag the head range quotes.
     closing_tag_in_hole,
+    /// A `...` where no list's brackets surround it (language.md §6.8).
+    stray_spread,
+    /// A pattern spread whose operand is not a name or `_`.
+    spread_operand,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -201,6 +205,8 @@ fn constructText(c: Construct) []const u8 {
         .element_fact => "a fact of `pub element`: `void`, `svg` or `mathml`",
         .attribute_fact => "a fact of `pub attribute`: `on`, `property`, `stateful`, `url`, `raw`, `classes` or `styles`",
         .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
+        .stray_spread => "an expression",
+        .spread_operand => "a name or `_`",
     };
 }
 
@@ -337,6 +343,22 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 , .{ text, head });
             } else if (item.construct == .element_fact or item.construct == .attribute_fact or item.construct == .event_fact) {
                 try w.print("`{s}` is not {s}.", .{ text, constructText(item.construct) });
+            } else if (item.construct == .stray_spread) {
+                try w.writeAll(
+                    \\I found a spread, `...`, outside a list.
+                    \\
+                    \\A spread puts the elements of one list into another, so it belongs inside the
+                    \\brackets of a list: `[ 0, ...xs ]` as an expression, `[ x, ...rest ]` as a
+                    \\pattern. A component's attributes take one too, as `{...props}` first in its tag.
+                );
+            } else if (item.construct == .spread_operand) {
+                try w.print(
+                    \\I was parsing a list pattern and ran into `{s}` after its `...`.
+                    \\
+                    \\A spread in a pattern names the elements it covers, or ignores them: `...rest`
+                    \\or `..._`. The items around the spread match single elements, so a pattern for
+                    \\them goes there: `[ x, y, ...rest ]` rather than `[ x, ...[ y, ..._ ] ]`.
+                , .{text});
             } else if (item.construct == .float_pattern) {
                 try w.print(
                     \\`{s}` is a float, and a pattern cannot match a float.
@@ -697,9 +719,167 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\    f <| <{s} … />
             , .{ head, name, head, name, name, name });
         },
+        .two_spreads_in_pattern => try w.writeAll(
+            \\This list pattern has a second spread.
+            \\
+            \\A list pattern may have one spread: the items before it match the first elements
+            \\and the items after it the last ones, so with two there would be more than one
+            \\way to split the list between them. Keep one, and match the rest with items:
+            \\
+            \\    [ first, ...middle, last ]
+        ),
+        .cons_removed => if (item.head_end > item.head_start) {
+            try w.writeAll(
+                \\`::` is no longer part of beni: a list is built and matched with brackets and a
+                \\spread. Write this as:
+                \\
+                \\
+            );
+            try w.writeAll("    ");
+            try writeBracketForm(w, head);
+            try w.writeAll(
+                \\
+                \\
+                \\`[ x, ...xs ]` is `x` followed by the elements of `xs`, and as a pattern it
+                \\matches a list of at least one element, binding its first element and the rest.
+            );
+        } else try w.writeAll(
+            \\`(::)` is no longer part of beni, with the `::` operator it named. The function is
+            \\`List.cons`:
+            \\
+            \\    List.cons x xs
+            \\
+            \\and `[ x, ...xs ]` is the same list written in brackets.
+        ),
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
+    }
+}
+
+/// `cons_removed`'s fix-it (language.md §6.8): `chain`, the source text of
+/// an `a :: b :: rest` chain, written in the bracket spelling. The chain is
+/// split at every `::` outside brackets, strings and characters; runs of
+/// whitespace, newlines included, become one space. The last part decides
+/// the end: `[]` adds nothing, a list literal `[ … ]` adds its items, `_`
+/// is `..._`, a parenthesised chain is opened up, and anything else is
+/// spread.
+fn writeBracketForm(w: *std.Io.Writer, chain: []const u8) std.Io.Writer.Error!void {
+    var parts: [64][]const u8 = undefined;
+    var count = splitCons(chain, &parts);
+    // A parenthesised chain in tail position, `a :: (b :: rest)`, is opened
+    // up; past `parts`' length the rest stays in the last part.
+    while (count >= 2 and count < parts.len) {
+        const last = parts[count - 1];
+        if (last.len < 2 or last[0] != '(' or closerOf(last, 0) != last.len - 1) break;
+        const inner = std.mem.trim(u8, last[1 .. last.len - 1], " \n\r");
+        if (!hasTopCons(inner)) break;
+        count -= 1;
+        count += splitCons(inner, parts[count..]);
+    }
+    try w.writeAll("[ ");
+    for (parts[0 .. count - 1], 0..) |part, i| {
+        if (i != 0) try w.writeAll(", ");
+        try writeSpaced(w, part);
+    }
+    const last = parts[count - 1];
+    if (std.mem.eql(u8, last, "[]")) {
+        // Nothing to add.
+    } else if (last.len >= 2 and last[0] == '[' and closerOf(last, 0) == last.len - 1) {
+        const inner = std.mem.trim(u8, last[1 .. last.len - 1], " \n\r");
+        if (inner.len != 0) {
+            try w.writeAll(", ");
+            try writeSpaced(w, inner);
+        }
+    } else {
+        try w.writeAll(", ...");
+        try writeSpaced(w, last);
+    }
+    try w.writeAll(" ]");
+}
+
+/// Split `text` at its top-level `::`s into `out`, each part trimmed.
+/// Returns the count (at least 1); parts past `out`'s length stay in the
+/// last one.
+fn splitCons(text: []const u8, out: [][]const u8) usize {
+    var count: usize = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    var depth: u32 = 0;
+    while (i < text.len) {
+        switch (text[i]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -|= 1,
+            '"', '\'' => {
+                i = skipQuoted(text, i);
+                continue;
+            },
+            ':' => if (depth == 0 and i + 1 < text.len and text[i + 1] == ':' and count + 1 < out.len) {
+                out[count] = std.mem.trim(u8, text[start..i], " \n\r");
+                count += 1;
+                i += 2;
+                start = i;
+                continue;
+            },
+            else => {},
+        }
+        i += 1;
+    }
+    out[count] = std.mem.trim(u8, text[start..], " \n\r");
+    return count + 1;
+}
+
+fn hasTopCons(text: []const u8) bool {
+    var parts: [2][]const u8 = undefined;
+    return splitCons(text, &parts) > 1;
+}
+
+/// The index just past the quoted literal starting at `at`, escapes
+/// included; the end of `text` when it is not closed.
+fn skipQuoted(text: []const u8, at: usize) usize {
+    const quote = text[at];
+    var i = at + 1;
+    while (i < text.len) : (i += 1) {
+        if (text[i] == '\\') {
+            i += 1;
+        } else if (text[i] == quote) return i + 1;
+    }
+    return text.len;
+}
+
+/// The index of the bracket closing the one at `open`, or `text.len`.
+fn closerOf(text: []const u8, open: usize) usize {
+    var depth: u32 = 0;
+    var i = open;
+    while (i < text.len) {
+        switch (text[i]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => {
+                depth -|= 1;
+                if (depth == 0) return i;
+            },
+            '"', '\'' => {
+                i = skipQuoted(text, i);
+                continue;
+            },
+            else => {},
+        }
+        i += 1;
+    }
+    return text.len;
+}
+
+/// `text` with every run of whitespace written as one space.
+fn writeSpaced(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    var space = false;
+    for (text) |c| {
+        if (c == ' ' or c == '\n' or c == '\r') {
+            space = true;
+            continue;
+        }
+        if (space) try w.writeByte(' ');
+        space = false;
+        try w.writeByte(c);
     }
 }
 

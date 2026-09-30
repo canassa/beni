@@ -1,0 +1,96 @@
+(module
+  (definition build
+    (pat_var x)
+    (pat_var xs)
+    (pat_var ys)
+    (tuple
+      (list
+        (ident x)
+        (spread
+          (ident xs)))
+      (list
+        (spread
+          (ident xs))
+        (ident x))
+      (list
+        (spread
+          (ident xs))
+        (spread
+          (ident ys)))
+      (list
+        (spread
+          (ident xs))
+        (ident x)
+        (spread
+          (ident ys)))
+      (list
+        (spread
+          (ident xs)))))
+  (definition operands
+    (pat_var f)
+    (pat_var x)
+    (pat_var xs)
+    (pat_var ys)
+    (list
+      (spread
+        (apply
+          (ident f)
+          (ident x)))
+      (int 0)
+      (spread
+        (append
+          (ident xs)
+          (ident ys)))))
+  (definition shapes
+    (pat_var xs)
+    (case
+      (ident xs)
+      (branch
+        (pat_list)
+        (int 0))
+      (branch
+        (pat_list
+          (pat_var x)
+          (pat_spread
+            (pat_var rest)))
+        (int 1))
+      (branch
+        (pat_list
+          (pat_spread
+            (pat_var init))
+          (pat_var last))
+        (int 2))
+      (branch
+        (pat_list
+          (pat_var first)
+          (pat_spread
+            (pat_var middle))
+          (pat_var last))
+        (int 3))
+      (branch
+        (pat_list
+          (pat_var x)
+          (pat_spread
+            (pat_wild)))
+        (int 4))
+      (branch
+        (pat_list
+          (pat_spread
+            (pat_var rest)))
+        (int 5))))
+  (definition nested
+    (pat_var xs)
+    (case
+      (ident xs)
+      (branch
+        (pat_list
+          (pat_list
+            (pat_var a)
+            (pat_spread
+              (pat_var b)))
+          (pat_spread
+            (pat_var c)))
+        (ident a))
+      (branch
+        (pat_wild)
+        (int 0)))))

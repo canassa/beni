@@ -350,10 +350,21 @@ pub const Reporter = struct {
             },
             .call_arg => {
                 const callee = r.calleeOf(category.owner.unwrap() orelse region);
+                // A list written with a spread IS these calls (language.md
+                // §6.8), so the sentence says which spelling it was.
+                const is = struct {
+                    fn name(c: Callee, n: []const u8) bool {
+                        return c.kind == .function and std.mem.eql(u8, c.name, n);
+                    }
+                };
+                const spelled: []const u8 = if (is.name(callee, "List.cons"))
+                    " — `[ x, ...xs ]` is `List.cons x xs`"
+                else if (is.name(callee, "List.append")) " — `[ ...xs, y ]` is `List.append xs [ y ]`" else "";
                 return .{
-                    .intro = std.fmt.allocPrint(scratch, "The {s} argument to {s} is not what I expect:", .{
+                    .intro = std.fmt.allocPrint(scratch, "The {s} argument to {s} is not what I expect{s}:", .{
                         ordinal(scratch, category.index),
                         calleeReference(scratch, callee),
+                        spelled,
                     }) catch "This argument is not what I expect:",
                     .found = "This argument is:",
                     .wanted = std.fmt.allocPrint(scratch, "But {s} needs the {s} argument to be:", .{
@@ -1238,6 +1249,7 @@ pub const Reporter = struct {
                 // a core function nobody writes by hand, so naming the
                 // function would name something the author never typed.
                 if (r.operatorCallee(@enumFromInt(data.lhs), symbol)) |op| return .{ .kind = .operator, .name = op };
+                if (r.listSyntaxCallee(@enumFromInt(data.lhs), symbol)) |name| return .{ .kind = .function, .name = name };
                 return .{ .kind = .function, .name = r.env.interner.slice(symbol) };
             },
             .ext_ctor => {
@@ -1267,8 +1279,9 @@ pub const Reporter = struct {
     /// operator the author never typed and one that, on an `Int32`, does
     /// not exist at all (`core/Int32.beni`). `List.eq`, `List.compare` and
     /// `String.append` share a name with a desugaring the same way. Every
-    /// operator of language.md §6.5 lowers to a value of `core/Basics`,
-    /// except `::`, which lowers to `core/List`'s `cons`.
+    /// operator of language.md §6.5 lowers to a value of `core/Basics`
+    /// (`::`, which lowered to `core/List`'s `cons`, left on 2026-10-01; a
+    /// list's spread is `listSyntaxCallee`'s).
     fn operatorCallee(r: *const Reporter, module: Graph.Index, symbol: Symbol) ?[]const u8 {
         const spelling = operatorSpelling(symbol) orelse return null;
         // The six comparisons lower to method calls, never to a call of
@@ -1278,10 +1291,19 @@ pub const Reporter = struct {
         inline for (.{ wk.eq, wk.neq, wk.lt, wk.gt, wk.le, wk.ge }) |comparison| {
             if (symbol == comparison.symbol()) return null;
         }
-        const owner: InternPool.WellKnown =
-            if (symbol == InternPool.WellKnown.cons.symbol()) .List else .Basics;
-        const declared = r.env.graph.find(.core, owner.symbol()) orelse return null;
+        const declared = r.env.graph.find(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
         return if (declared == module) spelling else null;
+    }
+
+    /// `List.cons` or `List.append` when `symbol` of `module` is core's —
+    /// the two functions a list written with a spread is (language.md
+    /// §6.8, §8) — named in full, because the author wrote brackets and
+    /// the message has to say which call they mean.
+    fn listSyntaxCallee(r: *const Reporter, module: Graph.Index, symbol: Symbol) ?[]const u8 {
+        const wk = InternPool.WellKnown;
+        const name = if (symbol == wk.cons.symbol()) "List.cons" else if (symbol == wk.append.symbol()) "List.append" else return null;
+        const declared = r.env.graph.find(.core, wk.List.symbol()) orelse return null;
+        return if (declared == module) name else null;
     }
 
     /// Whether `v` is `core/Int32.beni`'s `Int32`, asked by NAME and only
@@ -1301,26 +1323,8 @@ pub const Reporter = struct {
     }
 };
 
-/// The operator a core function is the desugaring of (language.md §6.5), or
-/// null for an ordinary name. The symbols are the well-known prefix of the
-/// intern pool, so this is a switch on an integer. It answers on the name
-/// alone, so a CALLEE is named through `Reporter.operatorCallee`, which
-/// checks the module too.
-pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
-    const wk = InternPool.WellKnown;
-    const pairs = .{
-        .{ wk.add, "+" },     .{ wk.sub, "-" },   .{ wk.mul, "*" },
-        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" }, .{ wk.pow, "^" },
-        .{ wk.append, "++" }, .{ wk.cons, "::" }, .{ wk.eq, "==" },
-        .{ wk.neq, "/=" },    .{ wk.lt, "<" },    .{ wk.gt, ">" },
-        .{ wk.le, "<=" },     .{ wk.ge, ">=" },   .{ wk.@"and", "&&" },
-        .{ wk.@"or", "||" },
-    };
-    inline for (pairs) |pair| {
-        if (symbol == pair[0].symbol()) return pair[1];
-    }
-    return null;
-}
+/// The operator a core function is the desugaring of (`DispatchTexts.zig`).
+pub const operatorSpelling = DispatchTexts.operatorSpelling;
 
 /// Whatever the Bir calls it, something that takes arguments is a function
 /// in an arity message: "the `scale` value expects 2 arguments" reads wrong
@@ -1476,13 +1480,4 @@ test "edit distance is what the field-typo hint needs" {
     try testing.expectEqual(@as(usize, 1), try editDistance(a, "nane", "name"));
     try testing.expectEqual(@as(usize, 4), try editDistance(a, "", "name"));
     try testing.expectEqual(@as(usize, 5), try editDistance(a, "count", ""));
-}
-
-test "operator spellings cover the desugarings of language.md §6.5" {
-    try testing.expectEqualStrings("+", operatorSpelling(InternPool.WellKnown.add.symbol()).?);
-    try testing.expectEqualStrings("==", operatorSpelling(InternPool.WellKnown.eq.symbol()).?);
-    try testing.expectEqualStrings("::", operatorSpelling(InternPool.WellKnown.cons.symbol()).?);
-    // A prelude value the author DOES write by hand keeps its own name.
-    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.negate.symbol()));
-    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.max.symbol()));
 }

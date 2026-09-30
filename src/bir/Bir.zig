@@ -391,6 +391,10 @@ pub const Inst = struct {
         pat_list,
         /// `x :: xs`. `lhs` head, `rhs` tail.
         pat_cons,
+        /// `...rest` or `..._`: an item of a `pat_list`, at most one per
+        /// list (language.md §6.8). `lhs` is its operand, the `pat_var` or
+        /// `pat_wild` the elements it covers are bound to.
+        pat_spread,
         /// `{ a, b }`. Range of the local indices bound, one per field; the
         /// field name is the local's name.
         pat_record,

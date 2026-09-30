@@ -1,0 +1,14 @@
+-- check/bad: `[ ...init, last ]` takes every non-empty list, so the
+-- `[ x, ...rest ]` below it can never run: redundant_pattern at it, the 2nd
+-- pattern (checker.md §6.6, amended 2026-10-01).
+pub lastOr : List Int -> Int
+lastOr xs =
+    case xs of
+        [ ...init, last ] ->
+            last
+
+        [ x, ...rest ] ->
+            x
+
+        [] ->
+            0

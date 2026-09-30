@@ -89,7 +89,10 @@ pub const magic = "BENIFE\x00\x00";
 /// `foreign` signature marks it (transparent-effects-proposal.md §15.2,
 /// §15.5), a new AST node carries the mark, and lowering has a code for a
 /// misplaced one.
-pub const format_version: u32 = 10;
+/// 11 (2026-10-01): the list syntax (language.md §6.8) — `Bir.Inst.Tag`
+/// gained `pat_spread`, which shifted every later pattern tag, and the
+/// parser has two new codes, `cons_removed` and `two_spreads_in_pattern`.
+pub const format_version: u32 = 11;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

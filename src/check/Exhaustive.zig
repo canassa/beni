@@ -14,18 +14,25 @@
 //!     row matches, i.e. the counterexamples. A non-empty answer is
 //!     `missing_patterns`, and the answer itself is what the message prints.
 //!
-//! **Patterns are simplified first** (`simplify`), into three shapes and
+//! **Patterns are simplified first** (`simplify`), into four shapes and
 //! nothing else: `anything` (a wildcard, a variable, a record pattern —
 //! records have no alternatives, so matching one always succeeds), a
-//! `literal`, or a `ctor` of a known *union*. Everything structural becomes
-//! a constructor of a one- or two-alternative union invented here: `()` is
-//! the sole constructor of a unit union, an n-tuple the sole constructor of
-//! a tuple union, and a list is `[]`/`::`, which is what makes `[ a, b ]`
-//! and `x :: xs` one language rather than two cases in the algorithm. The
-//! three-way split is the whole reason the algorithm is short: a column
-//! either has a finite set of alternatives (then "did we see all of them?"
-//! is a count) or it has infinitely many (`Int`, `Float`, `Char`, `String`
-//! literals — a wildcard is then the only way to be exhaustive).
+//! `literal`, a `ctor` of a known *union*, or a `list`. Everything structural
+//! but a list becomes a constructor of a one-alternative union invented
+//! here: `()` is the sole constructor of a unit union and an n-tuple the
+//! sole constructor of a tuple union. A column either has a finite set of
+//! alternatives (then "did we see all of them?" is a count) or it has
+//! infinitely many (`Int`, `Float`, `Char`, `String` literals — a wildcard
+//! is then the only way to be exhaustive).
+//!
+//! **A list is split by length** (checker.md §6.6, amended 2026-10-01).
+//! It was the union `[]`/`::`, which cannot say "the last element is 0"
+//! (`[ ...init, 0 ]`, language.md §6.8), so a list pattern is its leading
+//! items, its trailing items and whether it has a spread, and a list
+//! column's alternatives — `exact ℓ` below a length `L` and `at least L` —
+//! are computed from that column when it is specialised (`LenSplit`),
+//! as Rust's slice patterns do. `[ a, b ]`, `[ x, ...rest ]` and the old
+//! `x :: rest` are one language there too.
 //!
 //! **A constructor's union comes from its type declaration**: for a
 //! constructor of this module, from the declaring `type`'s `Bir.ctors`
@@ -96,6 +103,7 @@ const Render = @import("Render.zig");
 const Types = @import("Types.zig");
 const PatternStore = @import("PatternStore.zig");
 const ColumnIndex = @import("ColumnIndex.zig");
+const Flat = @import("Flat.zig").Flat;
 const diagnostic = @import("diagnostic");
 
 const Exhaustive = @This();
@@ -184,7 +192,7 @@ pub const default_budget: u32 = 5_000_000;
 /// `--pattern-budget` — the budget is not what stopped it and raising it
 /// would not help. The depth is a nesting depth of PATTERNS — 512 `Just (Just
 /// (…))` — so no program a person writes comes near it.
-const max_depth: u32 = 512;
+pub const max_depth: u32 = 512;
 
 /// Why the analysis stopped early. Three answers, not one:
 ///
@@ -504,296 +512,10 @@ fn one(
 }
 
 // ---------------------------------------------------------------------------
-// The lookup table (Maranget §4)
-// ---------------------------------------------------------------------------
-
-/// A `case` whose every branch is a **key** — a lookup table, which is the
-/// shape a program written by a person actually reaches the budget with.
-///
-/// The general relation answers "is row k useful?" by specialising the whole
-/// matrix above k and recursing, which is O(k) per row and therefore
-/// **quadratic in the branch count with no nesting at all**: ~1.05·n² for a
-/// single-column table, and 2·n² once the key is a pair, because each row's
-/// specialisation then runs twice over the rows above it. A key has no
-/// alternatives to explore, so the same question collapses to set membership,
-/// and `isExhaustive`'s answer collapses with it. That is Maranget §4's
-/// observation for the one shape it is worth taking, and it is what OCaml and
-/// Elm rely on in practice.
-///
-/// **What a key is.** `unwrap` walks a row, descending through every
-/// constructor of a union with exactly ONE alternative — a tuple, a record's
-/// product, a `Box a` wrapper — because such a constructor carries no choice:
-/// `Box a` matches exactly the values whose contents `a` matches, so the
-/// wrapper can be erased. (`as` is already transparent, `simplify` having
-/// dropped it.) What the walk leaves is a fixed-width row of **cells**, each
-/// of which must be `_`/a variable/a record, a literal, or a constructor of a
-/// real choice that is **nullary or has only wildcard arguments** (`C x`
-/// matches every value `C` builds, so it is one point of its column exactly
-/// as `C` would be). Anything else — a constructor with a narrower
-/// argument that is one alternative of several, a column that mixes literals with
-/// constructors (which is `error.Malformed`, and whose silence is the general
-/// path's to keep), a row that unwraps to a different spine than the rows
-/// before it — is `.general`, for that row and every one after it.
-///
-/// **THE CUT.** A row of all-concrete cells matches exactly ONE value, so the
-/// rows above it match exactly the keys in the set and "is it useful?" is "is
-/// its key absent?". A row of all-wildcard cells matches EVERY value, so it is
-/// useful exactly when nothing above it covers everything. A row that is
-/// concrete in one cell and open in another — `( 1, _ )` — matches a SLICE of
-/// the key space, and membership of a point cannot decide a slice: `( 1, _ )`
-/// above shadows `( 1, 3 )` below, and no set of points says so. **Such a row
-/// is `.general`**, and so is every row after it. So the shape this path
-/// decides is: all-concrete rows, plus full-wildcard rows anywhere among them
-/// (in practice the trailing `_ ->`). What it leaves on the slow path is a
-/// table with a partial default — `( state, _ ) ->` — from that row down.
-///
-/// The two answers it gives are both proofs, never guesses:
-///
-///   - *useful / redundant* for a row, by the argument above.
-///   - *exhaustive*, and only when `covered` can show it: every cell column
-///     must be a constructor column, whose value space is its union's
-///     alternatives, and then the whole key space has `∏ alternatives` points.
-///     The keys are DISTINCT points of that space, so `count == product` is
-///     "every point is taken". A literal column has infinitely many points and
-///     ends the question; so does a product too big for `u64`.
-///
-/// Everything else — "not exhaustive", and the witnesses that go with it — is
-/// **delegated** to `isExhaustive` over the same matrix, so there is exactly
-/// one place in this file that builds a counterexample.
-///
-/// It decides **nothing the general relation would decide differently**. The
-/// equivalence is asserted where it is visible — the `check/bad` fixtures for
-/// `missing_patterns` and `redundant_pattern` are unchanged to the byte, and
-/// `blackbox_test.zig`'s flat- and pair-table scenarios pin the redundant
-/// row's position and the missing combinations by name inside tables the
-/// general relation could not have decided at all — and the two pieces with
-/// no visible output, that `literalKey` agrees with `Literal.eql` in both
-/// directions and that `rowKey`'s concatenation is a prefix code, are pinned
-/// at the bottom of this file.
-///
-/// The budget is charged **1 per node the walk visits**, which is what
-/// building and probing the key costs: 1 for a bare literal or nullary
-/// constructor, 3 for `( 1, 2 )`. That leaves a single-column table at 2
-/// steps a branch. It is not free: `--pattern-budget=1` still refuses the
-/// first branch of any `case`, which is what the pattern-budget black-box
-/// scenarios assert.
-const Flat = struct {
-    arena: Allocator,
-    /// The spine the first all-concrete row fixed (`unwrap`'s tokens). A row
-    /// that walks differently builds its key out of a different structure, so
-    /// the two keys are not comparable and the table stops here.
-    shape: ?[]const u32 = null,
-    /// One per cell of the key, in order; fixed by that same first row.
-    cols: []Column = &.{},
-    /// Canonical keys of the all-concrete rows seen, by `rowKey`.
-    keys: std.StringHashMapUnmanaged(void) = .empty,
-    /// A row above matches every value, so nothing below it can be useful.
-    wildcard: bool = false,
-    /// One row's walk, reused across rows. A `case` is checked branch by
-    /// branch and a branch's cells are dead as soon as its key is built, so
-    /// three buffers for the whole `case` do what three per branch would —
-    /// and a `case` that is not a table at all never grows them, because
-    /// `unwrap` gives up before it appends. What OUTLIVES a row is copied
-    /// out: `shape` on the first concrete row, a key when it is new.
-    scratch_shape: std.ArrayList(u32) = .empty,
-    scratch_cells: std.ArrayList(PatIndex) = .empty,
-    scratch_key: std.ArrayList(u8) = .empty,
-
-    const Answer = enum { useful, redundant, general };
-
-    /// What one cell position holds. The kind is what makes a column of
-    /// literals and a column of constructors two different questions, and
-    /// `un` is what lets `covered` count a constructor column's points.
-    const Column = struct {
-        kind: enum { literal, ctor },
-        un: u32 = 0,
-    };
-
-    /// Flatten `p` into `cells`, recording the structure it walked in
-    /// `shape`. False means "not a key" — the caller answers `.general`.
-    ///
-    /// `shape`'s tokens are a prefix code, so two equal token sequences are
-    /// two equal structures: `0` is a cell, and `1, un, arity` is a wrapper
-    /// whose `arity` children follow. The cells themselves are NOT in it —
-    /// `( _, _ )` and `( 1, 2 )` have to compare equal, because a full
-    /// wildcard is the same row whatever the key's shape is.
-    fn unwrap(
-        f: *Flat,
-        an: *Analysis,
-        p: PatIndex,
-        depth: u32,
-        shape: *std.ArrayList(u32),
-        cells: *std.ArrayList(PatIndex),
-    ) (Allocator.Error || error{OverBudget})!bool {
-        // The same nesting guard the general path has, answered the way this
-        // path answers everything it cannot read: hand it back.
-        if (depth > max_depth) return false;
-        // Charged per node, so a row that unwraps into a combinatorial
-        // explosion runs out of budget rather than out of memory.
-        try an.spend(1);
-        switch (an.pats.tag(p)) {
-            .anything, .literal => {
-                try shape.append(f.arena, 0);
-                try cells.append(f.arena, p);
-                return true;
-            },
-            .ctor => {
-                const c = an.pats.ctor(p);
-                if (an.pats.unionAt(c.un).count() == 1) {
-                    try shape.appendSlice(f.arena, &.{ 1, c.un, c.args_len });
-                    var i: u32 = 0;
-                    // `args` re-slices at every index on purpose: nothing
-                    // here appends to `extra`, but the rule that a slice of
-                    // it is valid only at the moment of use is the rule.
-                    while (i < c.args_len) : (i += 1) {
-                        if (!try f.unwrap(an, an.pats.args(c)[i], depth + 1, shape, cells)) return false;
-                    }
-                    return true;
-                }
-                // One alternative of a real choice. Nullary, or with only
-                // wildcard arguments — `C x`, `C _ _` — it is a key: it
-                // matches exactly the values built by `C`, whatever they
-                // carry, which is the point `rowKey` (the alternative) and
-                // `covered` (a point per alternative) take it for, so
-                // `C0 x -> … C1999 x ->` stays linear instead of going
-                // through the quadratic general relation. A narrower argument is
-                // exactly the recursion this path exists to avoid.
-                for (an.pats.args(c)) |arg| {
-                    try an.spend(1);
-                    if (an.pats.tag(arg) != .anything) return false;
-                }
-                try shape.append(f.arena, 0);
-                try cells.append(f.arena, p);
-                return true;
-            },
-        }
-    }
-
-    /// Decide one row against the rows already admitted, and record it.
-    /// `OverBudget` is the only abort it can raise: the nesting guard and
-    /// every shape it cannot read are `.general` rather than `TooDeep` or
-    /// `Malformed` — deciding those is the general path's job.
-    fn admit(f: *Flat, an: *Analysis, p: PatIndex) (Allocator.Error || error{OverBudget})!Answer {
-        f.scratch_shape.clearRetainingCapacity();
-        f.scratch_cells.clearRetainingCapacity();
-        const shape = &f.scratch_shape;
-        const cells = &f.scratch_cells;
-        if (!try f.unwrap(an, p, 0, shape, cells)) return .general;
-
-        var concrete: usize = 0;
-        for (cells.items) |c| {
-            if (an.pats.tag(c) != .anything) concrete += 1;
-        }
-
-        // Nothing but wildcards: the row matches every value, so `_` and
-        // `( _, _ )` are one row — and so is `One` of a one-constructor
-        // type, which unwraps to no cells at all.
-        if (concrete == 0) {
-            if (f.wildcard) return .redundant;
-            // A key space already covered leaves a wildcard nothing to
-            // match, which is what `isUseful`'s `complete` arm answers.
-            if (f.covered(an)) return .redundant;
-            f.wildcard = true;
-            return .useful;
-        }
-        // THE CUT — see this struct's comment.
-        if (concrete != cells.items.len) return .general;
-
-        if (f.shape) |s| {
-            if (!std.mem.eql(u32, s, shape.items)) return .general;
-        } else {
-            const cols = try f.arena.alloc(Column, cells.items.len);
-            for (cells.items, cols) |c, *col| col.* = (columnOf(an, c) orelse return .general);
-            // Copied out of the scratch buffer, which the next row reuses.
-            f.shape = try f.arena.dupe(u32, shape.items);
-            f.cols = cols;
-        }
-        // Equal spines have equal cell counts, `0` being a cell's token — but
-        // the loop below PANICS on a length mismatch rather than answering,
-        // and handing back what it cannot decide is this path's whole job.
-        if (cells.items.len != f.cols.len) return .general;
-        // One spine can still carry two different columns: a cell that is a
-        // literal where an earlier row had a constructor is the matrix the
-        // general path calls malformed, and two constructors of different
-        // unions is the same thing one level down.
-        for (cells.items, f.cols) |c, col| {
-            const here = columnOf(an, c) orelse return .general;
-            if (here.kind != col.kind or here.un != col.un) return .general;
-        }
-
-        if (f.wildcard) return .redundant;
-        const key = try f.rowKey(an, cells.items);
-        // A key that is already there is answered without copying it, so the
-        // only row that costs an allocation is a row that is kept.
-        if (f.keys.contains(key)) return .redundant;
-        try f.keys.put(f.arena, try f.arena.dupe(u8, key), {});
-        return .useful;
-    }
-
-    /// The column a concrete cell describes, or null when it is not one.
-    fn columnOf(an: *const Analysis, cell: PatIndex) ?Column {
-        return switch (an.pats.tag(cell)) {
-            .literal => .{ .kind = .literal },
-            .ctor => .{ .kind = .ctor, .un = an.pats.ctor(cell).un },
-            .anything => null,
-        };
-    }
-
-    /// A byte key two rows share exactly when they match the same value: each
-    /// cell's canonical key, length-prefixed so the concatenation parses back
-    /// into the same cells and equal bytes mean equal cells. A literal's key
-    /// is `literalKey`'s, pinned against `Literal.eql` at the bottom of this
-    /// file; a nullary constructor's is its absolute alternative index, which
-    /// is what the general relation compares too.
-    ///
-    /// Valid until the next row: the caller copies it if it keeps it.
-    fn rowKey(f: *Flat, an: *Analysis, cells: []const PatIndex) Error![]const u8 {
-        f.scratch_key.clearRetainingCapacity();
-        const out = &f.scratch_key;
-        for (cells) |c| {
-            var alt: [4]u8 = undefined;
-            const body: []const u8 = switch (an.pats.tag(c)) {
-                .literal => try an.literalKey(an.pats.literal(c)),
-                .ctor => blk: {
-                    std.mem.writeInt(u32, &alt, an.pats.ctor(c).alt, .little);
-                    break :blk &alt;
-                },
-                // `admit` counted the wildcards before it got here.
-                .anything => "",
-            };
-            var len: [4]u8 = undefined;
-            std.mem.writeInt(u32, &len, @intCast(body.len), .little);
-            try out.appendSlice(f.arena, &len);
-            try out.appendSlice(f.arena, body);
-        }
-        return out.items;
-    }
-
-    /// Do the rows admitted so far take every point of the key space? Only a
-    /// constructor column has a finite one, so every column must be one, and
-    /// then the space has `∏ alternatives` points and the keys are distinct
-    /// points of it.
-    fn covered(f: *const Flat, an: *const Analysis) bool {
-        if (f.shape == null) return false;
-        var points: u64 = 1;
-        for (f.cols) |col| {
-            if (col.kind != .ctor) return false;
-            points = std.math.mul(u64, points, an.pats.unionAt(col.un).count()) catch return false;
-        }
-        return @as(u64, f.keys.count()) == points;
-    }
-
-    /// Whether the rows admitted so far cover every value of the scrutinee.
-    fn exhaustive(f: *const Flat, an: *const Analysis) bool {
-        return f.wildcard or f.covered(an);
-    }
-};
-
-// ---------------------------------------------------------------------------
 // Simplification
 // ---------------------------------------------------------------------------
 
-const Analysis = struct {
+pub const Analysis = struct {
     arena: Allocator,
     cx: Context,
     pats: *Patterns,
@@ -813,7 +535,7 @@ const Analysis = struct {
     /// `error{OverBudget}` and not `Abort`: running out of budget is the
     /// only way this can fail, and `Flat.admit` — which cannot go too deep
     /// or meet a malformed matrix — needs to say so in its own signature.
-    fn spend(an: *Analysis, amount: usize) error{OverBudget}!void {
+    pub fn spend(an: *Analysis, amount: usize) error{OverBudget}!void {
         const cost = std.math.cast(u32, amount) orelse return error.OverBudget;
         if (an.budget < cost) {
             an.budget = 0;
@@ -837,7 +559,7 @@ const Analysis = struct {
     /// and an `Int` of one scalar value never collide; an `int` whose
     /// spelling overflowed `value` gets its own tag, because `eql` compares
     /// those by spelling and never to a parsed one.
-    fn literalKey(an: *Analysis, lit: Literal) Error![]const u8 {
+    pub fn literalKey(an: *Analysis, lit: Literal) Error![]const u8 {
         const tag: u8 = switch (lit.kind) {
             .char => 'c',
             .int => if (lit.parsed) 'i' else 'I',
@@ -871,7 +593,7 @@ const Analysis = struct {
             switch (shape) {
                 .adt => if (u.type == id) return @intCast(i),
                 .tuple => if (u.count() == 1 and an.pats.alt(u.alts_start).arity == alts[0].arity) return @intCast(i),
-                .unit, .list => return @intCast(i),
+                .unit => return @intCast(i),
             }
         }
         const start: u32 = @intCast(an.pats.alts.items.len);
@@ -894,14 +616,56 @@ const Analysis = struct {
         return an.internUnion(.unit, .none, &.{.{ .name = .none, .arity = 0 }});
     }
 
-    /// `[]` is alternative 0 and `::` alternative 1, in that order, because
-    /// the missing-pattern search walks alternatives in order and `[]` is
-    /// the example a reader wants first.
-    fn listUnion(an: *Analysis) Error!u32 {
-        return an.internUnion(.list, .none, &.{
-            .{ .name = .none, .arity = 0 },
-            .{ .name = .none, .arity = 2 },
-        });
+    fn makeList(an: *Analysis, prefix: []const PatIndex, suffix: []const PatIndex, spread: bool) Error!PatIndex {
+        const at: u32 = @intCast(an.pats.extra.items.len);
+        try an.pats.extra.appendSlice(an.arena, &.{ @intCast(prefix.len), @intCast(suffix.len), @intFromBool(spread) });
+        try an.pats.extra.appendSlice(an.arena, @ptrCast(prefix));
+        try an.pats.extra.appendSlice(an.arena, @ptrCast(suffix));
+        return an.node(.{ .tag = .list, .lhs = 0, .rhs = at });
+    }
+
+    /// A `pat_list`, or a `pat_cons` chain, as one `list` node. A chain is
+    /// walked, not recursed into: `a :: b :: rest` is two leading items and
+    /// a spread, and `a :: [ b, ...m, z ]` three items around one — the tail
+    /// of a chain is the list it ends in, a name (the spread) or `_`.
+    fn simplifyList(an: *Analysis, inst: Bir.Inst.Index, depth: u32) Fail!PatIndex {
+        const bir = an.cx.bir;
+        var prefix: std.ArrayList(PatIndex) = .empty;
+        var suffix: std.ArrayList(PatIndex) = .empty;
+        var spread = false;
+        var at = inst;
+        while (true) {
+            try an.spend(1);
+            if (at.int() >= bir.insts.len) return error.Malformed;
+            const data = bir.instData(at);
+            switch (bir.instTag(at)) {
+                .pat_cons => {
+                    try prefix.append(an.arena, try an.simplify(@enumFromInt(data.lhs), depth + 1));
+                    at = @enumFromInt(data.rhs);
+                },
+                // Only ever a chain's tail: an `as` binds, it does not test.
+                .pat_as => at = @enumFromInt(data.lhs),
+                .pat_var, .pat_wild => {
+                    spread = true;
+                    break;
+                },
+                .pat_list => {
+                    for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
+                        if (bir.instTag(el) == .pat_spread) {
+                            // The parser refused a second one.
+                            if (spread) return error.Malformed;
+                            spread = true;
+                            continue;
+                        }
+                        const item = try an.simplify(el, depth + 1);
+                        try (if (spread) &suffix else &prefix).append(an.arena, item);
+                    }
+                    break;
+                },
+                else => return error.Malformed,
+            }
+        }
+        return an.makeList(prefix.items, suffix.items, spread);
     }
 
     fn simplify(an: *Analysis, inst: Bir.Inst.Index, depth: u32) Fail!PatIndex {
@@ -940,25 +704,7 @@ const Analysis = struct {
                 const un = try an.tupleUnion(@intCast(elements.len));
                 return an.makeCtor(un, an.pats.unionAt(un).alts_start, args);
             },
-            .pat_list => {
-                const elements = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
-                const un = try an.listUnion();
-                const nil_alt = an.pats.unionAt(un).alts_start;
-                var acc = try an.makeCtor(un, nil_alt, &.{});
-                var i = elements.len;
-                while (i > 0) {
-                    i -= 1;
-                    const head = try an.simplify(elements[i], depth + 1);
-                    acc = try an.makeCtor(un, nil_alt + 1, &.{ head, acc });
-                }
-                return acc;
-            },
-            .pat_cons => {
-                const un = try an.listUnion();
-                const head = try an.simplify(@enumFromInt(data.lhs), depth + 1);
-                const tail = try an.simplify(@enumFromInt(data.rhs), depth + 1);
-                return an.makeCtor(un, an.pats.unionAt(un).alts_start + 1, &.{ head, tail });
-            },
+            .pat_list, .pat_cons => return an.simplifyList(inst, depth),
             .pat_ctor => {
                 const found = try an.ctorUnion(@enumFromInt(data.lhs));
                 const arg_insts = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
@@ -1141,7 +887,30 @@ const Analysis = struct {
                 const sub = try an.specializeByLiteral(matrix, an.pats.literal(first));
                 return an.isUseful(sub, rest, depth + 1);
             },
+            // A list pattern stands for every alternative it covers.
+            .list => {
+                const lens = an.lenSplit(matrix, first);
+                var alt: u32 = 0;
+                while (alt < lens.count()) : (alt += 1) {
+                    const cells = (try an.listCells(first, lens, alt)) orelse continue;
+                    const sub = try an.specializeList(matrix, lens, alt);
+                    if (try an.isUseful(sub, try an.concat(cells, rest), depth + 1)) return true;
+                }
+                return false;
+            },
             .anything => {
+                // A wildcard over lists: every alternative of the column,
+                // which together are every list.
+                if (an.listColumn(matrix)) {
+                    const lens = an.lenSplit(matrix, null);
+                    var alt: u32 = 0;
+                    while (alt < lens.count()) : (alt += 1) {
+                        const sub = try an.specializeList(matrix, lens, alt);
+                        const v = try an.concat(try an.anythings(lens.arity(alt)), rest);
+                        if (try an.isUseful(sub, v, depth + 1)) return true;
+                    }
+                    return false;
+                }
                 if (try an.complete(matrix)) |un| {
                     // Every alternative is covered above, so this wildcard
                     // adds nothing for the HEADS — but an alternative's
@@ -1181,6 +950,26 @@ const Analysis = struct {
         }
         // A row of width zero matches the empty value vector.
         if (n == 0) return &.{};
+
+        // A list column: every alternative, each counterexample rebuilt
+        // from its alternative's cells.
+        if (an.listColumn(matrix)) {
+            const lens = an.lenSplit(matrix, null);
+            var out: std.ArrayList([]const PatIndex) = .empty;
+            var alt: u32 = 0;
+            while (alt < lens.count()) : (alt += 1) {
+                const arity = lens.arity(alt);
+                const sub = try an.specializeList(matrix, lens, alt);
+                const rows = try an.isExhaustive(sub, arity + n - 1, depth + 1);
+                for (rows) |row| {
+                    if (row.len < arity) return error.Malformed;
+                    const recovered = try an.listOf(lens, alt, row[0..arity]);
+                    try out.append(an.arena, try an.concat(&.{recovered}, row[arity..]));
+                    if (out.items.len >= max_examples) return out.items;
+                }
+            }
+            return out.items;
+        }
 
         const seen = try an.collect(matrix);
         if (seen.count == 0) {
@@ -1299,10 +1088,110 @@ const Analysis = struct {
                 // align"); a compiler may not. The precondition is that the
                 // declaration type-checked, so reaching this means the
                 // matrix is not what we think it is.
-                .literal => return error.Malformed,
+                .literal, .list => return error.Malformed,
             }
         }
         return out.items;
+    }
+
+    // ---- Lists: the length split (checker.md §6.6, amended 2026-10-01) ---
+
+    /// A list column's alternatives: `exact ℓ` for every ℓ below `len`,
+    /// of arity ℓ, and `at least len` — alternative `len` — of arity
+    /// `prefix + suffix`, its first `prefix` and its last `suffix`
+    /// elements, which cannot overlap because `len >= prefix + suffix`.
+    /// Together they are every list, each exactly once.
+    const LenSplit = struct {
+        prefix: u32,
+        suffix: u32,
+        len: u32,
+
+        fn count(s: LenSplit) u32 {
+            return s.len + 1;
+        }
+
+        fn arity(s: LenSplit, alt: u32) u32 {
+            return if (alt < s.len) alt else s.prefix + s.suffix;
+        }
+    };
+
+    /// Whether column zero holds a list pattern.
+    fn listColumn(an: *const Analysis, matrix: []const []const PatIndex) bool {
+        for (matrix) |row| {
+            if (row.len != 0 and an.pats.tag(row[0]) == .list) return true;
+        }
+        return false;
+    }
+
+    /// Column zero's split, `extra` counted as one more row (Rust's
+    /// `Slice::split`): the longest exact pattern `F`, the most leading
+    /// items `P` and trailing items `S` of a pattern with a spread, and
+    /// `len = max(P + S, F + 1)` — `P` raised when `F + 1` is the larger,
+    /// so an `at least` alternative is never shorter than an exact one.
+    fn lenSplit(an: *const Analysis, matrix: []const []const PatIndex, extra: ?PatIndex) LenSplit {
+        var fixed: ?u32 = null;
+        var prefix: u32 = 0;
+        var suffix: u32 = 0;
+        var i: usize = 0;
+        while (i <= matrix.len) : (i += 1) {
+            const p = if (i < matrix.len) (if (matrix[i].len != 0) matrix[i][0] else continue) else (extra orelse break);
+            if (an.pats.tag(p) != .list) continue;
+            const l = an.pats.list(p);
+            if (l.spread) {
+                prefix = @max(prefix, l.prefix);
+                suffix = @max(suffix, l.suffix);
+            } else fixed = @max(fixed orelse 0, l.prefix);
+        }
+        var len = prefix + suffix;
+        if (fixed) |f| if (f + 1 > len) {
+            prefix = f + 1 - suffix;
+            len = f + 1;
+        };
+        return .{ .prefix = prefix, .suffix = suffix, .len = len };
+    }
+
+    /// The cells list pattern `p` has under alternative `alt`, or null when
+    /// `p` does not cover it. Under `exact ℓ` a pattern with a spread is its
+    /// leading items, `ℓ - p - s` wildcards and its trailing items; under
+    /// `at least`, its leading items padded to `P` and its trailing items
+    /// padded, in front, to `S`.
+    fn listCells(an: *Analysis, p: PatIndex, lens: LenSplit, alt: u32) Error!?[]const PatIndex {
+        const l = an.pats.list(p);
+        const items = try an.arena.dupe(PatIndex, an.pats.items(l));
+        if (!l.spread) return if (alt < lens.len and l.prefix == alt) items else null;
+        if (alt < lens.len and l.prefix + l.suffix > alt) return null;
+        const arity = lens.arity(alt);
+        const out = try an.arena.alloc(PatIndex, arity);
+        @memcpy(out[0..l.prefix], items[0..l.prefix]);
+        for (out[l.prefix .. arity - l.suffix]) |*c| c.* = try an.anything();
+        @memcpy(out[arity - l.suffix ..], items[l.prefix..]);
+        return out;
+    }
+
+    /// Maranget's specialisation by one alternative of a list column.
+    fn specializeList(an: *Analysis, matrix: []const []const PatIndex, lens: LenSplit, alt: u32) Fail![]const []const PatIndex {
+        try an.spend(matrix.len + 1);
+        var out: std.ArrayList([]const PatIndex) = .empty;
+        const arity = lens.arity(alt);
+        for (matrix) |row| {
+            if (row.len == 0) return error.Malformed;
+            switch (an.pats.tag(row[0])) {
+                .anything => try out.append(an.arena, try an.concat(try an.anythings(arity), row[1..])),
+                .list => if (try an.listCells(row[0], lens, alt)) |cells| {
+                    try out.append(an.arena, try an.concat(cells, row[1..]));
+                },
+                .ctor, .literal => return error.Malformed,
+            }
+        }
+        return out.items;
+    }
+
+    /// The counterexample of alternative `alt`, from its cells: `[ _, _ ]`
+    /// for `exact 2`, `[ _, ..._, _ ]` for an `at least` of one leading and
+    /// one trailing element.
+    fn listOf(an: *Analysis, lens: LenSplit, alt: u32, cells: []const PatIndex) Error!PatIndex {
+        if (alt < lens.len) return an.makeList(cells, &.{}, false);
+        return an.makeList(cells[0..lens.prefix], cells[lens.prefix..], true);
     }
 
     fn specializeByLiteral(an: *Analysis, matrix: []const []const PatIndex, lit: Literal) Fail![]const []const PatIndex {
@@ -1315,7 +1204,7 @@ const Analysis = struct {
                     try out.append(an.arena, row[1..]);
                 },
                 .anything => try out.append(an.arena, row[1..]),
-                .ctor => return error.Malformed,
+                .ctor, .list => return error.Malformed,
             }
         }
         return out.items;

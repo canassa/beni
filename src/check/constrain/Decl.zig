@@ -545,6 +545,7 @@ fn patternLocals(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32)) 
                 try stack.append(scratch, @enumFromInt(data.rhs));
             },
             .pat_ctor => try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)),
+            .pat_spread => try stack.append(scratch, @enumFromInt(data.lhs)),
             else => {},
         }
     }
@@ -611,7 +612,7 @@ pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, s
             try stack.append(scratch, @enumFromInt(data.lhs));
             try stack.append(scratch, @enumFromInt(data.rhs));
         },
-        .pat_as => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .pat_as, .pat_spread => try stack.append(scratch, @enumFromInt(data.lhs)),
         .markup => try bir.markupValues(scratch, @enumFromInt(data.lhs), stack),
         .schema_app, .schema_value, .schema_tagged => {
             try stack.append(scratch, @enumFromInt(data.lhs));

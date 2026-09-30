@@ -56,6 +56,7 @@ const files = [_]File{
     .{ .path = "Env.zig", .text = @embedFile("Env.zig") },
     .{ .path = "Evidence.zig", .text = @embedFile("Evidence.zig") },
     .{ .path = "Exhaustive.zig", .text = @embedFile("Exhaustive.zig") },
+    .{ .path = "Flat.zig", .text = @embedFile("Flat.zig") },
     .{ .path = "Generalize.zig", .text = @embedFile("Generalize.zig") },
     .{ .path = "Groups.zig", .text = @embedFile("Groups.zig") },
     .{ .path = "Incremental.zig", .text = @embedFile("Incremental.zig") },

@@ -1,7 +1,8 @@
--- check/bad: a list is `[]` and `::` (checker.md §6.6), so a `case` that
--- names only the empty list is missing every non-empty one — and the
--- example is spelled with `::`, not with the invented constructor name the
--- algorithm uses internally.
+-- check/bad: a list column is split by length (checker.md §6.6, amended
+-- 2026-10-01), so a `case` that names only the empty list is missing every
+-- non-empty one — and the example is spelled in the list syntax,
+-- `[ _, ..._ ]`, not as the length alternative the algorithm uses
+-- internally.
 pub headOr : List Int -> Int
 headOr xs =
     case xs of

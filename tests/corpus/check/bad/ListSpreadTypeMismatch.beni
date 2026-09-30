@@ -1,0 +1,25 @@
+-- check/bad: a spread's operand is a list of the literal's own element type
+-- (language.md §6.8). A literal with a spread IS its `List.cons` and
+-- `List.append` calls, so the mismatch names the call and says which
+-- bracket spelling it is: `...names` behind an Int (10:13), a String after
+-- `...xs` (15:14, the 1st element of the literal after the spread), and a
+-- pattern spread's name, a `List Int`, where a `List String` is wanted
+-- (22:13).
+pub greet : List String -> List Int
+greet names =
+    [ 1, ...names ]
+
+
+pub append : List Int -> List Int
+append xs =
+    [ ...xs, "b" ]
+
+
+pub initNames : List Int -> List String
+initNames xs =
+    case xs of
+        [ ...init, 0 ] ->
+            init
+
+        _ ->
+            []

@@ -68,8 +68,17 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
             const element = try g.freshFlex();
             var parts: std.ArrayList(Constraint) = .empty;
             defer parts.deinit(g.cx.scratch);
-            try parts.append(g.cx.scratch, try g.equal(expected, try g.applied(wk.list, &.{element}), inst, .{ .tag = .case_pattern }));
-            for (elements) |el| try parts.append(g.cx.scratch, try patternAgainst(g, el, element));
+            const list = try g.applied(wk.list, &.{element});
+            try parts.append(g.cx.scratch, try g.equal(expected, list, inst, .{ .tag = .case_pattern }));
+            for (elements) |el| {
+                // A spread's operand is the elements it covers: a list of
+                // the same type (language.md §6.8).
+                const operand: Bir.Inst.Index = @enumFromInt(bir.instData(el).lhs);
+                try parts.append(g.cx.scratch, if (bir.instTag(el) == .pat_spread)
+                    try patternAgainst(g, operand, list)
+                else
+                    try patternAgainst(g, el, element));
+            }
             return g.conj(parts.items);
         },
         .pat_cons => {

@@ -939,7 +939,7 @@ const Builder = struct {
                 var f = extra[d.rhs];
                 while (f < extra[d.rhs + 1]) : (f += 2) try out.append(b.arena, extra[f + 1]);
             },
-            .field_access, .tuple_index, .@"try", .pat_as => try out.append(b.arena, d.lhs),
+            .field_access, .tuple_index, .@"try", .pat_as, .pat_spread => try out.append(b.arena, d.lhs),
             .call, .pat_ctor => {
                 try out.append(b.arena, d.lhs);
                 try out.appendSlice(b.arena, extra[extra[d.rhs]..extra[d.rhs + 1]]);

@@ -1,9 +1,10 @@
--- `...` is an `ellipsis` only as the first token of a hole opened in a tag
--- (frontend.md §9.1). Later in such a hole, in a children hole, and in
--- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: in the
--- tag's hole expected_token for the `...` (8:12) and the `}` (8:14), in the
--- children hole unexpected_token (8:21), and in the code unexpected_token
--- (12:7). `Card` is not imported (8:6).
+-- `...` is one `ellipsis` wherever code is lexed (frontend.md §9.1, amended
+-- 2026-10-01, for a list's spread), and the PARSER decides where a spread may
+-- stand: first in a component's tag hole, or inside a list's brackets. Later
+-- in a tag's hole it is expected_token for the `...` (8:12) and then for the
+-- `}` at the `...` (8:14); in a children hole and in ordinary code it is
+-- unexpected_token with the stray-spread message (8:21, 12:7). `Card` is not
+-- imported (8:6).
 view a =
     <Card {a ...a}>{...a}</Card>
 

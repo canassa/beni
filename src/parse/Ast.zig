@@ -314,6 +314,9 @@ pub const Node = struct {
 
         /// `-x`. `main_token` is `-`; `lhs` is the operand.
         negate,
+        /// `...xs`, an item of a `list` (language.md §6.8). `main_token`
+        /// is the `ellipsis`; `lhs` is the operand.
+        spread,
         /// `( e )`, grouping. `main_token` is `(`; `lhs` is the inner
         /// expression.
         paren,
@@ -462,6 +465,10 @@ pub const Node = struct {
         /// `p as name`. `main_token` is `as`; `lhs` is the pattern; `rhs`
         /// is the name's token.
         pat_as,
+        /// `...rest` or `..._`, an item of a `pat_list` (language.md §6.8).
+        /// `main_token` is the `ellipsis`; `lhs` is the operand, a
+        /// `pat_var` or `pat_wild`.
+        pat_spread,
 
         // ---- Markup (language.md §11.3, frontend.md §9.4) ----------------
         //
@@ -1464,7 +1471,7 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
 /// the markup `{…}` forms.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
     return @enumFromInt(tree.nodeData(node).lhs);

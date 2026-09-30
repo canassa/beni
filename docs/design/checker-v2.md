@@ -4498,7 +4498,9 @@ directory (and `constrain/`), so an import is `"X.zig"` again. `checker.md` §3,
 it moved so no caller changed: `Diagnostics.zig` 2 174 → 1 431 (`DispatchTexts.zig` 793: the
 §10 and obligation texts and the cyclic value), `Exhaustive.zig` 1 590 → 1 453
 (`PatternStore.zig` 159: the simplified pattern language) and `Contexts.zig` 1 620 → 1 318
-(`ContextUnits.zig` 334: the unit graph and `complete`). The largest files now: `Exhaustive`
+(`ContextUnits.zig` 334: the unit graph and `complete`). *2026-10-01:* the list syntax's length
+split took `Exhaustive.zig` past the line again, and its lookup table moved to `Flat.zig`
+(300 lines), imported by it alone. The largest files now: `Exhaustive`
 1 453, `Diagnostics` 1 431, `Schemes` 1 397, `Contexts` 1 318, `checker_test` 1 294, `Types`
 1 257 (from 1 835), `TypeStore` 1 047; `Dispatch` 907 (from 1 747). 30 551 lines in all, tests
 included. `rules_test.zig` fences I2 (with the kept files that own, serialise or print a type

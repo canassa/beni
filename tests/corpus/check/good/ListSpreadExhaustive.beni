@@ -1,0 +1,78 @@
+-- check/good: a list column is split by length (checker.md §6.6, amended
+-- 2026-10-01), so each `case` here is exhaustive with no wildcard and has no
+-- redundant branch: `[]` with `[ x, ...rest ]`; `[]`, `[ x ]` with
+-- `[ x, y, ...rest ]`; `[]` with `[ ...init, last ]`; `[]`, `[ x ]` with
+-- `[ first, ...middle, last ]`; trailing constructors that between them
+-- take every value (`[ ...init, True ]`, `[ ...init, False ]`); and a list
+-- inside a constructor. The spread's operand has the list's own type, so
+-- `init` and `middle` come back as `List a`.
+pub headOr : List Int -> Int
+headOr xs =
+    case xs of
+        [] ->
+            0
+
+        [ x, ...rest ] ->
+            x
+
+
+pub pairs : List Int -> Int
+pairs xs =
+    case xs of
+        [] ->
+            0
+
+        [ x ] ->
+            x
+
+        [ x, y, ...rest ] ->
+            x + y
+
+
+pub initOf : List a -> List a
+initOf xs =
+    case xs of
+        [] ->
+            []
+
+        [ ...init, last ] ->
+            init
+
+
+pub inner : List a -> List a
+inner xs =
+    case xs of
+        [] ->
+            []
+
+        [ x ] ->
+            []
+
+        [ first, ...middle, last ] ->
+            middle
+
+
+pub endsTrue : List Bool -> Bool
+endsTrue xs =
+    case xs of
+        [] ->
+            False
+
+        [ ...init, True ] ->
+            True
+
+        [ ...init, False ] ->
+            False
+
+
+pub firstJust : Maybe (List Int) -> Int
+firstJust m =
+    case m of
+        Nothing ->
+            0
+
+        Just [] ->
+            0
+
+        Just [ x, ..._ ] ->
+            x

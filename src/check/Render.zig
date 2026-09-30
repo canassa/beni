@@ -661,10 +661,9 @@ fn writeRecord(
 pub const PatPrec = enum {
     /// A whole branch pattern: nothing needs wrapping.
     top,
-    /// An argument of a constructor: `Just (Node a b)`, `Just (x :: xs)`.
+    /// An argument of a constructor: `Just (Node a b)`. A list is brackets
+    /// and needs none, `Just [ x, ..._ ]`.
     arg,
-    /// Left of a `::`: `(a :: b) :: c`, but `Circle _ :: _`.
-    head,
 };
 
 /// A counterexample pattern rendered into a freshly allocated string, for
@@ -728,6 +727,7 @@ fn writePat(
         // literal would go is still a pattern that covers the missing case,
         // which is the one property the reader acts on.
         .literal => return w.writeAll("_"),
+        .list => return writeList(w, pats, interner, p, depth),
         .ctor => {},
     }
     const c = pats.ctor(p);
@@ -743,17 +743,13 @@ fn writePat(
             }
             return w.writeAll(" )");
         },
-        // A list is `[]`/`::` in the algorithm and two different things on
-        // the page: a spine that ends in `[]` is a literal list, one that
-        // ends in anything else is a `::` chain (Elm's `delist`).
-        .list => return writeList(w, pats, interner, p, prec, depth),
         .adt => {
             const name = if (c.alt < pats.alts.items.len) pats.alt(c.alt).name.unwrap() else null;
             const text = if (name) |sym| interner.slice(sym) else "?";
             if (args.len == 0) return w.writeAll(text);
             // An argument-taking constructor needs parentheses only as an
-            // ARGUMENT: `Just (Node a b)`. At the head of a `::` it needs
-            // none, `Group (Circle _ :: _)` (Elm's `patternToDoc`).
+            // ARGUMENT: `Just (Node a b)`, never as a list item,
+            // `[ Circle _, ..._ ]` (Elm's `patternToDoc`).
             const wrap = prec == .arg;
             if (wrap) try w.writeByte('(');
             try w.writeAll(text);
@@ -766,53 +762,36 @@ fn writePat(
     }
 }
 
-/// `[]`, `[ a, b ]` or `a :: rest`, walking the cons spine iteratively —
-/// the spine of a missing-pattern example is as long as the source's
-/// longest list pattern and does not belong on the stack.
+/// `[]`, `[ a, b ]`, `[ a, ..._ ]` or `[ ..._, z ]` (language.md §6.8): the
+/// leading items, the spread when the pattern has one, the trailing items.
 fn writeList(
     w: *std.Io.Writer,
     pats: *const Exhaustive.Patterns,
     interner: *const InternPool.Global,
     p: Exhaustive.PatIndex,
-    prec: PatPrec,
     depth: u32,
 ) (std.Io.Writer.Error || Allocator.Error)!void {
-    // Collect the heads; `tail` ends on `[]` (a finite list) or on anything
-    // else (a `::` chain).
-    var heads: [max_depth]Exhaustive.PatIndex = undefined;
-    var count: usize = 0;
-    var tail = p;
-    while (count < heads.len) {
-        if (pats.tag(tail) != .ctor) break;
-        const c = pats.ctor(tail);
-        if (pats.unionAt(c.un).shape != .list) break;
-        if (c.args_len != 2) break; // `[]`
-        const cons = pats.args(c);
-        heads[count] = cons[0];
-        count += 1;
-        tail = cons[1];
-    }
-    const finite = pats.tag(tail) == .ctor and
-        pats.unionAt(pats.ctor(tail).un).shape == .list and
-        pats.ctor(tail).args_len == 0;
-
-    if (finite) {
-        if (count == 0) return w.writeAll("[]");
-        try w.writeAll("[ ");
-        for (heads[0..count], 0..) |h, i| {
-            if (i != 0) try w.writeAll(", ");
-            try writePat(w, pats, interner, h, .top, depth + 1);
+    const l = pats.list(p);
+    if (!l.spread and l.prefix == 0) return w.writeAll("[]");
+    try w.writeAll("[ ");
+    var first = true;
+    // Re-sliced per item, as `ctor`'s arguments are.
+    var i: u32 = 0;
+    while (i < l.prefix + l.suffix) : (i += 1) {
+        if (i == l.prefix and l.spread) {
+            if (!first) try w.writeAll(", ");
+            try w.writeAll("..._");
+            first = false;
         }
-        return w.writeAll(" ]");
+        if (!first) try w.writeAll(", ");
+        try writePat(w, pats, interner, pats.items(l)[i], .top, depth + 1);
+        first = false;
     }
-    const wrap = prec != .top;
-    if (wrap) try w.writeByte('(');
-    for (heads[0..count]) |h| {
-        try writePat(w, pats, interner, h, .head, depth + 1);
-        try w.writeAll(" :: ");
+    if (l.spread and l.suffix == 0) {
+        if (!first) try w.writeAll(", ");
+        try w.writeAll("..._");
     }
-    try writePat(w, pats, interner, tail, .top, depth + 1);
-    if (wrap) try w.writeByte(')');
+    try w.writeAll(" ]");
 }
 
 // ---------------------------------------------------------------------------

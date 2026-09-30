@@ -1,0 +1,42 @@
+-- The list syntax (language.md §6.8): a `...` spread is an item of a list
+-- expression, any number of them anywhere, its operand a whole expression
+-- up to the comma (`f x`, `xs ++ ys`); and one item of a list pattern, its
+-- operand a name or `_`, before, between or after the other items. The
+-- tree holds each as `spread` / `pat_spread` over its operand (frontend.md
+-- §3.5).
+build x xs ys =
+    ( [ x, ...xs ], [ ...xs, x ], [ ...xs, ...ys ], [ ...xs, x, ...ys ], [ ...xs ] )
+
+
+operands f x xs ys =
+    [ ...f x, 0, ...xs ++ ys ]
+
+
+shapes xs =
+    case xs of
+        [] ->
+            0
+
+        [ x, ...rest ] ->
+            1
+
+        [ ...init, last ] ->
+            2
+
+        [ first, ...middle, last ] ->
+            3
+
+        [ x, ..._ ] ->
+            4
+
+        [ ...rest ] ->
+            5
+
+
+nested xs =
+    case xs of
+        [ [ a, ...b ], ...c ] ->
+            a
+
+        _ ->
+            0

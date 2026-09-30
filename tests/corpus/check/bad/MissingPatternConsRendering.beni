@@ -1,9 +1,9 @@
 -- A missing pattern is rendered with no parentheses that the grammar
--- does not need: `Group (Circle _ :: _)`, as Elm writes it (checker-v2.md
--- §15.3), never `Group ((Circle _) :: _)`. Elm's
--- `patternToDoc` prints a cons head in the `Head` context, which adds no
--- parentheses (`references/elm/compiler/src/Reporting/Error/Pattern.hs`,
--- lines 139-165).
+-- does not need: `Group [ Circle _, ..._ ]`, as Elm writes a constructor
+-- in a list (checker-v2.md §15.3) — the brackets delimit the item, so
+-- `Circle _` needs none, and the list is an argument that needs none
+-- either (`references/elm/compiler/src/Reporting/Error/Pattern.hs`,
+-- lines 139-165; language.md §6.8 for the syntax).
 
 
 type Shape

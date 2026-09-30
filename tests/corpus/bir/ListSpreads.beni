@@ -1,0 +1,48 @@
+-- bir: a list literal with a spread lowers to the calls it means (language.md
+-- §6.8, §8), built from the right. `consOne` is one `List.cons`, exactly the
+-- call `x :: xs` made; `consTwo` two, nested; `snoc` a `List.append` of `xs`
+-- onto the literal `[ x ]`; `both` a bare `List.append`; `between` a
+-- `List.cons` of `x` onto the `List.append` of `a` onto `[ y ]`, the items
+-- lowered first in source order; and `whole` is `xs` itself, no call at all.
+-- A pattern keeps its shape: `ends` is a `pat_list` holding a `pat_spread`
+-- over the name it binds, and `firstOf`'s `..._` a spread over `pat_wild`.
+consOne x xs =
+    [ x, ...xs ]
+
+
+consTwo a b xs =
+    [ a, b, ...xs ]
+
+
+snoc xs x =
+    [ ...xs, x ]
+
+
+both a b =
+    [ ...a, ...b ]
+
+
+between x a y =
+    [ x, ...a, y ]
+
+
+whole xs =
+    [ ...xs ]
+
+
+ends xs =
+    case xs of
+        [ first, ...middle, last ] ->
+            middle
+
+        _ ->
+            xs
+
+
+firstOf xs =
+    case xs of
+        [ x, ..._ ] ->
+            x
+
+        _ ->
+            0

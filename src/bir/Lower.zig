@@ -2203,12 +2203,20 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         },
         .paren => return l.lowerExpr(l.tree.operand(node)),
         .tuple, .list => {
+            if (tag == .list) {
+                for (l.tree.children(node)) |elem| {
+                    if (l.tree.nodeTag(elem) == .spread) return l.lowerSpreadList(node);
+                }
+            }
             const mark = l.scratchMark();
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerExpr(elem));
             const range = try l.addRange(l.scratchSince(mark));
             return l.addInstAt(main_token, if (tag == .tuple) .tuple else .list, @intFromEnum(range.start), @intFromEnum(range.end));
         },
+        // Only ever an item of a `list`, which `lowerSpreadList` reads; the
+        // operand alone is the defensive reading of one met anywhere else.
+        .spread => return l.lowerExpr(l.tree.operand(node)),
         .record => {
             const range = try l.lowerFields(l.tree.children(node));
             return l.addInstAt(main_token, .record, @intFromEnum(range.start), @intFromEnum(range.end));
@@ -2296,6 +2304,56 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.errorInst(l.tree.fullError(node).code);
         },
     }
+}
+
+/// A list literal with a spread (language.md §6.8, §8): the `List.cons` and
+/// `List.append` calls it means, built from the right. The plain items
+/// after the last spread are one `list` (none when the spread is last);
+/// going left, a spread `...s` is `List.append s <built>` — `s` alone when
+/// nothing is built yet — and an element `e` is `List.cons e <built>`. So
+/// `[ x, ...xs ]` is exactly the call `x :: xs` was, which is what keeps a
+/// cons step a cons step (`backend.md` §8) and the emitted JavaScript the
+/// same. Every item is lowered first, in source order, so the instructions
+/// read as the source does; a call evaluates its arguments left to right,
+/// so the items still run in written order. Each call and its callee are
+/// stamped with the `...` of the spread they belong to.
+fn lowerSpreadList(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    const items = l.tree.children(node);
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    for (items) |item| {
+        try l.pushScratch(try l.lowerExpr(if (l.tree.nodeTag(item) == .spread) l.tree.operand(item) else item));
+    }
+    // Nothing below pushes to the scratch list, so the slice stays valid.
+    const lowered: []const Index = @ptrCast(l.scratchSince(mark));
+    // The trailing run of plain items, as one literal.
+    var end = items.len;
+    while (end > 0 and l.tree.nodeTag(items[end - 1]) != .spread) end -= 1;
+    var built: ?Index = null;
+    if (end < items.len) {
+        const range = try l.addRange(@ptrCast(lowered[end..]));
+        built = try l.addInstAt(l.tree.nodeMainToken(node), .list, @intFromEnum(range.start), @intFromEnum(range.end));
+    }
+    var i = end;
+    // The `...` of the nearest spread at or right of `i`.
+    var spread_token = l.tree.nodeMainToken(items[end - 1]);
+    while (i > 0) {
+        i -= 1;
+        const item = items[i];
+        if (l.tree.nodeTag(item) == .spread) {
+            spread_token = l.tree.nodeMainToken(item);
+            if (built) |rest| {
+                l.cur_token = spread_token;
+                const callee = try l.importRef(.import_value, .import_value, WellKnown.List.symbol(), WellKnown.append.symbol());
+                built = try l.call(callee, &.{ lowered[i].int(), rest.int() });
+            } else built = lowered[i];
+        } else {
+            l.cur_token = spread_token;
+            const callee = try l.importRef(.import_value, .import_value, WellKnown.List.symbol(), WellKnown.cons.symbol());
+            built = try l.call(callee, &.{ lowered[i].int(), built.?.int() });
+        }
+    }
+    return built.?;
 }
 
 fn call(l: *Lower, callee: Index, args: []const u32) Allocator.Error!Index {
@@ -3004,6 +3062,7 @@ fn patternNames(l: *Lower, pattern: NodeIndex, names: *std.ArrayList(Symbol)) Al
             if (l.tags[a.name] == .lower_ident) try names.append(l.scratch_allocator, l.tokenSymbol(a.name));
         },
         .pat_tuple, .pat_list => for (l.tree.children(pattern)) |child| try l.patternNames(child, names),
+        .pat_spread => try l.patternNames(l.tree.operand(pattern), names),
         .pat_ctor => for (l.tree.children(pattern)) |child| try l.patternNames(child, names),
         .pat_cons => {
             const d = l.tree.nodeData(pattern);
@@ -4126,7 +4185,7 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
             var f = extra[d.rhs];
             while (f < extra[d.rhs + 1]) : (f += 2) try out.append(gpa, extra[f + 1]);
         },
-        .field_access, .tuple_index, .@"try", .pat_as => try out.append(gpa, d.lhs),
+        .field_access, .tuple_index, .@"try", .pat_as, .pat_spread => try out.append(gpa, d.lhs),
         .call, .pat_ctor => {
             try out.append(gpa, d.lhs);
             try out.appendSlice(gpa, extra[extra[d.rhs]..extra[d.rhs + 1]]);
@@ -4302,6 +4361,10 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             const head = try l.lowerPattern(@enumFromInt(data.lhs), set_start, .pattern);
             const tail = try l.lowerPattern(@enumFromInt(data.rhs), set_start, .pattern);
             return l.addInst(.pat_cons, head.int(), tail.int());
+        },
+        .pat_spread => {
+            const operand = try l.lowerPattern(l.tree.operand(node), set_start, .pattern);
+            return l.addInstAt(main_token, .pat_spread, operand.int(), Inst.Data.unused);
         },
         .pat_as => {
             const pa = l.tree.fullPatAs(node);
@@ -4717,6 +4780,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkLocal(bir, d, data.rhs);
         },
+        .pat_spread => try checkInDecl(d, @enumFromInt(data.lhs)),
         .@"error" => try testing.expect(data.lhs < @typeInfo(diagnostic.Code).@"enum".fields.len),
     }
 }

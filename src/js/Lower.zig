@@ -2988,6 +2988,7 @@ const Lowerer = struct {
             .pat_tuple,
             .pat_list,
             .pat_cons,
+            .pat_spread,
             .pat_record,
             .pat_as,
             .let_def,
@@ -6455,6 +6456,15 @@ const Lowerer = struct {
         const scrutinee: Inst.Index = @enumFromInt(d.lhs);
         const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
         if (branches.len == 0) return null;
+        for (branches) |branch| {
+            if (l.hasSpread(@enumFromInt(l.bir.instData(branch).lhs))) {
+                try l.report(.not_implemented, @enumFromInt(l.bir.instData(branch).lhs),
+                    \\A list pattern with a spread, `[ x, ...rest ]`, is not compiled yet
+                    \\(`docs/design/backend.md` §7, *List patterns with elements after the spread*).
+                , .{});
+                return null;
+            }
+        }
 
         // §7's tuple-literal rule: a `case` on a tuple LITERAL every row
         // matches with a tuple pattern (or a bare `_`) starts as an n-column
@@ -6541,6 +6551,22 @@ const Lowerer = struct {
             .ready = try l.scratch.alloc(Ready, 0),
             .sink = .{ .tail = null },
             .p = p,
+        };
+    }
+
+    fn hasSpread(l: *Lowerer, pattern: Inst.Index) bool {
+        const d = l.bir.instData(pattern);
+        return switch (l.bir.instTag(pattern)) {
+            .pat_spread => true,
+            .pat_as => l.hasSpread(@enumFromInt(d.lhs)),
+            .pat_cons => l.hasSpread(@enumFromInt(d.lhs)) or l.hasSpread(@enumFromInt(d.rhs)),
+            .pat_tuple, .pat_list => for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |el| {
+                if (l.hasSpread(el)) break true;
+            } else false,
+            .pat_ctor => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |el| {
+                if (l.hasSpread(el)) break true;
+            } else false,
+            else => false,
         };
     }
 

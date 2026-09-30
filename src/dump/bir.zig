@@ -716,6 +716,10 @@ const Dumper = struct {
                 try d.w.writeAll(" as ");
                 try d.local(data.rhs, true);
             },
+            .pat_spread => {
+                try d.w.writeAll(" ...");
+                try d.ref(data.lhs);
+            },
             .@"error" => {
                 const code: @import("diagnostic").Code = @enumFromInt(data.lhs);
                 try d.w.print(" {t}", .{code});

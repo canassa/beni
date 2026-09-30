@@ -1,0 +1,11 @@
+-- A list pattern may hold one spread (language.md §6.8): with two, the
+-- items between them could fall on either side, so the second is
+-- two_spreads_in_pattern (7:20), and the pattern is otherwise read as
+-- written.
+middle xs =
+    case xs of
+        [ ...a, x, ...b ] ->
+            x
+
+        _ ->
+            0

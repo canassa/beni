@@ -1,32 +1,33 @@
-7:1 lower_ident view
-7:6 lower_ident a
-7:8 equal =
-8:5 markup_open <
-8:6 markup_name Card
-8:11 l_brace {
-8:12 lower_ident a
-8:14 dot_dot ..
-8:16 dot_lower .a
-8:18 r_brace }
-8:19 markup_gt >
-8:20 l_brace {
-8:21 dot_dot ..
-8:23 dot_lower .a
-8:25 r_brace }
-8:26 markup_close_open </
-8:28 markup_name Card
-8:32 markup_gt >
-11:1 lower_ident plain
-11:7 lower_ident a
-11:9 equal =
-12:5 lower_ident a
-12:7 dot_dot ..
-12:9 dot_lower .a
-13:1 eof
+8:1 lower_ident view
+8:6 lower_ident a
+8:8 equal =
+9:5 markup_open <
+9:6 markup_name Card
+9:11 l_brace {
+9:12 lower_ident a
+9:14 ellipsis ...
+9:17 lower_ident a
+9:18 r_brace }
+9:19 markup_gt >
+9:20 l_brace {
+9:21 ellipsis ...
+9:24 lower_ident a
+9:25 r_brace }
+9:26 markup_close_open </
+9:28 markup_name Card
+9:32 markup_gt >
+12:1 lower_ident plain
+12:7 lower_ident a
+12:9 equal =
+13:5 lower_ident a
+13:7 ellipsis ...
+13:10 lower_ident a
+14:1 eof
 -- comments
-1:1 plain -- `...` is an `ellipsis` only as the first token of a hole opened in a tag
-2:1 plain -- (frontend.md §9.1). Later in such a hole, in a children hole, and in
-3:1 plain -- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: in the
-4:1 plain -- tag's hole expected_token for the `...` (8:12) and the `}` (8:14), in the
-5:1 plain -- children hole unexpected_token (8:21), and in the code unexpected_token
-6:1 plain -- (12:7). `Card` is not imported (8:6).
+1:1 plain -- `...` is one `ellipsis` wherever code is lexed (frontend.md §9.1, amended
+2:1 plain -- 2026-10-01, for a list's spread), and the PARSER decides where a spread may
+3:1 plain -- stand: first in a component's tag hole, or inside a list's brackets. Later
+4:1 plain -- in a tag's hole it is expected_token for the `...` (8:12) and then for the
+5:1 plain -- `}` at the `...` (8:14); in a children hole and in ordinary code it is
+6:1 plain -- unexpected_token with the stray-spread message (8:21, 12:7). `Card` is not
+7:1 plain -- imported (8:6).

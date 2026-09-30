@@ -1095,3 +1095,33 @@ pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporte
     , .{ method, result }) catch return error.OutOfMemory;
     try r.emit(.type_mismatch, region, &out);
 }
+
+/// The operator a core function is the desugaring of (language.md §6.5), or
+/// null for an ordinary name. The symbols are the well-known prefix of the
+/// intern pool, so this is a switch on an integer. It answers on the name
+/// alone, so a CALLEE is named through `Reporter.operatorCallee`, which
+/// checks the module too.
+pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
+    const wk = InternPool.WellKnown;
+    const pairs = .{
+        .{ wk.add, "+" },     .{ wk.sub, "-" },     .{ wk.mul, "*" },
+        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" },   .{ wk.pow, "^" },
+        .{ wk.append, "++" }, .{ wk.eq, "==" },     .{ wk.neq, "/=" },
+        .{ wk.lt, "<" },      .{ wk.gt, ">" },      .{ wk.le, "<=" },
+        .{ wk.ge, ">=" },     .{ wk.@"and", "&&" }, .{ wk.@"or", "||" },
+    };
+    inline for (pairs) |pair| {
+        if (symbol == pair[0].symbol()) return pair[1];
+    }
+    return null;
+}
+
+test "operator spellings cover the desugarings of language.md §6.5" {
+    try testing.expectEqualStrings("+", operatorSpelling(InternPool.WellKnown.add.symbol()).?);
+    try testing.expectEqualStrings("==", operatorSpelling(InternPool.WellKnown.eq.symbol()).?);
+    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.cons.symbol()));
+    // A prelude value the author DOES write by hand keeps its own name.
+    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.negate.symbol()));
+    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.max.symbol()));
+}
+const testing = std.testing;

@@ -1,0 +1,21 @@
+-- check/bad: the length split (checker.md §6.6, amended 2026-10-01) prints a
+-- missing list in the bracket syntax. `lastZero` matches only lists that end
+-- in 0, so it is missing the empty list, `[]`, and a list ending in anything
+-- else, `[ ..._, _ ]`. `twoEnds` needs at least two elements in both its
+-- rows, so it is missing `[]` and `[ _ ]`, and a longer list whose last
+-- element is not `Nothing`, `[ Just _, ..._, Just _ ]`.
+pub lastZero : List Int -> Int
+lastZero xs =
+    case xs of
+        [ ...init, 0 ] ->
+            0
+
+
+pub twoEnds : List (Maybe Int) -> Int
+twoEnds xs =
+    case xs of
+        [ Nothing, ...middle, _ ] ->
+            0
+
+        [ Just x, ..._, Nothing ] ->
+            x

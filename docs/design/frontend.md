@@ -410,7 +410,7 @@ linear.
 
 **The list syntax added one instruction tag and removed one** (2026-10-01, `language.md` §6.8, §8).
 `pat_spread` — `lhs` the `pat_var` or `pat_wild` it binds — is an item of a `pat_list`, at most one
-per list, and `dump --stage=bir` prints it inside the list as `...%n`. `pat_cons` is gone: a `::`
+per list, and `dump --stage=bir` prints it as `pat_spread ...%n`, one of its list's items. `pat_cons` is gone: a `::`
 pattern is refused by the parser and lowers to `error`, as does a `::` expression. A list
 **expression** with a spread adds no tag; it lowers to the `List.cons`/`List.append` calls of
 `language.md` §8, each stamped with its spread's `...` token. The frontend artifact's format version

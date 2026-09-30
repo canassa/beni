@@ -2312,6 +2312,8 @@ fn unexpectedExpr(p: *Parse) Allocator.Error!Index {
     // `<-div>`: `<-` is one token (language.md §2.2), so this is no tag.
     if (p.rawTag() == .arrow_left and p.tok_i + 1 < p.tags.len and p.adjacent(p.tok_i + 1) and
         isMarkupNameStart(p.tags[p.tok_i + 1])) item.construct = .dash_tag;
+    // `...xs` where no list surrounds it (language.md §6.8).
+    if (p.rawTag() == .ellipsis) item.construct = .stray_spread;
     const node = try p.errorNode(.error_expr, item);
     p.recoverUnlessStructural();
     return node;
@@ -3039,7 +3041,7 @@ fn parseParens(p: *Parse) Allocator.Error!Index {
     return p.rangeNode(.tuple, open, try p.listToRange(p.scratchSince(mark)));
 }
 
-/// '[' ']' | '[' Expr (',' Expr)* ']'
+/// '[' ']' | '[' ListItem (',' ListItem)* ']'
 fn parseList(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.list);
     defer p.context = saved_context;
@@ -3049,11 +3051,19 @@ fn parseList(p: *Parse) Allocator.Error!Index {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     if (p.peek() != .r_bracket) {
-        try p.pushScratch(try p.parseExpr());
-        while (p.eat(.comma)) |_| try p.pushScratch(try p.parseExpr());
+        try p.pushScratch(try p.parseListItem());
+        while (p.eat(.comma)) |_| try p.pushScratch(try p.parseListItem());
     }
     try p.expectCloser(.r_bracket, open);
     return p.rangeNode(.list, open, try p.listToRange(p.scratchSince(mark)));
+}
+
+/// ListItem := Expr | '...' Expr   (language.md §6.8)
+fn parseListItem(p: *Parse) Allocator.Error!Index {
+    const ellipsis = p.eat(.ellipsis) orelse return p.parseExpr();
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    return p.unary(.spread, ellipsis, try p.parseExpr());
 }
 
 /// '{' '}' | '{' Field (',' Field)* '}' | '{' lower_ident '|' Field (',' Field)* '}'
@@ -3528,7 +3538,9 @@ fn canStartPatAtom(tag: Tag) bool {
 }
 
 fn canStartPattern(tag: Tag) bool {
-    return canStartPatAtom(tag) or tag == .op_minus;
+    // `...` starts none, but a branch that begins with one is reported as
+    // a stray spread (language.md §6.8) rather than ending the `case`.
+    return canStartPatAtom(tag) or tag == .op_minus or tag == .ellipsis;
 }
 
 /// Pattern := PatCons ('as' lower_ident)?
@@ -3600,6 +3612,33 @@ fn parseNegIntPattern(p: *Parse) Allocator.Error!Index {
     }
     _ = p.next();
     return p.leaf(.pat_neg_int, minus);
+}
+
+/// PatItem := Pattern | '...' (lower_ident | '_')   (language.md §6.8)
+///
+/// At most one spread per list: the second is `two_spreads_in_pattern` and
+/// still becomes a `pat_spread`, so the tree stays whole. A spread operand
+/// that is not a name or `_` is `unexpected_token`, and the pattern after
+/// the `...` is parsed anyway so the list goes on.
+fn parsePatItem(p: *Parse, spreads: *u32) Allocator.Error!Index {
+    const ellipsis = p.eat(.ellipsis) orelse return p.parsePattern();
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    spreads.* += 1;
+    if (spreads.* == 2) _ = try p.report(p.itemAtToken(.two_spreads_in_pattern, ellipsis));
+    const operand = switch (p.peek()) {
+        .underscore => try p.leaf(.pat_wild, p.next()),
+        .lower_ident => try p.leaf(.pat_var, p.next()),
+        else => blk: {
+            @branchHint(.cold);
+            var item = p.itemAt(.unexpected_token);
+            item.construct = .spread_operand;
+            const node = try p.errorNode(.error_pattern, item);
+            if (canStartPattern(p.peek())) _ = try p.parsePattern();
+            break :blk node;
+        },
+    };
+    return p.unary(.pat_spread, ellipsis, operand);
 }
 
 /// PatAtom := '_' | lower | upper | qualified_upper | int | char | string
@@ -3677,8 +3716,9 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
             const mark = p.scratchMark();
             defer p.shrinkScratch(mark);
             if (p.peek() != .r_bracket) {
-                try p.pushScratch(try p.parsePattern());
-                while (p.eat(.comma)) |_| try p.pushScratch(try p.parsePattern());
+                var spreads: u32 = 0;
+                try p.pushScratch(try p.parsePatItem(&spreads));
+                while (p.eat(.comma)) |_| try p.pushScratch(try p.parsePatItem(&spreads));
             }
             try p.expectCloser(.r_bracket, open);
             return p.rangeNode(.pat_list, open, try p.listToRange(p.scratchSince(mark)));
@@ -3706,7 +3746,8 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
         },
         .invalid => return p.invalidNode(.error_pattern),
         else => {
-            const node = try p.unexpected(.error_pattern, .pattern);
+            // `...rest` outside a list pattern's brackets (§6.8).
+            const node = try p.unexpected(.error_pattern, if (p.rawTag() == .ellipsis) .stray_spread else .pattern);
             p.recoverUnlessStructural();
             return node;
         },
@@ -3915,7 +3956,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try testing.expect(r.base < token_count);
             try checkIndices(tree, r.fields);
         },
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
         .type_fn => {
             const f = tree.fullTypeFn(n);
             try testing.expect(f.params.len >= 1);

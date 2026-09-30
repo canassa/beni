@@ -99,7 +99,7 @@ pub fn split(arena: Allocator, pats: *const Patterns, matrix: []const []const Pa
                 starts[c.alt - u.alts_start + 1] += 1;
             },
             .anything => wild_count += 1,
-            .literal => return error.Malformed,
+            .literal, .list => return error.Malformed,
         }
     }
     for (1..starts.len) |i| starts[i] += starts[i - 1];
@@ -141,7 +141,7 @@ pub const Heads = struct {
         const index: u32 = @intCast(row_index);
         switch (pats.tag(head)) {
             .anything => try h.wild.append(arena, index),
-            .literal => h.ok = false,
+            .literal, .list => h.ok = false,
             .ctor => {
                 const c = pats.ctor(head);
                 if (h.un == null) {

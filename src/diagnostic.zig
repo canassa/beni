@@ -324,6 +324,12 @@ pub const Code = enum {
     /// A spike (research 47): `import Js` in a module that is neither
     /// core's nor a platform package's.
     js_outside_platform,
+    /// Appended with the list syntax (language.md §6.8): `::` — an
+    /// operator, a pattern or `(::)` — left the language, and the message
+    /// is the bracket form of what was written; and a list pattern's second
+    /// spread.
+    cons_removed,
+    two_spreads_in_pattern,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -482,6 +488,8 @@ pub fn title(code: Code) []const u8 {
         .sync_boundary => "SUSPENDING CALLBACK",
         .must_not_suspend => "MUST NOT SUSPEND",
         .js_outside_platform => "JS OUTSIDE PLATFORM",
+        .cons_removed => "NO MORE CONS OPERATOR",
+        .two_spreads_in_pattern => "TWO SPREADS IN ONE PATTERN",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };
