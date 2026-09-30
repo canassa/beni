@@ -475,14 +475,25 @@ export const compare = (m0, xs, ys) => {
   return n === m ? "EQ" : n < m ? "LT" : "GT";
 };
 
-// The builder of invariant 5: a fresh array one loop of `List.beni` pushes
-// onto and then hands over, once, as a plain list. `n` is a size hint.
-export const builder = (n) => [];
+// The builder of invariant 5: a fresh array one loop of `List.beni` fills
+// and then hands over, once, as a plain list of its first `n` elements.
+// `builder(n)` has room for n, filled by index with `put`: at 100 000
+// elements an array grown by `push` is copied as it grows and builds in
+// about three times the time of one made its size first (Node 24, the
+// flip's measurement); `builder(0)` grows by `add`.
+export const builder = (n) => new Array(n > 0 ? n : 0);
+export const put = (b, i, x) => {
+  b[i] = x;
+  return b;
+};
 export const add = (b, x) => {
   b.push(x);
   return b;
 };
-export const done = (b) => b;
+export const done = (b, n) => {
+  if (b.length !== n) b.length = n;
+  return b;
+};
 // A building loop's exit (backend.md §8, *Tail calls modulo cons, onto an
 // array*): the destination b, which its loop owns until now, with v's
 // elements pushed after what the steps pushed; v itself when they pushed

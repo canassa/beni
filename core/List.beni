@@ -214,13 +214,25 @@ foreign pure base : List a -> List a
 foreign pure offset : List a -> Int
 
 
+--| A builder with room for `n` elements: a loop that knows how many it will
+--| write fills them by index with `put`, which builds in a third of the
+--| time pushing takes at 100 000 elements, where an array grown by `push`
+--| is copied as it grows. `builder 0` is grown by `add`.
 foreign pure builder : Int -> Builder a
 
 
+--| Element `i` of the builder written, `i` below the room it was made with.
+foreign pure put : Builder a, Int, a -> Builder a
+
+
+--| The builder with an element pushed at its end.
 foreign pure add : Builder a, a -> Builder a
 
 
-foreign pure done : Builder a -> List a
+--| The builder handed over as a list of its first `n` elements: `n` is
+--| how many a loop `put` (or `add`ed), so a builder made with more room
+--| than it needed — `filter`'s — is cut to what it holds.
+foreign pure done : Builder a, Int -> List a
 
 
 --| A building loop's exit (`backend.md` §8, *Tail calls modulo cons, onto
@@ -304,15 +316,15 @@ singleton value =
 --|     repeat 0 3 == [ 0, 0, 0 ]
 pub repeat : a, Int -> List a
 repeat value n =
-    repeatHelp value n (builder n)
+    repeatHelp value 0 n (builder n)
 
 
-repeatHelp : a, Int, Builder a -> List a
-repeatHelp value n b =
-    if n <= 0 then
-        done b
+repeatHelp : a, Int, Int, Builder a -> List a
+repeatHelp value i n b =
+    if i < n then
+        repeatHelp value (i + 1) n (put b i value)
     else
-        repeatHelp value (n - 1) (add b value)
+        done b i
 
 
 --| Create a list of numbers, every element increasing by one. You give the
@@ -323,15 +335,15 @@ repeatHelp value n b =
 --|     range 6 3 == []
 pub range : Int, Int -> List Int
 range lo hi =
-    rangeHelp lo hi (builder 0)
+    rangeHelp lo 0 (hi - lo + 1) (builder (hi - lo + 1))
 
 
-rangeHelp : Int, Int, Builder Int -> List Int
-rangeHelp lo hi b =
-    if lo > hi then
-        done b
+rangeHelp : Int, Int, Int, Builder Int -> List Int
+rangeHelp lo i n b =
+    if i < n then
+        rangeHelp lo (i + 1) n (put b i (lo + i))
     else
-        rangeHelp (lo + 1) hi (add b lo)
+        done b i
 
 
 --| Create a list of `n` elements, calling `func` on each index from 0 to
@@ -348,9 +360,9 @@ initialize n func =
 initializeHelp : Int, Int, (Int -> a), Builder a -> List a
 initializeHelp i n func b =
     if i < n then
-        initializeHelp (i + 1) n func (add b (func i))
+        initializeHelp (i + 1) n func (put b i (func i))
     else
-        done b
+        done b i
 
 
 --| Apply a function to every element of a list.
@@ -377,9 +389,9 @@ mapHelp xs i n func b same =
             y =
                 func x
         in
-        mapHelp xs (i + 1) n func (add b y) (same && identical x y)
+        mapHelp xs (i + 1) n func (put b i y) (same && identical x y)
     else
-        kept same xs (done b)
+        kept same xs (done b n)
 
 
 --| Same as `map` but the function is also given the index of each element,
@@ -402,9 +414,9 @@ indexedMapHelp xs i n func b same =
             y =
                 func i x
         in
-        indexedMapHelp xs (i + 1) n func (add b y) (same && identical x y)
+        indexedMapHelp xs (i + 1) n func (put b i y) (same && identical x y)
     else
-        kept same xs (done b)
+        kept same xs (done b n)
 
 
 --| Keep the elements that pass the test.
@@ -418,7 +430,7 @@ pub filter : List a, (a -> Bool) -> List a
 filter xs isGood =
     let
         result =
-            filterHelp xs 0 (length xs) isGood (builder 0)
+            filterHelp xs 0 (length xs) isGood (builder (length xs)) 0
     in
     if length result == length xs then
         xs
@@ -426,19 +438,20 @@ filter xs isGood =
         result
 
 
-filterHelp : List a, Int, Int, (a -> Bool), Builder a -> List a
-filterHelp xs i n isGood b =
+--| `j` is how many were kept: the builder has room for all `n`.
+filterHelp : List a, Int, Int, (a -> Bool), Builder a, Int -> List a
+filterHelp xs i n isGood b j =
     if i < n then
         let
             x =
                 unsafeGet xs i
         in
         if isGood x then
-            filterHelp xs (i + 1) n isGood (add b x)
+            filterHelp xs (i + 1) n isGood (put b j x) (j + 1)
         else
-            filterHelp xs (i + 1) n isGood b
+            filterHelp xs (i + 1) n isGood b j
     else
-        done b
+        done b j
 
 
 --| Filter out certain values. For example, to get all the heads of a list of
@@ -449,20 +462,20 @@ filterHelp xs i n isGood b =
 --| `func` sees the first element first. O(n).
 pub filterMap : List a, (a -> Maybe b) -> List b
 filterMap xs func =
-    filterMapHelp xs 0 (length xs) func (builder 0)
+    filterMapHelp xs 0 (length xs) func (builder (length xs)) 0
 
 
-filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b -> List b
-filterMapHelp xs i n func b =
+filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b, Int -> List b
+filterMapHelp xs i n func b j =
     if i < n then
         case func (unsafeGet xs i) of
             Just y ->
-                filterMapHelp xs (i + 1) n func (add b y)
+                filterMapHelp xs (i + 1) n func (put b j y) (j + 1)
 
             Nothing ->
-                filterMapHelp xs (i + 1) n func b
+                filterMapHelp xs (i + 1) n func b j
     else
-        done b
+        done b j
 
 
 --| Reverse a list.
@@ -476,15 +489,15 @@ reverse xs =
     if length xs < 2 then
         xs
     else
-        reverseHelp xs (length xs - 1) (builder (length xs))
+        reverseHelp xs 0 (length xs) (builder (length xs))
 
 
-reverseHelp : List a, Int, Builder a -> List a
-reverseHelp xs i b =
-    if i < 0 then
-        done b
+reverseHelp : List a, Int, Int, Builder a -> List a
+reverseHelp xs i n b =
+    if i < n then
+        reverseHelp xs (i + 1) n (put b i (unsafeGet xs (n - 1 - i)))
     else
-        reverseHelp xs (i - 1) (add b (unsafeGet xs i))
+        done b n
 
 
 --| Figure out whether a list contains a value. The element type has to have
@@ -577,6 +590,16 @@ addAll b xs i n =
         b
 
 
+--| Every element of `xs` from `i` up to `n`, put into builder `b` from
+--| index `j` on.
+putAll : Builder a, Int, List a, Int, Int -> Builder a
+putAll b j xs i n =
+    if i < n then
+        putAll (put b j (unsafeGet xs i)) (j + 1) xs (i + 1) n
+    else
+        b
+
+
 --| Concatenate a bunch of lists into a single list.
 --|
 --|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
@@ -616,21 +639,26 @@ concatSecond lists i n first =
         if isEmpty xs then
             concatSecond lists (i + 1) n first
         else
-            concatRest lists (i + 1) n (addAll (addAll (builder 0) first 0 (length first)) xs 0 (length xs))
+            let
+                total =
+                    foldlFrom lists i n (length first) (\ys count -> count + length ys)
+            in
+            concatRest lists (i + 1) n (putAll (putAll (builder total) 0 first 0 (length first)) (length first) xs 0 (length xs)) (length first + length xs)
     else
         first
 
 
-concatRest : List (List a), Int, Int, Builder a -> List a
-concatRest lists i n b =
+--| `j` is how many elements are in the builder, which has room for all.
+concatRest : List (List a), Int, Int, Builder a, Int -> List a
+concatRest lists i n b j =
     if i < n then
         let
             xs =
                 unsafeGet lists i
         in
-        concatRest lists (i + 1) n (addAll b xs 0 (length xs))
+        concatRest lists (i + 1) n (putAll b j xs 0 (length xs)) (j + length xs)
     else
-        done b
+        done b j
 
 
 --| Map a given function onto a list and flatten the resulting lists.
@@ -671,21 +699,23 @@ concatMapSecond xs i n func first =
         if isEmpty ys then
             concatMapSecond xs (i + 1) n func first
         else
-            concatMapRest xs (i + 1) n func (addAll (addAll (builder 0) first 0 (length first)) ys 0 (length ys))
+            concatMapRest xs (i + 1) n func (addAll (addAll (builder 0) first 0 (length first)) ys 0 (length ys)) (length first + length ys)
     else
         first
 
 
-concatMapRest : List a, Int, Int, (a -> List b), Builder b -> List b
-concatMapRest xs i n func b =
+--| The answers' sizes are not known before `func` gives them, so this one
+--| builder grows by `add`; `j` is how many it holds.
+concatMapRest : List a, Int, Int, (a -> List b), Builder b, Int -> List b
+concatMapRest xs i n func b j =
     if i < n then
         let
             ys =
                 func (unsafeGet xs i)
         in
-        concatMapRest xs (i + 1) n func (addAll b ys 0 (length ys))
+        concatMapRest xs (i + 1) n func (addAll b ys 0 (length ys)) (j + length ys)
     else
-        done b
+        done b j
 
 
 --| Places the given value between all members of the given list.
@@ -696,15 +726,15 @@ intersperse xs sep =
     if isEmpty xs then
         []
     else
-        intersperseHelp xs sep 1 (length xs) (add (builder 0) (unsafeGet xs 0))
+        intersperseHelp xs sep 1 (length xs) (put (builder (2 * length xs - 1)) 0 (unsafeGet xs 0))
 
 
 intersperseHelp : List a, a, Int, Int, Builder a -> List a
 intersperseHelp xs sep i n b =
     if i < n then
-        intersperseHelp xs sep (i + 1) n (add (add b sep) (unsafeGet xs i))
+        intersperseHelp xs sep (i + 1) n (put (put b (2 * i - 1) sep) (2 * i) (unsafeGet xs i))
     else
-        done b
+        done b (2 * n - 1)
 
 
 --| Combine two lists, combining them with the given function. If one list is
@@ -727,9 +757,9 @@ map2 xs ys func =
 map2Help : List a, List b, Int, Int, (a, b -> result), Builder result -> List result
 map2Help xs ys i n func b =
     if i < n then
-        map2Help xs ys (i + 1) n func (add b (func (unsafeGet xs i) (unsafeGet ys i)))
+        map2Help xs ys (i + 1) n func (put b i (func (unsafeGet xs i) (unsafeGet ys i)))
     else
-        done b
+        done b n
 
 
 --| Combine three lists, combining them with the given function.
@@ -856,9 +886,9 @@ sortRange xs lo hi cmp =
 merge : List a, Int, Int, List a, Int, Int, (a, a -> Order), Builder a -> List a
 merge xs i n ys j m cmp b =
     if i >= n then
-        done (addAll b ys j m)
+        done (putAll b (i + j) ys j m) (n + m)
     else if j >= m then
-        done (addAll b xs i n)
+        done (putAll b (i + j) xs i n) (n + m)
     else
         let
             x =
@@ -869,10 +899,10 @@ merge xs i n ys j m cmp b =
         in
         case cmp x y of
             GT ->
-                merge xs i n ys (j + 1) m cmp (add b y)
+                merge xs i n ys (j + 1) m cmp (put b (i + j) y)
 
             _ ->
-                merge xs (i + 1) n ys j m cmp (add b x)
+                merge xs (i + 1) n ys j m cmp (put b (i + j) x)
 
 
 --| Determine if a list is empty.
@@ -986,22 +1016,23 @@ update xs i func =
 --| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a -> Bool) -> ( List a, List a )
 partition xs pred =
-    partitionHelp xs 0 (length xs) pred (builder 0) (builder 0)
+    partitionHelp xs 0 (length xs) pred (builder (length xs)) (builder (length xs)) 0
 
 
-partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a -> ( List a, List a )
-partitionHelp xs i n pred yes no =
+--| `k` is how many passed: the rest, `i - k`, did not.
+partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a, Int -> ( List a, List a )
+partitionHelp xs i n pred yes no k =
     if i < n then
         let
             x =
                 unsafeGet xs i
         in
         if pred x then
-            partitionHelp xs (i + 1) n pred (add yes x) no
+            partitionHelp xs (i + 1) n pred (put yes k x) no (k + 1)
         else
-            partitionHelp xs (i + 1) n pred yes (add no x)
+            partitionHelp xs (i + 1) n pred yes (put no (i - k) x) k
     else
-        ( done yes, done no )
+        ( done yes k, done no (n - k) )
 
 
 --| Decompose a list of tuples into a tuple of lists.
@@ -1017,6 +1048,6 @@ unzipHelp pairs i n xs ys =
     if i < n then
         case unsafeGet pairs i of
             ( x, y ) ->
-                unzipHelp pairs (i + 1) n (add xs x) (add ys y)
+                unzipHelp pairs (i + 1) n (put xs i x) (put ys i y)
     else
-        ( done xs, done ys )
+        ( done xs n, done ys n )
