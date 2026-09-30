@@ -1718,7 +1718,9 @@ const Main$fetchSum = (a$1, b$2) =>
   *Amended 2026-10-01, specified, not built (`backend.md` §4, *Lists are arrays*):* once lists are
   arrays the destination is one builder array, `$root`, and the continuation is
   `($built) => Basics$append($root, $built)` — one copy of the rest per park where linking was
-  O(1) (`backend.md` §8, *Tail calls modulo cons, onto an array*). A loop whose list slot is a
+  O(1) (`backend.md` §8, *Tail calls modulo cons, onto an array*). *Built 2026-10-01 as
+  `($built) => List$close($root, $built)`, core-private: it pushes the rest onto `$root`, which
+  the one-shot continuation owns, instead of concatenating both (`emit/SuspendShapes`).* A loop whose list slot is a
   scalar view (`backend.md` §8, *Scalar views*) re-enters with the slot **materialised**: the
   continuation's `F(…)` passes `List$view($s$<i>, o)`, a list, because the re-entered call computes
   its own base and offset. And `core/List`'s higher-order functions, now loops over indexes that

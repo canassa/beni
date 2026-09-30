@@ -64,7 +64,7 @@ ships it; nothing in slices 0 and 1 changes.
 | **A suffix pattern is a length split** (2026-10-01) | `[ ...init, last ]` cannot be `[]`/`::` rows; the checker and the tree split a column by length as Rust's slice patterns do. On cons cells it walks (O(n)); after the flip it is a length test and indexed reads (`backend.md` §7) |
 | **A reader protocol of three points** (`length`, `Array.isArray`, `$plain()`) instead of a shared helper | A sibling cannot import another file (`backend.md` §2), and the backend reads no types, so it cannot convert at a `foreign` call site |
 | **`$plain` is a field holding a shared function**, not a prototype method | `Minify` declines a file with `class` or a top-level expression statement, and no core file may be declined |
-| **`++` is O(n + m) always**, a fresh plain array unless one side is empty | `Basics.append` is a sibling and cannot reach `core/List.js`'s trie code. The cost is Elm's own `++` class; `acc ++ [ x ]` in a loop stays quadratic, as it is today on cons cells, and `push` is the way to grow. Research 46 counted `acc ++ [x]` linear under E1t only because its array-first programs wrote `push`. *Amended 2026-10-01 (E1tp):* still so for `++`; `[ ...acc, x ]` is now linear (the row on `List.append`), so the two spellings of one list differ in cost. The owner may prefer to close that — see §1.3, O6 |
+| **`++` is O(n + m) always**, a fresh plain array unless one side is empty | `Basics.append` is a sibling and cannot reach `core/List.js`'s trie code. The cost is Elm's own `++` class; `acc ++ [ x ]` in a loop stays quadratic, as it is today on cons cells, and `push` is the way to grow. Research 46 counted `acc ++ [x]` linear under E1t only because its array-first programs wrote `push`. *Amended 2026-10-01 (E1tp):* still so for `++`; `[ ...acc, x ]` is now linear (the row on `List.append`), so the two spellings of one list differ in cost. The owner may prefer to close that — see §1.3, O6. *Superseded 2026-10-01 by O6's decision:* a `++` the checker solved to lists calls `List.append`, so the two spellings cost the same; `Basics.append`'s list half (O(n + m), on the protocol) serves only `++` over `appendable` |
 | **The core-private primitives are non-`pub` `foreign`s the emitter imports by well-known symbol** | A `pub unsafeGet` would let a program read `undefined` as a value of any type |
 | **Higher-order functions in beni, the sibling first-order**; `eq`/`compare` stay `foreign` with `sync` evidence | Research 38 §12.2's effects rule; the `sync` step already covers `where` evidence |
 | **Decoders build fresh arrays; they adopt the input only when they created it and validation is the identity** | A host array may still be written by the host |
@@ -86,6 +86,16 @@ no `::` to warn about or to keep a rewrite for; the rewrite itself stays under i
 
 *Added 2026-10-01 with E1tp; open, the owner's.* Neither blocks slice 2: each recommendation is
 what the contract now says, and each is reversible.
+
+*Decided 2026-10-01 by the manager on the owner's delegation, reversible.* **O6: `++` on lists
+goes to `List.append`**, against the recommendation below, the way `==` on a list reaches
+`List.eq`: the checker records every `++` whose result it solved to a `List` (`Dispatch.appends`,
+read once every type is final, so no order of solving changes the answer) and the backend calls
+`List.append` there instead of `Basics.append`. So `xs ++ ys` and `[ ...xs, ...ys ]` are one call
+and cost the same, and `acc ++ [ x ]` in a loop is linear; a `++` over `appendable` — which may be
+a `String` — keeps `Basics.append`. No protocol point was added and the backend still reads no
+types. **O7: the tail-identity memo waits** for slice 4's `ForViewIdentity` measurement, as
+recommended.
 
 | | Question | Recommendation |
 |---|---|---|
@@ -183,7 +193,7 @@ once on 100 000 elements, and `initialize` building 100 000: stack safety); the 
 **Measurements owed.** `bench/size.mjs` (dev and release totals unmoved except the new fixtures:
 elimination drops what nothing calls).
 
-### Slice 2 — the flip
+### Slice 2 — the flip (2026-10-01, landed)
 
 **Scope.** Every row of §2 except the markup identity (`same`), the scalar views, re-consing and the
 warning: `core/List.js` (E1t, research 40's rules), `core/List.beni` (loops over `unsafeGet` and the
@@ -258,6 +268,85 @@ stay where they are.
   per-operation medians, no operation slower than before the flip beyond noise; the release bundle's
   growth reported against the sibling's measured cost (research 40 §5: ~450 bytes read-only, ~900
   written).
+
+**As built, 2026-10-01.** The flip landed as one change, with O6 in it (§1.3). What it did not
+do as written above, each reversible:
+
+- **A building loop's exit is `List$close($root, v)`, not `Basics$append($root, v)`**, and so is
+  a suspended building loop's continuation. `close` is core-private: it pushes `v`'s elements onto
+  the destination the loop owns until then and returns it (or `v` itself when nothing was pushed),
+  so the result is plain as the contract wants, nothing is copied twice, and a program that builds
+  ships no `Basics` sibling for it.
+- **A spread with items after it binds `List$slice(r, p, r.length - s)`**, a copy of the elements
+  it covers: a view is a suffix (invariant 3), and a view with an end would be a fourth form.
+  `[ ...init, last ]` whose `init` is not read binds nothing.
+- **The core-private values cross modules by their printed name.** `unsafeGet`, `view` and `close`
+  are in no interface, so the emitter imports them as it imports a derived function, `core/List`
+  exports each that survives, and `Reach` gives every declaration with a list pattern, or that
+  names `List.cons`, the edges to them.
+- **`List.eq` and `List.compare` do not answer at once for a list against itself**, which
+  `backend.md` §4's table said they would: a list holding a NaN is not equal to itself, as a record
+  holding one is not and as the cons core answered.
+- **Builders are made their final size.** `builder n` is an array of room `n`, filled by index with
+  `put`, and `done b k` hands over its first `k`; a builder whose size is not known (`concatMap`)
+  grows by `add`. At 100 000 elements V8 copies a pushed array as it grows: map, filter, range and
+  reverse built in a half to a third of the time.
+- `map` and `indexedMap` keep their input (O4) through two core-private helpers, `identical` (JS
+  `===`) and `kept`; `sortWith`'s midpoint is a core-private `half`, which keeps `Basics`' sibling
+  out of every program that sorts.
+- `js/Decision.zig` names a `::`'s two columns (`.head`, `.tail`) so the emitter can read a chain of
+  tails as one position `(r, k)`; nothing else in it moved.
+- `abuse_wide_test`'s 65 600-context-entry check no longer loads the `node` platform: it sat at
+  4 290 of the 4 300 million-instruction budget, and a cold check of the larger `core/List` costs
+  about 4 ms (≈10 % of an empty program's cold check, ≈28 million instructions).
+
+The differential held: every `run/` and `browser/` output is byte-identical but `ListIdentity`'s
+three lines. New fixtures: `run/ListPersistence` (each claim condition broken in a scratch build
+prints a mismatch), `run/ListForms`, `run/ListPrepend`, `run/ListPrependDeep` and `run/ListRecons`
+(a scratch core whose `cons` always copies and whose `append` never pushes takes 33–35 s where the
+shipped one takes 0.1 s; with O6 undone `ListPrependDeep` takes 4.8 s), `run/ListWalkDeep`,
+`emit/ListPatterns`, `emit/AppendOperator`, `dispatch/AppendOnLists`, and `ListIndexedIdentity`'s
+lines for `set` of the same value and `map` of the identity. Every new `run/` fixture's output is
+the cons core's, compiled by the pre-flip compiler.
+
+*Measured 2026-10-01* (Node 24.19, a Ryzen 9 5950X). **`bench/list/run.mjs`**, pinned, load under
+1, `--before-beni` the pre-flip compiler, µs per call at 1 000 / 10 000 / 100 000, cons → arrays:
+`length`, `get`, `last` and `drop` O(1) (1.4 / 13 / 130 → 0.06); `push` 4.5 / 43 / 560 → 0.9 / 8.2 /
+85; `set` 0.4×, `slice` 0.05–0.27×, `append` 0.2–0.3×, `take` 0.1–0.6×, `foldr` 0.3–0.5×, `reverse`
+0.6–0.8×, `range` 0.4–0.9×; `map` and `indexedMap` 1.0 / 0.9 / 1.3–1.6×; `foldl`, `sum` and `member`
+1.1–1.5×. **Slower than 1.5× at some size:** `filter` (4.9× at 1 000 in the batch, 1.4× alone,
+2.2× at 100 000), `filterMap` and `map2`–`map5` (1.3–3.6×), `concatMap` (2×) and `[ x, ...xs ]`
+onto an UNWRITTEN plain list (O(n): it is converted to a trie at every call, by design, where the
+cheap case is onto the trie that conversion returns). The cause of the first group is two things a
+cons cell does not pay: V8 allocates cells in its young generation more cheaply than it grows or
+fills large arrays, and the core-private `unsafeGet` and `put` are shared by every loop of the
+program, so their property accesses go megamorphic. Written in place in an experiment, `map2` went
+4.4 → 1.6 µs and `member` 1.7 → 0.85 at 1 000: slice 3's scalar views, and the emitter writing
+core's own reads and writes in place, are where that is won back.
+**`bench/arrays`**, the default run with the `beni` candidate beside the rest: 238 s at a load up
+to 32; then the four candidates the flip compares, four workers, 55 s
+(`results/flip-table-4.md`): `beni` within 1.5× of the E1tp prototype on every list row but four
+(`render only` 2.1× and 1.6×, `takeWhile` 1.6× and `map, recursive` 1.6×, Elm-style — a view per
+step of an `x :: rest` walk and a `$plain()` copy per render of a trie, slices 3 and 4) and every
+single operation but `concat` and `push, first` at 1 000 (1.9×); Elm-style `x :: acc` then
+`reverse` at 10 000 is 400 µs (E1tp 630 µs, §11.4's 547), and Elm-style `acc ++ [ x ]` is 455 µs
+against E1tp's 36.9 ms — O6. `node lists/claim-prepend-test.mjs core` runs the persistence sweep
+against the shipped `core/List.js`: 3.03 million checks, every version intact.
+**Size** (`bench/size.mjs`, 309 programs): release brotli total 254 699 → 343 780; per program the
+median moved +2 bytes and the 90th percentile +1 086, the programs that write lists and so ship the
+trie's write half; the floor 835 → 865 dev, 203 → 188 release; the two empty pages unmoved in release, the TEA
+`element` page 1 668 → 1 845 and the `effects` page 5 165 → 6 286;
+`bench/corpus` 19 149 → 20 800. The whole `List` surface (`lists/surface/E1`, release) is 4 037
+bytes brotli against research 46 §11.6's 3 897 for the prototype. The table app's release bundle
+5 032 → 6 289 bytes (+1 257, research 40 predicted ~900 for a writing program; `++` and
+`[ ...xs, … ]` are writers now). Development output grew more (1.33 → 2.00 MB brotli over the 309):
+`core/List.js` is copied whole, comments included, into every development build that uses it.
+**`bench/ui`** (research 29's harness, headless Chrome 153, pinned, n = 4, then n = 12 for the three
+rows that moved): script medians unchanged within noise on every operation — swap 1.11 → 1.23 ms
+(IQRs overlapping), update every 10th 1.61 → 1.23, select 1.20 → 1.30. On script beni is faster
+than Solid 2 on all nine operations (0.30–0.93×), and than Solid 1 on six of nine at n = 4 (the
+pre-flip build: seven), the three at 1.01–1.13×: clear, create after 1 000, and swap, which at
+n = 12 is 1.23 ms against Solid 1's 1.66.
 
 ### Slice 3 — the compiler rules
 

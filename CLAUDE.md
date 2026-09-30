@@ -173,6 +173,14 @@ with `Time`, `Dom`, `Http` and window events (`boundary.md` §9.1, §9.8; pages 
 imports (`backend.md` §9, `src/js/Minify.zig`): the empty mounted page is
 1.4 kB brotli (`bench/size.mjs`'s `page` lines).
 
+**`List` is array-backed** (the owner's decision, 2026-10-01; landed the same day): a plain
+array, an O(1) view for a pattern's `rest`, or a 32-way trie with a claimable head and tail
+(E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ x, ...xs ]` are
+amortised O(1) at either end. Every reader outside `core/List.js` uses three facts — `length`,
+`Array.isArray`, `$plain()`; `++` on lists calls `List.append`. Contract: `backend.md` §4 *Lists
+are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-arrays.md`, whose
+slices 3–5 (scalar views, markup identity, bytes) are still to come.
+
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
 rewritten around them. It was built as a spike, measured
@@ -256,7 +264,8 @@ platform's `Io` has `run`, `sleep` and `readFile`. The other primitives, and the
 still to come. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
 `where` clause, so their siblings are JavaScript loops calling beni evidence —
-the shape `foldl` was.
+the shape `foldl` was — covered, since a well-known `eq` or `compare` is `sync`
+(`boundary.md` §4).
 
 ## Building
 

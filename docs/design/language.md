@@ -896,7 +896,10 @@ Elm's and stays; what changes is what each piece costs, and the API, which gains
 writes. The representation, its invariants and the runtime are [`backend.md`](backend.md) §4,
 *Lists are arrays*; the migration and its slices are
 [`plans/list-arrays.md`](../../plans/list-arrays.md). Until that plan's second slice lands, lists
-are cons cells and the costs below that differ from Elm's do not hold yet.
+are cons cells and the costs below that differ from Elm's do not hold yet. *Landed 2026-10-01: the
+costs below hold. And by the manager's decision O6 (on the owner's delegation, reversible), `xs ++
+ys` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; only a `++` over
+`appendable` keeps `Basics.append`'s O(length of both).*
 
 **The syntax, and what each form costs.** *Restated 2026-10-01 in the bracket spelling* (*The list
 syntax*, below); the costs are the array's, after the flip.
@@ -911,7 +914,7 @@ syntax*, below); the costs are the array's, after the flip.
 | `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | *Amended 2026-10-01 (E1tp):* **amortised O(1)**, as `List.push` is at the other end; at most 31 elements copied when `xs` was prepended onto before; O(length of `xs`) once when `xs` is a list of 32 or more nothing has written to (it is converted, and everything built from it after is cheap). *Was, under E1t:* O(length of `xs`), a copy |
 | `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | *Amended 2026-10-01 (E1tp):* what `List.push xs x` costs — amortised O(1). *Was:* O(length of `xs`) |
 | `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | *Amended 2026-10-01 (E1tp):* O(length of `ys`) when `xs` has been written to, or has 32 elements or more while `ys` has fewer — each of `ys` is pushed — and O(length of both) otherwise |
-| `xs ++ ys` | the same list as `[ ...xs, ...ys ]` | O(length of both), always: `++` is `Basics.append`, which serves strings too and cannot reach the list's representation (`backend.md` §4) |
+| `xs ++ ys` | the same list as `[ ...xs, ...ys ]` | O(length of both), always: `++` is `Basics.append`, which serves strings too and cannot reach the list's representation (`backend.md` §4). *Amended 2026-10-01 (O6, the manager on the owner's delegation, reversible):* a `++` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; this row still holds for a `++` over `appendable` |
 
 **`[ x, ...xs ]` is cheap.** *Amended 2026-10-01, the owner (W35, E1tp). Under E1t this paragraph
 read "`[ x, ...xs ]` is legal, and it copies" and told programs not to prepend in a loop.* A list

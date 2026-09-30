@@ -484,7 +484,13 @@ functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--
 
 *Added 2026-10-01. Specified, not built: it lands in the slices of
 [`plans/list-arrays.md`](../../plans/list-arrays.md), and until its second slice does, the cons
-cells of the table above are what the compiler emits.* The owner decided on 2026-10-01
+cells of the table above are what the compiler emits.* *Built 2026-10-01: the plan's second slice
+has landed, so this subsection describes what the compiler emits; its §2's slice-2 note, *As
+built*, lists where the build departs from the text below — a building loop's exit is
+`List$close`, not `Basics$append`; a spread with items after it binds a `slice`; `eq` and
+`compare` do not answer at once for a list against itself; builders are made their final size
+(`builder`, `put`, `add`, `done(b, n)`) — and the manager's decision O6: a `++` the checker solved
+to lists calls `List.append` (the `a ++ b` row below).* The owner decided on 2026-10-01
 ([`plans/browser-decisions.md`](../../plans/browser-decisions.md) W35, amended) that beni has **one
 sequence type**: `List` becomes array-backed, there is no `Array` and no cons list, `[a, b]`
 literals and `x :: rest` patterns stay (the pattern is an O(1) view), programs build at the end with
@@ -824,7 +830,7 @@ guarantees on each function:
 | `[]` | `[]`, a fresh empty array at each use. Two `[]`s are not promised to be one value, as the cons list's `{$:0}` was not |
 | `[ e1, …, en ]` | the array literal `[e1, …, en]`, the elements evaluated left to right (`language.md` §6, *Evaluation order*). It nests at no length, so `max_cons_elements` and the `reduceRight` form of *Emitted JavaScript nests only as deep as the source* are withdrawn with the cons cell |
 | `e :: t` | `List$cons(e, t)`: `e`, then `t`, then an O(n) copy (*E1tp:* the prepend of *The claimable head*, amortised O(1)). **Folded**: `e1 :: … :: ek :: [ l1, … ]` whose innermost tail is a literal is the one literal `[e1, …, ek, l1, …]`, which evaluates in the same order and copies nothing. A `::` that re-conses what a pattern matched is §7's; one that is a step of a tail call modulo cons is §8's |
-| `a ++ b` | `Basics$append(a, b)`, unchanged; the list half above |
+| `a ++ b` | `Basics$append(a, b)`, unchanged; the list half above. *Amended 2026-10-01, the manager on the owner's delegation (`plans/list-arrays.md` O6), reversible:* a `++` whose result the checker solved to a `List` is `List$append(a, b)` — the dispatch table's `appends`, as `==` on a list reaches `List.eq` — so it costs what `[ ...a, ...b ]` does; one over `appendable` stays `Basics$append` |
 | `case` on a list | §7, *List patterns over arrays* |
 | an `x :: rest` loop | §8, *Scalar views* |
 
@@ -2017,8 +2023,10 @@ right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 i
 
 ### List patterns over arrays
 
-*Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`). **The
-matrix does not change.** `js/Decision.zig` still reads `[]` and `::` as the two constructors of the
+*Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`). *Built
+2026-10-01 with the plan's second slice, R5 aside (its third): `js/Decision.zig` gained only names
+for a `::`'s two columns, `.head` and `.tail`, so the emitter reads a chain of tails as one `(r,
+k)`; `emit/ListPatterns` pins the shapes.* **The matrix does not change.** `js/Decision.zig` still reads `[]` and `::` as the two constructors of the
 list union and still normalises `[ a, b, c ]` to `a :: b :: c :: []`, and the checker's
 exhaustiveness is untouched; a list is still a two-alternative node, so still an `if`. What changes is
 the third column of the table above — what `js/Lower.zig` writes for a list occurrence, a list test
@@ -2159,7 +2167,11 @@ occurrence `(r, k)` tests `r.length === k + ℓ` for `exact ℓ` and `r.length >
 L` — one comparison per alternative instead of a walk — trailing item *j* is
 `List$unsafeGet(r, r.length - s + j)`, and the spread binds a view of `r` from `k + p` to
 `r.length - s`: O(1) for every form. §4's `view` has only a start today; a view with an end, or a
-`slice` until it has one, is `plans/list-arrays.md` slice 2's to choose.
+`slice` until it has one, is `plans/list-arrays.md` slice 2's to choose. *Chosen and built
+2026-10-01: `List$slice(r, k + p, r.length - s)`, a copy of the elements the spread covers, O(n −
+p − s); a view stays a suffix (invariant 3), and a spread whose name nothing reads binds nothing.
+The chain of two-way tests stays — `r.length === k + ℓ` for each `exact ℓ`, the tree asking them
+in turn — one comparison each, and no walk.*
 
 Fixtures: `run/ListSpreadPatterns` (every row of `language.md` §6.8's pattern table at its edges —
 the empty list, one element, exactly *p* + *s*, one more — nested lists, literal and constructor
@@ -2833,7 +2845,12 @@ is `reverse` then `foldl` by contract, `range` and `repeat` build back to front 
 ### Tail calls modulo cons, onto an array
 
 *Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`'s second
-slice). **The rewrite stays**, with a new destination. It is not made obsolete by arrays: without
+slice). *Built 2026-10-01, with one departure: an exit that is not the literal `[]` is `return
+List$close($root, v)`, and a suspended building loop's continuation `($built) => List$close($root,
+$built)`. `close` is core-private: it pushes `v`'s elements onto the destination its loop owns and
+returns it — or `v` itself when nothing was pushed, as `Basics$append` would — so the result is
+plain, nothing is copied twice, and no `Basics` sibling ships for it.* **The rewrite stays**, with a
+new destination. It is not made obsolete by arrays: without
 it, `f x :: go rest` on an array is a copy of the rest per step *and* a stack frame per element —
 O(n²) and an overflow at 100 000, the worst of both representations (research 38 §16.8, candidate
 B) — while with it research 46 §0 measured the Elm-shaped `map` and `filter` by hand at 1.4–2.4×

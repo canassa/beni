@@ -264,7 +264,8 @@ that passes these checks fails a release build.
 #### How a sibling sees a `List`
 
 *Added 2026-10-01; specified, not built* (`backend.md` §4, *Lists are arrays*; `plans/list-arrays.md`).
-Until now a sibling that took or returned a `List` walked or built cons cells, `{ $: 1, a, b }` and
+*Built 2026-10-01: every first-party file named below reads and returns lists this way, and so do
+the test platforms' siblings.* Until now a sibling that took or returned a `List` walked or built cons cells, `{ $: 1, a, b }` and
 `{ $: 0, a: null, b: null }`, by a contract written in `core/List.js`, `core/String.js`,
 `core/Basics.js` and `backend.md` §4. With lists array-backed that contract is replaced by this one,
 and it is the whole of what a sibling — or a platform runtime, a markup runtime, the
