@@ -1388,7 +1388,8 @@ zero times is written as an expression statement where it is evaluated, not as a
 binding is written, so §9 item 1 — which drops a dead binding whole, `Debug.log` and all — has
 nothing to drop, and the two builds evaluate the same expressions. A name or a field read of one
 has nothing to evaluate and is left out. The rule is about the `case`; a `let` pattern that binds
-nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md` §6).
+nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md` §6) — when its
+right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 item 1's amendment).
 `run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
 
 ### Sharing a leaf reached from two paths
@@ -2387,7 +2388,9 @@ reaches `Debug` is refused.** Three reasons, and the third is the one that close
 - **`Debug.log` inside a dead binding is dropped whole** by item 1, which `language.md` §6's *What an
   optimiser may assume* licenses in so many words. That is the one place a release build prints
   something different from a development build, and `tests/corpus/run/ReleaseDeadDebug` is the one
-  fixture that pins it.
+  fixture that pins it. *Amended 2026-09-30: no longer true, and the refusal no longer rests on it.
+  Item 1 now keeps every binding that may be impure, `Debug.log` included, so the two builds print
+  the same lines; the other two reasons stand.*
 - **A `Debug.log` or a `Debug.todo` in a shipped build is almost always an accident.** The module's
   own documentation says it is not meant for shipping code; the compiler now says the same thing at
   the one moment the author can act on it.
@@ -2440,7 +2443,10 @@ broken cannot pass for a claim about the flag.
 drops a dead binding's `Debug.log` and a dev build still keeps it, so the fixture and its
 `.release-expected` still state item 1's zero-use rule out loud. What they no longer state is
 anything a user can see: a build like that is refused. The mechanism is a harness-only fact from
-2026-09-19 on.
+2026-09-19 on. *Amended 2026-09-30: the fixture stays and its `.release-expected` is deleted. Item
+1 keeps a binding that may be impure (below), so under the flag the release build prints the dead
+binding's line too, and "a release build behaves exactly as the development build does" now holds
+even where only the harness can look.*
 
 #### Item 1 — local dead bindings, and the single use that follows them
 
@@ -2483,6 +2489,39 @@ Measured: **39 raw bytes across the whole corpus, in one declaration** — `benc
 `ExprParser.tokenizeChars`, where a `c :: rest` row binds `rest` and the body reads the list whole.
 Nearly worthless today and specified anyway: it is the half that is about correctness rather than
 bytes, and §7's leaf bindings are the construct that makes more of them.
+
+*Amended 2026-09-30: **zero uses drops a binding only when its right-hand side is pure.*** Effects
+ended the premise above: a `foreign` may now be `impure` or `suspends`, and a function that calls one
+is inferred so (`transparent-effects-proposal.md` §14), so "asks nothing about the right-hand side"
+made a release build skip a named `Task.spawnIn`, or a platform's impure call, that its development
+build performs (research 44 §8). The rule is now `language.md` §6's first bullet as amended the same
+day, and it is decided by lowering, not guessed by this pass:
+
+- **Lowering lists the bindings to keep** (`Lower.effect_keep`, `Opt.runKeeping`): a `let` value
+  binding's `const`, or a `let` pattern's subject temporary, whose BIR right-hand side reaches —
+  outside any lambda or `let` function it builds — a `call`, `method_call` or `type_dispatch` whose
+  dispatch-table row says **`impure`**, or whose suspension answer is not `no`. Markup is not
+  walked and counts as effectful, which costs only the binding of a view nothing reads. The pass
+  never drops a listed binding; the suspendable form (`transparent-effects-proposal.md` §16.3,
+  `src/js/Suspend.zig`) copies a listed `const` and lists the copy.
+- **`impure` in the table means *may be***: the callee's rung is `impure` or `suspends`, or it is
+  `poly` (it would be, used with something that is), or a `sync` class of the declaration's scheme
+  reaches it — a `sync` class cannot suspend, so it never makes a call `poly`, but it can still be
+  impure (`transparent-effects-proposal.md` §16.2 as amended 2026-09-30). The table's columns and
+  the sidecar's format are unchanged; only which rows say `impure` moved.
+- **What stays droppable** is everything else: arithmetic, a pure call, a `foreign pure` (so
+  `Node.done` still pins nothing), a lambda, and a reference to a value. `Debug.log` and
+  `Debug.todo` are `foreign impure` and are kept like any other impure call — one rule, no special
+  case, and `run/ReleaseDeadDebug` no longer needs a `.release-expected`.
+- **One known gap, recorded rather than closed**: reading a top-level value with a `where` clause
+  and no parameters runs its initialiser at the first use that needs it (`language.md` §6's table).
+  A dropped binding whose right-hand side is only such a read moves that first run to the next
+  use; it is observable only when the initialiser itself is impure, and the evaluation class that
+  would say so is module-local and never published (`transparent-effects-proposal.md` §14.3
+  rule 1).
+
+The size cost is the bindings kept, which are exactly the ones a development build evaluates for an
+effect: `emit/release/ReleaseDropsPureBinding` shows both halves.
 
 **Exactly one use: the binding is inlined**, under a rule that is narrow on purpose.
 
@@ -2762,7 +2801,10 @@ The fixtures, by intent:
 
 | Fixture | Intent | Observable |
 |---|---|---|
-| `run/ReleaseDeadDebug` | a `Debug.log` in a binding nothing reads, beside one in a binding that is read, beside one in a dropped declaration (`run/DceDebugLog`'s other half) | exactly the live lines, in order — pins that the dead binding goes whole and that the surviving order did not move |
+| `run/ReleaseDeadDebug` | a `Debug.log` in a binding nothing reads, beside one in a binding that is read, beside one in a dropped declaration (`run/DceDebugLog`'s other half) | exactly the live lines, in order — pins that the surviving order did not move. *Amended 2026-09-30*: the unread binding's line is now printed by both builds (item 1 keeps a binding that may be impure), and the fixture's `.release-expected` is gone |
+| `run/ReleaseKeepsNamedSpawn` | a named, unread `Task.spawnIn`, and one inside a list literal, whose children print through a test platform's `foreign impure` | the children's lines in both builds (2026-09-30) |
+| `run/ReleaseKeepsNamedForeign` | unread bindings over an impure `foreign` called directly, inside a pure call's argument, in one branch of an `if`, inside a tuple a pattern takes apart, through an inferred-impure helper, through a callback parameter, and through a `sync` callback parameter | every line in both builds (2026-09-30) |
+| `emit/release/ReleaseDropsPureBinding` | unread bindings over arithmetic and over pure calls, beside one over `Task.spawn` | golden: the pure two are gone, the impure one's `const` stays (2026-09-30) |
 | `run/ReleaseNameCollision` | locals whose source names are JavaScript reserved words (`new`, `class`, `let`, `eval`); more than 54 locals in one declaration, so the alphabet spills to two characters; two sibling `case` branches binding the same source name; a §8 loop label beside a binding of the same source name; a declaration that mentions enough globals to push its locals past the ones they may not take | the answers; a collision is a `SyntaxError` at load or a silently wrong value |
 | `run/ReleaseAsiTraps` | expressions whose printed form starts with `(`, `[`, `` ` ``, `+`, `-` and `/`, in statement position and after a `return`; `a - -1` and `a + +b` in one expression | the values; pins that the printer never needs ASI and never merges two operators |
 | `run/ReleaseInlineOrder` | the inliner's own hazard: a binding whose one use is behind a surviving `Debug.log`, one whose use is inside a lambda, one whose use is inside a §8 loop body while the binding is outside it, and one reading an `$in$<i>` slot that the loop reassigns | the printed order and the values; each is a wrong answer if a condition of item 1's table is dropped |
@@ -2912,7 +2954,8 @@ other rule, the one this section called the owner's and declined to take. **The 
 `--release` build that reaches `Debug` is refused (*`Debug` is refused, not pinned*, above). So the
 membership test below is not needed — a release build has no `Debug` in it to notice a renamed field
 — and `run/ReleaseDeadDebug`'s `.release-expected` is not deleted but demoted: it is asserted under
-the hidden `--allow-debug` flag and is a harness-only fact. Item 4 is still declined, on its own
+the hidden `--allow-debug` flag and is a harness-only fact. *(Deleted on 2026-09-30, when item 1
+began keeping a binding that may be impure: both builds now print the same lines.)* Item 4 is still declined, on its own
 numbers; this paragraph only removes the constraint it would have had to honour.
 
 **The measurement that found the pin, kept.** With every field renamed, **103
@@ -2933,7 +2976,8 @@ took it**: Elm 0.19 refuses `Debug` under `--optimize` and **beni now does too**
 not pinned*, above). That deletes the pin, exactly as this paragraph said it would — a release build
 cannot reach `Debug`, so the membership test has nothing to protect. `run/ReleaseDeadDebug` keeps its
 `.release-expected`, now asserted under the hidden `--allow-debug` flag, which makes it a statement
-about item 1's zero-use rule and no longer a statement about anything a user can build.
+about item 1's zero-use rule and no longer a statement about anything a user can build. *(Until
+2026-09-30, when the file was deleted: item 1 keeps an impure binding now.)*
 
 **Every order stays SOURCE-name order, and that is what makes this a print-time substitution.** Three
 places read a record's fields sorted by name and all three keep sorting on the source text:

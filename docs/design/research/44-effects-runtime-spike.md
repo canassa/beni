@@ -261,7 +261,8 @@ node size.mjs ../../zig-out/bin/beni out/size
 - **Tail recursion modulo cons is off in a suspendable body** (P2 §16.3), so a `::`-building
   recursion that may suspend uses a frame per element on the fast path.
 - **A named binding nothing reads is still dropped by `--release`**, even over an impure call; only
-  `let _ =` is kept.
+  `let _ =` is kept. *(Closed 2026-09-30: every binding that may be impure is kept — `backend.md`
+  §9 item 1, `language.md` §6.)*
 - **A join allocates its closure** even when no branch parks; a join in a loop is inlined into each
   leaf instead, so the hot case does not.
 - **Source maps and logical stack traces** (P2 §7.4) are M5's.

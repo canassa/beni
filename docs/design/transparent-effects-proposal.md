@@ -1296,7 +1296,14 @@ every group of the module has been checked (§14.4).
    — is independent of the call (report 43 §9.6). That is unsound for exactly one kind, a callback
    the host calls synchronously during the call; the `sync` step closes it, since such a callback
    must be `sync` (`plans/browser-decisions.md` W8). For `impure` alone the gap stays open until
-   then, and nothing reads `impure` before it.
+   then, and nothing reads `impure` before it. *Amended 2026-09-30, when the release optimiser
+   began reading `impure` (§16.5):* the gap is closed at the one `foreign` that calls a callback
+   during the call and was declared `pure`, **`Task.andThen`, which is now `foreign impure`**
+   (§16.1), so a hand-written `Task.andThen x k` is kept whatever `k` is. Joining every `sync`
+   callback into its `foreign`'s own arrow was tried and withdrawn: most such callbacks are called
+   later (a page's handler, `Task.start`'s observer), and the join carried a suspending callback's
+   rung into the call too, so a `sync_boundary` error gained a second, cascading `must_not_suspend`
+   at its caller.
 7. **A derived `eq` or `compare` joins its context.** The derived function calls the evidence of
    each context entry, so each entry's method type `⊑` the method type it answers.
 8. **Recursion needs nothing.** A binding group's members share their variables until the group is
@@ -1617,6 +1624,11 @@ pub foreign pure isWaiting : a -> Bool              -- `a` is `$Y`
 Both are `pub` because the emitted code of every module imports them as it imports any value; both
 are harmless to call by hand — no beni value is `$Y`, so `andThen x k` is `k x`, and the `sync`
 mark keeps a hand-written `k` from suspending under a caller that believes `andThen` pure.
+*Amended 2026-09-30: `andThen` is `foreign impure`.* It calls `k` during the call, and §14.3 rule 6
+makes a callback independent of the call, so declared `pure` it made `Task.andThen x k` pure however
+impure `k` was — which the release optimiser, reading `impure` since that day (§16.5), would have
+turned into a dropped call. The emitted code is unchanged: the generator's calls are JavaScript, not
+beni, and no rung is read from them. The `sync` mark still does what the sentence above says.
 
 ### 16.2 What the checker hands the backend
 
@@ -1649,7 +1661,13 @@ reaches no `$s` body, and elimination (`backend.md` §9) writes none.
 - **The table.** The answers ride in the dispatch table as two columns — one row per instruction
   with a `yes` or `poly` answer, or a call whose callee is `impure` whatever it is called with
   (§16.5's `let _ =`), and one byte per declaration (its own arrow's answer, and whether it has
-  two bodies) — dispatch sidecar format 6 → 7.
+  two bodies) — dispatch sidecar format 6 → 7. *Amended 2026-09-30:* a row's `impure` bit means
+  **may be impure** — the callee's rung is `impure` or `suspends`, or its answer is `poly`, or a
+  **`sync`** class of the declaration's scheme reaches it. The last is needed because a `sync` class
+  cannot suspend, so it is never sensitive and never makes a call `poly`, yet it may be impure at a
+  use: `k x` inside a function whose `k` also flows into `Task.andThen`'s callback is impure when
+  the caller passes an impure `k`. The walk starts only at `sync` classes, which are few. No
+  column or format moves; the release optimiser is the one reader (§16.5).
 - **Evidence.** A declaration passed as `where` evidence takes the body the site's callee takes.
   The `where` types of an imported use are among the classes its choice is read off, and a
   declaration that calls its evidence has that evidence's class as a sensitive one, so a callee
@@ -1777,6 +1795,14 @@ all; `let _ = Task.spawn work` is written for the spawn. A `let` whose pattern b
 `()`) over a call whose callee is `impure` or worse is kept by the release optimiser (the
 `impure` answer of §16.2's table, which is the owner's A5 applied where it is load-bearing). A
 *named* binding nothing reads is still dropped, as `run/ReleaseDeadDebug` pins.
+
+*Amended 2026-09-30: **every** `let` whose right-hand side may be impure or may suspend is kept,
+named or not, whatever its pattern binds, and wherever in the right-hand side the call sits
+(outside a function it builds).* Dropping the named one made a release build skip what its
+development build does — `let t = Task.spawnIn s work` with `t` unread started no fiber — which
+`language.md` §6 forbids; that section's first bullet and `backend.md` §9 item 1 now carry the rule,
+`Debug.log` included, and `run/ReleaseDeadDebug` prints the same lines in both builds.
+`run/ReleaseKeepsNamedSpawn` and `run/ReleaseKeepsNamedForeign` are its fixtures.
 
 ### 16.6 Fixtures
 

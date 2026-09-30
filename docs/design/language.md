@@ -818,23 +818,31 @@ implementation:
 - **Which of two modules that do not depend on each other is loaded first.**
 
 **What an optimiser may assume** (`backend.md` §9 is where it is spent). Every beni expression is
-**pure**: evaluating it produces a value and changes nothing an observer can see. The exceptions are
-exactly two — `Debug.log`, which writes a line, and a platform package's `foreign` values, which
-`boundary.md` §4 confines to a total pure function over admitted types or an effect *value*. So:
+**pure**: evaluating it produces a value and changes nothing an observer can see — **unless it
+calls something the checker infers `impure` or `suspends`** (`transparent-effects-proposal.md`
+§14). A `foreign` declares its rung (`foreign pure|impure|suspends`), and every other function's is
+inferred from what it calls; `Debug.log` and `Debug.todo` are `foreign impure`, as are `Task.spawn`
+and a platform's primitives that start or observe something. So:
 
-- **A binding whose value is never used may be dropped whole**, everything inside it included, a
-  `Debug.log` among it. That is `backend.md` §9's dead-binding elimination and its reachability
-  pass, and purity is why neither needs a bundler's `sideEffects` guesswork. **The `Debug.log`
-  clause is no longer a licence any build a user can run will spend, and it is kept because it is
-  the reason the pass may ask nothing about a right-hand side.** Amended 2026-09-19: dead-BINDING
-  elimination is `--release`'s alone — a development build eliminates whole declarations and never
-  looks inside a body — and a `--release` build that reaches `Debug` is now refused outright
-  (`backend.md` §9's *`Debug` is refused, not pinned*). So the two never meet outside the corpus
-  harness, where the hidden `--allow-debug` flag puts them back together to keep
-  `run/ReleaseDeadDebug` asserting the rule. What the clause still settles is the shape of the
-  pass: it drops a binding on its use count alone and asks nothing about the initialiser, rather
-  than testing "does this call a `foreign`?", which is the `sideEffects` guesswork one sentence
-  up.
+- **A binding whose value is never used may be dropped whole — unless its right-hand side may be
+  impure or may suspend**, in which case it is **evaluated for its effect** exactly where it is
+  written, whatever its pattern binds and whether or not anything reads it. *May* is the checker's
+  answer and nothing softer: the right-hand side reaches, outside any function it builds, a call
+  whose callee is `impure` or `suspends`, or would be once the enclosing declaration is used with
+  something that is — a call of a parameter `f` counts, because one body serves every caller
+  (`transparent-effects-proposal.md` §16.2's `impure` answer). **`Debug.log` is kept under the same
+  rule**: it is `foreign impure`, and one rule for every impure call is the point. A binding whose
+  right-hand side is pure is still dropped whole, initialiser and all. That is `backend.md` §9's
+  dead-binding elimination (item 1) and its reachability pass, and the inferred rung is why neither
+  needs a bundler's `sideEffects` guesswork. *Amended 2026-09-30.* Until then this bullet read "may
+  be dropped whole, everything inside it included, a `Debug.log` among it", and the pass asked
+  nothing about a right-hand side. That was sound only while `Debug.log` was the one impure value
+  and a `--release` build that reaches `Debug` was refused (2026-09-19, `backend.md` §9's *`Debug`
+  is refused, not pinned*); once effects existed it made a release build skip a `Task.spawnIn` or
+  an impure platform call its development build performs, which is exactly the difference between
+  the two builds that no program may see. `let _ = e` had been kept since the fiber spike (§16.5);
+  the rule is now the same for a named binding and for `_`, and `run/ReleaseDeadDebug` prints the
+  same lines in both builds.
 - **Two evaluations that both survive may not be reordered against each other**, and neither may be
   duplicated into a position where it runs more often than the table above says. Inlining
   substitutes a *body*, never an argument expression: an argument is evaluated once, at the call,
@@ -842,10 +850,11 @@ exactly two — `Debug.log`, which writes a line, and a platform package's `fore
 - A `let` binding may be sunk into the one branch that uses it, or dropped, but not lifted out of a
   branch into a position where it runs when that branch does not.
 
-When effects land, `transparent-effects-proposal.md` §5 adds one clause on top of this and changes
-none of it: a call carrying the `impure` bit may not be eliminated, duplicated, reordered across
-another `impure` call, or memoised, *even when its result is unused* — the first bullet above stops
-applying to it.
+`transparent-effects-proposal.md` §5 adds the clause the first bullet now states: a call carrying
+the `impure` bit may not be eliminated, duplicated, reordered across another `impure` call, or
+memoised, *even when its result is unused*. *(This paragraph said "when effects land … the first
+bullet above stops applying to it" until 2026-09-30, when the first bullet was amended to say so
+itself.)*
 
 ## 7. Scoping and shadowing
 
@@ -1018,7 +1027,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `pattern_budget_exhausted` | exhaustiveness again | `pattern_budget_exhausted`, appended on 2026-09-18 rather than filed with the exhaustiveness pair above, so that again no line moved. It is the one code of the three that is about the compiler and not the program: deciding a `case` can cost exponentially much, so the analysis spends a bounded amount of work on it (`--pattern-budget=<n>`), and a `case` it could not decide is **refused** rather than passed over in silence. Silence there was an exit-0 miscompile, because [`backend.md`](backend.md) §7 compiles a `case` to a decision tree with no default arm on the strength of the checker having proved it exhaustive. The message names the budget in force and says the two ways past it: split the match, or raise the flag |
 | `let_forward_reference`, `cyclic_value` | M3 again | the two halves of §7's **initialisation** rule, appended on 2026-09-18 and again never inserted. `let_forward_reference` is lowering's, about a `let` value binding that reads one written below it; `cyclic_value` is the checker's (`checker.md` §6.7), about a top-level value reachable from its own initialiser. They are one defect at two scopes: a name that is in scope but has no value yet, emitted as a JavaScript `const` and read inside its temporal dead zone. Both were exit-0 paths from a well-typed program to a `ReferenceError` at load, and both are refusals rather than reorderings — the first because §6's table says `let` bindings run in written order, the second because a circle has no order to be put into |
 | `duplicate_main` | the backend again | `duplicate_main`, appended on 2026-09-19, again never inserted. A project with more than one `main` was refused under `missing_main`, whose title — MISSING MAIN — says the opposite of the message printed under it, and whose code told a tool routing on it that a project with two entry points had none. A build is a pair of ONE entry point and ONE platform ([`boundary.md`](boundary.md) §5.3), so two `main`s are two builds, which is a different edit from the one "MISSING MAIN" asks for. The message names both modules and both locations, and which of the two it calls the first is the lower module index — the sorted path, never argument or completion order (CLAUDE.md rule 5). `--library` turns the whole rule off, `missing_main` with it |
-| `debug_in_release` | the optimiser | `debug_in_release`, appended on 2026-09-19, again never inserted. It is the **one code in this catalogue a development build cannot produce**: a `--release` build in which any `pub` value of `core/Debug` — `log`, `toString`, `todo`, which is the whole module — survives [`backend.md`](backend.md) §9's reachability elimination is refused, exit 1, nothing written. That is Elm 0.19's rule for `--optimize`, taken by the owner on 2026-09-19 once the optimiser's first release slice had landed, and its reasons are §9's *`Debug` is refused, not pinned*: `Debug.toString` reflects on the runtime representation a release optimiser must stay free to change, a `Debug.log` inside a dead binding is dropped whole by §9 item 1 (§6's *What an optimiser may assume*), and a `Debug` call in a shipped build is almost always an accident. The rule is **reachability** and nothing softer — a `Debug.log` in a declaration the walk drops does not refuse the build, because the build does not ship it. The message names the use sites, at most five and then a count, in module-index then source order (CLAUDE.md rule 5) |
+| `debug_in_release` | the optimiser | `debug_in_release`, appended on 2026-09-19, again never inserted. It is the **one code in this catalogue a development build cannot produce**: a `--release` build in which any `pub` value of `core/Debug` — `log`, `toString`, `todo`, which is the whole module — survives [`backend.md`](backend.md) §9's reachability elimination is refused, exit 1, nothing written. That is Elm 0.19's rule for `--optimize`, taken by the owner on 2026-09-19 once the optimiser's first release slice had landed, and its reasons are §9's *`Debug` is refused, not pinned*: `Debug.toString` reflects on the runtime representation a release optimiser must stay free to change, a `Debug.log` inside a dead binding was dropped whole by §9 item 1 (§6's *What an optimiser may assume*; since 2026-09-30 it is kept, as every impure call is, so this reason is history), and a `Debug` call in a shipped build is almost always an accident. The rule is **reachability** and nothing softer — a `Debug.log` in a declaration the walk drops does not refuse the build, because the build does not ship it. The message names the use sites, at most five and then a count, in module-index then source order (CLAUDE.md rule 5) |
 | `output_path_collision`, `invalid_entry_file` | the backend again | `output_path_collision` and `invalid_entry_file`, appended on 2026-09-21, again never inserted. They are one guarantee, [`backend.md`](backend.md) §2's *The output tree does not depend on the file system's case sensitivity*: **a build's output is the same set of files on every file system**. macOS and Windows fold case, so two output paths differing only by case are one file there — the entry file `main.mjs` and the module `Main`'s `Main.mjs` were exactly that, and every program built on a Mac threw `SyntaxError` at load with the build having exited 0. The compiler's reserved output names now begin with `_` (`_main.mjs`, `_core/`, `_platform/`), which a module path cannot reach because every segment is an upper identifier (§5); `output_path_collision` is the backstop for what that does not cover — two modules named `Json.Decode` and `JSON.Decode`, say — and is checked over the files a build is about to write, folded by simple ASCII lower-casing, before the first byte is written, naming both paths and both source files. `invalid_entry_file` is the other half: a platform may now declare the entry file's name in its manifest ([`boundary.md`](boundary.md) §5.2, `"entry"`), and a declared name that does not obey the `_` rule is refused when the platform is loaded, because a manifest key that could reintroduce the defect is worse than a hardcoded name |
 | `method_needs_annotation` | static dispatch again | `method_needs_annotation`, appended on 2026-09-23 after the schema codes, again never inserted. Under checker v1 (the default until the cut-over, 2026-09-27): a comparison — or any method use — on a module's own type needs that module's method, the method has no annotation, and its binding group is checked after the use, so it has no type there yet. It was a silent wrong answer: the site compiled to `undefined`, or a derived comparison's part to a structural walk that ignored the method. The message says which method to annotate → `static-dispatch-spike.md` §10.12. **Amended 2026-09-26: checker v2 never emits it for that ordering case** — the use checks the method's group nested at the use ([`checker-v2.md`](checker-v2.md) §10.2) — **and emits it only for [`checker-v2.md`](checker-v2.md) §11.2's case**, a derived context entry indexed by a type parameter that depends on an in-flight inferred method (`checker-v2.md` §21.1). The code stays in this catalogue |
 | `too_many_type_parameters` | the checker rewrite | `too_many_type_parameters`, appended on 2026-09-25, again never inserted. It is lowering's, at the 65 536th parameter of a `type`, `type alias`, `foreign type` or `schema` (whose parameters go through the same lowering): an arity is a 16-bit count in the interface record ([`checker-v2.md`](checker-v2.md) §14.2), and a count that saturated there imported the type at the wrong width — an 8-bit count was exactly that at 255, and it built a program that threw a `TypeError` once run. A refusal and not a clamp, because the clamp is the defect. The declaration keeps its first 65 535 parameters, so a body naming a later one is also an `unbound_type_variable` |
