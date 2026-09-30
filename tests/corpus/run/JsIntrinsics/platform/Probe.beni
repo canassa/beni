@@ -93,3 +93,33 @@ readThenWrite =
             Js.set o "v" (Js.from 1)
     in
     Js.to (Js.apply (Js.global "String") [ Js.get o "v", Js.from (Js.set o "v" (Js.from 2)) ])
+
+
+bump : Js.Value -> Int
+bump o =
+    let
+        _ =
+            Js.set o "v" (Js.from 2)
+    in
+    0
+
+
+second : Int, Int -> String
+second _ b =
+    String.fromInt b
+
+
+--| A property read bound before a call that writes the property keeps what
+--| it read: `1`, not the `2` the call writes. The release optimiser may not
+--| fold the read into the call's arguments, after the call.
+pub readBeforeCall : () -> String
+readBeforeCall () =
+    let
+        o =
+            Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
+
+        v : Int
+        v =
+            Js.to (Js.get o "v")
+    in
+    second (bump o) v

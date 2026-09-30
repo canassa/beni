@@ -3698,7 +3698,12 @@ day, and it is decided by lowering, not guessed by this pass:
   dispatch-table row says **`impure`**, or whose suspension answer is not `no`. Markup is not
   walked and counts as effectful, which costs only the binding of a view nothing reads. The pass
   never drops a listed binding; the suspendable form (`transparent-effects-proposal.md` §16.3,
-  `src/js/Suspend.zig`) copies a listed `const` and lists the copy.
+  `src/js/Suspend.zig`) copies a listed `const` and lists the copy. *Amended 2026-10-02:* **nor
+  does it fold one into its use.** A listed binding may be a read whose answer a later call can
+  change — `let v = Js.to (Js.get o "v")` before `f (bump o) v`, where `bump` writes `o.v` — and
+  the fold of a member chain into the next statement would read it after that statement's earlier
+  operands ran: `f(bump(o), o.v)` answered `2` where the program says `1`. Only a read of a beni
+  value, which nothing can change, is folded. `run/JsIntrinsics`'s last line.
 - **`impure` in the table means *may be***: the callee's rung is `impure` or `suspends`, or it is
   `poly` (it would be, used with something that is), or a `sync` class of the declaration's scheme
   reaches it — a `sync` class cannot suspend, so it never makes a call `poly`, but it can still be

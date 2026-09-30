@@ -427,6 +427,12 @@ const Opt = struct {
             if (t != .const_decl) continue;
             if (o.readOf(idx, "uses") != 1 or o.readOf(idx, "decls") != 1) continue;
             const value: Index = @enumFromInt(d.rhs);
+            // A property read that may have an effect — a `Js.get` of a
+            // property some call may write — is evaluated where it stands:
+            // folded into its use it would move past whatever that use's
+            // statement evaluates first. A name or a literal cannot change.
+            const here = stmt.int();
+            if (o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0 and o.ir.tag(value) == .member) continue;
             const base = o.chainBase(value) orelse continue;
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
