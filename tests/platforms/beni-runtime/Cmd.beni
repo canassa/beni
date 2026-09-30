@@ -145,13 +145,13 @@ mapItem item segment tag =
             Perform (through body tag)
 
         Keyed path policy body ->
-            Keyed (segment :: path) policy (through body tag)
+            Keyed [ segment, ...path ] policy (through body tag)
 
         Cancel path ->
-            Cancel (segment :: path)
+            Cancel [ segment, ...path ]
 
         CancelAll path ->
-            CancelAll (segment :: path)
+            CancelAll [ segment, ...path ]
 
         After work ->
             After (Hosted.mapLater work tag)

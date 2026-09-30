@@ -900,7 +900,6 @@ const Lowerer = struct {
                 for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |e| if (l.patternDead(r, e, depth + 1)) return true;
                 return false;
             },
-            .pat_cons => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1) or l.patternDead(r, @enumFromInt(d.rhs), depth + 1),
             .pat_as => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1),
             else => return false,
         }

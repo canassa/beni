@@ -884,10 +884,6 @@ pub const Builder = struct {
                     for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)) |arg| try g.patternCtors(arg, depth + 1);
                 },
                 .pat_tuple, .pat_list => for (bir.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)) |e| try g.patternCtors(e, depth + 1),
-                .pat_cons => {
-                    try g.patternCtors(@enumFromInt(d.lhs), depth + 1);
-                    try g.patternCtors(@enumFromInt(d.rhs), depth + 1);
-                },
                 .pat_as => try g.patternCtors(@enumFromInt(d.lhs), depth + 1),
                 else => {},
             }
