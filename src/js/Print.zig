@@ -2028,6 +2028,15 @@ const Printer = struct {
         if (p.plan.isDropped(node)) return true;
         switch (p.ir.tag(node)) {
             .continue_stmt => return std.mem.indexOfScalar(Index, p.elided.items, node) != null,
+            // `x = x`, which a loop writes for a variable an iteration passes
+            // unchanged: under `--release`, nothing.
+            .assign_stmt => {
+                if (!p.compact) return false;
+                const d = p.ir.data(node);
+                const target = p.resolve(@enumFromInt(d.lhs));
+                const value = p.resolve(@enumFromInt(d.rhs));
+                return p.ir.tag(target) == .ident and p.ir.tag(value) == .ident and p.ir.data(target).lhs == p.ir.data(value).lhs;
+            },
             .return_stmt => {
                 if (!p.discarding or !p.isTailReturn(node)) return false;
                 const value = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).lhs)).unwrap() orelse return true;

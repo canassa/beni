@@ -4887,6 +4887,10 @@ And under all of them:
 - **`x = x op e` is `x op= e`** for a name, an arithmetic or bitwise `op`: both read `x`, then
   `e`, then write.
 - **`!(a === b)` is `a !== b`** (and the other way round) anywhere (`Spec.peephole`).
+- **`x = x` is not written** (`Print.skipped`): a loop assigns every variable it carries, and one
+  an iteration passes unchanged is its own value. Fixture: `emit/release/ListScalarView`.
+- **Adjacent `let`s join**, as adjacent `const`s do (§9 item 5), and a run of top-level ones keeps
+  its newline after each member. Fixture: `emit/release/core/LetRuns`.
 
 Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916 for items 5 and 8; with the
 port's `Rt.beni` rewritten for items 5–8 (`isNullish` for the phase, the parse in the cloner, one
