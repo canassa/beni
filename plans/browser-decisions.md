@@ -976,6 +976,11 @@ it is experiment **X2** in [`plans/browser-platform.md`](browser-platform.md) §
 
 **Reversibility: high.** Adding a module to `core/` is additive.
 
+*Specified 2026-10-01*, after the owner's one-sequence amendment in the table above: the contract is
+`backend.md` §4 *Lists are arrays* (with §7, §8 and §15.5's amendments), `language.md` §6.8,
+`boundary.md` §4 *How a sibling sees a `List`* and `schema.md` §6 *Lists are arrays*; the migration,
+its slices and the decisions still the owner's are [`list-arrays.md`](list-arrays.md).
+
 ---
 
 ### W2. What does a defect do to a page?

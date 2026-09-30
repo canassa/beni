@@ -1987,7 +1987,11 @@ Written against the representation of `backend.md` §4 and its "Corrections to t
 objects with keys sorted by **name text**; a type with any argument-taking constructor pads every
 constructor to `{$: "Tag", a, b, …}`; a type whose constructors are all nullary is a bare tag
 string; `Basics.Bool` is `true`/`false`; a tuple is `{a, b, …}`; a list is `{$:1, a, b}` /
-`{$:0, a:null, b:null}`; `()` is `null`; a `Char` is a one-scalar string.
+`{$:0, a:null, b:null}`; `()` is `null`; a `Char` is a one-scalar string. *(Amended 2026-10-01,
+specified, not built: a list becomes array-backed, `backend.md` §4 *Lists are arrays*. Derived code
+never reads a list — it calls `List.eq`/`List.compare`, whose loops and the derived engine's
+`listEq`/`listCompare` read lists through that section's protocol — so nothing in this section's
+emitted shapes changes.)*
 
 **The `parts` contract.** Each `Dispatch.Derived` carries one `Target` per structural position, in
 this order:

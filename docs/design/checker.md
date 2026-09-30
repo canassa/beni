@@ -1671,6 +1671,17 @@ the inventory. Three things moved. `Char` and `String` are **declared by their o
 `core/Dict/String.beni` and `core/Dict/Int.beni` are **deleted**: they existed only to hide the
 comparator argument, and there is nothing left to hide.
 
+*Amended 2026-10-01; specified, not built.* **`List` gains Elm `Array`'s indexed operations and a
+few more, and there is no `Array`** (`language.md` §6.8, the owner's one-sequence decision):
+`initialize : Int, (Int -> a) -> List a`, `get : List a, Int -> Maybe a`, `last : List a -> Maybe a`,
+`set : List a, Int, a -> List a`, `update : List a, Int, (a -> a) -> List a`,
+`push : List a, a -> List a`, `pop : List a -> List a`, `slice : List a, Int, Int -> List a`,
+`insertAt : List a, Int, a -> List a`, `removeAt : List a, Int -> List a` and
+`swap : List a, Int, Int -> List a`, all `pub`. `List a` stays `pub equatable foreign type List a`
+with no constructors, so nothing in the checker changes: the type is the same type, and only its
+representation and its costs move (`backend.md` §4, *Lists are arrays*). The first slice of
+`plans/list-arrays.md` adds the signatures, over today's cons cells.
+
 - `Int32` (its own module, **built 2026-09-19**): the escape hatch of `fast-compiler.md` §3.1 —
   `Int` is a double, and exact 32-bit work has a type that says so. `*` is deliberately unavailable
   on it, which is what makes mask-after-multiply unreachable; `==` and `<` are available, because

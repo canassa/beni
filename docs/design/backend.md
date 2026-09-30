@@ -373,7 +373,7 @@ mapping.
 | record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; the owner's decision that a record alias constructor builds the record, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (decided 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2): until 2026-09-25 it was `not_implemented`, because interface v2 had no names |
 | nullary constructor | the bare tag — or, for a type that also has a constructor with fields, one module-level constant object per constructor (*A nullary constructor is one object*, below; 2026-09-29) |
 | tuple | fixed-shape object per arity, no runtime tag |
-| list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below) |
+| list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below). *Amended 2026-10-01, the owner's decision (W35):* **a list is array-backed** — a plain JavaScript array, a view, or a 32-way trie with a claimable tail; *Lists are arrays*, below, is the contract, and it replaces this row when `plans/list-arrays.md`'s second slice lands |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
 | `Int` | a number |
 | `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B) |
@@ -432,6 +432,12 @@ native strings, which are Elm's answers and the ones pattern matching and intero
 toward. The optimiser benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
 open question 2 requires, and records the result here either way.
 
+*Amended 2026-10-01.* The benchmark was taken (research 38 §3–§17, research 46) and the list half
+is decided: *Lists are arrays*, below. The empty list then comes from nowhere in particular — it is
+`[]` — and the paragraph above about its singleton being written down in two places is withdrawn
+with the cons cell; what every file that reads a list shares instead is that subsection's
+three-point protocol.
+
 ### A nullary constructor is one object
 
 *Added 2026-09-29* (research 39 §10.3; decided by the project's manager on the owner's delegation).
@@ -471,6 +477,255 @@ fresh one except a platform's reference check, which is the point.
 Fixtures: `emit/NullaryConstant` (local and imported constants, a top-level use, uses inside
 functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--release`, as §15.8's),
 `browser/dom/NullaryHelperSkip` (`button "run" Run` called once, at mount).
+
+### Lists are arrays
+
+*Added 2026-10-01. Specified, not built: it lands in the slices of
+[`plans/list-arrays.md`](../../plans/list-arrays.md), and until its second slice does, the cons
+cells of the table above are what the compiler emits.* The owner decided on 2026-10-01
+([`plans/browser-decisions.md`](../../plans/browser-decisions.md) W35, amended) that beni has **one
+sequence type**: `List` becomes array-backed, there is no `Array` and no cons list, `[a, b]`
+literals and `x :: rest` patterns stay (the pattern is an O(1) view), programs build at the end with
+`push`, and the compiler rule that turns an `x :: rest` walk into an index loop ships with it. This
+subsection is the normative contract for the representation, for the runtime that `core/List.js`
+provides, for the invariants every writer of JavaScript keeps, and for the identities a platform may
+rely on. The rest of the contract lives where each part belongs, once:
+
+| What | Where |
+|---|---|
+| the surface: literals, `::` both ways, `++`, the `core/List` API with each function's cost, identity promises, callbacks | [`language.md`](language.md) §6.8 |
+| list patterns: occurrences, tests, bindings, re-consing a match | §7, *List patterns over arrays* |
+| tail calls modulo cons onto an array; scalar views of an `x :: rest` walk | §8, *Tail calls modulo cons, onto an array*, and *Scalar views* |
+| `For`, `List (Html msg)` holes, class and style lists | §15.5, *`For` over arrays* |
+| what a `foreign` sibling receives and returns | [`boundary.md`](boundary.md) §4, *How a sibling sees a `List`* |
+| decoders and encoders | [`schema.md`](schema.md) §6, *Lists are arrays* |
+| suspending bodies | [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §16.3's amendment of 2026-10-01 |
+| the migration, the slices, their tests and measurements | [`plans/list-arrays.md`](../../plans/list-arrays.md) |
+
+The evidence is [research 38](research/38-immutable-array-representations.md) §15–§17 (the adaptive
+array, one type against two, array-first code), [research 46](research/46-every-sequence-candidate-on-every-scenario.md)
+(every candidate on every scenario in one harness), [research 40](research/40-array-sibling-under-brotli.md)
+(how the sibling is written for brotli and for elimination) and
+[research 42](research/42-reference-counts-in-javascript.md) (in-place writes, not taken here). The
+prototype this contract follows is `bench/arrays/ports/first-tail.js` (the runtime),
+`bench/arrays/lists/first-core/List.{beni,js}` (the core) and `bench/arrays/seq/e1t.js`.
+
+#### The representation: E1t
+
+The representation is the one research 38 §17.2 calls **E1t**: *E1* — §16's adaptive array, a plain
+JavaScript array until something writes to it, plus the O(1) view an `x :: rest` pattern makes —
+with a claimable **t**ail on its trie. A `List` value is one of three **forms**:
+
+| Form | JavaScript | Which lists have it |
+|---|---|---|
+| **plain** | a JavaScript array; the elements are `a[0] … a[a.length − 1]` | every list nothing has written: `[]`, a literal, and the result of every operation that builds a fresh sequence — `map`, `filter`, `range`, `initialize`, `slice`, `reverse`, the sorts, `concat`, `::`, `++`, `insertAt`, `removeAt`, a decoder, a sibling — and a list written below the thresholds |
+| **view** | `{ b, o, length, $plain }`: the elements `b[o] … b[b.length − 1]` of a plain array `b` | what an `x :: rest` pattern binds as `rest`, `List.tail`, `List.drop`. Never empty, `o ≥ 1`, `length === b.length − o`: a view is always a **suffix** of its backing array |
+| **trie** | `{ length, s, r, t, p, $plain }`: the Clojure and Elm 32-way persistent vector — a root `r` whose height is the shift `s` (a multiple of 5), leaves of exactly 32 elements, and a **tail** array `t` holding the last 1 to 32 elements; `p` is the cached plain copy, or `null` | the result of a single-element write (`set`, `update`, `swap`, `push`, `pop`) to a plain list above its threshold, and every write to a trie |
+
+**The thresholds.** `push` converts a plain list of **32** elements or more to a trie; `set`,
+`update`, `swap` and `pop` convert one longer than **256**. Below them a write is copy-on-write and
+the result is plain. The two numbers are research 38 §15.11 and §17.2's, they are constants of
+`core/List.js`, and a change to either is a measurement's to make, on research 38 §15's and §17's
+scenarios through `bench/arrays`. A read-mostly UI list of up to 256 rows therefore stays plain through `set`, and a list
+built by `push` stops copying at 32.
+
+**The representation is not canonical.** The same elements may be any of the three forms, and no
+result a beni program can compute depends on which: `==`, `compare`, `Debug.toString`, every
+function of `core/List`, every sibling and every platform runtime accept all three. Only speed, and
+the identities of *Identity* below, can tell them apart.
+
+#### Invariants
+
+Every piece of JavaScript that touches a list — `core/List.js`, the emitted code, a sibling, a
+platform runtime, the derived-comparison engine — keeps these. A list is **published** from the
+moment any code other than the operation creating it can reach it.
+
+1. **Nothing published is written**, with exactly two exceptions, both invisible to every reader:
+   - **The claim.** A trie's tail array `t` may be written at index `c`, this version's tail count
+     (`length` minus the offset of its tail), **only when `t.length === c` and `c < 32`**: `push`
+     onto the version that owns the end of `t` appends in place and returns a new header sharing
+     the array. Every other version sharing `t` reads only its own first `c′ ≤ c` elements, so none
+     can see the write. `push` onto any other version copies the at most 31 elements its tail owns
+     first — never the whole list — and `pop` returns a header sharing `t`. This is Go's `append`
+     made persistent by each version's own length (research 38 §17.2); it needs no analysis, and
+     `bench/arrays/lists/claim-test.mjs` checked it 2.39 million times on randomly chosen old
+     versions two levels deep.
+   - **The cache.** A trie header's `p` is written once, from `null` to a fresh plain array holding
+     its elements, the first time a walk, a `$plain()` or a bulk operation needs one. A view may
+     cache its own `$plain()` the same way. It is derived data.
+2. **A trie's tail is never a plain list's array, and never a leaf while it can be claimed.**
+   Converting a plain list copies it (the tail too, so a claim never writes into an array some
+   plain list is). A full tail of 32 moves into the tree as a leaf unchanged, and no version can
+   claim it after: a claim needs `c < 32`, and a leaf is 32 long. No leaf and no inner node is
+   written after the header that first published it.
+3. **A view's backing array is plain.** The tail of a trie is a view over its cached plain copy.
+4. **The empty list is plain.** No view and no trie is empty: `view` at the end, `pop` of the last
+   element and `slice` to nothing return `[]`.
+5. **A builder is owned.** A builder is a plain array one loop writes with `push` and then hands
+   over, once, as a plain list, after which it is never written: `core/List`'s core-private
+   `Builder` (below) and the destination of §8's tail calls modulo cons. It is used **linearly** —
+   every `add` returns the builder, and that result is the only thing the loop uses next — so no
+   code other than its loop can see it before the hand-over, and neither §9 item 1's dead-binding
+   rule nor its single-use inlining can drop or reorder a write. A resumption of a suspended fiber
+   is one-shot (`transparent-effects-proposal.md` §16.1), which is what makes a builder captured by
+   a continuation sound; a multi-shot continuation would have to copy it.
+6. **Elements are references.** No operation copies, wraps or rebuilds an element: what comes out
+   is `===` what went in (research 38 §7's *element identity*).
+
+What these invariants do not permit is the rest of what an array can do in place. In particular a
+`set` or `push` whose input is provably unique is still a copy or a new header here; static
+in-place writes (research 42's R0) are a later optimisation that would relax invariant 1 only under
+a proof, and nothing in this contract depends on them.
+
+#### What a reader of a list may rely on: the protocol
+
+Code that reads a list without being `core/List.js` — a sibling, a platform runtime, the markup
+runtime, the derived-comparison engine, `Debug` — may rely on exactly three things, and on no field
+name of a view or a trie:
+
+1. **`xs.length`** is the number of elements, in every form.
+2. **`Array.isArray(xs)`** is true exactly for the plain form, whose elements are `xs[0 … length − 1]`.
+3. Otherwise **`xs.$plain()`** returns a plain array of the elements, which the caller must not
+   write. For a trie it is computed once and cached (invariant 1), so a second call on the same
+   header is O(1).
+
+The idiom is one line, and every first-party file that reads a list uses it:
+
+```js
+const a = Array.isArray(xs) ? xs : xs.$plain();
+```
+
+**A value is a list exactly when `Array.isArray(v) || typeof v.$plain === "function"`.** No other
+beni value is a JavaScript array (a tuple is `{a, b, …}`, §4), and no record can have a field called
+`$plain` (a field name is a lower-case identifier), which is how `Debug.toString` tells a list from
+anything else.
+
+`$plain` is a **field** holding one shared function expression — `$plain: TriePlain` in the header
+literal, reading `this` — and not a prototype method. `Minify` declines a file that mentions `class`
+or holds a top-level expression statement such as `T.prototype.m = …` (§9, *Hand-written JavaScript
+under `--release`*), and no file in `core/` may be declined. Property names are never renamed by
+§9's passes (a key before `:` and a property after `.` are not bindings), so `length`, `$plain` and
+`push` survive every build.
+
+What a sibling may **return** as a list is [`boundary.md`](boundary.md) §4's: a fresh plain array
+that nothing else holds and that it never touches again, or a list it was given.
+
+#### The runtime: `core/List.js`
+
+`List a` stays `pub equatable foreign type List a`: it has no constructors, and the checker is not
+touched by any of this. `core/List.js` is the one file that knows the view and trie forms. Its
+exports, each a `foreign` of `List.beni`, are the runtime every other part of this contract calls:
+
+| Export | Visibility | What it does | Cost |
+|---|---|---|---|
+| `cons(h, t)` | `pub` (`::` desugars to it, `language.md` §6) | a fresh plain array `[h, …t]` | O(n) |
+| `length(xs)` | `pub` | `xs.length` | O(1) |
+| `set(xs, i, v)` | `pub` | the list with element `i` replaced; `xs` itself when `i` is out of range or `v` is `===` the element there | a copy ≤ 256, else O(log₃₂ n) after one conversion |
+| `push(xs, v)` | `pub` | the list with `v` added at the end | a copy < 32, else amortised O(1): one header, at most a 31-element tail copy when this version was pushed onto before, and a path copy every 32nd push |
+| `pop(xs)` | `pub` | the list without its last element; `xs` when empty | a copy ≤ 256, else O(1) sharing the tail, O(log₃₂ n) every 32nd |
+| `slice(xs, from, to)` | `pub` | Elm's `Array.slice`: negative indexes count from the end, both clamped; `xs` itself when the range is all of it; `[]` when `from ≥ to` | O(k) for a result of k, plain |
+| `insertAt(xs, i, v)`, `removeAt(xs, i)` | `pub` | insert before `i` (`0 ≤ i ≤ length`), remove at `i`; `xs` when out of range | O(n), plain |
+| `swap(xs, i, j)` | `pub` | exchange two elements; `xs` when either is out of range or `i === j` | two `set`s |
+| `eq(m0, xs, ys)`, `compare(m0, xs, ys)` | `pub`, `where` evidence first (§4 check 4) | element by element, index loops over all three forms; `xs === ys` is `True`/`EQ` at once; the shorter list is `LT` against a longer one that starts the same | O(n) |
+| `unsafeGet(xs, i)` | core-private; the emitter imports it | element `i`, for `0 ≤ i < length`, which the caller guarantees | O(1) plain or view, O(log₃₂ n) trie |
+| `view(xs, k)` | core-private; the emitter imports it | the list without its first `k` elements, `0 ≤ k ≤ length`: `xs` when `k = 0`, `[]` when `k = length`, otherwise a view (of a view's backing array, or of a trie's cached plain copy) | O(1), after at most one conversion of a trie per header |
+| `base(xs)`, `offset(xs)` | core-private; the emitter imports them | the plain array `xs` is a suffix of, and where in it `xs` starts: `(xs, 0)` for plain, `(b, o)` for a view, `(p, 0)` for a trie | O(1) after that conversion |
+| `builder(n)`, `add(b, x)`, `done(b)` | core-private, for `List.beni` alone | invariant 5's builder: `[]`, `b.push(x); return b`, `b`. `n` is a size hint the implementation may ignore | O(1) amortised |
+
+`core/Basics.js`'s `append` — what `++` lowers to — keeps its string half and gets a new list half,
+written against the protocol and not the forms: `ys.length === 0 ? xs : xs.length === 0 ? ys :
+plain(xs).concat(plain(ys))`. It is O(n + m) and returns a fresh plain array unless one side is
+empty, in which case it returns the other side itself. A sibling cannot import another file (§2),
+which is why the list half is written against the protocol rather than calling `core/List.js`.
+
+`List.beni` holds everything else, written in beni over this first-order surface (research 38
+§12.2): every function that takes a callback is a beni loop over `unsafeGet`, so a callback that
+suspends parks the loop (`language.md` §6.8, *Callbacks*). `eq` and `compare` stay `foreign` with a
+`where` clause as they are today; their evidence is `sync` without being written
+(`boundary.md` §4, the `sync` step), because a well-known `eq` or `compare` cannot suspend.
+
+**The emitter's imports of the core-private exports.** `unsafeGet`, `view`, `base` and `offset` are
+not `pub`: a program that could call `unsafeGet` out of range would read `undefined` as a value of
+any type, which is exactly what the language promises cannot happen. The emitter imports them as it
+imports `List$cons`, from `_core/List.mjs`, which exports them for the emitter although beni code
+outside `List.beni` cannot name them; it recognises them by well-known symbol — core package, `List`
+module, the symbol — as it recognises `List.cons` (§8) and `Basics.and` (§4), never by spelling.
+The lowering records each use as it records a derived comparator's (§9, *Reachability
+elimination*), so a program with no list pattern imports none of them and the one hoisted file
+(§9) holds none of them.
+
+#### Identity: what an operation returns unchanged
+
+`language.md` §11.12 promises that a value a program does not rebuild keeps its identity, and the
+markup runtime skips work on `===` (§15.5, §15.8). For lists that promise is these guarantees, which
+research 38 §7 measured for the ports this runtime is built from, and which `core/List` documents as
+guarantees on each function:
+
+- **The input itself**, not an equal copy, from: `set`, `update` and `swap` out of range or writing
+  the identical value (`===`, not `==`) and `swap xs i i`; `insertAt` and `removeAt` out of range;
+  `slice` and `take` covering the whole list, `drop xs 0` and `view xs 0`; `xs ++ []` and
+  `[] ++ ys`; `filter` keeping every element; `map` and `indexedMap` when every result is `===` its
+  element (one comparison per element — the result built is dropped); `reverse`, `sort`, `sortBy`
+  and `sortWith` of fewer than two elements; `pop []`; `concat` and `concatMap` when exactly one
+  list is non-empty (that list). The last replaces the cons list's sharing of a tail, which an
+  array cannot do: `append` no longer shares its second list, and `concat` no longer shares its
+  last non-empty list unless it is the only one.
+- **Element identity** always (invariant 6).
+- **A view is the same list as another view of the same backing array at the same offset.** Two
+  matches of `x :: rest` against one list bind two view objects, and `===` tells them apart where
+  the cons list's `rest` was one cell. The markup runtime therefore compares with `same(a, b)` —
+  `a === b`, or both views with the same `b` and `o` — on the miss path of every identity check
+  that can see a list (§15.5). `language.md` §11.12's amendment of 2026-10-01 states the promise
+  this way.
+
+#### What the emitter writes for list syntax
+
+| beni | JavaScript |
+|---|---|
+| `[]` | `[]`, a fresh empty array at each use. Two `[]`s are not promised to be one value, as the cons list's `{$:0}` was not |
+| `[ e1, …, en ]` | the array literal `[e1, …, en]`, the elements evaluated left to right (`language.md` §6, *Evaluation order*). It nests at no length, so `max_cons_elements` and the `reduceRight` form of *Emitted JavaScript nests only as deep as the source* are withdrawn with the cons cell |
+| `e :: t` | `List$cons(e, t)`: `e`, then `t`, then an O(n) copy. **Folded**: `e1 :: … :: ek :: [ l1, … ]` whose innermost tail is a literal is the one literal `[e1, …, ek, l1, …]`, which evaluates in the same order and copies nothing. A `::` that re-conses what a pattern matched is §7's; one that is a step of a tail call modulo cons is §8's |
+| `a ++ b` | `Basics$append(a, b)`, unchanged; the list half above |
+| `case` on a list | §7, *List patterns over arrays* |
+| an `x :: rest` loop | §8, *Scalar views* |
+
+No list carries a `$` tag, so no list test is a tag test and nothing in §4's constructor rows or
+§9.4's padding applies to a list any more.
+
+#### `--release`, the hoisted file and the read/write split
+
+- **The list primitives are `pure` `foreign`s** (`boundary.md` §4's rung), so §9 item 1 treats a
+  call of one as it treats any pure call: an unused `view` or `unsafeGet` binding is dropped in
+  `--release` (the development build does not bind an unread tail in the first place, §7). The
+  builder's `add` is declared `pure` too, which is sound only because of invariant 5's linearity;
+  `List.beni` is the one place that may call it, and every call's result is the builder its loop
+  passes on. A `$root.push(…)` statement that §8 writes is a method call on a local and is never
+  dropped.
+- **`core/List.js` is hoistable** into §9's one file: no `class`, no top-level expression statement,
+  every top-level initialiser inert (literals, arrows, function expressions, objects and arrays of
+  them), each export `export const f = (…) =>` with its parameter list written out (`boundary.md`
+  §4 check 4). `Minify`'s unit test that no file of `core/` is declined covers it.
+- **Readers never name write code** (research 40 §5 and §8's rules). A trie is born only in a writer
+  (`set`, `push`, `pop`, `swap`; `update` is `set`), so the trie's write half — path copies, the
+  build from a plain array, the tail claim, leaf push and pop — is mentioned by writers alone, and a
+  program that imports no writer ships none of it (research 40 measured 452 bytes brotli for a
+  read-only program's adaptive sibling against 901 for one that writes). Whether the trie's **read**
+  half (the descent `unsafeGet` needs and the flatten `$plain` runs) can go too, through the header's
+  own field, is measured in `plans/list-arrays.md`'s last slice; research 40 §5 rule 2 found a hot
+  read through an indirection 15–18 % slower, so it is not assumed.
+- **Research 40 §8's other rules** apply to the file as written: one walk written once, parameters
+  named by role, capitalised top-level names and lower-case locals, every speed-motivated line
+  commented with its reason.
+
+#### What is not done
+
+- **No front buffer** (research 38 §17.2's E2): prepending is O(n), and no measured array-first
+  program prepends.
+- **No O(log n) `slice`, `concat` or `insertAt`** (funkia's RRB tree, research 46 §9): 2.9× the
+  bytes and 1.2–2.5× slower reads everywhere.
+- **No conversion functions in beni.** There is no JavaScript-array type in the language to convert
+  to; a list crosses the boundary through a sibling or a port, under the protocol.
+- **No static in-place writes** (research 42's R0), above.
 
 ### A record literal's keys move; its initialisers do not
 
@@ -660,6 +915,11 @@ identical everywhere. `&&`/`||` of three terms or more prints flat at any length
 | `if`s each in the `then` branch of the one before, 16 or more, either position | the same, nested the other way | the same, flat, each test negated so that the short `else` is inside and the chain follows: `if (x.$ !== "Just") { return 0; }` |
 | evidence for a type nested *n* deep | one closure per level, `(x, y) => List$eq((x, y) => …, x, y)` | a closure 20 levels deep (`evidence_spill`) is bound to a `const` ahead of the call |
 | string interpolation, record literal, `case` of literals | flat already | unchanged |
+
+*Amended 2026-10-01:* the two list-literal rows go with the cons cell (*Lists are arrays*, above).
+An array literal nests at no length, so every list literal is the "flat already" row, and
+`max_cons_elements`, the `reduceRight` step and `run/NestingFlatList`'s claim about cell shapes are
+withdrawn when `plans/list-arrays.md`'s second slice lands; the fixture keeps its output.
 
 **Why none of this moves an evaluation** (`language.md` §6 is normative). A spilled `const` goes
 where a `case` or a `?` in the same position would put its statements — `Lower.expr`'s `out`, the
@@ -1251,7 +1511,7 @@ simplifies them, and the vocabulary is deliberately shared with it:
 | constructor | a constructor of the declaring `type`'s union, in declaration order | `ctorRepOf` (`:1278`): `subj` for `.boolean`, `subj` for `.bare_tag`, `subj.$` for `.tagged` |
 | tuple, `()` | the sole constructor of a one-constructor union — **always matches**, so it never becomes a test; it expands into *n* columns (0 for `()`) | none |
 | record `{ a, b }` | *anything*, with one binding per named field: a record type has no alternatives | none |
-| `[]`, `x :: xs` | the two constructors of the list union on the emitter's `{$:0}`/`{$:1}` shape (§4) | `subj.$ === 0` / `=== 1` |
+| `[]`, `x :: xs` | the two constructors of the list union on the emitter's `{$:0}`/`{$:1}` shape (§4) | `subj.$ === 0` / `=== 1`. *Amended 2026-10-01:* `r.length === k` / `r.length > k` on an array (*List patterns over arrays*, below) |
 | `[ a, b, c ]` | **normalised to `a :: b :: c :: []`** before the matrix is built | the cons tests |
 | `Int`, `Char`, `String` literal | a literal with infinitely many alternatives, so the node always keeps a default edge | `===` against the literal |
 
@@ -1391,6 +1651,88 @@ has nothing to evaluate and is left out. The rule is about the `case`; a `let` p
 nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md` §6) — when its
 right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 item 1's amendment).
 `run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
+
+### List patterns over arrays
+
+*Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`). **The
+matrix does not change.** `js/Decision.zig` still reads `[]` and `::` as the two constructors of the
+list union and still normalises `[ a, b, c ]` to `a :: b :: c :: []`, and the checker's
+exhaustiveness is untouched; a list is still a two-alternative node, so still an `if`. What changes is
+the third column of the table above — what `js/Lower.zig` writes for a list occurrence, a list test
+and a list binding — because there are no cells to walk.
+
+**An occurrence of a list is a root and a depth.** Specialising `::` on a list occurrence makes two
+columns, its head and its tail. The emitter never builds the tail: a list occurrence is written as
+**`(r, k)`** — the list `r` without its first `k` elements — where `r` is the scrutinee, or any
+occurrence that is itself a list reached some other way (a head whose elements are lists, a tuple
+component, a constructor argument), and `k` counts the `::` specialisations between `r` and here.
+The head of `(r, k)` is element `k` of `r`.
+
+| Pattern at `(r, k)` | Test | Binding |
+|---|---|---|
+| `[]` | `r.length === k` | — |
+| `h :: t` | `r.length > k` | `h` is `List$unsafeGet(r, k)`; `t` is the occurrence `(r, k + 1)` |
+| a variable or `as` naming `(r, k)` | — | `r` when `k = 0`, else `List$view(r, k)` |
+
+The two tests are complementary on every path that reaches `(r, k)`: that path has already found
+`(r, k − 1)` to be a `::`, so `r.length ≥ k` there. `r` is bound by `bindSubject` exactly as any
+scrutinee is, and each `.length` read counts as a read of it. `[ x, y ]` is therefore
+`r.length === 2` with `x` and `y` at indexes 0 and 1, `a :: b :: rest` is `r.length > 1` (after the
+`> 0` its first column asked, when the tree asks it) with `rest` the view at 2, and `(x :: xs) :: rest`
+makes the head `List$unsafeGet(r, 0)` a root of its own. `classify` of the measurement table above
+keeps its four questions on its worst path; each is now a length comparison instead of a tag read
+down a chain of cells.
+
+**A tail is bound only on a leaf that reads it**, in both builds. A binding of `(r, k)` for `k ≥ 1`
+allocates a view — O(1), but an object — so a leaf whose body never reads a tail variable does not
+write its binding. `( x :: xt, y :: yt )` in a `merge` that uses one of the two tails per branch
+therefore makes one view per step, not two. (Research 38 §17.2 found the other behaviour turning a
+`merge` that holds a trie side unmatched into O(n²) before the trie cached its plain copy; with the
+cache it is O(1) either way, and this rule removes the allocation at its source.) Any other pattern
+variable is bound at the leaf as before: reading an element allocates nothing.
+
+**Re-consing what a pattern matched is the list it matched.** In a leaf, an expression `h :: t` in
+which `h` is the variable a pattern bound to the head of `(r, k)` and `t` the variable the same
+pattern bound to `(r, k + 1)` denotes `(r, k)` itself — values are immutable, so the list whose head
+is `h` and whose tail is `t` *is* that suffix of `r`. It is written as `(r, k)`'s binding above
+(`r` itself at `k = 0`, so `===` the scrutinee; a view otherwise), not as `List$cons`, and it costs
+O(1) where the copy costs O(n). This is research 38 §16.3's **R5**. It is what keeps the Elm-shaped
+`pairwise` — `(a, b) :: pairwise (b :: rest)` after matching `a :: b :: rest` — linear, and the
+`merge` that re-conses the head it did not take. It is syntactic: both operands are the pattern's
+own variables, unapplied and unwrapped. `x :: rest` where `x` came from a different pattern is an
+ordinary copy.
+
+```js
+// describe xs =
+//     case xs of
+//         [] -> "empty"
+//         [ x ] -> "one ${x}"
+//         x :: y :: rest -> "${x}, ${y} and ${List.length rest} more"
+const Main$describe = (xs$1) => {
+  if (xs$1.length === 0) {
+    return "empty";
+  } else {
+    if (xs$1.length === 1) {
+      const x$2 = List$unsafeGet(xs$1, 0);
+      return `one ${x$2}`;
+    } else {
+      const x$3 = List$unsafeGet(xs$1, 0);
+      const y$4 = List$unsafeGet(xs$1, 1);
+      const rest$5 = List$view(xs$1, 2);
+      return `${x$3}, ${y$4} and ${List$length(rest$5)} more`;
+    }
+  }
+};
+```
+
+(Illustrative: which test a node writes first is the tree's choice, §7's *Choosing a column*, and
+the printer's; the reads are the contract.)
+
+Fixtures, owed by `plans/list-arrays.md`'s second slice: `emit/ListPatterns` (every row of the table,
+`[ x, y ]` against `x :: y :: rest`, a nested list head, an `as` on a sub-list, a leaf that reads no
+tail) and every existing `run/Match*` fixture unchanged in output; R5 in the third slice with
+`run/ListRecons` (`pairwise` and a re-consing `merge` at 100 000 elements, which exceed the test
+budget as O(n²) copies and so are red before it) and `emit/ListRecons`.
 
 ### Sharing a leaf reached from two paths
 
@@ -1990,6 +2332,157 @@ helper carrying the index, where it was `map2` over a `range` of the `length`), 
 destination. Its accumulators are now loop parameters instead of a pair rebuilt per element. `foldr`
 is `reverse` then `foldl` by contract, `range` and `repeat` build back to front already, and the
 `Dict` folds walk trees.
+
+### Tail calls modulo cons, onto an array
+
+*Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`'s second
+slice). **The rewrite stays**, with a new destination. It is not made obsolete by arrays: without
+it, `f x :: go rest` on an array is a copy of the rest per step *and* a stack frame per element —
+O(n²) and an overflow at 100 000, the worst of both representations (research 38 §16.8, candidate
+B) — while with it research 46 §0 measured the Elm-shaped `map` and `filter` by hand at 1.4–2.4×
+the best candidate on E1t. A stack overflow is a runtime exception the language promises not to
+have, so this is still §8's *mandatory*.
+
+What a **cons step** is, what **reaches** means, which functions build, the evaluation order, the
+evidence parameters, closures, `?`, mutual recursion and *Other constructors* are all unchanged.
+Only the destination changes:
+
+- **The destination is one fresh array**, `const $root = [];`, allocated before the loop — a builder
+  in §4's sense (invariant 5). `$last` is gone.
+- **A cons step pushes its heads**, in order, `$root.push(h)`, each head evaluated in its own
+  statement exactly where it was evaluated before, then jumps as §8's tail call does.
+- **An exit writes its value after what was pushed**: `return $root;` when the value is the literal
+  `[]`, and otherwise `return Basics$append($root, v);` — which is `v` itself when nothing was
+  pushed (the recursion's own answer when it took no step) and a fresh plain concatenation
+  otherwise. An exit's value is evaluated where it was before, after every head pushed.
+
+```js
+const Main$mapRec = ($in$0, f$2) => {
+  const $root = [];
+  Main$mapRec: while (true) {
+    const xs$1 = $in$0;
+    if (xs$1.length === 0) {
+      return $root;
+    } else {
+      const x$3 = List$unsafeGet(xs$1, 0);
+      const rest$4 = List$view(xs$1, 1);
+      $root.push(f$2(x$3));
+      $in$0 = rest$4;
+      continue Main$mapRec;
+    }
+  }
+};
+```
+
+(*Scalar views*, below, removes `rest$4` and the view from this loop.)
+
+**Cost.** One `push` per head — the builder's amortised O(1) — so a building function is O(n + |v|)
+over the exit's value `v`, where the cons version shared `v` as its tail in O(1). So `append`'s shape
+(`x :: go rest ys`, exiting with `ys`) copies `ys`, which `++` does anyway, and a `merge` copies
+the side it returns at the end once. Nothing becomes quadratic.
+
+**Why the mutation is sound** is the cons version's argument unchanged: `$root` is fresh, reachable
+only from a local of this call until the `return` hands it over, never written after (§4's
+invariants 1 and 5). A head that throws leaves garbage nobody held. §9 item 1 never drops
+`$root.push(…)`, a method call on a local.
+
+**In a suspendable body** the fast path stays in the loop as before, and the slow path's
+continuation is `($built) => Basics$append($root, $built)`: the function re-entered with its slots
+builds the rest of the list in a destination of its own, and the continuation appends it to what
+this one pushed — the copy of the rest that `$last.b = $built` avoided, once per park, which is O(n)
+per park where the cons version linked in O(1). One-shot resumption is still what makes capturing
+`$root` sound (`transparent-effects-proposal.md` §16.3's amendment of 2026-10-01).
+
+**Fixtures.** Every `TailModCons*` fixture, `ListDirect*`, `SuspendListBuildDeep` and
+`run/ListIdentity` keep their outputs except `ListIdentity`'s lines for `append`'s and `concat`'s
+shared tails, which §4's *Identity* withdraws (`plans/list-arrays.md` records the lines);
+`emit/TailModConsLoop`, `emit/release/TailModConsLoop` and `emit/SuspendShapes` are re-recorded to
+the shape above.
+
+### Scalar views
+
+*Added 2026-10-01; specified, not built* (`plans/list-arrays.md`'s third slice). This is the rule
+the owner's decision names: **an `x :: rest` walk becomes an index loop.** It is research 38 §16.3's
+**R3**. Without it each step of a walk allocates a view where a cons list's cells already existed,
+3.8–7.9× the cons list on a bare `sum` (research 38 §17.4, research 46 §0's "bare `x :: rest` walk
+≈ 10×"); with it the walk is the proven-plain `a[i]` loop research 38 §9 measured at 0.3–0.5× the
+cons list, and research 38 §15.11 measured at up to 2.2× faster than a loop over `unsafeGet`.
+
+**When it applies.** To one parameter slot *i* of a function that §8 lowers to a loop, when all of
+these hold — each a syntactic test over `Bir`, like every other test in §8:
+
+1. The slot is **carried** (§8's *The emitted shape*): some tail self-call passes something other
+   than the parameter itself.
+2. **Every tail self-call's argument *i*** — cons steps included — is one of: the parameter itself;
+   a variable a list pattern bound to a tail `(p, k)`, `k ≥ 1`, of the parameter `p` (the `rest` of
+   `x :: rest`, of `a :: b :: rest`, or an `as` naming a sub-list); or an expression §7's
+   re-consing rule turns into such a tail. Each of them is a **suffix of the parameter's value on
+   entry to the call**.
+3. The parameter is the scrutinee of at least one `case` with a list pattern — which, with 2, is how
+   a backend that reads no types knows the slot holds a list.
+
+**What it emits.** The slot becomes an **offset** into a **base** array fixed for the whole call:
+
+- Before the loop, `const $s$<i> = List$base($in$<i>);` and `$in$<i> = List$offset($in$<i>);`. The
+  slot `$in$<i>` now carries an integer, and the loop's prologue `const` binds the parameter's
+  ordinary name to it, as §8 binds every carried slot — so §8's no-temporaries invariant holds
+  unchanged: an argument written against the ordinary names reads this iteration's offset.
+- A list occurrence `(p, k)` of §7 becomes `(o + k)` over `$s$<i>`, `o` the offset: the test
+  `[]` is `o + k === $s$<i>.length`, `::` is `o + k < $s$<i>.length`, and the head of `(p, k)` is
+  `$s$<i>[o + k]` — a bare index, sound because the base is a plain array by `base`'s contract and,
+  being published, never changes (§4, invariant 1). This is the one place emitted code indexes an
+  array directly.
+- A tail self-call's argument *i* is the integer `o + k` (the parameter itself is `o`).
+- **Any other read** of the parameter, or of a tail variable of it — an argument to another function,
+  a returned value, a closure's capture, a field of a record, an argument to a non-tail self-call, a
+  re-entry of a suspendable loop (`transparent-effects-proposal.md` §16.3) — **materialises** it
+  there, in O(1): `List$view($s$<i>, o + k)`, except that at the offset the call entered with it is
+  the entry value itself (`$v$<i>`, bound before the loop only when some read materialises), so a
+  walk that took no step returns the very list it was given (§4, *Identity*). The rule is therefore
+  never all or nothing: a loop that returns `rest` at its exit, as `drop` does, keeps the index loop
+  and allocates one view at the exit.
+
+```js
+// sum xs acc = case xs of
+//     [] -> acc
+//     x :: rest -> sum rest (acc + x)
+const Main$sum = ($in$0, $in$1) => {
+  const $s$0 = List$base($in$0);
+  $in$0 = List$offset($in$0);
+  Main$sum: while (true) {
+    const xs$1 = $in$0;
+    const acc$2 = $in$1;
+    if (xs$1 === $s$0.length) {
+      return acc$2;
+    } else {
+      const x$3 = $s$0[xs$1];
+      $in$0 = xs$1 + 1;
+      $in$1 = Basics$add(acc$2, x$3);
+      continue Main$sum;
+    }
+  }
+};
+```
+
+**Why it is sound.** Every value the slot takes is, by condition 2, a suffix of the value it had on
+entry, and that value's elements are `base[offset …]` by `base`'s and `offset`'s contract. A suffix
+of it is therefore `base[o …]` for the `o` the slot now holds, and the loop reads only indexes it has
+just tested to be below `base.length`. `base` of a trie is its cached plain copy (invariant 1's
+cache), computed once per call — O(n), which the walk pays anyway. Materialising yields a list equal
+to the one the recursive version held, and `===` to it wherever the recursive version held the
+entry value.
+
+**It composes.** A building function's slot is scalarised as any other (`map` above then has no
+view at all); a `merge` with two list parameters has two bases and two offsets; §7's re-consing
+rule applies first, so `pairwise`'s `(a, b) :: pairwise (b :: rest)` passes `o + 1`. A slot whose
+arguments come from elsewhere — `go (List.filter f xs)` — is not scalarised, and its walk
+allocates one view per step, O(1) each, as §7 says.
+
+**Fixtures** (third slice): `emit/ListScalarView` and `emit/release/ListScalarView` (the shape: a
+walk, a building walk, two slots, a slot taking the parameter itself, a materialised exit, a
+closure capture); `run/ListScalarView` (every materialisation point, the entry-value identity
+through `refEq`, a trie and a view as the input, `Debug.log` order unchanged); the corpus's
+`run/` outputs unchanged.
 
 ### Fixtures
 
@@ -4027,6 +4520,45 @@ render's), builds the body's block as a row's and calls `show(slot, key, block)`
 remounts when the key is not `===` the slot's last key or the slot showed the fallback, and otherwise
 patches as `childHtml`. A body is always a block in interface version 1.0 — a `Show` is not a list,
 so the one allocation per render is not worth a pair.
+
+#### `For` over arrays
+
+*Added 2026-10-01; specified, not built* (§4, *Lists are arrays*). Every loop of the markup
+runtimes over a list — `forKeyed`, `forPosition`, `trimmed`, `childList`, `classes`' and `styles`'
+walks in `platforms/browser/runtime.js`, and `platforms/node/markup.js`'s — reads it through §4's
+protocol and nothing else, which is what `boundary.md` §9.4.3 means by a loop being the runtime's.
+The lowering interface, the row kinds, the keying modes, the selector and every amendment above are
+unchanged; only how a runtime walks the items changes.
+
+- **The plain form is walked in place.** `const a = Array.isArray(items) ? items : items.$plain();`
+  then an index loop over `a`: no cons cells to follow, and `trimmed`'s copy of the rest of the
+  items into `xs` is gone — the rest is `a` from the matched start, its length known without a walk.
+  An empty list is `a.length === 0`, the `fallback` test.
+- **A trie is walked by its cached plain copy** in the second slice of `plans/list-arrays.md`: O(n)
+  once per trie header, O(1) for every later render of the same version (§4, invariant 1's cache).
+  Research 38 §15.9 measured the copy at 13 µs for 10 000 elements against an 82 µs render walk.
+  The fourth slice measures a walk over the trie's **leaves** — its 32-element arrays and its tail,
+  in order, with no copy — against it on research 29's harness, and adopts whichever is faster; if
+  that is the leaf walk, it is a fourth protocol point that `core/List.js` alone implements
+  (`xs.$chunks()`), and the runtime keeps the index loop for plain lists.
+- **A view is walked over its backing array** from its offset.
+- **The key map, keyed reconciliation, rank chains, the ends-first match, the replacement that
+  empties the parent, mounting through the patch and the selector are unchanged**: they operate on
+  items and keys, never on the list's representation.
+- **Identity.** A render is skipped when `items === s.b` and the inputs are the same (above). A
+  pattern's tail is a new view object each time the pattern matches (§4, *Identity*), so the
+  runtime compares with **`same(a, b)`** — `a === b`, or both views over the same backing array at
+  the same offset — wherever it compares an item, an input or a list that may be a list; `same` runs
+  only when `===` has already failed, so an unchanged value costs what it costs today. `refEq` in
+  the test platform (§15.8) stays `===`, because it tests the promise and not the runtime.
+- **Class and style lists** (`language.md` §11.19) that the lowering writes as literals are array
+  literals now (`src/js/Lower.zig`'s entries list, built today with `consNode`).
+
+Fixtures (second and fourth slices): `browser/dom/ForForms` (one keyed and one positional `For`
+over a list that is plain, then a trie after a `push` past 32, then a view from a pattern; a swap, a
+remove and a selection on the trie), `browser/dom/ForViewIdentity` (`<For each={rest}>` of a
+`first :: rest` match re-rendered after an unrelated model edit, whose rows log once, not twice —
+red without `same`), `browser/dom/ClassListForms`; and the existing `browser/` goldens unchanged.
 
 ### 15.6 The `ssr` lowering
 

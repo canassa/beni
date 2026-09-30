@@ -41,6 +41,11 @@ and a keyed `Show`, typed against an element vocabulary a platform package decla
 knows no HTML vocabulary, only the character references JSX text decodes (§11). With it comes the
 promise that a record update keeps the identity of every field it does not name (§11.12).
 
+**One array-backed sequence type.** Decided by the owner on 2026-10-01, specified here the same
+day, not built: `List` is array-backed and is beni's only sequence type. The syntax is Elm's; an
+`x :: rest` pattern is an O(1) view, `x :: xs` as an expression copies, and a list grows at its end
+with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the representation.
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
@@ -67,6 +72,7 @@ promise that a record update keeps the identity of every field it does not name 
 | `f >> g`, `f << g` composition | removed; name the argument | §6.5 |
 | `andThen` pyramids in a `let` | `let x <- f a` binds the rest of the block | §3, §6.7 |
 | `div [ class "a" ] [ text name ]` | `<div class="a">{name}</div>`, typed against a platform's vocabulary; an untouched record field keeps its identity | §11 |
+| `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*) | §6.8 |
 
 Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
 `if … then … else`, records, record update, lists, tuples, type aliases, custom types, `as`
@@ -856,6 +862,98 @@ memoised, *even when its result is unused*. *(This paragraph said "when effects 
 bullet above stops applying to it" until 2026-09-30, when the first bullet was amended to say so
 itself.)*
 
+### 6.8 Lists
+
+*Added 2026-10-01; specified, not built.* **`List` is beni's one sequence type, and it is
+array-backed** — the owner's decision of 2026-10-01 (`plans/browser-decisions.md` W35, amended),
+after research 38 §15–§17 and research 46. There is no `Array` and no cons list. The syntax is
+Elm's and stays; what changes is what each piece costs, and the API, which gains indexed reads and
+writes. The representation, its invariants and the runtime are [`backend.md`](backend.md) §4,
+*Lists are arrays*; the migration and its slices are
+[`plans/list-arrays.md`](../../plans/list-arrays.md). Until that plan's second slice lands, lists
+are cons cells and the costs below that differ from Elm's do not hold yet.
+
+**The syntax, and what each form costs.**
+
+| Written | Means | Cost |
+|---|---|---|
+| `[]`, `[ a, b, c ]` | a list of those elements, evaluated left to right | O(length) |
+| `case xs of [] -> …` | `xs` is empty | O(1) |
+| `x :: rest ->`, `a :: b :: rest ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies |
+| `[ x, y ] ->` | `xs` has exactly two elements | O(1) |
+| `x :: xs` as an expression | a **new list**: `x`, then every element of `xs` | **O(length of `xs`)** — a copy |
+| `xs ++ ys` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | O(length of both) |
+
+**`x :: xs` stays legal, and it copies.** It is the right thing to write once — a TEA `update` that
+puts a new row first pays one copy per message, which the render walk dwarfs. It is the wrong thing
+to write in a loop: prepending onto an accumulator is O(n) per step and O(n²) in all, where the cons
+list was O(1). **A list grows at its end**: `List.push acc x`, amortised O(1), keeps the order the
+elements arrived in, so the `List.reverse` that Elm code writes after a prepending loop is not
+needed. Three places where `::` does not copy, because the compiler sees what it means:
+
+- **A function's result `f x :: go rest`**, where `go` is the function itself, is compiled to a loop
+  that builds the result front to back, O(1) per element and no stack (`backend.md` §8, *Tail calls
+  modulo cons, onto an array*). Elm-shaped `map`, `filter` and `takeWhile` written by hand stay
+  linear and stack-safe.
+- **Re-consing what a pattern matched**, `h :: t` right after matching `h :: t`, is the list that
+  was matched (`backend.md` §7, *List patterns over arrays*).
+- **`e :: [ … ]`**, onto a literal, is one literal.
+
+*Proposed, the owner's decision (`plans/list-arrays.md` §1, O1):* **the warning
+`prepend_in_loop`**, on by default for the root package only, as `ambiguous_method_receiver` is. It
+fires on a `::` expression, or an `acc ++ [ e ]`, that none of the three rules above rewrites and
+whose result becomes an argument of a tail self-call of the enclosing function, or the result of a
+lambda passed directly to a fold whose accumulator parameter is its right operand — the two
+spellings of an accumulator built by prepending. It says the list is copied at every step and
+names `List.push`. It is a warning and not an error because no guarantee is at stake: the program
+is correct, only slow (CLAUDE.md rule 7).
+
+**`core/List`.** Elm's `List` module, subject first and uncurried as all of `core/` is, plus
+the indexed operations Elm keeps in `Array`, plus `pop`, `insertAt`, `removeAt` and `swap`, which a
+UI needs and Elm makes its users write badly (research 38 §12.3). `n` is the length of the list
+argument, `k` the length of the result. **"Near O(1)"** is O(log₃₂ n) — at most four steps below a
+million elements — and is what an indexed read costs on a list that has been written to with
+`set`, `push`, `pop` or `swap` above their thresholds; on any other list it is O(1).
+
+| Function | Cost | What is guaranteed beyond Elm's meaning |
+|---|---|---|
+| `singleton`, `repeat`, `range` | O(k) | |
+| `initialize : Int, (Int -> a) -> List a` | O(k) | *new*; the callback in index order |
+| `length`, `isEmpty` | **O(1)** | `length` was O(n) |
+| `head`, `last`, `get : List a, Int -> Maybe a` | near O(1) | `last` and `get` *new*; `get` is `Nothing` out of range |
+| `tail`, `drop` | O(1) | a view of the list, sharing its elements (it keeps the whole list alive, as a substring may) |
+| `take`, `slice : List a, Int, Int -> List a` | O(k) | `slice` *new*, Elm's `Array.slice`: a negative index counts from the end; the list itself when the result is all of it |
+| `set : List a, Int, a -> List a`, `update : List a, Int, (a -> a) -> List a` | a copy up to 256 elements; above, near O(1) after one O(n) conversion per list | *new*; out of range, the list unchanged |
+| `push : List a, a -> List a` | a copy below 32 elements; above, amortised O(1) after one O(n) conversion per list | *new*; the end is where a list grows. Pushing twice onto one version (after an undo) copies at most 31 elements, never the list |
+| `pop : List a -> List a` | as `set` | *new*; the last element removed; `[]` unchanged |
+| `swap : List a, Int, Int -> List a` | two `set`s | *new*; out of range, unchanged |
+| `insertAt : List a, Int, a -> List a`, `removeAt : List a, Int -> List a` | O(n) | *new*; `insertAt` at `length` appends; out of range, unchanged |
+| `cons` (`::`), `append` (`++`), `concat`, `concatMap`, `intersperse` | O(total) | |
+| `map`, `indexedMap`, `filter`, `filterMap`, `map2`–`map5`, `partition`, `unzip` | O(n) | the result is fresh and reads at O(1) |
+| `foldl`, `foldr`, `any`, `all`, `member`, `sum`, `product`, `maximum`, `minimum` | O(n) | `foldr` walks backwards and allocates nothing (it was `reverse` then `foldl`) |
+| `reverse` | O(n) | |
+| `sort`, `sortBy`, `sortWith` | O(n log n) | stable; the comparator's calls as today's merge sort |
+| `==`, `compare` (`eq`, `compare`) | O(n) | element by element, as today |
+
+Every function walks a list of any length without growing the stack, and `sortWith` recurses to a
+depth of log₂ n. The costs are written into each function's doc comment in `core/List.beni`, and
+`checker.md` Appendix B's inventory lists the signatures.
+
+**What an operation returns unchanged.** A function whose result would equal its input returns the
+input itself wherever `backend.md` §4, *Identity*, says so — `set` of the value already there, `swap
+xs i i`, anything out of range, a `slice` or `take` of everything, `drop xs 0`, `filter` that keeps
+everything, `map` whose every result is the element it was given, and `xs ++ []` among them — so a
+view that shows the list skips it (§11.12). *The `map` rule costs one comparison per element and is
+proposed as a guarantee (`plans/list-arrays.md` §1, O4).*
+
+**Callbacks.** Every function that takes a callback calls it on the first element first, except
+`foldr`, which calls it on the last first (`checker.md` Appendix B), and each is written in beni over
+a first-order `foreign` sibling, so **a callback may suspend** (`transparent-effects-proposal.md`
+§16): the loop parks with it and resumes where it stopped. The `foreign` half is `cons`, `length`,
+the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and `eq` and `compare`, whose
+`where` evidence is called from JavaScript and is `sync` (`boundary.md` §4); nothing that takes a
+function is `foreign`.
+
 ## 7. Scoping and shadowing
 
 | Rule | Detail |
@@ -1463,7 +1561,8 @@ not done (research 36 question 7, accepted: identity first, measured before anyt
 ```
 
 `For` is Solid 2's list form (W33; research 27 §7.1, research 36 §4.4). **Its attributes** are
-`each`, the list — `List a`, and `Array a` once `core/` has one (W35) — which is required; `keyed`,
+`each`, the list — `List a`, and `Array a` once `core/` has one (W35; *amended 2026-10-01: there
+will be no `Array`, `List` being array-backed, §6.8, so `each` is a `List a`*) — which is required; `keyed`,
 the keying mode; and `fallback`, an optional `Html msg` shown when the list is empty. An attribute
 `For` does not take is `unknown_form_attribute`, with "did you mean" over the three (`key=` is
 answered with `keyed=`), and a missing `each` is `missing_form_attribute`. Its only child is one hole
@@ -1606,6 +1705,17 @@ add allocations. `lazy` is not added: the per-hole reference check is the memois
 
 beni has no reference equality a program can call, so the promise is observable only through what a
 platform does with it; it is pinned by fixtures in both builds (`backend.md` §15.8).
+
+**A list tail, once lists are arrays** (*amended 2026-10-01*, §6.8; specified, not built). "A list
+tail" above meant a cons cell, which a pattern read and did not make. On an array a pattern's tail
+is a **view** the match makes, so two matches of `x :: rest` against one list give two view objects
+that are equal element for element and not `===`. The promise for them is this: **a view is the
+same value as another view of the same list at the same position**, and every platform identity
+check treats them as one (`backend.md` §4, *Identity*, and §15.5's `same`). Everything else above
+holds unchanged for a list — a list that is not rebuilt is the same object, an untouched field
+holding one keeps it, and the operations `backend.md` §4 lists return their input itself when their
+result would equal it. *This narrows W27's wording for one case and is the owner's to confirm
+(`plans/list-arrays.md` §1, O3).*
 
 **A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
 nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an

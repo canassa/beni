@@ -626,6 +626,35 @@ A shared cold helper may construct a known Issue, but must not interpret a
 description or rerun user conversions. The callback's own Result failure is
 ordinary data, not an exception or a new interpreter fallback.
 
+### Lists are arrays
+
+*Added 2026-10-01; specified, not built* (`backend.md` §4, *Lists are arrays*;
+`boundary.md` §4, *How a sibling sees a `List`*). The table's "input
+positions/cons cells as appropriate" becomes input positions only: a `List` is
+array-backed, and the engine and the specialised workers are hand-written or
+emitted JavaScript that reads and makes lists under the sibling protocol.
+
+- **Decoding (parse, read).** The input is a JavaScript array tested with
+  `Array.isArray` and walked by index; the index is the path segment
+  (`Index i`, zero-based) and depth is counted as for any child. The output
+  list is **a fresh plain array** the worker builds in input order with
+  `push` and hands over when the list succeeds — a builder in `backend.md`
+  §4's sense, never written after. A worker **may adopt the input array
+  itself** as the output only when both hold: every element's validation
+  returns its input unchanged (a `List Int`, a `List String`, a list of a
+  schema with no conversion), and the array was created by the same
+  operation (`parse` calling `JSON.parse` on its own string). An array the
+  caller handed in as a host value is never adopted, because the host may
+  still write it.
+- **Encoding (print, write).** A list is read through the protocol —
+  `Array.isArray(xs) ? xs : xs.$plain()` — and walked by index. When the
+  encoded elements are the elements themselves, the plain array may be given
+  to `JSON.stringify` as it is; otherwise the worker builds the external
+  array.
+- **Failure paths** allocate as before; a failed list allocates no output.
+- Nothing here depends on which of the three forms a list is in, and a
+  decoded list is plain, so reading it back is O(1) per element.
+
 For example, **emission pseudocode**, not a new host API or fixed Result ABI:
 
 ```text

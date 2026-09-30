@@ -1556,7 +1556,9 @@ that the wrong order costs a 30,000-line refactor (01 §7).
    cover only the direct case. See §9.3.
 2. **List representation** — cons cells vs. persistent vector trie (§9.4). Benchmark against real
    idiomatic code; the answer is workload-dependent and PureScript's experience shows intuition is
-   unreliable here.
+   unreliable here. *Decided 2026-10-01 by the owner, after research 38 and 46 measured both on
+   beni's own output:* one array-backed `List` — a plain array until written, a 32-way trie with a
+   claimable tail after — and no cons list (`backend.md` §4, *Lists are arrays*; `language.md` §6.8).
 3. **How fine is too fine for Layer 2?** Zig found `AnalUnit` granularity needed a major refactor to
    avoid over-analysis when a type doubles as a namespace (01 §7). Start at the four kinds in §8.2
    and resist adding more without a measurement that demands it.

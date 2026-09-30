@@ -1715,6 +1715,16 @@ const Main$fetchSum = (a$1, b$2) =>
   re-enters the function, which builds the rest of the list in a destination of its own, and the
   continuation links that list into `$last` and returns `$root.b` (`backend.md` §8, *What it owes
   the fiber lowering*). No second entry to the loop is needed.
+  *Amended 2026-10-01, specified, not built (`backend.md` §4, *Lists are arrays*):* once lists are
+  arrays the destination is one builder array, `$root`, and the continuation is
+  `($built) => Basics$append($root, $built)` — one copy of the rest per park where linking was
+  O(1) (`backend.md` §8, *Tail calls modulo cons, onto an array*). A loop whose list slot is a
+  scalar view (`backend.md` §8, *Scalar views*) re-enters with the slot **materialised**: the
+  continuation's `F(…)` passes `List$view($s$<i>, o)`, a list, because the re-entered call computes
+  its own base and offset. And `core/List`'s higher-order functions, now loops over indexes that
+  thread a core-private builder, suspend exactly as any §8 loop does: the builder is one of the
+  slots, and one-shot resumption (§16.1) is what makes sharing it with the continuation sound — a
+  multi-shot continuation would have to copy it, as Koka copies a context.
 - **A `let` function** a continuation's statements declare is hoisted in front of the suspension
   point when something before the point calls it, so `language.md` §7's "a function may be read
   anywhere" still holds.

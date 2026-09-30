@@ -250,6 +250,52 @@ sibling already is: top-level `import`s, declarations, functions and `export` li
 its `;` or its brace. A file it cannot read exactly is written whole, never refused, so no sibling
 that passes these checks fails a release build.
 
+#### How a sibling sees a `List`
+
+*Added 2026-10-01; specified, not built* (`backend.md` §4, *Lists are arrays*; `plans/list-arrays.md`).
+Until now a sibling that took or returned a `List` walked or built cons cells, `{ $: 1, a, b }` and
+`{ $: 0, a: null, b: null }`, by a contract written in `core/List.js`, `core/String.js`,
+`core/Basics.js` and `backend.md` §4. With lists array-backed that contract is replaced by this one,
+and it is the whole of what a sibling — or a platform runtime, a markup runtime, the
+derived-comparison engine — may assume.
+
+**What a sibling receives.** A `List` argument may be in any of the three forms of `backend.md` §4,
+and a sibling reads it through the protocol there and nothing else: `xs.length`; `Array.isArray(xs)`
+for the plain form; `xs.$plain()` for the others, a plain array it must not write. The idiom is
+`const a = Array.isArray(xs) ? xs : xs.$plain();`. A sibling never writes a list it was given, never
+keeps one it will later write, and never names a view's or a trie's fields: those belong to
+`core/List.js`, and a platform that reached into them would break the next time the representation
+is tuned.
+
+**What a sibling returns.** A `List` result is either **a fresh plain array that nothing else holds
+and that the sibling never touches again** — `s.split(sep)`, `Array.from(s)`, an array it built — or
+**a `List` it was given**, unchanged. An array the *host* owns is never returned as it is: a DOM
+collection, an array an event carries, a buffer a callback will reuse, or any array another piece of
+JavaScript may still write is copied first (`Array.from(x)`, `x.slice()`), because a list is
+immutable and the host's array is not (`backend.md` §4, invariant 1). A sibling returns no view and
+no trie; only `core/List.js` makes those.
+
+**Why a protocol and not a helper.** A sibling may not import another file (`backend.md` §2), so it
+cannot call `core/List.js`; and the backend reads no types, so it cannot convert a list at a
+`foreign` call site. Three facts every form answers — its length, whether it is an array, and a
+method that flattens it — cost a sibling one line and leave every other detail private to one file.
+
+**The checks.** Check 1 is unchanged: `foreign xs : List a` is still refused. Checks 2, 3 and 4 are
+unchanged and apply to `core/List.js` like any sibling; its core-private exports (`unsafeGet`,
+`view`, `base`, `offset`, `builder`, `add`, `done`) are ordinary `foreign` declarations of
+`List.beni` without `pub`, so check 2 counts them. What the protocol adds to §4.1's recipe is its
+third rule, *marshal to plain data*, made specific: a list crosses as a plain array.
+
+**The first-party files this touches**, all in `plans/list-arrays.md`'s second slice: `core/Basics.js`
+(`append`'s list half, and the representation comment), `core/String.js` (`words`, `lines`, `split`,
+`indexes` and `toList` return the array they make; `fromList` reads through the idiom), `core/Debug.js`
+(`toString` recognises a list by `Array.isArray(v) || typeof v.$plain === "function"`),
+`src/js/derived_runtime.mjs` (`listEq`, `listCompare` and their steps index a plain array),
+`platforms/node/Node.js`, `platforms/browser/Browser.js`, `tests/platforms/page/Page.js`,
+`platforms/browser/runtime.js` and `platforms/node/markup.js` (`backend.md` §15.5, *`For` over
+arrays*). A **port**'s generated codec (§3.1) follows the same two rules: a list going out is read
+through the protocol, and one coming in is a fresh array the codec built.
+
 ### 4.1 The recipe for privileged code, written down and tested
 
 The guarantee lives or dies in privileged code, and Elm's own has holes: a core package declares a
@@ -1126,7 +1172,9 @@ because `Opt`'s rewrites and `Print`'s precedence table would both have to learn
 the same work (`backend.md` §15.3). **A loop is the runtime's**: iterating a list — a `For`, a
 `List (Html msg)` hole, a class list that is not a literal — is a runtime export's job, because the
 runtime is where the cons-list representation is read (`backend.md` §15.6), and it keeps a lowering
-from needing the representation.
+from needing the representation. *(Amended 2026-10-01: once lists are arrays the runtime reads them
+through §4's protocol, *How a sibling sees a `List`*, and `backend.md` §15.5's *`For` over arrays*;
+the reason a loop is the runtime's is unchanged.)*
 
 #### 9.4.4 What a lowering may not do
 
