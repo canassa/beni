@@ -66,12 +66,21 @@ pub const none: u32 = std.math.maxInt(u32);
 pub const Module = struct {
     ir: *JsIr,
     global: []const u32,
+    /// Per name: its whole-program property-name id when it is a plain name
+    /// (a key or a member's name may be one), or `none`.
+    prop: []const u32 = &.{},
 };
 
 pub const Input = struct {
     modules: []const Module,
     /// How many whole-program ids `Module.global` uses.
     globals: u32,
+    /// How many property-name ids `Module.prop` uses.
+    props: u32 = 0,
+    /// The property-name ids of the names `Object.prototype` has
+    /// (`toString`, `constructor`, …): an object literal without one does
+    /// not read as `undefined` there.
+    builtin_props: []const u32 = &.{},
     /// Whole-program names some file the pass cannot see reads or calls:
     /// the entry file's `main`, `run`, `start` and `flush`, and what the
     /// markup runtime imports from the runtime module.
@@ -91,6 +100,8 @@ const max_depth = 200;
 
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     var s: Spec = try .init(gpa, arena, in);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
     var round: u32 = 0;
     while (round < max_rounds) : (round += 1) {
         if (!try s.analyse()) break;
@@ -167,6 +178,9 @@ const Decl = struct {
 const Mod = struct {
     ir: *JsIr,
     global: []const u32,
+    /// `Module.prop`, and where this module is in `Spec.mods`.
+    prop: []const u32,
+    index: u32,
     extra: std.ArrayList(u32),
     string_bytes: std.ArrayList(u8),
     /// Per node: the value the evaluating walk computed.
@@ -244,6 +258,9 @@ const Spec = struct {
     /// The declaration the walk is in, and the counter its stamps use.
     current: u32 = 0,
     top_func: ?Decl = null,
+    /// The top-level statement being walked, which keys `Pts`'s locals.
+    cur_top: Index = undefined,
+    pts: Pts = undefined,
     changed: bool = false,
     /// Whether this sweep counts the reads of whole-program names: the
     /// first of a round only, so that `reads` is a count and not a
@@ -254,11 +271,13 @@ const Spec = struct {
 
     fn init(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Spec {
         const mods = try arena.alloc(Mod, in.modules.len);
-        for (mods, in.modules) |*m, src| {
+        for (mods, in.modules, 0..) |*m, src, mi| {
             const ir = src.ir;
             m.* = .{
                 .ir = ir,
                 .global = src.global,
+                .prop = src.prop,
+                .index = @intCast(mi),
                 .extra = .{ .items = @constCast(ir.extra), .capacity = ir.extra.len },
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len },
                 .memo = try arena.alloc(Lat, ir.nodes.len),
@@ -385,6 +404,8 @@ const Spec = struct {
                 s.decl[g] = decl;
             }
         }
+        // Fact 3 first: a read it proves `undefined` folds like a literal.
+        try s.pts.analyse();
         var sweep: u32 = 0;
         while (sweep < max_sweeps) : (sweep += 1) {
             s.changed = false;
@@ -406,6 +427,7 @@ const Spec = struct {
         const ir = m.ir;
         s.current += 1;
         s.top_func = null;
+        s.cur_top = stmt;
         // The declaration's own function, whose parameters are tracked.
         switch (ir.tag(stmt)) {
             .const_decl, .func_decl => if (m.globalOf(@enumFromInt(ir.data(stmt).lhs))) |g| {
@@ -629,6 +651,11 @@ const Spec = struct {
                         try s.evalFunc(m, mi, @enumFromInt(ir.data(f.node).lhs));
                         continue;
                     },
+                    // A leaf has no operands to wait for.
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                        m.memo[f.node.int()] = try s.combine(m, f.node);
+                        continue;
+                    },
                     else => {},
                 }
                 try s.stack.append(s.arena, .{ .node = f.node, .post = true });
@@ -669,6 +696,14 @@ const Spec = struct {
             .call => blk: {
                 try s.callSite(m, node);
                 break :blk .top;
+            },
+            // Fact 3: a property no object this may be ever holds is
+            // `undefined`. Only of a name or properties of one, whose
+            // evaluation does nothing the fold could lose.
+            .member => blk: {
+                const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(d.lhs)) orelse break :blk .top;
+                if (!s.pts.neverWritten(obj, s.pts.propId(m.index, @enumFromInt(d.rhs)))) break :blk .top;
+                break :blk .of(try s.intern(.{ .kind = .undefined_lit }));
             },
             else => .top,
         };
@@ -1150,11 +1185,28 @@ const Spec = struct {
                     for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
                     continue;
                 },
+                // Fact 3: a key no reachable read reaches goes from its
+                // literal, when its value does nothing.
+                .object => _ = try s.dropKeys(m, node),
                 else => {},
             }
+            // What this reports is whether the program SHRANK in a way the
+            // next round's facts can see: a branch or a read gone. A name or
+            // an operator written as its value takes no call site, no
+            // assignment and no read with it (`prune` sees the name's
+            // reference go).
+            const was = ir.tag(node);
+            const shrinks = switch (was) {
+                .member, .cond => true,
+                .binary => switch (@as(JsIr.BinaryOp, @enumFromInt(ir.data(node).rhs))) {
+                    .logical_and, .logical_or => true,
+                    else => false,
+                },
+                else => false,
+            };
             const v = m.memo[node.int()];
             if (v.state == .lit and try s.patchLiteral(m, node, v)) {
-                any = true;
+                if (shrinks) any = true;
                 continue;
             }
             // A conditional or a logical operator whose left side decides.
@@ -1290,13 +1342,22 @@ const Spec = struct {
         // Then this one.
         var changed = false;
         for (items) |raw| {
-            if (s.decided(m, @enumFromInt(raw)) != null) changed = true;
+            if (s.decided(m, @enumFromInt(raw)) != null or try s.deadWrite(m, @enumFromInt(raw))) changed = true;
         }
         if (!changed) return any;
         var out: std.ArrayList(u32) = .empty;
         defer out.deinit(s.arena);
         for (items) |raw| {
             const stmt: Index = @enumFromInt(raw);
+            // Fact 3: a write of a property no reachable read reaches is not
+            // written; its value is still evaluated when it may do something.
+            if (try s.deadWrite(m, stmt)) {
+                const value: Index = @enumFromInt(m.ir.data(stmt).rhs);
+                if (inert(m.ir, value)) continue;
+                m.setNode(stmt, .expr_stmt, value.int(), 0);
+                try out.append(s.arena, raw);
+                continue;
+            }
             const arm = s.decided(m, stmt) orelse {
                 try out.append(s.arena, raw);
                 continue;
@@ -1321,6 +1382,46 @@ const Spec = struct {
             m.ir.body = .{ .start = @enumFromInt(start), .end = @enumFromInt(end) };
         }
         return true;
+    }
+
+    /// Drop from object literal `node` every key fact 3 says no reachable
+    /// read reaches, whose value does nothing when evaluated. True when any
+    /// went.
+    fn dropKeys(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
+        if (!s.pts.ok) return false;
+        const ir = m.ir;
+        const props = try s.arena.dupe(Index, ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index));
+        var kept: std.ArrayList(u32) = .empty;
+        var dropped = false;
+        for (props) |prop| {
+            if (ir.tag(prop) == .property) {
+                const d = ir.data(prop);
+                const id = s.pts.propId(m.index, @enumFromInt(d.lhs));
+                if (s.pts.keyUnread(m.index, node, id) and inert(ir, @enumFromInt(d.rhs))) {
+                    dropped = true;
+                    continue;
+                }
+            }
+            try kept.append(s.arena, prop.int());
+        }
+        if (!dropped) return false;
+        const start = try m.append(s.gpa, kept.items);
+        m.setData(node, start, start + @as(u32, @intCast(kept.items.len)));
+        return true;
+    }
+
+    /// Whether statement `stmt` writes a property fact 3 says no reachable
+    /// read reaches, on an object named by a chain that does nothing when
+    /// evaluated.
+    fn deadWrite(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!bool {
+        if (!s.pts.ok) return false;
+        const ir = m.ir;
+        if (ir.tag(stmt) != .assign_stmt) return false;
+        const target: Index = @enumFromInt(ir.data(stmt).lhs);
+        if (ir.tag(target) != .member) return false;
+        const td = ir.data(target);
+        const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(td.lhs)) orelse return false;
+        return s.pts.neverRead(obj, s.pts.propId(m.index, @enumFromInt(td.rhs)));
     }
 
     /// The arm an `if` with a literal test takes, or null.
@@ -1434,6 +1535,673 @@ const Spec = struct {
             try m.ir.pushOperands(s.arena, &stack, node);
         }
         return any;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Slice 3: allocation sites
+// ---------------------------------------------------------------------------
+
+/// The names `Object.prototype` has: an object literal that holds none of
+/// these still has one to read (`Input.builtin_props`).
+pub const prototype_names = [_][]const u8{
+    "constructor",      "hasOwnProperty",   "isPrototypeOf",    "propertyIsEnumerable",
+    "toLocaleString",   "toString",         "valueOf",          "__proto__",
+    "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
+};
+
+/// `backend.md` §9, *Whole-program specialisation*, fact 3: a
+/// flow-insensitive, allocation-site points-to analysis, field-sensitive by
+/// property name. An abstract object per object literal, array literal and
+/// function; `top` for anything the program did not allocate or cannot
+/// follow; `prim` for a value that is no object. Values flow through
+/// bindings, assignments, arguments to parameters, returns to call results,
+/// and property writes and reads. A value handed to code the pass cannot see
+/// — a host call, a hand-written file, a `throw`, a function that escapes —
+/// escapes: every property of it is read and may be written, and what it
+/// holds escapes with it.
+///
+/// **The iteration is optimistic where nothing can be unsound**: a call of
+/// a value that holds nothing yet does nothing, and neither does a read or a
+/// write through one — at the fixpoint such a value is never an object. What
+/// the program does not declare (a hand-written import) is `top` from the
+/// start.
+const Pts = struct {
+    s: *Spec,
+    vars: std.ArrayList(VSet) = .empty,
+    sites: std.ArrayList(Site) = .empty,
+    site_at: std.AutoHashMapUnmanaged(NodeKey, u32) = .empty,
+    locals: std.AutoHashMapUnmanaged(LocalKey, VarId) = .empty,
+    globals: []VarId = &.{},
+    /// Each module's per-node value of the sweep in progress.
+    vals: [][]Val = &.{},
+    /// Where one sweep's temporary values live.
+    tmp: std.heap.ArenaAllocator,
+    changed: bool = false,
+    /// The fixpoint was reached this round: the facts may be read.
+    ok: bool = false,
+    stack: std.ArrayList(Frame) = .empty,
+    children: std.ArrayList(Index) = .empty,
+    /// The top-level statement the walk is in: locals are keyed by it.
+    top: Index = undefined,
+
+    const VarId = u32;
+    const Frame = struct { node: Index, post: bool };
+    const LocalKey = struct { module: u32, top: u32, name: u32 };
+    const NodeKey = struct { module: u32, node: u32 };
+    const elem_prop: u32 = std.math.maxInt(u32) - 1;
+    /// A var holding more sites than this is `top`, its sites escaped: the
+    /// sets stay small and the analysis linear in the program.
+    const max_sites = 48;
+    const max_pts_sweeps = 64;
+
+    const VSet = struct {
+        top: bool = false,
+        prim: bool = false,
+        sites: std.ArrayList(u32) = .empty,
+    };
+
+    const Val = struct {
+        top: bool = false,
+        prim: bool = false,
+        sites: []const u32 = &.{},
+
+        const top_val: Val = .{ .top = true };
+        const prim_val: Val = .{ .prim = true };
+    };
+
+    const SiteKind = enum(u8) { object, array, func };
+
+    const Prop = struct { id: u32, vals: VarId, read: bool = false, written: bool = false };
+
+    const Site = struct {
+        kind: SiteKind,
+        module: u32,
+        node: Index,
+        escaped: bool = false,
+        /// Every property read: a computed read, a spread, `for…of`.
+        all_read: bool = false,
+        /// Values written under a key the pass does not know.
+        any: VarId,
+        any_written: bool = false,
+        props: std.ArrayList(Prop) = .empty,
+        /// A function's return and parameters.
+        ret: VarId = none,
+        params: []const VarId = &.{},
+    };
+
+    fn init(s: *Spec) Pts {
+        return .{ .s = s, .tmp = .init(s.gpa) };
+    }
+
+    fn deinit(p: *Pts) void {
+        p.tmp.deinit();
+    }
+
+    fn arena(p: *Pts) Allocator {
+        return p.s.arena;
+    }
+
+    // ---- Sets ----------------------------------------------------------------
+
+    fn newVar(p: *Pts) Allocator.Error!VarId {
+        const id: VarId = @intCast(p.vars.items.len);
+        try p.vars.append(p.arena(), .{});
+        return id;
+    }
+
+    fn view(p: *Pts, v: VarId) Val {
+        const set = &p.vars.items[v];
+        return .{ .top = set.top, .prim = set.prim, .sites = set.sites.items };
+    }
+
+    fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
+        const set = &p.vars.items[v];
+        if (set.top) {
+            // A var that is `top` holds no list: what joins it escapes.
+            try p.escapeSite(site);
+            return;
+        }
+        const at = std.sort.lowerBound(u32, set.sites.items, site, orderU32);
+        if (at < set.sites.items.len and set.sites.items[at] == site) return;
+        try set.sites.insert(p.arena(), at, site);
+        p.changed = true;
+        if (set.sites.items.len > max_sites) try p.makeTop(v);
+    }
+
+    fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
+        const set = &p.vars.items[v];
+        if (set.top) return;
+        set.top = true;
+        p.changed = true;
+        for (set.sites.items) |site| try p.escapeSite(site);
+        set.sites.clearRetainingCapacity();
+    }
+
+    fn join(p: *Pts, v: VarId, val: Val) Allocator.Error!void {
+        if (val.top) try p.makeTop(v);
+        if (val.prim and !p.vars.items[v].prim) {
+            p.vars.items[v].prim = true;
+            p.changed = true;
+        }
+        for (val.sites) |site| try p.addSite(v, site);
+    }
+
+    fn escapeSite(p: *Pts, site: u32) Allocator.Error!void {
+        const st = &p.sites.items[site];
+        if (st.escaped) return;
+        st.escaped = true;
+        p.changed = true;
+    }
+
+    fn escape(p: *Pts, val: Val) Allocator.Error!void {
+        for (val.sites) |site| try p.escapeSite(site);
+    }
+
+    fn unionOf(p: *Pts, a: Val, b: Val) Allocator.Error!Val {
+        if (a.sites.len == 0) return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = b.sites };
+        if (b.sites.len == 0) return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = a.sites };
+        var out: std.ArrayList(u32) = .empty;
+        try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < a.sites.len or j < b.sites.len) {
+            if (j == b.sites.len or (i < a.sites.len and a.sites[i] < b.sites[j])) {
+                out.appendAssumeCapacity(a.sites[i]);
+                i += 1;
+            } else if (i == a.sites.len or b.sites[j] < a.sites[i]) {
+                out.appendAssumeCapacity(b.sites[j]);
+                j += 1;
+            } else {
+                out.appendAssumeCapacity(a.sites[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+        return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = out.items };
+    }
+
+    fn orderU32(a: u32, b: u32) std.math.Order {
+        return std.math.order(a, b);
+    }
+
+    // ---- Names and sites -----------------------------------------------------
+
+    fn localVar(p: *Pts, mi: u32, n: NameIndex) Allocator.Error!VarId {
+        const gop = try p.locals.getOrPut(p.arena(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
+        if (!gop.found_existing) gop.value_ptr.* = try p.newVar();
+        return gop.value_ptr.*;
+    }
+
+    fn nameVar(p: *Pts, mi: u32, n: NameIndex) Allocator.Error!VarId {
+        if (p.s.mods[mi].globalOf(n)) |g| return p.globals[g];
+        return p.localVar(mi, n);
+    }
+
+    fn propId(p: *Pts, mi: u32, n: NameIndex) u32 {
+        const m = &p.s.mods[mi];
+        const i = n.unwrap() orelse return none;
+        if (i >= m.prop.len) return none;
+        return m.prop[i];
+    }
+
+    fn siteOf(p: *Pts, mi: u32, node: Index, kind: SiteKind) Allocator.Error!u32 {
+        const gop = try p.site_at.getOrPut(p.arena(), .{ .module = mi, .node = node.int() });
+        if (gop.found_existing) return gop.value_ptr.*;
+        const id: u32 = @intCast(p.sites.items.len);
+        gop.value_ptr.* = id;
+        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .any = try p.newVar() });
+        return id;
+    }
+
+    /// A function's site, its parameters' vars and its return's.
+    fn funcSite(p: *Pts, mi: u32, node: Index, record: ExtraIndex) Allocator.Error!u32 {
+        const seen = p.site_at.contains(.{ .module = mi, .node = node.int() });
+        const site = try p.siteOf(mi, node, .func);
+        if (seen) return site;
+        const ir = p.s.mods[mi].ir;
+        const f = ir.extraData(record, JsIr.Func);
+        const names = ir.extraSlice(f.params(), NameIndex);
+        const params = try p.arena().alloc(VarId, names.len);
+        for (params, names) |*v, n| v.* = try p.localVar(mi, n);
+        p.sites.items[site].params = params;
+        p.sites.items[site].ret = try p.newVar();
+        return site;
+    }
+
+    fn prop(p: *Pts, site: u32, id: u32) Allocator.Error!*Prop {
+        const st = &p.sites.items[site];
+        for (st.props.items) |*pr| if (pr.id == id) return pr;
+        const v = try p.newVar();
+        const st2 = &p.sites.items[site];
+        try st2.props.append(p.arena(), .{ .id = id, .vals = v });
+        return &st2.props.items[st2.props.items.len - 1];
+    }
+
+    fn findProp(p: *const Pts, site: u32, id: u32) ?*const Prop {
+        for (p.sites.items[site].props.items) |*pr| if (pr.id == id) return pr;
+        return null;
+    }
+
+    // ---- Reads and writes ----------------------------------------------------
+
+    fn read(p: *Pts, obj: Val, id: u32, mark: bool) Allocator.Error!Val {
+        var out: Val = .{ .top = obj.top or obj.prim };
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (st.kind != .object or st.escaped or id == none) {
+                out.top = true;
+                continue;
+            }
+            if (mark) {
+                const pr = try p.prop(site, id);
+                if (!pr.read) {
+                    pr.read = true;
+                    p.changed = true;
+                }
+                out = try p.unionOf(out, p.view(pr.vals));
+            } else if (p.findProp(site, id)) |pr| out = try p.unionOf(out, p.view(pr.vals));
+            out = try p.unionOf(out, p.view(p.sites.items[site].any));
+        }
+        return out;
+    }
+
+    /// Every property of every object `obj` may be, read.
+    fn readAll(p: *Pts, obj: Val) Allocator.Error!Val {
+        var out: Val = .{ .top = obj.top or obj.prim };
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (st.kind == .func or st.escaped) {
+                out.top = true;
+                continue;
+            }
+            if (!st.all_read) {
+                st.all_read = true;
+                p.changed = true;
+            }
+            for (p.sites.items[site].props.items) |pr| out = try p.unionOf(out, p.view(pr.vals));
+            out = try p.unionOf(out, p.view(p.sites.items[site].any));
+        }
+        return out;
+    }
+
+    fn write(p: *Pts, obj: Val, id: u32, value: Val) Allocator.Error!void {
+        if (obj.top or obj.prim) try p.escape(value);
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (st.kind != .object or st.escaped or id == none) {
+                try p.escape(value);
+                if (id == none) try p.writeAnyOne(site, value);
+                continue;
+            }
+            const pr = try p.prop(site, id);
+            if (!pr.written) {
+                pr.written = true;
+                p.changed = true;
+            }
+            try p.join(pr.vals, value);
+        }
+    }
+
+    fn writeAnyOne(p: *Pts, site: u32, value: Val) Allocator.Error!void {
+        const st = &p.sites.items[site];
+        if (!st.any_written) {
+            st.any_written = true;
+            p.changed = true;
+        }
+        try p.join(st.any, value);
+        if (p.sites.items[site].escaped) try p.escape(value);
+    }
+
+    fn writeAny(p: *Pts, obj: Val, value: Val) Allocator.Error!void {
+        if (obj.top or obj.prim) try p.escape(value);
+        for (obj.sites) |site| try p.writeAnyOne(site, value);
+    }
+
+    // ---- The analysis --------------------------------------------------------
+
+    /// Fact 3 to its fixpoint over the program as it stands this round.
+    fn analyse(p: *Pts) Allocator.Error!void {
+        const s = p.s;
+        p.ok = false;
+        p.vars = .empty;
+        p.sites = .empty;
+        p.site_at = .empty;
+        p.locals = .empty;
+        p.globals = try p.arena().alloc(VarId, s.in.globals);
+        for (p.globals) |*g| g.* = try p.newVar();
+        // What no module declares — an import of a hand-written file's
+        // export — is anything at all.
+        for (s.decl, p.globals) |d, g| if (d == null) try p.makeTop(g);
+        p.vals = try p.arena().alloc([]Val, s.mods.len);
+        for (p.vals, s.mods) |*v, *m| v.* = try p.arena().alloc(Val, m.ir.nodes.len);
+        var sweep: u32 = 0;
+        while (sweep < max_pts_sweeps) : (sweep += 1) {
+            p.changed = false;
+            _ = p.tmp.reset(.retain_capacity);
+            for (s.mods, 0..) |*m, mi| {
+                for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+                    p.top = top;
+                    try p.stmt(@intCast(mi), top, null);
+                }
+            }
+            // What files the pass cannot see read.
+            for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(p.view(p.globals[g]));
+            try p.propagate();
+            if (!p.changed) {
+                p.ok = true;
+                return;
+            }
+        }
+    }
+
+    /// What an escaped site holds escapes, and an escaped function is
+    /// called with anything and returns to anyone.
+    fn propagate(p: *Pts) Allocator.Error!void {
+        var i: usize = 0;
+        while (i < p.sites.items.len) : (i += 1) {
+            if (!p.sites.items[i].escaped) continue;
+            const st = &p.sites.items[i];
+            if (!st.all_read or !st.any_written) {
+                st.all_read = true;
+                st.any_written = true;
+                p.changed = true;
+            }
+            for (p.sites.items[i].props.items) |pr| try p.escape(p.view(pr.vals));
+            try p.escape(p.view(p.sites.items[i].any));
+            if (p.sites.items[i].kind == .func) {
+                for (p.sites.items[i].params) |v| try p.makeTop(v);
+                try p.escape(p.view(p.sites.items[i].ret));
+            }
+        }
+    }
+
+    fn stmt(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+            .const_decl, .let_decl => {
+                const v: Node.OptionalIndex = @enumFromInt(d.rhs);
+                const val = if (v.unwrap()) |value| try p.expr(mi, value, func) else Val.prim_val;
+                try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), val);
+            },
+            .func_decl, .gen_decl => {
+                const site = try p.funcSite(mi, node, @enumFromInt(d.rhs));
+                if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
+                try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), .{ .sites = &.{site} });
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
+                try p.list(mi, f.body(), site);
+            },
+            .assign_stmt => {
+                const value = try p.expr(mi, @enumFromInt(d.rhs), func);
+                const target: Index = @enumFromInt(d.lhs);
+                const td = ir.data(target);
+                switch (ir.tag(target)) {
+                    .ident => try p.join(try p.nameVar(mi, @enumFromInt(td.lhs)), value),
+                    .member => try p.write(try p.expr(mi, @enumFromInt(td.lhs), func), p.propId(mi, @enumFromInt(td.rhs)), value),
+                    .index_get => {
+                        _ = try p.expr(mi, @enumFromInt(td.rhs), func);
+                        try p.writeAny(try p.expr(mi, @enumFromInt(td.lhs), func), value);
+                    },
+                    else => {
+                        _ = try p.expr(mi, target, func);
+                        try p.escape(value);
+                    },
+                }
+            },
+            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
+                const val = try p.expr(mi, value, func);
+                if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
+            },
+            .if_stmt => {
+                _ = try p.expr(mi, @enumFromInt(d.lhs), func);
+                const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                try p.list(mi, branches.thenBody(), func);
+                try p.list(mi, branches.elseBody(), func);
+            },
+            .while_true, .block_stmt => try p.list(mi, ir.subRange(@enumFromInt(d.rhs)), func),
+            .for_of => {
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                const items = try p.readAll(try p.expr(mi, f.iterable, func));
+                try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), items);
+                try p.list(mi, f.body(), func);
+            },
+            .switch_stmt => {
+                _ = try p.expr(mi, @enumFromInt(d.lhs), func);
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try p.stmt(mi, c, func);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| _ = try p.expr(mi, t, func);
+                try p.list(mi, ir.subRange(@enumFromInt(d.rhs)), func);
+            },
+            .expr_stmt => _ = try p.expr(mi, @enumFromInt(d.lhs), func),
+            .throw_stmt => try p.escape(try p.expr(mi, @enumFromInt(d.lhs), func)),
+            else => _ = try p.expr(mi, node, func),
+        }
+    }
+
+    fn list(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32) Allocator.Error!void {
+        const ir = p.s.mods[mi].ir;
+        for (ir.extraSlice(range, Index)) |node| try p.stmt(mi, node, func);
+    }
+
+    /// What `root` may be, bottom-up over an explicit stack, every node's
+    /// into `vals`. An arrow is its site, its body walked as the statements
+    /// it is.
+    fn expr(p: *Pts, mi: u32, root: Index, func: ?u32) Allocator.Error!Val {
+        // Where a `return` goes is the statements' business; an expression
+        // holds none, and an arrow in it is a function of its own.
+        _ = func;
+        const ir = p.s.mods[mi].ir;
+        const vals = p.vals[mi];
+        const base = p.stack.items.len;
+        defer p.stack.shrinkRetainingCapacity(base);
+        try p.stack.append(p.arena(), .{ .node = root, .post = false });
+        while (p.stack.items.len > base) {
+            const f = p.stack.pop().?;
+            if (!f.post) {
+                if (ir.tag(f.node) == .arrow) {
+                    const record: ExtraIndex = @enumFromInt(ir.data(f.node).lhs);
+                    const site = try p.funcSite(mi, f.node, record);
+                    try p.list(mi, ir.extraData(record, JsIr.Func).body(), site);
+                    vals[f.node.int()] = .{ .sites = try p.tmp.allocator().dupe(u32, &.{site}) };
+                    continue;
+                }
+                switch (ir.tag(f.node)) {
+                    // A leaf has no operands to wait for.
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                        vals[f.node.int()] = try p.combine(mi, f.node);
+                        continue;
+                    },
+                    else => {},
+                }
+                try p.stack.append(p.arena(), .{ .node = f.node, .post = true });
+                p.children.clearRetainingCapacity();
+                try ir.pushOperands(p.arena(), &p.children, f.node);
+                for (p.children.items) |c| try p.stack.append(p.arena(), .{ .node = c, .post = false });
+                continue;
+            }
+            vals[f.node.int()] = try p.combine(mi, f.node);
+        }
+        return vals[root.int()];
+    }
+
+    fn combine(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
+        const ir = p.s.mods[mi].ir;
+        const vals = p.vals[mi];
+        const d = ir.data(node);
+        return switch (ir.tag(node)) {
+            .number, .string, .template, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit => Val.prim_val,
+            .global_this => Val.top_val,
+            .ident => p.view(try p.nameVar(mi, @enumFromInt(d.lhs))),
+            .member => p.read(vals[d.lhs], p.propId(mi, @enumFromInt(d.rhs)), true),
+            .index_get => p.readAll(vals[d.lhs]),
+            .property => vals[d.rhs],
+            .spread_property => vals[d.lhs],
+            .object => blk: {
+                const site = try p.siteOf(mi, node, .object);
+                for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {
+                    const cd = ir.data(child);
+                    switch (ir.tag(child)) {
+                        .property => {
+                            const pr = try p.prop(site, p.propId(mi, @enumFromInt(cd.lhs)));
+                            if (!pr.written) {
+                                pr.written = true;
+                                p.changed = true;
+                            }
+                            try p.join(pr.vals, vals[cd.rhs]);
+                        },
+                        // `{...x}` copies what `x` holds, reading all of it.
+                        else => {
+                            const from = vals[cd.lhs];
+                            _ = try p.readAll(from);
+                            if (from.top or from.prim) try p.writeAnyOne(site, Val.top_val);
+                            for (from.sites) |other| {
+                                if (p.sites.items[other].kind != .object) {
+                                    try p.writeAnyOne(site, Val.top_val);
+                                    continue;
+                                }
+                                var k: usize = 0;
+                                while (k < p.sites.items[other].props.items.len) : (k += 1) {
+                                    const src = p.sites.items[other].props.items[k];
+                                    const pr = try p.prop(site, src.id);
+                                    if (!pr.written) {
+                                        pr.written = true;
+                                        p.changed = true;
+                                    }
+                                    try p.join(pr.vals, p.view(src.vals));
+                                }
+                                if (p.sites.items[other].any_written) try p.writeAnyOne(site, p.view(p.sites.items[other].any));
+                            }
+                        },
+                    }
+                }
+                break :blk .{ .sites = try p.tmp.allocator().dupe(u32, &.{site}) };
+            },
+            .array => blk: {
+                const site = try p.siteOf(mi, node, .array);
+                const pr = try p.prop(site, elem_prop);
+                const pv = pr.vals;
+                for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| try p.join(pv, vals[child.int()]);
+                break :blk .{ .sites = try p.tmp.allocator().dupe(u32, &.{site}) };
+            },
+            .arrow => vals[node.int()],
+            .cond => blk: {
+                const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+                break :blk p.unionOf(vals[c.consequent.int()], vals[c.alternate.int()]);
+            },
+            .binary => blk: {
+                const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                break :blk switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+                    .logical_and, .logical_or => p.unionOf(vals[b.left.int()], vals[b.right.int()]),
+                    else => Val.prim_val,
+                };
+            },
+            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .yield) Val.top_val else Val.prim_val,
+            .call => p.call(mi, node),
+            .new_call => blk: {
+                for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try p.escape(vals[a.int()]);
+                break :blk Val.top_val;
+            },
+            else => Val.top_val,
+        };
+    }
+
+    /// A call: its arguments join the parameters of every function its
+    /// callee may be, and its value is what they return. A callee that may
+    /// be anything else is code the pass cannot see: the arguments escape,
+    /// and so does the object whose method it is.
+    fn call(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
+        const ir = p.s.mods[mi].ir;
+        const vals = p.vals[mi];
+        const d = ir.data(node);
+        const callee: Index = @enumFromInt(d.lhs);
+        const vc = vals[callee.int()];
+        const args = ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index);
+        var out: Val = .{};
+        var unknown = vc.top or vc.prim;
+        for (vc.sites) |site| {
+            if (p.sites.items[site].kind != .func) {
+                unknown = true;
+                continue;
+            }
+            const params = p.sites.items[site].params;
+            for (params, 0..) |v, i| try p.join(v, if (i < args.len) vals[args[i].int()] else Val.prim_val);
+            out = try p.unionOf(out, p.view(p.sites.items[site].ret));
+        }
+        if (unknown) {
+            for (args) |a| try p.escape(vals[a.int()]);
+            if (ir.tag(callee) == .member) try p.escape(vals[ir.data(callee).lhs]);
+            out.top = true;
+        }
+        return out;
+    }
+
+    // ---- The facts -----------------------------------------------------------
+
+    /// What an effect-free chain — a name, or properties of one — may be,
+    /// read without recording anything. Null for anything else.
+    fn chain(p: *Pts, mi: u32, top: Index, node: Index) Allocator.Error!?Val {
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        return switch (ir.tag(node)) {
+            .ident => blk: {
+                const n: NameIndex = @enumFromInt(d.lhs);
+                if (p.s.mods[mi].globalOf(n)) |g| break :blk p.view(p.globals[g]);
+                const v = p.locals.get(.{ .module = mi, .top = top.int(), .name = n.int() }) orelse break :blk null;
+                break :blk p.view(v);
+            },
+            .member => blk: {
+                const obj = try p.chain(mi, top, @enumFromInt(d.lhs)) orelse break :blk null;
+                break :blk try p.read(obj, p.propId(mi, @enumFromInt(d.rhs)), false);
+            },
+            else => null,
+        };
+    }
+
+    /// Whether every object `obj` may be is an object literal the program
+    /// made and nothing it cannot see holds.
+    fn known(p: *const Pts, obj: Val) bool {
+        if (!p.ok or obj.top or obj.prim or obj.sites.len == 0) return false;
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (st.kind != .object or st.escaped) return false;
+        }
+        return true;
+    }
+
+    /// Property `id` is never written on any object `obj` may be: reading
+    /// it gives `undefined`.
+    fn neverWritten(p: *const Pts, obj: Val, id: u32) bool {
+        if (id == none or !p.known(obj)) return false;
+        for (p.s.in.builtin_props) |b| if (b == id) return false;
+        for (obj.sites) |site| {
+            if (p.sites.items[site].any_written) return false;
+            if (p.findProp(site, id)) |pr| if (pr.written) return false;
+        }
+        return true;
+    }
+
+    /// Property `id` is never read on any object `obj` may be: writing it
+    /// changes nothing anyone can see.
+    fn neverRead(p: *const Pts, obj: Val, id: u32) bool {
+        if (id == none or !p.known(obj)) return false;
+        for (obj.sites) |site| {
+            if (p.sites.items[site].all_read) return false;
+            if (p.findProp(site, id)) |pr| if (pr.read) return false;
+        }
+        return true;
+    }
+
+    /// Of object literal `node`, a site: whether key `id` is never read.
+    fn keyUnread(p: *const Pts, mi: u32, node: Index, id: u32) bool {
+        if (!p.ok or id == none) return false;
+        const site = p.site_at.get(.{ .module = mi, .node = node.int() }) orelse return false;
+        const st = &p.sites.items[site];
+        if (st.escaped or st.all_read) return false;
+        if (p.findProp(site, id)) |pr| if (pr.read) return false;
+        return true;
     }
 };
 

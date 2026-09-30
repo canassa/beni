@@ -2422,7 +2422,12 @@ const Emitter = struct {
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
     fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: Entry) !void {
+        const token = e.session.profile.begin();
+        defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
+        // Property names, by text: a key or a member's name is a plain name
+        // of its module, possibly in the module's overlay.
+        var props: std.StringHashMapUnmanaged(u32) = .empty;
         var modules: std.ArrayList(Spec.Module) = .empty;
         for (todo) |i| {
             const slot = &slots[i];
@@ -2430,15 +2435,29 @@ const Emitter = struct {
             if (lowered.diagnostics.len != 0) continue;
             const ir = &lowered.ir;
             const global = try e.scratch.alloc(u32, ir.names.len);
-            for (global, 0..) |*g, n| {
+            const prop = try e.scratch.alloc(u32, ir.names.len);
+            for (global, prop, 0..) |*g, *pr, n| {
                 g.* = Spec.none;
-                if (ir.names[n].module == .none) continue;
+                pr.* = Spec.none;
+                if (ir.names[n].module == .none) {
+                    if (ir.names[n].tag != JsIr.Name.no_tag) continue;
+                    // Copied: moving a name into the session's pool (below)
+                    // may move the bytes this slice points at.
+                    const text = slot.overlay.slice(ir.names[n].base);
+                    const gop = try props.getOrPut(e.scratch, text);
+                    if (!gop.found_existing) {
+                        gop.key_ptr.* = try e.scratch.dupe(u8, text);
+                        gop.value_ptr.* = props.count() - 1;
+                    }
+                    pr.* = gop.value_ptr.*;
+                    continue;
+                }
                 const name = try e.poolName(slot, @enumFromInt(@as(u32, @intCast(n))));
                 const gop = try ids.getOrPut(e.scratch, Rename.Globals.key(name));
                 if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
                 g.* = gop.value_ptr.*;
             }
-            try modules.append(e.scratch, .{ .ir = ir, .global = global });
+            try modules.append(e.scratch, .{ .ir = ir, .global = global, .prop = prop });
         }
         // What files the pass cannot see read or call: the entry file's
         // `main`, `run`, `start` and `flush`, and what the markup runtime
@@ -2463,9 +2482,13 @@ const Emitter = struct {
             };
             if (ids.get(Rename.Globals.key(main))) |g| try escaping.append(e.scratch, g);
         }
+        var builtin: std.ArrayList(u32) = .empty;
+        for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
         try Spec.run(e.gpa, e.scratch, .{
             .modules = modules.items,
             .globals = ids.count(),
+            .props = props.count(),
+            .builtin_props = builtin.items,
             .escaping = escaping.items,
         });
     }

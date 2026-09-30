@@ -1,0 +1,32 @@
+-- Whole-program specialisation's fact 3 (`backend.md` §9) drops a record
+-- field no reachable read reaches from its object literal. What code the
+-- pass cannot see may read — here `Debug.toString`, hand-written, which
+-- reads every key — keeps every field: `shown`'s record is printed whole
+-- in both builds, while `point`'s `label` goes under `--release`.
+import Node exposing (Program)
+
+
+type alias Point =
+    { x : Int, y : Int, label : String, tag : String }
+
+
+point : Int -> Point
+point n =
+    { x = n, y = n * 2, label = "unused", tag = "read" }
+
+
+shown : Int -> Point
+shown n =
+    { x = n, y = 0, label = "kept", tag = "t" }
+
+
+main : Program
+main =
+    let
+        p =
+            point 3
+
+        q =
+            shown 4
+    in
+    Node.printLines [ String.fromInt (p.x + p.y), p.tag, Debug.toString q ]

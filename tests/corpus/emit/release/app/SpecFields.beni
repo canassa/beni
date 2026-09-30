@@ -1,0 +1,24 @@
+-- emit: whole-program specialisation, fact 3 (`backend.md` §9): a record
+-- field no reachable read reaches is not written into the object literal
+-- when its value does nothing. `point`'s `label` and `rank` are read
+-- nowhere, so its literal holds `tag`, `x` and `y` only — and, since every
+-- call passes `3`, it is a constant function (fact 1).
+import Node exposing (Program)
+
+
+type alias Point =
+    { x : Int, y : Int, label : String, rank : Int, tag : String }
+
+
+point : Int -> Point
+point n =
+    { x = n, y = n * 2, label = "unused", rank = 7, tag = "shown" }
+
+
+main : Program
+main =
+    let
+        p =
+            point 3
+    in
+    Node.printLines [ String.fromInt (p.x + p.y), p.tag ]

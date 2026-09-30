@@ -136,6 +136,10 @@ pub const Phase = enum {
     /// that took it. Under `--release` a module has two: lowering and
     /// planning, then renaming and printing.
     emit_module,
+    /// `--release` of an application: whole-program specialisation
+    /// (`backend.md` §9), on the calling thread between lowering and
+    /// printing.
+    specialise,
     /// The writes that end `emit`: the output record, every output file,
     /// and the removal of what only the previous build wrote.
     write,

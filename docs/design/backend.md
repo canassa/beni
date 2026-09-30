@@ -4773,6 +4773,36 @@ only reached from a folded branch until slice 3). Fixture: `emit/release/app/Spe
 `limit` and `String.toUpper`; `emit/release/app/HoistOrder`'s `Mid` now reads `String.length` so
 that its three values are not folded away.
 
+**As built — slice 3** (2026-10-02, `Spec.Pts`). Fact 3 as specified, with these choices:
+
+- **A computed read or write does not escape its object**; it is field-insensitive on it: `o[k]`
+  reads every property of every object `o` may be (it may return any of their values), and
+  `o[k] = v` may write any property with `v` — so no key of such an object is dropped and no read
+  of it folds. The text above made it an escape, which would have lost the program description an
+  index loop walks (`p(v)`'s `a[b]`) for no reason: nothing unseen reads it. A spread `{...x}`
+  reads all of `x` and copies what each of its properties may hold into the new object's.
+- **The iteration is optimistic where nothing can be unsound**: a call, read or write through a
+  value that holds nothing yet does nothing (at the fixpoint such a value is never an object),
+  while a name no module declares — a hand-written import — is `top` from the start. A var whose
+  set passes 48 objects is `top`, its objects escaped: the sets stay small. At most 64 sweeps; a
+  round that does not converge uses no fact 3.
+- **A read folds to `undefined` only through a name or properties of one** (whose evaluation does
+  nothing the fold could lose), on objects that are all object literals of the program, none
+  escaped, none written under an unknown key, and never for a name `Object.prototype` has
+  (`prototype_names`). The fold is fact 2's literal, so it folds on (`m.h === undefined`).
+- **A key goes from its literal, and a write of it from the program, only when its value is
+  inert** (`inert`); a write whose value may do something keeps the value as a statement.
+- **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
+  in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
+  declaration — so a program with nothing to specialise pays one round.
+
+Measured: `EmptyPage` 856 → **838** brotli — a slot is `{cx:null,i:null,m:null,p:a}`, its list
+fields gone. The program description the runtime reads `h` of is `Browser.program`'s, which is
+hand-written on `beni-runtime`, so `m.h === undefined` does not fold on that page (it would with
+`program` written in beni). Fixtures: `emit/release/app/SpecFields` (a user record's unread
+fields), `run/SpecializeFields` (the same, beside a record `Debug.toString` reads whole, which keeps
+every field), `emit/release/split/EmptyPage`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

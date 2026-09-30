@@ -6,7 +6,7 @@ z=(a,b,c)=>{let d=l(b);const e=w(b);for(;;){const f=d.nextSibling;a.insertBefore
 A=(a)=>{let b=l(a);const c=w(a);for(;;){const d=b.nextSibling;b.remove();if(b===c)return;b=d}},
 c=(a,b)=>{const d=l(a);z(d.parentNode,b,d);A(a)},
 d=()=>{let a=null;return()=>{if(a===null){const b=document,c=b.createElement("template");c.innerHTML="<!>";a=c.content;a=a.firstChild}return a.cloneNode(true)}},
-B=(a)=>({b:null,cx:null,d:false,i:null,m:null,p:a,u:null,x:null,y:null,z:null}),
+B=(a)=>({cx:null,i:null,m:null,p:a}),
 C=(a)=>a.p===null?a.m.parentNode:a.p,
 D=(a,b)=>{const c=a.t.m(a.v,b);c.t=a.t;c.b=a;return c},
 E=(a,b,d)=>{if(b===a.b)return a;if(b.t===a.t){b.t.p(a,b.v);a.b=b;return a}const e=D(b,d);c(a,e);return e},
