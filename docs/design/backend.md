@@ -3154,7 +3154,9 @@ ranking. Build them in this order:
 **Explicitly not built**, because they measured zero or negative after compression: boolean
 shortening (`true` → `!0` makes brotli output *larger*), `if_return`, `collapse_vars`, inlining,
 constant evaluation, sequence joining, comparison and switch rewriting. (*2026-10-02*: `if_return`
-was measured again, and stays out — §8, *In place, when nothing captures*.)
+was measured again, and stays out — §8, *In place, when nothing captures*. Inlining a function
+called from one place is built, for a runtime written in beni — *A function called once is written
+where it is called*, below.)
 
 **Emission order matters and is free.** Declarations are emitted in module-grouped reachability
 order and names are stable across builds; a size-sorted order costs up to 7% of compressed bytes at
@@ -4491,6 +4493,133 @@ and prints its development golden, under Node, happy-dom and (`zig build test-br
 program's release build summed (`bench/size.mjs`'s `release_gross`, 276 programs) 864 313 / 257 479
 → **699 082 / 206 309**, −19.9 % brotli.
 
+### A function called once is written where it is called
+
+*Added 2026-10-02 (research 47 §6 item 6; `plans/browser-decisions.md` R47-1).* A runtime written
+in beni has a helper declaration wherever hand-written JavaScript has a loop or a sequence — `put`
+and `putRun`, `run` and `runFrom`, `template` and its parser — each called from one place. **Under
+`--release`, a declaration of a module called from exactly one place is written at that place, and
+not written at all** (`Lower.findInlines`, `inlineExpr`, `inlineTail`, `inlineLoop`). A
+development build is unchanged.
+
+**Which declarations.** A function of the module (`Convention`'s `params` or `lambda`) that is live
+(§9's *Roots*), not `pub`, not the entry, named by no dispatch answer, with no evidence, no second
+body, nothing in it that may suspend, and no `?` that returns from it; whose every reference in the
+module — nothing outside the module can name it — is ONE saturated call with no evidence that cannot
+suspend, in another declaration that has no second body, inside a function (a top-level constant's
+expression would need a called arrow to hold the statements). A declaration that refers to itself
+qualifies only when every such reference is a tail self-call: it is a loop (§8).
+
+**How it is written.** The call's arguments are evaluated as the call evaluated them — once each, in
+order, before the body (`orderedExprs`) — and bound to the parameters: a parameter passed an
+immutable name IS that name, one ignored (`_`, `()`) has its argument evaluated for what it does,
+and any other is a `const`. The body is then lowered where the call stood, in the caller's
+function, with the callee's locals named past every local named so far in that function (their
+disambiguator is offset), so two declarations' `x$1` never meet: in tail position its tail positions
+return (or jump, when the caller is a loop and the body tail-calls it) for the caller; anywhere else
+its value is the call's. **A loop** is written only at a tail call of a function that is not itself
+a loop and cannot suspend: its carried parameters become `let`s, the others `const`s or the names
+passed, then §8's `for (;;)`, whose exits return for the caller — research 47 §4.3's hand-written
+`put`, statement for statement. Anywhere else — a loop called in expression position — the
+declaration is written as before. Whatever a call did not take in is lowered where it stands in the
+emission order, after the rest, so the rule can decline at any site and cost bytes, never a program.
+
+**What cannot change.** `language.md` §6's order is the call's: arguments before the body, each
+once, and the body's `let`s where the call was. `run/InlineOnceOrder` observes that in both builds;
+every `run/` and `browser/` fixture's release pass is the differential test.
+
+**Measured** on 2026-10-02: `bench/size.mjs`'s release total 246 993 → **246 778** brotli
+(−0.09 %); the `bench/ui` app **5 032 → 5 032** (13 968 → 13 963 raw: its beni is the TEA layer,
+which has few such helpers); the empty pages of `browser` and `browser-tea` unchanged (980, 993),
+`element` 1 668 → 1 666, `effects` 5 165 → 5 171; research 47's empty page with the runtime module
+(`boundary.md` §9.2) **1 058 → 1 037**, against the hand-written 980. Fixtures:
+`emit/release/core/InlineOnce` (a loop, an expression, a tail call, and the three that are not taken
+in), `emit/release/split/EmptyPage`, `run/InlineOnceOrder`.
+
+### Whole-program specialisation
+
+*Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; nothing below is built
+yet.* A runtime written in beni is compiled WITH the program (`boundary.md` §9.2's runtime module),
+so the compiler sees every call of every runtime function the page makes — which no copied JavaScript
+file allows (*Hand-written JavaScript under `--release`* cuts whole exports, never a branch). The
+empty page never passes `template` a flag, never mounts a hosted program, never holds a list; this
+is how it stops paying for them. Research 47 §5.1's `v3` hand-applied it: the empty page **975 →
+772** brotli against the hand-written 980, the only step that makes a beni runtime *smaller* than
+the one it replaces (R47-3). The page with the runtime module is at 1 037 today (*A function called
+once …*, above); `emit/release/split/EmptyPage` is the golden the slices below move.
+
+**Where.** `--release` application builds, after every module is lowered and before any is printed,
+over the whole program's `JsIr` at once — the one scope-hoisted file's pieces, or the multi-file
+layout's modules, whose top-level names are whole-program names already (§9 item 2). A `--library`
+build does not specialise: its exports' callers are outside it. A new pass, `src/js/Spec.zig`, run
+on the calling thread (the facts are whole-program; the per-module walks that feed them run on the
+workers and are merged in module order), producing a plan the printer spends as it spends `Opt`'s —
+node replacements, dropped statements, dropped parameters and arguments, dropped properties —
+without mutating the IR.
+
+**The facts**, each a lattice value computed to a fixpoint:
+
+1. **Constant arguments.** Per parameter of every top-level function: the one literal (a number, a
+   string, `true`, `false`, `null`, `undefined`) every call passes it, or ⊤. The call sites are
+   every `call` whose callee is the function's whole-program name; a function whose name appears
+   anywhere else — passed as a value, stored, exported, imported by a hand-written file through
+   `beni:<Module>`, called by the entry file, handed to a lowering's `cx.call` — has every parameter
+   ⊤. An argument that is itself a parameter of a caller takes that parameter's value, so the fact
+   propagates down call chains (`mount` → `template`'s `flags`).
+2. **Constant variables.** Per module-level or local `let` (a `Js.Ref` written as a `let`, §4): the
+   initial value when no reachable statement assigns it, else ⊤. `phase` on the empty page is
+   `null` for good, because the one function that assigns it (`setPhase`) is reached only from the
+   hosted mount, which fact 3 removes.
+3. **Allocation sites.** A flow-insensitive, allocation-site points-to analysis (Andersen-style,
+   field-sensitive by property name): an abstract object per object and array literal site, plus
+   **⊤-object**, which stands for anything the program did not allocate — a host object
+   (`globalThis`, the DOM, `Js.global`), a value a hand-written file returns or passes in, a
+   parameter of a function with ⊤ parameters. Values flow through bindings, assignments, arguments
+   to parameters, returns to call results, and property writes and reads (`o.p = v` adds `v` to
+   `p` of every object `o` may be; `o.p` reads the union). An object that reaches a hand-written
+   file, a host call, a computed read or write (`o[k]` with `k` not a literal), a spread or
+   `Js.to`'s unchecked side **escapes**: every property of it is read, and may be written with ⊤.
+   Two facts come out per non-escaped abstract object `O` and property name `p`:
+   - **`p` is never written on `O`**: `O`'s literal has no key `p` and no reachable write reaches it
+     — so a read of `p` on a value that may only be such objects is `undefined` (`m.h === undefined`
+     on a program description built by `Browser.program`, which has no `h`);
+   - **`p` is never read on `O`**: no reachable read of `p` reaches it — so the key goes from the
+     literal and a write of `p` to such values goes (its value still evaluated when it may have an
+     effect): a slot's `u`, `x`, `y`, `z`, `d` on a page with no list.
+
+**What is rewritten, from the facts.**
+
+- A parameter with a constant is replaced by the constant in its body, and **dropped** from the
+  function's parameter list and from every call — the call sites are all known, by fact 1's
+  definition. A trailing run first, then any position (arguments are still evaluated, in order, when
+  they may have an effect: a literal never does).
+- **Constant folding** over what those replacements produce, exact or nothing (§4, *Arithmetic is
+  an operator*): arithmetic, bitwise, comparison and `===`/`!==` on literals, `!`, `&&`/`||` with a
+  literal left side, `c ? a : b` and `if (c)` with a literal `c`; a folded `if` keeps one arm, a
+  folded conditional one branch. Nothing is folded that could throw or that reads a property of ⊤.
+- A read fact 3 answers `undefined` is `undefined`, and folds on.
+- A key fact 3 says is never read goes from its literal, and so does a write of it.
+- **Then reachability again, over the `JsIr`**: a top-level function none of whose references
+  survives the folding (`setPhase`, the hosted half of `mount`, a list helper only a dead branch
+  called) is not printed, and a hand-written unit only it imported is cut with it (Minify's `cut`,
+  re-run with the smaller import set). This walk iterates with the facts until nothing changes: a
+  dropped function removes call sites, which can make a parameter constant.
+
+**What must not change**: behaviour, exactly (`language.md` §6, and R47-3's rule is about bytes, not
+meaning). Every fact is a may-analysis whose unknowns are ⊤, and every rewrite is licensed by a fact
+alone, so a program the analysis cannot see through is printed as it is today. **Field identity
+(CLAUDE.md rule 8) is untouched**: no object is copied, merged or split; a dropped key is one no
+reachable code can observe. Determinism: the fixpoint visits nodes in module order and IR order,
+and its answer is a function of the IR (CLAUDE.md rule 5).
+
+**Build order**, each slice with its golden moved and `bench/ui` held to R47-3: (1) facts 1 and 2
+with folding and parameter dropping — `template`'s flags, `phase` (research 47 §5.1 estimates
+roughly half of the 203 bytes); (2) the `JsIr` reachability re-walk; (3) fact 3 and its two
+rewrites — the hosted mount, the list half of `first`/`last`, a slot's fields. Fixtures: an
+`emit/release/split/` golden per fact, a `run/` pair per fact where a host object or a hand-written
+file must defeat it (a DOM node's own `h`, an object passed to a sibling), and every `run/` and
+`browser/` program's release pass as the differential.
+
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with
@@ -4781,10 +4910,11 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   it imports from the module is a root there. *Measured* on 2026-10-02, research 47's empty page
   with `tests/platforms/beni-runtime` (the port as its runtime module, the rest of the runtime as
   its file): **1 107 → 1 058** brotli against the same port spliced in ahead of the program, which
-  kept every function of the module; the hand-written runtime's page is 980. The rest of the gap is
-  research 47 §6's items 6 and 8 (inlining a function called once, and specialisation), which is
-  where `emit/release/split/EmptyPage` shows it: `put`/`putRun`, `drop`/`dropRun`, `run`/`runFrom`
-  pairs, and `template`'s flag branches for flags the page never passes.
+  kept every function of the module; the hand-written runtime's page is 980. With §9's *A function
+  called once is written where it is called*, 1 037. The rest of the gap is research 47 §6's item 8,
+  specialisation (§9, *Whole-program specialisation*), which `emit/release/split/EmptyPage` shows:
+  `template`'s flag branches for flags the page never passes, the list half of `first` and `last`,
+  and a slot's fields only list code reads.
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.
