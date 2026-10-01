@@ -36,7 +36,7 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 e5d4e7c6594698c12952a07930aad3d9faf591aa387a352bba963b43a3f388aa
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 bebb219a5bcc4846c0dca1df1932f9cfa5c7cf5253184239565c92ccddc3a868
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 aec9dd418b685babb0a3050bd6ea12566d4a2b976cf41135c209127995f8cec3
-build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 844493b7afbdcfeca4c580e033998903531e32262da80f13abc4909f4859e271
+build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 4ab5b383ca25a4a471fad2d2cbbe3979516211ab41aeceecdc1b8669a1b9ffa3
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 579eb30ea66e6153cf0b7cd5fb89ef217688300466fdc7a92457d7c27e73b4f2
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 0c6a7c59b1e04682c6284b1d774098ec92251abe0de11799000c1646f8ecabe2
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 e31baadeb61348f18a6a3edbae0ccde85f9e75fd43bc146907e6f29eeb08d078

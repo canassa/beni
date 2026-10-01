@@ -2312,7 +2312,15 @@ const Emitter = struct {
         if (e.options.release) {
             // §9's *Whole-program specialisation*: an application's modules,
             // all at once, before the per-module optimiser plans any.
-            if (!e.options.library and lowered_clean) if (entry) |at| try e.specialise(slots, todo.items, at);
+            // Whether the build will be one file is asked first: a name of
+            // one module may then be written in another (`Spec.nameIn`).
+            // Specialisation only cuts what the hand-written files must
+            // keep, so a build that is one file before it is one after.
+            var one_scope = false;
+            if (!e.options.library and lowered_clean) if (entry) |at| {
+                one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime) != null;
+                try e.specialise(slots, todo.items, at, one_scope);
+            };
             try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
@@ -2321,6 +2329,7 @@ const Emitter = struct {
             if (!e.options.library and lowered_clean) if (entry) |at| {
                 hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime);
             };
+            if (one_scope and hoist == null) @panic("a build that is one file before specialisation is one after it");
             if (hoist) |*h| {
                 try e.numberHoisted(slots, h);
             } else {
@@ -2544,7 +2553,7 @@ const Emitter = struct {
     /// it (`Spec`). On the calling thread, in module order: the facts are
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
-    fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: Entry) !void {
+    fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: Entry, one_scope: bool) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -2655,6 +2664,7 @@ const Emitter = struct {
             .node_makers = makers.items,
             .escaping = escaping.items,
             .entry = entry_call,
+            .one_scope = one_scope,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
                 .insert_before = id,

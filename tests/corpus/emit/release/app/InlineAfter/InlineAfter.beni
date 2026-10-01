@@ -11,7 +11,9 @@
 --   * `Helpers.label` is called twice, but `verbose` is always `False`
 --     (fact 1), so one call goes with its branch and the other, whose
 --     argument is a name, is `label`'s body;
---   * `Helpers.box` builds the record `describe`'s `let` holds;
+--   * `Helpers.box` builds the record `describe`'s `let` holds — and,
+--     nothing but its fields read, the record is never made: each read
+--     is the field's value (*Scalar replacement*);
 --   * `twice` is called from three places and stays a function, and
 --     `describe` from two.
 import Helpers

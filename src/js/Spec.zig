@@ -118,6 +118,9 @@ pub const Input = struct {
     /// invents (each told apart by its disambiguator). `.none` turns
     /// slice 5 off.
     fresh: JsIr.Symbol.Optional = .none,
+    /// The build is one scope-hoisted file, so any module may name any
+    /// top-level declaration of another (slice 6, `nameIn`).
+    one_scope: bool = false,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -172,6 +175,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     // Slice 5, once the facts are spent: what is called from one place is
     // written there, and reachability drops what it was.
     if (try s.inlineOnce()) _ = try s.prune();
+    // Slice 7: an object nothing but its own reads and writes can see is
+    // its keys.
+    _ = try s.scalarReplace();
     s.releaseKeeps();
     try s.finish();
 }
@@ -180,7 +186,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
 // Values
 // ---------------------------------------------------------------------------
 
-const Kind = enum(u8) { number, string, true_lit, false_lit, null_lit, undefined_lit };
+/// `name`: an object or function a top-level declaration makes (`const f = (…) => …`,
+/// `const o = {…}`, `function f`), by its whole-program id in `bytes`
+/// (four bytes): a constant written as the declaration's name (slice 6).
+const Kind = enum(u8) { number, string, true_lit, false_lit, null_lit, undefined_lit, name };
 
 /// A literal, interned: `Spec.lits` holds its kind and bytes.
 const Lit = struct {
@@ -231,6 +240,8 @@ const Decl = struct {
 const Mod = struct {
     ir: *JsIr,
     global: []const u32,
+    /// `global`, grown when a name of another module is written here.
+    global_list: std.ArrayList(u32) = .empty,
     /// `Module.prop`, and where this module is in `Spec.mods`.
     prop: []const u32,
     index: u32,
@@ -363,6 +374,9 @@ const Spec = struct {
     ret_lat: std.AutoHashMapUnmanaged(NodeRef, Lat) = .empty,
     cur_fn: ?NodeRef = null,
     decided_conds: std.AutoHashMapUnmanaged(NodeRef, Index) = .empty,
+    /// `nameIn`'s answers, keyed by module and whole-program id; cleared
+    /// each rewrite.
+    name_in: std.AutoHashMapUnmanaged(SiteProp, u32) = .empty,
 
     const Frame = struct { node: Index, post: bool };
     const SiteProp = struct { site: u32, prop: u32 };
@@ -516,6 +530,7 @@ const Spec = struct {
             .false_lit => 5,
             .null_lit => 4,
             .undefined_lit => 9,
+            .name => 2,
         };
     }
 
@@ -964,6 +979,7 @@ const Spec = struct {
                 .false_lit => "false",
                 .null_lit => "null",
                 .undefined_lit => "undefined",
+                .name => return .nonnull,
             };
             try text.appendSlice(s.arena, spelled);
             template_len += 3 + printedLen(lit);
@@ -1135,6 +1151,20 @@ const Spec = struct {
     /// What reading `n` gives, from the facts.
     fn nameValue(s: *Spec, m: *Mod, n: NameIndex) Lat {
         if (m.globalOf(n)) |g| {
+            // Slice 6: a declaration that makes an object or a function, and
+            // that nothing assigns, is that one object wherever it is read.
+            if (s.decl[g]) |decl| if (!s.assigned[g]) {
+                const dm = &s.mods[decl.module];
+                const fresh = switch (dm.ir.tag(decl.stmt)) {
+                    .func_decl => true,
+                    .const_decl => switch (dm.ir.tag(@enumFromInt(dm.ir.data(decl.stmt).rhs))) {
+                        .arrow, .object, .array => true,
+                        else => false,
+                    },
+                    else => false,
+                };
+                if (fresh) return s.nameLat(g) catch .nonnull;
+            };
             if (s.escaped[g] and s.decl[g] != null and s.decl[g].?.func != null) return .top;
             if (s.assigned[g]) return .top;
             const decl = s.decl[g] orelse return .top;
@@ -1201,7 +1231,7 @@ const Spec = struct {
     fn truthy(s: *Spec, lit: Lit) Truth {
         _ = s;
         return switch (lit.kind) {
-            .true_lit => .yes,
+            .true_lit, .name => .yes,
             .false_lit, .null_lit, .undefined_lit => .no,
             .string => if (lit.bytes.len != 0) .yes else .no,
             .number => {
@@ -1233,6 +1263,7 @@ const Spec = struct {
                     .true_lit, .false_lit => "boolean",
                     .null_lit => "object",
                     .undefined_lit => "undefined",
+                    .name => return .top,
                 };
                 return .of(try s.intern(.{ .kind = .string, .bytes = text }));
             },
@@ -1323,6 +1354,7 @@ const Spec = struct {
     fn rewrite(s: *Spec) Allocator.Error!bool {
         var any = false;
         s.counting = false;
+        s.name_in.clearRetainingCapacity();
         // Which parameters go: a constant the substitution rule allows.
         const drop = try s.arena.alloc(bool, s.params.items.len);
         @memset(drop, false);
@@ -1341,6 +1373,8 @@ const Spec = struct {
                 const at = n.unwrap() orelse continue;
                 if (m.decls[at] != 1 or m.assigned[at]) continue;
                 if (!substitutes(s.litOf(v), m.uses[at])) continue;
+                // A name is written only where the module has it.
+                if (s.litOf(v).kind == .name and try s.nameIn(m, nameId(s.litOf(v))) == null) continue;
                 drop[decl.params + i] = true;
             }
         }
@@ -1767,8 +1801,47 @@ const Spec = struct {
             .false_lit => m.setNode(node, .false_lit, 0, 0),
             .null_lit => m.setNode(node, .null_lit, 0, 0),
             .undefined_lit => m.setNode(node, .undefined_lit, 0, 0),
+            .name => {
+                const n = try s.nameIn(m, nameId(lit)) orelse return false;
+                if (ir.tag(node) == .ident and ir.data(node).lhs == n.int()) return false;
+                m.setNode(node, .ident, n.int(), 0);
+            },
         }
         return true;
+    }
+
+    /// Slice 6: the value of a declaration's name, `name` and its id.
+    fn nameLat(s: *Spec, g: u32) Allocator.Error!Lat {
+        const bytes = std.mem.toBytes(g);
+        return .of(try s.intern(.{ .kind = .name, .bytes = &bytes }));
+    }
+
+    fn nameId(lit: Lit) u32 {
+        return std.mem.bytesToValue(u32, lit.bytes[0..4]);
+    }
+
+    /// Module `m`'s name for whole-program name `g`, when a live statement
+    /// of it already mentions `g` (`namedIn`), so writing it needs no import
+    /// the module lacks; cached for the round's rewrite.
+    fn nameIn(s: *Spec, m: *Mod, g: u32) Allocator.Error!?NameIndex {
+        const gop = try s.name_in.getOrPut(s.arena, .{ .site = m.index, .prop = g });
+        if (!gop.found_existing) {
+            gop.value_ptr.* = if (try s.namedIn(m, g)) |n| n.int() else none;
+            // In one scope-hoisted file every top-level name is one binding
+            // of the one scope, spelled from its `Name` alone: the
+            // declaring module's, copied in.
+            if (gop.value_ptr.* == none and s.in.one_scope) if (s.decl[g]) |decl| {
+                const dm = &s.mods[decl.module];
+                const name = dm.ir.name(@enumFromInt(dm.ir.data(decl.stmt).lhs));
+                const at = try m.addName(s.gpa, name);
+                if (m.global_list.items.len == 0) try m.global_list.appendSlice(s.arena, m.global);
+                while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
+                try m.global_list.append(s.arena, g);
+                m.global = m.global_list.items;
+                gop.value_ptr.* = at.int();
+            };
+        }
+        return if (gop.value_ptr.* == none) null else @enumFromInt(gop.value_ptr.*);
     }
 
     /// Fold the `if`s of one statement list whose test is now a literal,
@@ -2049,6 +2122,246 @@ const Spec = struct {
             }
             t.keep.shrinkRetainingCapacity(kept);
         }
+    }
+
+    // ---- Slice 7: scalar replacement --------------------------------------
+
+    /// `backend.md` §9, *Scalar replacement*: a local `const x = {…}` (or a
+    /// `let` nothing reassigns) of an object literal of plain keys, whose
+    /// every mention in its declaration is `x.k` — read, or written by an
+    /// assignment — for a key `k` of the literal, is one binding per key:
+    /// `const x$k = v` in the literal's order (`let` when a write reaches
+    /// it), and each `x.k` is that binding. Nothing else can see the object,
+    /// so nothing can tell it was never made. True when any was replaced.
+    fn scalarReplace(s: *Spec) Allocator.Error!bool {
+        if (s.in.fresh == .none) return false;
+        var any = false;
+        for (s.mods) |*m| {
+            const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (body) |top| switch (m.ir.tag(top)) {
+                .const_decl, .let_decl, .func_decl => if (try s.srBelow(m, top, top, 0)) {
+                    any = true;
+                },
+                else => {},
+            };
+        }
+        return any;
+    }
+
+    /// The statement lists below `stmt`, each replaced in its owner.
+    fn srBelow(s: *Spec, m: *Mod, stmt: Index, top: Index, depth: u32) Allocator.Error!bool {
+        if (depth > max_depth) return false;
+        const ir = m.ir;
+        const d = ir.data(stmt);
+        var any = false;
+        switch (ir.tag(stmt)) {
+            .const_decl, .let_decl, .assign_stmt, .return_stmt, .expr_stmt, .throw_stmt => {
+                var stack: std.ArrayList(Index) = .empty;
+                try operandsOf(s.arena, ir, stmt, &stack);
+                while (JsIr.popOperand(&stack)) |node| {
+                    if (m.ir.tag(node) == .arrow) {
+                        const at = m.ir.data(node).lhs;
+                        if (try s.srList(m, at + 2, m.ir.extraData(@enumFromInt(at), JsIr.Func).body(), top, depth + 1)) any = true;
+                        continue;
+                    }
+                    try m.ir.pushOperands(s.arena, &stack, node);
+                }
+            },
+            .func_decl, .gen_decl => any = try s.srList(m, d.rhs + 2, ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), top, depth + 1),
+            .if_stmt => {
+                if (try s.srBelowExpr(m, @enumFromInt(d.lhs), top, depth)) any = true;
+                if (try s.srList(m, d.rhs, m.ir.extraData(@enumFromInt(d.rhs), JsIr.If).thenBody(), top, depth + 1)) any = true;
+                if (try s.srList(m, d.rhs + 2, m.ir.extraData(@enumFromInt(d.rhs), JsIr.If).elseBody(), top, depth + 1)) any = true;
+            },
+            .while_true, .block_stmt, .switch_case => any = try s.srList(m, d.rhs, ir.subRange(@enumFromInt(d.rhs)), top, depth + 1),
+            .for_of => any = try s.srList(m, d.rhs + 1, ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).body(), top, depth + 1),
+            .switch_stmt => for (try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index))) |c| {
+                if (try s.srBelow(m, c, top, depth + 1)) any = true;
+            },
+            .try_stmt => {
+                if (try s.srList(m, d.rhs, m.ir.extraData(@enumFromInt(d.rhs), JsIr.Try).body(), top, depth + 1)) any = true;
+                if (try s.srList(m, d.rhs + 2, m.ir.extraData(@enumFromInt(d.rhs), JsIr.Try).finalBody(), top, depth + 1)) any = true;
+            },
+            else => {},
+        }
+        return any;
+    }
+
+    fn srBelowExpr(s: *Spec, m: *Mod, root: Index, top: Index, depth: u32) Allocator.Error!bool {
+        var any = false;
+        var stack: std.ArrayList(Index) = .empty;
+        try stack.append(s.arena, root);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (m.ir.tag(node) == .arrow) {
+                const at = m.ir.data(node).lhs;
+                if (try s.srList(m, at + 2, m.ir.extraData(@enumFromInt(at), JsIr.Func).body(), top, depth + 1)) any = true;
+                continue;
+            }
+            try m.ir.pushOperands(s.arena, &stack, node);
+        }
+        return any;
+    }
+
+    /// One list: the lists below first, then each declaration of it that
+    /// can be replaced, written as its bindings.
+    fn srList(s: *Spec, m: *Mod, owner: u32, range: JsIr.SubRange, top: Index, depth: u32) Allocator.Error!bool {
+        if (depth > max_depth) return false;
+        const items = try s.arena.dupe(u32, m.ir.extraSlice(range, u32));
+        var any = false;
+        for (items) |raw| if (try s.srBelow(m, @enumFromInt(raw), top, depth + 1)) {
+            any = true;
+        };
+        var out: std.ArrayList(u32) = .empty;
+        var changed = false;
+        for (items) |raw| {
+            if (try s.replaceScalars(m, @enumFromInt(raw), top, &out)) {
+                changed = true;
+                continue;
+            }
+            try out.append(s.arena, raw);
+        }
+        if (!changed) return any;
+        const start = try m.append(s.gpa, out.items);
+        m.extra.items[owner] = start;
+        m.extra.items[owner + 1] = start + @as(u32, @intCast(out.items.len));
+        return true;
+    }
+
+    /// When `stmt` declares an object that can be replaced by its keys, its
+    /// bindings onto `out` and every `x.k` of `top` rewritten; false, with
+    /// nothing changed, otherwise.
+    fn replaceScalars(s: *Spec, m: *Mod, stmt: Index, top: Index, out: *std.ArrayList(u32)) Allocator.Error!bool {
+        const ir = m.ir;
+        const tag = ir.tag(stmt);
+        if (tag != .const_decl and tag != .let_decl) return false;
+        const x: NameIndex = @enumFromInt(ir.data(stmt).lhs);
+        if (x == .none or m.globalOf(x) != null) return false;
+        const value = (@as(Node.OptionalIndex, @enumFromInt(ir.data(stmt).rhs))).unwrap() orelse return false;
+        if (ir.tag(value) != .object) return false;
+        const props = try s.arena.dupe(Index, ir.extraSlice(JsIr.inlineRange(ir.data(value)), Index));
+        if (props.len == 0 or props.len > 32) return false;
+        const ids = try s.arena.alloc(u32, props.len);
+        for (props, ids, 0..) |p, *id, i| {
+            if (ir.tag(p) != .property) return false;
+            id.* = s.pts.propId(m.index, @enumFromInt(ir.data(p).lhs));
+            if (id.* == none) return false;
+            if (std.mem.indexOfScalar(u32, ids[0..i], id.*) != null) return false;
+        }
+        // Every mention of `x` in its declaration.
+        var members: std.ArrayList(Index) = .empty;
+        const written = try s.arena.alloc(bool, props.len);
+        @memset(written, false);
+        const seen = try s.arena.alloc(bool, props.len);
+        @memset(seen, false);
+        var decls: u32 = 0;
+        var stack: std.ArrayList(Index) = .empty;
+        try stack.append(s.arena, top);
+        var budget: u32 = 1 << 16;
+        while (JsIr.popOperand(&stack)) |node| {
+            if (budget == 0) return false;
+            budget -= 1;
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .ident => if (d.lhs == x.int()) return false,
+                .const_decl, .let_decl, .func_decl, .gen_decl, .for_of => if (d.lhs == x.int()) {
+                    decls += 1;
+                },
+                .member => {
+                    const obj: Index = @enumFromInt(d.lhs);
+                    if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
+                        const id = s.pts.propId(m.index, @enumFromInt(d.rhs));
+                        const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
+                        try members.append(s.arena, node);
+                        seen[k] = true;
+                        continue;
+                    }
+                },
+                .assign_stmt => {
+                    const target: Index = @enumFromInt(d.lhs);
+                    if (ir.tag(target) == .member) {
+                        const obj: Index = @enumFromInt(ir.data(target).lhs);
+                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
+                            const id = s.pts.propId(m.index, @enumFromInt(ir.data(target).rhs));
+                            const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
+                            written[k] = true;
+                        }
+                    }
+                },
+                else => {},
+            }
+            switch (ir.tag(node)) {
+                .arrow, .func_decl, .gen_decl => {
+                    const record: ExtraIndex = @enumFromInt(if (ir.tag(node) == .arrow) d.lhs else d.rhs);
+                    const f = ir.extraData(record, JsIr.Func);
+                    for (ir.extraSlice(f.params(), NameIndex)) |p| if (p == x) {
+                        decls += 1;
+                    };
+                },
+                else => {},
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        if (decls != 1) return false;
+
+        const kept = if (m.tables) |t| std.mem.indexOfScalar(Index, t.keep.items, stmt) != null else false;
+        // How many reads each key has: a key never written whose value is
+        // an atom — a short literal, any literal read once, or a name
+        // nothing assigns — is that atom where it is read.
+        const uses = try s.arena.alloc(u32, props.len);
+        @memset(uses, 0);
+        for (members.items, 0..) |node, i| {
+            if (std.mem.indexOfScalar(Index, members.items[0..i], node) != null) continue;
+            uses[std.mem.indexOfScalar(u32, ids, s.pts.propId(m.index, @enumFromInt(m.ir.data(node).rhs))).?] += 1;
+        }
+        const names = try s.arena.alloc(NameIndex, props.len);
+        const atoms = try s.arena.alloc(?Index, props.len);
+        for (props, names, atoms, 0..) |p, *n, *a, k| {
+            const v: Index = @enumFromInt(m.ir.data(p).rhs);
+            a.* = null;
+            n.* = .none;
+            if (!seen[k] and !written[k] and inert(m.ir, v)) continue;
+            if (!written[k]) {
+                const atom = switch (m.ir.tag(v)) {
+                    .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => literalLen(m.ir, v) <= 5 or uses[k] <= 1,
+                    // A name declared twice in the declaration may mean
+                    // another binding where the key is read.
+                    .ident => try s.atomArgument(m, v, top, s.assigned) and
+                        (m.globalOf(@enumFromInt(m.ir.data(v).lhs)) != null or try declCount(s.arena, m.ir, top, @enumFromInt(m.ir.data(v).lhs)) <= 1),
+                    else => false,
+                };
+                if (atom) {
+                    a.* = v;
+                    continue;
+                }
+            }
+            n.* = try s.freshLocal(m);
+            const decl = try m.addNode(s.gpa, if (written[k]) .let_decl else .const_decl, m.ir.pos(p), n.*.int(), v.int());
+            try out.append(s.arena, decl.int());
+            if (m.tables) |t| if (kept and !inert(m.ir, v)) try t.keep.append(s.arena, decl);
+        }
+        for (members.items) |node| {
+            // A node two parents share is met twice.
+            if (m.ir.tag(node) != .member) continue;
+            const id = s.pts.propId(m.index, @enumFromInt(m.ir.data(node).rhs));
+            const k = std.mem.indexOfScalar(u32, ids, id).?;
+            if (atoms[k]) |a| m.copyNode(node, a) else m.setNode(node, .ident, names[k].int(), 0);
+        }
+        return true;
+    }
+
+    /// A local name no name of the module has.
+    fn freshLocal(s: *Spec, m: *Mod) Allocator.Error!NameIndex {
+        if (m.next_tag == 0) {
+            var max: u32 = 0;
+            // A record field's `Name.field` disambiguates nothing.
+            for (m.names.items) |x| if (x.tag != JsIr.Name.field) {
+                max = @max(max, x.tag);
+            };
+            m.next_tag = max + 1;
+        }
+        const tag = m.next_tag;
+        m.next_tag += 1;
+        return m.addName(s.gpa, .{ .module = .none, .base = s.in.fresh.unwrap().?, .tag = tag });
     }
 
     // ---- Slice 5: a function called once, once the whole program is seen ----
@@ -4153,6 +4466,33 @@ fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayL
     }
 }
 
+/// How many times `top` declares name `n`: a `const`, `let`, `function` or
+/// `for…of` binding, or a parameter of a function in it.
+fn declCount(gpa: Allocator, ir: *const JsIr, top: Index, n: NameIndex) Allocator.Error!u32 {
+    var count: u32 = 0;
+    var stack: std.ArrayList(Index) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, top);
+    while (JsIr.popOperand(&stack)) |node| {
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .const_decl, .let_decl, .for_of => if (d.lhs == n.int()) {
+                count += 1;
+            },
+            .func_decl, .gen_decl, .arrow => {
+                if (ir.tag(node) != .arrow and d.lhs == n.int()) count += 1;
+                const record: ExtraIndex = @enumFromInt(if (ir.tag(node) == .arrow) d.lhs else d.rhs);
+                for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| if (p == n) {
+                    count += 1;
+                };
+            },
+            else => {},
+        }
+        try pushChildren(gpa, ir, node, &stack);
+    }
+    return count;
+}
+
 /// The expression operands of any node, statements' included.
 fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(Index)) Allocator.Error!void {
     const d = ir.data(node);
@@ -4363,7 +4703,8 @@ fn strictEquals(x: Lit, y: Lit) ?bool {
             const q = parseNumber(y.bytes) orelse return null;
             return p == q;
         },
-        .string => std.mem.eql(u8, x.bytes, y.bytes),
+        // Two declarations each make an object of their own.
+        .string, .name => std.mem.eql(u8, x.bytes, y.bytes),
         .true_lit, .false_lit => x.kind == y.kind,
         .null_lit, .undefined_lit => true,
     };

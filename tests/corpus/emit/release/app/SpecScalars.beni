@@ -1,0 +1,65 @@
+-- emit: scalar replacement and declarations as constants (`backend.md` §9,
+-- *Whole-program specialisation*, slices 6 and 7):
+--
+--   * `area`'s record is read only by its fields: it is never made, and
+--     each read is the field's value or the binding that holds it;
+--   * `kept`'s record is passed to `describe` as well, a function called
+--     from two places: it is made;
+--   * every `Shape` this program builds has `measure` as its `measure`
+--     field, so `run`'s `shape.measure 3` calls `measure` by its name —
+--     and `measure`, then called from one place, is written there.
+import Node
+
+
+type alias Box =
+    { w : Int, h : Int, name : String }
+
+
+area : Int, Int -> Int
+area w h =
+    let
+        r =
+            { w = w * 2, h = h + 1, name = "r" }
+    in
+    r.w * r.h + String.length r.name
+
+
+describe : Box -> String
+describe b =
+    "${b.name} ${String.fromInt b.w}"
+
+
+kept : Int -> String
+kept w =
+    let
+        r =
+            { w = w, h = 1, name = "kept" }
+    in
+    describe r ++ String.fromInt r.h
+
+
+type alias Shape =
+    { label : String, measure : Int -> Int }
+
+
+measure : Int -> Int
+measure n =
+    n * n + 1
+
+
+run : Shape -> String
+run shape =
+    String.fromInt (shape.measure 3)
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (area 3 4)
+        , String.fromInt (area 5 6)
+        , kept 2
+        , kept 3
+        , describe { w = 9, h = 9, name = "nine" }
+        , run { label = "a", measure = measure }
+        , run { label = "b", measure = measure }
+        ]

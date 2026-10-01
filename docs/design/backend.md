@@ -5319,6 +5319,52 @@ literal one of whose two calls writes nothing), `run/SpecializeInit` (the same, 
 value reads the key it writes through a call — red when a call counts as harmless),
 `emit/release/split/EmptyPage`.
 
+**Slice 6 — a declaration's object as a constant** (*added 2026-10-03*; the empty page's study,
+ledger step 20, *constant propagation through non-escaping literals*). Facts 1, 2 and 4 joined
+only literals; a field that always holds `view`, a parameter every call passes the module's one
+block, were ⊤ or *nonnull*. The lattice gains a constant kind, **`name`**: the object or function
+a top-level declaration makes — a `function`, or a `const` whose initialiser is an arrow, an object
+or an array literal, which nothing assigns and which is declared once. A read of such a name is
+that constant; two different declarations make two different objects, so `===` of two names is
+decided, and a name is never `null`, a primitive or falsy. It flows as the literals do: a
+parameter every call passes it (fact 1), a `const` or `let` it initialises (fact 2), a field every
+write gives it (fact 4, with fact 4's conditions: read through a chain of program objects that
+nothing unseen holds, the key present from the start). And it is spent as they are: the read, the
+parameter or the field is written as the name. **Written where the module has it**: a module
+names another's declaration only through an `import`, so the name is written only in a module
+that already mentions it — or, when the build is one scope-hoisted file (*One scope-hoisted file
+under `--release`*), anywhere, every top-level name being one binding of the one scope (Emit asks
+whether it will be before specialising; specialisation only shrinks what the hand-written files
+must keep, so the answer cannot change). A read `o.f(x)` written `f(x)` loses its receiver, which
+nothing emitted reads: no function of the program uses `this`. Measured (release, brotli, the
+whole bundle): the empty `browser` page and `Tea.sandbox` 557 → **550** (`a.view(d)` is the
+page's `view` called by name, the kind's `m` called through the kind's name), `Tea.element`
+1 261 → 1 253, with effects 5 412 → 5 405, the `bench/ui` app 5 723 → 5 700; `bench/size.mjs`'s
+release total over `run/` −911 (`WideRecordDerivedEq` −541: its evidence records' fields are
+named functions). Fixtures: `emit/release/app/SpecScalars` (`run`'s `shape.measure 3`),
+`run/SpecializeScalars` (a field every construction gives one function, and one two give two),
+`emit/release/app/OneLine`, `emit/release/split/EmptyPage`.
+
+**Slice 7 — scalar replacement** (*added 2026-10-03*; ledger step 19). A local `const x = {…}` (or
+a `let` nothing reassigns) of an object literal of plain keys — no spread, no computed key — whose
+every mention in its top-level declaration is `x.k`, read or written by an assignment, for a key
+`k` of its literal, and which that declaration declares once, is never made: each key is a
+binding, `const` (or `let` when a write reaches it) in the literal's order, so every value is
+evaluated once, where and in the order the literal evaluated it, and `x.k` is the binding. A key
+never written whose value is an atom — a literal of at most 5 bytes or read once, or a name
+nothing assigns and the declaration declares once — is that atom where it is read; a key nothing
+reads whose value does nothing goes. Nothing but those reads and writes can see the object, so
+nothing can tell; a closure that reads `x.k` reads the binding, which it shares with the function
+as it shared the object. A binding lowering kept for its initialiser's effect (`effect_keep`) keeps
+each key's binding whose value may have one. It runs after the facts and *A function called once*,
+which is where most such objects appear: a record a helper built, now in its caller's `let`.
+Measured: `run/` programs' release brotli −185 more in all; every page and the app unchanged (their
+objects reach a call). Fixtures: `emit/release/app/SpecScalars` (`area`'s record, and `kept`'s,
+passed to a function called twice, made), `run/SpecializeScalars` (a field a closure reads later;
+in a loop, a record whose field is the loop's variable, read by closures after the loop — each
+sees its turn's value, which a substitution of the reassigned variable would lose),
+`emit/release/app/InlineAfter`, `emit/release/app/SpecFields`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

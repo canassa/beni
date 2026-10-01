@@ -1,0 +1,71 @@
+-- Scalar replacement and declarations as constants (`backend.md` §9,
+-- *Whole-program specialisation*, slices 6 and 7), beside what must defeat
+-- them, printing the same in both builds:
+--
+--   * a record read only by its fields, one of them read by a closure
+--     that runs later;
+--   * in a loop, a record whose field is the loop's variable, read by
+--     closures made on each turn and called after the loop: each sees the
+--     turn's value, not the variable's last;
+--   * a field every construction gives one function, and one two
+--     constructions give different functions.
+import Node
+
+
+area : Int, Int -> List Int
+area w h =
+    let
+        r =
+            { w = w * 2, h = h + 1 }
+    in
+    List.map [ 1, 2 ] (\k -> k * r.w + r.h)
+
+
+turns : Int, List (() -> Int) -> List (() -> Int)
+turns n acc =
+    let
+        r =
+            { v = n }
+    in
+    if n == 0 then
+        acc
+
+    else
+        turns (n - 1) [ \_ -> r.v * 10, ...acc ]
+
+
+type alias Op =
+    { name : String, apply : Int -> Int }
+
+
+double : Int -> Int
+double n =
+    n * 2
+
+
+square : Int -> Int
+square n =
+    n * n
+
+
+useOne : Op -> Int
+useOne op =
+    op.apply 7
+
+
+useEither : Op -> Int
+useEither op =
+    op.apply 5
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map (area 3 4 ++ area 5 6) String.fromInt
+            ++ List.map (turns 3 []) (\f -> String.fromInt (f ()))
+            ++ [ String.fromInt (useOne { name = "one", apply = double })
+               , String.fromInt (useOne { name = "two", apply = double })
+               , String.fromInt (useEither { name = "d", apply = double })
+               , String.fromInt (useEither { name = "s", apply = square })
+               ]
+        )
