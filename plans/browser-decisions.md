@@ -1382,3 +1382,5 @@ The steps, and what each measured: [`plans/runtime-in-beni.md`](runtime-in-beni.
 §29; the slices and the sixteen choices the specification made for the owner to confirm (Y1–Y16 —
 Y3, Y10 and Y11 before the first mechanical commit they shape) are
 [`plans/syntax-batch.md`](syntax-batch.md).
+| **S6** | **Syntax-batch choices confirmed** (the owner, 2026-10-02, as recommended in `plans/syntax-batch.md`): Y3 — a block starts only on a new line after `=`, `->`, `then`, `else` or a line-ending `(`; Y10 — new `Int` and `Float` core modules (`Int.mod`, `Int.rem`, `Float.log`, dot-call `n.mod 2`); Y11 — `Debug.log` keeps its name and takes Elm's label-first order. |
+| **S7** | **`Js` is exempt from the module graph** (the owner, 2026-10-02): a compiler built-in every core and platform module may use without an import edge, so `Char` and `Basics` can move to beni. **`String.compare` uses the fast code-unit walk** (≈4× faster, +15–30 B on small programs): processing time beats bytes. |
