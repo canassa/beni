@@ -1,0 +1,31 @@
+-- `Debug.toString` prints field names and constructor tags, which a release
+-- build is otherwise free to respell (backend.md §9, *Item 4, taken up*).
+-- A release build that reaches `Debug` is refused; the harness's second
+-- pass builds this one under `--allow-debug`, where no field is renamed and
+-- no tag is an integer, so both builds print the same lines.
+import Node
+
+
+type Mood
+    = Calm
+    | Busy Int
+
+
+type alias Person =
+    name : String
+    mood : Mood
+    tags : List String
+
+
+main : Node.Program
+main =
+    let
+        ada : Person
+        ada =
+            { name = "Ada", mood = Busy 3, tags = [ "math" ] }
+    in
+    Node.printLines
+        [ Debug.toString ada
+        , Debug.toString { ada | mood = Calm }
+        , ada.name
+        ]

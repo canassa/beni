@@ -36,6 +36,7 @@ const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Rename = @import("Rename.zig");
+const Fields = @import("Fields.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -121,6 +122,11 @@ pub const Options = struct {
     /// *Compact statements*, item 8).
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
+    /// `--release`: a record field's short spelling, by the field's text
+    /// (`backend.md` §9, *Item 4, taken up*; `Fields.Table`). A field name
+    /// with no entry is pinned and printed as its text. Null prints every
+    /// field as its text.
+    fields: ?*const Fields.Table = null,
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -146,6 +152,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .unobserved = options.unobserved,
         .bare_globals = options.bare_globals,
         .bare_blocked = options.bare_blocked,
+        .fields = options.fields,
         .spelled = scratch,
         .spellings = spellings,
     };
@@ -332,6 +339,8 @@ const Printer = struct {
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
     recursion_limit: u32 = 256,
+    /// `Options.fields`.
+    fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
     /// (`spelling`), and where those texts live until the joiner blits.
     spellings: []?Spelling,
@@ -488,6 +497,20 @@ const Printer = struct {
     /// exactly as it went in, in either mode.
     fn name(p: *Printer, index: JsIr.NameIndex, role: Rename.Role) Allocator.Error!void {
         const escape_reserved = role == .binding;
+        // A record field's key or read (`backend.md` §9, *Item 4, taken
+        // up*): its short spelling, or its text when it is pinned.
+        if (role == .fixed) if (p.fields) |table| {
+            const n = p.ir.name(index);
+            if (n.isField()) {
+                const text = p.names.text(n.base);
+                if (table.get(text)) |short| return p.push(short);
+                // A field the table never saw would print as its text
+                // beside renamed reads of the same field elsewhere.
+                if (std.debug.runtime_safety and !table.knows(text)) {
+                    std.debug.panic("release printer: field `{s}` has no spelling and is not kept (backend.md §9, *Item 4, taken up*)", .{text});
+                }
+            }
+        };
         if (p.rename) |m| {
             if (role == .binding) {
                 if (m.ordinal(index)) |o| {
@@ -525,7 +548,7 @@ const Printer = struct {
             text.appendAssumeCapacity('$');
         }
         try text.appendSlice(p.spelled, base);
-        if (n.tag != JsIr.Name.no_tag) {
+        if (n.tag != JsIr.Name.no_tag and n.tag != JsIr.Name.field) {
             var buf: [12]u8 = undefined;
             try text.appendSlice(p.spelled, std.fmt.bufPrint(&buf, "${d}", .{n.tag}) catch "$x");
         }

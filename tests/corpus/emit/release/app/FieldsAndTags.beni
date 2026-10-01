@@ -1,0 +1,55 @@
+-- `--release`'s field spellings and integer tags (backend.md §9, *Item 4,
+-- taken up*). `count` is named most and is spelled first; `label` and
+-- `total` follow by use, then text. `Light`'s constructors are tagged 0, 1
+-- and 2 — their declaration order — so `case` switches on numbers and the
+-- derived `compare` `List.sort` calls reads the tags themselves, with no
+-- `$$order` table. The `Node`
+-- program record crosses to the platform's runtime and keeps `code` and
+-- `out`.
+import Node
+
+
+type Light
+    = Red
+    | Amber Int
+    | Green
+
+
+type alias Meter =
+    label : String
+    count : Int
+    total : Int
+
+
+bump : Meter -> Meter
+bump m =
+    { m | count = m.count + 1, total = m.total + m.count }
+
+
+says : Light -> String
+says light =
+    case light of
+        Red ->
+            "stop"
+
+        Amber n ->
+            "wait ${String.fromInt n}"
+
+        Green ->
+            "go"
+
+
+main : Node.Program
+main =
+    let
+        m =
+            bump (bump { label = "m", count = 1, total = 0 })
+
+        lights =
+            [ Green, Amber m.count, Red ]
+    in
+    Node.printLines
+        [ "${m.label} ${String.fromInt m.count} ${String.fromInt m.total}"
+        , String.join (List.map lights says) " "
+        , String.join (List.map (List.sort lights) says) " "
+        ]

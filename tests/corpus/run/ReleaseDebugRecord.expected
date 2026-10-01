@@ -1,0 +1,3 @@
+{ mood = Busy 3, name = "Ada", tags = ["math"] }
+{ mood = Calm, name = "Ada", tags = ["math"] }
+Ada

@@ -2735,7 +2735,10 @@ const Spec = struct {
             if (n >= c.renamed.len or c.renamed[n] != none) return;
             if (c.dst.next_tag == 0) {
                 var max: u32 = 0;
-                for (c.dst.names.items) |x| max = @max(max, x.tag);
+                // A record field's `Name.field` disambiguates nothing.
+                for (c.dst.names.items) |x| if (x.tag != JsIr.Name.field) {
+                    max = @max(max, x.tag);
+                };
                 c.dst.next_tag = max + 1;
             }
             const tag = c.dst.next_tag;

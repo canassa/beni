@@ -84,6 +84,7 @@ const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const Rename = @import("Rename.zig");
+const Fields = @import("Fields.zig");
 const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
@@ -434,6 +435,12 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    /// `--release` of an application that does not reach `Debug`: what
+    /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
+    /// Null renames no field and gives no type integer tags.
+    boundary: ?Fields.Boundary = null,
+    /// The fields' short spellings, assigned after the optimiser.
+    field_table: ?Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1855,6 +1862,86 @@ const Emitter = struct {
     /// derivation is the difference between an empty program shipping 70 kB
     /// and shipping 2 kB, and a development build that ships fifty times
     /// what it needs is not a development build anyone would run.
+    /// §9, *Item 4, taken up*: what JavaScript sees, for a `--release`
+    /// application, once elimination has said what ships. A `--library`
+    /// build's consumer is hand-written JavaScript reading its records by
+    /// name, and a build that reaches `Debug` — only under the harness's
+    /// `--allow-debug` — prints field names and tags: neither renames a
+    /// field or gives a type integer tags.
+    fn closeBoundary(e: *Emitter) !void {
+        e.boundary = null;
+        if (!e.options.release or e.options.library or e.reachesDebug()) return;
+        const count = e.graph().count();
+        const birs = try e.scratch.alloc(*const Bir, count);
+        const tables = try e.scratch.alloc(*const Dispatch, count);
+        for (birs, tables, 0..) |*b, *d, i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            b.* = e.bir(m);
+            d.* = e.dispatchOf(m);
+        }
+        e.boundary = try Fields.close(.{
+            .arena = e.scratch,
+            .graph = e.graph(),
+            .birs = birs,
+            .dispatch = tables,
+            .live = &e.live,
+            .types = &e.session.checked.types,
+            .interner = &e.session.interner,
+        });
+    }
+
+    /// Whether any declaration of core's `Debug` survived elimination.
+    fn reachesDebug(e: *Emitter) bool {
+        const debug = e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol()) orelse return false;
+        for (0..e.bir(debug).decls.len) |i| {
+            if (e.live.decl(debug, i)) return true;
+        }
+        return false;
+    }
+
+    /// §9, *Item 4, taken up*: every record field's short spelling, from the
+    /// optimised trees of every module, in module order. A field keeps its
+    /// text when the boundary pins it or when the build also writes it as a
+    /// property that is not a field — one scan of every `member` and
+    /// `property` node.
+    fn assignFields(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) !void {
+        e.field_table = null;
+        const boundary = &(e.boundary orelse return);
+        var uses: std.StringArrayHashMapUnmanaged(u32) = .empty;
+        var plain: std.StringHashMapUnmanaged(void) = .empty;
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            const tags = ir.nodes.items(.tag);
+            const datas = ir.nodes.items(.data);
+            for (tags, datas) |tag, d| {
+                const index: JsIr.NameIndex = switch (tag) {
+                    .member => @enumFromInt(d.rhs),
+                    .property => @enumFromInt(d.lhs),
+                    else => continue,
+                };
+                const n = ir.name(index);
+                if (n.module != .none) continue;
+                const text = slot.overlay.slice(n.base);
+                if (n.isField()) {
+                    const gop = try uses.getOrPut(e.scratch, text);
+                    if (!gop.found_existing) {
+                        gop.key_ptr.* = try e.scratch.dupe(u8, text);
+                        gop.value_ptr.* = 0;
+                    }
+                    gop.value_ptr.* += 1;
+                } else if (!plain.contains(text)) {
+                    try plain.put(e.scratch, try e.scratch.dupe(u8, text), {});
+                }
+            }
+        }
+        const counts = try e.scratch.alloc(Fields.Count, uses.count());
+        for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
+        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain);
+    }
+
     fn eliminate(e: *Emitter, entry: ?Entry) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
@@ -2119,6 +2206,10 @@ const Emitter = struct {
         var insts: usize = 0;
         var uses_runtime = false;
         var lowered_clean = true;
+        // §9, *Item 4, taken up*: closed on the first, coarser elimination,
+        // so a second lowering below reads the same answer — a superset of
+        // what ships, which only ever keeps more names and more tags.
+        try e.closeBoundary();
         // A build with a runtime module lowers a second time when what the
         // first lowering used of the module reaches less than the coarse
         // roots did (`backend.md` §15.1, *The runtime module*).
@@ -2217,6 +2308,7 @@ const Emitter = struct {
             }
             e.hoisted = hoist != null;
             if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
+            try e.assignFields(slots, todo.items);
             try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
         }
 
@@ -2338,6 +2430,7 @@ const Emitter = struct {
                 .markup = slot.markup,
                 .inline_once = e.options.release,
                 .unit_results = e.options.release,
+                .boundary = if (e.boundary) |*b| b else null,
             });
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;
@@ -2419,6 +2512,7 @@ const Emitter = struct {
                 .hoisted = e.hoisted,
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
+                .fields = if (e.field_table) |*table| table else null,
             });
             slot.rename_failure = renamer.failure;
         }
@@ -2448,7 +2542,10 @@ const Emitter = struct {
                 g.* = Spec.none;
                 pr.* = Spec.none;
                 if (ir.names[n].module == .none) {
-                    if (ir.names[n].tag != JsIr.Name.no_tag) continue;
+                    // A record field's name is a property too, numbered by
+                    // its text like a plain one (§9, *Item 4, taken up*).
+                    const tag = ir.names[n].tag;
+                    if (tag != JsIr.Name.no_tag and tag != JsIr.Name.field) continue;
                     // Copied: moving a name into the session's pool (below)
                     // may move the bytes this slice points at.
                     const text = slot.overlay.slice(ir.names[n].base);
@@ -2464,7 +2561,7 @@ const Emitter = struct {
                     if (InternPool.Overlay.isOverlay(ir.names[n].base)) ir.setName(@enumFromInt(@as(u32, @intCast(n))), .{
                         .module = .none,
                         .base = try e.session.interner.getOrPut(e.gpa, gop.key_ptr.*),
-                        .tag = JsIr.Name.no_tag,
+                        .tag = tag,
                     });
                     continue;
                 }

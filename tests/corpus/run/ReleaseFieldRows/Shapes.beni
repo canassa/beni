@@ -1,0 +1,44 @@
+-- See Main.beni: records declared here and read there, by name and through
+-- an extensible row.
+pub type alias Rect =
+    width : Int
+    height : Int
+    name : String
+
+
+pub type alias Disc =
+    radius : Int
+    name : String
+
+
+-- `zeta` is named more often than `alpha`, so a release build gives it the
+-- shorter spelling; `compare` still reads `alpha` first, by source text.
+pub type alias Pair =
+    zeta : Int
+    alpha : Int
+
+
+-- Row-polymorphic: reads `name` on any record that has one.
+pub nameOf : { r | name : String } -> String
+nameOf r =
+    r.name
+
+
+pub rename : { r | name : String }, String -> { r | name : String }
+rename r name =
+    { r | name = name }
+
+
+pub area : Rect -> Int
+area { width, height } =
+    width * height
+
+
+pub pairOf : Int, Int -> Pair
+pairOf z a =
+    Pair z a
+
+
+pub zetaOf : Pair -> Int
+zetaOf (Pair z _) =
+    z

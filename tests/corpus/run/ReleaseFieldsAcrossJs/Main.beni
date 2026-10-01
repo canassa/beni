@@ -1,0 +1,62 @@
+-- What JavaScript reads by name keeps its name under `--release`, and what
+-- it never sees is renamed (backend.md §9, *Item 4, taken up*): a record
+-- and a tagged type a sibling reads and builds, a record that crosses by
+-- `Js.to` and one read back by `Js.get` after `Js.from`, a record handed
+-- through a type variable, and records and tags of the program's own that
+-- no JavaScript sees. Both builds print the same lines.
+import Node
+import Probe exposing (Point, Shape, Circle, Square)
+
+
+type alias Item =
+    label : String
+    weight : Int
+
+
+type Size
+    = Small
+    | Medium Int
+    | Large
+
+
+sizeText : Size -> String
+sizeText size =
+    case size of
+        Small ->
+            "small"
+
+        Medium n ->
+            "medium ${String.fromInt n}"
+
+        Large ->
+            "large"
+
+
+main : Node.Program
+main =
+    let
+        p : Point
+        p =
+            { x = 3, label = "p" }
+
+        o =
+            Probe.origin ()
+
+        made =
+            Probe.fromJs ()
+
+        item : Item
+        item =
+            Probe.keep { label = "kept", weight = 7 }
+    in
+    Node.printLines
+        [ Probe.describe p
+        , Probe.describe { o | x = o.x + 1 }
+        , String.fromFloat (Probe.area (Circle 2.0))
+        , String.fromFloat (Probe.area (Square 3.0))
+        , "${made.kind} ${String.fromInt made.count}"
+        , Probe.second { first = 1, second = "second" }
+        , "${item.label} ${String.fromInt item.weight}"
+        , sizeText (Probe.keep (Medium 2))
+        , if Small < Large then "ordered" else "unordered"
+        ]

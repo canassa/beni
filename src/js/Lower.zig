@@ -54,6 +54,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
+const Fields = @import("Fields.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
 const stamped = @import("../stamped.zig");
@@ -183,6 +184,11 @@ pub const Input = struct {
     /// a program's own modules call — the same reason a chunked build's
     /// `lazy` declarations will be exported from their chunks.
     entry_decl: ?u32 = null,
+    /// `--release`: what JavaScript sees (`Fields.close`), which decides
+    /// the types whose constructors have integer tags (`backend.md` §9,
+    /// *Item 4, taken up*). Null in a development build: every tag is a
+    /// string.
+    boundary: ?*const Fields.Boundary = null,
     /// §9's survivor sets, for the WHOLE program: what this module lowers,
     /// exports and imports is restricted to them, and the debug self-check
     /// below reads the other modules' to prove that no reference leaves the
@@ -396,16 +402,31 @@ const WellKnown = struct {
 const CtorRep = union(enum) {
     /// `Basics.Bool`.
     boolean: bool,
-    /// Every constructor of the type is nullary: the bare tag string.
-    bare_tag,
-    /// `{$: "Tag", a, b, …}`, padded to `fields` slots.
-    tagged: struct { fields: u32 },
+    /// Every constructor of the type is nullary: the bare tag string, or
+    /// under `--release` the constructor's declaration index when the type
+    /// has integer tags (`backend.md` §9, *Item 4, taken up*).
+    bare_tag: Tag,
+    /// `{$: "Tag", a, b, …}`, padded to `fields` slots; `$` is `int` when
+    /// the type has integer tags.
+    tagged: struct { fields: u32, int: Tag = null },
     /// A record alias's implicit constructor (backend.md §4's row, the
     /// owner's decision): the RECORD it builds, keys sorted by name text as
     /// every record literal's are (`recordNode`), and no tag. A pattern over
-    /// it reads the fields by name (`argName`). Where the names come from is
-    /// `RecordRep`'s.
+    /// it reads the fields by name (`argMember`). Where the names come from
+    /// is `RecordRep`'s.
     record: RecordRep,
+
+    /// A constructor's declaration index when its type's tags are
+    /// integers, else null and the tag is its name.
+    const Tag = ?u32;
+
+    fn int(rep: CtorRep) Tag {
+        return switch (rep) {
+            .bare_tag => |t| t,
+            .tagged => |t| t.int,
+            .boolean, .record => null,
+        };
+    }
 };
 
 /// Where a record alias's field names are read, in argument order.
@@ -850,6 +871,22 @@ const Lowerer = struct {
     fn property(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = key, .tag = JsIr.Name.no_tag });
         return l.add(.property, p, @intFromEnum(n), value.int());
+    }
+
+    /// A beni record's field, as a key or a read: the name carries
+    /// `Name.field`, which is what `--release` renames and nothing else is
+    /// (`backend.md` §9, *Item 4, taken up*). A development build prints it
+    /// as its text, exactly as a plain name.
+    fn fieldName(l: *Lowerer, field: Symbol) !JsIr.NameIndex {
+        return l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.field });
+    }
+
+    fn fieldMember(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
+        return l.add(.member, p, target.int(), @intFromEnum(try l.fieldName(field)));
+    }
+
+    fn fieldProperty(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
+        return l.add(.property, p, @intFromEnum(try l.fieldName(key)), value.int());
     }
 
     fn constDecl(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
@@ -3226,8 +3263,23 @@ const Lowerer = struct {
             return .{ .boolean = l.bir.symbol(c.name) == InternPool.WellKnown.True.symbol() };
         }
         if (owner.kind == .type_alias) return .{ .record = .{ .local = c.decl.int() } };
-        if (max == 0) return .bare_tag;
-        return .{ .tagged = .{ .fields = max } };
+        const int: CtorRep.Tag = if (l.integerTags(l.in.types.ofDecl(l.in.module, c.decl))) ctor_index - owner.ctors_start else null;
+        if (max == 0) return .{ .bare_tag = int };
+        return .{ .tagged = .{ .fields = max, .int = int } };
+    }
+
+    /// Whether `id`'s constructors have integer tags in this build
+    /// (`backend.md` §9, *Item 4, taken up*): never in a development build.
+    fn integerTags(l: *const Lowerer, id: Dispatch.TypeId) bool {
+        const b = l.in.boundary orelse return false;
+        return b.integerTags(id);
+    }
+
+    /// A constructor's tag as a literal: its declaration index when its
+    /// type has integer tags, else its name.
+    fn tagLiteral(l: *Lowerer, rep: CtorRep, tag: Symbol, p: u32) !Node.Index {
+        if (rep.int()) |i| return l.intNode(i, p);
+        return l.stringNode(l.text(tag), p);
     }
 
     /// The field names of a record alias's constructor, in argument order:
@@ -3295,17 +3347,17 @@ const Lowerer = struct {
     /// accepted by the front end, and it is irrefutable — one constructor —
     /// so it compiles to these reads with no test (decided 2026-09-24 under
     /// rule 7).
-    fn argName(l: *Lowerer, via: ?Inst.Index, i: u32) !Symbol {
+    fn argMember(l: *Lowerer, target: Node.Index, via: ?Inst.Index, i: u32, p: u32) !Node.Index {
         if (via) |ref| {
             if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
                 .record => |r| {
                     const names = try l.recordNames(r);
-                    if (i < names.len) return names[i];
+                    if (i < names.len) return l.fieldMember(target, names[i], p);
                 },
                 else => {},
             };
         }
-        return l.slotName(i);
+        return l.member(target, try l.slotName(i), p);
     }
 
     fn ctorRepExternal(l: *Lowerer, module: Graph.Index, ctor_index: u32) CtorRep {
@@ -3324,8 +3376,11 @@ const Lowerer = struct {
         // declared it (backend.md §4's row; interface v3 carries the
         // names).
         if (c.result == .record_alias) return .{ .record = .{ .imported = .{ .module = module, .ctor = ctor_index } } };
-        if (max == 0) return .bare_tag;
-        return .{ .tagged = .{ .fields = max } };
+        // The interface lists a type's constructors in declaration order,
+        // so the index is the one the declaring module writes.
+        const int: CtorRep.Tag = if (l.integerTags(l.in.types.ofInterface(module, c.type))) ctor_index - owner.ctors_start else null;
+        if (max == 0) return .{ .bare_tag = int };
+        return .{ .tagged = .{ .fields = max, .int = int } };
     }
 
     fn ctorRepOf(l: *Lowerer, inst: Inst.Index) ?struct { CtorRep, Symbol } {
@@ -3351,10 +3406,10 @@ const Lowerer = struct {
     fn ctorValue(l: *Lowerer, rep: CtorRep, tag: Symbol, args: []const Node.Index, p: u32) !Node.Index {
         switch (rep) {
             .boolean => |value| return l.add(if (value) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
-            .bare_tag => return l.stringNode(l.text(tag), p),
+            .bare_tag => return l.tagLiteral(rep, tag, p),
             .tagged => |t| {
                 var properties: std.ArrayList(Node.Index) = .empty;
-                try properties.append(l.scratch, try l.property(l.well.tag, try l.stringNode(l.text(tag), p), p));
+                try properties.append(l.scratch, try l.property(l.well.tag, try l.tagLiteral(rep, tag, p), p));
                 for (0..t.fields) |i| {
                     const slot = try l.slotName(@intCast(i));
                     const value = if (i < args.len) args[i] else try l.nullNode(p);
@@ -3370,7 +3425,7 @@ const Lowerer = struct {
                 var properties: std.ArrayList(Node.Index) = .empty;
                 for (order) |field| {
                     const value = if (field < args.len) args[field] else try l.nullNode(p);
-                    try properties.append(l.scratch, try l.property(names[field], value, p));
+                    try properties.append(l.scratch, try l.fieldProperty(names[field], value, p));
                 }
                 return l.object(properties.items, p);
             },
@@ -3775,13 +3830,13 @@ const Lowerer = struct {
                 var properties: std.ArrayList(Node.Index) = .empty;
                 try properties.append(l.scratch, try l.add(.spread_property, p, values[0].int(), Node.Data.unused));
                 for (fields, values[1..]) |f, value| {
-                    try properties.append(l.scratch, try l.property(l.bir.symbol(f.name), value, p));
+                    try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
                 }
                 return l.object(properties.items, p);
             },
             .field_access => {
                 const target = try l.expr(out, @enumFromInt(d.lhs));
-                return l.member(target, l.bir.symbols[d.rhs], p);
+                return l.fieldMember(target, l.bir.symbols[d.rhs], p);
             },
             .tuple_index => {
                 const target = try l.expr(out, @enumFromInt(d.lhs));
@@ -3931,7 +3986,7 @@ const Lowerer = struct {
         const values = try l.orderedExprs(out, insts, reordered);
         var properties: std.ArrayList(Node.Index) = .empty;
         for (order) |field| {
-            try properties.append(l.scratch, try l.property(l.bir.symbol(fields[field].name), values[field], p));
+            try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(fields[field].name), values[field], p));
         }
         return l.object(properties.items, p);
     }
@@ -3988,8 +4043,8 @@ const Lowerer = struct {
         // what the emitter would have to do if that changed — an emitter
         // that guesses at a representation is how a wrong answer ships.
         const failed = switch (rep) {
-            .tagged => try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.stringNode(l.text(tag), p), p),
-            .bare_tag => try l.binary(.strict_eq, subject, try l.stringNode(l.text(tag), p), p),
+            .tagged => try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.tagLiteral(rep, tag, p), p),
+            .bare_tag => try l.binary(.strict_eq, subject, try l.tagLiteral(rep, tag, p), p),
             .boolean => |value| if (value)
                 subject
             else
@@ -4744,6 +4799,9 @@ const Lowerer = struct {
         if (entry.module != l.in.module or entry.decl.int() >= l.bir.decls.len) return null;
         const ctors = l.bir.declCtors(l.bir.decls[entry.decl.int()]);
         if (ctors.len < 2) return null;
+        // An integer tag IS the declaration index the table would map it
+        // to (`orderLookup`), so there is no table.
+        if (l.integerTags(id)) return null;
         const p = Node.no_pos;
         var properties: std.ArrayList(Node.Index) = .empty;
         for (ctors, 0..) |ctor, i| {
@@ -4767,6 +4825,7 @@ const Lowerer = struct {
 
     /// `<T>$$order[subject]` — the tag's rank.
     fn orderLookup(l: *Lowerer, id: Dispatch.TypeId, subject: Node.Index, p: u32) !Node.Index {
+        if (l.integerTags(id)) return subject;
         const table = try l.ident(try l.synthesisedName(try l.orderBase(id)), p);
         return l.add(.index_get, p, table.int(), subject.int());
     }
@@ -5125,7 +5184,7 @@ const Lowerer = struct {
                 const fields = l.in.dispatch.shapeNames(names);
                 if (fields.len == 0) return try l.emptyArrow(row.kind, params.items, p);
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
-                return l.structuralArrow(row.kind, params.items, x, y, fields, p);
+                return l.structuralArrow(row.kind, params.items, x, y, fields, true, p);
             },
             // §9.3: the same, over the slot names `a`, `b`, `c`… of
             // `backend.md` §4. Keyed on the arity alone, so `( Int, Int )`
@@ -5135,7 +5194,7 @@ const Lowerer = struct {
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
                 const slots = try l.scratch.alloc(Symbol, arity);
                 for (slots, 0..) |*slot, i| slot.* = try l.slotName(@intCast(i));
-                return l.structuralArrow(row.kind, params.items, x, y, slots, p);
+                return l.structuralArrow(row.kind, params.items, x, y, slots, false, p);
             },
             .nominal => |id| {
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
@@ -5167,13 +5226,20 @@ const Lowerer = struct {
         x: JsIr.NameIndex,
         y: JsIr.NameIndex,
         slots: []const Symbol,
+        /// The slots are a record's field names, not a tuple's `a`, `b`, ….
+        fields: bool,
         p: u32,
     ) !?Node.Index {
+        const read = struct {
+            fn at(lo: *Lowerer, target: Node.Index, slot: Symbol, is_field: bool, at_p: u32) !Node.Index {
+                return if (is_field) lo.fieldMember(target, slot, at_p) else lo.member(target, slot, at_p);
+            }
+        }.at;
         if (kind == .eq) {
             var value: Conjunction = .{};
             for (slots, 0..) |slot, i| {
-                const left = try l.member(try l.ident(x, p), slot, p);
-                const right = try l.member(try l.ident(y, p), slot, p);
+                const left = try read(l, try l.ident(x, p), slot, fields, p);
+                const right = try read(l, try l.ident(y, p), slot, fields, p);
                 try value.add(l, try l.evidenceCall(@intCast(i), left, right, p), p);
             }
             var out: StmtList = .empty;
@@ -5183,8 +5249,8 @@ const Lowerer = struct {
         var stmts: StmtList = .empty;
         var counter: u32 = 0;
         for (slots, 0..) |slot, i| {
-            const left = try l.member(try l.ident(x, p), slot, p);
-            const right = try l.member(try l.ident(y, p), slot, p);
+            const left = try read(l, try l.ident(x, p), slot, fields, p);
+            const right = try read(l, try l.ident(y, p), slot, fields, p);
             const one = try l.evidenceCall(@intCast(i), left, right, p);
             try l.lexicographic(&stmts, one, i + 1 == slots.len, &counter, p);
         }
@@ -5568,6 +5634,8 @@ const Lowerer = struct {
             // `x.$` has already been proved equal to `y.$`.
             const test_expr: Node.OptionalIndex = if (i + 1 == ctors.len)
                 .none
+            else if (l.integerTags(id))
+                (try l.intNode(@intCast(i), p)).toOptional()
             else
                 (try l.stringNode(l.text(l.bir.symbol(ctor.name)), p)).toOptional();
             try arms.append(l.scratch, try l.add(.switch_case, p, @intFromEnum(test_expr), @intFromEnum(record)));
@@ -6420,7 +6488,7 @@ const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
-                const field_fn = try l.member(values[0], l.bir.symbol(m.name), p);
+                const field_fn = try l.fieldMember(values[0], l.bir.symbol(m.name), p);
                 return l.suspension(out, inst, try l.call(field_fn, values[1..], p));
             },
             // Never a callee: an `err` site becomes no term at all.
@@ -6521,8 +6589,8 @@ const Lowerer = struct {
 
     fn ctorTest(l: *Lowerer, subject: Node.Index, t_index: Dispatch.TermIndex, inst: Inst.Index, leaves: []const Node.Index, cursor: *usize, p: u32) !Node.Index {
         const app = l.ctorApplication(inst).?;
-        _, const tag = l.ctorRepOf(app.ctor).?;
-        var acc = try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.stringNode(l.text(tag), p), p);
+        const rep, const tag = l.ctorRepOf(app.ctor).?;
+        var acc = try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.tagLiteral(rep, tag, p), p);
         for (app.args, 0..) |arg, j| {
             const field = try l.member(subject, try l.slotName(@intCast(j)), p);
             const one = switch (l.fieldEq(t_index, app.ctor, j)) {
@@ -9236,7 +9304,7 @@ const Lowerer = struct {
             .ctor => {
                 const ref = edge.ref.unwrap() orelse return l.nullNode(p);
                 const rep_and_tag = l.ctorRepOf(ref) orelse return l.nullNode(p);
-                return l.stringNode(l.text(rep_and_tag[1]), p);
+                return l.tagLiteral(rep_and_tag[0], rep_and_tag[1], p);
             },
             .int => return l.numberNode(l.bir.bytes(edge.ref.unwrap().?), p),
             .char => {
@@ -9277,7 +9345,7 @@ const Lowerer = struct {
         const node = if (o.parent == Decision.Occ.no_parent)
             c.roots[o.root]
         else switch (o.kind) {
-            .slot => try l.member(try l.occNode(c, o.parent), try l.argName(o.via.unwrap(), o.slot), c.p),
+            .slot => try l.argMember(try l.occNode(c, o.parent), o.via.unwrap(), o.slot, c.p),
             // An element: `List$unsafeGet(r, k)`, O(1) on a plain list or
             // a view, and near O(1) on a trie.
             .head => blk: {
@@ -9471,7 +9539,7 @@ const Lowerer = struct {
             .pat_ctor => {
                 const ref: Inst.Index = @enumFromInt(d.lhs);
                 for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, i| {
-                    try l.bindings(out, arg, try l.member(subject, try l.argName(ref, @intCast(i)), p));
+                    try l.bindings(out, arg, try l.argMember(subject, ref, @intCast(i), p));
                 }
             },
             .pat_list => {
@@ -9513,7 +9581,7 @@ const Lowerer = struct {
                 for (l.bir.extraSlice(Bir.inlineRange(d), u32)) |local| {
                     if (local >= l.locals.len) continue;
                     const field = l.locals[local].name.unwrap() orelse continue;
-                    const value = try l.member(subject, l.bir.symbols[field], p);
+                    const value = try l.fieldMember(subject, l.bir.symbols[field], p);
                     try l.constDecl(out, try l.localName(local), value, p);
                 }
             },
@@ -9670,8 +9738,8 @@ const Lowerer = struct {
                 // comparisons can hold for, else the value itself, which
                 // is an object and so no key (backend.md §15.5).
                 const ctor = probe.ctor.unwrap() orelse return l.markupInput(probe.input, p);
-                _, const tag = l.ctorRepOf(ctor) orelse return l.markupInput(probe.input, p);
-                const tested = try l.binary(.strict_eq, try l.member(try l.markupInput(probe.input, p), l.well.tag, p), try l.stringNode(l.text(tag), p), p);
+                const rep, const tag = l.ctorRepOf(ctor) orelse return l.markupInput(probe.input, p);
+                const tested = try l.binary(.strict_eq, try l.member(try l.markupInput(probe.input, p), l.well.tag, p), try l.tagLiteral(rep, tag, p), p);
                 const field = try l.member(try l.markupInput(probe.input, p), try l.slotName(0), p);
                 return l.condOf(tested, field, try l.markupInput(probe.input, p), p);
             },
@@ -9710,8 +9778,10 @@ const Lowerer = struct {
         var node = try l.ident(try l.localName(input.local), p);
         for (0..input.len) |k| {
             const link = input.link(k);
-            const field = if (link & Bir.tuple_link != 0) try l.slotName(link & ~Bir.tuple_link) else l.bir.symbols[link];
-            node = try l.member(node, field, p);
+            node = if (link & Bir.tuple_link != 0)
+                try l.member(node, try l.slotName(link & ~Bir.tuple_link), p)
+            else
+                try l.fieldMember(node, l.bir.symbols[link], p);
         }
         return node;
     }
@@ -9847,9 +9917,9 @@ const Lowerer = struct {
         var properties: std.ArrayList(Node.Index) = .empty;
         if (c.spread) |spread| {
             try properties.append(l.scratch, try l.add(.spread_property, p, (try l.markupValue(spread)).int(), Node.Data.unused));
-            for (names.items, values.items) |n, v| try properties.append(l.scratch, try l.property(n, v, p));
+            for (names.items, values.items) |n, v| try properties.append(l.scratch, try l.fieldProperty(n, v, p));
         } else {
-            for (try l.fieldOrder(names.items)) |i| try properties.append(l.scratch, try l.property(names.items[i], values.items[i], p));
+            for (try l.fieldOrder(names.items)) |i| try properties.append(l.scratch, try l.fieldProperty(names.items[i], values.items[i], p));
         }
         const args = [_]Node.Index{try l.object(properties.items, p)};
         if (try l.referenceApplied(source.callee, &args)) |called| return called;
@@ -10112,7 +10182,10 @@ const markup_vtable: beni_markup.VTable = struct {
         const l = lowerer(impl);
         const p = pos(l);
         const tag = try l.member(node(e), l.well.tag, p);
-        return expr(try l.binary(.strict_eq, tag, try l.stringNode("Just", p), p));
+        // `Just`'s tag as the build writes it: its name, or its index when
+        // `Maybe` has integer tags (`backend.md` §9, *Item 4, taken up*).
+        const just = if (l.integerTags(l.in.types.well_known.maybe)) try l.intNode(0, p) else try l.stringNode("Just", p);
+        return expr(try l.binary(.strict_eq, tag, just, p));
     }
 
     fn start(impl: *anyopaque, key: []const u8, val: []const u8) E!void {

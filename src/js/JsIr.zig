@@ -401,6 +401,15 @@ pub const Name = struct {
     tag: u32,
 
     pub const no_tag: u32 = 0;
+    /// A beni record's field name, as a key or a read (`backend.md` §9,
+    /// *Item 4, taken up*): printed as its text, and under `--release` as
+    /// the short spelling the build gave the field, unless the field is
+    /// pinned. No counter reaches it, so it disambiguates nothing.
+    pub const field: u32 = std.math.maxInt(u32);
+
+    pub fn isField(n: Name) bool {
+        return n.module == .none and n.tag == field;
+    }
 
     pub fn local(base: Symbol) Name {
         return .{ .module = .none, .base = base, .tag = no_tag };
