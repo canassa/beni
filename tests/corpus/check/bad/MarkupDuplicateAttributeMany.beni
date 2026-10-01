@@ -1,7 +1,7 @@
 -- Past sixteen attributes the names of a tag are kept in a set, and a
 -- duplicate is still duplicate_attribute at the second, naming the line
--- of the first: `a3`, first written on line 7, again on 10 (10:9), and
--- `a16`, the seventeenth, again on 11 (11:9).
+-- of the first: `a3`, first written on line 10, again on 24 (24:9), and
+-- `a16`, the seventeenth, again on 25 (25:9).
 view =
     <div
         a0

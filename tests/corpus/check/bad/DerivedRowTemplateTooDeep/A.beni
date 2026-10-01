@@ -5,7 +5,7 @@
 -- writer's 512. `Facts.templateScheme` must go through the one publication
 -- routine — its `hasError` scan, and `noteDeepDecl` on `too_deep` — never
 -- publish `<error>` silently, which would let `check A B` exit 0 and give C
--- — a valid use — two INTERNAL ERRORs at `C.beni:15:23` (an evidence
+-- — a valid use — two INTERNAL ERRORs at `C.beni:1034:25` (an evidence
 -- miscount). Expected: B's row goes through `Publisher.scheme`
 -- and B reports NESTING TOO DEEP (the position is open: §14.1 does not yet
 -- say which region a row's failure names), and C, reading a poisoned row,

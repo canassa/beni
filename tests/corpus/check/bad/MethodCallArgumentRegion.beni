@@ -1,5 +1,5 @@
 -- check/bad: a dot-call on a record field is still a field call (§1.2), and
--- an argument mistake underlines THAT ARGUMENT — `"two"` at 14:17 — and
+-- an argument mistake underlines THAT ARGUMENT — `"two"` at 13:25 — and
 -- names the field, exactly as the `call(field_access(…))` this replaced
 -- did. A regression guard for the whole argument path of a `method_call`,
 -- including `Solve.argRegions`, which had no arm for the new tag: the

@@ -2,9 +2,9 @@
 -- proposal.md §15.2 items 1, 3 and 4; checker-v2.md §25.6). The page calls
 -- each of these synchronously, from an event or a render, where a
 -- suspension would come back in place of a message or of markup: the
--- `update` `Browser.program` declares `sync` (49:20), an event handler in
--- its function form (37:25), a `For`'s row function (39:53) and the
--- function `Html.map` passes each message through (41:43). The `view`
+-- `update` `Browser.program` declares `sync` (50:20), an event handler in
+-- its function form (38:25), a `For`'s row function (40:53) and the
+-- function `Html.map` passes each message through (42:43). The `view`
 -- that holds them does not suspend itself: a handler and a row are only
 -- built there, and the page calls them later.
 import Browser

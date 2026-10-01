@@ -1,6 +1,6 @@
 -- Markup nested more deeply than the checker follows is one
 -- `nesting_too_deep`, worded for markup, at the innermost hole the checker
--- reached (14:8405), and nothing more: the part it could not read is poisoned,
+-- reached (15:8404), and nothing more: the part it could not read is poisoned,
 -- so no hole reports that it cannot tell its type. 1 400 levels of
 -- `<div>{…}</div>` is the fewest the checker gives up on while the parser
 -- accepts them. The message is about markup, not a type and a type alias,

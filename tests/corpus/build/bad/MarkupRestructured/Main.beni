@@ -2,10 +2,10 @@
 -- page's HTML parser would rebuild into another tree than the one written.
 -- The `ssr` lowering refuses it at the node, one diagnostic per root, and
 -- nothing is written: a `<div>` in a `<p>`, which the parser closes first
--- (15:9); a row straight in a `<table>`, which it moves into a `tbody` of
--- its own (20:13); and a `<style>` whose text holds its own end tag, which
+-- (14:12); a row straight in a `<table>`, which it moves into a `tbody` of
+-- its own (18:17); and a `<style>` whose text holds its own end tag, which
 -- would close it early — the reference is decoded before the lowering sees
--- it (25:17).
+-- it (22:20).
 import Html exposing (Html)
 import Node
 

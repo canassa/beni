@@ -5,8 +5,8 @@
 -- and `[ x ] == [ y ]` would answer `True` for any two values, at exit 0.
 -- So a `pub eq` or `pub compare` written for a type of its module is
 -- refused at its own name when it may suspend: `eq` (19:1) through a call
--- of the primitive, `compare` (24:1) through `eq`. The `==` on two lists
--- of them (30:8) is not refused a second time: its chain runs through
+-- of the primitive, `compare` (23:1) through `eq`. The `==` on two lists
+-- of them (27:17) is not refused a second time: its chain runs through
 -- `eq`, whose own refusal already says it.
 pub foreign suspends lookup : String -> Int
 

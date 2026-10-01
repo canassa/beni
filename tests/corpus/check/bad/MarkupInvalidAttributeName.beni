@@ -1,8 +1,8 @@
 -- A quoted attribute name holds only attribute-name characters (language.md
--- §11.5): whitespace (8:9, and 10:9 written as an escape), `=` (9:9), a
--- control character (11:9), a quote (12:9), `/` (13:9) or `>` (14:9) would
+-- §11.5): whitespace (9:9, and 11:9 written as an escape), `=` (10:9), a
+-- control character (12:9), a quote (13:9), `/` (14:9) or `>` (15:9) would
 -- end the name in the page and begin another attribute — `"x onclick"`
--- writes an event handler — and an empty name (15:9) names nothing. Each is
+-- writes an event handler — and an empty name (16:9) names nothing. Each is
 -- invalid_attribute_name at the quoted name; `"data-ok"` is a name.
 view model =
     <p

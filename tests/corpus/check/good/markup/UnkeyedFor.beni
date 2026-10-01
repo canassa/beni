@@ -1,6 +1,6 @@
 -- `unkeyed_for` (language.md §11.9, checker-v2.md §25.4): a `For` over
 -- records that says nothing about its keying is warned about at its tag
--- (17:10), because an edited record is a new value and its row would be
+-- (18:10), because an edited record is a new value and its row would be
 -- rebuilt. It is a warning, so the module still checks. Over a `String`,
 -- identity is equality and there is nothing to say; `keyed={True}` says
 -- identity is meant; a key says how rows are matched.

@@ -1,7 +1,7 @@
 -- `key_not_primitive` (checker-v2.md §25.4): a key is compared by
 -- identity, so it must be a type whose `==` is identity. A record key is
--- refused, for `For` (15:34) and for `Show` (16:37), and a key whose type
--- is the annotation's variable cannot be known to be one (22:34).
+-- refused, for `For` (16:34) and for `Show` (17:37), and a key whose type
+-- is the annotation's variable cannot be known to be one (22:51).
 import Html exposing (Html)
 
 
