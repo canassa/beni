@@ -5385,3 +5385,49 @@ section says only where it sits in this checker.
   class reaching a demand and publishes it `sync`, and `Sync.check` reports it at the word when the
   body makes it suspend. Lowering refuses the word (`misplaced_sync`) in a package that may not
   write `foreign`; the parser reads it in every top-level annotation.
+
+## 28. Amendment of 2026-10-01: the boundary rows
+
+`backend.md` §9's *Item 4, taken up* renames record fields and gives constructors integer tags
+under `--release`, except where JavaScript can see them (`boundary.md` §4, *What JavaScript may
+read of a beni value*). One half of "where" is written in declarations, and the backend reads it
+there; the other half is a solved type, and only this checker has it: **the type a use of core's
+`Js.from` or `Js.to` was instantiated at.** That is the whole of what this section adds to §13.1's
+record — the field-interference artifact `backend.md` §9 once asked for, reduced to the one fact a
+declaration cannot give.
+
+**The rows.** `Dispatch.boundary: []const Boundary`, where
+
+```zig
+pub const Boundary = struct {
+    decl: u32,                     // the Bir.DeclIndex whose instruction range holds the use
+    kind: enum(u8) { field, type },
+    value: u32,                    // field: a Symbol; type: a Types.TypeId
+};
+```
+
+one row per distinct `(decl, kind, value)`: every field NAME of every record node, and every named
+type, reachable from the use's instantiated type. The walk reads through an alias to its
+expansion, into a function's parameters and result, an application's arguments, a tuple's elements
+and a record's own fields and extension; it stops at a `flex`, a `rigid` and an `err`, because a
+type variable is opaque (`boundary.md` §4). It does not open a named type's constructors: their
+bodies are declarations, and the backend reads them from `Bir` when it closes the boundary.
+
+**Where it is made.** `Solve` notes every `reference` constraint whose instruction is an
+`ext_value` of core's `Js` module named `from` or `to` — keyed on the core package and the module
+and value names, as `js/JsIntrinsic.zig` is, never on a spelling a user can write — with the
+variable the copy was unified into and the declaration being solved. P6 walks each one once every
+type is final, beside the `appends` (§13.1), so no order of solving can change a row.
+
+**Order and determinism.** Rows are sorted by `decl`, then `kind`, then the field's TEXT or the
+type's `(package, module, name)`, and deduplicated: a `Symbol` id and a `TypeId` depend on
+`--jobs` (`InternPool`'s header), so neither orders anything (§17).
+
+**The cache.** The rows are a product of the module's source and of its imports' interfaces, which
+is exactly what the cache entry's key already pins, so the key does not change. They ride in the
+dispatch sidecar as the column `boundary`, 12 bytes a row — `decl`, `kind`, three bytes of zero, and
+a string offset (a field) or a `type_refs` index (a type) — and `cache/dispatch_bytes.zig`'s
+`format_version` goes 8 → 9, so an older sidecar is a miss.
+
+**The dump.** `dump --stage=dispatch` prints one line per row after a module's other lines:
+`boundary <decl> field <name>` or `boundary <decl> type <Module>.<Type>`, in row order.

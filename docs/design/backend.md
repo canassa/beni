@@ -369,7 +369,7 @@ mapping.
 | a pattern in an irrefutable position | a fresh name plus a destructuring statement, **with no test** — a parameter, a `let` pattern and a `<-` bound pattern alike. Correct by construction: `language.md` §7 makes all of them irrefutable, the parser refusing the shapes no type can rescue and `checker.md` §6.6 refusing a constructor whose type has more than one, so a pattern that could fail never reaches lowering. A single-constructor type destructures through whichever shape §9.4 gave it — `{$: "Tag", a, b}`, or the bare tag when its one constructor is nullary |
 | saturated call at known arity | direct call `f(a, b)` (§6) |
 | record | object literal, keys in a canonical sorted order so one hidden class per record type — the sort moves the **keys** and never an initialiser (below) |
-| constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
+| constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release. *Amended 2026-10-01:* an integer only for a type no JavaScript sees, and never `Order` — §9, *Item 4, taken up* |
 | record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; the owner's decision that a record alias constructor builds the record, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (decided 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2): until 2026-09-25 it was `not_implemented`, because interface v2 had no names |
 | nullary constructor | the bare tag — or, for a type that also has a constructor with fields, one module-level constant object per constructor (*A nullary constructor is one object*, below; 2026-09-29) |
 | tuple | fixed-shape object per arity, no runtime tag |
@@ -4240,6 +4240,11 @@ here unblocks any of them.
 
 #### Item 4 — field ambiguation, specified and then declined
 
+*Amended 2026-10-01: taken up on the owner's order, with the integer tags — *Item 4, taken up*,
+below, is what is built. This section stands as its reasoning, except where that one says
+otherwise: the checker artifact is back (smaller), and "no record enters a program from
+JavaScript" is no longer true.*
+
 **It is not worth building, and this is the measurement that says so.** Item 4 is worth **0.71% of
 brotli on `bench/corpus`, 0.00% on `Dictionaries` and 0.07% over the whole corpus** — against report
 12 §5.3's predicted ~4%, which was `terser --mangle-props` on *Elm's* bundle and has now been
@@ -4385,6 +4390,120 @@ here and never will be — the backend has no types, which is §3 and not a gap.
 rule off and **byte-identical** with it on; every `run/` fixture unchanged under `--release`; emit
 throughput within noise of today's **48.08 ms / 61.2 MB/s for 633 modules** (`bench -- --generate=100000`,
 ReleaseFast, this machine), which a print-time table lookup cannot move.
+
+#### Item 4, taken up — record fields renamed, and integer constructor tags
+
+*Added 2026-10-01, the owner's order: build item 4 and the integer tags under `--release`.* This
+amends the section above in three places and keeps the rest of it: **the unit is still the source
+field NAME, whole-program**; scheme (i) is what is built and colouring (ii) stays rejected on its
+numbers; every order still sorts on SOURCE text, so this is a print-time substitution. What changed
+is the premise *"no record enters a program from JavaScript"*, which the browser runtime written in
+beni (`platforms/browser/Rt.beni`, `Browser.beni`, research 47) made false: it builds records with
+`Js.from { p = parent, m = marker, … }` and reads them back with `Js.get s "u"`. So a field can be
+seen by JavaScript, the set of such fields depends on types, and the checker artifact the section
+above withdrew is back, smaller: it carries only what a solved type knows and a declaration does not
+(`checker-v2.md` §28).
+
+**Scheme (i), and why it is interference-free by construction.** Every distinct source field name
+that is not pinned (below) gets its own short spelling, ranked by how often the build's generated
+code names it, ties broken by the name's text. Two different fields never share a spelling, so two
+fields that can sit on one object — a record type's fields, an extensible record's row, whatever a
+row-polymorphic `getX` is handed — can never collide, and no interference graph is needed to prove
+it. One name has one spelling everywhere, so every function that can see an object reads it the
+same way, which is what made the name the unit in the first place.
+
+**The alphabet**: `a`–`z`, `A`–`Z`, `_`, then digits from the second character, in `Rename`'s
+mixed radix — and no spelling that contains `$` (`core/Debug.js`, the list protocol's `$plain`,
+the constructor tag), and no spelling that is the text of a field that keeps its text (below),
+because the two could be keys of one record. A spelling MAY be the text of a property that is not
+a field — `a`, a tuple's slot, is the commonest: a record holds nothing but its fields, and nothing
+that reads a plain property by name is handed a record whose fields it does not name. A reserved
+word is a legal property name and is not skipped.
+
+**How a field is told from every other property.** `Lower` writes a record field's key and every
+read of one — a literal's keys, a record update's, `.x`, an accessor, a record pattern, a record
+alias constructor's keys and its pattern's reads, a derived `eq`/`compare` over a record shape, a
+field call `r.f a`, a markup row input's field path and a component's props — as a `JsIr.Name`
+whose disambiguator is `Name.field`, a value no counter reaches. A tuple or constructor slot, the
+`$` tag, a `Js.get`/`Js.set`/`Js.call` name, a `Js.Ref`'s `v`, `length`, and every name a markup
+lowering writes through `beni_markup` are plain names, as before. The development printer spells a
+field name by its text alone, so **a development build does not move by a byte**. Whole-program
+specialisation keys properties by TEXT (`Spec`'s `props`), and a field-marked name is pooled and
+numbered like any plain one, so a body copied into another module names the same property there.
+
+**What is never renamed — the closed list.**
+
+| | why |
+|---|---|
+| a field of a record type that crosses into JavaScript: the **boundary** | JavaScript reads and writes it by its source name. *Below* |
+| a field name the build also writes as a non-field property, anywhere | one text, two meanings: `Js.get o "u"` on a record whose `u` was renamed would read nothing. The collision is found on the final `JsIr`, after specialisation, by one scan of every `member` and `property` node |
+| every field of a `--library` build | its consumer is hand-written JavaScript, reading the exported records by name (the section above) |
+| every field of a build that reaches `Debug` | `Debug.toString` prints field names. A release build that reaches `Debug` is refused (*`Debug` is refused, not pinned*); under the harness-only `--allow-debug` it is built with renaming off, so `run/`'s release pass still prints its `.expected` |
+| a JSON key, a schema's host-object key | never a record field: a schema reads and writes a host value's keys as plain names (`schema.md`), and its generated code builds the beni record with a literal like any other |
+| a markup vocabulary's attribute, a markup runtime's object | not a field. A component's props ARE a record, built at the call and read in the component, both generated, so they are renamed consistently |
+
+**The boundary.** A record field is pinned when JavaScript can see it, and JavaScript sees a beni
+value only through the two doors the wall has (`boundary.md` §4):
+
+1. **A live `foreign` value's declared annotation** — every field of every record written in it,
+   through aliases, and every field in the body of every named type it names, transitively. A
+   `foreign` is how a sibling hands beni a record it built (`Dom.box : String -> Result Error
+   Box`) and reads one beni built. The backend reads the annotation from the declaration's `Bir`,
+   as it already reads a record alias's body.
+2. **A use of `Js.from` or `Js.to` in a live declaration** — every field of the type the use was
+   INSTANTIATED at, by the same walk. `Js.from { p = parent, m = marker }` pins `p` and `m`;
+   `Js.to (Js.get m "n") : { h : Value }` pins `h`. Only the checker knows that type, and this is
+   what `checker-v2.md` §28's artifact carries, per declaration, so elimination decides which rows
+   count.
+
+**A type variable is opaque at both doors**, which is `boundary.md` §4's parametricity rule: a
+sibling handed an `a`, and platform code handed `Js.from x` with `x : a`, may store it and hand it
+back, compare it with `===`, and walk it reflectively the way `Basics.eq` does — but never read one
+of its fields by name, because which type it is was never its to know. Without the rule the
+browser runtime's `Js.from msg` would pin every field of every program's messages. A named type
+whose body is reached (`Result Error Box` reaches `Box`, `Error`) contributes its whole body, its
+parameters opaque.
+
+**When it runs.** The boundary is closed once per build, in `Emit`, after elimination and before
+lowering: seeds from every live declaration's artifact rows and every live `foreign`'s annotation,
+then a worklist over named types read from `Types` and the declaring module's `Bir`. It is a
+function of the live sets, the artifacts and the declarations, so `--jobs` cannot move it. The
+spelling table is made after `optimise`, on the calling thread, in module order: count, sort by
+(count descending, text ascending), assign. A short spelling is printed by the printer's `.fixed`
+slot when its name is field-marked, exactly where item 2 prints a binding's.
+
+**Integer constructor tags.** Under `--release`, a type whose values JavaScript never sees has
+integer tags: constructor `i` of its declaration, counted from 0, is `{$: i, a, b}`, and a type whose
+constructors are all nullary is the bare integer. A type keeps its string tags when:
+
+- it is in the closed boundary above — a sibling builds `{$: "Just", a}` and reads `.$ === "Done"`
+  (`core/String.js`, `core/Task.js`, `platforms/browser/Http.js`) for exactly the types its
+  annotations name;
+- it is core's `Order` or `Bool` — `Order`'s `"LT"`/`"EQ"`/`"GT"` are written by siblings
+  (`List.compare`, `String.compare`, `Hosted.compareKeys`) and by every derived `compare`, and `Bool`
+  is `true`/`false`;
+- the build is a `--library` build or reaches `Debug`, as for fields.
+
+The decision is one bit per type for the whole build, made with the boundary and handed to `Lower`;
+every place `Lower` writes a tag — a constructor's object, a nullary constant, a test, a `switch`
+case, a markup probe, `isJust` — writes the bit's answer, so no two spellings of one type can meet.
+**`compare` on an integer-tagged type needs no `<T>$$order` table**: the tag IS the declaration
+index the table maps to, so the lookup is the tag itself and the table is not written — which also
+pays the `obj[dynamicString]` the section above recorded against report 12 §5.4. A
+`Hosted.Key` built from a value holding such a type orders differently in the two builds; only its
+equality is the program's (`boundary.md` §9.8.3), and that does not move.
+
+**The self-check**, safety builds: a field-marked name that reaches the release printer has a
+spelling or keeps its text, and the table was made from every field the build names — a field the
+table never saw would print as its text beside renamed reads of it elsewhere.
+
+**Fixtures**, by intent: `emit/release/` goldens of a record renamed and of a record crossing
+`Js.from` kept; `run/` programs with an extensible-record accessor over two record types across two
+modules, a record passed through a test platform's `foreign` and read by its sibling, a derived
+`compare` whose source order differs from its short-name order asserted through `List.sort`, and a
+`Debug.toString` of a record unchanged under the harness's `--allow-debug`; a `dump --stage=dispatch`
+golden of the artifact; the whole `run/` and `browser/` corpus's release pass is the differential
+test, and the determinism test runs `--release` at `--jobs=1` and `--jobs=8`.
 
 ### Hand-written JavaScript under `--release`
 
@@ -6081,7 +6200,9 @@ Nothing in §9's release slice changes, and three things are stated so that no l
   `.data`, a block's `t` and `v`, an instance's fields — because `Rename` renames bindings and nothing
   else.
 - **Item 4**, field ambiguation, is declined (§9); if it is ever taken up, a markup runtime's objects
-  and blocks are outside it, because the runtime reads their fields by name.
+  and blocks are outside it, because the runtime reads their fields by name. *Amended 2026-10-01:
+  taken up (§9, *Item 4, taken up*), and they are outside it: a lowering writes plain names, and
+  only a beni record's fields — a component's props among them — are renamed.*
 
 **Development output of a program without markup does not move by a byte**, as the release slice's
 proof required; the `emit/` corpus is what makes it a test.

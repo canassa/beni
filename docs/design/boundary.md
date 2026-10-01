@@ -319,6 +319,28 @@ third rule, *marshal to plain data*, made specific: a list crosses as a plain ar
 arrays*). A **port**'s generated codec (§3.1) follows the same two rules: a list going out is read
 through the protocol, and one coming in is a fresh array the codec built.
 
+#### What JavaScript may read of a beni value
+
+*Added 2026-10-01, with `backend.md` §9's* Item 4, taken up. A `--release` build renames record
+fields and gives constructors integer tags wherever no JavaScript can see the difference, so
+"where can JavaScript see it" is now part of this contract. **JavaScript sees the representation
+of exactly the types a `foreign` annotation names, and of the type a `Js.from` or `Js.to` is
+used at** — written records, named types and their bodies, transitively. Those keep their source
+field names and string tags in every build.
+
+**A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
+Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
+store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s
+`Object.keys` walk, `Hosted`'s key order — but never read a field or a tag by name: which type
+it holds was never its to know, and a release build may spell that type's fields and tags
+differently. A reflective walk sees the same values equal in both builds; an ORDER it imposes on
+unequal values of different shapes may differ, and nothing may make that order observable
+except as a set's order. This is parametricity, and it is what keeps a platform's generic
+plumbing from pinning every program's records.
+
+**What to do about it** is nothing new: a platform that needs to read a record by name names its
+type — in a `foreign` annotation, or at the `Js.from` / `Js.to` it goes through.
+
 ### 4.1 The recipe for privileged code, written down and tested
 
 The guarantee lives or dies in privileged code, and Elm's own has holes: a core package declares a
