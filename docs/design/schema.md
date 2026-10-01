@@ -966,6 +966,74 @@ compiler rows have **not landed in this capture** and remain owed. Specialisatio
 Beni row and reports per-operation medians/orderings, both directions and all
 fault paths, without a geometric-mean parity claim or a new measurement here.
 
+### The specialised path, as specified for S4
+
+*Added 2026-10-01, before S4 was built* (§16, S4). What the paragraphs above leave to the
+implementation, decided against the code of the S3 engine (`core/Schema.beni`), which the
+specialised code shares one context with.
+
+**What a declaration emits.** For a schema `S` of module `M`, ordinary module-level bindings, in
+three reachability nodes and the declaration's own:
+
+| Binding | What it is | Reached by |
+|---|---|---|
+| `M$S$$via$k` | the `k`th `via` expression's value, evaluated once at module initialisation | either path, where it uses that `via` |
+| `M$S$$description`, `M$S$$schema` | the description: `core/Schema`'s builders composed as §5's table composes them, the field mappings and injections written as arrows over §4's representation. A nongeneric one is a module constant `schema` returns; a generic one is built by `schema`, its factory, from the arguments. A schema in a reference cycle of its module is wrapped in `Schema.recursive "S"`, so module initialisation calls no body | a use of `S.schema`, and another description that names `S` |
+| `M$S$$read`, `M$S$$parse`, `M$S$$parseWith` | the decoding worker and its two root wrappers | `S.parse`, `S.parseWith`, and another decoding worker that names `S` |
+| `M$S$$write`, `M$S$$print`, `M$S$$printWith` | the encoding worker and its two root wrappers | `S.print`, `S.printWith`, and another encoding worker that names `S` |
+
+No node reaches another direction or the description, so a program that only parses ships no
+print, no description and none of the builders (§6, *DCE*). The two tagged endpoints' constructors
+are §4's tagged unions with the variant's name as the tag in both families — a schema endpoint
+never gets integer tags (`backend.md` §9, *Item 4, taken up*) — so `Message.Count x` and
+`Message.Encoded.Count x` are the same JavaScript value, and each is matched, compared and derived
+like any `type`'s.
+
+**The worker.** A worker is `(c, depth, path, v, …slots)` and answers what the engine's `run`
+answers for the same node: the result, or `c.fail` after pushing its issues. `c` is the engine's own
+context record; `depth` and `path` are the engine's (`run`'s), so a failure's path is built only
+when it is reported, as the engine's `step` chain. The root wrappers are one call each of
+`compiledParse` and `compiledPrint`, core-private values of `core/Schema` (in no interface; the code
+generator names them by their symbols in that module, as it names `List`'s core-private values,
+`backend.md` §4): the root's checks, `JSON.parse` with only its `SyntaxError` caught (`Js.catchIf`,
+CLAUDE.md rule 9), the context, the worker, the `Result`. A failure branch is one call of
+`compiledFail` with the code by its position in `IssueCode` and the message written as a literal;
+a `via` is `compiledForward`/`compiledBackward`, which are the engine's `call`, so a conversion's
+issues are moved exactly as the library moves them; the encoding side of a `via` runs its source
+under `belowBackward`. Everything else is written in place: the `typeof`, `Array.isArray`,
+`Object.hasOwn` and `Number.isSafeInteger` tests, the excess-key loop under `Reject`, the depth test
+before each descent, the list loop, the typed record built in canonical key order, the
+constructors. Primitives, `nullable` and `via` over them are written into their parent; a record,
+list or tagged node is a worker of its own (`M$S$$read$n`), called with the child's path.
+
+**Print writes the engine's host value.** An encoding worker answers the host value the engine
+writes and `compiledPrint` makes its text with one `JSON.stringify`, as `printWith` does, so the
+two paths print the same bytes. A record is a plain object whose keys are assigned after its fields
+were visited, in field order with a variant's discriminator first, a `Missing` field left out;
+`__proto__` is defined as an own property rather than assigned, so no key reaches a prototype
+(§5, *Host values*). Writing JSON text piece by piece was measured first and is slower wherever the
+values are strings: a `JSON.stringify` call per string costs more than one over the whole tree.
+
+**Parse may keep a list's array** (§6, *Lists are arrays*): a list of a primitive with no `via` is
+the array `JSON.parse` made, once every element is checked.
+
+**Generic parameters.** A slot is a worker. A root wrapper given `Schema` values turns each into a
+slot with the core-private `readSlot`/`writeSlot`, which run the library engine on the context the
+wrapper made (the dynamic-child rule above), and checks them first as `rootProblem` checks a whole
+schema: each argument's construction failure in the order the declaration first reaches it, then an
+argument whose Encoded end has no external form. A parameter the declaration never reaches is not
+checked, as the library never looks at it. A static argument inside a declaration — `Page User`
+written in a field — is a compiled worker, so a declaration reaches the library engine only through
+a schema value the program supplies at run time.
+
+**The forced library path** (Q9). A hidden `--schema-library` build flag — absent from `usage`, as
+`--allow-debug` is — makes every root wrapper of every declaration the library's:
+`M$S$$parseWith = (o, t) => Schema.parseWith(M$S$$schema(…), o, t)`, the whole root through the
+interpreter, and emits no worker. It changes no answer; that is what the differential corpus
+asserts (§10). The corpus builds every `run/` fixture that declares a `schema` four times —
+development and `--release`, each compiled and forced — against the one `.expected`, which is
+written by hand: the two paths agreeing with each other is not evidence on its own.
+
 ## 7. Effects
 
 Effectful transformations are part of the intended design. Synchronous delivery
