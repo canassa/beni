@@ -1,0 +1,49 @@
+-- emit: constructor folding (`backend.md` §9, *Whole-program
+-- specialisation*, slice 9) — a list read through a `Maybe` makes no
+-- `Just`:
+--
+--   * `pick` reads a word with `List.get` then `Maybe.withDefault`: `get`
+--     makes a `Just` or is `Nothing`, and `withDefault` only inspects what
+--     it is given, so each is written where `pick` returns, the choice is
+--     an `if`, and each branch reads the element or returns the default;
+--   * `firstOr` matches `List.head` with a `case`: the same, with the
+--     arm's own expression;
+--   * `dropHead` reads through `List.drop` first: the view is still made,
+--     the `Just` is not.
+import Node
+
+
+pick : List String, Int -> String
+pick words i =
+    List.get words i |> Maybe.withDefault ""
+
+
+firstOr : List Int, Int -> Int
+firstOr xs d =
+    case List.head xs of
+        Just x ->
+            x * 2
+
+        Nothing ->
+            d
+
+
+dropHead : List String, Int -> String
+dropHead words i =
+    List.drop words i |> List.head |> Maybe.withDefault "?"
+
+
+main : Node.Program
+main =
+    let
+        words =
+            [ "a", "b", "c" ]
+    in
+    Node.printLines
+        [ pick words 1
+        , pick words 7
+        , String.fromInt (firstOr [ 4, 5 ] 0)
+        , String.fromInt (firstOr [] 9)
+        , dropHead words 2
+        , dropHead words 5
+        ]

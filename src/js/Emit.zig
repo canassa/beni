@@ -2665,6 +2665,7 @@ const Emitter = struct {
             .globals = ids.count(),
             .props = props.count(),
             .prop_len = prop_len,
+            .tag_prop = props.get("$") orelse Spec.none,
             .builtin_props = builtin.items,
             .node_makers = makers.items,
             .escaping = escaping.items,

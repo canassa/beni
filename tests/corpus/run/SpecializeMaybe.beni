@@ -1,0 +1,76 @@
+-- Constructor folding (`backend.md` §9, *Whole-program specialisation*,
+-- slice 9) beside what must defeat it, printing the same in both builds —
+-- `Debug.log` shows each argument evaluated once, in order:
+--
+--   * `List.get` then `Maybe.withDefault`, in and out of range, its index
+--     an expression with an effect;
+--   * a `case` on `List.head`, empty and not, whose arms each log;
+--   * a `Maybe` a `case` matches after something else read it whole
+--     (`Debug.toString`): it is made;
+--   * a `Maybe` built by a function with a choice of three.
+import Node
+
+
+pick : List String, Int -> String
+pick words i =
+    List.get words (Debug.log i "index") |> Maybe.withDefault "none"
+
+
+firstOr : List Int, Int -> Int
+firstOr xs d =
+    case List.head xs of
+        Just x ->
+            Debug.log (x * 2) "just"
+
+        Nothing ->
+            Debug.log d "nothing"
+
+
+shown : List Int -> String
+shown xs =
+    let
+        m =
+            List.head xs
+    in
+    case m of
+        Just x ->
+            Debug.toString m ++ String.fromInt x
+
+        Nothing ->
+            "empty"
+
+
+sign : Int -> Maybe String
+sign n =
+    if n > 0 then
+        Just "positive"
+
+    else if n < 0 then
+        Just "negative"
+
+    else
+        Nothing
+
+
+describe : Int -> String
+describe n =
+    Maybe.withDefault (sign n) "zero"
+
+
+main : Node.Program
+main =
+    let
+        words =
+            [ "a", "b", "c" ]
+    in
+    Node.printLines
+        [ pick words 1
+        , pick words 7
+        , String.fromInt (firstOr [ 4, 5 ] 0)
+        , String.fromInt (firstOr [] 9)
+        , shown [ 3 ]
+        , shown []
+        , describe 5
+        , describe (0 - 5)
+        , describe 0
+        ]

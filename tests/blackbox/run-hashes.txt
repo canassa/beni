@@ -16,7 +16,7 @@ abuse_wide_test.test.a written && chain runs at the widest the parser admits und
 abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 a9c54a916cddd423b1af961965f8fb309a5ec5949fc83ecb9ef3ae946248f297
 abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 0b47ea9ae9e2686f4e342bdb5d1387ffeeb220b5b48a556d995586108bcf8d77
 abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 e192828740ddc5cdba2699369ef63891ab913766e1707b1117b2dcf04e686f5e
-abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 19a628e9575c9dd3c5d95f595263435b4a2ae71e34b0b942ddc43b7c87aea4e5
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 120e640e62ee3743254cb6cef23260af3cb651563f9a4cdd66cd3a06ff5690d8
 blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 02f1852874fe1b0cfaf630a3d94312221163433d3e919a65497934df13c09019
 blackbox_test.test.a constrained value in a part position is handed its own evidence #0 10779300f70eebe2d134a29725ce0cbbbbdfa25ca125f21663b760394dcd8c1d
 blackbox_test.test.a derived compare compiles, and so does List's #0 595e59e1cd5507f5d0d6bb52f679a25408f1366004834be320c7801e411de411

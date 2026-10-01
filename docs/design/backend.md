@@ -5410,6 +5410,54 @@ through the field), `run/SpecializeSmall` (the same with `Debug.log` on each arg
 is the development build's), `emit/release/app/SpecConstants`, `SpecFacts`, `SpecNodes`,
 `SpecInit`, `InlineAfter`, `emit/release/split/EmptyPage`.
 
+**Slice 9 — constructor folding** (*added 2026-10-03*; `plans/runtime-in-beni.md`'s *Append
+against Solid 1*: a page that reads a list with `List.get` then `Maybe.withDefault` made a `Just`
+per read, most of the cold loop's cost). A value a small function makes, that another small
+function or the rest of the caller only *inspects*, is made where it is inspected, so that its
+tag test folds and its fields are read where they are written:
+
+- **A producer** is an expression that makes an object a fold can see into: an object literal; a
+  *declared object* (a top-level `const` of an object literal — a nullary constructor such as
+  `Nothing`); a choice `c ? A : B` of two producers; or a call of a small function (slice 8's,
+  whose body may now also be `if (t) return a; return b` and `const v = e; return R` with `v`
+  read once, first — the `case` lowering's shapes, read as `t ? a : b` and `R[v := e]`) whose
+  body is one. A parameter is **inspected** when the body reads it, and only as the object of a
+  property read; a local is when its declaration says so of every mention.
+- **`return f(…, P, …)`**, `f` small, inspecting the parameter `P` is passed to, `P` a producer: the
+  arguments that are not atoms are bound first, in order, by `const`s (kept by the optimiser when
+  they may do something), then `return` `f`'s body.
+- **`const x = g(…)`**, `g` a small producer, `x` only inspected: the same, `x` bound to `g`'s
+  body.
+- **`const x = c ? A : B`, then one statement `R` ending the list**, `x` only inspected, `A` and
+  `B` producers, `R` small with no function in it: `if (c) { const x = A; R } else { const x' = B;
+  R' }`, `R'` a copy of `R` reading `x'` and declaring names of its own — `R` runs once on either
+  path, as it did.
+- **`const x = e; return R`**, `x` read once in its declaration, by `R`, first, and not only
+  inspected: `return R[x := e]` — the field binding scalar replacement leaves behind.
+
+Then scalar replacement makes `x = {$: "Just", a: v}` its fields, and the facts fold the tag
+test: `"Just" === "Just"` is `true`; and **a constructor's tag `$`** read through a chain whose
+objects are all object literals of the program with the key — escaped or not — is the literals'
+one value when no code of the program writes `$` on them or on anything the pass cannot see: a
+beni value is immutable, and a hand-written file writes none (`Spec.tagValue`; `Nothing.$` is
+`"Nothing"` though `Nothing` is passed everywhere). `List.get xs i |> Maybe.withDefault ""` is
+then `0<=i&&i<xs.length?unsafeGet(xs,i):""`; `case List.head xs of Just x -> x * 2; Nothing -> d`
+is `0<xs.length?unsafeGet(xs,0)*2:d`; a read through `List.drop` still makes the view, not the
+`Just`. A name a body needs that is a hand-written file's binding is written by the name a module
+imports it as, which is one binding of the one scope; the import stays while any module names it.
+The passes run small functions, functions called once, then this, then scalar replacement — in
+that order, so a function called once is taken in before a binding here makes its argument a
+call.
+
+Measured (release, brotli, the whole bundle): the empty `browser` page and `Tea.sandbox` 503 →
+**496**, `Tea.element` 1 226 → 1 210, with effects 5 384 → 5 362, the `bench/ui` app 5 701 →
+**5 675** — its `pick` is `{let d=N(c,b);return 0<=d&&d<a.length?R(a,d):""}`, no `Just` — and
+`run/` programs −671 in all. Fixtures: `emit/release/app/SpecMaybe` (`get` then `withDefault`, a
+`case` on `head`, and `drop` then `head`), `run/SpecializeMaybe` (the same with `Debug.log` on the
+index and in each arm, a `Maybe` read whole by `Debug.toString` and so made, and a function
+choosing among three), `emit/release/split/EmptyPage`, `HolesPage`, `emit/release/app/SpecScalars`,
+`SpecSmall`, `SpecNodes`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

@@ -123,6 +123,9 @@ pub const Input = struct {
     one_scope: bool = false,
     /// Per property-name id: its length, for slice 8's size model.
     prop_len: []const u8 = &.{},
+    /// The property-name id of `$`, a constructor's tag (slice 9), or
+    /// `none`.
+    tag_prop: u32 = none,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -175,6 +178,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
         var changed = false;
         if (try s.inlineSmall()) changed = true;
         if (try s.inlineOnce()) changed = true;
+        if (try s.constructors()) changed = true;
         if (try s.scalarReplace()) changed = true;
         if (!changed) break;
         _ = try s.prune();
@@ -385,6 +389,10 @@ const Spec = struct {
     /// `nameIn`'s answers, keyed by module and whole-program id; cleared
     /// each rewrite.
     name_in: std.AutoHashMapUnmanaged(SiteProp, u32) = .empty,
+    /// What `srList` does to each statement list it reaches.
+    list_mode: enum { scalars, constructors } = .scalars,
+    /// Slice 9: `smallTable`, for the pass in progress.
+    cf_smalls: []?Small = &.{},
 
     const Frame = struct { node: Index, post: bool };
     const SiteProp = struct { site: u32, prop: u32 };
@@ -1053,7 +1061,32 @@ const Spec = struct {
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
         const v = s.propValue(obj, id);
         if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
+        if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @enumFromInt(d.lhs), id)) |t| return t;
         return s.demote(v);
+    }
+
+    /// Slice 9: a constructor's tag `$`, read through a chain that may only
+    /// be object literals of the program each of which has the key — escaped
+    /// or not: a beni value is immutable, and no file the pass cannot see
+    /// writes one (`boundary.md` §4) — and that no code of the program
+    /// writes `$` on, or on anything it cannot see, is the literals' one
+    /// value. A literal has no getter; the chain is safe to evaluate.
+    fn tagValue(s: *Spec, m: *Mod, object: Index, id: u32) Allocator.Error!?Lat {
+        const p = &s.pts;
+        if (p.unknown_any or std.mem.indexOfScalar(u32, p.unknown_props.items, id) != null) return null;
+        const obj = try p.safeChain(m.index, s.cur_top, object) orelse return null;
+        if (obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return null;
+        var out: Lat = .bot;
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (st.kind != .object or st.prog_any) return null;
+            if (std.mem.indexOfScalar(u32, st.prog_props.items, id) != null) return null;
+            if (site >= s.spread_sites.len or s.spread_sites[site]) return null;
+            const pr = p.findProp(site, id) orelse return null;
+            if (!pr.init) return null;
+            out = s.join(out, s.prop_lat.get(.{ .site = site, .prop = id }) orelse return null);
+        }
+        return if (out.state == .lit) out else null;
     }
 
     /// The join of what is written to property `id` of every object `obj`
@@ -1876,9 +1909,16 @@ const Spec = struct {
             // In one scope-hoisted file every top-level name is one binding
             // of the one scope, spelled from its `Name` alone: the
             // declaring module's, copied in.
-            if (gop.value_ptr.* == none and s.in.one_scope) if (s.decl[g]) |decl| {
+            // A hand-written file's binding no module declares: the name a
+            // module imports it by, the same `Name` wherever it is copied
+            // (the import stays while any module names it: `prune`).
+            const known: ?JsIr.Name = if (s.decl[g]) |decl| blk: {
                 const dm = &s.mods[decl.module];
-                const name = dm.ir.name(@enumFromInt(dm.ir.data(decl.stmt).lhs));
+                break :blk dm.ir.name(@enumFromInt(dm.ir.data(decl.stmt).lhs));
+            } else found: for (s.mods) |*other| {
+                for (other.global, 0..) |og, oi| if (og == g) break :found other.names.items[oi];
+            } else null;
+            if (gop.value_ptr.* == none and s.in.one_scope) if (known) |name| {
                 const at = try m.addName(s.gpa, name);
                 if (m.global_list.items.len == 0) try m.global_list.appendSlice(s.arena, m.global);
                 while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
@@ -2183,6 +2223,302 @@ const Spec = struct {
     /// it), and each `x.k` is that binding. Nothing else can see the object,
     /// so nothing can tell it was never made. True when any was replaced.
     fn scalarReplace(s: *Spec) Allocator.Error!bool {
+        s.list_mode = .scalars;
+        return s.eachFunctionList();
+    }
+
+    /// Slice 9: constructor folding, over every statement list.
+    fn constructors(s: *Spec) Allocator.Error!bool {
+        if (s.in.fresh == .none) return false;
+        s.list_mode = .constructors;
+        s.cf_smalls = try s.smallTable();
+        return s.eachFunctionList();
+    }
+
+    /// `backend.md` §9, *Slice 9*: a value a small function makes — an
+    /// object literal, or a choice between such and declared objects — that
+    /// a small function or the rest of its function only inspects, is made
+    /// where it is inspected, so that each object's fields are read where
+    /// they are written (scalar replacement) and a tag test folds. The list
+    /// `items`, rewritten onto `out`; true when anything was.
+    fn foldConstructors(s: *Spec, m: *Mod, top: Index, items: []const u32, out: *std.ArrayList(u32)) Allocator.Error!bool {
+        var work: std.ArrayList(u32) = .empty;
+        try work.appendSlice(s.arena, items);
+        var changed = false;
+        var budget: u32 = 32;
+        var i: usize = 0;
+        while (i < work.items.len) {
+            if (budget > 0 and try s.foldAt(m, top, &work, i)) {
+                changed = true;
+                budget -= 1;
+                // The statements written in its place may fold again.
+                continue;
+            }
+            i += 1;
+        }
+        try out.appendSlice(s.arena, work.items);
+        return changed;
+    }
+
+    /// One statement of a list being folded, rewritten in `work` when a
+    /// rule applies.
+    fn foldAt(s: *Spec, m: *Mod, top: Index, work: *std.ArrayList(u32), i: usize) Allocator.Error!bool {
+        const stmt: Index = @enumFromInt(work.items[i]);
+        const ir = m.ir;
+        const d = ir.data(stmt);
+        switch (ir.tag(stmt)) {
+            // `return f(…, g(…), …)`: `f` inspects what `g` makes.
+            .return_stmt => {
+                const v = (@as(Node.OptionalIndex, @enumFromInt(d.lhs))).unwrap() orelse return false;
+                const small = s.calleeSmall(m, v) orelse return false;
+                const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(ir.data(v).rhs)), Index));
+                if (args.len != small.params.len) return false;
+                const exposes = for (args, small.inspects) |a, insp| {
+                    if (insp and s.producer(m, a, 0)) break true;
+                } else false;
+                if (!exposes) return false;
+                var stmts: std.ArrayList(u32) = .empty;
+                const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
+                const ret = try m.addNode(s.gpa, .return_stmt, ir.pos(stmt), e.int(), 0);
+                try stmts.append(s.arena, ret.int());
+                try work.replaceRange(s.arena, i, 1, stmts.items);
+                return true;
+            },
+            .const_decl, .let_decl => {
+                const x: NameIndex = @enumFromInt(d.lhs);
+                if (x == .none or m.globalOf(x) != null) return false;
+                const v = (@as(Node.OptionalIndex, @enumFromInt(d.rhs))).unwrap() orelse return false;
+                // `const x = e; return R`, `R` reading `x` once and first,
+                // and nothing else reading it: `return R` with `e` in its
+                // place — what a field's binding is once its object went.
+                // Not where `x` is only inspected: the rules below fold it.
+                if (i + 1 < work.items.len and ir.tag(@as(Index, @enumFromInt(work.items[i + 1]))) == .return_stmt) intoReturn: {
+                    const r: Index = @enumFromInt(work.items[i + 1]);
+                    const re = (@as(Node.OptionalIndex, @enumFromInt(ir.data(r).lhs))).unwrap() orelse break :intoReturn;
+                    if (try s.onlyInspected(m, top, x)) break :intoReturn;
+                    if (try declCount(s.arena, ir, top, x) != 1) break :intoReturn;
+                    if (firstUse(ir, re, x, 0) != .found) break :intoReturn;
+                    var reads: u32 = 0;
+                    var stack: std.ArrayList(Index) = .empty;
+                    try stack.append(s.arena, top);
+                    while (JsIr.popOperand(&stack)) |node| {
+                        if (ir.tag(node) == .ident and ir.data(node).lhs == x.int()) reads += 1;
+                        try pushChildren(s.arena, ir, node, &stack);
+                    }
+                    if (reads != 1) break :intoReturn;
+                    var c: Copy = .{
+                        .s = s,
+                        .src = m,
+                        .dst = m,
+                        .cross = false,
+                        .renamed = try s.arena.alloc(u32, m.names.items.len),
+                        .subst = try s.arena.alloc(Node.OptionalIndex, m.names.items.len),
+                    };
+                    @memset(c.renamed, none);
+                    @memset(c.subst, .none);
+                    c.subst[x.int()] = v.toOptional();
+                    const e = try c.expr(re, 0);
+                    const ret = try m.addNode(s.gpa, .return_stmt, ir.pos(r), e.int(), 0);
+                    try work.replaceRange(s.arena, i, 2, &.{ret.int()});
+                    return true;
+                }
+                switch (ir.tag(v)) {
+                    // `const x = g(…)`, `g` a producer, `x` only inspected.
+                    .call => {
+                        const small = s.calleeSmall(m, v) orelse return false;
+                        if (!s.producer(&s.mods[small.module], small.ret, 0)) return false;
+                        if (!try s.onlyInspected(m, top, x)) return false;
+                        const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(ir.data(v).rhs)), Index));
+                        if (args.len != small.params.len) return false;
+                        var stmts: std.ArrayList(u32) = .empty;
+                        const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
+                        m.setData(stmt, d.lhs, e.int());
+                        try stmts.append(s.arena, stmt.int());
+                        try work.replaceRange(s.arena, i, 1, stmts.items);
+                        return true;
+                    },
+                    // `const x = c ? A : B; R`, `R` the list's last statement
+                    // and `x` only inspected: `if (c) { const x = A; R } else
+                    // { const x2 = B; R' }` — each branch makes its object,
+                    // and `R` runs once either way, as it did.
+                    .cond => {
+                        if (i + 2 != work.items.len) return false;
+                        const r: Index = @enumFromInt(work.items[i + 1]);
+                        const c = ir.extraData(@enumFromInt(ir.data(v).rhs), JsIr.Cond);
+                        if (!s.producer(m, c.consequent, 0) or !s.producer(m, c.alternate, 0)) return false;
+                        if (!try s.onlyInspected(m, top, x)) return false;
+                        // `R` is copied: small, holding no function, its
+                        // own declarations given names of their own.
+                        var owned: std.ArrayList(u32) = .empty;
+                        var size: u32 = 0;
+                        var stack: std.ArrayList(Index) = .empty;
+                        try stack.append(s.arena, r);
+                        while (JsIr.popOperand(&stack)) |node| {
+                            size += 1;
+                            if (size > 96) return false;
+                            switch (ir.tag(node)) {
+                                .arrow, .func_decl, .gen_decl, .import_stmt, .export_stmt => return false,
+                                .const_decl, .let_decl, .for_of, .while_true, .block_stmt => {
+                                    const n: NameIndex = @enumFromInt(ir.data(node).lhs);
+                                    if (n != .none) try owned.append(s.arena, n.int());
+                                },
+                                else => {},
+                            }
+                            try pushChildren(s.arena, ir, node, &stack);
+                        }
+                        const x2 = try s.freshLocal(m);
+                        var copy: Copy = .{
+                            .s = s,
+                            .src = m,
+                            .dst = m,
+                            .cross = false,
+                            .renamed = try s.arena.alloc(u32, m.names.items.len),
+                            .subst = try s.arena.alloc(Node.OptionalIndex, m.names.items.len),
+                        };
+                        @memset(copy.renamed, none);
+                        @memset(copy.subst, .none);
+                        for (owned.items) |n| try copy.fresh(n, false);
+                        copy.subst[x.int()] = (try m.addNode(s.gpa, .ident, Node.no_pos, x2.int(), 0)).toOptional();
+                        const r2 = try copy.stmt(r, 0);
+                        const then_decl = try m.addNode(s.gpa, ir.tag(stmt), ir.pos(stmt), x.int(), c.consequent.int());
+                        const else_decl = try m.addNode(s.gpa, ir.tag(stmt), ir.pos(stmt), x2.int(), c.alternate.int());
+                        const then_start = try m.append(s.gpa, &.{ then_decl.int(), r.int() });
+                        const else_start = try m.append(s.gpa, &.{ else_decl.int(), r2.int() });
+                        const branches = try m.append(s.gpa, &.{ then_start, then_start + 2, else_start, else_start + 2 });
+                        const if_node = try m.addNode(s.gpa, .if_stmt, ir.pos(stmt), ir.data(v).lhs, branches);
+                        try work.replaceRange(s.arena, i, 2, &.{if_node.int()});
+                        return true;
+                    },
+                    else => return false,
+                }
+            },
+            else => return false,
+        }
+    }
+
+    /// The small function call `v` calls by its whole-program name, or null.
+    fn calleeSmall(s: *Spec, m: *Mod, v: Index) ?Small {
+        if (m.ir.tag(v) != .call) return null;
+        const callee: Index = @enumFromInt(m.ir.data(v).lhs);
+        if (m.ir.tag(callee) != .ident) return null;
+        const g = m.globalOf(@enumFromInt(m.ir.data(callee).lhs)) orelse return null;
+        if (g >= s.cf_smalls.len) return null;
+        return s.cf_smalls[g];
+    }
+
+    /// Whether `e`, of module `m`, makes an object a fold can see into: an
+    /// object literal; a declared object (a top-level `const` of an object
+    /// literal, made once); a choice of two such; or a call of a small
+    /// function whose body is one.
+    fn producer(s: *Spec, m: *Mod, e: Index, depth: u32) bool {
+        if (depth > 4) return false;
+        const ir = m.ir;
+        switch (ir.tag(e)) {
+            .object => return true,
+            .cond => {
+                const c = ir.extraData(@enumFromInt(ir.data(e).rhs), JsIr.Cond);
+                return s.producer(m, c.consequent, depth + 1) and s.producer(m, c.alternate, depth + 1);
+            },
+            .ident => {
+                const g = m.globalOf(@enumFromInt(ir.data(e).lhs)) orelse return false;
+                const decl = s.decl[g] orelse return false;
+                if (s.assigned[g]) return false;
+                const dm = &s.mods[decl.module];
+                if (dm.ir.tag(decl.stmt) != .const_decl) return false;
+                return dm.ir.tag(@enumFromInt(dm.ir.data(decl.stmt).rhs)) == .object;
+            },
+            .call => {
+                const small = s.calleeSmall(m, e) orelse return false;
+                return s.producer(&s.mods[small.module], small.ret, depth + 1);
+            },
+            else => return false,
+        }
+    }
+
+    /// Whether every mention of local `x` in `top` is the object of a
+    /// property read, and `top` declares it once and assigns it nowhere.
+    fn onlyInspected(s: *Spec, m: *Mod, top: Index, x: NameIndex) Allocator.Error!bool {
+        const ir = m.ir;
+        if (try declCount(s.arena, ir, top, x) != 1) return false;
+        var stack: std.ArrayList(Index) = .empty;
+        try stack.append(s.arena, top);
+        while (JsIr.popOperand(&stack)) |node| {
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .ident => if (d.lhs == x.int()) return false,
+                .member => {
+                    const obj: Index = @enumFromInt(d.lhs);
+                    if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) continue;
+                },
+                .assign_stmt => {
+                    // A write of `x.k` is no inspection.
+                    const target: Index = @enumFromInt(d.lhs);
+                    if (ir.tag(target) == .member) {
+                        const obj: Index = @enumFromInt(ir.data(target).lhs);
+                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) return false;
+                    }
+                },
+                else => {},
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        return true;
+    }
+
+    /// `small`'s body for a call in module `m` with `args`: each argument
+    /// that is not an atom bound first, in order, by a `const` appended to
+    /// `stmts` (and kept by the optimiser when it may do something), then
+    /// the body with each parameter its argument or binding. Null when a
+    /// name the body needs is not one `m` can write.
+    fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32)) Allocator.Error!?Index {
+        const fm = &s.mods[small.module];
+        const cross = small.module != m.index;
+        var c: Copy = .{
+            .s = s,
+            .src = fm,
+            .dst = m,
+            .cross = cross,
+            .renamed = try s.arena.alloc(u32, fm.ir.names.len),
+            .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
+        };
+        @memset(c.renamed, none);
+        @memset(c.subst, .none);
+        if (cross) {
+            var stack: std.ArrayList(Index) = .empty;
+            try stack.append(s.arena, small.ret);
+            while (JsIr.popOperand(&stack)) |node| {
+                if (fm.ir.tag(node) == .ident) {
+                    const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, small.params, x) == null) {
+                        const h = fm.globalOf(x).?;
+                        const to = try s.nameIn(m, h) orelse return null;
+                        c.renamed[x.int()] = to.int();
+                    }
+                }
+                try fm.ir.pushOperands(s.arena, &stack, node);
+            }
+        }
+        for (small.params, args, 0..) |p, a, i| {
+            const pi = p.unwrap() orelse continue;
+            const atom = switch (m.ir.tag(a)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => literalLen(m.ir, a) <= 5 or small.reads[i] <= 1,
+                .ident => try s.atomArgument(m, a, top, s.assigned),
+                else => false,
+            };
+            if (atom) {
+                c.subst[pi] = a.toOptional();
+                continue;
+            }
+            const t = try s.freshLocal(m);
+            const decl = try m.addNode(s.gpa, .const_decl, m.ir.pos(a), t.int(), a.int());
+            try stmts.append(s.arena, decl.int());
+            if (!inert(m.ir, a)) if (m.tables) |tb| try tb.keep.append(s.arena, decl);
+            c.subst[pi] = (try m.addNode(s.gpa, .ident, Node.no_pos, t.int(), 0)).toOptional();
+        }
+        return try c.expr(small.ret, 0);
+    }
+
+    fn eachFunctionList(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;
         var any = false;
         for (s.mods) |*m| {
@@ -2262,12 +2598,15 @@ const Spec = struct {
         };
         var out: std.ArrayList(u32) = .empty;
         var changed = false;
-        for (items) |raw| {
-            if (try s.replaceScalars(m, @enumFromInt(raw), top, &out)) {
-                changed = true;
-                continue;
-            }
-            try out.append(s.arena, raw);
+        switch (s.list_mode) {
+            .scalars => for (items) |raw| {
+                if (try s.replaceScalars(m, @enumFromInt(raw), top, &out)) {
+                    changed = true;
+                    continue;
+                }
+                try out.append(s.arena, raw);
+            },
+            .constructors => changed = try s.foldConstructors(m, top, items, &out),
         }
         if (!changed) return any;
         const start = try m.append(s.gpa, out.items);
@@ -2428,6 +2767,9 @@ const Spec = struct {
         /// evaluates that could do anything, and it is evaluated whenever
         /// `e` is (`firstUse`).
         first: []bool,
+        /// Per parameter: read, and only ever as the object of a property
+        /// read — `e` inspects it (slice 9).
+        inspects: []bool,
     };
 
     /// `backend.md` §9, *Slice 8*: a call of a top-level function whose
@@ -2458,13 +2800,14 @@ const Spec = struct {
         if (fm.ir.tag(value) != .arrow or fm.ir.data(value).rhs != Node.arrow_plain) return null;
         const f = fm.ir.extraData(@enumFromInt(fm.ir.data(value).lhs), JsIr.Func);
         const body = fm.ir.extraSlice(f.body(), Index);
-        if (body.len != 1 or fm.ir.tag(body[0]) != .return_stmt) return null;
-        const ret = (@as(Node.OptionalIndex, @enumFromInt(fm.ir.data(body[0]).lhs))).unwrap() orelse return null;
+        const ret = try s.returnExpr(module, body, 0) orelse return null;
         // Copied: writing a body in appends to `extra`, which may move it.
         const params = try s.arena.dupe(NameIndex, fm.ir.extraSlice(f.params(), NameIndex));
         for (params, 0..) |p, i| if (std.mem.indexOfScalar(NameIndex, params[0..i], p) != null) return null;
         const reads = try s.arena.alloc(u32, params.len);
         @memset(reads, 0);
+        const member_reads = try s.arena.alloc(u32, params.len);
+        @memset(member_reads, 0);
         var cost: u32 = 0;
         var stack: std.ArrayList(Index) = .empty;
         try stack.append(s.arena, ret);
@@ -2472,6 +2815,12 @@ const Spec = struct {
             cost += 1;
             if (cost > 24) return null;
             switch (fm.ir.tag(node)) {
+                .member => {
+                    const obj: Index = @enumFromInt(fm.ir.data(node).lhs);
+                    if (fm.ir.tag(obj) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(fm.ir.data(obj).lhs))) |i| {
+                        member_reads[i] += 1;
+                    };
+                },
                 // A function in it is made on each call: kept out, with its
                 // declarations and captures.
                 .arrow => return null,
@@ -2491,12 +2840,81 @@ const Spec = struct {
         }
         const first = try s.arena.alloc(bool, params.len);
         for (params, first, reads) |p, *fi, r| fi.* = r == 1 and firstUse(fm.ir, ret, p, 0) == .found;
-        return .{ .module = module, .params = params, .ret = ret, .cost = nodeCount(fm.ir, ret, &s.pts, module), .reads = reads, .first = first };
+        const inspects = try s.arena.alloc(bool, params.len);
+        for (inspects, reads, member_reads) |*x, r, mr| x.* = r > 0 and r == mr;
+        return .{
+            .module = module,
+            .params = params,
+            .ret = ret,
+            .cost = nodeCount(fm.ir, ret, &s.pts, module),
+            .reads = reads,
+            .first = first,
+            .inspects = inspects,
+        };
     }
 
-    fn inlineSmallPass(s: *Spec, resolve: bool) Allocator.Error!bool {
-        const n = s.in.globals;
-        const smalls = try s.arena.alloc(?Small, n);
+    /// The one expression a function body of returns is: `return e`, or
+    /// `if (t) return a; return b` (either arm a block of its own, or the
+    /// `else`) as `t ? a : b`, nested — the `case` lowering's shape, which
+    /// the printer writes as the conditional. A conditional made for it is
+    /// a node of its own, reached from nowhere but the copies made of it.
+    /// Null for any other body.
+    fn returnExpr(s: *Spec, module: u32, body: []const Index, depth: u32) Allocator.Error!?Index {
+        if (depth > 8 or body.len == 0) return null;
+        const fm = &s.mods[module];
+        const ir = fm.ir;
+        const first = body[0];
+        if (ir.tag(first) == .return_stmt) {
+            if (body.len != 1) return null;
+            return (@as(Node.OptionalIndex, @enumFromInt(ir.data(first).lhs))).unwrap();
+        }
+        // `const v = e; …return R` with `R` reading `v` once, first: `R`
+        // with `e` in its place, evaluated where it was.
+        if (ir.tag(first) == .const_decl) {
+            const v: NameIndex = @enumFromInt(ir.data(first).lhs);
+            if (fm.globalOf(v) != null) return null;
+            const r = try s.returnExpr(module, body[1..], depth + 1) orelse return null;
+            if (firstUse(ir, r, v, 0) != .found) return null;
+            var reads: u32 = 0;
+            var stack: std.ArrayList(Index) = .empty;
+            try stack.append(s.arena, r);
+            while (JsIr.popOperand(&stack)) |node| {
+                if (ir.tag(node) == .ident and ir.data(node).lhs == v.int()) reads += 1;
+                if (ir.tag(node) == .arrow) return null;
+                try ir.pushOperands(s.arena, &stack, node);
+            }
+            if (reads != 1) return null;
+            var c: Copy = .{
+                .s = s,
+                .src = fm,
+                .dst = fm,
+                .cross = false,
+                .renamed = try s.arena.alloc(u32, fm.names.items.len),
+                .subst = try s.arena.alloc(Node.OptionalIndex, fm.names.items.len),
+            };
+            @memset(c.renamed, none);
+            @memset(c.subst, .none);
+            c.subst[v.int()] = (@as(Index, @enumFromInt(ir.data(first).rhs))).toOptional();
+            return try c.expr(r, 0);
+        }
+        if (ir.tag(first) != .if_stmt) return null;
+        const b = ir.extraData(@enumFromInt(ir.data(first).rhs), JsIr.If);
+        const then = try s.arena.dupe(Index, ir.extraSlice(b.thenBody(), Index));
+        const els = try s.arena.dupe(Index, ir.extraSlice(b.elseBody(), Index));
+        const a = try s.returnExpr(module, then, depth + 1) orelse return null;
+        const rest: []const Index = if (els.len != 0) blk: {
+            if (body.len != 1) return null;
+            break :blk els;
+        } else body[1..];
+        const c = try s.returnExpr(module, rest, depth + 1) orelse return null;
+        const record = try fm.append(s.gpa, &.{ a.int(), c.int() });
+        const cond = try fm.addNode(s.gpa, .cond, ir.pos(first), ir.data(first).lhs, record);
+        return cond;
+    }
+
+    /// Every top-level function slice 8 may write in, by whole-program id.
+    fn smallTable(s: *Spec) Allocator.Error![]?Small {
+        const smalls = try s.arena.alloc(?Small, s.in.globals);
         @memset(smalls, null);
         for (s.decl, 0..) |maybe, gi| {
             const decl = maybe orelse continue;
@@ -2507,6 +2925,11 @@ const Spec = struct {
             if (std.mem.indexOfScalar(Index, fm.ir.extraSlice(fm.ir.body, Index), decl.stmt) == null) continue;
             smalls[g] = try s.smallOf(decl.module, @enumFromInt(fm.ir.data(decl.stmt).rhs), g);
         }
+        return smalls;
+    }
+
+    fn inlineSmallPass(s: *Spec, resolve: bool) Allocator.Error!bool {
+        const smalls = try s.smallTable();
         // A function a call reaches through a property — `kind.m(…)` — when
         // fact 3 says the callee is that one function, reading it does
         // nothing, and the facts are of the program as it stands.
@@ -3805,6 +4228,10 @@ const Pts = struct {
     /// returning it writes before anything can read them. Kept across the
     /// runs of one `analyse`, which grow it.
     extra_init: std.AutoHashMapUnmanaged(NodeKey, std.ArrayList(u32)) = .empty,
+    /// Keys the program writes on objects the pass cannot see, and whether
+    /// it writes one it does not know there (slice 9's tag).
+    unknown_props: std.ArrayList(u32) = .empty,
+    unknown_any: bool = false,
     /// Per call node the initialiser of a `const` or `let`: the list it
     /// stands in and where (`writesAfter`).
     decl_call: std.AutoHashMapUnmanaged(NodeKey, DeclAt) = .empty,
@@ -3888,6 +4315,10 @@ const Pts = struct {
         /// something else does (the entry file, `new`).
         callers: std.ArrayList(NodeKey) = .empty,
         odd_caller: bool = false,
+        /// What the program's own code writes on it, escaped or not: the
+        /// keys, and whether under a key it does not know (slice 9's tag).
+        prog_props: std.ArrayList(u32) = .empty,
+        prog_any: bool = false,
     };
 
     fn init(s: *Spec) Pts {
@@ -4122,7 +4553,23 @@ const Pts = struct {
         return out;
     }
 
+    /// A write the program's own code makes, of key `id` (`none`: a key it
+    /// does not know), on every object `obj` may be — or on one the pass
+    /// cannot see, which it records for every object (slice 9's tag).
+    fn progWrite(p: *Pts, obj: Val, id: u32) Allocator.Error!void {
+        if (obj.top or obj.prim) {
+            if (id == none) p.unknown_any = true else if (std.mem.indexOfScalar(u32, p.unknown_props.items, id) == null) try p.unknown_props.append(p.arena(), id);
+        }
+        for (obj.sites) |site| {
+            const st = &p.sites.items[site];
+            if (id == none) {
+                st.prog_any = true;
+            } else if (std.mem.indexOfScalar(u32, st.prog_props.items, id) == null) try st.prog_props.append(p.arena(), id);
+        }
+    }
+
     fn write(p: *Pts, obj: Val, id: u32, value: Val) Allocator.Error!void {
+        try p.progWrite(obj, id);
         if (obj.top or obj.prim) try p.escape(value);
         for (obj.sites) |site| {
             const st = &p.sites.items[site];
@@ -4151,6 +4598,7 @@ const Pts = struct {
     }
 
     fn writeAny(p: *Pts, obj: Val, value: Val) Allocator.Error!void {
+        try p.progWrite(obj, none);
         if (obj.top or obj.prim) try p.escape(value);
         for (obj.sites) |site| try p.writeAnyOne(site, value);
     }
@@ -4184,6 +4632,8 @@ const Pts = struct {
         p.site_at = .empty;
         p.locals = .empty;
         p.decl_call = .empty;
+        p.unknown_props = .empty;
+        p.unknown_any = false;
         p.globals = try p.arena().alloc(VarId, s.in.globals);
         for (p.globals) |*g| g.* = try p.newVar();
         // What no module declares — an import of a hand-written file's
