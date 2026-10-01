@@ -526,9 +526,11 @@ fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Write
         \\            <p>Pick a user</p>
     );
     try w.print("    case {s} of\n", .{when});
-    const arrow = if (body[0] == '\\') std.mem.indexOf(u8, body, "->") else null;
+    // A lambda's head is `λ` (two bytes) or the old `\` (language.md §12.1).
+    const head: usize = if (std.mem.startsWith(u8, body, "λ")) "λ".len else if (body[0] == '\\') 1 else 0;
+    const arrow = if (head != 0) std.mem.indexOf(u8, body, "->") else null;
     if (arrow) |at| {
-        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[1..at], blank)});
+        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[head..at], blank)});
         try writeBlock(w, source, std.mem.trim(u8, body[at + 2 ..], blank), "            ");
     } else if (std.mem.indexOfAny(u8, body, blank) == null) {
         try w.print("        Just value ->\n            {s} value", .{body});

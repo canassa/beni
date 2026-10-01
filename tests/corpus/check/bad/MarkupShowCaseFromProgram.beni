@@ -10,7 +10,7 @@ view model =
             fallback={<p>Nothing picked</p>}
             keyed={False}
         >
-            {\item ->
+            {λitem ->
                 <section>
                     <h2>{item.title}</h2>
                 </section>
