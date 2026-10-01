@@ -1080,6 +1080,13 @@ fn rewrite(arena: Allocator, s: *const Structure, shown: []bool, spell: []?[]con
 /// `backend.md` §9, *Hand-written JavaScript under `--release`*): a unit
 /// elimination cut is never evaluated, so its `i = …` assigns nothing, and
 /// it used to keep every `const` of the units that stay.
+///
+/// *Amended 2026-10-03*: a `const` at the file's top level is never
+/// rewritten. V8 folds a module-level `const` into the code that calls it,
+/// and loads and checks a `let` on every call, which made a loop over a
+/// top-level function 2.5× slower in isolation; the emitted code's
+/// top-level declarations are `const` too (`Print.topConstRun`), so the one
+/// bundle still spells each place one way.
 fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
     const tokens = s.tokens;
     const assigned = try assignedNames(arena, s, shown) orelse return;
@@ -1100,7 +1107,9 @@ fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell:
         }
         try consts.append(arena, @intCast(k));
     }
-    for (consts.items) |k| spell[k] = "let";
+    for (consts.items) |k| {
+        if (s.outer[k] != Structure.none) spell[k] = "let";
+    }
 }
 
 /// Every name the file assigns anywhere, by name and not by scope — or null
@@ -1783,9 +1792,12 @@ test "A3: a semicolon before a closing brace goes unless it is an empty statemen
 }
 
 test "A3: a lone parameter loses its brackets, and const is let when nothing assigns one" {
-    try expectReleased("export const f = (x) => x + 1;\n", null, "export let f=a=>a+1;\n");
+    try expectReleased("export const f = (x) => x + 1;\n", null, "export const f=a=>a+1;\n");
+    // A `const` inside a function is `let`; one at the top level stays,
+    // because V8 folds a module-level `const` and not a `let`.
+    try expectReleased("const k = 2;\nexport const f = (x) => { const y = x * k; return y; };\n", null, "const a=2;export const f=b=>{let c=b*a;return c};\n");
     // Two parameters, a default or a pattern keep theirs.
-    try expectReleased("export const g = (x, y) => x;\nexport const h = (x = 1) => x;\n", null, "export let g=(a,b)=>a;export let h=(a=1)=>a;\n");
+    try expectReleased("export const g = (x, y) => x;\nexport const h = (x = 1) => x;\n", null, "export const g=(a,b)=>a;export const h=(a=1)=>a;\n");
     // An assigned `const`, however it is assigned, keeps every `const` of
     // the file: the `TypeError` is the program's behaviour.
     try expectReleased("const a = 1;\nexport const f = () => { a = 2; };\n", null, "const a=1;export const f=()=>{a=2};\n");
@@ -1796,14 +1808,14 @@ test "A3: a lone parameter loses its brackets, and const is let when nothing ass
     // is all this reads, so a `let` assigned anywhere keeps a `const` of the
     // same name elsewhere — and then every `const`.
     try expectReleased("export const f = () => { const i = 1; return i; };\nexport const g = () => { let i = 0; i = 1; return i; };\n", null, "export const f=()=>{const a=1;return a};export const g=()=>{let a=0;a=1;return a};\n");
-    try expectReleased("const a = [1];\nlet n = 0;\nexport const f = () => { a[0] = 2; n += 1; };\n", null, "let a=[1];let b=0;export let f=()=>{a[0]=2;b+=1};\n");
+    try expectReleased("const a = [1];\nlet n = 0;\nexport const f = () => { a[0] = 2; n += 1; };\n", null, "const a=[1];let b=0;export const f=()=>{a[0]=2;b+=1};\n");
 }
 
 test "A3: const is let when only a unit elimination cut assigns the name" {
     // `g`, which assigns `i`, is cut: nothing it does can happen, so `f`'s
     // `const i` may be a `let`. Kept, it keeps every `const`.
     const source = "export const f = () => { const i = 1; return i; };\nexport const g = () => { let i = 0; i = 1; return i; };\n";
-    try expectReleased(source, &.{"f"}, "export let f=()=>{let a=1;return a};\n");
+    try expectReleased(source, &.{"f"}, "export const f=()=>{let a=1;return a};\n");
     try expectReleased(source, &.{ "f", "g" }, "export const f=()=>{const a=1;return a};export const g=()=>{let a=0;a=1;return a};\n");
 }
 
@@ -1814,7 +1826,7 @@ test "a newline after the brace of a block statement goes, and after an arrow's 
     try expectReleased("export function f(a) {\n  for (;;) { g(); }\n  h();\n}\n", null, "export function f(a){for(;;){g()}h()}\n");
     try expectReleased("export function f(a) {\n  try { g(); } catch (e) { h(); }\n  finally { k(); }\n  return;\n}\n", null, "export function f(a){try{g()}catch(b){h()}finally{k()}return}\n");
     try expectReleased("export function f(a) {\n  switch (a) { case 1: g(); }\n  h();\n}\n", null, "export function f(a){switch(a){case 1:g()}h()}\n");
-    try expectReleased("function g() {}\nfunction h() {}\nexport const f = () => g(h());\n", null, "function a(){}function b(){}export let f=()=>a(b());\n");
+    try expectReleased("function g() {}\nfunction h() {}\nexport const f = () => g(h());\n", null, "function a(){}function b(){}export const f=()=>a(b());\n");
     try expectReleased("export const f = () => {}\nf()\n", null, "export const f=()=>{}\nf()\n");
     try expectReleased("export let f = function () {}\nf()\n", null, "export let f=function(){}\nf()\n");
 }
@@ -1832,19 +1844,19 @@ test "A2: bound names are renamed most-used first; exports, imports, keys and gl
         // `value` is `a`. `program` is also a shorthand property and
         // `helper` a key, so both keep their names; `document` is a host
         // global, which a local may not take from the reads of the real one.
-        "import process from\"node:process\";let helper=a=>a+a;export let run=program=>{let document=helper(program.size);return{helper:document,program,[program.key]:Math.max(document,1)}};\n",
+        "import process from\"node:process\";const helper=a=>a+a;export const run=program=>{let document=helper(program.size);return{helper:document,program,[program.key]:Math.max(document,1)}};\n",
     );
-    try expectReleased("const long = 1;\nexport const f = (x) => long + x + long;\n", null, "let a=1;export let f=b=>a+b+a;\n");
+    try expectReleased("const long = 1;\nexport const f = (x) => long + x + long;\n", null, "const a=1;export const f=b=>a+b+a;\n");
     // A name the file spells anywhere as a non-binding is never handed out:
     // `a` and `b` are keys here.
-    try expectReleased("const k = 1;\nexport const f = () => ({ a: k, b: k });\n", null, "let c=1;export let f=()=>({a:c,b:c});\n");
+    try expectReleased("const k = 1;\nexport const f = () => ({ a: k, b: k });\n", null, "const c=1;export const f=()=>({a:c,b:c});\n");
     // A ternary's consequent and a `case` read the name; a label keeps it.
-    try expectReleased("export const f = (x, y) => x ? y : x;\n", null, "export let f=(a,b)=>a?b:a;\n");
+    try expectReleased("export const f = (x, y) => x ? y : x;\n", null, "export const f=(a,b)=>a?b:a;\n");
 }
 
 test "A2: a file with eval, with or a class keeps every name, and with eval every const" {
     try expectReleased("const long = 1;\nexport const f = () => eval(\"long\");\n", null, "const long=1;export const f=()=>eval(\"long\");\n");
-    try expectReleased("const long = 1;\nexport class A { m(long) { return long; } }\n", null, "let long=1;export class A{m(long){return long}}\n");
+    try expectReleased("const long = 1;\nexport class A { m(long) { return long; } }\n", null, "const long=1;export class A{m(long){return long}}\n");
 }
 
 test "comments and whitespace go, and a string or template keeps what looks like them" {
@@ -1996,7 +2008,7 @@ test "hoisting: top-level names take the linker's spellings, and the file's modu
     const printed = try printHoisted(arena, &h, &forced);
     try testing.expectEqualStrings("import process from\"node:process\";\n", printed.imports[0]);
     // The locals avoid `a` and `b`, which a local would capture.
-    try testing.expectEqualStrings("let a=c=>c+1;let b=d=>process.exit(a(d));\n", printed.body);
+    try testing.expectEqualStrings("const a=c=>c+1;const b=d=>process.exit(a(d));\n", printed.body);
 }
 
 test "hoisting: a name read unbound is free, and a key after { or , is not" {

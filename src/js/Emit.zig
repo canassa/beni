@@ -3280,7 +3280,7 @@ const Emitter = struct {
                         if (a.eql(u.local)) break true;
                     } else false;
                     if (already) continue;
-                    try out.appendSlice(scratch, if (aliased.items.len == 0) "let " else ",");
+                    try out.appendSlice(scratch, if (aliased.items.len == 0) "const " else ",");
                     try aliased.append(scratch, u.local);
                     var buf: [8]u8 = undefined;
                     try out.appendSlice(scratch, Rename.spell(e.globals.lookup(u.local).?, &buf));

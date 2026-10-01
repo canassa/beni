@@ -1,0 +1,29 @@
+-- emit: a release application's top-level declarations are `const`, the
+-- emitted ones and the hand-written runtime's alike, while a function's own
+-- locals are `let` (`backend.md` §9, *Compact statements*, amended
+-- 2026-10-03). V8 folds a module-level `const` into the code that calls it
+-- and cannot fold a `let`, which it must assume reassigned: `step`, called
+-- in `sumTo`'s loop, was a `let` and the loop paid for a load and a check
+-- of it on every call — 2.5× slower in isolation, 3–7 % on the schema
+-- library's failure paths.
+import Node exposing (Program)
+
+
+step : Int, Int -> Int
+step acc i = acc + i * i
+
+
+sumTo : Int, Int, Int -> Int
+sumTo acc i n =
+    if i > n then
+        acc
+    else
+        let
+            next = step acc i
+        in
+        sumTo next (i + 1) n
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (sumTo 0 1 (String.length "four")), String.fromInt (step 2 3) ]

@@ -1,1 +1,1 @@
-let a=(b,c)=>({...b,selected:c});export{a};
+const a=(b,c)=>({...b,selected:c});export{a};

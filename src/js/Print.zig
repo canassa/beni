@@ -968,18 +968,25 @@ const Printer = struct {
     /// member exactly as it would if they were still separate statements.
     ///
     /// *Amended 2026-10-02* (`backend.md` §9, *Compact statements*): the
-    /// newline that used to follow every member is gone, and a `const` is
-    /// written `let` — so a `const` and a `let` next to each other are one
-    /// run. Adjacent, so nothing moves past anything, and a comma
-    /// declaration evaluates left to right as the separate statements did.
+    /// newline that used to follow every member is gone. Adjacent, so
+    /// nothing moves past anything, and a comma declaration evaluates left
+    /// to right as the separate statements did.
+    ///
+    /// *Amended 2026-10-03*: a top-level `const` stays `const`, so a run is
+    /// declarations of ONE kind. V8 folds a module-level `const` into the
+    /// code that reads it, and a `let` it must load and check on every
+    /// call: a top-level function written `let` made a loop calling it 2.5×
+    /// slower in isolation. A function's own locals are `let` still
+    /// (`constRun`), where the keyword changes nothing V8 does.
     fn topConstRun(p: *Printer, list: []const Index, from: usize) Allocator.Error!usize {
-        try p.push("let");
+        const kind = p.ir.tag(list[from]);
+        try p.push(if (kind == .const_decl) "const" else "let");
         var last = from;
         var i = from;
         var written: usize = 0;
         while (i < list.len) : (i += 1) {
             if (p.plan.isDropped(list[i])) continue;
-            if (!isDeclaration(p.ir.tag(list[i]))) break;
+            if (p.ir.tag(list[i]) != kind) break;
             if (written != 0) try p.push(",");
             if (p.rename) |m| try m.enter(list[i]);
             try p.declarator(list[i], 1);
@@ -3235,7 +3242,7 @@ test "an arrow body or a statement whose leftmost token is `{` is bracketed whol
 
 test "the leftmost-brace bracket survives compact printing" {
     try expectCompact(
-        \\let m=()=>({a:1}.a),c=()=>({a:1}.f(b)),s=()=>({a:1}.a+b),q=()=>({a:1}.a?1:2),k=()=>b*({a:1}.a+1);({a:1}.f());({a:1}.a)=b;
+        \\const m=()=>({a:1}.a),c=()=>({a:1}.f(b)),s=()=>({a:1}.a+b),q=()=>({a:1}.a?1:2),k=()=>b*({a:1}.a+1);({a:1}.f());({a:1}.a)=b;
         \\
     , LeftmostBrace.go);
 }
@@ -3320,7 +3327,7 @@ test "compact: a binary minus before a negation keeps one space and nothing else
     // adjacency §9 names beside identifier-identifier. `a + -b` is safe, and
     // so is every other pair `BinaryOp.text` and `UnaryOp.text` can make.
     try expectCompact(
-        \\let a=x- -y,b=x+-y,c=x-y,d=-x-y;
+        \\const a=x- -y,b=x+-y,c=x-y,d=-x-y;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3344,7 +3351,7 @@ test "compact: every keyword keeps exactly the space that separates it from what
     // `continue L` — all of them identifier-character adjacencies, all of
     // them handled by one guard rather than by seven call sites.
     try expectCompact(
-        \\let f=a=>{switch(a){case 1:{throw a}default:{break L}}},g=a=>typeof a;
+        \\const f=a=>{switch(a){case 1:{throw a}default:{break L}}},g=a=>typeof a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3374,7 +3381,7 @@ test "compact: a string literal is one token however many pieces it takes to wri
     // space inside the string. `run/StringOps` printed `one| two` until the
     // guard learnt about `openToken`.
     try expectCompact(
-        "let s=\"one\\ntwo\",t=`a${b}c`;\n",
+        "const s=\"one\\ntwo\",t=`a${b}c`;\n",
         struct {
             fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
                 try f.constDecl(out, "s", try f.string("one\ntwo"));
@@ -3389,14 +3396,16 @@ test "compact: a string literal is one token however many pieces it takes to wri
     );
 }
 
-test "compact: a run of declarations joins, a const is a let, and the module is one line" {
+test "compact: a run of declarations joins, a local const is a let, and the module is one line" {
     // §9 item 5, with item 3 as amended on 2026-10-02: the module body joins
-    // into ONE declaration, `const` and `let` alike written `let`, with no
-    // newline anywhere but the file's last byte. Every semicolon stays, so
+    // into ONE declaration with no newline anywhere but the file's last
+    // byte; inside a function `const` and `let` alike are written `let`, and
+    // at the top level a `const` stays one (amended 2026-10-03: V8 folds a
+    // module-level `const` and not a `let`). Every semicolon stays, so
     // no newline was ever standing in for one. `f`'s parameter nothing
     // mentions is not written (its `length` is the only difference).
     try expectCompact(
-        \\let f=()=>{let b=1,c=2,d;return b},g=2,h=a=>a;
+        \\const f=()=>{let b=1,c=2,d;return b},g=2,h=a=>a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3415,7 +3424,7 @@ test "compact: a run of declarations joins, a const is a let, and the module is 
 test "compact: a labelled loop, an if/else chain and an assignment" {
     // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\let f=a=>{L:for(;;){if(!a)return a;a=1}};
+        \\const f=a=>{L:for(;;){if(!a)return a;a=1}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3440,7 +3449,7 @@ test "compact: a labelled loop, an if/else chain and an assignment" {
 
 test "compact: an import keeps its `as`, and an object and a call lose every space" {
     try expectCompact(
-        \\import{add as Basics$add,Other$f}from"./M.mjs";let o={a:1,...rest},c=f(1,2);export{o,c};
+        \\import{add as Basics$add,Other$f}from"./M.mjs";const o={a:1,...rest},c=f(1,2);export{o,c};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3555,7 +3564,7 @@ fn printDeepChains() !void {
         const close = if (compact) "}" else " }";
         var expected: std.ArrayList(u8) = .empty;
         defer expected.deinit(testing.allocator);
-        try expected.appendSlice(testing.allocator, if (compact) "let c=a" else "const c = a");
+        try expected.appendSlice(testing.allocator, if (compact) "const c=a" else "const c = a");
         for (1..depth) |_| try expected.appendSlice(testing.allocator, and_op);
         try expected.appendSlice(testing.allocator, if (compact) ",l=" else ";\nconst l = ");
         for (0..depth) |_| try expected.appendSlice(testing.allocator, open);

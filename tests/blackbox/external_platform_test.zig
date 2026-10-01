@@ -120,7 +120,7 @@ test "a release application calls the runtime's start and run inside its one fil
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(
-        \\import process from"node:process";let e=[];let g=a=>{e=a.tag};let h=c=>{process.stdout.write(`${c.html.t}\ntags: ${e.join(" ")}\n`)};let b=d=>`"${d}"`;let a=html=>({html});function c(a){return"p["+a+"]"}let d=a({t:c("\"Hi \" "+b("you"))});g({"tag":["p"]});h(d);
+        \\import process from"node:process";let e=[];const g=a=>{e=a.tag};const h=c=>{process.stdout.write(`${c.html.t}\ntags: ${e.join(" ")}\n`)};const b=d=>`"${d}"`;const a=html=>({html});function c(a){return"p["+a+"]"}const d=a({t:c("\"Hi \" "+b("you"))});g({"tag":["p"]});h(d);
         \\
     , try w.read("out/_main.mjs"));
 }

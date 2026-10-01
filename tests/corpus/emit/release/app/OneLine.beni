@@ -1,8 +1,9 @@
 -- emit: a release application is one line with a newline at its end, every
--- declaration a `let` — a `const` the compiler wrote is assigned nowhere —
--- and a function's trailing parameters that its body never mentions are not
--- written (`backend.md` §9, item 3 and *Compact statements*, amended
--- 2026-10-02). `first` reads `n` and not the count after it, so it takes
+-- local declaration a `let` — a `const` the compiler wrote is assigned
+-- nowhere — and every top-level one a `const`, which V8 folds where a `let`
+-- costs a load and a check at every call; and a function's trailing
+-- parameters that its body never mentions are not written (`backend.md` §9,
+-- item 3 and *Compact statements*, amended 2026-10-02 and 2026-10-03). `first` reads `n` and not the count after it, so it takes
 -- one parameter, and the call through the record still passes two; the
 -- node runtime's hand-written pieces join the same line.
 import Node exposing (Program)

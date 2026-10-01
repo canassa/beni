@@ -1,8 +1,9 @@
 -- emit: adjacent `let`s join into one declaration under `--release`
 -- (`backend.md` §9, *Compact statements*), as adjacent `const`s do: the
 -- module's two cells are `let a=0,b=false` and `count`'s two locals one
--- `let`. Since 2026-10-02 a `const` is written `let` and joins them too:
--- the module is one declaration, `c` the function after the two cells.
+-- `let`. Since 2026-10-03 a top-level `const` stays `const` (V8 folds it,
+-- and loads and checks a `let` at every call), so a run is one kind: the two
+-- cells are one `let`, and `c`, the function after them, a `const`.
 import Js
 
 

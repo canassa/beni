@@ -4879,7 +4879,8 @@ built and measured in research 41 §4).* Two more passes over the same tokens, a
   throw cannot happen. All or none, because a partial rewrite measured **+9** brotli on the browser
   runtime, whose `let i` in one function keeps a `const i` in another. *Amended 2026-10-02*: "the
   file" is the tokens that are written — a unit elimination cut assigns nothing (§9, *Compact
-  statements*, the last list).
+  statements*, the last list). *Amended 2026-10-03*: **a `const` at the file's top level is never
+  rewritten**, for speed — §9, *Compact statements*, the 2026-10-03 list, has the measurement.
 
 Refusal is per name or per file, as before, and costs bytes only. `Minify.verify` holds the output
 to the plan's spellings, and `zig build fuzz` runs the sweep with both passes on. Measured on the
@@ -5848,6 +5849,8 @@ build.*
   nowhere, so the one difference — the `TypeError` an assignment would throw — cannot arise, and a
   file of one keyword compresses better than a file of two (research 41; the study's step 03).
   `for (const x of …)` is `for(let x of …)`: a fresh binding per iteration either way.
+  *Withdrawn at the top level on 2026-10-03* — it was not free at run time; the paragraph after
+  this list.
 - **A function's trailing parameters that its body never mentions are not written**
   (`Print.namedParams`): `m:()=>{…}` for a kind whose body reads neither argument, `p=()=>n` for a
   `view` that ignores its model. The caller still passes them — an argument is evaluated whatever
@@ -5871,6 +5874,29 @@ every `emit/release/` golden, now one line each; `Minify.zig`'s unit tests for a
 assignment and for each block kind. Measured (release, brotli, the whole bundle): the empty
 `browser` page 802 → **776**, `Tea.sandbox` 809 → **781**, `Tea.element` 1 599 → **1 552**, with
 effects 5 839 → **5 758**, the `bench/ui` app 5 998 → **5 941**.
+
+**Amended 2026-10-03: a top-level `const` stays `const`** (`Print.topConstRun`,
+`Minify.constToLet`; `plans/core-in-beni.md`, the schema engine). The rule above assumed the keyword
+costs nothing at run time, and in V8 it does not hold at a module's top level: a module-level
+`const` is folded into the code that reads it, while a `let` is loaded from its slot and checked on
+every read, because V8 must assume something reassigns it — and a top-level function is read at
+every call. A loop calling a two-line top-level function ran **2.5× slower** with the function
+written `let` than `const` (Node 24, one process, both modules side by side); inside a function the
+keyword changed nothing measurable, a captured `let` included. On `core/Schema`'s engine it was the
+failure paths' gap to the hand-written JavaScript: instructions per operation of
+`bench/schema-library`'s workloads, all of them warmed first as the bench does, against the
+JavaScript engine — parse `wrong_type` 1.026 → **0.999**, `missing_key` 1.029 → **1.019**,
+`unknown_key` 1.040 → **0.999**, read `missing_key` 1.072 → **1.000**, every valid path 0.94–1.00.
+So the printer writes a top-level run of `const_decl`s `const` and a run of `let_decl`s `let` — a
+run is one kind now — and the compactor never rewrites a hand-written file's top-level `const`. A
+function's locals keep `let` (written `const` too, the corpus grew 97 brotli bytes more for
+nothing). The price is bytes, and the owner's rule is that bytes never buy run time (the
+`hand-minify` skill, §1.4):
+`bench/size.mjs`'s release total 372 717 → **373 337** brotli (+0.17 %), the largest program +31
+(`browser-tea` random, 1 987 → 2 018); the floor 202 → 184, `bench/corpus` 19 670 → 19 661 and
+the `bench/ui` app 5 675 → 5 669 (a hand-written runtime's top-level `const` now matches the
+emitted code around it). The release file's aliases of a sibling's exports (`Emit`, `const a=say`)
+are `const` for the same reason. Fixture: `emit/release/app/TopLevelConst`.
 
 **Amended 2026-10-02: the loops a bound loop prints as** (`Print.breakLoop`, `forHead`,
 `assignmentValue`; `plans/runtime-in-beni.md`, step 4). Three printing rules, each for shapes the

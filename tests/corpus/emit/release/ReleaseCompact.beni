@@ -5,8 +5,9 @@
 --   * **one line, and a newline only at the end of the file** (item 3 as
 --     amended on 2026-10-02: the newline after every top-level declaration,
 --     kept for stack traces, was 13 brotli bytes of the empty page's 838).
---     The whole module body is ONE joined declaration, written `let`: a
---     `const` the compiler wrote is assigned nowhere;
+--     The whole module body is ONE joined declaration, written `const` (a
+--     top-level `const` stays one since 2026-10-03: V8 folds it, and loads
+--     and checks a `let` at every call); a function's locals are `let`;
 --   * **no indentation at all**, and no space that the syntax does not need —
 --     `let a=1`, `f(x,y)`, `{a:1}`, `(a,b)=>`, `a?b:c`, `if(c){…}else{…}`,
 --     `case 1:`, `for(;;)`;
