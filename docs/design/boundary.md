@@ -1802,7 +1802,10 @@ mount a `Browser` constructor makes carries a function of that file, and `run` h
 before mounting anything; `flush` and `onRendered` call it. The platform's runtime file gains no
 export. *(Amended 2026-10-02, `backend.md` §15.11's last amendment: only a `hosted` mount carries
 one, called at its own mount; the dispatcher, the after-render phase and `flush`'s guards are
-`Browser.js`'s, so a page of `Browser.program`s alone ships none of them.)*
+`Browser.js`'s, so a page of `Browser.program`s alone ships none of them.)* *(Amended again
+2026-10-02: they are `Browser.beni`'s now, written over `Js.finally` (§4.2), and `hosted`, `flush`
+and `onRendered` are beni declarations with the signatures above, less `foreign`; the mount still
+reaches the loop by value, `h(root, flush, setPhase)`. `backend.md` §15.11.)*
 
 **`Task` gains three** (R45 §3.9 item 2): `running : Fiber a -> Bool`, `impure`, `False` once the
 fiber has ended either way; `openRoot : () -> Scope` and `closeRoot : Scope -> ()`, both `impure`,

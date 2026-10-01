@@ -18,7 +18,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 |---|---|---|
 | 1 | **Slot and mount**: an instance's nodes (`first`, `last`, `put`, `drop`, `swap`), `template`, `slot`, `parentOf`, `unit`, `patch`, `place`, `childHtml`, the render queue, `flush`, `run` and the mount | **landed 2026-10-02**, below |
 | 2 | **Templates and holes**: `childMaybe`, `childList`, `insertText`, `attr`, `attrNS`, `rawHtml`, `safeUrl`, the text and map kinds (`text`, `map`) | **landed 2026-10-02**, below; `childList` moves with step 4, `safeUrl` stays |
-| 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop stay |
+| 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop with `Js.finally`, below |
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | open |
 
@@ -458,3 +458,112 @@ and `patchRows` re-reads `next[b]` for the row it shows instead of a variable ea
 **What stayed, and why.** The class and style lists (`classes`, `styles`, `classSet`, `styleMap`)
 are step 5's; `safeUrl`, for step 2's reason. The `For`'s `Js.each` over the rows to insert is a
 `for…of`, as in the JavaScript.
+
+## Step 3, finished — the hosted loop (2026-10-02)
+
+**The compiler feature first.** `Js.finally : sync (() -> a), sync (() -> ()) -> a`, the statement
+`try { … } finally { … }` (`boundary.md` §4.2; `backend.md` §4, *`Js.finally` is `try …
+finally`*): JsIr's `try_stmt`, walked by every pass — `Opt` folds nothing across it, `Spec` walks
+both blocks (fact 3's guards die at it, `inlineOnce` copies it and writes a call found in either
+block into that block), `Rename` scopes each block, `Print` braces both, `Suspend` refuses a
+marker inside one. Called with lambdas, each lambda's body is its block and no closure is made;
+discarded it is the bare statement, in tail position the body's `return`s are inside the guard,
+anywhere else a `let` the body assigns. A body or cleanup that may suspend is `sync_boundary` at
+the argument: a fiber that parked inside the guard would run the cleanup at the park and the rest
+outside it. Red first: `emit/release/core/JsFinally`, `run/JsFinally` (cleanup on return and on
+`Js.throw`, bound, discarded, in tail position, nested, at the end of a loop, with arguments that
+are not lambdas — made first, in order — as a value, and written by `inlineOnce` into another
+module), `check/bad/core/FinallySuspends`; with the core before, `Js does not expose finally`.
+
+**What moved.** `Browser.hosted`, its mount record (`Host`), the after-render phase, the inbox and
+`flush`'s latches, `Browser.flush` and `Browser.onRendered` are declarations of `Browser.beni`,
+each of the three guards a `Js.finally`; `Browser.js` keeps `mountAt` and `programs`. The protocol
+with `Rt` is the same (`{ h, n }`, `h(root, flush, setPhase)`), and so is the behaviour: every
+`browser/tea/` page passes unchanged in both builds, and a new one, `tea/ThrowRecovers`, throws
+from `update`, from a render and from after-render work and shows the next message applied and
+`Browser.flush` rendering at once after each. Its transcript is the hand-written loop's
+byte for byte (built by the compiler before, under happy-dom, both builds); with the three guards
+written as plain calls instead, it fails at its second step (the dispatch latch stays set and
+`inc` is never applied). It needed one driver feature: a `throws <step>` line records each
+uncaught exception as `(threw: …)` instead of ending the run (`tests/corpus/README.md`).
+
+Two compiler rules came with it, both for the shape: a `Js.finally` whose body is a lambda is
+unit-valued when that body is (`Lower.unitValued`), and the end of a function whose result nothing
+reads is followed into a `try`'s guarded block (never its cleanup), so the phase's
+`try{…;return}finally{…}` is `try{…}finally{…}`. In the beni, the inbox's push is a `let _ =`
+(the hand-written `update` returned `null` there too), the drain loop is bound, so it prints as the
+hand-written `for`, and `send` is unit-valued.
+
+**Sizes** (release, brotli, the whole bundle; the compiler before this step against this one, the
+same pages; `--allow-debug` where a page logs):
+
+| page | before | after | |
+|---|--:|--:|--:|
+| empty `browser` | 605 | 605 | 0 (identical) |
+| empty `Tea.sandbox` | 605 | 605 | 0 (identical) |
+| empty `Tea.element` | 1 475 | **1 261** | −214 |
+| `Tea.element` with effects | 5 590 | **5 412** | −178 |
+| `bench/ui` app | 5 850 | 5 850 | 0 (identical) |
+| `tea/ReentrantSend` | 3 769 | **3 573** | −196 |
+| `tea/FlushLatched` | 3 528 | **3 338** | −190 |
+| `tea/OwnedByProgram` | 5 571 | **5 387** | −184 |
+| `tea/Policies` | 6 257 | **6 080** | −177 |
+| `tea/ThrowRecovers` (new) | 3 898 | **3 726** | −172 |
+| `tea/WindowEvents` | 5 627 | **5 459** | −168 |
+| `tea/ClockStops` | 5 093 | **4 929** | −164 |
+| `tea/TupleKeyRestart` | 5 113 | **4 954** | −159 |
+| `tea/HttpResults` | 5 457 | **5 331** | −126 |
+| `tea/AfterRenderFocus` (`Dom.rendered`) | 4 164 | **4 052** | −112 |
+| `tea/LatestTagger` | 6 217 | **6 110** | −107 |
+| `tea/DebouncedSearch` | 5 989 | **5 912** | −77 |
+| `tea/TwoPrograms` | 1 862 | 1 865 | +3 (names only) |
+| `tea/Counters`, `tea/TypedInput`, every `dom/` page | | | 0 |
+
+Every page that reaches the loop is smaller. `TwoPrograms` (two `Tea.sandbox`es) reaches none of
+it; its text is the same once every identifier is masked.
+
+**Speed.** The `bench/ui` app is a `Tea.sandbox` and its release file is byte-identical before
+and after, so its medians cannot move. A `Tea.element` counter page (release, happy-dom in Node
+24, pinned to one core, 1-minute load 2.7–3.1; 41 rounds each, three interleaved runs per build),
+median [IQR] of one round:
+
+| | before | after |
+|---|--:|--:|
+| `send` alone (20 000 per task, one render after) | 33.7 [31.4–37.2], 32.3 [31.1–37.5], 36.8 [31.4–41.1] ns | 36.1 [31.3–37.3], 36.8 [31.5–41.6], 36.4 [31.2–38.1] ns |
+| `send` and its render (2 000, one per task) | 772 [643–1135], 771 [637–1132], 769 [638–973] ns | 782 [654–990], 753 [621–987], 764 [631–1037] ns |
+
+Every range overlaps and the medians flip between runs: no slowdown.
+
+**Shape**, from `tea/AfterRenderFocus`'s release file (the hand-written loop as `Minify` left it,
+then the beni):
+
+```js
+// hosted, Host, the phase
+w=b=>[{n:null,h:(g,mb,i)=>lb(b,g,mb,i)}]
+M=(a)=>[{h:(b,c,d)=>{C=c;D=d;d(H);…}}]   // `Host` is written into `hosted`'s mount
+const kb=()=>{const t=gb;const u=fb;gb=[];fb=[];hb=true;try{for(const f of t)f(null);for(const l of u)l()}finally{hb=false}}
+H=()=>{let a=E,b=F;E=[];F=[];G=true;try{for(let b of a)b(null);for(let a of b)a()}finally{G=false}}
+// the host and its record
+const q=()=>g.$$root(eb);db=q;…const j={send:d=>g.$$root(d),after:l=>{fb.push(l);q()},};const s=d=>{o=true;c=b.update(j,d,c)}
+let e=(a)=>{b.$$root(a)};I=()=>e(J);…j={after:(a)=>{F.push(a);return e(J)},send:e},k=(b)=>{h=true;f=a.update(j,b,f)}
+// update: the dispatcher
+update:d=>{if(d===eb)return null;if(ib){jb.push(s,d);return null}ib=true;try{s(d);for(let e=0;e<jb.length;e+=2)jb[e](jb[e+1])}finally{jb=[];ib=false}return null}
+update:(a)=>{if(a!==J)if(K)L.push(k,a);else{K=true;try{k(a);for(let b=0;b<L.length;b+=2)L[b](L[b+1])}finally{L=[];K=false}}}
+// view
+view:()=>{if(!r){r=true;c=b.settle(j,b.init(j));return(p=b.view(c))}if(!o)return p;o=false;hb=true;try{c=b.settle(j,c);return(p=b.view(c))}finally{hb=false}}
+view:()=>{if(!g){g=true;f=a.settle(j,a.init(j));i=a.view(f);return i}if(!h)return i;h=false;G=true;try{f=a.settle(j,f);i=a.view(f);return i}finally{G=false}}
+// onRendered
+D=f=>{if(bb===null||(!cb(kb)&&fb.length===0)){f(null);return null}gb.push(f);db();return()=>{const e=gb.indexOf(f);if(e>=0)gb.splice(e,1);return null}}
+N=(a)=>{if(C===null||!D(H)&&F.length===0){a(null);return null}E.push(a);I();return()=>{let b=E.indexOf(a);return b>=0?E.splice(b,1):null}}
+```
+
+The same statements, the same latches and the same order; the mount's unread `init:null` key is
+gone (fact 3), `hosted` is written into `main`, and a page that never calls `Browser.flush` (this
+one) ships no `flush`. Three differences that are not bytes: `skip` is `[]` where `Skip` was `{}`
+(only its identity is read); `after` returns what `send` returns, and the waiter's canceller what
+`splice` returns, both of which their callers discard; and `view` assigns `shown` and returns it
+where the hand-written wrote `return(p=…)`, since beni writes no assignment expression.
+
+**What is left of the hand-written browser runtime**: `mountAt` and `programs` (`Browser.js`),
+`Hosted.js`'s keys, outlets, after-render work, taps and relays, and `runtime.js`'s class and
+style lists (step 5) and `safeUrl`.

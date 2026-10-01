@@ -1,0 +1,93 @@
+-- The hosted loop's three guards (boundary.md §9.8; `Js.finally`): a throw
+-- in `update`, in a render, or in the after-render phase goes past them to
+-- the page, and the loop runs the next message as before.
+--
+--   - "boom": `update` throws. The dispatch latch is let go, so "inc" is
+--     applied at once and rendered.
+--   - "bad": the next render throws. The render latch is let go, so after
+--     "fix" a fiber's `Browser.flush` renders at once: "render" is logged
+--     between "sent" and "flushed".
+--   - "after": after-render work throws. The phase's latch is let go, and
+--     the fiber's flush renders at once again.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Boom
+    | Inc
+    | Bad
+    | Fix
+    | FromFiber
+    | After
+
+
+type alias Model =
+    count : Int
+    bad : Bool
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Boom ->
+            Debug.todo "update threw"
+
+        Inc ->
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+        Bad ->
+            ( { model | bad = True }, Cmd.none )
+
+        Fix ->
+            ( { model | bad = False }, Cmd.none )
+
+        FromFiber ->
+            ( model, Cmd.perform flushing )
+
+        After ->
+            ( model, Cmd.afterRender (\_ -> Debug.todo "after-render threw") )
+
+
+flushing : Cmd.Send Msg -> ()
+flushing send =
+    let
+        _ = send Inc
+        _ = Debug.log () "sent"
+        _ = Browser.flush ()
+    in
+    Debug.log () "flushed"
+
+
+view : Model -> Html Msg
+view model =
+    let
+        _ = Debug.log model.count "render"
+        _ =
+            if model.bad then
+                Debug.todo "view threw"
+            else
+                ()
+    in
+    <main>
+        <p id="count">{String.fromInt model.count}</p>
+        <button id="boom" onClick={Boom}>boom</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="bad" onClick={Bad}>bad</button>
+        <button id="fix" onClick={Fix}>fix</button>
+        <button id="fiber" onClick={FromFiber}>fiber</button>
+        <button id="after" onClick={After}>after</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { count = 0, bad = False }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

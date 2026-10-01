@@ -98,6 +98,9 @@ in a project) against it, one step per line, `#` for a comment:
                                 `n` (default 1) plain `Event`s of that
                                 name on the window or the document, in one
                                 task
+    throws <step>               any step above, which must make the page
+                                throw: each uncaught exception is the line
+                                `(threw: <its first line>)`
 
 **The page's clock is virtual.** The driver replaces `setTimeout`,
 `clearTimeout` and `Date.now` before the program loads: `Date.now()` is 0
@@ -122,7 +125,8 @@ each followed by what the page logged (`console.log: …`) and then
 `document.body`, one node per line, text and attribute values as JSON
 strings, a form control's live `.value` (and `.checked`) after its
 attributes, `:focus` on the focused element — or `(the DOM did not
-change)`. An uncaught exception in the page, and a step that cannot run,
+change)`. An uncaught exception in the page outside a `throws` step (which
+must throw, and records each exception instead), and a step that cannot run,
 fail the case with the step, the message and where it was thrown; they
 are never a golden. `<name>.release-expected` works as in `run/`.
 

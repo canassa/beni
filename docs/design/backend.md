@@ -1748,7 +1748,11 @@ finallyTry`):
   ends in `Js.throw` assigns nothing.
 
 The cleanup's value is always discarded. `Js.finally` passed as a value is the sibling's function
-(`core/Js.js`), which does the same with two calls.
+(`core/Js.js`), which does the same with two calls. For *A result nothing reads* and *A `()`
+result is not written*, a `Js.finally` whose body is a lambda is unit-valued when that lambda's
+body is (`Lower.unitValued`), and a function's end is followed into a `try`'s guarded block —
+never into its cleanup, where a `return` would replace how the body ended, a throw's included —
+so `try{…;return}finally{…}` at the end of such a function is `try{…}finally{…}`.
 
 **Neither argument may suspend.** Both parameters are `sync` (`checker-v2.md` §27): a body that
 parked would leave the `try` at the park, the cleanup would run then, and the rest of the body
@@ -6434,3 +6438,15 @@ exports them. `fire` reads a node's flags without the listener's `?? 0`: an abse
 guard of that loop is a `try … finally` (a message's `update`, a render, the after-render phase),
 which beni cannot write, and none of it is on a page a build could specialise further than
 `Minify`'s export cut already does.
+
+*Amended 2026-10-02 (`plans/runtime-in-beni.md`, the hosted loop).* **The hosted loop is
+`Browser.beni`'s**, written over `Js.finally` (§4, *`Js.finally` is `try … finally`*): `hosted`,
+the mount record it makes (`Host` in the JavaScript), the after-render phase, the dispatcher's
+inbox, `flush` and `onRendered` are beni declarations, each guard a `Js.finally`, and `Browser.js`
+keeps only `mountAt` and `programs`. The protocol with `Rt` is unchanged — the mount is `{ h, n }`,
+`h(root, flush, setPhase)` — and so is every behaviour, a throw in `update`, a render or the
+after-render phase included (`browser/tea/ThrowRecovers`). What a release build does with it that
+it could not with a sibling: the mount record's unread `init` key goes (fact 3), `hosted` is
+written into `main` (*Once the whole program is in view*), `flush` and `onRendered` are dropped
+by reachability like any declaration, and a unit-valued lambda's `return null`s are not written.
+The empty `Tea.element` page is 1 475 → **1 261** brotli, the effects page 5 590 → **5 412**.

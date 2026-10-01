@@ -1,0 +1,73 @@
+-- load
+console.log: render: 0
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="fiber">"fiber"</button>
+    <button id="after">"after"</button>
+  </main>
+</body>
+-- throws click #boom
+console.log: render: 0
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- click #inc
+console.log: render: 1
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="fiber">"fiber"</button>
+    <button id="after">"after"</button>
+  </main>
+</body>
+-- throws click #bad
+console.log: render: 1
+(threw: Error: TODO: view threw)
+(the DOM did not change)
+-- click #fix
+console.log: render: 1
+(the DOM did not change)
+-- click #fiber
+console.log: render: 1
+console.log: sent: ()
+console.log: render: 2
+console.log: flushed: ()
+<body>
+  <main>
+    <p id="count">"2"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="fiber">"fiber"</button>
+    <button id="after">"after"</button>
+  </main>
+</body>
+-- throws click #after
+console.log: render: 2
+(threw: Error: TODO: after-render threw)
+(the DOM did not change)
+-- click #fiber
+console.log: render: 2
+console.log: sent: ()
+console.log: render: 3
+console.log: flushed: ()
+<body>
+  <main>
+    <p id="count">"3"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+    <button id="bad">"bad"</button>
+    <button id="fix">"fix"</button>
+    <button id="fiber">"fiber"</button>
+    <button id="after">"after"</button>
+  </main>
+</body>

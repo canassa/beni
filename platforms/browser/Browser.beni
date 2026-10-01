@@ -8,6 +8,7 @@
 --! a handler sends goes through its own `update`; the page renders the new
 --! model once, on one microtask after the messages of a task, writing only
 --! the holes whose values changed.
+
 import Html exposing (Html)
 import Js
 import Task
@@ -73,13 +74,21 @@ pub foreign type Host msg
 --| per render, just before `view`, on the model about to be rendered, and
 --| returns the model that is. All four are `sync`: the page calls them
 --| while it handles an event or renders.
-pub foreign pure hosted :
+pub hosted :
     { init : sync (Host msg -> model)
     , update : sync (Host msg, msg, model -> model)
     , settle : sync (Host msg, model -> model)
     , view : sync (model -> Html msg)
     }
     -> Program
+hosted p =
+    -- One mount, `{ h, n }`: no element id, and the function the runtime
+    -- turns into the record it mounts, handed the mount node, the render
+    -- loop's `flush` and what sets the after-render phase.
+    Js.to
+        (Js.array
+            [ Js.from { h = \root flushing phase -> host p root flushing phase, n = Js.null } ]
+        )
 
 
 --| Render every program with a message waiting, now, rather than on the
@@ -87,10 +96,307 @@ pub foreign pure hosted :
 --| messages. During a message's `update` or a render it does nothing more
 --| than the flush already queued, so no render ever sees a half-handled
 --| message.
-pub foreign impure flush : () -> ()
+pub flush : () -> ()
+flush () =
+    if Js.isNull (Js.read loop) || Js.read busy || Js.read dispatching then
+        ()
+    else
+        Js.to (Js.apply (Js.read loop) [])
 
 
 --| How `Dom.rendered` waits: `resume` is called at the start of the
 --| after-render phase of the flush the page has queued, or at once when
 --| none is queued. Returns what stops the wait.
-pub foreign impure onRendered : Task.Resume () -> (() -> ())
+pub onRendered : Task.Resume () -> (() -> ())
+onRendered resume =
+    if
+        Js.isNull (Js.read loop)
+            || not (Js.to (Js.apply (Js.read setPhase) [ Js.from afterRender ]))
+                && Js.to (Js.get (Js.read later) "length") == 0
+    then
+        let
+            _ =
+                Js.apply (Js.from resume) [ Js.null ]
+        in
+        Js.to Js.null
+    else
+        let
+            _ =
+                Js.call (Js.read waiters) "push" [ Js.from resume ]
+
+            _ =
+                Js.apply (Js.read nudge) []
+        in
+        \() ->
+            let
+                i : Int
+                i =
+                    Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
+            in
+            if i >= 0 then
+                Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
+            else
+                ()
+
+
+-- ---- The hosted loop (`boundary.md` §9.8; `backend.md` §15.11) -----------
+--
+-- Everything a hosted program adds to the render loop is here, so a page
+-- that mounts none ships none of it (research 40 §8, rule 2): the
+-- dispatcher, the after-render phase, `flush`'s guards and the waits of
+-- `Dom.rendered`. The runtime hands a hosted mount what it needs by value —
+-- its `flush`, and a function that sets the after-render phase and answers
+-- whether a flush is queued — and a flush is queued through the mount
+-- node's `send`, with `skip`, which renders nothing. Each guard is a
+-- `Js.finally`, so a throw in `update`, a render or the after-render phase
+-- leaves the loop able to run the next message.
+-- The runtime's loop, once a hosted program has mounted (null before),
+-- what sets its after-render phase, and what queues a flush: the last
+-- hosted mount node's `send`, with `skip`.
+loop : Js.Ref Js.Value
+loop =
+    Js.ref Js.null
+
+
+setPhase : Js.Ref Js.Value
+setPhase =
+    Js.ref Js.null
+
+
+nudge : Js.Ref Js.Value
+nudge =
+    Js.ref Js.null
+
+
+-- A message no `update` sees: sent to queue a flush, and the render it
+-- queues shows what the program showed.
+skip : Js.Value
+skip =
+    Js.array []
+
+
+-- After-render work queued since the last flush, and the resumes of the
+-- fibers waiting for its phase (`onRendered`), first queued first.
+later : Js.Ref Js.Value
+later =
+    Js.ref (Js.array [])
+
+
+waiters : Js.Ref Js.Value
+waiters =
+    Js.ref (Js.array [])
+
+
+-- A hosted program renders in a flush, or the after-render phase runs; and
+-- a message is being dispatched. `flush` does nothing during either: the
+-- flush already queued renders what the dispatch did.
+busy : Js.Ref Bool
+busy =
+    Js.ref False
+
+
+dispatching : Js.Ref Bool
+dispatching =
+    Js.ref False
+
+
+-- Messages sent while one was being dispatched, as apply, message pairs.
+inbox : Js.Ref Js.Value
+inbox =
+    Js.ref (Js.array [])
+
+
+-- The after-render phase, which ends every flush once a hosted program has
+-- mounted: the fibers waiting in `Dom.rendered` resume, in the order they
+-- waited, then the work queued before this flush began runs, first queued
+-- first, each at once. Work queued, or a message sent, while it runs is the
+-- next flush's.
+afterRender : () -> ()
+afterRender () =
+    let
+        resumes =
+            Js.read waiters
+
+        work =
+            Js.read later
+
+        _ =
+            Js.write waiters (Js.array [])
+
+        _ =
+            Js.write later (Js.array [])
+
+        _ =
+            Js.write busy True
+    in
+    Js.finally
+        (\() ->
+            let
+                _ =
+                    Js.each resumes (\resume -> Js.to (Js.apply resume [ Js.null ]))
+            in
+            Js.each work (\f -> Js.to (Js.apply f []))
+        )
+        (\() -> Js.write busy False)
+
+
+-- Apply every message the inbox holds from `i` on, in the order they were
+-- sent; one applied may send more, which land after them.
+drain : Int -> ()
+drain i =
+    if i < Js.to (Js.get (Js.read inbox) "length") then
+        let
+            _ =
+                Js.apply (Js.at (Js.read inbox) i) [ Js.at (Js.read inbox) (i + 1) ]
+        in
+        drain (i + 2)
+    else
+        ()
+
+
+-- A hosted mount, as the runtime reads one: `{ init, update, view }` whose
+-- `update` dispatches and whose `view` settles first, the model held here.
+-- `send` is the mount node's, which queues the render and its flush before
+-- it calls `update` (`backend.md` §15.11). The first `view`, at mount, is of
+-- `settle host (init host)`; every later one is in a flush, and settles and
+-- renders only when a message was applied since the last — a render `skip`
+-- queued shows again what was shown.
+host :
+    { init : sync (Host msg -> model)
+    , update : sync (Host msg, msg, model -> model)
+    , settle : sync (Host msg, model -> model)
+    , view : sync (model -> Html msg)
+    }
+    , Js.Value
+    , Js.Value
+    , Js.Value
+    -> Js.Value
+host p root flushing phase =
+    let
+        _ =
+            Js.write loop flushing
+
+        _ =
+            Js.write setPhase phase
+
+        _ =
+            Js.apply phase [ Js.from afterRender ]
+
+        send =
+            \msg ->
+                let
+                    _ =
+                        Js.call root "$$root" [ msg ]
+                in
+                ()
+
+        _ =
+            Js.write nudge (Js.from (\() -> send skip))
+
+        model =
+            Js.ref (Js.to Js.null)
+
+        started =
+            Js.ref False
+
+        dirty =
+            Js.ref False
+
+        shown =
+            Js.ref (Js.to Js.null)
+
+        self : Host msg
+        self =
+            Js.to
+                (Js.from
+                    { after =
+                        \f ->
+                            let
+                                _ =
+                                    Js.call (Js.read later) "push" [ f ]
+                            in
+                            send skip
+                    , send = send
+                    }
+                )
+
+        apply =
+            \msg ->
+                let
+                    _ =
+                        Js.write dirty True
+                in
+                Js.write model (p.update self (Js.to msg) (Js.read model))
+    in
+    Js.from
+        { init = Js.null
+        , update =
+            \msg ->
+                if Js.same msg skip then
+                    ()
+                else if Js.read dispatching then
+                    let
+                        _ =
+                            Js.call (Js.read inbox) "push" [ Js.from apply, msg ]
+                    in
+                    ()
+                else
+                    let
+                        _ =
+                            Js.write dispatching True
+                    in
+                    Js.finally
+                        (\() ->
+                            let
+                                _ =
+                                    apply msg
+
+                                _ =
+                                    drain 0
+                            in
+                            ()
+                        )
+                        (\() ->
+                            let
+                                _ =
+                                    Js.write inbox (Js.array [])
+                            in
+                            Js.write dispatching False
+                        )
+        , view =
+            \() ->
+                if not (Js.read started) then
+                    let
+                        _ =
+                            Js.write started True
+
+                        _ =
+                            Js.write model (p.settle self (p.init self))
+
+                        _ =
+                            Js.write shown (p.view (Js.read model))
+                    in
+                    Js.read shown
+                else if not (Js.read dirty) then
+                    Js.read shown
+                else
+                    let
+                        _ =
+                            Js.write dirty False
+
+                        _ =
+                            Js.write busy True
+                    in
+                    Js.finally
+                        (\() ->
+                            let
+                                _ =
+                                    Js.write model (p.settle self (Js.read model))
+
+                                _ =
+                                    Js.write shown (p.view (Js.read model))
+                            in
+                            Js.read shown
+                        )
+                        (\() -> Js.write busy False)
+        }

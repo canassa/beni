@@ -37,6 +37,10 @@
 //   event <window|document> <name> [<n>]
 //                               `n` (default 1) plain `Event`s of that name
 //                               on the window or the document, in one task
+//   throws <step>               any step above, which must make the page
+//                               throw: each uncaught exception is the line
+//                               `(threw: <its first line>)` instead of the
+//                               end of the run, and none is a failure
 //
 // The page's clock is virtual from the start: `Date.now()` is 0 until an
 // `advance` step moves it, and a `setTimeout` callback runs only when an
@@ -280,13 +284,15 @@ const steps = [];
 if (stepsPath !== undefined) {
   const text = readFileSync(stepsPath, "utf8");
   text.split("\n").forEach((raw, i) => {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) return;
+    const written = raw.trim();
+    if (written === "" || written.startsWith("#")) return;
     const where = `${stepsPath}:${i + 1}`;
+    const throws = written.startsWith("throws ");
+    const line = throws ? written.slice("throws ".length).trim() : written;
     const m = line.match(/^(\S+)\s+(\S+)(?:\s+(.*))?$/);
     if (!m) usage(`${where}: \`${line}\` is not \`<command> <selector> [<argument>]\``);
     const [, command, selector, argument] = m;
-    const s = { line, where, command, selector };
+    const s = { line: written, where, command, selector, throws };
     if (command === "advance") {
       if (argument !== undefined || !/^[0-9]+$/.test(selector)) usage(`${where}: \`advance\` takes a number of milliseconds`);
       s.ms = Number(selector);
@@ -444,13 +450,19 @@ const finish = async (code, why) => {
 
 // One phase: act, let the page settle, then record what it logged and what
 // it now shows.
-const phase = async (title, act) => {
+const phase = async (title, act, throws = false) => {
   transcript.push(`-- ${title}`);
   const fault = await act();
   await page.run(settle);
   const { log, errors } = await page.run(drain);
   transcript.push(...log);
-  if (errors.length !== 0) {
+  if (throws) {
+    if (errors.length === 0) {
+      await finish(1, `${title}: the step was to make the page throw, and it did not`);
+      return false;
+    }
+    transcript.push(...errors.map((e) => `(threw: ${e.split("\n")[0]})`));
+  } else if (errors.length !== 0) {
     await finish(1, `${title}: the page threw an uncaught exception:\n${errors.join("\n")}`);
     return false;
   }
@@ -485,7 +497,7 @@ if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
         if (why !== null) return `${s.where}: ${s.line}: ${why}`;
       }
       return null;
-    });
+    }, s.throws);
     if (!ok) break;
   }
   if (ok) await finish(0);

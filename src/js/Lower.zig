@@ -8318,6 +8318,15 @@ const Lowerer = struct {
                         },
                         .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
                             .write, .set, .setAt, .throw, .each => {},
+                            // `Js.finally`'s value is its body's: a lambda's
+                            // body, whose tails are asked in turn.
+                            .finally => {
+                                const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                                if (args.len != 2 or l.bir.instTag(args[0]) != .lambda) return false;
+                                if (len == stack.len) return false;
+                                stack[len] = @enumFromInt(l.bir.instData(args[0]).rhs);
+                                len += 1;
+                            },
                             else => return false,
                         },
                         else => return false,

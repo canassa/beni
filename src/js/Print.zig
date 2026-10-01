@@ -2436,6 +2436,11 @@ const Printer = struct {
                         try pending.append(p.spelled, branches.elseBody());
                     },
                     .block_stmt => try pending.append(p.spelled, p.ir.subRange(@enumFromInt(d.rhs))),
+                    // A `try`'s guarded block, whose end runs the cleanup
+                    // and then reaches the end of the run anyway; never the
+                    // cleanup, where a jump would replace how the body
+                    // ended (a throw's among them).
+                    .try_stmt => try pending.append(p.spelled, p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try).body()),
                     else => {},
                 }
             }
