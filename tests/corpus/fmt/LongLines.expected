@@ -31,11 +31,8 @@ big =
     ( "a very long first element of a tuple", "a very long second element of a tuple", 1234567890 )
 
 
-call =
-    List.foldl
-        [ "some", "long", "list", "of", "strings", "here" ]
-        0
-        (λitem acc -> acc + String.length item * 2)
+call = List.foldl [ "some", "long", "list", "of", "strings", "here" ] 0 λitem acc ->
+    acc + String.length item * 2
 
 
 signature :

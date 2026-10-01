@@ -1,0 +1,42 @@
+-- fmt: a parenthesised last-argument lambda loses its parentheses where
+-- nothing that would continue its body follows (language.md §12.3, §12.5):
+-- at the end of a definition, before a `,` or a closing bracket, and in a
+-- later stage of a vertical pipeline, whose next `|>` begins a line at the
+-- column of its own. It keeps them as the first operand of a broken chain, in
+-- a chain on one line but last, before `?`, and with a comment on either
+-- parenthesis. `f a <| λx -> e` is `f a λx -> e`; a lambda that is not the
+-- last argument keeps its parentheses.
+ends xs = List.map xs (λx -> x + 1)
+
+
+inList xs = [ List.map xs (λx -> x), xs ]
+
+
+stages xs =
+    xs
+        |> List.filter (λx -> x > 1)
+        |> List.map (λx -> x * 2)
+
+
+first xs =
+    List.map xs (λx -> x)
+        |> List.length
+
+
+oneLine xs = xs |> List.map (λx -> x) |> List.length
+
+
+question m = Maybe.map m (λx -> x)?
+
+
+commented xs = List.map xs (λx -> x -- the same
+    )
+
+
+piped url = Task.attempt (Http.get url) <| λr -> r
+
+
+notLast xs = List.foldl (λx acc -> x + acc) 0 xs
+
+
+long xs = List.map xs (λx -> someVeryLongFunctionName x anotherArgument yetAnotherArgument andOneMore)

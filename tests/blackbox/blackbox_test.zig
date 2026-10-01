@@ -2012,11 +2012,9 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
         \\branch m =
         \\    case m of
         \\        Just x ->
-        \\            List.map [ x ]
-        \\                (λy ->
-        \\                    z = y
-        \\                    z
-        \\                )
+        \\            List.map [ x ] λy ->
+        \\                z = y
+        \\                z
         \\
         \\        Nothing ->
         \\            [ max

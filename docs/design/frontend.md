@@ -1587,7 +1587,8 @@ differently:
   pinned vertical by the source's breaks between its arguments, and one whose parentheses are
   dropped wherever it lands — nothing follows it — is measured without them, so an enclosing
   group decides on the width the second run will see.
-- **What is left as written.** A parenthesised lambda with a comment on either parenthesis, and
+- **What is left as written.** A parenthesised lambda with a comment on either parenthesis or
+  between its `λ` and its `->`, and
   `f a <| λx ->` when the left of `<|` is not a call without `_`, a name or an accessor, or a
   comment sits at the `<|`, or the `<|` is not the chain's only one (`g <| f a <| λx ->`): those
   keep their spelling.
@@ -1595,6 +1596,12 @@ differently:
   difference between the AST before and after; the formatter's tests and the `fmt/` corpus compare
   the dumps with that spelling undone (`withoutLambdaSpelling`), and the BIR, which lowers `paren`
   and `<|` to nothing, does not differ at all.
+
+*As built, the rule enforced (2026-10-02).* After the repository moved (the mechanical commit
+named `--migrate-trailing-lambda`), the rule is the formatter's own: plain `beni fmt` drops the
+parentheses and writes `f a <| λx ->` as a trailing lambda, and the flag stays, hidden, as a
+synonym of plain `fmt`, so a branch can still be migrated with the flag its commit names. A
+`<| λx ->` the formatter cannot write as a trailing lambda keeps `language.md` §9's flat form.
 
 ### 11.6 The `beni fmt --check` gate
 

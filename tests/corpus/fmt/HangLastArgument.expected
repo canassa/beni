@@ -62,10 +62,8 @@ wide =
         [ 1 ]
 
 
-paren xs =
-    List.map
-        xs
-        (λx -> x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789)
+paren xs = List.map xs λx ->
+    x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789
 
 
 plain =

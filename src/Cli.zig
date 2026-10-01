@@ -362,9 +362,10 @@ pub const Fmt = struct {
     /// `--migrate-let`, hidden: format, printing every `let … in` as the
     /// block it becomes (`Format.Options.migrate_let`).
     migrate_let: bool = false,
-    /// `--migrate-trailing-lambda`, hidden: format, printing every
-    /// last-argument lambda as a trailing lambda where its parentheses are
-    /// redundant (`Format.Options.trailing_lambdas`).
+    /// `--migrate-trailing-lambda`, hidden: what plain `fmt` does, since
+    /// the formatter writes trailing lambdas itself (frontend.md §11.5);
+    /// kept so a branch written before can be migrated with the flag its
+    /// mechanical commit names.
     migrate_trailing_lambda: bool = false,
     paths: []const []const u8,
 };

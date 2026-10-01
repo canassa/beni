@@ -10,4 +10,4 @@ g = λa b -> a + b
 h = λ( a, b ) { c } _ -> a + b + c
 
 
-k = List.map [ 1, 2 ] (λx -> x * 2)
+k = List.map [ 1, 2 ] λx -> x * 2

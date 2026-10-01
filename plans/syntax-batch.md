@@ -136,6 +136,23 @@ The `NameRemoved*` fixtures are written in the old names on purpose: **re-runnin
 Slice 16's Elm-order hint is a read-only fit test, not §7.5 speculation (`checker-v2.md` §29.4,
 *As built*).
 
+*As built, slices 10–12 (2026-10-02).* Six commits, each gates-green: 10, two formatter fixes the
+migration's dry runs found (a `λ` measured as one byte, so a lambda could end a 101-byte line; and
+a hung lambda measured with the breaks and parentheses the printer drops, so the migration's output
+was not a fixed point of plain `fmt`), 11 alone (`--migrate-trailing-lambda`, 266 files; every
+`run/` and `browser/` program's JavaScript byte-identical in development without source maps and in
+release, every migrated file's BIR identical, 12 `.diag` goldens moved by position only), 11's hand
+pass (doc comments, design-document examples, Zig test programs, `bench/gen.zig` and the compare
+printer), then 12. The choices the specification left open are `frontend.md` §11.2 and §11.5's
+*As built* notes: *"the lambda ends its line"* read as "nothing that would continue its body
+follows it" (a closer or a comma may); the parentheses kept for the first operand of a broken
+chain, an operand of a one-line chain but the last, before `?`, and with a comment on a
+parenthesis or in the head; `<|` written as a trailing lambda only for a call without `_`, a name
+or an accessor, in a chain of one `<|`; the hanging head line not counting `λparams ->` except
+when it joins `=`; and an argument after a bare lambda `unexpected_token`
+(`argument_after_lambda`). Two doc-comment examples whose lambda body holds an `==` keep their
+parentheses: bare, the doc-example gate reads the line as an `expr == value` assertion.
+
 **Dependencies.** 1 → 2 → 3 first, because every reformatting migration (8, 11) relies on the gate
 holding its files canonical, and the blocks' safety argument (`language.md` §12.2) relies on
 canonical layout. 4–6 next, because `λ` is the smallest piece and every later fixture is written in

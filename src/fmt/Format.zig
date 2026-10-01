@@ -211,11 +211,6 @@ pub const Options = struct {
     /// `beni fmt --migrate-let` (frontend.md §11.5): print every `let … in`
     /// as the block it becomes.
     migrate_let: bool = false,
-    /// `beni fmt --migrate-trailing-lambda` (frontend.md §11.5): print a
-    /// parenthesised last-argument lambda without its parentheses wherever
-    /// they are redundant, and `f a <| λx -> e` as `f a λx -> e`
-    /// (language.md §12.5, *trailing lambdas*).
-    trailing_lambdas: bool = false,
 };
 
 /// `format`, with `options`.
@@ -262,7 +257,6 @@ pub fn formatWith(
 
     var m: Measurer = .{
         .tail_op = tail_op,
-        .trailing_lambdas = options.trailing_lambdas,
         .tree = tree,
         .tags = tokens.items(.tag),
         .starts = tokens.items(.start),
@@ -295,7 +289,6 @@ pub fn formatWith(
         .tail_op = tail_op,
         .op_place = op_place,
         .lambda_marks = lambda_marks,
-        .trailing_lambdas = options.trailing_lambdas,
         .migrate_let = options.migrate_let,
         .w = w,
         .source = source,
@@ -990,6 +983,11 @@ fn lambdaInParens(tree: *const Ast, comments: []const Token.Comment, lasts: []co
     if (tree.nodeTag(inner) != .lambda) return null;
     const open = tree.nodeMainToken(arg);
     if (commentsBefore(comments, open + 1).len != 0 or commentsBefore(comments, lasts[inner.int()] + 1).len != 0) return null;
+    // Nor inside its head, where it would end the head line of a hung call.
+    const l = tree.fullLambda(inner);
+    const arrow = lasts[l.params[l.params.len - 1].int()] + 1;
+    var t = l.head + 1;
+    while (t <= arrow) : (t += 1) if (commentsBefore(comments, t).len != 0) return null;
     return inner;
 }
 
@@ -1013,13 +1011,13 @@ fn pipeConvertible(tree: *const Ast, comments: []const Token.Comment, n: Index) 
 }
 
 const Measurer = struct {
-    /// `Printer.tail_op`, which the measure of an application needs.
+    /// `Printer.tail_op`, which the measure of an application needs: one
+    /// whose last-argument lambda loses its parentheses wherever it ends
+    /// up — nothing follows it — is measured without them, and a `<|`
+    /// printed as an application as one, so the first run's choices are the
+    /// second run's. Empty for the migrations that only measure, which
+    /// print nothing.
     tail_op: []const u32 = &.{},
-    /// `Options.trailing_lambdas`: an application whose last-argument
-    /// lambda is printed without its parentheses wherever it ends up — one
-    /// nothing follows — and a `<|` printed as an application are measured
-    /// as printed, so the first run's choices are the second run's.
-    trailing_lambdas: bool = false,
     tree: *const Ast,
     tags: []const Token.Tag,
     starts: []const u32,
@@ -1437,7 +1435,7 @@ const Measurer = struct {
                 // they do not pin the vertical form here either: the
                 // printer joins them whenever the whole fits.
                 const last_arg = all[all.len - 1];
-                const dropped = m.trailing_lambdas and m.tail_op[n.int()] == no_node and
+                const dropped = m.tail_op.len != 0 and m.tail_op[n.int()] == no_node and
                     lambdaInParens(tree, m.comments, m.lasts, last_arg) != null;
                 if (dropped and m.w(n) != no_fit) m.widths[n.int()] -= 2;
                 if (!dropped and tree.nodeTag(last_arg) != .lambda and m.brokenBetween(m.last(all[0]), all[1..], null)) {
@@ -1773,7 +1771,7 @@ const Measurer = struct {
             m.set(s, if (broken) no_fit else m.w(lhs) +| op_width +| m.w(rhs), m.first(lhs), m.last(rhs));
         }
         // `f a <| λx -> e` printed as `f a λx -> e` (`Printer.pipePlan`).
-        if (tag == .pipe_left and m.trailing_lambdas and pipeConvertible(m.tree, m.comments, top)) {
+        if (tag == .pipe_left and pipeConvertible(m.tree, m.comments, top)) {
             const d = m.tree.nodeData(top);
             const lhs: Index = @enumFromInt(d.lhs);
             const lambda: Index = @enumFromInt(d.rhs);
@@ -1847,10 +1845,6 @@ const Printer = struct {
     op_place: []u32,
     /// Per node: `LambdaMark`, set by `trailingPlan` for the node it plans.
     lambda_marks: []LambdaMark,
-    /// `--migrate-trailing-lambda` (frontend.md §11.5): a parenthesised
-    /// last-argument lambda loses its parentheses where they are
-    /// redundant, and `f a <| λx -> e` prints as `f a λx -> e`.
-    trailing_lambdas: bool = false,
     /// `--migrate-let` (frontend.md §11.5): every `let` prints as a block.
     migrate_let: bool = false,
 
@@ -2915,14 +2909,13 @@ const Printer = struct {
         switch (tree.nodeTag(last_arg)) {
             .lambda => {},
             .paren => {
-                if (!p.trailing_lambdas) return null;
                 plan.lambda = lambdaInParens(tree, p.comments, p.lasts, last_arg) orelse return null;
                 plan.paren = last_arg;
             },
             else => return null,
         }
         // The measure already left the parentheses out where nothing
-        // follows the application (`Measurer.trailing_lambdas`).
+        // follows the application (`Measurer.tail_op`).
         const base = p.widths[n.int()];
         const width = if (plan.paren != null and base != no_fit and p.tail_op[n.int()] != no_node) base - 2 else base;
         plan.layout = p.trailingLayout(&plan, width, col);
@@ -2934,7 +2927,7 @@ const Printer = struct {
         return plan;
     }
 
-    /// `f a <| λx -> e` under `trailing_lambdas`, planned as the application
+    /// `f a <| λx -> e`, planned as the application
     /// `f a λx -> e` it is written as (§12.5): when its left side is a call
     /// without a `_`, or a name, and no comment sits at the `<|`.
     /// Otherwise null, and it prints as the operator chain it is.
@@ -3054,7 +3047,7 @@ const Printer = struct {
                 const a = p.tree.fullApply(body);
                 break :blk p.trailingPlan(body, a.function, a.args, indent, col, p.lineIndent());
             },
-            .pipe_left => if (p.trailing_lambdas) try p.pipePlan(body, col) else null,
+            .pipe_left => try p.pipePlan(body, col),
             else => null,
         } orelse return false;
         if (plan.form != .bare) return false;
@@ -3171,7 +3164,7 @@ const Printer = struct {
         const tree = p.tree;
         const tag = tree.nodeTag(n);
         const main = tree.nodeMainToken(n);
-        if (tag == .pipe_left and p.trailing_lambdas) {
+        if (tag == .pipe_left) {
             if (try p.pipePlan(n, p.curCol())) |plan| return p.applyTrailing(plan, indent);
         }
         if (tag.isBinop()) return p.chain(n, indent);
@@ -4741,8 +4734,8 @@ test "nested breaking: a pipeline inside a list inside a record, and a field val
         \\    { title = "Board"
         \\    , body =
         \\        [ model.items
-        \\            |> List.filter (λi -> i.done)
-        \\            |> List.map (λi -> viewItem model i)
+        \\            |> List.filter λi -> i.done
+        \\            |> List.map λi -> viewItem model i
         \\            |> List.reverse
         \\        , footer model
         \\        ]
@@ -4781,7 +4774,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\
         \\process xs =
         \\    xs
-        \\        |> List.map (λx -> x * 2)
+        \\        |> List.map λx -> x * 2
         \\        |> List.sum
         \\
         \\
@@ -4794,7 +4787,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
     try check(
         \\f = text <| if a then b
         \\    else c
-        \\g = decode <|
+        \\g = (decode a) <|
         \\      λx -> x + 1
         \\h = foo <| case x of
         \\     A -> 1
@@ -4809,7 +4802,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\
         \\
         \\g =
-        \\    decode <| λx ->
+        \\    (decode a) <| λx ->
         \\    x + 1
         \\
         \\
@@ -4846,15 +4839,26 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
     );
 }
 
-test "a trailing `<|` lambda keeps its body at the indentation of the `<|` line (§9)" {
+test "`f a <| λx ->` is written as a trailing lambda, whose body is a block below (§12.5)" {
     try check(
         \\chain url = Task.attempt (Http.get url) <| λresponse -> Task.attempt (Json.decode response) <| λvalue -> renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     ,
+        \\chain url = Task.attempt (Http.get url) λresponse ->
+        \\    Task.attempt (Json.decode response) λvalue ->
+        \\        renderTheDecodedValue value withSomeContext andAnotherArgument
+        \\
+    );
+}
+
+test "a trailing `<|` lambda that cannot be a trailing lambda keeps its body at the indentation of the `<|` line (§9)" {
+    try check(
+        \\chain url = (Task.attempt (Http.get url)) <| λresponse -> renderTheDecodedValue response withSomeContext andAnotherArgument
+        \\
+    ,
         \\chain url =
-        \\    Task.attempt (Http.get url) <| λresponse ->
-        \\    Task.attempt (Json.decode response) <| λvalue ->
-        \\    renderTheDecodedValue value withSomeContext andAnotherArgument
+        \\    (Task.attempt (Http.get url)) <| λresponse ->
+        \\    renderTheDecodedValue response withSomeContext andAnotherArgument
         \\
     );
 }
