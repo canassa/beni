@@ -761,6 +761,20 @@ throwing a `SyntaxError`; the engine catches exactly that error and re-throws an
 rule 9). `JSON.stringify` needs no catch: what the engine prints is objects and arrays it built,
 finite numbers, strings, booleans and `null`, nested no deeper than the bound.
 
+*Amended 2026-10-01: the engine is beni again* (the owner's direction, core written in beni;
+`plans/core-in-beni.md`). The wall above is gone — a process checks only the core modules its
+program reaches (`checker.md` §4, amended the same day), so a program that does not import `Schema`
+pays nothing for it — and `core/Schema.js` is deleted: nothing in the engine needs JavaScript that
+`Js` cannot write. `Schema.beni` keeps every public type and signature; its opaque types stay
+`foreign type`s, each the engine's own record seen through a cast at a type variable, so no type of
+the engine is one JavaScript "can see" and a release build renames all of them. The values it shares
+with the program — `Result`, `Maybe`, `Presence`, `Nullable`, `Issue`, `Shape`, the products — it
+builds and reads by ordinary construction and patterns, the host value (a parsed document, the
+object a `write` makes) through `Js`, and its own sequences — a record's fields, a union's
+variants, the issues of a run — are host arrays, so a program using it pulls in none of `List`'s
+array-backed machinery. `JSON.parse`'s `SyntaxError` is caught by `Js.catchIf`, which re-throws
+anything else. The builders are pure, their reads of the arrays they build behind `Js.pure`.
+
 ## 6. Codegen
 
 A declaration emits ordinary module-local top-level values/functions. A
@@ -2032,7 +2046,24 @@ program that only builds schemas with the library builds and runs, under `--rele
   (`Json`, `Random`) meets the same wall, and checking only the core modules a program reaches is
   the fix that would lift it. It is not built here. *Amended 2026-10-01:* it is built
   (`checker.md` §4, amended the same day): a core module nothing imports is no longer lowered or
-  checked, so a program that does not import `Schema` pays nothing for it.
+  checked, so a program that does not import `Schema` pays nothing for it. *Amended again
+  2026-10-01: the engine is beni* (§5's amendment), `core/Schema.js` deleted. **Its check is in
+  budget, and the 34 ms was the safe build's.** `Schema.beni` is 2 242 lines, 1 480 of them code;
+  its check takes 25.8 ms on the ReleaseSafe compiler the tests run and 3.6 ms on the ReleaseFast
+  LLVM one users get (solve 1.8, constrain 0.6, effects 0.4; the front end 1.1 more), 315 000 code
+  lines a second whole — inside `fast-compiler.md` §2's 250 000. The safe build is 7.2× slower on
+  it and 7.8× slower on `core/List` (9.3 against 1.2 ms), the one factor across modules, so the
+  engine's shape holds no checker hotspot; the solver is the largest phase in both, as everywhere.
+  What a Schema program now pays is real but bounded: `run/SchemaFailures` builds in 596 M
+  instructions (413 M with the JavaScript engine) and under `--release` in 2 078 M (1 229 M),
+  whole-program specialisation of the engine being most of the difference; every test is inside
+  its budget. Release brotli of `bench/schema-library`'s `SchemaSize`: 4 531 → **4 503**. Speed, A/B
+  interleaved on one pinned core: as **applications** (whole-program specialised; 300 000
+  operations, wall ms, median of 7) parse 358 → 351, decode 162 → 158, print 466 → 469 — no
+  slowdown; as the bench's **`--library`** build, which specialises nothing, 5–38 % slower (read
+  flat 402 → 501 ns, decode flat 320 → 442 ns, parse list 0.92 → 1.05 ms): the hand-written
+  engine was specialised by hand, and a library build of beni-written core is not specialised at
+  all. That is the wall, recorded in `plans/core-in-beni.md`.
 - **The ceiling** (§5's amendment): `maxDepthCeiling` 1 024, default 512. The deepest value one
   cold operation survived in a fresh Node 24 process (default stack, 984 KB), by bisection over
   processes, in depth units: a tree whose level is a payload, a field and an element (three

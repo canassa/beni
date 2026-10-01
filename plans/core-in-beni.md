@@ -18,6 +18,7 @@ spelling — it is kept minimal, and the step says why.
 | 2 | **`core/Task.js`**: the fiber runtime | to come |
 | 3 | **`core/List.js`**: the array-backed list and its views | to come; needs `Js`'s list positions loosened as step 1 loosened its names (*What step 1 leaves*) |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js`, `Dom.js`, `runtime.js`'s `safeUrl`, `html`'s `Html.js`, and the `node` platform | to come |
+| 5 | **`core/Schema.js`**: the schema library's engine | **built 2026-10-01**, below: all of it, the sibling deleted; size and application speed meet the bar, the `--library` bench does not |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
 
@@ -393,3 +394,72 @@ is the sibling's to the tenth of a microsecond (`toUpper` 150 against 151 µs pe
 gap is gone once V8 has optimised both, so it is warm-up and not the code. A first version shared
 the case mappings' one-scalar test as a helper; it measured 1.02× with 30 ms samples, and each
 mapping writes its test out now, as the sibling did.
+
+## Step 5 — the schema engine (2026-10-01)
+
+**What moved.** All of `core/Schema.js`, 626 lines: the builders, the traversal, the runners and
+`describe` are beni in `core/Schema.beni` over `Js` (`schema.md` §5 and §16, both amended). **No
+JavaScript is left**: every operation the engine performs — `typeof`, `Array.isArray`,
+`Object.keys`, `Object.hasOwn`, `Object.create(null)`, `Number.isSafeInteger`/`isFinite`/`isInteger`,
+`Map` and `Set` keyed by identity, `JSON.parse` with exactly its `SyntaxError` caught
+(`Js.catchIf`), `JSON.stringify` — has a `Js` spelling, so the sibling is deleted rather than
+shrunk. The nine `run/Schema*` programs print what they printed, in both builds. It needed no new
+intrinsic: step 1's `typeOf`, `instanceOf`, `catchIf` and `pure` were enough.
+
+**What made it possible** is not in this step: a process now checks only the core modules its
+program reaches (`checker.md` §4, amended 2026-10-01). The S3 engine was withdrawn because every
+`beni` process paid its check; now a program that does not import `Schema` pays nothing, and one
+that does pays 3.6 ms on the ReleaseFast compiler (25.8 ms on the ReleaseSafe one the tests run —
+the safe build is 7–8× slower on every module, `core/List` included, so there is no hotspot in the
+engine's shape; `schema.md` §16 has the phases).
+
+**How it is written, and why that is not bending the code.** Two choices are about the
+representation contract, not about speed. The opaque types (`Schema`, `Fields`, `Variant`, …) stay
+`foreign type`s and the engine's records are cast to and from them at a type variable
+(`toHost`/`fromHost`): a `Js.from` at a named type would make that type one JavaScript "can see"
+and keep its field names and string tags in a release build (`boundary.md` §4) — the first draft
+did, and its release bundle was 1 370 brotli bytes larger. And the engine's own sequences are host
+arrays: written over `List.push` and friends, a schema program pulled in `List`'s array-backed
+trie, 1 100 brotli bytes. A run's failure mark is its issue array, and a tagged value's payload is
+returned with its variant rather than parked in a cell, which removed three allocations an
+operation.
+
+### Measured
+
+| | JavaScript engine | beni engine | |
+|---|--:|--:|--:|
+| `SchemaSize`, `--release`, brotli 11 | 4 531 | **4 503** | −28 |
+| `SchemaSize`, `--release`, raw | 12 760 | 12 652 | −108 |
+| application, parse flat × 300 000 (ms, median of 7) | 358 | **351** | 0.98× |
+| application, decode flat × 300 000 | 162 | **158** | 0.98× |
+| application, print flat × 300 000 | 466 | 469 | 1.01× |
+| `--library` bench, parse flat valid (ns) | 1 166 | 1 340 | 1.15× |
+| `--library` bench, read flat valid | 402 | 501 | 1.25× |
+| `--library` bench, parse flat unknown_key | 1 391 | 1 693 | 1.22× |
+| `--library` bench, parse list valid | 920 µs | 1 052 µs | 1.14× |
+| `--library` bench, decode flat | 320 | 442 | 1.38× |
+| `--library` bench, print flat valid | 1 703 | 1 786 | 1.05× |
+| `--library` bench, print list valid | 1 428 µs | 1 494 µs | 1.05× |
+
+Both A/B, interleaved on one pinned core (`taskset -c 22`), Node 24.19, load 1.8–2.9: the
+applications are a loop of 300 000 operations in `main`, built `--release` (whole-program
+specialised; the same `SchemaBench` user and payload as `bench/schema-library`), timed as whole
+`node` processes, start included; the library rows are
+`bench/schema-library/run.mjs`'s own workloads, the two builds' modules imported into one process
+and sampled alternately, 15 rounds.
+
+### The wall: `--library` builds are not specialised
+
+**The bar is met for size and for programs, and missed by `bench/schema-library/run.mjs`.** That
+bench builds `SchemaBench` with `--library --release`, and a library build runs no whole-program
+specialisation (`Emit.zig`: `specialise` only for an application), so beni-written core reaches
+it as written — its identity casts, its constant sides and its small helpers uninlined — where the
+hand-written engine had been specialised by hand. As an application the same engine is at parity.
+The fix is the compiler's, not the engine's (`CLAUDE.md` rule 10): specialise a library build's
+core modules (they are whole-program-known; only the library's own exports are open), or inline
+small top-level functions in the per-module optimiser. Until then this step's library-mode figures
+stand as the measured cost.
+
+**Test cost.** Every test is inside its budget. A Schema program costs more to build:
+`run/SchemaFailures` 413 → 596 M instructions in development and 1 229 → 2 078 M under
+`--release` (the specialiser working through the engine), on the ReleaseSafe compiler.

@@ -29,10 +29,15 @@
 --!             (Schema.mapping toUser fromUser)
 --!             (Schema.mapping toUser fromUser)
 --!
---! **The engine is the sibling, `Schema.js`** (§5, *The builder API*):
---! core is checked whole by every compilation, so the engine is JavaScript
---! and this module declares its surface. Every function a builder keeps is
+--! **The engine is written here, in beni over `Js`** (§5, *The builder
+--! API*; `plans/core-in-beni.md`). It reads and writes the host value — a
+--! parsed JSON document, or the object a `write` makes — through `Js`, and
+--! every beni value it shares with the program, an `Issue`, a `Result`, a
+--! `Presence`, through ordinary patterns. Every function a builder keeps is
 --! `sync`, because a runner calls it during the run.
+
+import Js
+
 
 -- ---- The public types ----------------------------------------------------
 
@@ -216,7 +221,9 @@ pub type alias VariantShape =
 --| stack once per level, and this bound keeps a whole operation at the
 --| ceiling well inside the stack a browser or Node gives a program
 --| (`schema.md` §5, *Traversal and failure rules*; §16, S3's *As built*).
-pub foreign pure maxDepthCeiling : Int
+pub maxDepthCeiling : Int
+maxDepthCeiling =
+    1024
 
 
 --| Effect's defaults: stop at the first failure, ignore unknown keys, and
@@ -230,112 +237,632 @@ defaultOptions =
     }
 
 
+-- ---- The engine's graph --------------------------------------------------
+-- What a builder makes is a `Box` around a `Node`, and every opaque type of
+-- this module is the engine's own record seen through `cast`: nothing reads
+-- them but the code below. A function a builder was given is kept as the
+-- host function it is and called with `Js.apply`; a value at a type
+-- variable — a user's record, an `Encoded` or `Type` value — is a
+-- `Js.Value` the engine only hands to those functions, never reads; and the
+-- engine's own sequences — a record's fields, a union's variants, the
+-- issues of a run — are host arrays, made and read through `Js`.
+
+
+type Node
+    = NPrim Int
+    | NList Node
+    | NNullable Node
+    | NRecord Js.Value Maps
+    | NTagged String Js.Value
+    | NConverted Node Js.Value Js.Value
+    | NFlipped Node
+    | NProjected Int Node
+    | NRef Cell
+    | NBroken String
+
+
+-- A record's field: `key` is what the Encoded endpoint reads and writes,
+-- `name` what the Type endpoint does. A record's are a host array of these.
+type alias FieldNode =
+    name : String
+    key : String
+    renamed : Bool
+    optional : Bool
+    node : Node
+
+
+-- A record's mappings, from each endpoint's product to its record and back.
+type alias Maps =
+    toE : Js.Value
+    fromE : Js.Value
+    toA : Js.Value
+    fromA : Js.Value
+
+
+-- A pair of functions: a `Mapping`'s `to` and `from`, an `Injection`'s
+-- `inject` and `project`, a `Conversion`'s `forward` and `backward`.
+type alias Pair =
+    there : Js.Value
+    back : Js.Value
+
+
+-- A variant: its payload is a record node, or none. A union's are a host
+-- array of these.
+type alias VariantNode =
+    name : String
+    tag : String
+    payload : Maybe Node
+    injE : Pair
+    injA : Pair
+
+
+-- A recursive schema's definition. `state` is 0 unbuilt, 1 building and 2
+-- built; the function that builds the body is given a schema of this very
+-- cell, so a reference is resolved by identity.
+type alias Cell =
+    name : String
+    build : Js.Value
+    state : Js.Ref Int
+    body : Js.Ref (Maybe Node)
+
+
+-- A schema: its node, and the analysis a root operation on it made, once.
+type alias Box =
+    node : Node
+    analysis : Js.Ref (Maybe Analysis)
+
+
+type alias Analysis =
+    problem : Maybe String
+    encodedOpaque : Bool
+    typeOpaque : Bool
+
+
+-- A record being built: its fields, a host array, and its first
+-- construction failure.
+type alias FieldsBox =
+    fields : Js.Value
+    problem : Maybe String
+
+
+-- The value itself, as another type: an opaque type of this module and the
+-- engine record it is are one object.
+cast : a -> b
+cast x =
+    fromHost (toHost x)
+
+
+-- A value handed to the host, and one taken back, at a type variable: a
+-- `Js.from` or `Js.to` at a named type would keep that type's field names
+-- and string tags in a release build (`boundary.md` §4, *What JavaScript
+-- may read of a beni value*), and the host only stores these, compares
+-- them with `===` and hands them back.
+toHost : a -> Js.Value
+toHost x =
+    Js.from x
+
+
+fromHost : Js.Value -> a
+fromHost v =
+    Js.to v
+
+
+-- The engine's views of a value it was handed.
+nullableOf : Js.Value -> Nullable Js.Value
+nullableOf v =
+    cast v
+
+
+presenceOf : Js.Value -> Presence Js.Value
+presenceOf v =
+    cast v
+
+
+maybeOf : Js.Value -> Maybe Js.Value
+maybeOf v =
+    cast v
+
+
+resultOf : Js.Value -> Result Js.Value Js.Value
+resultOf v =
+    cast v
+
+
+issueOf : Js.Value -> Issue
+issueOf v =
+    cast v
+
+
+pairOf : Js.Value -> ( Js.Value, Js.Value )
+pairOf v =
+    cast v
+
+
+stringOf : Js.Value -> String
+stringOf v =
+    Js.to v
+
+
+intOf : Js.Value -> Int
+intOf v =
+    Js.to v
+
+
+-- The `i`th element of a host array, as what the engine put there.
+fieldAt : Js.Value, Int -> FieldNode
+fieldAt xs i =
+    fromHost (Js.at xs i)
+
+
+variantAt : Js.Value, Int -> VariantNode
+variantAt xs i =
+    fromHost (Js.at xs i)
+
+
+box : Node -> Schema e a
+box n =
+    let
+        b : Box
+        b = { node = n, analysis = Js.ref Nothing }
+    in
+    cast b
+
+
+pair : Js.Value, Js.Value -> Pair
+pair there back =
+    { there = there, back = back }
+
+
+boxOf : Schema e a -> Box
+boxOf s =
+    cast s
+
+
+nodeOf : Schema e a -> Node
+nodeOf s =
+    (boxOf s).node
+
+
+-- The two sides of a schema.
+encodedSide : Int
+encodedSide =
+    0
+
+
+typeSide : Int
+typeSide =
+    1
+
+
+endpointOf : Int -> Endpoint
+endpointOf side =
+    if side == encodedSide then
+        Encoded
+    else
+        Type
+
+
+endpointName : Int -> String
+endpointName side =
+    if side == encodedSide then
+        "Encoded"
+    else
+        "Type"
+
+
+-- ---- Host arrays ---------------------------------------------------------
+
+lengthOf : Js.Value -> Int
+lengthOf xs =
+    Js.to (Js.get xs "length")
+
+
+-- `x` pushed onto the host array `xs`.
+push : Js.Value, Js.Value -> ()
+push xs x =
+    let
+        _ = Js.call xs "push" [ x ]
+    in
+    ()
+
+
+-- A fresh host array: `xs` and then `x`.
+appended : Js.Value, Js.Value -> Js.Value
+appended xs x =
+    Js.call xs "concat" [ Js.array [ x ] ]
+
+
+-- A list's elements as a plain array: a host array is one, and a `List` is
+-- read by the protocol every reader outside `core/List` uses.
+plain : Js.Value -> Js.Value
+plain xs =
+    if isArray xs then
+        xs
+    else
+        Js.call xs "$plain" []
+
+
+-- The first name of the host array `xs`, by `nameOf`, that occurs again
+-- after it.
+duplicateIn : Js.Value, (a -> String) -> Maybe String
+duplicateIn xs nameOf =
+    duplicateFrom xs nameOf 0 (lengthOf xs)
+
+
+duplicateFrom : Js.Value, (a -> String), Int, Int -> Maybe String
+duplicateFrom xs nameOf i n =
+    if i >= n then
+        Nothing
+    else
+        let
+            name = nameOf (fromHost (Js.at xs i))
+        in
+        if occursFrom xs nameOf name (i + 1) n then
+            Just name
+        else
+            duplicateFrom xs nameOf (i + 1) n
+
+
+occursFrom : Js.Value, (a -> String), String, Int, Int -> Bool
+occursFrom xs nameOf name i n =
+    if i >= n then
+        False
+    else if nameOf (fromHost (Js.at xs i)) == name then
+        True
+    else
+        occursFrom xs nameOf name (i + 1) n
+
+
 -- ---- Primitives ----------------------------------------------------------
 
 --| A string, both ways.
-pub foreign pure string : Schema String String
+pub string : Schema String String
+string =
+    box (NPrim 0)
 
 
 --| `true` or `false`.
-pub foreign pure bool : Schema Bool Bool
+pub bool : Schema Bool Bool
+bool =
+    box (NPrim 1)
 
 
 --| A safe integer, both ways: a whole number from −(2⁵³−1) to 2⁵³−1. A
 --| well-typed `Int` outside that range fails to encode.
-pub foreign pure int : Schema Int Int
+pub int : Schema Int Int
+int =
+    box (NPrim 2)
 
 
 --| Any number. Printing NaN or an infinity as JSON fails, because JSON has
 --| no number for it.
-pub foreign pure float : Schema Float Float
+pub float : Schema Float Float
+float =
+    box (NPrim 3)
 
 
 --| A finite number, both ways.
-pub foreign pure finiteFloat : Schema Float Float
+pub finiteFloat : Schema Float Float
+finiteFloat =
+    box (NPrim 4)
 
 
 --| JSON's `null`, whose one value is `Null`.
-pub foreign pure null : Schema (Nullable Never) (Nullable Never)
+pub null : Schema (Nullable Never) (Nullable Never)
+null =
+    box (NPrim 5)
 
 
 --| Any host value, unread: the Encoded value is the Type value.
-pub foreign pure value : Schema Value Value
+pub value : Schema Value Value
+value =
+    box (NPrim 6)
 
 
 -- ---- Lists and nullability -----------------------------------------------
 
 --| A list of the child's values: an array outside, a `List` inside.
-pub foreign pure list : Schema e a -> Schema (List e) (List a)
+pub list : Schema e a -> Schema (List e) (List a)
+list child =
+    box (NList (nodeOf child))
 
 
 --| The child's values, or `null`, told apart.
-pub foreign pure nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+pub nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+nullable child =
+    box (NNullable (nodeOf child))
 
 
 -- ---- Records -------------------------------------------------------------
 
 --| No fields yet.
-pub foreign pure fields : Fields () ()
+pub fields : Fields () ()
+fields =
+    fieldsBox (toHost []) Nothing
+
+
+fieldsBox : Js.Value, Maybe String -> Fields pe pa
+fieldsBox fs problem =
+    let
+        b : FieldsBox
+        b = { fields = fs, problem = problem }
+    in
+    cast b
+
+
+fieldsOf : Fields pe pa -> FieldsBox
+fieldsOf fs =
+    cast fs
+
+
+fieldNode : String, String, Bool, Bool, Node -> FieldNode
+fieldNode name k renamed isOptional n =
+    { name = name, key = k, renamed = renamed, optional = isOptional, node = n }
+
+
+withField : Fields pe pa, String, Schema e a, Bool -> Fields qe qa
+withField fs name s isOptional =
+    let
+        b = fieldsOf fs
+    in
+    Js.pure (\() -> fieldsBox (appended b.fields (toHost (fieldNode name name False isOptional (nodeOf s)))) b.problem)
 
 
 --| A required field, read and written under its own name until `key`
 --| renames it outside.
-pub foreign pure field : Fields pe pa, String, Schema e a -> Fields ( pe, e ) ( pa, a )
+pub field : Fields pe pa, String, Schema e a -> Fields ( pe, e ) ( pa, a )
+field fs name s =
+    withField fs name s False
 
 
 --| A field that may be missing: its key absent is `Missing`, and present it
 --| is `Present` of the child's value, whatever that is — `null` included
 --| when the child is `nullable`.
-pub foreign pure optional :
+pub optional :
     Fields pe pa
     , String
     , Schema e a
     -> Fields ( pe, Presence e ) ( pa, Presence a )
+optional fs name s =
+    withField fs name s True
+
+
+-- The construction failure a builder found, unless one was found before.
+firstProblem : Maybe String, String -> Maybe String
+firstProblem problem message =
+    case problem of
+        Just _ ->
+            problem
+
+        Nothing ->
+            Just message
 
 
 --| The external key of the field just added: the Encoded endpoint reads and
 --| writes the key, and the Type endpoint, and both typed records, the
 --| field's name. A declaration's `as "key"`.
-pub foreign pure key : Fields pe pa, String -> Fields pe pa
+pub key : Fields pe pa, String -> Fields pe pa
+key fs external =
+    let
+        b = fieldsOf fs
+    in
+    Js.pure
+        (\() ->
+            let
+                n = lengthOf b.fields
+            in
+            if n == 0 then
+                fieldsBox b.fields (firstProblem b.problem "Schema.key renames the field added before it, and there is none")
+            else
+                let
+                    last = fieldAt b.fields (n - 1)
+                in
+                if last.renamed then
+                    fieldsBox b.fields (firstProblem b.problem "the field ${last.name} already has the key \"${last.key}\"")
+                else
+                    fieldsBox
+                        (appended
+                            (Js.call b.fields "slice" [ Js.from 0, Js.from (n - 1) ])
+                            (toHost (fieldNode last.name external True last.optional last.node))
+                        )
+                        b.problem
+        )
 
 
 --| How the products of `fields` become the records of each endpoint, and
 --| back: `to` builds the record from the product, `from` takes it apart.
-pub foreign pure mapping : sync (p -> r), sync (r -> p) -> Mapping p r
+pub mapping : sync (p -> r), sync (r -> p) -> Mapping p r
+mapping to from =
+    cast (pair (Js.from to) (Js.from from))
 
 
 --| A record schema: the fields, then how each endpoint's product becomes
 --| its record. The two mappings are often one polymorphic pair of functions,
 --| since both records have the same field names.
-pub foreign pure record : Fields pe pa, Mapping pe e, Mapping pa a -> Schema e a
+pub record : Fields pe pa, Mapping pe e, Mapping pa a -> Schema e a
+record fs encoded typed =
+    let
+        b = fieldsOf fs
+        encodedMaps : Pair
+        encodedMaps = cast encoded
+        typedMaps : Pair
+        typedMaps = cast typed
+    in
+    Js.pure
+        (\() ->
+            case b.problem of
+                Just problem ->
+                    box (NBroken problem)
+
+                Nothing ->
+                    case duplicateIn b.fields fieldName of
+                        Just name ->
+                            box (NBroken "two fields are named ${name}")
+
+                        Nothing ->
+                            case duplicateIn b.fields fieldKey of
+                                Just k ->
+                                    box (NBroken "two fields read and write the key \"${k}\"")
+
+                                Nothing ->
+                                    box (NRecord b.fields { toE = encodedMaps.there, fromE = encodedMaps.back, toA = typedMaps.there, fromA = typedMaps.back })
+        )
+
+
+fieldName : FieldNode -> String
+fieldName f =
+    f.name
+
+
+fieldKey : FieldNode -> String
+fieldKey f =
+    f.key
 
 
 -- ---- Tagged unions -------------------------------------------------------
 
 --| A constructor and its test, for one variant at one endpoint.
-pub foreign pure injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
+pub injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
+injection inject project =
+    cast (pair (Js.from inject) (Js.from project))
+
+
+variantNode : String, String, Maybe Node, Pair, Pair -> VariantNode
+variantNode name tag payload injE injA =
+    { name = name, tag = tag, payload = payload, injE = injE, injA = injA }
+
+
+-- A `Variant`: the variant, or why it is not one.
+variantBox : Result String VariantNode -> Variant e a
+variantBox r =
+    cast r
 
 
 --| A variant with a payload: its constructor name, its tag, its payload —
 --| a `record` schema, whose fields sit beside the discriminator — and its
 --| two constructors.
-pub foreign pure variant :
+pub variant :
     String
     , String
     , Schema pe pa
     , Injection pe e
     , Injection pa a
     -> Variant e a
+variant name tag payload injectE injectA =
+    case nodeOf payload of
+        NRecord _ _ ->
+            variantBox (Ok (variantNode name tag (Just (nodeOf payload)) (cast injectE) (cast injectA)))
+
+        _ ->
+            variantBox (Err "the payload of the variant ${name} is not a record schema")
 
 
 --| A variant with no payload: only the discriminator is written.
-pub foreign pure nullary : String, String, Injection () e, Injection () a -> Variant e a
+pub nullary : String, String, Injection () e, Injection () a -> Variant e a
+nullary name tag injectE injectA =
+    variantBox (Ok (variantNode name tag Nothing (cast injectE) (cast injectA)))
 
 
 --| A tagged union: the discriminator key, then the variants. A value is an
 --| object whose discriminator holds one variant's tag and whose other keys
 --| are that variant's payload.
-pub foreign pure tagged : String, List (Variant e a) -> Schema e a
+pub tagged : String, List (Variant e a) -> Schema e a
+tagged discriminator variants =
+    Js.pure
+        (\() ->
+            let
+                given = plain (toHost variants)
+                vs = Js.array []
+            in
+            case collectVariants given vs 0 (lengthOf given) of
+                Just problem ->
+                    box (NBroken problem)
+
+                Nothing ->
+                    if lengthOf vs == 0 then
+                        box (NBroken "a tagged schema needs a variant")
+                    else
+                        case duplicateIn vs variantTag of
+                            Just tag ->
+                                box (NBroken "two variants have the tag \"${tag}\"")
+
+                            Nothing ->
+                                case duplicateIn vs variantName of
+                                    Just name ->
+                                        box (NBroken "two variants are named ${name}")
+
+                                    Nothing ->
+                                        case clash discriminator vs 0 (lengthOf vs) of
+                                            Just name ->
+                                                box (NBroken "the variant ${name} has a field on the discriminator \"${discriminator}\"")
+
+                                            Nothing ->
+                                                box (NTagged discriminator vs)
+        )
+
+
+variantTag : VariantNode -> String
+variantTag v =
+    v.tag
+
+
+variantName : VariantNode -> String
+variantName v =
+    v.name
+
+
+-- The variants of `given` pushed onto `vs`, or why the first that could not
+-- be built was not.
+collectVariants : Js.Value, Js.Value, Int, Int -> Maybe String
+collectVariants given vs i n =
+    if i >= n then
+        Nothing
+    else
+        case variantResult (Js.at given i) of
+            Err problem ->
+                Just problem
+
+            Ok v ->
+                let
+                    _ = push vs (toHost v)
+                in
+                collectVariants given vs (i + 1) n
+
+
+variantResult : Js.Value -> Result String VariantNode
+variantResult v =
+    cast v
+
+
+-- The first variant with a field on the discriminator.
+clash : String, Js.Value, Int, Int -> Maybe String
+clash discriminator vs i n =
+    if i >= n then
+        Nothing
+    else
+        let
+            v = variantAt vs i
+        in
+        case v.payload of
+            Just (NRecord fs _) ->
+                if fieldOn discriminator fs 0 (lengthOf fs) then
+                    Just v.name
+                else
+                    clash discriminator vs (i + 1) n
+
+            _ ->
+                clash discriminator vs (i + 1) n
+
+
+fieldOn : String, Js.Value, Int, Int -> Bool
+fieldOn discriminator fs i n =
+    if i >= n then
+        False
+    else
+        let
+            f = fieldAt fs i
+        in
+        f.key == discriminator || f.name == discriminator || fieldOn discriminator fs (i + 1) n
 
 
 -- ---- Conversions ---------------------------------------------------------
@@ -343,17 +870,25 @@ pub foreign pure tagged : String, List (Variant e a) -> Schema e a
 --| A fallible conversion: from the source endpoint `b` to the target `a`,
 --| and back. An `Err` holds issues whose paths are relative to the value
 --| converted; the engine puts them where the value is.
-pub foreign pure conversion :
+pub conversion :
     sync (b -> Result (List Issue) a)
     , sync (a -> Result (List Issue) b)
     -> Conversion b a
+conversion forward backward =
+    cast (pair (Js.from forward) (Js.from backward))
 
 
 --| The schema's values, converted: decoding reads `e` to `b` and converts
 --| it to `a`; encoding converts `a` back to `b` and writes `e`. The Type
 --| endpoint is the conversion's target, which has no external form of its
 --| own.
-pub foreign pure converted : Schema e b, Conversion b a -> Schema e a
+pub converted : Schema e b, Conversion b a -> Schema e a
+converted source c =
+    let
+        p : Pair
+        p = cast c
+    in
+    box (NConverted (nodeOf source) p.there p.back)
 
 
 --| A conversion's failure at the value it converted, `ConversionFailed`.
@@ -381,7 +916,37 @@ issueAt path message =
 --| defines and builds its body, once, the first time it is needed. A
 --| reference to it is resolved by identity, never by name, so two schemas
 --| built with one name are still two.
-pub foreign pure recursive : String, sync (Schema e a -> Schema e a) -> Schema e a
+pub recursive : String, sync (Schema e a -> Schema e a) -> Schema e a
+recursive name body =
+    box (NRef { name = name, build = Js.from body, state = Js.ref 0, body = Js.ref Nothing })
+
+
+-- A reference's body, built the first time it is needed; `Nothing` while it
+-- is being built, the one way a reference can dangle.
+resolve : Cell -> Maybe Node
+resolve cell =
+    case Js.read cell.state of
+        2 ->
+            Js.read cell.body
+
+        1 ->
+            Nothing
+
+        _ ->
+            let
+                _ = Js.write cell.state 1
+                built : Schema Js.Value Js.Value
+                built = fromHost (Js.apply cell.build [ toHost (box (NRef cell)) ])
+                n = nodeOf built
+                _ = Js.write cell.body (Just n)
+                _ = Js.write cell.state 2
+            in
+            Just n
+
+
+dangling : Cell -> String
+dangling cell =
+    "the recursive schema ${cell.name} is used before its body is built"
 
 
 -- ---- Endpoints -----------------------------------------------------------
@@ -389,20 +954,1055 @@ pub foreign pure recursive : String, sync (Schema e a -> Schema e a) -> Schema e
 --| The same schema facing the other way: its Encoded endpoint is `a` and its
 --| Type endpoint `e`, so decoding it encodes the original. Flipping twice is
 --| the original.
-pub foreign pure flip : Schema e a -> Schema a e
+pub flip : Schema e a -> Schema a e
+flip s =
+    case nodeOf s of
+        NFlipped inner ->
+            box inner
+
+        n ->
+            box (NFlipped n)
 
 
 --| The Type endpoint alone, at both ends: both directions validate a Type
 --| value and convert nothing. Outside, it is written with the declared
 --| field names. A conversion's target is identity here.
-pub foreign pure typeOnly : Schema e a -> Schema a a
+pub typeOnly : Schema e a -> Schema a a
+typeOnly s =
+    box (NProjected typeSide (nodeOf s))
 
 
 --| The Encoded endpoint alone, at both ends.
-pub foreign pure encodedOnly : Schema e a -> Schema e e
+pub encodedOnly : Schema e a -> Schema e e
+encodedOnly s =
+    box (NProjected encodedSide (nodeOf s))
+
+
+-- ---- What a root operation checks before it reads anything ---------------
+
+-- The first construction failure the schema reaches. `seen` is a host `Set`
+-- of the definitions already entered.
+problemIn : Node, Js.Value -> Maybe String
+problemIn n seen =
+    case n of
+        NList child ->
+            problemIn child seen
+
+        NNullable child ->
+            problemIn child seen
+
+        NFlipped child ->
+            problemIn child seen
+
+        NConverted child _ _ ->
+            problemIn child seen
+
+        NProjected _ child ->
+            problemIn child seen
+
+        NRecord fs _ ->
+            problemInFields fs seen 0 (lengthOf fs)
+
+        NTagged _ vs ->
+            problemInVariants vs seen 0 (lengthOf vs)
+
+        NRef cell ->
+            if Js.to (Js.call seen "has" [ toHost cell ]) then
+                Nothing
+            else
+                let
+                    _ = Js.call seen "add" [ toHost cell ]
+                in
+                case resolve cell of
+                    Nothing ->
+                        Just (dangling cell)
+
+                    Just body ->
+                        problemIn body seen
+
+        NBroken problem ->
+            Just problem
+
+        NPrim _ ->
+            Nothing
+
+
+problemInFields : Js.Value, Js.Value, Int, Int -> Maybe String
+problemInFields fs seen i n =
+    if i >= n then
+        Nothing
+    else
+        case problemIn (fieldAt fs i).node seen of
+            Nothing ->
+                problemInFields fs seen (i + 1) n
+
+            found ->
+                found
+
+
+problemInVariants : Js.Value, Js.Value, Int, Int -> Maybe String
+problemInVariants vs seen i n =
+    if i >= n then
+        Nothing
+    else
+        case (variantAt vs i).payload of
+            Just p ->
+                case problemIn p seen of
+                    Nothing ->
+                        problemInVariants vs seen (i + 1) n
+
+                    found ->
+                        found
+
+            Nothing ->
+                problemInVariants vs seen (i + 1) n
+
+
+-- Whether the `side` endpoint holds a conversion's target, which has no
+-- external form: a reachability walk over (node, side), so a flip inside a
+-- recursive schema is followed exactly. `seen` is a host `Map` from a
+-- definition to the sides it was entered at, one bit each.
+opaqueIn : Node, Int, Js.Value -> Bool
+opaqueIn n side seen =
+    case n of
+        NList child ->
+            opaqueIn child side seen
+
+        NNullable child ->
+            opaqueIn child side seen
+
+        NRecord fs _ ->
+            opaqueField fs side seen 0 (lengthOf fs)
+
+        NTagged _ vs ->
+            opaqueVariant vs side seen 0 (lengthOf vs)
+
+        NConverted child _ _ ->
+            side == typeSide || opaqueIn child encodedSide seen
+
+        NFlipped child ->
+            opaqueIn child (1 - side) seen
+
+        NProjected onlySide child ->
+            opaqueIn child onlySide seen
+
+        NRef cell ->
+            let
+                entered = Js.call seen "get" [ toHost cell ]
+                mask = if Js.isUndefined entered then 0 else intOf entered
+                bit = if side == encodedSide then 1 else 2
+            in
+            if Js.bitAnd mask bit /= 0 then
+                False
+            else
+                let
+                    _ = Js.call seen "set" [ toHost cell, Js.from (Js.bitOr mask bit) ]
+                in
+                case resolve cell of
+                    Nothing ->
+                        False
+
+                    Just body ->
+                        opaqueIn body side seen
+
+        _ ->
+            False
+
+
+opaqueField : Js.Value, Int, Js.Value, Int, Int -> Bool
+opaqueField fs side seen i n =
+    i < n && (opaqueIn (fieldAt fs i).node side seen || opaqueField fs side seen (i + 1) n)
+
+
+opaqueVariant : Js.Value, Int, Js.Value, Int, Int -> Bool
+opaqueVariant vs side seen i n =
+    if i >= n then
+        False
+    else
+        case (variantAt vs i).payload of
+            Just p ->
+                opaqueIn p side seen || opaqueVariant vs side seen (i + 1) n
+
+            Nothing ->
+                opaqueVariant vs side seen (i + 1) n
+
+
+analyse : Box -> Analysis
+analyse b =
+    case Js.read b.analysis of
+        Just z ->
+            z
+
+        Nothing ->
+            let
+                problem = problemIn b.node (Js.construct (Js.global "Set") [])
+                seen = Js.construct (Js.global "Map") []
+                encodedOpaque = opaqueIn b.node encodedSide seen
+                typeOpaque = opaqueIn b.node typeSide seen
+                z : Analysis
+                z = { problem = problem, encodedOpaque = encodedOpaque, typeOpaque = typeOpaque }
+                _ = Js.write b.analysis (Just z)
+            in
+            z
+
+
+opaqueAt : Analysis, Int -> Bool
+opaqueAt z side =
+    if side == encodedSide then
+        z.encodedOpaque
+    else
+        z.typeOpaque
+
+
+-- ---- One operation's context ---------------------------------------------
+
+-- The context of one root operation. `src` and `dst` are the sides read
+-- and written, which a flip or a projection moves, and `sh` and `dh`
+-- whether each is a host value; `inE` and `outE` are the root's endpoints,
+-- which an issue is reported at whatever moved below; `cv` is set below a
+-- conversion's backward step, where a failure is in what the operation
+-- writes. `issues` is a host array every step pushes onto, and `fail` what
+-- a step that failed answers.
+type alias Context =
+    all : Bool
+    reject : Bool
+    max : Int
+    report : Bool
+    dir : Direction
+    json : Bool
+    src : Int
+    sh : Bool
+    dst : Int
+    dh : Bool
+    inE : Endpoint
+    outE : Endpoint
+    cv : Bool
+    issues : Js.Value
+    fail : Js.Value
+
+
+-- The path to a value: a host `null` at the root, and below it a `Step`,
+-- the key or index as the input names it and as the output does. A step is
+-- made for every value a run reads, and read only when one fails.
+type alias Path =
+    Js.Value
+
+
+type alias Step =
+    parent : Path
+    input : Js.Value
+    output : Js.Value
+
+
+atRoot : Path
+atRoot =
+    Js.null
+
+
+step : Path, Js.Value, Js.Value -> Path
+step parent input output =
+    let
+        s : Step
+        s = { parent = parent, input = input, output = output }
+    in
+    toHost s
+
+
+-- The recursive schemas entered at a position since the last descent.
+type Active
+    = NoneActive
+    | Entered Cell Active
+
+
+isActive : Cell, Active -> Bool
+isActive cell active =
+    case active of
+        NoneActive ->
+            False
+
+        Entered c rest ->
+            Js.same c cell || isActive cell rest
+
+
+-- The path as a host array of `PathSegment`s, outermost first.
+pathArray : Path, Bool -> Js.Value
+pathArray path output =
+    let
+        out = Js.array []
+        _ = collect path output out
+        _ = Js.call out "reverse" []
+    in
+    out
+
+
+collect : Path, Bool, Js.Value -> ()
+collect path output out =
+    if Js.isNull path then
+        ()
+    else
+        let
+            s : Step
+            s = fromHost path
+            _ = push out (toHost (segment (if output then s.output else s.input)))
+        in
+        collect s.parent output out
+
+
+segment : Js.Value -> PathSegment
+segment s =
+    if isType s "number" then
+        Index (intOf s)
+    else
+        Field (stringOf s)
+
+
+-- An issue at `path`, pushed onto the context's list. `output` says the
+-- failure is in what the operation writes.
+failAt : Context, Path, IssueCode, String, Js.Value, Bool -> Js.Value
+failAt c path code message input output =
+    let
+        entry : Issue
+        entry =
+            { path = fromHost (pathArray path output)
+            , direction = c.dir
+            , endpoint = if output || c.cv then c.outE else c.inE
+            , code = code
+            , message = message
+            , input = if c.report then Just (cast input) else Nothing
+            }
+        _ = push c.issues (toHost entry)
+    in
+    c.fail
+
+
+rootErr : Direction, Endpoint, IssueCode, String -> Result (List Issue) b
+rootErr dir endpoint code message =
+    Err (rootIssue dir endpoint code message)
+
+
+rootIssue : Direction, Endpoint, IssueCode, String -> List Issue
+rootIssue dir endpoint code message =
+    [ { path = [], direction = dir, endpoint = endpoint, code = code, message = message, input = Nothing } ]
+
+
+-- What ends a root operation before anything is read: bad options, a
+-- construction failure, an endpoint with no external form read or written
+-- outside.
+rootProblem : Schema e a, Options, Direction, Int, Bool, Int, Bool -> Maybe (List Issue)
+rootProblem s o dir src sh dst dh =
+    if not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from o.maxDepth ]) && o.maxDepth >= 0 && o.maxDepth <= maxDepthCeiling) then
+        Just (rootIssue dir (endpointOf src) InvalidOptions "maxDepth must be from 0 to ${String.fromInt maxDepthCeiling}, not ${String.fromInt o.maxDepth}")
+    else
+        let
+            z = analyse (boxOf s)
+        in
+        case z.problem of
+            Just problem ->
+                Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+
+            Nothing ->
+                if sh && opaqueAt z src then
+                    Just (opaqueIssue dir src)
+                else if dh && opaqueAt z dst then
+                    Just (opaqueIssue dir dst)
+                else
+                    Nothing
+
+
+opaqueIssue : Direction, Int -> List Issue
+opaqueIssue dir side =
+    rootIssue dir (endpointOf side) InvalidSchema "the ${endpointName side} endpoint holds a conversion's target, which has no external form to read or write"
+
+
+-- The context of one root operation. A step that failed answers the
+-- operation's issue array, which no value it reads or makes can be.
+context : Options, Direction, Int, Bool, Int, Bool, Bool -> Context
+context o dir src sh dst dh json =
+    let
+        issues = Js.array []
+    in
+    { all = o.errors == AllErrors
+    , reject = o.unknownKeys == Reject
+    , max = o.maxDepth
+    , report = o.reportInput
+    , dir = dir
+    , json = json
+    , src = src
+    , sh = sh
+    , dst = dst
+    , dh = dh
+    , inE = endpointOf src
+    , outE = endpointOf dst
+    , cv = False
+    , issues = issues
+    , fail = issues
+    }
+
+
+finish : Context, Js.Value -> Result (List Issue) b
+finish c x =
+    if Js.same x c.fail then
+        Err (fromHost c.issues)
+    else
+        Ok (fromHost x)
+
+
+issueCount : Context -> Int
+issueCount c =
+    lengthOf c.issues
+
+
+-- ---- The host value ------------------------------------------------------
+
+isType : Js.Value, String -> Bool
+isType v name =
+    Js.same (Js.typeOf v) (Js.from name)
+
+
+isArray : Js.Value -> Bool
+isArray v =
+    Js.to (Js.call (Js.global "Array") "isArray" [ v ])
+
+
+isObject : Js.Value -> Bool
+isObject v =
+    isType v "object" && not (Js.isNull v) && not (isArray v)
+
+
+isFinite : Js.Value -> Bool
+isFinite v =
+    Js.to (Js.call (Js.global "Number") "isFinite" [ v ])
+
+
+hasOwn : Js.Value, String -> Bool
+hasOwn v k =
+    Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from k ])
+
+
+-- A payload's discriminator and variant.
+type alias Owner =
+    discriminator : String
+    variant : VariantNode
+
+
+-- A fresh host object with no prototype, so that writing `__proto__` or
+-- `constructor` makes an own key and changes nothing else (§5); a variant's
+-- discriminator is its first key.
+newObject : Maybe Owner -> Js.Value
+newObject owner =
+    let
+        o = Js.call (Js.global "Object") "create" [ Js.null ]
+        _ =
+            case owner of
+                Just w ->
+                    Js.set o w.discriminator (Js.from w.variant.tag)
+
+                Nothing ->
+                    ()
+    in
+    o
+
+
+-- ---- The traversal -------------------------------------------------------
+
+-- Run node `n` on value `v` at `depth` and `path`. `active` lists the
+-- recursive schemas entered at this position since the last descent:
+-- entering one again would read nothing, so it is refused there (§5). A
+-- flip, a projection, a reference and the last step of a conversion loop
+-- here; a level of the value costs this frame and its record's or list's.
+run : Context, Node, Int, Path, Active, Js.Value -> Js.Value
+run c n depth path active v =
+    case n of
+        NPrim p ->
+            prim c p depth path v
+
+        NList child ->
+            listOf c child depth path v
+
+        NNullable child ->
+            if c.sh then
+                if Js.isNull v then
+                    nullOut c
+                else
+                    nonNullOut c (run c child depth path active v)
+            else
+                case nullableOf v of
+                    Null ->
+                        nullOut c
+
+                    NonNull a ->
+                        nonNullOut c (run c child depth path active a)
+
+        NRecord fs maps ->
+            if c.sh && not (isObject v) then
+                failAt c path WrongShape "expected an object" v False
+            else
+                recordOf c fs maps Nothing depth path v
+
+        NTagged discriminator vs ->
+            case variantOf c discriminator vs path v of
+                NotFound ->
+                    c.fail
+
+                FoundVariant x payload ->
+                    case x.payload of
+                        Just (NRecord fs maps) ->
+                            if depth >= c.max then
+                                failAt c path DepthExceeded "the depth limit is reached" payload False
+                            else
+                                recordOf c fs maps (Just { discriminator = discriminator, variant = x }) (depth + 1) path payload
+
+                        _ ->
+                            nullaryOf c discriminator x path v
+
+        NConverted source forward backward ->
+            if c.src == encodedSide && c.dst == typeSide then
+                let
+                    b = run c source depth path active v
+                in
+                if Js.same b c.fail then
+                    c.fail
+                else
+                    call c path forward b
+            else if c.src == typeSide && c.dst == encodedSide then
+                let
+                    b = call c path backward v
+                in
+                if Js.same b c.fail then
+                    c.fail
+                else
+                    run (if c.cv then c else { c | cv = True }) source depth path active b
+            else if c.src == typeSide then
+                v
+            else
+                run c source depth path active v
+
+        NFlipped inner ->
+            run { c | src = 1 - c.src, dst = 1 - c.dst } inner depth path active v
+
+        NProjected side inner ->
+            run { c | src = side, dst = side } inner depth path active v
+
+        NRef cell ->
+            if isActive cell active then
+                failAt c path InvalidSchema "the recursive schema ${cell.name} refers to itself without reading into the value" v False
+            else
+                case resolve cell of
+                    Nothing ->
+                        failAt c path InvalidSchema (dangling cell) v False
+
+                    Just body ->
+                        run c body depth path (Entered cell active) v
+
+        NBroken problem ->
+            failAt c path InvalidSchema problem v False
+
+
+nullOut : Context -> Js.Value
+nullOut c =
+    if c.dh then
+        Js.null
+    else
+        toHost Null
+
+
+nonNullOut : Context, Js.Value -> Js.Value
+nonNullOut c x =
+    if Js.same x c.fail then
+        c.fail
+    else if c.dh then
+        x
+    else
+        toHost (NonNull x)
+
+
+prim : Context, Int, Int, Path, Js.Value -> Js.Value
+prim c p depth path v =
+    case p of
+        0 ->
+            if isType v "string" then
+                v
+            else
+                failAt c path WrongShape "expected a string" v False
+
+        1 ->
+            if isType v "boolean" then
+                v
+            else
+                failAt c path WrongShape "expected a boolean" v False
+
+        2 ->
+            if not (isType v "number") then
+                failAt c path WrongShape "expected a number" v False
+            else if Js.to (Js.call (Js.global "Number") "isSafeInteger" [ v ]) then
+                v
+            else
+                failAt c path InvalidValue "expected a safe integer" v False
+
+        3 ->
+            if not (isType v "number") then
+                failAt c path WrongShape "expected a number" v False
+            else if c.json && c.dh && not (isFinite v) then
+                failAt c path PrintFailed "JSON has no number for NaN or an infinity" v True
+            else
+                v
+
+        4 ->
+            if not (isType v "number") then
+                failAt c path WrongShape "expected a number" v False
+            else if isFinite v then
+                v
+            else
+                failAt c path InvalidValue "expected a finite number" v False
+
+        5 ->
+            if c.sh && not (Js.isNull v) then
+                failAt c path WrongShape "expected null" v False
+            else
+                nullOut c
+
+        _ ->
+            if c.json && c.dh then
+                case printable v (c.max - depth) of
+                    1 ->
+                        failAt c path DepthExceeded "the value nests deeper than the depth limit" v True
+
+                    2 ->
+                        failAt c path PrintFailed "the value holds NaN or an infinity, which JSON has no number for" v True
+
+                    _ ->
+                        v
+            else
+                v
+
+
+-- Whether a host value prints as JSON as it is: 0 when it does, 1 when it
+-- nests deeper than `budget` more levels, 2 when it holds a number JSON
+-- has no form for.
+printable : Js.Value, Int -> Int
+printable v budget =
+    if isType v "number" then
+        if isFinite v then
+            0
+        else
+            2
+    else if not (isType v "object") || Js.isNull v then
+        0
+    else if isArray v then
+        printableItems v Js.undefined 0 (lengthOf v) budget
+    else
+        let
+            keys = Js.call (Js.global "Object") "keys" [ v ]
+        in
+        printableItems keys v 0 (lengthOf keys) budget
+
+
+-- The items of an array, or with `owner` an object's values by its keys.
+printableItems : Js.Value, Js.Value, Int, Int, Int -> Int
+printableItems items owner i n budget =
+    if i >= n then
+        0
+    else if budget < 1 then
+        1
+    else
+        let
+            item = if Js.isUndefined owner then Js.at items i else Js.get owner (stringOf (Js.at items i))
+            r = printable item (budget - 1)
+        in
+        if r /= 0 then
+            r
+        else
+            printableItems items owner (i + 1) n budget
+
+
+-- A list's elements, each one level down: the depth bound is tested before
+-- the descent (§5), and the references entered at the list's own position
+-- are left behind. A failure is an issue added since `before`.
+listOf : Context, Node, Int, Path, Js.Value -> Js.Value
+listOf c child depth path v =
+    if c.sh && not (isArray v) then
+        failAt c path WrongShape "expected an array" v False
+    else
+        let
+            before = issueCount c
+            xs = plain v
+            out = Js.array []
+        in
+        if listItems c child depth path xs out 0 (lengthOf xs) then
+            c.fail
+        else if issueCount c > before then
+            c.fail
+        else
+            out
+
+
+-- True when the list stops at a failure.
+listItems : Context, Node, Int, Path, Js.Value, Js.Value, Int, Int -> Bool
+listItems c child depth path xs out i n =
+    if i >= n then
+        False
+    else
+        let
+            here = step path (Js.from i) (Js.from i)
+            item = Js.at xs i
+            x =
+                if depth >= c.max then
+                    failAt c here DepthExceeded "the depth limit is reached" item False
+                else
+                    run c child (depth + 1) here NoneActive item
+        in
+        if Js.same x c.fail then
+            if c.all then
+                listItems c child depth path xs out (i + 1) n
+            else
+                True
+        else
+            let
+                _ = push out x
+            in
+            listItems c child depth path xs out (i + 1) n
+
+
+-- Under `Reject`, each own key of a host object the record does not claim,
+-- in the object's own key order, at its own path. True when one was found.
+unknownKeys : Context, Js.Value, Maybe String, Path, Js.Value -> Bool
+unknownKeys c fs claimed path v =
+    let
+        keys = Js.call (Js.global "Object") "keys" [ v ]
+    in
+    unknownKeysFrom c fs claimed path v keys 0 (lengthOf keys) False
+
+
+unknownKeysFrom : Context, Js.Value, Maybe String, Path, Js.Value, Js.Value, Int, Int, Bool -> Bool
+unknownKeysFrom c fs claimed path v keys i n found =
+    if i >= n then
+        found
+    else
+        let
+            k = stringOf (Js.at keys i)
+        in
+        if claimed == Just k || claims c fs k 0 (lengthOf fs) then
+            unknownKeysFrom c fs claimed path v keys (i + 1) n found
+        else
+            let
+                _ = failAt c (step path (Js.from k) (Js.from k)) UnknownKey "unexpected key \"${k}\"" (Js.get v k) False
+            in
+            if c.all then
+                unknownKeysFrom c fs claimed path v keys (i + 1) n True
+            else
+                True
+
+
+-- Whether a field reads key `k` of the input.
+claims : Context, Js.Value, String, Int, Int -> Bool
+claims c fs k i n =
+    if i >= n then
+        False
+    else
+        let
+            f = fieldAt fs i
+        in
+        (if c.src == encodedSide then f.key else f.name) == k || claims c fs k (i + 1) n
+
+
+-- A typed record's field values, first field first, from the product its
+-- mapping takes it apart into: `( ( ( (), a ), b ), c )` is `[a, b, c]`.
+valuesOf : Context, Int, Maps, Js.Value -> Js.Value
+valuesOf c n maps v =
+    let
+        values = Js.construct (Js.global "Array") [ Js.from n ]
+        product = Js.apply (if c.src == encodedSide then maps.fromE else maps.fromA) [ v ]
+        _ = unpack product (n - 1) values
+    in
+    values
+
+
+unpack : Js.Value, Int, Js.Value -> ()
+unpack product i values =
+    if i < 0 then
+        ()
+    else
+        let
+            ( rest, x ) = pairOf product
+            _ = Js.setAt values i x
+        in
+        unpack rest (i - 1) values
+
+
+-- The typed value a record's fields make: the record its mapping builds
+-- from their product — in its variant's constructor, for a payload.
+made : Context, Maps, Maybe Owner, Js.Value -> Js.Value
+made c maps owner out =
+    let
+        product = productOf out 0 (lengthOf out) (toHost ())
+        built = Js.apply (if c.dst == encodedSide then maps.toE else maps.toA) [ product ]
+    in
+    case owner of
+        Nothing ->
+            built
+
+        Just w ->
+            Js.apply (if c.dst == encodedSide then w.variant.injE.there else w.variant.injA.there) [ built ]
+
+
+productOf : Js.Value, Int, Int, Js.Value -> Js.Value
+productOf out i n acc =
+    if i >= n then
+        acc
+    else
+        productOf out (i + 1) n (toHost ( acc, Js.at out i ))
+
+
+-- A record's fields, in order, each one level down from the record at
+-- `depth`, then the value they make. This frame and `run`'s are what one
+-- level of a value costs the stack.
+recordOf : Context, Js.Value, Maps, Maybe Owner, Int, Path, Js.Value -> Js.Value
+recordOf c fs maps owner depth path v =
+    let
+        before = issueCount c
+    in
+    if c.sh && c.reject && unknownKeys c fs (Maybe.map owner .discriminator) path v && not c.all then
+        c.fail
+    else
+        let
+            values = if c.sh then v else valuesOf c (lengthOf fs) maps v
+            out = if c.dh then newObject owner else Js.array []
+        in
+        if fieldsFrom c fs 0 (lengthOf fs) depth path v values out then
+            c.fail
+        else if issueCount c > before then
+            c.fail
+        else if c.dh then
+            out
+        else
+            made c maps owner out
+
+
+-- The fields from the `i`th on, each read, run and written. True when the
+-- record stops at a failure.
+fieldsFrom : Context, Js.Value, Int, Int, Int, Path, Js.Value, Js.Value, Js.Value -> Bool
+fieldsFrom c fs i n depth path v values out =
+    if i >= n then
+        False
+    else
+        let
+            f = fieldAt fs i
+            inName = if c.src == encodedSide then f.key else f.name
+            outName = if c.dst == encodedSide then f.key else f.name
+            here = step path (Js.from inName) (Js.from outName)
+            x =
+                if c.sh then
+                    if hasOwn v inName then
+                        descend c f depth here (Js.get v inName)
+                    else if f.optional then
+                        toHost Missing
+                    else
+                        failAt c here MissingKey "missing key \"${inName}\"" v False
+                else if f.optional then
+                    case presenceOf (Js.at values i) of
+                        Missing ->
+                            Js.at values i
+
+                        Present a ->
+                            descend c f depth here a
+                else
+                    descend c f depth here (Js.at values i)
+        in
+        if Js.same x c.fail then
+            if c.all then
+                fieldsFrom c fs (i + 1) n depth path v values out
+            else
+                True
+        else
+            let
+                _ =
+                    if not c.dh then
+                        push out x
+                    else if not f.optional then
+                        Js.set out outName x
+                    else
+                        case presenceOf x of
+                            Present a ->
+                                Js.set out outName a
+
+                            Missing ->
+                                ()
+            in
+            fieldsFrom c fs (i + 1) n depth path v values out
+
+
+-- A field's value run one level down, or the failure the depth bound is;
+-- an optional field's answer is `Present` of it.
+descend : Context, FieldNode, Int, Path, Js.Value -> Js.Value
+descend c f depth here x =
+    let
+        y =
+            if depth >= c.max then
+                failAt c here DepthExceeded "the depth limit is reached" x False
+            else
+                run c f.node (depth + 1) here NoneActive x
+    in
+    if f.optional && not (Js.same y c.fail) then
+        toHost (Present y)
+    else
+        y
+
+
+-- The variant a tagged value is, and its payload: the host object itself,
+-- or what a typed value's constructor holds.
+type Found
+    = NotFound
+    | FoundVariant VariantNode Js.Value
+
+
+-- The discriminator is read first.
+variantOf : Context, String, Js.Value, Path, Js.Value -> Found
+variantOf c discriminator vs path v =
+    if c.sh then
+        if not (isObject v) then
+            failed (failAt c path WrongShape "expected an object" v False)
+        else
+            let
+                here = step path (Js.from discriminator) (Js.from discriminator)
+            in
+            if not (hasOwn v discriminator) then
+                failed (failAt c here MissingKey "missing key \"${discriminator}\"" v False)
+            else
+                let
+                    tag = Js.get v discriminator
+                    found = if isType tag "string" then withTag vs (stringOf tag) 0 (lengthOf vs) else Nothing
+                in
+                case found of
+                    Just x ->
+                        FoundVariant x v
+
+                    Nothing ->
+                        failed (failAt c here UnknownTag ("unknown tag; expected " ++ tagList vs 0 (lengthOf vs) "") tag False)
+    else
+        case projected c vs v 0 (lengthOf vs) of
+            NotFound ->
+                failed (failAt c path InvalidSchema "no variant of this tagged schema takes the value" v False)
+
+            found ->
+                found
+
+
+failed : Js.Value -> Found
+failed _ =
+    NotFound
+
+
+-- The variant whose tag is `tag`.
+withTag : Js.Value, String, Int, Int -> Maybe VariantNode
+withTag vs tag i n =
+    if i >= n then
+        Nothing
+    else
+        let
+            v = variantAt vs i
+        in
+        if v.tag == tag then
+            Just v
+        else
+            withTag vs tag (i + 1) n
+
+
+-- Every variant's tag, quoted, joined with ", ".
+tagList : Js.Value, Int, Int, String -> String
+tagList vs i n acc =
+    if i >= n then
+        acc
+    else
+        tagList vs (i + 1) n (acc ++ (if i == 0 then "" else ", ") ++ "\"${(variantAt vs i).tag}\"")
+
+
+-- The first variant whose test takes a typed value, and its payload.
+projected : Context, Js.Value, Js.Value, Int, Int -> Found
+projected c vs v i n =
+    if i >= n then
+        NotFound
+    else
+        let
+            x = variantAt vs i
+        in
+        case maybeOf (Js.apply (if c.src == encodedSide then x.injE.back else x.injA.back) [ v ]) of
+            Just payload ->
+                FoundVariant x payload
+
+            Nothing ->
+                projected c vs v (i + 1) n
+
+
+-- A variant with no payload: its discriminator alone outside, its
+-- constructor inside.
+nullaryOf : Context, String, VariantNode, Path, Js.Value -> Js.Value
+nullaryOf c discriminator x path v =
+    if c.sh && c.reject && unknownKeys c (toHost []) (Just discriminator) path v then
+        c.fail
+    else if c.dh then
+        newObject (Just { discriminator = discriminator, variant = x })
+    else
+        Js.apply (if c.dst == encodedSide then x.injE.there else x.injA.there) [ toHost () ]
+
+
+-- A conversion's own answer. Its issues are moved to where the value is:
+-- the engine's path in front of theirs, and its direction and endpoint; an
+-- `Err` with none is one of the engine's.
+call : Context, Path, Js.Value, Js.Value -> Js.Value
+call c path fn v =
+    case resultOf (Js.apply fn [ v ]) of
+        Ok a ->
+            a
+
+        Err given ->
+            let
+                issues = plain given
+                prefix = pathArray path False
+                _ =
+                    if lengthOf issues == 0 then
+                        moved c prefix v (toHost [ issue "the conversion failed without an issue" ]) 0 1
+                    else
+                        moved c prefix v issues 0 (lengthOf issues)
+            in
+            c.fail
+
+
+moved : Context, Js.Value, Js.Value, Js.Value, Int, Int -> ()
+moved c prefix v issues i n =
+    if i >= n then
+        ()
+    else
+        let
+            given = issueOf (Js.at issues i)
+            entry : Issue
+            entry =
+                { path = fromHost (Js.call prefix "concat" [ plain (toHost given.path) ])
+                , direction = c.dir
+                , endpoint = c.outE
+                , code = given.code
+                , message = given.message
+                , input = if c.report then Just (cast v) else Nothing
+                }
+            _ = push c.issues (toHost entry)
+        in
+        moved c prefix v issues (i + 1) n
 
 
 -- ---- Running -------------------------------------------------------------
+
+-- One root operation: its context, then the traversal from the root.
+runRoot : Schema e a, Options, Direction, Int, Bool, Int, Bool, Js.Value -> Result (List Issue) b
+runRoot s o dir src sh dst dh v =
+    case rootProblem s o dir src sh dst dh of
+        Just issues ->
+            Err issues
+
+        Nothing ->
+            let
+                c = context o dir src sh dst dh False
+            in
+            finish c (run c (nodeOf s) 0 atRoot NoneActive v)
+
 
 --| An Encoded value converted to the Type.
 pub decode : Schema e a, e -> Result (List Issue) a
@@ -410,7 +2010,9 @@ decode schema input = decodeWith schema defaultOptions input
 
 
 --| `decode` with options.
-pub foreign impure decodeWith : Schema e a, Options, e -> Result (List Issue) a
+pub decodeWith : Schema e a, Options, e -> Result (List Issue) a
+decodeWith s o v =
+    runRoot s o Decoding encodedSide False typeSide False (toHost v)
 
 
 --| A Type value converted to the Encoded.
@@ -419,7 +2021,9 @@ encode schema input = encodeWith schema defaultOptions input
 
 
 --| `encode` with options.
-pub foreign impure encodeWith : Schema e a, Options, a -> Result (List Issue) e
+pub encodeWith : Schema e a, Options, a -> Result (List Issue) e
+encodeWith s o v =
+    runRoot s o Encoding typeSide False encodedSide False (toHost v)
 
 
 --| A host value read as the Encoded endpoint's external form, to the Type.
@@ -428,7 +2032,9 @@ read schema input = readWith schema defaultOptions input
 
 
 --| `read` with options.
-pub foreign impure readWith : Schema e a, Options, Value -> Result (List Issue) a
+pub readWith : Schema e a, Options, Value -> Result (List Issue) a
+readWith s o v =
+    runRoot s o Decoding encodedSide True typeSide False (toHost v)
 
 
 --| A Type value written as the Encoded endpoint's external form.
@@ -437,7 +2043,9 @@ write schema input = writeWith schema defaultOptions input
 
 
 --| `write` with options.
-pub foreign impure writeWith : Schema e a, Options, a -> Result (List Issue) Value
+pub writeWith : Schema e a, Options, a -> Result (List Issue) Value
+writeWith s o v =
+    runRoot s o Encoding typeSide False encodedSide True (toHost v)
 
 
 --| JSON text read to the Type.
@@ -445,8 +2053,30 @@ pub parse : Schema e a, String -> Result (List Issue) a
 parse schema text = parseWith schema defaultOptions text
 
 
---| `parse` with options.
-pub foreign impure parseWith : Schema e a, Options, String -> Result (List Issue) a
+--| `parse` with options. `JSON.parse` reports malformed text by throwing a
+--| `SyntaxError`, and only that is an answer; anything else it throws goes
+--| on as it came (CLAUDE.md rule 9).
+pub parseWith : Schema e a, Options, String -> Result (List Issue) a
+parseWith s o text =
+    case rootProblem s o Decoding encodedSide True typeSide False of
+        Just issues ->
+            Err issues
+
+        Nothing ->
+            case
+                Js.catchIf
+                    (\() -> Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                    (\thrown -> Js.instanceOf thrown (Js.global "SyntaxError"))
+                    (\thrown -> Err (stringOf (Js.get thrown "message")))
+            of
+                Err message ->
+                    rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+
+                Ok v ->
+                    let
+                        c = context o Decoding encodedSide True typeSide False True
+                    in
+                    finish c (run c (nodeOf s) 0 atRoot NoneActive v)
 
 
 --| A Type value printed as JSON text.
@@ -455,9 +2085,158 @@ print schema input = printWith schema defaultOptions input
 
 
 --| `print` with options.
-pub foreign impure printWith : Schema e a, Options, a -> Result (List Issue) String
+pub printWith : Schema e a, Options, a -> Result (List Issue) String
+printWith s o v =
+    case rootProblem s o Encoding typeSide False encodedSide True of
+        Just issues ->
+            Err issues
 
+        Nothing ->
+            let
+                c = context o Encoding typeSide False encodedSide True True
+                x = run c (nodeOf s) 0 atRoot NoneActive (toHost v)
+            in
+            if Js.same x c.fail then
+                Err (fromHost c.issues)
+            else
+                Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
+
+
+-- ---- Descriptions --------------------------------------------------------
 
 --| The schema's graph, both endpoints, as plain data. It runs no
 --| conversion; it builds a recursive schema's body if no run has yet.
-pub foreign impure describe : Schema e a -> Description
+pub describe : Schema e a -> Description
+describe s =
+    let
+        ids = Js.construct (Js.global "Map") []
+        definitions = Js.array []
+        root = shapeOf ids definitions (nodeOf s)
+        _ = Js.call definitions "sort" [ toHost byId ]
+    in
+    { root = root, definitions = fromHost definitions }
+
+
+byId : Definition, Definition -> Int
+byId x y =
+    x.id - y.id
+
+
+-- `ids` maps a definition to its number in this description, in the order
+-- it was first met; `definitions` collects each once its body is described.
+shapeOf : Js.Value, Js.Value, Node -> Shape
+shapeOf ids definitions n =
+    case n of
+        NPrim k ->
+            Primitive (kindOf k)
+
+        NList child ->
+            ListOf (shapeOf ids definitions child)
+
+        NNullable child ->
+            NullableOf (shapeOf ids definitions child)
+
+        NRecord fs _ ->
+            let
+                out = Js.array []
+                _ = fieldShapes ids definitions fs out 0 (lengthOf fs)
+            in
+            RecordOf (fromHost out)
+
+        NTagged discriminator vs ->
+            let
+                out = Js.array []
+                _ = variantShapes ids definitions vs out 0 (lengthOf vs)
+            in
+            TaggedOf discriminator (fromHost out)
+
+        NConverted child _ _ ->
+            Converted (shapeOf ids definitions child)
+
+        NFlipped child ->
+            Flipped (shapeOf ids definitions child)
+
+        NProjected side child ->
+            if side == typeSide then
+                TypeOnly (shapeOf ids definitions child)
+            else
+                EncodedOnly (shapeOf ids definitions child)
+
+        NRef cell ->
+            let
+                known = Js.call ids "get" [ toHost cell ]
+            in
+            if not (Js.isUndefined known) then
+                Reference (intOf known)
+            else
+                let
+                    id = intOf (Js.get ids "size")
+                    _ = Js.call ids "set" [ toHost cell, Js.from id ]
+                    shape =
+                        case resolve cell of
+                            Nothing ->
+                                Invalid (dangling cell)
+
+                            Just body ->
+                                shapeOf ids definitions body
+                    definition : Definition
+                    definition = { id = id, name = cell.name, shape = shape }
+                    _ = push definitions (toHost definition)
+                in
+                Reference id
+
+        NBroken problem ->
+            Invalid problem
+
+
+fieldShapes : Js.Value, Js.Value, Js.Value, Js.Value, Int, Int -> ()
+fieldShapes ids definitions fs out i n =
+    if i >= n then
+        ()
+    else
+        let
+            f = fieldAt fs i
+            shape : FieldShape
+            shape = { name = f.name, key = f.key, optional = f.optional, shape = shapeOf ids definitions f.node }
+            _ = push out (toHost shape)
+        in
+        fieldShapes ids definitions fs out (i + 1) n
+
+
+variantShapes : Js.Value, Js.Value, Js.Value, Js.Value, Int, Int -> ()
+variantShapes ids definitions vs out i n =
+    if i >= n then
+        ()
+    else
+        let
+            v = variantAt vs i
+            shape : VariantShape
+            shape = { name = v.name, payload = Maybe.map v.payload (shapeOf ids definitions _), tag = v.tag }
+            _ = push out (toHost shape)
+        in
+        variantShapes ids definitions vs out (i + 1) n
+
+
+kindOf : Int -> PrimitiveKind
+kindOf k =
+    case k of
+        0 ->
+            StringKind
+
+        1 ->
+            BoolKind
+
+        2 ->
+            IntKind
+
+        3 ->
+            FloatKind
+
+        4 ->
+            FiniteFloatKind
+
+        5 ->
+            NullKind
+
+        _ ->
+            ValueKind
