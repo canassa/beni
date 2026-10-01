@@ -322,7 +322,8 @@ fn printDependencyDigests(gpa: Allocator, stdout: *Io.Writer, session: *Session)
 }
 
 /// `--frontend-keys`: one `<path> <32 hex digits>` line per FILE on stdout,
-/// sorted by path (`fast-compiler.md` §8, `frontend.md` §1).
+/// sorted by path (`fast-compiler.md` §8, `frontend.md` §1), for every file
+/// the run lowered.
 ///
 /// `--cache-keys`' twin, and deliberately the same shape, because the two
 /// answer the two halves of the question incremental rebuilds ask: the module key says
@@ -340,6 +341,9 @@ fn printFrontendKeys(stdout: *Io.Writer, session: *Session) !void {
     const FileKey = @import("../cache/FileKey.zig");
     for (0..session.store.count()) |i| {
         const file: @TypeOf(session.store).Index = @enumFromInt(i);
+        // A core module no wave reached has no front end and so no key
+        // (checker.md §4.1, amended 2026-10-01).
+        if (!session.lowered[i]) continue;
         try stdout.print("{s} {s}\n", .{ session.store.path(file), &FileKey.hex(session.file_keys[i]) });
     }
     try stdout.flush();

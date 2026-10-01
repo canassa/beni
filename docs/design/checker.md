@@ -156,7 +156,8 @@ fixtures and records each guard's measured boundary.
 
 Core is embedded into the binary with `@embedFile` from `build.zig` (one anonymous import per
 file, the list generated from the directory at build time), and parsed on every cold start
-until M4 caches it. `--core-root` reads the directory instead.
+until M4 caches it. `--core-root` reads the directory instead. *Amended 2026-10-01:* only the core
+modules a build reaches are parsed and checked (§4, amended the same day).
 
 ## 4. The module graph and resolution
 
@@ -234,6 +235,58 @@ until M4 caches it. `--core-root` reads the directory instead.
    Measured on the generated 100k-line corpus at `--jobs=8`: the phase went from 4.6 ms of one
    thread to 1.4 ms, and from 5.0 ms to 1.5 ms on a warm check, where it was the largest serial
    step left.
+
+*Amended 2026-10-01: core is read, lowered and checked only as far as the build reaches it.*
+Item 1 enumerates every core module, and until this amendment items 2–5 then lowered, resolved
+and checked all of them in every process, whatever the program imported: a core module cost
+every `beni` run its whole check. That made writing core in beni a tax on every test — the S3
+engine's 1 300 lines took `Schema`'s check from 0.34 ms to 34 ms in every process and pushed four
+tests over their instruction budget (`schema.md` §16, *As built — S3*). The rule now:
+
+- **The roots** are every module that is not core's (the root package's and the platform
+  chain's), every core module whose file the command line named (`beni check core` checks all of
+  core, and `dump --stage=… core/Dict.beni` dumps `Dict`), and the **implicit core modules** —
+  the seven prelude modules and `Task`, the core modules the compiler itself names with no edge
+  from the module that observes them (`Graph.implicit_core`: the prelude's names, the well-known
+  types, `Lower`'s `Basics.eq`, `String.compare`, `Maybe.Nothing`, `Result.Err`, and the
+  suspension protocol's `Task.andThen` and `Task.isWaiting`). `Schema` is not one of them: every
+  construct that needs it mints an edge to it (§4 item 3, `static-dispatch-spike.md` §6.8).
+- **The front end runs in waves** (`Session.firstWave`, `nextWave`): the first is every file
+  but the core modules that are not roots; each next one is the core modules an explicit import
+  of the last wave names, or whose type one of its files mints, until a wave adds nothing. A core
+  module no wave reaches is never lowered — and under `--core-root`, never read.
+- **The graph keeps what an edge reaches** (`Graph.dropUnreached`). Item 3 builds it over the
+  lowered files; every module no root reaches through the edges of item 3 — explicit imports,
+  used prelude rows, the markup vocabulary, minted types — is left out, and the graph is built
+  again without it. A module of the build is then exactly a module some root can observe, and
+  resolution, the check, the persistent cache and emit see nothing else.
+- **What does not change.** A program's diagnostics, interfaces, keys of the modules it has and
+  emitted JavaScript are what they were: every module it can observe is checked as before, against
+  the same interfaces. Which files a wave holds is a function of the input, and the interners are
+  merged in file order after the last wave, so the output is identical at every `--jobs` (rule 5).
+- **What does change, deliberately.** A core module nothing reaches reports nothing: a syntax or
+  type error in an unreached module under `--core-root` is not the program's to hear, and is
+  reported the moment a module imports it or the command line names it. `dump --stage=graph`,
+  `--cache-keys`, `--frontend-keys` and the `modules`/`files` counters list the build's modules
+  and files, not core's. `core_surface` is over the implicit core modules only
+  (`fast-compiler.md` §8, amended the same day), so a program that begins importing `Dict` moves
+  no other module's key.
+
+*Measured* (ReleaseSafe `beni`, instructions per process, an empty `node` program / `run/Adt` /
+`bench/corpus --library`): 338 M → 226 M, 349 M → 237 M, 938 M → 883 M. `zig build test-blackbox`
+spends 985.6 G → 752.0 G instructions over its tests and fixtures (−24 %). Six copies of
+`core/Dict.beni` added as unimported core modules (3 546 lines) cost the empty program 250 M
+instructions and the suite 591 G and six tests over budget before; after, 0.3 M and 1 G and none.
+
+*Measured and not built: a pre-checked core.* The other way to stop paying for core is to check it
+when `beni` itself is built and embed the result — the persistent cache's entries and front-end
+artifacts for every core module, keyed exactly as on disk, so a stale one is a miss. Its ceiling is
+what a warm cache gives today: the empty program with every module but `Main` loaded from a cache is
+112 M instructions against 226 M cold. It is not built here because reachability had to come first —
+a pre-checked core still loads every core module unless the build knows which it reaches — and
+because it puts a second compile of the compiler on the build graph's critical path (the entries
+carry the build id of the binary that embeds them). It is the next step when the implicit core
+modules, which every process still checks, grow in beni: they are now the whole of core's cost.
 
 **Schema namespaces and endpoint elaboration** extend resolution here and the
 interface of §7. [`schema.md`](schema.md) §3–§4 owns K13(b) exposure, the two

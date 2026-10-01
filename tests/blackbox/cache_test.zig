@@ -237,7 +237,7 @@ test "--cache-keys prints one sorted line per module, core included" {
     try testing.expect(lookup(keys, "app:Top") != null);
     try testing.expect(lookup(keys, "core:Basics") != null);
     try testing.expect(lookup(keys, "core:String") != null);
-    try testing.expect(keys.len >= 12);
+    try testing.expect(keys.len >= 11); // the app's three, and the eight core modules every check keeps
 
     // No two modules share a key. A recipe that dropped the module name
     // would give every module of one project the same one, and every
@@ -1052,11 +1052,11 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // A cold run hits nothing, checks everything, and writes an entry per
-    // cacheable module — the app's three and core's, which is what makes
-    // even an unchanged-tree hit worth having.
+    // cacheable module — the app's three and the core modules it reaches,
+    // which is what makes even an unchanged-tree hit worth having.
     try testing.expectEqual(@as(u64, 0), cached.counters.hits);
     try testing.expectEqual(@as(u64, 0), plain.counters.hits);
-    try testing.expect(cached.counters.misses >= 12);
+    try testing.expect(cached.counters.misses >= 11);
     try testing.expectEqual(cached.counters.misses, plain.counters.misses);
     try testing.expectEqual(cached.counters.checked, plain.counters.checked);
     try testing.expect(cached.counters.bytes > 0);
@@ -2177,7 +2177,7 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The module cache's plainest win: an unchanged tree, plus the nine core
+    // The module cache's plainest win: an unchanged tree, plus the core
     // modules and the platform, which are unchanged in every build anyone
     // will ever run.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -2198,7 +2198,7 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     );
     try testing.expectEqual(@as(u64, 0), warm.counters.misses);
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    try testing.expect(warm.counters.hits >= 12);
+    try testing.expect(warm.counters.hits >= 11);
     // Nothing new was written: every entry was already there under its key.
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
 }
@@ -3240,7 +3240,10 @@ test "--frontend-keys prints one sorted line per FILE, core included, and no two
     try testing.expect(lookup(keys, mid_file) != null);
     try testing.expect(lookup(keys, top_file) != null);
     try testing.expect(lookup(keys, "core/Basics.beni") != null);
-    try testing.expect(keys.len >= 12);
+    // The app's three and the eight core modules a check always lowers;
+    // a core module nothing imports has no front end and no key.
+    try testing.expect(keys.len >= 11);
+    try testing.expect(lookup(keys, "core/Dict.beni") == null);
 
     // A recipe that dropped the module name would give every file of one
     // project the same key, and every row below would still pass.

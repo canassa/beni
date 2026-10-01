@@ -23,10 +23,10 @@
 //! kind is carried only so that a violation's message can name it.
 //!
 //! *Which MODULE was read* is a RUNTIME question, and it is the substantive
-//! one. A module's key covers itself, its transitive imports and the whole
-//! core package — the first two because the digest is inductive over direct
-//! imports, the third because `core_surface` is one term over all of core
-//! (`fast-compiler.md` §8). Anything else is a fact the key cannot see move,
+//! one. A module's key covers itself, its transitive imports and the implicit
+//! core modules — the first two because the digest is inductive over direct
+//! imports, the third because `core_surface` is one term over the prelude and
+//! `Task` (`fast-compiler.md` §8, amended 2026-10-01; `Graph.implicit_core`). Anything else is a fact the key cannot see move,
 //! which is exactly the failure mode this slice is about: `checker.md` §7's
 //! first `type_refs` consequence says a check can read facts about a module it
 //! never imported, and `Solve.methodOnApp` carries an `internal` guard that
@@ -182,10 +182,11 @@ pub const Coverage = struct {
         for (out.rows) |*row| row.* = .{};
         for (out.rows) |*row| row.* = try .initEmpty(gpa, n);
 
-        // `core_surface` is one term over every core module, so every
-        // module's key sees every core module move.
+        // `core_surface` is one term over the implicit core modules
+        // (`Graph.implicit_core`), so every module's key sees those move;
+        // any other core module it reads must be an edge, like any import.
         for (0..n) |i| {
-            if (graph.modulePackage(@enumFromInt(i)) != .core) continue;
+            if (!graph.isImplicitCore(@enumFromInt(i))) continue;
             for (out.rows) |*row| row.set(i);
         }
         for (graph.order) |m| {

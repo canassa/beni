@@ -77,6 +77,13 @@ pub const File = struct {
     /// The bytes are `@embedFile`d into the binary and must not be read or
     /// freed. Only ever true for `core` files.
     embedded: bool,
+    /// The file was enumerated from an argument path — some pending entry
+    /// for it came in as package `app` — whatever package it ended up in.
+    /// A core module the user named (`beni check core`) is a root of the
+    /// core reach (`Graph.dropUnreached`, checker.md §4.1 as amended
+    /// 2026-10-01); one that only came from the embedded copy or
+    /// `--core-root` is checked only when something reaches it.
+    named: bool,
     /// Owned unless `embedded`; empty until `read`. Sentinel-terminated for
     /// the tokenizer.
     bytes: [:0]const u8,
@@ -152,6 +159,11 @@ pub fn packages(store: *const SourceStore) []const Package {
 /// under the directory the user pointed at.
 pub fn isEmbedded(store: *const SourceStore, index: Index) bool {
     return store.files.items(.embedded)[index.int()];
+}
+
+/// Whether the file came from an argument path (`File.named`).
+pub fn isNamed(store: *const SourceStore, index: Index) bool {
+    return store.files.items(.named)[index.int()];
 }
 
 pub fn bytes(store: *const SourceStore, index: Index) [:0]const u8 {
@@ -411,6 +423,9 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             .module_path_valid = derived == .valid,
             .package = pkg,
             .embedded = source != null,
+            // Sorted `app` first, so `p` is an argument path exactly when
+            // any entry for this path was.
+            .named = p.package == .app,
             .bytes = source orelse empty_source,
             .line_starts = &.{},
         });

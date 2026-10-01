@@ -67,6 +67,7 @@ const Artifacts = @import("../Artifacts.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
+const prelude = @import("../bir/prelude.zig");
 
 const Graph = @This();
 
@@ -388,7 +389,8 @@ pub fn edgeCount(g: *const Graph) u32 {
 /// Birs' symbols are already global.
 ///
 /// Files with an invalid module path (language.md §1) are not modules: they
-/// have been reported already and nothing can import them.
+/// have been reported already and nothing can import them. Nor is a file
+/// `keep` says false for: a core module no root reaches (`dropUnreached`).
 pub fn build(
     gpa: Allocator,
     scratch: Allocator,
@@ -396,6 +398,7 @@ pub fn build(
     artifacts: *const Artifacts,
     interner: *InternPool.Global,
     platforms: Platforms,
+    keep: ?[]const bool,
 ) Allocator.Error!Graph {
     var g: Graph = .empty;
     errdefer g.deinit(gpa);
@@ -417,6 +420,7 @@ pub fn build(
     for (0..store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
         if (!store.modulePathValid(file)) continue;
+        if (keep) |k| if (!k[i]) continue;
         const name = try interner.getOrPut(gpa, store.moduleName(file));
         name_limit = @max(name_limit, @intFromEnum(name) + 1);
         const package = store.package(file);
@@ -559,6 +563,75 @@ pub fn build(
     return g;
 }
 
+/// The core modules a build checks (checker.md §4.1, *amended 2026-10-01*):
+/// the ones the build's roots reach. `keep` — one `bool` per FILE, the mask
+/// this graph was built with — is cleared for every core module nothing
+/// reaches, for `build` to leave out the second time. True when one was.
+///
+/// The roots are every module that is not core's — the root package's and
+/// the platform chain's — every core module the command line named
+/// (`SourceStore.isNamed`: `beni check core` checks all of core), and the
+/// core modules the compiler itself names: the seven prelude modules
+/// (`prelude.modules`) and `Task`, whose `andThen` and `isWaiting` the code
+/// of a body that may suspend calls with no edge to say so
+/// (`js/Lower.zig`'s `coreValue`). From those, every edge `build` made is
+/// followed — explicit imports, used prelude rows, the markup vocabulary and
+/// minted types (`Schema` included) — so a module is left out only when no
+/// root can observe it.
+///
+/// A function of the graph alone, which is a function of the input: the
+/// same files are left out at every `--jobs` (rule 5).
+pub fn dropUnreached(g: *const Graph, scratch: Allocator, store: *const SourceStore, keep: []bool) Allocator.Error!bool {
+    const n = g.modules.len;
+    const reached = try scratch.alloc(bool, n);
+    @memset(reached, false);
+    var stack: std.ArrayList(Index) = .empty;
+    const packages = g.modules.items(.package);
+    const files = g.modules.items(.file);
+    for (0..n) |i| {
+        if (packages[i] == .core and !store.isNamed(files[i])) continue;
+        reached[i] = true;
+        try stack.append(scratch, @enumFromInt(i));
+    }
+    for (implicit_core) |w| {
+        const m = g.find(.core, w.symbol()) orelse continue;
+        if (reached[m.int()]) continue;
+        reached[m.int()] = true;
+        try stack.append(scratch, m);
+    }
+    while (stack.pop()) |m| {
+        for (g.dependencies(m)) |dep| {
+            if (reached[dep.int()]) continue;
+            reached[dep.int()] = true;
+            try stack.append(scratch, dep);
+        }
+    }
+    var dropped = false;
+    for (reached, files) |r, file| {
+        if (r) continue;
+        keep[file.int()] = false;
+        dropped = true;
+    }
+    return dropped;
+}
+
+/// The core modules the compiler names itself, with no edge from the module
+/// that observes them: the seven prelude modules and `Task`. `dropUnreached`
+/// always keeps them, so whether one is in a build never depends on what the
+/// build imports, and `core_surface` is one term over exactly these
+/// (`fast-compiler.md` §8, amended 2026-10-01; `isImplicitCore`).
+pub const implicit_core = prelude.modules ++ [_]InternPool.WellKnown{.Task};
+
+/// Whether module `m` is one of `implicit_core`.
+pub fn isImplicitCore(g: *const Graph, m: Index) bool {
+    if (g.modulePackage(m) != .core) return false;
+    const name = g.moduleName(m);
+    for (implicit_core) |w| {
+        if (w.symbol() == name) return true;
+    }
+    return false;
+}
+
 /// The chain's vocabulary module and markup type (`boundary.md` §9.2), each
 /// looked up among the platform modules, the type checked for what §9.2
 /// says it is: a `pub foreign type` of one parameter.
@@ -689,6 +762,23 @@ fn mintedModules(bir: *const Bir) u8 {
 /// The modules that declare a well-known type, one bit each in the order
 /// `minted_bits` uses. `check/Types.findWellKnown` names the same six.
 const minted_modules = [_]InternPool.WellKnown{ .Basics, .List, .String, .Char, .Maybe, .Result, .Schema };
+
+/// The modules whose types `bir` mints, into `buffer`: the edges `build`
+/// will add for them, known before the graph exists, so the per-file
+/// phase's waves can lower a minted module that no import names
+/// (`Session.nextWave` — a `schema` declaration mints `Schema`).
+pub fn mintedNames(bir: *const Bir, buffer: *[minted_modules.len]InternPool.WellKnown) []const InternPool.WellKnown {
+    const minted = mintedModules(bir);
+    var n: usize = 0;
+    for (minted_modules, 0..) |w, bit| {
+        if (minted & (@as(u8, 1) << @intCast(bit)) == 0) continue;
+        buffer[n] = w;
+        n += 1;
+    }
+    return buffer[0..n];
+}
+
+pub const minted_count = minted_modules.len;
 
 /// Which of `minted_modules` an instruction of each tag makes a dependency.
 /// `Int`, `Float` and `Bool` all live in `Basics`: a comparison is a

@@ -4,7 +4,8 @@
 //!
 //! ```
 //! "BENIKEY\x00"           8       magic
-//! key_version: u32                5 — no checker id (4: `v2` checks core;
+//! key_version: u32                6 — core_surface over the implicit core
+//!                                 modules (5: no checker id; 4: `v2` checks core;
 //!                                 3: the checker id; 2: the cutoff)
 //! build_id: [16]u8                the compiler build id (`src/build_id.zig`),
 //!                                 the compiler-identity component
@@ -14,9 +15,10 @@
 //! source_hash: [16]u8             over the module's source bytes
 //! sibling_hash: [16]u8            over its sibling .js, or 16 zero bytes when
 //!                                 it declares no `foreign`
-//! core_surface: [16]u8            over the core package's sorted (module name,
-//!                                 interface hash, digest) list; 16 zero bytes
-//!                                 for a core module itself
+//! core_surface: [16]u8            over the implicit core modules' sorted
+//!                                 (module name, interface hash, digest) list
+//!                                 (`Graph.implicit_core`); 16 zero bytes for a
+//!                                 core module itself
 //! import_count: u32
 //!   per direct import, sorted by (package, name), duplicates removed:
 //!     package: u8, name_len: u32, name,
@@ -56,6 +58,12 @@
 //! hash, digest)` list of the core package, is how the key says so — and it is
 //! `core_epoch` with its term changed and nothing else, which buys the property
 //! that an edit to core no module can observe re-checks nothing outside core.
+//! *Amended 2026-10-01:* the list is the implicit core modules' — the prelude
+//! and `Task`, the ones the compiler names with no edge — and not the whole
+//! package's, because a build checks only the core modules it reaches
+//! (checker.md §4.1). Every other core module a check reads is an edge of it,
+//! which the import terms cover, and `reads.zig`'s self-check holds every
+//! check to that.
 //!
 //! **Keys are finished ON THE DAG**, by the worker that claimed the module
 //! (`check/Incremental.zig`'s `claim`): an import's pair exists only once that import has
@@ -101,7 +109,10 @@ pub const magic = "BENIKEY\x00";
 /// them (`checker-v2.md` §14.3). The build id alone is the compiler identity
 /// again; the bump keeps a key without the term from ever equalling one
 /// written with it.
-pub const key_version: u32 = 5;
+/// **6** (`fast-compiler.md` §8, amended 2026-10-01): `core_surface` is over
+/// the implicit core modules (`Graph.implicit_core`) rather than all of core,
+/// because a build checks only the core modules it reaches.
+pub const key_version: u32 = 6;
 
 /// The first recipe: an import contributes its own KEY, and the
 /// core term is `core_epoch` over core's keys. **Nothing is stored under it.**

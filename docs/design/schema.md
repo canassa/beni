@@ -2030,7 +2030,9 @@ program that only builds schemas with the library builds and runs, under `--rele
   checking cost is per process** — the persistent cache does not help a test's fresh directory —
   so every line of beni added to core is paid by every test; whatever else S5–S15 add to core
   (`Json`, `Random`) meets the same wall, and checking only the core modules a program reaches is
-  the fix that would lift it. It is not built here.
+  the fix that would lift it. It is not built here. *Amended 2026-10-01:* it is built
+  (`checker.md` §4, amended the same day): a core module nothing imports is no longer lowered or
+  checked, so a program that does not import `Schema` pays nothing for it.
 - **The ceiling** (§5's amendment): `maxDepthCeiling` 1 024, default 512. The deepest value one
   cold operation survived in a fresh Node 24 process (default stack, 984 KB), by bisection over
   processes, in depth units: a tree whose level is a payload, a field and an element (three

@@ -49,11 +49,16 @@ pub fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
     const cutoff = d.options.cutoff orelse return;
     if (d.core_pending != 0) return;
     if (!std.mem.eql(u8, &cutoff.core_surface, &Digest.none)) return;
+    // Over the implicit core modules only (`Graph.implicit_core`,
+    // `fast-compiler.md` §8 as amended 2026-10-01): every other core module
+    // a check observes is an edge of it, whose pair is in the key that way.
+    // Over every core module of the build, the term would move every key
+    // in the project the day one module first imported `Dict`.
     var entries: std.ArrayList(Digest.CoreEntry) = .empty;
     defer entries.deinit(scratch.allocator());
     for (0..d.graph.count()) |i| {
         const m: Graph.Index = @enumFromInt(i);
-        if (d.graph.modulePackage(m) != .core) continue;
+        if (!d.graph.isImplicitCore(m)) continue;
         try entries.append(scratch.allocator(), .{
             .name = d.interner.slice(d.graph.moduleName(m)),
             .iface_hash = cutoff.iface_hash[i],

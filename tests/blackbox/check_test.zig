@@ -506,3 +506,115 @@ test "--platform is refused where it would do nothing" {
         dumped.stderr,
     );
 }
+
+// ---------------------------------------------------------------------------
+// Core is checked as far as a program reaches it (checker.md §4.1, amended
+// 2026-10-01)
+// ---------------------------------------------------------------------------
+
+/// A core of four modules under `--core-root`: `Basics`, which the prelude
+/// names and every check keeps; `Outer`, which imports `Broken`; `Broken`,
+/// which does not parse; and `Lone`, which nothing imports.
+fn writeReachCore(w: *World) !void {
+    try w.write("mycore/Basics.beni", "pub foreign type Int\n");
+    try w.write("mycore/Outer.beni",
+        \\import Broken
+        \\
+        \\
+        \\pub z : Int
+        \\z =
+        \\    Broken.x
+        \\
+    );
+    try w.write("mycore/Broken.beni", "pub x : Int\nx =\n    (1\n");
+    try w.write("mycore/Lone.beni", "pub y : Int\ny =\n    1\n");
+}
+
+test "a core module no import reaches is neither read nor checked, and one an import chain reaches is" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Broken` is a syntax error. A program that imports nothing from core
+    // never lowers it, so the error is not the program's to hear about; a
+    // program that imports `Outer` reaches it two imports deep — the third
+    // wave of the front end — and hears it exactly as it always did; and
+    // naming the core directory on the command line makes every module of it
+    // a root, which is how core itself is checked.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReachCore(&w);
+    try w.write("src/Main.beni", "pub x : Int\nx =\n    1\n");
+    try w.write("other/Main.beni", "import Outer\n\n\npub x : Int\nx =\n    Outer.z\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const unreached = try w.run(&.{ "check", "--core-root=mycore", "--frontend-keys", "src" });
+    const reached = try w.run(&.{ "check", "--core-root=mycore", "other" });
+    const named = try w.run(&.{ "check", "--core-root=mycore", "mycore" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), unreached.exit_code);
+    try testing.expectEqualStrings("", unreached.stderr);
+    // Only what was lowered has a front-end key: `Basics` and the program.
+    try testing.expect(std.mem.indexOf(u8, unreached.stdout, "mycore/Basics.beni ") != null);
+    try testing.expect(std.mem.indexOf(u8, unreached.stdout, "src/Main.beni ") != null);
+    for ([_][]const u8{ "mycore/Broken.beni", "mycore/Outer.beni", "mycore/Lone.beni" }) |path| {
+        if (std.mem.indexOf(u8, unreached.stdout, path) != null) {
+            std.debug.print("{s} was lowered:\n{s}", .{ path, unreached.stdout });
+            return error.UnreachedModuleLowered;
+        }
+    }
+
+    for ([_]world.Result{ reached, named }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqualStrings("mycore/Broken.beni", r.diagnostics[0].span.file);
+    }
+}
+
+test "the core modules a build reaches are the same at every --jobs, and nothing else of core is in its graph" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The embedded core. `Set` imports `Dict`, so this program's front end
+    // runs in three waves; `Schema`, `Int32` and `Js` are imported by
+    // nothing it reaches and are not modules of the build at all.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Set
+        \\
+        \\
+        \\pub size : Int
+        \\size =
+        \\    Set.size (Set.fromList [ 1, 2 ])
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.run(&.{ "dump", "--stage=graph", "--jobs=1", "Main.beni" });
+    const eight = try w.run(&.{ "dump", "--stage=graph", "--jobs=8", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expectEqualStrings(one.stdout, eight.stdout);
+    for ([_][]const u8{ "app:Main -> core:Set\n", "core:Set -> core:Dict\n", "core:Dict -> core:List\n" }) |edge| {
+        if (std.mem.indexOf(u8, one.stdout, edge) == null) {
+            std.debug.print("missing {s}--- graph ---\n{s}", .{ edge, one.stdout });
+            return error.MissingEdge;
+        }
+    }
+    for ([_][]const u8{ "core:Schema", "core:Int32", "core:Js" }) |module| {
+        if (std.mem.indexOf(u8, one.stdout, module) != null) {
+            std.debug.print("{s} is in the graph:\n{s}", .{ module, one.stdout });
+            return error.UnreachedModuleInGraph;
+        }
+    }
+}

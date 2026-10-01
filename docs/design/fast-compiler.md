@@ -1165,6 +1165,20 @@ and `core/Basics` by scanning their `Bir` with no edge at all, and enumerating t
 reaches is the incremental whole-program passes' job, not this step's. One term over ten modules is the honest price of not
 enumerating them yet.
 
+*Amended 2026-10-01 (`checker.md` §4, amended the same day): `key_version` 6, and the narrowing is
+taken.* A build now checks only the core modules it reaches, so "every core module" became "every
+core module this program reaches" — and a term over THAT moved every key in the project the day one
+module first imported `Dict` (a `cache_test` scenario caught it: `--platform=node` reaches `Js` and
+moved every app key). `core_surface` is now over the **implicit core modules** — the prelude's seven
+and `Task` (`Graph.implicit_core`), which every build keeps whatever it imports — and the
+enumeration the rejection asked for is that set: the backend's edgeless reaches (`Reach`'s
+`String.compare` and `Basics.eq`, `Lower`'s `Maybe.Nothing` and `Result.Err`, the suspension
+protocol's `Task`) and the checker's (`Types.findWellKnown`, `Solve`'s and `Elaborate`'s `Basics`)
+all land in it, except `Schema`'s well-known types, which only a construct that mints an edge to
+`Schema` reads. Every other core module a check reads is an edge of it, and its pair is in the key
+as any import's is. `reads.zig`'s covered-read self-check now covers exactly that set, so a read
+outside it fails the safe build that every test runs, rather than being argued.
+
 **The dependency digest is a SECOND hash per module, and it is deliberately not part of the
 interface hash.** Its bytes are `checker.md` §7. It carries what a dependent reads about a module
 that the record does not say, and it is separate for the reason §8.1's purity rule gives: adding a
