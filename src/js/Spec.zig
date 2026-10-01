@@ -357,6 +357,10 @@ const Spec = struct {
     assigned: []bool,
     /// Reads of each whole-program name, for the substitution rule.
     reads: []u32,
+    /// How many whole-program names there are: `Input.globals`, and one
+    /// more for each top-level binding a body written in another place
+    /// declares (`addGlobal`).
+    globals: u32,
     params: std.ArrayList(Lat) = .empty,
     lits: std.ArrayList(Lit) = .empty,
     lit_ids: std.StringHashMapUnmanaged(u32) = .empty,
@@ -495,6 +499,7 @@ const Spec = struct {
             .escaped = try arena.alloc(bool, in.globals),
             .assigned = try arena.alloc(bool, in.globals),
             .reads = try arena.alloc(u32, in.globals),
+            .globals = in.globals,
         };
         return s;
     }
@@ -1510,9 +1515,9 @@ const Spec = struct {
     /// initialiser may do something when evaluated is kept whether or not it
     /// is read, as `Reach` keeps it — and the names `Input.escaping` lists.
     fn prune(s: *Spec) Allocator.Error!bool {
-        const referenced = try s.arena.alloc(bool, s.in.globals);
+        const referenced = try s.arena.alloc(bool, s.globals);
         @memset(referenced, false);
-        const live = try s.arena.alloc(bool, s.in.globals);
+        const live = try s.arena.alloc(bool, s.globals);
         @memset(live, false);
         var work: std.ArrayList(u32) = .empty;
         var ri: usize = 0;
@@ -1889,6 +1894,24 @@ const Spec = struct {
             },
         }
         return true;
+    }
+
+    /// A top-level binding of module `m` that a body written there declares
+    /// (`Copy.fresh`): a whole-program name of its own, as every declaration
+    /// the pass was handed has. Without one, each top-level statement read it
+    /// as a different local, so what it holds reached no read of it, and the
+    /// facts dropped keys that are read.
+    fn addGlobal(s: *Spec, m: *Mod, at: NameIndex) Allocator.Error!void {
+        const g = s.globals;
+        s.globals += 1;
+        s.decl = try growSlice(s.arena, ?Decl, s.decl, s.globals, null);
+        s.escaped = try growSlice(s.arena, bool, s.escaped, s.globals, false);
+        s.assigned = try growSlice(s.arena, bool, s.assigned, s.globals, false);
+        s.reads = try growSlice(s.arena, u32, s.reads, s.globals, 0);
+        if (m.global_list.items.len == 0) try m.global_list.appendSlice(s.arena, m.global);
+        while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
+        try m.global_list.append(s.arena, g);
+        m.global = m.global_list.items;
     }
 
     /// Slice 6: the value of a declaration's name, `name` and its id.
@@ -2962,7 +2985,7 @@ const Spec = struct {
 
     /// Every top-level function slice 8 may write in, by whole-program id.
     fn smallTable(s: *Spec) Allocator.Error![]?Small {
-        const smalls = try s.arena.alloc(?Small, s.in.globals);
+        const smalls = try s.arena.alloc(?Small, s.globals);
         @memset(smalls, null);
         for (s.decl, 0..) |maybe, gi| {
             const decl = maybe orelse continue;
@@ -3123,7 +3146,7 @@ const Spec = struct {
     /// function, by whole-program id, mentioned once as a callee and fit to
     /// be written there.
     fn inlineOne(s: *Spec) Allocator.Error!bool {
-        const n = s.in.globals;
+        const n = s.globals;
         const refs = try s.arena.alloc(u32, n);
         @memset(refs, 0);
         const sites = try s.arena.alloc(?CallSite, n);
@@ -3799,6 +3822,7 @@ const Spec = struct {
                 .tag = tag,
             };
             const at = try c.dst.addName(c.gpa(), name);
+            if (global) try c.s.addGlobal(c.dst, at);
             c.renamed[n] = at.int();
             if (c.src.tables) |t| if (std.mem.indexOfScalar(NameIndex, t.mutable.items, @enumFromInt(n)) != null) {
                 if (c.dst.tables) |dt| try dt.mutable.append(c.s.arena, at);
@@ -4682,7 +4706,7 @@ const Pts = struct {
         p.decl_call = .empty;
         p.unknown_props = .empty;
         p.unknown_any = false;
-        p.globals = try p.arena().alloc(VarId, s.in.globals);
+        p.globals = try p.arena().alloc(VarId, s.globals);
         for (p.globals) |*g| g.* = try p.newVar();
         // What no module declares — an import of a hand-written file's
         // export — is anything at all.

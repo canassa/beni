@@ -1,0 +1,55 @@
+-- A function called once, from a top-level value, is written there under
+-- `--release` (`backend.md` §9, *A function called once is written where it
+-- is called*), and the names its body declares become top-level bindings of
+-- the caller's module: here the two temporaries a record literal's sorted
+-- keys move its initialisers into. Those bindings are names the whole
+-- program knows, so what the record holds — the two functions — is seen by
+-- the call that reads it back, and the `Ok`/`Err` they make keep their tags.
+-- Before the fix the analysis saw an empty record, dropped the tags and the
+-- failure's fields, and the program crashed under `--release` alone.
+import Node exposing (Program)
+
+
+type alias Check =
+    forward : Int -> Result Problem Int
+    backward : Int -> Result Problem Int
+
+
+type alias Problem =
+    message : String
+    value : Int
+
+
+make : (Int -> Result Problem Int), (Int -> Result Problem Int) -> Check
+make forward backward = { forward = identity forward, backward = identity backward }
+
+
+positive : Check
+positive =
+    make
+        (\n ->
+            if n > 0 then
+                Ok n
+            else
+                Err { message = "not positive", value = n }
+        )
+        (\n -> Ok (n * 2))
+
+
+run : Check, Int -> String
+run check n =
+    case check.forward n of
+        Ok v ->
+            case check.backward v of
+                Ok w ->
+                    "ok " ++ String.fromInt w
+
+                Err problem ->
+                    problem.message
+
+        Err problem ->
+            problem.message ++ " " ++ String.fromInt problem.value
+
+
+main : Program
+main = Node.printLines [ run positive 3, run positive (-4) ]
