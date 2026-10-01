@@ -3928,6 +3928,39 @@ name in the fifth VLQ field, which is what makes a minified stack trace readable
 already asks for a name at print time — so §11's "fused into the print pass" is what keeps this
 free (report 12 §6.2). Pointer only.
 
+**Amended 2026-10-02: a spelling is reused in scopes that cannot see each other**
+(`Rename.Module.enter`; `plans/runtime-in-beni.md`, step 4). A declaration's locals were one flat
+alphabet in emission order, so a function with fifty locals spelt the last of them with two
+letters even where twenty of them lived in loop bodies that never meet. The walk now builds the
+declaration's scopes — a function's parameters and body as one, a loop's body, a block, a
+`switch`'s cases (an `if`'s arms are the scope around them, since the printer may write an arm's
+statements into that list: `compactIf`) — and gives each local a home, the innermost scope that
+holds its declaration and every use. Scopes are assigned parent first; a scope's names take, in the
+order the printer meets them, the lowest ordinals that no global the declaration mentions has and
+no name of an enclosing scope that is **used inside this scope** has. A name of an enclosing scope
+that is not used inside may be shadowed, which is what a hand minifier does: two loops' bodies, two
+closures, and a closure and the function around it share `a`, `b`, `c`… Three rules keep it a
+rename and nothing more:
+
+- **A `for…of` head's binding is in scope in its iterable** (`for(let a of a)` reads the new `a`,
+  in its dead zone), so the iterable is walked inside the loop's scope.
+- **A label may not be declared again inside its own statement**, so every scope opened inside a
+  labelled statement counts as using its label.
+- **A loop's variable declared just before the loop** may be written in the loop's `for` head by
+  the printer (*Compact statements*, below) or left where it is. It is homed in the loop's scope
+  but given no spelling of the scope around the loop, nor of the enclosing names that scope uses,
+  so either way it collides with nothing.
+
+Assignment is still a function of the input alone (CLAUDE.md rule 5): scopes are numbered in walk
+order, and within one the order is the emission order it always was. The safety build's self-check
+is per scope now: a scope's ordinals are distinct, and none is the ordinal of an enclosing name it
+uses — one mark per name, linear. Measured with step 4 of `plans/runtime-in-beni.md`, where it is
+most of the difference between the keyed list written in beni and the hand-written one (its
+table: every `browser/` page smaller than before the step). Fixtures: `Rename.zig`'s unit tests (sibling
+bodies, a used enclosing name stepped over), `run/NestingElseIf` (nested labelled blocks), every
+`browser/` page's release pass (`for(let a of a)` was found there), and every `emit/release/`
+golden.
+
 #### Item 3 — compact printing
 
 One boolean on `Print.Printer`, threaded to the places that push whitespace — esbuild does it in 35
@@ -4688,6 +4721,52 @@ specialisation cut a caller; a record-building helper taken into a `let`), `emit
 EmptyPage` (`slot`, `parentOf`, `drop` and `template`), `run/InlineAfterOrder` (argument and body
 order, a closure's cell, a `let` the body assigns, in both builds).
 
+**Amended 2026-10-02: a loop whose value is bound or discarded** (`Lower.boundLoop`,
+`inlineLoop`; `plans/runtime-in-beni.md`, step 4). A loop was written in place only at a tail
+call, so a runtime written in beni paid a call wherever hand-written JavaScript has a loop
+followed by more of the function — `reconcile`'s inner `while`s, `trimmed`'s six. A candidate loop
+(`findInlines`, unchanged) is now written in place at three more positions, in any function, a
+loop's body included:
+
+- **`x = loop args`** (a `let` binding of a name): `let x;` before the loop, and each exit writes
+  `x = value; break`.
+- **`( a, b ) = loop args`** (a tuple pattern of names and `_`), when every exit of the loop is a
+  tuple literal of that size: each exit writes the elements, in order, into the names — **no tuple
+  is built**. An element bound to `_` is evaluated for its effect.
+- **`_ = loop args`**, or a leaf of a `case` whose value is discarded: each exit evaluates its value
+  for its effect, then `break`s.
+
+The arguments are evaluated once each, in order, before the loop, as at a tail call; here a
+carried argument that is a name is copied into the loop's `let` (the call would be no shorter).
+An exit's `break` names the loop's label only when the body holds a `switch` (a bare `break` would
+leave the `switch`); a `continue` never needs one, since no jump or exit is ever inside a loop the
+body holds — a `Js.each` body is discarded, a bound loop's body is another function's — so a
+function loop holding a loop no longer keeps its label either. **When every exit writes `x` from one
+variable the loop reassigns in place**, `x` is that variable from there on: the exits' writes
+become `v = v`, which the printer writes as nothing, and the binding is never declared — `k =
+upTo xs 0` is `let k=0;while(k<n&&…)k++`. Not for a local a `let` function read before the binding
+(it already has a name).
+
+Three more `--release` rules of `Lower` came with it, each removing a copy the hand-written runtime
+does not make:
+
+- **A `case` whose value a `let` binds writes the binding itself** (`case_into`): `let i;
+  if(…){…;i=a}else i=b` where it was a temporary and `const i=$t`. A leaf of a value `case` that
+  is — under its `let`s — a `case` of its own writes the outer temporary, where it wrote one of its
+  own and the leaf copied it; the same when the tree was first lowered as candidate conditional
+  arms (`lowerReadyInto`).
+- **A leaf `let … x = e … in x`** writes `x` as an assignment of the `case`'s temporary, which `x`
+  then is (`bind_into`): `let e;if(…){e=a.m(…);if(…)a.p(e,…)}else e=…`.
+- **A binding of a name nothing reassigns is that name** (`y = Js.to x` is `x`), as a parameter
+  passed a name is in `enterInline`; not a `Js.Ref` written as a `let`, not in a suspendable body,
+  not a local read before its binding.
+
+Fixtures: `emit/release/core/BoundLoops` (a name a loop's variable becomes, a `for` head, a tuple of
+two variables, exits that write a `let`, a loop in a loop) — red against the compiler before the
+change, which keeps each call; `run/BoundLoops` (the same shapes and an exit inside a `switch`, an
+argument with an effect evaluated once, in both builds); every `browser/` page's release pass. The
+measurements are step 4's (`plans/runtime-in-beni.md`).
+
 ### Whole-program specialisation
 
 *Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; what is built, and where
@@ -5107,6 +5186,27 @@ every `emit/release/` golden, now one line each; `Minify.zig`'s unit tests for a
 assignment and for each block kind. Measured (release, brotli, the whole bundle): the empty
 `browser` page 802 → **776**, `Tea.sandbox` 809 → **781**, `Tea.element` 1 599 → **1 552**, with
 effects 5 839 → **5 758**, the `bench/ui` app 5 998 → **5 941**.
+
+**Amended 2026-10-02: the loops a bound loop prints as** (`Print.breakLoop`, `forHead`,
+`assignmentValue`; `plans/runtime-in-beni.md`, step 4). Three printing rules, each for shapes the
+loops of *A function called once is written where it is called* produce:
+
+- **`for(;;){if(c)break;…}` is `while(!c){…}`**, and `for(;;){if(c){…}else break;…}` is
+  `while(c){…}`: an unlabelled loop whose first statement is an `if` one arm of which is a bare
+  `break` and nothing else. Unlike *item 6*'s `return` form, the rest may be any number of
+  statements, and may hold other `break`s — in a `while` they leave for the same place. Only loops
+  that exit by `break` are touched, so no loop printed before changes.
+- **`let i=a;while(c){…;i=e}` is `for(let i=a;c;i=e){…}`** when the loop prints as such a `while`,
+  its body makes no function (a `for` head's `let` is one binding per iteration), no `continue` of
+  its own that prints would skip the update, the update is an assignment of `i` among the
+  assignments the body ends with and none after it reads `i` nor does it read what they write, and
+  nothing after the loop reads `i`. The declaration may be a member of a run of declarations if
+  the members after it hold literals only; the run is written without it.
+- **`x += 1` is `x++`** and `x -= 1` is `x--` (a `+` with a number literal is a number's), and
+  **`!(a == b)` is `a != b`** in a test.
+
+Fixtures: `emit/release/core/BoundLoops`, `emit/release/core/WhileLoops`, every `emit/release/`
+golden with a counter, and the `run/` and `browser/` release passes.
 
 ## 10. Chunking
 

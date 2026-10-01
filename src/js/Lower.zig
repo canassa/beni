@@ -616,6 +616,17 @@ const Lowerer = struct {
     /// The join a non-tail `case` of a suspendable function sends its leaves
     /// to (§16.3), or `.none`: `tailReturn` writes `return $j(value)`.
     join: JsIr.NameIndex = .none,
+    /// `--release`: the name the next `case` in expression position writes
+    /// its value into instead of a temporary of its own — a `let`
+    /// binding's, declared by that `case` when `declare` says so, or the
+    /// temporary of the `case` whose leaf it is (`backend.md` §9, *Compact
+    /// statements*). `caseExpr` takes it on entry, so no `case` nested in
+    /// its scrutinee or its leaves sees it.
+    case_into: struct { name: JsIr.NameIndex = .none, declare: bool = false } = .{},
+    /// `--release`: the `let` binding of local `local` is written as an
+    /// assignment of `name`, which it then is — the temporary of the `case`
+    /// whose leaf ends in a read of it (`leafBody`).
+    bind_into: struct { local: u32 = std.math.maxInt(u32), name: JsIr.NameIndex = .none } = .{},
     /// The two core values the suspendable form calls, imported the first
     /// time a function needs them.
     fiber_names: ?Suspend.Names = null,
@@ -2108,11 +2119,31 @@ const Lowerer = struct {
         /// (`mayGoInPlace`). Only a hint: `functionOrLoop` decides on the
         /// JavaScript, and a jump written ready is right either way.
         ready: bool = false,
+        /// Where an exit's value goes: `return` for a function's loop, or
+        /// — for a loop written where its value is bound or discarded (§9,
+        /// *A function called once is written where it is called*) — the
+        /// binding, and then `break`.
+        exit: Exit = .@"return",
+
+        const Exit = union(enum) {
+            @"return",
+            /// The value evaluated for its effect alone.
+            discard,
+            /// `name = value`.
+            assign: JsIr.NameIndex,
+            /// A tuple literal's elements, each into its name (`.none` for
+            /// `_`, evaluated for its effect alone): no tuple is built.
+            tuple: []const JsIr.NameIndex,
+        };
 
         const Jumps = struct {
             /// The `ident` each assignment writes, and the slot it is.
             targets: std.ArrayList(struct { node: Node.Index, slot: u32 }) = .empty,
             continues: std.ArrayList(Node.Index) = .empty,
+            /// The `break`s an exit that does not return writes.
+            breaks: std.ArrayList(Node.Index) = .empty,
+            /// The assignments an exit that binds writes, `name = value`.
+            exits: std.ArrayList(Node.Index) = .empty,
         };
 
         /// Which reference, syntactically, names this function.
@@ -2307,12 +2338,18 @@ const Lowerer = struct {
         // A `continue` reaches the innermost loop of its own function, and
         // a body with no loop of its own leaves only this one: the label is
         // needed by nothing but a suspension's re-entry (§16.3).
+        // A jump or an exit is never inside a loop the body holds — that
+        // loop is a `Js.each`'s, whose body is discarded, or one written
+        // where its value is bound, whose body is another function's — but
+        // an exit's `break` with no label would leave a `switch` it is in
+        // rather than this loop, so there it keeps the label.
         var loop_label = label;
         const datas = l.b.nodes.items(.data);
-        if (l.markers == 0 and !held.loop) {
+        if (l.markers == 0 and !(held.switch_ and jumps.breaks.items.len != 0)) {
             loop_label = .none;
             for (jumps.continues.items) |c| datas[c.int()].lhs = @intFromEnum(loop_label);
         }
+        for (jumps.breaks.items) |b| datas[b.int()].lhs = @intFromEnum(loop_label);
         if (in_place) {
             const tags = l.b.nodes.items(.tag);
             for (jumps.targets.items) |t| {
@@ -2826,6 +2863,10 @@ const Lowerer = struct {
                 return l.tailStmts(out, @enumFromInt(d.rhs), loop);
             },
             .case => return l.tailCase(out, inst, loop),
+            .tuple => if (loop) |lp| switch (lp.exit) {
+                .tuple => |names| if (Bir.inlineRange(d).len() == names.len) return l.tupleExit(out, inst, lp, names),
+                else => {},
+            },
             .call => {
                 if (loop) |lp| {
                     if (l.isSelfCall(inst, lp)) return l.tailJump(out, inst, lp);
@@ -2833,7 +2874,7 @@ const Lowerer = struct {
                 }
                 if (try l.tailInline(inst, loop)) |index| {
                     if (!l.inline_loops[index]) return l.inlineTail(out, inst, index, loop);
-                    if (try l.inlineLoop(out, inst, index)) return;
+                    if (try l.inlineLoop(out, inst, index, .@"return", &.{})) return;
                 }
             },
             else => {},
@@ -2859,11 +2900,73 @@ const Lowerer = struct {
             return out.append(l.scratch, try l.returnStmt(try l.call(try l.ident(l.join, p), &.{value}, p), p));
         }
         const lp = loop orelse return out.append(l.scratch, try l.returnStmt(value, p));
+        switch (lp.exit) {
+            .@"return" => {},
+            .discard => {
+                try l.discardValue(out, value, p);
+                return l.exitBreak(out, lp, p);
+            },
+            .assign => |n| {
+                try l.exitAssign(out, lp, n, value, p);
+                return l.exitBreak(out, lp, p);
+            },
+            // A value that is not a tuple literal (`tailStmts` writes those
+            // element by element): its elements read from the tuple. An
+            // arm nothing can reach has none.
+            .tuple => |names| {
+                if (l.b.nodes.items(.tag)[value.int()] != .undefined_lit) {
+                    const tuple = try l.bindSubject(out, value, p);
+                    for (names, 0..) |n, i| {
+                        if (n == .none) continue;
+                        const element = try l.member(tuple, try l.slotName(@intCast(i)), p);
+                        try l.exitAssign(out, lp, n, element, p);
+                    }
+                }
+                return l.exitBreak(out, lp, p);
+            },
+        }
         if (!lp.builds) return out.append(l.scratch, try l.returnStmt(value, p));
         const root = try l.ident(lp.root, p);
         if (l.isEmptyArray(value)) return out.append(l.scratch, try l.returnStmt(root, p));
         const closed = try l.call(try l.ident(try l.closeName(p), p), &.{ root, value }, p);
         try out.append(l.scratch, try l.returnStmt(closed, p));
+    }
+
+    /// `name = value` at an exit of a loop whose value is bound, recorded
+    /// for `inlineLoop`, which may find the name is a loop variable's.
+    fn exitAssign(l: *Lowerer, out: *StmtList, loop: *const Loop, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
+        const stmt = try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), value.int());
+        try loop.jumps.exits.append(l.scratch, stmt);
+        try out.append(l.scratch, stmt);
+    }
+
+    /// The `break` that ends an exit of a loop written where its value is
+    /// bound or discarded; `loopOf` gives it the loop's label when it needs
+    /// one.
+    fn exitBreak(l: *Lowerer, out: *StmtList, loop: *const Loop, p: u32) !void {
+        const brk = try l.add(.break_stmt, p, @intFromEnum(loop.label), Node.Data.unused);
+        try loop.jumps.breaks.append(l.scratch, brk);
+        try out.append(l.scratch, brk);
+    }
+
+    /// A tuple literal at an exit of a loop whose value a tuple pattern
+    /// binds: each element evaluated in order and written into its name, no
+    /// tuple built.
+    fn tupleExit(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop, names: []const JsIr.NameIndex) !void {
+        const p = l.pos(inst);
+        const elements = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(inst)), Inst.Index);
+        // The names are the caller's, bound by the pattern, and no element
+        // can read one: they are written in order, as the elements are
+        // evaluated.
+        const values = try l.orderedExprs(out, elements, false);
+        for (values, names) |value, n| {
+            if (n == .none) {
+                try l.discardValue(out, value, p);
+                continue;
+            }
+            try l.exitAssign(out, loop, n, value, p);
+        }
+        return l.exitBreak(out, loop, p);
     }
 
     /// A cons step and every cons step directly under it, `[ a, b, ...go
@@ -3516,6 +3619,11 @@ const Lowerer = struct {
             .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => true,
             else => false,
         };
+    }
+
+    /// Whether `value` is an `ident` of the name `n`.
+    fn isIdentOf(l: *Lowerer, value: Node.Index, n: JsIr.NameIndex) bool {
+        return l.b.nodes.items(.tag)[value.int()] == .ident and l.b.nodes.items(.data)[value.int()].lhs == @intFromEnum(n);
     }
 
     /// Whether `value` is an `ident` naming a `Js.Ref` written as a `let`.
@@ -7179,6 +7287,7 @@ const Lowerer = struct {
                         .{ .start = payload.params_start, .end = payload.params_end },
                         Inst.Index,
                     );
+                    const named_before = payload.local < l.local_names.len and l.local_names[payload.local] != .none;
                     const n = try l.localName(payload.local);
                     const self: Loop.Self = .{ .local = payload.local };
                     // A function binding that generalised takes its evidence
@@ -7219,7 +7328,39 @@ const Lowerer = struct {
                             if (l.mayHaveEffect(init_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                             continue;
                         }
+                        // A loop called once, its value bound here: the
+                        // loop, whose exits write the name (§9).
+                        // The binding a `case` leaf ends in a read of: an
+                        // assignment of the `case`'s temporary (`bind_into`).
+                        if (l.bind_into.local == payload.local and !named_before and payload.local < l.local_names.len) {
+                            const into = l.bind_into.name;
+                            l.bind_into = .{};
+                            l.local_names[payload.local] = into;
+                            if (l.bir.instTag(value_inst) == .case) l.case_into = .{ .name = into };
+                            const value = try l.expr(out, value_inst);
+                            l.case_into = .{};
+                            if (!l.isIdentOf(value, into)) {
+                                try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(into, p)).int(), value.int()));
+                            }
+                            continue;
+                        }
+                        if (try l.boundLoop(out, value_inst, .{ .assign = n }, if (named_before) &.{} else &.{payload.local})) continue;
+                        // `--release`: a `case` whose value is bound writes
+                        // the binding itself, declared a `let`, rather than
+                        // a temporary the binding then copies.
+                        if (l.in.unit_results and l.bir.instTag(value_inst) == .case) l.case_into = .{ .name = n, .declare = true };
                         const value = try l.expr(out, value_inst);
+                        l.case_into = .{};
+                        if (l.isIdentOf(value, n)) continue;
+                        // `--release`: a binding of a name nothing
+                        // reassigns — `y = Js.to x` — is that name, as a
+                        // parameter passed one is (`enterInline`).
+                        if (l.in.unit_results and !l.suspendable and l.b.nodes.items(.tag)[value.int()] == .ident and
+                            !l.isMutable(value) and !named_before and payload.local < l.local_names.len)
+                        {
+                            l.local_names[payload.local] = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+                            continue;
+                        }
                         try l.constDecl(out, n, value, p);
                         // Read by nothing or not, a binding that may have an
                         // effect is evaluated: the release optimiser keeps it.
@@ -7243,6 +7384,15 @@ const Lowerer = struct {
                     if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) {
                         try l.discard(out, @enumFromInt(d.rhs), p);
                         continue;
+                    }
+                    // `( a, b ) = <a loop called once>`: the loop, whose
+                    // exits write each element into its name (§9).
+                    if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_tuple) {
+                        // Which names are new, asked before they are made.
+                        const locals = try l.tupleLocals(@enumFromInt(d.lhs));
+                        if (try l.tupleNames(@enumFromInt(d.lhs))) |names| {
+                            if (try l.boundLoop(out, @enumFromInt(d.rhs), .{ .tuple = names }, locals)) continue;
+                        }
                     }
                     const value = try l.expr(out, @enumFromInt(d.rhs));
                     const before = out.items.len;
@@ -7710,7 +7860,7 @@ const Lowerer = struct {
     /// the caller may suspend, the loop builds a list, or a variable the loop
     /// reassigns would first be given a name the caller already has — a copy
     /// of it, where the call is the shorter form.
-    fn inlineLoopPlan(l: *Lowerer, site: Inst.Index, index: u32) Allocator.Error!?Loop {
+    fn inlineLoopPlan(l: *Lowerer, site: Inst.Index, index: u32, exit: Loop.Exit) Allocator.Error!?Loop {
         if (l.suspendable) return null;
         const params = l.paramsOf(index);
         const slots = try l.scratch.alloc(Loop.Slot, params.len);
@@ -7721,8 +7871,11 @@ const Lowerer = struct {
         }
         const jumps = try l.scratch.create(Loop.Jumps);
         jumps.* = .{};
-        var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps };
+        var loop: Loop = .{ .label = .none, .self = .{ .top = index }, .evidence = 0, .slots = slots, .jumps = jumps, .exit = exit };
         if (!l.markTails(l.bodyOf(index), &loop) or loop.builds) return null;
+        // Where the value is bound or discarded, the call is no shorter
+        // than the copies: the loop is taken in whatever its arguments are.
+        if (exit != .@"return") return loop;
         const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(site).rhs)), Inst.Index);
         for (slots, args) |slot, arg| {
             if (!slot.carried or slot.unwritten) continue;
@@ -7744,11 +7897,83 @@ const Lowerer = struct {
         const index = l.inlineTarget(site) orelse return null;
         if (!l.inline_loops[index]) return if (l.atomArguments(site)) index else null;
         if (loop != null) return null;
-        return if (try l.inlineLoopPlan(site, index) != null) index else null;
+        return if (try l.inlineLoopPlan(site, index, .@"return") != null) index else null;
     }
 
-    fn inlineLoop(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32) Allocator.Error!bool {
-        var loop = try l.inlineLoopPlan(site, index) orelse return false;
+    /// A call of a loop written in place (`findInlines`) whose value is
+    /// bound to a name, bound by a tuple pattern of names, or discarded:
+    /// the loop, its exits writing the binding and leaving by `break`, and
+    /// the rest of the caller after it. False, with nothing written, when
+    /// `site` is no such call or the loop is not one this writes.
+    fn boundLoop(l: *Lowerer, out: *StmtList, site: Inst.Index, exit: Loop.Exit, locals: []const u32) Allocator.Error!bool {
+        if (l.bir.instTag(site) != .call) return false;
+        const index = l.inlineTarget(site) orelse return false;
+        if (!l.inline_loops[index]) return false;
+        switch (exit) {
+            .@"return" => return false,
+            .discard, .assign => {},
+            // Every exit a tuple literal of the pattern's size, or no tuple
+            // is saved.
+            .tuple => |names| if (!l.tuplesAtExits(l.bodyOf(index), index, names.len)) return false,
+        }
+        return l.inlineLoop(out, site, index, exit, locals);
+    }
+
+    /// The names a tuple pattern of names binds, `.none` for each `_`, or
+    /// null for any other pattern.
+    fn tupleNames(l: *Lowerer, pattern: Inst.Index) Allocator.Error!?[]const JsIr.NameIndex {
+        if (l.bir.instTag(pattern) != .pat_tuple) return null;
+        const elements = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index);
+        const names = try l.scratch.alloc(JsIr.NameIndex, elements.len);
+        for (elements, names) |element, *n| n.* = switch (l.bir.instTag(element)) {
+            .pat_var => try l.localName(l.bir.instData(element).lhs),
+            .pat_wild => .none,
+            else => return null,
+        };
+        return names;
+    }
+
+    /// The locals a tuple pattern of names binds, `Loop.no_local` for each
+    /// `_` and for a local something lowered earlier already named — a
+    /// `let` function may read a binding written after it — so that
+    /// `inlineLoop` gives a new name only to a local nothing has read
+    /// (`tupleNames`' order).
+    fn tupleLocals(l: *Lowerer, pattern: Inst.Index) Allocator.Error![]const u32 {
+        const elements = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index);
+        const locals = try l.scratch.alloc(u32, elements.len);
+        for (elements, locals) |element, *local| {
+            local.* = Loop.no_local;
+            if (l.bir.instTag(element) != .pat_var) continue;
+            const index = l.bir.instData(element).lhs;
+            if (index < l.local_names.len and l.local_names[index] == .none) local.* = index;
+        }
+        return locals;
+    }
+
+    /// Whether every tail position of `inst` that is not declaration
+    /// `index`'s own tail call is a tuple literal of `arity` elements.
+    fn tuplesAtExits(l: *Lowerer, inst: Inst.Index, index: u32, arity: usize) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.tuplesAtExits(@enumFromInt(d.rhs), index, arity),
+            .case => {
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    if (!l.tuplesAtExits(@enumFromInt(l.bir.instData(branch).rhs), index, arity)) return false;
+                }
+                return true;
+            },
+            .call => {
+                const callee: Inst.Index = @enumFromInt(d.lhs);
+                return l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index;
+            },
+            .tuple => return Bir.inlineRange(d).len() == arity,
+            else => return false,
+        }
+    }
+
+    fn inlineLoop(l: *Lowerer, out: *StmtList, site: Inst.Index, index: u32, exit: Loop.Exit, locals: []const u32) Allocator.Error!bool {
+        var loop = try l.inlineLoopPlan(site, index, exit) orelse return false;
         const slots = loop.slots;
         const params = l.paramsOf(index);
         const body = l.bodyOf(index);
@@ -7815,8 +8040,64 @@ const Lowerer = struct {
             }
             try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(built.names[k]), @intFromEnum(value.toOptional())));
         }
+        // The names the exits write, declared before the loop — but for a
+        // name every exit gives the value of one loop variable, which IS
+        // that variable from here on: its exits' writes are dropped.
+        const names: []const JsIr.NameIndex = switch (exit) {
+            .@"return", .discard => &.{},
+            .assign => |n| &.{n},
+            .tuple => |ns| ns,
+        };
+        const none = @intFromEnum(Node.OptionalIndex.none);
+        for (names, 0..) |n, i| {
+            if (n == .none) continue;
+            if (i < locals.len) if (l.exitVariable(&loop, built.names, n)) |variable| {
+                if (locals[i] < saved.local_names.len) {
+                    saved.local_names[locals[i]] = variable;
+                    // Each exit's write becomes `variable = variable`,
+                    // which a release build prints as nothing (`Print`'s
+                    // `skipped`) wherever the statement ends up.
+                    const datas = l.b.nodes.items(.data);
+                    for (loop.jumps.exits.items) |stmt| {
+                        const target = datas[stmt.int()].lhs;
+                        if (datas[target].lhs == @intFromEnum(n)) datas[target].lhs = @intFromEnum(variable);
+                    }
+                    continue;
+                }
+            };
+            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), none));
+        }
         try out.appendSlice(l.scratch, built.stmts);
         return true;
+    }
+
+    /// The loop variable every exit of `loop` writes into `n`, when there is
+    /// one: a slot the loop reassigns in place (`loopOf`'s `names` are then
+    /// the slots' own), the same at every exit.
+    fn exitVariable(l: *Lowerer, loop: *const Loop, names: []const JsIr.NameIndex, n: JsIr.NameIndex) ?JsIr.NameIndex {
+        const tags = l.b.nodes.items(.tag);
+        const datas = l.b.nodes.items(.data);
+        var found: ?JsIr.NameIndex = null;
+        for (loop.jumps.exits.items) |stmt| {
+            const target = datas[stmt.int()].lhs;
+            if (datas[target].lhs != @intFromEnum(n)) continue;
+            const value = datas[stmt.int()].rhs;
+            if (tags[value] != .ident) return null;
+            const v: JsIr.NameIndex = @enumFromInt(datas[value].lhs);
+            if (found) |f| if (f != v) return null;
+            found = v;
+        }
+        const v = found orelse return null;
+        // A carried slot's variable, written in place: its name in the
+        // list is the name the body reads.
+        var k: usize = 0;
+        for (loop.slots) |slot| {
+            if (slot.unwritten) continue;
+            defer k += 1;
+            if (!slot.carried or slot.body == .none) continue;
+            if (names[k] == v and slot.body == v) return v;
+        }
+        return null;
     }
 
     /// A call of a function written in place, in tail position: its body in
@@ -7970,6 +8251,7 @@ const Lowerer = struct {
         // once is written where it is called*) — statements or not, since
         // no value has to come out of them.
         if (l.bir.instTag(at) == .call) if (l.inlineTarget(at)) |index| {
+            if (l.inline_loops[index] and try l.boundLoop(out, at, .discard, &.{})) return;
             if (!l.inline_loops[index] and l.atomArguments(at)) {
                 const saved = try l.enterInline(out, at, index);
                 defer l.leaveInline(saved);
@@ -8151,6 +8433,8 @@ const Lowerer = struct {
 
     /// A `case` in expression position: §7's last three rows.
     fn caseExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const into = l.case_into;
+        l.case_into = .{};
         const p = l.pos(inst);
         // A branch that may suspend: the rest of the function is a join the
         // leaves call (transparent-effects-proposal.md §16.3).
@@ -8165,13 +8449,17 @@ const Lowerer = struct {
         // nothing bound, every leaf one expression — `a ? b : c` and nothing
         // more, exactly as today.
         c.nested_conds = l.in.unit_results;
+        // `--release`: the result's name is chosen first, so that a leaf
+        // that is a `case` needing statements writes it (`case_into`).
+        var early: JsIr.NameIndex = .none;
         if (try l.condChainPossible(&c)) {
-            try l.lowerReady(&c);
+            if (l.in.unit_results) early = if (into.name != .none) into.name else try l.fresh(l.well.temp);
+            try l.lowerReadyInto(&c, early);
             if (l.readyIsClean(&c)) return l.condChain(&c, c.tree.root);
         }
 
-        const result = try l.fresh(l.well.temp);
-        try out.append(l.scratch, try l.add(
+        const result = if (early != .none) early else if (into.name != .none) into.name else try l.fresh(l.well.temp);
+        if (into.name == .none or into.declare) try out.append(l.scratch, try l.add(
             .let_decl,
             c.p,
             @intFromEnum(result),
@@ -8478,7 +8766,29 @@ const Lowerer = struct {
             .tail => |loop| try l.tailStmts(out, body, loop),
             .value => |v| {
                 if (v.chained and try l.chainedLeaf(out, body, c.sink)) return;
-                const value = try l.expr(out, body);
+                // `--release`: a leaf that is — under its `let`s — a `case`
+                // of its own writes this tree's temporary, where it would
+                // write one of its own and this leaf copy it. Not behind a
+                // wrapper, whose leaves break out of it after writing.
+                var at = body;
+                if (l.in.unit_results and v.wrapper == .none and !l.deadArm(body)) {
+                    // A leaf `let … x = e … in x`: `x` is the temporary,
+                    // written where it is bound (`letBindings`).
+                    var fin = body;
+                    while (l.bir.instTag(fin) == .let) fin = @enumFromInt(l.bir.instData(fin).rhs);
+                    const saved_bind = l.bind_into;
+                    defer l.bind_into = saved_bind;
+                    l.bind_into = if (l.bir.instTag(fin) == .local) .{ .local = l.bir.instData(fin).lhs, .name = v.result } else .{};
+                    while (l.bir.instTag(at) == .let) {
+                        const d = l.bir.instData(at);
+                        try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+                        at = @enumFromInt(d.rhs);
+                    }
+                    if (l.bir.instTag(at) == .case) l.case_into = .{ .name = v.result };
+                }
+                const value = try l.expr(out, at);
+                l.case_into = .{};
+                if (l.isIdentOf(value, v.result)) return;
                 try l.finishLeaf(c, out, value, p);
             },
             .discard => |v| {
@@ -8565,8 +8875,11 @@ const Lowerer = struct {
         switch (c.sink) {
             .tail => |loop| try l.tailReturn(out, value, loop, p),
             .value => |v| {
-                const target = try l.ident(v.result, p);
-                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+                // A leaf `case` that wrote the result itself (`case_into`).
+                if (!l.isIdentOf(value, v.result)) {
+                    const target = try l.ident(v.result, p);
+                    try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+                }
                 if (v.wrapper != .none) {
                     try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
                 }
@@ -8890,6 +9203,12 @@ const Lowerer = struct {
     /// after they are lowered, which is what `readyIsClean` answers.
     fn condChainPossible(l: *Lowerer, c: *Case) Allocator.Error!bool {
         if (c.tree.hasSwitch() or c.tree.hasShared()) return false;
+        // A loop's exits whose tuples are written element by element: a
+        // conditional would build the tuple.
+        switch (c.sink) {
+            .tail => |loop| if (loop) |lp| if (lp.exit == .tuple) return false,
+            else => {},
+        }
         for (c.branches, 0..) |branch, i| {
             if (c.tree.uses[i] == 0) continue;
             for (0..c.roots.len) |r| {
@@ -8912,7 +9231,11 @@ const Lowerer = struct {
                         if (loop) |lp| if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
                         if (try l.tailInline(body, loop) != null) return false;
                     },
-                    .value, .discard => {},
+                    // A loop written where its value is discarded.
+                    .discard => if (l.inlineTarget(body)) |index| {
+                        if (l.inline_loops[index]) return false;
+                    },
+                    .value => {},
                 },
                 else => {},
             }
@@ -8921,12 +9244,21 @@ const Lowerer = struct {
     }
 
     fn lowerReady(l: *Lowerer, c: *Case) !void {
+        return l.lowerReadyInto(c, .none);
+    }
+
+    /// `lowerReady`, where a leaf that is itself a `case` writes `into`
+    /// when it needs statements (`case_into`), unless `into` is `.none`.
+    fn lowerReadyInto(l: *Lowerer, c: *Case, into: JsIr.NameIndex) !void {
         const ready = try l.scratch.alloc(Ready, c.branches.len);
         @memset(ready, .{});
         for (c.branches, 0..) |branch, i| {
             if (c.tree.uses[i] == 0) continue;
             var stmts: StmtList = .empty;
-            const value = try l.expr(&stmts, @enumFromInt(l.bir.instData(branch).rhs));
+            const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
+            if (into != .none and l.bir.instTag(body) == .case and !l.deadArm(body)) l.case_into = .{ .name = into };
+            const value = try l.expr(&stmts, body);
+            l.case_into = .{};
             ready[i] = .{ .stmts = stmts.items, .value = value.toOptional() };
         }
         c.ready = ready;

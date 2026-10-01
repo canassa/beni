@@ -1307,6 +1307,9 @@ pub const Builder = struct {
         call: bool = false,
         /// A read of the name asked about.
         reads: bool = false,
+        /// A `switch`, which a `break` with no label inside it leaves
+        /// instead of the loop around it.
+        switch_: bool = false,
     };
 
     /// `Holds` for `roots`, which may be statements or expressions; `read`
@@ -1358,6 +1361,7 @@ pub const Builder = struct {
                     try stack.appendSlice(gpa, b.rangeWords(f.body()));
                 },
                 .switch_stmt => {
+                    out.switch_ = true;
                     try stack.append(gpa, d.lhs);
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
                 },

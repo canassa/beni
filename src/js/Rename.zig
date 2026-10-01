@@ -298,6 +298,32 @@ pub const Module = struct {
     current: u32 = 0,
     /// The locals of the declaration being assigned, in emission order.
     order: std.ArrayList(NameIndex) = .empty,
+    /// The scopes of the declaration being assigned, scope 0 the
+    /// declaration itself, each after its parent: a function's parameters
+    /// and body, a loop's body, a block, a `switch`'s cases. An `if`'s arms
+    /// are the scope around them, because the printer may write an arm's
+    /// statements into the list around it (`Print.compactIf`).
+    scopes: std.ArrayList(Scope) = .empty,
+    /// The scope the walk is in.
+    scope: u32 = 0,
+    /// Per local (valid when `stamp` agrees with `current`): the innermost
+    /// scope that holds every place the name is written, its declaration
+    /// and every use.
+    home: []u32 = &.{},
+    /// Every place a local is written, in print order.
+    occurs: std.ArrayList(Occurrence) = .empty,
+    /// A loop's variable declared just before it (`collectList`), and the
+    /// scope its declaration stands in.
+    /// Per local (valid when `pulled_stamp` agrees with `current`): a
+    /// loop's variable declared just before the loop (`collectList`), and
+    /// the scope its declaration stands in.
+    pulled_outer: []u32 = &.{},
+    pulled_stamp: []u32 = &.{},
+    /// `enter`'s, per local: the scope a name was last met in.
+    last_scope: []u32 = &.{},
+    last_stamp: []u32 = &.{},
+    /// The labels of the statements the walk is inside.
+    labels: std.ArrayList(u32) = .empty,
     /// `collectExpr`'s explicit stack, shared by the walks it nests.
     stack: std.ArrayList(Index) = .empty,
     /// The ordinals the globals this declaration mentions were given, as a
@@ -305,6 +331,9 @@ pub const Module = struct {
     /// above that range cannot collide with a local, so it is not recorded.
     taken: []bool = &.{},
     failure: ?Failure = null,
+
+    const Scope = struct { parent: u32, depth: u32 };
+    const Occurrence = struct { scope: u32, name: u32 };
 
     pub fn ordinal(m: *const Module, n: NameIndex) ?u32 {
         const name = m.ir.name(n);
@@ -315,9 +344,24 @@ pub const Module = struct {
     }
 
     /// Assign the namespace of one top-level statement of `ir.body`.
+    ///
+    /// **A spelling is reused in scopes that cannot see each other**
+    /// (`backend.md` §9, item 2, *amended 2026-10-02*): a local's names
+    /// are handed out per scope, parent before child, each the lowest
+    /// ordinal that no global this declaration mentions has and no name of
+    /// an enclosing scope that is USED inside this scope has. A name of an
+    /// enclosing scope that is not used inside may be shadowed, which is
+    /// how two loops' bodies, two closures and a closure and the function
+    /// around it come to share `a`, `b`, `c`… — what a hand minifier writes,
+    /// and what brotli matches. Within one scope the order is the order the
+    /// printer meets the names, as before (CLAUDE.md rule 5).
     pub fn enter(m: *Module, stmt: Index) Allocator.Error!void {
         m.current += 1;
         m.order.clearRetainingCapacity();
+        m.occurs.clearRetainingCapacity();
+        m.scopes.clearRetainingCapacity();
+        try m.scopes.append(m.gpa, .{ .parent = 0, .depth = 0 });
+        m.scope = 0;
         var mentioned: std.ArrayList(u32) = .empty;
         defer mentioned.deinit(m.gpa);
         try m.collect(stmt, &mentioned);
@@ -331,27 +375,164 @@ pub const Module = struct {
             if (o < bound) m.taken[o] = true;
         }
 
-        var next: u32 = 0;
-        for (m.order.items) |n| {
-            while (true) {
-                next = usable(next);
-                if (next >= bound or !m.taken[next]) break;
+        const scope_count = m.scopes.items.len;
+        // The names each scope holds, bucketed in `order`'s order.
+        const homed = try m.bucket(scope_count, m.order.items.len, HomeOf{ .m = m });
+        // The names of enclosing scopes each scope uses: every scope from
+        // an occurrence up to, not including, the name's home. A name met
+        // again in the scope it was last met in adds nothing; any other
+        // repeat is harmless, a mark set twice.
+        var blocked_pairs: std.ArrayList(Occurrence) = .empty;
+        defer blocked_pairs.deinit(m.gpa);
+        for (m.occurs.items) |occ| {
+            if (m.last_stamp[occ.name] == m.current and m.last_scope[occ.name] == occ.scope) continue;
+            m.last_stamp[occ.name] = m.current;
+            m.last_scope[occ.name] = occ.scope;
+            var s = occ.scope;
+            const home = m.home[occ.name];
+            while (s != home) {
+                try blocked_pairs.append(m.gpa, .{ .scope = s, .name = occ.name });
+                s = m.scopes.items[s].parent;
+            }
+        }
+        const blocked = try m.bucket(scope_count, blocked_pairs.items.len, PairOf{ .pairs = blocked_pairs.items });
+
+        const busy = try m.gpa.alloc(bool, bound);
+        defer m.gpa.free(busy);
+        @memset(busy, false);
+        const extra = try m.gpa.alloc(bool, bound);
+        defer m.gpa.free(extra);
+        @memset(extra, false);
+        var pulled_here: std.ArrayList(u32) = .empty;
+        defer pulled_here.deinit(m.gpa);
+        for (0..scope_count) |s| {
+            for (blocked.items(s)) |x| {
+                const o = m.local[x];
+                if (o < bound) busy[o] = true;
+            }
+            // A loop's variable whose declaration may stay in the scope
+            // around the loop takes no spelling that scope's names have, nor
+            // one of the names of enclosing scopes it uses: it is given
+            // first, and the loop's other names step around it.
+            pulled_here.clearRetainingCapacity();
+            const parent = m.scopes.items[s].parent;
+            for (homed.items(s)) |i| {
+                if (s == 0 or m.pulled_stamp[i] != m.current or m.pulled_outer[i] != parent) continue;
+                for (homed.items(parent)) |x| if (m.local[x] < bound) {
+                    extra[m.local[x]] = true;
+                };
+                for (blocked.items(parent)) |x| if (m.local[x] < bound) {
+                    extra[m.local[x]] = true;
+                };
+                var o: u32 = 0;
+                while (true) {
+                    o = usable(o);
+                    if (o >= bound or (!m.taken[o] and !busy[o] and !extra[o])) break;
+                    o += 1;
+                }
+                @memset(extra, false);
+                m.local[i] = o;
+                if (o < bound) busy[o] = true;
+                try pulled_here.append(m.gpa, i);
+            }
+            var next: u32 = 0;
+            for (homed.items(s)) |i| {
+                if (std.mem.indexOfScalar(u32, pulled_here.items, i) != null) continue;
+                while (true) {
+                    next = usable(next);
+                    if (next >= bound or (!m.taken[next] and !busy[next])) break;
+                    next += 1;
+                }
+                m.local[i] = next;
                 next += 1;
             }
-            const i = n.unwrap().?;
-            m.local[i] = next;
-            m.stamp[i] = m.current;
-            next += 1;
+            for (pulled_here.items) |i| if (m.local[i] < bound) {
+                busy[m.local[i]] = false;
+            };
+            for (blocked.items(s)) |x| {
+                const o = m.local[x];
+                if (o < bound) busy[o] = false;
+            }
         }
-        m.verify(mentioned.items);
+        m.verify(mentioned.items, homed, blocked, busy);
+    }
+
+    /// Items bucketed by scope, each bucket in the items' order.
+    const Buckets = struct {
+        start: []u32,
+        flat: []u32,
+
+        fn items(b: Buckets, s: usize) []const u32 {
+            return b.flat[b.start[s]..b.start[s + 1]];
+        }
+    };
+
+    const HomeOf = struct {
+        m: *const Module,
+        fn at(h: HomeOf, k: usize) Occurrence {
+            const i = h.m.order.items[k].unwrap().?;
+            return .{ .scope = h.m.home[i], .name = i };
+        }
+    };
+
+    const PairOf = struct {
+        pairs: []const Occurrence,
+        fn at(p: PairOf, k: usize) Occurrence {
+            return p.pairs[k];
+        }
+    };
+
+    /// A counting sort of `count` (scope, name) items by scope.
+    fn bucket(m: *Module, scope_count: usize, count: usize, source: anytype) Allocator.Error!Buckets {
+        const start = try m.gpa.alloc(u32, scope_count + 1);
+        @memset(start, 0);
+        for (0..count) |k| start[source.at(k).scope + 1] += 1;
+        for (1..start.len) |s| start[s] += start[s - 1];
+        const fill = try m.gpa.dupe(u32, start[0..scope_count]);
+        defer m.gpa.free(fill);
+        const flat = try m.gpa.alloc(u32, count);
+        for (0..count) |k| {
+            const item = source.at(k);
+            flat[fill[item.scope]] = item.name;
+            fill[item.scope] += 1;
+        }
+        return .{ .start = start, .flat = flat };
+    }
+
+    /// The innermost scope holding both `a` and `b`.
+    fn common(m: *const Module, a: u32, b: u32) u32 {
+        var x = a;
+        var y = b;
+        while (m.scopes.items[x].depth > m.scopes.items[y].depth) x = m.scopes.items[x].parent;
+        while (m.scopes.items[y].depth > m.scopes.items[x].depth) y = m.scopes.items[y].parent;
+        while (x != y) {
+            x = m.scopes.items[x].parent;
+            y = m.scopes.items[y].parent;
+        }
+        return x;
+    }
+
+    /// Walk into a scope of its own; `leave` with what this returned.
+    fn push(m: *Module) Allocator.Error!u32 {
+        const saved = m.scope;
+        if (m.met != null) return saved;
+        const depth = m.scopes.items[saved].depth + 1;
+        m.scope = @intCast(m.scopes.items.len);
+        try m.scopes.append(m.gpa, .{ .parent = saved, .depth = depth });
+        for (m.labels.items) |label| try m.occurs.append(m.gpa, .{ .scope = m.scope, .name = label });
+        return saved;
+    }
+
+    fn leave(m: *Module, saved: u32) void {
+        m.scope = saved;
     }
 
     /// The safety-build wall. Compiled away outside one (`runtime_safety` is
-    /// comptime-known); where it is compiled in it is two linear scans of
-    /// lists that hold a declaration's locals and the globals it mentions,
-    /// which is the cheapest place to turn "the skip set was wrong" from a
-    /// `SyntaxError` in somebody's program into a stopped build.
-    fn verify(m: *Module, mentioned: []const u32) void {
+    /// comptime-known); where it is compiled in it is linear scans of the
+    /// lists `enter` built, which is the cheapest place to turn "the skip
+    /// set was wrong" from a `SyntaxError` in somebody's program into a
+    /// stopped build. `busy` is `enter`'s, all false.
+    fn verify(m: *Module, mentioned: []const u32, homed: Buckets, blocked: Buckets, busy: []bool) void {
         if (!std.debug.runtime_safety) return;
         if (m.failure != null) return;
         for (m.order.items) |n| {
@@ -367,18 +548,32 @@ pub const Module = struct {
                 return;
             }
         }
-        // Distinctness among the locals themselves. `enter` hands out a
-        // strictly increasing ordinal so this cannot fire; it is here because
-        // "cannot fire" is the claim, and a check is how a claim survives an
-        // edit. It checks the stronger claim, that the ordinals INCREASE
-        // along `order` (which `see` keeps free of repeats), because that is
-        // linear: the all-pairs form would be quadratic in a declaration's
-        // locals, 46 s of a safety build's `--release` on a derived `compare`
-        // with 65 535 `$o$<i>`.
-        for (m.order.items[0..m.order.items.len -| 1], m.order.items[@min(1, m.order.items.len)..]) |a, b| {
-            if (m.local[a.unwrap().?] < m.local[b.unwrap().?]) continue;
-            m.failure = .{ .kind = .collision, .name = a };
-            return;
+        // Within a scope the ordinals are distinct, and none is the ordinal
+        // of a name of an enclosing scope that the scope uses: one mark per
+        // name, linear, where the all-pairs form was 46 s of a safety
+        // build's `--release` on a derived `compare` with 65 535 `$o$<i>`.
+        // "Cannot fire" is `enter`'s claim; a check is how a claim survives
+        // an edit. (Every ordinal is below `busy.len`: `enter` hands out at
+        // most one per name and global.)
+        for (0..m.scopes.items.len) |s| {
+            const names = homed.items(s);
+            defer for (names) |i| {
+                if (m.local[i] < busy.len) busy[m.local[i]] = false;
+            };
+            for (names) |i| {
+                const o = m.local[i];
+                if (o >= busy.len) continue;
+                if (busy[o]) {
+                    m.failure = .{ .kind = .collision, .name = @enumFromInt(i) };
+                    return;
+                }
+                busy[o] = true;
+            }
+            for (blocked.items(s)) |x| {
+                if (m.local[x] >= busy.len or !busy[m.local[x]]) continue;
+                m.failure = .{ .kind = .collision, .name = @enumFromInt(x) };
+                return;
+            }
         }
     }
 
@@ -407,9 +602,16 @@ pub const Module = struct {
             return;
         }
         if (m.met != null) return;
-        if (m.stamp[i] == m.current) return; // already in this declaration's list
+        try m.occurs.append(m.gpa, .{ .scope = m.scope, .name = i });
+        if (m.stamp[i] == m.current) {
+            // Already in this declaration's list: its home widens to hold
+            // this place too.
+            m.home[i] = m.common(m.home[i], m.scope);
+            return;
+        }
         m.stamp[i] = m.current;
         m.local[i] = std.math.maxInt(u32); // assigned below; a read before then is a bug
+        m.home[i] = m.scope;
         try m.order.append(m.gpa, n);
     }
 
@@ -447,11 +649,25 @@ pub const Module = struct {
                 try m.collectList(branches.elseBody(), mentioned);
             },
             .while_true, .block_stmt => {
-                try m.see(@enumFromInt(d.lhs), mentioned);
+                const label: NameIndex = @enumFromInt(d.lhs);
+                try m.see(label, mentioned);
+                // A label may not be declared again inside its own
+                // statement: every scope there uses it (`push`).
+                const labelled = m.met == null and label.unwrap() != null and m.ir.name(label).module == .none;
+                if (labelled) try m.labels.append(m.gpa, label.unwrap().?);
+                defer if (labelled) {
+                    _ = m.labels.pop();
+                };
+                const saved = try m.push();
+                defer m.leave(saved);
                 try m.collectList(m.ir.subRange(@enumFromInt(d.rhs)), mentioned);
             },
             .for_of => {
                 const f = m.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                // The iterable is in the scope of the head's `let`: `for(let
+                // a of a)` reads the new `a`, before it is initialised.
+                const saved = try m.push();
+                defer m.leave(saved);
                 try m.see(@enumFromInt(d.lhs), mentioned);
                 try m.collectExpr(f.iterable, mentioned);
                 try m.collectList(f.body(), mentioned);
@@ -459,6 +675,8 @@ pub const Module = struct {
             .break_stmt, .continue_stmt => try m.see(@enumFromInt(d.lhs), mentioned),
             .switch_stmt => {
                 try m.collectExpr(@enumFromInt(d.lhs), mentioned);
+                const saved = try m.push();
+                defer m.leave(saved);
                 for (m.ir.extraSlice(m.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try m.collect(c, mentioned);
             },
             .switch_case => {
@@ -471,11 +689,43 @@ pub const Module = struct {
     }
 
     fn collectList(m: *Module, range: JsIr.SubRange, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
-        for (m.ir.extraSlice(range, Index)) |s| try m.collect(s, mentioned);
+        const list = m.ir.extraSlice(range, Index);
+        var i: usize = 0;
+        while (i < list.len) : (i += 1) {
+            // `let n=a;` just before an unlabelled loop: `n` is the loop's,
+            // since the printer may write it in the loop's `for` head
+            // (`Print.forHead`) — but it is given no spelling the scope
+            // around the loop has, nor one of the names of enclosing scopes
+            // that scope uses, since the printer may as well leave it where
+            // it is (`pulled_outer`). `a` is evaluated where it stands.
+            if (m.met == null and i + 1 < list.len and m.ir.tag(list[i]) == .let_decl and
+                m.ir.tag(list[i + 1]) == .while_true and
+                @as(NameIndex, @enumFromInt(m.ir.data(list[i + 1]).lhs)) == .none)
+            {
+                const d = m.ir.data(list[i]);
+                const n: NameIndex = @enumFromInt(d.lhs);
+                if (n.unwrap()) |index| if (index < m.ir.names.len and m.ir.name(n).module == .none) {
+                    if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try m.collectExpr(v, mentioned);
+                    const saved = try m.push();
+                    defer m.leave(saved);
+                    try m.see(n, mentioned);
+                    m.pulled_stamp[index] = m.current;
+                    m.pulled_outer[index] = saved;
+                    try m.collectList(m.ir.subRange(@enumFromInt(m.ir.data(list[i + 1]).rhs)), mentioned);
+                    i += 1;
+                    continue;
+                };
+            }
+            try m.collect(list[i], mentioned);
+        }
     }
 
     fn collectFunc(m: *Module, record: JsIr.ExtraIndex, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
         const f = m.ir.extraData(record, JsIr.Func);
+        // The parameters and the body are one scope: a body's `let` may not
+        // take a parameter's name.
+        const saved = try m.push();
+        defer m.leave(saved);
         for (m.ir.extraSlice(f.params(), NameIndex)) |n| try m.see(n, mentioned);
         try m.collectList(f.body(), mentioned);
     }
@@ -506,7 +756,25 @@ pub fn begin(gpa: Allocator, ir: *const JsIr, globals: *const Globals) Allocator
     const local = try gpa.alloc(u32, ir.names.len);
     const stamp = try gpa.alloc(u32, ir.names.len);
     @memset(stamp, 0);
-    return .{ .ir = ir, .globals = globals, .gpa = gpa, .local = local, .stamp = stamp };
+    const home = try gpa.alloc(u32, ir.names.len);
+    const pulled_outer = try gpa.alloc(u32, ir.names.len);
+    const pulled_stamp = try gpa.alloc(u32, ir.names.len);
+    @memset(pulled_stamp, 0);
+    const last_scope = try gpa.alloc(u32, ir.names.len);
+    const last_stamp = try gpa.alloc(u32, ir.names.len);
+    @memset(last_stamp, 0);
+    return .{
+        .ir = ir,
+        .globals = globals,
+        .gpa = gpa,
+        .local = local,
+        .stamp = stamp,
+        .home = home,
+        .pulled_outer = pulled_outer,
+        .pulled_stamp = pulled_stamp,
+        .last_scope = last_scope,
+        .last_stamp = last_stamp,
+    };
 }
 
 /// The whole-program names one module mentions, each once, in the order the
@@ -680,9 +948,10 @@ test "a function returning a && chain deeper than a recursive walk survives is n
     // A derived `eq` is one left-nested `&&` as long as its record is wide.
     // The collecting walk keeps its own stack (`JsIr.pushOperands`), so
     // the names are assigned on `small_stack`'s few pages. The one local
-    // that only the chain's deepest link reads is the third name met in
-    // print order — after the function and its parameter — so it is given
-    // ordinal 2 only if the walk reached the bottom first.
+    // that only the chain's deepest link reads is the second name met in
+    // the function's scope — after its parameter, which may take the
+    // function's own spelling since the body never names the function — so
+    // it is given ordinal 1 only if the walk reached the bottom first.
     try small_stack.run(nameDeepChain, .{});
 }
 
@@ -709,8 +978,8 @@ fn nameDeepChain() !void {
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
     try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
-    try testing.expectEqual(@as(?u32, 1), m.ordinal(a));
-    try testing.expectEqual(@as(?u32, 2), m.ordinal(z));
+    try testing.expectEqual(@as(?u32, 0), m.ordinal(a));
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(z));
 }
 
 test "a declaration of 16 384 locals is named and self-checked in linear time" {
@@ -741,10 +1010,46 @@ test "a declaration of 16 384 locals is named and self-checked in linear time" {
     var m = try begin(gpa, &ir, &globals);
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
-    try testing.expectEqual(@as(?u32, 2), m.ordinal(locals[0]));
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(locals[0]));
     for (locals[0 .. width - 1], locals[1..]) |earlier, later| {
         try testing.expect(m.ordinal(earlier).? < m.ordinal(later).?);
     }
+}
+
+test "a loop's body reuses a spelling of the scope around it that it does not use, and no other" {
+    // `function f(a) { const x2 = a; for (;;) { const x = a; } for (;;) {
+    // const y = x2; } }`: the first body uses `a`, so `x` takes `x2`'s
+    // spelling, which that body never reads; the second uses `x2`, so `y`
+    // takes `a`'s.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const gpa = arena_state.allocator();
+    var b: JsIr.Builder = .init(gpa);
+    const f = try b.intern(.local(@enumFromInt(0)));
+    const a = try b.intern(.local(@enumFromInt(1)));
+    const x = try b.intern(.local(@enumFromInt(2)));
+    const y = try b.intern(.local(@enumFromInt(3)));
+    const x2 = try b.intern(.local(@enumFromInt(4)));
+    const none = @intFromEnum(NameIndex.none);
+    const decl_x2 = try testNode(&b, .const_decl, x2.int(), (try testNode(&b, .ident, a.int(), 0)).int());
+    const first = try b.addRecord(try b.addRange(&.{try testNode(&b, .const_decl, x.int(), (try testNode(&b, .ident, a.int(), 0)).int())}));
+    const second = try b.addRecord(try b.addRange(&.{try testNode(&b, .const_decl, y.int(), (try testNode(&b, .ident, x2.int(), 0)).int())}));
+    const loop1 = try testNode(&b, .while_true, none, @intFromEnum(first));
+    const loop2 = try testNode(&b, .while_true, none, @intFromEnum(second));
+    const decl = try testFunc(&b, f, a, &.{ decl_x2, loop1, loop2 });
+    const ir = try b.toOwned(try b.addRange(&.{decl}));
+
+    var globals: Globals = .{};
+    var m = try begin(gpa, &ir, &globals);
+    try m.enter(decl);
+    try testing.expectEqual(@as(?Failure, null), m.failure);
+    // The function's scope: `a`, then `x2`.
+    try testing.expectEqual(@as(?u32, 0), m.ordinal(a));
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(x2));
+    // The first body uses `a`: `x` steps over it, onto `x2`'s spelling.
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(x));
+    // The second uses `x2`: `y` takes `a`'s, which it does not use.
+    try testing.expectEqual(@as(?u32, 0), m.ordinal(y));
 }
 
 fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {

@@ -1,0 +1,21 @@
+-- Loops whose value is bound or discarded, written in place under
+-- `--release` (`backend.md` §9, *A function called once is written where it
+-- is called*): a loop's variable read after it, a tuple of its variables, a
+-- loop for its writes alone, a loop in another loop's body, and exits inside
+-- a `switch`. The argument with an effect is evaluated once.
+import Loops exposing (Skip, Stop, Take, Twice)
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Loops.firstNull 0)
+        , String.fromInt (Loops.ticks ())
+        , Loops.mirror [ 1, 2, 3, 2, 1 ]
+        , Loops.mirror [ 1, 2 ]
+        , String.join (List.map (Loops.squares 4) String.fromInt) ","
+        , String.fromInt Loops.widths
+        , Loops.run [ Take 1, Skip, Twice 3, Stop, Take 100 ]
+        , Loops.run [ Take 1, Take 2 ]
+        ]

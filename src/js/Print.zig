@@ -351,6 +351,8 @@ const Printer = struct {
     /// The next statement printed is an unbraced `if` or `else` body
     /// (`compactIf`): an `if` there keeps its `else` and splices nothing.
     single: bool = false,
+    /// The statement a `for` head writes (`forLoop`), which its body skips.
+    skip_update: ?Index = null,
     /// How many pieces the joiner held right after the last statement's
     /// `;` (`terminate`), or 0.
     semicolon: usize = 0,
@@ -549,11 +551,274 @@ const Printer = struct {
             // `JsIr` node moves, because it is a printing decision. §8's loop
             // prologue is what reserved it.
             if (p.compact and (p.ir.tag(list[i]) == .const_decl or p.ir.tag(list[i]) == .let_decl)) {
+                // The run's last member may be a loop's variable, written in
+                // the loop's `for` head (`forHead`).
+                var last: ?usize = null;
+                var j = i;
+                while (j < list.len) : (j += 1) {
+                    if (p.plan.isDropped(list[j])) continue;
+                    if (!isDeclaration(p.ir.tag(list[j]))) break;
+                    last = j;
+                }
+                // The candidate goes last: the members after it may only
+                // hold literals, which nothing evaluates.
+                var cand = last;
+                while (cand) |l| {
+                    if (j >= list.len) break;
+                    if (try p.forHead(list[l], list[j], list[j + 1 ..])) |head| {
+                        try p.constRunSkip(list[0..j], i, l, level);
+                        try p.forLoop(list[l], list[j], head, level);
+                        i = j;
+                        break;
+                    }
+                    if (!p.literalDecl(list[l])) {
+                        cand = null;
+                        break;
+                    }
+                    cand = null;
+                    var k = l;
+                    while (k > i) {
+                        k -= 1;
+                        if (p.plan.isDropped(list[k])) continue;
+                        cand = k;
+                        break;
+                    }
+                }
+                if (cand != null) continue;
                 i = try p.constRun(list, i, level);
                 continue;
             }
             try p.statement(list[i], level);
         }
+    }
+
+    /// A `while` loop whose variable is declared just before it and updated
+    /// last in it, written `for(let i=a;c;i++){…}` (`backend.md` §9,
+    /// *Compact statements*): what a loop written where its value is bound
+    /// or discarded looks like (§9, *A function called once is written
+    /// where it is called*). Only when the loop prints as `while` from an
+    /// exit `break` (`breakLoop`), its last statement assigns the variable,
+    /// no `continue` in it skips that assignment, it makes no function
+    /// (a `for` head's `let` is one binding per iteration), and nothing
+    /// after it reads the variable. Null for any other.
+    fn forHead(p: *Printer, decl: Index, loop: Index, after: []const Index) Allocator.Error!?BreakShape {
+        if (p.ir.tag(decl) != .let_decl or p.ir.tag(loop) != .while_true) return null;
+        if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(loop).lhs)) != .none) return null;
+        const n: JsIr.NameIndex = @enumFromInt(p.ir.data(decl).lhs);
+        if (n == .none or p.plan.isRepeated(n)) return null;
+        const body = p.ir.subRange(@enumFromInt(p.ir.data(loop).rhs));
+        try p.markLoopTail(body);
+        var shape = p.breakShape(loop) orelse return null;
+        // The update: an assignment of the variable among the assignments
+        // the body ends with — a jump's, in place — when none after it reads
+        // the variable, so that it may run after them.
+        const last_range = if (p.anyLive(shape.rest)) shape.rest else shape.arm;
+        const stmts = p.ir.extraSlice(last_range, Index);
+        var k = stmts.len;
+        const u = while (k > 0) {
+            k -= 1;
+            const s = stmts[k];
+            if (p.skipped(s)) continue;
+            if (p.ir.tag(s) != .assign_stmt) return null;
+            const target = p.resolve(@enumFromInt(p.ir.data(s).lhs));
+            if (p.ir.tag(target) == .ident and p.ir.data(target).lhs == @intFromEnum(n)) break s;
+            if (try p.mentions(s, n)) return null;
+        } else return null;
+        // Nor may the update read what an assignment after it writes.
+        for (stmts[k + 1 ..]) |s| {
+            if (p.skipped(s)) continue;
+            const target = p.resolve(@enumFromInt(p.ir.data(s).lhs));
+            if (p.ir.tag(target) != .ident) return null;
+            if (try p.mentions(u, @enumFromInt(p.ir.data(target).lhs))) return null;
+        }
+        shape.update = u;
+        if (try p.loopJumpsOrMakes(body)) return null;
+        for (after) |s| if (try p.mentions(s, n)) return null;
+        return shape;
+    }
+
+    /// `for(let n=a;c;update)body`, `forHead`'s answer.
+    fn forLoop(p: *Printer, decl: Index, loop: Index, shape: BreakShape, level: u32) Allocator.Error!void {
+        _ = loop;
+        try p.indent(level);
+        try p.push("for(let ");
+        try p.declarator(decl, level);
+        try p.push(";");
+        const guard = p.ir.data(shape.guard).lhs;
+        if (shape.exits_then) try p.negatedTest(@enumFromInt(guard), level) else try p.expression(@enumFromInt(guard), 0, level);
+        try p.push(";");
+        try p.assignment(shape.update.?, level);
+        try p.push(")");
+        const saved = p.skip_update;
+        p.skip_update = shape.update;
+        defer p.skip_update = saved;
+        try p.loopBody(shape, level);
+    }
+
+    /// Whether statement `node` reads the name `n` anywhere, closures and
+    /// what a use substitutes (`resolve`) included.
+    fn mentions(p: *Printer, node: Index, n: JsIr.NameIndex) Allocator.Error!bool {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(p.spelled);
+        try stack.append(p.spelled, node);
+        while (JsIr.popOperand(&stack)) |at| {
+            const d = p.ir.data(at);
+            switch (p.ir.tag(at)) {
+                .ident => {
+                    const r = p.resolve(at);
+                    if (r != at) {
+                        try stack.append(p.spelled, r);
+                        continue;
+                    }
+                    if (d.lhs == @intFromEnum(n)) return true;
+                },
+                .arrow => try p.pushFunc(&stack, @enumFromInt(d.lhs)),
+                .func_decl, .gen_decl => try p.pushFunc(&stack, @enumFromInt(d.rhs)),
+                .const_decl => try stack.append(p.spelled, @enumFromInt(d.rhs)),
+                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .if_stmt => {
+                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
+                },
+                .while_true, .block_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .for_of => {
+                    const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    try stack.append(p.spelled, f.iterable);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(f.body(), Index));
+                },
+                .switch_stmt => {
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                },
+                .switch_case => {
+                    if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(p.spelled, t);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                },
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                else => try p.ir.pushOperands(p.spelled, &stack, at),
+            }
+        }
+        return false;
+    }
+
+    fn pushFunc(p: *Printer, stack: *std.ArrayList(Index), record: JsIr.ExtraIndex) Allocator.Error!void {
+        try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.extraData(record, JsIr.Func).body(), Index));
+    }
+
+    /// Whether loop body `body` holds a `continue` of its own that prints —
+    /// one not inside a loop or a function of its own — or makes a function.
+    fn loopJumpsOrMakes(p: *Printer, body: JsIr.SubRange) Allocator.Error!bool {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(p.spelled);
+        try stack.appendSlice(p.spelled, p.ir.extraSlice(body, Index));
+        // Expressions are walked for functions only; statements of a nested
+        // loop for functions only, which the flag says.
+        var nested: std.ArrayList(bool) = .empty;
+        defer nested.deinit(p.spelled);
+        try nested.appendNTimes(p.spelled, false, stack.items.len);
+        while (stack.pop()) |at| {
+            const inner = nested.pop().?;
+            const d = p.ir.data(at);
+            const before = stack.items.len;
+            switch (p.ir.tag(at)) {
+                .arrow, .func_decl, .gen_decl => return true,
+                .continue_stmt => if (!inner and !p.skipped(at)) return true,
+                .const_decl => try stack.append(p.spelled, @enumFromInt(d.rhs)),
+                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+                .return_stmt, .expr_stmt, .throw_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .if_stmt => {
+                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
+                },
+                .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .switch_stmt => {
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                },
+                .while_true => {
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
+                    try nested.appendNTimes(p.spelled, true, stack.items.len - before);
+                    continue;
+                },
+                .for_of => {
+                    const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    try stack.append(p.spelled, f.iterable);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(f.body(), Index));
+                    try nested.appendNTimes(p.spelled, true, stack.items.len - before);
+                    continue;
+                },
+                .import_stmt, .export_stmt, .break_stmt => {},
+                else => try p.ir.pushOperands(p.spelled, &stack, at),
+            }
+            try nested.appendNTimes(p.spelled, inner, stack.items.len - before);
+        }
+        return false;
+    }
+
+    /// Assignment statement `node` as an expression, for a `for` head.
+    fn assignment(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        try p.expression(@enumFromInt(p.ir.data(node).lhs), prec_call, level);
+        try p.assignmentValue(node, level);
+    }
+
+    /// What follows an assignment's target: `=value`, `op=e`, `++` or `--`.
+    fn assignmentValue(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        const d = p.ir.data(node);
+        // `x = x + e` is `x += e` under `--release`: for a name, the two read
+        // `x`, then `e`, then write, in that order.
+        if (p.compound(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) |b| {
+            const op: JsIr.BinaryOp = @enumFromInt(p.ir.data(p.resolve(@enumFromInt(d.rhs))).rhs);
+            // `x += 1` is `x++`: `+` with a number is a number's (a string is
+            // appended to another string only), so the two agree.
+            const right = p.resolve(b.right);
+            const one = p.ir.tag(right) == .number and std.mem.eql(u8, p.ir.bytes(right), "1");
+            if (one and (op == .add or op == .sub)) return p.push(if (op == .add) "++" else "--");
+            try p.push(op.text());
+            try p.push("=");
+            return p.expression(b.right, 0, level);
+        }
+        try p.tok(" = ", "=");
+        try p.expression(@enumFromInt(d.rhs), 0, level);
+    }
+
+    /// A declaration whose value is a literal, or nothing: evaluating it
+    /// before or after anything else is the same.
+    fn literalDecl(p: *Printer, node: Index) bool {
+        const v = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).rhs)).unwrap() orelse return true;
+        return switch (p.ir.tag(p.resolve(v))) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+            else => false,
+        };
+    }
+
+    /// `constRun` over the declarations of `list` from `from` on, but for
+    /// `skip`'s (a `for` head's).
+    fn constRunSkip(p: *Printer, list: []const Index, from: usize, skip: usize, level: u32) Allocator.Error!void {
+        const any = for (list[from..], from..) |node, i| {
+            if (i == skip or p.plan.isDropped(node)) continue;
+            if (!isDeclaration(p.ir.tag(node))) break false;
+            break true;
+        } else false;
+        if (!any) return;
+        try p.indent(level);
+        try p.push("let");
+        var written: usize = 0;
+        for (list[from..], from..) |node, i| {
+            if (i == skip or p.plan.isDropped(node)) continue;
+            if (!isDeclaration(p.ir.tag(node))) break;
+            if (written != 0) try p.push(",");
+            try p.declarator(node, level);
+            written += 1;
+        }
+        try p.terminate();
+        try p.endLine(level);
     }
 
     /// §9 items 3 and 5 together, at the module level: a run of top-level
@@ -729,16 +994,7 @@ const Printer = struct {
             },
             .assign_stmt => {
                 try p.statementExpression(@enumFromInt(d.lhs), level);
-                // `x = x + e` is `x += e` under `--release`: for a name, the
-                // two read `x`, then `e`, then write, in that order.
-                if (p.compound(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) |b| {
-                    try p.push(@as(JsIr.BinaryOp, @enumFromInt(p.ir.data(p.resolve(@enumFromInt(d.rhs))).rhs)).text());
-                    try p.push("=");
-                    try p.expression(b.right, 0, level);
-                } else {
-                    try p.tok(" = ", "=");
-                    try p.expression(@enumFromInt(d.rhs), 0, level);
-                }
+                try p.assignmentValue(node, level);
                 try p.terminate();
                 try p.endLine(level);
             },
@@ -820,6 +1076,7 @@ const Printer = struct {
             .while_true => {
                 if (p.compact and @as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none) {
                     if (try p.whileLoop(node, level)) return;
+                    if (try p.breakLoop(node, level)) return;
                 }
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.name(@enumFromInt(d.lhs), .binding);
@@ -1004,6 +1261,79 @@ const Printer = struct {
         try p.armBody(if (p.anyLive(rest)) rest else else_body, false, level);
         if (p.ir.tag(exit) == .return_stmt and !p.returnsAtEnd(node, exit)) try p.statement(exit, level);
         return true;
+    }
+
+    /// `for(;;){if(c)break;…}` as `while(!c){…}`, and `for(;;){if(c){…}else
+    /// break;…}` as `while(c){…}`: an unlabelled loop whose first statement
+    /// is an `if` one arm of which is a `break` of this loop and nothing else
+    /// — the exit of a loop written where its value is bound or discarded
+    /// (`backend.md` §9, *A function called once is written where it is
+    /// called*). The other arm and the statements after the `if` are the
+    /// body; a `break` among them leaves the `while` for the same place.
+    /// False, printing nothing, for any other loop.
+    fn breakLoop(p: *Printer, node: Index, level: u32) Allocator.Error!bool {
+        const shape = p.breakShape(node) orelse return false;
+        try p.markLoopTail(p.ir.subRange(@enumFromInt(p.ir.data(node).rhs)));
+        try p.push("while(");
+        const guard = p.ir.data(shape.guard).lhs;
+        if (shape.exits_then) try p.negatedTest(@enumFromInt(guard), level) else try p.expression(@enumFromInt(guard), 0, level);
+        try p.push(")");
+        try p.loopBody(shape, level);
+        return true;
+    }
+
+    /// A loop `breakLoop` writes as `while`: its guard, which arm of the
+    /// guard is the `break`, the other arm and the statements after the
+    /// guard, and — for `forHead` — the statement written in the head.
+    const BreakShape = struct {
+        guard: Index,
+        exits_then: bool,
+        arm: JsIr.SubRange,
+        rest: JsIr.SubRange,
+        update: ?Index = null,
+    };
+
+    fn breakShape(p: *Printer, node: Index) ?BreakShape {
+        const body = p.ir.subRange(@enumFromInt(p.ir.data(node).rhs));
+        const items = p.ir.extraSlice(body, Index);
+        var first: ?usize = null;
+        for (items, 0..) |s, i| if (!p.skipped(s)) {
+            first = i;
+            break;
+        };
+        const at = first orelse return null;
+        const guard = items[at];
+        if (p.ir.tag(guard) != .if_stmt) return null;
+        const branches = p.ir.extraData(@enumFromInt(p.ir.data(guard).rhs), JsIr.If);
+        const Exit = struct {
+            fn is(pr: *Printer, range: JsIr.SubRange) bool {
+                const only = pr.onlyLive(range) orelse return false;
+                return pr.ir.tag(only) == .break_stmt and @as(JsIr.NameIndex, @enumFromInt(pr.ir.data(only).lhs)) == .none;
+            }
+        };
+        const exits_then = Exit.is(p, branches.thenBody());
+        if (!exits_then and !Exit.is(p, branches.elseBody())) return null;
+        return .{
+            .guard = guard,
+            .exits_then = exits_then,
+            .arm = if (exits_then) branches.elseBody() else branches.thenBody(),
+            .rest = .{ .start = @enumFromInt(@intFromEnum(body.start) + @as(u32, @intCast(at + 1))), .end = body.end },
+        };
+    }
+
+    /// The body of a `while` or `for` `breakShape` found: the guard's other
+    /// arm, then the statements after the guard.
+    fn loopBody(p: *Printer, shape: BreakShape, level: u32) Allocator.Error!void {
+        if (!p.anyLive(shape.rest)) {
+            try p.armBody(shape.arm, false, level);
+        } else if (!p.anyLive(shape.arm)) {
+            try p.armBody(shape.rest, false, level);
+        } else {
+            try p.push("{");
+            try p.statements(shape.arm, level + 1);
+            try p.statements(shape.rest, level + 1);
+            try p.closeBlock();
+        }
     }
 
     /// The binary of `x = x op e`, when it may be written `x op= e`: under
@@ -2085,6 +2415,7 @@ const Printer = struct {
     /// reads (§4, *A result nothing reads*).
     fn skipped(p: *Printer, node: Index) bool {
         if (p.plan.isDropped(node)) return true;
+        if (p.skip_update) |u| if (u == node) return true;
         switch (p.ir.tag(node)) {
             .continue_stmt => return std.mem.indexOfScalar(Index, p.elided.items, node) != null,
             // `x = x`, which a loop writes for a variable an iteration passes
@@ -2136,6 +2467,14 @@ const Printer = struct {
                     try p.push(f.text());
                     try p.tok(" ", "");
                     return p.expression(b.right, f.rightPrecedence(), level);
+                }
+                // `a != b` for `a == b` (`Js.isNullish`), which `JsIr` has
+                // no operator of its own for.
+                if (op == .loose_eq) {
+                    const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    try p.expression(b.left, op.leftPrecedence(), level);
+                    try p.tok(" != ", "!=");
+                    return p.expression(b.right, op.rightPrecedence(), level);
                 }
             },
             else => {},
