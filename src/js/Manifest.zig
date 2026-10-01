@@ -44,6 +44,13 @@
 //!   implements it) — and, since 2026-10-02, `module`: a beni module of the
 //!   runtime's package whose `pub` values supply runtime exports in the
 //!   file's place (§9.2, *A runtime module*).
+//! - `html` — the page shell (`backend.md` §2, *The page shell*), since
+//!   2026-10-01: a template file relative to the package root in which
+//!   `{{entry}}` stands for the entry file, written as `index.html`. Inherited
+//!   down the chain like every output key; an APP manifest's replaces it.
+//! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
+//!   §10.1): `platform`, `paths` and `out`, each used when the command line
+//!   does not say. A platform package's is ignored.
 //!
 //! An unknown key is ignored rather than rejected: a manifest is a forward
 //! compatibility surface, and packages will add to it.
@@ -71,6 +78,16 @@ entry: ?[]const u8 = null,
 platforms: []const []const u8 = &.{},
 reexports: []const []const u8 = &.{},
 markup: Markup = .{},
+html: ?[]const u8 = null,
+build: Build = .{},
+
+/// `"build"`'s three fields (`frontend.md` §10.1), each absent unless
+/// written.
+pub const Build = struct {
+    platform: ?[]const u8 = null,
+    paths: ?[]const []const u8 = null,
+    out: ?[]const u8 = null,
+};
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
 pub const Markup = struct {
@@ -99,6 +116,8 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         platforms: ?[]const []const u8 = null,
         reexports: ?[]const []const u8 = null,
         markup: ?Markup = null,
+        html: ?[]const u8 = null,
+        build: ?Build = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
         .ignore_unknown_fields = true,
@@ -116,10 +135,18 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .platforms = parsed.platforms orelse &.{},
         .reexports = parsed.reexports orelse &.{},
         .markup = parsed.markup orelse .{},
+        .html = parsed.html,
+        .build = parsed.build orelse .{},
     };
 }
 
 pub const ReadError = ParseError || error{ReadFailed};
+
+/// `<dir>/beni.json` as a message names it: `beni.json` alone for `.`.
+pub fn pathIn(arena: Allocator, dir: []const u8) []const u8 {
+    if (dir.len == 0 or std.mem.eql(u8, dir, ".")) return file_name;
+    return std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, file_name }) catch file_name;
+}
 
 /// Read `<dir>/beni.json`. Null when there is no manifest, which is the
 /// ordinary case: a package without one is an ordinary package.
@@ -189,6 +216,24 @@ test "an ordinary package, and forward compatibility" {
     try testing.expect(!m.platform);
     try testing.expectEqualStrings("my-app", m.name.?);
     try testing.expectEqual(@as(?[]const u8, null), m.program);
+}
+
+test "a page shell, and a project's build defaults" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "name": "counter", "html": "page.html",
+        \\  "build": { "platform": "browser-tea", "paths": ["src"], "out": "dist", "later": 1 } }
+    );
+    try testing.expectEqualStrings("page.html", m.html.?);
+    try testing.expectEqualStrings("browser-tea", m.build.platform.?);
+    try testing.expectEqualStrings("src", m.build.paths.?[0]);
+    try testing.expectEqualStrings("dist", m.build.out.?);
+    const bare = try parse(arena.allocator(), "{}");
+    try testing.expectEqual(@as(?[]const u8, null), bare.build.platform);
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "build": { "paths": "src" } }
+    ));
 }
 
 test "malformed manifests are reported, not guessed at" {

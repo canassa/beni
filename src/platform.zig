@@ -391,6 +391,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
     const runtime = chain.first("runtime");
     if (needs_program and (program == null or runtime == null)) return error.Incomplete;
     const entry = chain.first("entry");
+    const html = chain.first("html");
     const lowering = chain.firstMarkup("lowering");
     const markup_runtime = chain.firstMarkup("runtime");
     const dirs = try arena.alloc([]const u8, chain.layers.len);
@@ -416,6 +417,8 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .markup_runtime = if (markup_runtime) |r| r.value else null,
             .markup_runtime_dir = if (markup_runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
             .markup_module = if (chain.firstMarkup("module")) |m| m.value else null,
+            .html = if (html) |h| h.value else null,
+            .html_root = if (html) |h| chain.layers[h.layer].root else chain.top().root,
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };

@@ -163,7 +163,21 @@ pub const Platform = struct {
     /// module*): a module of the runtime's package whose `pub` values supply
     /// runtime exports in the file's place.
     markup_module: ?[]const u8 = null,
+    /// The page shell (§2, *The page shell*): a template relative to
+    /// `html_root` whose `{{entry}}` becomes the entry file, written as
+    /// `index.html`. The chain's `"html"`, or the app manifest's, which
+    /// replaces it (`frontend.md` §10.1); null writes no page.
+    html: ?[]const u8 = null,
+    /// The directory holding the `beni.json` that named `html`.
+    html_root: []const u8 = "",
 };
+
+/// The page shell's output name (§2, *The page shell*). No `_`: every
+/// module's output ends in `.mjs`, so no module can reach a `.html` name.
+pub const html_file = "index.html";
+
+/// What a page shell writes for the entry file.
+pub const html_placeholder = "{{entry}}";
 
 /// The markup lowerings compiled into this binary (`boundary.md` §9.5),
 /// sorted by name: the registry `build.zig` generates from every platform's
@@ -343,6 +357,8 @@ pub fn run(
         try e.copyAssets();
         if (entry) |at| try e.emitEntry(at);
     }
+    // §2's page shell, beside the entry file, in either layout.
+    if (entry != null) try e.emitShell();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
@@ -3812,6 +3828,49 @@ const Emitter = struct {
         }
         try out.appendSlice(e.scratch, "}");
         return .{ .path = (try e.markupRuntimeOutputPath()).?, .data = out.items };
+    }
+
+    /// §2's *The page shell*: the template the chain or the app names,
+    /// every `{{entry}}` replaced by `./<entry file>`, written as
+    /// `index.html`. A template that cannot be read is reported against
+    /// the manifest that named it; one that never names the entry, against
+    /// itself — a page that loads nothing is a build that does nothing.
+    fn emitShell(e: *Emitter) !void {
+        const p = e.options.platform;
+        const html = p.html orelse return;
+        // The app's own root is usually `.`, and a message says `index.html`
+        // rather than `./index.html`.
+        const here = p.html_root.len == 0 or std.mem.eql(u8, p.html_root, ".");
+        const path = if (here) html else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ p.html_root, html });
+        const manifest_path = if (here) Manifest.file_name else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ p.html_root, Manifest.file_name });
+        const template = e.readAsset(path) orelse return e.reportInFile(
+            .invalid_html_shell,
+            .{ .path = manifest_path },
+            \\I cannot read the page shell `{s}` this manifest names in "html".
+            \\
+            \\A program build writes it as `{s}`, with `{s}` replaced by the entry file
+            \\(`docs/design/backend.md` §2, *The page shell*).
+        ,
+            .{ path, html_file, html_placeholder },
+        );
+        const replacement = try std.fmt.allocPrint(e.scratch, "./{s}", .{p.entry});
+        const count = std.mem.count(u8, template, html_placeholder);
+        if (count == 0) return e.reportInFile(
+            .invalid_html_shell,
+            .{ .path = path },
+            \\This page shell never says `{s}`, so the page it makes would not load the
+            \\program.
+            \\
+            \\Write `<script type="module" src="{s}"></script>` where the program should
+            \\load; the build replaces `{s}` with the entry file, `{s}`
+            \\(`docs/design/backend.md` §2, *The page shell*).
+        ,
+            .{ html_placeholder, html_placeholder, html_placeholder, replacement },
+        );
+        const size = template.len - count * html_placeholder.len + count * replacement.len;
+        const out = try e.scratch.alloc(u8, size);
+        _ = std.mem.replace(u8, template, html_placeholder, replacement, out);
+        try e.produce(html_file, out, path);
     }
 
     /// `<platform root>/beni.json` of the package that declared the entry

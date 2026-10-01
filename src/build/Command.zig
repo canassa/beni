@@ -32,6 +32,7 @@ const Emit = @import("../js/Emit.zig");
 const beni_profile = @import("../Profile.zig");
 const platform = @import("../platform.zig");
 const CacheDir = @import("../cache/Dir.zig");
+const Manifest = @import("../js/Manifest.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, build: Cli.Build) u8 {
     var options = options_in;
@@ -97,8 +98,20 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return 1;
     }
 
-    const loaded = platform.load(arena, &session, &chain, !build.library) catch |err|
+    var loaded = platform.load(arena, &session, &chain, !build.library) catch |err|
         return platform.reportLoad(stderr, build.platform, err);
+    // The app's own page shell replaces the chain's (`backend.md` §2, *The
+    // page shell*; `frontend.md` §10.1). Read here, every build, so that a
+    // watch picks up an edit to it.
+    const app_root = build.common.root orelse ".";
+    const app = Manifest.read(arena, io, app_root) catch |err| switch (err) {
+        error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+        else => return fail(stderr, "beni: cannot read '{s}': it is not a JSON object", .{Manifest.pathIn(arena, app_root)}),
+    };
+    if (app) |m| if (m.html) |html| {
+        loaded.platform.html = html;
+        loaded.platform.html_root = app_root;
+    };
 
     const emit_token = session.profile.begin();
     var result = emitOnBigStack(gpa, arena, &session, .{

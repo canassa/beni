@@ -578,6 +578,9 @@ pub const World = struct {
                 return std.mem.lessThan(u8, x.folded, y.folded);
             }
         }.lessThan);
+        // A build whose output went elsewhere (a project's `"build"` `"out"`)
+        // leaves nothing here to fold.
+        if (entries.len < 2) return;
         for (1..entries.len) |i| {
             if (!std.mem.eql(u8, entries[i - 1].folded, entries[i].folded)) continue;
             std.debug.print(

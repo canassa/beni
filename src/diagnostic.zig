@@ -330,6 +330,10 @@ pub const Code = enum {
     /// spread.
     cons_removed,
     two_spreads_in_pattern,
+    /// Appended with the page shell (backend.md §2, *The page shell*): a
+    /// platform's or an app's `"html"` template that cannot be read, or that
+    /// never names the entry file with `{{entry}}`.
+    invalid_html_shell,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -490,6 +494,7 @@ pub fn title(code: Code) []const u8 {
         .js_outside_platform => "JS OUTSIDE PLATFORM",
         .cons_removed => "REMOVED OPERATOR",
         .two_spreads_in_pattern => "TWO SPREADS IN ONE PATTERN",
+        .invalid_html_shell => "INVALID PAGE SHELL",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

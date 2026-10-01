@@ -6,7 +6,9 @@
 //! stderr and exits 2. The wording is part of the black-box contract.
 //!
 //! ```
-//! beni build  [options] --platform=<name> <path>...
+//! beni new    [--platform=browser-tea|node] <dir>
+//! beni build  [options] [--watch] [--platform=<name>] [<path>...]
+//! beni serve  [build options] [--port=<n>] [--host=<address>] [--no-reload] [<path>...]
 //! beni check  [options] [--platform=<name>] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
 //! beni dump   [options] --stage=<tokens|ast|bir|interface|raw|types|graph> [--positions] <file>
@@ -21,8 +23,10 @@ pub const usage =
     \\usage: beni <command> [options] [<path>...]
     \\
     \\commands:
-    \\  build    compile to JavaScript for a platform
-    \\  check    parse, lower and resolve every module against core; report diagnostics
+    \\  new      make a project that builds and runs: beni new [--platform=browser-tea|node] <dir>
+    \\  build    compile to JavaScript for a platform; --watch rebuilds on every change
+    \\  serve    build --watch, and serve the output over HTTP with live reload
+    \\  check   parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
     \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch)
     \\  version  print the version
@@ -38,7 +42,7 @@ pub const usage =
     \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
     \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
-    \\check and build options:
+    \\check, build and serve options:
     \\  --cache-dir=<path>        keep checked modules between runs here (default: .beni-cache)
     \\  --no-cache                do not read or write a cache at all
     \\                            deleting the cache directory is always safe: rm -rf .beni-cache
@@ -47,12 +51,23 @@ pub const usage =
     \\  --platform=<name>         also load this platform package, exactly as build does; optional,
     \\                            and with it the sibling checks of a build run too
     \\
-    \\build options:
-    \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
-    \\  --out=<dir>               output directory (default: out)
+    \\build and serve options:
+    \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required,
+    \\                            unless beni.json's "build" names it, as it does the paths)
+    \\  --out=<dir>               output directory (default: beni.json's "build" "out", else out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
     \\  --source-maps             emit .map files (not implemented yet)
     \\  --release                 dead bindings out, short names, compact printing, joined consts
+    \\  --watch                   keep running: rebuild whenever an input changes, until Ctrl-C
+    \\  --poll-interval=<ms>      how often --watch looks for changes (default: 200)
+    \\
+    \\serve options:
+    \\  --port=<n>                TCP port; 0 picks a free one (default: 8000)
+    \\  --host=<address>          address to listen on (default: 127.0.0.1)
+    \\  --no-reload               do not inject the live-reload script into HTML responses
+    \\
+    \\new options:
+    \\  --platform=browser-tea|node   which template (default: browser-tea)
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
@@ -274,6 +289,12 @@ pub const Build = struct {
     /// a test-only entry point — would move the assertion off the thing
     /// that ships.
     allow_debug: bool = false,
+    /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
+    /// to the inputs until SIGINT.
+    watch: bool = false,
+    /// `--poll-interval=<ms>`: how often a watch looks at its inputs.
+    /// Refused without `--watch`, since it would do nothing.
+    poll_interval_ms: u32 = default_poll_interval_ms,
     /// No `source_maps` field: `parseBuild` refuses that flag outright, so
     /// nothing downstream can be handed a setting the backend does not
     /// honour.
@@ -281,6 +302,39 @@ pub const Build = struct {
 };
 
 pub const default_out = "out";
+pub const default_poll_interval_ms: u32 = 200;
+
+/// `beni serve` (`frontend.md` §10.4): a `build --watch` and a static HTTP
+/// server for its `--out`.
+pub const Serve = struct {
+    build: Build,
+    port: u16 = default_port,
+    host: []const u8 = default_host,
+    /// `--no-reload` turns it off: the live-reload script injected into
+    /// every HTML response.
+    reload: bool = true,
+};
+
+pub const default_port: u16 = 8000;
+pub const default_host = "127.0.0.1";
+
+/// `beni new` (`frontend.md` §10.2).
+pub const New = struct {
+    template: Template = .@"browser-tea",
+    dir: []const u8,
+};
+
+pub const Template = enum { @"browser-tea", node };
+
+/// A project's `"build"` defaults (`frontend.md` §10.1), read from its
+/// `beni.json` by `main` before `parseWith`: what `build` and `serve` use for
+/// `--platform`, the paths and `--out` when the command line gives none.
+/// The command line wins, field by field.
+pub const Defaults = struct {
+    platform: ?[]const u8 = null,
+    paths: ?[]const []const u8 = null,
+    out: ?[]const u8 = null,
+};
 
 pub const Fmt = struct {
     common: Common = .{},
@@ -308,6 +362,8 @@ pub const Command = union(enum) {
     check: Check,
     fmt: Fmt,
     dump: Dump,
+    serve: Serve,
+    new: New,
     version,
     help,
 };
@@ -338,6 +394,30 @@ pub const Result = union(enum) {
 /// Parse `args` (without the program name). Path lists are allocated from
 /// `gpa`; option values are slices of `args`.
 pub fn parse(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    return parseWith(gpa, args, .{});
+}
+
+/// Whether `args` is a command that takes a project's `"build"` defaults
+/// (`frontend.md` §10.1): `build` or `serve`. `main` reads `beni.json` for
+/// these and for nothing else.
+pub fn wantsProject(args: []const [:0]const u8) bool {
+    if (args.len == 0) return false;
+    return std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "serve");
+}
+
+/// The `--root=<dir>` among `args`, before any `--`: where `main` looks for
+/// the project's `beni.json`, the directory `Session` reads it from.
+pub fn rootArg(args: []const [:0]const u8) ?[]const u8 {
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--")) return null;
+        if (std.mem.startsWith(u8, arg, "--root=") and arg.len > "--root=".len) return arg["--root=".len..];
+    }
+    return null;
+}
+
+/// `parse`, with the project's `"build"` defaults for `build` and `serve`.
+/// Still pure: `main` read the manifest.
+pub fn parseWith(gpa: Allocator, args: []const [:0]const u8, defaults: Defaults) Allocator.Error!Result {
     if (args.len == 0) return .{ .usage = .init("beni: missing subcommand; run 'beni help' for usage", .{}) };
     const sub = args[0];
     const rest = args[1..];
@@ -350,7 +430,9 @@ pub fn parse(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         if (rest.len != 0) return .{ .usage = .init("beni: help takes no arguments", .{}) };
         return .{ .command = .help };
     }
-    if (std.mem.eql(u8, sub, "build")) return parseBuild(gpa, rest);
+    if (std.mem.eql(u8, sub, "build")) return parseBuild(gpa, rest, defaults);
+    if (std.mem.eql(u8, sub, "serve")) return parseServe(gpa, rest, defaults);
+    if (std.mem.eql(u8, sub, "new")) return parseNew(gpa, rest);
     if (std.mem.eql(u8, sub, "check")) return parseCheck(gpa, rest);
     if (std.mem.eql(u8, sub, "fmt")) return parseFmt(gpa, rest);
     if (std.mem.eql(u8, sub, "dump")) return parseDump(gpa, rest);
@@ -590,6 +672,8 @@ const BuildSpecific = struct {
     release: bool = false,
     library: bool = false,
     allow_debug: bool = false,
+    watch: bool = false,
+    poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
 
     fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
@@ -620,19 +704,37 @@ const BuildSpecific = struct {
             if (value != null) return noValue(name);
             self.allow_debug = true;
             self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--watch")) {
+            if (value != null) return noValue(name);
+            self.watch = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--poll-interval")) {
+            const v = value orelse return needsValue(name, "<ms>");
+            const n = std.fmt.parseInt(u32, v, 10) catch 0;
+            if (n == 0) return Usage.init("beni: invalid value '{s}' for --poll-interval (expected a positive number of milliseconds)", .{v});
+            self.poll_interval_ms = n;
+            self.consumed = true;
         }
         return null;
     }
 };
 
-fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+fn parseBuild(gpa: Allocator, args: []const [:0]const u8, defaults: Defaults) Allocator.Error!Result {
     var s: Scanner(BuildSpecific) = .{};
-    errdefer s.positionals.deinit(gpa);
-    if (try s.scan(gpa, args)) |u| {
-        s.positionals.deinit(gpa);
-        return .{ .usage = u };
-    }
     defer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| return .{ .usage = u };
+    // `--poll-interval` without `--watch` would do nothing (`frontend.md`
+    // §10.3), which is `--source-maps`' rule.
+    if (s.specific.poll_interval_ms != null and !s.specific.watch) {
+        return .{ .usage = .init("beni: --poll-interval needs --watch", .{}) };
+    }
+    return finishBuild(gpa, &s, defaults, "build");
+}
+
+/// What `build` and `serve` share once their flags are scanned: the
+/// `--source-maps` refusal, then the project's defaults under the command
+/// line's values (`frontend.md` §10.1), then the two requirements.
+fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, command: []const u8) Allocator.Error!Result {
     // `--release` is implemented (backend.md §2, §9). `--source-maps` keeps
     // its own refusal, and keeps it in a `--release` build too, so the pair
     // exits 2 on this line.
@@ -643,21 +745,112 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     if (s.specific.source_maps) {
         return .{ .usage = .init("beni: --source-maps is not implemented yet; this build would write no .map file", .{}) };
     }
-    const platform = s.specific.platform orelse
-        return .{ .usage = .init("beni: build needs --platform=<name>", .{}) };
-    if (s.positionals.items.len == 0) {
-        return .{ .usage = .init("beni: build needs at least one path", .{}) };
+    const platform = s.specific.platform orelse defaults.platform orelse
+        return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
+    const default_paths = defaults.paths orelse &.{};
+    if (s.positionals.items.len == 0 and default_paths.len == 0) {
+        return .{ .usage = .init("beni: {s} needs at least one path", .{command}) };
     }
-    const paths = try s.positionals.toOwnedSlice(gpa);
+    const paths = if (s.positionals.items.len != 0)
+        try s.positionals.toOwnedSlice(gpa)
+    else
+        try gpa.dupe([]const u8, default_paths);
     return .{ .command = .{ .build = .{
         .common = s.common,
         .cache = s.specific.cache,
         .platform = platform,
-        .out = s.specific.out orelse default_out,
+        .out = s.specific.out orelse defaults.out orelse default_out,
         .library = s.specific.library,
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
+        .watch = s.specific.watch,
+        .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,
         .paths = paths,
+    } } };
+}
+
+/// `serve`'s flags beside `build`'s (`frontend.md` §10.4).
+const ServeSpecific = struct {
+    consumed: bool = false,
+    build: BuildSpecific = .{},
+    port: ?u16 = null,
+    host: ?[]const u8 = null,
+    no_reload: bool = false,
+
+    fn apply(self: *ServeSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--port")) {
+            const v = value orelse return needsValue(name, "<n>");
+            self.port = std.fmt.parseInt(u16, v, 10) catch
+                return Usage.init("beni: invalid value '{s}' for --port (expected 0 to 65535)", .{v});
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--host")) {
+            const v = value orelse return needsValue(name, "<address>");
+            if (v.len == 0) return needsValue(name, "<address>");
+            self.host = v;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--no-reload")) {
+            if (value != null) return noValue(name);
+            self.no_reload = true;
+            self.consumed = true;
+            return null;
+        }
+        if (try self.build.apply(name, value)) |u| return u;
+        self.consumed = self.build.consumed;
+        self.build.consumed = false;
+        return null;
+    }
+};
+
+fn parseServe(gpa: Allocator, args: []const [:0]const u8, defaults: Defaults) Allocator.Error!Result {
+    var s: Scanner(ServeSpecific) = .{};
+    defer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| return .{ .usage = u };
+    // The build half, through the one path `build` takes, with `--watch`
+    // implied.
+    var b: Scanner(BuildSpecific) = .{ .common = s.common, .specific = s.specific.build, .positionals = s.positionals };
+    s.positionals = .empty;
+    defer b.positionals.deinit(gpa);
+    b.specific.watch = true;
+    const result = try finishBuild(gpa, &b, defaults, "serve");
+    const build = switch (result) {
+        .usage => return result,
+        .command => |c| c.build,
+    };
+    return .{ .command = .{ .serve = .{
+        .build = build,
+        .port = s.specific.port orelse default_port,
+        .host = s.specific.host orelse default_host,
+        .reload = !s.specific.no_reload,
+    } } };
+}
+
+const NewSpecific = struct {
+    consumed: bool = false,
+    template: ?Template = null,
+
+    fn apply(self: *NewSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--platform")) {
+            const v = value orelse return needsValue(name, "<name>");
+            self.template = std.meta.stringToEnum(Template, v) orelse
+                return Usage.init("beni: new has templates for browser-tea and node, not '{s}'", .{v});
+            self.consumed = true;
+        }
+        return null;
+    }
+};
+
+fn parseNew(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    var s: Scanner(NewSpecific) = .{};
+    defer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| return .{ .usage = u };
+    if (s.positionals.items.len != 1) return .{ .usage = .init("beni: new needs exactly one directory", .{}) };
+    return .{ .command = .{ .new = .{
+        .template = s.specific.template orelse .@"browser-tea",
+        .dir = s.positionals.items[0],
     } } };
 }
 
@@ -775,9 +968,10 @@ pub fn stageResolvesImports(stage: Stage) bool {
 pub fn deinitCommand(gpa: Allocator, command: Command) void {
     switch (command) {
         .build => |c| gpa.free(c.paths),
+        .serve => |c| gpa.free(c.build.paths),
         .check => |c| gpa.free(c.paths),
         .fmt => |f| gpa.free(f.paths),
-        .dump, .version, .help => {},
+        .dump, .new, .version, .help => {},
     }
 }
 
@@ -1129,9 +1323,99 @@ test "--cache-build-id is check's and build's, hidden, and nobody else's" {
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release", "--library", "--cache-dir", "--no-cache" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release", "--library", "--cache-dir", "--no-cache", "new", "serve", "--watch", "--poll-interval", "--port", "--host", "--no-reload" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
+}
+
+fn expectCommandWith(expected: Command, args: []const [:0]const u8, defaults: Defaults) !void {
+    const result = try parseWith(testing.allocator, args, defaults);
+    switch (result) {
+        .command => |c| {
+            defer deinitCommand(testing.allocator, c);
+            try testing.expectEqualDeep(expected, c);
+        },
+        .usage => |u| {
+            std.debug.print("unexpected usage error: {s}\n", .{u.message()});
+            return error.TestUnexpectedResult;
+        },
+    }
+}
+
+test "a project's build defaults fill what the command line leaves out, field by field" {
+    const project: Defaults = .{ .platform = "browser-tea", .paths = &.{"src"}, .out = "dist" };
+    try expectCommandWith(
+        .{ .build = .{ .platform = "browser-tea", .out = "dist", .paths = &.{"src"} } },
+        &.{"build"},
+        project,
+    );
+    // The command line wins.
+    try expectCommandWith(
+        .{ .build = .{ .platform = "node", .out = "o", .paths = &.{"lib"} } },
+        &.{ "build", "--platform=node", "--out=o", "lib" },
+        project,
+    );
+    try expectCommandWith(
+        .{ .build = .{ .platform = "browser-tea", .out = "out", .paths = &.{"src"} } },
+        &.{"build"},
+        .{ .platform = "browser-tea", .paths = &.{"src"} },
+    );
+    // Without them, the messages are what they were.
+    try expectUsage("beni: build needs --platform=<name>", &.{"build"});
+    const no_paths = try parseWith(testing.allocator, &.{"build"}, .{ .platform = "node", .paths = &.{} });
+    try testing.expectEqualStrings("beni: build needs at least one path", no_paths.usage.message());
+}
+
+test "build --watch, and --poll-interval only with it" {
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .watch = true, .poll_interval_ms = 20, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--watch", "--poll-interval=20", "src" },
+    );
+    try expectUsage("beni: --poll-interval needs --watch", &.{ "build", "--platform=node", "--poll-interval=20", "src" });
+    try expectUsage("beni: invalid value '0' for --poll-interval (expected a positive number of milliseconds)", &.{ "build", "--watch", "--poll-interval=0", "src" });
+    try expectUsage("beni: option '--watch' does not take a value", &.{ "build", "--watch=1", "src" });
+    try expectUsage("beni: unknown option '--watch'; run 'beni help' for usage", &.{ "check", "--watch", "src" });
+}
+
+test "serve: build's flags with --watch implied, and its own" {
+    try expectCommand(
+        .{ .serve = .{ .build = .{ .platform = "browser", .watch = true, .paths = &.{"src"} } } },
+        &.{ "serve", "--platform=browser", "src" },
+    );
+    try expectCommand(
+        .{ .serve = .{
+            .build = .{ .platform = "browser", .watch = true, .release = true, .poll_interval_ms = 30, .out = "dist", .paths = &.{"src"} },
+            .port = 0,
+            .host = "::1",
+            .reload = false,
+        } },
+        &.{ "serve", "--port=0", "--host=::1", "--no-reload", "--release", "--poll-interval=30", "--out=dist", "--platform=browser", "src" },
+    );
+    try expectCommandWith(
+        .{ .serve = .{ .build = .{ .platform = "browser-tea", .watch = true, .paths = &.{"src"} } } },
+        &.{"serve"},
+        .{ .platform = "browser-tea", .paths = &.{"src"} },
+    );
+    try expectUsage("beni: serve needs --platform=<name>", &.{ "serve", "src" });
+    try expectUsage("beni: serve needs at least one path", &.{ "serve", "--platform=node" });
+    try expectUsage("beni: invalid value '70000' for --port (expected 0 to 65535)", &.{ "serve", "--port=70000", "src" });
+    try expectUsage("beni: option '--no-reload' does not take a value", &.{ "serve", "--no-reload=1", "src" });
+    try expectUsage("beni: unknown option '--port'; run 'beni help' for usage", &.{ "build", "--port=1", "src" });
+}
+
+test "new: one directory and a template" {
+    try expectCommand(.{ .new = .{ .dir = "app" } }, &.{ "new", "app" });
+    try expectCommand(.{ .new = .{ .template = .node, .dir = "cli" } }, &.{ "new", "--platform=node", "cli" });
+    try expectUsage("beni: new needs exactly one directory", &.{"new"});
+    try expectUsage("beni: new needs exactly one directory", &.{ "new", "a", "b" });
+    try expectUsage("beni: new has templates for browser-tea and node, not 'browser'", &.{ "new", "--platform=browser", "a" });
+}
+
+test "the project root is --root, before --" {
+    try testing.expectEqualStrings("app", rootArg(&.{ "build", "--root=app", "src" }).?);
+    try testing.expectEqual(@as(?[]const u8, null), rootArg(&.{ "build", "--", "--root=app" }));
+    try testing.expect(wantsProject(&.{"serve"}));
+    try testing.expect(!wantsProject(&.{ "check", "src" }));
 }
 
 test "--checker is gone with v1: an unknown option" {

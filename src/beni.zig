@@ -58,6 +58,11 @@ pub const js = struct {
 pub const build = struct {
     pub const Command = @import("build/Command.zig");
 };
+pub const devloop = struct {
+    pub const Watch = @import("devloop/Watch.zig");
+    pub const Serve = @import("devloop/Serve.zig");
+    pub const New = @import("devloop/New.zig");
+};
 pub const fmt = struct {
     pub const Format = @import("fmt/Format.zig");
     pub const Command = @import("fmt/Command.zig");
@@ -187,5 +192,6 @@ test {
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
     std.testing.refAllDecls(build);
+    std.testing.refAllDecls(devloop);
     std.testing.refAllDecls(render);
 }

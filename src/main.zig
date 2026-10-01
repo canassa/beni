@@ -25,6 +25,7 @@ const beni = @import("beni");
 const Cli = beni.Cli;
 const Session = beni.Session;
 const SourceStore = beni.SourceStore;
+const Manifest = beni.js.Manifest;
 
 pub fn main(init: std.process.Init) u8 {
     const gpa = init.gpa;
@@ -41,7 +42,20 @@ pub fn main(init: std.process.Init) u8 {
     defer stdout.flush() catch {};
 
     const args = init.minimal.args.toSlice(arena) catch return fail(stderr, "beni: out of memory", .{});
-    const parsed = Cli.parse(arena, if (args.len == 0) args else args[1..]) catch
+    const rest = if (args.len == 0) args else args[1..];
+    // `build` and `serve` take a project's `"build"` defaults from its
+    // `beni.json` (`frontend.md` §10.1), read where `Session` reads the app
+    // manifest: `--root`, else the working directory.
+    var defaults: Cli.Defaults = .{};
+    if (Cli.wantsProject(rest)) {
+        const root = Cli.rootArg(rest) orelse ".";
+        const manifest = Manifest.read(arena, io, root) catch |err| switch (err) {
+            error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+            else => return fail(stderr, "beni: cannot read '{s}': it is not a JSON object", .{Manifest.pathIn(arena, root)}),
+        };
+        if (manifest) |m| defaults = .{ .platform = m.build.platform, .paths = m.build.paths, .out = m.build.out };
+    }
+    const parsed = Cli.parseWith(arena, rest, defaults) catch
         return fail(stderr, "beni: out of memory", .{});
     const command = switch (parsed) {
         .command => |c| c,
@@ -61,7 +75,12 @@ pub fn main(init: std.process.Init) u8 {
             stdout.writeAll(Cli.usage) catch return 2;
             return 0;
         },
-        .build => |build| return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build),
+        .build => |build| {
+            if (build.watch) return beni.devloop.Watch.run(gpa, io, stdout, stderr, sessionOptions(build.common), build, null);
+            return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build);
+        },
+        .serve => |serve| return beni.devloop.Serve.run(gpa, io, stdout, stderr, sessionOptions(serve.build.common), serve),
+        .new => |new| return beni.devloop.New.run(io, stdout, stderr, new),
         .check => |check| return beni.check.Command.run(gpa, io, stdout, stderr, sessionOptions(check.common), check),
         .fmt => |fmt| {
             var options = sessionOptions(fmt.common);

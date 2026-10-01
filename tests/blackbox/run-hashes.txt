@@ -101,6 +101,9 @@ cache_test.test.a warm rebuild is a cold build: the custom eq and compare remove
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #0 91bf1ba53be853476b7d13e7de3ebf2c0b931cd24cd2b4c62cacf0f612ba8383
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 704065f7c35f9c5fb1f619ff332e5fcd844c2348397c1f734a68702fb6f67bba
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 a26f08c42aed68e052758d54766ce55adfa3f4fd06920292e6aeb6b7810952a3
+devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 7f36f84bb9fe6a15d7477128317e17e8f49569e97dbb23c75e3d6469fba0ecd5
+devloop_test.test.beni new --platform=node writes a program that runs #0 654019d93945cef87200ededcee0466ee0afc5e306791cb9a2d5481facf89703
+devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 a0de52f6df92021c75ea4ec1997cc8846d25a86344368f618548240e7a058129
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 8e61ac32b215076384879687fd52ffbe59be7d97d43b12d8cdd1b57176976be9
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 4725a5a602dc941de3d6722b5071e13060e3faacafdce312dd8cb22bf8a024de
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81

@@ -3,6 +3,7 @@
   "name": "browser",
   "program": "Browser.Program",
   "runtime": "runtime.js",
+  "html": "index.html",
   "platforms": ["html"],
   "reexports": ["Html"],
   "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" },
