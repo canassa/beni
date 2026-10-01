@@ -19,6 +19,7 @@ const testing = std.testing;
 const world = @import("world.zig");
 const World = world.World;
 const browser = @import("browser.zig");
+const Io = std.Io;
 
 /// A button whose message `update` cannot handle: clicking it throws.
 const button =
@@ -60,6 +61,12 @@ const loaded =
 /// repository root, with `BENI_RUN_HASHES=<mode>` ("" to check), writing
 /// its counts into `counts/`.
 fn walker(w: *World, mode: []const u8) !world.Result {
+    return walkerIn(w, mode, .inherit);
+}
+
+/// `walker` from `root` instead of the repository root: where the walker
+/// finds the driver, the DOM and the `page` platform.
+fn walkerIn(w: *World, mode: []const u8, root: std.process.Child.Cwd) !world.Result {
     const arena = w.arena.allocator();
     const project = try w.projectPath();
     var env = std.process.Environ.Map.init(arena);
@@ -71,7 +78,7 @@ fn walker(w: *World, mode: []const u8) !world.Result {
     try env.put("BENI_RUN_HASHES", mode);
     try env.put("BENI_RUN_HASH_REPORT", try std.fmt.allocPrint(arena, "{s}/counts", .{project}));
     const argv = try arena.dupe([]const u8, &.{try testing.environ.getAlloc(arena, "BENI_CORPUS_TEST_EXE")});
-    return world.spawnAndCaptureIn(arena, w.io, argv, .inherit, world.default_timeout_ms, &env);
+    return world.spawnAndCaptureIn(arena, w.io, argv, root, world.default_timeout_ms, &env);
 }
 
 fn expectExit(want: u8, r: world.Result) !void {
@@ -272,6 +279,50 @@ test "a browser page whose run hash is recorded is not loaded again" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // Checking never writes a record.
+    try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
+}
+
+test "a page recorded in one checkout is not loaded again in a checkout at another path" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The same corpus, recorded from the repository root, then checked
+    // from a second checkout: another directory holding the same driver,
+    // DOM and `page` platform. The platform is copied, not linked, so its
+    // absolute path is the second checkout's. Nothing the page runs
+    // differs, so neither may its output tree nor its record.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const record = try recordButton(&w, "# Nothing is clicked.\n");
+    var checkout = try World.init(testing.allocator, testing.io);
+    defer checkout.deinit();
+    const arena = w.arena.allocator();
+    for ([_][]const u8{ browser.driver_path, browser.dom_path }) |path| {
+        try checkout.symlink(try Io.Dir.cwd().realPathFileAlloc(testing.io, path, arena), path);
+    }
+    var platform = try Io.Dir.cwd().openDir(testing.io, browser.platform_path, .{ .iterate = true });
+    defer platform.close(testing.io);
+    var files = platform.iterate();
+    while (try files.next(testing.io)) |entry| {
+        const from = try std.fs.path.join(arena, &.{ browser.platform_path, entry.name });
+        try checkout.write(from, try Io.Dir.cwd().readFileAlloc(testing.io, from, arena, .limited(world.max_stream_bytes)));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walkerIn(&w, "", .{ .dir = checkout.tmp.dir });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, r);
+    // Both builds skipped: the second checkout built the same bytes.
+    try expectCounts(&w, 2, 0, 0, 0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
 }
 

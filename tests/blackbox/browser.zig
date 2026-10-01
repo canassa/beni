@@ -64,14 +64,28 @@ pub const dom_sha256 = "7e09361e2353bc4bb2766b7b39754466aa37b40157c31c94cf4422bb
 /// The platform a fixture without a `platform/` directory is built for.
 pub const platform_path = "tests/platforms/page";
 
+/// Where a fixture's project holds its copy of `platform_path`'s files.
+///
+/// **Copied, never named by its path in the repository.** A development
+/// build's source maps name each `.beni` file by its path from the map
+/// (`backend.md` §11.1), and the project lives under `/dev/shm` or
+/// `.zig-cache/tmp`, so a platform named at its place in the checkout put
+/// the checkout's absolute path into `_platform/Page.mjs.map` — and into
+/// the run hash, which then differed between the main checkout and every
+/// worktree. In the project, the map says `../platform/Page.beni`
+/// wherever the repository is.
+pub const platform_dir = "platform";
+
 /// The harness's files, resolved once per process from the working
 /// directory, which is the repository root in every run the build makes.
 pub const Harness = struct {
-    /// Absolute paths, for a driver and a compiler that run in a test's
-    /// project directory.
+    /// Absolute paths, for a driver that runs in a test's project
+    /// directory.
     driver: []const u8,
     dom: []const u8,
-    platform: []const u8,
+    /// `platform_path`'s files, each named by its path inside it, for a
+    /// fixture to copy into `platform_dir`.
+    platform: []const run_hash.Page.Input,
     driver_bytes: []const u8,
 };
 
@@ -101,10 +115,32 @@ pub fn harness(io: Io) !Harness {
     harness_value = .{
         .driver = try Io.Dir.cwd().realPathFileAlloc(io, driver_path, gpa),
         .dom = try Io.Dir.cwd().realPathFileAlloc(io, dom_path, gpa),
-        .platform = try Io.Dir.cwd().realPathFileAlloc(io, platform_path, gpa),
+        .platform = try readPlatform(io, gpa),
         .driver_bytes = try Io.Dir.cwd().readFileAlloc(io, driver_path, gpa, .limited(world.max_stream_bytes)),
     };
     return harness_value.?;
+}
+
+/// Every file under `platform_path`, with its path inside it.
+fn readPlatform(io: Io, gpa: Allocator) ![]const run_hash.Page.Input {
+    var dir = try Io.Dir.cwd().openDir(io, platform_path, .{ .iterate = true });
+    defer dir.close(io);
+    var walker = try dir.walk(gpa);
+    defer walker.deinit();
+    var files: std.ArrayList(run_hash.Page.Input) = .empty;
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        try files.append(gpa, .{
+            .name = try gpa.dupe(u8, entry.path),
+            .bytes = try dir.readFileAlloc(io, entry.path, gpa, .limited(world.max_stream_bytes)),
+        });
+    }
+    return files.toOwnedSlice(gpa);
+}
+
+/// Write the `page` platform into `w`'s project as `platform_dir`.
+pub fn writePlatform(arena: Allocator, w: *World, h: Harness) !void {
+    for (h.platform) |file| try w.write(try std.fs.path.join(arena, &.{ platform_dir, file.name }), file.bytes);
 }
 
 /// What a browser build's record line covers besides the output tree and

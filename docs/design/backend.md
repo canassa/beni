@@ -6268,7 +6268,11 @@ element that opens it, and the walk the lowering invents between them to the mar
 **Determinism** (rule 5): the map is a function of the printed bytes, the marks (in print order)
 and the source; `names` is numbered in first-use order; nothing reads thread timing. The only input
 outside the build's arguments is the working directory, and it enters only as the common prefix
-the relative URL cancels.
+the relative URL cancels. That holds while the arguments are relative to it: an absolute one (a
+`--platform=/…/page`) does not cancel, and a map names that file by its path from the output
+tree, so moving the project relative to it changes the map — correctly, since the path is one the
+developer can open. A test that hashes an output tree therefore keeps every disk source inside its
+project (the `browser/` harness copies the `page` platform in, `tests/blackbox/browser.zig`).
 
 **Cost**, measured 2026-10-01 on `zig build bench -- --generate=100000` (624 files, 100 159 lines,
 one core, ReleaseFast): the `emit` line 34–37 ms without maps; the new `emit+maps` line, which

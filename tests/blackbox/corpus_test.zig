@@ -1827,8 +1827,10 @@ const Case = struct {
             "--platform=platform"
         else if (c.fixture.platform) |name|
             try std.fmt.allocPrint(c.arena, "--platform={s}", .{name})
-        else
-            try std.fmt.allocPrint(c.arena, "--platform={s}", .{h.platform});
+        else blk: {
+            try browser.writePlatform(c.arena, c.w, h);
+            break :blk "--platform=" ++ browser.platform_dir;
+        };
         const sources = try c.writeSources();
 
         // The steps, copied into the project under the name the driver
