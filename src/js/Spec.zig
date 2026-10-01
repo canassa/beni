@@ -213,7 +213,12 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     }
     s.list_mode = .self_assign;
     _ = try s.eachFunctionList();
-    try s.releaseKeeps();
+    // A binding no longer kept may have held a parameter's last read
+    // (`deadReads`): the facts once more, so that the parameter goes.
+    if (try s.releaseKeeps()) {
+        try s.grow();
+        try s.rounds();
+    }
     try s.finish();
 }
 
@@ -412,6 +417,10 @@ const Spec = struct {
     /// declares (`addGlobal`).
     globals: u32,
     params: std.ArrayList(Lat) = .empty,
+    /// Per parameter, as `params`: some call passes it an argument whose
+    /// evaluation may do something (`effectFree`), so a parameter no body
+    /// reads keeps its place and the argument.
+    arg_effect: std.ArrayList(bool) = .empty,
     lits: std.ArrayList(Lit) = .empty,
     lit_ids: std.StringHashMapUnmanaged(u32) = .empty,
     key: std.ArrayList(u8) = .empty,
@@ -713,6 +722,7 @@ const Spec = struct {
         @memset(s.assigned, false);
         @memset(s.reads, 0);
         s.params.clearRetainingCapacity();
+        s.arg_effect.clearRetainingCapacity();
         s.prop_lat.clearRetainingCapacity();
         s.ret_lat.clearRetainingCapacity();
         s.decided_conds.clearRetainingCapacity();
@@ -755,6 +765,7 @@ const Spec = struct {
                     decl.params = @intCast(s.params.items.len);
                     decl.arity = f.params().len();
                     try s.params.appendNTimes(s.arena, .bot, decl.arity);
+                    try s.arg_effect.appendNTimes(s.arena, false, decl.arity);
                 }
                 s.decl[g] = decl;
             }
@@ -1537,10 +1548,23 @@ const Spec = struct {
             return;
         }
         for (args, 0..) |a, i| {
+            // Asked of the first sweep, which walks every call: the answer
+            // is the IR's and fact 3's, which no later sweep moves.
+            if (s.counting and !s.arg_effect.items[decl.params + i] and !try s.effectFree(m, a)) s.arg_effect.items[decl.params + i] = true;
             // A parameter is read by its own declaration alone.
             if (s.joinInto(&s.params.items[decl.params + i], m.memo[a.int()]) and decl.index < s.w_dirty.bit_length)
                 s.w_dirty.set(decl.index);
         }
+    }
+
+    /// Whether evaluating argument `a` can do nothing but make its value, so
+    /// that it may go with the parameter it is passed to: `inert`, or a
+    /// name or a chain of reads through objects the program made, none of
+    /// which may run a getter or throw (`Pts.safeChain`).
+    fn effectFree(s: *Spec, m: *Mod, a: Index) Allocator.Error!bool {
+        if (inert(m.ir, a)) return true;
+        if (!s.pts.ok) return false;
+        return try s.pts.safeChain(m.index, s.cur_top, a) != null;
     }
 
     /// Facts 5 and 6: whether `left === right`, from what each side may be,
@@ -1813,6 +1837,15 @@ const Spec = struct {
         // Which parameters go: a constant the substitution rule allows.
         const drop = try s.arena.alloc(bool, s.params.items.len);
         @memset(drop, false);
+        const quiet = try s.arena.alloc(bool, s.params.items.len);
+        @memset(quiet, false);
+        // The initialisers of the dead bindings that held a dropped
+        // parameter's only reads (`deadReads`), written `undefined`.
+        var dead_inits: std.ArrayList(DeadInit) = .empty;
+        var candidates: std.ArrayList(DeadInit) = .empty;
+        var dead_counts: std.ArrayList(u32) = .empty;
+        const kept_bits = try s.arena.alloc(?std.DynamicBitSetUnmanaged, s.mods.len);
+        @memset(kept_bits, null);
         for (s.decl, 0..) |maybe, g| {
             const decl = maybe orelse continue;
             if (decl.func == null or s.escaped[g]) continue;
@@ -1822,15 +1855,46 @@ const Spec = struct {
             // assigned.
             s.current += 1;
             try s.count(m, decl.stmt);
+            // `deadReads`, walked once per function when some parameter
+            // asks.
+            var dead_walked = false;
             for (m.ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
                 const v = s.params.items[decl.params + i];
-                if (v.state != .lit) continue;
                 const at = n.unwrap() orelse continue;
                 if (m.decls[at] != 1 or m.assigned[at]) continue;
-                if (!substitutes(s.litOf(v), m.uses[at])) continue;
-                // A name is written only where the module has it.
-                if (s.litOf(v).kind == .name and try s.nameIn(m, nameId(s.litOf(v))) == null) continue;
-                drop[decl.params + i] = true;
+                if (v.state == .lit and substitutes(s.litOf(v), m.uses[at]) and
+                    (s.litOf(v).kind != .name or try s.nameIn(m, nameId(s.litOf(v))) != null))
+                {
+                    drop[decl.params + i] = true;
+                    continue;
+                }
+                // A parameter nothing reads goes whatever it is passed, when
+                // every call is seen and no argument for it does anything —
+                // a read in the initialiser of a binding that is itself
+                // read by nothing, and does nothing, counts as none. It
+                // asks for no round of its own (`quiet`): what it exposes
+                // the next round finds, whichever asks for it.
+                if (v.state != .bot and !s.arg_effect.items[decl.params + i]) {
+                    if (m.uses[at] == 0) {
+                        drop[decl.params + i] = true;
+                        quiet[decl.params + i] = true;
+                        continue;
+                    }
+                    if (!dead_walked) {
+                        dead_walked = true;
+                        if (kept_bits[m.index] == null) {
+                            var bits: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
+                            if (m.tables) |t| for (t.keep.items) |k| if (k.int() < bits.bit_length) bits.set(k.int());
+                            kept_bits[m.index] = bits;
+                        }
+                        try s.deadReads(m, decl, kept_bits[m.index].?, &dead_counts, &candidates);
+                    }
+                    if (dead_counts.items[i] == m.uses[at]) {
+                        for (candidates.items) |c| if (c.param == i) try dead_inits.append(s.arena, c);
+                        drop[decl.params + i] = true;
+                        continue;
+                    }
+                }
             }
         }
 
@@ -1886,6 +1950,12 @@ const Spec = struct {
                 }
             }
         }
+        for (dead_inits.items) |dead| {
+            const m = &s.mods[dead.module];
+            m.setNode(dead.init, .undefined_lit, 0, 0);
+            m.lit_of[dead.init.int()] = none;
+            any = true;
+        }
         // Parameters and arguments.
         for (s.decl) |maybe| {
             const decl = maybe orelse continue;
@@ -1901,7 +1971,9 @@ const Spec = struct {
             m.changed();
             m.extra.items[at] = start;
             m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
-            any = true;
+            for (flags, quiet[decl.params..][0..decl.arity]) |gone, q| {
+                if (gone and !q) any = true;
+            }
         }
         // Every call of such a function the patched program still makes. Found
         // by walking it again rather than from the analysis's list: a folded
@@ -1909,6 +1981,57 @@ const Spec = struct {
         // one that is reached.
         for (s.mods) |*m| try s.rewriteCalls(m, drop);
         return any;
+    }
+
+    const DeadInit = struct { module: u32, init: Index, param: u32 };
+
+    /// Per parameter of `decl`'s function, into `counts`, how many of its
+    /// reads stand in the initialiser of a dead binding: a `const` or `let`
+    /// that the counts `count` just made say nothing reads or assigns, that
+    /// lowering does not keep for an effect (`kept`, `Tables.keep` after
+    /// `releaseKeeps`), and whose initialiser does nothing (`effectFree`) —
+    /// so `Opt` drops it whole, and the reads in it are reads of nothing.
+    /// Each such initialiser is appended to `out` once per parameter it
+    /// reads.
+    fn deadReads(s: *Spec, m: *Mod, decl: Decl, kept: std.DynamicBitSetUnmanaged, counts: *std.ArrayList(u32), out: *std.ArrayList(DeadInit)) Allocator.Error!void {
+        const ir = m.ir;
+        const params = ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).params(), NameIndex);
+        counts.clearRetainingCapacity();
+        try counts.appendNTimes(s.arena, 0, params.len);
+        out.clearRetainingCapacity();
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        s.cur_top = decl.stmt;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        var reads = try s.takeStack();
+        defer s.giveStack(&reads);
+        try stack.appendSlice(s.arena, ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).body(), Index));
+        while (stack.pop()) |node| {
+            const tag = ir.tag(node);
+            if (tag == .const_decl or tag == .let_decl) dead: {
+                const b = @as(NameIndex, @enumFromInt(ir.data(node).lhs)).unwrap() orelse break :dead;
+                if (b >= m.stamp.len or m.stamp[b] != s.current or m.uses[b] != 0 or m.assigned[b]) break :dead;
+                const value = @as(Node.OptionalIndex, @enumFromInt(ir.data(node).rhs)).unwrap() orelse break :dead;
+                if (node.int() < kept.bit_length and kept.isSet(node.int())) break :dead;
+                if (value.int() >= s.pts.vals[m.index].len or !try s.effectFree(m, value)) break :dead;
+                const first = out.items.len;
+                reads.clearRetainingCapacity();
+                try reads.append(s.arena, value);
+                while (reads.pop()) |r| {
+                    if (ir.tag(r) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(ir.data(r).lhs))) |p| {
+                        counts.items[p] += 1;
+                        const seen = for (out.items[first..]) |o| {
+                            if (o.param == p) break true;
+                        } else false;
+                        if (!seen) try out.append(s.arena, .{ .module = m.index, .init = value, .param = @intCast(p) });
+                    };
+                    try pushChildren(s.arena, ir, r, &reads);
+                }
+                continue;
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
     }
 
     /// Drop the arguments of the dropped parameters from every call `m`
@@ -2647,8 +2770,10 @@ const Spec = struct {
     /// A binding lowering kept for what its initialiser might do, whose
     /// initialiser the facts folded to something that does nothing (a
     /// literal, a name): kept no more, so the optimiser drops it when
-    /// nothing reads it.
-    fn releaseKeeps(s: *Spec) Allocator.Error!void {
+    /// nothing reads it. True when one released is a read through a local,
+    /// which may be a parameter's last read (`deadReads`).
+    fn releaseKeeps(s: *Spec) Allocator.Error!bool {
+        var released = false;
         for (s.mods) |*m| {
             const t = m.tables orelse continue;
             // Slice 8: a read through program objects does nothing either
@@ -2689,7 +2814,14 @@ const Spec = struct {
                     if (top_of.len != 0 and m.ir.tag(v) == .member and node.int() < nodes and v.int() < s.pts.vals[m.index].len) {
                         // A binding no walk reached is in no top: kept.
                         const top = top_of[node.int()];
-                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) continue;
+                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) {
+                            // A read of a local — a parameter, maybe — that
+                            // nothing may need now (`run`).
+                            var base = v;
+                            while (m.ir.tag(base) == .member) base = @enumFromInt(m.ir.data(base).lhs);
+                            if (m.ir.tag(base) == .ident and m.globalOf(@enumFromInt(m.ir.data(base).lhs)) == null) released = true;
+                            continue;
+                        }
                     }
                 }
                 t.keep.items[kept] = node;
@@ -2697,6 +2829,7 @@ const Spec = struct {
             }
             t.keep.shrinkRetainingCapacity(kept);
         }
+        return released;
     }
 
     // ---- Slice 7: scalar replacement --------------------------------------

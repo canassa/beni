@@ -1,0 +1,34 @@
+-- Whole-program specialisation drops a parameter nothing reads (`backend.md`
+-- §9, *Whole-program specialisation*, amended 2026-10-02) only when no
+-- argument for it does anything, so both builds print the same lines in the
+-- same order: `banner`'s `Config` goes with its name and literal arguments;
+-- `framed`'s stays, since one call passes it `Debug.log`'s result, which is
+-- logged before the line it is passed to is made.
+import Node exposing (Program)
+
+
+type alias Config =
+    title : String
+    width : Int
+
+
+settings : Config
+settings = { title = "unused", width = 3 }
+
+
+banner : Config, String -> String
+banner config name = "[ ${name} | ${String.fromInt (String.length name)} | ${String.toUpper name} ]"
+
+
+framed : Config, String -> String
+framed config name = "( ${name} | ${String.fromInt (String.length name)} | ${String.toLower name} )"
+
+
+main : Program
+main =
+    Node.printLines
+        [ banner settings "a"
+        , banner { title = "lit", width = 1 } "bb"
+        , framed settings "C"
+        , framed (Debug.log "passed" settings) "DD"
+        ]

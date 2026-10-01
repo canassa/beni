@@ -17,7 +17,10 @@
 -- itself and `patch` returns the instance it is given (§9, *definite
 -- initialisation*); the body `run` hands `mount` is past its guard, so a
 -- slot's `p` is never `null`, `parentOf` is the read and the slot's `m`
--- goes (*fact 5 past a guard*) — and what the page calls from one place is
+-- goes (*fact 5 past a guard*); `mount` reads its program only for the
+-- model nothing reads now, so the parameter, its argument and the mount
+-- record's field go (*a parameter nothing reads*) — and what the page
+-- calls from one place is
 -- written there: `slot` and `parentOf` in their callers, `drop` at the end
 -- of `swap`, and `template`, called once at this module's top level, is its
 -- cell beside the kind that clones it.

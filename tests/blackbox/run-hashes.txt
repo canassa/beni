@@ -42,7 +42,7 @@ build_test.test.a concrete foreign constant is allowed, because core's own `pi` 
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 4207fe5c384229feb7615ce845b77626c7ba4fabe33084e7461423d2d6c97ea0
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 d21891b4411feeca3433c1dd6d0367a0f30236ba37185f39749b37c4c98f0129
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 8d1309072f1bc7920791bfd0fb06c05f9ec8385ed76cc231431ddbf64a80f5c2
-build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 03751c60832edf9c0dabf0c0c625080e50aad6a2f5a1ba18232e9a6f42b91741
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 2cbf4bc0fbf3d4f096fa4e4ffcc0f9171d7efe75500e3b0795cab8f37dcb539b
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 0f070978c4bb531c95339ddc6c46be6a70ddb27a7919ec12a813d7da84895a6a
 build_test.test.a non-zero exit code from the platform reaches the process #0 28d05da57481a4660b58f74e3d2cd73a99319811660dbfeb7ffe40d1ac3ec9bc
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 e76b3aec8766ee907335d02c60c8707507933f6984f9bfbc312becb72c064f02

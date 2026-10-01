@@ -1,0 +1,46 @@
+-- emit: whole-program specialisation, a parameter nothing reads
+-- (`backend.md` §9, *Whole-program specialisation*, amended 2026-10-02):
+--
+--   * `banner` never reads its `Config`, and every call is seen and passes
+--     a name or a record literal, which do nothing: the parameter goes, and
+--     so does every argument for it;
+--   * `framed` never reads its `Config` either, but one call passes it
+--     `nth 2`'s result — a call, which may do something — so the parameter
+--     stays, and every call keeps its argument.
+import Node exposing (Program)
+
+
+type alias Config =
+    title : String
+    width : Int
+
+
+settings : Config
+settings = { title = "unused", width = 3 }
+
+
+banner : Config, String -> String
+banner config name = "[ ${name} | ${String.fromInt (String.length name)} | ${String.toUpper name} ]"
+
+
+framed : Config, String -> String
+framed config name = "( ${name} | ${String.fromInt (String.length name)} | ${String.toLower name} )"
+
+
+nth : Int -> Config
+nth n =
+    if n <= 0 then
+        settings
+    else
+        nth (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ banner settings "a"
+        , banner settings "bb"
+        , banner { title = "lit", width = 1 } "ccc"
+        , framed settings "D"
+        , framed (nth 2) "EE"
+        ]

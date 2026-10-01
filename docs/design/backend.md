@@ -5643,6 +5643,39 @@ Fixtures: `emit/release/app/SpecStatements` (`stop` twice and gone, `set n` with
 `bump` called nine times and kept, `raise` stored for the host and kept), `run/SpecializeStatements`
 (the same; both builds print the same lines).
 
+*Amended 2026-10-02: a parameter nothing reads* (`plans/runtime-in-beni.md`, *The empty page's
+last items*). Fact 1 drops a parameter whose every call passes one literal; a parameter whose value
+nothing uses goes the same way whatever it is passed. A parameter of a top-level function every call
+of which is seen (fact 1's condition: the name is never used but as a callee, with its arity) goes
+from the function and from every call when nothing in the body reads or assigns it and **every
+argument for it does nothing** (`effectFree`: an inert expression — a literal, a name, a function,
+an object or array of those — or a read through objects the program made that can run no getter and
+throw nothing, `Pts.safeChain`); an argument that may do something keeps the parameter, so no
+evaluation is lost or moved. A read that stands in the initialiser of a **dead binding** counts as no
+read (`deadReads`): a `const` or `let` that nothing reads or assigns, that lowering does not keep
+for an effect, and whose initialiser does nothing — `Opt` drops it whole — whose initialiser is then
+written `undefined`, so no read of the parameter is left. The pass takes this in every round, but
+such a drop asks for no round of its own — what it exposes the next round finds, whichever asks —
+since the extra rounds it asked for cost a `--schema-library` release build a third more analyses.
+The model binding of `mount` (`let e = a.init`) is dead only once its self-assignment is gone and
+its read is released (*Amended 2026-10-03*, above), so when releasing a binding frees a read
+through a local, the facts are asked once more after it. On the empty page `mount`'s program
+parameter goes, with `run`'s `b.a` argument and the mount record's `a` (`[{}]`). Measured (release,
+brotli, the whole bundle): the empty `browser` page and `Tea.sandbox` 466 → **450**, `Tea.element`
+1 232 → 1 223, with effects 5 316 → 5 311, `random` 1 997 → 1 962; `bench/size.mjs` −358 over its 367
+lines (38 smaller, 17 larger, the largest `run/SchemaDeclModules` +22 with fewer raw bytes, and
+`run/UnitSubPattern` +13 and `run/ConstantMethodCall` +11: a call made shorter by its dropped
+argument is no longer written in by slice 8's per-call size model); the 52 `browser/` pages −243
+(22 smaller, 5 larger by 1–6); the `bench/ui` app byte-identical. Dropping the parameter only in a
+last round, after the inlining passes, avoided those two and was measured smaller on fewer programs
+(−304 and −67), so it was not taken. **Cost**: the specialised program is cheaper to make smaller
+still — `run/SchemaDeclRecords`, whose four builds include a release build of the whole schema
+engine, takes 3 670 → 4 059 million instructions (the budget is 4 300), nearly all of it in the
+passes after the drops (asking `effectFree` and walking for dead reads cost 45 million). Fixtures:
+`emit/release/app/SpecUnreadParams` (a parameter passed names and literals goes; one passed a call
+stays), `run/SpecializeUnreadParams` (one passed `Debug.log`'s result stays, and the line is logged
+where it was), `emit/release/app/OneLine`, `SpecScalars`, `emit/release/split/EmptyPage`.
+
 **Slice 9 — constructor folding** (*added 2026-10-03*; `plans/runtime-in-beni.md`'s *Append
 against Solid 1*: a page that reads a list with `List.get` then `Maybe.withDefault` made a `Just`
 per read, most of the cold loop's cost). A value a small function makes, that another small
