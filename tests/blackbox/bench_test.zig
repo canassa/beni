@@ -358,14 +358,20 @@ test "bench/size.mjs builds a root that declares no main behind a synthesised en
     // └─────────────────────────────────────────┘
     if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
     var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
-    _ = it.next(); // the floor
+    const floor = try parseJson(SizeFloor, arena, it.next() orelse return error.NoFloorLine);
     const program = try parseJson(SizeSynthesised, arena, it.next() orelse return error.NoProgramLine);
     try testing.expectEqualStrings("BenchMain (synthesised)", program.entry);
     try testing.expectEqual(@as(u32, 1), program.modules_measured);
     try testing.expectEqual(@as(usize, 0), program.modules_excluded.len);
-    // The module really is in the output, not merely imported and dropped:
-    // there is no DCE, so an import is enough (§11).
-    try testing.expect(program.net_raw_bytes > 0);
+    // The module really is in the output, not merely imported and dropped —
+    // counted in files, not net bytes. The floor is a PROGRAM build and ships
+    // the entry file `_main.mjs`, which a `--library` build never writes
+    // (backend.md §2), and `Alpha.mjs`, one arithmetic line now that `*` is
+    // emitted inline rather than reaching `_core/Basics`, is smaller than that
+    // file: `net_raw_bytes` is negative here and says nothing about `Alpha`.
+    // The floor's tree is `Empty.mjs`, `_main.mjs` and the platform's files;
+    // this one is `BenchMain.mjs`, `Alpha.mjs` and the same platform files.
+    try testing.expectEqual(floor.files, program.files);
 }
 
 test "bench/size.mjs builds a program in a subdirectory as a project with its own modules" {
@@ -530,7 +536,7 @@ const SizeSynthesised = struct {
     entry: []const u8,
     modules_measured: u32,
     modules_excluded: []const []const u8,
-    net_raw_bytes: i64,
+    files: u32,
 };
 
 /// The `{"total":…}` line. Every figure names its ARITHMETIC: `floor_once_*`
