@@ -452,6 +452,10 @@ const Spec = struct {
     only_fewer: bool = false,
     /// Counts the rewrites, from 1 (`Mod.occ_rewrite`).
     rewrite_epoch: u32 = 0,
+    /// The locals a guard the walk has passed proves are neither `null` nor
+    /// `undefined` (`guardNames`), for the rest of the statement list that
+    /// holds the guard.
+    narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
     list_mode: enum { scalars, constructors, self_assign } = .scalars,
     /// Slice 9: `smallTable`, for the pass in progress.
@@ -1108,7 +1112,14 @@ const Spec = struct {
                     if (m.decls[i] == 1 and !m.assigned[i]) m.value[i] = v;
                 };
             },
-            .func_decl, .gen_decl => try s.evalFunc(m, mi, @enumFromInt(d.rhs), stmt),
+            // A declaration is hoisted: its body may run before any guard
+            // the list has passed, so it sees none.
+            .func_decl, .gen_decl => {
+                const saved = s.narrow;
+                s.narrow = .empty;
+                defer s.narrow = saved;
+                try s.evalFunc(m, mi, @enumFromInt(d.rhs), stmt);
+            },
             .assign_stmt => {
                 const target: Index = @enumFromInt(d.lhs);
                 if (ir.tag(target) != .ident) _ = try s.eval(m, mi, target);
@@ -1161,7 +1172,79 @@ const Spec = struct {
     }
 
     fn evalList(s: *Spec, m: *Mod, mi: u32, range: JsIr.SubRange) Allocator.Error!void {
-        for (m.ir.extraSlice(range, Index)) |stmt| try s.evalStmt(m, mi, stmt);
+        const base = s.narrow.items.len;
+        defer s.narrow.shrinkRetainingCapacity(base);
+        for (m.ir.extraSlice(range, Index)) |stmt| {
+            try s.evalStmt(m, mi, stmt);
+            if (m.ir.tag(stmt) == .if_stmt) try s.guardNames(m, stmt);
+        }
+    }
+
+    /// Fact 5 past a guard: `if (T) …` whose first arm cannot complete
+    /// normally (it ends in a `throw`, `return`, `break` or `continue`) is
+    /// followed by the rest of its list only when `T` was false — so every
+    /// disjunct of `T`'s top-level `||` chain was evaluated, and was false,
+    /// without throwing. A local `X` is then neither `null` nor `undefined`
+    /// for the rest of the list when some disjunct is `X == null`, or when
+    /// some disjunct reads a property of `X` wherever it is evaluated (not
+    /// in the right side of `&&`, `||` or a conditional's arms, nor in a
+    /// function): that read would have thrown. `nameValue` reads what this
+    /// pushes, and only for a name declared once that nothing assigns, so
+    /// the value it saw is the value every later read sees.
+    fn guardNames(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!void {
+        const ir = m.ir;
+        const branches = ir.extraData(@enumFromInt(ir.data(stmt).rhs), JsIr.If);
+        const then = ir.extraSlice(branches.thenBody(), Index);
+        if (then.len == 0) return;
+        switch (ir.tag(then[then.len - 1])) {
+            .throw_stmt, .return_stmt, .break_stmt, .continue_stmt => {},
+            else => return,
+        }
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        var disjuncts = try s.takeStack();
+        defer s.giveStack(&disjuncts);
+        try disjuncts.append(s.arena, @enumFromInt(ir.data(stmt).lhs));
+        while (disjuncts.pop()) |dj| {
+            if (ir.tag(dj) == .binary and @as(JsIr.BinaryOp, @enumFromInt(ir.data(dj).rhs)) == .logical_or) {
+                const b = ir.extraData(@enumFromInt(ir.data(dj).lhs), JsIr.Binary);
+                try disjuncts.appendSlice(s.arena, &.{ b.right, b.left });
+                continue;
+            }
+            if (nullTest(ir, dj)) |t| if (t.loose and t.null_in_then and ir.tag(t.chain) == .ident) {
+                try s.narrowName(m, @enumFromInt(ir.data(t.chain).lhs));
+            };
+            // What this disjunct evaluated, whatever its value.
+            stack.clearRetainingCapacity();
+            try stack.append(s.arena, dj);
+            while (stack.pop()) |node| {
+                const d = ir.data(node);
+                switch (ir.tag(node)) {
+                    .member, .index_get => {
+                        const object: Index = @enumFromInt(d.lhs);
+                        if (ir.tag(object) == .ident) try s.narrowName(m, @enumFromInt(ir.data(object).lhs));
+                    },
+                    .binary => switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+                        .logical_and, .logical_or => {
+                            try stack.append(s.arena, ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
+                            continue;
+                        },
+                        else => {},
+                    },
+                    .cond => {
+                        try stack.append(s.arena, @enumFromInt(d.lhs));
+                        continue;
+                    },
+                    else => {},
+                }
+                try ir.pushOperands(s.arena, &stack, node);
+            }
+        }
+    }
+
+    fn narrowName(s: *Spec, m: *Mod, n: NameIndex) Allocator.Error!void {
+        if (m.globalOf(n) != null or n.unwrap() == null) return;
+        try s.narrow.append(s.arena, n);
     }
 
     /// A function's body, `node` the arrow or the declaration: what its
@@ -1553,13 +1636,15 @@ const Spec = struct {
         const i = n.unwrap() orelse return .top;
         if (i >= m.stamp.len or m.stamp[i] != s.current) return .top;
         if (m.decls[i] != 1 or m.assigned[i]) return .top;
-        if (m.param[i] != none) {
-            const f = s.top_func orelse return .top;
+        const v = if (m.param[i] != none) param: {
+            const f = s.top_func orelse break :param Lat.top;
             try s.readsName(s.globalOfDecl(f));
-            if (s.escaped[s.globalOfDecl(f)]) return .top;
-            return s.params.items[f.params + m.param[i]];
-        }
-        return m.value[i];
+            if (s.escaped[s.globalOfDecl(f)]) break :param Lat.top;
+            break :param s.params.items[f.params + m.param[i]];
+        } else m.value[i];
+        // Past a guard that proves it (`guardNames`).
+        if (v.state == .top and std.mem.indexOfScalar(NameIndex, s.narrow.items, n) != null) return .nonnull;
+        return v;
     }
 
     fn globalOfDecl(s: *Spec, d: Decl) u32 {

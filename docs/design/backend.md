@@ -5469,6 +5469,29 @@ module's one block with an instance's `b`, which `unit` writes right after the k
 instance — but a flow-insensitive analysis sees the instance before that write, where `b` is still
 `undefined`.
 
+**Amended 2026-10-02: fact 5 past a guard** (`Spec.guardNames`; `plans/runtime-in-beni.md`, *The
+empty page's last items*). Fact 3's guard narrows what an object chain *points to* inside a
+branch; fact 5 learns the same of a local's *value* after one. A statement `if (T) …` whose first
+arm cannot complete normally — its last statement a `throw`, a `return`, a `break` or a `continue`
+— is followed by the rest of its list only when `T` was false. Then every disjunct of `T`'s
+top-level `||` chain was evaluated, was false, and did not throw, so a local `X` is *nonnull* for
+the rest of that list (and inside what the rest makes, closures included) when some disjunct is
+`X == null`, or when some disjunct reads a property of `X` (`X.p`, `X[k]`) where it is evaluated
+whenever the disjunct is — not in the right side of an `&&` or `||`, not in a conditional's arms,
+not in a function. `X === null` alone proves nothing: `X` may be `undefined`. The local must be
+declared once and assigned nowhere in its declaration, so the value the guard saw is the one every
+later read sees, and a `function` declared in the rest sees no guard, since it is hoisted above
+it. What it buys is what fact 5 already spends: a parameter every call passes such a local is
+nonnull (fact 1), and so is a field every write gives it (fact 4's join). On the empty page,
+`run`'s `if (d === null || d.$$root !== undefined) throw …` makes the body it hands `mount`
+nonnull, so the slot's `p` is: `parentOf`'s `d.p === null ? d.m.parentNode : d.p` is `d.p`, and the
+slot's `m`, read by nothing now, goes from its literal. Measured (release, brotli, the whole
+bundle): the empty `browser` page and `Tea.sandbox` 480 → **466**, `Tea.element` 1 241 → 1 232,
+with effects 5 325 → 5 316, `random` 1 992 → 1 997 (raw −33); 21 of the 52 `browser/` pages
+smaller, none larger (−280 in all); the `bench/ui` app and every `run/` program byte-identical.
+Fixtures: `emit/release/app/SpecGuards`, `run/SpecializeGuards` (a guard that refuses only
+`undefined`, given `null`, keeps the fallback), `emit/release/split/EmptyPage`.
+
 **Amended 2026-10-03: definite initialisation** (`Pts.definiteInit`; the empty page's study,
 ledger step 13). Fact 3 learns, per object literal, the keys it lacks that no code can read before
 they are written — so a read of one is never the `undefined` of a key not yet there, exactly as

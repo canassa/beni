@@ -1,0 +1,41 @@
+--! Fact 5 past a guard (`backend.md` §9, *slice 4*, amended 2026-10-02):
+--! the browser runtime's mount check and its `parentOf`, over a root the
+--! program reads from the host.
+
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- A holder keeps the node it is given, and a marker whose parent stands
+-- in for the node when it has none.
+holder : V, V -> V
+holder n marker = Js.from { p = n, m = marker }
+
+
+parentOf : V -> V
+parentOf h =
+    if Js.isNull (Js.get h "p") then
+        Js.get (Js.get h "m") "parentNode"
+    else
+        Js.get h "p"
+
+
+-- A root that is missing or taken is refused. Past the guard it is neither
+-- `null` (the first test) nor `undefined` (the second reads a property of
+-- it), so every holder's `p` is never `null`: `parentOf` is its read, and
+-- nothing reads `m`.
+mount : V -> String
+mount root =
+    _ =
+        if Js.isNull root || not (Js.isUndefined (Js.get root "taken")) then
+            Js.throw (Js.construct (Js.global "Error") [ Js.from "no root" ])
+        else
+            ()
+    Js.to (Js.get (parentOf (holder root (Js.get (Js.global "globalThis") "probeMarker"))) "name")
+
+
+pub demo : () -> List String
+demo () = [ mount (Js.get (Js.global "globalThis") "probeRoot") ]

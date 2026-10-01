@@ -15,7 +15,9 @@
 -- `first` and `last` are reads; `unit` writes an instance's `b` before
 -- anything reads it, so `patch`'s `b === i.b` compares the one block with
 -- itself and `patch` returns the instance it is given (§9, *definite
--- initialisation*) — and what the page calls from one place is
+-- initialisation*); the body `run` hands `mount` is past its guard, so a
+-- slot's `p` is never `null`, `parentOf` is the read and the slot's `m`
+-- goes (*fact 5 past a guard*) — and what the page calls from one place is
 -- written there: `slot` and `parentOf` in their callers, `drop` at the end
 -- of `swap`, and `template`, called once at this module's top level, is its
 -- cell beside the kind that clones it.

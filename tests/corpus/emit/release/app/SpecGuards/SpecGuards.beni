@@ -1,0 +1,13 @@
+-- emit: whole-program specialisation, fact 5 past a guard (`backend.md`
+-- §9, *slice 4*, amended 2026-10-02), in a platform module
+-- (`platform/Guards.beni`): `mount` throws when its root, a host value, is
+-- `null` or holds a property `taken`, so the root it hands `holder` is
+-- neither `null` nor `undefined`. The holder's `p` is then never `null`:
+-- `parentOf` is the read `a.p` alone, and the marker's key `m`, which only
+-- the fallback read, goes from the literal.
+import Guards
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Guards.demo ())

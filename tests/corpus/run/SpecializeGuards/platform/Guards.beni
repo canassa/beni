@@ -1,0 +1,73 @@
+--! Fact 5 past a guard (`backend.md` §9, *slice 4*, amended 2026-10-02)
+--! where it fires and beside where it must not: each answer is the same in
+--! both builds.
+
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- A holder keeps the node it is given, and a marker whose parent stands
+-- in for the node when it has none.
+holder : V, V -> V
+holder n marker = Js.from { p = n, m = marker }
+
+
+parentOf : V -> V
+parentOf h =
+    if Js.isNull (Js.get h "p") then
+        Js.get (Js.get h "m") "parentNode"
+    else
+        Js.get h "p"
+
+
+-- Past a test against `null` and a read of one of its properties, the root
+-- is neither `null` nor `undefined`: `parentOf` is the read of `p`.
+mount : V, V -> String
+mount root marker =
+    _ =
+        if Js.isNull root || not (Js.isUndefined (Js.get root "taken")) then
+            Js.throw (Js.construct (Js.global "Error") [ Js.from "no root" ])
+        else
+            ()
+    Js.to (Js.get (parentOf (holder root marker)) "name")
+
+
+-- The same shapes, past a guard that refuses only `undefined`: the root
+-- may still be `null`, and here it is, so the marker's parent answers.
+holderLoose : V, V -> V
+holderLoose n marker = Js.from { p = n, m = marker }
+
+
+parentOfLoose : V -> V
+parentOfLoose h =
+    if Js.isNull (Js.get h "p") then
+        Js.get (Js.get h "m") "parentNode"
+    else
+        Js.get h "p"
+
+
+mountLoose : V, V -> String
+mountLoose root marker =
+    _ =
+        if Js.isUndefined root then
+            Js.throw (Js.construct (Js.global "Error") [ Js.from "no root" ])
+        else
+            ()
+    Js.to (Js.get (parentOfLoose (holderLoose root marker)) "name")
+
+
+pub demo : () -> List String
+demo () =
+    global = Js.global "globalThis"
+    _ = Js.set global "probeRoot" (Js.from { name = "root" })
+    _ =
+        Js.set
+            global
+            "probeMarker"
+            (Js.from { parentNode = Js.from { name = "the marker's parent" } })
+    _ = Js.set global "probeNothing" Js.null
+    marker = Js.get global "probeMarker"
+    [ mount (Js.get global "probeRoot") marker, mountLoose (Js.get global "probeNothing") marker ]

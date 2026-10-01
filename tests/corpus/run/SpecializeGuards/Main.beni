@@ -1,0 +1,11 @@
+-- Fact 5 past a guard (`backend.md` §9, *slice 4*, amended 2026-10-02),
+-- printing the same in both builds: in the platform module, a root past a
+-- guard that refuses `null` and reads one of its properties, whose holder's
+-- fallback goes; and one past a guard that refuses only `undefined`, which
+-- is `null` and takes the fallback.
+import Guards
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Guards.demo ())
