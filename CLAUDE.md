@@ -500,6 +500,18 @@ error type names that failure: `BadUrl`, `QuotaExceeded`, `NotFound`, …).
 - `Js.finally` (cleanup that always runs and does not catch) is not a `catch` and
   stays allowed. A review that finds a broad catch treats it as a defect.
 
+### 10. Never bend the design to make a check pass — stop and report
+
+The owner, 2026-10-02, after an agent rewrote `core/Schema`'s engine in JavaScript
+because the beni version pushed tests over the instruction budget: **a failing test, a
+budget, a gate or a slow compile is a finding, never a reason to change the design.**
+When the intended design (core written in beni, a decided syntax, a decided
+representation) hits a wall, **stop, keep the intended design, and report the wall as the
+defect to fix** — here, "the compiler checks all of `core/` in every process". Never
+switch language, representation or approach, weaken a test, raise a budget, or move code
+behind `foreign` to get green, unless the owner agrees first. A manager who merges such
+a workaround is equally at fault.
+
 ## Operational
 
 ### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
