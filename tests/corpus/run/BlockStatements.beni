@@ -1,0 +1,32 @@
+-- run: a statement is evaluated where it stands, for its effect, and its
+-- `()` thrown away (language.md §12.2): the lines of `trace` print in the
+-- order written, interleaved with the bindings around them, once per call
+-- of the function they are in, and a statement in a branch runs only when
+-- the branch is taken. `_ =` discards a value that is not `()`.
+import Node exposing (Program)
+import String
+
+
+trace : String -> ()
+trace label = Debug.log label ()
+
+
+steps : Int -> Int
+steps n =
+    trace "first"
+    a = Debug.log "a" n
+    trace "second"
+    _ = Debug.log "discarded" (a + 1)
+    if a > 1 then
+        trace "big"
+        a * 10
+    else
+        trace "small"
+        a
+
+
+main : Program
+main =
+    small = steps 1
+    big = steps 2
+    Node.printLines [ String.fromInt small, String.fromInt big ]

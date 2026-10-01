@@ -5474,6 +5474,14 @@ function like any binding (§26). Elaboration writes it to the record as the `le
 or suspend and drops it whole when it is pure, under the rule `language.md` §6 states for every
 unread binding.
 
+*As built (2026-10-02).* `constrain/Decl.zig` declares a `let_stmt` with `()` as its variable and
+defines it as its expression against a fresh variable, then that variable against `()` under
+`statement` (owner: the expression), so a failure inside reports first; `Diagnostics.zig`'s
+`statementNotUnit` also stays silent when the statement's type holds an error. The "returns a new
+one" sentence is given when the call (not an operator) passes a local whose type prints as the
+statement's, and the suggested binding is then named after the first argument (`xs2`), else
+`result`.
+
 ### 29.2 `name_removed` at a qualified name
 
 A qualified `Basics.modBy`, `Basics.remainderBy` or `Basics.logBase`, and a method call `n.modBy`

@@ -662,6 +662,10 @@ const Dumper = struct {
                 try d.w.writeAll(" = ");
                 try d.ref(data.rhs);
             },
+            .let_stmt => {
+                try d.w.writeByte(' ');
+                try d.ref(data.rhs);
+            },
             .case => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);

@@ -2093,6 +2093,7 @@ const Lowerer = struct {
                             if (l.reaches(@enumFromInt(dd.rhs), probe)) return true;
                         },
                         .let_pattern => if (l.reaches(@enumFromInt(dd.rhs), probe)) return true,
+                        .let_stmt => if (l.reaches(@enumFromInt(dd.rhs), probe)) return true,
                         else => {},
                     }
                 }
@@ -4040,6 +4041,7 @@ const Lowerer = struct {
             .pat_as,
             .let_def,
             .let_pattern,
+            .let_stmt,
             .branch,
             .schema_ref,
             .schema_app,
@@ -7936,6 +7938,9 @@ const Lowerer = struct {
                     if (l.in.unit_results and !l.functionSuspends(def) and l.unitValued(@enumFromInt(d.rhs))) try l.unobserved_arrows.append(l.scratch, func);
                     try out.append(l.scratch, func);
                 },
+                // A block's statement is emitted as `let _ = e` is (§4, *A
+                // discarded value is a statement*).
+                .let_stmt => try l.discard(out, @enumFromInt(d.rhs), p),
                 .let_pattern => {
                     // `let _ = e` is `e` as a statement (§4, *A discarded
                     // value is a statement*).
@@ -7997,6 +8002,7 @@ const Lowerer = struct {
                 all[d.lhs] += 1;
             },
             .let_pattern => if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) try stack.append(l.scratch, @enumFromInt(d.rhs)),
+            .let_stmt => try stack.append(l.scratch, @enumFromInt(d.rhs)),
             else => {},
         };
         while (stack.pop()) |inst| {

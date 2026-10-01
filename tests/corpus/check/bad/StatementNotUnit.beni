@@ -1,0 +1,37 @@
+-- A statement's type must be `()` (language.md §12.2, checker-v2.md §29.1):
+-- `List.push xs 4` on a line of its own builds a list and loses it, so it is
+-- statement_not_unit at 14:5, spanning the call, whose message names the
+-- type, says `push` returned a new one, and gives both fixes in the
+-- statement's own text. A statement that is no call (20:5) gets the fixes
+-- without that sentence, and one written across lines (26:5) is quoted on
+-- one. A statement that fails inside (34:18) reports that failure only. `_ =`
+-- discards anything (35:5), and a `()` statement (36:5) is legal.
+import List
+
+
+pushed : List Int -> List Int
+pushed xs =
+    List.push xs 4
+    xs
+
+
+arithmetic : Int -> Int
+arithmetic n =
+    n + 1
+    n
+
+
+acrossLines : List Int -> List Int
+acrossLines xs =
+    List.push
+        xs
+        4
+    xs
+
+
+inside : List Int -> List Int
+inside xs =
+    List.push xs "a"
+    _ = List.push xs 5
+    ()
+    xs

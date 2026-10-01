@@ -3502,28 +3502,29 @@ fn parseBlock(p: *Parse) Allocator.Error!Index {
                 p.recover();
             }
         }
-        // Each item is a pair, its node and its first token.
+        // Each item is a triple: its node, its first token and its last.
         try p.pushScratch(before);
+        try p.pushScratch(p.tok_i - 1);
         p.nextSibling(&siblings);
         p.assertProgress(before);
         const t = p.tok_i;
         if (p.tags[t] == .eof or p.col(t) != column or !p.firstOnLine(t) or !p.startsItem(t)) break;
     }
     p.endBlock(saved);
-    const count = (p.scratch.items.len - mark) / 2;
+    const count = (p.scratch.items.len - mark) / 3;
     const tags = p.nodes.items(.tag);
-    const last: Index = @enumFromInt(p.scratch.items[mark + 2 * (count - 1)]);
-    const last_token: TokenIndex = p.scratch.items[mark + 2 * (count - 1) + 1];
+    const last: Index = @enumFromInt(p.scratch.items[mark + 3 * (count - 1)]);
+    const last_token: TokenIndex = p.scratch.items[mark + 3 * (count - 1) + 1];
     if (count == 1 and !isBindingItem(tags[last.int()])) return last;
     // The items before the value, in order; every expression among them
     // is a statement.
     for (0..count - 1) |i| {
-        const n: Index = @enumFromInt(p.scratch.items[mark + 2 * i]);
-        const at: TokenIndex = p.scratch.items[mark + 2 * i + 1];
+        const n: Index = @enumFromInt(p.scratch.items[mark + 3 * i]);
+        const at: TokenIndex = p.scratch.items[mark + 3 * i + 1];
         p.scratch.items[mark + i] = if (isBindingItem(p.nodes.items(.tag)[n.int()]))
             n.int()
         else
-            (try p.addNode(.{ .tag = .stmt, .main_token = at, .data = .{ .lhs = n.int(), .rhs = 0 } })).int();
+            (try p.addNode(.{ .tag = .stmt, .main_token = at, .data = .{ .lhs = n.int(), .rhs = p.scratch.items[mark + 3 * i + 2] } })).int();
     }
     var value = last;
     var len = count - 1;

@@ -103,7 +103,9 @@ pub const magic = "BENIFE\x00\x00";
 /// 16 (2026-10-02): blocks (language.md §12.2) — `Ast.Node.Tag` gained
 /// `block` and `stmt`, which shifted every later tag, and the parser has a
 /// new code, `block_ends_in_binding`.
-pub const format_version: u32 = 16;
+/// 17 (2026-10-02): statements — `Bir.Inst.Tag` gained `let_stmt`, which
+/// shifted every later tag.
+pub const format_version: u32 = 17;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

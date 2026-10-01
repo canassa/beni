@@ -970,6 +970,7 @@ const Builder = struct {
                 try out.append(b.arena, d.lhs);
                 try out.append(b.arena, d.rhs);
             },
+            .let_stmt => try out.append(b.arena, d.rhs),
             .markup => {
                 var values: std.ArrayList(Inst.Index) = .empty;
                 try bir_.markupValues(b.arena, @enumFromInt(d.lhs), &values);

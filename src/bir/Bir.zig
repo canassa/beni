@@ -344,6 +344,12 @@ pub const Inst = struct {
         let_def,
         /// `pattern = e` in a `let`. `lhs` pattern, `rhs` value.
         let_pattern,
+        /// A block's statement (language.md §12.2): an expression evaluated
+        /// for its effect, whose type must be `()`. `lhs` the statement's last
+        /// token (its first is `main_token`), for a diagnostic that spans it;
+        /// `rhs` the expression, where every binding keeps its value. An item
+        /// of a `let`'s range in written order.
+        let_stmt,
         /// `case e of …`, and what `if` desugars to (branches on
         /// `import_ctor(Basics, True)` / `False`). `lhs` scrutinee; `rhs`
         /// extra `SubRange` of `branch` instructions.

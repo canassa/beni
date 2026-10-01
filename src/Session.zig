@@ -61,6 +61,8 @@ const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
 const TypeStore = @import("check/TypeStore.zig");
+const CheckDiagnostics = @import("check/Diagnostics.zig");
+const StatementTexts = @import("check/StatementTexts.zig");
 const Key = @import("cache/Key.zig");
 const FileKey = @import("cache/FileKey.zig");
 const CacheDir = @import("cache/Dir.zig");
@@ -194,6 +196,9 @@ pub const Options = struct {
     /// names as their replacements and touch nothing else
     /// (`Format.migrateNames`).
     migrate_names: bool = false,
+    /// `beni fmt --migrate-let` (hidden): format, printing every `let … in`
+    /// as the block it becomes (frontend.md §11.5).
+    migrate_let: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -1119,6 +1124,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
         // `fmt --migrate-cons` is the fix for these: it rewrites them.
         if (session.options.migrate_cons and item.code == .cons_removed) continue;
         if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
+        if (session.options.migrate_let and item.code == .let_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1509,7 +1515,8 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
     if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
-        !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree))) return;
+        !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree)) and
+        !(session.options.migrate_let and Format.onlyLetRemoved(tree))) return;
 
     const gpa = session.gpa;
     const text = session.store.bytes(file);
@@ -1617,7 +1624,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         text,
         &out.writer,
         &skipped,
-    ) else Format.format(
+    ) else Format.formatWith(
         worker.arena.allocator(),
         tree,
         session.artifacts.tokens(file),
@@ -1625,6 +1632,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         text,
         session.store.lineStarts(file),
         &out.writer,
+        .{ .migrate_let = session.options.migrate_let },
     )) catch |err| switch (err) {
         // Guarded above; belt and braces, and the file is left alone.
         error.SyntaxErrors => {
@@ -2138,9 +2146,45 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
             bir.insts.items(.main_token)[item.region.int()]
         else
             0;
+        if (item.code == .statement_not_unit and item.region.int() < bir.insts.len and bir.instTag(item.region) == .let_stmt) {
+            try session.reportStatement(file, item, token, bir.instData(item.region).lhs);
+            continue;
+        }
         const start, const end = session.tokenSpan(file, token);
         try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
     }
+}
+
+/// `statement_not_unit` spans its statement's whole expression, from its
+/// first token to `last`, and its message gives the fixes in that text
+/// (checker-v2.md §29.1), which the checker, having no source, marks with
+/// `StatementTexts.statement_text`. A statement written across
+/// lines is quoted on one, each run of whitespace one space.
+fn reportStatement(session: *Session, file: SourceStore.Index, item: CheckDiagnostics.Item, first: u32, last: u32) RunError!void {
+    const gpa = session.gpa;
+    const start, _ = session.tokenSpan(file, first);
+    _, const end = session.tokenSpan(file, @max(first, last));
+    const tokens = session.artifacts.spans(file);
+    const source = session.store.bytes(file);
+    var text: std.ArrayList(u8) = .empty;
+    defer text.deinit(gpa);
+    if (first < tokens.len() and last < tokens.len()) {
+        const from = tokens.starts[first];
+        const to = Tokenizer.tokenEnd(source, tokens.tags[last], tokens.starts[last]);
+        var space = false;
+        for (source[from..@max(from, to)]) |c| {
+            if (c == ' ' or c == '\n' or c == '\r') {
+                space = true;
+                continue;
+            }
+            if (space and text.items.len != 0) try text.append(gpa, ' ');
+            space = false;
+            try text.append(gpa, c);
+        }
+    }
+    const message = try std.mem.replaceOwned(u8, gpa, item.message, StatementTexts.statement_text, text.items);
+    defer gpa.free(message);
+    try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, message);
 }
 
 /// The span of `token` in `file`, from the token list the parser produced.

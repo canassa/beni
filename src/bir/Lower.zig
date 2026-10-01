@@ -2750,11 +2750,10 @@ fn lowerBindings(
                     .hoisted = false,
                 });
             },
-            // A block's statement (language.md §12.2) is a value binding
-            // that binds nothing, matched against `()`.
+            // A block's statement (language.md §12.2) binds nothing; its
+            // `let_stmt` is made in phase 2, in this slot.
             .stmt => {
-                l.cur_token = l.tree.nodeMainToken(b);
-                try l.pushScratch(try l.addInst(.pat_unit, 0, 0));
+                try l.pushScratch(@as(u32, 0));
                 try order.append(l.scratch_allocator, .{
                     .local_start = local_start,
                     .local_end = l.nextLocal(),
@@ -2827,12 +2826,14 @@ fn lowerBindings(
                 row.inst_end = @intCast(l.insts.len);
                 slot += 1;
             },
+            // `let_stmt`: `lhs` the statement's last token, for the span of
+            // `statement_not_unit`; `rhs` the expression, where every other
+            // binding keeps its value.
             .stmt => {
-                const pat: Index = @enumFromInt(l.list_scratch.items[slot]);
                 const row = &order.items[slot - mark];
                 row.inst_start = @intCast(l.insts.len);
                 const value = try l.lowerExpr(l.tree.operand(b));
-                l.list_scratch.items[slot] = (try l.addInstAt(l.tree.nodeMainToken(b), .let_pattern, pat.int(), value.int())).int();
+                l.list_scratch.items[slot] = (try l.addInstAt(l.tree.nodeMainToken(b), .let_stmt, l.tree.nodeData(b).rhs, value.int())).int();
                 row.inst_end = @intCast(l.insts.len);
                 slot += 1;
             },
@@ -4250,6 +4251,7 @@ fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocat
             try out.append(gpa, d.lhs);
             try out.append(gpa, d.rhs);
         },
+        .let_stmt => try out.append(gpa, d.rhs),
         .markup => try l.markupOperands(d.lhs, out, gpa),
         else => {},
     }
@@ -4755,6 +4757,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkInDecl(d, @enumFromInt(data.rhs));
         },
+        .let_stmt => try checkInDecl(d, @enumFromInt(data.rhs)),
         .type_unit, .unit, .pat_wild, .pat_unit => {},
         .type_tuple, .tuple, .list, .interp, .pat_tuple, .pat_list => try checkInstList(bir, d, Bir.inlineRange(data)),
         .type_record, .record => try checkFields(bir, d, Bir.inlineRange(data)),

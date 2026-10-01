@@ -3,7 +3,7 @@
 -- declarations below lower to the same instructions: a definition, a
 -- pattern binding and an annotated function as `let_def`/`let_pattern` in
 -- written order, then the body. A statement — an item that is not the
--- last — is a `let_pattern` whose pattern is `()` (`statement`).
+-- last — is a `let_stmt` of its expression (`statement`).
 withLet : Int -> Int
 withLet n =
     let

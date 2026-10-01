@@ -428,7 +428,8 @@ pub const Node = struct {
         block,
         /// A statement: an expression item of a block that is not its last
         /// (language.md §12.2). `main_token` is its first token; `lhs` is
-        /// the expression.
+        /// the expression; `rhs` is its last token, which a diagnostic about
+        /// the whole statement spans to.
         stmt,
         /// `case e of branches`. `main_token` is `case`; `lhs` is the
         /// scrutinee; `rhs` is the `ExtraIndex` of a `SubRange` of `branch`

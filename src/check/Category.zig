@@ -51,6 +51,9 @@ pub const Category = struct {
         ctor_arg,
         /// The value side of a `let pattern = value`.
         destructure,
+        /// A block's statement against `()` (checker-v2.md §29.1); `owner`
+        /// is the statement's expression.
+        statement,
         schema_conversion,
         /// A requirement that came from a `where` clause, checked
         /// against the method type it resolved to (checker-v2.md §9.2).

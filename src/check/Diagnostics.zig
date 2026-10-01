@@ -36,6 +36,7 @@ const Walk = @import("Walk.zig");
 const DispatchTexts = @import("DispatchTexts.zig");
 const CallStyle = @import("CallStyle.zig");
 const PatternTexts = @import("PatternTexts.zig");
+const StatementTexts = @import("StatementTexts.zig");
 
 const Diagnostics = @This();
 
@@ -142,6 +143,7 @@ pub const Reporter = struct {
         if (category.tag == .where_clause and rigid == null) {
             if (r.clause) |c| return DispatchTexts.whereClauseMismatch(r, region, c, expected, actual);
         }
+        if (category.tag == .statement) return StatementTexts.statementNotUnit(r, region, category, actual);
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -438,7 +440,7 @@ pub const Reporter = struct {
             .markup_attribute, .markup_list_attribute, .markup_handler, .markup_form, .markup_row, .markup_child, .markup_children => return MarkupTexts.categoryLines(scratch, r.env.interner, category),
             // `.where_clause` (a `where` clause's method type against the
             // method it resolved to) keeps the general lines.
-            .try_value, .pattern, .ctor_arg, .destructure, .general, .where_clause => return .{
+            .try_value, .pattern, .ctor_arg, .destructure, .statement, .general, .where_clause => return .{
                 .intro = "Something is off here:",
                 .found = "This is:",
                 .wanted = "But I need:",
@@ -1360,7 +1362,7 @@ fn calleeSubject(scratch: Allocator, callee: Callee, comptime capital: bool) []c
 }
 
 /// "`f`", "(+)", "this function" — the short form, for mid-sentence use.
-fn calleeReference(scratch: Allocator, callee: Callee) []const u8 {
+pub fn calleeReference(scratch: Allocator, callee: Callee) []const u8 {
     return switch (callee.kind) {
         .anonymous => "this function",
         .operator => std.fmt.allocPrint(scratch, "({s})", .{callee.name}) catch "this operator",

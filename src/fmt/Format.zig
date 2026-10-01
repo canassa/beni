@@ -175,7 +175,28 @@ pub fn format(
     line_starts: []const u32,
     w: *Io.Writer,
 ) Error!void {
-    if (tree.errors.len != 0) return error.SyntaxErrors;
+    return formatWith(scratch, tree, tokens, comments, source, line_starts, w, .{});
+}
+
+/// What `formatWith` does besides formatting.
+pub const Options = struct {
+    /// `beni fmt --migrate-let` (frontend.md §11.5): print every `let … in`
+    /// as the block it becomes.
+    migrate_let: bool = false,
+};
+
+/// `format`, with `options`.
+pub fn formatWith(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    line_starts: []const u32,
+    w: *Io.Writer,
+    options: Options,
+) Error!void {
+    if (tree.errors.len != 0 and !(options.migrate_let and onlyLetRemoved(tree))) return error.SyntaxErrors;
     const n = tree.nodes.len;
     const widths = try scratch.alloc(u32, n);
     const firsts = try scratch.alloc(u32, n);
@@ -205,6 +226,7 @@ pub fn format(
 
     var p: Printer = .{
         .block_starts = block_starts,
+        .migrate_let = options.migrate_let,
         .w = w,
         .source = source,
         .tags = tokens.items(.tag),
@@ -796,6 +818,14 @@ fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?Lambd
 pub fn onlyBackslashLambdas(tree: *const Ast) bool {
     for (tree.errors) |e| {
         if (e.code != .backslash_lambda_removed) return false;
+    }
+    return true;
+}
+
+/// Whether every syntax error of `tree` is a `let` (`--migrate-let`'s input).
+pub fn onlyLetRemoved(tree: *const Ast) bool {
+    for (tree.errors) |e| {
+        if (e.code != .let_removed) return false;
     }
     return true;
 }
@@ -1756,6 +1786,8 @@ const Printer = struct {
     stack: std.ArrayList(u32) = .empty,
     /// Per token: whether a block begins there.
     block_starts: []const bool,
+    /// `--migrate-let` (frontend.md §11.5): every `let` prints as a block.
+    migrate_let: bool = false,
 
     /// Bytes written on the current line.
     col: u32 = 0,
@@ -2699,7 +2731,7 @@ const Printer = struct {
             try p.expr(body, indent);
         } else {
             p.newline(indent + indent_step);
-            try p.expr(body, indent + indent_step);
+            try p.bodyExpr(body, indent + indent_step);
         }
     }
 
@@ -2840,6 +2872,9 @@ const Printer = struct {
     fn wrapped(p: *Printer, n: Index, comptime kind: Kind, indent: u32) Error!void {
         const inner = p.tree.operand(n);
         const open = p.tree.nodeMainToken(n);
+        if (kind == .expr and p.migrate_let and p.tree.nodeTag(inner) == .let) {
+            return p.letParenthesised(inner, indent, .{ .open = open, .close = p.last(inner) + 1 });
+        }
         if (kind == .expr and p.tree.nodeTag(inner) == .block) {
             // A parenthesised block (language.md §12.5, *blocks*): `(` ends
             // its line, the items sit 4 right of that line's indentation,
@@ -2937,11 +2972,11 @@ const Printer = struct {
                     try p.expr(l.body, indent);
                 } else {
                     p.newline(indent + indent_step);
-                    try p.expr(l.body, indent + indent_step);
+                    try p.bodyExpr(l.body, indent + indent_step);
                 }
             },
             .@"if" => try p.ifExpr(n, indent, null),
-            .let => try p.letExpr(n, indent),
+            .let => if (p.migrate_let) try p.letParenthesised(n, indent, null) else try p.letExpr(n, indent),
             .block => try p.blockExpr(n, indent),
             .case => try p.caseExpr(n, indent),
             .markup_element, .markup_fragment, .markup_for, .markup_show => try p.markup(n),
@@ -3254,7 +3289,10 @@ const Printer = struct {
         const operands_at = mark + count;
         const ops_at = operands_at + count + 1;
         const one_line = p.fits(top);
-        const block_tail = !one_line and count == 1 and isBlockForm(p.tree.nodeTag(@enumFromInt(p.stack.items[operands_at + 1])));
+        const tail_tag = p.tree.nodeTag(@enumFromInt(p.stack.items[operands_at + 1]));
+        // A `let` under `--migrate-let` is a parenthesised block, which is
+        // an operand like any other.
+        const block_tail = !one_line and count == 1 and isBlockForm(tail_tag) and !(p.migrate_let and tail_tag == .let);
 
         try p.expr(@enumFromInt(p.stack.items[operands_at]), indent);
         for (0..count) |i| {
@@ -3317,9 +3355,10 @@ const Printer = struct {
         // A block body cannot continue at the line's own column, where its
         // items would be read as the enclosing block's (language.md §12.2,
         // B1): it is indented as any lambda's.
-        const body_indent = if (p.tree.nodeTag(l.body) == .block) indent + indent_step else indent;
+        const body_tag = p.tree.nodeTag(l.body);
+        const body_indent = if (body_tag == .block or (p.migrate_let and body_tag == .let)) indent + indent_step else indent;
         p.newline(body_indent);
-        try p.expr(l.body, body_indent);
+        try p.bodyExpr(l.body, body_indent);
     }
 
     /// The base, then the glued `.field` / `.0` / `?` tokens.
@@ -3375,7 +3414,7 @@ const Printer = struct {
             try p.tokRaw(then_tok);
         }
         p.newline(indent + indent_step);
-        try p.expr(i.then_expr, indent + indent_step);
+        try p.bodyExpr(i.then_expr, indent + indent_step);
         try p.leading(else_tok, indent + indent_step);
         p.newline(kw);
         try p.tokRaw(else_tok);
@@ -3384,7 +3423,7 @@ const Printer = struct {
             try p.ifExpr(i.else_expr, indent, kw);
         } else {
             p.newline(indent + indent_step);
-            try p.expr(i.else_expr, indent + indent_step);
+            try p.bodyExpr(i.else_expr, indent + indent_step);
         }
     }
 
@@ -3417,15 +3456,88 @@ const Printer = struct {
     /// start of a line at `indent`: one item per line there, at most one
     /// blank line between two, kept if present, then the value.
     fn blockExpr(p: *Printer, n: Index, indent: u32) Error!void {
-        const l = p.tree.fullLet(n);
-        var prev_last: ?TokenIndex = null;
-        for (l.bindings) |b| {
-            if (prev_last) |pl| p.blankLines(if (p.blankBetween(pl, p.first(b))) 1 else 0, indent);
-            try p.binding(b, indent);
-            prev_last = p.last(b);
+        return p.blockItems(n, indent, null);
+    }
+
+    /// The items of the block or `let` `n` from the start of a line at
+    /// `indent`, after `prev_last` (the last token of the item printed
+    /// before them, if they continue a block). Under `--migrate-let` a
+    /// `let` prints as the block it becomes (frontend.md §11.5): its
+    /// bindings, then its body — and a body that is itself a `let`, or the
+    /// value of a block that is one, is flattened into the same block. Its
+    /// `let` and `in` are dropped with their comments kept: a comment on
+    /// `in`'s line goes above the value.
+    fn blockItems(p: *Printer, n: Index, indent: u32, after: ?TokenIndex) Error!void {
+        var prev_last = after;
+        var cur = n;
+        while (true) {
+            const l = p.tree.fullLet(cur);
+            const is_let = p.tree.nodeTag(cur) == .let;
+            if (is_let) {
+                if (prev_last) |pl| p.blankLines(if (p.blankBetween(pl, l.let_token)) 1 else 0, indent);
+                try p.leading(l.let_token, indent);
+                try p.ownLineTrailing(l.let_token, indent);
+                prev_last = l.let_token;
+            }
+            for (l.bindings, 0..) |b, i| {
+                if (prev_last) |pl| {
+                    const blank = !(is_let and i == 0) and p.blankBetween(pl, p.first(b));
+                    p.blankLines(if (blank) 1 else 0, indent);
+                }
+                try p.binding(b, indent);
+                prev_last = p.last(b);
+            }
+            if (is_let) {
+                const in_tok = p.last(l.bindings[l.bindings.len - 1]) + 1;
+                const blank = p.blankBetween(prev_last.?, in_tok);
+                p.blankLines(if (blank) 1 else 0, indent);
+                try p.leading(in_tok, indent);
+                try p.ownLineTrailing(in_tok, indent);
+                prev_last = in_tok;
+                p.blankLines(0, indent);
+            } else if (prev_last) |pl| {
+                p.blankLines(if (p.blankBetween(pl, p.first(l.body))) 1 else 0, indent);
+            }
+            switch (p.tree.nodeTag(l.body)) {
+                .block => cur = l.body,
+                .let => if (p.migrate_let) {
+                    cur = l.body;
+                } else return p.expr(l.body, indent),
+                else => return p.expr(l.body, indent),
+            }
         }
-        if (prev_last) |pl| p.blankLines(if (p.blankBetween(pl, p.first(l.body))) 1 else 0, indent);
-        try p.expr(l.body, indent);
+    }
+
+    /// The comments on `t`'s line after it, each on a line of its own at
+    /// `indent`: what a dropped `let` or `in` leaves of its line.
+    fn ownLineTrailing(p: *Printer, t: TokenIndex, indent: u32) Io.Writer.Error!void {
+        if (p.trailing_done == t) return;
+        p.trailing_done = t;
+        for (commentsBefore(p.comments, t + 1)) |c| {
+            if (p.commentLine(c) != p.tok_lines[t]) continue;
+            p.newline(indent);
+            try p.writeComment(c);
+            p.newline(indent);
+        }
+    }
+
+    /// A body after one of the openers (language.md §12.2): the cursor at
+    /// the start of a line at `indent`. Under `--migrate-let` a `let` there
+    /// is the block it becomes.
+    fn bodyExpr(p: *Printer, n: Index, indent: u32) Error!void {
+        if (p.migrate_let and p.tree.nodeTag(n) == .let) return p.blockItems(n, indent, null);
+        return p.expr(n, indent);
+    }
+
+    /// A `let` where no opener heads a block, under `--migrate-let`: a
+    /// parenthesised block, reusing `open` and `close` when the `let` was
+    /// already in parentheses.
+    fn letParenthesised(p: *Printer, n: Index, indent: u32, parens: ?struct { open: TokenIndex, close: TokenIndex }) Error!void {
+        if (parens) |pr| try p.tok(pr.open) else try p.raw("(");
+        p.newline(indent + indent_step);
+        try p.blockItems(n, indent + indent_step, null);
+        p.newline(indent);
+        if (parens) |pr| try p.tok(pr.close) else try p.raw(")");
     }
 
     fn binding(p: *Printer, n: Index, indent: u32) Error!void {
@@ -3507,7 +3619,7 @@ const Printer = struct {
             try p.space();
             try p.tok(p.last(br.pattern) + 1); // `->`
             p.newline(inner + indent_step);
-            try p.expr(br.body, inner + indent_step);
+            try p.bodyExpr(br.body, inner + indent_step);
             prev_last = p.last(b);
         }
     }

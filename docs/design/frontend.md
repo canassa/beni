@@ -1425,10 +1425,20 @@ choices the text above left open:
 - **Depth.** A block costs no nesting level of its own; an expression item is charged by
   `parseExpr`, and a binding item by the block, since a binding's body may be a block whose first
   item is a binding again with no `parseExpr` between them.
-- **Before statements.** Until `let_stmt` lands (§11.3), a statement lowers to a `let_pattern`
-  whose pattern is `()`, so a statement that is not `()` is already an error, `type_mismatch`;
-  the formatter prints blocks from the same slice, since every fixture that holds one is held to
-  `beni fmt --check` (§11.6).
+- **The formatter** prints blocks from the slice that parses them, since every fixture that holds
+  one is held to `beni fmt --check` (§11.6).
+
+*As built, statements and `--migrate-let` (2026-10-02).* `let_stmt` keeps its expression in
+**`rhs`**, where every other binding of a `let` keeps its value, so the passes that walk a `let`'s
+bindings read it in one place; its `lhs` is the statement's last token (the AST `stmt` carries it
+in its `rhs`), which `Session` needs to span `statement_not_unit` over the whole statement and to
+quote it in the message's two fixes — the checker has no source, so it writes a marker the session
+replaces. `--migrate-let` is `Format.formatWith` with `migrate_let` set: a body after an opener
+prints its `let` as items (`blockItems`), flattening a `let` that is the body of another or the
+value of a block; a `let` anywhere else is a parenthesised block (`letParenthesised`), reusing
+`( let … )`'s parentheses, and is an ordinary operand of the operator chain it is in. Comments
+before `let` and `in` stay where they were, and one on the `in` line goes above the value. Its
+output is a fixed point of plain `beni fmt` (the black-box test runs both).
 
 ### 11.3 AST, BIR and versions
 

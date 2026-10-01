@@ -1978,6 +1978,101 @@ test "fmt --migrate-names leaves a file that binds a removed name alone and name
     try testing.expectEqualStrings(source, try w.read("Main.beni"));
 }
 
+test "fmt --migrate-let writes a let in each position as the block it becomes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.5: a `let` after an opener is a block; a `let` that
+    // is another's body is flattened into it, its comments kept above the
+    // value; a `let` in a binding's body is a block of its own; one where
+    // no opener heads a block is a parenthesised block, reusing its
+    // parentheses when it had them.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\top n =
+        \\    let
+        \\        a = n + 1
+        \\    in
+        \\    let
+        \\        b =
+        \\            let
+        \\                c = a
+        \\            in
+        \\            c
+        \\    in
+        \\    -- the value
+        \\    a + b
+        \\
+        \\
+        \\branch m =
+        \\    case m of
+        \\        Just x ->
+        \\            List.map [ x ]
+        \\                (λy ->
+        \\                    let
+        \\                        z = y
+        \\                    in
+        \\                    z
+        \\                )
+        \\
+        \\        Nothing ->
+        \\            [ max (let k = 1 in k) 2, 2 + let j = 3 in j ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-let", "Main.beni" });
+    const again = try w.run(&.{ "fmt", "--check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\top n =
+        \\    a = n + 1
+        \\    b =
+        \\        c = a
+        \\        c
+        \\    -- the value
+        \\    a + b
+        \\
+        \\
+        \\branch m =
+        \\    case m of
+        \\        Just x ->
+        \\            List.map [ x ]
+        \\                (λy ->
+        \\                    z = y
+        \\                    z
+        \\                )
+        \\
+        \\        Nothing ->
+        \\            [ max
+        \\                (
+        \\                    k = 1
+        \\                    k
+        \\                )
+        \\                2
+        \\            , 2
+        \\                + (
+        \\                    j = 3
+        \\                    j
+        \\                )
+        \\            ]
+        \\
+    , try w.read("Main.beni"));
+}
+
 test "fmt --check on a canonical file exits 0 with nothing on either stream" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

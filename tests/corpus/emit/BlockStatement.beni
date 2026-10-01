@@ -1,0 +1,38 @@
+-- emit: a block's statement is emitted as `_ = e` is (backend.md §4, *A
+-- discarded value is a statement*; language.md §12.2): `say "a"` on a line
+-- of its own is `BlockStatement$say("a");`, in `statement` exactly as in
+-- `discarded`, and a statement that is an `if` is an `if` statement whose
+-- arms are discarded in turn. `say` is private and every call of it is a
+-- statement, so it writes no `return`.
+import Node exposing (Program)
+
+
+say : String -> ()
+say s =
+    _ = Debug.log "say" s
+    ()
+
+
+pub statement : Bool -> Int
+statement c =
+    say "a"
+    if c then
+        say "b"
+    else
+        ()
+    1
+
+
+pub discarded : Bool -> Int
+discarded c =
+    _ = say "a"
+    _ =
+        if c then
+            say "b"
+        else
+            ()
+    1
+
+
+main : Program
+main = Node.printLines []

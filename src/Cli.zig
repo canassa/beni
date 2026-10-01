@@ -363,6 +363,9 @@ pub const Fmt = struct {
     /// `logBase` as `Int.mod`, `Int.rem` and `Float.log`
     /// (`Format.migrateNames`) instead of formatting.
     migrate_names: bool = false,
+    /// `--migrate-let`, hidden: format, printing every `let … in` as the
+    /// block it becomes (`Format.Options.migrate_let`).
+    migrate_let: bool = false,
     paths: []const []const u8,
 };
 
@@ -905,11 +908,16 @@ const FmtSpecific = struct {
     migrate_let_blanks: bool = false,
     migrate_lambda: bool = false,
     migrate_names: bool = false,
+    migrate_let: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--migrate-names")) {
             if (value != null) return noValue(name);
             self.migrate_names = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-let")) {
+            if (value != null) return noValue(name);
+            self.migrate_let = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-lambda")) {
             if (value != null) return noValue(name);
@@ -953,7 +961,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
     }
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
         @intFromBool(s.specific.migrate_let_blanks) + @intFromBool(s.specific.migrate_lambda) +
-        @intFromBool(s.specific.migrate_names);
+        @intFromBool(s.specific.migrate_names) +
+        @intFromBool(s.specific.migrate_let);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
@@ -966,6 +975,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_let_blanks = s.specific.migrate_let_blanks,
         .migrate_lambda = s.specific.migrate_lambda,
         .migrate_names = s.specific.migrate_names,
+        .migrate_let = s.specific.migrate_let,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

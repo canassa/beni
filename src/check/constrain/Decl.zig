@@ -404,6 +404,8 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
             try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(data.lhs), v));
             return v;
         },
+        // What a statement is held to: `()`. It binds nothing.
+        .let_stmt => return g.fresh(.{ .structure = .unit }),
         else => return g.freshFlex(),
     }
 }
@@ -443,6 +445,17 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             return g.conj(parts.items);
         },
         .let_pattern => return Expr.expr(g, @enumFromInt(data.rhs), check, .{ .tag = .destructure }),
+        // A statement (checker-v2.md §29.1): its expression is checked on its
+        // own, and only then held to `()` under `statement`, so a failure
+        // inside it reports once, as itself, and never as `statement_not_unit`.
+        .let_stmt => {
+            const t = try g.freshFlex();
+            const parts = [_]Constraint{
+                try Expr.expr(g, @enumFromInt(data.rhs), t, .{}),
+                try g.equal(check, t, m, .{ .tag = .statement, .owner = @enumFromInt(data.rhs) }),
+            };
+            return g.conj(&parts);
+        },
         else => return g.true_(),
     }
 }
@@ -608,6 +621,7 @@ pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, s
             try stack.append(scratch, @enumFromInt(data.lhs));
             try stack.append(scratch, @enumFromInt(data.rhs));
         },
+        .let_stmt => try stack.append(scratch, @enumFromInt(data.rhs)),
         .pat_as, .pat_spread => try stack.append(scratch, @enumFromInt(data.lhs)),
         .markup => try bir.markupValues(scratch, @enumFromInt(data.lhs), stack),
         .schema_app, .schema_value, .schema_tagged => {
