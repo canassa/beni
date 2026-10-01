@@ -109,11 +109,11 @@ exactly as the development build does" holds with no exception and §9 *Item
 4*'s "pin every field if `Debug` survives" is withdrawn. The corpus's release
 second pass carries a hidden, test-only `--allow-debug`, because `Debug.log`
 is its only instrument for evaluation order (24 of the 121 fixtures);
-`tests/corpus/build/bad-release/` is the kind that does not pass it. Still to come
-in M3c: **item 4**, type-directed field ambiguation, which needs a per-build
-field-interference artifact the backend
-does not receive (§9's *What the second slice owes*), integer constructor tags
-riding with it, and chunking (§10).
+`tests/corpus/build/bad-release/` is the kind that does not pass it. **Item 4 has
+landed** (2026-10-02, §9 *Item 4, taken up*): under `--release` record fields get
+short names and constructor tags are integers, except where JavaScript can see them
+(`boundary.md` §4, *What JavaScript may read of a beni value*). Still to come in M3c:
+chunking (§10).
 
 **The output tree's reserved names begin with `_`** (2026-09-21):
 `_main.mjs`, `_core/` and `_platform/`. They were `main.mjs`, `core/` and
