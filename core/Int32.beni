@@ -235,16 +235,14 @@ pub foreign pure shiftRightZero : Int32, Int -> Int32
 --|
 --|     toInt zero == 0
 pub zero : Int32
-zero =
-    fromInt 0
+zero = fromInt 0
 
 
 --| One.
 --|
 --|     toInt one == 1
 pub one : Int32
-one =
-    fromInt 1
+one = fromInt 1
 
 
 --| The smallest `Int32`, -2147483648. There is no `Int32` whose `neg` or
@@ -253,8 +251,7 @@ one =
 --|     toInt minValue == -2147483648
 --|     neg minValue == minValue
 pub minValue : Int32
-minValue =
-    fromInt (-2147483648)
+minValue = fromInt (-2147483648)
 
 
 --| The largest `Int32`, 2147483647.
@@ -262,8 +259,7 @@ minValue =
 --|     toInt maxValue == 2147483647
 --|     add maxValue one == minValue
 pub maxValue : Int32
-maxValue =
-    fromInt 2147483647
+maxValue = fromInt 2147483647
 
 
 --| Negate, wrapping. Written as a subtraction from zero, exactly as
@@ -273,8 +269,7 @@ maxValue =
 --|     neg zero == zero
 --|     neg minValue == minValue
 pub neg : Int32 -> Int32
-neg n =
-    sub zero n
+neg n = sub zero n
 
 
 --| Flip every bit — JavaScript's `~`, written as an exclusive or with all
@@ -284,8 +279,7 @@ neg n =
 --|     toInt (complement (fromInt 0x0f0f0f0f)) == -252645136
 --|     complement (complement (fromInt 12345)) == fromInt 12345
 pub complement : Int32 -> Int32
-complement n =
-    xor n (fromInt (-1))
+complement n = xor n (fromInt (-1))
 
 
 --| Rotate left: the bits shifted off the top come back in at the bottom.
@@ -298,8 +292,7 @@ complement n =
 --|     rotateLeft (fromInt 12345) 0 == fromInt 12345
 --|     rotateLeft (fromInt 12345) 32 == fromInt 12345
 pub rotateLeft : Int32, Int -> Int32
-rotateLeft n count =
-    or (shiftLeft n count) (shiftRightZero n (32 - count))
+rotateLeft n count = or (shiftLeft n count) (shiftRightZero n (32 - count))
 
 
 --| Rotate right, the mirror of `rotateLeft`.
@@ -309,8 +302,7 @@ rotateLeft n count =
 --|     rotateRight (fromInt 0x12345678) 8 == fromInt 0x78123456
 --|     rotateRight (fromInt 12345) 0 == fromInt 12345
 pub rotateRight : Int32, Int -> Int32
-rotateRight n count =
-    or (shiftRightZero n count) (shiftLeft n (32 - count))
+rotateRight n count = or (shiftRightZero n count) (shiftLeft n (32 - count))
 
 
 --| Whether two `Int32`s are the same 32-bit value. This is what `==` and
@@ -321,8 +313,7 @@ rotateRight n count =
 --|     eq (fromInt 5) (fromInt 6) == False
 --|     eq (fromInt 4294967296) zero == True
 pub eq : Int32, Int32 -> Bool
-eq a b =
-    toInt a == toInt b
+eq a b = toInt a == toInt b
 
 
 --| Compare two `Int32`s as SIGNED integers. This is what `<`, `<=`, `>` and
@@ -338,5 +329,4 @@ eq a b =
 --| however you print it. Sort a hash table by `toUnsignedInt` when you want
 --| the other order.
 pub compare : Int32, Int32 -> Order
-compare a b =
-    Basics.compare (toInt a) (toInt b)
+compare a b = Basics.compare (toInt a) (toInt b)

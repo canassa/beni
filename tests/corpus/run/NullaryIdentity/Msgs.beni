@@ -7,5 +7,4 @@ pub type Msg
 
 
 pub stop : Int -> Msg
-stop _ =
-    Stop
+stop _ = Stop

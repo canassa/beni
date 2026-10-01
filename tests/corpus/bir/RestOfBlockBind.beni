@@ -13,12 +13,10 @@ only n =
 around : Int -> Int
 around n =
     let
-        before =
-            n + 1
+        before = n + 1
 
         x <- withScope before
-        after =
-            x * 2
+        after = x * 2
     in
     after
 
@@ -33,5 +31,4 @@ several n =
 
 
 withScope : Int, (Int -> Int) -> Int
-withScope n body =
-    body n
+withScope n body = body n

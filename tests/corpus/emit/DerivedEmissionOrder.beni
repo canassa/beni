@@ -42,15 +42,12 @@ pub type Zinc
 
 
 pub sorted : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
-sorted a b =
-    a < b
+sorted a b = a < b
 
 
 pub same : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
-same a b =
-    a == b
+same a b = a == b
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

@@ -13,8 +13,7 @@ pub foreign pure targetValue : Event -> String
 
 
 pub plain : Event -> String
-plain _ =
-    ""
+plain _ = ""
 
 
 pub attribute "count" : List Int

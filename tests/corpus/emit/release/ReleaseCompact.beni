@@ -29,14 +29,11 @@ import Node exposing (Program)
 pub joins : Int -> Int
 joins n =
     let
-        one =
-            n * 2
+        one = n * 2
 
-        two =
-            one * 3
+        two = one * 3
 
-        three =
-            two * 4
+        three = two * 4
     in
     one + two + three
 
@@ -58,10 +55,8 @@ carried n acc =
 
 
 pub shaped : Int -> { count : Int, label : Int }
-shaped n =
-    { count = n, label = n * 2 }
+shaped n = { count = n, label = n * 2 }
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

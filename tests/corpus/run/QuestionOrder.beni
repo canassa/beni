@@ -18,43 +18,35 @@ import String
 
 
 n : String, Int -> Int
-n label v =
-    Debug.log v label
+n label v = Debug.log v label
 
 
 step : String, Int -> Result String Int
-step label v =
-    Ok (n label v)
+step label v = Ok (n label v)
 
 
 stop : String -> Result String Int
-stop label =
-    Err (Debug.log label "stop")
+stop label = Err (Debug.log label "stop")
 
 
 two : Int, Int -> Int
-two a b =
-    a + b
+two a b = a + b
 
 
 chain : String -> Result String Int
-chain label =
-    Ok (step "chain.1" 1? + step "chain.2" 2? + stop label? + step "chain.4" 4?)
+chain label = Ok (step "chain.1" 1? + step "chain.2" 2? + stop label? + step "chain.4" 4?)
 
 
 mixed : String -> Result String Int
-mixed label =
-    Ok (n "mixed.first" 1 + (step label 2)?)
+mixed label = Ok (n "mixed.first" 1 + (step label 2)?)
 
 
 record : String -> Result String { alpha : Int, zed : Int }
-record label =
-    Ok { zed = n "record.zed" 1, alpha = (step label 2)? }
+record label = Ok { zed = n "record.zed" 1, alpha = (step label 2)? }
 
 
 args : String -> Result String Int
-args label =
-    Ok (two (n "args.first" 1) ((step label 2)?))
+args label = Ok (two (n "args.first" 1) ((step label 2)?))
 
 
 showResult : Result String Int -> String

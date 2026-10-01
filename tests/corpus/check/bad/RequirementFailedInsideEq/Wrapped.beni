@@ -10,10 +10,8 @@ pub type W
 
 
 pub mkW : Int -> W
-mkW n =
-    W (Holder.Holder (Key.Key n))
+mkW n = W (Holder.Holder (Key.Key n))
 
 
 local : Bool
-local =
-    mkW 1 == mkW 2
+local = mkW 1 == mkW 2

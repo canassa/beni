@@ -85,8 +85,7 @@ long =
 
 
 pub every : Bool, Bool, Bool, Bool -> Bool
-every a b c d =
-    a && b && c && d
+every a b c d = a && b && c && d
 
 
 pub pick : Int -> String

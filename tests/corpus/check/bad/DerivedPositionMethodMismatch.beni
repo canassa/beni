@@ -8,15 +8,12 @@ type Holder a
 
 
 eq : Holder Int, Holder Int -> Bool
-eq _ _ =
-    True
+eq _ _ = True
 
 
 badRecord : { value : Holder String }, { value : Holder String } -> Bool
-badRecord left right =
-    left == right
+badRecord left right = left == right
 
 
 badTuple : ( Holder String, Int ), ( Holder String, Int ) -> Bool
-badTuple left right =
-    left == right
+badTuple left right = left == right

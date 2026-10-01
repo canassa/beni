@@ -3,5 +3,4 @@ import MessageEncoded
 
 
 bad : MessageEncoded.Message
-bad =
-    MessageEncoded.Count { value = "not an int" }
+bad = MessageEncoded.Count { value = "not an int" }

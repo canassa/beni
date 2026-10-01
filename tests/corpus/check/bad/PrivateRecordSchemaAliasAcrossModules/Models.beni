@@ -7,5 +7,4 @@ pub type alias PrivRecW =
 
 
 pub mk : Int -> PrivRecW
-mk n =
-    { z = n }
+mk n = { z = n }

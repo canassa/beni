@@ -9,8 +9,7 @@ import String
 
 
 showPair : ( Float, Float ) -> String
-showPair pair =
-    String.fromFloat pair.0 ++ "," ++ String.fromFloat pair.1
+showPair pair = String.fromFloat pair.0 ++ "," ++ String.fromFloat pair.1
 
 
 showBool : Bool -> String

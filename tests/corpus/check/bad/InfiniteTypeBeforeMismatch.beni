@@ -6,5 +6,4 @@
 -- as a tuple unrolled until the printer's node budget runs out (37 KB) and
 -- the list's other elements as `…`. Expected: one INFINITE TYPE, written
 -- down with `a` standing for the repeat.
-f x =
-    [ x, ( x, x ), { zb = x, za = "s" } ]
+f x = [ x, ( x, x ), { zb = x, za = "s" } ]

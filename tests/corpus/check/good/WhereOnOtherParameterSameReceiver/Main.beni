@@ -10,19 +10,16 @@ import Box exposing (Box)
 
 
 pub viaParam : Box Int -> String
-viaParam bx =
-    bx.describe bx
+viaParam bx = bx.describe bx
 
 
 pub wrapped : Box Int -> String
-wrapped bx =
-    bx.describe (Box.Box bx)
+wrapped bx = bx.describe (Box.Box bx)
 
 
 pub wrapped2 : Box Int -> String
 wrapped2 bx =
     let
-        w =
-            Box.Box bx
+        w = Box.Box bx
     in
     bx.describe w

@@ -8,5 +8,4 @@
 -- `[ A.f ] == [ 1 ]`, `List.sort [ A.f ]`, `A.f.eq 1`, and a NAMING ERROR
 -- in `A` instead of a type error. Expected: exactly `A`'s one error, and
 -- nothing in `T`.
-pub f =
-    1 + "x"
+pub f = 1 + "x"

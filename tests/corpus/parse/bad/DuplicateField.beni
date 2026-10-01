@@ -1,8 +1,6 @@
 -- duplicate_field at 4:14: `a` twice in a record literal (§6.3). Second at
 -- 8:18: twice in a record update.
-x =
-    { a = 1, a = 2 }
+x = { a = 1, a = 2 }
 
 
-f r =
-    { r | b = 1, b = 2 }
+f r = { r | b = 1, b = 2 }

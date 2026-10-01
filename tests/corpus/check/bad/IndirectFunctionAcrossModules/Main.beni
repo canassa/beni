@@ -10,5 +10,4 @@ pub type Indirect
 
 
 pub before : Indirect, Indirect -> Bool
-before a b =
-    a < b
+before a b = a < b

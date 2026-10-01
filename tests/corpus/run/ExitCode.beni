@@ -8,5 +8,4 @@ import String
 
 
 main : Program
-main =
-    Node.exitWith (String.join [ "exit", "code", "zero" ] " ") 0
+main = Node.exitWith (String.join [ "exit", "code", "zero" ] " ") 0

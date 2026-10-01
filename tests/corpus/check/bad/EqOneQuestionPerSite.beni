@@ -11,15 +11,12 @@ type Box
 
 
 k : Int -> Int
-k n =
-    n
+k n = n
 
 
 t : Bool
-t =
-    Basics.eq ( k, Box k ) ( k, Box k )
+t = Basics.eq ( k, Box k ) ( k, Box k )
 
 
 u : Bool
-u =
-    Basics.eq { a = k, b = Box k } { a = k, b = Box k }
+u = Basics.eq { a = k, b = Box k } { a = k, b = Box k }

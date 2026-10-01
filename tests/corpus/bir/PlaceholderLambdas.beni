@@ -4,40 +4,32 @@
 -- the first position, and the lambda wraps the whole call, so everything
 -- else in it is lowered inside the lambda.
 addOne : List Int -> List Int
-addOne xs =
-    List.map xs (add 1 _)
+addOne xs = List.map xs (add 1 _)
 
 
 firstPosition : Int -> Int
-firstPosition n =
-    apply (subtract _ n)
+firstPosition n = apply (subtract _ n)
 
 
 nested : Int -> Int
-nested n =
-    outer (inner _) n
+nested n = outer (inner _) n
 
 
 add : Int, Int -> Int
-add a b =
-    a + b
+add a b = a + b
 
 
 subtract : Int, Int -> Int
-subtract a b =
-    a - b
+subtract a b = a - b
 
 
 apply : (Int -> Int) -> Int
-apply f =
-    f 1
+apply f = f 1
 
 
 outer : (Int -> Int), Int -> Int
-outer f n =
-    f n
+outer f n = f n
 
 
 inner : Int -> Int
-inner n =
-    n
+inner n = n

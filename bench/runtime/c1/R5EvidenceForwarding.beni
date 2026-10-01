@@ -43,23 +43,19 @@ import String
 
 
 outerReps : Int
-outerReps =
-    40
+outerReps = 40
 
 
 innerReps : Int
-innerReps =
-    500
+innerReps = 500
 
 
 pivot : Int
-pivot =
-    250
+pivot = 250
 
 
 values : List Int
-values =
-    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+values = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
 
 
 -- Level 3: the work. Everything it knows about `a` arrives as evidence.
@@ -83,21 +79,18 @@ tally xs mark =
 -- obligation rather than a value it can see.
 level2 : List a, a -> Int
     where a.compare : a, a -> Order
-level2 xs mark =
-    tally xs mark
+level2 xs mark = tally xs mark
 
 
 level1 : List a, a -> Int
     where a.compare : a, a -> Order
-level1 xs mark =
-    level2 xs mark
+level1 xs mark = level2 xs mark
 
 
 -- Where the ordering is chosen. In C0 this builds two closures; here it
 -- discharges one obligation with `Int`'s own `compare` and calls.
 tallyBy : List Int, Int -> Int
-tallyBy xs mark =
-    level1 xs mark
+tallyBy xs mark = level1 xs mark
 
 
 main : Program

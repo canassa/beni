@@ -3,5 +3,4 @@
 -- interned first (it is written in `A.beni` and before `alpha`), so a search
 -- in symbol order meets the `List` cycle. The message draws `alpha`'s.
 pub zeta : Int
-zeta =
-    1
+zeta = 1

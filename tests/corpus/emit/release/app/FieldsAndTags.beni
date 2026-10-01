@@ -22,8 +22,7 @@ type alias Meter =
 
 
 bump : Meter -> Meter
-bump m =
-    { m | count = m.count + 1, total = m.total + m.count }
+bump m = { m | count = m.count + 1, total = m.total + m.count }
 
 
 says : Light -> String
@@ -42,11 +41,9 @@ says light =
 main : Node.Program
 main =
     let
-        m =
-            bump (bump { label = "m", count = 1, total = 0 })
+        m = bump (bump { label = "m", count = 1, total = 0 })
 
-        lights =
-            [ Green, Amber m.count, Red ]
+        lights = [ Green, Amber m.count, Red ]
     in
     Node.printLines
         [ "${m.label} ${String.fromInt m.count} ${String.fromInt m.total}"

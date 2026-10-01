@@ -9,7 +9,6 @@ import Box exposing (Box)
 listed : Box Int -> String
 listed bx =
     let
-        w =
-            [ bx ]
+        w = [ bx ]
     in
     bx.describe w

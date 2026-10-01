@@ -27,25 +27,20 @@ scale m factor =
 
 twice : a, Int -> a
     where a.scale : a, Int -> a
-twice x factor =
-    (x.scale factor).scale factor
+twice x factor = (x.scale factor).scale factor
 
 
 apply : (Metre, Int -> Metre), Metre -> Metre
-apply f m =
-    f m 2
+apply f m = f m 2
 
 
 pub grow : Metre -> Metre
-grow m =
-    apply twice m
+grow m = apply twice m
 
 
 pub bound : Metre, Int -> Metre
-bound =
-    twice
+bound = twice
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

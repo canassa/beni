@@ -28,14 +28,12 @@ foreign pure compareKeys : Key, Key -> Order
 --| The order of two keys: by value, the same for equal values whatever
 --| built them.
 pub compare : Key, Key -> Order
-compare a b =
-    compareKeys a b
+compare a b = compareKeys a b
 
 
 --| Whether two keys are the same value.
 pub eq : Key, Key -> Bool
-eq a b =
-    compareKeys a b == EQ
+eq a b = compareKeys a b == EQ
 
 
 --| Where a running body's messages go: its program, until it is closed.

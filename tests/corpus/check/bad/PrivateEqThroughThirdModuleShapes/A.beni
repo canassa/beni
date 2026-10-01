@@ -17,5 +17,4 @@ eq left right =
 
 
 pub inside : T, T -> Bool
-inside a b =
-    a == b
+inside a b = a == b

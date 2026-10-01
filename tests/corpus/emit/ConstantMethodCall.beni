@@ -21,8 +21,7 @@ pub type Counter
 
 
 pub bumped : Counter
-bumped =
-    (Counter 1).bump 2
+bumped = (Counter 1).bump 2
 
 
 pub bump : Counter, Int -> Counter
@@ -33,5 +32,4 @@ bump c step =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

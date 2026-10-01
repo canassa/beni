@@ -62,27 +62,23 @@ pub type Item msg
 
 --| No work.
 pub none : Cmd msg
-none =
-    Cmd []
+none = Cmd []
 
 
 --| All of these commands, in order.
 pub batch : List (Cmd msg) -> Cmd msg
-batch cmds =
-    Cmd (List.concat (List.map cmds items))
+batch cmds = Cmd (List.concat (List.map cmds items))
 
 
 --| The pieces of a command, in the order they run.
 pub items : Cmd msg -> List (Item msg)
-items (Cmd list) =
-    list
+items (Cmd list) = list
 
 
 --| Run `body` in a fiber of its own. Nothing can cancel it but the
 --| program's end.
 pub perform : (Send msg -> ()) -> Cmd msg
-perform body =
-    Cmd [ Perform body ]
+perform body = Cmd [ Perform body ]
 
 
 --| Run `body` in a fiber of its own under `key`, doing what `policy` says
@@ -99,8 +95,7 @@ perform body =
 --| is throttled by `Ignore`.
 pub keyed : k, Policy, (Send msg -> ()) -> Cmd msg
     where k.compare : k, k -> Order
-keyed k policy body =
-    Cmd [ Keyed [ Hosted.key k ] policy body ]
+keyed k policy body = Cmd [ Keyed [ Hosted.key k ] policy body ]
 
 
 --| Cancel every body running under `key`. Their `send` does nothing from
@@ -108,15 +103,13 @@ keyed k policy body =
 --| happens.
 pub cancel : k -> Cmd msg
     where k.compare : k, k -> Order
-cancel k =
-    Cmd [ Cancel [ Hosted.key k ] ]
+cancel k = Cmd [ Cancel [ Hosted.key k ] ]
 
 
 --| Cancel every keyed body of this component and of the components it
 --| maps in.
 pub cancelAll : Cmd msg
-cancelAll =
-    Cmd [ CancelAll [] ]
+cancelAll = Cmd [ CancelAll [] ]
 
 
 --| A child component's commands in its parent: their keys under
@@ -158,8 +151,7 @@ mapItem item segment tag =
 
 
 through : (Send a -> ()), (a -> msg) -> (Send msg -> ())
-through body tag =
-    \send -> body (\a -> send (tag a))
+through body tag = \send -> body (\a -> send (tag a))
 
 
 --| Run `body` in the after-render phase of the flush that renders this
@@ -167,18 +159,15 @@ through body tag =
 --| message, synchronously, so the nodes it rendered exist and a focus or
 --| a measurement costs no frame. It must not wait.
 pub afterRender : (Send msg -> ()) -> Cmd msg
-afterRender body =
-    Cmd [ After (Hosted.later body) ]
+afterRender body = Cmd [ After (Hosted.later body) ]
 
 
 --| Run `work` in a fiber of its own and send what it returns through
 --| `tag`.
 pub task : (() -> a), (a -> msg) -> Cmd msg
-task work tag =
-    perform (\send -> send (tag (work ())))
+task work tag = perform (\send -> send (tag (work ())))
 
 
 --| Run `work` in a fiber of its own, for what it does.
 pub do : (() -> ()) -> Cmd msg
-do work =
-    perform (\_ -> work ())
+do work = perform (\_ -> work ())

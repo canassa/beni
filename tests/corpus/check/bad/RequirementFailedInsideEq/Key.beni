@@ -5,5 +5,4 @@ pub type Key
 
 
 pub key : Key, () -> String
-key k u =
-    "k"
+key k u = "k"

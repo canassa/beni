@@ -16,60 +16,48 @@ import Node exposing (Program)
 
 
 pub arithmetic : Int, Int -> Int
-arithmetic a b =
-    a + b * 2 - (a - b)
+arithmetic a b = a + b * 2 - (a - b)
 
 
 pub floats : Float, Float -> Float
-floats x y =
-    x / y + negate x
+floats x y = x / y + negate x
 
 
 pub power : Int, Int, Int -> Int
-power a b c =
-    a ^ b ^ c
+power a b c = a ^ b ^ c
 
 
 pub powerLeft : Int, Int, Int -> Int
-powerLeft a b c =
-    (a ^ b) ^ c
+powerLeft a b c = (a ^ b) ^ c
 
 
 pub powerOfNegation : Int, Int -> Int
-powerOfNegation a b =
-    negate a ^ b
+powerOfNegation a b = negate a ^ b
 
 
 pub byName : Int, Int -> Bool
-byName a b =
-    Basics.lt a b && Basics.ge a b
+byName a b = Basics.lt a b && Basics.ge a b
 
 
 pub notBoth : Bool, Bool -> Bool
-notBoth a b =
-    not (a && b) || not a
+notBoth a b = not (a && b) || not a
 
 
 pub divide : Int, Int -> Int
-divide a b =
-    a // b + modBy b a + remainderBy b a
+divide a b = a // b + modBy b a + remainderBy b a
 
 
 pub wrap : Int32, Int32 -> Int
-wrap a b =
-    Int32.toInt (Int32.add (Int32.sub a b) (Int32.fromInt 1))
+wrap a b = Int32.toInt (Int32.add (Int32.sub a b) (Int32.fromInt 1))
 
 
 pub bits : Int32, Int32 -> Int32
-bits a b =
-    Int32.xor (Int32.and a b) (Int32.or (Int32.shiftLeft a 3) (Int32.shiftRightZero b 2))
+bits a b = Int32.xor (Int32.and a b) (Int32.or (Int32.shiftLeft a 3) (Int32.shiftRightZero b 2))
 
 
 pub product : Int32, Int32 -> Int
-product a b =
-    Int32.toUnsignedInt (Int32.mul (Int32.shiftRight a 1) b)
+product a b = Int32.toUnsignedInt (Int32.mul (Int32.shiftRight a 1) b)
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

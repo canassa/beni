@@ -19,5 +19,4 @@ pub foreign pure three : (sync (Int -> Int) -> Int) -> Int
 
 
 wrap : sync -> List sync
-wrap x =
-    [ x ]
+wrap x = [ x ]

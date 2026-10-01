@@ -1,10 +1,8 @@
 -- check/good (project): the dependency. `helper` is public and `secret`
 -- is not, so only one of them can be imported by `Main`.
 pub helper : Int -> Int
-helper n =
-    n + 1
+helper n = n + 1
 
 
 secret : Int
-secret =
-    42
+secret = 42

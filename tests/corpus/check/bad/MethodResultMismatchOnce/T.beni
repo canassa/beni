@@ -3,5 +3,4 @@ pub type T
 
 
 pub bar : T, () -> Int
-bar _ _ =
-    1
+bar _ _ = 1

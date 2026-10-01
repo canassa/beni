@@ -11,15 +11,12 @@ import Html exposing (Html)
 
 
 pub static : Html msg
-static =
-    <p class="lead">Hello &amp; welcome</p>
+static = <p class="lead">Hello &amp; welcome</p>
 
 
 pub greet : { name : String, count : Int } -> Html msg
-greet user =
-    <p title={user.name}>Hi {user.name}, {user.count} new<br />{Html.text "!"}</p>
+greet user = <p title={user.name}>Hi {user.name}, {user.count} new<br />{Html.text "!"}</p>
 
 
 pub list : List String -> Html msg
-list items =
-    <ul><For each={items}>{\item -> <li>{item}</li>}</For></ul>
+list items = <ul><For each={items}>{\item -> <li>{item}</li>}</For></ul>

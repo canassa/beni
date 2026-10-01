@@ -10,5 +10,4 @@ type alias Wrapper =
 
 
 f : c -> c
-f x =
-    x
+f x = x

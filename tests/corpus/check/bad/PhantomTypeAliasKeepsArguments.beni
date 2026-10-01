@@ -11,14 +11,11 @@ type alias Boxed t =
 
 
 a : Boxed String
-a =
-    Box
+a = Box
 
 
 b : Boxed Bool
-b =
-    Box
+b = Box
 
 
-both =
-    [ a, b ]
+both = [ a, b ]

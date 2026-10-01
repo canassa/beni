@@ -19,24 +19,21 @@ type Other
 
 input g =
     let
-        v =
-            <input onInput={g} />
+        v = <input onInput={g} />
     in
     ( v, g "x" )
 
 
 hole h =
     let
-        v =
-            <div>{h}</div>
+        v = <div>{h}</div>
     in
     ( v, [ h, <button onClick={Oops "x"} /> ] )
 
 
 rows r =
     let
-        v =
-            <ul><For each={[ 1 ]}>{r}</For></ul>
+        v = <ul><For each={[ 1 ]}>{r}</For></ul>
     in
     ( v, r 1 )
 

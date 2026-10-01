@@ -2,5 +2,4 @@
 -- lambda's body forgot an argument. The message lands on that body, where
 -- the mistake is, and not on the predicate's type or on the list.
 pub capped : List Int -> List Int
-capped xs =
-    List.filter xs (\n -> max n)
+capped xs = List.filter xs (\n -> max n)

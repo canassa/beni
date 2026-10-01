@@ -65,8 +65,7 @@ kind value =
 --| other indent puts every array element and object field on its own
 --| line, nested that many spaces per level.
 pub print : Value, Int -> String
-print value indent =
-    printAt value indent 0
+print value indent = printAt value indent 0
 
 
 printAt : Value, Int, Int -> String
@@ -122,11 +121,9 @@ block parts open close indent depth =
         open ++ String.join parts "," ++ close
     else
         let
-            inner =
-                "\n" ++ String.repeat " " (indent * (depth + 1))
+            inner = "\n" ++ String.repeat " " (indent * (depth + 1))
 
-            outer =
-                "\n" ++ String.repeat " " (indent * depth)
+            outer = "\n" ++ String.repeat " " (indent * depth)
         in
         open ++ inner ++ String.join parts ("," ++ inner) ++ outer ++ close
 
@@ -144,8 +141,7 @@ printNumber n =
 --| A string as a JSON string literal: quoted, with the characters JSON
 --| does not allow bare written as escapes.
 pub quote : String -> String
-quote s =
-    "\"" ++ String.concat (List.map (String.toList s) escape) ++ "\""
+quote s = "\"" ++ String.concat (List.map (String.toList s) escape) ++ "\""
 
 
 escape : Char -> String
@@ -176,8 +172,7 @@ escape c =
 hex : Int -> String
 hex n =
     let
-        digit d =
-            String.slice "0123456789abcdef" d (d + 1)
+        digit d = String.slice "0123456789abcdef" d (d + 1)
     in
     if n < 16 then
         digit n

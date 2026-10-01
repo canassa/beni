@@ -29,13 +29,11 @@ import String
 -- Four characters, six UTF-16 code units. The two `a`s are characters 1 and
 -- 3; an answer in code units would say 2 and 5.
 subject : String
-subject =
-    "\u{1F600}a\u{1F600}a"
+subject = "\u{1F600}a\u{1F600}a"
 
 
 shown : List Int -> String
-shown ns =
-    "[" ++ String.join (List.map ns String.fromInt) "," ++ "]"
+shown ns = "[" ++ String.join (List.map ns String.fromInt) "," ++ "]"
 
 
 yesNo : Bool -> String

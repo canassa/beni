@@ -19,25 +19,20 @@ type Shape
 
 
 make : Js.Value -> Js.Value
-make n =
-    Js.from { node = n, count = 0 }
+make n = Js.from { node = n, count = 0 }
 
 
 read : Js.Value -> Cell
-read v =
-    Js.to v
+read v = Js.to v
 
 
 generic : a -> Js.Value
-generic x =
-    Js.from x
+generic x = Js.from x
 
 
 shape : Shape -> Js.Value
-shape s =
-    Js.from (Just s)
+shape s = Js.from (Just s)
 
 
 callback : ({ when : Int } -> ()) -> Js.Value
-callback f =
-    Js.from f
+callback f = Js.from f

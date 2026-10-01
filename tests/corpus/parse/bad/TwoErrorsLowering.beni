@@ -1,17 +1,14 @@
 -- Two lowering errors in one file with valid declarations around them:
 -- unbound_variable at 5:5, then `ok` at line 8 is valid, then shadowing at
 -- 14:9 (`ok` rebound in a `let`).
-x =
-    nowhere
+x = nowhere
 
 
-ok =
-    1
+ok = 1
 
 
 f =
     let
-        ok =
-            2
+        ok = 2
     in
     ok

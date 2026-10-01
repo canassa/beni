@@ -13,8 +13,7 @@ import String
 
 
 show : Set String -> String
-show set =
-    "{" ++ String.join (Set.toList set) "," ++ "}"
+show set = "{" ++ String.join (Set.toList set) "," ++ "}"
 
 
 flag : Bool -> String
@@ -26,13 +25,11 @@ flag b =
 
 
 left : Set String
-left =
-    Set.fromList [ "b", "a" ]
+left = Set.fromList [ "b", "a" ]
 
 
 right : Set String
-right =
-    Set.fromList [ "c", "b" ]
+right = Set.fromList [ "c", "b" ]
 
 
 main : Program

@@ -18,5 +18,4 @@ import Reached
 
 
 main : Program
-main =
-    Node.printLines [ Reached.greeting ]
+main = Node.printLines [ Reached.greeting ]

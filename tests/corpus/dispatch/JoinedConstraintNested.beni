@@ -46,14 +46,12 @@ pub type Box k
 
 pub put : Box k, k -> Box k
     where k.compare : k, k -> Order
-put box _ =
-    box
+put box _ = box
 
 
 pub tag : Box k, k -> Box k
     where k.eq : k, k -> Bool
-tag box _ =
-    box
+tag box _ = box
 
 
 pub type Pair a
@@ -62,20 +60,17 @@ pub type Pair a
 
 pub compare : Pair a, Pair a -> Order
     where a.compare : a, a -> Order
-compare (Pair x _) (Pair y _) =
-    x.compare y
+compare (Pair x _) (Pair y _) = x.compare y
 
 
 pub size : Box k -> Int
-size _ =
-    1
+size _ = 1
 
 
 pub nestedList : Int
 nestedList =
     let
-        seed =
-            Empty
+        seed = Empty
     in
     size (put (put seed [ 1, 2 ]) [ 3 ])
 
@@ -83,8 +78,7 @@ nestedList =
 pub nestedDict : Int
 nestedDict =
     let
-        seed =
-            Dict.empty
+        seed = Dict.empty
     in
     Dict.size (Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b")
 
@@ -92,8 +86,7 @@ nestedDict =
 pub annotatedDict : Dict (List Int) String
 annotatedDict =
     let
-        seed =
-            Dict.empty
+        seed = Dict.empty
     in
     Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b"
 
@@ -101,8 +94,7 @@ annotatedDict =
 pub nestedOwn : Int
 nestedOwn =
     let
-        seed =
-            Empty
+        seed = Empty
     in
     size (put (put seed (Pair 1 2)) (Pair 3 4))
 
@@ -110,7 +102,6 @@ nestedOwn =
 pub nestedEq : Int
 nestedEq =
     let
-        seed =
-            Empty
+        seed = Empty
     in
     size (tag (tag seed [ 1, 2 ]) [ 3 ])

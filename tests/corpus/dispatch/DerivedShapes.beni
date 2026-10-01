@@ -15,20 +15,16 @@
 -- numbering and `derived 0` would name a different function than the
 -- emitter's first (A.15, A.29).
 pub sameUnit : (), () -> Bool
-sameUnit a b =
-    a == b
+sameUnit a b = a == b
 
 
 pub samePair : ( Int, Char ), ( Int, Char ) -> Bool
-samePair a b =
-    a == b
+samePair a b = a == b
 
 
 pub sameInts : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
-sameInts a b =
-    a == b
+sameInts a b = a == b
 
 
 pub sameMixed : { y : String, x : Int }, { y : String, x : Int } -> Bool
-sameMixed a b =
-    a == b
+sameMixed a b = a == b

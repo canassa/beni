@@ -1,5 +1,4 @@
 -- check/args: `f g x` where `f (g x)` was meant. Juxtaposition binds
 -- tighter than the author expected, so `negate` arrives as an argument.
 pub shown : Int -> String
-shown n =
-    String.fromInt negate n
+shown n = String.fromInt negate n

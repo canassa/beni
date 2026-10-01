@@ -5,5 +5,4 @@ pub type Holder a
 
 
 pub eq : Holder Int, Holder Int -> Bool
-eq _ _ =
-    True
+eq _ _ = True

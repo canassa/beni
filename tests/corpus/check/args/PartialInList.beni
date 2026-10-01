@@ -1,4 +1,3 @@
 -- check/args: a list of results where one element is still a function.
 pub lengths : List String -> List Int
-lengths words =
-    [ String.length "a", String.length ]
+lengths words = [ String.length "a", String.length ]

@@ -4,7 +4,6 @@ pub biggest : Int -> Int
 biggest n =
     let
         m : Int
-        m =
-            max n
+        m = max n
     in
     m

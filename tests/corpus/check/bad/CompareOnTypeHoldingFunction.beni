@@ -11,10 +11,8 @@ pub type Handler
 
 
 pub before : Handler, Handler -> Bool
-before a b =
-    a < b
+before a b = a < b
 
 
 pub same : Handler, Handler -> Bool
-same a b =
-    a == b
+same a b = a == b

@@ -3,8 +3,7 @@
 -- ends up with one too many — a mistake that is invisible in the
 -- pipeline's shape and reads as a mystery until the arity is in the type.
 wrap : String, String -> String
-wrap tag body =
-    tag ++ body ++ tag
+wrap tag body = tag ++ body ++ tag
 
 
 shout : String -> String

@@ -18,10 +18,8 @@ type Hid a
 
 
 pub make : Int -> Tag (Int -> Int)
-make n =
-    Tag n
+make n = Tag n
 
 
 pub hidden : Int -> Hid (Int -> Int)
-hidden n =
-    Hid n
+hidden n = Hid n

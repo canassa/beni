@@ -13,19 +13,15 @@ type W a
 
 
 mk : a -> W a
-mk x =
-    W (H.Holder x)
+mk x = W (H.Holder x)
 
 
-same l r =
-    l == r
+same l r = l == r
 
 
 helper : Bool
-helper =
-    same (mk "a") (mk "a")
+helper = same (mk "a") (mk "a")
 
 
 direct : Bool
-direct =
-    mk "a" == mk "a"
+direct = mk "a" == mk "a"

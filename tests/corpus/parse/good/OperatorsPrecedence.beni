@@ -1,68 +1,51 @@
 -- Operator associativity and precedence subtleties of §6.5: each expression
 -- here produces a different AST if a fixity were wrong.
-leftMinus a b c =
-    a - b - c
+leftMinus a b c = a - b - c
 
 
-rightApply f g x =
-    f <| g <| x
+rightApply f g x = f <| g <| x
 
 
-leftPipe f g x =
-    x |> f |> g
+leftPipe f g x = x |> f |> g
 
 
-rightPow a b c =
-    a ^ b ^ c
+rightPow a b c = a ^ b ^ c
 
 
-notAnd a b c =
-    not (a == b) && c
+notAnd a b c = not (a == b) && c
 
 
-mulOverAdd a b c =
-    a + b * c
+mulOverAdd a b c = a + b * c
 
 
-spreadOverAppend a b c =
-    [ ...a ++ b, c ]
+spreadOverAppend a b c = [ ...a ++ b, c ]
 
 
-orOverAnd a b c =
-    a || b && c
+orOverAnd a b c = a || b && c
 
 
-comparisonOverAppend a b c d =
-    a ++ b == c ++ d
+comparisonOverAppend a b c d = a ++ b == c ++ d
 
 
-pipeLowest f x y =
-    x + y |> f
+pipeLowest f x y = x + y |> f
 
 
-powOverMul a b c =
-    a * b ^ c
+powOverMul a b c = a * b ^ c
 
 
-divisionsLeft a b c =
-    a / b // c
+divisionsLeft a b c = a / b // c
 
 
-appTighter f x y =
-    f x + f y
+appTighter f x y = f x + f y
 
 
-accessTighter f r =
-    f r.a.b
+accessTighter f r = f r.a.b
 
 
-questionTighter f r =
-    f r? + 1
+questionTighter f r = f r? + 1
 
 
-mixedRight a b c d =
-    a || b || c && d
+mixedRight a b c d = a || b || c && d
 
 
-andChainRight a b c =
-    a && b && c
+andChainRight a b c = a && b && c

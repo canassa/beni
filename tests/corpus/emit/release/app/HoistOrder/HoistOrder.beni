@@ -19,5 +19,4 @@ import Zed
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (Zed.value + Alpha.value) ]
+main = Node.printLines [ String.fromInt (Zed.value + Alpha.value) ]

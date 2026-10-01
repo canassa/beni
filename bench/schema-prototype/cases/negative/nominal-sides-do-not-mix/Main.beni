@@ -4,10 +4,8 @@ import MessageProgram
 
 
 encoded : MessageEncoded.Message
-encoded =
-    MessageEncoded.Count { value = 42 }
+encoded = MessageEncoded.Count { value = 42 }
 
 
 bad : MessageProgram.Message
-bad =
-    encoded
+bad = encoded

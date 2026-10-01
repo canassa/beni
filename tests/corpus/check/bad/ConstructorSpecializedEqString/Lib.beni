@@ -1,8 +1,7 @@
 import Holder
 
 
-identity value =
-    value
+identity value = value
 
 
 pub same left right =

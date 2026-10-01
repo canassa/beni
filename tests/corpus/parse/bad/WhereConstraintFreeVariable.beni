@@ -6,5 +6,4 @@
 -- variable, at its first occurrence.
 pub total : List a -> a
     where a.fold : a, (x, s -> s), s -> s
-total xs =
-    xs
+total xs = xs

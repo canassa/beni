@@ -10,8 +10,7 @@ import String
 
 
 ints : List Int -> String
-ints xs =
-    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
 flag : Bool -> String
@@ -25,8 +24,7 @@ flag b =
 main : Program
 main =
     let
-        ( numbers, flags ) =
-            List.unzip [ ( 0, True ), ( 17, False ) ]
+        ( numbers, flags ) = List.unzip [ ( 0, True ), ( 17, False ) ]
     in
     Node.printLines
         [ ints (List.singleton 1234)

@@ -24,11 +24,9 @@ cell g x y =
 alive : Grid, Int -> Int
 alive g i =
     let
-        x =
-            modBy i g.w
+        x = modBy i g.w
 
-        y =
-            i // g.w
+        y = i // g.w
 
         n =
             cell g (x - 1) (y - 1)
@@ -47,5 +45,4 @@ alive g i =
 
 
 pub step : Grid -> Grid
-step g =
-    { g | cells = Array.initialize (g.w * g.h) (\i -> alive g i) }
+step g = { g | cells = Array.initialize (g.w * g.h) (\i -> alive g i) }

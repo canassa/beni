@@ -116,8 +116,7 @@ defaultOptions =
 
 
 rootContext : Options, Direction -> Context
-rootContext options direction =
-    { options = options, path = [], depth = 0, direction = direction }
+rootContext options direction = { options = options, path = [], depth = 0, direction = direction }
 
 
 pub endpoint :
@@ -158,8 +157,7 @@ fromEndpoint item =
 pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
 decodeWith options schema value =
     let
-        context =
-            rootContext options Decoding
+        context = rootContext options Decoding
 
         _ <- Result.andThen (schema.encoded.validate context value)
         decodedValue <- Result.andThen (schema.decodeValue context value)
@@ -169,15 +167,13 @@ decodeWith options schema value =
 
 
 pub decode : Schema e a, e -> Result (List Issue) a
-decode schema value =
-    decodeWith defaultOptions schema value
+decode schema value = decodeWith defaultOptions schema value
 
 
 pub encodeWith : Options, Schema e a, a -> Result (List Issue) e
 encodeWith options schema value =
     let
-        context =
-            rootContext options Encoding
+        context = rootContext options Encoding
 
         _ <- Result.andThen (schema.decoded.validate context value)
         encodedValue <- Result.andThen (schema.encodeValue context value)
@@ -187,15 +183,13 @@ encodeWith options schema value =
 
 
 pub encode : Schema e a, a -> Result (List Issue) e
-encode schema value =
-    encodeWith defaultOptions schema value
+encode schema value = encodeWith defaultOptions schema value
 
 
 pub readWith : Options, Schema e a, Value -> Result (List Issue) a
 readWith options schema value =
     let
-        context =
-            rootContext options Decoding
+        context = rootContext options Decoding
 
         encodedValue <- Result.andThen (schema.encoded.readValue context value)
     in
@@ -203,15 +197,13 @@ readWith options schema value =
 
 
 pub read : Schema e a, Value -> Result (List Issue) a
-read schema value =
-    readWith defaultOptions schema value
+read schema value = readWith defaultOptions schema value
 
 
 pub writeWith : Options, Schema e a, a -> Result (List Issue) Value
 writeWith options schema value =
     let
-        context =
-            rootContext options Encoding
+        context = rootContext options Encoding
 
         encodedValue <- Result.andThen (encodeWith options schema value)
     in
@@ -219,8 +211,7 @@ writeWith options schema value =
 
 
 pub write : Schema e a, a -> Result (List Issue) Value
-write schema value =
-    writeWith defaultOptions schema value
+write schema value = writeWith defaultOptions schema value
 
 
 pub parseWith : Options, Schema e a, String -> Result (List Issue) a
@@ -234,8 +225,7 @@ parseWith options schema source =
 
 
 pub parse : Schema e a, String -> Result (List Issue) a
-parse schema source =
-    parseWith defaultOptions schema source
+parse schema source = parseWith defaultOptions schema source
 
 
 pub printWith : Options, Schema e a, a -> Result (List Issue) String
@@ -254,23 +244,19 @@ printWith options schema value =
 
 
 pub print : Schema e a, a -> Result (List Issue) String
-print schema value =
-    printWith defaultOptions schema value
+print schema value = printWith defaultOptions schema value
 
 
 pub flip : Schema e a -> Schema a e
-flip schema =
-    make schema.decoded schema.encoded schema.encodeValue schema.decodeValue
+flip schema = make schema.decoded schema.encoded schema.encodeValue schema.decodeValue
 
 
 pub typeOnly : Schema e a -> Schema a a
-typeOnly schema =
-    fromEndpoint schema.decoded
+typeOnly schema = fromEndpoint schema.decoded
 
 
 pub encodedOnly : Schema e a -> Schema e e
-encodedOnly schema =
-    fromEndpoint schema.encoded
+encodedOnly schema = fromEndpoint schema.encoded
 
 
 pub transform :
@@ -317,8 +303,7 @@ refine base message predicate =
 
 
 pub describe : Schema e a -> { encoded : Description, decoded : Description }
-describe schema =
-    { encoded = schema.encoded.description, decoded = schema.decoded.description }
+describe schema = { encoded = schema.encoded.description, decoded = schema.decoded.description }
 
 
 pub stringEndpoint : Endpoint String
@@ -336,8 +321,7 @@ stringEndpoint =
 
 
 pub string : Schema String String
-string =
-    fromEndpoint stringEndpoint
+string = fromEndpoint stringEndpoint
 
 
 pub boolEndpoint : Endpoint Bool
@@ -355,8 +339,7 @@ boolEndpoint =
 
 
 pub bool : Schema Bool Bool
-bool =
-    fromEndpoint boolEndpoint
+bool = fromEndpoint boolEndpoint
 
 
 pub nullEndpoint : Endpoint ()
@@ -374,8 +357,7 @@ nullEndpoint =
 
 
 pub null : Schema () ()
-null =
-    fromEndpoint nullEndpoint
+null = fromEndpoint nullEndpoint
 
 
 pub int : Schema Float Int
@@ -389,8 +371,7 @@ int =
         )
         (\context value ->
             let
-                asFloat =
-                    toFloat value
+                asFloat = toFloat value
             in
             if isSafeWhole asFloat then
                 Ok asFloat
@@ -433,8 +414,7 @@ intEndpoint =
         )
         (\context value ->
             let
-                number =
-                    toFloat value
+                number = toFloat value
             in
             if isSafeWhole number then
                 Ok (Wire.Number number)
@@ -619,10 +599,8 @@ object1Endpoint name field build get =
                 Wire.Object fields ->
                     let
                         nested <- Result.andThen (enter context)
-                        unknownResult =
-                            unknown nested [ field.key ] fields
-                        fieldResult =
-                            field.readField nested fields
+                        unknownResult = unknown nested [ field.key ] fields
+                        fieldResult = field.readField nested fields
                     in
                     combineObject1 nested.options.errors unknownResult fieldResult build
                 _ ->
@@ -660,12 +638,9 @@ object2Endpoint name first second build getFirst getSecond =
                 Wire.Object fields ->
                     let
                         nested <- Result.andThen (enter context)
-                        unknownResult =
-                            unknown nested [ first.key, second.key ] fields
-                        firstResult =
-                            first.readField nested fields
-                        secondResult =
-                            second.readField nested fields
+                        unknownResult = unknown nested [ first.key, second.key ] fields
+                        firstResult = first.readField nested fields
+                        secondResult = second.readField nested fields
                     in
                     combineObject2
                         nested.options.errors
@@ -679,20 +654,16 @@ object2Endpoint name first second build getFirst getSecond =
         (\context value ->
             let
                 nested <- Result.andThen (enter context)
-                firstResult =
-                    first.writeField nested (getFirst value)
-                secondResult =
-                    second.writeField nested (getSecond value)
+                firstResult = first.writeField nested (getFirst value)
+                secondResult = second.writeField nested (getSecond value)
             in
             combineFields nested.options.errors firstResult secondResult
         )
         (\context value ->
             let
                 nested <- Result.andThen (enter context)
-                firstResult =
-                    first.validateField nested (getFirst value)
-                secondResult =
-                    second.validateField nested (getSecond value)
+                firstResult = first.validateField nested (getFirst value)
+                secondResult = second.validateField nested (getSecond value)
             in
             combineValidations nested.options.errors firstResult secondResult
         )
@@ -703,22 +674,19 @@ deferEndpoint name get =
     endpoint (plain (ReferenceShape name))
         (\context value ->
             let
-                target =
-                    get ()
+                target = get ()
             in
             target.readValue context value
         )
         (\context value ->
             let
-                target =
-                    get ()
+                target = get ()
             in
             target.writeValue context value
         )
         (\context value ->
             let
-                target =
-                    get ()
+                target = get ()
             in
             target.validate context value
         )
@@ -727,8 +695,7 @@ deferEndpoint name get =
 pub recursiveEndpoint : String, Shape, (() -> Endpoint a) -> Endpoint a
 recursiveEndpoint name definition getBody =
     let
-        deferred =
-            deferEndpoint name getBody
+        deferred = deferEndpoint name getBody
     in
     { deferred
         | description = { root = ReferenceShape name, definitions = [ ( name, definition ) ] }
@@ -745,28 +712,23 @@ issue context code message =
 
 
 plain : Shape -> Description
-plain root =
-    { root = root, definitions = [] }
+plain root = { root = root, definitions = [] }
 
 
 expected : Context, String -> Result (List Issue) a
-expected context name =
-    Err [ issue context (Expected name) ("expected " ++ name) ]
+expected context name = Err [ issue context (Expected name) ("expected " ++ name) ]
 
 
 atKey : Context, String -> Context
-atKey context key =
-    { context | path = List.append context.path [ Key key ] }
+atKey context key = { context | path = List.append context.path [ Key key ] }
 
 
 atIndex : Context, Int -> Context
-atIndex context index =
-    { context | path = List.append context.path [ Index index ] }
+atIndex context index = { context | path = List.append context.path [ Index index ] }
 
 
 deeper : Context -> Context
-deeper context =
-    { context | depth = context.depth + 1 }
+deeper context = { context | depth = context.depth + 1 }
 
 
 enter : Context -> Result (List Issue) Context
@@ -825,8 +787,7 @@ unknown context known fields =
 
 
 traverse : Context, List a, (Context, a -> Result (List Issue) b) -> Result (List Issue) (List b)
-traverse context values func =
-    traverseHelp context values func 0 [] []
+traverse context values func = traverseHelp context values func 0 [] []
 
 
 traverseHelp :

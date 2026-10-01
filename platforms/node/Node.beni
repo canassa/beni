@@ -59,5 +59,4 @@ pub foreign pure exitWith : String, Int -> Program
 
 --| A program that writes nothing and exits 0.
 pub done : Program
-done =
-    printLines []
+done = printLines []

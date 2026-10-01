@@ -9,5 +9,4 @@ pub type Other
 
 
 pub eq : Other, Other -> Bool
-eq _ _ =
-    True
+eq _ _ = True

@@ -4,5 +4,4 @@ import Owner exposing (Token, make)
 
 
 pub first : Token
-first =
-    make 1
+first = make 1

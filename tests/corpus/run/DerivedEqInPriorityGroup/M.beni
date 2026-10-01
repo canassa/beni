@@ -16,13 +16,11 @@ pub type K
 
 
 plusOne : Int -> Int
-plusOne v =
-    v + 1
+plusOne v = v + 1
 
 
 minusOne : Int -> Int
-minusOne v =
-    v - 1
+minusOne v = v - 1
 
 
 pub same : Bool

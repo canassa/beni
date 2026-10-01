@@ -3,5 +3,4 @@
 -- SECONDARY half of the two-span rule (§10 preamble, A.37).
 pub render : a -> String
     where a.draw : a, Int -> String
-render x =
-    x.draw 1
+render x = x.draw 1

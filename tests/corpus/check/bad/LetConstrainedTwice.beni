@@ -10,7 +10,6 @@
 pub report : Int, String -> String
 report n s =
     let
-        show x =
-            x.render 1
+        show x = x.render 1
     in
     show n ++ show s

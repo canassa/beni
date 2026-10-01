@@ -4,11 +4,9 @@
 pub parseBoth : String, String -> Result String Int
 parseBoth a b =
     let
-        left =
-            parseOne a?
+        left = parseOne a?
 
-        right =
-            parseOne b?
+        right = parseOne b?
     in
     Ok (left + right)
 
@@ -26,7 +24,6 @@ parseOne s =
 pub firstTwo : List Int -> Maybe Int
 firstTwo xs =
     let
-        head =
-            List.head xs?
+        head = List.head xs?
     in
     Just (head + 1)

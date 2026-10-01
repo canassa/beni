@@ -30,41 +30,33 @@ pub type Shape
 
 pub eqGen : a, a -> Bool
     where a.eq : a, a -> Bool
-eqGen x y =
-    x.eq y
+eqGen x y = x.eq y
 
 
 pub cmpGen : a, a -> Order
     where a.compare : a, a -> Order
-cmpGen x y =
-    x.compare y
+cmpGen x y = x.compare y
 
 
 pub c1 : Bool
-c1 =
-    eqGen Red Green
+c1 = eqGen Red Green
 
 
 pub c2 : Order
-c2 =
-    cmpGen (Circle 1.0) (Rect 1.0 2.0)
+c2 = cmpGen (Circle 1.0) (Rect 1.0 2.0)
 
 
 pub c3 : Bool
-c3 =
-    eqGen ( 1, "a" ) ( 2, "b" )
+c3 = eqGen ( 1, "a" ) ( 2, "b" )
 
 
 pub c4 : Order
-c4 =
-    cmpGen { x = 1, y = 2 } { x = 3, y = 4 }
+c4 = cmpGen { x = 1, y = 2 } { x = 3, y = 4 }
 
 
 pub c5 : Bool
-c5 =
-    eqGen [ 1, 2 ] [ 3 ]
+c5 = eqGen [ 1, 2 ] [ 3 ]
 
 
 pub c6 : Bool
-c6 =
-    Red == Green
+c6 = Red == Green

@@ -34,18 +34,15 @@ insert x tree =
 
 
 pub fromList : List Int -> Tree Int
-fromList xs =
-    List.foldl xs Leaf insert
+fromList xs = List.foldl xs Leaf insert
 
 
 pub toList : Tree a -> List a
-toList tree =
-    fold List.cons [] tree |> List.reverse
+toList tree = fold List.cons [] tree |> List.reverse
 
 
 pub size : Tree a -> Int
-size =
-    fold (\_ n -> n + 1) 0
+size = fold (\_ n -> n + 1) 0
 
 
 pub depth : Tree a -> Int

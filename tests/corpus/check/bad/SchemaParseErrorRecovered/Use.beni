@@ -2,10 +2,8 @@ import Sch
 
 
 p : Sch.P.Type
-p =
-    { x = 1, y = "a" }
+p = { x = 1, y = "a" }
 
 
 q : Sch.Q.Type
-q =
-    { x = 1, y = "a" }
+q = { x = 1, y = "a" }

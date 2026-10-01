@@ -18,10 +18,8 @@ pub type IndirectFn
 
 
 pub before : IndirectFn, IndirectFn -> Bool
-before a b =
-    a < b
+before a b = a < b
 
 
 pub same : IndirectFn, IndirectFn -> Bool
-same a b =
-    a == b
+same a b = a == b

@@ -14,10 +14,8 @@ import String
 
 
 report : Int -> Int
-report n =
-    Debug.log (n + 1) "report"
+report n = Debug.log (n + 1) "report"
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (report 2) ]
+main = Node.printLines [ String.fromInt (report 2) ]

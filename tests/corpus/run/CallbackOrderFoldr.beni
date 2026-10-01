@@ -12,51 +12,40 @@ import String
 
 
 note : String, Int -> Int
-note tag n =
-    Debug.log n tag
+note tag n = Debug.log n tag
 
 
 noteChar : String, Char -> Char
-noteChar tag ch =
-    Debug.log ch tag
+noteChar tag ch = Debug.log ch tag
 
 
 numbers : Dict Int Int
-numbers =
-    Dict.fromList [ ( 1, 10 ), ( 2, 20 ), ( 3, 30 ) ]
+numbers = Dict.fromList [ ( 1, 10 ), ( 2, 20 ), ( 3, 30 ) ]
 
 
 members : Set Int
-members =
-    Set.fromList [ 1, 2, 3 ]
+members = Set.fromList [ 1, 2, 3 ]
 
 
 main : Program
 main =
     let
-        listLeft =
-            List.foldl [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldl" x, ...acc ])
+        listLeft = List.foldl [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldl" x, ...acc ])
 
-        listRight =
-            List.foldr [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldr" x, ...acc ])
+        listRight = List.foldr [ 1, 2, 3 ] [] (\x acc -> [ note "List.foldr" x, ...acc ])
 
-        stringLeft =
-            String.foldl "abc" "" (\ch acc -> String.cons acc (noteChar "String.foldl" ch))
+        stringLeft = String.foldl "abc" "" (\ch acc -> String.cons acc (noteChar "String.foldl" ch))
 
         stringRight =
             String.foldr "abc" "" (\ch acc -> String.cons acc (noteChar "String.foldr" ch))
 
-        dictLeft =
-            Dict.foldl numbers [] (\k _ acc -> [ note "Dict.foldl" k, ...acc ])
+        dictLeft = Dict.foldl numbers [] (\k _ acc -> [ note "Dict.foldl" k, ...acc ])
 
-        dictRight =
-            Dict.foldr numbers [] (\k _ acc -> [ note "Dict.foldr" k, ...acc ])
+        dictRight = Dict.foldr numbers [] (\k _ acc -> [ note "Dict.foldr" k, ...acc ])
 
-        setLeft =
-            Set.foldl members [] (\v acc -> [ note "Set.foldl" v, ...acc ])
+        setLeft = Set.foldl members [] (\v acc -> [ note "Set.foldl" v, ...acc ])
 
-        setRight =
-            Set.foldr members [] (\v acc -> [ note "Set.foldr" v, ...acc ])
+        setRight = Set.foldr members [] (\v acc -> [ note "Set.foldr" v, ...acc ])
     in
     Node.printLines
         [ Debug.toString listLeft

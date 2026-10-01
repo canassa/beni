@@ -116,23 +116,19 @@ onRendered resume =
                 && Js.to (Js.get (Js.read later) "length") == 0
     then
         let
-            _ =
-                Js.apply (Js.from resume) [ Js.null ]
+            _ = Js.apply (Js.from resume) [ Js.null ]
         in
         Js.to Js.null
     else
         let
-            _ =
-                Js.call (Js.read waiters) "push" [ Js.from resume ]
+            _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
 
-            _ =
-                Js.apply (Js.read nudge) []
+            _ = Js.apply (Js.read nudge) []
         in
         \() ->
             let
                 i : Int
-                i =
-                    Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
+                i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
             in
             if i >= 0 then
                 Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
@@ -155,56 +151,47 @@ onRendered resume =
 -- what sets its after-render phase, and what queues a flush: the last
 -- hosted mount node's `send`, with `skip`.
 loop : Js.Ref Js.Value
-loop =
-    Js.ref Js.null
+loop = Js.ref Js.null
 
 
 setPhase : Js.Ref Js.Value
-setPhase =
-    Js.ref Js.null
+setPhase = Js.ref Js.null
 
 
 nudge : Js.Ref Js.Value
-nudge =
-    Js.ref Js.null
+nudge = Js.ref Js.null
 
 
 -- A message no `update` sees: sent to queue a flush, and the render it
 -- queues shows what the program showed.
 skip : Js.Value
-skip =
-    Js.array []
+skip = Js.array []
 
 
 -- After-render work queued since the last flush, and the resumes of the
 -- fibers waiting for its phase (`onRendered`), first queued first.
 later : Js.Ref Js.Value
-later =
-    Js.ref (Js.array [])
+later = Js.ref (Js.array [])
 
 
 waiters : Js.Ref Js.Value
-waiters =
-    Js.ref (Js.array [])
+waiters = Js.ref (Js.array [])
 
 
 -- A hosted program renders in a flush, or the after-render phase runs; and
 -- a message is being dispatched. `flush` does nothing during either: the
 -- flush already queued renders what the dispatch did.
 busy : Js.Ref Bool
-busy =
-    Js.ref False
+busy = Js.ref False
 
 
 dispatching : Js.Ref Bool
-dispatching =
-    Js.ref False
+dispatching = Js.ref False
 
 
 -- Messages sent while one was being dispatched, as apply, message pairs.
 inbox : Js.Ref Js.Value
-inbox =
-    Js.ref (Js.array [])
+inbox = Js.ref (Js.array [])
 
 
 -- The after-render phase, which ends every flush once a hosted program has
@@ -215,26 +202,20 @@ inbox =
 afterRender : () -> ()
 afterRender () =
     let
-        resumes =
-            Js.read waiters
+        resumes = Js.read waiters
 
-        work =
-            Js.read later
+        work = Js.read later
 
-        _ =
-            Js.write waiters (Js.array [])
+        _ = Js.write waiters (Js.array [])
 
-        _ =
-            Js.write later (Js.array [])
+        _ = Js.write later (Js.array [])
 
-        _ =
-            Js.write busy True
+        _ = Js.write busy True
     in
     Js.finally
         (\() ->
             let
-                _ =
-                    Js.each resumes (\resume -> Js.to (Js.apply resume [ Js.null ]))
+                _ = Js.each resumes (\resume -> Js.to (Js.apply resume [ Js.null ]))
             in
             Js.each work (\f -> Js.to (Js.apply f []))
         )
@@ -247,8 +228,7 @@ drain : Int -> ()
 drain i =
     if i < Js.to (Js.get (Js.read inbox) "length") then
         let
-            _ =
-                Js.apply (Js.at (Js.read inbox) i) [ Js.at (Js.read inbox) (i + 1) ]
+            _ = Js.apply (Js.at (Js.read inbox) i) [ Js.at (Js.read inbox) (i + 1) ]
         in
         drain (i + 2)
     else
@@ -275,41 +255,31 @@ host :
     -> Js.Value
 host p root flushing phase stop =
     let
-        _ =
-            Js.write loop flushing
+        _ = Js.write loop flushing
 
         -- A fiber that throws stops the page, as a handler that throws does.
-        _ =
-            Task.onDefect (\() -> Js.to (Js.apply stop []))
+        _ = Task.onDefect (\() -> Js.to (Js.apply stop []))
 
-        _ =
-            Js.write setPhase phase
+        _ = Js.write setPhase phase
 
-        _ =
-            Js.apply phase [ Js.from afterRender ]
+        _ = Js.apply phase [ Js.from afterRender ]
 
         send =
             \msg ->
                 let
-                    _ =
-                        Js.call root "$$root" [ msg ]
+                    _ = Js.call root "$$root" [ msg ]
                 in
                 ()
 
-        _ =
-            Js.write nudge (Js.from (\() -> send skip))
+        _ = Js.write nudge (Js.from (\() -> send skip))
 
-        model =
-            Js.ref (Js.to Js.null)
+        model = Js.ref (Js.to Js.null)
 
-        started =
-            Js.ref False
+        started = Js.ref False
 
-        dirty =
-            Js.ref False
+        dirty = Js.ref False
 
-        shown =
-            Js.ref (Js.to Js.null)
+        shown = Js.ref (Js.to Js.null)
 
         self : Host msg
         self =
@@ -318,8 +288,7 @@ host p root flushing phase stop =
                     { after =
                         \f ->
                             let
-                                _ =
-                                    Js.call (Js.read later) "push" [ f ]
+                                _ = Js.call (Js.read later) "push" [ f ]
                             in
                             send skip
                     , send = send
@@ -329,8 +298,7 @@ host p root flushing phase stop =
         apply =
             \msg ->
                 let
-                    _ =
-                        Js.write dirty True
+                    _ = Js.write dirty True
                 in
                 Js.write model (p.update self (Js.to msg) (Js.read model))
     in
@@ -342,30 +310,25 @@ host p root flushing phase stop =
                     ()
                 else if Js.read dispatching then
                     let
-                        _ =
-                            Js.call (Js.read inbox) "push" [ Js.from apply, msg ]
+                        _ = Js.call (Js.read inbox) "push" [ Js.from apply, msg ]
                     in
                     ()
                 else
                     let
-                        _ =
-                            Js.write dispatching True
+                        _ = Js.write dispatching True
                     in
                     Js.finally
                         (\() ->
                             let
-                                _ =
-                                    apply msg
+                                _ = apply msg
 
-                                _ =
-                                    drain 0
+                                _ = drain 0
                             in
                             ()
                         )
                         (\() ->
                             let
-                                _ =
-                                    Js.write inbox (Js.array [])
+                                _ = Js.write inbox (Js.array [])
                             in
                             Js.write dispatching False
                         )
@@ -373,34 +336,27 @@ host p root flushing phase stop =
             \() ->
                 if not (Js.read started) then
                     let
-                        _ =
-                            Js.write started True
+                        _ = Js.write started True
 
-                        _ =
-                            Js.write model (p.settle self (p.init self))
+                        _ = Js.write model (p.settle self (p.init self))
 
-                        _ =
-                            Js.write shown (p.view (Js.read model))
+                        _ = Js.write shown (p.view (Js.read model))
                     in
                     Js.read shown
                 else if not (Js.read dirty) then
                     Js.read shown
                 else
                     let
-                        _ =
-                            Js.write dirty False
+                        _ = Js.write dirty False
 
-                        _ =
-                            Js.write busy True
+                        _ = Js.write busy True
                     in
                     Js.finally
                         (\() ->
                             let
-                                _ =
-                                    Js.write model (p.settle self (Js.read model))
+                                _ = Js.write model (p.settle self (Js.read model))
 
-                                _ =
-                                    Js.write shown (p.view (Js.read model))
+                                _ = Js.write shown (p.view (Js.read model))
                             in
                             Js.read shown
                         )

@@ -82,8 +82,7 @@ compare (Pair leftHigh leftLow) (Pair rightHigh rightLow) =
 
 
 showList : List Int -> String
-showList xs =
-    String.join (List.map xs String.fromInt) ","
+showList xs = String.join (List.map xs String.fromInt) ","
 
 
 showBoxList : Box (List Int) -> String
@@ -109,29 +108,21 @@ showBoxPair box =
 main : Program
 main =
     let
-        seed =
-            Empty
+        seed = Empty
 
-        lists =
-            keepLarger (keepLarger seed [ 1, 2 ]) [ 1, 3 ]
+        lists = keepLarger (keepLarger seed [ 1, 2 ]) [ 1, 3 ]
 
-        listsReversed =
-            keepLarger (keepLarger seed [ 9 ]) [ 1, 3 ]
+        listsReversed = keepLarger (keepLarger seed [ 9 ]) [ 1, 3 ]
 
-        pairs =
-            keepLarger (keepLarger seed (Pair 1 2)) (Pair 1 4)
+        pairs = keepLarger (keepLarger seed (Pair 1 2)) (Pair 1 4)
 
-        same =
-            keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 2 ]
+        same = keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 2 ]
 
-        different =
-            keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 3 ]
+        different = keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 3 ]
 
-        emptyDict =
-            Dict.empty
+        emptyDict = Dict.empty
 
-        dict =
-            Dict.insert (Dict.insert emptyDict [ 1, 2 ] "a") [ 3 ] "b"
+        dict = Dict.insert (Dict.insert emptyDict [ 1, 2 ] "a") [ 3 ] "b"
     in
     Node.printLines
         [ showBoxList lists

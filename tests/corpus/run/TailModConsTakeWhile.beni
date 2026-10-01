@@ -22,15 +22,13 @@ takeWhile xs keep =
 
 
 show : List Int -> String
-show xs =
-    String.join (List.map xs String.fromInt) ","
+show xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
     let
-        kept =
-            takeWhile (List.range 1 200000) (\x -> x <= 100000)
+        kept = takeWhile (List.range 1 200000) (\x -> x <= 100000)
     in
     Node.printLines
         [ show (takeWhile [ 1, 2, 3, 9, 4 ] (\x -> x < 5))

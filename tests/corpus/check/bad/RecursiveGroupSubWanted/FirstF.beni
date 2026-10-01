@@ -14,23 +14,19 @@ type Box a
     = Box a
 
 
-pub mix (K n) b =
-    K n
+pub mix (K n) b = K n
 
 
 combine : Box a, b -> Box a
     where a.mix : a, b -> a
-combine (Box a) z =
-    Box (a.mix z)
+combine (Box a) z = Box (a.mix z)
 
 
 f n =
     let
-        r =
-            g n
+        r = g n
 
-        q z =
-            (Box r).combine z
+        q z = (Box r).combine z
     in
     ( q 1, q "s" )
 
@@ -40,7 +36,6 @@ g n =
         K n
     else
         let
-            _ =
-                f (n + 1)
+            _ = f (n + 1)
         in
         K n

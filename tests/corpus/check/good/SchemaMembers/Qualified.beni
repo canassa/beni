@@ -4,22 +4,18 @@ import Schema exposing (Missing, Schema)
 
 
 pub user : Models.User.Type
-user =
-    { id = 1, email = Missing, nickname = Missing }
+user = { id = 1, email = Missing, nickname = Missing }
 
 
 pub description : Schema Models.User.Encoded Models.User.Type
-description =
-    Models.User.schema ()
+description = Models.User.schema ()
 
 
-pub parsed =
-    Models.User.parse "{}"
+pub parsed = Models.User.parse "{}"
 
 
 pub escapedPrivateEndpoint : { value : Int }
-escapedPrivateEndpoint =
-    Models.hiddenInt
+escapedPrivateEndpoint = Models.hiddenInt
 
 
 pub programCase : Models.Message.Type -> Bool

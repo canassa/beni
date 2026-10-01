@@ -6,10 +6,8 @@ import Mid
 
 
 f : Int -> Int
-f n =
-    n
+f n = n
 
 
 same : Bool
-same =
-    Mid.Box (H.Holder f) == Mid.Box (H.Holder f)
+same = Mid.Box (H.Holder f) == Mid.Box (H.Holder f)

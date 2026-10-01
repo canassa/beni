@@ -8,10 +8,8 @@ import Two
 
 
 f : Two.A -> Bool
-f a =
-    a < a
+f a = a < a
 
 
 g : Bool
-g =
-    Two.B1 < Two.B2
+g = Two.B1 < Two.B2

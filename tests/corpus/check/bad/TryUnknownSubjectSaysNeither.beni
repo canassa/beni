@@ -5,7 +5,6 @@
 -- `Result b c`, at `[ v ]`.
 pub k u =
     let
-        v =
-            u?
+        v = u?
     in
     [ v ]

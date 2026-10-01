@@ -4,5 +4,4 @@
 -- the constraint to add. Without this trigger the code had no reachable
 -- path: lowering's `unbound_variable` would have swallowed it.
 pub decode : String -> Result String a
-decode s =
-    a.decode s
+decode s = a.decode s

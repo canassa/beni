@@ -27,13 +27,11 @@ import String
 
 
 blocks : Int
-blocks =
-    120
+blocks = 120
 
 
 perBlock : Int
-perBlock =
-    500
+perBlock = 500
 
 
 keys : List String
@@ -46,10 +44,8 @@ keys =
 main : Program
 main =
     let
-        dict =
-            List.foldl keys Dict.empty (\k d -> Dict.insert d k (String.length k))
+        dict = List.foldl keys Dict.empty (\k d -> Dict.insert d k (String.length k))
 
-        total =
-            List.foldl keys 0 (\k acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
+        total = List.foldl keys 0 (\k acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
     in
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

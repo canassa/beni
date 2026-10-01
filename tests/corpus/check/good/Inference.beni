@@ -1,29 +1,23 @@
 -- check/good: what the checker works out with no annotation at all. The
 -- `.iface` golden is the whole point: these schemes are what a dependent
 -- would be checked against, and they are the principal types.
-pub identity value =
-    value
+pub identity value = value
 
 
-pub apply f x =
-    f x
+pub apply f x = f x
 
 
-pub compose f g x =
-    f (g x)
+pub compose f g x = f (g x)
 
 
-pub twice n =
-    n + n
+pub twice n = n + n
 
 
-pub sizes xs =
-    List.map xs String.length
+pub sizes xs = List.map xs String.length
 
 
 pub letPolymorphism =
     let
-        dup y =
-            ( y, y )
+        dup y = ( y, y )
     in
     ( dup 1, dup "two" )

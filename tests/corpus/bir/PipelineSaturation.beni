@@ -6,18 +6,15 @@
 -- looked through, and a chain is left-associative. `<|` inserts at the other
 -- end and is right-associative: `f a <| x` is `f a x`.
 firstArgument : List Int -> List Int
-firstArgument xs =
-    xs |> List.map double
+firstArgument xs = xs |> List.map double
 
 
 bareCallee : List Int -> Int
-bareCallee xs =
-    xs |> List.sum
+bareCallee xs = xs |> List.sum
 
 
 throughParens : List Int -> List Int
-throughParens xs =
-    xs |> (List.map double)
+throughParens xs = xs |> (List.map double)
 
 
 chain : List Int -> Int
@@ -29,20 +26,16 @@ chain xs =
 
 
 applyLeft : Int -> String
-applyLeft n =
-    String.fromInt <| n + 1
+applyLeft n = String.fromInt <| n + 1
 
 
 applyLeftNested : (Int -> Int), Int -> Int
-applyLeftNested f x =
-    f <| f <| x
+applyLeftNested f x = f <| f <| x
 
 
 double : Int -> Int
-double n =
-    n * 2
+double n = n * 2
 
 
 big : Int -> Bool
-big n =
-    n > 10
+big n = n > 10

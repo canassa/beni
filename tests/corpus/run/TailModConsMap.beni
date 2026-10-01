@@ -39,21 +39,17 @@ filterRec xs keep =
 
 
 show : List Int -> String
-show xs =
-    String.join (List.map xs String.fromInt) ","
+show xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
     let
-        big =
-            List.range 1 100000
+        big = List.range 1 100000
 
-        doubled =
-            mapRec big (\x -> x * 2)
+        doubled = mapRec big (\x -> x * 2)
 
-        odd =
-            filterRec big (\x -> modBy x 2 == 1)
+        odd = filterRec big (\x -> modBy x 2 == 1)
     in
     Node.printLines
         [ show (mapRec [ 1, 2, 3 ] (\x -> x * 10))

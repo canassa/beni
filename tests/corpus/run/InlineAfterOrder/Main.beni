@@ -14,55 +14,43 @@ import Node
 
 
 next : () -> Int
-next =
-    Cells.counter 5
+next = Cells.counter 5
 
 
 logged : Int -> Int
 logged n =
     let
-        _ =
-            Debug.log n "inside"
+        _ = Debug.log n "inside"
     in
     n + 1
 
 
 shout : String -> String
-shout s =
-    "${s}!"
+shout s = "${s}!"
 
 
 total : Int -> Int
-total n =
-    Cells.sumTo 0 n
+total n = Cells.sumTo 0 n
 
 
 main : Node.Program
 main =
     let
-        seed =
-            Debug.log 41 "seed"
+        seed = Debug.log 41 "seed"
 
-        _ =
-            Debug.log 0 "before"
+        _ = Debug.log 0 "before"
 
-        x =
-            logged seed
+        x = logged seed
 
-        _ =
-            Debug.log x "after"
+        _ = Debug.log x "after"
 
-        a =
-            next ()
+        a = next ()
 
-        b =
-            next ()
+        b = next ()
 
-        c =
-            next ()
+        c = next ()
 
-        later =
-            \w -> shout w
+        later = \w -> shout w
     in
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"

@@ -11,5 +11,4 @@ pub type Pair a
 
 
 pub wrap : Int -> Wrap
-wrap n =
-    Wrap (A.T n)
+wrap n = Wrap (A.T n)

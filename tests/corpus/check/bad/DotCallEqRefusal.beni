@@ -7,20 +7,16 @@ type F
     = F (Int -> Int)
 
 
-h x =
-    x.eq x
+h x = x.eq x
 
 
 direct : Bool
-direct =
-    (F (\y -> y)).eq (F (\y -> y))
+direct = (F (\y -> y)).eq (F (\y -> y))
 
 
 onFunction : Bool
-onFunction =
-    (\y -> y + 1).eq (\y -> y)
+onFunction = (\y -> y + 1).eq (\y -> y)
 
 
 viaHelper : Bool
-viaHelper =
-    h (F (\y -> y))
+viaHelper = h (F (\y -> y))

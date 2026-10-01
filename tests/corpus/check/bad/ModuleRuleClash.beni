@@ -18,10 +18,8 @@ pub type Colour
 
 
 pub eq : Version, Version -> Bool
-eq a b =
-    True
+eq a b = True
 
 
 pub sameColour : Colour, Colour -> Bool
-sameColour a b =
-    a == b
+sameColour a b = a == b

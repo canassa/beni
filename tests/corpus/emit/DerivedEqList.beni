@@ -24,15 +24,12 @@ import Node exposing (Program)
 
 
 pub sameInts : List Int, List Int -> Bool
-sameInts a b =
-    a == b
+sameInts a b = a == b
 
 
 pub sameRows : List { x : Int }, List { x : Int } -> Bool
-sameRows a b =
-    a == b
+sameRows a b = a == b
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

@@ -13,5 +13,4 @@ bump t step =
 
 
 pub zero : Token
-zero =
-    Token 0
+zero = Token 0

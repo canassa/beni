@@ -9,37 +9,30 @@
 -- logs itself and calls `f`, so it is `!(impure | e1)`.
 -- `shared` binds a local function once: a local does not generalise its bits
 -- (rule 4), so its one class is its body's and every use's.
-pub apply f x =
-    f x
+pub apply f x = f x
 
 
-pub compose f g x =
-    f (g x)
+pub compose f g x = f (g x)
 
 
-pub sizes xs =
-    List.map xs String.length
+pub sizes xs = List.map xs String.length
 
 
-pub loud xs =
-    List.map xs (\x -> Debug.log x "x")
+pub loud xs = List.map xs (\x -> Debug.log x "x")
 
 
-pub hand x =
-    apply (\y -> y) (\z -> Debug.log z "z")
+pub hand x = apply (\y -> y) (\z -> Debug.log z "z")
 
 
 pub withLog f x =
     let
-        _ =
-            Debug.log "calling" "f"
+        _ = Debug.log "calling" "f"
     in
     f x
 
 
 pub shared n =
     let
-        step y =
-            Debug.log y "step"
+        step y = Debug.log y "step"
     in
     ( step n, step "twice" )

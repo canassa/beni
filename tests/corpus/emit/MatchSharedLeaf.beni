@@ -52,5 +52,4 @@ report x y flag =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

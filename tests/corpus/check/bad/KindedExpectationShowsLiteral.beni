@@ -2,5 +2,4 @@
 -- before the meeting fails on the kind, so the message shows the literal's
 -- own field types (checker-v2.md §6.5), not `{ a : a, b : b }`.
 --
-pub f x =
-    Basics.add x { a = 1, b = "s" }
+pub f x = Basics.add x { a = 1, b = "s" }

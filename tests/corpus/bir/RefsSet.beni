@@ -7,23 +7,18 @@ import String.Extra exposing (padLeft)
 
 
 report : Dict String Int -> String
-report d =
-    format (total d + limit) ++ " of ${Dict.size d}"
+report d = format (total d + limit) ++ " of ${Dict.size d}"
 
 
 format : Int -> String
-format n =
-    padLeft 4 (String.fromInt n)
+format n = padLeft 4 (String.fromInt n)
 
 
 total : Dict String Int -> Int
-total d =
-    size d
+total d = size d
 
 
-limit =
-    10
+limit = 10
 
 
-unused =
-    limit + 1
+unused = limit + 1

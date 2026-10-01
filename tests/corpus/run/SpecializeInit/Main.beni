@@ -12,5 +12,4 @@ import Probe
 
 
 main : Node.Program
-main =
-    Node.printLines (Probe.demo ())
+main = Node.printLines (Probe.demo ())

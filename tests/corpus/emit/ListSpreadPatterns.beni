@@ -58,5 +58,4 @@ headOr xs =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

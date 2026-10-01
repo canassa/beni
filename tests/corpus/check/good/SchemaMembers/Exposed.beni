@@ -4,12 +4,10 @@ import Schema exposing (Missing)
 
 
 pub user : User.Type
-user =
-    { id = 1, email = Missing, nickname = Missing }
+user = { id = 1, email = Missing, nickname = Missing }
 
 
-pub printed =
-    User.print user
+pub printed = User.print user
 
 
 pub programCase : Message.Type -> Bool

@@ -2,10 +2,8 @@
 -- `g`'s element is `cons`'s `a` merged with the literal's `number`, so the
 -- message says `List number`, never "This argument is: `List a` … One of
 -- those has to be a number", which contradicts itself.
-g =
-    [ 1 ]
+g = [ 1 ]
 
 
 bad : String
-bad =
-    String.toUpper (Maybe.withDefault (List.head g) "")
+bad = String.toUpper (Maybe.withDefault (List.head g) "")

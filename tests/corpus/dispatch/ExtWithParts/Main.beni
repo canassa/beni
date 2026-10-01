@@ -17,10 +17,8 @@ import Boxes exposing (Box)
 
 
 pub same : Box Int, Box Int -> Bool
-same a b =
-    a == b
+same a b = a == b
 
 
 pub sameRow : { flag : Bool, item : Box Int }, { flag : Bool, item : Box Int } -> Bool
-sameRow a b =
-    a == b
+sameRow a b = a == b

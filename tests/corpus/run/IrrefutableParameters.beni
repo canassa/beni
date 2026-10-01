@@ -38,73 +38,60 @@ type Unit
 
 -- ---- the shapes that need no types ----------------------------------------
 addPair : ( Int, Int ) -> Int
-addPair ( a, b ) =
-    a + b
+addPair ( a, b ) = a + b
 
 
 ignore : Int, Int -> Int
-ignore _ n =
-    n
+ignore _ n = n
 
 
 fromUnit : () -> Int
-fromUnit () =
-    7
+fromUnit () = 7
 
 
 fullName : { firstName : String, lastName : String } -> String
-fullName { firstName, lastName } =
-    "${firstName} ${lastName}"
+fullName { firstName, lastName } = "${firstName} ${lastName}"
 
 
 rebuild : ( Int, Int ) -> Int
-rebuild (( a, b ) as both) =
-    a + b + addPair both
+rebuild (( a, b ) as both) = a + b + addPair both
 
 
 deep : ( ( Int, Int ), { c : Int } ) -> Int
-deep ( ( a, b ), { c } ) =
-    a + b + c
+deep ( ( a, b ), { c } ) = a + b + c
 
 
 -- ---- single-constructor types, admitted by the checker ---------------------
 unbox : Box -> Int
-unbox (Box n) =
-    n
+unbox (Box n) = n
 
 
 nested : Wrapped -> Int
-nested (Wrapped (Box n)) =
-    n
+nested (Wrapped (Box n)) = n
 
 
 pairSum : Pair -> Int
-pairSum (Pair (Box a) (Box b)) =
-    a + b
+pairSum (Pair (Box a) (Box b)) = a + b
 
 
 inTuple : ( Box, Int ) -> Int
-inTuple ( Box a, b ) =
-    a + b
+inTuple ( Box a, b ) = a + b
 
 
 ofRecord : Rec -> String
-ofRecord (Rec r) =
-    "${r.s}${String.fromInt r.n}"
+ofRecord (Rec r) = "${r.s}${String.fromInt r.n}"
 
 
 -- The `bare_tag` representation: one constructor, no fields, so the value is
 -- the tag itself and the destructure has nothing to read off it.
 countUnit : Unit -> Int
-countUnit Unit =
-    1
+countUnit Unit = 1
 
 
 letUnwrap : Box -> Int
 letUnwrap b =
     let
-        (Box n) =
-            b
+        (Box n) = b
     in
     n
 
@@ -112,8 +99,7 @@ letUnwrap b =
 letNested : Pair -> Int
 letNested p =
     let
-        Pair (Box a) (Box b) =
-            p
+        Pair (Box a) (Box b) = p
     in
     a + b
 
@@ -121,15 +107,13 @@ letNested p =
 letBoundFn : Int
 letBoundFn =
     let
-        f (Box n) =
-            n
+        f (Box n) = n
     in
     f (Box 11)
 
 
 withBox : Box, (Box -> Int) -> Int
-withBox b body =
-    body b
+withBox b body = body b
 
 
 bound : Int
@@ -141,8 +125,7 @@ bound =
 
 
 lambdas : List Int
-lambdas =
-    List.map [ Box 1, Box 2 ] (\(Box n) -> n)
+lambdas = List.map [ Box 1, Box 2 ] (\(Box n) -> n)
 
 
 main : Program

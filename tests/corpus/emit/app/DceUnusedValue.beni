@@ -22,25 +22,20 @@ import String
 
 
 helper : Int -> Int
-helper n =
-    n + 1
+helper n = n + 1
 
 
 pub used : Int -> String
-used n =
-    String.fromInt (helper n)
+used n = String.fromInt (helper n)
 
 
 orphanHelper : String -> Int
-orphanHelper text =
-    String.length text
+orphanHelper text = String.length text
 
 
 pub orphan : String -> String
-orphan text =
-    String.fromInt (orphanHelper text)
+orphan text = String.fromInt (orphanHelper text)
 
 
 main : Program
-main =
-    Node.printLines [ used 1 ]
+main = Node.printLines [ used 1 ]

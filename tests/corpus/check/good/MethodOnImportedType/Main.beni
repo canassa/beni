@@ -6,5 +6,4 @@ import Token exposing (Token, bump)
 
 
 pub step : Token -> Token
-step t =
-    t.bump 1
+step t = t.bump 1

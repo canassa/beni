@@ -103,8 +103,7 @@ update msg model =
 
         AddTag tag ->
             let
-                clean =
-                    String.trim (String.toLower tag)
+                clean = String.trim (String.toLower tag)
             in
             if String.isEmpty clean then
                 model
@@ -121,8 +120,7 @@ update msg model =
 
         Delete id ->
             let
-                remaining =
-                    Dict.remove model.notes id
+                remaining = Dict.remove model.notes id
 
                 selected =
                     if model.selected == Just id then
@@ -186,18 +184,15 @@ pushHistory model =
 
 
 setNotes : Model, Dict Int Note -> Model
-setNotes model notes =
-    { model | notes = notes }
+setNotes model notes = { model | notes = notes }
 
 
 select : Model, Maybe Int -> Model
-select model id =
-    { model | selected = id }
+select model id = { model | selected = id }
 
 
 bumpId : Model -> Model
-bumpId model =
-    { model | nextId = model.nextId + 1 }
+bumpId model = { model | nextId = model.nextId + 1 }
 
 
 editNote : Model, Int, (Note -> Note) -> Model
@@ -205,8 +200,7 @@ editNote model id f =
     case Dict.get model.notes id of
         Just note ->
             let
-                edited =
-                    f note
+                edited = f note
             in
             { model | notes = Dict.insert model.notes id { edited | updatedAt = model.now } }
 
@@ -227,8 +221,7 @@ editSelected model f =
 pub visibleNotes : Model -> List Note
 visibleNotes model =
     let
-        query =
-            String.toLower (String.trim model.query)
+        query = String.toLower (String.trim model.query)
 
         matchesQuery note =
             String.isEmpty query
@@ -267,8 +260,7 @@ allTags model =
         count tag counts =
             Dict.update counts tag (\existing -> Just (Maybe.withDefault existing 0 + 1))
 
-        countNote note counts =
-            Set.foldl note.tags counts count
+        countNote note counts = Set.foldl note.tags counts count
 
         commonestFirst ( tag1, n1 ) ( tag2, n2 ) =
             if n1 /= n2 then
@@ -347,8 +339,7 @@ viewNoteItem selected note =
 preview : String -> String
 preview body =
     let
-        firstLine =
-            body |> String.lines |> List.head |> Maybe.withDefault ""
+        firstLine = body |> String.lines |> List.head |> Maybe.withDefault ""
     in
     if String.length firstLine > 40 then
         String.left firstLine 37 ++ "..."

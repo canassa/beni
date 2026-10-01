@@ -11,11 +11,9 @@ import Units
 main : Node.Program
 main =
     let
-        first =
-            Units.tick ()
+        first = Units.tick ()
 
-        second =
-            Units.tick ()
+        second = Units.tick ()
     in
     Node.printLines
         [ String.fromInt (first + second)

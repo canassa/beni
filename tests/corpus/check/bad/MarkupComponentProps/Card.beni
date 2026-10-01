@@ -1,3 +1,2 @@
 -- The component the other module calls: its `view`.
-pub view props =
-    props
+pub view props = props

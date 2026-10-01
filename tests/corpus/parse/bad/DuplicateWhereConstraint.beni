@@ -4,5 +4,4 @@ pub pick : a, a -> Bool
     where
         a.eq : a, a -> Bool
         , a.eq : a, a -> Bool
-pick x y =
-    x == y
+pick x y = x == y

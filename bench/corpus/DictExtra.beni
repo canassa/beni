@@ -35,23 +35,20 @@ groupOrder items key =
     let
         step item ( seen, order ) =
             let
-                k =
-                    key item
+                k = key item
             in
             if Set.member seen k then
                 ( seen, order )
             else
                 ( Set.insert seen k, [ k, ...order ] )
 
-        walked =
-            List.foldl items ( Set.empty, [] ) step
+        walked = List.foldl items ( Set.empty, [] ) step
     in
     List.reverse walked.1
 
 
 pub frequencies : List String -> Dict String Int
-frequencies items =
-    List.foldl items Dict.empty (\item counts -> insertWith counts item 1 (+))
+frequencies items = List.foldl items Dict.empty (\item counts -> insertWith counts item 1 (+))
 
 
 pub insertWith : Dict String v, String, v, (v, v -> v) -> Dict String v
@@ -74,13 +71,11 @@ fromListWith pairs combine =
 
 
 pub unionWith : Dict String v, Dict String v, (v, v -> v) -> Dict String v
-unionWith left right combine =
-    Dict.foldl left right (\k v acc -> insertWith acc k v combine)
+unionWith left right combine = Dict.foldl left right (\k v acc -> insertWith acc k v combine)
 
 
 pub invert : Dict String String -> Dict String (List String)
-invert dict =
-    Dict.foldl dict Dict.empty (\k v acc -> insertWith acc v [ k ] (++))
+invert dict = Dict.foldl dict Dict.empty (\k v acc -> insertWith acc v [ k ] (++))
 
 
 pub filterMap : Dict String a, (String, a -> Maybe b) -> Dict String b
@@ -98,8 +93,7 @@ filterMap dict f =
 
 
 pub mapKeys : Dict String v, (String -> String) -> Dict String v
-mapKeys dict f =
-    Dict.foldl dict Dict.empty (\k v acc -> Dict.insert acc (f k) v)
+mapKeys dict f = Dict.foldl dict Dict.empty (\k v acc -> Dict.insert acc (f k) v)
 
 
 pub partition : Dict String v, (String, v -> Bool) -> ( Dict String v, Dict String v )
@@ -146,8 +140,7 @@ any dict predicate =
 
 
 pub all : Dict String v, (String, v -> Bool) -> Bool
-all dict predicate =
-    not (any dict (\k v -> not (predicate k v)))
+all dict predicate = not (any dict (\k v -> not (predicate k v)))
 
 
 pub toSortedList : Dict String v, (v, v -> Order) -> List ( String, v )
@@ -175,23 +168,19 @@ keysWhere dict predicate =
 
 
 pub restrict : Dict String v, Set String -> Dict String v
-restrict dict keys =
-    Dict.filter dict (\k _ -> Set.member keys k)
+restrict dict keys = Dict.filter dict (\k _ -> Set.member keys k)
 
 
 pub without : Dict String v, Set String -> Dict String v
-without dict keys =
-    Dict.filter dict (\k _ -> not (Set.member keys k))
+without dict keys = Dict.filter dict (\k _ -> not (Set.member keys k))
 
 
 pub symmetricDifference : Set String, Set String -> Set String
-symmetricDifference a b =
-    Set.union (Set.diff a b) (Set.diff b a)
+symmetricDifference a b = Set.union (Set.diff a b) (Set.diff b a)
 
 
 pub powerSetSize : Set String -> Int
-powerSetSize set =
-    2 ^ Set.size set
+powerSetSize set = 2 ^ Set.size set
 
 
 pub renameKey : Dict String v, String, String -> Dict String v
@@ -205,8 +194,7 @@ renameKey dict from to =
 
 
 pub updateAll : Dict String v, List String, (v -> v) -> Dict String v
-updateAll dict keys f =
-    List.foldl keys dict (\k acc -> Dict.update acc k (Maybe.map _ f))
+updateAll dict keys f = List.foldl keys dict (\k acc -> Dict.update acc k (Maybe.map _ f))
 
 
 pub getOrInsert : Dict String v, String, v -> ( v, Dict String v )
@@ -230,8 +218,7 @@ nested outer =
 pub describe : Dict String Int -> String
 describe counts =
     let
-        total =
-            Dict.foldl counts 0 (\_ n acc -> acc + n)
+        total = Dict.foldl counts 0 (\_ n acc -> acc + n)
 
         entries =
             topN counts 3

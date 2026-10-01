@@ -15,20 +15,17 @@ pub type Duration
 
 --| `n` milliseconds.
 pub millis : Int -> Duration
-millis n =
-    Duration n
+millis n = Duration n
 
 
 --| `n` seconds.
 pub seconds : Int -> Duration
-seconds n =
-    Duration (n * 1000)
+seconds n = Duration (n * 1000)
 
 
 --| How many milliseconds.
 pub inMillis : Duration -> Int
-inMillis (Duration n) =
-    n
+inMillis (Duration n) = n
 
 
 --| A moment, as the milliseconds since the Unix epoch.
@@ -38,20 +35,17 @@ pub type Posix
 
 --| The milliseconds since the Unix epoch.
 pub toMillis : Posix -> Int
-toMillis (Posix n) =
-    n
+toMillis (Posix n) = n
 
 
 --| The moment from the milliseconds since the Unix epoch.
 pub fromMillis : Int -> Posix
-fromMillis n =
-    Posix n
+fromMillis n = Posix n
 
 
 --| What the clock says now.
 pub now : () -> Posix
-now () =
-    Posix (clock ())
+now () = Posix (clock ())
 
 
 foreign impure clock : () -> Int
@@ -59,8 +53,7 @@ foreign impure clock : () -> Int
 
 --| Wait for `duration`. Only the calling fiber waits.
 pub sleep : Duration -> ()
-sleep (Duration ms) =
-    Task.callback (\resume -> startTimer ms resume)
+sleep (Duration ms) = Task.callback (\resume -> startTimer ms resume)
 
 
 foreign impure startTimer : Int, Resume () -> (() -> ())
@@ -74,8 +67,7 @@ type Key
 --| declaration of one interval shares one timer, and each receives each
 --| tick through its own tagger.
 pub every : Duration, (Posix -> msg) -> Sub msg
-every (Duration ms) tag =
-    Sub.listen (Every ms) (ticks ms _) tag
+every (Duration ms) tag = Sub.listen (Every ms) (ticks ms _) tag
 
 
 ticks : Int, Browser.Send Posix -> ()

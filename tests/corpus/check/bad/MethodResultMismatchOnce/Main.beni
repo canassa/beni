@@ -11,12 +11,10 @@ import T exposing (T)
 
 pub f4 x =
     let
-        h u =
-            x.bar ()
+        h u = x.bar ()
     in
     ( h 1, h "s" )
 
 
 bad4 : ( String, Int )
-bad4 =
-    f4 (T.T 1)
+bad4 = f4 (T.T 1)

@@ -33,5 +33,4 @@ eq p q =
 
 
 pub same : Bool
-same =
-    Box 1 2 == Box 3 4
+same = Box 1 2 == Box 3 4

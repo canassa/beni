@@ -13,5 +13,4 @@ pub foreign pure make : Int -> Handle
 
 
 pub same : Handle, Handle -> Bool
-same a b =
-    a == b
+same a b = a == b

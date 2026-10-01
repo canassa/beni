@@ -50,5 +50,4 @@ view model =
 
 
 main : Tea.Program
-main =
-    Tea.sandbox { init = { count = 0, bad = False }, update = update, view = view }
+main = Tea.sandbox { init = { count = 0, bad = False }, update = update, view = view }

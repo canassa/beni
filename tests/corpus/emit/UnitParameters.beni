@@ -11,34 +11,28 @@ import Node exposing (Program)
 
 
 pub thunk : () -> Int
-thunk () =
-    42
+thunk () = 42
 
 
 pub later : Int, () -> Int
-later n () =
-    n + 1
+later n () = n + 1
 
 
 pub first : (), Int -> Int
-first () n =
-    n
+first () n = n
 
 
 pub lambda : () -> (() -> Int)
-lambda () =
-    \() -> 7
+lambda () = \() -> 7
 
 
 pub calls : Int -> Int
 calls n =
     let
-        f =
-            lambda ()
+        f = lambda ()
     in
     thunk () + later n () + first () n + f ()
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

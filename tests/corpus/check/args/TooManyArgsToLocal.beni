@@ -1,9 +1,7 @@
 -- check/args: one argument too many, the mirror of the missing one.
 pub double : Int -> Int
-double n =
-    n * 2
+double n = n * 2
 
 
 pub go : Int
-go =
-    double 1 2
+go = double 1 2

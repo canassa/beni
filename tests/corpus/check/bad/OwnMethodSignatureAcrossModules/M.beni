@@ -9,5 +9,4 @@ pub type T
 
 
 pub eq : T, Int -> Bool
-eq (T a) b =
-    a == b
+eq (T a) b = a == b

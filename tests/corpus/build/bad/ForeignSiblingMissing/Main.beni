@@ -7,5 +7,4 @@ import String
 
 
 main : Program
-main =
-    Prog.say (String.fromInt (Extra.helper 1))
+main = Prog.say (String.fromInt (Extra.helper 1))

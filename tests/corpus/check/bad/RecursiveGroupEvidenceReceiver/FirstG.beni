@@ -3,14 +3,12 @@ type K
     = K Int
 
 
-pub mix (K n) b =
-    K n
+pub mix (K n) b = K n
 
 
 useMix : a, b -> a
     where a.mix : a, b -> a
-useMix x y =
-    x.mix y
+useMix x y = x.mix y
 
 
 g n =
@@ -18,18 +16,15 @@ g n =
         K n
     else
         let
-            _ =
-                f (n + 1)
+            _ = f (n + 1)
         in
         K n
 
 
 f n =
     let
-        r =
-            g n
+        r = g n
 
-        q z =
-            useMix r z
+        q z = useMix r z
     in
     ( q 1, q "s" )

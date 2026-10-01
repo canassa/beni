@@ -3,10 +3,8 @@
 -- — so `equatable a -> equatable a` marks `a` twice, and `a -> equatable a`
 -- marks a later occurrence. Both are mistakes about what the prefix means.
 pub twice : equatable a, equatable a -> Bool
-twice x y =
-    True
+twice x y = True
 
 
 pub late : a, equatable a -> Bool
-late x y =
-    True
+late x y = True

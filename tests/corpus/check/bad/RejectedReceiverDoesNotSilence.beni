@@ -9,10 +9,8 @@ type T
 
 
 pub bar : T, Int -> Int
-bar (T n) m =
-    n + m
+bar (T n) m = n + m
 
 
 f : T -> Int
-f x =
-    x.foo 1 + x.baz 2 + x.bar 3 + String.length x
+f x = x.foo 1 + x.baz 2 + x.bar 3 + String.length x

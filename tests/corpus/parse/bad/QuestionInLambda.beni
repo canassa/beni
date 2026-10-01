@@ -1,8 +1,6 @@
 -- question_in_lambda at 8:24: `?` inside a lambda body, even though the
 -- lambda is inside a named function (§6.6).
-g x =
-    Ok x
+g x = Ok x
 
 
-f xs =
-    List.map (\y -> g y?) xs
+f xs = List.map (\y -> g y?) xs

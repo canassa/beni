@@ -9,5 +9,4 @@ import Padding
 
 
 main : Node.Program
-main =
-    Node.print (Padding.pad "7" 3)
+main = Node.print (Padding.pad "7" 3)

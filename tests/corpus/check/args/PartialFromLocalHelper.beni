@@ -2,7 +2,6 @@
 pub area : Int -> Int
 area n =
     let
-        scale factor value =
-            factor * value
+        scale factor value = factor * value
     in
     scale 2

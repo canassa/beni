@@ -8,18 +8,15 @@ import String
 
 
 subtract : Int, Int -> Int
-subtract a b =
-    a - b
+subtract a b = a - b
 
 
 between : Int, Int, Int -> Int
-between lo hi n =
-    clamp n lo hi
+between lo hi n = clamp n lo hi
 
 
 apply : (Int -> Int), Int -> Int
-apply f n =
-    f n
+apply f n = f n
 
 
 main : Program

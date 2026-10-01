@@ -17,33 +17,25 @@ eq a b =
             Debug.log (x == y) "eq"
 
 
-pub twice x =
-    Lib.logged (Lib.logged x)
+pub twice x = Lib.logged (Lib.logged x)
 
 
-pub viaApply n =
-    Lib.apply (\x -> Debug.log x "x") n
+pub viaApply n = Lib.apply (\x -> Debug.log x "x") n
 
 
-pub pureApply n =
-    Lib.apply (\x -> x + 1) n
+pub pureApply n = Lib.apply (\x -> x + 1) n
 
 
-pub viaHandler n =
-    Lib.runHandler (\x -> Debug.log x "h") n
+pub viaHandler n = Lib.runHandler (\x -> Debug.log x "h") n
 
 
-pub viaApi n =
-    Lib.callApi { log = \s -> Debug.log () s, size = n }
+pub viaApi n = Lib.callApi { log = \s -> Debug.log () s, size = n }
 
 
-pub quietApi n =
-    Lib.callApi { log = \s -> (), size = n }
+pub quietApi n = Lib.callApi { log = \s -> (), size = n }
 
 
-pub countLoud xs =
-    Lib.countEq xs (Loud 1)
+pub countLoud xs = Lib.countEq xs (Loud 1)
 
 
-pub countInts xs =
-    Lib.countEq xs 1
+pub countInts xs = Lib.countEq xs 1

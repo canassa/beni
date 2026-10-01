@@ -19,8 +19,7 @@ pub type Generic a
     = Generic (Holder.Holder a)
 
 
-identity value =
-    value
+identity value = value
 
 
 badWrapper =
@@ -39,15 +38,12 @@ badAfter =
 
 
 badGeneric : Generic String, Generic String -> Bool
-badGeneric left right =
-    left == right
+badGeneric left right = left == right
 
 
 badRecord : { value : Holder.Holder String }, { value : Holder.Holder String } -> Bool
-badRecord left right =
-    left == right
+badRecord left right = left == right
 
 
 badTuple : ( Holder.Holder String, Int ), ( Holder.Holder String, Int ) -> Bool
-badTuple left right =
-    left == right
+badTuple left right = left == right

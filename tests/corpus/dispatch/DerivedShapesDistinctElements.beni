@@ -12,20 +12,16 @@
 -- characters, exactly what A.26 refuses — while `nested` compares its inner
 -- tuple with `===`.
 pub orderInts : ( Int, Int ), ( Int, Int ) -> Bool
-orderInts a b =
-    a < b
+orderInts a b = a < b
 
 
 pub orderStrings : ( String, String ), ( String, String ) -> Bool
-orderStrings a b =
-    a < b
+orderStrings a b = a < b
 
 
 pub sameInts : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
-sameInts a b =
-    a == b
+sameInts a b = a == b
 
 
 pub nested : { x : Int, y : ( Char, Char ) }, { x : Int, y : ( Char, Char ) } -> Bool
-nested a b =
-    a == b
+nested a b = a == b

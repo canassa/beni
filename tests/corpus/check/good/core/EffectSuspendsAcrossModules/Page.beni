@@ -2,20 +2,16 @@ import Users
 
 
 pub names : List Int -> Int
-names ids =
-    List.length (Users.fetchAll ids)
+names ids = List.length (Users.fetchAll ids)
 
 
 pub later : List Int -> (() -> List String)
-later ids =
-    \() -> Users.fetchAll ids
+later ids = \() -> Users.fetchAll ids
 
 
 pub now : List Int -> List String
-now ids =
-    (later ids) ()
+now ids = (later ids) ()
 
 
 pub quiet : List Int -> Int
-quiet ids =
-    Users.count ids
+quiet ids = Users.count ids

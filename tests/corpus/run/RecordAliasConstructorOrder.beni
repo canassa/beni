@@ -20,21 +20,17 @@ type alias Outer =
 -- Annotated, so the record is closed where `==` meets it: the same
 -- comparison written inline after `q.zed` is `no_methods_on_shape`.
 same : Q, Q -> Bool
-same a b =
-    a == b
+same a b = a == b
 
 
 main : Program
 main =
     let
-        q =
-            Q (Debug.log 1 "zed") (Debug.log 2 "alpha")
+        q = Q (Debug.log 1 "zed") (Debug.log 2 "alpha")
 
-        outer =
-            Outer (Q 3 4) "o"
+        outer = Outer (Q 3 4) "o"
 
-        half =
-            Q 5 _
+        half = Q 5 _
     in
     Node.printLines
         [ String.fromInt q.zed

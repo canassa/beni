@@ -6,5 +6,4 @@
 -- With the section's type left to the body, this read "This is `Bool` but I
 -- need `b`" and pointed at the same place for a different reason.
 pub folded : Int
-folded =
-    List.foldl [ 1 ] 0 (<)
+folded = List.foldl [ 1 ] 0 (<)

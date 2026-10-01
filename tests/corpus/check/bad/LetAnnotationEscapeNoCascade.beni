@@ -8,8 +8,7 @@ coerce x =
     (\z ->
         let
             g : a -> a
-            g y =
-                z
+            g y = z
         in
         g "s"
     )

@@ -10,10 +10,8 @@ import Html exposing (Html)
 
 pub input g =
     let
-        v =
-            <input onInput={g} />
+        v = <input onInput={g} />
 
-        z =
-            g "x"
+        z = g "x"
     in
     ( v, z )

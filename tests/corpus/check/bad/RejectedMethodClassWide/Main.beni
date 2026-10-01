@@ -12,33 +12,25 @@ import T exposing (T)
 
 f1 x y =
     let
-        a =
-            x.foo ()
+        a = x.foo ()
 
-        b =
-            [ x, T.T 1 ]
+        b = [ x, T.T 1 ]
 
-        c =
-            [ x, y ]
+        c = [ x, y ]
 
-        d =
-            y.foo ()
+        d = y.foo ()
     in
     0
 
 
 f2 x y =
     let
-        a =
-            x.foo ()
+        a = x.foo ()
 
-        b =
-            [ x, T.T 1 ]
+        b = [ x, T.T 1 ]
 
-        c =
-            [ y, x ]
+        c = [ y, x ]
 
-        d =
-            y.foo ()
+        d = y.foo ()
     in
     0

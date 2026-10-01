@@ -16,43 +16,35 @@ pub type Doc
 
 
 pub empty : Doc
-empty =
-    Empty
+empty = Empty
 
 
 pub text : String -> Doc
-text =
-    Text
+text = Text
 
 
 pub line : Doc
-line =
-    Line
+line = Line
 
 
 pub softline : Doc
-softline =
-    SoftLine
+softline = SoftLine
 
 
 pub nest : Int, Doc -> Doc
-nest =
-    Nest
+nest = Nest
 
 
 pub group : Doc -> Doc
-group =
-    Group
+group = Group
 
 
 pub append : Doc, Doc -> Doc
-append =
-    Concat
+append = Concat
 
 
 pub concat : List Doc -> Doc
-concat docs =
-    List.foldr docs Empty Concat
+concat docs = List.foldr docs Empty Concat
 
 
 pub join : List Doc, Doc -> Doc
@@ -76,8 +68,7 @@ bracket open inner close =
 
 
 pub hang : Int, Doc -> Doc
-hang indent doc =
-    Group (Nest indent doc)
+hang indent doc = Group (Nest indent doc)
 
 
 type Mode
@@ -135,8 +126,7 @@ layout w column items acc =
 
                 Group inner ->
                     let
-                        flat =
-                            { item | mode = Flat, doc = inner }
+                        flat = { item | mode = Flat, doc = inner }
                     in
                     if fits (w - column) [ flat, ...rest ] then
                         layout w column [ flat, ...rest ] acc
@@ -183,8 +173,7 @@ fits remaining items =
 
 
 newline : Int -> String
-newline indent =
-    "\n" ++ String.repeat " " indent
+newline indent = "\n" ++ String.repeat " " indent
 
 
 pub type Value
@@ -234,13 +223,11 @@ valueDoc value =
 
 
 fieldDoc : ( String, Value ) -> Doc
-fieldDoc ( key, value ) =
-    Concat (Text (quote key)) (Concat (Text ": ") (valueDoc value))
+fieldDoc ( key, value ) = Concat (Text (quote key)) (Concat (Text ": ") (valueDoc value))
 
 
 quote : String -> String
-quote s =
-    "\"" ++ escape s ++ "\""
+quote s = "\"" ++ escape s ++ "\""
 
 
 escape : String -> String
@@ -253,8 +240,7 @@ escape s =
 
 
 pub printValue : Int, Value -> String
-printValue w value =
-    render w (valueDoc value)
+printValue w value = render w (valueDoc value)
 
 
 pub sample : Value

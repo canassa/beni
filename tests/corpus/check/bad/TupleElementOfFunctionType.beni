@@ -4,10 +4,8 @@
 -- reads that as a 2-ary function — and a type in a diagnostic is text the
 -- reader pastes back into their source.
 pub apply : ( (Int -> Int), Int ) -> Int
-apply _ =
-    0
+apply _ = 0
 
 
 pub wrong : Int
-wrong =
-    apply "x"
+wrong = apply "x"

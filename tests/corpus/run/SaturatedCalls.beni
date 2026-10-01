@@ -18,13 +18,11 @@ type Point
 
 
 add : Int, Int -> Int
-add a b =
-    a + b
+add a b = a + b
 
 
 sum3 : Int, Int, Int -> Int
-sum3 a b c =
-    a + b + c
+sum3 a b c = a + b + c
 
 
 area : Point -> Int
@@ -35,8 +33,7 @@ area p =
 
 
 callWith : (Int, Int -> Int), Int, Int -> Int
-callWith f a b =
-    f a b
+callWith f a b = f a b
 
 
 main : Program

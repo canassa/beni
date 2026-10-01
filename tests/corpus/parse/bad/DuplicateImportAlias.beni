@@ -3,5 +3,4 @@ import Json.Decode as D
 import Json.Encode as D
 
 
-x =
-    1
+x = 1

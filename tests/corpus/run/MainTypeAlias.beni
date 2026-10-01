@@ -15,5 +15,4 @@ type alias Entry =
 
 
 main : Entry
-main =
-    Node.print "main is an Entry"
+main = Node.print "main is an Entry"

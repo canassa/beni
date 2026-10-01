@@ -17,10 +17,8 @@ eq a b =
 
 
 pub inside : T, T -> Bool
-inside a b =
-    a == b
+inside a b = a == b
 
 
 pub insideTuple : T, T -> Bool
-insideTuple a b =
-    ( a, 0 ) == ( b, 0 )
+insideTuple a b = ( a, 0 ) == ( b, 0 )

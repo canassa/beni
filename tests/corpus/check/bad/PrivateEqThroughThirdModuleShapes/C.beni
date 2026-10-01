@@ -4,18 +4,15 @@ import B
 
 
 viaWrapper : Bool
-viaWrapper =
-    B.wrap 1 == B.wrap 11
+viaWrapper = B.wrap 1 == B.wrap 11
 
 
 viaCtor : Bool
-viaCtor =
-    B.Wrap (A.T 1) == B.Wrap (A.T 11)
+viaCtor = B.Wrap (A.T 1) == B.Wrap (A.T 11)
 
 
 viaParam : Bool
-viaParam =
-    B.Pair 1 (A.T 1) == B.Pair 1 (A.T 11)
+viaParam = B.Pair 1 (A.T 1) == B.Pair 1 (A.T 11)
 
 
 type Again
@@ -23,10 +20,8 @@ type Again
 
 
 viaOwn : Bool
-viaOwn =
-    Again (B.wrap 1) == Again (B.wrap 11)
+viaOwn = Again (B.wrap 1) == Again (B.wrap 11)
 
 
 viaList : Bool
-viaList =
-    [ B.wrap 1 ] == [ B.wrap 11 ]
+viaList = [ B.wrap 1 ] == [ B.wrap 11 ]

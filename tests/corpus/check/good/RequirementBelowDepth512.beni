@@ -7,89 +7,67 @@
 -- wanted: an INTERNAL ERROR). Expected: the
 -- module checks, as it does at `w9`, with nothing public. Oracle twin:
 -- the same file with `w9`/`u9` as the last pair checks clean.
-w1 x =
-    ( x, x )
+w1 x = ( x, x )
 
 
-u1 ( p, _ ) =
-    p
+u1 ( p, _ ) = p
 
 
-w2 x =
-    w1 (w1 x)
+w2 x = w1 (w1 x)
 
 
-u2 t =
-    u1 (u1 t)
+u2 t = u1 (u1 t)
 
 
-w3 x =
-    w2 (w2 x)
+w3 x = w2 (w2 x)
 
 
-u3 t =
-    u2 (u2 t)
+u3 t = u2 (u2 t)
 
 
-w4 x =
-    w3 (w3 x)
+w4 x = w3 (w3 x)
 
 
-u4 t =
-    u3 (u3 t)
+u4 t = u3 (u3 t)
 
 
-w5 x =
-    w4 (w4 x)
+w5 x = w4 (w4 x)
 
 
-u5 t =
-    u4 (u4 t)
+u5 t = u4 (u4 t)
 
 
-w6 x =
-    w5 (w5 x)
+w6 x = w5 (w5 x)
 
 
-u6 t =
-    u5 (u5 t)
+u6 t = u5 (u5 t)
 
 
-w7 x =
-    w6 (w6 x)
+w7 x = w6 (w6 x)
 
 
-u7 t =
-    u6 (u6 t)
+u7 t = u6 (u6 t)
 
 
-w8 x =
-    w7 (w7 x)
+w8 x = w7 (w7 x)
 
 
-u8 t =
-    u7 (u7 t)
+u8 t = u7 (u7 t)
 
 
-w9 x =
-    w8 (w8 x)
+w9 x = w8 (w8 x)
 
 
-u9 t =
-    u8 (u8 t)
+u9 t = u8 (u8 t)
 
 
-w10 x =
-    w9 (w9 x)
+w10 x = w9 (w9 x)
 
 
-u10 t =
-    u9 (u9 t)
+u10 t = u9 (u9 t)
 
 
-g t =
-    t == w10 (u10 t)
+g t = t == w10 (u10 t)
 
 
-v =
-    g (w10 1)
+v = g (w10 1)

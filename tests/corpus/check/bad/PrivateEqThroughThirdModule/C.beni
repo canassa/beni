@@ -3,5 +3,4 @@ import B
 
 
 viaWrapper : Bool
-viaWrapper =
-    B.wrap 1 == B.wrap 11
+viaWrapper = B.wrap 1 == B.wrap 11

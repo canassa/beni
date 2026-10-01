@@ -14,8 +14,7 @@ pub eq left right =
 
 pub compare left right =
     let
-        same =
-            { v = left } == { v = right }
+        same = { v = left } == { v = right }
     in
     case left of
         T n _ ->

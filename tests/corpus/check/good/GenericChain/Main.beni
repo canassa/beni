@@ -17,5 +17,4 @@ scale m factor =
 
 
 pub grow : Metre -> Metre
-grow m =
-    Lib.outer m 3
+grow m = Lib.outer m 3

@@ -7,8 +7,7 @@ import String
 
 
 swap : ( Int, String ) -> ( String, Int )
-swap ( n, s ) =
-    ( s, n )
+swap ( n, s ) = ( s, n )
 
 
 describe : ( Int, Int, Int ) -> String
@@ -24,11 +23,9 @@ describe triple =
 main : Program
 main =
     let
-        pair =
-            ( 1, "one" )
+        pair = ( 1, "one" )
 
-        ( left, right ) =
-            swap pair
+        ( left, right ) = swap pair
     in
     Node.printLines
         [ left

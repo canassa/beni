@@ -8,8 +8,7 @@ pub type Wrap
 
 
 pub wrap : Int -> Wrap
-wrap n =
-    Wrap (A.T n)
+wrap n = Wrap (A.T n)
 
 
 pub type Other
@@ -17,5 +16,4 @@ pub type Other
 
 
 pub same : Other, Other -> Bool
-same x y =
-    x == y
+same x y = x == y

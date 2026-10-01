@@ -33,8 +33,7 @@ show b =
 main : Program
 main =
     let
-        fruit =
-            Dict.fromList [ ( "pear", 2 ), ( "apple", 1 ), ( "fig", 3 ) ]
+        fruit = Dict.fromList [ ( "pear", 2 ), ( "apple", 1 ), ( "fig", 3 ) ]
     in
     Node.printLines
         [ show ("a" < "b")

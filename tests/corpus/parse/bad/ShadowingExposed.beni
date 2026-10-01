@@ -2,5 +2,4 @@
 import Dict exposing (empty)
 
 
-f empty =
-    empty
+f empty = empty

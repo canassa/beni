@@ -19,18 +19,15 @@ import String
 
 
 subtract : Int, Int -> Int
-subtract a b =
-    a - b
+subtract a b = a - b
 
 
 twice : Int, (Int -> String) -> String
-twice n body =
-    body n ++ "/" ++ body (n + 1)
+twice n body = body n ++ "/" ++ body (n + 1)
 
 
 usingAll : List (Int -> Int), (List Int -> String) -> String
-usingAll fs body =
-    body (List.map fs (\f -> f 7))
+usingAll fs body = body (List.map fs (\f -> f 7))
 
 
 insideRest : String

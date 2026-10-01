@@ -6,10 +6,8 @@ import Right exposing (scaleDown)
 
 
 pub round : Unit, Int -> Int
-round u n =
-    scaleDown u (scaleUp u n)
+round u n = scaleDown u (scaleUp u n)
 
 
 pub metres : Int
-metres =
-    round Metres 12
+metres = round Metres 12

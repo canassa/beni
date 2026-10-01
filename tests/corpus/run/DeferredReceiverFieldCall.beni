@@ -12,18 +12,15 @@
 import Node exposing (Program)
 
 
-g u =
-    (\r -> r.f 1) { f = \x -> x + 1 }
+g u = (\r -> r.f 1) { f = \x -> x + 1 }
 
 
 apply u =
     let
-        call s =
-            s.f 10
+        call s = s.f 10
     in
     call { f = \x -> x + 1 }
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (g ()), String.fromInt (apply ()) ]
+main = Node.printLines [ String.fromInt (g ()), String.fromInt (apply ()) ]

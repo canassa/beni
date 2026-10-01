@@ -13,5 +13,4 @@ pub type Wraps
 
 
 pub before : Wraps, Wraps -> Bool
-before a b =
-    a < b
+before a b = a < b

@@ -2,5 +2,4 @@ schema Page item =
     item : item
 
 
-bad =
-    Page
+bad = Page

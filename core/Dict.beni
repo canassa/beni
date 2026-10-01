@@ -54,8 +54,7 @@ type NColor
 --|
 --|     Dict.empty
 pub empty : Dict k v
-empty =
-    Dict Leaf
+empty = Dict Leaf
 
 
 --| Create a dictionary with one key-value pair. One pair needs no ordering
@@ -63,8 +62,7 @@ empty =
 --|
 --|     Dict.singleton "Tom" 42
 pub singleton : k, v -> Dict k v
-singleton key value =
-    Dict (Node Black key value Leaf Leaf)
+singleton key value = Dict (Node Black key value Leaf Leaf)
 
 
 --| Get the value associated with a key. If the key is not found, return
@@ -75,8 +73,7 @@ singleton key value =
 --|     get (fromList [ ( "Tom", "cat" ) ]) "Jerry" == Nothing
 pub get : Dict k v, k -> Maybe v
     where k.compare : k, k -> Order
-get (Dict tree) targetKey =
-    getHelp tree targetKey
+get (Dict tree) targetKey = getHelp tree targetKey
 
 
 getHelp : Tree k v, k -> Maybe v
@@ -115,8 +112,7 @@ member dict key =
 
 --| Determine the number of key-value pairs in the dictionary.
 pub size : Dict k v -> Int
-size (Dict tree) =
-    sizeHelp 0 tree
+size (Dict tree) = sizeHelp 0 tree
 
 
 sizeHelp : Int, Tree k v -> Int
@@ -148,8 +144,7 @@ isEmpty (Dict tree) =
 --|     insert empty "Tom" 42
 pub insert : Dict k v, k, v -> Dict k v
     where k.compare : k, k -> Order
-insert (Dict tree) key value =
-    Dict (blacken (insertHelp tree key value))
+insert (Dict tree) key value = Dict (blacken (insertHelp tree key value))
 
 
 -- The root node is always black.
@@ -220,8 +215,7 @@ balance color key value left right =
 --|     remove animals "Tom"
 pub remove : Dict k v, k -> Dict k v
     where k.compare : k, k -> Order
-remove (Dict tree) key =
-    Dict (blacken (removeHelp tree key))
+remove (Dict tree) key = Dict (blacken (removeHelp tree key))
 
 
 -- The easiest thing to remove from the tree, other than a red node, is a
@@ -409,23 +403,20 @@ update dict targetKey alter =
 --| the first dictionary.
 pub union : Dict k v, Dict k v -> Dict k v
     where k.compare : k, k -> Order
-union t1 t2 =
-    foldl t1 t2 (\key value dict -> insert dict key value)
+union t1 t2 = foldl t1 t2 (\key value dict -> insert dict key value)
 
 
 --| Keep a key-value pair when its key appears in the second dictionary.
 pub intersect : Dict k v, Dict k v -> Dict k v
     where k.compare : k, k -> Order
-intersect t1 t2 =
-    filter t1 (\key _ -> member t2 key)
+intersect t1 t2 = filter t1 (\key _ -> member t2 key)
 
 
 --| Keep a key-value pair when its key does not appear in the second
 --| dictionary.
 pub diff : Dict k a, Dict k b -> Dict k a
     where k.compare : k, k -> Order
-diff t1 t2 =
-    foldl t2 t1 (\key _ t -> remove t key)
+diff t1 t2 = foldl t2 t1 (\key _ t -> remove t key)
 
 
 --| The most general way of combining two dictionaries. The two dictionaries
@@ -479,8 +470,7 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
 --| `func` is called in ascending key order (`checker.md` Appendix B), which
 --| is what `mapTree` binds its three pieces in order to get.
 pub map : Dict k a, (k, a -> b) -> Dict k b
-map (Dict tree) func =
-    Dict (mapTree tree func)
+map (Dict tree) func = Dict (mapTree tree func)
 
 
 mapTree : Tree k a, (k, a -> b) -> Tree k b
@@ -491,14 +481,11 @@ mapTree tree func =
 
         Node color key value left right ->
             let
-                newLeft =
-                    mapTree left func
+                newLeft = mapTree left func
 
-                newValue =
-                    func key value
+                newValue = func key value
 
-                newRight =
-                    mapTree right func
+                newRight = mapTree right func
             in
             Node color key newValue newLeft newRight
 
@@ -508,8 +495,7 @@ mapTree tree func =
 --|
 --|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (\_ _ count -> count + 1) == 2
 pub foldl : Dict k v, b, (k, v, b -> b) -> b
-foldl (Dict tree) acc func =
-    foldlTree tree acc func
+foldl (Dict tree) acc func = foldlTree tree acc func
 
 
 foldlTree : Tree k v, b, (k, v, b -> b) -> b
@@ -527,8 +513,7 @@ foldlTree tree acc func =
 --|
 --|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (\key _ names -> [ key, ...names ]) == [ "a", "b" ]
 pub foldr : Dict k v, b, (k, v, b -> b) -> b
-foldr (Dict tree) acc func =
-    foldrTree tree acc func
+foldr (Dict tree) acc func = foldrTree tree acc func
 
 
 foldrTree : Tree k v, b, (k, v, b -> b) -> b
@@ -580,16 +565,14 @@ partition (Dict tree) isGood =
 --|
 --|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
 pub keys : Dict k v -> List k
-keys dict =
-    foldl dict [] (\key _ keyList -> List.push keyList key)
+keys dict = foldl dict [] (\key _ keyList -> List.push keyList key)
 
 
 --| Get all of the values in a dictionary, in the order of their keys.
 --|
 --|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
 pub values : Dict k v -> List v
-values dict =
-    foldl dict [] (\_ value valueList -> List.push valueList value)
+values dict = foldl dict [] (\_ value valueList -> List.push valueList value)
 
 
 --| Convert a dictionary into an association list of key-value pairs, sorted
@@ -598,8 +581,7 @@ values dict =
 --|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ])
 --|         == [ ( "a", 0 ), ( "b", 1 ) ]
 pub toList : Dict k v -> List ( k, v )
-toList dict =
-    foldl dict [] (\key value list -> List.push list ( key, value ))
+toList dict = foldl dict [] (\key value list -> List.push list ( key, value ))
 
 
 --| Convert an association list into a dictionary, ordered by the key type's
@@ -608,5 +590,4 @@ toList dict =
 --|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
 pub fromList : List ( k, v ) -> Dict k v
     where k.compare : k, k -> Order
-fromList assocs =
-    List.foldl assocs empty (\( key, value ) dict -> insert dict key value)
+fromList assocs = List.foldl assocs empty (\( key, value ) dict -> insert dict key value)

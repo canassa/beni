@@ -2,22 +2,18 @@
 -- interned before `flexf` (the first declaration names it) — with the same
 -- one `not_equatable` (checker-v2.md §11.4): which failure is reported
 -- follows name text, never interning order.
-fnf =
-    1
+fnf = 1
 
 
-flexf =
-    1
+flexf = 1
 
 
 k : Int -> Int
-k n =
-    n
+k n = n
 
 
 h x =
     let
-        t =
-            Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
+        t = Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
     in
     x 1

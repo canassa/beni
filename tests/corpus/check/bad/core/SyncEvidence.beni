@@ -20,13 +20,11 @@ pub type Item
 
 
 pub probe : Item -> Bool
-probe (Item n) =
-    get n
+probe (Item n) = get n
 
 
 count : () -> Int
-count () =
-    countWhere [ Item 1 ]
+count () = countWhere [ Item 1 ]
 
 
 pub type Check
@@ -34,15 +32,12 @@ pub type Check
 
 
 pub eq : Check, Check -> Bool
-eq (Check f) (Check g) =
-    f 0 == g 0
+eq (Check f) (Check g) = f 0 == g 0
 
 
 same : () -> Bool
-same () =
-    Check (\n -> get n) == Check (\n -> n > 0)
+same () = Check (\n -> get n) == Check (\n -> n > 0)
 
 
 fine : () -> Bool
-fine () =
-    Check (\n -> n < 0) == Check (\n -> n > 0)
+fine () = Check (\n -> n < 0) == Check (\n -> n > 0)

@@ -69,5 +69,4 @@ nested i =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

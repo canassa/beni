@@ -9,8 +9,7 @@ import Task
 worker : Int -> Int
 worker n =
     let
-        _ =
-            Io.sleep 1
+        _ = Io.sleep 1
     in
     n * 2
 

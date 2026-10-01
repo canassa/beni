@@ -7,20 +7,16 @@
 -- early return wins. `|>` writes its operand first and so lowers it
 -- first; `applyRightOperandOrder` is the mirror.
 two : Int, Int -> Int
-two a b =
-    a + b
+two a b = a + b
 
 
 applyLeftOperandOrder : String, String -> Maybe Int
-applyLeftOperandOrder a b =
-    Just (two (String.toInt a?) <| String.toInt b?)
+applyLeftOperandOrder a b = Just (two (String.toInt a?) <| String.toInt b?)
 
 
 applyRightOperandOrder : String, String -> Maybe Int
-applyRightOperandOrder a b =
-    Just (String.toInt a? |> two (String.toInt b?))
+applyRightOperandOrder a b = Just (String.toInt a? |> two (String.toInt b?))
 
 
 bareCallee : Int -> Int
-bareCallee n =
-    two n <| n + 1
+bareCallee n = two n <| n + 1

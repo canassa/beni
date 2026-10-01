@@ -4,12 +4,10 @@
 -- operand a name or `_`, before, between or after the other items. The
 -- tree holds each as `spread` / `pat_spread` over its operand (frontend.md
 -- §3.5).
-build x xs ys =
-    ( [ x, ...xs ], [ ...xs, x ], [ ...xs, ...ys ], [ ...xs, x, ...ys ], [ ...xs ] )
+build x xs ys = ( [ x, ...xs ], [ ...xs, x ], [ ...xs, ...ys ], [ ...xs, x, ...ys ], [ ...xs ] )
 
 
-operands f x xs ys =
-    [ ...f x, 0, ...xs ++ ys ]
+operands f x xs ys = [ ...f x, 0, ...xs ++ ys ]
 
 
 shapes xs =

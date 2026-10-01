@@ -2,12 +2,10 @@
 -- module, regardless of declaration order (§6.2, §7); recursion resolves
 -- to the declaration itself.
 double : Int -> Int
-double n =
-    scale n factor
+double n = scale n factor
 
 
-factor =
-    2
+factor = 2
 
 
 scale : Int, Int -> Int

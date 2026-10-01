@@ -48,98 +48,79 @@ pub type ArbitraryOuter
 
 
 plusOne : Int -> Int
-plusOne value =
-    value + 1
+plusOne value = value + 1
 
 
 minusOne : Int -> Int
-minusOne value =
-    value - 1
+minusOne value = value - 1
 
 
 sameLeft : Outer
-sameLeft =
-    Outer (Inner.Inner "same" (Inner.Callback plusOne))
+sameLeft = Outer (Inner.Inner "same" (Inner.Callback plusOne))
 
 
 sameRight : Outer
-sameRight =
-    Outer (Inner.Inner "same" (Inner.Callback minusOne))
+sameRight = Outer (Inner.Inner "same" (Inner.Callback minusOne))
 
 
 different : Outer
-different =
-    Outer (Inner.Inner "different" (Inner.Callback plusOne))
+different = Outer (Inner.Inner "different" (Inner.Callback plusOne))
 
 
 highRank : RankedOuter
-highRank =
-    RankedOuter (Ranked.Ranked 9 plusOne)
+highRank = RankedOuter (Ranked.Ranked 9 plusOne)
 
 
 lowRank : RankedOuter
-lowRank =
-    RankedOuter (Ranked.Ranked 1 minusOne)
+lowRank = RankedOuter (Ranked.Ranked 1 minusOne)
 
 
 sameOpaqueLeft : OpaqueOuter
-sameOpaqueLeft =
-    OpaqueOuter (Opaque.Opaque "same" plusOne)
+sameOpaqueLeft = OpaqueOuter (Opaque.Opaque "same" plusOne)
 
 
 sameOpaqueRight : OpaqueOuter
-sameOpaqueRight =
-    OpaqueOuter (Opaque.Opaque "same" minusOne)
+sameOpaqueRight = OpaqueOuter (Opaque.Opaque "same" minusOne)
 
 
 differentOpaque : OpaqueOuter
-differentOpaque =
-    OpaqueOuter (Opaque.Opaque "different" plusOne)
+differentOpaque = OpaqueOuter (Opaque.Opaque "different" plusOne)
 
 
 sameSpecializedLeft : SpecializedOuter
-sameSpecializedLeft =
-    SpecializedOuter (Specialized.Holder 1 "same" plusOne)
+sameSpecializedLeft = SpecializedOuter (Specialized.Holder 1 "same" plusOne)
 
 
 sameSpecializedRight : SpecializedOuter
-sameSpecializedRight =
-    SpecializedOuter (Specialized.Holder 2 "same" minusOne)
+sameSpecializedRight = SpecializedOuter (Specialized.Holder 2 "same" minusOne)
 
 
 differentSpecialized : SpecializedOuter
-differentSpecialized =
-    SpecializedOuter (Specialized.Holder 1 "different" plusOne)
+differentSpecialized = SpecializedOuter (Specialized.Holder 1 "different" plusOne)
 
 
 sameSpecializedChainLeft : SpecializedOuterChain
-sameSpecializedChainLeft =
-    SpecializedOuterChain sameSpecializedLeft
+sameSpecializedChainLeft = SpecializedOuterChain sameSpecializedLeft
 
 
 sameSpecializedChainRight : SpecializedOuterChain
-sameSpecializedChainRight =
-    SpecializedOuterChain sameSpecializedRight
+sameSpecializedChainRight = SpecializedOuterChain sameSpecializedRight
 
 
 differentSpecializedChain : SpecializedOuterChain
-differentSpecializedChain =
-    SpecializedOuterChain differentSpecialized
+differentSpecializedChain = SpecializedOuterChain differentSpecialized
 
 
 sameArbitraryLeft : ArbitraryOuter
-sameArbitraryLeft =
-    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
+sameArbitraryLeft = ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
 
 
 sameArbitraryRight : ArbitraryOuter
-sameArbitraryRight =
-    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 minusOne))
+sameArbitraryRight = ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 minusOne))
 
 
 differentArbitrary : ArbitraryOuter
-differentArbitrary =
-    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 plusOne))
+differentArbitrary = ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 plusOne))
 
 
 show : Bool -> String

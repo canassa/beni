@@ -9,13 +9,11 @@ import Schema exposing (Conversion)
 
 
 mk : Int -> Conversion Int (Int -> Int)
-mk n =
-    Debug.todo "checker-only conversion"
+mk n = Debug.todo "checker-only conversion"
 
 
 conversion : Conversion Int (Int -> Int)
-conversion =
-    mk 0
+conversion = mk 0
 
 
 pub schema Fn tagged "kind" of
@@ -28,10 +26,8 @@ type Wrap
 
 
 same : Wrap, Wrap -> Bool
-same left right =
-    left == right
+same left right = left == right
 
 
 sameFn : Fn.Type, Fn.Type -> Bool
-sameFn left right =
-    left == right
+sameFn left right = left == right

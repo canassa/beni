@@ -9,13 +9,11 @@ import String
 
 
 withDiff : Int, Int, (Int -> String) -> String
-withDiff a b body =
-    body (a - b)
+withDiff a b body = body (a - b)
 
 
 subtract : Int, Int -> Int
-subtract a b =
-    a - b
+subtract a b = a - b
 
 
 piped : String
@@ -51,5 +49,4 @@ parenthesised =
 
 
 main : Program
-main =
-    Node.printLines [ piped, chained, appliedLeft, parenthesised ]
+main = Node.printLines [ piped, chained, appliedLeft, parenthesised ]

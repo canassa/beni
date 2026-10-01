@@ -2,10 +2,8 @@
 -- `Maybe` takes one argument and gets none; `Int` takes none and gets one.
 -- Types are always fully applied — there are no higher-kinded types.
 pub bare : Maybe
-bare =
-    Nothing
+bare = Nothing
 
 
 pub over : Int Int
-over =
-    1
+over = 1

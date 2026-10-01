@@ -8,5 +8,4 @@ import Show
 
 
 main : Program
-main =
-    Node.print (Show.render 41)
+main = Node.print (Show.render 41)

@@ -3,5 +3,4 @@ pub type T
 
 
 pub m : T, a -> a
-m t a =
-    a
+m t a = a

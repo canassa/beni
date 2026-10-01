@@ -2,8 +2,7 @@ import Schema exposing (Conversion)
 
 
 toFunction : Conversion Int (Int -> Int)
-toFunction =
-    Debug.todo "checker-only conversion"
+toFunction = Debug.todo "checker-only conversion"
 
 
 pub schema Box tagged "kind" of

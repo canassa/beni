@@ -2,5 +2,4 @@ import Models
 
 
 bad : Models.Hidden.Type
-bad =
-    { value = 1 }
+bad = { value = 1 }

@@ -5,5 +5,4 @@
 -- application dispatches on the TYPE and is not a field access on a value.
 pub decode : String -> Result String a
     where a.decode : String -> Result String a
-decode s =
-    a.decode s
+decode s = a.decode s

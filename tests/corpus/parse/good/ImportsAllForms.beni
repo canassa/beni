@@ -11,5 +11,4 @@ import Set exposing (Set)
 
 
 example : Set Int
-example =
-    Set.empty
+example = Set.empty

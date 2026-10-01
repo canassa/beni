@@ -2,10 +2,8 @@
 -- one used by a public one is fine (language.md §5.1). The golden lists
 -- `visible` and not `hidden`.
 pub visible : Int -> Int
-visible n =
-    hidden n + 1
+visible n = hidden n + 1
 
 
 hidden : Int -> Int
-hidden n =
-    n * 2
+hidden n = n * 2

@@ -5,5 +5,4 @@ import User
 
 
 pub value : User.Type
-value =
-    { id = 1 }
+value = { id = 1 }

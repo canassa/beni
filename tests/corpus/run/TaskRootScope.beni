@@ -14,8 +14,7 @@ import Task exposing (Cancelled, Done)
 
 
 say : String -> ()
-say line =
-    Debug.log () line
+say line = Debug.log () line
 
 
 main : Program
@@ -23,16 +22,11 @@ main =
     Io.run
         (\() ->
             let
-                root =
-                    Task.openRoot ()
-                quick =
-                    Task.spawnIn root (\() -> say "quick runs")
-                _ =
-                    Debug.log (Task.running quick) "quick running"
-                _ =
-                    Task.join quick
-                _ =
-                    Debug.log (Task.running quick) "quick running"
+                root = Task.openRoot ()
+                quick = Task.spawnIn root (\() -> say "quick runs")
+                _ = Debug.log (Task.running quick) "quick running"
+                _ = Task.join quick
+                _ = Debug.log (Task.running quick) "quick running"
                 slow =
                     Task.spawnIn
                         root
@@ -48,18 +42,12 @@ main =
                                 )
                                 (\_ -> Io.sleep 100000)
                         )
-                _ =
-                    Task.yieldNow ()
-                _ =
-                    Task.closeRoot root
-                _ =
-                    say "closed"
-                _ =
-                    Task.wait slow
-                late =
-                    Task.spawnIn root (\() -> say "late runs")
-                _ =
-                    Debug.log (Task.wait late) "late ended"
+                _ = Task.yieldNow ()
+                _ = Task.closeRoot root
+                _ = say "closed"
+                _ = Task.wait slow
+                late = Task.spawnIn root (\() -> say "late runs")
+                _ = Debug.log (Task.wait late) "late ended"
             in
             Node.done
         )

@@ -79,18 +79,15 @@ tail s =
 
 -- Move an instance's nodes before `before` in `parent`, in order.
 pub put : V, V, V -> ()
-put parent i before =
-    putRun parent (first i) (last i) before
+put parent i before = putRun parent (first i) (last i) before
 
 
 putRun : V, V, V, V -> ()
 putRun parent n end before =
     let
-        next =
-            Js.get n "nextSibling"
+        next = Js.get n "nextSibling"
 
-        _ =
-            Js.call parent "insertBefore" [ n, before ]
+        _ = Js.call parent "insertBefore" [ n, before ]
     in
     if Js.same n end then
         ()
@@ -101,18 +98,15 @@ putRun parent n end before =
 
 -- Take an instance's nodes out of the page.
 pub drop : V -> ()
-drop i =
-    dropRun (first i) (last i)
+drop i = dropRun (first i) (last i)
 
 
 dropRun : V, V -> ()
 dropRun n end =
     let
-        next =
-            Js.get n "nextSibling"
+        next = Js.get n "nextSibling"
 
-        _ =
-            Js.call n "remove" []
+        _ = Js.call n "remove" []
     in
     if Js.same n end then
         ()
@@ -125,11 +119,9 @@ dropRun n end =
 pub swap : V, V -> ()
 swap old i =
     let
-        f =
-            first old
+        f = first old
 
-        _ =
-            put (Js.get f "parentNode") i f
+        _ = put (Js.get f "parentNode") i f
     in
     drop old
 
@@ -146,25 +138,20 @@ swap old i =
 pub template : String, Int -> (() -> V)
 template html flags =
     let
-        node =
-            Js.ref Js.null
+        node = Js.ref Js.null
     in
     \() ->
         let
             _ =
                 if Js.isNull (Js.read node) then
                     let
-                        document =
-                            Js.global "document"
+                        document = Js.global "document"
 
-                        t =
-                            Js.call document "createElement" [ Js.from "template" ]
+                        t = Js.call document "createElement" [ Js.from "template" ]
 
-                        _ =
-                            Js.set t "innerHTML" (Js.from html)
+                        _ = Js.set t "innerHTML" (Js.from html)
 
-                        _ =
-                            Js.write node (Js.get t "content")
+                        _ = Js.write node (Js.get t "content")
 
                         _ =
                             if Js.bitAnd flags 2 /= 0 then
@@ -176,11 +163,9 @@ template html flags =
                     if Js.bitAnd flags 4 /= 0 then
                         if Js.bitAnd flags 2 /= 0 then
                             let
-                                f =
-                                    Js.call document "createDocumentFragment" []
+                                f = Js.call document "createDocumentFragment" []
 
-                                _ =
-                                    gather (Js.read node) f
+                                _ = gather (Js.read node) f
                             in
                             Js.write node f
 
@@ -208,8 +193,7 @@ gather from into =
 
     else
         let
-            _ =
-                Js.call into "appendChild" [ Js.get from "firstChild" ]
+            _ = Js.call into "appendChild" [ Js.get from "firstChild" ]
         in
         gather from into
 
@@ -238,14 +222,11 @@ parentOf s =
 pub unit : V, V -> V
 unit b cx =
     let
-        i =
-            Js.call (Js.get b "t") "m" [ Js.get b "v", cx ]
+        i = Js.call (Js.get b "t") "m" [ Js.get b "v", cx ]
 
-        _ =
-            Js.set i "t" (Js.get b "t")
+        _ = Js.set i "t" (Js.get b "t")
 
-        _ =
-            Js.set i "b" b
+        _ = Js.set i "b" b
     in
     i
 
@@ -259,21 +240,17 @@ patch i b cx =
 
     else if Js.same (Js.get b "t") (Js.get i "t") then
         let
-            _ =
-                Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
+            _ = Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
 
-            _ =
-                Js.set i "b" b
+            _ = Js.set i "b" b
         in
         i
 
     else
         let
-            n =
-                unit b cx
+            n = unit b cx
 
-            _ =
-                swap i n
+            _ = swap i n
         in
         n
 
@@ -308,18 +285,15 @@ childHtml s b =
 -- The module's `let`s: the programs with a render queued, whether a flush
 -- is, and the after-render phase a hosted program sets.
 queued : Js.Ref V
-queued =
-    Js.ref (Js.array [])
+queued = Js.ref (Js.array [])
 
 
 scheduled : Js.Ref Bool
-scheduled =
-    Js.ref False
+scheduled = Js.ref False
 
 
 phase : Js.Ref V
-phase =
-    Js.ref Js.null
+phase = Js.ref Js.null
 
 
 -- ---- A defect stops the page (`boundary.md` §9.8.10 (c)) -----------------
@@ -332,8 +306,7 @@ phase =
 -- not; the throw goes on to the host, which reports it. A development
 -- build also shows a crash screen; a release build has no code for one.
 dead : Js.Ref Bool
-dead =
-    Js.ref False
+dead = Js.ref False
 
 
 stop : () -> ()
@@ -357,11 +330,9 @@ stop () =
 crashScreen : () -> ()
 crashScreen () =
     let
-        document =
-            Js.global "document"
+        document = Js.global "document"
 
-        screen =
-            Js.call document "createElement" [ Js.from "div" ]
+        screen = Js.call document "createElement" [ Js.from "div" ]
 
         _ =
             Js.call screen "setAttribute" [ Js.from "style", Js.from "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap" ]
@@ -369,22 +340,19 @@ crashScreen () =
         _ =
             Js.set screen "textContent" (Js.from "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n")
 
-        _ =
-            Js.call (Js.get document "body") "appendChild" [ screen ]
+        _ = Js.call (Js.get document "body") "appendChild" [ screen ]
 
         report =
             \event ->
                 let
-                    error =
-                        Js.get event "error"
+                    error = Js.get event "error"
 
                     message : String
                     message =
                         Js.to (Js.apply (Js.global "String") [ if Js.isNullish error then Js.get event "message" else error ])
 
                     shown : String
-                    shown =
-                        Js.to (Js.get screen "textContent")
+                    shown = Js.to (Js.get screen "textContent")
                 in
                 Js.set screen "textContent" (Js.from (shown ++ message))
     in
@@ -400,23 +368,18 @@ flush () =
 
     else
         let
-            ok =
-                Js.ref False
+            ok = Js.ref False
         in
         Js.finally
             (\() ->
                 let
-                    _ =
-                        Js.write scheduled False
+                    _ = Js.write scheduled False
 
-                    renders =
-                        Js.read queued
+                    renders = Js.read queued
 
-                    _ =
-                        Js.write queued (Js.array [])
+                    _ = Js.write queued (Js.array [])
 
-                    _ =
-                        Js.each renders (\render -> Js.to (Js.apply render []))
+                    _ = Js.each renders (\render -> Js.to (Js.apply render []))
 
                     _ =
                         if Js.isNullish (Js.read phase) then
@@ -434,14 +397,12 @@ flush () =
 pub run : V -> ()
 run program =
     let
-        ok =
-            Js.ref False
+        ok = Js.ref False
     in
     Js.finally
         (\() ->
             let
-                _ =
-                    Js.each program (\m -> startOne m)
+                _ = Js.each program (\m -> startOne m)
             in
             Js.write ok True
         )
@@ -451,8 +412,7 @@ run program =
 startOne : V -> ()
 startOne m =
     let
-        document =
-            Js.global "document"
+        document = Js.global "document"
 
         root =
             if Js.isNull (Js.get m "n") then
@@ -467,8 +427,7 @@ startOne m =
             if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
                 let
                     id : String
-                    id =
-                        Js.to (Js.get m "n")
+                    id = Js.to (Js.get m "n")
                 in
                 Js.throw
                     (Js.construct
@@ -499,8 +458,7 @@ startOne m =
 setPhase : V -> V
 setPhase f =
     let
-        _ =
-            Js.write phase f
+        _ = Js.write phase f
     in
     Js.from (Js.read scheduled)
 
@@ -510,20 +468,16 @@ setPhase f =
 mount : V, V -> ()
 mount program root =
     let
-        s =
-            slot root Js.null Js.null
+        s = slot root Js.null Js.null
 
-        model =
-            Js.ref (Js.get program "init")
+        model = Js.ref (Js.get program "init")
 
-        waiting =
-            Js.ref False
+        waiting = Js.ref False
 
         render =
             \() ->
                 let
-                    _ =
-                        Js.write waiting False
+                    _ = Js.write waiting False
                 in
                 childHtml s (Js.call program "view" [ Js.read model ])
 
@@ -590,8 +544,7 @@ childMaybe s b =
 
         else
             let
-                _ =
-                    drop (Js.get s "i")
+                _ = drop (Js.get s "i")
             in
             Js.set s "i" Js.null
 
@@ -629,8 +582,7 @@ childList s list =
 
     else
         let
-            _ =
-                Js.set s "b" list
+            _ = Js.set s "b" list
 
             _ =
                 if Js.isNull (Js.get s "u") then
@@ -639,14 +591,11 @@ childList s list =
                 else
                     ()
 
-            u =
-                Js.get s "u"
+            u = Js.get s "u"
 
-            a =
-                elements list
+            a = elements list
 
-            _ =
-                childrenFrom s u a 0
+            _ = childrenFrom s u a 0
         in
         dropPast u (Js.to (Js.get a "length"))
 
@@ -663,11 +612,9 @@ childrenFrom s u a k =
 
                 else
                     let
-                        i =
-                            unit (Js.at a k) (Js.get s "cx")
+                        i = unit (Js.at a k) (Js.get s "cx")
 
-                        _ =
-                            put (parentOf s) i (Js.get s "m")
+                        _ = put (parentOf s) i (Js.get s "m")
                     in
                     Js.to (Js.call u "push" [ i ])
         in
@@ -682,8 +629,7 @@ dropPast : V, Int -> ()
 dropPast u k =
     if Js.to (Js.get u "length") > k then
         let
-            _ =
-                drop (Js.call u "pop" [])
+            _ = drop (Js.call u "pop" [])
         in
         dropPast u k
 
@@ -706,8 +652,7 @@ mountRow row item position cx =
         i =
             if Js.isUndefined (Js.get row "b") then
                 let
-                    j =
-                        Js.call row "m" [ item, Js.from position, cx ]
+                    j = Js.call row "m" [ item, Js.from position, cx ]
 
                     _ =
                         if Js.same (Js.get row "w") (Js.from True) then
@@ -721,26 +666,19 @@ mountRow row item position cx =
             else
                 unit (Js.call row "b" [ item, Js.from position ]) cx
 
-        _ =
-            Js.set i "x" item
+        _ = Js.set i "x" item
 
-        _ =
-            Js.set i "y" (Js.from position)
+        _ = Js.set i "y" (Js.from position)
 
-        _ =
-            Js.set i "k" Js.null
+        _ = Js.set i "k" Js.null
 
-        _ =
-            Js.set i "n" Js.null
+        _ = Js.set i "n" Js.null
 
-        _ =
-            Js.set i "kv" (Js.from 0)
+        _ = Js.set i "kv" (Js.from 0)
 
-        _ =
-            Js.set i "kc" Js.null
+        _ = Js.set i "kc" Js.null
 
-        _ =
-            Js.set i "kt" Js.null
+        _ = Js.set i "kt" Js.null
     in
     i
 
@@ -751,15 +689,13 @@ patchRow : V, V, V, Int, V -> V
 patchRow row i item position cx =
     if Js.isUndefined (Js.get row "b") then
         let
-            _ =
-                Js.call row "p" [ i, item, Js.from position ]
+            _ = Js.call row "p" [ i, item, Js.from position ]
         in
         i
 
     else
         let
-            n =
-                patch i (Js.call row "b" [ item, Js.from position ]) cx
+            n = patch i (Js.call row "b" [ item, Js.from position ]) cx
 
             _ =
                 if Js.same n i then
@@ -767,17 +703,13 @@ patchRow row i item position cx =
 
                 else
                     let
-                        _ =
-                            Js.set n "k" (Js.get i "k")
+                        _ = Js.set n "k" (Js.get i "k")
 
-                        _ =
-                            Js.set n "n" Js.null
+                        _ = Js.set n "n" Js.null
 
-                        _ =
-                            Js.set n "kv" (Js.from 0)
+                        _ = Js.set n "kv" (Js.from 0)
 
-                        _ =
-                            Js.set n "kc" (Js.get i "kc")
+                        _ = Js.set n "kc" (Js.get i "kc")
                     in
                     Js.set n "kt" Js.null
         in
@@ -795,8 +727,7 @@ sameInputs a b =
 
     else
         let
-            k =
-                sameFrom a b 0
+            k = sameFrom a b 0
         in
         k == Js.to (Js.get a "length")
 
@@ -822,8 +753,7 @@ sameInputsBut a b g =
 
     else
         let
-            k =
-                sameFromBut a b g 0
+            k = sameFromBut a b g 0
         in
         k == Js.to (Js.get a "length")
 
@@ -840,8 +770,7 @@ sameFromBut a b g k =
 -- What no key is: both of a render's probes when its selection did not
 -- change, so no row is patched for it.
 none : V
-none =
-    Js.from {}
+none = Js.from {}
 
 
 -- The rows whose key is `key` — its first row and the chain of rows that
@@ -849,8 +778,7 @@ none =
 reselect : V, V, V -> ()
 reselect s row key =
     let
-        _ =
-            reselectFrom row (Js.call (Js.get s "x") "get" [ key ])
+        _ = reselectFrom row (Js.call (Js.get s "x") "get" [ key ])
     in
     ()
 
@@ -864,23 +792,20 @@ reselectFrom row i =
 
     else
         let
-            _ =
-                Js.call row "p" [ i, Js.get i "x", Js.get i "y" ]
+            _ = Js.call row "p" [ i, Js.get i "x", Js.get i "y" ]
         in
         reselectFrom row (Js.get i "n")
 
 
 -- A detached run of nodes that moves back into the list later.
 parked : Js.Ref V
-parked =
-    Js.ref Js.null
+parked = Js.ref Js.null
 
 
 park : V -> ()
 park i =
     let
-        f =
-            first i
+        f = first i
     in
     if Js.same f (last i) then
         Js.to (Js.call f "remove" [])
@@ -914,8 +839,7 @@ reconcile parent a b bLength after aStart aEnd bStart bEnd indices =
 
     else
         let
-            ( aTo, bTo ) =
-                sameEnds a b aStart aEnd bStart bEnd
+            ( aTo, bTo ) = sameEnds a b aStart aEnd bStart bEnd
         in
         if aTo == aStart then
             let
@@ -930,31 +854,25 @@ reconcile parent a b bLength after aStart aEnd bStart bEnd indices =
                     else
                         after
 
-                _ =
-                    putRange parent b bStart bTo node
+                _ = putRange parent b bStart bTo node
             in
             reconcile parent a b bLength after aStart aTo bTo bTo indices
 
         else if bTo == bStart then
             let
-                _ =
-                    dropRange a indices aStart aTo
+                _ = dropRange a indices aStart aTo
             in
             reconcile parent a b bLength after aTo aTo bStart bTo indices
 
         else if Js.same (Js.at a aStart) (Js.at b (bTo - 1)) && Js.same (Js.at b bStart) (Js.at a (aTo - 1)) then
             let
-                node =
-                    Js.get (last (Js.at a (aTo - 1))) "nextSibling"
+                node = Js.get (last (Js.at a (aTo - 1))) "nextSibling"
 
-                _ =
-                    put parent (Js.at b bStart) (Js.get (last (Js.at a aStart)) "nextSibling")
+                _ = put parent (Js.at b bStart) (Js.get (last (Js.at a aStart)) "nextSibling")
 
-                _ =
-                    put parent (Js.at b (bTo - 1)) node
+                _ = put parent (Js.at b (bTo - 1)) node
 
-                _ =
-                    Js.setAt a (aTo - 1) (Js.at b (bTo - 1))
+                _ = Js.setAt a (aTo - 1) (Js.at b (bTo - 1))
             in
             reconcile parent a b bLength after (aStart + 1) (aTo - 1) (bStart + 1) (bTo - 1) indices
 
@@ -974,44 +892,36 @@ reconcile parent a b bLength after aStart aEnd bStart bEnd indices =
                     else
                         ()
 
-                found =
-                    Js.call positions "get" [ Js.at a aStart ]
+                found = Js.call positions "get" [ Js.at a aStart ]
             in
             if Js.isUndefined found then
                 let
-                    _ =
-                        drop (Js.at a aStart)
+                    _ = drop (Js.at a aStart)
                 in
                 reconcile parent a b bLength after (aStart + 1) aTo bStart bTo positions
 
             else
                 let
                     index : Int
-                    index =
-                        Js.to found
+                    index = Js.to found
                 in
                 if bStart < index && index < bTo then
                     let
-                        sequence =
-                            sameRun positions a aTo bTo index (aStart + 1) 1
+                        sequence = sameRun positions a aTo bTo index (aStart + 1) 1
                     in
                     if sequence > index - bStart then
                         let
-                            _ =
-                                putBefore parent b bStart index (first (Js.at a aStart))
+                            _ = putBefore parent b bStart index (first (Js.at a aStart))
                         in
                         reconcile parent a b bLength after aStart aTo index bTo positions
 
                     else
                         let
-                            old =
-                                Js.at a aStart
+                            old = Js.at a aStart
 
-                            _ =
-                                put parent (Js.at b bStart) (first old)
+                            _ = put parent (Js.at b bStart) (first old)
 
-                            _ =
-                                park old
+                            _ = park old
                         in
                         reconcile parent a b bLength after (aStart + 1) aTo (bStart + 1) bTo positions
 
@@ -1047,8 +957,7 @@ putBefore : V, V, Int, Int, V -> ()
 putBefore parent b from to node =
     if from < to then
         let
-            _ =
-                put parent (Js.at b from) node
+            _ = put parent (Js.at b from) node
         in
         putBefore parent b (from + 1) to node
 
@@ -1079,8 +988,7 @@ indexRange : V, V, Int, Int -> ()
 indexRange positions b from to =
     if from < to then
         let
-            _ =
-                Js.call positions "set" [ Js.at b from, Js.from from ]
+            _ = Js.call positions "set" [ Js.at b from, Js.from from ]
         in
         indexRange positions b (from + 1) to
 
@@ -1100,8 +1008,7 @@ sameRun positions a aEnd bEnd index i sequence =
 
 -- Each render of a keyed list that runs its rows has a stamp of its own.
 stamps : Js.Ref Int
-stamps =
-    Js.ref 0
+stamps = Js.ref 0
 
 
 -- The keyed list when last render's keys were distinct, matched as Solid's
@@ -1120,12 +1027,10 @@ stamps =
 trimmed : V, V, V, V, Bool, V, V -> Bool
 trimmed s items keyOf row same was now =
     let
-        old =
-            Js.get s "u"
+        old = Js.get s "u"
 
         m : Int
-        m =
-            Js.to (Js.get old "length")
+        m = Js.to (Js.get old "length")
     in
     -- A list that was empty or is: the full pass mounts it in one walk
     -- or empties the parent at once.
@@ -1134,17 +1039,13 @@ trimmed s items keyOf row same was now =
 
     else
         let
-            _ =
-                Js.write stamps (Js.read stamps + 1)
+            _ = Js.write stamps (Js.read stamps + 1)
 
-            stamp =
-                Js.read stamps
+            stamp = Js.read stamps
 
-            a =
-                elements items
+            a = elements items
 
-            p =
-                startRows s a old keyOf row same was now stamp m 0
+            p = startRows s a old keyOf row same was now stamp m 0
         in
         if p == m && p == Js.to (Js.get a "length") then
             True
@@ -1153,27 +1054,22 @@ trimmed s items keyOf row same was now =
             let
                 -- The rest of the items, each key asked for once and only
                 -- if needed.
-                xs =
-                    Js.call a "slice" [ Js.from p ]
+                xs = Js.call a "slice" [ Js.from p ]
 
-                n =
-                    p + Js.to (Js.get xs "length")
+                n = p + Js.to (Js.get xs "length")
 
-                ks =
-                    Js.construct (Js.global "Array") [ Js.get xs "length" ]
+                ks = Js.construct (Js.global "Array") [ Js.get xs "length" ]
 
                 -- The key the item at `b` has, asked for once: `ks` holds
                 -- the keys of the items from `p`.
                 keyAt =
                     \b ->
                         let
-                            k =
-                                Js.at ks (b - p)
+                            k = Js.at ks (b - p)
                         in
                         if Js.isUndefined k then
                             let
-                                item =
-                                    Js.at xs (b - p)
+                                item = Js.at xs (b - p)
 
                                 key =
                                     if Js.isNull keyOf then
@@ -1182,8 +1078,7 @@ trimmed s items keyOf row same was now =
                                     else
                                         Js.apply keyOf [ item ]
 
-                                _ =
-                                    Js.setAt ks (b - p) key
+                                _ = Js.setAt ks (b - p) key
                             in
                             key
 
@@ -1195,51 +1090,41 @@ trimmed s items keyOf row same was now =
                 hit =
                     \i b -> Js.same (Js.get i "x") (Js.at xs (b - p)) || Js.same (Js.get i "k") (keyAt b)
 
-                next =
-                    Js.construct (Js.global "Array") [ Js.from n ]
+                next = Js.construct (Js.global "Array") [ Js.from n ]
 
-                _ =
-                    copyRows next old p 0
+                _ = copyRows next old p 0
 
                 -- The end, written out: it is most of a remove.
-                ( aOuter, bOuter ) =
-                    endRows old xs keyAt next p stamp m n
+                ( aOuter, bOuter ) = endRows old xs keyAt next p stamp m n
 
-                ( aStart, aEnd, bEnd ) =
-                    crossRows old hit next stamp p aOuter bOuter
+                ( aStart, aEnd, bEnd ) = crossRows old hit next stamp p aOuter bOuter
 
                 -- What is left: its keys looked up, a new key's row mounted
                 -- (and marked with the stamp's negation), a key found twice
                 -- handing over. A row mounted here that the full pass is
                 -- handed is its key's first row.
-                byKey =
-                    Js.get s "x"
+                byKey = Js.get s "x"
 
                 -- A row mounted this render: the stamp's negation.
-                unseen =
-                    0 - stamp
+                unseen = 0 - stamp
 
-                ( found, kept ) =
-                    lookUpRows s xs keyAt next row byKey p stamp unseen bEnd aStart 0
+                ( found, kept ) = lookUpRows s xs keyAt next row byKey p stamp unseen bEnd aStart 0
             in
             if found < bEnd then
                 False
 
             else
                 let
-                    _ =
-                        patchRows s old xs next row byKey p stamp unseen same was now n p
+                    _ = patchRows s old xs next row byKey p stamp unseen same was now n p
 
-                    _ =
-                        forgetRows old byKey stamp aStart aEnd
+                    _ = forgetRows old byKey stamp aStart aEnd
 
                     -- No row kept, and the rows all the parent holds: a
                     -- replacement. The parent is emptied at once, as a clear
                     -- is, rather than a thousand rows removed one by one —
                     -- which is what Solid's `reconcileArrays` does — and the
                     -- new rows go in after.
-                    parent =
-                        parentOf s
+                    parent = parentOf s
 
                     _ =
                         if
@@ -1257,8 +1142,7 @@ trimmed s items keyOf row same was now =
                                 && Js.same (Js.get parent "lastChild") (last (Js.at old (m - 1)))
                         then
                             let
-                                _ =
-                                    Js.set parent "textContent" (Js.from "")
+                                _ = Js.set parent "textContent" (Js.from "")
                             in
                             Js.each next (\i -> put parent i Js.null)
 
@@ -1291,8 +1175,7 @@ trimmed s items keyOf row same was now =
                         else
                             ()
 
-                    _ =
-                        Js.set s "u" next
+                    _ = Js.set s "u" next
                 in
                 True
 
@@ -1303,29 +1186,24 @@ startRows : V, V, V, V, V, Bool, V, V, Int, Int, Int -> Int
 startRows s a old keyOf row same was now stamp m p =
     if p < Js.to (Js.get a "length") && p < m then
         let
-            i =
-                Js.at old p
+            i = Js.at old p
 
-            item =
-                Js.at a p
+            item = Js.at a p
 
-            hit =
-                Js.same (Js.get i "x") item
+            hit = Js.same (Js.get i "x") item
         in
         if not hit && not (Js.same (Js.get i "k") (if Js.isNull keyOf then item else Js.apply keyOf [ item ])) then
             p
 
         else if hit && same && not (Js.same (Js.get i "k") was) && not (Js.same (Js.get i "k") now) then
             let
-                _ =
-                    Js.set i "kv" (Js.from stamp)
+                _ = Js.set i "kv" (Js.from stamp)
             in
             startRows s a old keyOf row same was now stamp m (p + 1)
 
         else
             let
-                n =
-                    patchRow row i item p (Js.get s "cx")
+                n = patchRow row i item p (Js.get s "cx")
 
                 _ =
                     if Js.same n i then
@@ -1333,19 +1211,15 @@ startRows s a old keyOf row same was now stamp m p =
 
                     else
                         let
-                            _ =
-                                Js.setAt old p n
+                            _ = Js.setAt old p n
 
-                            _ =
-                                Js.call (Js.get s "x") "set" [ Js.get n "k", n ]
+                            _ = Js.call (Js.get s "x") "set" [ Js.get n "k", n ]
                         in
                         Js.set n "y" (Js.from p)
 
-                _ =
-                    Js.set n "x" item
+                _ = Js.set n "x" item
 
-                _ =
-                    Js.set n "kv" (Js.from stamp)
+                _ = Js.set n "kv" (Js.from stamp)
             in
             startRows s a old keyOf row same was now stamp m (p + 1)
 
@@ -1358,8 +1232,7 @@ copyRows : V, V, Int, Int -> ()
 copyRows next old p k =
     if k < p then
         let
-            _ =
-                Js.setAt next k (Js.at old k)
+            _ = Js.setAt next k (Js.at old k)
         in
         copyRows next old p (k + 1)
 
@@ -1372,19 +1245,16 @@ endRows : V, V, sync (Int -> V), V, Int, Int, Int, Int -> ( Int, Int )
 endRows old xs keyAt next p stamp aEnd bEnd =
     if p < aEnd && p < bEnd then
         let
-            i =
-                Js.at old (aEnd - 1)
+            i = Js.at old (aEnd - 1)
         in
         if not (Js.same (Js.get i "x") (Js.at xs (bEnd - 1 - p))) && not (Js.same (Js.get i "k") (keyAt (bEnd - 1))) then
             ( aEnd, bEnd )
 
         else
             let
-                _ =
-                    Js.set i "kv" (Js.from stamp)
+                _ = Js.set i "kv" (Js.from stamp)
 
-                _ =
-                    Js.setAt next (bEnd - 1) i
+                _ = Js.setAt next (bEnd - 1) i
             in
             endRows old xs keyAt next p stamp (aEnd - 1) (bEnd - 1)
 
@@ -1399,29 +1269,21 @@ crossRows : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> ( Int, Int, Int )
 crossRows old hit next stamp aStart aEnd bEnd =
     if aEnd - aStart > 1 && bEnd - aStart > 1 && hit (Js.at old aStart) (bEnd - 1) && hit (Js.at old (aEnd - 1)) aStart then
         let
-            i =
-                Js.at old aStart
+            i = Js.at old aStart
 
-            j =
-                Js.at old (aEnd - 1)
+            j = Js.at old (aEnd - 1)
 
-            _ =
-                Js.set i "kv" (Js.from stamp)
+            _ = Js.set i "kv" (Js.from stamp)
 
-            _ =
-                Js.set j "kv" (Js.from stamp)
+            _ = Js.set j "kv" (Js.from stamp)
 
-            _ =
-                Js.setAt next (bEnd - 1) i
+            _ = Js.setAt next (bEnd - 1) i
 
-            _ =
-                Js.setAt next aStart j
+            _ = Js.setAt next aStart j
 
-            inner =
-                crossStart old hit next stamp (aStart + 1) (aEnd - 1) (bEnd - 1)
+            inner = crossStart old hit next stamp (aStart + 1) (aEnd - 1) (bEnd - 1)
 
-            ( aTo, bTo ) =
-                crossEnd old hit next stamp inner (aEnd - 1) (bEnd - 1)
+            ( aTo, bTo ) = crossEnd old hit next stamp inner (aEnd - 1) (bEnd - 1)
         in
         crossRows old hit next stamp inner aTo bTo
 
@@ -1433,19 +1295,16 @@ crossStart : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> Int
 crossStart old hit next stamp aStart aEnd bEnd =
     if aStart < aEnd && aStart < bEnd then
         let
-            k =
-                Js.at old aStart
+            k = Js.at old aStart
         in
         if not (hit k aStart) then
             aStart
 
         else
             let
-                _ =
-                    Js.set k "kv" (Js.from stamp)
+                _ = Js.set k "kv" (Js.from stamp)
 
-                _ =
-                    Js.setAt next aStart k
+                _ = Js.setAt next aStart k
             in
             crossStart old hit next stamp (aStart + 1) aEnd bEnd
 
@@ -1457,14 +1316,11 @@ crossEnd : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> ( Int, Int )
 crossEnd old hit next stamp aStart aEnd bEnd =
     if aStart < aEnd && aStart < bEnd && hit (Js.at old (aEnd - 1)) (bEnd - 1) then
         let
-            k =
-                Js.at old (aEnd - 1)
+            k = Js.at old (aEnd - 1)
 
-            _ =
-                Js.set k "kv" (Js.from stamp)
+            _ = Js.set k "kv" (Js.from stamp)
 
-            _ =
-                Js.setAt next (bEnd - 1) k
+            _ = Js.setAt next (bEnd - 1) k
         in
         crossEnd old hit next stamp aStart (aEnd - 1) (bEnd - 1)
 
@@ -1478,28 +1334,21 @@ lookUpRows : V, V, sync (Int -> V), V, V, V, Int, Int, Int, Int, Int, Int -> ( I
 lookUpRows s xs keyAt next row byKey p stamp unseen bEnd b kept =
     if b < bEnd then
         let
-            key =
-                keyAt b
+            key = keyAt b
 
-            h =
-                Js.call byKey "get" [ key ]
+            h = Js.call byKey "get" [ key ]
         in
         if Js.isUndefined h then
             let
-                i =
-                    mountRow row (Js.at xs (b - p)) b (Js.get s "cx")
+                i = mountRow row (Js.at xs (b - p)) b (Js.get s "cx")
 
-                _ =
-                    Js.set i "k" key
+                _ = Js.set i "k" key
 
-                _ =
-                    Js.set i "kv" (Js.from unseen)
+                _ = Js.set i "kv" (Js.from unseen)
 
-                _ =
-                    Js.call byKey "set" [ key, i ]
+                _ = Js.call byKey "set" [ key, i ]
 
-                _ =
-                    Js.setAt next b i
+                _ = Js.setAt next b i
             in
             lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) kept
 
@@ -1508,11 +1357,9 @@ lookUpRows s xs keyAt next row byKey p stamp unseen bEnd b kept =
 
         else
             let
-                _ =
-                    Js.set h "kv" (Js.from stamp)
+                _ = Js.set h "kv" (Js.from stamp)
 
-                _ =
-                    Js.setAt next b h
+                _ = Js.setAt next b h
             in
             lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) (kept + 1)
 
@@ -1526,11 +1373,9 @@ patchRows : V, V, V, V, V, V, Int, Int, Int, Bool, V, V, Int, Int -> ()
 patchRows s old xs next row byKey p stamp unseen same was now n b =
     if b < n then
         let
-            item =
-                Js.at xs (b - p)
+            item = Js.at xs (b - p)
 
-            i =
-                Js.at next b
+            i = Js.at next b
 
             _ =
                 if Js.to (Js.get i "kv") == unseen then
@@ -1538,36 +1383,29 @@ patchRows s old xs next row byKey p stamp unseen same was now n b =
 
                 else if not same || not (Js.same (Js.get i "x") item) || (Js.to (Js.get row "i") && Js.to (Js.get i "y") /= b) || Js.same (Js.get i "k") was || Js.same (Js.get i "k") now then
                     let
-                        r =
-                            patchRow row i item b (Js.get s "cx")
+                        r = patchRow row i item b (Js.get s "cx")
                     in
                     if Js.same r i then
                         ()
 
                     else
                         let
-                            _ =
-                                Js.setAt old (Js.to (Js.get i "y")) r
+                            _ = Js.setAt old (Js.to (Js.get i "y")) r
 
-                            _ =
-                                Js.set r "kv" (Js.from stamp)
+                            _ = Js.set r "kv" (Js.from stamp)
 
-                            _ =
-                                Js.call byKey "set" [ Js.get r "k", r ]
+                            _ = Js.call byKey "set" [ Js.get r "k", r ]
                         in
                         Js.setAt next b r
 
                 else
                     ()
 
-            shown =
-                Js.at next b
+            shown = Js.at next b
 
-            _ =
-                Js.set shown "x" item
+            _ = Js.set shown "x" item
 
-            _ =
-                Js.set shown "y" (Js.from b)
+            _ = Js.set shown "y" (Js.from b)
         in
         patchRows s old xs next row byKey p stamp unseen same was now n (b + 1)
 
@@ -1623,11 +1461,9 @@ forgetRows old byKey stamp a aEnd =
 pub forKeyed : V, V, V, V, V -> ()
 forKeyed s items keyOf row inputs =
     let
-        g =
-            Js.get row "g"
+        g = Js.get row "g"
 
-        rendered =
-            not (Js.isNull (Js.get s "b"))
+        rendered = not (Js.isNull (Js.get s "b"))
 
         same =
             rendered
@@ -1638,8 +1474,7 @@ forKeyed s items keyOf row inputs =
                         sameInputsBut (Js.get s "y") inputs (Js.to g)
                    )
 
-        moving =
-            not (Js.isUndefined g) && rendered && not (Js.same (Js.get s "z") (Js.get row "z"))
+        moving = not (Js.isUndefined g) && rendered && not (Js.same (Js.get s "z") (Js.get row "z"))
 
         was =
             if moving then
@@ -1669,21 +1504,17 @@ forKeyed s items keyOf row inputs =
 
                 else
                     let
-                        _ =
-                            Js.set s "y" inputs
+                        _ = Js.set s "y" inputs
 
-                        _ =
-                            reselect s row was
+                        _ = reselect s row was
                     in
                     reselect s row now
 
             else
                 let
-                    _ =
-                        Js.set s "b" items
+                    _ = Js.set s "b" items
 
-                    _ =
-                        Js.set s "y" inputs
+                    _ = Js.set s "y" inputs
                 in
                 if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
                     ()
@@ -1706,11 +1537,9 @@ forKeyed s items keyOf row inputs =
 keyedPass : V, V, V, V, Bool, V, V -> ()
 keyedPass s items keyOf row same was now =
     let
-        _ =
-            Js.write stamps (Js.read stamps + 1)
+        _ = Js.write stamps (Js.read stamps + 1)
 
-        stamp =
-            Js.read stamps
+        stamp = Js.read stamps
 
         old =
             if Js.isNull (Js.get s "u") then
@@ -1726,11 +1555,9 @@ keyedPass s items keyOf row same was now =
             else
                 ()
 
-        byKey =
-            Js.get s "x"
+        byKey = Js.get s "x"
 
-        next =
-            Js.array []
+        next = Js.array []
 
         ( distinct, shifted ) =
             keyedRows s (elements items) keyOf row same was now stamp old byKey next 0 True False
@@ -1749,8 +1576,7 @@ keyedPass s items keyOf row same was now =
         _ =
             if shifted || not (Js.same (Js.get next "length") (Js.get old "length")) then
                 let
-                    parent =
-                        parentOf s
+                    parent = parentOf s
 
                     _ =
                         if Js.to (Js.get old "length") == 0 then
@@ -1800,8 +1626,7 @@ keyedPass s items keyOf row same was now =
             else
                 ()
 
-        _ =
-            Js.set s "u" next
+        _ = Js.set s "u" next
     in
     Js.set s "d" (Js.from distinct)
 
@@ -1813,8 +1638,7 @@ keyedRows : V, V, V, V, Bool, V, V, Int, V, V, V, Int, Bool, Bool -> ( Bool, Boo
 keyedRows s a keyOf row same was now stamp old byKey next position distinct moved =
     if position < Js.to (Js.get a "length") then
         let
-            item =
-                Js.at a position
+            item = Js.at a position
 
             key =
                 if Js.isNull keyOf then
@@ -1823,12 +1647,10 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
                 else
                     Js.apply keyOf [ item ]
 
-            h =
-                Js.call byKey "get" [ key ]
+            h = Js.call byKey "get" [ key ]
 
             -- The key's first item in this render: the chain starts again.
-            starts =
-                Js.isUndefined h || Js.to (Js.get h "kv") /= stamp
+            starts = Js.isUndefined h || Js.to (Js.get h "kv") /= stamp
 
             found =
                 if Js.isUndefined h then
@@ -1836,15 +1658,13 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 
                 else if starts then
                     let
-                        _ =
-                            Js.set h "kc" (Js.get h "n")
+                        _ = Js.set h "kc" (Js.get h "n")
                     in
                     h
 
                 else
                     let
-                        c =
-                            Js.get h "kc"
+                        c = Js.get h "kc"
 
                         _ =
                             if Js.isNullish c then
@@ -1858,11 +1678,9 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
             i =
                 if Js.isNullish found then
                     let
-                        j =
-                            mountRow row item position (Js.get s "cx")
+                        j = mountRow row item position (Js.get s "cx")
 
-                        _ =
-                            Js.set j "k" key
+                        _ = Js.set j "k" key
 
                         _ =
                             if starts then
@@ -1875,11 +1693,9 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 
                 else if not same || not (Js.same (Js.get found "x") item) || (Js.to (Js.get row "i") && Js.to (Js.get found "y") /= position) || Js.same (Js.get found "k") was || Js.same (Js.get found "k") now then
                     let
-                        y =
-                            Js.get found "y"
+                        y = Js.get found "y"
 
-                        n =
-                            patchRow row found item position (Js.get s "cx")
+                        n = patchRow row found item position (Js.get s "cx")
 
                         _ =
                             if Js.same n found then
@@ -1887,8 +1703,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 
                             else
                                 let
-                                    _ =
-                                        Js.setAt old (Js.to y) n
+                                    _ = Js.setAt old (Js.to y) n
                                 in
                                 if starts then
                                     Js.to (Js.call byKey "set" [ key, n ])
@@ -1901,17 +1716,13 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
                 else
                     found
 
-            shifted =
-                moved || Js.isNullish found || not (Js.same (Js.at old position) i)
+            shifted = moved || Js.isNullish found || not (Js.same (Js.at old position) i)
 
-            _ =
-                Js.set i "kv" (Js.from stamp)
+            _ = Js.set i "kv" (Js.from stamp)
 
-            _ =
-                Js.set i "x" item
+            _ = Js.set i "x" item
 
-            _ =
-                Js.set i "y" (Js.from position)
+            _ = Js.set i "y" (Js.from position)
 
             _ =
                 if Js.isNull (Js.get i "n") then
@@ -1926,13 +1737,11 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 
                 else
                     let
-                        _ =
-                            Js.set (Js.get h "kt") "n" i
+                        _ = Js.set (Js.get h "kt") "n" i
                     in
                     Js.set h "kt" i
 
-            _ =
-                Js.call next "push" [ i ]
+            _ = Js.call next "push" [ i ]
         in
         keyedRows s a keyOf row same was now stamp old byKey next (position + 1) (distinct && starts) shifted
 
@@ -1945,8 +1754,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 pub forPosition : V, V, V, V -> ()
 forPosition s items row inputs =
     let
-        same =
-            not (Js.isNull (Js.get s "b")) && sameInputs (Js.get s "y") inputs
+        same = not (Js.isNull (Js.get s "b")) && sameInputs (Js.get s "y") inputs
 
         _ =
             if Js.same items (Js.get s "b") && same then
@@ -1954,11 +1762,9 @@ forPosition s items row inputs =
 
             else
                 let
-                    _ =
-                        Js.set s "b" items
+                    _ = Js.set s "b" items
 
-                    _ =
-                        Js.set s "y" inputs
+                    _ = Js.set s "y" inputs
 
                     _ =
                         if Js.isNull (Js.get s "u") then
@@ -1967,14 +1773,11 @@ forPosition s items row inputs =
                         else
                             ()
 
-                    u =
-                        Js.get s "u"
+                    u = Js.get s "u"
 
-                    a =
-                        elements items
+                    a = elements items
 
-                    _ =
-                        positionsFrom s u a row same 0
+                    _ = positionsFrom s u a row same 0
                 in
                 dropPast u (Js.to (Js.get a "length"))
     in
@@ -1994,22 +1797,18 @@ positionsFrom : V, V, V, V, Bool, Int -> ()
 positionsFrom s u a row same k =
     if k < Js.to (Js.get a "length") then
         let
-            item =
-                Js.at a k
+            item = Js.at a k
 
             _ =
                 if k < Js.to (Js.get u "length") then
                     let
-                        i =
-                            Js.at u k
+                        i = Js.at u k
                     in
                     if not same || not (Js.same (Js.get i "x") item) then
                         let
-                            n =
-                                patchRow row i item k (Js.get s "cx")
+                            n = patchRow row i item k (Js.get s "cx")
 
-                            _ =
-                                Js.setAt u k n
+                            _ = Js.setAt u k n
                         in
                         Js.set n "x" item
 
@@ -2018,8 +1817,7 @@ positionsFrom s u a row same k =
 
                 else
                     let
-                        i =
-                            mountRow row item k (Js.get s "cx")
+                        i = mountRow row item k (Js.get s "cx")
 
                         _ =
                             put
@@ -2052,8 +1850,7 @@ show s key b =
             else
                 place s (unit b (Js.get s "cx"))
 
-        _ =
-            Js.set s "x" key
+        _ = Js.set s "x" key
     in
     Js.set s "y" (Js.from False)
 
@@ -2072,8 +1869,7 @@ hide s f =
             else
                 place s (unit f (Js.get s "cx"))
 
-        _ =
-            Js.set s "x" Js.null
+        _ = Js.set s "x" Js.null
     in
     Js.set s "y" (Js.from True)
 
@@ -2103,8 +1899,7 @@ attrNS el namespace name value =
 
 -- `(el, markup)`: the `raw` escape hatch, markup text written unescaped.
 pub rawHtml : V, V -> ()
-rawHtml el markup =
-    Js.set el "innerHTML" markup
+rawHtml el markup = Js.set el "innerHTML" markup
 
 
 -- `(el, list, previous)`: the element has exactly the classes the list
@@ -2112,8 +1907,7 @@ rawHtml el markup =
 pub classes : V, V, V -> ()
 classes el list previous =
     let
-        next =
-            classSet list
+        next = classSet list
 
         old =
             if Js.isNull previous then
@@ -2152,8 +1946,7 @@ classes el list previous =
 classSet : V -> V
 classSet list =
     let
-        names =
-            Js.construct (Js.global "Set") []
+        names = Js.construct (Js.global "Set") []
 
         _ =
             Js.each
@@ -2179,8 +1972,7 @@ classSet list =
 
 -- HTML's whitespace, which separates class names.
 spaces : V
-spaces =
-    Js.construct (Js.global "RegExp") [ Js.from "[\t\n\u{000C}\r ]+" ]
+spaces = Js.construct (Js.global "RegExp") [ Js.from "[\t\n\u{000C}\r ]+" ]
 
 
 -- `(el, list, previous)`: each property set to its last value in the list,
@@ -2189,8 +1981,7 @@ spaces =
 pub styles : V, V, V -> ()
 styles el list previous =
     let
-        next =
-            styleMap list
+        next = styleMap list
 
         old =
             if Js.isNull previous then
@@ -2199,8 +1990,7 @@ styles el list previous =
             else
                 styleMap previous
 
-        style =
-            Js.get el "style"
+        style = Js.get el "style"
 
         _ =
             if Js.isNull old then
@@ -2232,8 +2022,7 @@ styles el list previous =
 styleMap : V -> V
 styleMap list =
     let
-        values =
-            Js.construct (Js.global "Map") []
+        values = Js.construct (Js.global "Map") []
 
         _ =
             Js.each (elements list) (\entry -> Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]))
@@ -2251,8 +2040,7 @@ textKind =
         { m =
             \v ->
                 let
-                    n =
-                        Js.call (Js.global "document") "createTextNode" [ v ]
+                    n = Js.call (Js.global "document") "createTextNode" [ v ]
                 in
                 Js.from { s = n, q = Js.null, e = n, d = v }
         , p =
@@ -2262,8 +2050,7 @@ textKind =
 
                 else
                     let
-                        _ =
-                            Js.set i "d" v
+                        _ = Js.set i "d" v
                     in
                     Js.set (Js.get i "s") "data" v
         }
@@ -2271,8 +2058,7 @@ textKind =
 
 -- `Html.text`: the text, as a text hole shows it.
 pub text : V -> V
-text s =
-    Js.from { t = textKind, v = s }
+text s = Js.from { t = textKind, v = s }
 
 
 -- A map's instance is its markup's, mounted with a context that sends
@@ -2284,21 +2070,17 @@ mapKind =
         { m =
             \v cx ->
                 let
-                    c =
-                        Js.from { f = Js.at v 1, up = cx }
+                    c = Js.from { f = Js.at v 1, up = cx }
 
-                    h =
-                        slot Js.null Js.null c
+                    h = slot Js.null Js.null c
 
-                    _ =
-                        Js.set h "i" (unit (Js.at v 0) c)
+                    _ = Js.set h "i" (unit (Js.at v 0) c)
                 in
                 Js.from { s = Js.null, q = h, e = Js.null, c = c }
         , p =
             \i v ->
                 let
-                    _ =
-                        Js.set (Js.get i "c") "f" (Js.at v 1)
+                    _ = Js.set (Js.get i "c") "f" (Js.at v 1)
                 in
                 Js.set (Js.get i "q") "i" (patch (Js.get (Js.get i "q") "i") (Js.at v 0) (Js.get i "c"))
         }
@@ -2306,8 +2088,7 @@ mapKind =
 
 -- `Html.map`: the same markup, its messages passed through `f`.
 pub map : V, V -> V
-map html f =
-    Js.from { t = mapKind, v = Js.array [ html, f ] }
+map html f = Js.from { t = mapKind, v = Js.array [ html, f ] }
 
 
 -- ---- Events (backend.md §15.3) --------------------------------------------
@@ -2322,8 +2103,7 @@ map html f =
 
 -- The payload of an event whose handler takes the event itself.
 pub identity : V -> V
-identity event =
-    event
+identity event = event
 
 
 -- Send the message `node`'s handler makes of `event` to the program whose
@@ -2347,15 +2127,13 @@ fire node event key flags =
                 else
                     ()
 
-            ok =
-                Js.ref False
+            ok = Js.ref False
 
             _ =
                 Js.finally
                     (\() ->
                         let
-                            x =
-                                Js.get node "${key}X"
+                            x = Js.get node "${key}X"
 
                             msg =
                                 through
@@ -2367,8 +2145,7 @@ fire node event key flags =
                                         Js.call node key [ Js.apply x [ event ] ]
                                     )
 
-                            root =
-                                mountAbove (Js.get node "parentNode")
+                            root = mountAbove (Js.get node "parentNode")
 
                             _ =
                                 if Js.isNull root then
@@ -2418,8 +2195,7 @@ delegated : V -> ()
 delegated event =
     let
         type_ : String
-        type_ =
-            Js.to (Js.get event "type")
+        type_ = Js.to (Js.get event "type")
     in
     bubble event "$$${type_}" (Js.get event "target")
 
@@ -2431,11 +2207,9 @@ bubble event key node =
 
     else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
         let
-            flags =
-                Js.to (Js.get node "${key}F")
+            flags = Js.to (Js.get node "${key}F")
 
-            _ =
-                fire node event key flags
+            _ = fire node event key flags
         in
         if Js.bitAnd flags 2 /= 0 then
             ()
@@ -2449,8 +2223,7 @@ bubble event key node =
 
 -- The delegated names listened for so far.
 registered : V
-registered =
-    Js.construct (Js.global "Set") []
+registered = Js.construct (Js.global "Set") []
 
 
 -- `(names)`: listen for each delegated event name once.
@@ -2464,8 +2237,7 @@ delegate names =
 
             else
                 let
-                    _ =
-                        Js.call registered "add" [ name ]
+                    _ = Js.call registered "add" [ name ]
                 in
                 Js.to (Js.call (Js.global "document") "addEventListener" [ name, Js.from delegated ])
         )
@@ -2487,8 +2259,7 @@ start data =
 pub listen : V, String, Int -> ()
 listen el name flags =
     let
-        key =
-            "$$${name}"
+        key = "$$${name}"
     in
     Js.to
         (Js.call

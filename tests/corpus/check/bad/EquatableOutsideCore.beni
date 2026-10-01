@@ -3,8 +3,7 @@
 -- type variable, once as a declaration modifier. Note the `foreign` error
 -- rides along, which is the same rule from the other side.
 pub eq : equatable a, a, a -> Bool
-eq a b =
-    True
+eq a b = True
 
 
 pub equatable foreign type Handle

@@ -3,5 +3,4 @@ schema User =
 
 
 bad : User.Unknown
-bad =
-    { id = 1 }
+bad = { id = 1 }

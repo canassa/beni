@@ -3,5 +3,4 @@ pub schema User =
     id : Int
 
 
-pub main =
-    User.parse "{\"id\":1}"
+pub main = User.parse "{\"id\":1}"

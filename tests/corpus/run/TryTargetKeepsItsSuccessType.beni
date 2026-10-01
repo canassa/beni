@@ -10,12 +10,10 @@ import Node exposing (Program)
 
 f u =
     let
-        g k =
-            k (u?)
+        g k = k (u?)
     in
     ( g (\v -> Ok v), g (\v -> Ok (String.fromInt v)) )
 
 
 main : Program
-main =
-    Node.printLines [ Debug.toString (f (Ok 1)), Debug.toString (f (Err "no")) ]
+main = Node.printLines [ Debug.toString (f (Ok 1)), Debug.toString (f (Err "no")) ]

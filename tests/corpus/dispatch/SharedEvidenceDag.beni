@@ -4,18 +4,14 @@
 -- with arguments in full once, as `<term> #<n>`, and every later
 -- occurrence as `<term> = #<n>` (§13.2); printed
 -- as a tree it would double per level, and 32 levels would never finish.
-w1 x =
-    ( x, x )
+w1 x = ( x, x )
 
 
-w2 x =
-    w1 (w1 x)
+w2 x = w1 (w1 x)
 
 
-w3 x =
-    w2 (w2 x)
+w3 x = w2 (w2 x)
 
 
 pub same : Bool
-same =
-    w3 1 == w3 2
+same = w3 1 == w3 2

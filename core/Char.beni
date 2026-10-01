@@ -52,8 +52,7 @@ pub foreign pure toLower : Char -> Char
 pub isUpper : Char -> Bool
 isUpper char =
     let
-        code =
-            toCode char
+        code = toCode char
     in
     code <= 0x5A && 0x41 <= code
 
@@ -65,8 +64,7 @@ isUpper char =
 pub isLower : Char -> Bool
 isLower char =
     let
-        code =
-            toCode char
+        code = toCode char
     in
     0x61 <= code && code <= 0x7A
 
@@ -76,8 +74,7 @@ isLower char =
 --|     isAlpha 'a' == True
 --|     isAlpha '0' == False
 pub isAlpha : Char -> Bool
-isAlpha char =
-    isLower char || isUpper char
+isAlpha char = isLower char || isUpper char
 
 
 --| Detect upper case and lower case ASCII characters and ASCII digits.
@@ -85,8 +82,7 @@ isAlpha char =
 --|     isAlphaNum 'a' == True
 --|     isAlphaNum '-' == False
 pub isAlphaNum : Char -> Bool
-isAlphaNum char =
-    isLower char || isUpper char || isDigit char
+isAlphaNum char = isLower char || isUpper char || isDigit char
 
 
 --| Detect digits `0123456789`.
@@ -96,8 +92,7 @@ isAlphaNum char =
 pub isDigit : Char -> Bool
 isDigit char =
     let
-        code =
-            toCode char
+        code = toCode char
     in
     code <= 0x39 && 0x30 <= code
 
@@ -109,8 +104,7 @@ isDigit char =
 pub isOctDigit : Char -> Bool
 isOctDigit char =
     let
-        code =
-            toCode char
+        code = toCode char
     in
     code <= 0x37 && 0x30 <= code
 
@@ -122,8 +116,7 @@ isOctDigit char =
 pub isHexDigit : Char -> Bool
 isHexDigit char =
     let
-        code =
-            toCode char
+        code = toCode char
     in
     (0x30 <= code && code <= 0x39)
         || (0x41 <= code && code <= 0x46)

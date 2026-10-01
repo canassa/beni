@@ -21,5 +21,4 @@ view count =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = 0, update = \Inc count -> count + 1, view = view }
+main = Browser.program { init = 0, update = \Inc count -> count + 1, view = view }

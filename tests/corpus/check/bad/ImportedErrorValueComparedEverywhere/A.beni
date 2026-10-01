@@ -4,5 +4,4 @@
 -- a hand-written dot-call. Each wanted meets `err` and is `poisoned`: `A`'s
 -- one error is the whole output, and `T` is silent with no INTERNAL ERROR
 -- (checker-v2.md §12.2).
-pub f =
-    1 + "x"
+pub f = 1 + "x"

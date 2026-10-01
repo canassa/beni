@@ -14,5 +14,4 @@ foreign pure unsafeLength : List a -> Int
 
 
 pub length : List a -> Int
-length xs =
-    add (unsafeLength xs) 0
+length xs = add (unsafeLength xs) 0

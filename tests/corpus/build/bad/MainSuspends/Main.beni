@@ -12,12 +12,10 @@ import Remote
 main : Program
 main =
     let
-        later =
-            \() -> Remote.lookup "later"
+        later = \() -> Remote.lookup "later"
     in
     Prog.say (greeting "world")
 
 
 greeting : String -> String
-greeting name =
-    Remote.lookup name
+greeting name = Remote.lookup name

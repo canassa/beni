@@ -7,15 +7,12 @@ import Ssr
 
 
 k5 : String
-k5 =
-    "declared"
+k5 = "declared"
 
 
 view : Html msg
-view =
-    <p>hoisted</p>
+view = <p>hoisted</p>
 
 
 main : Node.Program
-main =
-    Node.printLines [ k5, Ssr.render view ]
+main = Node.printLines [ k5, Ssr.render view ]

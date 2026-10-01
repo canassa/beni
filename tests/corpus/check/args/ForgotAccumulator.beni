@@ -11,5 +11,4 @@ sumHelp xs acc =
 
 
 pub sum : List Int -> Int
-sum xs =
-    sumHelp xs
+sum xs = sumHelp xs

@@ -11,10 +11,8 @@ import Node exposing (Program)
 import Pt exposing (P)
 
 
-p =
-    P 1 "a"
+p = P 1 "a"
 
 
 main : Program
-main =
-    Node.printLines [ p.y ]
+main = Node.printLines [ p.y ]

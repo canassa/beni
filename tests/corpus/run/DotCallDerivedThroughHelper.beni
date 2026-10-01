@@ -17,12 +17,10 @@ type Pair a
     = Pair a a
 
 
-before x y =
-    x.compare y == LT
+before x y = x.compare y == LT
 
 
-same x y =
-    x.eq y
+same x y = x.eq y
 
 
 yes : Bool -> String

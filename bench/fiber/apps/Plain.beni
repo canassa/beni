@@ -4,10 +4,8 @@ import Node exposing (Program)
 
 
 worker : Int -> Int
-worker n =
-    n * 2
+worker n = n * 2
 
 
 main : Program
-main =
-    Node.print (String.fromInt (worker 21))
+main = Node.print (String.fromInt (worker 21))

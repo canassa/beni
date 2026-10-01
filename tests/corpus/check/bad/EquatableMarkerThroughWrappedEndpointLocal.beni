@@ -11,8 +11,7 @@ import Schema exposing (Conversion)
 
 
 conv : Conversion Int Mine
-conv =
-    Debug.todo "checker-only conversion"
+conv = Debug.todo "checker-only conversion"
 
 
 type Mine
@@ -29,15 +28,12 @@ type Holds
 
 
 mk : Int -> Holds
-mk n =
-    Debug.todo "h"
+mk n = Debug.todo "h"
 
 
 viaEq : Bool
-viaEq =
-    mk 1 == mk 2
+viaEq = mk 1 == mk 2
 
 
 viaBasics : Bool
-viaBasics =
-    Basics.eq (mk 1) (mk 2)
+viaBasics = Basics.eq (mk 1) (mk 2)

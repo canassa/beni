@@ -5,5 +5,4 @@ import Helpers exposing (double)
 
 
 pub wrong : String
-wrong =
-    double "not a number"
+wrong = double "not a number"

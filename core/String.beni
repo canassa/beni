@@ -201,24 +201,21 @@ pub foreign pure fromList : List Char -> String
 --|     isEmpty "" == True
 --|     isEmpty "the world" == False
 pub isEmpty : String -> Bool
-isEmpty str =
-    str == ""
+isEmpty str = str == ""
 
 
 --| Reverse a string.
 --|
 --|     reverse "stressed" == "desserts"
 pub reverse : String -> String
-reverse str =
-    fromList (List.reverse (toList str))
+reverse str = fromList (List.reverse (toList str))
 
 
 --| Repeat a string `n` times.
 --|
 --|     repeat "ha" 3 == "hahaha"
 pub repeat : String, Int -> String
-repeat chunk n =
-    concat (List.repeat chunk n)
+repeat chunk n = concat (List.repeat chunk n)
 
 
 --| Replace all occurrences of some substring. The string being rewritten
@@ -237,16 +234,14 @@ repeat chunk n =
 --|     replace "abc" "" "-" == "a-b-c"
 --|     replace "" "" "-" == ""
 pub replace : String, String, String -> String
-replace str before after =
-    join (split str before) after
+replace str before after = join (split str before) after
 
 
 --| Concatenate many strings into one.
 --|
 --|     concat [ "never", "the", "less" ] == "nevertheless"
 pub concat : List String -> String
-concat strings =
-    join strings ""
+concat strings = join strings ""
 
 
 --| Put many strings together with a given separator. The list is the subject
@@ -342,8 +337,7 @@ contains str sub =
 --|     startsWith "abc" "" == True
 --|     startsWith "" "" == True
 pub startsWith : String, String -> Bool
-startsWith str prefix =
-    left str (length prefix) == prefix
+startsWith str prefix = left str (length prefix) == prefix
 
 
 --| See if a string ends with a given suffix. Every string ends with the
@@ -354,8 +348,7 @@ startsWith str prefix =
 --|     endsWith "abc" "" == True
 --|     endsWith "" "" == True
 pub endsWith : String, String -> Bool
-endsWith str suffix =
-    right str (length suffix) == suffix
+endsWith str suffix = right str (length suffix) == suffix
 
 
 --| Get all of the indexes for a substring. An alias of `indexes`, kept
@@ -364,8 +357,7 @@ endsWith str suffix =
 --|
 --|     indices "Mississippi" "i" == [ 1, 4, 7, 10 ]
 pub indices : String, String -> List Int
-indices str sub =
-    indexes str sub
+indices str sub = indexes str sub
 
 
 --| Add a character to the beginning of a string. The string is the subject,
@@ -373,8 +365,7 @@ indices str sub =
 --|
 --|     cons "he truth is out there" 'T' == "The truth is out there"
 pub cons : String, Char -> String
-cons str char =
-    append (fromChar char) str
+cons str char = append (fromChar char) str
 
 
 --| Split a non-empty string into its first character and the rest.
@@ -397,8 +388,7 @@ uncons str =
 pub pad : String, Int, Char -> String
 pad str n char =
     let
-        half =
-            Basics.toFloat (n - length str) / 2
+        half = Basics.toFloat (n - length str) / 2
     in
     repeat (fromChar char) (ceiling half) ++ str ++ repeat (fromChar char) (floor half)
 
@@ -407,61 +397,53 @@ pad str n char =
 --|
 --|     padLeft "1" 5 '.' == "....1"
 pub padLeft : String, Int, Char -> String
-padLeft str n char =
-    repeat (fromChar char) (n - length str) ++ str
+padLeft str n char = repeat (fromChar char) (n - length str) ++ str
 
 
 --| Pad a string on the right until it has a given length.
 --|
 --|     padRight "1" 5 '.' == "1...."
 pub padRight : String, Int, Char -> String
-padRight str n char =
-    str ++ repeat (fromChar char) (n - length str)
+padRight str n char = str ++ repeat (fromChar char) (n - length str)
 
 
 --| Transform every character in a string.
 --|
 --|     map "a/b/c" (\char -> if char == '/' then '.' else char) == "a.b.c"
 pub map : String, (Char -> Char) -> String
-map str func =
-    fromList (List.map (toList str) func)
+map str func = fromList (List.map (toList str) func)
 
 
 --| Keep only the characters that pass the test.
 --|
 --|     filter "R2-D2" Char.isDigit == "22"
 pub filter : String, (Char -> Bool) -> String
-filter str isGood =
-    fromList (List.filter (toList str) isGood)
+filter str isGood = fromList (List.filter (toList str) isGood)
 
 
 --| Reduce a string from the left, starting from an initial value.
 --|
 --|     foldl "time" "" (\char acc -> cons acc char) == "emit"
 pub foldl : String, b, (Char, b -> b) -> b
-foldl str acc func =
-    List.foldl (toList str) acc func
+foldl str acc func = List.foldl (toList str) acc func
 
 
 --| Reduce a string from the right, starting from an initial value.
 --|
 --|     foldr "time" "" (\char acc -> cons acc char) == "time"
 pub foldr : String, b, (Char, b -> b) -> b
-foldr str acc func =
-    List.foldr (toList str) acc func
+foldr str acc func = List.foldr (toList str) acc func
 
 
 --| Determine whether any characters pass the test.
 --|
 --|     any "R2-D2" Char.isDigit == True
 pub any : String, (Char -> Bool) -> Bool
-any str isGood =
-    List.any (toList str) isGood
+any str isGood = List.any (toList str) isGood
 
 
 --| Determine whether all characters pass the test.
 --|
 --|     all "2D2" Char.isDigit == False
 pub all : String, (Char -> Bool) -> Bool
-all str isGood =
-    List.all (toList str) isGood
+all str isGood = List.all (toList str) isGood

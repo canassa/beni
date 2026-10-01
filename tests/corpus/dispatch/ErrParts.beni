@@ -43,30 +43,24 @@
 -- difference, because both readings compile and only one is right. This
 -- golden can.
 pub empties : Bool
-empties =
-    [] == []
+empties = [] == []
 
 
 pub nothings : Bool
-nothings =
-    Nothing == Nothing
+nothings = Nothing == Nothing
 
 
 pub crossed : Bool
-crossed =
-    Ok 1 == Err "a"
+crossed = Ok 1 == Err "a"
 
 
 pub insideAShape : Bool
-insideAShape =
-    { a = [] } == { a = [] }
+insideAShape = { a = [] } == { a = [] }
 
 
 pub literalPair : Bool
-literalPair =
-    ( 1, 2.5 ) == ( 3, 4 )
+literalPair = ( 1, 2.5 ) == ( 3, 4 )
 
 
 pub literalOrder : Bool
-literalOrder =
-    ( 1, 2 ) < ( 3, 4 )
+literalOrder = ( 1, 2 ) < ( 3, 4 )

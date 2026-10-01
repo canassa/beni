@@ -18,8 +18,7 @@ walk n acc =
         acc
     else
         let
-            byThree =
-                modBy n 3
+            byThree = modBy n 3
         in
         case byThree of
             0 ->

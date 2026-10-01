@@ -11,5 +11,4 @@ pub type Shape
 
 
 pub show : Shape -> String
-show shape =
-    Lib.render shape
+show shape = Lib.render shape

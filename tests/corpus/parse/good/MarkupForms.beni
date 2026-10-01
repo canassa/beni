@@ -8,5 +8,4 @@ rows model =
     </ul>
 
 
-editor model =
-    <Show when={model.user} keyed>{\user -> <p>{user.name}</p>}</Show>
+editor model = <Show when={model.user} keyed>{\user -> <p>{user.name}</p>}</Show>

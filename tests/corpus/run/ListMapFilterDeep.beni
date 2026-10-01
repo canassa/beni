@@ -13,15 +13,13 @@ import String
 
 
 cells : List Int
-cells =
-    List.range 1 20000
+cells = List.range 1 20000
 
 
 main : Program
 main =
     let
-        ( big, small ) =
-            List.partition cells (\n -> n > 19000)
+        ( big, small ) = List.partition cells (\n -> n > 19000)
     in
     Node.printLines
         [ String.fromInt (List.foldl (List.map cells (\n -> n * 2)) 0 (\x acc -> x + acc))

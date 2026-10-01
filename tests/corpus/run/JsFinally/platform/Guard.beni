@@ -7,25 +7,21 @@ import Js
 
 
 log : Js.Ref String
-log =
-    Js.ref ""
+log = Js.ref ""
 
 
 --| Record one effect.
 pub note : String -> ()
-note s =
-    Js.write log "${Js.read log}${s}; "
+note s = Js.write log "${Js.read log}${s}; "
 
 
 --| What was recorded since the last `take`, and a fresh record.
 pub take : () -> String
 take () =
     let
-        seen =
-            Js.read log
+        seen = Js.read log
 
-        _ =
-            Js.write log ""
+        _ = Js.write log ""
     in
     seen
 
@@ -35,8 +31,7 @@ pub foreign impure attempt : (() -> String) -> String
 
 
 fail : String -> a
-fail m =
-    Js.throw (Js.construct (Js.global "Error") [ Js.from m ])
+fail m = Js.throw (Js.construct (Js.global "Error") [ Js.from m ])
 
 
 --| In tail position: the body's value is returned from inside the guard.
@@ -45,8 +40,7 @@ tail x =
     Js.finally
         (\() ->
             let
-                _ =
-                    note "body"
+                _ = note "body"
             in
             x + 1
         )
@@ -61,15 +55,13 @@ valued x =
             Js.finally
                 (\() ->
                     let
-                        _ =
-                            note "body"
+                        _ = note "body"
                     in
                     x * 2
                 )
                 (\() -> note "cleanup")
 
-        _ =
-            note "after"
+        _ = note "after"
     in
     String.fromInt v
 
@@ -78,11 +70,9 @@ valued x =
 pub discarded : () -> String
 discarded () =
     let
-        _ =
-            Js.finally (\() -> note "body") (\() -> note "cleanup")
+        _ = Js.finally (\() -> note "body") (\() -> note "cleanup")
 
-        _ =
-            note "after"
+        _ = note "after"
     in
     "done"
 
@@ -93,8 +83,7 @@ throwsTail () =
     Js.finally
         (\() ->
             let
-                _ =
-                    note "body"
+                _ = note "body"
             in
             fail "boom"
         )
@@ -110,15 +99,13 @@ throwsValued () =
             Js.finally
                 (\() ->
                     let
-                        _ =
-                            note "body"
+                        _ = note "body"
                     in
                     fail "bang"
                 )
                 (\() -> note "cleanup")
 
-        _ =
-            note "unreached"
+        _ = note "unreached"
     in
     v
 
@@ -127,11 +114,9 @@ throwsValued () =
 pub throwsDiscarded : () -> String
 throwsDiscarded () =
     let
-        _ =
-            Js.finally (\() -> fail "crash") (\() -> note "cleanup")
+        _ = Js.finally (\() -> fail "crash") (\() -> note "cleanup")
 
-        _ =
-            note "unreached"
+        _ = note "unreached"
     in
     "unreached"
 
@@ -144,8 +129,7 @@ nested () =
             Js.finally
                 (\() ->
                     let
-                        _ =
-                            note "inner"
+                        _ = note "inner"
                     in
                     fail "deep"
                 )
@@ -158,13 +142,11 @@ nested () =
 make : String, Int -> (() -> Int)
 make s v =
     let
-        _ =
-            note "make ${s}"
+        _ = note "make ${s}"
     in
     \() ->
         let
-            _ =
-                note s
+            _ = note s
         in
         v
 
@@ -172,8 +154,7 @@ make s v =
 cleanupOf : String -> (() -> ())
 cleanupOf s =
     let
-        _ =
-            note "make ${s}"
+        _ = note "make ${s}"
     in
     \() -> note s
 
@@ -181,25 +162,21 @@ cleanupOf s =
 --| Arguments that are not lambdas are evaluated first, in order, and
 --| called in their blocks.
 pub ordered : () -> Int
-ordered () =
-    Js.finally (make "body" 7) (cleanupOf "cleanup")
+ordered () = Js.finally (make "body" 7) (cleanupOf "cleanup")
 
 
 --| Functions passed in.
 pub passed : (() -> Int), (() -> ()) -> Int
-passed f g =
-    Js.finally f g
+passed f g = Js.finally f g
 
 
 --| `Js.finally` itself passed as a value: the sibling's function.
 pub asValue : (() -> Int), (() -> ()) -> Int
-asValue f g =
-    apply Js.finally f g
+asValue f g = apply Js.finally f g
 
 
 apply : ((() -> Int), (() -> ()) -> Int), (() -> Int), (() -> ()) -> Int
-apply h f g =
-    h f g
+apply h f g = h f g
 
 
 --| `f` under a latch, called from one place in another module: a release
@@ -207,11 +184,9 @@ apply h f g =
 pub latched : (() -> ()) -> ()
 latched f =
     let
-        _ =
-            note "lock"
+        _ = note "lock"
 
-        _ =
-            Js.finally f (\() -> note "unlock")
+        _ = Js.finally f (\() -> note "unlock")
     in
     note "unlocked"
 

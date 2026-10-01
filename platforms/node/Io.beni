@@ -26,13 +26,11 @@ import Task exposing (Exit, Resume)
 --| returns says when it ends. If the fiber is cancelled, the program exits
 --| 130.
 pub run : (() -> Program) -> Program
-run body =
-    after (Task.start body finish) Node.done
+run body = after (Task.start body finish) Node.done
 
 
 after : (), a -> a
-after _ value =
-    value
+after _ value = value
 
 
 foreign impure finish : Exit Program -> ()
@@ -40,8 +38,7 @@ foreign impure finish : Exit Program -> ()
 
 --| Wait `ms` milliseconds. Only the fiber that sleeps waits; the others run.
 pub sleep : Int -> ()
-sleep ms =
-    Task.callback (\resume -> startTimer ms resume)
+sleep ms = Task.callback (\resume -> startTimer ms resume)
 
 
 foreign impure startTimer : Int, Resume () -> (() -> ())
@@ -78,8 +75,7 @@ pub type FileError
 --|   can.
 --| - `TooLarge`: it is larger than any string can hold.
 pub readFile : String -> Result FileError String
-readFile path =
-    Task.callback (\resume -> startRead path resume)
+readFile path = Task.callback (\resume -> startRead path resume)
 
 
 foreign impure startRead : String, Resume (Result FileError String) -> (() -> ())

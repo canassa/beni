@@ -2,40 +2,32 @@
 --! which is what most real modules look like.
 
 pub afterFirst : String -> String
-afterFirst input =
-    String.dropLeft input 1
+afterFirst input = String.dropLeft input 1
 
 
 pub isDigit : Char -> Bool
-isDigit c =
-    Char.isDigit c
+isDigit c = Char.isDigit c
 
 
 pub isSpace : Char -> Bool
-isSpace c =
-    c == ' ' || c == '\n' || c == '\r'
+isSpace c = c == ' ' || c == '\n' || c == '\r'
 
 
 pub hexValue : Int
-hexValue =
-    0x1F
+hexValue = 0x1F
 
 
 pub ratio : Float
-ratio =
-    1.5e-3
+ratio = 1.5e-3
 
 
 pub negativeExample : List Int
-negativeExample =
-    [ -1, 0, 1 ]
+negativeExample = [ -1, 0, 1 ]
 
 
 pub clampIndex : Int, Int -> Int
-clampIndex limit index =
-    clamp index 0 (limit - 1)
+clampIndex limit index = clamp index 0 (limit - 1)
 
 
 pub pairUp : a, b -> ( a, b )
-pairUp left right =
-    ( left, right )
+pairUp left right = ( left, right )

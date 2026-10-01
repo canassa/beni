@@ -2,5 +2,4 @@ import Schema exposing (Conversion)
 
 
 pub convert : Conversion Int String
-convert =
-    Debug.todo "checker-only imported conversion"
+convert = Debug.todo "checker-only imported conversion"

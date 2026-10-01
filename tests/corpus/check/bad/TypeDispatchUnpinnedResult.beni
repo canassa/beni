@@ -15,10 +15,8 @@
 -- argument has nothing but the caller to pin it.
 pub decodeInto : Int -> a
     where a.fromInt : Int -> a
-decodeInto n =
-    a.fromInt n
+decodeInto n = a.fromInt n
 
 
 pub ignored : Int
-ignored =
-    always 1 (decodeInto 0)
+ignored = always 1 (decodeInto 0)

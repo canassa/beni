@@ -28,15 +28,12 @@ pub type Box a
 
 
 pub deep : Bool
-deep =
-    [ [ [ Box "a" "b" ] ] ] == [ [ [ Box "a" "c" ] ] ]
+deep = [ [ [ Box "a" "b" ] ] ] == [ [ [ Box "a" "c" ] ] ]
 
 
 pub three : Bool
-three =
-    [ [ [ 1 ] ] ] == [ [ [ 2 ] ] ]
+three = [ [ [ 1 ] ] ] == [ [ [ 2 ] ] ]
 
 
 pub pairs : Bool
-pairs =
-    [ [ ( 1, "a" ) ] ] == [ [ ( 2, "b" ) ] ]
+pairs = [ [ ( 1, "a" ) ] ] == [ [ ( 2, "b" ) ] ]

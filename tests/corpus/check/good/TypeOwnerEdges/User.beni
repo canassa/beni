@@ -6,5 +6,4 @@
 import Middle exposing (first)
 
 
-pub again =
-    first
+pub again = first

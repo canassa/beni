@@ -10,14 +10,12 @@ import Prog exposing (Program)
 
 
 greeting : Html.Html msg
-greeting =
-    Html.text "hello"
+greeting = Html.text "hello"
 
 
 main : Program
 main =
     let
-        _ =
-            greeting
+        _ = greeting
     in
     Prog.say "hello"

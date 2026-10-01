@@ -1,5 +1,4 @@
 import Lib
 
 
-bad =
-    Lib.same "left" "right"
+bad = Lib.same "left" "right"

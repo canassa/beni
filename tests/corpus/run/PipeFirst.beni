@@ -12,13 +12,11 @@ import String
 
 
 subtract : Int, Int -> Int
-subtract a b =
-    a - b
+subtract a b = a - b
 
 
 double : Int -> Int
-double n =
-    n * 2
+double n = n * 2
 
 
 main : Program

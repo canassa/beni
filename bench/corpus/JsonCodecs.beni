@@ -167,8 +167,7 @@ ordersDecoder =
 
 
 pub encodeTier : Tier -> Encode.Value
-encodeTier tier =
-    Encode.string (tierToString tier)
+encodeTier tier = Encode.string (tierToString tier)
 
 
 pub encodeAddress : Address -> Encode.Value
@@ -248,8 +247,7 @@ orderTotal order =
 pub discount : Order -> Float
 discount order =
     let
-        total =
-            orderTotal order
+        total = orderTotal order
 
         rate =
             case order.customer.tier of
@@ -277,8 +275,7 @@ parseOrders json =
 pub roundTrip : String -> Result String String
 roundTrip json =
     let
-        orders =
-            parseOrders json?
+        orders = parseOrders json?
     in
     Ok (Encode.encode (Encode.list orders encodeOrder) 2)
 
@@ -286,8 +283,7 @@ roundTrip json =
 pub summarize : String -> Result String (Dict String Int)
 summarize json =
     let
-        orders =
-            parseOrders json?
+        orders = parseOrders json?
 
         bump counts key =
             Dict.update counts key (\existing -> Just (Maybe.withDefault existing 0 + 1))

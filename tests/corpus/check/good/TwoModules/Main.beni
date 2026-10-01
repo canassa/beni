@@ -5,5 +5,4 @@ import Util exposing (helper)
 
 
 pub main : Int
-main =
-    helper (Util.helper 1)
+main = helper (Util.helper 1)

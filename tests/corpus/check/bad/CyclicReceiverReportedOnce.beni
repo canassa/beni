@@ -3,5 +3,4 @@
 -- meets the cycle reports it ONCE, at the `==`, and poisons the cycle's root,
 -- so the `<` on the same receiver adds nothing. The cycle is written as its
 -- structure, `a = List a`, never as `a  =  … a …`.
-f x =
-    x == [ x ] && x < [ x ]
+f x = x == [ x ] && x < [ x ]

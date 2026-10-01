@@ -19,31 +19,25 @@ eq a b =
 
 
 pub sameLoud : Loud, Loud -> Bool
-sameLoud a b =
-    a == b
+sameLoud a b = a == b
 
 
 pub count : List a, a -> Int
     where a.eq : a, a -> Bool
-count xs x =
-    List.length (List.filter xs (\y -> y == x))
+count xs x = List.length (List.filter xs (\y -> y == x))
 
 
 pub countLoud : List Loud -> Int
-countLoud xs =
-    count xs (Loud 1)
+countLoud xs = count xs (Loud 1)
 
 
 pub countInts : List Int -> Int
-countInts xs =
-    count xs 1
+countInts xs = count xs 1
 
 
 pub sameMaybe : Maybe Loud, Maybe Loud -> Bool
-sameMaybe a b =
-    a == b
+sameMaybe a b = a == b
 
 
 pub sameList : List Loud, List Loud -> Bool
-sameList a b =
-    a == b
+sameList a b = a == b

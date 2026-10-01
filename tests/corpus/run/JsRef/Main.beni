@@ -9,20 +9,15 @@ import Node
 main : Node.Program
 main =
     let
-        next =
-            Cells.counter 10
+        next = Cells.counter 10
 
-        a =
-            next ()
+        a = next ()
 
-        b =
-            next ()
+        b = next ()
 
-        t1 =
-            Cells.tick ()
+        t1 = Cells.tick ()
 
-        t2 =
-            Cells.tick ()
+        t2 = Cells.tick ()
     in
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b}"

@@ -7,5 +7,4 @@ pub type Box a
 
 pub describe : Box a, b -> String
     where b.describe : b, K -> String
-describe (Box _) other =
-    "box of " ++ other.describe (K.K 1)
+describe (Box _) other = "box of " ++ other.describe (K.K 1)

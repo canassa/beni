@@ -49,10 +49,8 @@ filterRec xs keep =
 
 
 pub plain : Int, List Int -> List Int
-plain n xs =
-    [ n, ...xs ]
+plain n xs = [ n, ...xs ]
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

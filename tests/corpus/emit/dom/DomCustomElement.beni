@@ -7,5 +7,4 @@ import Html exposing (Html)
 
 
 pub view : String -> Html msg
-view s =
-    <my-widget title={s}><x-a-b>hi</x-a-b></my-widget>
+view s = <my-widget title={s}><x-a-b>hi</x-a-b></my-widget>

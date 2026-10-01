@@ -5,8 +5,7 @@
 -- the same way one line down — is legal.
 h =
     let
-        x =
-            x + 1
+        x = x + 1
 
         countDown k =
             if k == 0 then

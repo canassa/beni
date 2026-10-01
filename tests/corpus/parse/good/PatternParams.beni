@@ -4,37 +4,29 @@
 -- parameter PARSES here whatever its type is — §7 leaves "does it match
 -- everything?" to the checker — while a list parameter, with a spread or not, can never
 -- match everything and is a parse error (`parse/bad/RefutableParameterList`).
-first ( a, _ ) =
-    a
+first ( a, _ ) = a
 
 
-fullName { firstName, lastName } =
-    "${firstName} ${lastName}"
+fullName { firstName, lastName } = "${firstName} ${lastName}"
 
 
-constant _ =
-    0
+constant _ = 0
 
 
-fromUnit () =
-    1
+fromUnit () = 1
 
 
-unbox (Box inner) =
-    inner
+unbox (Box inner) = inner
 
 
 type Box
     = Box Int
 
 
-keep (( a, b ) as pair) =
-    ( pair, a, b )
+keep (( a, b ) as pair) = ( pair, a, b )
 
 
-deep ( ( a, b ), { c } ) =
-    a + b + c
+deep ( ( a, b ), { c } ) = a + b + c
 
 
-lambdaParams =
-    \( a, b ) { c } (Box d) -> a + b + c + d
+lambdaParams = \( a, b ) { c } (Box d) -> a + b + c + d

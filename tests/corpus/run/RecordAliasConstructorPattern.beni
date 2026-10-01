@@ -15,8 +15,7 @@ type alias User =
 
 
 nameOf : User -> String
-nameOf (User n _) =
-    n
+nameOf (User n _) = n
 
 
 describe : User -> String
@@ -39,8 +38,7 @@ ageOf maybe =
 main : Program
 main =
     let
-        (User m years) =
-            User "Ada" 36
+        (User m years) = User "Ada" 36
 
         both =
             case User "Bo" 7 of

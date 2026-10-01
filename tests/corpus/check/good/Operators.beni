@@ -3,20 +3,16 @@
 -- a list's spread in `List`, everything else in `Basics`. If one of those names were
 -- wrong this file would be a pile of `unknown_import_name`.
 pub arithmetic : Int, Int -> Int
-arithmetic a b =
-    a + b - a * b // 2
+arithmetic a b = a + b - a * b // 2
 
 
 pub logic : Int, Int -> Bool
-logic a b =
-    (a == b || a /= b) && not (a < b)
+logic a b = (a == b || a /= b) && not (a < b)
 
 
 pub text : String -> String
-text s =
-    s ++ s
+text s = s ++ s
 
 
 pub pipeline : List Int -> List Int
-pipeline xs =
-    [ 1, ...(xs |> List.map negate) ]
+pipeline xs = [ 1, ...(xs |> List.map negate) ]

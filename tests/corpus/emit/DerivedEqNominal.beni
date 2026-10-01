@@ -58,20 +58,16 @@ pub type Box a
 
 
 pub sameShape : Shape, Shape -> Bool
-sameShape a b =
-    a == b
+sameShape a b = a == b
 
 
 pub sameTree : Tree, Tree -> Bool
-sameTree a b =
-    a == b
+sameTree a b = a == b
 
 
 pub sameBoxes : Box Int, Box Int -> Bool
-sameBoxes a b =
-    a == b
+sameBoxes a b = a == b
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

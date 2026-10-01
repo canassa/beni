@@ -11,5 +11,4 @@
 -- solved, so the two method types unify and `"two"` then meets `number` —
 -- and gets `type_mismatch` at the argument instead, which is a better span
 -- and a different code.
-pub widen x =
-    ( x.render 1, x.render 1 2 )
+pub widen x = ( x.render 1, x.render 1 2 )

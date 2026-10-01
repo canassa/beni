@@ -6,28 +6,23 @@ import List
 
 
 pub make : Int -> List Int
-make n =
-    List.range 1 n
+make n = List.range 1 n
 
 
 pub chunks : Int -> List (List Int)
-chunks n =
-    List.map (List.range 1 (n // 10)) (\_ -> List.range 1 10)
+chunks n = List.map (List.range 1 (n // 10)) (\_ -> List.range 1 10)
 
 
 pub pairs : Int -> List ( Int, Int )
-pairs n =
-    List.map (List.range 1 n) (\x -> ( x, x ))
+pairs n = List.map (List.range 1 n) (\x -> ( x, x ))
 
 
 pub map : List Int -> List Int
-map xs =
-    List.map xs (\x -> x + 1)
+map xs = List.map xs (\x -> x + 1)
 
 
 pub filter : List Int -> List Int
-filter xs =
-    List.filter xs (\x -> modBy x 2 == 0)
+filter xs = List.filter xs (\x -> modBy x 2 == 0)
 
 
 pub filterMap : List Int -> List Int
@@ -42,142 +37,114 @@ filterMap xs =
 
 
 pub indexedMap : List Int -> List Int
-indexedMap xs =
-    List.indexedMap xs (\i x -> i + x)
+indexedMap xs = List.indexedMap xs (\i x -> i + x)
 
 
 pub take : List Int, Int -> List Int
-take xs n =
-    List.take xs n
+take xs n = List.take xs n
 
 
 pub append : List Int -> List Int
-append xs =
-    List.append xs [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+append xs = List.append xs [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
 
 
 pub concat : List (List Int) -> List Int
-concat lists =
-    List.concat lists
+concat lists = List.concat lists
 
 
 pub concatMap : List Int -> List Int
-concatMap xs =
-    List.concatMap xs (\x -> [ x, x ])
+concatMap xs = List.concatMap xs (\x -> [ x, x ])
 
 
 pub map2 : List Int -> List Int
-map2 xs =
-    List.map2 xs xs (\a b -> a + b)
+map2 xs = List.map2 xs xs (\a b -> a + b)
 
 
 pub map3 : List Int -> List Int
-map3 xs =
-    List.map3 xs xs xs (\a b c -> a + b + c)
+map3 xs = List.map3 xs xs xs (\a b c -> a + b + c)
 
 
 pub map5 : List Int -> List Int
-map5 xs =
-    List.map5 xs xs xs xs xs (\a b c d v -> a + b + c + d + v)
+map5 xs = List.map5 xs xs xs xs xs (\a b c d v -> a + b + c + d + v)
 
 
 pub partition : List Int -> ( List Int, List Int )
-partition xs =
-    List.partition xs (\x -> modBy x 2 == 0)
+partition xs = List.partition xs (\x -> modBy x 2 == 0)
 
 
 pub unzip : List ( Int, Int ) -> ( List Int, List Int )
-unzip ps =
-    List.unzip ps
+unzip ps = List.unzip ps
 
 
 pub intersperse : List Int -> List Int
-intersperse xs =
-    List.intersperse xs 0
+intersperse xs = List.intersperse xs 0
 
 
 pub sortWith : List Int -> List Int
-sortWith xs =
-    List.sortWith xs (\a b -> Basics.compare b a)
+sortWith xs = List.sortWith xs (\a b -> Basics.compare b a)
 
 
 -- The functions that read or write a list without a callback that builds
 -- one: folds, searches, the indexed reads and writes, and the ends.
 pub foldl : List Int -> Int
-foldl xs =
-    List.foldl xs 0 (\x acc -> acc + x)
+foldl xs = List.foldl xs 0 (\x acc -> acc + x)
 
 
 pub foldr : List Int -> Int
-foldr xs =
-    List.foldr xs 0 (\x acc -> acc + x)
+foldr xs = List.foldr xs 0 (\x acc -> acc + x)
 
 
 pub reverse : List Int -> List Int
-reverse xs =
-    List.reverse xs
+reverse xs = List.reverse xs
 
 
 pub length : List Int -> Int
-length xs =
-    List.length xs
+length xs = List.length xs
 
 
 pub member : List Int -> Bool
-member xs =
-    List.member xs 0
+member xs = List.member xs 0
 
 
 pub range : Int -> List Int
-range n =
-    List.range 1 n
+range n = List.range 1 n
 
 
 pub get : List Int, Int -> Maybe Int
-get xs n =
-    List.get xs (n - 2)
+get xs n = List.get xs (n - 2)
 
 
 pub last : List Int -> Maybe Int
-last xs =
-    List.last xs
+last xs = List.last xs
 
 
 pub set : List Int, Int -> List Int
-set xs n =
-    List.set xs (n // 2) 0
+set xs n = List.set xs (n // 2) 0
 
 
 pub push : List Int -> List Int
-push xs =
-    List.push xs 0
+push xs = List.push xs 0
 
 
 pub pop : List Int -> List Int
-pop xs =
-    List.pop xs
+pop xs = List.pop xs
 
 
 pub slice : List Int, Int -> List Int
-slice xs n =
-    List.slice xs (n // 4) (n // 2)
+slice xs n = List.slice xs (n // 4) (n // 2)
 
 
 pub drop : List Int, Int -> List Int
-drop xs n =
-    List.drop xs (n // 2)
+drop xs n = List.drop xs (n // 2)
 
 
 pub cons : List Int -> List Int
-cons xs =
-    [ 0, ...xs ]
+cons xs = [ 0, ...xs ]
 
 
 pub equal : List Int -> Bool
-equal xs =
-    xs == xs
+equal xs = xs == xs
 
 
 pub sum : List Int -> Int
-sum xs =
-    List.sum xs
+sum xs = List.sum xs

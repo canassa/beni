@@ -12,5 +12,4 @@ foreign type Table k v
 
 
 length : List a -> Int
-length _ =
-    0
+length _ = 0

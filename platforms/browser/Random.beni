@@ -37,16 +37,14 @@ pub type Generator a
 
 
 next : Seed -> Seed
-next (Seed state incr) =
-    Seed (Int32.add (Int32.mul state (Int32.fromInt 1664525)) incr) incr
+next (Seed state incr) = Seed (Int32.add (Int32.mul state (Int32.fromInt 1664525)) incr) incr
 
 
 -- A 32-bit output of the seed, from 0 to 4294967295.
 peel : Seed -> Int
 peel (Seed state _) =
     let
-        shift =
-            Int32.toInt (Int32.shiftRightZero state 28) + 4
+        shift = Int32.toInt (Int32.shiftRightZero state 28) + 4
 
         word =
             Int32.mul (Int32.xor (Int32.shiftRightZero state shift) state) (Int32.fromInt 277803737)
@@ -65,8 +63,7 @@ initialSeed x =
 
 --| Run a generator on a seed: the value, and the seed to use next.
 pub step : Generator a, Seed -> ( a, Seed )
-step (Generator generator) seed =
-    generator seed
+step (Generator generator) seed = generator seed
 
 
 --| A generator of seeds independent of the one that made them: for a
@@ -87,14 +84,12 @@ independentSeed =
 --| `Random.generate`, the generator first. Each run steps the page's own
 --| seed, which starts from `crypto.getRandomValues`.
 pub generate : Generator a, (a -> msg) -> Cmd msg
-generate generator tag =
-    Cmd.task (\() -> draw generator) tag
+generate generator tag = Cmd.task (\() -> draw generator) tag
 
 
 -- The page's seed, once a command has drawn from it.
 pageSeed : Js.Ref (Maybe Seed)
-pageSeed =
-    Js.ref Nothing
+pageSeed = Js.ref Nothing
 
 
 draw : Generator a -> a
@@ -111,8 +106,7 @@ draw (Generator generator) =
     case generator seed of
         ( value, after ) ->
             let
-                _ =
-                    Js.write pageSeed (Just after)
+                _ = Js.write pageSeed (Just after)
             in
             value
 
@@ -136,15 +130,12 @@ fresh () =
 pub int : Int, Int -> Generator Int
 int a b =
     let
-        lo =
-            min a b
+        lo = min a b
 
-        range =
-            max a b - lo + 1
+        range = max a b - lo + 1
 
         -- 2³² mod range: the outputs below it would favour the low values.
-        threshold =
-            modBy (4294967296 - range) range
+        threshold = modBy (4294967296 - range) range
     in
     Generator (\seed -> unbiased seed lo range threshold)
 
@@ -152,8 +143,7 @@ int a b =
 unbiased : Seed, Int, Int, Int -> ( Int, Seed )
 unbiased seed lo range threshold =
     let
-        x =
-            peel seed
+        x = peel seed
     in
     if x < threshold then
         unbiased (next seed) lo range threshold
@@ -163,14 +153,12 @@ unbiased seed lo range threshold =
 
 --| The least integer `int` takes.
 pub minInt : Int
-minInt =
-    -2147483648
+minInt = -2147483648
 
 
 --| The greatest integer `int` takes.
 pub maxInt : Int
-maxInt =
-    2147483647
+maxInt = 2147483647
 
 
 --| A float from `a` to `b`, from 53 bits of randomness.
@@ -179,17 +167,13 @@ float a b =
     Generator
         (\seed0 ->
             let
-                seed1 =
-                    next seed0
+                seed1 = next seed0
 
-                lo =
-                    toFloat (Js.bitAnd (peel seed1) 67108863)
+                lo = toFloat (Js.bitAnd (peel seed1) 67108863)
 
-                hi =
-                    toFloat (Js.bitAnd (peel seed0) 134217727)
+                hi = toFloat (Js.bitAnd (peel seed0) 134217727)
 
-                value =
-                    (hi * 67108864.0 + lo) / 9007199254740992.0
+                value = (hi * 67108864.0 + lo) / 9007199254740992.0
             in
             ( value * abs (b - a) + a, next seed1 )
         )
@@ -197,22 +181,19 @@ float a b =
 
 --| Always this value.
 pub constant : a -> Generator a
-constant value =
-    Generator (\seed -> ( value, seed ))
+constant value = Generator (\seed -> ( value, seed ))
 
 
 --| Two values, one from each generator.
 pub pair : Generator a, Generator b -> Generator ( a, b )
-pair first second =
-    map2 first second (\x y -> ( x, y ))
+pair first second = map2 first second (\x y -> ( x, y ))
 
 
 --| `n` values from the generator.
 --|
 --|     Random.list (Random.int 1 6) 3
 pub list : Generator a, Int -> Generator (List a)
-list (Generator generator) n =
-    Generator (\seed -> listHelp [] n generator seed)
+list (Generator generator) n = Generator (\seed -> listHelp [] n generator seed)
 
 
 listHelp : List a, Int, (Seed -> ( a, Seed )), Seed -> ( List a, Seed )
@@ -229,8 +210,7 @@ listHelp done n generator seed =
 --|
 --|     Random.uniform "heads" [ "tails" ]
 pub uniform : a, List a -> Generator a
-uniform value values =
-    weighted ( 1, value ) (List.map values (\v -> ( 1, v )))
+uniform value values = weighted ( 1, value ) (List.map values (\v -> ( 1, v )))
 
 
 --| One of the values, each as likely as its weight against the rest.
@@ -239,8 +219,7 @@ uniform value values =
 pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
 weighted first others =
     let
-        total =
-            abs first.0 + List.sum (List.map others (\o -> abs o.0))
+        total = abs first.0 + List.sum (List.map others (\o -> abs o.0))
     in
     map (float 0 total) (\countdown -> byWeight first others countdown)
 
@@ -312,5 +291,4 @@ andThen (Generator generator) f =
 
 --| A generator made only when it is run: for one that refers to itself.
 pub lazy : (() -> Generator a) -> Generator a
-lazy make =
-    Generator (\seed -> step (make ()) seed)
+lazy make = Generator (\seed -> step (make ()) seed)

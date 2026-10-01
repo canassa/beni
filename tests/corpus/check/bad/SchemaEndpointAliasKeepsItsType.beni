@@ -7,8 +7,7 @@ import Schema exposing (Conversion)
 
 
 conv : Conversion Int (Int -> Int)
-conv =
-    Debug.todo "checker-only conversion"
+conv = Debug.todo "checker-only conversion"
 
 
 schema R tagged "k" of
@@ -30,10 +29,8 @@ type alias FW =
 
 
 bump : RW -> Int
-bump r =
-    r + 1
+bump r = r + 1
 
 
 same : FW, FW -> Bool
-same p q =
-    p == q
+same p q = p == q

@@ -93,19 +93,15 @@ test "a let's markup and the call that decides its handler infer one type in eit
     const a = s.arena();
     const written = try readRepo(a, "tests/corpus/check/good/markup/LetMarkupObligationLater.beni");
     const markup_first =
-        \\        v =
-        \\            <input onInput={g} />
+        \\        v = <input onInput={g} />
         \\
-        \\        z =
-        \\            g "x"
+        \\        z = g "x"
         \\
     ;
     const call_first =
-        \\        z =
-        \\            g "x"
+        \\        z = g "x"
         \\
-        \\        v =
-        \\            <input onInput={g} />
+        \\        v = <input onInput={g} />
         \\
     ;
     const swapped = try std.mem.replaceOwned(u8, a, written, markup_first, call_first);

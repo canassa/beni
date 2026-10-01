@@ -6,10 +6,8 @@ import Node exposing (Program)
 
 
 settings : String
-settings =
-    Debug.todo "render the settings page"
+settings = Debug.todo "render the settings page"
 
 
 main : Program
-main =
-    Node.print settings
+main = Node.print settings

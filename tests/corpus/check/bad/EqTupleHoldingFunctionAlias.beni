@@ -12,5 +12,4 @@ type alias H =
 
 
 same : H, H -> Bool
-same a b =
-    ( a, 1 ) == ( b, 1 )
+same a b = ( a, 1 ) == ( b, 1 )

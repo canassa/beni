@@ -12,8 +12,7 @@ import Schema exposing (Conversion)
 
 
 conv0 : Conversion Int Mine0
-conv0 =
-    Debug.todo "c"
+conv0 = Debug.todo "c"
 
 
 type Mine0
@@ -27,8 +26,7 @@ schema L0 tagged "kind" of
 
 
 conv1 : Conversion Int Mine1
-conv1 =
-    Debug.todo "c"
+conv1 = Debug.todo "c"
 
 
 type Mine1
@@ -42,8 +40,7 @@ schema L1 tagged "kind" of
 
 
 conv2 : Conversion Int Mine2
-conv2 =
-    Debug.todo "c"
+conv2 = Debug.todo "c"
 
 
 type Mine2
@@ -57,8 +54,7 @@ schema L2 tagged "kind" of
 
 
 conv3 : Conversion Int Mine3
-conv3 =
-    Debug.todo "c"
+conv3 = Debug.todo "c"
 
 
 type Mine3
@@ -72,8 +68,7 @@ schema L3 tagged "kind" of
 
 
 conv4 : Conversion Int Mine4
-conv4 =
-    Debug.todo "c"
+conv4 = Debug.todo "c"
 
 
 type Mine4
@@ -87,8 +82,7 @@ schema L4 tagged "kind" of
 
 
 conv5 : Conversion Int Mine5
-conv5 =
-    Debug.todo "c"
+conv5 = Debug.todo "c"
 
 
 type Mine5
@@ -102,5 +96,4 @@ schema L5 tagged "kind" of
 
 
 same : L0.Type, L0.Type -> Bool
-same a b =
-    a == b
+same a b = a == b

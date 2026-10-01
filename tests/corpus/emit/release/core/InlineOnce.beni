@@ -17,18 +17,15 @@ import Js
 
 
 pub put : Js.Value, Js.Value, Js.Value -> ()
-put parent i before =
-    putRun parent (Js.get i "first") (Js.get i "last") before
+put parent i before = putRun parent (Js.get i "first") (Js.get i "last") before
 
 
 putRun : Js.Value, Js.Value, Js.Value, Js.Value -> ()
 putRun parent n end before =
     let
-        next =
-            Js.get n "nextSibling"
+        next = Js.get n "nextSibling"
 
-        _ =
-            Js.call parent "insertBefore" [ n, before ]
+        _ = Js.call parent "insertBefore" [ n, before ]
     in
     if Js.same n end then
         ()
@@ -37,13 +34,11 @@ putRun parent n end before =
 
 
 double : Int -> Int
-double n =
-    n * 2 + 1
+double n = n * 2 + 1
 
 
 pub label : Int, String -> String
-label n unit =
-    String.append (String.fromInt (double n)) unit
+label n unit = String.append (String.fromInt (double n)) unit
 
 
 exclaim : String, Bool -> String
@@ -55,8 +50,7 @@ exclaim s loud =
 
 
 pub shout : String, Bool -> String
-shout s loud =
-    exclaim s loud
+shout s loud = exclaim s loud
 
 
 describe : Int -> String
@@ -68,25 +62,20 @@ describe n =
 
 
 pub grade : Int -> String
-grade n =
-    describe (n - 1)
+grade n = describe (n - 1)
 
 
 twice : Int -> Int
-twice n =
-    n * 2
+twice n = n * 2
 
 
 pub both : Int -> Int
-both n =
-    twice n + twice (n + 1)
+both n = twice n + twice (n + 1)
 
 
 pub exported : Int -> Int
-exported n =
-    n + 1
+exported n = n + 1
 
 
 pub answer : Int
-answer =
-    exported 41
+answer = exported 41

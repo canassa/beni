@@ -3,16 +3,14 @@
 -- scopes reusing `k` (lines 26 and 27) are fine.
 f x =
     let
-        x =
-            1
+        x = 1
     in
     x
 
 
 g m =
     let
-        n =
-            2
+        n = 2
     in
     case m of
         Just n ->

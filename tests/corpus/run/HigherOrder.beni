@@ -17,13 +17,11 @@ import String
 
 
 compose : (b -> c), (a -> b), a -> c
-compose g f x =
-    g (f x)
+compose g f x = g (f x)
 
 
 twice : (a -> a), a -> a
-twice f x =
-    f (f x)
+twice f x = f (f x)
 
 
 pick : Bool -> (Int -> Int)
@@ -37,8 +35,7 @@ pick big =
 main : Program
 main =
     let
-        bump =
-            pick False
+        bump = pick False
     in
     Node.printLines
         [ String.fromInt (compose (\n -> n + 1) (\n -> n * 2) 5)

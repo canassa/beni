@@ -9,14 +9,12 @@ import Prog exposing (Program)
 
 
 greeting : String -> Html msg
-greeting name =
-    <p>Hello, {name}!</p>
+greeting name = <p>Hello, {name}!</p>
 
 
 main : Program
 main =
     let
-        _ =
-            greeting "world"
+        _ = greeting "world"
     in
     Prog.say "hello"

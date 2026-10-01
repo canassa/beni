@@ -14,8 +14,7 @@ import String
 
 
 show : List Int -> String
-show xs =
-    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+show xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
 yesNo : Bool -> String

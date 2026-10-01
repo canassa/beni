@@ -22,13 +22,11 @@ import String
 
 
 emoji : String
-emoji =
-    "a\u{1F600}b"
+emoji = "a\u{1F600}b"
 
 
 accented : String
-accented =
-    "e\u{0301}x"
+accented = "e\u{0301}x"
 
 
 main : Program

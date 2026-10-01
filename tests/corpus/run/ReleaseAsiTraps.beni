@@ -36,45 +36,37 @@ import String
 
 -- `a - -1`: the decrement trap, with a literal and with a name.
 minusMinus : Int, Int -> Int
-minusMinus a b =
-    (a - -1) + (a - -b) + (a + -b) + (-a - b) + -(-a)
+minusMinus a b = (a - -1) + (a - -b) + (a + -b) + (-a - b) + -(-a)
 
 
 -- A `return` whose value begins with each troublesome character.
 startsWithParen : Int -> Int
-startsWithParen n =
-    (n + 1) * 2
+startsWithParen n = (n + 1) * 2
 
 
 startsWithBracket : Int -> String
-startsWithBracket n =
-    String.join (List.map [ n, n + 1 ] String.fromInt) ","
+startsWithBracket n = String.join (List.map [ n, n + 1 ] String.fromInt) ","
 
 
 startsWithBacktick : Int -> String
-startsWithBacktick n =
-    "v=${String.fromInt n}"
+startsWithBacktick n = "v=${String.fromInt n}"
 
 
 startsWithMinus : Int -> Int
-startsWithMinus n =
-    -n
+startsWithMinus n = -n
 
 
 startsWithSlash : Float, Float -> Float
-startsWithSlash a b =
-    a / b / 2.0
+startsWithSlash a b = a / b / 2.0
 
 
 -- A template beside an identifier, and a string that is written in pieces.
 pieces : Int -> String
 pieces n =
     let
-        tag =
-            "n"
+        tag = "n"
 
-        body =
-            "${tag}=${String.fromInt n}"
+        body = "${tag}=${String.fromInt n}"
     in
     String.concat [ body, "|", "one\ntwo", "|", "a\tb", "|", "d\${}e" ]
 

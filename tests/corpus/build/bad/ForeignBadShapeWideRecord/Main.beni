@@ -8,5 +8,4 @@ import Prog exposing (Program)
 
 
 main : Program
-main =
-    Prog.say Bad.wide.g
+main = Prog.say Bad.wide.g

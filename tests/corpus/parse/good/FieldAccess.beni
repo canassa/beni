@@ -2,49 +2,37 @@
 -- functions as arguments, `f .name` (application of an accessor) versus
 -- `f.name` (field access), access on a parenthesised application, on a
 -- record literal, on a tuple literal, and accessors nested and piped.
-chain r =
-    r.a.b.c
+chain r = r.a.b.c
 
 
-tupleChain t =
-    t.0.1
+tupleChain t = t.0.1
 
 
-tupleThenField t =
-    t.1.name.0
+tupleThenField t = t.1.name.0
 
 
-accessorArg people =
-    List.map people .name
+accessorArg people = List.map people .name
 
 
-accessorApplied f =
-    f .name
+accessorApplied f = f .name
 
 
-fieldOnCall f x =
-    (f x).y
+fieldOnCall f x = (f x).y
 
 
-fieldOnLiteral =
-    { a = { b = 2 } }.a.b
+fieldOnLiteral = { a = { b = 2 } }.a.b
 
 
-fieldOnTuple =
-    ( 1, 2 ).1
+fieldOnTuple = ( 1, 2 ).1
 
 
-nestedAccessors r =
-    .city (.address r)
+nestedAccessors r = .city (.address r)
 
 
-accessorPipe person =
-    person |> .name |> String.toUpper
+accessorPipe person = person |> .name |> String.toUpper
 
 
-bigIndex t =
-    t.12
+bigIndex t = t.12
 
 
-accessInInterpolation r =
-    "${r.name.first} ${r.pair.1}"
+accessInInterpolation r = "${r.name.first} ${r.pair.1}"

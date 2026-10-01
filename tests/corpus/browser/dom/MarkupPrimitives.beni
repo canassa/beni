@@ -16,8 +16,7 @@ type Msg
 
 
 leaf : Html String
-leaf =
-    <button id="leaf" onClick={"leaf"}>{Html.text "press"}</button>
+leaf = <button id="leaf" onClick={"leaf"}>{Html.text "press"}</button>
 
 
 view : String -> Html Msg
@@ -36,5 +35,4 @@ update msg _ =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = "none", update = update, view = view }
+main = Browser.program { init = "none", update = update, view = view }

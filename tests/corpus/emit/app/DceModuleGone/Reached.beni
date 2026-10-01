@@ -1,8 +1,6 @@
 pub greeting : String
-greeting =
-    "hello"
+greeting = "hello"
 
 
 pub unreachedFromHere : String
-unreachedFromHere =
-    "nobody calls me"
+unreachedFromHere = "nobody calls me"

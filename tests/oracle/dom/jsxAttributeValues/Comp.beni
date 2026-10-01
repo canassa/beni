@@ -3,5 +3,4 @@ import Html exposing (Html)
 
 
 pub view : { fallback : Html msg } -> Html msg
-view props =
-    props.fallback
+view props = props.fallback

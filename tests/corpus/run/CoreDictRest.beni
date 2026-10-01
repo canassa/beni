@@ -15,8 +15,7 @@ import String
 
 
 pairs : Dict String Int -> String
-pairs dict =
-    String.join (List.map (Dict.toList dict) (\p -> p.0 ++ "=" ++ String.fromInt p.1)) ","
+pairs dict = String.join (List.map (Dict.toList dict) (\p -> p.0 ++ "=" ++ String.fromInt p.1)) ","
 
 
 flag : Bool -> String
@@ -28,13 +27,11 @@ flag b =
 
 
 left : Dict String Int
-left =
-    Dict.fromList [ ( "a", 1 ), ( "b", 2 ) ]
+left = Dict.fromList [ ( "a", 1 ), ( "b", 2 ) ]
 
 
 right : Dict String Int
-right =
-    Dict.fromList [ ( "b", 20 ), ( "c", 30 ) ]
+right = Dict.fromList [ ( "b", 20 ), ( "c", 30 ) ]
 
 
 main : Program

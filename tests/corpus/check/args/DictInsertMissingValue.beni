@@ -4,5 +4,4 @@ import Dict exposing (Dict)
 
 
 pub add : Dict Int String -> Dict Int String
-add d =
-    Dict.insert d 1
+add d = Dict.insert d 1

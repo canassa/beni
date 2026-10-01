@@ -1,3 +1,2 @@
 pub value : Int
-value =
-    String.length "seven!!"
+value = String.length "seven!!"

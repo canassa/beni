@@ -4,8 +4,7 @@ type T
 
 
 pub use : Int, Int -> Bool
-use a b =
-    T a == T b
+use a b = T a == T b
 
 
 eq left right =

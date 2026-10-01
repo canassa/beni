@@ -3,5 +3,4 @@ import Html exposing (Html)
 
 
 pub view : {} -> Html msg
-view props =
-    <i>comp</i>
+view props = <i>comp</i>

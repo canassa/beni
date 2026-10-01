@@ -23,15 +23,12 @@ pub type Tag
 
 
 pub fromList : List Char -> Tag
-fromList chars =
-    Tag (String.fromList chars)
+fromList chars = Tag (String.fromList chars)
 
 
 pub asTag : Tag
-asTag =
-    Decoder.decodeInto "tag"
+asTag = Decoder.decodeInto "tag"
 
 
 pub asString : String
-asString =
-    Decoder.decodeInto "str"
+asString = Decoder.decodeInto "str"

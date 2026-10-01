@@ -1,61 +1,46 @@
 -- Every escape of §2.6 in strings: \n \r \t \\ \" \$ \' and \u{…} with 1, 4,
 -- 5 and 6 hex digits; strings containing single quotes and braces unescaped;
 -- and every escape together in one literal.
-newline =
-    "a\nb"
+newline = "a\nb"
 
 
-carriage =
-    "a\rb"
+carriage = "a\rb"
 
 
-tabEscape =
-    "a\tb"
+tabEscape = "a\tb"
 
 
-backslash =
-    "a\\b"
+backslash = "a\\b"
 
 
-quote =
-    "say \"hi\""
+quote = "say \"hi\""
 
 
-dollar =
-    "\$"
+dollar = "\$"
 
 
-apostrophe =
-    "it\'s"
+apostrophe = "it\'s"
 
 
-unicode1 =
-    "\u{A}"
+unicode1 = "\u{A}"
 
 
-unicode4 =
-    "\u{00E9}"
+unicode4 = "\u{00E9}"
 
 
-unicode5 =
-    "\u{1F600}"
+unicode5 = "\u{1F600}"
 
 
-unicode6 =
-    "\u{10FFFF}"
+unicode6 = "\u{10FFFF}"
 
 
-allTogether =
-    "\n\r\t\\\"\$\'\u{41}"
+allTogether = "\n\r\t\\\"\$\'\u{41}"
 
 
-bareApostrophe =
-    "it's"
+bareApostrophe = "it's"
 
 
-bareBraces =
-    "{ not interpolation }"
+bareBraces = "{ not interpolation }"
 
 
-nonAsciiInside =
-    "café — naïve"
+nonAsciiInside = "café — naïve"

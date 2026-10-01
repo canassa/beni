@@ -11,30 +11,24 @@ pub type Pair a
 
 pub eq : Pair a, Pair a -> Bool
     where a.eq : a, a -> Bool
-eq (Pair x i) (Pair y j) =
-    x == y && i == j
+eq (Pair x i) (Pair y j) = x == y && i == j
 
 
 pub nestedEq : Bool
-nestedEq =
-    [ [] ] == [ [] ]
+nestedEq = [ [] ] == [ [] ]
 
 
 pub nestedLess : Bool
-nestedLess =
-    [ [] ] < [ [] ]
+nestedLess = [ [] ] < [ [] ]
 
 
 pub member : Bool
-member =
-    List.member [ [] ] []
+member = List.member [ [] ] []
 
 
 pub custom : Bool
-custom =
-    Pair (Pair [] 1) 1 == Pair (Pair [] 2) 1
+custom = Pair (Pair [] 1) 1 == Pair (Pair [] 2) 1
 
 
 pub underDerived : Bool
-underDerived =
-    Just [ [] ] == Nothing
+underDerived = Just [ [] ] == Nothing

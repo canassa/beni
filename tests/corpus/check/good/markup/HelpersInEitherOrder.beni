@@ -17,5 +17,4 @@ view rows =
     </ul>
 
 
-row r =
-    <li onClick={Picked r.id}>{String.toUpper r.label}</li>
+row r = <li onClick={Picked r.id}>{String.toUpper r.label}</li>

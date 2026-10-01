@@ -20,25 +20,20 @@ pub type alias Pair =
 
 -- Row-polymorphic: reads `name` on any record that has one.
 pub nameOf : { r | name : String } -> String
-nameOf r =
-    r.name
+nameOf r = r.name
 
 
 pub rename : { r | name : String }, String -> { r | name : String }
-rename r name =
-    { r | name = name }
+rename r name = { r | name = name }
 
 
 pub area : Rect -> Int
-area { width, height } =
-    width * height
+area { width, height } = width * height
 
 
 pub pairOf : Int, Int -> Pair
-pairOf z a =
-    Pair z a
+pairOf z a = Pair z a
 
 
 pub zetaOf : Pair -> Int
-zetaOf (Pair z _) =
-    z
+zetaOf (Pair z _) = z

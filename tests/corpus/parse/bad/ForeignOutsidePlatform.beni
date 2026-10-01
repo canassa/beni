@@ -7,5 +7,4 @@ pub foreign pure add : Int, Int -> Int
 foreign type Handle
 
 
-double n =
-    add n n
+double n = add n n

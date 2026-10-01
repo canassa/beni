@@ -2,25 +2,19 @@
 -- function (§8.2): `a + b` -> `add a b` and so on, marked as builtins;
 -- `++` too, and a list with a spread its `List.cons` and `List.append`
 -- calls (language.md §6.8). `<|`, `|>`, `_` and `<-` have their own fixtures.
-arith a b =
-    ( a + b, a - b, a * b, a / b, a // b, a ^ b )
+arith a b = ( a + b, a - b, a * b, a / b, a // b, a ^ b )
 
 
-comparisons a b =
-    ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+comparisons a b = ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
 
 
-logic a b =
-    ( a && b, a || b )
+logic a b = ( a && b, a || b )
 
 
-sequences x xs ys =
-    ( xs ++ ys, [ x, ...xs ] )
+sequences x xs ys = ( xs ++ ys, [ x, ...xs ] )
 
 
-negation x =
-    -x
+negation x = -x
 
 
-asFunction xs =
-    List.foldl xs 0 (+)
+asFunction xs = List.foldl xs 0 (+)

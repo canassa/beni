@@ -96,8 +96,7 @@ listUnit xs =
 -- An irrefutable PARAMETER: `Wrap` is the only constructor of its type, so
 -- `Wrap ()` matches every value of it (`language.md` §7).
 unwrap : Wrap, Int -> Int
-unwrap (Wrap ()) n =
-    n
+unwrap (Wrap ()) n = n
 
 
 -- A lookup table, so the `Flat` fast path of `checker.md` §6 rather than
@@ -117,8 +116,7 @@ table w b =
 lambdaAndLet : Int
 lambdaAndLet =
     let
-        (Wrap ()) =
-            Wrap ()
+        (Wrap ()) = Wrap ()
     in
     (\(Wrap ()) -> 9) (Wrap ())
 

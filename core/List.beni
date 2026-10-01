@@ -276,8 +276,7 @@ foreign pure half : Int -> Int
 --| code generator turns into a loop (`backend.md` §8), so this walks a list
 --| of any length.
 pub foldl : List a, b, (a, b -> b) -> b
-foldl xs acc func =
-    foldlFrom (base xs) (offset xs) (offset xs + length xs) acc func
+foldl xs acc func = foldlFrom (base xs) (offset xs) (offset xs + length xs) acc func
 
 
 --| Fold `a[i]`, `a[i + 1]`, … `a[stop - 1]` of an array `base` returned.
@@ -299,8 +298,7 @@ foldlFrom a i stop acc func =
 --| Nothing built on it may inherit that order — see `map`. It walks the
 --| list backwards by index and allocates nothing.
 pub foldr : List a, b, (a, b -> b) -> b
-foldr xs acc func =
-    foldrFrom (base xs) (offset xs) (offset xs + length xs - 1) acc func
+foldr xs acc func = foldrFrom (base xs) (offset xs) (offset xs + length xs - 1) acc func
 
 
 foldrFrom : List a, Int, Int, b, (a, b -> b) -> b
@@ -315,16 +313,14 @@ foldrFrom a o i acc func =
 --|
 --|     singleton 1234 == [ 1234 ]
 pub singleton : a -> List a
-singleton value =
-    [ value ]
+singleton value = [ value ]
 
 
 --| Create a list with `n` copies of a value.
 --|
 --|     repeat 0 3 == [ 0, 0, 0 ]
 pub repeat : a, Int -> List a
-repeat value n =
-    repeatHelp value 0 n (builder n)
+repeat value n = repeatHelp value 0 n (builder n)
 
 
 repeatHelp : a, Int, Int, Builder a -> List a
@@ -342,8 +338,7 @@ repeatHelp value i n b =
 --|     range 3 3 == [ 3 ]
 --|     range 6 3 == []
 pub range : Int, Int -> List Int
-range lo hi =
-    rangeHelp lo 0 (hi - lo + 1) (builder (hi - lo + 1))
+range lo hi = rangeHelp lo 0 (hi - lo + 1) (builder (hi - lo + 1))
 
 
 rangeHelp : Int, Int, Int, Builder Int -> List Int
@@ -361,8 +356,7 @@ rangeHelp lo i n b =
 --|
 --| O(n).
 pub initialize : Int, (Int -> a) -> List a
-initialize n func =
-    initializeHelp 0 n func (builder n)
+initialize n func = initializeHelp 0 n func (builder n)
 
 
 initializeHelp : Int, Int, (Int -> a), Builder a -> List a
@@ -383,8 +377,7 @@ initializeHelp i n func b =
 --| comparison per element, and a view showing the list skips it. O(n), and
 --| the result reads at O(1).
 pub map : List a, (a -> b) -> List b
-map xs func =
-    mapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
+map xs func = mapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
 
 
 --| Every loop below reads element `i` of its list as `at a (o + i)`, `a`
@@ -393,11 +386,9 @@ mapHelp : List a, List a, Int, Int, Int, (a -> b), Builder b, Bool -> List b
 mapHelp xs a o i n func b same =
     if i < n then
         let
-            x =
-                at a (o + i)
+            x = at a (o + i)
 
-            y =
-                func x
+            y = func x
         in
         mapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
@@ -418,11 +409,9 @@ indexedMapHelp : List a, List a, Int, Int, Int, (Int, a -> b), Builder b, Bool -
 indexedMapHelp xs a o i n func b same =
     if i < n then
         let
-            x =
-                at a (o + i)
+            x = at a (o + i)
 
-            y =
-                func i x
+            y = func i x
         in
         indexedMapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
@@ -437,8 +426,7 @@ indexedMapHelp xs a o i n func b same =
 --| element the result is `xs` itself, not an equal copy (`backend.md` §4,
 --| *Identity*). O(n).
 pub filter : List a, (a -> Bool) -> List a
-filter xs isGood =
-    filterFirst xs (base xs) (offset xs) 0 (length xs) isGood
+filter xs isGood = filterFirst xs (base xs) (offset xs) 0 (length xs) isGood
 
 
 --| Up to the first element `isGood` rejects: nothing is built before it,
@@ -460,8 +448,7 @@ filterHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Int -> List a
 filterHelp a o i n isGood b j =
     if i < n then
         let
-            x =
-                at a (o + i)
+            x = at a (o + i)
         in
         if isGood x then
             filterHelp a o (i + 1) n isGood (put b j x) (j + 1)
@@ -478,8 +465,7 @@ filterHelp a o i n isGood b j =
 --|
 --| `func` sees the first element first. O(n).
 pub filterMap : List a, (a -> Maybe b) -> List b
-filterMap xs func =
-    filterMapHelp (base xs) (offset xs) 0 (length xs) func (builder (length xs)) 0
+filterMap xs func = filterMapHelp (base xs) (offset xs) 0 (length xs) func (builder (length xs)) 0
 
 
 filterMapHelp : List a, Int, Int, Int, (a -> Maybe b), Builder b, Int -> List b
@@ -525,8 +511,7 @@ reverseHelp a top i n b =
 --|     member [ 1, 4, 9 ] 4 == True
 pub member : List a, a -> Bool
     where a.eq : a, a -> Bool
-member xs value =
-    any xs (\x -> x == value)
+member xs value = any xs (\x -> x == value)
 
 
 --| Determine if all elements satisfy some test.
@@ -534,8 +519,7 @@ member xs value =
 --|     all [ 2, 4 ] (\n -> modBy n 2 == 0) == True
 --|     all [] (\n -> modBy n 2 == 0) == True
 pub all : List a, (a -> Bool) -> Bool
-all xs isOkay =
-    not (any xs (\x -> not (isOkay x)))
+all xs isOkay = not (any xs (\x -> not (isOkay x)))
 
 
 --| Determine if any elements satisfy some test.
@@ -543,8 +527,7 @@ all xs isOkay =
 --|     any [ 2, 3 ] (\n -> modBy n 2 == 0) == True
 --|     any [] (\n -> modBy n 2 == 0) == False
 pub any : List a, (a -> Bool) -> Bool
-any xs isOkay =
-    anyFrom (base xs) (offset xs) (offset xs + length xs) isOkay
+any xs isOkay = anyFrom (base xs) (offset xs) (offset xs + length xs) isOkay
 
 
 anyFrom : List a, Int, Int, (a -> Bool) -> Bool
@@ -587,16 +570,14 @@ minimum xs =
 --|
 --|     sum [ 1, 2, 3 ] == 6
 pub sum : List number -> number
-sum xs =
-    foldl xs 0 (+)
+sum xs = foldl xs 0 (+)
 
 
 --| Get the product of the list elements.
 --|
 --|     product [ 2, 2, 2 ] == 8
 pub product : List number -> number
-product xs =
-    foldl xs 1 (*)
+product xs = foldl xs 1 (*)
 
 
 --| `a[i]` … `a[stop - 1]`, put into builder `b` from index `j` on.
@@ -630,8 +611,7 @@ pub foreign pure concat : List (List a) -> List a
 --| their own first, so the result is made its final size once, which is
 --| faster than growing it as the answers come.
 pub concatMap : List a, (a -> List b) -> List b
-concatMap xs func =
-    concat (map xs func)
+concatMap xs func = concat (map xs func)
 
 
 --| Places the given value between all members of the given list.
@@ -664,8 +644,7 @@ intersperseHelp a o sep i n b =
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
     let
-        n =
-            min (length xs) (length ys)
+        n = min (length xs) (length ys)
     in
     map2Help (base xs) (offset xs) (base ys) (offset ys) 0 n func (builder n)
 
@@ -685,8 +664,7 @@ map2Help ax ox ay oy i n func b =
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
     let
-        n =
-            min (length xs) (min (length ys) (length zs))
+        n = min (length xs) (min (length ys) (length zs))
     in
     map3Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) 0 n func (builder n)
 
@@ -703,8 +681,7 @@ map3Help ax ox ay oy az oz i n func b =
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
     let
-        n =
-            min (min (length xs) (length ys)) (min (length zs) (length ws))
+        n = min (min (length xs) (length ys)) (min (length zs) (length ws))
     in
     map4Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) 0 n func (builder n)
 
@@ -728,8 +705,7 @@ pub map5 :
     -> List result
 map5 xs ys zs ws vs func =
     let
-        n =
-            min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
+        n = min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
     in
     map5Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) (base vs) (offset vs) 0 n func (builder n)
 
@@ -765,8 +741,7 @@ map5Help ax ox ay oy az oz aw ow av ov i n func b =
 --| type for its `compare` method and sorts by what it answers.
 pub sort : List a -> List a
     where a.compare : a, a -> Order
-sort xs =
-    sortWith xs (\x y -> x.compare y)
+sort xs = sortWith xs (\x y -> x.compare y)
 
 
 --| Sort values by a key read out of each of them. The key can be of any
@@ -793,8 +768,7 @@ pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
     let
-        decorated =
-            map xs (\x -> ( toKey x, x ))
+        decorated = map xs (\x -> ( toKey x, x ))
     in
     if length decorated < 2 then
         xs
@@ -832,14 +806,11 @@ sortRange xs lo hi cmp =
         slice xs lo hi
     else
         let
-            mid =
-                lo + half (hi - lo)
+            mid = lo + half (hi - lo)
 
-            left =
-                sortRange xs lo mid cmp
+            left = sortRange xs lo mid cmp
 
-            right =
-                sortRange xs mid hi cmp
+            right = sortRange xs mid hi cmp
         in
         merge left 0 (length left) right 0 (length right) cmp (builder (hi - lo))
 
@@ -857,11 +828,9 @@ merge xs i n ys j m cmp b =
         done (putAll b (i + j) xs i n) (n + m)
     else
         let
-            x =
-                at xs i
+            x = at xs i
 
-            y =
-                at ys j
+            y = at ys j
         in
         case cmp x y of
             GT ->
@@ -875,8 +844,7 @@ merge xs i n ys j m cmp b =
 --|
 --|     isEmpty [] == True
 pub isEmpty : List a -> Bool
-isEmpty xs =
-    length xs == 0
+isEmpty xs = length xs == 0
 
 
 --| Extract the first element of a list.
@@ -884,8 +852,7 @@ isEmpty xs =
 --|     head [ 1, 2, 3 ] == Just 1
 --|     head [] == Nothing
 pub head : List a -> Maybe a
-head xs =
-    get xs 0
+head xs = get xs 0
 
 
 --| Extract the rest of the list.
@@ -954,8 +921,7 @@ get xs i =
 --|
 --| Near O(1).
 pub last : List a -> Maybe a
-last xs =
-    get xs (length xs - 1)
+last xs = get xs (length xs - 1)
 
 
 --| Replace the element at an index with what `func` makes of it. `func` is
@@ -990,8 +956,7 @@ partitionHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Builder a, Int ->
 partitionHelp a o i n pred yes no k =
     if i < n then
         let
-            x =
-                at a (o + i)
+            x = at a (o + i)
         in
         if pred x then
             partitionHelp a o (i + 1) n pred (put yes k x) no (k + 1)

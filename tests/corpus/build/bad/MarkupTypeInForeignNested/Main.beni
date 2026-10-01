@@ -10,5 +10,4 @@ import Node exposing (Program)
 
 
 main : Program
-main =
-    Node.print "hello"
+main = Node.print "hello"

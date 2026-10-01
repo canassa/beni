@@ -3,10 +3,8 @@
 -- lambda), where it meets the compared field (checker-v2.md §6.5, §11.4),
 -- and not at the record's `{`.
 --
-g r =
-    Basics.eq r.f r.f
+g r = Basics.eq r.f r.f
 
 
 use : Bool
-use =
-    g { f = \n -> n + 1 }
+use = g { f = \n -> n + 1 }

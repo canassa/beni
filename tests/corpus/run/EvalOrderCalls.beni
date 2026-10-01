@@ -13,26 +13,22 @@ import String
 
 
 n : String, Int -> Int
-n label v =
-    Debug.log v label
+n label v = Debug.log v label
 
 
 s : String, String -> String
-s label v =
-    Debug.log v label
+s label v = Debug.log v label
 
 
 three : Int, Int, Int -> Int
-three x y z =
-    x + y + z
+three x y z = x + y + z
 
 
 -- The callee of an application is an expression like any other, so a call
 -- whose head is itself a call has an order to pin: head first, arguments
 -- after.
 chooser : Int -> (Int, Int, Int -> Int)
-chooser _ =
-    three
+chooser _ = three
 
 
 -- A self tail call becomes a loop (`backend.md` §8). Its new arguments are
@@ -50,33 +46,26 @@ swapLoop steps x y =
 main : Program
 main =
     let
-        callArgs =
-            three (n "call.arg1" 1) (n "call.arg2" 2) (n "call.arg3" 3)
+        callArgs = three (n "call.arg1" 1) (n "call.arg2" 2) (n "call.arg3" 3)
 
         calleeFirst =
             (chooser (n "callee" 0)) (n "callee.arg1" 1) (n "callee.arg2" 2) (n "callee.arg3" 3)
 
         -- `+` desugars to a `Basics` call, so this is the row above.
-        plus =
-            n "plus.left" 1 + n "plus.right" 2
+        plus = n "plus.left" 1 + n "plus.right" 2
 
         -- `==` and `<` are METHOD calls with evidence since static dispatch
         -- (`language.md` §6.5). The evidence is a leading parameter, and the
         -- operands still go left to right.
-        equal =
-            n "eq.left" 1 == n "eq.right" 2
+        equal = n "eq.left" 1 == n "eq.right" 2
 
-        less =
-            n "lt.left" 1 < n "lt.right" 2
+        less = n "lt.left" 1 < n "lt.right" 2
 
-        appended =
-            s "append.left" "a" ++ s "append.right" "b"
+        appended = s "append.left" "a" ++ s "append.right" "b"
 
-        consed =
-            [ n "cons.head" 1, n "cons.tail" 2 ]
+        consed = [ n "cons.head" 1, n "cons.tail" 2 ]
 
-        looped =
-            swapLoop 3 1 2
+        looped = swapLoop 3 1 2
     in
     Node.printLines
         [ String.fromInt callArgs

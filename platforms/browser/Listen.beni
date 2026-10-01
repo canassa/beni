@@ -27,74 +27,61 @@ each target name read emit =
 open : String, String, sync (Js.Value -> a) -> Js.Value
 open target name read =
     let
-        on =
-            Js.global target
+        on = Js.global target
 
-        l =
-            Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
+        l = Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
 
         handler =
             \event ->
                 let
-                    v =
-                        Js.from (read event)
+                    v = Js.from (read event)
 
-                    waiting =
-                        Js.at l 1
+                    waiting = Js.at l 1
                 in
                 if Js.isNull waiting then
                     Js.to (Js.call (Js.at l 0) "push" [ v ])
                 else
                     let
-                        _ =
-                            Js.setAt l 1 Js.null
+                        _ = Js.setAt l 1 Js.null
                     in
                     Js.to (Js.apply waiting [ v ])
 
-        _ =
-            Js.setAt l 4 (Js.from handler)
+        _ = Js.setAt l 4 (Js.from handler)
 
-        _ =
-            Js.call on "addEventListener" [ Js.from name, Js.from handler ]
+        _ = Js.call on "addEventListener" [ Js.from name, Js.from handler ]
     in
     l
 
 
 close : Js.Value -> ()
-close l =
-    Js.to (Js.call (Js.at l 2) "removeEventListener" [ Js.at l 3, Js.at l 4 ])
+close l = Js.to (Js.call (Js.at l 2) "removeEventListener" [ Js.at l 3, Js.at l 4 ])
 
 
 pump : Js.Value, Browser.Send a -> ()
 pump l emit =
     let
-        _ =
-            emit (next l)
+        _ = emit (next l)
     in
     pump l emit
 
 
 -- The oldest value not yet taken, waiting for one when there is none.
 next : Js.Value -> a
-next l =
-    Task.callback (\resume -> take l resume)
+next l = Task.callback (\resume -> take l resume)
 
 
 take : Js.Value, Task.Resume a -> (() -> ())
 take l resume =
     let
-        queue =
-            Js.at l 0
+        queue = Js.at l 0
     in
     if Js.to (Js.get queue "length") > 0 then
         let
-            _ =
-                Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
+            _ = Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
         in
         Js.to Js.null
     else
         let
-            _ =
-                Js.setAt l 1 (Js.from resume)
+            _ = Js.setAt l 1 (Js.from resume)
         in
         \() -> Js.setAt l 1 Js.null

@@ -3,5 +3,4 @@ import Probe
 
 
 main : Probe.Program
-main =
-    Probe.finish Cases.results
+main = Probe.finish Cases.results

@@ -33,8 +33,7 @@ pub type Error
 pub get : Area, String -> Maybe String
 get area key =
     let
-        v =
-            getItem (isLocal area) key
+        v = getItem (isLocal area) key
     in
     if Js.isNull v then Nothing else Just (Js.to v)
 
@@ -55,19 +54,16 @@ set area key value =
 
 --| Forget the key.
 pub remove : Area, String -> ()
-remove area key =
-    removeItem (isLocal area) key
+remove area key = removeItem (isLocal area) key
 
 
 --| Every key stored, in the browser's order.
 pub keys : Area -> List String
-keys area =
-    allKeys (isLocal area)
+keys area = allKeys (isLocal area)
 
 
 isLocal : Area -> Bool
-isLocal area =
-    area == Local
+isLocal area = area == Local
 
 
 foreign impure getItem : Bool, String -> Js.Value

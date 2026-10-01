@@ -22,38 +22,31 @@ import String
 
 
 first : Int
-first =
-    second * 2
+first = second * 2
 
 
 second : Int
-second =
-    third + 1
+second = third + 1
 
 
 third : Int
-third =
-    10
+third = 10
 
 
 deferred : () -> Int
-deferred =
-    \_ -> scale * 3
+deferred = \_ -> scale * 3
 
 
 scale : Int
-scale =
-    7
+scale = 7
 
 
 offset : Int
-offset =
-    100
+offset = 100
 
 
 shift : Int -> Int
-shift n =
-    n + offset
+shift n = n + offset
 
 
 isEven : Int -> Bool

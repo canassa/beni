@@ -6,9 +6,7 @@ pub type Inner
 
 
 pub eq : Inner, Inner -> Bool
-eq _ _ =
-    True
+eq _ _ = True
 
 
-bad =
-    Basics.eq (Inner (\value -> value + 1)) (Inner (\value -> value - 1))
+bad = Basics.eq (Inner (\value -> value + 1)) (Inner (\value -> value - 1))

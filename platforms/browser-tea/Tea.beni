@@ -38,8 +38,7 @@ pub type alias Program =
 pub sandbox :
     { init : model, update : msg, model -> model, view : model -> Html msg }
     -> Program
-sandbox app =
-    Browser.program app
+sandbox app = Browser.program app
 
 
 --| A page with a model and effects. `init` is the first model and the
@@ -104,13 +103,11 @@ start host ( model, cmd ) =
 
 
 step : Host msg, ( model, Cmd msg ), State model msg -> State model msg
-step host ( model, cmd ) state =
-    perform host cmd { state | model = model }
+step host ( model, cmd ) state = perform host cmd { state | model = model }
 
 
 perform : Host msg, Cmd msg, State model msg -> State model msg
-perform host cmd state =
-    List.foldl (Cmd.items cmd) state (\it s -> item host it s)
+perform host cmd state = List.foldl (Cmd.items cmd) state (\it s -> item host it s)
 
 
 item : Host msg, Item msg, State model msg -> State model msg
@@ -174,13 +171,11 @@ spawn host scope body =
 
 
 jobsAt : State model msg, List Key -> List (Job msg)
-jobsAt state path =
-    Maybe.withDefault (Dict.get state.jobs path) []
+jobsAt state path = Maybe.withDefault (Dict.get state.jobs path) []
 
 
 put : State model msg, List Key, List (Job msg) -> State model msg
-put state path jobs =
-    { state | jobs = Dict.insert state.jobs path jobs }
+put state path jobs = { state | jobs = Dict.insert state.jobs path jobs }
 
 
 -- Close the outlets of `jobs` now, so nothing they send after this message
@@ -200,24 +195,20 @@ stopped scope jobs value =
 
 
 closing : List (Job msg), a -> a
-closing jobs value =
-    List.foldl jobs value (\j v -> after (Hosted.close j.outlet) v)
+closing jobs value = List.foldl jobs value (\j v -> after (Hosted.close j.outlet) v)
 
 
 -- Cancel each fiber and wait for its cleanup.
 stop : List (Job msg) -> ()
-stop jobs =
-    List.foldl jobs () (\j _ -> Task.cancel j.fiber)
+stop jobs = List.foldl jobs () (\j _ -> Task.cancel j.fiber)
 
 
 ended : Exit a -> ()
-ended _ =
-    ()
+ended _ = ()
 
 
 after : (), a -> a
-after _ value =
-    value
+after _ value = value
 
 
 startsWith : List Key, List Key -> Bool

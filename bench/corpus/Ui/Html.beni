@@ -26,74 +26,60 @@ pub type Handler msg
 
 
 pub text : String -> Html msg
-text content =
-    Text content
+text content = Text content
 
 
 pub node : String, List (Attribute msg), List (Html msg) -> Html msg
-node tag attributes children =
-    Element tag attributes children
+node tag attributes children = Element tag attributes children
 
 
 pub div : List (Attribute msg), List (Html msg) -> Html msg
-div attributes children =
-    Element "div" attributes children
+div attributes children = Element "div" attributes children
 
 
 pub span : List (Attribute msg), List (Html msg) -> Html msg
-span attributes children =
-    Element "span" attributes children
+span attributes children = Element "span" attributes children
 
 
 pub p : List (Attribute msg), List (Html msg) -> Html msg
-p attributes children =
-    Element "p" attributes children
+p attributes children = Element "p" attributes children
 
 
 pub h1 : List (Attribute msg), List (Html msg) -> Html msg
-h1 attributes children =
-    Element "h1" attributes children
+h1 attributes children = Element "h1" attributes children
 
 
 pub h2 : List (Attribute msg), List (Html msg) -> Html msg
-h2 attributes children =
-    Element "h2" attributes children
+h2 attributes children = Element "h2" attributes children
 
 
 pub button : List (Attribute msg), List (Html msg) -> Html msg
-button attributes children =
-    Element "button" attributes children
+button attributes children = Element "button" attributes children
 
 
 pub ul : List (Attribute msg), List (Html msg) -> Html msg
-ul attributes children =
-    Element "ul" attributes children
+ul attributes children = Element "ul" attributes children
 
 
 pub li : List (Attribute msg), List (Html msg) -> Html msg
-li attributes children =
-    Element "li" attributes children
+li attributes children = Element "li" attributes children
 
 
 pub label : List (Attribute msg), List (Html msg) -> Html msg
-label attributes children =
-    Element "label" attributes children
+label attributes children = Element "label" attributes children
 
 
 pub textarea : List (Attribute msg), List (Html msg) -> Html msg
-textarea attributes children =
-    Element "textarea" attributes children
+textarea attributes children = Element "textarea" attributes children
 
 
 --| An `input` takes no children; the empty list keeps Elm's call shape.
 pub input : List (Attribute msg), List (Html msg) -> Html msg
-input attributes _ =
-    Void "input" attributes
+input attributes _ = Void "input" attributes
 
 
 pub br : List (Attribute msg) -> Html msg
-br attributes =
-    Void "br" attributes
+br attributes = Void "br" attributes
 
 
 --| The same view, with every message its handlers produce passed through
@@ -183,8 +169,7 @@ renderAttribute attribute =
 
                 names ->
                     let
-                        joined =
-                            escape (String.join names " ")
+                        joined = escape (String.join names " ")
                     in
                     Just "class=\"${joined}\""
 

@@ -2,10 +2,8 @@
 -- literal, opening quote to closing quote, and so does one on an interpolated
 -- literal, rather than its opening quote alone or its last interpolated value.
 label : Int
-label =
-    "not an int"
+label = "not an int"
 
 
 greeting : Int
-greeting =
-    "hello ${1} and ${2}!"
+greeting = "hello ${1} and ${2}!"

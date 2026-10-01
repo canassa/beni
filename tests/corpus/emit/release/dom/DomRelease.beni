@@ -14,10 +14,8 @@ type Msg
 
 
 pub row : { id : Int, label : String } -> Html Msg
-row r =
-    <tr><td><a onClick={Pick r.id}>{r.label}</a></td></tr>
+row r = <tr><td><a onClick={Pick r.id}>{r.label}</a></td></tr>
 
 
 pub rename : { id : Int, label : String } -> { id : Int, label : String }
-rename r =
-    { r | label = "x" }
+rename r = { r | label = "x" }

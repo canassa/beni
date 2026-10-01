@@ -5,10 +5,8 @@ import Json.Value as J
 
 
 pub text : String -> J.Value
-text s =
-    J.Text s
+text s = J.Text s
 
 
 pub total : List J.Value -> Int
-total vs =
-    List.foldl vs 0 (\v acc -> acc + J.size v)
+total vs = List.foldl vs 0 (\v acc -> acc + J.size v)

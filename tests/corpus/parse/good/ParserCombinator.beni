@@ -21,13 +21,11 @@ run (Parser p) input =
 
 
 pub succeed : a -> Parser a
-succeed value =
-    Parser (\input -> Ok ( value, input ))
+succeed value = Parser (\input -> Ok ( value, input ))
 
 
 pub fail : String -> Parser a
-fail message =
-    Parser (\_ -> Err message)
+fail message = Parser (\_ -> Err message)
 
 
 pub char : Char -> Parser Char
@@ -124,5 +122,4 @@ digits =
 
 
 sumOf : String, String -> Result String Int
-sumOf a b =
-    Ok (run digits a? + run digits b?)
+sumOf a b = Ok (run digits a? + run digits b?)

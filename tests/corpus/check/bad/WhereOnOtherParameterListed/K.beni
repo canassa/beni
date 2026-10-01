@@ -3,5 +3,4 @@ pub type K
 
 
 pub describe : K, K -> String
-describe (K n) _ =
-    String.fromInt n
+describe (K n) _ = String.fromInt n

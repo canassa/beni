@@ -12,13 +12,11 @@ import String
 
 
 first : Int -> Int
-first n =
-    ( n, 1 ).0
+first n = ( n, 1 ).0
 
 
 name : String -> String
-name s =
-    { name = s }.name
+name s = { name = s }.name
 
 
 main : Program

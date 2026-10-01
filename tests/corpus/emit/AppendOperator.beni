@@ -9,23 +9,19 @@ import Node exposing (Program)
 
 
 pub lists : List Int, List Int -> List Int
-lists a b =
-    a ++ b
+lists a b = a ++ b
 
 
 pub spread : List Int, List Int -> List Int
-spread a b =
-    [ ...a, ...b ]
+spread a b = [ ...a, ...b ]
 
 
 pub strings : String, String -> String
-strings a b =
-    a ++ b
+strings a b = a ++ b
 
 
 pub generic : appendable, appendable -> appendable
-generic a b =
-    a ++ b
+generic a b = a ++ b
 
 
 pub grow : Int, List Int -> List Int
@@ -37,5 +33,4 @@ grow n acc =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

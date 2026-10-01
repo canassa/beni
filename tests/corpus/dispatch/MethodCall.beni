@@ -15,10 +15,8 @@ pub type Shape
 
 
 pub wider : Shape, Shape -> Bool
-wider a b =
-    True
+wider a b = True
 
 
 pub bigger : Shape, Shape -> Bool
-bigger a b =
-    a.wider b
+bigger a b = a.wider b

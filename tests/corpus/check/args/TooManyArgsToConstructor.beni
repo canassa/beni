@@ -4,5 +4,4 @@ pub type Point
 
 
 pub origin : Point
-origin =
-    Point 0 0 0
+origin = Point 0 0 0

@@ -67,18 +67,15 @@ pairUp pair =
 
 
 note : String, a -> a
-note tag x =
-    Debug.log x tag
+note tag x = Debug.log x tag
 
 
 main : Program
 main =
     let
-        xs =
-            [ 1, 2, 3 ]
+        xs = [ 1, 2, 3 ]
 
-        built =
-            [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
+        built = [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
     in
     Node.printLines
         [ describe []

@@ -43,5 +43,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Tea.sandbox { init = { left = 0, right = 0 }, update = update, view = view }
+main = Tea.sandbox { init = { left = 0, right = 0 }, update = update, view = view }

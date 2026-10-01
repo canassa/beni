@@ -2,5 +2,4 @@ import Mid
 
 
 pub value : Int
-value =
-    Mid.value * 3
+value = Mid.value * 3

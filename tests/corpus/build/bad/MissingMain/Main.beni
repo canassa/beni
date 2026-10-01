@@ -5,5 +5,4 @@ import String
 
 
 greeting : String
-greeting =
-    String.fromInt 1
+greeting = String.fromInt 1

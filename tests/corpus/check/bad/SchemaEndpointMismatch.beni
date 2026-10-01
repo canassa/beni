@@ -4,9 +4,7 @@ schema Message tagged "kind" of
 
 
 accept : Message.Type -> Message.Type
-accept message =
-    message
+accept message = message
 
 
-bad =
-    accept (Message.Encoded.Count { value = 1 })
+bad = accept (Message.Encoded.Count { value = 1 })

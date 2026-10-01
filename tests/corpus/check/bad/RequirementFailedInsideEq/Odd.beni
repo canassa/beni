@@ -5,5 +5,4 @@ pub type T
 
 
 pub eq : Int, Int -> Bool
-eq a b =
-    True
+eq a b = True

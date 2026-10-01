@@ -2040,5 +2040,4 @@ type alias A509 =
 
 
 pub f : A0 -> Int
-f _ =
-    1
+f _ = 1

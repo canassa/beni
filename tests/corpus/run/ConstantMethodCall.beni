@@ -23,8 +23,7 @@ pub type Counter
 
 
 pub bumped : Counter
-bumped =
-    (Counter 1).bump 2
+bumped = (Counter 1).bump 2
 
 
 pub bump : Counter, Int -> Counter
@@ -42,5 +41,4 @@ count c =
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (count bumped) ]
+main = Node.printLines [ String.fromInt (count bumped) ]

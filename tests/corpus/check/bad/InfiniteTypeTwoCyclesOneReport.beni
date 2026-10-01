@@ -6,13 +6,10 @@
 n : Int
 n =
     let
-        g =
-            ( [ List.singleton, identity ], [ Just, identity ] )
+        g = ( [ List.singleton, identity ], [ Just, identity ] )
 
-        h =
-            g
+        h = g
 
-        k =
-            g
+        k = g
     in
     0

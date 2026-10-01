@@ -2,12 +2,10 @@
 -- instantiates is the scheme the checker inferred, which the golden states —
 -- so a change in what inference generalises shows up here as a number to
 -- look at rather than as silence.
-pub pair a b =
-    ( a, b )
+pub pair a b = ( a, b )
 
 
-pub swap p =
-    ( p.second, p.first )
+pub swap p = ( p.second, p.first )
 
 
 pub firstOf xs ifEmpty =

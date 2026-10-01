@@ -5,18 +5,15 @@
 -- `fnf` was interned before `flexf`). `flexf` is interned first here — the
 -- first declaration names it; `EqOneQuestionRecordNamesFirst` is the twin
 -- that interns `fnf` first.
-flexf =
-    1
+flexf = 1
 
 
 k : Int -> Int
-k n =
-    n
+k n = n
 
 
 h x =
     let
-        t =
-            Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
+        t = Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
     in
     x 1

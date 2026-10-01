@@ -4,5 +4,4 @@ pub opaque type Tree
 
 
 pub leaf : Tree
-leaf =
-    Leaf
+leaf = Leaf

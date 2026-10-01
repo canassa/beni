@@ -27,5 +27,4 @@ page name =
 
 
 main : Node.Program
-main =
-    Node.print (Ssr.render (page "<you>"))
+main = Node.print (Ssr.render (page "<you>"))

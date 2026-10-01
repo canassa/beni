@@ -23,28 +23,24 @@ pub type Error
 
 --| `GET` the URL: its body as text.
 pub get : String -> Result Error String
-get url =
-    request "GET" url "" "" False
+get url = request "GET" url "" "" False
 
 
 --| `POST` the text to the URL: the answer's body as text.
 pub post : String, String -> Result Error String
-post url body =
-    request "POST" url "text/plain;charset=UTF-8" body False
+post url body = request "POST" url "text/plain;charset=UTF-8" body False
 
 
 --| `GET` JSON from the URL: the body's text, once it parses as JSON, and
 --| `BadBody` when it does not.
 pub getJson : String -> Result Error String
-getJson url =
-    request "GET" url "" "" True
+getJson url = request "GET" url "" "" True
 
 
 --| `POST` JSON text to the URL: the answer's body's text, once it parses
 --| as JSON, and `BadBody` when it does not.
 pub postJson : String, String -> Result Error String
-postJson url body =
-    request "POST" url "application/json" body True
+postJson url body = request "POST" url "application/json" body True
 
 
 -- A failure the sibling did not expect arrives as `{ d: error }` and is
@@ -53,11 +49,9 @@ postJson url body =
 request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
     let
-        answer =
-            Task.callback (\resume -> start method url contentType body json resume)
+        answer = Task.callback (\resume -> start method url contentType body json resume)
 
-        defect =
-            Js.get (Js.from answer) "d"
+        defect = Js.get (Js.from answer) "d"
     in
     if Js.isUndefined defect then answer else Js.throw defect
 

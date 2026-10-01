@@ -2,5 +2,4 @@ import Prog
 
 
 pub lookup : String -> String
-lookup name =
-    Prog.fetch name
+lookup name = Prog.fetch name

@@ -4,5 +4,4 @@
 -- that live in `Basics` stop resolving. The rule is deliberate; the cost
 -- of it is what this fixture pins.
 pub something : Bool
-something =
-    True
+something = True

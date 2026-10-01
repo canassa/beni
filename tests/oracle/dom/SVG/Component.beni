@@ -3,5 +3,4 @@ import Html exposing (Html)
 
 
 pub view : { children : Html msg } -> Html msg
-view props =
-    props.children
+view props = props.children

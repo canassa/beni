@@ -17,13 +17,11 @@ pub type Json
 
 
 pub succeed : a -> Parser a
-succeed value =
-    { run = \input -> Ok ( value, input ) }
+succeed value = { run = \input -> Ok ( value, input ) }
 
 
 pub fail : String -> Parser a
-fail reason =
-    { run = \_ -> Err reason }
+fail reason = { run = \_ -> Err reason }
 
 
 pub map : (a -> b), Parser a -> Parser b
@@ -93,8 +91,7 @@ literal =
 pub parseTwice : String -> Result String ( Json, Json )
 parseTwice input =
     let
-        second =
-            literal.run (String.trimLeft (T.afterFirst input))?
+        second = literal.run (String.trimLeft (T.afterFirst input))?
     in
     Ok ( second.0, second.0 )
 

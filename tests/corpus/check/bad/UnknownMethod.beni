@@ -7,5 +7,4 @@ pub type Shape
 
 
 pub area : Shape -> Float
-area s =
-    s.volume 2
+area s = s.volume 2

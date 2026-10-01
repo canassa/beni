@@ -39,8 +39,7 @@ decodeString decoder text =
 
 
 pub errorToString : Error -> String
-errorToString error =
-    errorToStringHelp error []
+errorToString error = errorToStringHelp error []
 
 
 errorToStringHelp : Error, List String -> String
@@ -62,8 +61,7 @@ errorToStringHelp error context =
 
                 _ ->
                     let
-                        numbered i problem =
-                            "(${i + 1}) " ++ indent (errorToString problem)
+                        numbered i problem = "(${i + 1}) " ++ indent (errorToString problem)
                     in
                     [ ("Every possibility failed" ++ atPath context ++ ":")
                     , ...List.indexedMap errors numbered
@@ -95,8 +93,7 @@ atPath context =
 
 
 indent : String -> String
-indent text =
-    String.join (String.split text "\n") "\n    "
+indent text = String.join (String.split text "\n") "\n    "
 
 
 -- Primitives
@@ -169,8 +166,7 @@ null result =
 
 
 pub raw : Decoder Value
-raw =
-    Decoder Ok
+raw = Decoder Ok
 
 
 -- Structure
@@ -189,8 +185,7 @@ field name decoder =
 
 
 pub at : List String, Decoder a -> Decoder a
-at names decoder =
-    List.foldr names decoder field
+at names decoder = List.foldr names decoder field
 
 
 pub index : Int, Decoder a -> Decoder a
@@ -273,24 +268,20 @@ pairsHelp decoder fields acc =
 
 
 pub dict : Decoder a -> Decoder (Dict String a)
-dict decoder =
-    map (keyValuePairs decoder) Dict.fromList
+dict decoder = map (keyValuePairs decoder) Dict.fromList
 
 
 -- Choices
 pub maybe : Decoder a -> Decoder (Maybe a)
-maybe decoder =
-    oneOf [ map decoder Just, succeed Nothing ]
+maybe decoder = oneOf [ map decoder Just, succeed Nothing ]
 
 
 pub nullable : Decoder a -> Decoder (Maybe a)
-nullable decoder =
-    oneOf [ null Nothing, map decoder Just ]
+nullable decoder = oneOf [ null Nothing, map decoder Just ]
 
 
 pub oneOf : List (Decoder a) -> Decoder a
-oneOf decoders =
-    Decoder (\value -> oneOfHelp decoders value [])
+oneOf decoders = Decoder (\value -> oneOfHelp decoders value [])
 
 
 oneOfHelp : List (Decoder a), Value, List Error -> Result Error a
@@ -310,13 +301,11 @@ oneOfHelp decoders value errors =
 
 -- Combinators
 pub succeed : a -> Decoder a
-succeed result =
-    Decoder (\_ -> Ok result)
+succeed result = Decoder (\_ -> Ok result)
 
 
 pub fail : String -> Decoder a
-fail message =
-    Decoder (\value -> Err (Failure message value))
+fail message = Decoder (\value -> Err (Failure message value))
 
 
 pub andThen : Decoder a, (a -> Decoder b) -> Decoder b
@@ -329,13 +318,11 @@ andThen decoder next =
 
 
 pub map : Decoder a, (a -> value) -> Decoder value
-map decoder f =
-    Decoder (\value -> Result.map (decodeValue decoder value) f)
+map decoder f = Decoder (\value -> Result.map (decodeValue decoder value) f)
 
 
 pub map2 : Decoder a, Decoder b, (a, b -> value) -> Decoder value
-map2 da db f =
-    Decoder (\value -> Result.map2 (decodeValue da value) (decodeValue db value) f)
+map2 da db f = Decoder (\value -> Result.map2 (decodeValue da value) (decodeValue db value) f)
 
 
 pub map3 : Decoder a, Decoder b, Decoder c, (a, b, c -> value) -> Decoder value

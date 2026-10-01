@@ -1,5 +1,4 @@
 import A
 
 
-g =
-    A.f == 1
+g = A.f == 1

@@ -8,10 +8,8 @@ pub schema User =
 
 
 pub ordinary : User
-ordinary =
-    User 1
+ordinary = User 1
 
 
 pub endpoint : User.Type
-endpoint =
-    { id = 1 }
+endpoint = { id = 1 }

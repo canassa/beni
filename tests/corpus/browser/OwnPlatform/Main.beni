@@ -6,5 +6,4 @@ import Title
 
 
 main : Title.Program
-main =
-    Title.heading "Hello from a platform of its own"
+main = Title.heading "Hello from a platform of its own"

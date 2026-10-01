@@ -8,8 +8,7 @@ pub opaque type Counter
 
 
 pub zero : Counter
-zero =
-    Counter 0
+zero = Counter 0
 
 
 pub bump : Counter -> Counter

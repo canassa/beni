@@ -16,20 +16,16 @@ import Gen
 
 
 pub ints : Bool
-ints =
-    Gen.before 1 2
+ints = Gen.before 1 2
 
 
 pub sameInts : Bool
-sameInts =
-    Gen.same 1 2
+sameInts = Gen.same 1 2
 
 
 pub floats : Bool
-floats =
-    Gen.before 1.5 2.5
+floats = Gen.before 1.5 2.5
 
 
 pub strings : Bool
-strings =
-    Gen.before "a" "b"
+strings = Gen.before "a" "b"

@@ -6,5 +6,4 @@ import Html exposing (Html)
 
 
 pub view : Html msg
-view =
-    <div tabindex="0" title />
+view = <div tabindex="0" title />

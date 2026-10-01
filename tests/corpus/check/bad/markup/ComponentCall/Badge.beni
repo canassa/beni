@@ -4,10 +4,8 @@ import Html exposing (Html)
 
 
 pub view : { label : String, count : Int } -> Html msg
-view props =
-    <span title={props.label}>{props.count}</span>
+view props = <span title={props.label}>{props.count}</span>
 
 
 pub pair : String, Int -> Html msg
-pair label count =
-    <span title={label}>{count}</span>
+pair label count = <span title={label}>{count}</span>

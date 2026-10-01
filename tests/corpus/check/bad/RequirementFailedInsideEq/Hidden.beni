@@ -9,5 +9,4 @@ type Hid a
 
 
 pub mk : a -> Hid a
-mk x =
-    Hid (Holder.Holder x)
+mk x = Hid (Holder.Holder x)

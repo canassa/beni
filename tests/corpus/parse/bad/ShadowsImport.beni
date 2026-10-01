@@ -4,8 +4,7 @@ import Dict exposing (Dict, empty)
 import Set exposing (Set)
 
 
-empty =
-    1
+empty = 1
 
 
 type Set

@@ -9,26 +9,21 @@ import String
 
 
 add3 : Int, Int, Int -> Int
-add3 a b c =
-    a + b + c
+add3 a b c = a + b + c
 
 
 apply : (Int -> Int), Int -> Int
-apply f n =
-    f n
+apply f n = f n
 
 
 main : Program
 main =
     let
-        addOne =
-            \b c -> add3 1 b c
+        addOne = \b c -> add3 1 b c
 
-        addOneTwo =
-            add3 1 2 _
+        addOneTwo = add3 1 2 _
 
-        counterFrom start =
-            \step -> start + step
+        counterFrom start = \step -> start + step
     in
     Node.printLines
         [ String.fromInt (add3 1 2 3)

@@ -10,15 +10,12 @@
 -- with an `Int`, refused the same way.
 pub lying : number, number -> Int
     where number.compare : number, number -> Int
-lying x y =
-    x.compare y + 1
+lying x y = x.compare y + 1
 
 
 pub rigidCaller : number -> Int
-rigidCaller n =
-    lying n n
+rigidCaller n = lying n n
 
 
 pub literalCaller : Int
-literalCaller =
-    lying 1 2
+literalCaller = lying 1 2

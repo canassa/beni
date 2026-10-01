@@ -2,5 +2,4 @@
 -- derived from the path is not a valid upper identifier (§1). The file is
 -- rejected before parsing; the contents are otherwise valid. Expected span:
 -- the file itself (1:1 is the only sensible position).
-x =
-    1
+x = 1

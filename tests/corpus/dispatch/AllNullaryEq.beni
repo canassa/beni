@@ -12,10 +12,8 @@ pub type Colour
 
 
 pub sameColour : Colour, Colour -> Bool
-sameColour a b =
-    a == b
+sameColour a b = a == b
 
 
 pub before : Colour, Colour -> Bool
-before a b =
-    a < b
+before a b = a < b

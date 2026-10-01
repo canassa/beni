@@ -12,5 +12,4 @@ import Pt exposing (P)
 
 
 main : Program
-main =
-    Node.printLines [ Debug.toString (P 1 "a") ]
+main = Node.printLines [ Debug.toString (P 1 "a") ]

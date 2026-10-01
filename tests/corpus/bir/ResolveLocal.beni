@@ -5,11 +5,9 @@
 f : Int, ( Int, Int ), Maybe Int -> Int
 f a ( b, c ) m =
     let
-        d =
-            a + b
+        d = a + b
 
-        ( g, h ) =
-            ( c, d )
+        ( g, h ) = ( c, d )
     in
     case m of
         Just n ->

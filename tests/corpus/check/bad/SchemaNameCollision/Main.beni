@@ -3,5 +3,4 @@ import User
 
 
 bad : User.Type
-bad =
-    { id = 1 }
+bad = { id = 1 }

@@ -5,15 +5,12 @@ import Models
 
 
 pub id : Models.Id
-id =
-    42
+id = 42
 
 
 pub score : Models.Score
-score =
-    2
+score = 2
 
 
 pub box : Models.Box
-box =
-    { value = 42 }
+box = { value = 42 }

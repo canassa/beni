@@ -9,5 +9,4 @@ pub type Holder a
 
 
 pub eq : Holder Int, Holder Int -> Bool
-eq (Holder x) (Holder y) =
-    modBy x 10 == modBy y 10
+eq (Holder x) (Holder y) = modBy x 10 == modBy y 10

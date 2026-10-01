@@ -2,8 +2,7 @@ import Schema exposing (Conversion)
 
 
 wrong : Conversion String Int
-wrong =
-    Debug.todo "checker-only conversion"
+wrong = Debug.todo "checker-only conversion"
 
 
 schema Bad =

@@ -20,10 +20,8 @@ scale m factor =
 
 pub scaleTwice : a, Int -> a
     where a.scale : a, Int -> a
-scaleTwice x factor =
-    (x.scale factor).scale factor
+scaleTwice x factor = (x.scale factor).scale factor
 
 
 pub grow : Metre -> Metre
-grow m =
-    scaleTwice m 3
+grow m = scaleTwice m 3

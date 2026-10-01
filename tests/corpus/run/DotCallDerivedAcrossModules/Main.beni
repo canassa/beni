@@ -7,8 +7,7 @@ type Local
     | Two
 
 
-before x y =
-    x.compare y == LT
+before x y = x.compare y == LT
 
 
 yes : Bool -> String

@@ -44,8 +44,7 @@ type NestedNode
 
 
 conversionIssue : Schema.Context, String -> List Schema.Issue
-conversionIssue context message =
-    [ Schema.issue context (Invalid "decimal_text") message ]
+conversionIssue context message = [ Schema.issue context (Invalid "decimal_text") message ]
 
 
 numericText : Schema.Schema String Int
@@ -77,8 +76,7 @@ pairEndpoint =
 
 
 pairSchema : Schema.Schema Pair Pair
-pairSchema =
-    Schema.fromEndpoint pairEndpoint
+pairSchema = Schema.fromEndpoint pairEndpoint
 
 
 optionalTextEndpoint : Schema.Endpoint OptionalText
@@ -90,8 +88,7 @@ optionalTextEndpoint =
 
 
 optionalTextSchema : Schema.Schema OptionalText OptionalText
-optionalTextSchema =
-    Schema.fromEndpoint optionalTextEndpoint
+optionalTextSchema = Schema.fromEndpoint optionalTextEndpoint
 
 
 userIdEndpoint : Schema.Endpoint UserId
@@ -103,8 +100,7 @@ userIdEndpoint =
 
 
 userIdSchema : Schema.Schema UserId UserId
-userIdSchema =
-    Schema.fromEndpoint userIdEndpoint
+userIdSchema = Schema.fromEndpoint userIdEndpoint
 
 
 messageEncodedEndpoint : Schema.Endpoint MessageEncoded.Message
@@ -246,8 +242,7 @@ programNodeEndpoint () =
 
 
 nodeSchema : Schema.Schema WireNode ProgramNode
-nodeSchema =
-    Schema.make (wireNodeEndpoint ()) (programNodeEndpoint ()) decodeNode encodeNode
+nodeSchema = Schema.make (wireNodeEndpoint ()) (programNodeEndpoint ()) decodeNode encodeNode
 
 
 -- A recursive endpoint nested inside another recursive endpoint. The outer
@@ -348,8 +343,7 @@ adverseEndpoint =
 
 
 positiveEndpoint : Schema.Endpoint Int
-positiveEndpoint =
-    Schema.refine Schema.int.decoded "must be positive" (\value -> value > 0)
+positiveEndpoint = Schema.refine Schema.int.decoded "must be positive" (\value -> value > 0)
 
 
 prevalidatedSchema : Schema.Schema String Int
@@ -410,28 +404,23 @@ stagedSchema =
 
 
 allOptions : Schema.Options
-allOptions =
-    { errors = AllErrors, unknownFields = RejectUnknown, maxDepth = 64 }
+allOptions = { errors = AllErrors, unknownFields = RejectUnknown, maxDepth = 64 }
 
 
 firstOptions : Schema.Options
-firstOptions =
-    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 64 }
+firstOptions = { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 64 }
 
 
 firstRejectOptions : Schema.Options
-firstRejectOptions =
-    { errors = FirstError, unknownFields = RejectUnknown, maxDepth = 64 }
+firstRejectOptions = { errors = FirstError, unknownFields = RejectUnknown, maxDepth = 64 }
 
 
 zeroDepthOptions : Schema.Options
-zeroDepthOptions =
-    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 0 }
+zeroDepthOptions = { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 0 }
 
 
 depthOptions : Schema.Options
-depthOptions =
-    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 4 }
+depthOptions = { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 4 }
 
 
 issueAt : List PathSegment, Direction, Code, String -> Schema.Issue

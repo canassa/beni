@@ -18,5 +18,4 @@ pub opaque type Hidden
 
 
 pub same : Hidden, Hidden -> Bool
-same a b =
-    a == b
+same a b = a == b

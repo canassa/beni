@@ -14,11 +14,9 @@ type alias Step a =
 pub parse : String -> Result String Value
 parse input =
     let
-        chars =
-            String.toList input
+        chars = String.toList input
 
-        ( value, rest ) =
-            parseValue chars?
+        ( value, rest ) = parseValue chars?
     in
     case skipSpace rest of
         [] ->
@@ -29,13 +27,11 @@ parse input =
 
 
 consumed : List Char, List Char -> Int
-consumed all rest =
-    List.length all - List.length rest
+consumed all rest = List.length all - List.length rest
 
 
 unexpected : Char, String, Int -> String
-unexpected c wanted at =
-    "unexpected '${c}' at character ${at}, expecting ${wanted}"
+unexpected c wanted at = "unexpected '${c}' at character ${at}, expecting ${wanted}"
 
 
 parseValue : List Char -> Step Value
@@ -114,8 +110,7 @@ parseString chars acc =
 
                 'u' ->
                     let
-                        ( code, after ) =
-                            parseHex4 rest?
+                        ( code, after ) = parseHex4 rest?
                     in
                     parseString after [ Char.fromCode code, ...acc ]
 
@@ -140,8 +135,7 @@ parseHex4 chars =
     case chars of
         [ a, b, c, d, ...rest ] ->
             let
-                digits =
-                    [ a, b, c, d ]
+                digits = [ a, b, c, d ]
             in
             if List.all digits Char.isHexDigit then
                 Ok ( List.foldl digits 0 (\digit total -> total * 16 + hexValue digit), rest )
@@ -155,8 +149,7 @@ parseHex4 chars =
 hexValue : Char -> Int
 hexValue c =
     let
-        code =
-            Char.toCode c
+        code = Char.toCode c
     in
     if Char.isDigit c then
         code - 48
@@ -169,11 +162,9 @@ hexValue c =
 parseNumber : List Char -> Step Value
 parseNumber chars =
     let
-        ( digits, rest ) =
-            span chars isNumberChar
+        ( digits, rest ) = span chars isNumberChar
 
-        text =
-            String.fromList digits
+        text = String.fromList digits
     in
     case String.toFloat text of
         Just n ->
@@ -184,8 +175,7 @@ parseNumber chars =
 
 
 isNumberChar : Char -> Bool
-isNumberChar c =
-    Char.isDigit c || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
+isNumberChar c = Char.isDigit c || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
 
 
 span : List a, (a -> Bool) -> ( List a, List a )
@@ -218,8 +208,7 @@ parseArray chars =
 parseElements : List Char, List Value -> Step Value
 parseElements chars acc =
     let
-        ( item, rest ) =
-            parseValue chars?
+        ( item, rest ) = parseValue chars?
     in
     case skipSpace rest of
         [ ',', ...more ] ->
@@ -250,14 +239,12 @@ parseMembers chars acc =
     case skipSpace chars of
         [ '"', ...afterQuote ] ->
             let
-                ( key, afterKey ) =
-                    parseString afterQuote []?
+                ( key, afterKey ) = parseString afterQuote []?
             in
             case skipSpace afterKey of
                 [ ':', ...afterColon ] ->
                     let
-                        ( item, rest ) =
-                            parseValue afterColon?
+                        ( item, rest ) = parseValue afterColon?
                     in
                     case skipSpace rest of
                         [ ',', ...more ] ->

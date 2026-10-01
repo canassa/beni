@@ -13,28 +13,23 @@ pub type alias Style =
 
 
 defaultStyle : Style
-defaultStyle =
-    { padding = 4, bold = False }
+defaultStyle = { padding = 4, bold = False }
 
 
 emphasised : Style
-emphasised =
-    { defaultStyle | bold = True }
+emphasised = { defaultStyle | bold = True }
 
 
 pub text : String -> Element msg
-text content =
-    Text content
+text content = Text content
 
 
 pub button : String, msg -> Element msg
-button label onPress =
-    Button label onPress
+button label onPress = Button label onPress
 
 
 pub column : List (Element msg) -> Element msg
-column children =
-    Column children
+column children = Column children
 
 
 pub render : Element msg -> String
@@ -53,10 +48,8 @@ render element =
 
 
 pub shout : Element msg -> String
-shout element =
-    String.toUpper (render element)
+shout element = String.toUpper (render element)
 
 
 pub indent : Style, String -> String
-indent style line =
-    String.repeat " " style.padding ++ line
+indent style line = String.repeat " " style.padding ++ line

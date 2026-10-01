@@ -1,5 +1,4 @@
 -- check/args: `List.sortBy` takes the list and then the key function; this
 -- call gives it only the list.
 pub ordered : List Int -> List Int
-ordered xs =
-    List.sortBy xs
+ordered xs = List.sortBy xs

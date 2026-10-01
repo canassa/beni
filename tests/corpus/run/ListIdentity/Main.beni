@@ -42,11 +42,9 @@ show label b =
 main : Node.Program
 main =
     let
-        rows =
-            [ { id = 1 }, { id = 2 }, { id = 3 } ]
+        rows = [ { id = 1 }, { id = 2 }, { id = 3 } ]
 
-        single =
-            [ 5 ]
+        single = [ 5 ]
 
         firstOf xs =
             case xs of
@@ -56,14 +54,11 @@ main =
                 [] ->
                     False
 
-        a =
-            [ 1, 2 ]
+        a = [ 1, 2 ]
 
-        b =
-            [ 3, 4 ]
+        b = [ 3, 4 ]
 
-        joined =
-            List.concat [ [], a, [], b, [], [] ]
+        joined = List.concat [ [], a, [], b, [], [] ]
 
         mapped =
             List.concatMap [ 1, 2, 3 ]
@@ -85,8 +80,7 @@ main =
                         b
                 )
 
-        ( kept, _ ) =
-            List.partition rows (\r -> r.id < 2)
+        ( kept, _ ) = List.partition rows (\r -> r.id < 2)
     in
     Node.printLines
         [ show "filter element" (firstOf (List.filter rows (\r -> r.id == 1)))

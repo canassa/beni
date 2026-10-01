@@ -13,15 +13,12 @@ type alias Id a =
 
 
 unwrapId : Id a -> a
-unwrapId x =
-    x
+unwrapId x = x
 
 
 g : Id (Id Int)
-g =
-    1
+g = 1
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (unwrapId g + g + 1) ]
+main = Node.printLines [ String.fromInt (unwrapId g + g + 1) ]

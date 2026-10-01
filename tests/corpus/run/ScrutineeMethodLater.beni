@@ -22,28 +22,23 @@ f n =
     case ( (\y -> y.h ()) (K n), (Box 1).g () ) of
         ( r, _ ) ->
             let
-                q z =
-                    r.combine z
+                q z = r.combine z
             in
             ( q 1, q "s" )
 
 
-pub g (Box a) u =
-    0
+pub g (Box a) u = 0
 
 
-pub h (K m) u =
-    Box m
+pub h (K m) u = Box m
 
 
-pub combine (Box a) z =
-    a
+pub combine (Box a) z = a
 
 
 main : Program
 main =
     let
-        ( a, b ) =
-            f 3
+        ( a, b ) = f 3
     in
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

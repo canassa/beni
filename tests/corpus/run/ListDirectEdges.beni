@@ -17,20 +17,17 @@ import String
 
 
 note : String, Int -> Int
-note tag n =
-    Debug.log n tag
+note tag n = Debug.log n tag
 
 
 show : List Int -> String
-show xs =
-    Debug.toString xs
+show xs = Debug.toString xs
 
 
 main : Program
 main =
     let
-        nested =
-            List.map [ 1, 2 ] (\x -> List.map [ 10, 20 ] (\y -> note "inner" (x * y)))
+        nested = List.map [ 1, 2 ] (\x -> List.map [ 10, 20 ] (\y -> note "inner" (x * y)))
 
         picked =
             List.filterMap [ 1, 2, 3 ]
@@ -43,8 +40,7 @@ main =
                             Just (List.sum other)
                 )
 
-        indexed =
-            List.indexedMap [ 5, 6, 7 ] (\i x -> note "indexedMap" (i * 100 + x))
+        indexed = List.indexedMap [ 5, 6, 7 ] (\i x -> note "indexedMap" (i * 100 + x))
 
         fives =
             List.map5
@@ -55,8 +51,7 @@ main =
                 [ 0, 0, 0 ]
                 (\a b c d v -> note "map5" (a + b + c + d + v))
 
-        halves =
-            List.partition [ 1, 2, 3, 4 ] (\x -> note "partition" x > 2)
+        halves = List.partition [ 1, 2, 3, 4 ] (\x -> note "partition" x > 2)
     in
     Node.printLines
         [ Debug.toString nested

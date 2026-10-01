@@ -17,15 +17,12 @@ key t u =
 
 same : List a, a -> Bool
     where a.key : a, () -> Int
-same xs z =
-    List.all xs (\x -> x.key () == z.key ())
+same xs z = List.all xs (\x -> x.key () == z.key ())
 
 
 wrongFirst : Bool
-wrongFirst =
-    same "nope" (T 1)
+wrongFirst = same "nope" (T 1)
 
 
 tooMany : Bool
-tooMany =
-    same [ T 1 1 ] (T 2)
+tooMany = same [ T 1 1 ] (T 2)

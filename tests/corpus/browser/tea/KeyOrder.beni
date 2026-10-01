@@ -33,23 +33,19 @@ spotName s =
 
 
 hello : String, Cmd.Send String -> ()
-hello name send =
-    send name
+hello name send = send name
 
 
 update : String, Model -> ( Model, Cmd String )
-update name model =
-    ( { model | seen = model.seen ++ [ name ] }, Cmd.none )
+update name model = ( { model | seen = model.seen ++ [ name ] }, Cmd.none )
 
 
 subscriptions : Model -> Sub String
 subscriptions _ =
     let
-        a =
-            { first = 1, second = 2 }
+        a = { first = 1, second = 2 }
 
-        b =
-            { first = 2, second = 1 }
+        b = { first = 2, second = 1 }
     in
     Sub.batch
         [ Sub.listen Zeta (hello "zeta" _) identity

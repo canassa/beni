@@ -83,5 +83,4 @@ weekday n =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

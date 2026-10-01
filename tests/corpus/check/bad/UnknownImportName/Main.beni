@@ -5,5 +5,4 @@ import Util exposing (absent)
 
 
 pub main : Int
-main =
-    Util.alsoAbsent
+main = Util.alsoAbsent

@@ -3,5 +3,4 @@ import D exposing (d)
 
 
 pub b : Int
-b =
-    c + d
+b = c + d

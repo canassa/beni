@@ -21,8 +21,7 @@ main : Node.Program
 main =
     let
         ada : Person
-        ada =
-            { name = "Ada", mood = Busy 3, tags = [ "math" ] }
+        ada = { name = "Ada", mood = Busy 3, tags = [ "math" ] }
     in
     Node.printLines
         [ Debug.toString ada

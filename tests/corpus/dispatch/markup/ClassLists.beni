@@ -8,8 +8,7 @@ import Html exposing (Html)
 
 
 classes : List ( String, Bool )
-classes =
-    [ ( "row", True ) ]
+classes = [ ( "row", True ) ]
 
 
 pub view : String, Bool -> Html msg
@@ -21,5 +20,4 @@ view size selected =
     </div>
 
 
-pub plain name =
-    <p class={name} />
+pub plain name = <p class={name} />

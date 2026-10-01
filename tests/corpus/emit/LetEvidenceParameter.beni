@@ -12,12 +12,10 @@ pub pairEq : a, a -> Bool
     where a.eq : a, a -> Bool
 pairEq x y =
     let
-        inner a b =
-            a == b
+        inner a b = a == b
     in
     inner x y && inner [ x ] [ y ]
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

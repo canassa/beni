@@ -3,21 +3,16 @@
 -- `->` and `<|`. The tokens show each `markup_open`, and the tree each
 -- markup expression where the operand stands: a definition's body, an
 -- argument in parentheses, list elements, a lambda's body, `<|`'s operand.
-bold =
-    <b />
+bold = <b />
 
 
-paren f =
-    f (<b />)
+paren f = f (<b />)
 
 
-items =
-    [ <li />, <li /> ]
+items = [ <li />, <li /> ]
 
 
-row =
-    \r -> <tr />
+row = \r -> <tr />
 
 
-piped f =
-    f <| <>x</>
+piped f = f <| <>x</>

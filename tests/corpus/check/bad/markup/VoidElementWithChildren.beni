@@ -5,5 +5,4 @@ import Html exposing (Html)
 
 
 pub view : Html msg
-view =
-    <br>line</br>
+view = <br>line</br>

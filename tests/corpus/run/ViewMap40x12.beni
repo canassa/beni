@@ -16,18 +16,15 @@ type Html
 
 
 div : List Attr, List Html -> Html
-div attrs kids =
-    Node "div" attrs kids
+div attrs kids = Node "div" attrs kids
 
 
 text : String -> Html
-text s =
-    Text s
+text s = Text s
 
 
 cls : String -> Attr
-cls c =
-    Attr "class" c
+cls c = Attr "class" c
 
 
 count : Html -> Int
@@ -1441,5 +1438,4 @@ view model =
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (count (view { items = [ 1 ] })) ]
+main = Node.printLines [ String.fromInt (count (view { items = [ 1 ] })) ]

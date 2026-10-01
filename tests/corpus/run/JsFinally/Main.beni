@@ -11,74 +11,51 @@ import Node
 main : Node.Program
 main =
     let
-        tail =
-            String.fromInt (Guard.tail 1)
+        tail = String.fromInt (Guard.tail 1)
 
-        tailTrail =
-            Guard.take ()
+        tailTrail = Guard.take ()
 
-        valued =
-            Guard.valued 4
+        valued = Guard.valued 4
 
-        valuedTrail =
-            Guard.take ()
+        valuedTrail = Guard.take ()
 
-        discarded =
-            Guard.discarded ()
+        discarded = Guard.discarded ()
 
-        discardedTrail =
-            Guard.take ()
+        discardedTrail = Guard.take ()
 
-        throwsTail =
-            Guard.attempt (\() -> Guard.throwsTail ())
+        throwsTail = Guard.attempt (\() -> Guard.throwsTail ())
 
-        throwsTailTrail =
-            Guard.take ()
+        throwsTailTrail = Guard.take ()
 
-        throwsValued =
-            Guard.attempt (\() -> Guard.throwsValued ())
+        throwsValued = Guard.attempt (\() -> Guard.throwsValued ())
 
-        throwsValuedTrail =
-            Guard.take ()
+        throwsValuedTrail = Guard.take ()
 
-        throwsDiscarded =
-            Guard.attempt (\() -> Guard.throwsDiscarded ())
+        throwsDiscarded = Guard.attempt (\() -> Guard.throwsDiscarded ())
 
-        throwsDiscardedTrail =
-            Guard.take ()
+        throwsDiscardedTrail = Guard.take ()
 
-        nested =
-            Guard.attempt (\() -> Guard.nested ())
+        nested = Guard.attempt (\() -> Guard.nested ())
 
-        nestedTrail =
-            Guard.take ()
+        nestedTrail = Guard.take ()
 
-        ordered =
-            String.fromInt (Guard.ordered ())
+        ordered = String.fromInt (Guard.ordered ())
 
-        orderedTrail =
-            Guard.take ()
+        orderedTrail = Guard.take ()
 
-        passed =
-            String.fromInt (Guard.passed (\() -> 3) (\() -> Guard.note "passed cleanup"))
+        passed = String.fromInt (Guard.passed (\() -> 3) (\() -> Guard.note "passed cleanup"))
 
-        passedTrail =
-            Guard.take ()
+        passedTrail = Guard.take ()
 
-        asValue =
-            String.fromInt (Guard.asValue (\() -> 5) (\() -> Guard.note "value cleanup"))
+        asValue = String.fromInt (Guard.asValue (\() -> 5) (\() -> Guard.note "value cleanup"))
 
-        asValueTrail =
-            Guard.take ()
+        asValueTrail = Guard.take ()
 
-        summed =
-            String.fromInt (Guard.sumTo 4 0)
+        summed = String.fromInt (Guard.sumTo 4 0)
 
-        summedTrail =
-            Guard.take ()
+        summedTrail = Guard.take ()
 
-        latched =
-            Latch.run "work"
+        latched = Latch.run "work"
     in
     Node.printLines
         [ "tail ${tail}: ${tailTrail}"

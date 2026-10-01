@@ -3,25 +3,20 @@ import Plat
 
 
 direct : Int
-direct =
-    Lib.onType Plat.get
+direct = Lib.onType Plat.get
 
 
 oneHop : Int
-oneHop =
-    Lib.onType (\n -> label (Lib.load n))
+oneHop = Lib.onType (\n -> label (Lib.load n))
 
 
 label : String -> String
-label s =
-    "[" ++ s ++ "]"
+label s = "[" ++ s ++ "]"
 
 
 fine : Int
-fine =
-    Lib.onType label2
+fine = Lib.onType label2
 
 
 label2 : Int -> String
-label2 n =
-    label (String.fromInt n)
+label2 n = label (String.fromInt n)

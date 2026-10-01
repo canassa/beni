@@ -4,10 +4,8 @@
 -- record. The message names the field and shows its type against the needed
 -- one, never "This is not a record with a `count` field".
 f : { count : Int } -> String
-f x =
-    x.count
+f x = x.count
 
 
 g : { r | count : Int } -> String
-g x =
-    x.count
+g x = x.count

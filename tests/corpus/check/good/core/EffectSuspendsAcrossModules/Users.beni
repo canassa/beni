@@ -2,10 +2,8 @@ import Net
 
 
 pub fetchAll : List Int -> List String
-fetchAll ids =
-    List.map ids Net.get
+fetchAll ids = List.map ids Net.get
 
 
 pub count : List Int -> Int
-count ids =
-    List.length ids
+count ids = List.length ids

@@ -15,13 +15,11 @@ type Rank
 
 
 pub compare : Rank, Rank -> Order
-compare a b =
-    Basics.compare (weight a) (weight b)
+compare a b = Basics.compare (weight a) (weight b)
 
 
 pub eq : Rank, Rank -> Bool
-eq a b =
-    weight a > 1 && weight b > 1 || weight a == weight b
+eq a b = weight a > 1 && weight b > 1 || weight a == weight b
 
 
 weight : Rank -> Int
@@ -37,8 +35,7 @@ weight r =
             2
 
 
-before x y =
-    x.compare y == LT
+before x y = x.compare y == LT
 
 
 yes : Bool -> String

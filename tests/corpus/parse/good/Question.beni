@@ -2,33 +2,27 @@
 -- pipeline, in a `case` branch, and inside a `let f x = …` in another
 -- function, whose `?` returns from `f`.
 parseAge : String -> Result String Int
-parseAge s =
-    String.toInt s |> Result.fromMaybe "not a number"
+parseAge s = String.toInt s |> Result.fromMaybe "not a number"
 
 
 both : String, String -> Result String Int
-both a b =
-    Ok (parseAge a? + parseAge b?)
+both a b = Ok (parseAge a? + parseAge b?)
 
 
 chained : Result String (Result String Int) -> Result String Int
-chained r =
-    Ok (r??)
+chained r = Ok (r??)
 
 
 piped : String -> Result String Int
-piped s =
-    parseAge s? |> (\n -> n * 2) |> Ok
+piped s = parseAge s? |> (\n -> n * 2) |> Ok
 
 
 inLet : List String -> Result String Int
 inLet items =
     let
-        parseOne item =
-            parseAge item? + 1 |> Ok
+        parseOne item = parseAge item? + 1 |> Ok
 
-        step item acc =
-            Ok (parseOne item? + acc?)
+        step item acc = Ok (parseOne item? + acc?)
     in
     List.foldl step (Ok 0) items
 
@@ -44,5 +38,4 @@ inBranch m =
 
 
 onArgument : String -> Result String Int
-onArgument s =
-    Ok (String.length (parseAge s? |> String.fromInt))
+onArgument s = Ok (String.length (parseAge s? |> String.fromInt))

@@ -7,5 +7,4 @@ import Shape exposing (Shape)
 
 
 pub describe : Shape -> String
-describe s =
-    "area ${area s}, perimeter ${perimeter s}"
+describe s = "area ${area s}, perimeter ${perimeter s}"

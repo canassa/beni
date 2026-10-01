@@ -9,10 +9,8 @@ type W a
 
 
 f : Int -> Int
-f n =
-    n
+f n = n
 
 
 less : Bool
-less =
-    W (H.Holder f) < W (H.Holder f)
+less = W (H.Holder f) < W (H.Holder f)

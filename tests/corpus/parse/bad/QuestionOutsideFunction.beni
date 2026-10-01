@@ -1,8 +1,6 @@
 -- question_outside_function at 8:8: `?` in a top-level constant, which has
 -- no parameters (§6.6).
-g x =
-    Ok x
+g x = Ok x
 
 
-answer =
-    g 1?
+answer = g 1?

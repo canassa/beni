@@ -34,8 +34,7 @@ pub opaque type Set t
 --|
 --|     Set.empty
 pub empty : Set t
-empty =
-    Set Dict.empty
+empty = Set Dict.empty
 
 
 --| Create a set with one value. One value needs no ordering either, so this
@@ -43,8 +42,7 @@ empty =
 --|
 --|     Set.singleton "Tom"
 pub singleton : t -> Set t
-singleton value =
-    Set (Dict.singleton value ())
+singleton value = Set (Dict.singleton value ())
 
 
 --| Insert a value into a set.
@@ -52,8 +50,7 @@ singleton value =
 --|     Set.insert Set.empty "Tom"
 pub insert : Set t, t -> Set t
     where t.compare : t, t -> Order
-insert (Set dict) value =
-    Set (Dict.insert dict value ())
+insert (Set dict) value = Set (Dict.insert dict value ())
 
 
 --| Remove a value from a set. If the value is not found, no changes are made.
@@ -61,16 +58,14 @@ insert (Set dict) value =
 --|     Set.remove names "Tom"
 pub remove : Set t, t -> Set t
     where t.compare : t, t -> Order
-remove (Set dict) value =
-    Set (Dict.remove dict value)
+remove (Set dict) value = Set (Dict.remove dict value)
 
 
 --| Determine if a set is empty.
 --|
 --|     isEmpty empty == True
 pub isEmpty : Set t -> Bool
-isEmpty (Set dict) =
-    Dict.isEmpty dict
+isEmpty (Set dict) = Dict.isEmpty dict
 
 
 --| Determine if a value is in a set.
@@ -79,42 +74,36 @@ isEmpty (Set dict) =
 --|     member (fromList [ "Alice", "Bob" ]) "Carol" == False
 pub member : Set t, t -> Bool
     where t.compare : t, t -> Order
-member (Set dict) value =
-    Dict.member dict value
+member (Set dict) value = Dict.member dict value
 
 
 --| Determine the number of elements in a set.
 pub size : Set t -> Int
-size (Set dict) =
-    Dict.size dict
+size (Set dict) = Dict.size dict
 
 
 --| Get the union of two sets. Keep all values.
 pub union : Set t, Set t -> Set t
     where t.compare : t, t -> Order
-union (Set d1) (Set d2) =
-    Set (Dict.union d1 d2)
+union (Set d1) (Set d2) = Set (Dict.union d1 d2)
 
 
 --| Get the intersection of two sets. Keeps values that appear in both sets.
 pub intersect : Set t, Set t -> Set t
     where t.compare : t, t -> Order
-intersect (Set d1) (Set d2) =
-    Set (Dict.intersect d1 d2)
+intersect (Set d1) (Set d2) = Set (Dict.intersect d1 d2)
 
 
 --| Get the difference between the first set and the second. Keeps values
 --| that do not appear in the second set.
 pub diff : Set t, Set t -> Set t
     where t.compare : t, t -> Order
-diff (Set d1) (Set d2) =
-    Set (Dict.diff d1 d2)
+diff (Set d1) (Set d2) = Set (Dict.diff d1 d2)
 
 
 --| Convert a set into a list, sorted from lowest to highest.
 pub toList : Set t -> List t
-toList (Set dict) =
-    Dict.keys dict
+toList (Set dict) = Dict.keys dict
 
 
 --| Convert a list into a set, removing any duplicates. The values are
@@ -123,8 +112,7 @@ toList (Set dict) =
 --|     Set.fromList [ "a", "b", "a" ]
 pub fromList : List t -> Set t
     where t.compare : t, t -> Order
-fromList list =
-    List.foldl list empty (\value set -> insert set value)
+fromList list = List.foldl list empty (\value set -> insert set value)
 
 
 --| Map a function onto a set, creating a new set with no duplicates. The
@@ -134,24 +122,21 @@ fromList list =
 --|     Set.map names String.length
 pub map : Set a, (a -> b) -> Set b
     where b.compare : b, b -> Order
-map set func =
-    fromList (List.map (toList set) func)
+map set func = fromList (List.map (toList set) func)
 
 
 --| Fold over the values in a set, in order from lowest to highest.
 --|
 --|     Set.foldl numbers 0 (\n total -> n + total)
 pub foldl : Set t, b, (t, b -> b) -> b
-foldl (Set dict) initial func =
-    Dict.foldl dict initial (\key _ acc -> func key acc)
+foldl (Set dict) initial func = Dict.foldl dict initial (\key _ acc -> func key acc)
 
 
 --| Fold over the values in a set, in order from highest to lowest.
 --|
 --|     foldr (fromList [ "b", "a" ]) [] (\name acc -> [ name, ...acc ]) == [ "a", "b" ]
 pub foldr : Set t, b, (t, b -> b) -> b
-foldr (Set dict) initial func =
-    Dict.foldr dict initial (\key _ acc -> func key acc)
+foldr (Set dict) initial func = Dict.foldr dict initial (\key _ acc -> func key acc)
 
 
 --| Only keep elements that pass the given test.
@@ -159,8 +144,7 @@ foldr (Set dict) initial func =
 --|     Set.filter numbers (\n -> n > 0)
 pub filter : Set t, (t -> Bool) -> Set t
     where t.compare : t, t -> Order
-filter (Set dict) isGood =
-    Set (Dict.filter dict (\key _ -> isGood key))
+filter (Set dict) isGood = Set (Dict.filter dict (\key _ -> isGood key))
 
 
 --| Create two new sets. The first contains all the elements that passed the
@@ -171,7 +155,6 @@ pub partition : Set t, (t -> Bool) -> ( Set t, Set t )
     where t.compare : t, t -> Order
 partition (Set dict) isGood =
     let
-        ( trues, falses ) =
-            Dict.partition dict (\key _ -> isGood key)
+        ( trues, falses ) = Dict.partition dict (\key _ -> isGood key)
     in
     ( Set trues, Set falses )

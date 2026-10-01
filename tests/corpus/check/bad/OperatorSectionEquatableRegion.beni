@@ -6,10 +6,8 @@
 -- token the author did not write the mistake at.
 --
 pub inc : Int -> Int
-inc n =
-    n
+inc n = n
 
 
 pub bad : Bool
-bad =
-    (==) inc inc
+bad = (==) inc inc

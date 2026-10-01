@@ -5,5 +5,4 @@
 import Html exposing (Html)
 
 
-render value =
-    <p>{value}</p>
+render value = <p>{value}</p>

@@ -20,11 +20,9 @@ pub type K
 
 pub compare left right =
     let
-        direct =
-            T 1 == T 2
+        direct = T 1 == T 2
 
-        nested =
-            { v = T 1 } == { v = T 2 }
+        nested = { v = T 1 } == { v = T 2 }
     in
     case left of
         K a ->
@@ -36,12 +34,10 @@ pub compare left right =
                         Basics.compare a b
 
 
-pub first =
-    T 1 == T 2
+pub first = T 1 == T 2
 
 
-pub second =
-    { v = T 1 } == { v = T 2 }
+pub second = { v = T 1 } == { v = T 2 }
 
 
 pub eq a b =

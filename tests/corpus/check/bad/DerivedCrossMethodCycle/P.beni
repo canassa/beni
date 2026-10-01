@@ -3,5 +3,4 @@ pub type Q
     = Q (Int -> Int)
 
 
-pub compare (Q _) (Q _) =
-    EQ
+pub compare (Q _) (Q _) = EQ

@@ -3,5 +3,4 @@ import Counter exposing (Counter)
 
 
 f : Counter -> String
-f c =
-    c.count
+f c = c.count

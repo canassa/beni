@@ -19,10 +19,8 @@ pub type Tag
 
 
 pub compare : Tag, Tag -> Order
-compare a b =
-    LT
+compare a b = LT
 
 
 pub before : ( Handle, Int ), ( Handle, Int ) -> Bool
-before a b =
-    a < b
+before a b = a < b

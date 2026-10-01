@@ -12,15 +12,13 @@ type W
 
 pub key (T n) u =
     let
-        _ =
-            ( pick 1, pick "s" )
+        _ = ( pick 1, pick "s" )
     in
     n
 
 
 pick x =
     let
-        _ =
-            W (H.Holder (T 1)) == W (H.Holder (T 2))
+        _ = W (H.Holder (T 1)) == W (H.Holder (T 2))
     in
     x

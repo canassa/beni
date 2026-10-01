@@ -16,5 +16,4 @@ foreign pure origin : { x : Float, y : Float }
 
 
 double : Int -> Int
-double n =
-    add n n
+double n = add n n

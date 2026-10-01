@@ -6,5 +6,4 @@
 --
 pub decode : String -> Result String a
     where a.decode : String -> Result String a
-decode s =
-    a.decode s
+decode s = a.decode s

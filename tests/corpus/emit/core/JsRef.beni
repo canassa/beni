@@ -13,19 +13,16 @@ import Js
 pub template : String -> (() -> Js.Value)
 template html =
     let
-        node =
-            Js.ref Js.null
+        node = Js.ref Js.null
     in
     \() ->
         let
             _ =
                 if Js.isNull (Js.read node) then
                     let
-                        t =
-                            Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+                        t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
 
-                        _ =
-                            Js.set t "innerHTML" (Js.from html)
+                        _ = Js.set t "innerHTML" (Js.from html)
                     in
                     Js.write node (Js.get (Js.get t "content") "firstChild")
                 else
@@ -35,13 +32,11 @@ template html =
 
 
 scheduled : Js.Ref Bool
-scheduled =
-    Js.ref False
+scheduled = Js.ref False
 
 
 pub flush : () -> ()
-flush () =
-    Js.write scheduled False
+flush () = Js.write scheduled False
 
 
 pub schedule : () -> ()
@@ -50,8 +45,7 @@ schedule () =
         ()
     else
         let
-            _ =
-                Js.write scheduled True
+            _ = Js.write scheduled True
 
             _ =
                 Js.apply
@@ -69,22 +63,18 @@ schedule () =
 
 
 pub cell : Int -> Js.Ref Int
-cell n =
-    Js.ref n
+cell n = Js.ref n
 
 
 pub bump : Js.Ref Int -> ()
-bump r =
-    Js.write r (Js.read r + 1)
+bump r = Js.write r (Js.read r + 1)
 
 
 pub counted : Int -> Int
 counted n =
     let
-        r =
-            cell n
+        r = cell n
 
-        _ =
-            bump r
+        _ = bump r
     in
     Js.read r

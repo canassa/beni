@@ -29,8 +29,7 @@ type Impossible
 
 
 drain : Impossible -> Int
-drain (Impossible nothingness) =
-    never nothingness
+drain (Impossible nothingness) = never nothingness
 
 
 showBool : Bool -> String

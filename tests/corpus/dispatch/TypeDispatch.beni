@@ -20,21 +20,17 @@ pub type Metre
 
 
 pub fromInt : Int -> Metre
-fromInt n =
-    Metre n
+fromInt n = Metre n
 
 
 make : Int -> a
     where a.fromInt : Int -> a
-make n =
-    a.fromInt n
+make n = a.fromInt n
 
 
 pub asMetre : Metre
-asMetre =
-    make 7
+asMetre = make 7
 
 
 pub asString : String
-asString =
-    make 42
+asString = make 42

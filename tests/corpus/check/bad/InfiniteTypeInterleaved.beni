@@ -1,5 +1,4 @@
 -- Interleaved cycles, `x = ( x, y )` and `y = ( y, x )`: one
 -- `infinite_type`, at `x` — not a second one at `y`, and never drawn as
 -- `a = ( a, ? )`, the poison marker shown to the author.
-f x y =
-    ( [ x, ( x, y ) ], [ y, ( y, x ) ] )
+f x y = ( [ x, ( x, y ) ], [ y, ( y, x ) ] )

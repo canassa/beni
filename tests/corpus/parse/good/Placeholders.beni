@@ -4,33 +4,25 @@
 -- as a constructor argument. One per application throughout. `f _ .name`
 -- is two arguments, not an access chain: a `dot_lower` must abut an atom
 -- and `_` is not one (§6.7).
-last f a =
-    f a _
+last f a = f a _
 
 
-middle f a c =
-    f a _ c
+middle f a c = f a _ c
 
 
-first f b =
-    f _ b
+first f b = f _ b
 
 
-only f =
-    f _
+only f = f _
 
 
-nested f g b =
-    f (g _) b
+nested f g b = f (g _) b
 
 
-inPipeline xs =
-    xs |> List.map (add 1 _)
+inPipeline xs = xs |> List.map (add 1 _)
 
 
-constructor a =
-    Pair a _
+constructor a = Pair a _
 
 
-accessorAfter f =
-    f _ .name
+accessorAfter f = f _ .name

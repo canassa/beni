@@ -11,36 +11,30 @@ type Box a
     = Box a
 
 
-pub weight (Box _) u =
-    2
+pub weight (Box _) u = 2
 
 
 viaAnnotated u =
     let
-        g x =
-            (Box x).size ()
+        g x = (Box x).size ()
     in
     ( g 1, g "s" )
 
 
 viaFirst u =
     let
-        g x =
-            (Box x).weight ()
+        g x = (Box x).weight ()
     in
     ( g 1, g "s" )
 
 
 pub size : Box a, () -> Int
-size b u =
-    1
+size b u = 1
 
 
 both : ( Int, Int ) -> String
-both ( a, b ) =
-    String.fromInt a ++ " " ++ String.fromInt b
+both ( a, b ) = String.fromInt a ++ " " ++ String.fromInt b
 
 
 main : Program
-main =
-    Node.printLines [ both (viaAnnotated 0), both (viaFirst 0) ]
+main = Node.printLines [ both (viaAnnotated 0), both (viaFirst 0) ]

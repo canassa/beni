@@ -10,11 +10,9 @@ import String
 main : Program
 main =
     let
-        empty =
-            Dict.empty
+        empty = Dict.empty
 
-        counts =
-            Dict.insert (Dict.insert empty "a" 1) "b" 2
+        counts = Dict.insert (Dict.insert empty "a" 1) "b" 2
     in
     Node.printLines
         [ String.fromInt (Dict.size counts)

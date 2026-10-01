@@ -2,5 +2,4 @@
 -- TUPLEs and nothing else: the interpolation of a result the tuple's own
 -- message already poisoned adds no third (I12).
 --
-pub f p =
-    "${p.0}${p.1}"
+pub f p = "${p.0}${p.1}"

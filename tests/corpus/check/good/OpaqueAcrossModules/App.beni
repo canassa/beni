@@ -4,8 +4,7 @@ import Counter exposing (Counter, bump, value, zero)
 
 
 pub twice : Counter
-twice =
-    bump (bump zero)
+twice = bump (bump zero)
 
 
 pub label : Counter -> String

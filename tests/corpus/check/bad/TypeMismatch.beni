@@ -1,5 +1,4 @@
 -- check/bad: the plain mismatch — a body that does not agree with its own
 -- annotation, and an argument that does not agree with its parameter.
 pub label : Int -> String
-label n =
-    n
+label n = n

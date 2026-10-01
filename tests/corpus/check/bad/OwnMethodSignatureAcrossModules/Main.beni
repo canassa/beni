@@ -2,10 +2,8 @@ import M exposing (T)
 
 
 one : Bool
-one =
-    M.T 1 == M.T 1
+one = M.T 1 == M.T 1
 
 
 two : Bool
-two =
-    M.T 2 == M.T 2
+two = M.T 2 == M.T 2

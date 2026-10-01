@@ -5,5 +5,4 @@ import Dict exposing (Dict, empty)
 import Set exposing (Set, empty, Dict, size, size)
 
 
-x =
-    empty
+x = empty

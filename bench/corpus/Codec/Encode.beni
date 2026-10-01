@@ -13,48 +13,39 @@ pub type alias Value =
 --| The value as JSON text, indented that many spaces per level; 0 prints
 --| it on one line.
 pub encode : Value, Int -> String
-encode value indent =
-    Json.print value indent
+encode value indent = Json.print value indent
 
 
 pub string : String -> Value
-string s =
-    Text s
+string s = Text s
 
 
 pub int : Int -> Value
-int n =
-    Number (toFloat n)
+int n = Number (toFloat n)
 
 
 pub float : Float -> Value
-float n =
-    Number n
+float n = Number n
 
 
 pub bool : Bool -> Value
-bool b =
-    Boolean b
+bool b = Boolean b
 
 
 pub null : Value
-null =
-    Null
+null = Null
 
 
 pub list : List a, (a -> Value) -> Value
-list items encoder =
-    Array (List.map items encoder)
+list items encoder = Array (List.map items encoder)
 
 
 pub set : Set a, (a -> Value) -> Value
-set items encoder =
-    Array (List.map (Set.toList items) encoder)
+set items encoder = Array (List.map (Set.toList items) encoder)
 
 
 pub object : List ( String, Value ) -> Value
-object fields =
-    Object fields
+object fields = Object fields
 
 
 --| A dictionary as an object, its keys turned into field names.

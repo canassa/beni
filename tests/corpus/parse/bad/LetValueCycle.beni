@@ -6,10 +6,8 @@
 -- printing the same mistake n times.
 c =
     let
-        a =
-            b + 1
+        a = b + 1
 
-        b =
-            a
+        b = a
     in
     a + b

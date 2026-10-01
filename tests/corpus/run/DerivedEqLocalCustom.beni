@@ -10,13 +10,11 @@ pub type Inner
 
 
 plusOne : Int -> Int
-plusOne value =
-    value + 1
+plusOne value = value + 1
 
 
 minusOne : Int -> Int
-minusOne value =
-    value - 1
+minusOne value = value - 1
 
 
 same : Bool
@@ -48,5 +46,4 @@ show value =
 
 
 main : Program
-main =
-    Node.printLines [ show same, show different ]
+main = Node.printLines [ show same, show different ]

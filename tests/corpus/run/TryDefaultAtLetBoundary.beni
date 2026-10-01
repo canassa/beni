@@ -13,8 +13,7 @@ import Node exposing (Program)
 pair : Int -> ( Result String Int, Result Int Int )
 pair n =
     let
-        unwrap u =
-            u?
+        unwrap u = u?
     in
     ( unwrap (Ok (Ok n)), unwrap (Err 7) )
 
@@ -22,7 +21,6 @@ pair n =
 main : Program
 main =
     let
-        ( first, second ) =
-            pair 1
+        ( first, second ) = pair 1
     in
     Node.printLines [ Debug.toString first, Debug.toString second ]

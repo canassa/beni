@@ -7,10 +7,8 @@
 -- THROUGH `<` itself — the operator pins both operands to one type (A.33),
 -- which is the real mistake and has nothing to do with ordering.
 pub count : Int
-count =
-    "12"
+count = "12"
 
 
 pub ordered : Bool
-ordered =
-    "a" < 1
+ordered = "a" < 1

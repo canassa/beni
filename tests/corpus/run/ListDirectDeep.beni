@@ -11,8 +11,7 @@ import String
 
 
 cells : List Int
-cells =
-    List.range 1 100000
+cells = List.range 1 100000
 
 
 ends : List Int -> String
@@ -29,11 +28,9 @@ ends xs =
 main : Program
 main =
     let
-        ( odd, even ) =
-            List.partition cells (\n -> modBy n 2 == 1)
+        ( odd, even ) = List.partition cells (\n -> modBy n 2 == 1)
 
-        ( firsts, seconds ) =
-            List.unzip (List.map cells (\n -> ( n, n * 2 )))
+        ( firsts, seconds ) = List.unzip (List.map cells (\n -> ( n, n * 2 )))
     in
     Node.printLines
         [ ends (List.map cells (\n -> n * 2))

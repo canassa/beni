@@ -18,5 +18,4 @@ view =
 
 
 pub plain : Html Wrap.Outer
-plain =
-    <div>{Wrap.view { children = <button onClick={Wrap.Clicked}>x</button> }}</div>
+plain = <div>{Wrap.view { children = <button onClick={Wrap.Clicked}>x</button> }}</div>

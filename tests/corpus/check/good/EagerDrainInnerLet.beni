@@ -18,29 +18,24 @@ type K
 
 
 pub unbox : Box a, () -> a
-unbox (Box v) _ =
-    v
+unbox (Box v) _ = v
 
 
 pub combine : Box a, z -> a
-combine (Box a) z =
-    a
+combine (Box a) z = a
 
 
 pub h : K, () -> Box Int
-h (K m) u =
-    Box m
+h (K m) u = Box m
 
 
 pub inner b =
     let
-        u =
-            b.unbox ()
+        u = b.unbox ()
 
         w =
             let
-                z =
-                    [ b, Box 3 ]
+                z = [ b, Box 3 ]
             in
             z
     in
@@ -51,7 +46,6 @@ pub pair n =
     case (\y -> y.h ()) (K n) of
         r ->
             let
-                q z =
-                    r.combine z
+                q z = r.combine z
             in
             ( q 1, q "s" )

@@ -7,13 +7,11 @@ import Dict exposing (Dict)
 
 pub insert : Dict k v, k, v -> Dict k v
     where k.compare : k, k -> Order
-insert d k v =
-    d
+insert d k v = d
 
 
 pub pairUp : List a, List b -> Bool
     where
         a.eq : a, a -> Bool
         , b.compare : b, b -> Order
-pairUp xs ys =
-    True
+pairUp xs ys = True

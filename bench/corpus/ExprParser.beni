@@ -35,8 +35,7 @@ pub type Op
 
 
 pub tokenize : String -> Result String (List Token)
-tokenize input =
-    tokenizeChars (String.toList input) []
+tokenize input = tokenizeChars (String.toList input) []
 
 
 tokenizeChars : List Char, List Token -> Result String (List Token)
@@ -78,11 +77,9 @@ tokenizeChars chars acc =
         [ c, ...rest ] ->
             if Char.isDigit c then
                 let
-                    ( digits, remaining ) =
-                        span isNumberChar chars
+                    ( digits, remaining ) = span isNumberChar chars
 
-                    text =
-                        String.fromList digits
+                    text = String.fromList digits
                 in
                 case String.toFloat text of
                     Just n ->
@@ -92,8 +89,7 @@ tokenizeChars chars acc =
                         Err "bad number: ${text}"
             else if Char.isAlpha c then
                 let
-                    ( letters, remaining ) =
-                        span Char.isAlphaNum chars
+                    ( letters, remaining ) = span Char.isAlphaNum chars
                 in
                 tokenizeChars remaining [ TIdent (String.fromList letters), ...acc ]
             else
@@ -101,8 +97,7 @@ tokenizeChars chars acc =
 
 
 isNumberChar : Char -> Bool
-isNumberChar c =
-    Char.isDigit c || c == '.'
+isNumberChar c = Char.isDigit c || c == '.'
 
 
 span : (a -> Bool), List a -> ( List a, List a )
@@ -125,11 +120,9 @@ span predicate items =
 pub parse : String -> Result String Expr
 parse input =
     let
-        tokens =
-            tokenize input?
+        tokens = tokenize input?
 
-        ( expr, rest ) =
-            parseExpr 0 tokens?
+        ( expr, rest ) = parseExpr 0 tokens?
     in
     case rest of
         [] ->
@@ -142,8 +135,7 @@ parse input =
 parseExpr : Int, List Token -> Result String ( Expr, List Token )
 parseExpr minPrec tokens =
     let
-        ( left, rest ) =
-            parseUnary tokens?
+        ( left, rest ) = parseUnary tokens?
     in
     climb minPrec left rest
 
@@ -164,8 +156,7 @@ climb minPrec left tokens =
                                 else
                                     prec + 1
 
-                            ( right, remaining ) =
-                                parseExpr nextMin rest?
+                            ( right, remaining ) = parseExpr nextMin rest?
                         in
                         climb minPrec (Binary op left right) remaining
 
@@ -203,8 +194,7 @@ parseUnary tokens =
     case tokens of
         [ TMinus, ...rest ] ->
             let
-                ( operand, remaining ) =
-                    parseUnary rest?
+                ( operand, remaining ) = parseUnary rest?
             in
             Ok ( Neg operand, remaining )
 
@@ -220,8 +210,7 @@ parseAtom tokens =
 
         [ TIdent name, TLParen, ...rest ] ->
             let
-                ( args, remaining ) =
-                    parseArgs rest []?
+                ( args, remaining ) = parseArgs rest []?
             in
             Ok ( Call name args, remaining )
 
@@ -230,8 +219,7 @@ parseAtom tokens =
 
         [ TLParen, ...rest ] ->
             let
-                ( inner, remaining ) =
-                    parseExpr 0 rest?
+                ( inner, remaining ) = parseExpr 0 rest?
             in
             case remaining of
                 [ TRParen, ...afterParen ] ->
@@ -255,8 +243,7 @@ parseArgs tokens acc =
 
         _ ->
             let
-                ( arg, remaining ) =
-                    parseExpr 0 tokens?
+                ( arg, remaining ) = parseExpr 0 tokens?
             in
             case remaining of
                 [ TComma, ...afterComma ] ->
@@ -317,11 +304,9 @@ eval env expr =
 
         Binary op left right ->
             let
-                l =
-                    eval env left?
+                l = eval env left?
 
-                r =
-                    eval env right?
+                r = eval env right?
             in
             case op of
                 Add ->
@@ -344,8 +329,7 @@ eval env expr =
 
         Call name args ->
             let
-                values =
-                    evalAll env args?
+                values = evalAll env args?
             in
             callFunction name values
 
@@ -431,5 +415,4 @@ opSymbol op =
 
 
 pub calculate : Dict String Float, String -> Result String Float
-calculate env input =
-    eval env (parse input?)
+calculate env input = eval env (parse input?)

@@ -1,264 +1,198 @@
 -- check/depth: a record of 65 fields built by extension (`Render.max_ext_links`
 -- is 64) prints whole and STAYS OPEN, `{ r | … }` (checker-v2.md §4.1).
-f1 x =
-    x.a1
+f1 x = x.a1
 
 
-f2 x =
-    ( x.a2, f1 x )
+f2 x = ( x.a2, f1 x )
 
 
-f3 x =
-    ( x.a3, f2 x )
+f3 x = ( x.a3, f2 x )
 
 
-f4 x =
-    ( x.a4, f3 x )
+f4 x = ( x.a4, f3 x )
 
 
-f5 x =
-    ( x.a5, f4 x )
+f5 x = ( x.a5, f4 x )
 
 
-f6 x =
-    ( x.a6, f5 x )
+f6 x = ( x.a6, f5 x )
 
 
-f7 x =
-    ( x.a7, f6 x )
+f7 x = ( x.a7, f6 x )
 
 
-f8 x =
-    ( x.a8, f7 x )
+f8 x = ( x.a8, f7 x )
 
 
-f9 x =
-    ( x.a9, f8 x )
+f9 x = ( x.a9, f8 x )
 
 
-f10 x =
-    ( x.a10, f9 x )
+f10 x = ( x.a10, f9 x )
 
 
-f11 x =
-    ( x.a11, f10 x )
+f11 x = ( x.a11, f10 x )
 
 
-f12 x =
-    ( x.a12, f11 x )
+f12 x = ( x.a12, f11 x )
 
 
-f13 x =
-    ( x.a13, f12 x )
+f13 x = ( x.a13, f12 x )
 
 
-f14 x =
-    ( x.a14, f13 x )
+f14 x = ( x.a14, f13 x )
 
 
-f15 x =
-    ( x.a15, f14 x )
+f15 x = ( x.a15, f14 x )
 
 
-f16 x =
-    ( x.a16, f15 x )
+f16 x = ( x.a16, f15 x )
 
 
-f17 x =
-    ( x.a17, f16 x )
+f17 x = ( x.a17, f16 x )
 
 
-f18 x =
-    ( x.a18, f17 x )
+f18 x = ( x.a18, f17 x )
 
 
-f19 x =
-    ( x.a19, f18 x )
+f19 x = ( x.a19, f18 x )
 
 
-f20 x =
-    ( x.a20, f19 x )
+f20 x = ( x.a20, f19 x )
 
 
-f21 x =
-    ( x.a21, f20 x )
+f21 x = ( x.a21, f20 x )
 
 
-f22 x =
-    ( x.a22, f21 x )
+f22 x = ( x.a22, f21 x )
 
 
-f23 x =
-    ( x.a23, f22 x )
+f23 x = ( x.a23, f22 x )
 
 
-f24 x =
-    ( x.a24, f23 x )
+f24 x = ( x.a24, f23 x )
 
 
-f25 x =
-    ( x.a25, f24 x )
+f25 x = ( x.a25, f24 x )
 
 
-f26 x =
-    ( x.a26, f25 x )
+f26 x = ( x.a26, f25 x )
 
 
-f27 x =
-    ( x.a27, f26 x )
+f27 x = ( x.a27, f26 x )
 
 
-f28 x =
-    ( x.a28, f27 x )
+f28 x = ( x.a28, f27 x )
 
 
-f29 x =
-    ( x.a29, f28 x )
+f29 x = ( x.a29, f28 x )
 
 
-f30 x =
-    ( x.a30, f29 x )
+f30 x = ( x.a30, f29 x )
 
 
-f31 x =
-    ( x.a31, f30 x )
+f31 x = ( x.a31, f30 x )
 
 
-f32 x =
-    ( x.a32, f31 x )
+f32 x = ( x.a32, f31 x )
 
 
-f33 x =
-    ( x.a33, f32 x )
+f33 x = ( x.a33, f32 x )
 
 
-f34 x =
-    ( x.a34, f33 x )
+f34 x = ( x.a34, f33 x )
 
 
-f35 x =
-    ( x.a35, f34 x )
+f35 x = ( x.a35, f34 x )
 
 
-f36 x =
-    ( x.a36, f35 x )
+f36 x = ( x.a36, f35 x )
 
 
-f37 x =
-    ( x.a37, f36 x )
+f37 x = ( x.a37, f36 x )
 
 
-f38 x =
-    ( x.a38, f37 x )
+f38 x = ( x.a38, f37 x )
 
 
-f39 x =
-    ( x.a39, f38 x )
+f39 x = ( x.a39, f38 x )
 
 
-f40 x =
-    ( x.a40, f39 x )
+f40 x = ( x.a40, f39 x )
 
 
-f41 x =
-    ( x.a41, f40 x )
+f41 x = ( x.a41, f40 x )
 
 
-f42 x =
-    ( x.a42, f41 x )
+f42 x = ( x.a42, f41 x )
 
 
-f43 x =
-    ( x.a43, f42 x )
+f43 x = ( x.a43, f42 x )
 
 
-f44 x =
-    ( x.a44, f43 x )
+f44 x = ( x.a44, f43 x )
 
 
-f45 x =
-    ( x.a45, f44 x )
+f45 x = ( x.a45, f44 x )
 
 
-f46 x =
-    ( x.a46, f45 x )
+f46 x = ( x.a46, f45 x )
 
 
-f47 x =
-    ( x.a47, f46 x )
+f47 x = ( x.a47, f46 x )
 
 
-f48 x =
-    ( x.a48, f47 x )
+f48 x = ( x.a48, f47 x )
 
 
-f49 x =
-    ( x.a49, f48 x )
+f49 x = ( x.a49, f48 x )
 
 
-f50 x =
-    ( x.a50, f49 x )
+f50 x = ( x.a50, f49 x )
 
 
-f51 x =
-    ( x.a51, f50 x )
+f51 x = ( x.a51, f50 x )
 
 
-f52 x =
-    ( x.a52, f51 x )
+f52 x = ( x.a52, f51 x )
 
 
-f53 x =
-    ( x.a53, f52 x )
+f53 x = ( x.a53, f52 x )
 
 
-f54 x =
-    ( x.a54, f53 x )
+f54 x = ( x.a54, f53 x )
 
 
-f55 x =
-    ( x.a55, f54 x )
+f55 x = ( x.a55, f54 x )
 
 
-f56 x =
-    ( x.a56, f55 x )
+f56 x = ( x.a56, f55 x )
 
 
-f57 x =
-    ( x.a57, f56 x )
+f57 x = ( x.a57, f56 x )
 
 
-f58 x =
-    ( x.a58, f57 x )
+f58 x = ( x.a58, f57 x )
 
 
-f59 x =
-    ( x.a59, f58 x )
+f59 x = ( x.a59, f58 x )
 
 
-f60 x =
-    ( x.a60, f59 x )
+f60 x = ( x.a60, f59 x )
 
 
-f61 x =
-    ( x.a61, f60 x )
+f61 x = ( x.a61, f60 x )
 
 
-f62 x =
-    ( x.a62, f61 x )
+f62 x = ( x.a62, f61 x )
 
 
-f63 x =
-    ( x.a63, f62 x )
+f63 x = ( x.a63, f62 x )
 
 
-f64 x =
-    ( x.a64, f63 x )
+f64 x = ( x.a64, f63 x )
 
 
-f65 x =
-    ( x.a65, f64 x )
+f65 x = ( x.a65, f64 x )
 
 
-pub g =
-    f65 "not a record"
+pub g = f65 "not a record"

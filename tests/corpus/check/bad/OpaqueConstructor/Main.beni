@@ -6,5 +6,4 @@ import Tree exposing (Tree, Leaf)
 
 
 pub mine : Tree
-mine =
-    Leaf
+mine = Leaf

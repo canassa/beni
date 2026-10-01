@@ -7,24 +7,20 @@ import Js
 
 
 pub flush : Js.Value -> ()
-flush queue =
-    Js.each queue (\render -> Js.to (Js.apply render []))
+flush queue = Js.each queue (\render -> Js.to (Js.apply render []))
 
 
 start : Js.Value -> ()
 start m =
     let
-        root =
-            Js.get m "root"
+        root = Js.get m "root"
     in
     Js.set root "started" (Js.from True)
 
 
 pub run : Js.Value -> ()
-run programs =
-    Js.each programs (\m -> start m)
+run programs = Js.each programs (\m -> start m)
 
 
 pub notify : Js.Value, (Js.Value -> ()) -> ()
-notify xs f =
-    Js.each xs f
+notify xs f = Js.each xs f

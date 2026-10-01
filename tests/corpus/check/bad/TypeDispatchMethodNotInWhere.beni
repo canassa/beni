@@ -8,5 +8,4 @@
 -- the clause does not carry, and the message names the one to add.
 pub decode : String -> Result String a
     where a.describe : a -> String
-decode s =
-    a.decode s
+decode s = a.decode s

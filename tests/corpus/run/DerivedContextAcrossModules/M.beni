@@ -4,5 +4,4 @@ pub type Fn
 
 
 pub eq : Fn, Fn -> Bool
-eq _ _ =
-    True
+eq _ _ = True

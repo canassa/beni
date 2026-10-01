@@ -22,20 +22,16 @@ type alias Wrap t =
 
 
 a : Outer String
-a =
-    1
+a = 1
 
 
 b : Outer Bool
-b =
-    2
+b = 2
 
 
 w : Wrap Int
-w =
-    [ 3 ]
+w = [ 3 ]
 
 
 main : Program
-main =
-    Node.printLines (List.map ([ a, b ] ++ w) String.fromInt)
+main = Node.printLines (List.map ([ a, b ] ++ w) String.fromInt)

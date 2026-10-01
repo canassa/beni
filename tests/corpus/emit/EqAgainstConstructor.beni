@@ -13,25 +13,20 @@ pub type Pair
 
 
 pub isSelected : { selected : Maybe Int }, Int -> Bool
-isSelected model id =
-    model.selected == Just id
+isSelected model id = model.selected == Just id
 
 
 pub nothing : Maybe Int -> Bool
-nothing m =
-    m /= Nothing
+nothing m = m /= Nothing
 
 
 pub nested : Maybe (Maybe Int), Int -> Bool
-nested m n =
-    Just (Just (n + 1)) == m
+nested m n = Just (Just (n + 1)) == m
 
 
 pub listField : Pair -> Bool
-listField p =
-    p == Pair [ 1 ] "a"
+listField p = p == Pair [ 1 ] "a"
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

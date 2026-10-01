@@ -5,5 +5,4 @@ import Models
 
 
 pub value : Models.User.Type
-value =
-    { id = 1 }
+value = { id = 1 }

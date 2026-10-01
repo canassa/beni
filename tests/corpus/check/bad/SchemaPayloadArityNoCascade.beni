@@ -11,5 +11,4 @@ schema Shape tagged "kind" of
 
 
 same : Shape.Type -> Bool
-same c =
-    c == c
+same c = c == c

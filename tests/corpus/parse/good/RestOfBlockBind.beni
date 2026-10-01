@@ -10,8 +10,7 @@ only f =
 
 afterOthers f =
     let
-        a =
-            1
+        a = 1
         x <- f a
     in
     x
@@ -19,11 +18,9 @@ afterOthers f =
 
 inTheMiddle f g =
     let
-        a =
-            1
+        a = 1
         x <- f a
-        b =
-            2
+        b = 2
     in
     g x b
 

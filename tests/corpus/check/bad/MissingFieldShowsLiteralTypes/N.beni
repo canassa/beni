@@ -3,5 +3,4 @@ import M
 
 
 pub go : String
-go =
-    M.describe { name = "z", n = 3 }
+go = M.describe { name = "z", n = 3 }

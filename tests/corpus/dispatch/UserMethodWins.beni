@@ -16,5 +16,4 @@ eq a b =
 
 
 pub sameVersion : Version, Version -> Bool
-sameVersion a b =
-    a == b
+sameVersion a b = a == b

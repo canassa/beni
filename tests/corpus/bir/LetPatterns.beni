@@ -5,20 +5,15 @@
 split : ( Int, ( String, Bool ) ), { name : String, age : Int } -> String
 split input person =
     let
-        ( n, ( s, flag ) ) =
-            input
+        ( n, ( s, flag ) ) = input
 
-        { name, age } =
-            person
+        { name, age } = person
 
-        () =
-            ()
+        () = ()
 
-        (( a, b ) as pair) =
-            ( n, age )
+        (( a, b ) as pair) = ( n, age )
 
         total : Int
-        total =
-            n + a + b + pair.0
+        total = n + a + b + pair.0
     in
     "${name}:${s}:${total}:${flag}"

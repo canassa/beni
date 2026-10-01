@@ -6,15 +6,13 @@ import String
 
 
 greet : String, Int -> String
-greet name age =
-    "${name} is ${String.fromInt age}"
+greet name age = "${name} is ${String.fromInt age}"
 
 
 main : Program
 main =
     let
-        inner =
-            greet "Bob" 7
+        inner = greet "Bob" 7
     in
     Node.printLines
         [ greet "Ada" 36

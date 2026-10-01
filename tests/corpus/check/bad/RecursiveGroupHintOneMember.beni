@@ -14,22 +14,18 @@ type K
 
 pub ma (K n) x =
     let
-        _ =
-            (K n).mc x
+        _ = (K n).mc x
     in
     (K n).mb x
 
 
-pub mb (K n) x =
-    (K n).ma x
+pub mb (K n) x = (K n).ma x
 
 
 pub mc (K n) x =
     let
-        hh z =
-            ( z, (K 0).mb z )
+        hh z = ( z, (K 0).mb z )
 
-        ( ha, hb ) =
-            ( hh 1, hh "s" )
+        ( ha, hb ) = ( hh 1, hh "s" )
     in
     x

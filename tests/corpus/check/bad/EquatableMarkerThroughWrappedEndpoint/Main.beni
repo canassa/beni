@@ -12,10 +12,8 @@ import B
 
 
 viaEq : Bool
-viaEq =
-    B.mk 1 == B.mk 2
+viaEq = B.mk 1 == B.mk 2
 
 
 viaBasics : Bool
-viaBasics =
-    Basics.eq (B.mk 1) (B.mk 2)
+viaBasics = Basics.eq (B.mk 1) (B.mk 2)

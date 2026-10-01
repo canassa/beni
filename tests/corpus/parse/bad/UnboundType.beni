@@ -2,8 +2,7 @@
 -- alias body): upper names in type position that are neither declared,
 -- exposed nor prelude (§6.2). The prelude type `Int` on line 13 is fine.
 x : Foo
-x =
-    1
+x = 1
 
 
 type alias T =
@@ -11,5 +10,4 @@ type alias T =
 
 
 y : Int
-y =
-    1
+y = 1

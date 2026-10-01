@@ -12,5 +12,4 @@ pub type Outer
 
 
 pub view : { children : Html Inner } -> Html Outer
-view props =
-    <section>{Html.map props.children Wrapped}</section>
+view props = <section>{Html.map props.children Wrapped}</section>

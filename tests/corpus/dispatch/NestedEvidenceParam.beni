@@ -11,35 +11,28 @@ pub type Box a
 
 pub same : List (List (Box a)), List (List (Box a)) -> Bool
     where a.eq : a, a -> Bool
-same xs ys =
-    xs == ys
+same xs ys = xs == ys
 
 
 wrap : a -> List (List (Box a))
-wrap x =
-    [ [ Box x x ] ]
+wrap x = [ [ Box x x ] ]
 
 
-sameInferred x y =
-    wrap x == wrap y
+sameInferred x y = wrap x == wrap y
 
 
 pub sameNested : Box a, Box a -> Bool
     where a.eq : a, a -> Bool
-sameNested x y =
-    same (wrap x) (wrap y) && sameInferred x y
+sameNested x y = same (wrap x) (wrap y) && sameInferred x y
 
 
 pub ints : Bool
-ints =
-    same [ [ Box 1 1 ] ] [ [ Box 1 1 ] ]
+ints = same [ [ Box 1 1 ] ] [ [ Box 1 1 ] ]
 
 
 pub chars : Bool
-chars =
-    sameInferred 'x' 'y'
+chars = sameInferred 'x' 'y'
 
 
 pub nested : Bool
-nested =
-    sameNested (Box "a" "b") (Box "a" "c")
+nested = sameNested (Box "a" "b") (Box "a" "c")

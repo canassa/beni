@@ -2,5 +2,4 @@
 -- constrains a variable of the type above it, and `a` is not one of them.
 pub render : Int -> String
     where a.show : a -> String
-render n =
-    "x"
+render n = "x"

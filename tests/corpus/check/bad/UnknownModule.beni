@@ -5,5 +5,4 @@ import Json.Decode
 
 
 pub x : Int
-x =
-    1
+x = 1

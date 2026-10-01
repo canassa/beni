@@ -16,8 +16,7 @@ pub type K
 
 pub compare left right =
     let
-        same =
-            L (Holder.Holder "a" identity) == L (Holder.Holder "b" identity)
+        same = L (Holder.Holder "a" identity) == L (Holder.Holder "b" identity)
     in
     case left of
         K a ->
@@ -30,5 +29,4 @@ pub compare left right =
 
 
 identity : Int -> Int
-identity v =
-    v
+identity v = v

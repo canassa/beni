@@ -3,5 +3,4 @@ schema Page item =
 
 
 bad : Page.Type
-bad =
-    { item = 1 }
+bad = { item = 1 }

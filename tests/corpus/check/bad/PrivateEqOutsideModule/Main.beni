@@ -7,20 +7,16 @@ type W
 
 
 viaWrapper : Bool
-viaWrapper =
-    W (M.T 1) == W (M.T 11)
+viaWrapper = W (M.T 1) == W (M.T 11)
 
 
 viaTuple : Bool
-viaTuple =
-    ( M.T 1, 0 ) == ( M.T 11, 0 )
+viaTuple = ( M.T 1, 0 ) == ( M.T 11, 0 )
 
 
 viaRecord : Bool
-viaRecord =
-    { a = M.T 1 } == { a = M.T 11 }
+viaRecord = { a = M.T 1 } == { a = M.T 11 }
 
 
 viaList : Bool
-viaList =
-    [ M.T 1 ] == [ M.T 11 ]
+viaList = [ M.T 1 ] == [ M.T 11 ]

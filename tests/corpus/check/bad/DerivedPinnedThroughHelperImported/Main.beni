@@ -5,20 +5,16 @@
 import M
 
 
-same l r =
-    l == r
+same l r = l == r
 
 
 helper : Bool
-helper =
-    same (M.mk "a") (M.mk "a")
+helper = same (M.mk "a") (M.mk "a")
 
 
 direct : Bool
-direct =
-    M.mk "a" == M.mk "a"
+direct = M.mk "a" == M.mk "a"
 
 
 numbers : Bool
-numbers =
-    same (M.mk 1) (M.mk 2)
+numbers = same (M.mk 1) (M.mk 2)

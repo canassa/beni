@@ -23,23 +23,19 @@ pub f (K n) u =
     case ( (\y -> y.h ()) (K n), (Box 1).g (), (Box "s").g () ) of
         ( r, _, _ ) ->
             let
-                q z =
-                    r.combine z
+                q z = r.combine z
             in
             ( q 1, q "s" )
 
 
-pub g (Box a) u =
-    0
+pub g (Box a) u = 0
 
 
 pub h (K m) u =
     let
-        _ =
-            \w -> (K 0).f ()
+        _ = \w -> (K 0).f ()
     in
     Box m
 
 
-pub combine (Box a) z =
-    a
+pub combine (Box a) z = a

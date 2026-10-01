@@ -6,5 +6,4 @@ import Js
 
 
 pub same : Js.Value, Js.Value -> Bool
-same a b =
-    Js.same a b
+same a b = Js.same a b

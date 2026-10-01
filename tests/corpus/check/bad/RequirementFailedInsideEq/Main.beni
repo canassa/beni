@@ -14,15 +14,12 @@ import Wrapped
 
 
 hidden : Bool
-hidden =
-    Hidden.mk (Key.Key 1) == Hidden.mk (Key.Key 2)
+hidden = Hidden.mk (Key.Key 1) == Hidden.mk (Key.Key 2)
 
 
 wrapped : Bool
-wrapped =
-    Wrapped.mkW 1 == Wrapped.mkW 2
+wrapped = Wrapped.mkW 1 == Wrapped.mkW 2
 
 
 wrap : Bool
-wrap =
-    Wrap.Wrap (Odd.T 1) == Wrap.Wrap (Odd.T 2)
+wrap = Wrap.Wrap (Odd.T 1) == Wrap.Wrap (Odd.T 2)

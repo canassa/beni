@@ -18,22 +18,17 @@ type K
 
 f m =
     let
-        _ =
-            m == m
+        _ = m == m
 
-        y =
-            m?
+        y = m?
 
-        _ =
-            y == K 1
+        _ = y == K 1
     in
     f m
 
 
-eq (K a) (K b) =
-    modBy 10 a == modBy 10 b
+eq (K a) (K b) = modBy 10 a == modBy 10 b
 
 
 pub h : Result String K -> Result String Int
-h m =
-    f m
+h m = f m

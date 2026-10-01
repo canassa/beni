@@ -9,45 +9,34 @@
 -- field, and `M.f x` stays a call of a qualified value. No `refs` edge is
 -- recorded for any method call: which function it calls is the checker's to
 -- decide (§1.4).
-dotCall d k v =
-    d.insert k v
+dotCall d k v = d.insert k v
 
 
-fieldReceiver x b =
-    x.a.m b
+fieldReceiver x b = x.a.m b
 
 
-tupleReceiver x a =
-    x.0.m a
+tupleReceiver x a = x.0.m a
 
 
-qualifiedReceiver a =
-    String.length.m a
+qualifiedReceiver a = String.length.m a
 
 
-placeholder x b =
-    x.m _ b
+placeholder x b = x.m _ b
 
 
-pipeIn source x a =
-    source |> x.m a
+pipeIn source x a = source |> x.m a
 
 
-pipeOut x a f =
-    x.m a |> f
+pipeOut x a f = x.m a |> f
 
 
-pipeOnly source x =
-    source |> x.m
+pipeOnly source x = source |> x.m
 
 
-fieldAccess x =
-    x.m
+fieldAccess x = x.m
 
 
-fieldCall x a =
-    (x.m) a
+fieldCall x a = (x.m) a
 
 
-qualifiedCall a =
-    String.length a
+qualifiedCall a = String.length a

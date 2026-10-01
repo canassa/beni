@@ -29,30 +29,24 @@ pub foreign pure compareAll : List a, List a -> Bool
 
 
 pub quiet : Int -> Int
-quiet n =
-    double n
+quiet n = double n
 
 
 pub tick : () -> Int
-tick u =
-    now u
+tick u = now u
 
 
 pub fetch : Int -> Int
-fetch id =
-    get id
+fetch id = get id
 
 
 pub both : Int -> Int
-both id =
-    get (now ())
+both id = get (now ())
 
 
 pub schedule : () -> ()
-schedule u =
-    later (\() -> get 1)
+schedule u = later (\() -> get 1)
 
 
 pub reading : () -> Int
-reading u =
-    (makeClock ()) ()
+reading u = (makeClock ()) ()

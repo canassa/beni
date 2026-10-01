@@ -7,13 +7,10 @@ type T
     = T (H.Holder (Maybe T)) P.Q
 
 
-a =
-    T (H.Holder Nothing) (P.Q (\n -> n))
+a = T (H.Holder Nothing) (P.Q (\n -> n))
 
 
-x1 =
-    a < a
+x1 = a < a
 
 
-x2 =
-    a == a
+x2 = a == a

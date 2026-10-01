@@ -37,5 +37,4 @@ isTimeout err =
 
 
 values : ( Shape, Error, Maybe Int, Order )
-values =
-    ( Circle 1, Timeout, Just 1, Asc )
+values = ( Circle 1, Timeout, Just 1, Asc )

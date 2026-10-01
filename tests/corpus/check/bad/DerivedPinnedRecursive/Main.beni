@@ -7,5 +7,4 @@ type S a
 
 
 same : Bool
-same =
-    SLeaf 1 == SLeaf 1
+same = SLeaf 1 == SLeaf 1

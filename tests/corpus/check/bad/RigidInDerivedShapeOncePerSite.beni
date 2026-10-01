@@ -4,15 +4,12 @@
 -- clean, and the same clause is not said once per occurrence.
 --
 f : a, a -> Bool
-f x y =
-    ( x, x ) == ( y, y )
+f x y = ( x, x ) == ( y, y )
 
 
 g : a, b -> Bool
-g x y =
-    ( x, y ) == ( x, y )
+g x y = ( x, y ) == ( x, y )
 
 
 h : a -> Bool
-h x =
-    { p = x, q = x, r = x } < { p = x, q = x, r = x }
+h x = { p = x, q = x, r = x } < { p = x, q = x, r = x }

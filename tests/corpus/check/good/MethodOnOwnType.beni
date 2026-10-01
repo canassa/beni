@@ -14,10 +14,8 @@ shift c step =
 
 
 pub bump : Counter, Int -> Counter
-bump c step =
-    c.shift step
+bump c step = c.shift step
 
 
 pub twice : Counter -> Counter
-twice c =
-    (c.bump 1).bump 2
+twice c = (c.bump 1).bump 2

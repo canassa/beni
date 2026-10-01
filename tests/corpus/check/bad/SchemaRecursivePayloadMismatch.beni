@@ -6,10 +6,8 @@ schema Tree tagged "kind" of
 
 
 badProgram : Tree.Type
-badProgram =
-    Tree.Branch { children = [ 1 ] }
+badProgram = Tree.Branch { children = [ 1 ] }
 
 
 badEncoded : Tree.Encoded
-badEncoded =
-    Tree.Encoded.Branch { children = [ 1 ] }
+badEncoded = Tree.Encoded.Branch { children = [ 1 ] }

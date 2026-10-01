@@ -32,13 +32,11 @@ order o =
 
 
 nan : Float
-nan =
-    0.0 / 0.0
+nan = 0.0 / 0.0
 
 
 inf : Float
-inf =
-    1.0 / 0.0
+inf = 1.0 / 0.0
 
 
 main : Program

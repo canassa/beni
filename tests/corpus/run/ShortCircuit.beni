@@ -8,8 +8,7 @@ import String
 
 
 boom : Int -> Bool
-boom n =
-    boom (n + 1)
+boom n = boom (n + 1)
 
 
 main : Program

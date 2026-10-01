@@ -29,36 +29,29 @@ type Shape
 
 
 n : String, Int -> Int
-n label v =
-    Debug.log v label
+n label v = Debug.log v label
 
 
 b : String, Bool -> Bool
-b label v =
-    Debug.log v label
+b label v = Debug.log v label
 
 
 shape : String, Shape -> Shape
-shape label v =
-    Debug.log v label
+shape label v = Debug.log v label
 
 
 subject : Shape
-subject =
-    Tri 1 2
+subject = Tri 1 2
 
 
 main : Program
 main =
     let
-        first =
-            n "let.first" 1
+        first = n "let.first" 1
 
-        second =
-            n "let.second" 2
+        second = n "let.second" 2
 
-        third =
-            n "let.third" 3
+        third = n "let.third" 3
 
         onceSimple =
             case shape "case.scrutinee" subject of
@@ -88,17 +81,13 @@ main =
             else
                 n "if.else" 20
 
-        andShort =
-            b "and.short.left" False && b "and.short.right" True
+        andShort = b "and.short.left" False && b "and.short.right" True
 
-        andBoth =
-            b "and.both.left" True && b "and.both.right" False
+        andBoth = b "and.both.left" True && b "and.both.right" False
 
-        orShort =
-            b "or.short.left" True || b "or.short.right" False
+        orShort = b "or.short.left" True || b "or.short.right" False
 
-        orBoth =
-            b "or.both.left" False || b "or.both.right" True
+        orBoth = b "or.both.left" False || b "or.both.right" True
 
         andShortStatements =
             b "and.stmt.short.left" False

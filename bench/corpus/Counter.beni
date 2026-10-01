@@ -18,8 +18,7 @@ pub type Msg
 
 
 pub init : Model
-init =
-    { count = 0, history = [] }
+init = { count = 0, history = [] }
 
 
 pub update : Msg, Model -> Model
@@ -46,8 +45,7 @@ step delta model =
 pub view : Model -> Element Msg
 view model =
     let
-        label =
-            "Count: ${model.count}"
+        label = "Count: ${model.count}"
 
         recent =
             model.history

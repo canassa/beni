@@ -309,8 +309,7 @@ pub foreign pure isInfinite : Float -> Bool
 --| This is what the prefix `-` desugars to, which is why it is written as a
 --| subtraction from zero rather than as `-n`.
 pub negate : number -> number
-negate n =
-    0 - n
+negate n = 0 - n
 
 
 --| Get the absolute value of a number.
@@ -406,8 +405,7 @@ xor a b =
 --|
 --|     identity 42 == 42
 pub identity : a -> a
-identity a =
-    a
+identity a = a
 
 
 --| Return the first argument and ignore the second. With the `_` placeholder
@@ -416,24 +414,21 @@ identity a =
 --|     always 0 1 == 0
 --|     List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]
 pub always : a, b -> a
-always a _ =
-    a
+always a _ = a
 
 
 --| A function that can never be called, turned into any type you like. If you
 --| hold a `Never` you are in a branch that cannot happen, and this is how you
 --| tell the type checker so.
 pub never : Never -> a
-never (JustOneMore nvr) =
-    never nvr
+never (JustOneMore nvr) = never nvr
 
 
 --| Convert degrees to the standard angle unit, radians.
 --|
 --|     degrees 180 == 3.141592653589793
 pub degrees : Float -> Float
-degrees angle =
-    angle * pi / 180
+degrees angle = angle * pi / 180
 
 
 --| Convert radians to the standard angle unit, radians. This is `identity`,
@@ -441,29 +436,25 @@ degrees angle =
 --|
 --|     radians pi == 3.141592653589793
 pub radians : Float -> Float
-radians angle =
-    angle
+radians angle = angle
 
 
 --| Convert turns to the standard angle unit, radians. One turn is 360 degrees.
 --|
 --|     turns 0.5 == 3.141592653589793
 pub turns : Float -> Float
-turns angle =
-    2 * pi * angle
+turns angle = 2 * pi * angle
 
 
 --| Convert Cartesian coordinates to polar coordinates.
 --|
 --|     toPolar ( 0, 1 ) == ( 1, 1.5707963267948966 )
 pub toPolar : ( Float, Float ) -> ( Float, Float )
-toPolar ( x, y ) =
-    ( sqrt (x * x + y * y), atan2 y x )
+toPolar ( x, y ) = ( sqrt (x * x + y * y), atan2 y x )
 
 
 --| Convert polar coordinates to Cartesian coordinates.
 --|
 --|     fromPolar ( 1, 0 ) == ( 1, 0 )
 pub fromPolar : ( Float, Float ) -> ( Float, Float )
-fromPolar ( radius, theta ) =
-    ( radius * cos theta, radius * sin theta )
+fromPolar ( radius, theta ) = ( radius * cos theta, radius * sin theta )

@@ -2,20 +2,16 @@
 -- body is a field-access node (§8.2); field access `r.a.b` and tuple index
 -- `t.0` stay as nodes.
 names : List { name : String } -> List String
-names people =
-    List.map people .name
+names people = List.map people .name
 
 
 nestedAccess : { a : { b : Int } } -> Int
-nestedAccess r =
-    r.a.b
+nestedAccess r = r.a.b
 
 
 first : ( Int, String ) -> Int
-first t =
-    t.0
+first t = t.0
 
 
 appliedAccessors : { address : { city : String } } -> String
-appliedAccessors r =
-    .city (.address r)
+appliedAccessors r = .city (.address r)

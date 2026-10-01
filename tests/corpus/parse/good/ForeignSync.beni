@@ -20,7 +20,6 @@ pair : Pair sync (Int)
 pair =
     let
         local : Pair sync (Int)
-        local =
-            pair
+        local = pair
     in
     local

@@ -11,10 +11,8 @@ import Two
 
 
 f : Two.A -> Bool
-f a =
-    a == a
+f a = a == a
 
 
 g : Bool
-g =
-    Two.B "x" == Two.B "x"
+g = Two.B "x" == Two.B "x"

@@ -28,35 +28,28 @@ eq a b =
 
 
 pub lists : Bool
-lists =
-    [ Id 1 2 ] == [ Id 1 99 ]
+lists = [ Id 1 2 ] == [ Id 1 99 ]
 
 
 pub listsOfRecords : Bool
-listsOfRecords =
-    [ { key = Id 1 2 } ] == [ { key = Id 1 99 } ]
+listsOfRecords = [ { key = Id 1 2 } ] == [ { key = Id 1 99 } ]
 
 
 pub maybes : Bool
-maybes =
-    Just (Id 1 2) == Just (Id 1 99)
+maybes = Just (Id 1 2) == Just (Id 1 99)
 
 
 pub okId : Result String Id
-okId =
-    Ok (Id 1 2)
+okId = Ok (Id 1 2)
 
 
 pub results : Bool
-results =
-    okId == Ok (Id 1 99)
+results = okId == Ok (Id 1 99)
 
 
 pub tuples : Bool
-tuples =
-    ( Id 1 2, 0 ) == ( Id 1 99, 0 )
+tuples = ( Id 1 2, 0 ) == ( Id 1 99, 0 )
 
 
 pub listsOfInts : Bool
-listsOfInts =
-    [ 1, 2 ] == [ 3 ]
+listsOfInts = [ 1, 2 ] == [ 3 ]

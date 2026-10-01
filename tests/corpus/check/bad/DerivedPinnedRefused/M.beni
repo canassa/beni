@@ -10,5 +10,4 @@ pub type X a
 
 
 pub mk : Int -> W Int
-mk n =
-    W (H.Holder n) 1
+mk n = W (H.Holder n) 1

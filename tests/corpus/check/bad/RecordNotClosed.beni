@@ -1,5 +1,4 @@
 -- check/bad: an annotation promises to work with ANY record that has an `x`
 -- field, and the body pins it to one specific record.
 pub coords : { r | x : Int } -> { r | x : Int }
-coords point =
-    { x = point.x }
+coords point = { x = point.x }

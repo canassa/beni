@@ -6,17 +6,13 @@
 -- still a variable, or the program would check clean.
 g r =
     let
-        b =
-            Basics.eq r r
+        b = Basics.eq r r
 
-        n =
-            r.x + 1
+        n = r.x + 1
 
-        fn =
-            r.f
+        fn = r.f
     in
     ( b, fn n )
 
 
-use =
-    g { x = 1, f = \n -> n + 1 }
+use = g { x = 1, f = \n -> n + 1 }

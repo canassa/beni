@@ -1,17 +1,13 @@
 -- duplicate_declaration at 8:1: `x` is declared twice (§5.3), once with an
 -- annotation and once without. Second at 16:1: `y` twice.
 x : Int
-x =
-    1
+x = 1
 
 
-x =
-    2
+x = 2
 
 
-y =
-    3
+y = 3
 
 
-y =
-    4
+y = 4

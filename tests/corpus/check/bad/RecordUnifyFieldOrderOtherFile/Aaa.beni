@@ -8,5 +8,4 @@
 -- `{ zp : String, zq : String }`. Expected: the single-file text, whatever
 -- else is in the project (fields walked in name-text order, or the
 -- mismatch rendered from the pre-unification types).
-pub y =
-    { zq = 1, zp = 2 }
+pub y = { zq = 1, zp = 2 }

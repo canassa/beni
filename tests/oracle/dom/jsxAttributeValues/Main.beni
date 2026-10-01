@@ -11,13 +11,11 @@ type Msg
 
 
 pub iifeValue : { compute : String } -> Html msg
-iifeValue state =
-    <div data={state.compute} />
+iifeValue state = <div data={state.compute} />
 
 
 pub handlerValue : Html Msg
-handlerValue =
-    <button onClick={Mount (<div>content</div>)}>go</button>
+handlerValue = <button onClick={Mount (<div>content</div>)}>go</button>
 
 
 pub propValue : Html msg

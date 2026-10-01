@@ -1,5 +1,4 @@
 -- A poisoned import with a NAMING ERROR in the dependency — the ordinary state of a
 -- project being edited: `A.h` is `<error>` in `A`'s interface, and `T`'s
 -- comparisons of it are `poisoned`, silent, with no INTERNAL ERROR.
-pub h =
-    nope
+pub h = nope

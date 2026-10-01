@@ -3,10 +3,8 @@ pub type K
 
 
 pub key : K, () -> String
-key (K n) _ =
-    String.fromInt n
+key (K n) _ = String.fromInt n
 
 
 pub show : K, () -> Int
-show (K n) _ =
-    n
+show (K n) _ = n

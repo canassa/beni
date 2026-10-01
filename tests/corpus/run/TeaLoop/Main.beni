@@ -23,8 +23,7 @@ type alias Model =
 
 
 init : Model
-init =
-    { left = 0, right = 0 }
+init = { left = 0, right = 0 }
 
 
 update : Msg, Model -> Model
@@ -64,8 +63,7 @@ runTask msgs loop =
         loop
     else
         let
-            model =
-                List.foldl msgs loop.model update
+            model = List.foldl msgs loop.model update
         in
         { model = model, renders = loop.renders ++ [ Ssr.render (view model) ] }
 

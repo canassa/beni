@@ -6,13 +6,11 @@
 -- pattern spread's name, a `List Int`, where a `List String` is wanted
 -- (22:13).
 pub greet : List String -> List Int
-greet names =
-    [ 1, ...names ]
+greet names = [ 1, ...names ]
 
 
 pub append : List Int -> List Int
-append xs =
-    [ ...xs, "b" ]
+append xs = [ ...xs, "b" ]
 
 
 pub initNames : List Int -> List String

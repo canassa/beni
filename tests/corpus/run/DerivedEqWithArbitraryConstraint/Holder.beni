@@ -7,5 +7,4 @@ pub type Holder a
 
 pub eq : Holder a, Holder a -> Bool
     where a.key : a, () -> Int
-eq (Holder left) (Holder right) =
-    left.key () == right.key ()
+eq (Holder left) (Holder right) = left.key () == right.key ()

@@ -1,13 +1,10 @@
 -- shadowing at 8:3: a parameter named like a top-level value of this file
 -- (§7). Second at 13:6: a lambda parameter named like a prelude value
 -- (`e`), since locals may not shadow prelude names either.
-count =
-    1
+count = 1
 
 
-f count =
-    count
+f count = count
 
 
-g =
-    \e -> e
+g = \e -> e

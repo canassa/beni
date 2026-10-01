@@ -36,31 +36,25 @@ pub type Box k
 
 pub put : Box k, k -> Box k
     where k.compare : k, k -> Order
-put box _ =
-    box
+put box _ = box
 
 
 pub tag : Box k, k -> Box k
     where k.eq : k, k -> Bool
-tag box _ =
-    box
+tag box _ = box
 
 
 pub size : Box k -> Int
-size _ =
-    1
+size _ = 1
 
 
 pub nested : Int
-nested =
-    size (put (put (Box "z") "a") "b")
+nested = size (put (put (Box "z") "a") "b")
 
 
 pub annotated : Box String
-annotated =
-    put (put (Box "z") "a") "b"
+annotated = put (put (Box "z") "a") "b"
 
 
 pub twoNames : Int
-twoNames =
-    size (tag (put (Box "z") "a") "b")
+twoNames = size (tag (put (Box "z") "a") "b")

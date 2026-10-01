@@ -9,21 +9,17 @@ import String
 main : Program
 main =
     let
-        outer =
-            1
+        outer = 1
 
         middle =
             let
-                inner =
-                    outer + 1
+                inner = outer + 1
             in
             inner * 10
 
-        double n =
-            n * 2
+        double n = n * 2
 
-        quadruple n =
-            double (double n)
+        quadruple n = double (double n)
     in
     Node.printLines
         [ String.fromInt outer
@@ -32,11 +28,9 @@ main =
         , String.fromInt (quadruple 5)
         , String.fromInt
             (let
-                a =
-                    2
+                a = 2
 
-                b =
-                    3
+                b = 3
              in
              a * b
             )

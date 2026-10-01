@@ -36,8 +36,7 @@ pub pair : a, b -> Bool
     where
         a.eq : a, a -> Bool
         , b.eq : b, b -> Bool
-pair x y =
-    x == x && y == y
+pair x y = x == x && y == y
 
 
 pub three : a, b, c -> Bool
@@ -45,20 +44,16 @@ pub three : a, b, c -> Bool
         a.eq : a, a -> Bool
         , b.eq : b, b -> Bool
         , c.eq : c, c -> Bool
-three x y z =
-    x == x && y == y && z == z
+three x y z = x == x && y == y && z == z
 
 
 pub two : Bool
-two =
-    pair [ [ 1 ] ] [ [ 2 ] ]
+two = pair [ [ 1 ] ] [ [ 2 ] ]
 
 
 pub middle : Bool
-middle =
-    three [ 1 ] [ [ [ 2 ] ] ] [ 3 ]
+middle = three [ 1 ] [ [ [ 2 ] ] ] [ 3 ]
 
 
 pub tupled : Bool
-tupled =
-    pair [ 1 ] ( [ [ 2 ] ], [ [ 3 ] ] )
+tupled = pair [ 1 ] ( [ [ 2 ] ], [ [ 3 ] ] )

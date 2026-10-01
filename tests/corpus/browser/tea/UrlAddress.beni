@@ -58,8 +58,7 @@ shown s =
 checks : List String
 checks =
     let
-        parsed =
-            Url.fromString "https://example.com:8042/over/there?name=ferret#nose"
+        parsed = Url.fromString "https://example.com:8042/over/there?name=ferret#nose"
 
         written =
             case parsed of

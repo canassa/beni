@@ -11,13 +11,11 @@ import String
 
 
 size : Int
-size =
-    100000
+size = 100000
 
 
 cells : List Int
-cells =
-    List.initialize size (\i -> i + 1)
+cells = List.initialize size (\i -> i + 1)
 
 
 ends : List Int -> String

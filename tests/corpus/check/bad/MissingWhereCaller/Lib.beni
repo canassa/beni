@@ -1,5 +1,4 @@
 -- check/bad (project): the CALLEE, whose annotation carries the constraint.
 pub top : a, a -> a
     where a.pick : a, a -> a
-top x y =
-    x.pick y
+top x y = x.pick y

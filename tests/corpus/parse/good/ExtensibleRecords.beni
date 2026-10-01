@@ -13,10 +13,8 @@ type alias Empty =
 
 
 describe : { a | name : String, age : Int } -> String
-describe person =
-    "${person.name} is ${person.age}"
+describe person = "${person.name} is ${person.age}"
 
 
 move : Positioned (Named {}) -> Positioned (Named {})
-move p =
-    { p | x = p.x + 1 }
+move p = { p | x = p.x + 1 }

@@ -6,5 +6,4 @@ f p =
             a
 
 
-g a a =
-    a
+g a a = a

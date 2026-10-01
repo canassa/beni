@@ -7,5 +7,4 @@ pub type Token
 
 
 pub make : Int -> Token
-make n =
-    Token n
+make n = Token n

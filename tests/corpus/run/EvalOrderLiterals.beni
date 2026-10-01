@@ -19,55 +19,45 @@ type Triple
 
 
 n : String, Int -> Int
-n label v =
-    Debug.log v label
+n label v = Debug.log v label
 
 
 -- An interpolation may not contain a string literal (`language.md` §2.6), so
 -- the label of each segment's log has to be baked into a function.
 seg0 : Int -> Int
-seg0 v =
-    Debug.log v "interp.0"
+seg0 v = Debug.log v "interp.0"
 
 
 seg1 : Int -> Int
-seg1 v =
-    Debug.log v "interp.1"
+seg1 v = Debug.log v "interp.1"
 
 
 seg2 : Int -> Int
-seg2 v =
-    Debug.log v "interp.2"
+seg2 v = Debug.log v "interp.2"
 
 
 -- Written out of alphabetical order on purpose: the update below names `zed`
 -- before `alpha`, and the emitted object's key order must not decide when the
 -- two initialisers run.
 base : { zed : Int, alpha : Int, mid : Int }
-base =
-    { zed = 0, alpha = 0, mid = 0 }
+base = { zed = 0, alpha = 0, mid = 0 }
 
 
 main : Program
 main =
     let
-        tup =
-            ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
+        tup = ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
 
-        lst =
-            [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
+        lst = [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
 
-        ctor =
-            Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
+        ctor = Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
 
-        updated =
-            { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
+        updated = { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
 
         interpolated =
             "${String.fromInt (seg0 1)}-${String.fromInt (seg1 2)}-${String.fromInt (seg2 3)}"
 
-        accessed =
-            n "access.subject" 7 + tup.0
+        accessed = n "access.subject" 7 + tup.0
     in
     Node.printLines
         [ Debug.toString tup

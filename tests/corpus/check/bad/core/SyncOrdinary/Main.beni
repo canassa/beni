@@ -3,15 +3,12 @@ import Plat
 
 
 direct : Int
-direct =
-    Plat.program { init = 0, view = Plat.get }
+direct = Plat.program { init = 0, view = Plat.get }
 
 
 viaLib : Int
-viaLib =
-    Lib.page (\n -> Plat.get (n + 1))
+viaLib = Lib.page (\n -> Plat.get (n + 1))
 
 
 fine : Int
-fine =
-    Lib.page String.fromInt
+fine = Lib.page String.fromInt

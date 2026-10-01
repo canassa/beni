@@ -3,5 +3,4 @@ pub type Holder a
     = Holder a
 
 
-pub eq (Holder x) (Holder y) =
-    Basics.eq x y
+pub eq (Holder x) (Holder y) = Basics.eq x y

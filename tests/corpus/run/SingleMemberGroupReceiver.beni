@@ -12,15 +12,13 @@ type T
     = T Int
 
 
-pub combine (T a) z =
-    a
+pub combine (T a) z = a
 
 
 f : T -> ( Int, Int )
 f x =
     let
-        q z =
-            x.combine z
+        q z = x.combine z
     in
     ( q 1, q "s" )
 
@@ -28,7 +26,6 @@ f x =
 main : Program
 main =
     let
-        ( a, b ) =
-            f (T 4)
+        ( a, b ) = f (T 4)
     in
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

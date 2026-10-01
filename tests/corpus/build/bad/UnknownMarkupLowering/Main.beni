@@ -7,5 +7,4 @@ import Prog exposing (Program)
 
 
 main : Program
-main =
-    Prog.say "hello"
+main = Prog.say "hello"

@@ -2,25 +2,19 @@
 -- digits, floats with fractions, exponents of both signs and cases, an int
 -- with an exponent (a float), a very long int, and literals mixed with
 -- operators.
-ints =
-    [ 0, 7, 42, 1000000 ]
+ints = [ 0, 7, 42, 1000000 ]
 
 
-hex =
-    [ 0x0, 0xFF, 0xff, 0xDeadBeef, 0x1F ]
+hex = [ 0x0, 0xFF, 0xff, 0xDeadBeef, 0x1F ]
 
 
-floats =
-    [ 0.5, 1.0, 3.14159, 100.001 ]
+floats = [ 0.5, 1.0, 3.14159, 100.001 ]
 
 
-exponents =
-    [ 1e10, 1E10, 1.5e-3, 2.0E+5, 6e0, 3.25e10 ]
+exponents = [ 1e10, 1E10, 1.5e-3, 2.0E+5, 6e0, 3.25e10 ]
 
 
-big =
-    12345678901234567890
+big = 12345678901234567890
 
 
-mixed =
-    1 + 2.5 * 1e2 - 0x10
+mixed = 1 + 2.5 * 1e2 - 0x10

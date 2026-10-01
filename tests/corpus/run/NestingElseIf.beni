@@ -19,13 +19,11 @@ import Node exposing (Program)
 
 
 n : String, Int -> Int
-n label v =
-    Debug.log v label
+n label v = Debug.log v label
 
 
 c : Int, Int -> Bool
-c k i =
-    Debug.log (k == i) ("test " ++ String.fromInt i)
+c k i = Debug.log (k == i) ("test " ++ String.fromInt i)
 
 
 tailChain : Int -> String
@@ -44,8 +42,7 @@ tailChain k =
         "arm6"
     else if c k 7 then
         let
-            seven =
-                n "leaf7" 7
+            seven = n "leaf7" 7
         in
         "seven " ++ String.fromInt seven
     else if c k 8 then
@@ -141,8 +138,7 @@ valueChain k =
                 "arm6"
             else if c k 7 then
                 let
-                    seven =
-                        n "leaf7" 7
+                    seven = n "leaf7" 7
                 in
                 "seven " ++ String.fromInt seven
             else if c k 8 then
@@ -153,8 +149,7 @@ valueChain k =
                 "arm10"
             else
                 let
-                    between =
-                        n "between" 0
+                    between = n "between" 0
                 in
                 if c k 11 then
                     "arm11"
@@ -228,8 +223,7 @@ shortChain k =
 
 
 above : Int, Int -> Bool
-above k i =
-    Debug.log (k > i) ("above " ++ String.fromInt i)
+above k i = Debug.log (k > i) ("above " ++ String.fromInt i)
 
 
 thenTail : Int -> String

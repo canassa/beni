@@ -18,5 +18,4 @@ update msg n =
             n - 1
 
 
-label =
-    "count: ${update Inc 1}"
+label = "count: ${update Inc 1}"

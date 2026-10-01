@@ -4,17 +4,14 @@
 -- `g : List a`, `h : List a` or `f : a -> List a2`: the kind is kept
 -- (`String.toUpper (List.head g …)` is refused) and so is its name.
 --
-pub g =
-    [ 1 ]
+pub g = [ 1 ]
 
 
-pub h =
-    List.singleton 2
+pub h = List.singleton 2
 
 
 pub f u =
     let
-        p1 =
-            []
+        p1 = []
     in
     [ 1, ...p1 ]

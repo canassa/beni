@@ -12,14 +12,11 @@ type alias Id a =
 
 
 wrap : a -> Id a
-wrap x =
-    x
+wrap x = x
 
 
-g x =
-    [ x, wrap x ]
+g x = [ x, wrap x ]
 
 
 main : Program
-main =
-    Node.printLines (g "a")
+main = Node.printLines (g "a")

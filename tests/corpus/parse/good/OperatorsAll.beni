@@ -2,41 +2,31 @@
 -- parenthesised function form used as one, including ones passed to folds.
 -- `(|>)` and `(<|)` are absent on purpose: they are syntax, not calls
 -- (§6.5), and are pinned as `operator_not_a_function` in parse/bad.
-arith a b =
-    ( a + b, a - b, a * b, a / b, a // b, a ^ b )
+arith a b = ( a + b, a - b, a * b, a / b, a // b, a ^ b )
 
 
-comparisons a b =
-    ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+comparisons a b = ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
 
 
-logic a b =
-    ( a && b, a || b )
+logic a b = ( a && b, a || b )
 
 
-sequences x xs ys =
-    ( xs ++ ys, [ x, ...xs ] )
+sequences x xs ys = ( xs ++ ys, [ x, ...xs ] )
 
 
-pipes f x =
-    ( x |> f, f <| x )
+pipes f x = ( x |> f, f <| x )
 
 
-asFunctions =
-    [ (+), (-), (*), (/), (//), (^) ]
+asFunctions = [ (+), (-), (*), (/), (//), (^) ]
 
 
-asPredicates =
-    [ (==), (/=), (<), (>), (<=), (>=) ]
+asPredicates = [ (==), (/=), (<), (>), (<=), (>=) ]
 
 
-asLogic =
-    [ (&&), (||) ]
+asLogic = [ (&&), (||) ]
 
 
-asRest =
-    (++)
+asRest = (++)
 
 
-folded xs =
-    List.foldl xs 0 (+)
+folded xs = List.foldl xs 0 (+)

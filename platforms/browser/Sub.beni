@@ -28,14 +28,12 @@ pub type Sub msg
 
 --| None.
 pub none : Sub msg
-none =
-    None
+none = None
 
 
 --| All of these.
 pub batch : List (Sub msg) -> Sub msg
-batch subs =
-    List.foldr subs None both
+batch subs = List.foldr subs None both
 
 
 both : Sub msg, Sub msg -> Sub msg
@@ -85,5 +83,4 @@ map sub tag =
 --|         Sub.listen (Every interval) (ticks interval _) tag
 pub listen : k, (Browser.Send a -> ()), (a -> msg) -> Sub msg
     where k.compare : k, k -> Order
-listen k body tag =
-    Listen [ ( Hosted.key k, Hosted.tap body tag ) ]
+listen k body tag = Listen [ ( Hosted.key k, Hosted.tap body tag ) ]

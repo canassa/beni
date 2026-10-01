@@ -4,11 +4,9 @@ pub type Box a
 
 pub show : Box a, () -> String
     where a.show : a, () -> String
-show (Box v) _ =
-    "Box " ++ v.show ()
+show (Box v) _ = "Box " ++ v.show ()
 
 
 pub eq : Box a, Box a -> Bool
     where a.key : a, () -> Int
-eq (Box x) (Box y) =
-    x.key () == y.key ()
+eq (Box x) (Box y) = x.key () == y.key ()

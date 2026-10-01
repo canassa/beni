@@ -7,10 +7,8 @@ import Node exposing (Program)
 
 
 greet : String -> String
-greet name =
-    "Hello, " ++ name ++ "!"
+greet name = "Hello, " ++ name ++ "!"
 
 
 main : Program
-main =
-    Node.printLines [ greet "you", greet "me" ]
+main = Node.printLines [ greet "you", greet "me" ]

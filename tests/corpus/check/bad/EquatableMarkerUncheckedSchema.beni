@@ -11,13 +11,11 @@ import Schema exposing (Conversion)
 
 
 mkM : Int -> Mine
-mkM n =
-    Debug.todo "m"
+mkM n = Debug.todo "m"
 
 
 g : Int -> Bool
-g n =
-    Basics.eq (mkM n) (mkM 2)
+g n = Basics.eq (mkM n) (mkM 2)
 
 
 type Mine
@@ -25,8 +23,7 @@ type Mine
 
 
 rconv : Conversion Int Fn
-rconv =
-    Debug.todo "c"
+rconv = Debug.todo "c"
 
 
 type Fn

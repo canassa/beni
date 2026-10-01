@@ -20,5 +20,4 @@ name c =
 
 
 pub warmest : Color
-warmest =
-    Red
+warmest = Red

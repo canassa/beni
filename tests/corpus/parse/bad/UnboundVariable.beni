@@ -1,12 +1,10 @@
 -- unbound_variable at 4:5: `undefinedThing` is not local, top-level, exposed
 -- or prelude (§6.2). Second at 10:13: inside a `let` body, `missing`.
-x =
-    undefinedThing
+x = undefinedThing
 
 
 y =
     let
-        a =
-            missing
+        a = missing
     in
     a

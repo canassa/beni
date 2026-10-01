@@ -1,5 +1,4 @@
 -- check/args: `Just` on its own is a function until it is applied, and here
 -- it stands where a `Maybe Int` is wanted.
 pub wrapped : Maybe Int
-wrapped =
-    Just
+wrapped = Just

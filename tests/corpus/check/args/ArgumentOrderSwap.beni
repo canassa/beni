@@ -4,5 +4,4 @@
 -- mistake only shows up as the wrong thing arriving in the first position,
 -- which is now the list.
 pub concatAll : List String -> String
-concatAll parts =
-    List.foldl (\part acc -> acc ++ part) "" parts
+concatAll parts = List.foldl (\part acc -> acc ++ part) "" parts

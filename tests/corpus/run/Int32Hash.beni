@@ -35,38 +35,31 @@ import String
 
 
 unsigned : Int32 -> String
-unsigned n =
-    String.fromInt (Int32.toUnsignedInt n)
+unsigned n = String.fromInt (Int32.toUnsignedInt n)
 
 
 fnvPrime : Int32
-fnvPrime =
-    Int32.fromInt 0x01000193
+fnvPrime = Int32.fromInt 0x01000193
 
 
 fnvOffset : Int32
-fnvOffset =
-    Int32.fromInt 0x811C9DC5
+fnvOffset = Int32.fromInt 0x811C9DC5
 
 
 fnv1a : String -> Int32
-fnv1a text =
-    List.foldl (String.toList text) fnvOffset fnvStep
+fnv1a text = List.foldl (String.toList text) fnvOffset fnvStep
 
 
 fnvStep : Char, Int32 -> Int32
-fnvStep char hash =
-    Int32.mul (Int32.xor hash (Int32.fromInt (Char.toCode char))) fnvPrime
+fnvStep char hash = Int32.mul (Int32.xor hash (Int32.fromInt (Char.toCode char))) fnvPrime
 
 
 xorshift32 : Int32 -> Int32
 xorshift32 seed =
     let
-        a =
-            Int32.xor seed (Int32.shiftLeft seed 13)
+        a = Int32.xor seed (Int32.shiftLeft seed 13)
 
-        b =
-            Int32.xor a (Int32.shiftRightZero a 17)
+        b = Int32.xor a (Int32.shiftRightZero a 17)
     in
     Int32.xor b (Int32.shiftLeft b 5)
 
@@ -77,8 +70,7 @@ xorshiftRun seed count =
         []
     else
         let
-            next =
-                xorshift32 seed
+            next = xorshift32 seed
         in
         [ next, ...xorshiftRun next (count - 1) ]
 
@@ -86,17 +78,13 @@ xorshiftRun seed count =
 fmix32 : Int32 -> Int32
 fmix32 h =
     let
-        a =
-            Int32.xor h (Int32.shiftRightZero h 16)
+        a = Int32.xor h (Int32.shiftRightZero h 16)
 
-        b =
-            Int32.mul a (Int32.fromInt 0x85EBCA6B)
+        b = Int32.mul a (Int32.fromInt 0x85EBCA6B)
 
-        c =
-            Int32.xor b (Int32.shiftRightZero b 13)
+        c = Int32.xor b (Int32.shiftRightZero b 13)
 
-        d =
-            Int32.mul c (Int32.fromInt 0xC2B2AE35)
+        d = Int32.mul c (Int32.fromInt 0xC2B2AE35)
     in
     Int32.xor d (Int32.shiftRightZero d 16)
 

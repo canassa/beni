@@ -15,34 +15,28 @@ pub foreign pure program : { init : Int, view : sync (Int -> String) } -> Int
 
 
 direct : Int
-direct =
-    onEvent (\n -> get n)
+direct = onEvent (\n -> get n)
 
 
 load : Int -> String
 load n =
     let
-        fetch k =
-            get k
+        fetch k = get k
     in
     fetch n
 
 
 viaLoad : Int
-viaLoad =
-    onEvent load
+viaLoad = onEvent load
 
 
 each : Int -> String
-each n =
-    String.concat (List.map [ n ] (\x -> get x))
+each n = String.concat (List.map [ n ] (\x -> get x))
 
 
 viaMap : Int
-viaMap =
-    onEvent each
+viaMap = onEvent each
 
 
 viaField : Int
-viaField =
-    program { init = 0, view = load }
+viaField = program { init = 0, view = load }

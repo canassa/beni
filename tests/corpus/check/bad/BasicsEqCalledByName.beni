@@ -4,5 +4,4 @@
 -- written by hand; it was reported as "the 2nd argument to (==)", an
 -- operator this program never wrote.
 x : Bool
-x =
-    Basics.eq 1 "a"
+x = Basics.eq 1 "a"

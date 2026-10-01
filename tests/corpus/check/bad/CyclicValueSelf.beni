@@ -8,5 +8,4 @@
 -- `ReferenceError: Cannot access 'CyclicValueSelf$x' before initialization`
 -- the moment Node loads the module.
 pub x : Int
-x =
-    x + 1
+x = x + 1

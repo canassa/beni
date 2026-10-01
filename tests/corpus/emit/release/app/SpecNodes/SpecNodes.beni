@@ -15,5 +15,4 @@ import Nodes
 
 
 main : Node.Program
-main =
-    Node.printLines (Nodes.demo ())
+main = Node.printLines (Nodes.demo ())

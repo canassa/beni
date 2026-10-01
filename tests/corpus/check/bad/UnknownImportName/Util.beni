@@ -1,3 +1,2 @@
 pub present : Int
-present =
-    1
+present = 1

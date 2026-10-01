@@ -10,5 +10,4 @@ type alias E =
 
 
 main : Program
-main =
-    Node.printLines [ Debug.toString {}, Debug.toString E, Debug.toString { a = {} } ]
+main = Node.printLines [ Debug.toString {}, Debug.toString E, Debug.toString { a = {} } ]

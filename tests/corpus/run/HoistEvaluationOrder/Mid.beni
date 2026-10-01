@@ -1,3 +1,2 @@
 pub value : String
-value =
-    Debug.log "mid" "load"
+value = Debug.log "mid" "load"

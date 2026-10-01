@@ -58,40 +58,34 @@ pub foreign impure targetChecked : Event -> Bool
 --|
 --|     onKeyDown={\event -> if Html.key event == "Enter" then Add else Ignored}
 pub key : Event -> String
-key event =
-    stringProp event "key"
+key event = stringProp event "key"
 
 
 --| The physical key of a keyboard event, whatever the layout types with
 --| it: `"KeyA"`, `"Enter"`, `"Digit1"`. `""` for any other event.
 pub code : Event -> String
-code event =
-    stringProp event "code"
+code event = stringProp event "code"
 
 
 --| Whether Control was held during a keyboard or mouse event.
 pub ctrlKey : Event -> Bool
-ctrlKey event =
-    boolProp event "ctrlKey"
+ctrlKey event = boolProp event "ctrlKey"
 
 
 --| Whether Shift was held during a keyboard or mouse event.
 pub shiftKey : Event -> Bool
-shiftKey event =
-    boolProp event "shiftKey"
+shiftKey event = boolProp event "shiftKey"
 
 
 --| Whether Alt (Option on a Mac) was held during a keyboard or mouse event.
 pub altKey : Event -> Bool
-altKey event =
-    boolProp event "altKey"
+altKey event = boolProp event "altKey"
 
 
 --| Whether Meta (Command on a Mac, the Windows key elsewhere) was held
 --| during a keyboard or mouse event.
 pub metaKey : Event -> Bool
-metaKey event =
-    boolProp event "metaKey"
+metaKey event = boolProp event "metaKey"
 
 
 --| Stop the browser doing what the event would do by default — a key
@@ -101,22 +95,19 @@ metaKey event =
 --|
 --|     onKeyDown={\event -> if Html.key event == "Tab" then let _ = Html.preventDefault event in Indent else Ignored}
 pub preventDefault : Event -> ()
-preventDefault event =
-    Js.to (Js.call (Js.from event) "preventDefault" [])
+preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 
 stringProp : Event, String -> String
 stringProp event name =
     let
-        v =
-            Js.get (Js.from event) name
+        v = Js.get (Js.from event) name
     in
     if Js.isNullish v then "" else Js.to v
 
 
 boolProp : Event, String -> Bool
-boolProp event name =
-    Js.same (Js.get (Js.from event) name) (Js.from True)
+boolProp event name = Js.same (Js.get (Js.from event) name) (Js.from True)
 
 
 -- Elements. A `void` element takes no children.

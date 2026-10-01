@@ -5,5 +5,4 @@ import B exposing (b)
 
 
 pub a : Int
-a =
-    b + 1
+a = b + 1

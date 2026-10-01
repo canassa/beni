@@ -46,12 +46,10 @@ square p =
 pub held : Pair -> Int
 held p =
     let
-        once =
-            sum p
+        once = sum p
     in
     once + 1
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

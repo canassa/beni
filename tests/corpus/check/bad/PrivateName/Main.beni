@@ -6,5 +6,4 @@ import Util exposing (secret)
 
 
 pub main : Int
-main =
-    Util.internal
+main = Util.internal

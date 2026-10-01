@@ -46,13 +46,11 @@ template11 =
 
 
 pub template12 : Html msg
-template12 =
-    <div> | <Link>comments</Link> |  |  | <Link>show</Link> | </div>
+template12 = <div> | <Link>comments</Link> |  |  | <Link>show</Link> | </div>
 
 
 pub template17 : Html msg
-template17 =
-    <Pre><span>1</span> <span>2</span> <span>3</span></Pre>
+template17 = <Pre><span>1</span> <span>2</span> <span>3</span></Pre>
 
 
 pub template18 : Html msg

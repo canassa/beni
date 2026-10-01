@@ -10,14 +10,11 @@ type Box a
 
 pub same : List (List (Box a)), List (List (Box a)) -> Bool
     where a.eq : a, a -> Bool
-same x y =
-    x == y
+same x y = x == y
 
 
-pub inferred x y =
-    [ [ Box x ] ] == [ [ Box y ] ] && x == y
+pub inferred x y = [ [ Box x ] ] == [ [ Box y ] ] && x == y
 
 
 pub ints : Bool
-ints =
-    same [ [ Box 1 ] ] [ [ Box 2 ] ] && inferred 1 2
+ints = same [ [ Box 1 ] ] [ [ Box 2 ] ] && inferred 1 2

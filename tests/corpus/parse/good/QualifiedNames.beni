@@ -7,13 +7,11 @@ import Json.Encode as E
 
 
 decoder : Json.Decode.Decoder Int
-decoder =
-    Json.Decode.int
+decoder = Json.Decode.int
 
 
 encode : Int -> E.Value
-encode n =
-    E.int n
+encode n = E.int n
 
 
 describe : Http.Error -> String
@@ -30,8 +28,7 @@ describe err =
 
 
 wrap : Int -> Maybe.Maybe Int
-wrap n =
-    Maybe.Just n
+wrap n = Maybe.Just n
 
 
 unwrap : Result.Result String Int -> Int
@@ -45,20 +42,16 @@ unwrap r =
 
 
 upper : String -> String
-upper =
-    String.toUpper
+upper = String.toUpper
 
 
 chars : String -> List Char
-chars s =
-    String.toList s |> List.map Char.toUpper
+chars s = String.toList s |> List.map Char.toUpper
 
 
 nested : Json.Decode.Decoder (List (Maybe.Maybe Int))
-nested =
-    Json.Decode.list (Json.Decode.maybe Json.Decode.int)
+nested = Json.Decode.list (Json.Decode.maybe Json.Decode.int)
 
 
 logged : Int -> Int
-logged n =
-    Debug.log n "n"
+logged n = Debug.log n "n"

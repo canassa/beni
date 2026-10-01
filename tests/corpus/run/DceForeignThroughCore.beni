@@ -24,8 +24,7 @@ import String
 
 
 pub describe : Int -> String
-describe n =
-    String.padLeft (String.fromInt n) 4 '.'
+describe n = String.padLeft (String.fromInt n) 4 '.'
 
 
 main : Program

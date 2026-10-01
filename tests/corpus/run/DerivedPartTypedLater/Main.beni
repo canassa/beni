@@ -11,14 +11,12 @@ import Plain
 
 
 inc : Int -> Int
-inc v =
-    v + 1
+inc v = v + 1
 
 
 pair left right =
     let
-        same =
-            ( left, 0 ) == ( right, 0 )
+        same = ( left, 0 ) == ( right, 0 )
     in
     same
 

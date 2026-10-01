@@ -8,10 +8,8 @@
 --
 h x y =
     let
-        t =
-            Basics.eq ( x, y ) ( x, y )
+        t = Basics.eq ( x, y ) ( x, y )
 
-        l =
-            [ x, y ]
+        l = [ x, y ]
     in
     x 1

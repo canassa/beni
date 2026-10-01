@@ -1,8 +1,6 @@
 secret : Int
-secret =
-    1
+secret = 1
 
 
 internal : Int
-internal =
-    2
+internal = 2

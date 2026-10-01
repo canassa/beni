@@ -1,7 +1,6 @@
 -- unbound_constructor at 4:5 (`Foo` in expression position) and 9:9 (`Bar`
 -- in pattern position); neither is declared, exposed or prelude (§6.2).
-x =
-    Foo
+x = Foo
 
 
 f m =

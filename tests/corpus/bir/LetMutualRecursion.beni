@@ -19,7 +19,6 @@ isEven n =
             else
                 even (k - 1)
 
-        base =
-            0
+        base = 0
     in
     even n

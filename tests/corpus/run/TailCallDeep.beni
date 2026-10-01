@@ -21,5 +21,4 @@ count n acc =
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (count 1000000 0) ]
+main = Node.printLines [ String.fromInt (count 1000000 0) ]

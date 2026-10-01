@@ -11,20 +11,16 @@
 -- `"a" < "b"` COMPILES, so the mistake has to be one the operator's own
 -- pinning rule catches — both operands are one type (A.33).
 pub tooFew : Int -> Bool
-tooFew n =
-    (==) n
+tooFew n = (==) n
 
 
 pub tooMany : Bool
-tooMany =
-    (<) 1 2 3
+tooMany = (<) 1 2 3
 
 
 pub wrongType : Bool
-wrongType =
-    (<) "a" 1
+wrongType = (<) "a" 1
 
 
 pub handWritten : Int -> Bool
-handWritten n =
-    (\a b -> a == b) n
+handWritten n = (\a b -> a == b) n

@@ -10,28 +10,23 @@ import Trip
 
 
 one : Int
-one =
-    1
+one = 1
 
 
 viaTuple x y =
     let
-        cx =
-            x < x
+        cx = x < x
 
-        cy =
-            y < y
+        cy = y < y
     in
     ( cx && cy, ( Trip.Trip x y one 5, 0 ) == ( Trip.Trip x y one 5, 0 ) )
 
 
 viaRecord x y =
     let
-        cx =
-            x < x
+        cx = x < x
 
-        cy =
-            y < y
+        cy = y < y
     in
     ( cx || cy, { t = Trip.Trip x y one 5 } == { t = Trip.Trip x y one 6 } )
 
@@ -54,5 +49,4 @@ show pair =
 
 
 main : Program
-main =
-    Node.printLines [ show (viaTuple 1 2), show (viaRecord 1 2) ]
+main = Node.printLines [ show (viaTuple 1 2), show (viaRecord 1 2) ]

@@ -10,20 +10,16 @@ pub foreign suspends fetch : Int -> Int
 
 
 answer : Int
-answer =
-    fetch 42
+answer = fetch 42
 
 
 twice : Int -> Int
-twice n =
-    fetch n + fetch n
+twice n = fetch n + fetch n
 
 
 total : Int
-total =
-    twice 1 + 2
+total = twice 1 + 2
 
 
 later : () -> Int
-later =
-    \() -> fetch 1
+later = \() -> fetch 1

@@ -4,17 +4,14 @@
 -- `where` clause on all three.
 pub outer : a, Int -> a
     where a.scale : a, Int -> a
-outer x factor =
-    middle x factor
+outer x factor = middle x factor
 
 
 pub middle : a, Int -> a
     where a.scale : a, Int -> a
-middle x factor =
-    inner x factor
+middle x factor = inner x factor
 
 
 pub inner : a, Int -> a
     where a.scale : a, Int -> a
-inner x factor =
-    x.scale factor
+inner x factor = x.scale factor

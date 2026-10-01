@@ -13,13 +13,11 @@ import String
 
 
 ints : List Int -> String
-ints xs =
-    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
 labels : List { key : Int, tag : String } -> String
-labels rows =
-    String.join (List.map rows (\r -> String.fromInt r.key ++ r.tag)) ","
+labels rows = String.join (List.map rows (\r -> String.fromInt r.key ++ r.tag)) ","
 
 
 tied : List { key : Int, tag : String }

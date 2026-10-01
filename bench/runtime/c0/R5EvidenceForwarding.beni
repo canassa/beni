@@ -36,23 +36,19 @@ import String
 
 
 outerReps : Int
-outerReps =
-    40
+outerReps = 40
 
 
 innerReps : Int
-innerReps =
-    500
+innerReps = 500
 
 
 pivot : Int
-pivot =
-    250
+pivot = 250
 
 
 values : List Int
-values =
-    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+values = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
 
 
 -- Level 3: the work. Everything it knows about `a` arrives in `cmp`.
@@ -73,13 +69,11 @@ tally xs mark cmp =
 -- Level 2 and level 1: pure forwarding, which is the point. Each one is
 -- generic in `a` and so cannot know what `cmp` is.
 level2 : List a, a, (a, a -> Order) -> Int
-level2 xs mark cmp =
-    tally xs mark cmp
+level2 xs mark cmp = tally xs mark cmp
 
 
 level1 : List a, a, (a, a -> Order) -> Int
-level1 xs mark cmp =
-    level2 xs mark cmp
+level1 xs mark cmp = level2 xs mark cmp
 
 
 -- Where the ordering is chosen. `key` closes over `scale`, and the
@@ -88,8 +82,7 @@ level1 xs mark cmp =
 tallyBy : List Int, Int, Int -> Int
 tallyBy xs mark scale =
     let
-        key =
-            \x -> x * scale
+        key = \x -> x * scale
     in
     level1 xs mark (\a b -> compare (key a) (key b))
 

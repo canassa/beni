@@ -10,8 +10,7 @@ import Schema exposing (Conversion)
 
 
 conv : Conversion Int Mine
-conv =
-    Debug.todo "checker-only conversion"
+conv = Debug.todo "checker-only conversion"
 
 
 type Mine
@@ -27,5 +26,4 @@ type HoldsRec
 
 
 sameHolds : HoldsRec, HoldsRec -> Bool
-sameHolds a b =
-    a == b
+sameHolds a b = a == b

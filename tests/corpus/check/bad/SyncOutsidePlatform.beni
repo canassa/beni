@@ -5,10 +5,8 @@
 -- `sync` is not followed by `(`, so it is an ordinary type variable, as it
 -- always was.
 apply : sync (Int -> Int), Int -> Int
-apply f n =
-    f n
+apply f n = f n
 
 
 wrap : sync -> List sync
-wrap x =
-    [ x ]
+wrap x = [ x ]

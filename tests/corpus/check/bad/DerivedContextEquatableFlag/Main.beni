@@ -12,10 +12,8 @@ type W a
 
 
 f : Int -> Int
-f n =
-    n
+f n = n
 
 
 same : Bool
-same =
-    W (H.Holder f) == W (H.Holder f)
+same = W (H.Holder f) == W (H.Holder f)

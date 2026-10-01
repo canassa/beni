@@ -7,15 +7,12 @@
 -- may be mutually recursive and this is not a report about `f`. The message
 -- names it as the step in between, which is the fix the author needs.
 pub a : Int
-a =
-    f 1
+a = f 1
 
 
 pub f : Int -> Int
-f n =
-    n + b
+f n = n + b
 
 
 pub b : Int
-b =
-    a
+b = a

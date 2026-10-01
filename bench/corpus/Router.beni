@@ -49,8 +49,7 @@ fromUrl url =
                 |> List.filter (\s -> not (String.isEmpty s))
                 |> List.map decodeSegment
 
-        params =
-            parseQuery url.query
+        params = parseQuery url.query
     in
     case segments of
         [] ->
@@ -301,8 +300,7 @@ title route =
 pub breadcrumbs : Route -> List ( String, Route )
 breadcrumbs route =
     let
-        root =
-            ( "Home", Home )
+        root = ( "Home", Home )
     in
     case route of
         Home ->
@@ -326,8 +324,7 @@ breadcrumbs route =
 
 
 pub defaultUsersQuery : UsersQuery
-defaultUsersQuery =
-    { page = 1, perPage = 20, sort = ByName, filter = Nothing }
+defaultUsersQuery = { page = 1, perPage = 20, sort = ByName, filter = Nothing }
 
 
 pub requiresAuth : Route -> Bool

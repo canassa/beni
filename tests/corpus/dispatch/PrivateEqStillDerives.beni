@@ -28,5 +28,4 @@ eq a b =
 
 
 pub sameMajor : Id, Id -> Bool
-sameMajor a b =
-    a == b
+sameMajor a b = a == b

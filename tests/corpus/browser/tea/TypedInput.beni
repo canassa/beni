@@ -36,5 +36,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Tea.sandbox { init = { text = "", seen = [] }, update = update, view = view }
+main = Tea.sandbox { init = { text = "", seen = [] }, update = update, view = view }

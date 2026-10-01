@@ -3,17 +3,13 @@
 -- operand a pipe supplies is an argument of that call and sits inside the
 -- lambda too. `|>` inserts it FIRST and `<|` last, so the three definitions
 -- differ only in where that argument sits and must report the same thing.
-g a b =
-    a + b
+g a b = a + b
 
 
-direct x =
-    g _ (x?)
+direct x = g _ (x?)
 
 
-piped x =
-    x? |> g _
+piped x = x? |> g _
 
 
-pipedLeft x =
-    g _ <| x?
+pipedLeft x = g _ <| x?

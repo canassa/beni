@@ -32,20 +32,16 @@ import String
 
 
 reached : Int -> Int
-reached n =
-    Debug.log n "reached" * 2
+reached n = Debug.log n "reached" * 2
 
 
 pub neverCalled : Int -> Int
-neverCalled n =
-    Debug.log n "neverCalled" + 1
+neverCalled n = Debug.log n "neverCalled" + 1
 
 
 pub neverEvaluated : Int
-neverEvaluated =
-    Debug.log 1 "neverEvaluated" + 1
+neverEvaluated = Debug.log 1 "neverEvaluated" + 1
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (reached 21) ]
+main = Node.printLines [ String.fromInt (reached 21) ]

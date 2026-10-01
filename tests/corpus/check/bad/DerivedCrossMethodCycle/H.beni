@@ -12,8 +12,7 @@ pub type Holder a
 
 pub eq : Holder a, Holder a -> Bool
     where a.compare : a, a -> Order
-eq (Holder x) (Holder y) =
-    x.compare y == EQ
+eq (Holder x) (Holder y) = x.compare y == EQ
 
 
 pub compare : Holder a, Holder a -> Order

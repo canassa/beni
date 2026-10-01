@@ -8,15 +8,13 @@ import Js
 
 
 busy : Js.Ref Bool
-busy =
-    Js.ref False
+busy = Js.ref False
 
 
 pub guard : Js.Value -> ()
 guard queue =
     let
-        _ =
-            Js.write busy True
+        _ = Js.write busy True
 
         _ =
             Js.finally
@@ -32,8 +30,7 @@ render view =
         Js.null
     else
         let
-            _ =
-                Js.write busy True
+            _ = Js.write busy True
         in
         Js.finally (\() -> Js.apply view []) (\() -> Js.write busy False)
 
@@ -42,12 +39,10 @@ pub measured : Js.Value -> String
 measured node =
     let
         width : Int
-        width =
-            Js.finally (\() -> Js.to (Js.get node "offsetWidth")) (\() -> Js.write busy False)
+        width = Js.finally (\() -> Js.to (Js.get node "offsetWidth")) (\() -> Js.write busy False)
     in
     "${String.fromInt width}px"
 
 
 pub passed : (() -> Int), (() -> ()) -> Int
-passed f g =
-    Js.finally f g
+passed f g = Js.finally f g

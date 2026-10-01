@@ -16,42 +16,34 @@
 -- hole (`part 0 err`).
 pub gen : a, a -> Order
     where a.compare : a, a -> Order
-gen x y =
-    x.compare y
+gen x y = x.compare y
 
 
 pub eqGen : a, a -> Bool
     where a.eq : a, a -> Bool
-eqGen x y =
-    x.eq y
+eqGen x y = x.eq y
 
 
 pub ints : Order
-ints =
-    gen 1 2
+ints = gen 1 2
 
 
 pub floats : Order
-floats =
-    gen 1.5 2.5
+floats = gen 1.5 2.5
 
 
 pub strings : Order
-strings =
-    gen "a" "b"
+strings = gen "a" "b"
 
 
 pub sameInts : Bool
-sameInts =
-    eqGen 1 2
+sameInts = eqGen 1 2
 
 
 pub pairOfLiterals : Order
-pairOfLiterals =
-    cmp ( 1, 2.5 ) ( 3, 4.5 )
+pairOfLiterals = cmp ( 1, 2.5 ) ( 3, 4.5 )
 
 
 pub cmp : a, a -> Order
     where a.compare : a, a -> Order
-cmp x y =
-    x.compare y
+cmp x y = x.compare y

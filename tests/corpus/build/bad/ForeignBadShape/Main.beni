@@ -3,5 +3,4 @@ import Prog exposing (Program)
 
 
 main : Program
-main =
-    Prog.say Bad.anything
+main = Prog.say Bad.anything

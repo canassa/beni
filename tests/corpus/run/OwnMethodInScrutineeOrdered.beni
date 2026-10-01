@@ -14,32 +14,27 @@ type Box a
     = Box a
 
 
-pub makeBox (K n) u =
-    Box n
+pub makeBox (K n) u = Box n
 
 
-pub map2 (Box v) fn =
-    Box (fn v)
+pub map2 (Box v) fn = Box (fn v)
 
 
 boxes u =
     case (K u).makeBox () of
         o ->
             let
-                g h =
-                    o.map2 h
+                g h = o.map2 h
             in
             ( g (\x -> x + 1), g String.fromInt )
 
 
-unbox (Box v) =
-    v
+unbox (Box v) = v
 
 
 main : Program
 main =
     let
-        ( n, s ) =
-            boxes 3
+        ( n, s ) = boxes 3
     in
     Node.printLines [ String.fromInt (unbox n) ++ " " ++ unbox s ]

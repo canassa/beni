@@ -6,10 +6,8 @@
 -- ONE diagnostic, not two: the circle is one mistake, reported at the first
 -- of its values in source order.
 pub x : Int
-x =
-    y + 1
+x = y + 1
 
 
 pub y : Int
-y =
-    x
+y = x
