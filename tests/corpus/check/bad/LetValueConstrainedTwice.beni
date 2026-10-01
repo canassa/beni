@@ -7,11 +7,9 @@
 -- parameter. Written `same a b = …`, it generalises and the program is
 -- valid (`run/LetConstrainedHelperPolymorphic`).
 check flag =
-    let
-        same =
-            if flag then
-                λa b -> a == b
-            else
-                λa b -> a /= b
-    in
+    same =
+        if flag then
+            λa b -> a == b
+        else
+            λa b -> a /= b
     same "a" "a" && same 'b' 'b'

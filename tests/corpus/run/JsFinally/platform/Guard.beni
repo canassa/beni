@@ -18,10 +18,8 @@ note s = Js.write log "${Js.read log}${s}; "
 --| What was recorded since the last `take`, and a fresh record.
 pub take : () -> String
 take () =
-    let
-        seen = Js.read log
-        _ = Js.write log ""
-    in
+    seen = Js.read log
+    _ = Js.write log ""
     seen
 
 
@@ -38,9 +36,7 @@ pub tail : Int -> Int
 tail x =
     Js.finally
         (λ() ->
-            let
-                _ = note "body"
-            in
+            _ = note "body"
             x + 1
         )
         (λ() -> note "cleanup")
@@ -49,29 +45,23 @@ tail x =
 --| As a value: bound, then used after the cleanup ran.
 pub valued : Int -> String
 valued x =
-    let
-        v =
-            Js.finally
-                (λ() ->
-                    let
-                        _ = note "body"
-                    in
-                    x * 2
-                )
-                (λ() -> note "cleanup")
+    v =
+        Js.finally
+            (λ() ->
+                _ = note "body"
+                x * 2
+            )
+            (λ() -> note "cleanup")
 
-        _ = note "after"
-    in
+    _ = note "after"
     String.fromInt v
 
 
 --| Discarded: the body's statements, then the cleanup's.
 pub discarded : () -> String
 discarded () =
-    let
-        _ = Js.finally (λ() -> note "body") (λ() -> note "cleanup")
-        _ = note "after"
-    in
+    _ = Js.finally (λ() -> note "body") (λ() -> note "cleanup")
+    _ = note "after"
     "done"
 
 
@@ -80,9 +70,7 @@ pub throwsTail : () -> String
 throwsTail () =
     Js.finally
         (λ() ->
-            let
-                _ = note "body"
-            in
+            _ = note "body"
             fail "boom"
         )
         (λ() -> note "cleanup")
@@ -91,30 +79,24 @@ throwsTail () =
 --| The body throws where its value is bound: nothing after it runs.
 pub throwsValued : () -> String
 throwsValued () =
-    let
-        v : String
-        v =
-            Js.finally
-                (λ() ->
-                    let
-                        _ = note "body"
-                    in
-                    fail "bang"
-                )
-                (λ() -> note "cleanup")
+    v : String
+    v =
+        Js.finally
+            (λ() ->
+                _ = note "body"
+                fail "bang"
+            )
+            (λ() -> note "cleanup")
 
-        _ = note "unreached"
-    in
+    _ = note "unreached"
     v
 
 
 --| The body throws where its value is discarded.
 pub throwsDiscarded : () -> String
 throwsDiscarded () =
-    let
-        _ = Js.finally (λ() -> fail "crash") (λ() -> note "cleanup")
-        _ = note "unreached"
-    in
+    _ = Js.finally (λ() -> fail "crash") (λ() -> note "cleanup")
+    _ = note "unreached"
     "unreached"
 
 
@@ -125,9 +107,7 @@ nested () =
         (λ() ->
             Js.finally
                 (λ() ->
-                    let
-                        _ = note "inner"
-                    in
+                    _ = note "inner"
                     fail "deep"
                 )
                 (λ() -> note "inner cleanup")
@@ -138,21 +118,15 @@ nested () =
 --| A function made by a call that records it.
 make : String, Int -> (() -> Int)
 make s v =
-    let
-        _ = note "make ${s}"
-    in
+    _ = note "make ${s}"
     λ() ->
-        let
-            _ = note s
-        in
+        _ = note s
         v
 
 
 cleanupOf : String -> (() -> ())
 cleanupOf s =
-    let
-        _ = note "make ${s}"
-    in
+    _ = note "make ${s}"
     λ() -> note s
 
 
@@ -180,10 +154,8 @@ apply h f g = h f g
 --| build writes its body, `try` and all, where that call is.
 pub latched : (() -> ()) -> ()
 latched f =
-    let
-        _ = note "lock"
-        _ = Js.finally f (λ() -> note "unlock")
-    in
+    _ = note "lock"
+    _ = Js.finally f (λ() -> note "unlock")
     note "unlocked"
 
 

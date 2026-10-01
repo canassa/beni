@@ -23,10 +23,8 @@ update msg n =
             ( n, Cmd.perform flushing )
 
         FromUpdate ->
-            let
-                _ = Browser.flush ()
-                _ = Debug.log "update flushed" ()
-            in
+            _ = Browser.flush ()
+            _ = Debug.log "update flushed" ()
             ( n + 1, Cmd.none )
 
         Bump ->
@@ -35,19 +33,15 @@ update msg n =
 
 flushing : Cmd.Send Msg -> ()
 flushing send =
-    let
-        _ = send Bump
-        _ = Debug.log "sent" ()
-        _ = Browser.flush ()
-    in
+    _ = send Bump
+    _ = Debug.log "sent" ()
+    _ = Browser.flush ()
     Debug.log "flushed" ()
 
 
 view : Int -> Html Msg
 view n =
-    let
-        _ = Debug.log "render" n
-    in
+    _ = Debug.log "render" n
     <main>
         <button id="fiber" onClick={FromFiber}>fiber</button>
         <button id="update" onClick={FromUpdate}>update</button>

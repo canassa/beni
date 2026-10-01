@@ -175,9 +175,7 @@ viewByFunction model =
 
 
 summary model =
-    let
-        count = List.length model.rows
-    in
+    count = List.length model.rows
     <footer class="summary">
         <p>
             Showing {count} rows, {if count > 0 then "some" else "none"} selected

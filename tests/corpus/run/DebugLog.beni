@@ -8,9 +8,7 @@ import String
 
 main : Program
 main =
-    let
-        doubled = Debug.log "input" 21 * 2
-    in
+    doubled = Debug.log "input" 21 * 2
     Node.printLines
         [ Debug.toString [ 1, 2, 3 ]
         , Debug.toString (Just "x")

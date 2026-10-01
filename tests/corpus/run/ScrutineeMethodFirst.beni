@@ -26,15 +26,11 @@ pub combine (Box a) z = a
 f n =
     case ( (λy -> y.h ()) (K n), (Box 1).g () ) of
         ( r, _ ) ->
-            let
-                q z = r.combine z
-            in
+            q z = r.combine z
             ( q 1, q "s" )
 
 
 main : Program
 main =
-    let
-        ( a, b ) = f 3
-    in
+    ( a, b ) = f 3
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

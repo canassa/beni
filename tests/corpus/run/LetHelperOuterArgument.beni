@@ -16,15 +16,11 @@ combine (T a) b = a + b
 
 
 f x =
-    let
-        g y = y.combine x
-    in
+    g y = y.combine x
     ( g (T 1), g (T 2) )
 
 
 main : Program
 main =
-    let
-        ( a, b ) = f 5
-    in
+    ( a, b ) = f 5
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

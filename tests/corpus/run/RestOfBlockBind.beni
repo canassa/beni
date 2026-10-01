@@ -16,28 +16,22 @@ twice n body = body n + body (n + 1)
 
 nested : String
 nested =
-    let
-        outer <- scope "a"
-        inner <- scope "b"
-    in
+    outer <- scope "a"
+    inner <- scope "b"
     outer ++ inner
 
 
 counted : Int
 counted =
-    let
-        n <- twice 10
-    in
+    n <- twice 10
     n * 2
 
 
 mixed : String
 mixed =
-    let
-        prefix = "p"
-        s <- scope "c"
-        suffix = "q"
-    in
+    prefix = "p"
+    s <- scope "c"
+    suffix = "q"
     prefix ++ s ++ suffix
 
 

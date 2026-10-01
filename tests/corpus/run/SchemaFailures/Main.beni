@@ -19,9 +19,7 @@ logged : String -> Conversion String String
 logged name =
     Schema.conversion
         (λs ->
-            let
-                _ = Debug.log name s
-            in
+            _ = Debug.log name s
             if s == "bad" then
                 Err [ Schema.issue (name ++ " is bad") ]
             else
@@ -60,9 +58,7 @@ joined =
         three
         (Schema.conversion
             (λt ->
-                let
-                    _ = Debug.log "whole record" t.x
-                in
+                _ = Debug.log "whole record" t.x
                 Ok (t.x ++ t.y ++ t.z)
             )
             (λs -> Ok { x = s, y = "", z = "" })

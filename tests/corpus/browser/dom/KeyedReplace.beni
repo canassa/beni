@@ -55,9 +55,7 @@ update msg model =
                     model
 
         Promote ->
-            let
-                ( rows, next ) = fresh model 1
-            in
+            ( rows, next ) = fresh model 1
             case model.rows of
                 [ _, second, ..._ ] ->
                     { rows = [ second, ...rows ], next = next }
@@ -66,15 +64,11 @@ update msg model =
                     model
 
         ReplaceAll ->
-            let
-                ( rows, next ) = fresh model 3
-            in
+            ( rows, next ) = fresh model 3
             { rows = rows, next = next }
 
         KeepMiddle ->
-            let
-                ( rows, next ) = fresh model 2
-            in
+            ( rows, next ) = fresh model 2
             case ( rows, List.drop model.rows 1 |> List.head ) of
                 ( [ a, b ], Just kept ) ->
                     { rows = [ a, kept, b ], next = next }

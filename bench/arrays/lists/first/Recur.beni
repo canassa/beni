@@ -121,15 +121,11 @@ pairwiseHelp xs acc =
 --| slices), sort both halves, merge by pushing the smaller head.
 pub mergeSort : List Int -> List Int
 mergeSort xs =
-    let
-        n = List.length xs
-    in
+    n = List.length xs
     if n <= 1 then
         xs
     else
-        let
-            half = n // 2
-        in
+        half = n // 2
         merge (mergeSort (List.take xs half)) (mergeSort (List.drop xs half)) []
 
 

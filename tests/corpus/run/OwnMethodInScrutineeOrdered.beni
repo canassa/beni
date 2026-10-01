@@ -23,9 +23,7 @@ pub map2 (Box v) fn = Box (fn v)
 boxes u =
     case (K u).makeBox () of
         o ->
-            let
-                g h = o.map2 h
-            in
+            g h = o.map2 h
             ( g (λx -> x + 1), g String.fromInt )
 
 
@@ -34,7 +32,5 @@ unbox (Box v) = v
 
 main : Program
 main =
-    let
-        ( n, s ) = boxes 3
-    in
+    ( n, s ) = boxes 3
     Node.printLines [ String.fromInt (unbox n) ++ " " ++ unbox s ]

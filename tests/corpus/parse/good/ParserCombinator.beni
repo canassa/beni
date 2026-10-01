@@ -61,27 +61,23 @@ pub andThen : Parser a, (a -> Parser b) -> Parser b
 andThen (Parser p) f =
     Parser
         (λinput ->
-            let
-                step ( value, rest ) =
-                    case f value of
-                        Parser q ->
-                            q rest
-            in
+            step ( value, rest ) =
+                case f value of
+                    Parser q ->
+                        q rest
             p input |> Result.andThen step
         )
 
 
 pub many : Parser a -> Parser (List a)
 many (Parser p) =
-    let
-        go acc input =
-            case p input of
-                Ok ( value, rest ) ->
-                    go [ value, ...acc ] rest
+    go acc input =
+        case p input of
+            Ok ( value, rest ) ->
+                go [ value, ...acc ] rest
 
-                Err _ ->
-                    Ok ( List.reverse acc, input )
-    in
+            Err _ ->
+                Ok ( List.reverse acc, input )
     Parser (go [])
 
 
@@ -89,20 +85,18 @@ pub oneOf : List (Parser a) -> Parser a
 oneOf parsers =
     Parser
         (λinput ->
-            let
-                try remaining =
-                    case remaining of
-                        [] ->
-                            Err "no parser matched"
+            try remaining =
+                case remaining of
+                    [] ->
+                        Err "no parser matched"
 
-                        [ (Parser p), ...rest ] ->
-                            case p input of
-                                Ok result ->
-                                    Ok result
+                    [ (Parser p), ...rest ] ->
+                        case p input of
+                            Ok result ->
+                                Ok result
 
-                                Err _ ->
-                                    try rest
-            in
+                            Err _ ->
+                                try rest
             try parsers
         )
 

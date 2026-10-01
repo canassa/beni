@@ -25,23 +25,21 @@ describe url =
             "no url"
 
         Just u ->
-            let
-                protocol =
-                    case u.protocol of
-                        Url.Http ->
-                            "http"
+            protocol =
+                case u.protocol of
+                    Url.Http ->
+                        "http"
 
-                        Url.Https ->
-                            "https"
+                    Url.Https ->
+                        "https"
 
-                port_ =
-                    case u.port_ of
-                        Just _ ->
-                            "a port"
+            port_ =
+                case u.port_ of
+                    Just _ ->
+                        "a port"
 
-                        Nothing ->
-                            "no port"
-            in
+                    Nothing ->
+                        "no port"
             "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment}"
 
 
@@ -57,33 +55,31 @@ shown s =
 
 checks : List String
 checks =
-    let
-        parsed = Url.fromString "https://example.com:8042/over/there?name=ferret#nose"
+    parsed = Url.fromString "https://example.com:8042/over/there?name=ferret#nose"
 
-        written =
-            case parsed of
-                Just u ->
-                    Url.toString u
+    written =
+        case parsed of
+            Just u ->
+                Url.toString u
 
-                Nothing ->
-                    "unparsed"
+            Nothing ->
+                "unparsed"
 
-        decoded =
-            case Url.percentDecode "%E2%82%AC%20" of
-                Just text ->
-                    text
+    decoded =
+        case Url.percentDecode "%E2%82%AC%20" of
+            Just text ->
+                text
 
-                Nothing ->
-                    "undecodable"
+            Nothing ->
+                "undecodable"
 
-        broken =
-            case Url.percentDecode "%C2" of
-                Just _ ->
-                    "decoded"
+    broken =
+        case Url.percentDecode "%C2" of
+            Just _ ->
+                "decoded"
 
-                Nothing ->
-                    "undecodable"
-    in
+            Nothing ->
+                "undecodable"
     [ describe parsed
     , written
     , describe (Url.fromString "example.com")

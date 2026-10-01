@@ -24,27 +24,25 @@ xs = [ 1, 2, 3 ]
 
 main : Program
 main =
-    let
-        folded = List.foldl xs 0 (λx acc -> note "foldl" x + acc)
-        mapped = List.map xs (λx -> note "map" x * 10)
-        indexed = List.indexedMap xs (λat x -> note "indexedMap" x + at)
-        kept = List.filter xs (λx -> note "filter" x /= 2)
+    folded = List.foldl xs 0 (λx acc -> note "foldl" x + acc)
+    mapped = List.map xs (λx -> note "map" x * 10)
+    indexed = List.indexedMap xs (λat x -> note "indexedMap" x + at)
+    kept = List.filter xs (λx -> note "filter" x /= 2)
 
-        picked =
-            List.filterMap xs
-                (λx ->
-                    if note "filterMap" x == 2 then
-                        Nothing
-                    else
-                        Just (x * 100)
-                )
+    picked =
+        List.filterMap xs
+            (λx ->
+                if note "filterMap" x == 2 then
+                    Nothing
+                else
+                    Just (x * 100)
+            )
 
-        flattened = List.concatMap xs (λx -> [ note "concatMap" x, x ])
-        zipped = List.map2 xs [ 10, 20, 30 ] (λx y -> note "map2" x + y)
-        split = List.partition xs (λx -> note "partition" x /= 2)
-        searched = List.any xs (λx -> note "any" x == 2)
-        every = List.all xs (λx -> note "all" x /= 3)
-    in
+    flattened = List.concatMap xs (λx -> [ note "concatMap" x, x ])
+    zipped = List.map2 xs [ 10, 20, 30 ] (λx y -> note "map2" x + y)
+    split = List.partition xs (λx -> note "partition" x /= 2)
+    searched = List.any xs (λx -> note "any" x == 2)
+    every = List.all xs (λx -> note "all" x /= 3)
     Node.printLines
         [ String.fromInt folded
         , Debug.toString mapped

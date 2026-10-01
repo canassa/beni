@@ -25,11 +25,9 @@ same a b = a == b
 
 main : Program
 main =
-    let
-        q = Q (Debug.log "zed" 1) (Debug.log "alpha" 2)
-        outer = Outer (Q 3 4) "o"
-        half = Q 5 _
-    in
+    q = Q (Debug.log "zed" 1) (Debug.log "alpha" 2)
+    outer = Outer (Q 3 4) "o"
+    half = Q 5 _
     Node.printLines
         [ String.fromInt q.zed
         , String.fromInt q.alpha

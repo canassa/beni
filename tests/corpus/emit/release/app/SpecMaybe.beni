@@ -33,9 +33,7 @@ dropHead words i = List.drop words i |> List.head |> Maybe.withDefault "?"
 
 main : Node.Program
 main =
-    let
-        words = [ "a", "b", "c" ]
-    in
+    words = [ "a", "b", "c" ]
     Node.printLines
         [ pick words 1
         , pick words 7

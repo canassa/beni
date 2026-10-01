@@ -14,17 +14,13 @@ import Node
 
 area : Int, Int -> List Int
 area w h =
-    let
-        r = { w = w * 2, h = h + 1 }
-    in
+    r = { w = w * 2, h = h + 1 }
     List.map [ 1, 2 ] (λk -> k * r.w + r.h)
 
 
 turns : Int, List (() -> Int) -> List (() -> Int)
 turns n acc =
-    let
-        r = { v = n }
-    in
+    r = { v = n }
     if n == 0 then
         acc
     else

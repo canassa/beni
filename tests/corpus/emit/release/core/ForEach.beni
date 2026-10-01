@@ -12,9 +12,7 @@ flush queue = Js.each queue (λrender -> Js.to (Js.apply render []))
 
 start : Js.Value -> ()
 start m =
-    let
-        root = Js.get m "root"
-    in
+    root = Js.get m "root"
     Js.set root "started" (Js.from True)
 
 

@@ -16,9 +16,7 @@ g u = (λr -> r.f 1) { f = λx -> x + 1 }
 
 
 apply u =
-    let
-        call s = s.f 10
-    in
+    call s = s.f 10
     call { f = λx -> x + 1 }
 
 

@@ -17,9 +17,7 @@ import Node exposing (Program)
 
 
 fa n x =
-    let
-        _ = fb n 0
-    in
+    _ = fb n 0
     x.combine 1
 
 
@@ -27,9 +25,7 @@ fb n y =
     if n > 0 then
         y
     else
-        let
-            _ = fa 1 { combine = λz -> z + 1 }
-        in
+        _ = fa 1 { combine = λz -> z + 1 }
         y
 
 

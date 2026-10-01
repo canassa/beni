@@ -17,9 +17,7 @@ walk n acc =
     if n <= 0 then
         acc
     else
-        let
-            byThree = Int.mod n 3
-        in
+        byThree = Int.mod n 3
         case byThree of
             0 ->
                 walk (n - 1) (acc + 1)

@@ -18,17 +18,13 @@ type K
 
 
 pub ma (K n) x =
-    let
-        twice y = ( y, y )
+    twice y = ( y, y )
 
-        ( flag, _ ) = twice (n > 0)
-    in
+    ( flag, _ ) = twice (n > 0)
     if not flag then
         x
     else if Int.mod 2 n == 0 then
-        let
-            ( again, _ ) = twice x
-        in
+        ( again, _ ) = twice x
         (K (n - 1)).mb again
     else
         (K (n - 1)).mc x

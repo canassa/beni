@@ -6,10 +6,8 @@
 coerce : b -> String
 coerce x =
     (λz ->
-        let
-            g : a -> a
-            g y = z
-        in
+        g : a -> a
+        g y = z
         g "s"
     )
         x

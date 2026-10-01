@@ -24,22 +24,20 @@ depth xs =
 
 
 inner u =
-    let
-        d : List a -> Int
-        d xs =
-            case xs of
-                [] ->
-                    0
+    d : List a -> Int
+    d xs =
+        case xs of
+            [] ->
+                0
 
-                [ _, ...rest ] ->
-                    1
-                        + d rest
-                        + (if False then
-                              d [ 1 ]
-                           else
-                              0
-                          )
-    in
+            [ _, ...rest ] ->
+                1
+                    + d rest
+                    + (if False then
+                          d [ 1 ]
+                       else
+                          0
+                      )
     d [ "a", "b" ]
 
 

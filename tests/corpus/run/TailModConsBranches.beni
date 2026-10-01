@@ -73,13 +73,11 @@ alternate xs flip =
 
 countdown : Int -> List Int
 countdown start =
-    let
-        go n =
-            if n <= 0 then
-                [ 0 ]
-            else
-                [ n, ...go (n - 1) ]
-    in
+    go n =
+        if n <= 0 then
+            [ 0 ]
+        else
+            [ n, ...go (n - 1) ]
     go start
 
 
@@ -91,11 +89,10 @@ withLet xs =
 
         [ x, ...rest ] ->
             [ x
-            , ...(let
-                     y = x * 3
-                  in
-                  [ y, ...withLet rest ]
-                 )
+            , ...(
+                y = x * 3
+                [ y, ...withLet rest ]
+            )
             ]
 
 
@@ -106,18 +103,16 @@ chunks xs n =
             []
 
         _ ->
-            let
-                first k ys =
-                    if k <= 0 then
-                        []
-                    else
-                        case ys of
-                            [] ->
-                                []
+            first k ys =
+                if k <= 0 then
+                    []
+                else
+                    case ys of
+                        [] ->
+                            []
 
-                            [ y, ...rest ] ->
-                                [ y, ...first (k - 1) rest ]
-            in
+                        [ y, ...rest ] ->
+                            [ y, ...first (k - 1) rest ]
             [ first n xs, ...chunks (List.drop xs n) n ]
 
 
@@ -140,9 +135,7 @@ opsFor n =
 
 main : Program
 main =
-    let
-        big = List.range 1 100000
-    in
+    big = List.range 1 100000
     Node.printLines
         [ show (twice [ 1, 2 ])
         , show (expand [ Keep 1, Dup 5, Skip, Keep 9, Stop, Keep 7 ] [ 100, 200 ])

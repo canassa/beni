@@ -39,25 +39,22 @@ rightSide = Dict.fromList [ ( 2, 22 ), ( 3, 33 ), ( 5, 55 ) ]
 
 main : Program
 main =
-    let
-        mapped = Dict.map numbers (λk value -> note "Dict.map" k + value)
-        kept = Dict.filter numbers (λk _ -> note "Dict.filter" k /= 3)
-        ( splitKept, splitDropped ) = Dict.partition numbers (λk _ -> note "Dict.partition" k /= 3)
+    mapped = Dict.map numbers (λk value -> note "Dict.map" k + value)
+    kept = Dict.filter numbers (λk _ -> note "Dict.filter" k /= 3)
+    ( splitKept, splitDropped ) = Dict.partition numbers (λk _ -> note "Dict.partition" k /= 3)
 
-        merged =
-            Dict.merge leftSide
-                rightSide
-                0
-                (λk _ acc -> note "merge.left" k + acc)
-                (λk _ _ acc -> note "merge.both" k + acc)
-                (λk _ acc -> note "merge.right" k + acc)
+    merged =
+        Dict.merge leftSide
+            rightSide
+            0
+            (λk _ acc -> note "merge.left" k + acc)
+            (λk _ _ acc -> note "merge.both" k + acc)
+            (λk _ acc -> note "merge.right" k + acc)
 
-        setMapped = Set.map members (λv -> note "Set.map" v * 10)
-        setKept = Set.filter members (λv -> note "Set.filter" v /= 3)
+    setMapped = Set.map members (λv -> note "Set.map" v * 10)
+    setKept = Set.filter members (λv -> note "Set.filter" v /= 3)
 
-        ( setSplitKept, setSplitDropped ) =
-            Set.partition members (λv -> note "Set.partition" v /= 3)
-    in
+    ( setSplitKept, setSplitDropped ) = Set.partition members (λv -> note "Set.partition" v /= 3)
     Node.printLines
         [ Debug.toString (Dict.toList mapped)
         , Debug.toString (Dict.keys kept)

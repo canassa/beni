@@ -100,9 +100,7 @@ oneOfSet allowed =
         if Set.member allowed value then
             Valid value
         else
-            let
-                choices = String.join (Set.toList allowed) ", "
-            in
+            choices = String.join (Set.toList allowed) ", "
             fail field "must be one of: ${choices}"
 
 
@@ -234,11 +232,9 @@ usernameChars field value =
 
 strongPassword : Validator String
 strongPassword field value =
-    let
-        hasDigit = String.any value Char.isDigit
-        hasUpper = String.any value Char.isUpper
-        hasLower = String.any value Char.isLower
-    in
+    hasDigit = String.any value Char.isDigit
+    hasUpper = String.any value Char.isUpper
+    hasLower = String.any value Char.isLower
     if hasDigit && hasUpper && hasLower then
         Valid value
     else

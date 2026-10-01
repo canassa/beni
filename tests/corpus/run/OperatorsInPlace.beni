@@ -25,11 +25,9 @@ show b =
 
 main : Program
 main =
-    let
-        top = Int32.fromInt 2147483647
+    top = Int32.fromInt 2147483647
 
-        minus8 = Int32.fromInt (-8)
-    in
+    minus8 = Int32.fromInt (-8)
     Node.printLines
         [ String.fromInt (7 + 3 * 2 - (7 - 3))
         , String.fromInt (2 ^ 3 ^ 2)

@@ -23,9 +23,7 @@ g7 x = x == A.f
 
 
 g8 =
-    let
-        q y = y == A.f
-    in
+    q y = y == A.f
     q 1
 
 

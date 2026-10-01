@@ -26,9 +26,7 @@ update msg count =
             , Cmd.batch
                 [ Cmd.perform
                     (λsend ->
-                        let
-                            _ = Time.sleep (Time.millis 50)
-                        in
+                        _ = Time.sleep (Time.millis 50)
                         send Late
                     )
                 , Cmd.perform (λ_ -> Debug.todo "body threw")

@@ -1,7 +1,7 @@
 (module
   (definition only
     (pat_var f)
-    (let
+    (block
       (let_bind
         (pat_var x)
         (apply
@@ -10,7 +10,7 @@
       (ident x)))
   (definition afterOthers
     (pat_var f)
-    (let
+    (block
       (let_def a
         (int 1))
       (let_bind
@@ -22,7 +22,7 @@
   (definition inTheMiddle
     (pat_var f)
     (pat_var g)
-    (let
+    (block
       (let_def a
         (int 1))
       (let_bind
@@ -39,7 +39,7 @@
   (definition several
     (pat_var f)
     (pat_var g)
-    (let
+    (block
       (let_bind
         (pat_var x)
         (apply
@@ -55,7 +55,7 @@
         (ident y))))
   (definition tuplePattern
     (pat_var f)
-    (let
+    (block
       (let_bind
         (pat_tuple
           (pat_var x)
@@ -69,7 +69,7 @@
   (definition ignored
     (pat_var f)
     (pat_var g)
-    (let
+    (block
       (let_bind
         (pat_wild)
         (apply
@@ -80,7 +80,7 @@
         (int 2))))
   (definition bareCallee
     (pat_var f)
-    (let
+    (block
       (let_bind
         (pat_var x)
         (ident f))
@@ -93,7 +93,7 @@
       (branch
         (pat_ctor Just
           (pat_var v))
-        (let
+        (block
           (let_bind
             (pat_var x)
             (apply

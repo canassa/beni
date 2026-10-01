@@ -72,10 +72,8 @@ note tag x = Debug.log tag x
 
 main : Program
 main =
-    let
-        xs = [ 1, 2, 3 ]
-        built = [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
-    in
+    xs = [ 1, 2, 3 ]
+    built = [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
     Node.printLines
         [ describe []
         , describe [ 7 ]

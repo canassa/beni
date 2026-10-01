@@ -11,9 +11,7 @@ import Node exposing (Program)
 
 
 h m =
-    let
-        v = m?
-    in
+    v = m?
     Just (v + 1)
 
 

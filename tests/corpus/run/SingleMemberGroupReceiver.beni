@@ -17,15 +17,11 @@ pub combine (T a) z = a
 
 f : T -> ( Int, Int )
 f x =
-    let
-        q z = x.combine z
-    in
+    q z = x.combine z
     ( q 1, q "s" )
 
 
 main : Program
 main =
-    let
-        ( a, b ) = f (T 4)
-    in
+    ( a, b ) = f (T 4)
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

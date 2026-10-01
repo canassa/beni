@@ -818,7 +818,5 @@ deep x = x
 
 same : Bool
 same =
-    let
-        p = deep (deep (deep String.length))
-    in
+    p = deep (deep (deep String.length))
     p == p

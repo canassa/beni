@@ -34,9 +34,7 @@ pick big =
 
 main : Program
 main =
-    let
-        bump = pick False
-    in
+    bump = pick False
     Node.printLines
         [ String.fromInt (compose (λn -> n + 1) (λn -> n * 2) 5)
         , String.fromInt (twice (λn -> n * 3) 2)

@@ -28,25 +28,23 @@ n label v = Debug.log label v
 
 main : Program
 main =
-    let
-        callsLater = twice (n "let.callsLater" 3)
-        deferred = λ_ -> later + 1
-        later = n "let.later" 5
-        usesEarlier = later * 10
-        twice k = n "let.twice" (k * 2)
+    callsLater = twice (n "let.callsLater" 3)
+    deferred = λ_ -> later + 1
+    later = n "let.later" 5
+    usesEarlier = later * 10
+    twice k = n "let.twice" (k * 2)
 
-        isEven k =
-            if k == 0 then
-                True
-            else
-                isOdd (k - 1)
+    isEven k =
+        if k == 0 then
+            True
+        else
+            isOdd (k - 1)
 
-        isOdd k =
-            if k == 0 then
-                False
-            else
-                isEven (k - 1)
-    in
+    isOdd k =
+        if k == 0 then
+            False
+        else
+            isEven (k - 1)
     Node.printLines
         [ String.fromInt callsLater
         , String.fromInt (deferred ())

@@ -75,7 +75,7 @@
   (definition multiLine
     (lambda
       (pat_var x)
-      (let
+      (block
         (let_def y
           (add
             (ident x)

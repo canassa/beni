@@ -64,10 +64,8 @@ viewStatus model =
 
 viewHit : Model, Hit -> Html Msg
 viewHit model hit =
-    let
-        isFav = List.member model.favourites hit.id
-        isSaving = List.member model.saving hit.id
-    in
+    isFav = List.member model.favourites hit.id
+    isSaving = List.member model.saving hit.id
     <li class="hit">
         <span class="title">{hit.title}</span>
         <button class="fav" disabled={isSaving} onClick={Favourited hit.id (not isFav)}>

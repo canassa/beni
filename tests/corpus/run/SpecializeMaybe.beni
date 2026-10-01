@@ -27,9 +27,7 @@ firstOr xs d =
 
 shown : List Int -> String
 shown xs =
-    let
-        m = List.head xs
-    in
+    m = List.head xs
     case m of
         Just x ->
             Debug.toString m ++ String.fromInt x
@@ -54,9 +52,7 @@ describe n = Maybe.withDefault (sign n) "zero"
 
 main : Node.Program
 main =
-    let
-        words = [ "a", "b", "c" ]
-    in
+    words = [ "a", "b", "c" ]
     Node.printLines
         [ pick words 1
         , pick words 7

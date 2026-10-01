@@ -48,9 +48,7 @@ points =
 
 main : Program
 main =
-    let
-        dict = List.foldl points (Dict.empty comparePoint) (λp d -> Dict.insert d p (p.x + p.y))
+    dict = List.foldl points (Dict.empty comparePoint) (λp d -> Dict.insert d p (p.x + p.y))
 
-        total = List.foldl points 0 (λp acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
-    in
+    total = List.foldl points 0 (λp acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

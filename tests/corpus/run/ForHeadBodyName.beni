@@ -10,9 +10,7 @@ import Node exposing (Program)
 
 count : Int -> Int
 count limit =
-    let
-        n = walk limit 0 0 0
-    in
+    n = walk limit 0 0 0
     n * 10 + limit
 
 
@@ -21,9 +19,7 @@ walk limit at scanned total =
     if at > limit then
         total
     else
-        let
-            ( s, p ) = advance at scanned total
-        in
+        ( s, p ) = advance at scanned total
         walk limit (at + 7) s p
 
 

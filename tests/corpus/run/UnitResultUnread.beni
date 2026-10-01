@@ -8,21 +8,17 @@ import Node exposing (Program)
 
 note : Int -> ()
 note n =
-    let
-        _ = Debug.log "note" n
-    in
+    _ = Debug.log "note" n
     ()
 
 
 main : Program
 main =
-    let
-        u = note 1
+    u = note 1
 
-        m = Just (note 2)
+    m = Just (note 2)
 
-        xs = [ note 3, u ]
-    in
+    xs = [ note 3, u ]
     Node.printLines
         [ Debug.toString u
         , Debug.toString m

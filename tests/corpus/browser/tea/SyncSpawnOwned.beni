@@ -43,10 +43,8 @@ pause yes =
 
 spawning : (() -> ()) -> ()
 spawning hold =
-    let
-        _ = hold ()
-        _ = Task.spawn (λ() -> Log.info "child runs")
-    in
+    _ = hold ()
+    _ = Task.spawn (λ() -> Log.info "child runs")
     Log.info "body returns"
 
 

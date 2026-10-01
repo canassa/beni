@@ -23,10 +23,8 @@ combine (Box a) z = Box (a.mix z)
 
 
 f n =
-    let
-        r = g n
-        q z = (Box r).combine z
-    in
+    r = g n
+    q z = (Box r).combine z
     ( q 1, q "s" )
 
 
@@ -34,7 +32,5 @@ g n =
     if n > 100 then
         K n
     else
-        let
-            _ = f (n + 1)
-        in
+        _ = f (n + 1)
         K n

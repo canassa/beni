@@ -12,26 +12,20 @@ object _ = Js.apply (Js.global "Object") []
 --| Count to `n` in a property of an object, one tail call per step.
 pub countTo : Int -> Int
 countTo n =
-    let
-        o = object ()
+    o = object ()
 
-        _ = Js.set o "n" (Js.from 0)
-    in
+    _ = Js.set o "n" (Js.from 0)
     step o n
 
 
 step : Js.Value, Int -> Int
 step o n =
-    let
-        k : Int
-        k = Js.to (Js.get o "n")
-    in
+    k : Int
+    k = Js.to (Js.get o "n")
     if k == n then
         k
     else
-        let
-            _ = Js.set o "n" (Js.from (k + 1))
-        in
+        _ = Js.set o "n" (Js.from (k + 1))
         step o n
 
 
@@ -43,20 +37,16 @@ joined = Js.to (Js.call (Js.array [ Js.from "a", Js.from "b", Js.from "c" ]) "jo
 --| A property whose name is not an identifier is read by index.
 pub dashed : String
 dashed =
-    let
-        o = object ()
+    o = object ()
 
-        _ = Js.set o "x-y" (Js.from "dashed")
-    in
+    _ = Js.set o "x-y" (Js.from "dashed")
     Js.to (Js.get o "x-y")
 
 
 --| The tests on `null` and `undefined`, and identity.
 pub tests : List Bool
 tests =
-    let
-        o = object ()
-    in
+    o = object ()
     [ Js.isNull Js.null
     , Js.isNullish Js.undefined
     , Js.isUndefined (Js.get o "missing")
@@ -75,19 +65,15 @@ bits = Js.bitAnd 6 3
 --| is `"1"`.
 pub readThenWrite : String
 readThenWrite =
-    let
-        o = object ()
+    o = object ()
 
-        _ = Js.set o "v" (Js.from 1)
-    in
+    _ = Js.set o "v" (Js.from 1)
     Js.to (Js.apply (Js.global "String") [ Js.get o "v", Js.from (Js.set o "v" (Js.from 2)) ])
 
 
 bump : Js.Value -> Int
 bump o =
-    let
-        _ = Js.set o "v" (Js.from 2)
-    in
+    _ = Js.set o "v" (Js.from 2)
     0
 
 
@@ -100,10 +86,8 @@ second _ b = String.fromInt b
 --| fold the read into the call's arguments, after the call.
 pub readBeforeCall : () -> String
 readBeforeCall () =
-    let
-        o = Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
+    o = Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
 
-        v : Int
-        v = Js.to (Js.get o "v")
-    in
+    v : Int
+    v = Js.to (Js.get o "v")
     second (bump o) v

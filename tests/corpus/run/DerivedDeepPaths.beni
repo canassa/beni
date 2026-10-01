@@ -74,19 +74,17 @@ show label b =
 
 main : Program
 main =
-    let
-        r = rose 25000 (Rose 0 [])
+    r = rose 25000 (Rose 0 [])
 
-        r1 = rose 25000 (Rose 1 [])
+    r1 = rose 25000 (Rose 1 [])
 
-        ev = evens 25000 EEnd
+    ev = evens 25000 EEnd
 
-        ev1 = evens 25000 (E 0 (O ( 0, EEnd )))
+    ev1 = evens 25000 (E 0 (O ( 0, EEnd )))
 
-        t = spine 25000 Leaf
+    t = spine 25000 Leaf
 
-        t1 = spine 25000 (Node Leaf Nothing Leaf)
-    in
+    t1 = spine 25000 (Node Leaf Nothing Leaf)
     Node.printLines
         [ show "rose == rose" (r == rose 25000 (Rose 0 []))
         , show "rose == other" (r == r1)

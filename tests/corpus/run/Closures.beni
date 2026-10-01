@@ -18,11 +18,9 @@ apply f n = f n
 
 main : Program
 main =
-    let
-        addOne = λb c -> add3 1 b c
-        addOneTwo = add3 1 2 _
-        counterFrom start = λstep -> start + step
-    in
+    addOne = λb c -> add3 1 b c
+    addOneTwo = add3 1 2 _
+    counterFrom start = λstep -> start + step
     Node.printLines
         [ String.fromInt (add3 1 2 3)
         , String.fromInt (addOne 2 3)

@@ -27,9 +27,7 @@ runHandler h x = h x
 
 pub callApi : Api -> Int
 callApi api =
-    let
-        () = api.log "called"
-    in
+    () = api.log "called"
     api.size
 
 

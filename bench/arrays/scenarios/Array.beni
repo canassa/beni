@@ -123,11 +123,9 @@ indexedMapHelp arr i n acc func =
 --| Keeps the input's identity when every element is kept (report 38 §7).
 pub filter : Array a, (a -> Bool) -> Array a
 filter arr isGood =
-    let
-        kept = foldr arr [] (λx acc -> if isGood x then [ x, ...acc ] else acc)
+    kept = foldr arr [] (λx acc -> if isGood x then [ x, ...acc ] else acc)
 
-        n = List.length kept
-    in
+    n = List.length kept
     if n == length arr then
         arr
     else

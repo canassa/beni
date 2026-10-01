@@ -17,11 +17,9 @@ type K
 
 
 f m =
-    let
-        _ = m == m
-        y = m?
-        _ = y == K 1
-    in
+    _ = m == m
+    y = m?
+    _ = y == K 1
     f m
 
 

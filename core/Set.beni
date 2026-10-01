@@ -154,7 +154,5 @@ filter (Set dict) isGood = Set (Dict.filter dict (λkey _ -> isGood key))
 pub partition : Set t, (t -> Bool) -> ( Set t, Set t )
     where t.compare : t, t -> Order
 partition (Set dict) isGood =
-    let
-        ( trues, falses ) = Dict.partition dict (λkey _ -> isGood key)
-    in
+    ( trues, falses ) = Dict.partition dict (λkey _ -> isGood key)
     ( Set trues, Set falses )

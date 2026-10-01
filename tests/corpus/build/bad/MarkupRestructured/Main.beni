@@ -24,7 +24,5 @@ style = <style>a {} &lt;/STYLE&gt;</style>
 
 main : Node.Program
 main =
-    let
-        _ = [ para, table, style ]
-    in
+    _ = [ para, table, style ]
     Node.print "unreachable"

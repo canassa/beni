@@ -211,9 +211,7 @@ indexedMapHelp xs i n func b =
 --| Keeps the input's identity when every element is kept (report 38 §7).
 pub filter : List a, (a -> Bool) -> List a
 filter xs isGood =
-    let
-        kept = filterHelp xs 0 (length xs) isGood (builder 0)
-    in
+    kept = filterHelp xs 0 (length xs) isGood (builder 0)
     if length kept == length xs then
         xs
     else
@@ -225,9 +223,7 @@ filterHelp xs i n isGood b =
     if i >= n then
         done b
     else
-        let
-            x = unsafeGet xs i
-        in
+        x = unsafeGet xs i
         if isGood x then
             filterHelp xs (i + 1) n isGood (add b x)
         else
@@ -332,9 +328,7 @@ concatMap xs func =
         (foldl xs
             (builder 0)
             (λx b ->
-                let
-                    ys = func x
-                in
+                ys = func x
                 addAll b ys 0 (length ys)
             )
         )
@@ -352,9 +346,7 @@ intersperse xs sep =
 
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
-    let
-        n = min (length xs) (length ys)
-    in
+    n = min (length xs) (length ys)
     map2Help xs ys 0 n func (builder n)
 
 
@@ -406,30 +398,24 @@ sort xs = sortWith xs (λx y -> x.compare y)
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
-    let
-        decorated = map xs (λx -> ( toKey x, x ))
+    decorated = map xs (λx -> ( toKey x, x ))
 
-        sorted = sortWith decorated (λ( left, _ ) ( right, _ ) -> left.compare right)
-    in
+    sorted = sortWith decorated (λ( left, _ ) ( right, _ ) -> left.compare right)
     map sorted (λ( _, x ) -> x)
 
 
 --| A stable merge sort over slices.
 pub sortWith : List a, (a, a -> Order) -> List a
 sortWith xs cmp =
-    let
-        n = length xs
-    in
+    n = length xs
     if n <= 1 then
         xs
     else
-        let
-            half = n // 2
+        half = n // 2
 
-            left = sortWith (slice xs 0 half) cmp
+        left = sortWith (slice xs 0 half) cmp
 
-            right = sortWith (slice xs half n) cmp
-        in
+        right = sortWith (slice xs half n) cmp
         mergeHelp left 0 (length left) right 0 (length right) cmp (builder n)
 
 
@@ -440,11 +426,9 @@ mergeHelp xs i n ys j m cmp b =
     else if j >= m then
         done (addAll b xs i n)
     else
-        let
-            x = unsafeGet xs i
+        x = unsafeGet xs i
 
-            y = unsafeGet ys j
-        in
+        y = unsafeGet ys j
         case cmp x y of
             GT ->
                 mergeHelp xs i n ys (j + 1) m cmp (add b y)
@@ -478,9 +462,7 @@ partitionHelp xs i n pred yes no =
     if i >= n then
         ( done yes, done no )
     else
-        let
-            x = unsafeGet xs i
-        in
+        x = unsafeGet xs i
         if pred x then
             partitionHelp xs (i + 1) n pred (add yes x) no
         else

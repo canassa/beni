@@ -15,11 +15,9 @@ pub combine (Box a) z = Box a
 
 
 f n =
-    let
-        r = g n
+    r = g n
 
-        q z = r.combine z
-    in
+    q z = r.combine z
     ( q 1, q "s" )
 
 
@@ -28,9 +26,7 @@ g n =
     if n > 100 then
         Box n
     else
-        let
-            _ = f (n + 1)
-        in
+        _ = f (n + 1)
         Box n
 
 
@@ -39,18 +35,14 @@ g2 n =
     if n > 100 then
         Box n
     else
-        let
-            _ = f2 (n + 1)
-        in
+        _ = f2 (n + 1)
         Box n
 
 
 f2 n =
-    let
-        r = g2 n
+    r = g2 n
 
-        q z = r.combine z
-    in
+    q z = r.combine z
     ( q 1, q "s" )
 
 

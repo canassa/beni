@@ -12,19 +12,17 @@ import Set exposing (Set)
 --| Group a list by a key function; keys keep first-seen order in `groupOrder`.
 pub groupBy : List a, (a -> String) -> Dict String (List a)
 groupBy items key =
-    let
-        step item groups =
-            Dict.update groups
-                (key item)
-                (λexisting ->
-                    case existing of
-                        Just group ->
-                            Just [ item, ...group ]
+    step item groups =
+        Dict.update groups
+            (key item)
+            (λexisting ->
+                case existing of
+                    Just group ->
+                        Just [ item, ...group ]
 
-                        Nothing ->
-                            Just [ item ]
-                )
-    in
+                    Nothing ->
+                        Just [ item ]
+            )
     List.foldl items Dict.empty step
         |> Dict.map (λ_ group -> List.reverse group)
 
@@ -32,18 +30,14 @@ groupBy items key =
 --| The order in which keys were first seen.
 pub groupOrder : List a, (a -> String) -> List String
 groupOrder items key =
-    let
-        step item ( seen, order ) =
-            let
-                k = key item
-            in
-            if Set.member seen k then
-                ( seen, order )
-            else
-                ( Set.insert seen k, [ k, ...order ] )
+    step item ( seen, order ) =
+        k = key item
+        if Set.member seen k then
+            ( seen, order )
+        else
+            ( Set.insert seen k, [ k, ...order ] )
 
-        walked = List.foldl items ( Set.empty, [] ) step
-    in
+    walked = List.foldl items ( Set.empty, [] ) step
     List.reverse walked.1
 
 
@@ -217,12 +211,10 @@ nested outer =
 
 pub describe : Dict String Int -> String
 describe counts =
-    let
-        total = Dict.foldl counts 0 (λ_ n acc -> acc + n)
+    total = Dict.foldl counts 0 (λ_ n acc -> acc + n)
 
-        entries =
-            topN counts 3
-                |> List.map (λ( k, n ) -> "${k}=${n}")
-                |> String.join ", "
-    in
+    entries =
+        topN counts 3
+            |> List.map (λ( k, n ) -> "${k}=${n}")
+            |> String.join ", "
     "${Dict.size counts} keys, ${total} total; top: ${entries}"

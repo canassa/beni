@@ -18,9 +18,7 @@ sumTo acc i n =
     if i > n then
         acc
     else
-        let
-            next = step acc i
-        in
+        next = step acc i
         sumTo next (i + 1) n
 
 

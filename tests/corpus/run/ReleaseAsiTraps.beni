@@ -63,10 +63,8 @@ startsWithSlash a b = a / b / 2.0
 -- A template beside an identifier, and a string that is written in pieces.
 pieces : Int -> String
 pieces n =
-    let
-        tag = "n"
-        body = "${tag}=${String.fromInt n}"
-    in
+    tag = "n"
+    body = "${tag}=${String.fromInt n}"
     String.concat [ body, "|", "one\ntwo", "|", "a\tb", "|", "d\${}e" ]
 
 

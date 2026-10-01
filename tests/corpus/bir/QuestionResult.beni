@@ -16,7 +16,5 @@ nested r = Ok (r??)
 
 inLet : String -> Result String Int
 inLet s =
-    let
-        twice t = Ok (parse t? * 2)
-    in
+    twice t = Ok (parse t? * 2)
     twice s

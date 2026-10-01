@@ -63,15 +63,13 @@ unwrap box fallback =
 
 main : Program
 main =
-    let
-        empty = Empty
+    empty = Empty
 
-        letters = keepLarger (keepLarger (keepLarger empty "b") "q") "f"
+    letters = keepLarger (keepLarger (keepLarger empty "b") "q") "f"
 
-        reversed = keepLarger (keepLarger empty "z") "a"
+    reversed = keepLarger (keepLarger empty "z") "a"
 
-        numbers = keepLarger (keepLarger empty 5) 3
-    in
+    numbers = keepLarger (keepLarger empty 5) 3
     Node.printLines
         [ unwrap letters "?"
         , unwrap reversed "?"

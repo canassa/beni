@@ -10,23 +10,17 @@ type Boxed
 
 pub refutable : Maybe Int -> Int
 refutable m =
-    let
-        Just v = m
-    in
+    Just v = m
     v
 
 
 pub insideTuple : ( Maybe Int, Int ) -> Int
 insideTuple pair =
-    let
-        ( Just v, n ) = pair
-    in
+    ( Just v, n ) = pair
     v + n
 
 
 pub fine : Boxed -> Int
 fine b =
-    let
-        (Boxed n) = b
-    in
+    (Boxed n) = b
     n

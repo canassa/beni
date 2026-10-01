@@ -53,9 +53,7 @@ update msg n =
             ( n + 1, keyed fibers "replace" Cmd.Restart "replacement ${String.fromInt (n + 1)}" )
 
         Said what ->
-            let
-                _ = Log.info "update: ${what}"
-            in
+            _ = Log.info "update: ${what}"
             ( n, Cmd.none )
 
 
@@ -96,10 +94,8 @@ pause yes =
 
 say : Cmd.Send Msg, (() -> ()), String -> ()
 say send hold what =
-    let
-        _ = hold ()
-        _ = Log.info "body: ${what}"
-    in
+    _ = hold ()
+    _ = Log.info "body: ${what}"
     send (Said what)
 
 

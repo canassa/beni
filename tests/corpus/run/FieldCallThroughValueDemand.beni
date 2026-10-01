@@ -17,9 +17,7 @@ type K
 
 
 pub ma (K n) x =
-    let
-        _ = mb (K n) 0
-    in
+    _ = mb (K n) 0
     x.combine 1
 
 
@@ -27,9 +25,7 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        let
-            _ = (K 1).ma { combine = λz -> z + 1 }
-        in
+        _ = (K 1).ma { combine = λz -> z + 1 }
         y
 
 

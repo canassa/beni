@@ -116,15 +116,11 @@ item : Host msg, Item msg, State model msg -> State model msg
 item host it state =
     case it of
         Perform job ->
-            let
-                _ = spawn host state.scope job
-            in
+            _ = spawn host state.scope job
             state
 
         Now job ->
-            let
-                _ = queue host job
-            in
+            _ = queue host job
             state
 
         Keyed path policy job ->
@@ -137,24 +133,18 @@ item host it state =
             stopped state.scope (runsAt state path) { state | jobs = Dict.remove state.jobs path }
 
         CancelAll prefix ->
-            let
-                ( gone, kept ) = Dict.partition state.jobs (λpath _ -> startsWith path prefix)
-            in
+            ( gone, kept ) = Dict.partition state.jobs (λpath _ -> startsWith path prefix)
             { state | jobs = stopped state.scope (List.concat (Dict.values gone)) kept }
 
         After work ->
-            let
-                _ = Hosted.afterRender host work
-            in
+            _ = Hosted.afterRender host work
             state
 
 
 -- A keyed body that may wait.
 keyed : Host msg, List Key, Policy, Job msg, State model msg -> State model msg
 keyed host path policy job state =
-    let
-        old = List.filter (runsAt state path) running
-    in
+    old = List.filter (runsAt state path) running
     case ( policy, old ) of
         ( _, [] ) ->
             put state path [ spawn host state.scope job ]
@@ -176,9 +166,7 @@ keyed host path policy job state =
 -- spawned, unless a body it must wait for is in a fiber.
 keyedNow : Host msg, List Key, Policy, Job msg, State model msg -> State model msg
 keyedNow host path policy job state =
-    let
-        old = List.filter (runsAt state path) running
-    in
+    old = List.filter (runsAt state path) running
     case ( policy, old ) of
         ( _, [] ) ->
             put state path [ queue host job ]
@@ -238,9 +226,7 @@ settleFirst policy old =
 -- own as its `send`.
 spawn : Host msg, Scope, Job msg -> Run msg
 spawn host scope job =
-    let
-        o = Hosted.outlet host
-    in
+    o = Hosted.outlet host
     InFiber (Task.spawnIn scope (λ() -> Hosted.runJob job (Hosted.emit o _))) o
 
 
@@ -254,9 +240,7 @@ spawnAfter host scope first job =
 -- run, with an outlet of its own as its `send`.
 queue : Host msg, Job msg -> Run msg
 queue host job =
-    let
-        o = Hosted.outlet host
-    in
+    o = Hosted.outlet host
     Queued (Task.soon (λ() -> Hosted.callJob job (Hosted.emit o _))) o
 
 
@@ -284,10 +268,8 @@ put state path runs = { state | jobs = Dict.insert state.jobs path runs }
 -- wait before its cancellation can reach it.
 stopped : Scope, List (Run msg), a -> a
 stopped scope runs value =
-    let
-        _ = closing runs ()
-        _ = (cancelling runs) scope
-    in
+    _ = closing runs ()
+    _ = (cancelling runs) scope
     value
 
 
@@ -301,9 +283,7 @@ canceller runs r k =
     case r of
         InFiber _ _ ->
             λscope ->
-                let
-                    _ = Task.spawnIn scope (λ() -> stop runs)
-                in
+                _ = Task.spawnIn scope (λ() -> stop runs)
                 ()
 
         Queued _ _ ->
@@ -410,16 +390,14 @@ lives l =
 
 diff : Host msg, Scope, List ( Key, Tap msg ), Dict Key (Live msg) -> Dict Key (Live msg)
 diff host scope declared live =
-    let
-        wanted =
-            List.foldl
-                declared
-                Dict.empty
-                (λ( k, t ) d ->
-                    Dict.insert d k (List.append (Maybe.withDefault (Dict.get d k) []) [ t ])
-                )
-        kept = Dict.foldl live Dict.empty (λk l d -> keep scope wanted k l d)
-    in
+    wanted =
+        List.foldl
+            declared
+            Dict.empty
+            (λ( k, t ) d ->
+                Dict.insert d k (List.append (Maybe.withDefault (Dict.get d k) []) [ t ])
+            )
+    kept = Dict.foldl live Dict.empty (λk l d -> keep scope wanted k l d)
     Dict.foldl wanted kept (λk taps d -> arrive host scope k taps d)
 
 
@@ -427,16 +405,12 @@ keep : Scope, Dict Key (List (Tap msg)), Key, Live msg, Dict Key (Live msg) -> D
 keep scope wanted k l d =
     case Dict.get wanted k of
         Just taps ->
-            let
-                _ = Hosted.retap l.relay taps
-            in
+            _ = Hosted.retap l.relay taps
             Dict.insert d k l
 
         Nothing ->
-            let
-                _ = Hosted.closeRelay l.relay
-                _ = Task.spawnIn scope (λ() -> Task.cancel l.fiber)
-            in
+            _ = Hosted.closeRelay l.relay
+            _ = Task.spawnIn scope (λ() -> Task.cancel l.fiber)
             d
 
 
@@ -444,10 +418,8 @@ arrive : Host msg, Scope, Key, List (Tap msg), Dict Key (Live msg) -> Dict Key (
 arrive host scope k taps d =
     case ( Dict.member d k, taps ) of
         ( False, [ first, ..._ ] ) ->
-            let
-                r = Hosted.relay host first
-                _ = Hosted.retap r taps
-            in
+            r = Hosted.relay host first
+            _ = Hosted.retap r taps
             Dict.insert d k { fiber = Task.spawnIn scope (λ() -> Hosted.run r), relay = r }
 
         _ ->

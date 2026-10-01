@@ -30,31 +30,25 @@ tick () = 7
 
 say : Int -> ()
 say n =
-    let
-        _ = Debug.log "say" n
-    in
+    _ = Debug.log "say" n
     ()
 
 
 pub twice : Bool -> Int
 twice c =
-    let
-        _ = say 1
+    _ = say 1
 
-        _ =
-            if c then
-                say (tick ())
-            else
-                ()
-    in
+    _ =
+        if c then
+            say (tick ())
+        else
+            ()
     2
 
 
 pub quiet : Int -> Int
 quiet n =
-    let
-        _ = n * 2
-    in
+    _ = n * 2
     n
 
 

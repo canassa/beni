@@ -154,8 +154,6 @@ watch target name read emit =
 
 forward : Listener, (() -> a), Browser.Send a -> ()
 forward l read emit =
-    let
-        _ = next l
-        _ = emit (read ())
-    in
+    _ = next l
+    _ = emit (read ())
     forward l read emit

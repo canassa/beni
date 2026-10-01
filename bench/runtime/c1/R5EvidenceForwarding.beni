@@ -95,13 +95,9 @@ tallyBy xs mark = level1 xs mark
 
 main : Program
 main =
-    let
-        total =
-            List.foldl
-                (List.range 1 outerReps)
-                0
-                (λ_ acc ->
-                    List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot)
-                )
-    in
+    total =
+        List.foldl
+            (List.range 1 outerReps)
+            0
+            (λ_ acc -> List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot))
     Node.print (String.fromInt total)

@@ -198,48 +198,46 @@ countTrue bs =
 
 main : Program
 main =
-    let
-        recordHits =
-            List.foldl
-                (List.range 1 recordReps)
-                0
-                (λ_ acc ->
-                    List.foldl records
-                        acc
-                        (λr n ->
-                            if r == probe then
-                                n + 1
-                            else
-                                n
-                        )
-                )
+    recordHits =
+        List.foldl
+            (List.range 1 recordReps)
+            0
+            (λ_ acc ->
+                List.foldl records
+                    acc
+                    (λr n ->
+                        if r == probe then
+                            n + 1
+                        else
+                            n
+                    )
+            )
 
-        nestedHits =
-            List.foldl
-                (List.range 1 nestedOuter)
-                0
-                (λ_ acc ->
-                    List.foldl (List.range 1 nestedInner)
-                        acc
-                        (λ_ n ->
-                            if nestedLeft == nestedRight then
-                                n + 1
-                            else
-                                n
-                        )
-                )
+    nestedHits =
+        List.foldl
+            (List.range 1 nestedOuter)
+            0
+            (λ_ acc ->
+                List.foldl (List.range 1 nestedInner)
+                    acc
+                    (λ_ n ->
+                        if nestedLeft == nestedRight then
+                            n + 1
+                        else
+                            n
+                    )
+            )
 
-        listHits =
-            List.foldl
-                (List.range 1 listReps)
-                0
-                (λ_ acc ->
-                    if shapesLeft == shapesRight then
-                        acc + 1
-                    else
-                        acc
-                )
-    in
+    listHits =
+        List.foldl
+            (List.range 1 listReps)
+            0
+            (λ_ acc ->
+                if shapesLeft == shapesRight then
+                    acc + 1
+                else
+                    acc
+            )
     Node.print
         (String.join
             [ String.fromInt recordHits

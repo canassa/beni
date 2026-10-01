@@ -30,11 +30,9 @@ asArgument =
 
 
 inLet =
-    let
-        text =
-            \\x
-            \\y
-    in
+    text =
+        \\x
+        \\y
     text
 
 

@@ -10,10 +10,8 @@ import Units
 
 main : Node.Program
 main =
-    let
-        first = Units.tick ()
-        second = Units.tick ()
-    in
+    first = Units.tick ()
+    second = Units.tick ()
     Node.printLines
         [ String.fromInt (first + second)
         , String.fromInt (Units.double 21 ())

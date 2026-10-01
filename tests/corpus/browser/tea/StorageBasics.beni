@@ -47,9 +47,7 @@ update msg lines =
             )
 
         Forget ->
-            let
-                _ = Storage.remove Local "todos"
-            in
+            _ = Storage.remove Local "todos"
             ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ]
             , Cmd.none
             )

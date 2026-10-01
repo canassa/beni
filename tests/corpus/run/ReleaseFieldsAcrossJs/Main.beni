@@ -34,17 +34,15 @@ sizeText size =
 
 main : Node.Program
 main =
-    let
-        p : Point
-        p = { x = 3, label = "p" }
+    p : Point
+    p = { x = 3, label = "p" }
 
-        o = Probe.origin ()
+    o = Probe.origin ()
 
-        made = Probe.fromJs ()
+    made = Probe.fromJs ()
 
-        item : Item
-        item = Probe.keep { label = "kept", weight = 7 }
-    in
+    item : Item
+    item = Probe.keep { label = "kept", weight = 7 }
     Node.printLines
         [ Probe.describe p
         , Probe.describe { o | x = o.x + 1 }

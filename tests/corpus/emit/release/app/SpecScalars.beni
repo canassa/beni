@@ -19,9 +19,7 @@ type alias Box =
 
 area : Int, Int -> Int
 area w h =
-    let
-        r = { w = w * 2, h = h + 1, name = "r" }
-    in
+    r = { w = w * 2, h = h + 1, name = "r" }
     r.w * r.h + String.length r.name
 
 
@@ -31,9 +29,7 @@ describe b = "${b.name} ${String.fromInt b.w}"
 
 kept : Int -> String
 kept w =
-    let
-        r = { w = w, h = 1, name = "kept" }
-    in
+    r = { w = w, h = 1, name = "kept" }
     describe r ++ String.fromInt r.h
 
 

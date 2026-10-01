@@ -8,13 +8,9 @@ import Js
 --| `Main`, whose top level then holds the cell.
 pub counter : Int -> (() -> Int)
 counter start =
-    let
-        n = Js.ref start
-    in
+    n = Js.ref start
     λ() ->
-        let
-            _ = Js.write n (Js.read n + 1)
-        in
+        _ = Js.write n (Js.read n + 1)
         Js.read n
 
 

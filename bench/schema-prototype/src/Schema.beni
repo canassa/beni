@@ -156,12 +156,10 @@ fromEndpoint item =
 
 pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
 decodeWith options schema value =
-    let
-        context = rootContext options Decoding
-        _ <- Result.andThen (schema.encoded.validate context value)
-        decodedValue <- Result.andThen (schema.decodeValue context value)
-        _ <- Result.andThen (schema.decoded.validate context decodedValue)
-    in
+    context = rootContext options Decoding
+    _ <- Result.andThen (schema.encoded.validate context value)
+    decodedValue <- Result.andThen (schema.decodeValue context value)
+    _ <- Result.andThen (schema.decoded.validate context decodedValue)
     Ok decodedValue
 
 
@@ -171,12 +169,10 @@ decode schema value = decodeWith defaultOptions schema value
 
 pub encodeWith : Options, Schema e a, a -> Result (List Issue) e
 encodeWith options schema value =
-    let
-        context = rootContext options Encoding
-        _ <- Result.andThen (schema.decoded.validate context value)
-        encodedValue <- Result.andThen (schema.encodeValue context value)
-        _ <- Result.andThen (schema.encoded.validate context encodedValue)
-    in
+    context = rootContext options Encoding
+    _ <- Result.andThen (schema.decoded.validate context value)
+    encodedValue <- Result.andThen (schema.encodeValue context value)
+    _ <- Result.andThen (schema.encoded.validate context encodedValue)
     Ok encodedValue
 
 
@@ -186,10 +182,8 @@ encode schema value = encodeWith defaultOptions schema value
 
 pub readWith : Options, Schema e a, Value -> Result (List Issue) a
 readWith options schema value =
-    let
-        context = rootContext options Decoding
-        encodedValue <- Result.andThen (schema.encoded.readValue context value)
-    in
+    context = rootContext options Decoding
+    encodedValue <- Result.andThen (schema.encoded.readValue context value)
     decodeWith options schema encodedValue
 
 
@@ -199,10 +193,8 @@ read schema value = readWith defaultOptions schema value
 
 pub writeWith : Options, Schema e a, a -> Result (List Issue) Value
 writeWith options schema value =
-    let
-        context = rootContext options Encoding
-        encodedValue <- Result.andThen (encodeWith options schema value)
-    in
+    context = rootContext options Encoding
+    encodedValue <- Result.andThen (encodeWith options schema value)
     schema.encoded.writeValue context encodedValue
 
 
@@ -264,17 +256,13 @@ pub transform :
 transform schema target decodeTransform encodeTransform =
     make schema.encoded target
         (λcontext encoded ->
-            let
-                value <- Result.andThen (schema.decodeValue context encoded)
-                _ <- Result.andThen (schema.decoded.validate context value)
-            in
+            value <- Result.andThen (schema.decodeValue context encoded)
+            _ <- Result.andThen (schema.decoded.validate context value)
             decodeTransform context value
         )
         (λcontext value ->
-            let
-                original <- Result.andThen (encodeTransform context value)
-                _ <- Result.andThen (schema.decoded.validate context original)
-            in
+            original <- Result.andThen (encodeTransform context value)
+            _ <- Result.andThen (schema.decoded.validate context original)
             schema.encodeValue context original
         )
 
@@ -288,9 +276,7 @@ refine base message predicate =
         base.readValue
         base.writeValue
         (λcontext value ->
-            let
-                _ <- Result.andThen (base.validate context value)
-            in
+            _ <- Result.andThen (base.validate context value)
             if predicate value then
                 Ok ()
             else
@@ -366,9 +352,7 @@ int =
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
         (λcontext value ->
-            let
-                asFloat = toFloat value
-            in
+            asFloat = toFloat value
             if isSafeWhole asFloat then
                 Ok asFloat
             else
@@ -409,9 +393,7 @@ intEndpoint =
                     expected context "integer"
         )
         (λcontext value ->
-            let
-                number = toFloat value
-            in
+            number = toFloat value
             if isSafeWhole number then
                 Ok (Wire.Number number)
             else
@@ -448,23 +430,17 @@ listEndpoint item =
         (λcontext value ->
             case value of
                 Wire.Array values ->
-                    let
-                        nested <- Result.andThen (enter context)
-                    in
+                    nested <- Result.andThen (enter context)
                     traverse nested values item.readValue
                 _ ->
                     expected context "array"
         )
         (λcontext values ->
-            let
-                nested <- Result.andThen (enter context)
-            in
+            nested <- Result.andThen (enter context)
             Result.map (traverse nested values item.writeValue) Wire.Array
         )
         (λcontext values ->
-            let
-                nested <- Result.andThen (enter context)
-            in
+            nested <- Result.andThen (enter context)
             Result.map (traverse nested values item.validate) (λ_ -> ())
         )
 
@@ -528,16 +504,12 @@ requiredField key item =
                 Nothing ->
                     Err [ issue (atKey context key) MissingField "required field is missing" ]
                 Just value ->
-                    let
-                        decodedValue <- Result.andThen (item.readValue (atKey context key) value)
-                        _ <- Result.andThen (item.validate (atKey context key) decodedValue)
-                    in
+                    decodedValue <- Result.andThen (item.readValue (atKey context key) value)
+                    _ <- Result.andThen (item.validate (atKey context key) decodedValue)
                     Ok decodedValue
     , writeField =
         λcontext value ->
-            let
-                _ <- Result.andThen (item.validate (atKey context key) value)
-            in
+            _ <- Result.andThen (item.validate (atKey context key) value)
             Result.map (item.writeValue (atKey context key) value) (λwire -> [ ( key, wire ) ])
     , validateField = λcontext value -> item.validate (atKey context key) value
     }
@@ -554,10 +526,8 @@ optionalField key item =
                 Nothing ->
                     Ok Missing
                 Just value ->
-                    let
-                        decodedValue <- Result.andThen (item.readValue (atKey context key) value)
-                        _ <- Result.andThen (item.validate (atKey context key) decodedValue)
-                    in
+                    decodedValue <- Result.andThen (item.readValue (atKey context key) value)
+                    _ <- Result.andThen (item.validate (atKey context key) decodedValue)
                     Ok (Present decodedValue)
     , writeField =
         λcontext value ->
@@ -565,9 +535,7 @@ optionalField key item =
                 Missing ->
                     Ok []
                 Present inner ->
-                    let
-                        _ <- Result.andThen (item.validate (atKey context key) inner)
-                    in
+                    _ <- Result.andThen (item.validate (atKey context key) inner)
                     Result.map
                         (item.writeValue (atKey context key) inner)
                         (λwire -> [ ( key, wire ) ])
@@ -593,25 +561,19 @@ object1Endpoint name field build get =
         (λcontext value ->
             case value of
                 Wire.Object fields ->
-                    let
-                        nested <- Result.andThen (enter context)
-                        unknownResult = unknown nested [ field.key ] fields
-                        fieldResult = field.readField nested fields
-                    in
+                    nested <- Result.andThen (enter context)
+                    unknownResult = unknown nested [ field.key ] fields
+                    fieldResult = field.readField nested fields
                     combineObject1 nested.options.errors unknownResult fieldResult build
                 _ ->
                     expected context name
         )
         (λcontext value ->
-            let
-                nested <- Result.andThen (enter context)
-            in
+            nested <- Result.andThen (enter context)
             Result.map (field.writeField nested (get value)) Wire.Object
         )
         (λcontext value ->
-            let
-                nested <- Result.andThen (enter context)
-            in
+            nested <- Result.andThen (enter context)
             field.validateField nested (get value)
         )
 
@@ -632,12 +594,10 @@ object2Endpoint name first second build getFirst getSecond =
         (λcontext value ->
             case value of
                 Wire.Object fields ->
-                    let
-                        nested <- Result.andThen (enter context)
-                        unknownResult = unknown nested [ first.key, second.key ] fields
-                        firstResult = first.readField nested fields
-                        secondResult = second.readField nested fields
-                    in
+                    nested <- Result.andThen (enter context)
+                    unknownResult = unknown nested [ first.key, second.key ] fields
+                    firstResult = first.readField nested fields
+                    secondResult = second.readField nested fields
                     combineObject2
                         nested.options.errors
                         unknownResult
@@ -648,19 +608,15 @@ object2Endpoint name first second build getFirst getSecond =
                     expected context name
         )
         (λcontext value ->
-            let
-                nested <- Result.andThen (enter context)
-                firstResult = first.writeField nested (getFirst value)
-                secondResult = second.writeField nested (getSecond value)
-            in
+            nested <- Result.andThen (enter context)
+            firstResult = first.writeField nested (getFirst value)
+            secondResult = second.writeField nested (getSecond value)
             combineFields nested.options.errors firstResult secondResult
         )
         (λcontext value ->
-            let
-                nested <- Result.andThen (enter context)
-                firstResult = first.validateField nested (getFirst value)
-                secondResult = second.validateField nested (getSecond value)
-            in
+            nested <- Result.andThen (enter context)
+            firstResult = first.validateField nested (getFirst value)
+            secondResult = second.validateField nested (getSecond value)
             combineValidations nested.options.errors firstResult secondResult
         )
 
@@ -669,30 +625,22 @@ pub deferEndpoint : String, (() -> Endpoint a) -> Endpoint a
 deferEndpoint name get =
     endpoint (plain (ReferenceShape name))
         (λcontext value ->
-            let
-                target = get ()
-            in
+            target = get ()
             target.readValue context value
         )
         (λcontext value ->
-            let
-                target = get ()
-            in
+            target = get ()
             target.writeValue context value
         )
         (λcontext value ->
-            let
-                target = get ()
-            in
+            target = get ()
             target.validate context value
         )
 
 
 pub recursiveEndpoint : String, Shape, (() -> Endpoint a) -> Endpoint a
 recursiveEndpoint name definition getBody =
-    let
-        deferred = deferEndpoint name getBody
-    in
+    deferred = deferEndpoint name getBody
     { deferred
         | description = { root = ReferenceShape name, definitions = [ ( name, definition ) ] }
     }
@@ -753,29 +701,27 @@ unknown context known fields =
         IgnoreUnknown ->
             Ok ()
         RejectUnknown ->
-            let
-                issues =
-                    List.foldl
-                        fields
-                        []
-                        (λ( key, _ ) found ->
-                            if List.member known key then
-                                found
-                            else
-                                case context.options.errors of
-                                    FirstError ->
-                                        if found == [] then
-                                            [ issue (atKey context key) UnknownField "unknown field"
-                                            ]
-                                        else
-                                            found
-
-                                    AllErrors ->
+            issues =
+                List.foldl
+                    fields
+                    []
+                    (λ( key, _ ) found ->
+                        if List.member known key then
+                            found
+                        else
+                            case context.options.errors of
+                                FirstError ->
+                                    if found == [] then
                                         [ issue (atKey context key) UnknownField "unknown field"
-                                        , ...found
                                         ]
-                        )
-            in
+                                    else
+                                        found
+
+                                AllErrors ->
+                                    [ issue (atKey context key) UnknownField "unknown field"
+                                    , ...found
+                                    ]
+                    )
             if issues == [] then
                 Ok ()
             else

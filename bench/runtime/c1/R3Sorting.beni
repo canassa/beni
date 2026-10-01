@@ -81,25 +81,21 @@ toInt s = Maybe.withDefault (String.toInt s) 0
 
 main : Program
 main =
-    let
-        total =
-            List.foldl
-                (List.range 1 reps)
-                0
-                (λ_ acc ->
-                    let
-                        ints = hash (List.sort values)
+    total =
+        List.foldl
+            (List.range 1 reps)
+            0
+            (λ_ acc ->
+                ints = hash (List.sort values)
 
-                        texts = hash (List.map (List.sort strings) toInt)
+                texts = hash (List.map (List.sort strings) toInt)
 
-                        ages =
-                            hash
-                                (List.map
-                                    (List.sortBy people (λp -> p.age))
-                                    (λp -> p.age * 1000 + toInt p.name)
-                                )
-                    in
-                    Int.mod (acc + ints + texts + ages) modulus
-                )
-    in
+                ages =
+                    hash
+                        (List.map
+                            (List.sortBy people (λp -> p.age))
+                            (λp -> p.age * 1000 + toInt p.name)
+                        )
+                Int.mod (acc + ints + texts + ages) modulus
+            )
     Node.print (String.join [ String.fromInt (List.length values), String.fromInt total ] " ")

@@ -60,9 +60,7 @@ errorToStringHelp error context =
                     errorToStringHelp only context
 
                 _ ->
-                    let
-                        numbered i problem = "(${i + 1}) " ++ indent (errorToString problem)
-                    in
+                    numbered i problem = "(${i + 1}) " ++ indent (errorToString problem)
                     [ ("Every possibility failed" ++ atPath context ++ ":")
                     , ...List.indexedMap errors numbered
                     ]

@@ -32,21 +32,17 @@ type alias Sized =
 
 pub describe : Shape -> Sized
 describe s =
-    let
-        measured = Shapes.area s
+    measured = Shapes.area s
 
-        twice = Shapes.double measured
-    in
+    twice = Shapes.double measured
     { size = twice, label = String.fromInt measured }
 
 
 pub biggest : Shape, Shape -> Int
 biggest one other =
-    let
-        a = Shapes.area one
+    a = Shapes.area one
 
-        b = Shapes.area other
-    in
+    b = Shapes.area other
     if a > b then
         a
     else

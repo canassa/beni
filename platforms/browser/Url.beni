@@ -134,23 +134,21 @@ beforePath protocol path query fragment str =
 --|     -- "https://example.com:8042/over/there?name=ferret"
 pub toString : Url -> String
 toString url =
-    let
-        scheme =
-            case url.protocol of
-                Http ->
-                    "http://"
+    scheme =
+        case url.protocol of
+            Http ->
+                "http://"
 
-                Https ->
-                    "https://"
+            Https ->
+                "https://"
 
-        withPort =
-            case url.port_ of
-                Nothing ->
-                    scheme ++ url.host
+    withPort =
+        case url.port_ of
+            Nothing ->
+                scheme ++ url.host
 
-                Just p ->
-                    "${scheme}${url.host}:${String.fromInt p}"
-    in
+            Just p ->
+                "${scheme}${url.host}:${String.fromInt p}"
     withPort ++ url.path ++ prefixed "?" url.query ++ prefixed "#" url.fragment
 
 

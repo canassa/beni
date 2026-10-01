@@ -15,16 +15,12 @@ g n =
     if n > 100 then
         Box n
     else
-        let
-            _ = f (n + 1)
-        in
+        _ = f (n + 1)
         Box n
 
 
 f n =
-    let
-        r = g n
+    r = g n
 
-        q z = r.combine z
-    in
+    q z = r.combine z
     ( q 1, q "s" )

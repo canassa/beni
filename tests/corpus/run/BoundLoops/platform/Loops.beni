@@ -14,9 +14,7 @@ calls = Js.ref 0
 --| Count a call, and answer `n`.
 pub tick : Int -> Int
 tick n =
-    let
-        _ = Js.write calls (Js.read calls + 1)
-    in
+    _ = Js.write calls (Js.read calls + 1)
     n
 
 
@@ -34,11 +32,9 @@ sample () = Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
 --| The first `null` of the sample from `from`, times ten.
 pub firstNull : Int -> Int
 firstNull from =
-    let
-        xs = sample ()
+    xs = sample ()
 
-        k = upToNull xs (tick from)
-    in
+    k = upToNull xs (tick from)
     k * 10
 
 
@@ -54,11 +50,9 @@ upToNull xs k =
 --| How far the two ends of `xs` mirror each other, as `"a b"`.
 pub mirror : List Int -> String
 mirror list =
-    let
-        xs = Js.from list
+    xs = Js.from list
 
-        ( a, b ) = inward xs 0 (Js.to (Js.get xs "length"))
-    in
+    ( a, b ) = inward xs 0 (Js.to (Js.get xs "length"))
     "${String.fromInt a} ${String.fromInt b}"
 
 
@@ -74,20 +68,16 @@ inward xs a b =
 --| `[0, 1, 4, …]`, the first `n` squares.
 pub squares : Int -> List Int
 squares n =
-    let
-        xs = Js.array []
+    xs = Js.array []
 
-        _ = fillSquares xs n 0
-    in
+    _ = fillSquares xs n 0
     Js.to xs
 
 
 fillSquares : Js.Value, Int, Int -> ()
 fillSquares xs n k =
     if k < n then
-        let
-            _ = Js.setAt xs k (Js.from (k * k))
-        in
+        _ = Js.setAt xs k (Js.from (k * k))
         fillSquares xs n (k + 1)
     else
         ()
@@ -103,9 +93,7 @@ widths = sumRows (Js.array [ sample (), Js.array [ Js.from 1, Js.null ], Js.arra
 sumRows : Js.Value, Int, Int -> Int
 sumRows rows r total =
     if r < Js.to (Js.get rows "length") then
-        let
-            w = upToNull2 (Js.at rows r) 0
-        in
+        w = upToNull2 (Js.at rows r) 0
         sumRows rows (r + 1) (total + w)
     else
         total
@@ -131,9 +119,7 @@ pub type Step
 --| The total of the steps up to the first `Stop`, and where it stopped.
 pub run : List Step -> String
 run steps =
-    let
-        ( total, at ) = walk steps 0 0
-    in
+    ( total, at ) = walk steps 0 0
     "${String.fromInt total} at ${String.fromInt at}"
 
 

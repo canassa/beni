@@ -15,9 +15,7 @@ gather from into =
     if Js.isNull (Js.get from "firstChild") then
         ()
     else
-        let
-            _ = Js.call into "appendChild" [ Js.get from "firstChild" ]
-        in
+        _ = Js.call into "appendChild" [ Js.get from "firstChild" ]
         gather from into
 
 
@@ -26,9 +24,7 @@ each fs k =
     if k == Js.to (Js.get fs "length") then
         ()
     else
-        let
-            _ = Js.apply (Js.at fs k) []
-        in
+        _ = Js.apply (Js.at fs k) []
         each fs (k + 1)
 
 
@@ -42,11 +38,9 @@ find xs k =
 
 pub settle : Js.Value, Js.Value -> ()
 settle n end =
-    let
-        next = Js.get n "nextSibling"
+    next = Js.get n "nextSibling"
 
-        _ = Js.call n "remove" []
-    in
+    _ = Js.call n "remove" []
     if Js.same n end then
         ()
     else

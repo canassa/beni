@@ -11,9 +11,7 @@ greet name age = "${name} is ${String.fromInt age}"
 
 main : Program
 main =
-    let
-        inner = greet "Bob" 7
-    in
+    inner = greet "Bob" 7
     Node.printLines
         [ greet "Ada" 36
         , "sum = ${String.fromInt (1 + 2)}"

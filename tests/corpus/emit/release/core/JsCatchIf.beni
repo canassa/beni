@@ -20,22 +20,18 @@ decodes text =
 
 pub stored : Js.Value, String, String -> Int
 stored area key value =
-    let
-        code : Int
-        code =
-            Js.catchIf
-                (λ() ->
-                    let
-                        _ = Js.call area "setItem" [ Js.from key, Js.from value ]
-                    in
-                    0
-                )
-                (λerr ->
-                    Js.instanceOf err (Js.global "DOMException")
-                        && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
-                )
-                (λ_ -> 1)
-    in
+    code : Int
+    code =
+        Js.catchIf
+            (λ() ->
+                _ = Js.call area "setItem" [ Js.from key, Js.from value ]
+                0
+            )
+            (λerr ->
+                Js.instanceOf err (Js.global "DOMException")
+                    && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
+            )
+            (λ_ -> 1)
     code + 1
 
 

@@ -25,9 +25,7 @@ tick () = Js.set (Js.global "document") "title" (Js.from "tick")
 -- amended 2026-10-02), would see the cell nothing writes and fold the test.
 pub start : Bool -> ()
 start flag =
-    let
-        scheduled = Js.ref flag
-    in
+    scheduled = Js.ref flag
     later scheduled
 
 

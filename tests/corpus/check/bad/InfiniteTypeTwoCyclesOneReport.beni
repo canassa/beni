@@ -5,9 +5,7 @@
 -- field-name text; there are no fields here, so the first element's.
 n : Int
 n =
-    let
-        g = ( [ List.singleton, identity ], [ Just, identity ] )
-        h = g
-        k = g
-    in
+    g = ( [ List.singleton, identity ], [ Just, identity ] )
+    h = g
+    k = g
     0

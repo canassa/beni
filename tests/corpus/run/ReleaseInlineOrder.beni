@@ -47,37 +47,31 @@ log label v = Debug.log label v
 -- Hazard 1: a surviving effectful call sits between the binding and its use.
 afterEffect : Point -> Int
 afterEffect p =
-    let
-        first = log "inline.first" p.x
+    first = log "inline.first" p.x
 
-        second = log "inline.second" p.y
-    in
+    second = log "inline.second" p.y
     first + second
 
 
 -- Hazard 2: the single use is inside a closure, and the closure runs twice.
 insideLambda : Point -> Int
 insideLambda p =
-    let
-        v = log "inline.lambda" p.x
+    v = log "inline.lambda" p.x
 
-        f = λ_ -> v + 1
-    in
+    f = λ_ -> v + 1
     f () + f ()
 
 
 -- Hazard 3: the single use is inside a loop the binding sits outside of.
 insideLoop : Point -> Int
 insideLoop p =
-    let
-        v = log "inline.loop" p.x
+    v = log "inline.loop" p.x
 
-        go k total =
-            if k == 0 then
-                total
-            else
-                go (k - 1) (total + v)
-    in
+    go k total =
+        if k == 0 then
+            total
+        else
+            go (k - 1) (total + v)
     go 3 0
 
 

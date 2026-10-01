@@ -222,25 +222,23 @@ pairText p = "${String.fromInt p.zeta}/${String.fromInt p.alpha}"
 
 main : Node.Program
 main =
-    let
-        rect : Rect
-        rect = Rect 2 3 "rect"
+    rect : Rect
+    rect = Rect 2 3 "rect"
 
-        disc : Disc
-        disc = { radius = 4, name = "disc" }
+    disc : Disc
+    disc = { radius = 4, name = "disc" }
 
-        pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
+    pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
 
-        byPair = Dict.fromList (List.map pairs (λp -> ( p, p.zeta + p.alpha )))
+    byPair = Dict.fromList (List.map pairs (λp -> ( p, p.zeta + p.alpha )))
 
-        letters : Letters
-        letters = { a = 1, b = "b" }
+    letters : Letters
+    letters = { a = 1, b = "b" }
 
-        tuple = ( letters.b, letters.a )
+    tuple = ( letters.b, letters.a )
 
-        counter : Counter
-        counter = { step = λn -> n + 10, name = "counter" }
-    in
+    counter : Counter
+    counter = { step = λn -> n + 10, name = "counter" }
     Node.printLines
         [ Shapes.nameOf rect
         , Shapes.nameOf disc

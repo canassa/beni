@@ -61,11 +61,9 @@ pub toUpper : Char -> Char
 toUpper char =
     Js.pure
         (λ() ->
-            let
-                mapped = Js.call (Js.from char) "toUpperCase" []
-                points : Int
-                points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
-            in
+            mapped = Js.call (Js.from char) "toUpperCase" []
+            points : Int
+            points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
             if points == 1 then Js.to mapped else char
         )
 
@@ -77,11 +75,9 @@ pub toLower : Char -> Char
 toLower char =
     Js.pure
         (λ() ->
-            let
-                mapped = Js.call (Js.from char) "toLowerCase" []
-                points : Int
-                points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
-            in
+            mapped = Js.call (Js.from char) "toLowerCase" []
+            points : Int
+            points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
             if points == 1 then Js.to mapped else char
         )
 
@@ -92,9 +88,7 @@ toLower char =
 --|     isUpper 'a' == False
 pub isUpper : Char -> Bool
 isUpper char =
-    let
-        code = toCode char
-    in
+    code = toCode char
     code <= 0x5A && 0x41 <= code
 
 
@@ -104,9 +98,7 @@ isUpper char =
 --|     isLower 'A' == False
 pub isLower : Char -> Bool
 isLower char =
-    let
-        code = toCode char
-    in
+    code = toCode char
     0x61 <= code && code <= 0x7A
 
 
@@ -132,9 +124,7 @@ isAlphaNum char = isLower char || isUpper char || isDigit char
 --|     isDigit 'a' == False
 pub isDigit : Char -> Bool
 isDigit char =
-    let
-        code = toCode char
-    in
+    code = toCode char
     code <= 0x39 && 0x30 <= code
 
 
@@ -144,9 +134,7 @@ isDigit char =
 --|     isOctDigit '8' == False
 pub isOctDigit : Char -> Bool
 isOctDigit char =
-    let
-        code = toCode char
-    in
+    code = toCode char
     code <= 0x37 && 0x30 <= code
 
 
@@ -156,9 +144,7 @@ isOctDigit char =
 --|     isHexDigit 'g' == False
 pub isHexDigit : Char -> Bool
 isHexDigit char =
-    let
-        code = toCode char
-    in
+    code = toCode char
     (0x30 <= code && code <= 0x39)
         || (0x41 <= code && code <= 0x46)
         || (0x61 <= code && code <= 0x66)

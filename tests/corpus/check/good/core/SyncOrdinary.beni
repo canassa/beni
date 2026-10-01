@@ -14,9 +14,7 @@ program p = p.init
 
 pub hosted : sync (Int, Int -> Int), Int -> Int
 hosted update model =
-    let
-        step m = update m 1
-    in
+    step m = update m 1
     step model
 
 
@@ -29,8 +27,6 @@ page =
     sandbox
         0
         (λn ->
-            let
-                () = log "view"
-            in
+            () = log "view"
             String.fromInt n
         )

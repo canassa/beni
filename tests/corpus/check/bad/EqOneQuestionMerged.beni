@@ -7,8 +7,6 @@
 -- inside a structure.
 --
 h x y =
-    let
-        t = Basics.eq ( x, y ) ( x, y )
-        l = [ x, y ]
-    in
+    t = Basics.eq ( x, y ) ( x, y )
+    l = [ x, y ]
     x 1

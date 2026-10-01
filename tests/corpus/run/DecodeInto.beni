@@ -70,9 +70,7 @@ pair = decodeTwo "one" "two"
 
 later : String
 later =
-    let
-        t = decodeInto "zz"
-    in
+    t = decodeInto "zz"
     label t
 
 

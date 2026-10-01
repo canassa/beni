@@ -81,21 +81,15 @@ level1 xs mark cmp = level2 xs mark cmp
 -- levels down.
 tallyBy : List Int, Int, Int -> Int
 tallyBy xs mark scale =
-    let
-        key = λx -> x * scale
-    in
+    key = λx -> x * scale
     level1 xs mark (λa b -> compare (key a) (key b))
 
 
 main : Program
 main =
-    let
-        total =
-            List.foldl
-                (List.range 1 outerReps)
-                0
-                (λ_ acc ->
-                    List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot 1)
-                )
-    in
+    total =
+        List.foldl
+            (List.range 1 outerReps)
+            0
+            (λ_ acc -> List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot 1))
     Node.print (String.fromInt total)

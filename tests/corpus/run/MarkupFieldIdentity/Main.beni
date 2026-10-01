@@ -33,13 +33,11 @@ show b =
 
 main : Node.Program
 main =
-    let
-        model = { rows = [ { id = 1 }, { id = 2 } ], selected = 0, title = "t" }
+    model = { rows = [ { id = 1 }, { id = 2 } ], selected = 0, title = "t" }
 
-        next = select model 3
+    next = select model 3
 
-        later = rename (select next 4) "u"
-    in
+    later = rename (select next 4) "u"
     Node.printLines
         [ show (Identity.refEq model.rows next.rows)
         , show (Identity.refEq model.title next.title)

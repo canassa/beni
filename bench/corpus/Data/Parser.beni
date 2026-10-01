@@ -90,9 +90,7 @@ literal =
 
 pub parseTwice : String -> Result String ( Json, Json )
 parseTwice input =
-    let
-        second = literal.run (String.trimLeft (T.afterFirst input))?
-    in
+    second = literal.run (String.trimLeft (T.afterFirst input))?
     Ok ( second.0, second.0 )
 
 

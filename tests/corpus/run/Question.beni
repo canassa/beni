@@ -16,10 +16,8 @@ import String
 
 parseBoth : String, String -> Result String Int
 parseBoth a b =
-    let
-        left = parseOne a?
-        right = parseOne b?
-    in
+    left = parseOne a?
+    right = parseOne b?
     Ok (left + right)
 
 
@@ -35,9 +33,7 @@ parseOne s =
 
 firstPlus : List Int -> Maybe Int
 firstPlus xs =
-    let
-        head = List.head xs?
-    in
+    head = List.head xs?
     Just (head + 1)
 
 
@@ -47,9 +43,7 @@ firstPlus xs =
 firstBigger : Result String a, a -> Result String Bool
     where a.compare : a, a -> Order
 firstBigger r limit =
-    let
-        value = r?
-    in
+    value = r?
     Ok (bigger value limit)
 
 

@@ -69,39 +69,29 @@ size _ = 1
 
 pub nestedList : Int
 nestedList =
-    let
-        seed = Empty
-    in
+    seed = Empty
     size (put (put seed [ 1, 2 ]) [ 3 ])
 
 
 pub nestedDict : Int
 nestedDict =
-    let
-        seed = Dict.empty
-    in
+    seed = Dict.empty
     Dict.size (Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b")
 
 
 pub annotatedDict : Dict (List Int) String
 annotatedDict =
-    let
-        seed = Dict.empty
-    in
+    seed = Dict.empty
     Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b"
 
 
 pub nestedOwn : Int
 nestedOwn =
-    let
-        seed = Empty
-    in
+    seed = Empty
     size (put (put seed (Pair 1 2)) (Pair 3 4))
 
 
 pub nestedEq : Int
 nestedEq =
-    let
-        seed = Empty
-    in
+    seed = Empty
     size (tag (tag seed [ 1, 2 ]) [ 3 ])

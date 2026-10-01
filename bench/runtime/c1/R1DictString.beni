@@ -43,8 +43,6 @@ keys =
 
 main : Program
 main =
-    let
-        dict = List.foldl keys Dict.empty (λk d -> Dict.insert d k (String.length k))
-        total = List.foldl keys 0 (λk acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
-    in
+    dict = List.foldl keys Dict.empty (λk d -> Dict.insert d k (String.length k))
+    total = List.foldl keys 0 (λk acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

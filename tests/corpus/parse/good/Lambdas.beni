@@ -27,7 +27,5 @@ ignoreAll = λ_ _ _ -> ()
 
 multiLine =
     λx ->
-        let
-            y = x + 1
-        in
+        y = x + 1
         y * 2

@@ -13,10 +13,8 @@ import Task
 
 worker : String, Int -> Int
 worker name ms =
-    let
-        _ = Io.sleep ms
-        _ = Debug.log "woke" name
-    in
+    _ = Io.sleep ms
+    _ = Debug.log "woke" name
     ms * 2
 
 
@@ -24,12 +22,10 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                a = Task.spawn (λ() -> worker "a" 30)
-                b = Task.spawn (λ() -> worker "b" 10)
-                c = Task.spawn (λ() -> worker "c" 20)
-                total = Task.join a + Task.join b + Task.join c
-                again = Task.join b
-            in
+            a = Task.spawn (λ() -> worker "a" 30)
+            b = Task.spawn (λ() -> worker "b" 10)
+            c = Task.spawn (λ() -> worker "c" 20)
+            total = Task.join a + Task.join b + Task.join c
+            again = Task.join b
             Node.print (String.fromInt total ++ " " ++ String.fromInt again)
         )

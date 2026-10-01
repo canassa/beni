@@ -34,9 +34,7 @@ view prefix rows names =
         <ul>
             <For each={rows} keyed={.id} fallback={<li>none</li>}>
                 {λ{ id, label } ->
-                    let
-                        text = String.toUpper label
-                    in
+                    text = String.toUpper label
                     <li id="row-${String.fromInt id}">{text}</li>
                 }
             </For>

@@ -34,13 +34,11 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    let
-        _ =
-            if model.bad then
-                Debug.todo "view threw"
-            else
-                ()
-    in
+    _ =
+        if model.bad then
+            Debug.todo "view threw"
+        else
+            ()
     <main>
         <p id="count">{String.fromInt model.count}</p>
         <button id="bad" onClick={Bad}>bad</button>

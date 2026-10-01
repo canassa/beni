@@ -17,9 +17,7 @@ sumTo n k =
     if n <= 0 then
         k 0
     else
-        let
-            m <- sumTo (n - 1)
-        in
+        m <- sumTo (n - 1)
         m + 1
 
 
@@ -28,9 +26,7 @@ chainTo n k =
     if n <= 0 then
         k 0
     else
-        let
-            m <- chainTo (n - 1)
-        in
+        m <- chainTo (n - 1)
         k (m + n)
 
 

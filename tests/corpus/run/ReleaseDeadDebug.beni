@@ -39,11 +39,9 @@ dropped = log "dead.declaration" 99
 
 report : Int -> Int
 report n =
-    let
-        first = log "dead.first" n
-        ignored = log "dead.ignored" (n * 10)
-        second = log "dead.second" (n + 1)
-    in
+    first = log "dead.first" n
+    ignored = log "dead.ignored" (n * 10)
+    second = log "dead.second" (n + 1)
     first + second
 
 

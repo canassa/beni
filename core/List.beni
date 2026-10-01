@@ -385,10 +385,8 @@ map xs func = mapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (leng
 mapHelp : List a, List a, Int, Int, Int, (a -> b), Builder b, Bool -> List b
 mapHelp xs a o i n func b same =
     if i < n then
-        let
-            x = at a (o + i)
-            y = func x
-        in
+        x = at a (o + i)
+        y = func x
         mapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
         kept same xs (done b n)
@@ -407,10 +405,8 @@ indexedMap xs func =
 indexedMapHelp : List a, List a, Int, Int, Int, (Int, a -> b), Builder b, Bool -> List b
 indexedMapHelp xs a o i n func b same =
     if i < n then
-        let
-            x = at a (o + i)
-            y = func i x
-        in
+        x = at a (o + i)
+        y = func i x
         indexedMapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
     else
         kept same xs (done b n)
@@ -445,9 +441,7 @@ filterFirst xs a o i n isGood =
 filterHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Int -> List a
 filterHelp a o i n isGood b j =
     if i < n then
-        let
-            x = at a (o + i)
-        in
+        x = at a (o + i)
         if isGood x then
             filterHelp a o (i + 1) n isGood (put b j x) (j + 1)
         else
@@ -647,9 +641,7 @@ intersperseHelp a o sep i n b =
 --| wider each.
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
-    let
-        n = min (length xs) (length ys)
-    in
+    n = min (length xs) (length ys)
     map2Help (base xs) (offset xs) (base ys) (offset ys) 0 n func (builder n)
 
 
@@ -667,9 +659,7 @@ map2Help ax ox ay oy i n func b =
 --| Combine three lists, combining them with the given function.
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
-    let
-        n = min (length xs) (min (length ys) (length zs))
-    in
+    n = min (length xs) (min (length ys) (length zs))
     map3Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) 0 n func (builder n)
 
 
@@ -705,9 +695,7 @@ map3Help ax ox ay oy az oz i n func b =
 --| Combine four lists, combining them with the given function.
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
-    let
-        n = min (min (length xs) (length ys)) (min (length zs) (length ws))
-    in
+    n = min (min (length xs) (length ys)) (min (length zs) (length ws))
     map4Help
         (base xs)
         (offset xs)
@@ -766,9 +754,7 @@ pub map5 :
     , (a, b, c, d, e -> result)
     -> List result
 map5 xs ys zs ws vs func =
-    let
-        n = min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
-    in
+    n = min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
     map5Help
         (base xs)
         (offset xs)
@@ -867,9 +853,7 @@ sort xs = sortWith xs (λx y -> x.compare y)
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
-    let
-        decorated = map xs (λx -> ( toKey x, x ))
-    in
+    decorated = map xs (λx -> ( toKey x, x ))
     if length decorated < 2 then
         xs
     else
@@ -905,11 +889,9 @@ sortRange xs lo hi cmp =
     if hi - lo < 2 then
         slice xs lo hi
     else
-        let
-            mid = lo + half (hi - lo)
-            left = sortRange xs lo mid cmp
-            right = sortRange xs mid hi cmp
-        in
+        mid = lo + half (hi - lo)
+        left = sortRange xs lo mid cmp
+        right = sortRange xs mid hi cmp
         merge left 0 (length left) right 0 (length right) cmp (builder (hi - lo))
 
 
@@ -925,10 +907,8 @@ merge xs i n ys j m cmp b =
     else if j >= m then
         done (putAll b (i + j) xs i n) (n + m)
     else
-        let
-            x = at xs i
-            y = at ys j
-        in
+        x = at xs i
+        y = at ys j
         case cmp x y of
             GT ->
                 merge xs i n ys (j + 1) m cmp (put b (i + j) y)
@@ -1060,9 +1040,7 @@ partition xs pred =
 partitionHelp : List a, Int, Int, Int, (a -> Bool), Builder a, Builder a, Int -> ( List a, List a )
 partitionHelp a o i n pred yes no k =
     if i < n then
-        let
-            x = at a (o + i)
-        in
+        x = at a (o + i)
         if pred x then
             partitionHelp a o (i + 1) n pred (put yes k x) no (k + 1)
         else

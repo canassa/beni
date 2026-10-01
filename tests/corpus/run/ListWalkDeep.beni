@@ -66,11 +66,9 @@ viewOf xs =
 
 show : String, List Int -> String
 show label xs =
-    let
-        one = walk { items = xs, total = 0, steps = 0 }
+    one = walk { items = xs, total = 0, steps = 0 }
 
-        two = walkPairs { items = xs, total = 0, steps = 0 }
-    in
+    two = walkPairs { items = xs, total = 0, steps = 0 }
     String.join
         [ label
         , String.fromInt one.steps

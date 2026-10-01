@@ -27,32 +27,30 @@ die = Random.int 1 6
 
 samples : List String
 samples =
-    let
-        seed = Random.initialSeed 42
+    seed = Random.initialSeed 42
 
-        ints = (Random.step (Random.list die 10) seed).0
+    ints = (Random.step (Random.list die 10) seed).0
 
-        backwards = (Random.step (Random.list (Random.int 10 5) 6) seed).0
+    backwards = (Random.step (Random.list (Random.int 10 5) 6) seed).0
 
-        coin = (Random.step (Random.uniform "heads" [ "tails" ]) seed).0
+    coin = (Random.step (Random.uniform "heads" [ "tails" ]) seed).0
 
-        weather = (Random.step (Random.weighted ( 0, "never" ) [ ( 1, "always" ) ]) seed).0
+    weather = (Random.step (Random.weighted ( 0, "never" ) [ ( 1, "always" ) ]) seed).0
 
-        both = (Random.step (Random.pair die (Random.constant "x")) seed).0
+    both = (Random.step (Random.pair die (Random.constant "x")) seed).0
 
-        chosen =
-            (Random.step
-                (Random.andThen die (λn -> Random.map (Random.int 0 n) (λm -> m <= n)))
-                seed
-            ).0
+    chosen =
+        (Random.step
+            (Random.andThen die (λn -> Random.map (Random.int 0 n) (λm -> m <= n)))
+            seed
+        ).0
 
-        fraction = (Random.step (Random.float 0 1) seed).0
+    fraction = (Random.step (Random.float 0 1) seed).0
 
-        fromChild =
-            case Random.step Random.independentSeed seed of
-                ( child, _ ) ->
-                    (Random.step die child).0
-    in
+    fromChild =
+        case Random.step Random.independentSeed seed of
+            ( child, _ ) ->
+                (Random.step die child).0
     [ "ints " ++ nums ints
     , "backwards " ++ nums backwards
     , "coin ${coin}"

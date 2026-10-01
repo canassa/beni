@@ -125,9 +125,7 @@ layout w column items acc =
                     layout w column [ { item | doc = left }, { item | doc = right }, ...rest ] acc
 
                 Group inner ->
-                    let
-                        flat = { item | mode = Flat, doc = inner }
-                    in
+                    flat = { item | mode = Flat, doc = inner }
                     if fits (w - column) [ flat, ...rest ] then
                         layout w column [ flat, ...rest ] acc
                     else

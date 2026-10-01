@@ -19,16 +19,12 @@ type Tree a
 
 
 check x y =
-    let
-        same a b = a == b
-    in
+    same a b = a == b
     [ same x y, x == y ]
 
 
 checkTree x y =
-    let
-        same a b = { v = a } == { v = b }
-    in
+    same a b = { v = a } == { v = b }
     [ same x y, Node x Leaf == Node y Leaf ]
 
 

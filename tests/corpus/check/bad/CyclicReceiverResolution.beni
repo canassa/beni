@@ -7,9 +7,7 @@
 
 f : Int -> Int
 f z =
-    let
-        k y = ( y, y ) == y
-    in
+    k y = ( y, y ) == y
     z
 
 

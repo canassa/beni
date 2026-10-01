@@ -17,9 +17,7 @@ type T
 
 
 pub combine (T a) b =
-    let
-        go r = r.run b
-    in
+    go r = r.run b
     if b > 100 then
         f b
     else
@@ -27,9 +25,7 @@ pub combine (T a) b =
 
 
 f n =
-    let
-        call s = s.run n
-    in
+    call s = s.run n
     if n > 50 then
         0
     else

@@ -51,14 +51,12 @@ merge xs ys =
 
 main : Program
 main =
-    let
-        pairs = pairwise (List.range 1 size)
+    pairs = pairwise (List.range 1 size)
 
-        merged =
-            merge
-                (List.map (List.range 1 (size // 2)) (λn -> n * 2))
-                (List.map (List.range 0 (size // 2 - 1)) (λn -> n * 2 + 1))
-    in
+    merged =
+        merge
+            (List.map (List.range 1 (size // 2)) (λn -> n * 2))
+            (List.map (List.range 0 (size // 2 - 1)) (λn -> n * 2 + 1))
     Node.printLines
         [ String.fromInt (List.length pairs)
         , Debug.toString (List.head pairs)

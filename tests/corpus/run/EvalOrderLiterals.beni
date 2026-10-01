@@ -45,17 +45,15 @@ base = { zed = 0, alpha = 0, mid = 0 }
 
 main : Program
 main =
-    let
-        tup = ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
-        lst = [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
-        ctor = Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
-        updated = { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
+    tup = ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
+    lst = [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
+    ctor = Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
+    updated = { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
 
-        interpolated =
-            "${String.fromInt (seg0 1)}-${String.fromInt (seg1 2)}-${String.fromInt (seg2 3)}"
+    interpolated =
+        "${String.fromInt (seg0 1)}-${String.fromInt (seg1 2)}-${String.fromInt (seg2 3)}"
 
-        accessed = n "access.subject" 7 + tup.0
-    in
+    accessed = n "access.subject" 7 + tup.0
     Node.printLines
         [ Debug.toString tup
         , Debug.toString lst

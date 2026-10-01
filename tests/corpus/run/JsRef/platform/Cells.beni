@@ -8,13 +8,9 @@ import Js
 --| A counter whose cell is captured by the closure it returns: a `let`.
 pub counter : Int -> (() -> Int)
 counter start =
-    let
-        n = Js.ref start
-    in
+    n = Js.ref start
     λ() ->
-        let
-            _ = Js.write n (Js.read n + 1)
-        in
+        _ = Js.write n (Js.read n + 1)
         Js.read n
 
 
@@ -26,9 +22,7 @@ calls = Js.ref 0
 --| How many times it has been called, counting this one.
 pub tick : () -> Int
 tick () =
-    let
-        _ = Js.write calls (Js.read calls + 1)
-    in
+    _ = Js.write calls (Js.read calls + 1)
     Js.read calls
 
 
@@ -38,9 +32,7 @@ countDown total k =
     if k == 0 then
         ()
     else
-        let
-            _ = Js.write total (Js.read total + k)
-        in
+        _ = Js.write total (Js.read total + k)
         countDown total (k - 1)
 
 
@@ -48,11 +40,9 @@ countDown total k =
 --| callee makes are the caller's to read.
 pub sumTo : Int -> Int
 sumTo n =
-    let
-        total = Js.ref 0
+    total = Js.ref 0
 
-        _ = countDown total n
-    in
+    _ = countDown total n
     Js.read total
 
 
@@ -63,22 +53,18 @@ pair a _ = String.fromInt a
 --| A read written before a write is evaluated before it: `1`, not `2`.
 pub readThenWrite : String
 readThenWrite =
-    let
-        r = Js.ref 1
-    in
+    r = Js.ref 1
     pair (Js.read r) (Js.write r 2)
 
 
 --| A value read out of a cell keeps what it read when the cell changes.
 pub snapshot : String
 snapshot =
-    let
-        r = Js.ref "before"
+    r = Js.ref "before"
 
-        seen = Js.read r
+    seen = Js.read r
 
-        _ = Js.write r "after"
-    in
+    _ = Js.write r "after"
     "${seen} ${Js.read r}"
 
 
@@ -89,11 +75,9 @@ fresh () = Js.ref 0
 
 pub freshAreDistinct : Bool
 freshAreDistinct =
-    let
-        a = fresh ()
+    a = fresh ()
 
-        b = fresh ()
+    b = fresh ()
 
-        _ = Js.write a 5
-    in
+    _ = Js.write a 5
     Js.read b == 0 && Js.read a == 5

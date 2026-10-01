@@ -27,10 +27,8 @@ ends xs =
 
 main : Program
 main =
-    let
-        ( odd, even ) = List.partition cells (λn -> Int.mod n 2 == 1)
-        ( firsts, seconds ) = List.unzip (List.map cells (λn -> ( n, n * 2 )))
-    in
+    ( odd, even ) = List.partition cells (λn -> Int.mod n 2 == 1)
+    ( firsts, seconds ) = List.unzip (List.map cells (λn -> ( n, n * 2 )))
     Node.printLines
         [ ends (List.map cells (λn -> n * 2))
         , ends (List.filter cells (λn -> Int.mod n 3 == 0))

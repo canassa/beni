@@ -15,21 +15,15 @@ import Js
 
 pub template : String -> (() -> Js.Value)
 template html =
-    let
-        node = Js.ref Js.null
-    in
+    node = Js.ref Js.null
     λ() ->
-        let
-            _ =
-                if Js.isNull (Js.read node) then
-                    let
-                        t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
-                        _ = Js.set t "innerHTML" (Js.from html)
-                    in
-                    Js.write node (Js.get (Js.get t "content") "firstChild")
-                else
-                    ()
-        in
+        _ =
+            if Js.isNull (Js.read node) then
+                t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+                _ = Js.set t "innerHTML" (Js.from html)
+                Js.write node (Js.get (Js.get t "content") "firstChild")
+            else
+                ()
         Js.call (Js.read node) "cloneNode" [ Js.from True ]
 
 
@@ -46,20 +40,18 @@ schedule () =
     if Js.read scheduled then
         ()
     else
-        let
-            _ = Js.write scheduled True
+        _ = Js.write scheduled True
 
-            _ =
-                Js.apply (Js.global "queueMicrotask")
-                    [ Js.from
-                        (λ() ->
-                            if Js.read scheduled then
-                                flush ()
-                            else
-                                ()
-                        )
-                    ]
-        in
+        _ =
+            Js.apply (Js.global "queueMicrotask")
+                [ Js.from
+                    (λ() ->
+                        if Js.read scheduled then
+                            flush ()
+                        else
+                            ()
+                    )
+                ]
         ()
 
 
@@ -73,8 +65,6 @@ bump r = Js.write r (Js.read r + 1)
 
 pub counted : Int -> Int
 counted n =
-    let
-        r = cell n
-        _ = bump r
-    in
+    r = cell n
+    _ = bump r
     Js.read r

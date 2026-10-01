@@ -6,21 +6,19 @@
 -- `person` is written above the record pattern that destructures it.
 split : ( Int, ( String, Bool ) ) -> String
 split input =
-    let
-        ( n, ( s, flag ) ) = input
-        person = { name = s, age = n }
-        { name, age } = person
+    ( n, ( s, flag ) ) = input
+    person = { name = s, age = n }
+    { name, age } = person
 
-        ( first, second ) =
-            case [ n, n + 1 ] of
-                [ a, b ] ->
-                    ( a, b )
+    ( first, second ) =
+        case [ n, n + 1 ] of
+            [ a, b ] ->
+                ( a, b )
 
-                _ ->
-                    ( n, n )
+            _ ->
+                ( n, n )
 
-        _ = flag
-        total : Int
-        total = first + second + age
-    in
+    _ = flag
+    total : Int
+    total = first + second + age
     "${name}:${total}"

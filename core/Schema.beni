@@ -390,10 +390,8 @@ variantAt xs i = fromHost (Js.at xs i)
 
 box : Node -> Schema e a
 box n =
-    let
-        b : Box
-        b = { node = n, analysis = Js.ref Nothing }
-    in
+    b : Box
+    b = { node = n, analysis = Js.ref Nothing }
     cast b
 
 
@@ -443,9 +441,7 @@ lengthOf xs = Js.to (Js.get xs "length")
 -- `x` pushed onto the host array `xs`.
 push : Js.Value, Js.Value -> ()
 push xs x =
-    let
-        _ = Js.call xs "push" [ x ]
-    in
+    _ = Js.call xs "push" [ x ]
     ()
 
 
@@ -475,9 +471,7 @@ duplicateFrom xs nameOf i n =
     if i >= n then
         Nothing
     else
-        let
-            name = nameOf (fromHost (Js.at xs i))
-        in
+        name = nameOf (fromHost (Js.at xs i))
         if occursFrom xs nameOf name (i + 1) n then
             Just name
         else
@@ -554,10 +548,8 @@ fields = fieldsBox (toHost []) Nothing
 
 fieldsBox : Js.Value, Maybe String -> Fields pe pa
 fieldsBox fs problem =
-    let
-        b : FieldsBox
-        b = { fields = fs, problem = problem }
-    in
+    b : FieldsBox
+    b = { fields = fs, problem = problem }
     cast b
 
 
@@ -572,9 +564,7 @@ fieldNode name k renamed isOptional n =
 
 withField : Fields pe pa, String, Schema e a, Bool -> Fields qe qa
 withField fs name s isOptional =
-    let
-        b = fieldsOf fs
-    in
+    b = fieldsOf fs
     Js.pure
         (λ() ->
             fieldsBox
@@ -616,14 +606,10 @@ firstProblem problem message =
 --| field's name. A declaration's `as "key"`.
 pub key : Fields pe pa, String -> Fields pe pa
 key fs external =
-    let
-        b = fieldsOf fs
-    in
+    b = fieldsOf fs
     Js.pure
         (λ() ->
-            let
-                n = lengthOf b.fields
-            in
+            n = lengthOf b.fields
             if n == 0 then
                 fieldsBox
                     b.fields
@@ -632,9 +618,7 @@ key fs external =
                         "Schema.key renames the field added before it, and there is none"
                     )
             else
-                let
-                    last = fieldAt b.fields (n - 1)
-                in
+                last = fieldAt b.fields (n - 1)
                 if last.renamed then
                     fieldsBox
                         b.fields
@@ -663,13 +647,11 @@ mapping to from = cast (pair (toHost to) (toHost from))
 --| since both records have the same field names.
 pub record : Fields pe pa, Mapping pe e, Mapping pa a -> Schema e a
 record fs encoded typed =
-    let
-        b = fieldsOf fs
-        encodedMaps : Pair
-        encodedMaps = cast encoded
-        typedMaps : Pair
-        typedMaps = cast typed
-    in
+    b = fieldsOf fs
+    encodedMaps : Pair
+    encodedMaps = cast encoded
+    typedMaps : Pair
+    typedMaps = cast typed
     Js.pure
         (λ() ->
             case b.problem of
@@ -756,10 +738,8 @@ pub tagged : String, List (Variant e a) -> Schema e a
 tagged discriminator variants =
     Js.pure
         (λ() ->
-            let
-                given = plain (toHost variants)
-                vs = Js.array []
-            in
+            given = plain (toHost variants)
+            vs = Js.array []
             case collectVariants given vs 0 (lengthOf given) of
                 Just problem ->
                     box (NBroken problem)
@@ -810,9 +790,7 @@ collectVariants given vs i n =
                 Just problem
 
             Ok v ->
-                let
-                    _ = push vs (toHost v)
-                in
+                _ = push vs (toHost v)
                 collectVariants given vs (i + 1) n
 
 
@@ -826,9 +804,7 @@ clash discriminator vs i n =
     if i >= n then
         Nothing
     else
-        let
-            v = variantAt vs i
-        in
+        v = variantAt vs i
         case v.payload of
             Just (NRecord fs _) ->
                 if fieldOn discriminator fs 0 (lengthOf fs) then
@@ -845,9 +821,7 @@ fieldOn discriminator fs i n =
     if i >= n then
         False
     else
-        let
-            f = fieldAt fs i
-        in
+        f = fieldAt fs i
         f.key == discriminator || f.name == discriminator || fieldOn discriminator fs (i + 1) n
 
 
@@ -869,10 +843,8 @@ conversion forward backward = cast (pair (toHost forward) (toHost backward))
 --| own.
 pub converted : Schema e b, Conversion b a -> Schema e a
 converted source c =
-    let
-        p : Pair
-        p = cast c
-    in
+    p : Pair
+    p = cast c
     box (NConverted (nodeOf source) p.there p.back)
 
 
@@ -918,14 +890,12 @@ resolve cell =
             Nothing
 
         _ ->
-            let
-                _ = Js.write cell.state 1
-                built : Schema Js.Value Js.Value
-                built = fromHost (Js.apply cell.build [ toHost (box (NRef cell)) ])
-                n = nodeOf built
-                _ = Js.write cell.body (Just n)
-                _ = Js.write cell.state 2
-            in
+            _ = Js.write cell.state 1
+            built : Schema Js.Value Js.Value
+            built = fromHost (Js.apply cell.build [ toHost (box (NRef cell)) ])
+            n = nodeOf built
+            _ = Js.write cell.body (Just n)
+            _ = Js.write cell.state 2
             Just n
 
 
@@ -992,9 +962,7 @@ problemIn n seen =
             if Js.to (Js.call seen "has" [ toHost cell ]) then
                 Nothing
             else
-                let
-                    _ = Js.call seen "add" [ toHost cell ]
-                in
+                _ = Js.call seen "add" [ toHost cell ]
                 case resolve cell of
                     Nothing ->
                         Just (dangling cell)
@@ -1069,17 +1037,13 @@ opaqueIn n side seen =
             opaqueIn child onlySide seen
 
         NRef cell ->
-            let
-                entered = Js.call seen "get" [ toHost cell ]
-                mask = if Js.isUndefined entered then 0 else intOf entered
-                bit = if side == encodedSide then 1 else 2
-            in
+            entered = Js.call seen "get" [ toHost cell ]
+            mask = if Js.isUndefined entered then 0 else intOf entered
+            bit = if side == encodedSide then 1 else 2
             if Js.bitAnd mask bit /= 0 then
                 False
             else
-                let
-                    _ = Js.call seen "set" [ toHost cell, Js.from (Js.bitOr mask bit) ]
-                in
+                _ = Js.call seen "set" [ toHost cell, Js.from (Js.bitOr mask bit) ]
                 case resolve cell of
                     Nothing ->
                         False
@@ -1116,15 +1080,13 @@ analyse b =
             z
 
         Nothing ->
-            let
-                problem = problemIn b.node (Js.construct (Js.global "Set") [])
-                seen = Js.construct (Js.global "Map") []
-                encodedOpaque = opaqueIn b.node encodedSide seen
-                typeOpaque = opaqueIn b.node typeSide seen
-                z : Analysis
-                z = { problem = problem, encodedOpaque = encodedOpaque, typeOpaque = typeOpaque }
-                _ = Js.write b.analysis (Just z)
-            in
+            problem = problemIn b.node (Js.construct (Js.global "Set") [])
+            seen = Js.construct (Js.global "Map") []
+            encodedOpaque = opaqueIn b.node encodedSide seen
+            typeOpaque = opaqueIn b.node typeSide seen
+            z : Analysis
+            z = { problem = problem, encodedOpaque = encodedOpaque, typeOpaque = typeOpaque }
+            _ = Js.write b.analysis (Just z)
             z
 
 
@@ -1182,10 +1144,8 @@ atRoot = Js.null
 
 step : Path, Js.Value, Js.Value -> Path
 step parent input output =
-    let
-        s : Step
-        s = { parent = parent, input = input, output = output }
-    in
+    s : Step
+    s = { parent = parent, input = input, output = output }
     toHost s
 
 
@@ -1208,11 +1168,9 @@ isActive cell active =
 -- The path as a host array of `PathSegment`s, outermost first.
 pathArray : Path, Bool -> Js.Value
 pathArray path output =
-    let
-        out = Js.array []
-        _ = collect path output out
-        _ = Js.call out "reverse" []
-    in
+    out = Js.array []
+    _ = collect path output out
+    _ = Js.call out "reverse" []
     out
 
 
@@ -1221,12 +1179,10 @@ collect path output out =
     if Js.isNull path then
         ()
     else
-        let
-            s : Step
-            s = fromHost path
-            -- `push` written out, as in `fieldsFrom`: every failure runs it.
-            _ = Js.call out "push" [ toHost (segment (if output then s.output else s.input)) ]
-        in
+        s : Step
+        s = fromHost path
+        -- `push` written out, as in `fieldsFrom`: every failure runs it.
+        _ = Js.call out "push" [ toHost (segment (if output then s.output else s.input)) ]
         collect s.parent output out
 
 
@@ -1242,18 +1198,16 @@ segment s =
 -- failure is in what the operation writes.
 failAt : Context, Path, IssueCode, String, Js.Value, Bool -> Js.Value
 failAt c path code message input output =
-    let
-        entry : Issue
-        entry =
-            { path = fromHost (pathArray path output)
-            , direction = c.dir
-            , endpoint = if output || c.cv then c.outE else c.inE
-            , code = code
-            , message = message
-            , input = if c.report then Just (cast input) else Nothing
-            }
-        _ = Js.call c.issues "push" [ toHost entry ]
-    in
+    entry : Issue
+    entry =
+        { path = fromHost (pathArray path output)
+        , direction = c.dir
+        , endpoint = if output || c.cv then c.outE else c.inE
+        , code = code
+        , message = message
+        , input = if c.report then Just (cast input) else Nothing
+        }
+    _ = Js.call c.issues "push" [ toHost entry ]
     c.fail
 
 
@@ -1293,9 +1247,7 @@ rootProblem s o dir src sh dst dh =
                 "maxDepth must be from 0 to ${String.fromInt maxDepthCeiling}, not ${String.fromInt o.maxDepth}"
             )
     else
-        let
-            z = analyse (boxOf s)
-        in
+        z = analyse (boxOf s)
         case z.problem of
             Just problem ->
                 Just (rootIssue dir (endpointOf src) InvalidSchema problem)
@@ -1322,9 +1274,7 @@ opaqueIssue dir side =
 -- operation's issue array, which no value it reads or makes can be.
 context : Options, Direction, Int, Bool, Int, Bool, Bool -> Context
 context o dir src sh dst dh json =
-    let
-        issues = Js.array []
-    in
+    issues = Js.array []
     { all = o.errors == AllErrors
     , reject = o.unknownKeys == Reject
     , max = o.maxDepth
@@ -1388,16 +1338,14 @@ type alias Owner =
 -- discriminator is its first key.
 newObject : Maybe Owner -> Js.Value
 newObject owner =
-    let
-        o = Js.call (Js.global "Object") "create" [ Js.null ]
-        _ =
-            case owner of
-                Just w ->
-                    Js.set o w.discriminator (Js.from w.variant.tag)
+    o = Js.call (Js.global "Object") "create" [ Js.null ]
+    _ =
+        case owner of
+            Just w ->
+                Js.set o w.discriminator (Js.from w.variant.tag)
 
-                Nothing ->
-                    ()
-    in
+            Nothing ->
+                ()
     o
 
 
@@ -1468,17 +1416,13 @@ run c n depth path active v =
 
         NConverted source forward backward ->
             if c.src == encodedSide && c.dst == typeSide then
-                let
-                    b = run c source depth path active v
-                in
+                b = run c source depth path active v
                 if Js.same b c.fail then
                     c.fail
                 else
                     call c path forward b
             else if c.src == typeSide && c.dst == encodedSide then
-                let
-                    b = call c path backward v
-                in
+                b = call c path backward v
                 if Js.same b c.fail then
                     c.fail
                 else
@@ -1620,9 +1564,7 @@ printable v budget =
     else if isArray v then
         printableItems v Js.undefined 0 (lengthOf v) budget
     else
-        let
-            keys = Js.call (Js.global "Object") "keys" [ v ]
-        in
+        keys = Js.call (Js.global "Object") "keys" [ v ]
         printableItems keys v 0 (lengthOf keys) budget
 
 
@@ -1634,14 +1576,12 @@ printableItems items owner i n budget =
     else if budget < 1 then
         1
     else
-        let
-            item =
-                if Js.isUndefined owner then
-                    Js.at items i
-                else
-                    Js.get owner (stringOf (Js.at items i))
-            r = printable item (budget - 1)
-        in
+        item =
+            if Js.isUndefined owner then
+                Js.at items i
+            else
+                Js.get owner (stringOf (Js.at items i))
+        r = printable item (budget - 1)
         if r /= 0 then
             r
         else
@@ -1656,11 +1596,9 @@ listOf c child depth path v =
     if c.sh && not (isArray v) then
         failAt c path WrongShape "expected an array" v False
     else
-        let
-            before = issueCount c
-            xs = plain v
-            out = Js.array []
-        in
+        before = issueCount c
+        xs = plain v
+        out = Js.array []
         if listItems c child depth path xs out 0 (lengthOf xs) then
             c.fail
         else if issueCount c > before then
@@ -1675,25 +1613,21 @@ listItems c child depth path xs out i n =
     if i >= n then
         False
     else
-        let
-            here = step path (Js.from i) (Js.from i)
-            item = Js.at xs i
-            x =
-                if depth >= c.max then
-                    failAt c here DepthExceeded "the depth limit is reached" item False
-                else
-                    run c child (depth + 1) here NoneActive item
-        in
+        here = step path (Js.from i) (Js.from i)
+        item = Js.at xs i
+        x =
+            if depth >= c.max then
+                failAt c here DepthExceeded "the depth limit is reached" item False
+            else
+                run c child (depth + 1) here NoneActive item
         if Js.same x c.fail then
             if c.all then
                 listItems c child depth path xs out (i + 1) n
             else
                 True
         else
-            let
-                -- `push` written out, as `fieldsFrom` writes it.
-                _ = Js.call out "push" [ x ]
-            in
+            -- `push` written out, as `fieldsFrom` writes it.
+            _ = Js.call out "push" [ x ]
             listItems c child depth path xs out (i + 1) n
 
 
@@ -1701,9 +1635,7 @@ listItems c child depth path xs out i n =
 -- in the object's own key order, at its own path. True when one was found.
 unknownKeys : Context, Js.Value, Maybe String, Path, Js.Value -> Bool
 unknownKeys c fs claimed path v =
-    let
-        keys = Js.call (Js.global "Object") "keys" [ v ]
-    in
+    keys = Js.call (Js.global "Object") "keys" [ v ]
     unknownKeysFrom c fs claimed path v keys 0 (lengthOf keys) False
 
 
@@ -1712,22 +1644,18 @@ unknownKeysFrom c fs claimed path v keys i n found =
     if i >= n then
         found
     else
-        let
-            k = stringOf (Js.at keys i)
-        in
+        k = stringOf (Js.at keys i)
         if claimed == Just k || claims c fs k 0 (lengthOf fs) then
             unknownKeysFrom c fs claimed path v keys (i + 1) n found
         else
-            let
-                _ =
-                    failAt
-                        c
-                        (step path (Js.from k) (Js.from k))
-                        UnknownKey
-                        "unexpected key \"${k}\""
-                        (Js.get v k)
-                        False
-            in
+            _ =
+                failAt
+                    c
+                    (step path (Js.from k) (Js.from k))
+                    UnknownKey
+                    "unexpected key \"${k}\""
+                    (Js.get v k)
+                    False
             if c.all then
                 unknownKeysFrom c fs claimed path v keys (i + 1) n True
             else
@@ -1740,9 +1668,7 @@ claims c fs k i n =
     if i >= n then
         False
     else
-        let
-            f = fieldAt fs i
-        in
+        f = fieldAt fs i
         (if c.src == encodedSide then f.key else f.name) == k || claims c fs k (i + 1) n
 
 
@@ -1750,11 +1676,9 @@ claims c fs k i n =
 -- mapping takes it apart into: `( ( ( (), a ), b ), c )` is `[a, b, c]`.
 valuesOf : Context, Int, Maps, Js.Value -> Js.Value
 valuesOf c n maps v =
-    let
-        values = Js.construct (Js.global "Array") [ Js.from n ]
-        product = Js.apply (if c.src == encodedSide then maps.fromE else maps.fromA) [ v ]
-        _ = unpack product (n - 1) values
-    in
+    values = Js.construct (Js.global "Array") [ Js.from n ]
+    product = Js.apply (if c.src == encodedSide then maps.fromE else maps.fromA) [ v ]
+    _ = unpack product (n - 1) values
     values
 
 
@@ -1763,10 +1687,8 @@ unpack product i values =
     if i < 0 then
         ()
     else
-        let
-            ( rest, x ) = pairOf product
-            _ = Js.setAt values i x
-        in
+        ( rest, x ) = pairOf product
+        _ = Js.setAt values i x
         unpack rest (i - 1) values
 
 
@@ -1774,10 +1696,8 @@ unpack product i values =
 -- from their product — in its variant's constructor, for a payload.
 made : Context, Maps, Maybe Owner, Js.Value -> Js.Value
 made c maps owner out =
-    let
-        product = productOf out 0 (lengthOf out) (toHost ())
-        built = Js.apply (if c.dst == encodedSide then maps.toE else maps.toA) [ product ]
-    in
+    product = productOf out 0 (lengthOf out) (toHost ())
+    built = Js.apply (if c.dst == encodedSide then maps.toE else maps.toA) [ product ]
     case owner of
         Nothing ->
             built
@@ -1800,18 +1720,14 @@ productOf out i n acc =
 -- level of a value costs the stack.
 recordOf : Context, Js.Value, Maps, Maybe Owner, Int, Path, Js.Value -> Js.Value
 recordOf c fs maps owner depth path v =
-    let
-        before = issueCount c
-    in
+    before = issueCount c
     if
         c.sh && c.reject && unknownKeys c fs (Maybe.map owner .discriminator) path v && not c.all
     then
         c.fail
     else
-        let
-            values = if c.sh then v else valuesOf c (lengthOf fs) maps v
-            out = if c.dh then newObject owner else Js.array []
-        in
+        values = if c.sh then v else valuesOf c (lengthOf fs) maps v
+        out = if c.dh then newObject owner else Js.array []
         if fieldsFrom c fs 0 (lengthOf fs) depth path v values out then
             c.fail
         else if issueCount c > before then
@@ -1829,54 +1745,50 @@ fieldsFrom c fs i n depth path v values out =
     if i >= n then
         False
     else
-        let
-            f = fieldAt fs i
-            inName = if c.src == encodedSide then f.key else f.name
-            outName = if c.dst == encodedSide then f.key else f.name
-            here = step path (Js.from inName) (Js.from outName)
-            x =
-                if c.sh then
-                    -- `Object.hasOwn` and `push` are written out here and not
-                    -- through `hasOwn` and `push`: this is the loop every
-                    -- record runs, and V8 inlines neither helper into it once a
-                    -- program runs the engine several ways
-                    -- (`plans/core-in-beni.md`, the schema engine).
-                    if Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ]) then
-                        descend c f depth here (Js.get v inName)
-                    else if f.optional then
-                        toHost Missing
-                    else
-                        failAt c here MissingKey "missing key \"${inName}\"" v False
+        f = fieldAt fs i
+        inName = if c.src == encodedSide then f.key else f.name
+        outName = if c.dst == encodedSide then f.key else f.name
+        here = step path (Js.from inName) (Js.from outName)
+        x =
+            if c.sh then
+                -- `Object.hasOwn` and `push` are written out here and not
+                -- through `hasOwn` and `push`: this is the loop every
+                -- record runs, and V8 inlines neither helper into it once a
+                -- program runs the engine several ways
+                -- (`plans/core-in-beni.md`, the schema engine).
+                if Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ]) then
+                    descend c f depth here (Js.get v inName)
                 else if f.optional then
-                    case presenceOf (Js.at values i) of
-                        Missing ->
-                            Js.at values i
-
-                        Present a ->
-                            descend c f depth here a
+                    toHost Missing
                 else
-                    descend c f depth here (Js.at values i)
-        in
+                    failAt c here MissingKey "missing key \"${inName}\"" v False
+            else if f.optional then
+                case presenceOf (Js.at values i) of
+                    Missing ->
+                        Js.at values i
+
+                    Present a ->
+                        descend c f depth here a
+            else
+                descend c f depth here (Js.at values i)
         if Js.same x c.fail then
             if c.all then
                 fieldsFrom c fs (i + 1) n depth path v values out
             else
                 True
         else
-            let
-                _ =
-                    if not c.dh then
-                        Js.to (Js.call out "push" [ x ])
-                    else if not f.optional then
-                        Js.set out outName x
-                    else
-                        case presenceOf x of
-                            Present a ->
-                                Js.set out outName a
+            _ =
+                if not c.dh then
+                    Js.to (Js.call out "push" [ x ])
+                else if not f.optional then
+                    Js.set out outName x
+                else
+                    case presenceOf x of
+                        Present a ->
+                            Js.set out outName a
 
-                            Missing ->
-                                ()
-            in
+                        Missing ->
+                            ()
             fieldsFrom c fs (i + 1) n depth path v values out
 
 
@@ -1884,13 +1796,11 @@ fieldsFrom c fs i n depth path v values out =
 -- an optional field's answer is `Present` of it.
 descend : Context, FieldNode, Int, Path, Js.Value -> Js.Value
 descend c f depth here x =
-    let
-        y =
-            if depth >= c.max then
-                failAt c here DepthExceeded "the depth limit is reached" x False
-            else
-                run c f.node (depth + 1) here NoneActive x
-    in
+    y =
+        if depth >= c.max then
+            failAt c here DepthExceeded "the depth limit is reached" x False
+        else
+            run c f.node (depth + 1) here NoneActive x
     if f.optional && not (Js.same y c.fail) then
         toHost (Present y)
     else
@@ -1911,20 +1821,16 @@ variantOf c discriminator vs path v =
         if not (isObject v) then
             failed (failAt c path WrongShape "expected an object" v False)
         else
-            let
-                here = step path (Js.from discriminator) (Js.from discriminator)
-            in
+            here = step path (Js.from discriminator) (Js.from discriminator)
             if not (hasOwn v discriminator) then
                 failed (failAt c here MissingKey "missing key \"${discriminator}\"" v False)
             else
-                let
-                    tag = Js.get v discriminator
-                    found =
-                        if isType tag "string" then
-                            withTag vs (stringOf tag) 0 (lengthOf vs)
-                        else
-                            Nothing
-                in
+                tag = Js.get v discriminator
+                found =
+                    if isType tag "string" then
+                        withTag vs (stringOf tag) 0 (lengthOf vs)
+                    else
+                        Nothing
                 case found of
                     Just x ->
                         FoundVariant x v
@@ -1966,9 +1872,7 @@ withTag vs tag i n =
     if i >= n then
         Nothing
     else
-        let
-            v = variantAt vs i
-        in
+        v = variantAt vs i
         if v.tag == tag then
             Just v
         else
@@ -1990,9 +1894,7 @@ projected c vs v i n =
     if i >= n then
         NotFound
     else
-        let
-            x = variantAt vs i
-        in
+        x = variantAt vs i
         case maybeOf (Js.apply (if c.src == encodedSide then x.injE.back else x.injA.back) [ v ]) of
             Just payload ->
                 FoundVariant x payload
@@ -2023,21 +1925,19 @@ call c path fn v =
             a
 
         Err given ->
-            let
-                issues = plain given
-                prefix = pathArray path False
-                _ =
-                    if lengthOf issues == 0 then
-                        moved
-                            c
-                            prefix
-                            v
-                            (toHost [ issue "the conversion failed without an issue" ])
-                            0
-                            1
-                    else
-                        moved c prefix v issues 0 (lengthOf issues)
-            in
+            issues = plain given
+            prefix = pathArray path False
+            _ =
+                if lengthOf issues == 0 then
+                    moved
+                        c
+                        prefix
+                        v
+                        (toHost [ issue "the conversion failed without an issue" ])
+                        0
+                        1
+                else
+                    moved c prefix v issues 0 (lengthOf issues)
             c.fail
 
 
@@ -2046,19 +1946,17 @@ moved c prefix v issues i n =
     if i >= n then
         ()
     else
-        let
-            given = issueOf (Js.at issues i)
-            entry : Issue
-            entry =
-                { path = fromHost (Js.call prefix "concat" [ plain (toHost given.path) ])
-                , direction = c.dir
-                , endpoint = c.outE
-                , code = given.code
-                , message = given.message
-                , input = if c.report then Just (cast v) else Nothing
-                }
-            _ = push c.issues (toHost entry)
-        in
+        given = issueOf (Js.at issues i)
+        entry : Issue
+        entry =
+            { path = fromHost (Js.call prefix "concat" [ plain (toHost given.path) ])
+            , direction = c.dir
+            , endpoint = c.outE
+            , code = given.code
+            , message = given.message
+            , input = if c.report then Just (cast v) else Nothing
+            }
+        _ = push c.issues (toHost entry)
         moved c prefix v issues (i + 1) n
 
 
@@ -2072,9 +1970,7 @@ runRoot s o dir src sh dst dh v =
             Err issues
 
         Nothing ->
-            let
-                c = context o dir src sh dst dh False
-            in
+            c = context o dir src sh dst dh False
             finish c (run c (nodeOf s) 0 atRoot NoneActive v)
 
 
@@ -2143,9 +2039,7 @@ parseWith s o text =
                     rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
 
                 Ok v ->
-                    let
-                        c = context o Decoding encodedSide True typeSide False True
-                    in
+                    c = context o Decoding encodedSide True typeSide False True
                     finish c (run c (nodeOf s) 0 atRoot NoneActive v)
 
 
@@ -2162,10 +2056,8 @@ printWith s o v =
             Err issues
 
         Nothing ->
-            let
-                c = context o Encoding typeSide False encodedSide True True
-                x = run c (nodeOf s) 0 atRoot NoneActive (toHost v)
-            in
+            c = context o Encoding typeSide False encodedSide True True
+            x = run c (nodeOf s) 0 atRoot NoneActive (toHost v)
             if Js.same x c.fail then
                 Err (fromHost c.issues)
             else
@@ -2178,12 +2070,10 @@ printWith s o v =
 --| conversion; it builds a recursive schema's body if no run has yet.
 pub describe : Schema e a -> Description
 describe s =
-    let
-        ids = Js.construct (Js.global "Map") []
-        definitions = Js.array []
-        root = shapeOf ids definitions (nodeOf s)
-        _ = Js.call definitions "sort" [ toHost byId ]
-    in
+    ids = Js.construct (Js.global "Map") []
+    definitions = Js.array []
+    root = shapeOf ids definitions (nodeOf s)
+    _ = Js.call definitions "sort" [ toHost byId ]
     { root = root, definitions = fromHost definitions }
 
 
@@ -2206,17 +2096,13 @@ shapeOf ids definitions n =
             NullableOf (shapeOf ids definitions child)
 
         NRecord fs _ ->
-            let
-                out = Js.array []
-                _ = fieldShapes ids definitions fs out 0 (lengthOf fs)
-            in
+            out = Js.array []
+            _ = fieldShapes ids definitions fs out 0 (lengthOf fs)
             RecordOf (fromHost out)
 
         NTagged discriminator vs ->
-            let
-                out = Js.array []
-                _ = variantShapes ids definitions vs out 0 (lengthOf vs)
-            in
+            out = Js.array []
+            _ = variantShapes ids definitions vs out 0 (lengthOf vs)
             TaggedOf discriminator (fromHost out)
 
         NConverted child _ _ ->
@@ -2232,26 +2118,22 @@ shapeOf ids definitions n =
                 EncodedOnly (shapeOf ids definitions child)
 
         NRef cell ->
-            let
-                known = Js.call ids "get" [ toHost cell ]
-            in
+            known = Js.call ids "get" [ toHost cell ]
             if not (Js.isUndefined known) then
                 Reference (intOf known)
             else
-                let
-                    id = intOf (Js.get ids "size")
-                    _ = Js.call ids "set" [ toHost cell, Js.from id ]
-                    shape =
-                        case resolve cell of
-                            Nothing ->
-                                Invalid (dangling cell)
+                id = intOf (Js.get ids "size")
+                _ = Js.call ids "set" [ toHost cell, Js.from id ]
+                shape =
+                    case resolve cell of
+                        Nothing ->
+                            Invalid (dangling cell)
 
-                            Just body ->
-                                shapeOf ids definitions body
-                    definition : Definition
-                    definition = { id = id, name = cell.name, shape = shape }
-                    _ = push definitions (toHost definition)
-                in
+                        Just body ->
+                            shapeOf ids definitions body
+                definition : Definition
+                definition = { id = id, name = cell.name, shape = shape }
+                _ = push definitions (toHost definition)
                 Reference id
 
         NBroken problem ->
@@ -2263,17 +2145,15 @@ fieldShapes ids definitions fs out i n =
     if i >= n then
         ()
     else
-        let
-            f = fieldAt fs i
-            shape : FieldShape
-            shape =
-                { name = f.name
-                , key = f.key
-                , optional = f.optional
-                , shape = shapeOf ids definitions f.node
-                }
-            _ = push out (toHost shape)
-        in
+        f = fieldAt fs i
+        shape : FieldShape
+        shape =
+            { name = f.name
+            , key = f.key
+            , optional = f.optional
+            , shape = shapeOf ids definitions f.node
+            }
+        _ = push out (toHost shape)
         fieldShapes ids definitions fs out (i + 1) n
 
 
@@ -2282,16 +2162,14 @@ variantShapes ids definitions vs out i n =
     if i >= n then
         ()
     else
-        let
-            v = variantAt vs i
-            shape : VariantShape
-            shape =
-                { name = v.name
-                , payload = Maybe.map v.payload (shapeOf ids definitions _)
-                , tag = v.tag
-                }
-            _ = push out (toHost shape)
-        in
+        v = variantAt vs i
+        shape : VariantShape
+        shape =
+            { name = v.name
+            , payload = Maybe.map v.payload (shapeOf ids definitions _)
+            , tag = v.tag
+            }
+        _ = push out (toHost shape)
         variantShapes ids definitions vs out (i + 1) n
 
 

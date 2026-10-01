@@ -67,9 +67,7 @@ pick =
 viaLet : a, a -> a
     where a.compare : a, a -> Order
 viaLet =
-    let
-        f = maxOf
-    in
+    f = maxOf
     f
 
 

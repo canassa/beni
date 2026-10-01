@@ -21,31 +21,23 @@ indexOf xs x k =
 pub classify : Int -> String
 classify n =
     if n < 0 then
-        let
-            m = String.fromInt (0 - n)
-        in
+        m = String.fromInt (0 - n)
         "minus " ++ m ++ "/" ++ m
     else if n == 0 then
         "zero"
     else
-        let
-            s = String.fromInt n
-        in
+        s = String.fromInt n
         "plus " ++ s ++ "/" ++ s
 
 
 pub settle : Js.Value -> ()
 settle o =
-    let
-        _ =
-            if Js.isNull (Js.get o "v") then
-                let
-                    _ = Js.set o "v" (Js.from 1)
-                in
-                Js.set o "n" (Js.from 0)
-            else
-                Js.throw (Js.from "set twice")
-    in
+    _ =
+        if Js.isNull (Js.get o "v") then
+            _ = Js.set o "v" (Js.from 1)
+            Js.set o "n" (Js.from 0)
+        else
+            Js.throw (Js.from "set twice")
     Js.set o "done" (Js.from True)
 
 

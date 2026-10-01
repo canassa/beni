@@ -9,10 +9,8 @@ import Js
 
 pub refuse : Js.Value, Js.Value -> ()
 refuse m root =
-    let
-        id : String
-        id = Js.to (Js.get m "n")
-    in
+    id : String
+    id = Js.to (Js.get m "n")
     if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
         Js.throw
             (Js.construct (Js.global "Error")

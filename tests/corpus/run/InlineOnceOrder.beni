@@ -10,9 +10,7 @@ import Node exposing (Program)
 
 pick : Int, Int -> Int
 pick a _ =
-    let
-        _ = Debug.log "body" a
-    in
+    _ = Debug.log "body" a
     a + a
 
 

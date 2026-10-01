@@ -191,7 +191,7 @@
       (paren
         (lambda
           (pat_var input)
-          (let
+          (block
             (let_def step
               (pat_tuple
                 (pat_var value)
@@ -225,7 +225,7 @@
     (pat_paren
       (pat_ctor Parser
         (pat_var p)))
-    (let
+    (block
       (let_def go
         (pat_var acc)
         (pat_var input)
@@ -276,7 +276,7 @@
       (paren
         (lambda
           (pat_var input)
-          (let
+          (block
             (let_def try
               (pat_var remaining)
               (case

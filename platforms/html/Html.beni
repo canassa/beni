@@ -99,9 +99,7 @@ preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 stringProp : Event, String -> String
 stringProp event name =
-    let
-        v = Js.get (Js.from event) name
-    in
+    v = Js.get (Js.from event) name
     if Js.isNullish v then "" else Js.to v
 
 

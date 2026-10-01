@@ -4,7 +4,5 @@
 -- subject is a `Maybe`, and it is not a TYPE MISMATCH, `List a` against
 -- `Result b c`, at `[ v ]`.
 pub k u =
-    let
-        v = u?
-    in
+    v = u?
     [ v ]

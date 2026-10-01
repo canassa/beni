@@ -35,9 +35,7 @@ pub logged : Int
 logged =
     onEvent
         (λn ->
-            let
-                () = log "event"
-            in
+            () = log "event"
             String.fromInt n
         )
 
@@ -46,9 +44,7 @@ pub later : Int
 later =
     onEvent
         (λn ->
-            let
-                fetch = λ() -> get n
-            in
+            fetch = λ() -> get n
             "later"
         )
 
@@ -63,7 +59,5 @@ pub type Key
 
 pub eq : Key, Key -> Bool
 eq (Key a) (Key b) =
-    let
-        () = log "compared"
-    in
+    () = log "compared"
     a == b

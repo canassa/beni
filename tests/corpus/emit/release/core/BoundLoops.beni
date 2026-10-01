@@ -16,9 +16,7 @@ import Js
 
 pub scan : Js.Value, Int -> Int
 scan xs m =
-    let
-        p = upTo xs m 0
-    in
+    p = upTo xs m 0
     p * 2
 
 
@@ -32,9 +30,7 @@ upTo xs m k =
 
 pub fill : Js.Value, Int -> Int
 fill xs n =
-    let
-        _ = fillFrom xs n 0
-    in
+    _ = fillFrom xs n 0
     n
 
 
@@ -43,17 +39,13 @@ fillFrom xs n k =
     if k == n then
         ()
     else
-        let
-            _ = Js.call xs "push" [ Js.from k ]
-        in
+        _ = Js.call xs "push" [ Js.from k ]
         fillFrom xs n (k + 1)
 
 
 pub ends : Js.Value, Int -> Int
 ends xs n =
-    let
-        ( a, b ) = both xs 0 n
-    in
+    ( a, b ) = both xs 0 n
     a + b
 
 
@@ -67,9 +59,7 @@ both xs a b =
 
 pub pick : Js.Value -> Int
 pick xs =
-    let
-        big = firstBig xs 0
-    in
+    big = firstBig xs 0
     big + 1
 
 
@@ -92,9 +82,7 @@ rowsFrom rows r sum =
     if r == Js.to (Js.get rows "length") then
         sum
     else
-        let
-            s = rowSum (Js.at rows r) 0 0
-        in
+        s = rowSum (Js.at rows r) 0 0
         rowsFrom rows (r + 1) (sum + s)
 
 

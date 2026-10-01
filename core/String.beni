@@ -70,13 +70,11 @@ pub slice : String, Int, Int -> String
 slice s start end =
     Js.pure
         (λ() ->
-            let
-                points = Js.call (Js.global "Array") "from" [ Js.from s ]
-                n : Int
-                n = Js.to (Js.get points "length")
-                from = clamp start n
-                to = clamp end n
-            in
+            points = Js.call (Js.global "Array") "from" [ Js.from s ]
+            n : Int
+            n = Js.to (Js.get points "length")
+            from = clamp start n
+            to = clamp end n
             if to <= from then
                 ""
             else
@@ -124,22 +122,20 @@ compare a b =
             -- one opens a surrogate pair in either string (the code point
             -- there is astral). No array is made: `<` on two strings is a
             -- walk, not a copy.
-            let
-                x = Js.from a
-                y = Js.from b
-                la : Int
-                la = Js.to (Js.get x "length")
-                lb : Int
-                lb = Js.to (Js.get y "length")
+            x = Js.from a
+            y = Js.from b
+            la : Int
+            la = Js.to (Js.get x "length")
+            lb : Int
+            lb = Js.to (Js.get y "length")
 
-                n =
-                    if la < lb then
-                        la
-                    else
-                        lb
+            n =
+                if la < lb then
+                    la
+                else
+                    lb
 
-                i = firstDifference x y 0 n
-            in
+            i = firstDifference x y 0 n
             if i == n then
                 if la < lb then
                     LT
@@ -148,13 +144,11 @@ compare a b =
                 else
                     EQ
             else
-                let
-                    at =
-                        if i > 0 && (pointAt x (i - 1) > 0xFFFF || pointAt y (i - 1) > 0xFFFF) then
-                            i - 1
-                        else
-                            i
-                in
+                at =
+                    if i > 0 && (pointAt x (i - 1) > 0xFFFF || pointAt y (i - 1) > 0xFFFF) then
+                        i - 1
+                    else
+                        i
                 if pointAt x at < pointAt y at then
                     LT
                 else
@@ -307,11 +301,9 @@ indexes haystack needle =
             if needle == "" then
                 []
             else
-                let
-                    h = Js.from haystack
-                    found = Js.array []
-                    _ = search h needle found (indexOf h needle 0) 0 0
-                in
+                h = Js.from haystack
+                found = Js.array []
+                _ = search h needle found (indexOf h needle 0) 0 0
                 Js.to found
         )
 
@@ -321,15 +313,13 @@ search h needle found at scanned point =
     if at < 0 then
         ()
     else
-        let
-            ( s, p ) = advance h at scanned point
+        ( s, p ) = advance h at scanned point
 
-            _ =
-                if s == at then
-                    Js.call found "push" [ Js.from p ]
-                else
-                    Js.null
-        in
+        _ =
+            if s == at then
+                Js.call found "push" [ Js.from p ]
+            else
+                Js.null
         search h needle found (indexOf h needle (at + Js.to (Js.get (Js.from needle) "length"))) s p
 
 
@@ -370,9 +360,7 @@ toInt s =
             -- §4.1): text that is not a number is `Nothing`, never a NaN pretending
             -- to be an `Int`, and neither is one past 2^53.
             if Js.to (Js.call (Js.regExp "^[+-]?\\d+$" "") "test" [ Js.from s ]) then
-                let
-                    n = Js.apply (Js.global "Number") [ Js.from s ]
-                in
+                n = Js.apply (Js.global "Number") [ Js.from s ]
                 if Js.to (Js.call (Js.global "Number") "isSafeInteger" [ n ]) then
                     Just (Js.to n)
                 else
@@ -406,9 +394,7 @@ toFloat s =
                         [ Js.from s ]
                     )
             then
-                let
-                    n = Js.apply (Js.global "Number") [ Js.from s ]
-                in
+                n = Js.apply (Js.global "Number") [ Js.from s ]
                 if Js.to (Js.call (Js.global "Number") "isNaN" [ n ]) then
                     Nothing
                 else
@@ -457,15 +443,13 @@ pub fromList : List Char -> String
 fromList list =
     Js.pure
         (λ() ->
-            let
-                xs = Js.from list
+            xs = Js.from list
 
-                plain =
-                    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
-                        xs
-                    else
-                        Js.call xs "$plain" []
-            in
+            plain =
+                if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+                    xs
+                else
+                    Js.call xs "$plain" []
             Js.to (Js.call plain "join" [ Js.from "" ])
         )
 
@@ -661,9 +645,7 @@ uncons str =
 --|     pad "1" 5 ' ' == "  1  "
 pub pad : String, Int, Char -> String
 pad str n char =
-    let
-        half = Basics.toFloat (n - length str) / 2
-    in
+    half = Basics.toFloat (n - length str) / 2
     repeat (fromChar char) (ceiling half) ++ str ++ repeat (fromChar char) (floor half)
 
 

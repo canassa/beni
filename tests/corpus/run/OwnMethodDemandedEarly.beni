@@ -24,26 +24,20 @@ type Box a
 
 
 pair u =
-    let
-        g x = (Box x).size ()
-    in
+    g x = (Box x).size ()
     ( g 1, g "s" )
 
 
 pairAnnotated u =
-    let
-        g : a -> Int
-        g y = (Box y).size ()
-    in
+    g : a -> Int
+    g y = (Box y).size ()
     ( g 1, g "s" )
 
 
 boxes u =
     case (K u).makeBox () of
         o ->
-            let
-                g h = o.map2 h
-            in
+            g h = o.map2 h
             ( g (λx -> x + 1), g String.fromInt )
 
 
@@ -65,8 +59,6 @@ both ( a, b ) = String.fromInt a ++ " " ++ String.fromInt b
 
 main : Program
 main =
-    let
-        ( n, s ) = boxes 3
-    in
+    ( n, s ) = boxes 3
     Node.printLines
         [ both (pair 0), both (pairAnnotated 0), String.fromInt (unbox n) ++ " " ++ unbox s ]

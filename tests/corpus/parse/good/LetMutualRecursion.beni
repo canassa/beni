@@ -2,17 +2,15 @@
 -- in every body (§7), regardless of textual order.
 isEven : Int -> Bool
 isEven n =
-    let
-        even k =
-            if k == 0 then
-                True
-            else
-                odd (k - 1)
+    even k =
+        if k == 0 then
+            True
+        else
+            odd (k - 1)
 
-        odd k =
-            if k == 0 then
-                False
-            else
-                even (k - 1)
-    in
+    odd k =
+        if k == 0 then
+            False
+        else
+            even (k - 1)
     even n

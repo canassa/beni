@@ -15,9 +15,7 @@ build n acc =
     if n <= 0 then
         acc
     else
-        let
-            _ = Io.sleep 0
-        in
+        _ = Io.sleep 0
         build (n - 1) [ (λx -> x + n), ...acc ]
 
 

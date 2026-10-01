@@ -19,9 +19,7 @@ wrap x = x
 
 g : Bool
 g =
-    let
-        a0 = wrap 1
-    in
+    a0 = wrap 1
     a0 == a0
 
 

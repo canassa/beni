@@ -20,61 +20,49 @@ import Node exposing (Program)
 
 
 tallies u =
-    let
-        countEach xs = List.map xs (λx -> List.foldl xs 0 (λy n -> if x == y then n + 1 else n))
-    in
+    countEach xs = List.map xs (λx -> List.foldl xs 0 (λy n -> if x == y then n + 1 else n))
     ( countEach [ 1, 2, 1 ], countEach [ "b", "a", "b" ] )
 
 
 nested u =
-    let
-        pairs xs =
-            let
-                both a b = a == b && xs == xs
-            in
-            List.map xs (λx -> both x x)
-    in
+    pairs xs =
+        both a b = a == b && xs == xs
+        List.map xs (λx -> both x x)
     pairs [ 'a', 'b' ]
 
 
 loops u =
-    let
-        go ys acc =
-            case ys of
-                [] ->
-                    acc
+    go ys acc =
+        case ys of
+            [] ->
+                acc
 
-                [ y, ...rest ] ->
-                    go rest (if y == y then acc + 1 else acc)
-    in
+            [ y, ...rest ] ->
+                go rest (if y == y then acc + 1 else acc)
     ( go [ 1, 2, 3 ] 0, go [ "a" ] 0 )
 
 
 mutual u =
-    let
-        isIn x ys =
-            case ys of
-                [] ->
-                    False
+    isIn x ys =
+        case ys of
+            [] ->
+                False
 
-                [ y, ...rest ] ->
-                    y == x || notIn x rest
+            [ y, ...rest ] ->
+                y == x || notIn x rest
 
-        notIn x ys =
-            case ys of
-                [] ->
-                    False
+    notIn x ys =
+        case ys of
+            [] ->
+                False
 
-                [ _, ...rest ] ->
-                    isIn x rest
-    in
+            [ _, ...rest ] ->
+                isIn x rest
     ( isIn 2 [ 1, 2 ], isIn "z" [ "a" ] )
 
 
 values u =
-    let
-        twice y = [ y ] == [ y ]
-    in
+    twice y = [ y ] == [ y ]
     List.map [ ( 1, 2 ) ] twice ++ List.map [ "a" ] twice
 
 
@@ -92,13 +80,11 @@ ints xs = String.join (List.map xs String.fromInt) ","
 
 main : Program
 main =
-    let
-        ( a, b ) = tallies ()
+    ( a, b ) = tallies ()
 
-        ( c, d ) = loops ()
+    ( c, d ) = loops ()
 
-        ( g, h ) = mutual ()
-    in
+    ( g, h ) = mutual ()
     Node.printLines
         [ ints a
         , ints b

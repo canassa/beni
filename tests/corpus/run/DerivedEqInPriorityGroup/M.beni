@@ -30,11 +30,9 @@ same =
 
 
 pub compare left right =
-    let
-        s =
-            W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
-                == W (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 minusOne))
-    in
+    s =
+        W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
+            == W (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 minusOne))
     case left of
         K a ->
             case right of

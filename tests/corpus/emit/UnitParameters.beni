@@ -28,9 +28,7 @@ lambda () = λ() -> 7
 
 pub calls : Int -> Int
 calls n =
-    let
-        f = lambda ()
-    in
+    f = lambda ()
     thunk () + later n () + first () n + f ()
 
 

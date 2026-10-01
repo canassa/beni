@@ -14,7 +14,5 @@ greeting name = <p>Hello, {name}!</p>
 
 main : Program
 main =
-    let
-        _ = greeting "world"
-    in
+    _ = greeting "world"
     Prog.say "hello"

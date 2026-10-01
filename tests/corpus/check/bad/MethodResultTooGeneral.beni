@@ -26,9 +26,7 @@ combine (Box a) z = a
 pair n =
     case (λy -> y.h ()) (K n) of
         r ->
-            let
-                q z = r.combine z
-            in
+            q z = r.combine z
             ( q 1, q "s" )
 
 

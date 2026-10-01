@@ -30,10 +30,8 @@ update msg n =
 
 work : String, Cmd.Send Msg -> ()
 work name _ =
-    let
-        _ = Debug.log "start ${name}" ()
-        _ = Time.sleep (Time.millis 100)
-    in
+    _ = Debug.log "start ${name}" ()
+    _ = Time.sleep (Time.millis 100)
     Debug.log "end ${name}" ()
 
 

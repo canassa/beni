@@ -19,49 +19,41 @@ import Node exposing (Program)
 
 say : String -> ()
 say s =
-    let
-        _ = Debug.log "say" s
-    in
+    _ = Debug.log "say" s
     ()
 
 
 twice : Bool -> ()
 twice c =
-    let
-        _ = say "a"
+    _ = say "a"
 
-        _ =
-            if c then
-                say "b"
-            else
-                ()
+    _ =
+        if c then
+            say "b"
+        else
+            ()
 
-        _ =
-            if c then
-                ()
-            else
-                say "d"
+    _ =
+        if c then
+            ()
+        else
+            say "d"
 
-        _ = c
-    in
+    _ = c
     say "c"
 
 
 pub kept : Bool -> ()
 kept c =
-    let
-        _ = twice c
-    in
+    _ = twice c
     ()
 
 
 pub pureDiscard : Int -> Int
 pureDiscard n =
-    let
-        _ = String.fromInt n
+    _ = String.fromInt n
 
-        _ = n * 2
-    in
+    _ = n * 2
     n
 
 

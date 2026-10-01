@@ -18,9 +18,7 @@ cells = List.range 1 20000
 
 main : Program
 main =
-    let
-        ( big, small ) = List.partition cells (λn -> n > 19000)
-    in
+    ( big, small ) = List.partition cells (λn -> n > 19000)
     Node.printLines
         [ String.fromInt (List.foldl (List.map cells (λn -> n * 2)) 0 (λx acc -> x + acc))
         , String.fromInt (List.length (List.filter cells (λn -> n > 19000)))

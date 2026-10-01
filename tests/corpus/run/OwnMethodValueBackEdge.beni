@@ -20,24 +20,18 @@ use n x =
     if n <= 0 then
         ( 0, x )
     else
-        let
-            ( k, y ) = (T n).m x
-        in
+        ( k, y ) = (T n).m x
         ( k + 1, y )
 
 
 pub m (T n) x =
-    let
-        ( k, y ) = use (n - 1) x
-    in
+    ( k, y ) = use (n - 1) x
     ( k * 2, y )
 
 
 main : Program
 main =
-    let
-        ( a, s ) = use 3 "s"
+    ( a, s ) = use 3 "s"
 
-        ( b, _ ) = use 2 True
-    in
+    ( b, _ ) = use 2 True
     Node.printLines [ String.fromInt a ++ " " ++ s, String.fromInt b ]

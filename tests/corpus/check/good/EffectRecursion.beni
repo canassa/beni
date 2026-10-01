@@ -40,9 +40,7 @@ walk xs visit =
             ()
 
         [ x, ...rest ] ->
-            let
-                () = visit x
-            in
+            () = visit x
             walk rest visit
 
 

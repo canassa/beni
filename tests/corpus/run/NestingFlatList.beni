@@ -90,58 +90,56 @@ at33 =
 
 main : Program
 main =
-    let
-        logged =
-            [ n "e1" 1
-            , n "e2" 2
-            , n "e3" 3
-            , n "e4" 4
-            , n "e5" 5
-            , n "e6" 6
-            , n "e7" 7
-            , n "e8" 8
-            , n "e9" 9
-            , n "e10" 10
-            , n "e11" 11
-            , n "e12" 12
-            , n "e13" 13
-            , n "e14" 14
-            , n "e15" 15
-            , n "e16" 16
-            , case Just (n "e17" 17) of
-                Just v ->
-                    v
+    logged =
+        [ n "e1" 1
+        , n "e2" 2
+        , n "e3" 3
+        , n "e4" 4
+        , n "e5" 5
+        , n "e6" 6
+        , n "e7" 7
+        , n "e8" 8
+        , n "e9" 9
+        , n "e10" 10
+        , n "e11" 11
+        , n "e12" 12
+        , n "e13" 13
+        , n "e14" 14
+        , n "e15" 15
+        , n "e16" 16
+        , case Just (n "e17" 17) of
+            Just v ->
+                v
 
-                Nothing ->
-                    0
-            , n "e18" 18
-            , n "e19" 19
-            , n "e20" 20
-            , n "e21" 21
-            , n "e22" 22
-            , n "e23" 23
-            , n "e24" 24
-            , n "e25" 25
-            , n "e26" 26
-            , n "e27" 27
-            , n "e28" 28
-            , n "e29" 29
-            , n "e30" 30
-            , n "e31" 31
-            , n "e32" 32
-            , n "e33" 33
-            ]
+            Nothing ->
+                0
+        , n "e18" 18
+        , n "e19" 19
+        , n "e20" 20
+        , n "e21" 21
+        , n "e22" 22
+        , n "e23" 23
+        , n "e24" 24
+        , n "e25" 25
+        , n "e26" 26
+        , n "e27" 27
+        , n "e28" 28
+        , n "e29" 29
+        , n "e30" 30
+        , n "e31" 31
+        , n "e32" 32
+        , n "e33" 33
+        ]
 
-        nested = [ at33, at32, [], at33 ]
+    nested = [ at33, at32, [], at33 ]
 
-        headOf xs =
-            case xs of
-                [ x, ..._ ] ->
-                    x
+    headOf xs =
+        case xs of
+            [ x, ..._ ] ->
+                x
 
-                [] ->
-                    0
-    in
+            [] ->
+                0
     Node.printLines
         [ String.fromInt (List.length logged)
         , String.fromInt (List.sum logged)

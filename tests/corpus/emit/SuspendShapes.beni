@@ -29,21 +29,17 @@ import Task
 
 pub fetch : Int -> Int
 fetch n =
-    let
-        _ = Io.sleep n
-    in
+    _ = Io.sleep n
     n + 1
 
 
 pub pick : Int -> Int
 pick n =
-    let
-        m =
-            if n > 0 then
-                fetch n
-            else
-                0
-    in
+    m =
+        if n > 0 then
+            fetch n
+        else
+            0
     m * 2
 
 

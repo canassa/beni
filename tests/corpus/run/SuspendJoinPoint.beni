@@ -16,39 +16,33 @@ import Task
 
 slow : Int -> Int
 slow n =
-    let
-        _ = Task.yieldNow ()
-    in
+    _ = Task.yieldNow ()
     n
 
 
 classify : Int -> String
 classify n =
-    let
-        label =
-            case Int.mod n 3 of
-                0 ->
-                    "zero " ++ String.fromInt (slow n)
+    label =
+        case Int.mod n 3 of
+            0 ->
+                "zero " ++ String.fromInt (slow n)
 
-                1 ->
-                    "one"
+            1 ->
+                "one"
 
-                _ ->
-                    "two " ++ String.fromInt (slow n + slow 1)
-        size =
-            if n > 4 then
-                slow 100
-            else
-                1
-    in
+            _ ->
+                "two " ++ String.fromInt (slow n + slow 1)
+    size =
+        if n > 4 then
+            slow 100
+        else
+            1
     label ++ " / " ++ String.fromInt size
 
 
 check : Int -> Bool
 check n =
-    let
-        ok = n > 3 && Debug.log "right operand" (slow n) > 0
-    in
+    ok = n > 3 && Debug.log "right operand" (slow n) > 0
     ok
 
 
@@ -57,13 +51,11 @@ loop n acc =
     if n == 0 then
         acc
     else
-        let
-            step =
-                if Int.mod n 2 == 0 then
-                    slow 2
-                else
-                    1
-        in
+        step =
+            if Int.mod n 2 == 0 then
+                slow 2
+            else
+                1
         loop (n - 1) (acc + step)
 
 

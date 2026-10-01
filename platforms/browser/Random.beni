@@ -46,9 +46,7 @@ pub value : Generator a -> a
 value generator =
     case Pcg.step generator (pageSeed ()) of
         ( v, after ) ->
-            let
-                _ = Js.write seed (Just after)
-            in
+            _ = Js.write seed (Just after)
             v
 
 
@@ -79,11 +77,9 @@ pageSeed () =
 -- and this one is neither.
 entropy : () -> Int
 entropy () =
-    let
-        words =
-            Js.call (Js.global "crypto") "getRandomValues"
-                [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
-    in
+    words =
+        Js.call (Js.global "crypto") "getRandomValues"
+            [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
     Js.to (Js.at words 0)
 
 

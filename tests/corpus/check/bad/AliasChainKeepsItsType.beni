@@ -819,7 +819,5 @@ deep x = x
 
 empty : Bool
 empty =
-    let
-        p = deep (deep (deep ( 2, 7 )))
-    in
+    p = deep (deep (deep ( 2, 7 )))
     String.isEmpty p.0

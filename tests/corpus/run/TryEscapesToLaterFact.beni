@@ -15,9 +15,7 @@ import Node exposing (Program)
 
 
 h m =
-    let
-        v = m?
-    in
+    v = m?
     if List.isEmpty [ m ] then
         Nothing
     else
@@ -25,17 +23,13 @@ h m =
 
 
 f k =
-    let
-        g u = k (u?)
-    in
+    g u = k (u?)
     ( g (Just 1), Maybe.withDefault (k 5) 0 )
 
 
 main : Program
 main =
-    let
-        ( first, second ) = f (λn -> Just (n + 1))
-    in
+    ( first, second ) = f (λn -> Just (n + 1))
     Node.printLines
         [ Debug.toString (h (Just 1))
         , Debug.toString (h Nothing)

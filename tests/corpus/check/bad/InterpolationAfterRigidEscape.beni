@@ -7,10 +7,8 @@
 -- A `${…}` decided at a rigid waits for its binder's
 -- boundary, where the escape poisons the rigid and settles it silently.
 f x =
-    let
-        s = "${x}"
+    s = "${x}"
 
-        g : a -> a
-        g y = if True then y else x
-    in
+    g : a -> a
+    g y = if True then y else x
     ( s, g 1 )

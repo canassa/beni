@@ -15,9 +15,7 @@ inc v = v + 1
 
 
 pair left right =
-    let
-        same = ( left, 0 ) == ( right, 0 )
-    in
+    same = ( left, 0 ) == ( right, 0 )
     same
 
 

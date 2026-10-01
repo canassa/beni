@@ -73,44 +73,40 @@ request method url contentType body json =
 start : String, String, String, String, Bool, Resume Answer -> (() -> ())
 start method url contentType body json resume =
     if parses url then
-        let
-            abort = Js.construct (Js.global "AbortController") []
-            headers = Js.construct (Js.global "Object") []
+        abort = Js.construct (Js.global "AbortController") []
+        headers = Js.construct (Js.global "Object") []
 
-            _ =
-                if contentType == "" then
-                    ()
+        _ =
+            if contentType == "" then
+                ()
+            else
+                Js.set headers "Content-Type" (Js.from contentType)
+
+        _ =
+            if json then
+                Js.set headers "Accept" (Js.from "application/json")
+            else
+                ()
+
+        init =
+            { body =
+                if method == "GET" then
+                    Js.undefined
                 else
-                    Js.set headers "Content-Type" (Js.from contentType)
+                    Js.from body
+            , headers = headers
+            , method = method
+            , signal = Js.get abort "signal"
+            }
 
-            _ =
-                if json then
-                    Js.set headers "Accept" (Js.from "application/json")
-                else
-                    ()
-
-            init =
-                { body =
-                    if method == "GET" then
-                        Js.undefined
-                    else
-                        Js.from body
-                , headers = headers
-                , method = method
-                , signal = Js.get abort "signal"
-                }
-
-            _ =
-                Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
-                    [ Js.from (λresponse -> received response json abort resume)
-                    , Js.from (λerror -> failed error abort resume)
-                    ]
-        in
+        _ =
+            Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
+                [ Js.from (λresponse -> received response json abort resume)
+                , Js.from (λerror -> failed error abort resume)
+                ]
         λ() -> Js.to (Js.call abort "abort" [])
     else
-        let
-            _ = resumeWith resume (Answered (Err (BadUrl url)))
-        in
+        _ = resumeWith resume (Answered (Err (BadUrl url)))
         λ() -> ()
 
 
@@ -119,11 +115,9 @@ parses : String -> Bool
 parses url =
     Js.catchIf
         (λ() ->
-            let
-                _ =
-                    Js.construct (Js.global "URL")
-                        [ Js.from url, Js.get (Js.global "location") "href" ]
-            in
+            _ =
+                Js.construct (Js.global "URL")
+                    [ Js.from url, Js.get (Js.global "location") "href" ]
             True
         )
         (λerror -> Js.instanceOf error (Js.global "TypeError"))
@@ -133,13 +127,11 @@ parses url =
 -- The response came: read its body, then answer.
 received : Js.Value, Bool, Js.Value, Resume Answer -> ()
 received response json abort resume =
-    let
-        _ =
-            Js.call (Js.call response "text" []) "then"
-                [ Js.from (λtext -> resumeWith resume (answered response json text))
-                , Js.from (λerror -> failed error abort resume)
-                ]
-    in
+    _ =
+        Js.call (Js.call response "text" []) "then"
+            [ Js.from (λtext -> resumeWith resume (answered response json text))
+            , Js.from (λerror -> failed error abort resume)
+            ]
     ()
 
 
@@ -153,9 +145,7 @@ answered response json text =
         -- defect it is, thrown in the waiting fiber.
         Js.catchIf
             (λ() ->
-                let
-                    _ = Js.call (Js.global "JSON") "parse" [ text ]
-                in
+                _ = Js.call (Js.global "JSON") "parse" [ text ]
                 Answered (Ok (Js.to text))
             )
             (λ_ -> True)

@@ -42,10 +42,8 @@ update name model = ( { model | seen = model.seen ++ [ name ] }, Cmd.none )
 
 subscriptions : Model -> Sub String
 subscriptions _ =
-    let
-        a = { first = 1, second = 2 }
-        b = { first = 2, second = 1 }
-    in
+    a = { first = 1, second = 2 }
+    b = { first = 2, second = 1 }
     Sub.batch
         [ Sub.listen Zeta (hello "zeta" _) identity
         , Sub.listen Alpha (hello "alpha" _) identity

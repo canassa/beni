@@ -42,15 +42,13 @@ pub type alias Url =
 
 pub fromUrl : Url -> Route
 fromUrl url =
-    let
-        segments =
-            url.path
-                |> String.split "/"
-                |> List.filter (λs -> not (String.isEmpty s))
-                |> List.map decodeSegment
+    segments =
+        url.path
+            |> String.split "/"
+            |> List.filter (λs -> not (String.isEmpty s))
+            |> List.map decodeSegment
 
-        params = parseQuery url.query
-    in
+    params = parseQuery url.query
     case segments of
         [] ->
             Home
@@ -108,12 +106,10 @@ fromUrl url =
 
 usersQuery : Dict String String -> UsersQuery
 usersQuery params =
-    let
-        intParam name default =
-            Dict.get params name
-                |> Maybe.andThen String.toInt
-                |> Maybe.withDefault default
-    in
+    intParam name default =
+        Dict.get params name
+            |> Maybe.andThen String.toInt
+            |> Maybe.withDefault default
     { page = intParam "page" 1 |> clampPage
     , perPage = intParam "per_page" 20 |> clamp 1 100
     , sort =
@@ -222,29 +218,27 @@ toUrl route =
 
 usersQueryString : UsersQuery -> String
 usersQueryString query =
-    let
-        pairs =
-            [ if query.page /= 1 then
-                Just ( "page", String.fromInt query.page )
-              else
+    pairs =
+        [ if query.page /= 1 then
+            Just ( "page", String.fromInt query.page )
+          else
+            Nothing
+        , if query.perPage /= 20 then
+            Just ( "per_page", String.fromInt query.perPage )
+          else
+            Nothing
+        , case query.sort of
+            ByName ->
                 Nothing
-            , if query.perPage /= 20 then
-                Just ( "per_page", String.fromInt query.perPage )
-              else
-                Nothing
-            , case query.sort of
-                ByName ->
-                    Nothing
 
-                ByCreated ->
-                    Just ( "sort", "created" )
+            ByCreated ->
+                Just ( "sort", "created" )
 
-                ByActivity ->
-                    Just ( "sort", "activity" )
-            , Maybe.map query.filter (λf -> ( "filter", encodeSegment f ))
-            ]
-                |> List.filterMap identity
-    in
+            ByActivity ->
+                Just ( "sort", "activity" )
+        , Maybe.map query.filter (λf -> ( "filter", encodeSegment f ))
+        ]
+            |> List.filterMap identity
     case pairs of
         [] ->
             ""
@@ -299,9 +293,7 @@ title route =
 
 pub breadcrumbs : Route -> List ( String, Route )
 breadcrumbs route =
-    let
-        root = ( "Home", Home )
-    in
+    root = ( "Home", Home )
     case route of
         Home ->
             [ root ]

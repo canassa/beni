@@ -73,16 +73,14 @@ pub update : Msg, Model -> Model
 update msg model =
     case msg of
         NewNote ->
-            let
-                note =
-                    { id = model.nextId
-                    , title = "Untitled"
-                    , body = ""
-                    , tags = Set.empty
-                    , pinned = False
-                    , updatedAt = model.now
-                    }
-            in
+            note =
+                { id = model.nextId
+                , title = "Untitled"
+                , body = ""
+                , tags = Set.empty
+                , pinned = False
+                , updatedAt = model.now
+                }
             model
                 |> pushHistory
                 |> setNotes (Dict.insert model.notes note.id note)
@@ -102,9 +100,7 @@ update msg model =
             editSelected model (λnote -> { note | body = body })
 
         AddTag tag ->
-            let
-                clean = String.trim (String.toLower tag)
-            in
+            clean = String.trim (String.toLower tag)
             if String.isEmpty clean then
                 model
             else
@@ -119,15 +115,13 @@ update msg model =
                 |> editNote id (λnote -> { note | pinned = not note.pinned })
 
         Delete id ->
-            let
-                remaining = Dict.remove model.notes id
+            remaining = Dict.remove model.notes id
 
-                selected =
-                    if model.selected == Just id then
-                        Nothing
-                    else
-                        model.selected
-            in
+            selected =
+                if model.selected == Just id then
+                    Nothing
+                else
+                    model.selected
             model
                 |> pushHistory
                 |> setNotes remaining
@@ -199,9 +193,7 @@ editNote : Model, Int, (Note -> Note) -> Model
 editNote model id f =
     case Dict.get model.notes id of
         Just note ->
-            let
-                edited = f note
-            in
+            edited = f note
             { model | notes = Dict.insert model.notes id { edited | updatedAt = model.now } }
 
         Nothing ->
@@ -220,34 +212,32 @@ editSelected model f =
 
 pub visibleNotes : Model -> List Note
 visibleNotes model =
-    let
-        query = String.toLower (String.trim model.query)
+    query = String.toLower (String.trim model.query)
 
-        matchesQuery note =
-            String.isEmpty query
-                || String.contains (String.toLower note.title) query
-                || String.contains (String.toLower note.body) query
+    matchesQuery note =
+        String.isEmpty query
+            || String.contains (String.toLower note.title) query
+            || String.contains (String.toLower note.body) query
 
-        matchesTag note =
-            case model.activeTag of
-                Just tag ->
-                    Set.member note.tags tag
+    matchesTag note =
+        case model.activeTag of
+            Just tag ->
+                Set.member note.tags tag
 
-                Nothing ->
-                    True
+            Nothing ->
+                True
 
-        rank note =
-            if note.pinned then
-                0
-            else
-                1
+    rank note =
+        if note.pinned then
+            0
+        else
+            1
 
-        pinnedFirstThenNewest a b =
-            if rank a /= rank b then
-                compare (rank a) (rank b)
-            else
-                compare b.updatedAt a.updatedAt
-    in
+    pinnedFirstThenNewest a b =
+        if rank a /= rank b then
+            compare (rank a) (rank b)
+        else
+            compare b.updatedAt a.updatedAt
     Dict.values model.notes
         |> List.filter matchesQuery
         |> List.filter matchesTag
@@ -256,18 +246,15 @@ visibleNotes model =
 
 pub allTags : Model -> List ( String, Int )
 allTags model =
-    let
-        count tag counts =
-            Dict.update counts tag (λexisting -> Just (Maybe.withDefault existing 0 + 1))
+    count tag counts = Dict.update counts tag (λexisting -> Just (Maybe.withDefault existing 0 + 1))
 
-        countNote note counts = Set.foldl note.tags counts count
+    countNote note counts = Set.foldl note.tags counts count
 
-        commonestFirst ( tag1, n1 ) ( tag2, n2 ) =
-            if n1 /= n2 then
-                compare n2 n1
-            else
-                String.compare tag1 tag2
-    in
+    commonestFirst ( tag1, n1 ) ( tag2, n2 ) =
+        if n1 /= n2 then
+            compare n2 n1
+        else
+            String.compare tag1 tag2
     Dict.values model.notes
         |> List.foldl Dict.empty countNote
         |> Dict.toList
@@ -337,9 +324,7 @@ viewNoteItem selected note =
 
 preview : String -> String
 preview body =
-    let
-        firstLine = body |> String.lines |> List.head |> Maybe.withDefault ""
-    in
+    firstLine = body |> String.lines |> List.head |> Maybe.withDefault ""
     if String.length firstLine > 40 then
         String.left firstLine 37 ++ "..."
     else

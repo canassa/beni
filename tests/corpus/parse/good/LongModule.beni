@@ -172,22 +172,18 @@ update msg model =
             { model | newCardTitle = title }
 
         AddCard ->
-            let
-                title = String.trim model.newCardTitle
-            in
+            title = String.trim model.newCardTitle
             if String.isEmpty title then
                 addError "A card needs a title." model
             else
-                let
-                    card =
-                        { id = model.nextId
-                        , title = title
-                        , description = ""
-                        , labels = []
-                        , column = Backlog
-                        , order = cardsIn Backlog model |> List.length
-                        }
-                in
+                card =
+                    { id = model.nextId
+                    , title = title
+                    , description = ""
+                    , labels = []
+                    , column = Backlog
+                    , order = cardsIn Backlog model |> List.length
+                    }
                 { model
                     | cards = Dict.insert model.cards card.id card
                     , nextId = model.nextId + 1
@@ -312,9 +308,7 @@ toggleLabel label card =
 
 commitEdit : Model -> Model
 commitEdit model =
-    let
-        finished = { model | editing = NotEditing }
-    in
+    finished = { model | editing = NotEditing }
     case model.editing of
         NotEditing ->
             model
@@ -336,13 +330,11 @@ moveCard id column model =
             if card.column == column then
                 model
             else
-                let
-                    moved =
-                        { card
-                            | column = column
-                            , order = List.length (cardsIn column model)
-                        }
-                in
+                moved =
+                    { card
+                        | column = column
+                        , order = List.length (cardsIn column model)
+                    }
                 { model | cards = Dict.insert model.cards id moved }
                     |> renumber
 
@@ -352,12 +344,10 @@ moveCard id column model =
 
 renumber : Model -> Model
 renumber model =
-    let
-        renumberColumn column cards =
-            cardsIn column model
-                |> List.indexedMap (λindex card -> { card | order = index })
-                |> List.foldl cards (λcard acc -> Dict.insert acc card.id card)
-    in
+    renumberColumn column cards =
+        cardsIn column model
+            |> List.indexedMap (λindex card -> { card | order = index })
+            |> List.foldl cards (λcard acc -> Dict.insert acc card.id card)
     { model | cards = List.foldl columns model.cards renumberColumn }
 
 
@@ -457,11 +447,9 @@ viewHeader model =
 
 countLabel : Model -> String
 countLabel model =
-    let
-        total = Dict.size model.cards
+    total = Dict.size model.cards
 
-        done = cardsIn Done model |> List.length
-    in
+    done = cardsIn Done model |> List.length
     if total == 0 then
         "no cards"
     else
@@ -488,21 +476,19 @@ viewErrors errors =
 
 viewColumn : Model, Column -> Html Msg
 viewColumn model column =
-    let
-        key = columnKey column
+    key = columnKey column
 
-        collapsed = Set.member model.collapsed key
+    collapsed = Set.member model.collapsed key
 
-        cards = visibleCardsIn column model
+    cards = visibleCardsIn column model
 
-        hovered =
-            case model.drag of
-                Just { over } ->
-                    over == Just column
+    hovered =
+        case model.drag of
+            Just { over } ->
+                over == Just column
 
-                Nothing ->
-                    False
-    in
+            Nothing ->
+                False
     div
         [ classList
             [ ( "column", True )
@@ -534,15 +520,13 @@ viewDropZone column =
 
 viewCard : Model, Card -> Html Msg
 viewCard model card =
-    let
-        dragging =
-            case model.drag of
-                Just { cardId } ->
-                    cardId == card.id
+    dragging =
+        case model.drag of
+            Just { cardId } ->
+                cardId == card.id
 
-                Nothing ->
-                    False
-    in
+            Nothing ->
+                False
     li
         [ classList
             [ ( "card", True )
@@ -641,15 +625,13 @@ viewLabels card =
 
 viewCardActions : Card -> Html Msg
 viewCardActions card =
-    let
-        moveButton direction label =
-            case direction card.column of
-                Just target ->
-                    button [ onClick (MoveCard card.id target) ] [ text label ]
+    moveButton direction label =
+        case direction card.column of
+            Just target ->
+                button [ onClick (MoveCard card.id target) ] [ text label ]
 
-                Nothing ->
-                    text ""
-    in
+            Nothing ->
+                text ""
     div [ class "actions" ]
         [ moveButton previousColumn "<"
         , moveButton nextColumn ">"
@@ -710,11 +692,9 @@ columnDecoder =
 
 pub load : String -> Result String Model
 load json =
-    let
-        cards =
-            Decode.decodeString cardsDecoder json
-                |> Result.mapError Decode.errorToString
-    in
+    cards =
+        Decode.decodeString cardsDecoder json
+            |> Result.mapError Decode.errorToString
     Ok (update (Loaded (Ok cards?)) init)
 
 

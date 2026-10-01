@@ -11,9 +11,7 @@ import Remote
 
 main : Program
 main =
-    let
-        later = λ() -> Remote.lookup "later"
-    in
+    later = λ() -> Remote.lookup "later"
     Prog.say (greeting "world")
 
 

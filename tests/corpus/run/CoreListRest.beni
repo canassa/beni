@@ -23,9 +23,7 @@ flag b =
 
 main : Program
 main =
-    let
-        ( numbers, flags ) = List.unzip [ ( 0, True ), ( 17, False ) ]
-    in
+    ( numbers, flags ) = List.unzip [ ( 0, True ), ( 17, False ) ]
     Node.printLines
         [ ints (List.singleton 1234)
         , Debug.toString (List.minimum [ 3, 2, 1 ])

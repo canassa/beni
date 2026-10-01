@@ -60,26 +60,24 @@ churn i s =
     if i >= size then
         s
     else
-        let
-            top =
-                case Int.mod i 3 of
-                    2 ->
-                        case s.top of
-                            [ _, ...rest ] ->
-                                rest
+        top =
+            case Int.mod i 3 of
+                2 ->
+                    case s.top of
+                        [ _, ...rest ] ->
+                            rest
 
-                            [] ->
-                                []
+                        [] ->
+                            []
 
-                    _ ->
-                        [ i, ...s.top ]
+                _ ->
+                    [ i, ...s.top ]
 
-            kept =
-                if Int.mod i 10000 == 0 then
-                    List.push s.kept top
-                else
-                    s.kept
-        in
+        kept =
+            if Int.mod i 10000 == 0 then
+                List.push s.kept top
+            else
+                s.kept
         churn (i + 1) { top = top, kept = kept }
 
 
@@ -96,11 +94,9 @@ summary xs =
 
 main : Program
 main =
-    let
-        backwards = prependAll size []
+    backwards = prependAll size []
 
-        stack = churn 0 { top = [], kept = [] }
-    in
+    stack = churn 0 { top = [], kept = [] }
     Node.printLines
         [ summary backwards
         , summary (List.reverse backwards)

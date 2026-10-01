@@ -14,9 +14,7 @@ import Node exposing (Program)
 lookup : a -> a
     where a.eq : a, a -> Bool
 lookup =
-    let
-        table = Debug.log "table (where)" (List.range 1 3)
-    in
+    table = Debug.log "table (where)" (List.range 1 3)
     λx ->
         if List.length table == 3 && x == x then
             x
@@ -26,9 +24,7 @@ lookup =
 
 lookupPlain : Int -> Int
 lookupPlain =
-    let
-        table = Debug.log "table (plain)" (List.range 1 3)
-    in
+    table = Debug.log "table (plain)" (List.range 1 3)
     λx ->
         if List.length table == 3 then
             x

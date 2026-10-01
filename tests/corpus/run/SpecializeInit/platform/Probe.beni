@@ -20,13 +20,11 @@ block = Js.from { t = kind }
 -- Every instance `m` makes gets `t` and `b` before anything reads them.
 unit : V -> V
 unit b =
-    let
-        i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
+    i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
-        _ = Js.set i "t" (Js.get b "t")
+    _ = Js.set i "t" (Js.get b "t")
 
-        _ = Js.set i "b" b
-    in
+    _ = Js.set i "b" b
     i
 
 
@@ -45,11 +43,9 @@ bare () = Js.from { s = Js.from "node" }
 
 marked : () -> V
 marked () =
-    let
-        i = bare ()
+    i = bare ()
 
-        _ = Js.set i "b" block
-    in
+    _ = Js.set i "b" block
     i
 
 
@@ -79,11 +75,9 @@ describe i =
 
 described : () -> V
 described () =
-    let
-        i = Js.call other "m" [ Js.from 0 ]
+    i = Js.call other "m" [ Js.from 0 ]
 
-        _ = Js.set i "c" (Js.from (describe i))
-    in
+    _ = Js.set i "c" (Js.from (describe i))
     i
 
 

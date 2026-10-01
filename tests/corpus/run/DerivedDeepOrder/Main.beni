@@ -39,19 +39,17 @@ show label b =
 
 main : Program
 main =
-    let
-        one = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+    one = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
 
-        same = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+    same = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
 
-        other = chain 20000 (Stop (Just (Key 25001)) (Just (Key 30000)))
+    other = chain 20000 (Stop (Just (Key 25001)) (Just (Key 30000)))
 
-        equal = one == same
+    equal = one == same
 
-        differ = one == other
+    differ = one == other
 
-        before = one < other
-    in
+    before = one < other
     Node.printLines
         [ show "equal" equal
         , show "differ" differ

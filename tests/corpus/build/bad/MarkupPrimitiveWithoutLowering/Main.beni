@@ -15,7 +15,5 @@ greeting = Html.text "hello"
 
 main : Program
 main =
-    let
-        _ = greeting
-    in
+    _ = greeting
     Prog.say "hello"

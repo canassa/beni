@@ -30,9 +30,7 @@ coinsHelp i n dp =
     if i > n then
         dp
     else
-        let
-            best = min (min (via dp i 1) (via dp i 5)) (min (via dp i 11) (via dp i 23))
-        in
+        best = min (min (via dp i 1) (via dp i 5)) (min (via dp i 11) (via dp i 23))
         coinsHelp (i + 1) n (Array.push dp best)
 
 

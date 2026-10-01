@@ -36,13 +36,11 @@ show label b =
 
 main : Program
 main =
-    let
-        one = chain 100000 Wrap.Empty
+    one = chain 100000 Wrap.Empty
 
-        same = chain 100000 Wrap.Empty
+    same = chain 100000 Wrap.Empty
 
-        other = chain 100000 (Wrap.Wrap 0 UEnd)
-    in
+    other = chain 100000 (Wrap.Wrap 0 UEnd)
     Node.printLines
         [ show "same ==" (one == same)
         , show "other ==" (one == other)

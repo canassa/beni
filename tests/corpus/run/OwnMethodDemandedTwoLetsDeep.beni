@@ -18,28 +18,20 @@ type Box a
 
 
 outer u =
-    let
-        f a =
-            let
-                g x = (Box x).size ()
-            in
-            ( g a, g "s" )
-    in
+    f a =
+        g x = (Box x).size ()
+        ( g a, g "s" )
     f u
 
 
 pub size (Box v) u =
-    let
-        h y = ( y, v )
-        ( _, _ ) = h True
-        ( one, _ ) = h 1
-    in
+    h y = ( y, v )
+    ( _, _ ) = h True
+    ( one, _ ) = h 1
     one
 
 
 main : Program
 main =
-    let
-        ( a, b ) = outer 0
-    in
+    ( a, b ) = outer 0
     Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

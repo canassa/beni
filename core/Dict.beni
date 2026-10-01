@@ -439,26 +439,23 @@ pub merge :
     -> result
     where k.compare : k, k -> Order
 merge leftDict rightDict initialResult leftStep bothStep rightStep =
-    let
-        stepState rKey rValue ( list, result ) =
-            case list of
-                [] ->
-                    ( list, rightStep rKey rValue result )
+    stepState rKey rValue ( list, result ) =
+        case list of
+            [] ->
+                ( list, rightStep rKey rValue result )
 
-                [ ( lKey, lValue ), ...rest ] ->
-                    case lKey.compare rKey of
-                        LT ->
-                            stepState rKey rValue ( rest, leftStep lKey lValue result )
+            [ ( lKey, lValue ), ...rest ] ->
+                case lKey.compare rKey of
+                    LT ->
+                        stepState rKey rValue ( rest, leftStep lKey lValue result )
 
-                        GT ->
-                            ( list, rightStep rKey rValue result )
+                    GT ->
+                        ( list, rightStep rKey rValue result )
 
-                        EQ ->
-                            ( rest, bothStep lKey lValue rValue result )
+                    EQ ->
+                        ( rest, bothStep lKey lValue rValue result )
 
-        ( leftovers, intermediateResult ) =
-            foldl rightDict ( toList leftDict, initialResult ) stepState
-    in
+    ( leftovers, intermediateResult ) = foldl rightDict ( toList leftDict, initialResult ) stepState
     List.foldl leftovers intermediateResult (λ( key, value ) result -> leftStep key value result)
 
 
@@ -480,11 +477,9 @@ mapTree tree func =
             Leaf
 
         Node color key value left right ->
-            let
-                newLeft = mapTree left func
-                newValue = func key value
-                newRight = mapTree right func
-            in
+            newLeft = mapTree left func
+            newValue = func key value
+            newRight = mapTree right func
             Node color key newValue newLeft newRight
 
 
@@ -549,13 +544,11 @@ filter (Dict tree) isGood =
 pub partition : Dict k v, (k, v -> Bool) -> ( Dict k v, Dict k v )
     where k.compare : k, k -> Order
 partition (Dict tree) isGood =
-    let
-        step key value ( trues, falses ) =
-            if isGood key value then
-                ( insert trues key value, falses )
-            else
-                ( trues, insert falses key value )
-    in
+    step key value ( trues, falses ) =
+        if isGood key value then
+            ( insert trues key value, falses )
+        else
+            ( trues, insert falses key value )
     foldlTree tree ( empty, empty ) step
 
 

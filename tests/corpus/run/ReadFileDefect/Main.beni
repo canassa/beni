@@ -13,10 +13,8 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                _ = Fault.breakReads ()
-                _ = Debug.log "before the read" ()
-            in
+            _ = Fault.breakReads ()
+            _ = Debug.log "before the read" ()
             case Io.readFile "anything.txt" of
                 Ok _ ->
                     Node.print "read it"

@@ -75,11 +75,9 @@ forms =
 
 prepends : ( String, List Int ) -> String
 prepends ( label, xs ) =
-    let
-        one = [ 100, ...xs ]
+    one = [ 100, ...xs ]
 
-        two = [ 200, 201, ...xs ]
-    in
+    two = [ 200, 201, ...xs ]
     String.join
         [ both label xs one, summary two, summary [ 300, ...one ], summary [ 400, ...one ] ]
         " "
@@ -101,30 +99,28 @@ appends ( label, xs ) =
 
 main : Program
 main =
-    let
-        base = pushMany [] 1 40
+    base = pushMany [] 1 40
 
-        -- Two prepends onto one version, both kept: the second may not
-        -- write the head slot the first claimed.
-        first = [ 1000, ...base ]
+    -- Two prepends onto one version, both kept: the second may not
+    -- write the head slot the first claimed.
+    first = [ 1000, ...base ]
 
-        second = [ 2000, ...base ]
+    second = [ 2000, ...base ]
 
-        third = [ 3000, ...first ]
+    third = [ 3000, ...first ]
 
-        -- 32 prepends fill the head; the 33rd makes it a leaf.
-        full = prependMany base 500 32
+    -- 32 prepends fill the head; the 33rd makes it a leaf.
+    full = prependMany base 500 32
 
-        fuller = [ 999, ...full ]
+    fuller = [ 999, ...full ]
 
-        -- The runtime re-cons: the view's backing array holds 0 just
-        -- before it, so `[ 0, ...v ]` is the wider list.
-        v = tail (List.range 0 40)
+    -- The runtime re-cons: the view's backing array holds 0 just
+    -- before it, so `[ 0, ...v ]` is the wider list.
+    v = tail (List.range 0 40)
 
-        again = [ 0, ...v ]
+    again = [ 0, ...v ]
 
-        other = [ 5, ...v ]
-    in
+    other = [ 5, ...v ]
     Node.printLines
         (List.map forms prepends
             ++ List.map forms appends

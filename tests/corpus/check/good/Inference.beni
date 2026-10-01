@@ -17,7 +17,5 @@ pub sizes xs = List.map xs String.length
 
 
 pub letPolymorphism =
-    let
-        dup y = ( y, y )
-    in
+    dup y = ( y, y )
     ( dup 1, dup "two" )

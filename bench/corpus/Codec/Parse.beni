@@ -13,10 +13,8 @@ type alias Step a =
 --| The text as one JSON value, with nothing but whitespace after it.
 pub parse : String -> Result String Value
 parse input =
-    let
-        chars = String.toList input
-        ( value, rest ) = parseValue chars?
-    in
+    chars = String.toList input
+    ( value, rest ) = parseValue chars?
     case skipSpace rest of
         [] ->
             Ok value
@@ -108,9 +106,7 @@ parseString chars acc =
                     parseString rest [ Char.fromCode 12, ...acc ]
 
                 'u' ->
-                    let
-                        ( code, after ) = parseHex4 rest?
-                    in
+                    ( code, after ) = parseHex4 rest?
                     parseString after [ Char.fromCode code, ...acc ]
 
                 _ ->
@@ -133,9 +129,7 @@ parseHex4 : List Char -> Step Int
 parseHex4 chars =
     case chars of
         [ a, b, c, d, ...rest ] ->
-            let
-                digits = [ a, b, c, d ]
-            in
+            digits = [ a, b, c, d ]
             if List.all digits Char.isHexDigit then
                 Ok ( List.foldl digits 0 (λdigit total -> total * 16 + hexValue digit), rest )
             else
@@ -147,9 +141,7 @@ parseHex4 chars =
 
 hexValue : Char -> Int
 hexValue c =
-    let
-        code = Char.toCode c
-    in
+    code = Char.toCode c
     if Char.isDigit c then
         code - 48
     else if Char.isUpper c then
@@ -160,10 +152,8 @@ hexValue c =
 
 parseNumber : List Char -> Step Value
 parseNumber chars =
-    let
-        ( digits, rest ) = span chars isNumberChar
-        text = String.fromList digits
-    in
+    ( digits, rest ) = span chars isNumberChar
+    text = String.fromList digits
     case String.toFloat text of
         Just n ->
             Ok ( Number n, rest )
@@ -178,18 +168,16 @@ isNumberChar c = Char.isDigit c || c == '-' || c == '+' || c == '.' || c == 'e' 
 
 span : List a, (a -> Bool) -> ( List a, List a )
 span items predicate =
-    let
-        go taken remaining =
-            case remaining of
-                [ x, ...rest ] ->
-                    if predicate x then
-                        go [ x, ...taken ] rest
-                    else
-                        ( List.reverse taken, remaining )
+    go taken remaining =
+        case remaining of
+            [ x, ...rest ] ->
+                if predicate x then
+                    go [ x, ...taken ] rest
+                else
+                    ( List.reverse taken, remaining )
 
-                [] ->
-                    ( List.reverse taken, [] )
-    in
+            [] ->
+                ( List.reverse taken, [] )
     go [] items
 
 
@@ -205,9 +193,7 @@ parseArray chars =
 
 parseElements : List Char, List Value -> Step Value
 parseElements chars acc =
-    let
-        ( item, rest ) = parseValue chars?
-    in
+    ( item, rest ) = parseValue chars?
     case skipSpace rest of
         [ ',', ...more ] ->
             parseElements more [ item, ...acc ]
@@ -236,14 +222,10 @@ parseMembers : List Char, List ( String, Value ) -> Step Value
 parseMembers chars acc =
     case skipSpace chars of
         [ '"', ...afterQuote ] ->
-            let
-                ( key, afterKey ) = parseString afterQuote []?
-            in
+            ( key, afterKey ) = parseString afterQuote []?
             case skipSpace afterKey of
                 [ ':', ...afterColon ] ->
-                    let
-                        ( item, rest ) = parseValue afterColon?
-                    in
+                    ( item, rest ) = parseValue afterColon?
                     case skipSpace rest of
                         [ ',', ...more ] ->
                             parseMembers more [ ( key, item ), ...acc ]

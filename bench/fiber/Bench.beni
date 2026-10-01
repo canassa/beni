@@ -22,9 +22,7 @@ inc n = n + 1
 pub incS : Int -> Int
 incS n =
     if n < 0 then
-        let
-            _ = Task.yieldNow ()
-        in
+        _ = Task.yieldNow ()
         n
     else
         n + 1
@@ -53,11 +51,9 @@ loopSuspending n acc =
 --| of the function to `Task.andThen` as a closure, fast path or not.
 four : Int -> Int
 four x =
-    let
-        a = incS x
-        b = incS a
-        c = incS b
-    in
+    a = incS x
+    b = incS a
+    c = incS b
     incS c + 0
 
 
@@ -76,9 +72,7 @@ loopYielding n acc =
     if n == 0 then
         acc
     else
-        let
-            _ = Task.yieldNow ()
-        in
+        _ = Task.yieldNow ()
         loopYielding (n - 1) (acc + 1)
 
 
@@ -86,17 +80,13 @@ loopYielding n acc =
 --| and summed.
 pub fanOut : Int -> Int
 fanOut n =
-    let
-        fibers = List.map (List.range 1 n) (λi -> Task.spawn (λ() -> worker i))
-    in
+    fibers = List.map (List.range 1 n) (λi -> Task.spawn (λ() -> worker i))
     List.foldl fibers 0 (λf acc -> acc + Task.join f)
 
 
 worker : Int -> Int
 worker i =
-    let
-        _ = Task.yieldNow ()
-    in
+    _ = Task.yieldNow ()
     i
 
 
@@ -110,9 +100,7 @@ together n =
                 (λ() -> n)
                 (λ_ _ -> ())
                 (λr ->
-                    let
-                        f = Task.spawnIn s (λ() -> worker r)
-                    in
+                    f = Task.spawnIn s (λ() -> worker r)
                     Task.join f
                 )
         )

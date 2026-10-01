@@ -63,13 +63,11 @@ type alias Scan =
 --| The accumulator is a field of the fold's state record.
 pub recordFold : List Int -> List Int
 recordFold xs =
-    let
-        final =
-            List.foldl
-                xs
-                { seen = [], count = 0 }
-                (λx st -> { st | seen = List.push st.seen (x * 2), count = st.count + 1 })
-    in
+    final =
+        List.foldl
+            xs
+            { seen = [], count = 0 }
+            (λx st -> { st | seen = List.push st.seen (x * 2), count = st.count + 1 })
     final.seen
 
 

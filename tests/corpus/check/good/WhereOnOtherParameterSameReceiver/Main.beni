@@ -19,7 +19,5 @@ wrapped bx = bx.describe (Box.Box bx)
 
 pub wrapped2 : Box Int -> String
 wrapped2 bx =
-    let
-        w = Box.Box bx
-    in
+    w = Box.Box bx
     bx.describe w

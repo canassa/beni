@@ -9,7 +9,5 @@
 -- declaration.
 pub report : Int, String -> String
 report n s =
-    let
-        show x = x.render 1
-    in
+    show x = x.render 1
     show n ++ show s

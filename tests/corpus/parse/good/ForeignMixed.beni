@@ -21,9 +21,7 @@ pub foreign pure fromCode : Int -> Char
 
 pub isUpper : Char -> Bool
 isUpper c =
-    let
-        code = toCode c
-    in
+    code = toCode c
     code >= 65 && code <= 90
 
 

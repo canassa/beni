@@ -10,31 +10,29 @@ import Node
 
 main : Node.Program
 main =
-    let
-        tail = String.fromInt (Guard.tail 1)
-        tailTrail = Guard.take ()
-        valued = Guard.valued 4
-        valuedTrail = Guard.take ()
-        discarded = Guard.discarded ()
-        discardedTrail = Guard.take ()
-        throwsTail = Guard.attempt (λ() -> Guard.throwsTail ())
-        throwsTailTrail = Guard.take ()
-        throwsValued = Guard.attempt (λ() -> Guard.throwsValued ())
-        throwsValuedTrail = Guard.take ()
-        throwsDiscarded = Guard.attempt (λ() -> Guard.throwsDiscarded ())
-        throwsDiscardedTrail = Guard.take ()
-        nested = Guard.attempt (λ() -> Guard.nested ())
-        nestedTrail = Guard.take ()
-        ordered = String.fromInt (Guard.ordered ())
-        orderedTrail = Guard.take ()
-        passed = String.fromInt (Guard.passed (λ() -> 3) (λ() -> Guard.note "passed cleanup"))
-        passedTrail = Guard.take ()
-        asValue = String.fromInt (Guard.asValue (λ() -> 5) (λ() -> Guard.note "value cleanup"))
-        asValueTrail = Guard.take ()
-        summed = String.fromInt (Guard.sumTo 4 0)
-        summedTrail = Guard.take ()
-        latched = Latch.run "work"
-    in
+    tail = String.fromInt (Guard.tail 1)
+    tailTrail = Guard.take ()
+    valued = Guard.valued 4
+    valuedTrail = Guard.take ()
+    discarded = Guard.discarded ()
+    discardedTrail = Guard.take ()
+    throwsTail = Guard.attempt (λ() -> Guard.throwsTail ())
+    throwsTailTrail = Guard.take ()
+    throwsValued = Guard.attempt (λ() -> Guard.throwsValued ())
+    throwsValuedTrail = Guard.take ()
+    throwsDiscarded = Guard.attempt (λ() -> Guard.throwsDiscarded ())
+    throwsDiscardedTrail = Guard.take ()
+    nested = Guard.attempt (λ() -> Guard.nested ())
+    nestedTrail = Guard.take ()
+    ordered = String.fromInt (Guard.ordered ())
+    orderedTrail = Guard.take ()
+    passed = String.fromInt (Guard.passed (λ() -> 3) (λ() -> Guard.note "passed cleanup"))
+    passedTrail = Guard.take ()
+    asValue = String.fromInt (Guard.asValue (λ() -> 5) (λ() -> Guard.note "value cleanup"))
+    asValueTrail = Guard.take ()
+    summed = String.fromInt (Guard.sumTo 4 0)
+    summedTrail = Guard.take ()
+    latched = Latch.run "work"
     Node.printLines
         [ "tail ${tail}: ${tailTrail}"
         , "valued ${valued}: ${valuedTrail}"

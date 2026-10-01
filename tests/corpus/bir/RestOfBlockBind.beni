@@ -4,28 +4,22 @@
 -- `let` whose only binding is a bind produces no `let` at all.
 only : Int -> Int
 only n =
-    let
-        x <- withScope n
-    in
+    x <- withScope n
     x
 
 
 around : Int -> Int
 around n =
-    let
-        before = n + 1
-        x <- withScope before
-        after = x * 2
-    in
+    before = n + 1
+    x <- withScope before
+    after = x * 2
     after
 
 
 several : Int -> Int
 several n =
-    let
-        x <- withScope n
-        y <- withScope x
-    in
+    x <- withScope n
+    y <- withScope x
     x + y
 
 

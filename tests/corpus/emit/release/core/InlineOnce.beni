@@ -28,10 +28,8 @@ put parent i before = putRun parent (Js.get i "first") (Js.get i "last") before
 
 putRun : Js.Value, Js.Value, Js.Value, Js.Value -> ()
 putRun parent n end before =
-    let
-        next = Js.get n "nextSibling"
-        _ = Js.call parent "insertBefore" [ n, before ]
-    in
+    next = Js.get n "nextSibling"
+    _ = Js.call parent "insertBefore" [ n, before ]
     if Js.same n end then
         ()
     else

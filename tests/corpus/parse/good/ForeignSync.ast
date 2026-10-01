@@ -38,7 +38,7 @@
         (type_paren
           (type_con Int)))))
   (definition pair
-    (let
+    (block
       (let_annotation local
         (type_con Pair
           (type_var sync)

@@ -39,12 +39,9 @@ next (Seed state incr) = Seed (Int32.add (Int32.mul state (Int32.fromInt 1664525
 -- A 32-bit output of the seed, from 0 to 4294967295.
 peel : Seed -> Int
 peel (Seed state _) =
-    let
-        shift = Int32.toInt (Int32.shiftRightZero state 28) + 4
+    shift = Int32.toInt (Int32.shiftRightZero state 28) + 4
 
-        word =
-            Int32.mul (Int32.xor (Int32.shiftRightZero state shift) state) (Int32.fromInt 277803737)
-    in
+    word = Int32.mul (Int32.xor (Int32.shiftRightZero state shift) state) (Int32.fromInt 277803737)
     Int32.toUnsignedInt (Int32.xor (Int32.shiftRightZero word 22) word)
 
 
@@ -87,21 +84,17 @@ independentSeed =
 --|     Random.int 1 6
 pub int : Int, Int -> Generator Int
 int a b =
-    let
-        lo = min a b
-        range = max a b - lo + 1
+    lo = min a b
+    range = max a b - lo + 1
 
-        -- 2³² mod range: the outputs below it would favour the low values.
-        threshold = Int.mod (4294967296 - range) range
-    in
+    -- 2³² mod range: the outputs below it would favour the low values.
+    threshold = Int.mod (4294967296 - range) range
     Generator (λseed -> unbiased seed lo range threshold)
 
 
 unbiased : Seed, Int, Int, Int -> ( Int, Seed )
 unbiased seed lo range threshold =
-    let
-        x = peel seed
-    in
+    x = peel seed
     if x < threshold then
         unbiased (next seed) lo range threshold
     else
@@ -123,12 +116,10 @@ pub float : Float, Float -> Generator Float
 float a b =
     Generator
         (λseed0 ->
-            let
-                seed1 = next seed0
-                lo = toFloat (Js.bitAnd (peel seed1) 67108863)
-                hi = toFloat (Js.bitAnd (peel seed0) 134217727)
-                value = (hi * 67108864.0 + lo) / 9007199254740992.0
-            in
+            seed1 = next seed0
+            lo = toFloat (Js.bitAnd (peel seed1) 67108863)
+            hi = toFloat (Js.bitAnd (peel seed0) 134217727)
+            value = (hi * 67108864.0 + lo) / 9007199254740992.0
             ( value * abs (b - a) + a, next seed1 )
         )
 
@@ -172,9 +163,7 @@ uniform value values = weighted ( 1, value ) (List.map values (λv -> ( 1, v )))
 --|     Random.weighted ( 80, Sunny ) [ ( 20, Rainy ) ]
 pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
 weighted first others =
-    let
-        total = abs first.0 + List.sum (List.map others (λo -> abs o.0))
-    in
+    total = abs first.0 + List.sum (List.map others (λo -> abs o.0))
     map (float 0 total) (λcountdown -> byWeight first others countdown)
 
 

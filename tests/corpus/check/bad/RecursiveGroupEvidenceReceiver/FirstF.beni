@@ -19,10 +19,8 @@ useMix x y = x.mix y
 
 
 f n =
-    let
-        r = g n
-        q z = useMix r z
-    in
+    r = g n
+    q z = useMix r z
     ( q 1, q "s" )
 
 
@@ -30,7 +28,5 @@ g n =
     if n > 100 then
         K n
     else
-        let
-            _ = f (n + 1)
-        in
+        _ = f (n + 1)
         K n

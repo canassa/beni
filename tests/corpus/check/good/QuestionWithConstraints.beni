@@ -10,9 +10,7 @@
 pub firstBigger : Result String a, a -> Result String Bool
     where a.compare : a, a -> Order
 firstBigger r limit =
-    let
-        value = r?
-    in
+    value = r?
     Ok (bigger value limit)
 
 

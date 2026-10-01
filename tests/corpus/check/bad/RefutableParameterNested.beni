@@ -9,9 +9,7 @@ lambda = (λ(Just n) -> n) (Just 1)
 
 pub letBound : Int
 letBound =
-    let
-        f (Just n) = n
-    in
+    f (Just n) = n
     f (Just 2)
 
 
@@ -21,7 +19,5 @@ withMaybe m body = body m
 
 pub bound : Int
 bound =
-    let
-        Just v <- withMaybe (Just 3)
-    in
+    Just v <- withMaybe (Just 3)
     v

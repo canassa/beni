@@ -8,9 +8,7 @@ import Task
 
 worker : Int -> Int
 worker n =
-    let
-        _ = Io.sleep 1
-    in
+    _ = Io.sleep 1
     n * 2
 
 
@@ -18,15 +16,13 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                answer =
-                    Task.scope
-                        (λs ->
-                            Task.bracket
-                                (λ() -> 21)
-                                (λ_ _ -> ())
-                                (λr -> Task.join (Task.spawnIn s (λ() -> worker r)))
-                        )
-            in
+            answer =
+                Task.scope
+                    (λs ->
+                        Task.bracket
+                            (λ() -> 21)
+                            (λ_ _ -> ())
+                            (λr -> Task.join (Task.spawnIn s (λ() -> worker r)))
+                    )
             Node.print (String.fromInt answer)
         )

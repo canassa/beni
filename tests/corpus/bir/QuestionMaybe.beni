@@ -8,7 +8,5 @@ firstTwo xs = Just ( List.head xs?, List.head (List.drop xs 1)? )
 
 viaHelper : List Int -> Maybe Int
 viaHelper xs =
-    let
-        headPlus n = Just (List.head xs? + n)
-    in
+    headPlus n = Just (List.head xs? + n)
     headPlus 1

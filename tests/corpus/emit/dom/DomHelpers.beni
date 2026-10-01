@@ -30,8 +30,6 @@ same x y = <b>{if x == y then "same" else "different"}</b>
 
 pub others : Int -> Html msg
 others n =
-    let
-        twice : Int -> Html msg
-        twice m = <i>{m}{m}</i>
-    in
+    twice : Int -> Html msg
+    twice m = <i>{m}{m}</i>
     <div>{same n 1}{twice n}{Html.text "t"}</div>

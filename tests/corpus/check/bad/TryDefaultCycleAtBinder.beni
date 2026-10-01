@@ -8,9 +8,7 @@
 -- check runs at every binder, so the cycle is met where `x` is bound, and
 -- the place is the same as the guard's.
 f x =
-    let
-        y = x?
-    in
+    y = x?
     if True then
         y
     else

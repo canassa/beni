@@ -13,7 +13,5 @@ k n = n
 
 
 h x =
-    let
-        t = Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
-    in
+    t = Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
     x 1

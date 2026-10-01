@@ -32,20 +32,16 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                one = Task.spawn (λ() -> 1)
-                _ = Io.sleep 1
-                cells = List.range 1 100000
-                slow n =
-                    let
-                        _ =
-                            if Int.mod n 1000 == 0 then
-                                Task.yieldNow ()
-                            else
-                                ()
-                    in
-                    n
-            in
+            one = Task.spawn (λ() -> 1)
+            _ = Io.sleep 1
+            cells = List.range 1 100000
+            slow n =
+                _ =
+                    if Int.mod n 1000 == 0 then
+                        Task.yieldNow ()
+                    else
+                        ()
+                n
             Node.printLines
                 [ ends (List.map cells (λn -> n * Task.join one))
                 , ends (List.filter cells (λn -> Int.mod n (2 * Task.join one) == 0))

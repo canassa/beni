@@ -17,23 +17,19 @@ busy = Js.ref False
 
 pub count : Js.Value -> Int
 count xs =
-    let
-        n = Js.ref 0
+    n = Js.ref 0
 
-        last = Js.ref (Js.get xs "first")
+    last = Js.ref (Js.get xs "first")
 
-        _ =
-            Js.each
-                xs
-                (λx ->
-                    let
-                        _ = Js.write n (Js.read n + 1)
-                    in
-                    Js.write last x
-                )
+    _ =
+        Js.each
+            xs
+            (λx ->
+                _ = Js.write n (Js.read n + 1)
+                Js.write last x
+            )
 
-        _ = Js.write total (Js.read total + Js.read n)
+    _ = Js.write total (Js.read total + Js.read n)
 
-        _ = Js.write busy False
-    in
+    _ = Js.write busy False
     Js.read n

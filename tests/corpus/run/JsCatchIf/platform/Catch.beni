@@ -20,10 +20,8 @@ note s = Js.write log "${Js.read log}${s}; "
 --| What was recorded since the last `take`, and a fresh record.
 pub take : () -> String
 take () =
-    let
-        seen = Js.read log
-        _ = Js.write log ""
-    in
+    seen = Js.read log
+    _ = Js.write log ""
     seen
 
 
@@ -45,9 +43,7 @@ pub tail : Bool -> String
 tail throws =
     Js.catchIf
         (λ() ->
-            let
-                _ = note "body"
-            in
+            _ = note "body"
             if throws then
                 fail "TypeError" "bad"
             else
@@ -60,40 +56,36 @@ tail throws =
 --| Bound, then used after the `try`.
 pub valued : Bool -> String
 valued throws =
-    let
-        v =
-            Js.catchIf
-                (λ() ->
-                    if throws then
-                        fail "TypeError" "bound"
-                    else
-                        1
-                )
-                (λerr -> isType err)
-                (λ_ -> 2)
+    v =
+        Js.catchIf
+            (λ() ->
+                if throws then
+                    fail "TypeError" "bound"
+                else
+                    1
+            )
+            (λerr -> isType err)
+            (λ_ -> 2)
 
-        _ = note "after"
-    in
+    _ = note "after"
     String.fromInt v
 
 
 --| Discarded: the body's statements, or the handler's.
 pub discarded : Bool -> String
 discarded throws =
-    let
-        _ =
-            Js.catchIf
-                (λ() ->
-                    if throws then
-                        fail "TypeError" "dropped"
-                    else
-                        note "body"
-                )
-                (λerr -> isType err)
-                (λerr -> note "caught ${message err}")
+    _ =
+        Js.catchIf
+            (λ() ->
+                if throws then
+                    fail "TypeError" "dropped"
+                else
+                    note "body"
+            )
+            (λerr -> isType err)
+            (λerr -> note "caught ${message err}")
 
-        _ = note "after"
-    in
+    _ = note "after"
     "done"
 
 
@@ -105,9 +97,7 @@ rethrown () =
         (λ() ->
             Js.catchIf
                 (λ() ->
-                    let
-                        _ = note "inner"
-                    in
+                    _ = note "inner"
                     fail "RangeError" "far"
                 )
                 (λerr -> isType err)
@@ -154,37 +144,25 @@ renamed () =
 --| A function made by a call that records it.
 make : String, a -> (() -> a)
 make s v =
-    let
-        _ = note "make ${s}"
-    in
+    _ = note "make ${s}"
     λ() ->
-        let
-            _ = note s
-        in
+        _ = note s
         v
 
 
 testOf : String -> (Js.Value -> Bool)
 testOf s =
-    let
-        _ = note "make ${s}"
-    in
+    _ = note "make ${s}"
     λerr ->
-        let
-            _ = note s
-        in
+        _ = note s
         isType err
 
 
 handlerOf : String -> (Js.Value -> Int)
 handlerOf s =
-    let
-        _ = note "make ${s}"
-    in
+    _ = note "make ${s}"
     λ_ ->
-        let
-            _ = note s
-        in
+        _ = note s
         9
 
 

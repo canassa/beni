@@ -38,25 +38,21 @@ update : Msg, List String -> ( List String, Cmd Msg )
 update msg lines =
     case msg of
         Quota ->
-            let
-                _ = Fault.fillQuota ()
-            in
+            _ = Fault.fillQuota ()
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
         Blocked ->
-            let
-                _ = Fault.blockSession ()
+            _ = Fault.blockSession ()
 
-                _ = Storage.remove Session "k"
+            _ = Storage.remove Session "k"
 
-                found =
-                    case Storage.get Session "k" of
-                        Just _ ->
-                            "found"
+            found =
+                case Storage.get Session "k" of
+                    Just _ ->
+                        "found"
 
-                        Nothing ->
-                            "nothing"
-            in
+                    Nothing ->
+                        "nothing"
             ( lines
                 ++ [ found
                    , "keys ${String.fromInt (List.length (Storage.keys Session))}"
@@ -66,9 +62,7 @@ update msg lines =
             )
 
         Broken ->
-            let
-                _ = Fault.breakStorage ()
-            in
+            _ = Fault.breakStorage ()
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
         Inc ->

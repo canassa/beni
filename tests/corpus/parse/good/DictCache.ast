@@ -62,7 +62,7 @@
                   (field_access .misses
                     (ident cache))
                   (int 1)))))
-          (let
+          (block
             (let_pattern
               (pat_tuple
                 (pat_var a)
@@ -116,13 +116,13 @@
   (definition fibAll
     (pat_var ns)
     (pat_var cache)
-    (let
+    (block
       (let_def step
         (pat_var n)
         (pat_tuple
           (pat_var acc)
           (pat_var c))
-        (let
+        (block
           (let_pattern
             (pat_tuple
               (pat_var value)
@@ -161,7 +161,7 @@
       (type_con Float)))
   (definition hitRate
     (pat_var cache)
-    (let
+    (block
       (let_def total
         (add
           (field_access .hits

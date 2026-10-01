@@ -6,10 +6,8 @@
 -- `String.toUpper` with an Int.
 
 f x =
-    let
-        g : a -> a
-        g y = x
-    in
+    g : a -> a
+    g y = x
     g "hello"
 
 

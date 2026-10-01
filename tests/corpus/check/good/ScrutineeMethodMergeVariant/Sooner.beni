@@ -11,9 +11,7 @@ pub g (Box a) u = 0
 
 
 pub h (K m) u =
-    let
-        _ = λw -> (K 0).f ()
-    in
+    _ = λw -> (K 0).f ()
     Box m
 
 

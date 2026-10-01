@@ -5,11 +5,9 @@
 -- (`r.x`). The flag on `r` must survive `r` becoming a record whose field is
 -- still a variable, or the program would check clean.
 g r =
-    let
-        b = Basics.eq r r
-        n = r.x + 1
-        fn = r.f
-    in
+    b = Basics.eq r r
+    n = r.x + 1
+    fn = r.f
     ( b, fn n )
 
 

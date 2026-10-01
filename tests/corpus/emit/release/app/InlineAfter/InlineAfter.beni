@@ -30,11 +30,9 @@ twice n = n * 2
 
 describe : Bool, Int -> String
 describe verbose n =
-    let
-        b = Helpers.box "item" n
+    b = Helpers.box "item" n
 
-        doubled = twice n
-    in
+    doubled = twice n
     if verbose then
         "${Helpers.label n} ${b.name}"
     else
@@ -43,9 +41,7 @@ describe verbose n =
 
 main : Program
 main =
-    let
-        fourteen = twice 7
-    in
+    fourteen = twice 7
     Node.printLines
         [ describe False 3
         , describe False 4

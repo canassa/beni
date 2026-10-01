@@ -13,9 +13,7 @@ combine (T a) b = a + b
 
 
 f x =
-    let
-        g y = x.combine y
-    in
+    g y = x.combine y
     ( g 1, g "s" )
 
 

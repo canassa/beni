@@ -12,7 +12,7 @@
       (ident String.lines)
       (multiline_string "a" "b")))
   (definition inLet
-    (let
+    (block
       (let_def text
         (multiline_string "x" "y"))
       (ident text)))

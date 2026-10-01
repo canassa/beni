@@ -65,7 +65,7 @@
           (list)))
       (branch
         (pat_ctor Add)
-        (let
+        (block
           (let_def title
             (apply
               (ident String.trim)
@@ -124,7 +124,7 @@
         (pat_ctor Check
           (pat_var id)
           (pat_var isDone))
-        (let
+        (block
           (let_def updateTodo
             (pat_var t)
             (if

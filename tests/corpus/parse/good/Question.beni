@@ -19,10 +19,8 @@ piped s = parseAge s? |> (λn -> n * 2) |> Ok
 
 inLet : List String -> Result String Int
 inLet items =
-    let
-        parseOne item = parseAge item? + 1 |> Ok
-        step item acc = Ok (parseOne item? + acc?)
-    in
+    parseOne item = parseAge item? + 1 |> Ok
+    step item acc = Ok (parseOne item? + acc?)
     List.foldl step (Ok 0) items
 
 

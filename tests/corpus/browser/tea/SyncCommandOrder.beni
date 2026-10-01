@@ -31,9 +31,7 @@ update : Msg, Int -> ( Int, Cmd Msg )
 update msg n =
     case msg of
         Run fibers ->
-            let
-                _ = Log.info "update: run"
-            in
+            _ = Log.info "update: run"
             ( n
             , if fibers then
                 bodies True (λ() -> pause False)
@@ -42,9 +40,7 @@ update msg n =
             )
 
         Sent fibers what ->
-            let
-                _ = Log.info "update: ${what}"
-            in
+            _ = Log.info "update: ${what}"
             ( n + 1
             , if what == "first" then
                 more fibers
@@ -82,28 +78,22 @@ more fibers =
 
 say : Cmd.Send Msg, Bool, (() -> ()), String -> ()
 say send fibers hold what =
-    let
-        _ = hold ()
-        _ = Log.info "body: ${what}"
-    in
+    _ = hold ()
+    _ = Log.info "body: ${what}"
     send (Sent fibers what)
 
 
 waiting : Cmd.Send Msg, Bool -> ()
 waiting send fibers =
-    let
-        _ = Log.info "body: second starts"
-        _ = Task.yieldNow ()
-        _ = Log.info "body: second resumes"
-    in
+    _ = Log.info "body: second starts"
+    _ = Task.yieldNow ()
+    _ = Log.info "body: second resumes"
     send (Sent fibers "second")
 
 
 view : Int -> Html Msg
 view n =
-    let
-        _ = Log.info "view"
-    in
+    _ = Log.info "view"
     <main>
         <button id="direct" onClick={Run False}>direct</button>
         <button id="fibers" onClick={Run True}>fibers</button>

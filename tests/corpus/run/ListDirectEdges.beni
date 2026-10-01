@@ -26,33 +26,31 @@ show xs = Debug.toString xs
 
 main : Program
 main =
-    let
-        nested = List.map [ 1, 2 ] (λx -> List.map [ 10, 20 ] (λy -> note "inner" (x * y)))
+    nested = List.map [ 1, 2 ] (λx -> List.map [ 10, 20 ] (λy -> note "inner" (x * y)))
 
-        picked =
-            List.filterMap [ 1, 2, 3 ]
-                (λx ->
-                    case List.concatMap [ x, x ] (λy -> [ note "concatMap" y ]) of
-                        [ 2, _ ] ->
-                            Nothing
+    picked =
+        List.filterMap [ 1, 2, 3 ]
+            (λx ->
+                case List.concatMap [ x, x ] (λy -> [ note "concatMap" y ]) of
+                    [ 2, _ ] ->
+                        Nothing
 
-                        other ->
-                            Just (List.sum other)
-                )
+                    other ->
+                        Just (List.sum other)
+            )
 
-        indexed = List.indexedMap [ 5, 6, 7 ] (λi x -> note "indexedMap" (i * 100 + x))
+    indexed = List.indexedMap [ 5, 6, 7 ] (λi x -> note "indexedMap" (i * 100 + x))
 
-        fives =
-            List.map5
-                [ 1, 2 ]
-                [ 10, 20 ]
-                [ 100, 200 ]
-                [ 1000, 2000 ]
-                [ 0, 0, 0 ]
-                (λa b c d v -> note "map5" (a + b + c + d + v))
+    fives =
+        List.map5
+            [ 1, 2 ]
+            [ 10, 20 ]
+            [ 100, 200 ]
+            [ 1000, 2000 ]
+            [ 0, 0, 0 ]
+            (λa b c d v -> note "map5" (a + b + c + d + v))
 
-        halves = List.partition [ 1, 2, 3, 4 ] (λx -> note "partition" x > 2)
-    in
+    halves = List.partition [ 1, 2, 3, 4 ] (λx -> note "partition" x > 2)
     Node.printLines
         [ Debug.toString nested
         , Debug.toString picked

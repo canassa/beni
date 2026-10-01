@@ -33,9 +33,7 @@ find items id lo hi =
     if lo > hi then
         Nothing
     else
-        let
-            mid = (lo + hi) // 2
-        in
+        mid = (lo + hi) // 2
         case Array.get items mid of
             Just it ->
                 if it.id == id then
@@ -59,9 +57,7 @@ lookupsHelp items j k acc =
     if j >= k then
         acc
     else
-        let
-            id = Int.mod (j * 7919) (Array.length items)
-        in
+        id = Int.mod (j * 7919) (Array.length items)
         case find items id 0 (Array.length items - 1) of
             Just it ->
                 lookupsHelp items (j + 1) k (acc + it.price)

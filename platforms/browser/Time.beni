@@ -59,11 +59,9 @@ sleep (Duration ms) = Task.callback (λresume -> startTimer ms resume)
 -- One timer, which resumes the waiting fiber, and what clears it.
 startTimer : Int, Resume () -> (() -> ())
 startTimer ms resume =
-    let
-        timer =
-            Js.apply (Js.global "setTimeout")
-                [ Js.from (λ() -> Js.to (Js.apply (Js.from resume) [ Js.null ])), Js.from ms ]
-    in
+    timer =
+        Js.apply (Js.global "setTimeout")
+            [ Js.from (λ() -> Js.to (Js.apply (Js.from resume) [ Js.null ])), Js.from ms ]
     λ() -> Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
 
 
@@ -80,8 +78,6 @@ every (Duration ms) tag = Sub.listen (Every ms) (ticks ms _) tag
 
 ticks : Int, Browser.Send Posix -> ()
 ticks ms emit =
-    let
-        _ = sleep (Duration ms)
-        _ = emit (now ())
-    in
+    _ = sleep (Duration ms)
+    _ = emit (now ())
     ticks ms emit

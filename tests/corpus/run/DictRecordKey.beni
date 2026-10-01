@@ -33,14 +33,12 @@ label slot = slot.section ++ "#" ++ String.fromInt slot.index
 
 main : Program
 main =
-    let
-        table =
-            Dict.fromList
-                [ ( { section = "b", index = 1 }, "beta-one" )
-                , ( { section = "a", index = 2 }, "alpha-two" )
-                , ( { section = "a", index = 1 }, "alpha-one" )
-                ]
-    in
+    table =
+        Dict.fromList
+            [ ( { section = "b", index = 1 }, "beta-one" )
+            , ( { section = "a", index = 2 }, "alpha-two" )
+            , ( { section = "a", index = 1 }, "alpha-one" )
+            ]
     Node.printLines
         [ String.fromInt (Dict.size table)
         , String.join (List.map (Dict.keys table) label) ","

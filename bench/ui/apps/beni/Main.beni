@@ -125,23 +125,19 @@ buildFrom id first seed rows =
     if id < first then
         ( rows, seed )
     else
-        let
-            a = next seed
+        a = next seed
 
-            c = next a
+        c = next a
 
-            n = next c
+        n = next c
 
-            label = "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
-        in
+        label = "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
         buildFrom (id - 1) first n [ { id = id, label = label }, ...rows ]
 
 
 replace : Model, Int -> Model
 replace model count =
-    let
-        ( rows, seed ) = build count model.nextId model.seed
-    in
+    ( rows, seed ) = build count model.nextId model.seed
     { model | rows = rows, nextId = model.nextId + count, seed = seed }
 
 
@@ -169,9 +165,7 @@ update msg model =
             replace model 10000
 
         Add ->
-            let
-                ( rows, seed ) = build 1000 model.nextId model.seed
-            in
+            ( rows, seed ) = build 1000 model.nextId model.seed
             { model | rows = model.rows ++ rows, nextId = model.nextId + 1000, seed = seed }
 
         Update ->

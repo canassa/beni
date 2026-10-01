@@ -3,15 +3,13 @@ h a = a.combine 1
 
 
 f x =
-    let
-        q = h x
+    q = h x
 
-        p = x.combine 1
+    p = x.combine 1
 
-        r =
-            if True then
-                x
-            else
-                { combine = λn -> n + 100 }
-    in
+    r =
+        if True then
+            x
+        else
+            { combine = λn -> n + 100 }
     p + q

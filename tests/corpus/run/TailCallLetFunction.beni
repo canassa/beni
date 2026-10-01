@@ -18,13 +18,11 @@ import String
 
 total : Int -> Int
 total limit =
-    let
-        go i acc =
-            if i > limit then
-                acc
-            else
-                go (i + 1) (acc + i)
-    in
+    go i acc =
+        if i > limit then
+            acc
+        else
+            go (i + 1) (acc + i)
     go 1 0
 
 
@@ -33,13 +31,11 @@ nested n acc =
     if n <= 0 then
         acc
     else
-        let
-            inner i sub =
-                if i <= 0 then
-                    sub
-                else
-                    inner (i - 1) (sub + 1)
-        in
+        inner i sub =
+            if i <= 0 then
+                sub
+            else
+                inner (i - 1) (sub + 1)
         nested (n - 1) (inner 3 acc)
 
 

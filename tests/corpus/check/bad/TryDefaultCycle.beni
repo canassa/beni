@@ -4,9 +4,7 @@
 -- the binder `x`, as `a = Result b a` (checker-v2.md §8.6).
 --
 f x =
-    let
-        y = x?
-    in
+    y = x?
     if True then
         y
     else

@@ -147,9 +147,7 @@ early =
     Schema.recursive
         "Early"
         (λself ->
-            let
-                answer = Schema.decode self 1
-            in
+            answer = Schema.decode self 1
             Schema.converted
                 Schema.int
                 (Schema.conversion

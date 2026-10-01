@@ -47,9 +47,7 @@ adders xs =
 
 main : Program
 main =
-    let
-        out = logged [ 1, 2 ]
-    in
+    out = logged [ 1, 2 ]
     Node.printLines
         [ String.join (List.map out String.fromInt) ","
         , String.join (List.map (adders [ 10, 20, 30 ]) (λf -> String.fromInt (f 0))) ","

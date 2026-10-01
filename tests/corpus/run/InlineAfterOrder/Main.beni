@@ -19,9 +19,7 @@ next = Cells.counter 5
 
 logged : Int -> Int
 logged n =
-    let
-        _ = Debug.log "inside" n
-    in
+    _ = Debug.log "inside" n
     n + 1
 
 
@@ -35,16 +33,14 @@ total n = Cells.sumTo 0 n
 
 main : Node.Program
 main =
-    let
-        seed = Debug.log "seed" 41
-        _ = Debug.log "before" 0
-        x = logged seed
-        _ = Debug.log "after" x
-        a = next ()
-        b = next ()
-        c = next ()
-        later = λw -> shout w
-    in
+    seed = Debug.log "seed" 41
+    _ = Debug.log "before" 0
+    x = logged seed
+    _ = Debug.log "after" x
+    a = next ()
+    b = next ()
+    c = next ()
+    later = λw -> shout w
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"
         , String.fromInt (total 4)

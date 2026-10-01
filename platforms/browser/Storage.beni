@@ -39,15 +39,11 @@ pub type Error
 --| The text stored under the key, or `Nothing`.
 pub get : Area, String -> Maybe String
 get area key =
-    let
-        s = storage area
-    in
+    s = storage area
     if Js.isNullish s then
         Nothing
     else
-        let
-            v = Js.call s "getItem" [ Js.from key ]
-        in
+        v = Js.call s "getItem" [ Js.from key ]
         if Js.isNull v then
             Nothing
         else
@@ -57,17 +53,13 @@ get area key =
 --| Store the text under the key, replacing what was there.
 pub set : Area, String, String -> Result Error ()
 set area key value =
-    let
-        s = storage area
-    in
+    s = storage area
     if Js.isNullish s then
         Err Unavailable
     else
         Js.catchIf
             (λ() ->
-                let
-                    _ = Js.call s "setItem" [ Js.from key, Js.from value ]
-                in
+                _ = Js.call s "setItem" [ Js.from key, Js.from value ]
                 Ok ()
             )
             (λerror -> isDomError error "QuotaExceededError")
@@ -77,9 +69,7 @@ set area key value =
 --| Forget the key.
 pub remove : Area, String -> ()
 remove area key =
-    let
-        s = storage area
-    in
+    s = storage area
     if Js.isNullish s then
         ()
     else
@@ -89,9 +79,7 @@ remove area key =
 --| Every key stored, in the browser's order.
 pub keys : Area -> List String
 keys area =
-    let
-        s = storage area
-    in
+    s = storage area
     if Js.isNullish s then
         []
     else
@@ -101,9 +89,7 @@ keys area =
 keysFrom : Js.Value, Int, Int, Js.Value -> List String
 keysFrom s i n found =
     if i < n then
-        let
-            _ = Js.call found "push" [ Js.call s "key" [ Js.from i ] ]
-        in
+        _ = Js.call found "push" [ Js.call s "key" [ Js.from i ] ]
         keysFrom s (i + 1) n found
     else
         Js.to found

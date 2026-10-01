@@ -10,13 +10,11 @@ import Js
 
 pub place : Js.Value, Js.Value -> ()
 place s i =
-    let
-        _ =
-            if Js.isNull (Js.get s "i") then
-                Js.set s "first" i
-            else
-                Js.set s "prev" (Js.get s "i")
-    in
+    _ =
+        if Js.isNull (Js.get s "i") then
+            Js.set s "first" i
+        else
+            Js.set s "prev" (Js.get s "i")
     Js.set s "i" i
 
 
@@ -25,31 +23,25 @@ each fs k =
     if k == Js.to (Js.get fs "length") then
         ()
     else
-        let
-            _ = Js.apply (Js.at fs k) []
-        in
+        _ = Js.apply (Js.at fs k) []
         each fs (k + 1)
 
 
 pub watch : Js.Value, Js.Value -> ()
 watch node s =
-    let
-        seen = Js.ref 0
+    seen = Js.ref 0
 
-        tick n =
-            if n > 3 then
-                ()
-            else
-                place s (Js.from n)
-    in
+    tick n =
+        if n > 3 then
+            ()
+        else
+            place s (Js.from n)
     Js.set
         node
         "$$send"
         (Js.from
             (λmsg ->
-                let
-                    _ = tick (Js.read seen)
-                in
+                _ = tick (Js.read seen)
                 Js.write seen (Js.to msg)
             )
         )

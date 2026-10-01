@@ -30,37 +30,35 @@ chain =
     Schema.recursive
         "Chain"
         (λself ->
-            let
-                link =
-                    Schema.injection
-                        Link
-                        (λc ->
-                            case c of
-                                Link r ->
-                                    Just r
+            link =
+                Schema.injection
+                    Link
+                    (λc ->
+                        case c of
+                            Link r ->
+                                Just r
 
-                                End ->
-                                    Nothing
-                        )
+                            End ->
+                                Nothing
+                    )
 
-                end =
-                    Schema.injection
-                        (λ() -> End)
-                        (λc ->
-                            case c of
-                                End ->
-                                    Just ()
+            end =
+                Schema.injection
+                    (λ() -> End)
+                    (λc ->
+                        case c of
+                            End ->
+                                Just ()
 
-                                Link _ ->
-                                    Nothing
-                        )
+                            Link _ ->
+                                Nothing
+                    )
 
-                next =
-                    Schema.record
-                        (Schema.fields |> Schema.field "next" self)
-                        (Schema.mapping toNext fromNext)
-                        (Schema.mapping toNext fromNext)
-            in
+            next =
+                Schema.record
+                    (Schema.fields |> Schema.field "next" self)
+                    (Schema.mapping toNext fromNext)
+                    (Schema.mapping toNext fromNext)
             Schema.tagged "t"
                 [ Schema.nullary "End" "end" end end, Schema.variant "Link" "link" next link link ]
         )

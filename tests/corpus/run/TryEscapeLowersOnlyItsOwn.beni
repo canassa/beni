@@ -18,14 +18,10 @@ import Node exposing (Program)
 
 
 f k =
-    let
-        g u =
-            let
-                v = u?
-                twice x = ( x, x )
-            in
-            k ( twice v, twice "s" )
-    in
+    g u =
+        v = u?
+        twice x = ( x, x )
+        k ( twice v, twice "s" )
     ( g (Just 1)
     , case k ( ( 0, 0 ), ( "", "" ) ) of
         Just _ ->
@@ -38,7 +34,5 @@ f k =
 
 main : Program
 main =
-    let
-        ( first, second ) = f (λp -> Just p)
-    in
+    ( first, second ) = f (λp -> Just p)
     Node.printLines [ Debug.toString first, String.fromInt second ]

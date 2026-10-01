@@ -23,20 +23,18 @@ cell g x y =
 
 alive : Grid, Int -> Int
 alive g i =
-    let
-        x = Int.mod i g.w
-        y = i // g.w
+    x = Int.mod i g.w
+    y = i // g.w
 
-        n =
-            cell g (x - 1) (y - 1)
-                + cell g x (y - 1)
-                + cell g (x + 1) (y - 1)
-                + cell g (x - 1) y
-                + cell g (x + 1) y
-                + cell g (x - 1) (y + 1)
-                + cell g x (y + 1)
-                + cell g (x + 1) (y + 1)
-    in
+    n =
+        cell g (x - 1) (y - 1)
+            + cell g x (y - 1)
+            + cell g (x + 1) (y - 1)
+            + cell g (x - 1) y
+            + cell g (x + 1) y
+            + cell g (x - 1) (y + 1)
+            + cell g x (y + 1)
+            + cell g (x + 1) (y + 1)
     if n == 3 || (n == 2 && cell g x y == 1) then
         1
     else

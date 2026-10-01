@@ -10,9 +10,7 @@ type K
 
 
 pub ma (K n) x =
-    let
-        _ = (K n).mb 0
-    in
+    _ = (K n).mb 0
     x == x
 
 
@@ -20,7 +18,5 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        let
-            _ = (K 1).ma (λq -> q)
-        in
+        _ = (K 1).ma (λq -> q)
         y

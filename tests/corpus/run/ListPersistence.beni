@@ -76,9 +76,7 @@ modelPrepend m x =
 
 modelDrop : Model, Int -> Model
 modelDrop m k =
-    let
-        d = min m.len (max 0 k)
-    in
+    d = min m.len (max 0 k)
     { m | start = m.start + d, len = m.len - d }
 
 
@@ -182,79 +180,69 @@ prepends v from n =
 -- of the time, so old versions are written to.
 step : State, Int -> State
 step s n =
-    let
-        seed1 = next s.seed
+    seed1 = next s.seed
 
-        seed2 = next seed1
+    seed2 = next seed1
 
-        seed3 = next seed2
+    seed3 = next seed2
 
-        which =
-            if pick seed1 3 == 0 then
-                pick seed2 s.count
-            else
-                max 0 (s.count - 1 - pick seed2 4)
+    which =
+        if pick seed1 3 == 0 then
+            pick seed2 s.count
+        else
+            max 0 (s.count - 1 - pick seed2 4)
 
-        v = Dict.get s.versions which |> Maybe.withDefault { list = [], model = empty }
+    v = Dict.get s.versions which |> Maybe.withDefault { list = [], model = empty }
 
-        op = pick seed3 14
+    op = pick seed3 14
 
-        x = n * 7 + 1
+    x = n * 7 + 1
 
-        len = v.model.len
+    len = v.model.len
 
-        made =
-            if op <= 3 then
-                { list = [ x, ...v.list ], model = modelPrepend v.model x }
-            else if op == 4 then
-                case v.list of
-                    [ h, ...t ] ->
-                        { list = [ h, ...t ], model = v.model }
+    made =
+        if op <= 3 then
+            { list = [ x, ...v.list ], model = modelPrepend v.model x }
+        else if op == 4 then
+            case v.list of
+                [ h, ...t ] ->
+                    { list = [ h, ...t ], model = v.model }
 
-                    [] ->
-                        v
-            else if op <= 6 then
-                { list = List.push v.list x, model = modelPush v.model x }
-            else if op == 7 then
-                { list = List.pop v.list, model = modelPop v.model }
-            else if op == 8 then
-                let
-                    i = pick seed1 (len + 1)
-                in
-                { list = List.set v.list i (0 - x), model = modelSet v.model i (0 - x) }
-            else if op == 9 then
-                case v.list of
-                    [ _, ...rest ] ->
-                        { list = rest, model = modelDrop v.model 1 }
+                [] ->
+                    v
+        else if op <= 6 then
+            { list = List.push v.list x, model = modelPush v.model x }
+        else if op == 7 then
+            { list = List.pop v.list, model = modelPop v.model }
+        else if op == 8 then
+            i = pick seed1 (len + 1)
+            { list = List.set v.list i (0 - x), model = modelSet v.model i (0 - x) }
+        else if op == 9 then
+            case v.list of
+                [ _, ...rest ] ->
+                    { list = rest, model = modelDrop v.model 1 }
 
-                    [] ->
-                        v
-            else if op == 10 then
-                let
-                    k = pick seed1 (len + 3)
-                in
-                { list = List.drop v.list k, model = modelDrop v.model k }
-            else if op == 11 then
-                let
-                    extra = List.range x (x + pick seed1 40)
-                in
-                { list = v.list ++ extra
-                , model = List.foldl extra v.model (λitem m -> modelPush m item)
-                }
-            else if op == 12 then
-                let
-                    extra = List.range x (x + pick seed2 3)
-                in
-                { list = [ ...v.list, ...extra ]
-                , model = List.foldl extra v.model (λitem m -> modelPush m item)
-                }
-            else
-                { list = List.push (List.push v.list x) (x + 1)
-                , model = modelPush (modelPush v.model x) (x + 1)
-                }
+                [] ->
+                    v
+        else if op == 10 then
+            k = pick seed1 (len + 3)
+            { list = List.drop v.list k, model = modelDrop v.model k }
+        else if op == 11 then
+            extra = List.range x (x + pick seed1 40)
+            { list = v.list ++ extra
+            , model = List.foldl extra v.model (λitem m -> modelPush m item)
+            }
+        else if op == 12 then
+            extra = List.range x (x + pick seed2 3)
+            { list = [ ...v.list, ...extra ]
+            , model = List.foldl extra v.model (λitem m -> modelPush m item)
+            }
+        else
+            { list = List.push (List.push v.list x) (x + 1)
+            , model = modelPush (modelPush v.model x) (x + 1)
+            }
 
-        label = "step " ++ String.fromInt n ++ " op " ++ String.fromInt op
-    in
+    label = "step " ++ String.fromInt n ++ " op " ++ String.fromInt op
     note (note (keep { s | seed = seed3 } made) label made) (label ++ " (its input)") v
 
 
@@ -288,16 +276,14 @@ walk s v n =
     else
         case v.list of
             [ h, ...rest ] ->
-                let
-                    tail = { list = rest, model = modelDrop v.model 1 }
+                tail = { list = rest, model = modelDrop v.model 1 }
 
-                    s2 =
-                        if Int.mod n 97 == 0 then
-                            note s ("re-cons at " ++ String.fromInt n)
-                                { list = [ h, ...rest ], model = v.model }
-                        else
-                            s
-                in
+                s2 =
+                    if Int.mod n 97 == 0 then
+                        note s ("re-cons at " ++ String.fromInt n)
+                            { list = [ h, ...rest ], model = v.model }
+                    else
+                        s
                 walk (keep s2 tail) tail (n - 1)
 
             [] ->
@@ -306,42 +292,40 @@ walk s v n =
 
 main : Program
 main =
-    let
-        base = pushes { list = [], model = empty } 1 1100
+    base = pushes { list = [], model = empty } 1 1100
 
-        short =
-            prepends
-                { list = [ 1, 2, 3 ], model = modelPush (modelPush (modelPush empty 1) 2) 3 }
-                10
-                0
+    short =
+        prepends
+            { list = [ 1, 2, 3 ], model = modelPush (modelPush (modelPush empty 1) 2) 3 }
+            10
+            0
 
-        start =
-            { seed = 4711
-            , versions = Dict.empty
-            , count = 0
-            , bad = []
-            , checks = 0
-            }
-                |> (λs -> keep s { list = [], model = empty })
-                |> (λs -> keep s base)
-                |> (λs -> keep s short)
+    start =
+        { seed = 4711
+        , versions = Dict.empty
+        , count = 0
+        , bad = []
+        , checks = 0
+        }
+            |> (λs -> keep s { list = [], model = empty })
+            |> (λs -> keep s base)
+            |> (λs -> keep s short)
 
-        -- The root grown left from a trie `push` made: its tree starts at
-        -- radix 0, so the 33rd prepend finds no room left of it.
-        left = prepends base 5000 33
+    -- The root grown left from a trie `push` made: its tree starts at
+    -- radix 0, so the 33rd prepend finds no room left of it.
+    left = prepends base 5000 33
 
-        -- ...and from a short list: the tree starts mid-root, at 512.
-        wide = prepends short 9000 600
+    -- ...and from a short list: the tree starts mid-root, at 512.
+    wide = prepends short 9000 600
 
-        grown =
-            start
-                |> (λs -> note s "33 prepends onto a pushed trie" left)
-                |> (λs -> note s "600 prepends onto a short list" wide)
-                |> (λs -> keep (keep s left) wide)
-                |> (λs -> walk s wide 700)
+    grown =
+        start
+            |> (λs -> note s "33 prepends onto a pushed trie" left)
+            |> (λs -> note s "600 prepends onto a short list" wide)
+            |> (λs -> keep (keep s left) wide)
+            |> (λs -> walk s wide 700)
 
-        done = recheck (run grown 0 2500) 0 7
-    in
+    done = recheck (run grown 0 2500) 0 7
     Node.printLines
         [ "checks "
             ++ (if done.checks > 5000 then "done" else "too few: " ++ String.fromInt done.checks)

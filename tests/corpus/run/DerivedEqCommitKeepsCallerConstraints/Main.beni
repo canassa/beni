@@ -14,18 +14,14 @@ one = 1
 
 
 viaTuple x y =
-    let
-        cx = x < x
-        cy = y < y
-    in
+    cx = x < x
+    cy = y < y
     ( cx && cy, ( Trip.Trip x y one 5, 0 ) == ( Trip.Trip x y one 5, 0 ) )
 
 
 viaRecord x y =
-    let
-        cx = x < x
-        cy = y < y
-    in
+    cx = x < x
+    cy = y < y
     ( cx || cy, { t = Trip.Trip x y one 5 } == { t = Trip.Trip x y one 6 } )
 
 

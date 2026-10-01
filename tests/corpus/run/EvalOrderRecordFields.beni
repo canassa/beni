@@ -28,25 +28,22 @@ n label v = Debug.log label v
 
 main : Program
 main =
-    let
-        rec = { zed = n "rec.zed" 1, alpha = n "rec.alpha" 2, mid = n "rec.mid" 3 }
+    rec = { zed = n "rec.zed" 1, alpha = n "rec.alpha" 2, mid = n "rec.mid" 3 }
 
-        nested =
-            { outer = n "nested.outer" 1, inner = { yy = n "nested.yy" 2, ax = n "nested.ax" 3 } }
+    nested = { outer = n "nested.outer" 1, inner = { yy = n "nested.yy" 2, ax = n "nested.ax" 3 } }
 
-        sorted = { alpha = n "sorted.alpha" 1, zed = n "sorted.zed" 2 }
+    sorted = { alpha = n "sorted.alpha" 1, zed = n "sorted.zed" 2 }
 
-        hoisted =
-            { alpha = n "hoisted.alpha" 1
-            , zed =
-                case Just (n "hoisted.zed" 2) of
-                    Just v ->
-                        v
+    hoisted =
+        { alpha = n "hoisted.alpha" 1
+        , zed =
+            case Just (n "hoisted.zed" 2) of
+                Just v ->
+                    v
 
-                    Nothing ->
-                        0
-            }
-    in
+                Nothing ->
+                    0
+        }
     Node.printLines
         [ Debug.toString rec
         , Debug.toString nested

@@ -23,7 +23,5 @@ point n = { x = n, y = n * 2, label = "unused", rank = 7, tag = "shown" }
 
 main : Program
 main =
-    let
-        p = point 3
-    in
+    p = point 3
     Node.printLines [ String.fromInt (p.x + p.y), p.tag ]

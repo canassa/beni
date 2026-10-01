@@ -23,7 +23,5 @@ render s k = s.show k (k * 2)
 
 main : Program
 main =
-    let
-        s = { show = first }
-    in
+    s = { show = first }
     Node.printLines [ render s 1, render s 2 ]

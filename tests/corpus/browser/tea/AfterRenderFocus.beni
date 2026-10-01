@@ -60,11 +60,9 @@ update msg model =
 
 openThenFocus : Cmd.Send Msg -> ()
 openThenFocus send =
-    let
-        _ = send Opened
-        _ = Debug.log "waiting for the render" ()
-        _ = Dom.rendered ()
-    in
+    _ = send Opened
+    _ = Debug.log "waiting for the render" ()
+    _ = Dom.rendered ()
     focus "second" send
 
 

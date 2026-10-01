@@ -19,10 +19,8 @@ type alias Person =
 
 main : Node.Program
 main =
-    let
-        ada : Person
-        ada = { name = "Ada", mood = Busy 3, tags = [ "math" ] }
-    in
+    ada : Person
+    ada = { name = "Ada", mood = Busy 3, tags = [ "math" ] }
     Node.printLines
         [ Debug.toString ada
         , Debug.toString { ada | mood = Calm }

@@ -28,31 +28,23 @@ pub am (K n) u = Maybe.withDefault ((Box (Just n)).bm (λv -> Just v)) 0
 
 
 pub bm (Box m) fn =
-    let
-        _ = λw -> (K 0).am ()
-    in
+    _ = λw -> (K 0).am ()
     fn (m?)
 
 
 pub size (Box _) u =
-    let
-        _ = λw -> (K 0).weight ()
-    in
+    _ = λw -> (K 0).weight ()
     1
 
 
 pub weight (K n) u =
-    let
-        g x y = ( (Box x).size (), y )
-    in
+    g x y = ( (Box x).size (), y )
     ( g 1 "a", g 2 3 )
 
 
 main : Program
 main =
-    let
-        ( ( one, a ), ( two, three ) ) = weight (K 1) ()
-    in
+    ( ( one, a ), ( two, three ) ) = weight (K 1) ()
     Node.printLines
         [ String.fromInt (am (K 4) ())
         , String.fromInt one ++ " " ++ a

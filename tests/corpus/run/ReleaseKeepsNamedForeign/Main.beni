@@ -34,26 +34,20 @@ import Task
 
 announce : String -> Int
 announce text =
-    let
-        _ = Say.say text
-    in
+    _ = Say.say text
     String.length text
 
 
 applyTo : (String -> ()), String -> Int
 applyTo f text =
-    let
-        viaCallback = f ("callback " ++ text)
-    in
+    viaCallback = f ("callback " ++ text)
     String.length text
 
 
 applySync : (String -> ()), String -> Int
 applySync k text =
-    let
-        viaSync = k ("sync " ++ text)
-        _ = Task.andThen ("then " ++ text) k
-    in
+    viaSync = k ("sync " ++ text)
+    _ = Task.andThen ("then " ++ text) k
     String.length text
 
 
@@ -63,18 +57,16 @@ unitText _ = ""
 
 report : Int -> Int
 report n =
-    let
-        direct = Say.say "direct"
-        nested = String.length (String.fromInt (n + 1) ++ unitText (Say.say "nested"))
-        branch =
-            if n > 0 then
-                Say.say "branch"
-            else
-                ()
-        ( left, right ) = ( Say.say "tuple", n )
-        viaHelper = announce "helper"
-        quiet = n * 1000
-    in
+    direct = Say.say "direct"
+    nested = String.length (String.fromInt (n + 1) ++ unitText (Say.say "nested"))
+    branch =
+        if n > 0 then
+            Say.say "branch"
+        else
+            ()
+    ( left, right ) = ( Say.say "tuple", n )
+    viaHelper = announce "helper"
+    quiet = n * 1000
     n
 
 

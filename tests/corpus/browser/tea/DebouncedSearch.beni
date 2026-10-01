@@ -41,10 +41,8 @@ fakeApi : Api
 fakeApi =
     { search =
         λq ->
-            let
-                _ = Debug.log "request" q
-                _ = Time.sleep (Time.millis 100)
-            in
+            _ = Debug.log "request" q
+            _ = Time.sleep (Time.millis 100)
             [ q ++ "!" ]
     }
 
@@ -59,9 +57,7 @@ update api msg model =
             ( { model | query = q }, Cmd.keyed Search Cmd.Restart (search api q _) )
 
         Got q hits ->
-            let
-                _ = Debug.log "got" q
-            in
+            _ = Debug.log "got" q
             ( { model | results = hits }, Cmd.none )
 
 
@@ -71,9 +67,7 @@ search api q send =
         (λ() -> Debug.log "start ${q}" ())
         (λ_ _ -> Debug.log "release ${q}" ())
         (λ_ ->
-            let
-                _ = Time.sleep (Time.millis 250)
-            in
+            _ = Time.sleep (Time.millis 250)
             Task.uninterruptible (λ() -> send (Got q (api.search q)))
         )
 

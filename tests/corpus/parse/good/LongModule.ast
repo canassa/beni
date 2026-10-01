@@ -288,7 +288,7 @@
             (ident title))))
       (branch
         (pat_ctor AddCard)
-        (let
+        (block
           (let_def title
             (apply
               (ident String.trim)
@@ -303,7 +303,7 @@
               (string
                 (chunk "A card needs a title."))
               (ident model))
-            (let
+            (block
               (let_def card
                 (record
                   (field id
@@ -702,7 +702,7 @@
       (type_con Model)))
   (definition commitEdit
     (pat_var model)
-    (let
+    (block
       (let_def finished
         (record_update model
           (field editing
@@ -780,7 +780,7 @@
               (ident card))
             (ident column))
           (ident model)
-          (let
+          (block
             (let_def moved
               (record_update card
                 (field column
@@ -812,7 +812,7 @@
       (type_con Model)))
   (definition renumber
     (pat_var model)
-    (let
+    (block
       (let_def renumberColumn
         (pat_var column)
         (pat_var cards)
@@ -1172,7 +1172,7 @@
       (type_con String)))
   (definition countLabel
     (pat_var model)
-    (let
+    (block
       (let_def total
         (apply
           (ident Dict.size)
@@ -1269,7 +1269,7 @@
   (definition viewColumn
     (pat_var model)
     (pat_var column)
-    (let
+    (block
       (let_def key
         (apply
           (ident columnKey)
@@ -1416,7 +1416,7 @@
   (definition viewCard
     (pat_var model)
     (pat_var card)
-    (let
+    (block
       (let_def dragging
         (case
           (field_access .drag
@@ -1721,7 +1721,7 @@
         (type_con Msg))))
   (definition viewCardActions
     (pat_var card)
-    (let
+    (block
       (let_def moveButton
         (pat_var direction)
         (pat_var label)
@@ -2013,7 +2013,7 @@
         (type_con Model))))
   (definition load
     (pat_var json)
-    (let
+    (block
       (let_def cards
         (pipe_right
           (apply

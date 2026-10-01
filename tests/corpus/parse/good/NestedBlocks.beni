@@ -5,15 +5,13 @@
 process : Maybe Int, Bool -> Int
 process m flag =
     if flag then
-        let
-            base =
-                case m of
-                    Just n ->
-                        n
+        base =
+            case m of
+                Just n ->
+                    n
 
-                    Nothing ->
-                        0
-        in
+                Nothing ->
+                    0
         base * 2
     else
         case m of
@@ -30,15 +28,13 @@ process m flag =
 handler : Maybe Int, Int -> Int
 handler m x =
     (λy ->
-        let
-            z =
-                case m of
-                    Just n ->
-                        n + y
+        z =
+            case m of
+                Just n ->
+                    n + y
 
-                    Nothing ->
-                        y
-        in
+                Nothing ->
+                    y
         z
     )
         x
@@ -60,10 +56,10 @@ sumWithDefault m d =
 ifInList : Bool -> List Int
 ifInList flag =
     [ if flag then 1 else 0
-    , let
+    , (
         one = 1
-      in
-      one
+        one
+    )
     , case flag of
         True ->
             1

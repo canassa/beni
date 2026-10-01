@@ -27,18 +27,14 @@ update msg () =
 
 sender : Cmd.Send Msg -> ()
 sender send =
-    let
-        _ = send Kick
-    in
+    _ = send Kick
     Time.sleep (Time.millis 1000)
 
 
 worker : Cmd.Send Msg -> ()
 worker _ =
-    let
-        _ = Debug.log "worker starts" ()
-        _ = Time.sleep (Time.millis 100)
-    in
+    _ = Debug.log "worker starts" ()
+    _ = Time.sleep (Time.millis 100)
     Debug.log "worker ends" ()
 
 

@@ -43,10 +43,8 @@ beat n send =
 
 loop : Int, Cmd.Send Int -> ()
 loop n send =
-    let
-        _ = Time.sleep (Time.millis 100)
-        _ = send n
-    in
+    _ = Time.sleep (Time.millis 100)
+    _ = send n
     loop (n + 1) send
 
 

@@ -20,23 +20,19 @@ type Box a
 
 
 f m =
-    let
-        _ = m == m
+    _ = m == m
 
-        y = m?
+    y = m?
 
-        _ =
-            case y of
-                Box _ ->
-                    0
-    in
+    _ =
+        case y of
+            Box _ ->
+                0
     f m
 
 
 eq (Box a) (Box b) =
-    let
-        _ = λu -> f u
-    in
+    _ = λu -> f u
     a == b
 
 

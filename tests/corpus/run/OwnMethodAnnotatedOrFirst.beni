@@ -15,16 +15,12 @@ pub weight (Box _) u = 2
 
 
 viaAnnotated u =
-    let
-        g x = (Box x).size ()
-    in
+    g x = (Box x).size ()
     ( g 1, g "s" )
 
 
 viaFirst u =
-    let
-        g x = (Box x).weight ()
-    in
+    g x = (Box x).weight ()
     ( g 1, g "s" )
 
 

@@ -86,7 +86,7 @@
         (type_con Int))))
   (definition inLet
     (pat_var items)
-    (let
+    (block
       (let_def parseOne
         (pat_var item)
         (pipe_right

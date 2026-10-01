@@ -37,14 +37,12 @@ ageOf maybe =
 
 main : Program
 main =
-    let
-        (User m years) = User "Ada" 36
+    (User m years) = User "Ada" 36
 
-        both =
-            case User "Bo" 7 of
-                (User n _) as whole ->
-                    n ++ "/" ++ nameOf whole
-    in
+    both =
+        case User "Bo" 7 of
+            (User n _) as whole ->
+                n ++ "/" ++ nameOf whole
     Node.printLines
         [ nameOf (User "Cy" 1)
         , describe (User "Di" 2)

@@ -49,9 +49,7 @@ square p =
 
 pub held : (Pair -> Int), Pair -> Int
 held measure p =
-    let
-        once = measure p
-    in
+    once = measure p
     measure p + once
 
 

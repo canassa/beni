@@ -239,11 +239,9 @@ forms =
 
 report : ( String, List Int ) -> List String
 report ( name, xs ) =
-    let
-        fromThree = List.drop xs 2
+    fromThree = List.drop xs 2
 
-        fromBig = List.drop xs 30
-    in
+    fromBig = List.drop xs 30
     [ name ++ " sum " ++ String.fromInt (sumFrom xs 0)
     , name ++ " pairs " ++ ints (pairSums xs [])
     , name ++ " map " ++ ints (mapRec xs (λx -> x * 2))

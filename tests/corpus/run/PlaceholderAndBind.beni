@@ -32,25 +32,19 @@ usingAll fs body = body (List.map fs (λf -> f 7))
 
 insideRest : String
 insideRest =
-    let
-        n <- twice 10
-    in
+    n <- twice 10
     String.join (List.map (List.map [ 1, 2 ] (subtract n _)) String.fromInt) ","
 
 
 nestedInCallee : String
 nestedInCallee =
-    let
-        applied <- usingAll [ subtract 100 _, subtract _ 100 ]
-    in
+    applied <- usingAll [ subtract 100 _, subtract _ 100 ]
     String.join (List.map applied String.fromInt) ","
 
 
 pipedIntoHole : String
 pipedIntoHole =
-    let
-        n <- twice 1
-    in
+    n <- twice 1
     String.fromInt ((n |> subtract _) 100)
 
 

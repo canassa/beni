@@ -5,7 +5,7 @@
       (type_con Bool)))
   (definition isEven
     (pat_var n)
-    (let
+    (block
       (let_def even
         (pat_var k)
         (if

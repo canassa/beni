@@ -95,15 +95,13 @@ filterOf url =
 
 init : ( Model, Cmd Msg )
 init =
-    let
-        todos =
-            case Storage.get Local key of
-                Just text ->
-                    decode text
+    todos =
+        case Storage.get Local key of
+            Just text ->
+                decode text
 
-                Nothing ->
-                    []
-    in
+            Nothing ->
+                []
     ( { todos = todos
       , draft = ""
       , filter = filterOf (Browser.Navigation.currentUrl ())
@@ -121,11 +119,9 @@ update msg model =
 
         KeyDown event ->
             if Html.key event == "Enter" then
-                let
-                    _ = Html.preventDefault event
+                _ = Html.preventDefault event
 
-                    title = String.trim model.draft
-                in
+                title = String.trim model.draft
                 if String.isEmpty title then
                     ( model, Cmd.none )
                 else
@@ -172,9 +168,7 @@ visible filter todo =
 
 view : Model -> Html Msg
 view model =
-    let
-        left = List.length (List.filter model.todos (λt -> not t.done))
-    in
+    left = List.length (List.filter model.todos (λt -> not t.done))
     <section class="todoapp">
         <header class="header">
             <h1>todos</h1>

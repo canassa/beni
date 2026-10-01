@@ -176,37 +176,35 @@ tree =
     Schema.recursive
         "Tree"
         (λself ->
-            let
-                leaf =
-                    Schema.injection
-                        Leaf
-                        (λt ->
-                            case t of
-                                Leaf p ->
-                                    Just p
+            leaf =
+                Schema.injection
+                    Leaf
+                    (λt ->
+                        case t of
+                            Leaf p ->
+                                Just p
 
-                                _ ->
-                                    Nothing
-                        )
+                            _ ->
+                                Nothing
+                    )
 
-                branch =
-                    Schema.injection
-                        Branch
-                        (λt ->
-                            case t of
-                                Branch p ->
-                                    Just p
+            branch =
+                Schema.injection
+                    Branch
+                    (λt ->
+                        case t of
+                            Branch p ->
+                                Just p
 
-                                _ ->
-                                    Nothing
-                        )
+                            _ ->
+                                Nothing
+                    )
 
-                children =
-                    Schema.record
-                        (Schema.fields |> Schema.field "children" (Schema.list self))
-                        (Schema.mapping toChildren fromChildren)
-                        (Schema.mapping toChildren fromChildren)
-            in
+            children =
+                Schema.record
+                    (Schema.fields |> Schema.field "children" (Schema.list self))
+                    (Schema.mapping toChildren fromChildren)
+                    (Schema.mapping toChildren fromChildren)
             Schema.tagged "type"
                 [ Schema.variant "Leaf" "leaf" (payload Schema.int) leaf leaf
                 , Schema.variant "Branch" "branch" children branch branch

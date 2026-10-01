@@ -8,9 +8,7 @@ pub type U
 
 
 pub compare a b =
-    let
-        s = T 1 == T 2
-    in
+    s = T 1 == T 2
     case ( a, b ) of
         ( U x, U y ) ->
             if s then

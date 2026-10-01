@@ -105,13 +105,11 @@ printAt value indent depth =
 
 printField : String, Value, Int, Int -> String
 printField key item indent depth =
-    let
-        separator =
-            if indent == 0 then
-                ":"
-            else
-                ": "
-    in
+    separator =
+        if indent == 0 then
+            ":"
+        else
+            ": "
     quote key ++ separator ++ printAt item indent (depth + 1)
 
 
@@ -120,10 +118,8 @@ block parts open close indent depth =
     if indent == 0 then
         open ++ String.join parts "," ++ close
     else
-        let
-            inner = "\n" ++ String.repeat " " (indent * (depth + 1))
-            outer = "\n" ++ String.repeat " " (indent * depth)
-        in
+        inner = "\n" ++ String.repeat " " (indent * (depth + 1))
+        outer = "\n" ++ String.repeat " " (indent * depth)
         open ++ inner ++ String.join parts ("," ++ inner) ++ outer ++ close
 
 
@@ -170,9 +166,7 @@ escape c =
 
 hex : Int -> String
 hex n =
-    let
-        digit d = String.slice "0123456789abcdef" d (d + 1)
-    in
+    digit d = String.slice "0123456789abcdef" d (d + 1)
     if n < 16 then
         digit n
     else

@@ -133,21 +133,19 @@ tallyPeople xs mark scale =
 
 main : Program
 main =
-    let
-        total =
-            List.foldl
-                (List.range 1 outerReps)
-                0
-                (λ_ acc ->
-                    List.foldl
-                        (List.range 1 innerReps)
-                        acc
-                        (λ_ n ->
-                            n
-                                + tallyNumbers numbers numberMark 1
-                                + tallyTexts texts textMark 1
-                                + tallyPeople people personMark 1
-                        )
-                )
-    in
+    total =
+        List.foldl
+            (List.range 1 outerReps)
+            0
+            (λ_ acc ->
+                List.foldl
+                    (List.range 1 innerReps)
+                    acc
+                    (λ_ n ->
+                        n
+                            + tallyNumbers numbers numberMark 1
+                            + tallyTexts texts textMark 1
+                            + tallyPeople people personMark 1
+                    )
+            )
     Node.print (String.fromInt total)

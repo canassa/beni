@@ -46,70 +46,68 @@ subject = Tri 1 2
 
 main : Program
 main =
-    let
-        first = n "let.first" 1
-        second = n "let.second" 2
-        third = n "let.third" 3
+    first = n "let.first" 1
+    second = n "let.second" 2
+    third = n "let.third" 3
 
-        onceSimple =
-            case shape "case.scrutinee" subject of
-                Circle a ->
-                    a
+    onceSimple =
+        case shape "case.scrutinee" subject of
+            Circle a ->
+                a
 
-                Square a ->
-                    a
+            Square a ->
+                a
 
-                Tri a c ->
-                    a + c
+            Tri a c ->
+                a + c
 
-        tupleScrutinee =
-            case ( shape "tuple.scrutinee.0" subject, n "tuple.scrutinee.1" 7 ) of
-                ( Circle a, 7 ) ->
-                    a
+    tupleScrutinee =
+        case ( shape "tuple.scrutinee.0" subject, n "tuple.scrutinee.1" 7 ) of
+            ( Circle a, 7 ) ->
+                a
 
-                ( Tri a c, 7 ) ->
-                    a + c
+            ( Tri a c, 7 ) ->
+                a + c
 
-                ( _, other ) ->
-                    other
+            ( _, other ) ->
+                other
 
-        conditional =
-            if n "if.condition" 1 == 1 then
-                n "if.then" 10
-            else
-                n "if.else" 20
+    conditional =
+        if n "if.condition" 1 == 1 then
+            n "if.then" 10
+        else
+            n "if.else" 20
 
-        andShort = b "and.short.left" False && b "and.short.right" True
-        andBoth = b "and.both.left" True && b "and.both.right" False
-        orShort = b "or.short.left" True || b "or.short.right" False
-        orBoth = b "or.both.left" False || b "or.both.right" True
+    andShort = b "and.short.left" False && b "and.short.right" True
+    andBoth = b "and.both.left" True && b "and.both.right" False
+    orShort = b "or.short.left" True || b "or.short.right" False
+    orBoth = b "or.both.left" False || b "or.both.right" True
 
-        andShortStatements =
-            b "and.stmt.short.left" False
-                && (case shape "and.stmt.short.right" subject of
-                       Circle a ->
-                           a > 0
+    andShortStatements =
+        b "and.stmt.short.left" False
+            && (case shape "and.stmt.short.right" subject of
+                   Circle a ->
+                       a > 0
 
-                       Square a ->
-                           a > 0
+                   Square a ->
+                       a > 0
 
-                       Tri a c ->
-                           a < c
-                   )
+                   Tri a c ->
+                       a < c
+               )
 
-        andBothStatements =
-            b "and.stmt.both.left" True
-                && (case shape "and.stmt.both.right" subject of
-                       Circle a ->
-                           a > 0
+    andBothStatements =
+        b "and.stmt.both.left" True
+            && (case shape "and.stmt.both.right" subject of
+                   Circle a ->
+                       a > 0
 
-                       Square a ->
-                           a > 0
+                   Square a ->
+                       a > 0
 
-                       Tri a c ->
-                           a < c
-                   )
-    in
+                   Tri a c ->
+                       a < c
+               )
     Node.printLines
         [ String.fromInt (first + second + third)
         , String.fromInt onceSimple

@@ -83,9 +83,7 @@ bools bs = String.concat (List.map bs (λb -> if b then "T" else "F"))
 
 line : ( String, List Int ) -> String
 line ( name, xs ) =
-    let
-        others = List.map forms (λ( _, ys ) -> ys)
-    in
+    others = List.map forms (λ( _, ys ) -> ys)
     String.join
         [ name
         , bools (List.map others (λys -> xs == ys))
@@ -110,19 +108,17 @@ line ( name, xs ) =
 
 readers : ( String, List Int ) -> String
 readers ( name, xs ) =
-    let
-        ends =
-            case xs of
-                [ first, ...middle, last ] ->
-                    String.fromInt first
-                        ++ ".."
-                        ++ String.fromInt (List.length middle)
-                        ++ ".."
-                        ++ String.fromInt last
+    ends =
+        case xs of
+            [ first, ...middle, last ] ->
+                String.fromInt first
+                    ++ ".."
+                    ++ String.fromInt (List.length middle)
+                    ++ ".."
+                    ++ String.fromInt last
 
-                _ ->
-                    "short"
-    in
+            _ ->
+                "short"
     String.join
         [ name
         , String.fromInt (List.foldr xs 0 (λx acc -> acc * 3 + x |> Int.mod 1000003))

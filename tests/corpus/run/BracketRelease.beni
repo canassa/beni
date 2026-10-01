@@ -33,9 +33,7 @@ describe exit =
 
 sleepThen : Int -> Int
 sleepThen n =
-    let
-        _ = Io.sleep 100000
-    in
+    _ = Io.sleep 100000
     n
 
 
@@ -51,24 +49,22 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                -- Success.
-                n = held "plain" (λ() -> 5)
-                _ = say ("plain returned " ++ String.fromInt n)
-                -- Cancelled from outside, two brackets deep.
-                waiting =
-                    Task.spawn
-                        (λ() -> held "outer" (λ() -> held "inner" (λ() -> sleepThen 0)))
-                _ = Io.sleep 1
-                _ = Task.cancel waiting
-                _ = say "cancel returned"
-                -- Cancelled by joining a cancelled fiber.
-                victim = Task.spawn (λ() -> held "victim" (λ() -> sleepThen 1))
-                joiner = Task.spawn (λ() -> held "joiner" (λ() -> Task.join victim))
-                _ = Io.sleep 1
-                _ = Task.cancel victim
-                ended = Task.wait joiner
-                _ = say ("joiner " ++ describe ended)
-            in
+            -- Success.
+            n = held "plain" (λ() -> 5)
+            _ = say ("plain returned " ++ String.fromInt n)
+            -- Cancelled from outside, two brackets deep.
+            waiting =
+                Task.spawn
+                    (λ() -> held "outer" (λ() -> held "inner" (λ() -> sleepThen 0)))
+            _ = Io.sleep 1
+            _ = Task.cancel waiting
+            _ = say "cancel returned"
+            -- Cancelled by joining a cancelled fiber.
+            victim = Task.spawn (λ() -> held "victim" (λ() -> sleepThen 1))
+            joiner = Task.spawn (λ() -> held "joiner" (λ() -> Task.join victim))
+            _ = Io.sleep 1
+            _ = Task.cancel victim
+            ended = Task.wait joiner
+            _ = say ("joiner " ++ describe ended)
             Node.print "end"
         )

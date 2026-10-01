@@ -6,12 +6,10 @@
 -- last — is a `let_stmt` of its expression (`statement`).
 withLet : Int -> Int
 withLet n =
-    let
-        a = n + 1
-        ( b, c ) = ( a, a )
-        f : Int -> Int
-        f x = x + b
-    in
+    a = n + 1
+    ( b, c ) = ( a, a )
+    f : Int -> Int
+    f x = x + b
     f c
 
 

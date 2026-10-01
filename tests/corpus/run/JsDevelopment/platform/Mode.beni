@@ -37,9 +37,7 @@ flag = Js.development ()
 -- either: a release build has no `noted`.
 pub note : () -> Int
 note () =
-    let
-        _ = if Js.development () then noted () else ()
-    in
+    _ = if Js.development () then noted () else ()
     1
 
 

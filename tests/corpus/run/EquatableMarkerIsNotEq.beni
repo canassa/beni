@@ -25,18 +25,14 @@ eq left right =
 
 
 markerFirst x y =
-    let
-        _ = Basics.eq x x
-    in
+    _ = Basics.eq x x
     x == y
 
 
 markerAfter x y =
-    let
-        r = x == y
+    r = x == y
 
-        _ = Basics.eq x x
-    in
+    _ = Basics.eq x x
     r
 
 

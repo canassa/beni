@@ -145,9 +145,7 @@ cancelAll = Cmd [ CancelAll [] ]
 pub map : Cmd a, k, (a -> msg) -> Cmd msg
     where k.compare : k, k -> Order
 map (Cmd list) segment tag =
-    let
-        s = Hosted.key segment
-    in
+    s = Hosted.key segment
     Cmd (List.map list (mapItem _ s tag))
 
 

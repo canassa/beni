@@ -9,11 +9,9 @@
 -- variable it binds.
 
 f p =
-    let
-        c u = a
+    c u = a
 
-        ( a, b ) = p
-    in
+    ( a, b ) = p
     ( c 1, String.length a )
 
 

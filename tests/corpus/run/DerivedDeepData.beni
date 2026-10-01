@@ -59,21 +59,19 @@ show label b =
 
 main : Program
 main =
-    let
-        same = list 100000 Nil
+    same = list 100000 Nil
 
-        twin = list 100000 Nil
+    twin = list 100000 Nil
 
-        longer = list 100000 (Cons 0 Nil)
+    longer = list 100000 (Cons 0 Nil)
 
-        bigger = list 100000 (Cons 1 Nil)
+    bigger = list 100000 (Cons 1 Nil)
 
-        nested = deep 10000 Nothing
+    nested = deep 10000 Nothing
 
-        nestedTwin = deep 10000 Nothing
+    nestedTwin = deep 10000 Nothing
 
-        nestedOther = deep 10000 (Just (Deep { next = Nothing, v = 0 }))
-    in
+    nestedOther = deep 10000 (Just (Deep { next = Nothing, v = 0 }))
     Node.printLines
         [ show "list == list" (same == twin)
         , show "list == longer" (same == longer)

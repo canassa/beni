@@ -1,7 +1,5 @@
 -- check/args: a `let`-bound helper of two arguments called with one.
 pub area : Int -> Int
 area n =
-    let
-        scale factor value = factor * value
-    in
+    scale factor value = factor * value
     scale 2

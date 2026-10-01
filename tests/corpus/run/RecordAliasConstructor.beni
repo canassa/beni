@@ -24,13 +24,11 @@ getY r = r.y
 
 main : Program
 main =
-    let
-        p = P 1 "a"
+    p = P 1 "a"
 
-        q = { x = 2, y = "b" }
+    q = { x = 2, y = "b" }
 
-        partial = P 2 _
-    in
+    partial = P 2 _
     Node.printLines
         [ String.toUpper (P 1 "a").y
         , p.y

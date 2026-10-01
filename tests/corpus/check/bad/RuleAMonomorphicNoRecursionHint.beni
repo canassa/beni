@@ -16,13 +16,11 @@ same (T a) (T b) = a == b
 
 
 f n x =
-    let
-        pairK z = ( z, z.same z )
+    pairK z = ( z, z.same z )
 
-        ( a1, _ ) = pairK (T 1)
+    ( a1, _ ) = pairK (T 1)
 
-        ( a2, _ ) = pairK "s"
-    in
+    ( a2, _ ) = pairK "s"
     g n x
 
 

@@ -48,10 +48,8 @@ boxed r = <p>{Debug.log "boxed" r.n}</p>
 
 view : Model -> Html Msg
 view model =
-    let
-        local : Int -> Html Msg
-        local n = <em>{Debug.log "local" n}</em>
-    in
+    local : Int -> Html Msg
+    local n = <em>{Debug.log "local" n}</em>
     <main>
         <button id="count" onClick={Count}>count</button>
         <button id="other" onClick={Other}>other</button>

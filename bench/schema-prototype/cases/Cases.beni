@@ -270,10 +270,8 @@ nestedNodeEndpoint () =
 
 decodeNode : Schema.Context, WireNode -> Result (List Schema.Issue) ProgramNode
 decodeNode context (WireNode node) =
-    let
-        value <- Result.andThen (numericText.decodeValue context node.value)
-        children <- Result.andThen (decodeNodes context node.children)
-    in
+    value <- Result.andThen (numericText.decodeValue context node.value)
+    children <- Result.andThen (decodeNodes context node.children)
     Ok (ProgramNode { value = value, children = children })
 
 
@@ -283,19 +281,15 @@ decodeNodes context nodes =
         [] ->
             Ok []
         [ first, ...rest ] ->
-            let
-                decoded <- Result.andThen (decodeNode context first)
-                decodedRest <- Result.andThen (decodeNodes context rest)
-            in
+            decoded <- Result.andThen (decodeNode context first)
+            decodedRest <- Result.andThen (decodeNodes context rest)
             Ok [ decoded, ...decodedRest ]
 
 
 encodeNode : Schema.Context, ProgramNode -> Result (List Schema.Issue) WireNode
 encodeNode context (ProgramNode node) =
-    let
-        value <- Result.andThen (numericText.encodeValue context node.value)
-        children <- Result.andThen (encodeNodes context node.children)
-    in
+    value <- Result.andThen (numericText.encodeValue context node.value)
+    children <- Result.andThen (encodeNodes context node.children)
     Ok (WireNode { value = value, children = children })
 
 
@@ -305,10 +299,8 @@ encodeNodes context nodes =
         [] ->
             Ok []
         [ first, ...rest ] ->
-            let
-                encoded <- Result.andThen (encodeNode context first)
-                encodedRest <- Result.andThen (encodeNodes context rest)
-            in
+            encoded <- Result.andThen (encodeNode context first)
+            encodedRest <- Result.andThen (encodeNodes context rest)
             Ok [ encoded, ...encodedRest ]
 
 
@@ -579,7 +571,7 @@ results =
              }
       )
     , ( "nested recursive description omits child definitions (limitation)"
-      , let
+      , (
           observedDescription =
               { root = Schema.ReferenceShape "NestedNode"
               , definitions =
@@ -591,9 +583,9 @@ results =
                     )
                   ]
               }
-        in
-        Schema.describe (Schema.fromEndpoint (nestedNodeEndpoint ()))
-            == { encoded = observedDescription, decoded = observedDescription }
+          Schema.describe (Schema.fromEndpoint (nestedNodeEndpoint ()))
+              == { encoded = observedDescription, decoded = observedDescription }
+      )
       )
     , ( "recursive transformed types roundtrip"
       , Schema.decode nodeSchema deepWire == Ok deepProgram

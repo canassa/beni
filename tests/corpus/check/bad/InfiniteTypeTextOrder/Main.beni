@@ -2,7 +2,5 @@ import A
 
 
 f =
-    let
-        g = { zeta = [ List.singleton, identity ], alpha = [ Just, identity ] }
-    in
+    g = { zeta = [ List.singleton, identity ], alpha = [ Just, identity ] }
     A.zeta

@@ -27,9 +27,7 @@ inLambda : List Int -> List String
 inLambda xs =
     List.map xs
         (λx ->
-            let
-                same p q = p == q
-            in
+            same p q = p == q
             verdict (same (A x) (A 0)) (same (B.B x) (B.B x))
         )
 
@@ -38,9 +36,7 @@ inCase : Int -> String
 inCase n =
     case n of
         0 ->
-            let
-                same p q = p == q
-            in
+            same p q = p == q
             verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
 
         _ ->
@@ -50,9 +46,7 @@ inCase n =
 inIf : Int -> String
 inIf n =
     if n == 0 then
-        let
-            same p q = p == q
-        in
+        same p q = p == q
         verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
     else
         "y"

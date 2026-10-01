@@ -13,14 +13,12 @@ busy = Js.ref False
 
 pub guard : Js.Value -> ()
 guard queue =
-    let
-        _ = Js.write busy True
+    _ = Js.write busy True
 
-        _ =
-            Js.finally
-                (λ() -> Js.each queue (λf -> Js.to (Js.apply f [])))
-                (λ() -> Js.write busy False)
-    in
+    _ =
+        Js.finally
+            (λ() -> Js.each queue (λf -> Js.to (Js.apply f [])))
+            (λ() -> Js.write busy False)
     Js.set queue "length" (Js.from 0)
 
 
@@ -29,18 +27,14 @@ render view =
     if Js.read busy then
         Js.null
     else
-        let
-            _ = Js.write busy True
-        in
+        _ = Js.write busy True
         Js.finally (λ() -> Js.apply view []) (λ() -> Js.write busy False)
 
 
 pub measured : Js.Value -> String
 measured node =
-    let
-        width : Int
-        width = Js.finally (λ() -> Js.to (Js.get node "offsetWidth")) (λ() -> Js.write busy False)
-    in
+    width : Int
+    width = Js.finally (λ() -> Js.to (Js.get node "offsetWidth")) (λ() -> Js.write busy False)
     "${String.fromInt width}px"
 
 

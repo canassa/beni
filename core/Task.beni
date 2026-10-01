@@ -174,9 +174,7 @@ foreign impure popFinalizer : a -> a
 --|             ( Task.join x, Task.join y ))
 pub scope : (Scope -> a) -> a
 scope body =
-    let
-        s = openScope ()
-    in
+    s = openScope ()
     closeScope s (body s)
 
 
@@ -193,10 +191,8 @@ uninterruptible work = unmask (work (mask ()))
 --|     Task.bracket (λ() -> open path) (λfile _ -> close file) (λfile -> read file)
 pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a
 bracket acquire release use =
-    let
-        resource = uninterruptible acquire
-        result = use (pushFinalizer resource (λ() -> release resource Cancelled))
-    in
+    resource = uninterruptible acquire
+    result = use (pushFinalizer resource (λ() -> release resource Cancelled))
     uninterruptible (λ() -> after (release resource (Done (popFinalizer result))) result)
 
 

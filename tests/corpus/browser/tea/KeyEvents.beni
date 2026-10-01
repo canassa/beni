@@ -37,9 +37,7 @@ update msg model =
 pressed : Html.Event -> Msg
 pressed event =
     if Html.key event == "Enter" && not (Html.shiftKey event) then
-        let
-            _ = Html.preventDefault event
-        in
+        _ = Html.preventDefault event
         Add
     else
         Pressed (describe event)

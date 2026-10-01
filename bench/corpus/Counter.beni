@@ -44,15 +44,13 @@ step delta model =
 
 pub view : Model -> Element Msg
 view model =
-    let
-        label = "Count: ${model.count}"
+    label = "Count: ${model.count}"
 
-        recent =
-            model.history
-                |> List.take 5
-                |> List.map String.fromInt
-                |> String.join ", "
-    in
+    recent =
+        model.history
+            |> List.take 5
+            |> List.map String.fromInt
+            |> String.join ", "
     column
         [ button "-" Decrement
         , text label

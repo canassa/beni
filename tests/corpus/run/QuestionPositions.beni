@@ -19,9 +19,7 @@ import String
 
 outer : Maybe Int, Int -> String
 outer m fallback =
-    let
-        inner x = Just (m? + x)
-    in
+    inner x = Just (m? + x)
     case inner 1 of
         Just v ->
             "inner ${String.fromInt v}"

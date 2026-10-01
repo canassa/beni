@@ -18,8 +18,6 @@ pub foreign pure handlers : List (sync (Event -> msg)) -> Attribute msg
 
 pair : Pair sync (Int)
 pair =
-    let
-        local : Pair sync (Int)
-        local = pair
-    in
+    local : Pair sync (Int)
+    local = pair
     local

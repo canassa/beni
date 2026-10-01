@@ -43,9 +43,7 @@ update msg lines =
             ( lines
             , Cmd.task
                 (λ() ->
-                    let
-                        _ = Fault.breakFetch ()
-                    in
+                    _ = Fault.breakFetch ()
                     Http.get "data:text/plain,hello"
                 )
                 Got

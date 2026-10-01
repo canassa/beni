@@ -16,15 +16,11 @@ viewRow model row = <tr>{row.name}{model.count}</tr>
 
 
 view model =
-    let
-        theme = model.theme
-    in
+    theme = model.theme
     <table>
         <For each={model.rows} keyed={.id}>
             {λrow ->
-                let
-                    cls = rowClass model row
-                in
+                cls = rowClass model row
                 <tr class={cls}><td>{label model.page}</td><td>{theme.dark}</td></tr>
             }
         </For>

@@ -7,8 +7,6 @@
 
 f : List Int -> Bool
 f xs =
-    let
-        g : a, a -> Bool
-        g p q = p == q
-    in
+    g : a, a -> Bool
+    g p q = p == q
     g xs xs

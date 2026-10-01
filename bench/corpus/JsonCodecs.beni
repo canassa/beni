@@ -246,23 +246,21 @@ orderTotal order =
 
 pub discount : Order -> Float
 discount order =
-    let
-        total = orderTotal order
+    total = orderTotal order
 
-        rate =
-            case order.customer.tier of
-                Free ->
-                    0
+    rate =
+        case order.customer.tier of
+            Free ->
+                0
 
-                Pro ->
-                    0.1
+            Pro ->
+                0.1
 
-                Enterprise ->
-                    if total > 1000 then
-                        0.25
-                    else
-                        0.2
-    in
+            Enterprise ->
+                if total > 1000 then
+                    0.25
+                else
+                    0.2
     total * rate
 
 
@@ -274,32 +272,27 @@ parseOrders json =
 
 pub roundTrip : String -> Result String String
 roundTrip json =
-    let
-        orders = parseOrders json?
-    in
+    orders = parseOrders json?
     Ok (Encode.encode (Encode.list orders encodeOrder) 2)
 
 
 pub summarize : String -> Result String (Dict String Int)
 summarize json =
-    let
-        orders = parseOrders json?
+    orders = parseOrders json?
 
-        bump counts key =
-            Dict.update counts key (λexisting -> Just (Maybe.withDefault existing 0 + 1))
+    bump counts key = Dict.update counts key (λexisting -> Just (Maybe.withDefault existing 0 + 1))
 
-        statusKey order =
-            case order.status of
-                Pending ->
-                    "pending"
+    statusKey order =
+        case order.status of
+            Pending ->
+                "pending"
 
-                Paid _ ->
-                    "paid"
+            Paid _ ->
+                "paid"
 
-                Shipped _ ->
-                    "shipped"
+            Shipped _ ->
+                "shipped"
 
-                Cancelled _ ->
-                    "cancelled"
-    in
+            Cancelled _ ->
+                "cancelled"
     Ok (List.foldl orders Dict.empty (λorder counts -> bump counts (statusKey order)))

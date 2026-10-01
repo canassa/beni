@@ -10,9 +10,7 @@ import T exposing (T)
 
 
 pub f4 x =
-    let
-        h u = x.bar ()
-    in
+    h u = x.bar ()
     ( h 1, h "s" )
 
 

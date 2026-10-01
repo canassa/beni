@@ -20,7 +20,7 @@
       (type_con Bool)))
   (definition isUpper
     (pat_var c)
-    (let
+    (block
       (let_def code
         (apply
           (ident toCode)

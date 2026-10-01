@@ -51,17 +51,15 @@ tickHelp g j k seed =
     if j >= k then
         g
     else
-        let
-            i = Int.mod (seed + j * 7919) (g.w * g.h)
+        i = Int.mod (seed + j * 7919) (g.w * g.h)
 
-            x = Int.mod i g.w
+        x = Int.mod i g.w
 
-            y = i // g.w
+        y = i // g.w
 
-            n = neighbours g x y
+        n = neighbours g x y
 
-            v = cell g x y + 1 + Int.mod n 2
-        in
+        v = cell g x y + 1 + Int.mod n 2
         tickHelp { g | cells = Array.set g.cells i v } (j + 1) k seed
 
 

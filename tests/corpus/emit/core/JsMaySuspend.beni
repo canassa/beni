@@ -18,9 +18,7 @@ inFiber _ = "in a fiber"
 
 direct : (() -> ()) -> String
 direct f =
-    let
-        _ = f ()
-    in
+    _ = f ()
     "directly"
 
 

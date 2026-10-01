@@ -20,9 +20,7 @@ direct = onEvent (λn -> get n)
 
 load : Int -> String
 load n =
-    let
-        fetch k = get k
-    in
+    fetch k = get k
     fetch n
 
 

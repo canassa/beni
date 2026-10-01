@@ -9,7 +9,7 @@
       (type_con String)))
   (definition split
     (pat_var input)
-    (let
+    (block
       (let_pattern
         (pat_tuple
           (pat_var n)

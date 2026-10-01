@@ -12,9 +12,7 @@ import Node exposing (Program)
 
 
 pairEq x y =
-    let
-        inner a b = a == b
-    in
+    inner a b = a == b
     inner x y && inner [ x ] [ y ]
 
 

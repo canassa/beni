@@ -3,10 +3,8 @@
 -- never converted into each other.
 pub parseBoth : String, String -> Result String Int
 parseBoth a b =
-    let
-        left = parseOne a?
-        right = parseOne b?
-    in
+    left = parseOne a?
+    right = parseOne b?
     Ok (left + right)
 
 
@@ -22,7 +20,5 @@ parseOne s =
 
 pub firstTwo : List Int -> Maybe Int
 firstTwo xs =
-    let
-        head = List.head xs?
-    in
+    head = List.head xs?
     Just (head + 1)

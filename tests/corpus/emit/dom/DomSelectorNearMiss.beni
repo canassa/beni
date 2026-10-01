@@ -43,9 +43,7 @@ table model =
         </For>
         <For each={model.rows} keyed={.id}>
             {λrow ->
-                let
-                    sel = model.selected
-                in
+                sel = model.selected
                 <p class={if sel == Just row.id then "on" else ""}>{row.label}</p>
             }
         </For>

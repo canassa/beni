@@ -23,16 +23,12 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        let
-            _ = (K 1).ma { combine = λz -> z + 1 }
-        in
+        _ = (K 1).ma { combine = λz -> z + 1 }
         y
 
 
 pub ma (K n) x =
-    let
-        _ = (K n).mb 0
-    in
+    _ = (K n).mb 0
     x.combine 1
 
 

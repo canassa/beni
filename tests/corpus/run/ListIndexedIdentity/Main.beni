@@ -38,18 +38,16 @@ show label b =
 
 main : Node.Program
 main =
-    let
-        xs = [ 1, 2, 3 ]
+    xs = [ 1, 2, 3 ]
 
-        empty = List.drop xs 3
+    empty = List.drop xs 3
 
-        one = [ 7 ]
+    one = [ 7 ]
 
-        pair = [ 4, 4 ]
+    pair = [ 4, 4 ]
 
-        -- Past `push`'s threshold: a list that has been written to.
-        wide = List.foldl (List.range 1 40) [] (λn acc -> List.push acc n)
-    in
+    -- Past `push`'s threshold: a list that has been written to.
+    wide = List.foldl (List.range 1 40) [] (λn acc -> List.push acc n)
     Node.printLines
         [ show "set -1" (Identity.refEq (List.set xs (-1) 9) xs)
         , show "set length" (Identity.refEq (List.set xs 3 9) xs)

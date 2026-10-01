@@ -115,9 +115,7 @@ table w b =
 -- The same pattern as a lambda parameter, and as a `let` pattern.
 lambdaAndLet : Int
 lambdaAndLet =
-    let
-        (Wrap ()) = Wrap ()
-    in
+    (Wrap ()) = Wrap ()
     (λ(Wrap ()) -> 9) (Wrap ())
 
 

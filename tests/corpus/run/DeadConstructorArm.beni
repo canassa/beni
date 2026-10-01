@@ -86,8 +86,6 @@ run r =
 
 main : Program
 main =
-    let
-        ( first, next ) = run (Greet "world")
-        ( second, _ ) = run next
-    in
+    ( first, next ) = run (Greet "world")
+    ( second, _ ) = run next
     Node.printLines [ first, "[" ++ second ++ "]" ]

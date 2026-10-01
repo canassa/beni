@@ -21,33 +21,31 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                root = Task.openRoot ()
-                quick = Task.spawnIn root (λ() -> say "quick runs")
-                _ = Debug.log "quick running" (Task.running quick)
-                _ = Task.join quick
-                _ = Debug.log "quick running" (Task.running quick)
-                slow =
-                    Task.spawnIn
-                        root
-                        (λ() ->
-                            Task.bracket
-                                (λ() -> ())
-                                (λ_ exit ->
-                                    case exit of
-                                        Done _ ->
-                                            say "slow done"
-                                        Cancelled ->
-                                            say "slow cancelled"
-                                )
-                                (λ_ -> Io.sleep 100000)
-                        )
-                _ = Task.yieldNow ()
-                _ = Task.closeRoot root
-                _ = say "closed"
-                _ = Task.wait slow
-                late = Task.spawnIn root (λ() -> say "late runs")
-                _ = Debug.log "late ended" (Task.wait late)
-            in
+            root = Task.openRoot ()
+            quick = Task.spawnIn root (λ() -> say "quick runs")
+            _ = Debug.log "quick running" (Task.running quick)
+            _ = Task.join quick
+            _ = Debug.log "quick running" (Task.running quick)
+            slow =
+                Task.spawnIn
+                    root
+                    (λ() ->
+                        Task.bracket
+                            (λ() -> ())
+                            (λ_ exit ->
+                                case exit of
+                                    Done _ ->
+                                        say "slow done"
+                                    Cancelled ->
+                                        say "slow cancelled"
+                            )
+                            (λ_ -> Io.sleep 100000)
+                    )
+            _ = Task.yieldNow ()
+            _ = Task.closeRoot root
+            _ = say "closed"
+            _ = Task.wait slow
+            late = Task.spawnIn root (λ() -> say "late runs")
+            _ = Debug.log "late ended" (Task.wait late)
             Node.done
         )

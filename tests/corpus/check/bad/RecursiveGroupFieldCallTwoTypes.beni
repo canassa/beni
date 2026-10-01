@@ -10,14 +10,10 @@ type K
 
 
 pub ma (K n) x =
-    let
-        _ = (K n).mb 0
-    in
-    let
-        h z = x.f z
+    _ = (K n).mb 0
+    h z = x.f z
 
-        ( r1, _ ) = ( h 1, h "s" )
-    in
+    ( r1, _ ) = ( h 1, h "s" )
     r1
 
 
@@ -25,7 +21,5 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        let
-            _ = (K 1).ma { f = λz -> z }
-        in
+        _ = (K 1).ma { f = λz -> z }
         y

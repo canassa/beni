@@ -17,24 +17,20 @@ main : Program
 main =
     Io.run
         (λ() ->
-            let
-                one = Task.spawn (λ() -> 1)
-                _ = Io.sleep 1
-                xs = List.range 1 1000000
-                fast = List.foldl xs 0 (λx acc -> acc + x * Task.join one)
-                slow =
-                    List.foldl xs
-                        0
-                        (λx acc ->
-                            let
-                                _ =
-                                    if Int.mod x 1000 == 0 then
-                                        Task.yieldNow ()
-                                    else
-                                        ()
-                            in
-                            acc + x
-                        )
-            in
+            one = Task.spawn (λ() -> 1)
+            _ = Io.sleep 1
+            xs = List.range 1 1000000
+            fast = List.foldl xs 0 (λx acc -> acc + x * Task.join one)
+            slow =
+                List.foldl xs
+                    0
+                    (λx acc ->
+                        _ =
+                            if Int.mod x 1000 == 0 then
+                                Task.yieldNow ()
+                            else
+                                ()
+                        acc + x
+                    )
             Node.printLines [ String.fromInt fast, String.fromInt slow ]
         )

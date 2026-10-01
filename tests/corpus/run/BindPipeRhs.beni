@@ -18,33 +18,25 @@ subtract a b = a - b
 
 piped : String
 piped =
-    let
-        x <- 100 |> withDiff 1
-    in
+    x <- 100 |> withDiff 1
     String.fromInt x
 
 
 chained : String
 chained =
-    let
-        x <- 200 |> subtract 50 |> withDiff 7
-    in
+    x <- 200 |> subtract 50 |> withDiff 7
     String.fromInt x
 
 
 appliedLeft : String
 appliedLeft =
-    let
-        x <- withDiff 100 <| 1
-    in
+    x <- withDiff 100 <| 1
     String.fromInt x
 
 
 parenthesised : String
 parenthesised =
-    let
-        x <- 100 |> (withDiff 1)
-    in
+    x <- 100 |> (withDiff 1)
     String.fromInt x
 
 

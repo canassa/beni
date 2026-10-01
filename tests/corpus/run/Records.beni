@@ -21,11 +21,9 @@ shift dx p = { p | x = p.x + dx }
 
 main : Program
 main =
-    let
-        origin = { x = 0, y = 0 }
+    origin = { x = 0, y = 0 }
 
-        here = { name = "here", point = shift 3 origin }
-    in
+    here = { name = "here", point = shift 3 origin }
     Node.printLines
         [ String.fromInt origin.x
         , String.fromInt (shift 3 origin).x

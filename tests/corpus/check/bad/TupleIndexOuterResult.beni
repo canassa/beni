@@ -10,7 +10,5 @@ snd ( _, b ) = b
 
 
 f p =
-    let
-        a = p.0
-    in
+    a = p.0
     ( a + snd p, String.length a )

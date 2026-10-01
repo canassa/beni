@@ -25,13 +25,11 @@ fib n cache =
             if n < 2 then
                 ( n, { cache | misses = cache.misses + 1 } )
             else
-                let
-                    ( a, cache1 ) = fib (n - 1) cache
+                ( a, cache1 ) = fib (n - 1) cache
 
-                    ( b, cache2 ) = fib (n - 2) cache1
+                ( b, cache2 ) = fib (n - 2) cache1
 
-                    result = a + b
-                in
+                result = a + b
                 ( result
                 , { cache2
                     | misses = cache2.misses + 1
@@ -42,22 +40,16 @@ fib n cache =
 
 pub fibAll : List Int, Cache -> ( List Int, Cache )
 fibAll ns cache =
-    let
-        step n ( acc, c ) =
-            let
-                ( value, c1 ) = fib n c
-            in
-            ( [ value, ...acc ], c1 )
-    in
+    step n ( acc, c ) =
+        ( value, c1 ) = fib n c
+        ( [ value, ...acc ], c1 )
     List.foldl ns ( [], cache ) step
         |> (λ( values, final ) -> ( List.reverse values, final ))
 
 
 pub hitRate : Cache -> Float
 hitRate cache =
-    let
-        total = cache.hits + cache.misses
-    in
+    total = cache.hits + cache.misses
     if total == 0 then
         0
     else

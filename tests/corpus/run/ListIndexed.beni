@@ -35,11 +35,9 @@ line label parts = label ++ ": " ++ String.join parts " | "
 
 main : Program
 main =
-    let
-        built = List.initialize 4 (λi -> Debug.log "initialize" (i * i))
-        updated = List.update xs 1 (λx -> Debug.log "update in range" (x + 1))
-        missed = List.update xs 3 (λx -> Debug.log "update out of range" (x + 1))
-    in
+    built = List.initialize 4 (λi -> Debug.log "initialize" (i * i))
+    updated = List.update xs 1 (λx -> Debug.log "update in range" (x + 1))
+    missed = List.update xs 3 (λx -> Debug.log "update out of range" (x + 1))
     Node.printLines
         [ line "initialize"
             [ show built

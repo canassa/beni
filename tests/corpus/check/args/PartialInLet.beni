@@ -2,8 +2,6 @@
 -- and a body that is still a function.
 pub biggest : Int -> Int
 biggest n =
-    let
-        m : Int
-        m = max n
-    in
+    m : Int
+    m = max n
     m

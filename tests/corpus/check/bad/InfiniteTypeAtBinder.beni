@@ -13,9 +13,7 @@
 
 g : Int -> Int
 g x =
-    let
-        _ = (λy -> y y) (λy -> y y)
-    in
+    _ = (λy -> y y) (λy -> y y)
     x
 
 

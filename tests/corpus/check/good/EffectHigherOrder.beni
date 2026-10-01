@@ -25,14 +25,10 @@ pub hand x = apply (λy -> y) (λz -> Debug.log "z" z)
 
 
 pub withLog f x =
-    let
-        _ = Debug.log "f" "calling"
-    in
+    _ = Debug.log "f" "calling"
     f x
 
 
 pub shared n =
-    let
-        step y = Debug.log "step" y
-    in
+    step y = Debug.log "step" y
     ( step n, step "twice" )

@@ -62,9 +62,7 @@ runTask msgs loop =
     if List.isEmpty msgs then
         loop
     else
-        let
-            model = List.foldl msgs loop.model update
-        in
+        model = List.foldl msgs loop.model update
         { model = model, renders = loop.renders ++ [ Ssr.render (view model) ] }
 
 

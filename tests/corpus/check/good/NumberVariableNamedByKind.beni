@@ -11,7 +11,5 @@ pub h = List.singleton 2
 
 
 pub f u =
-    let
-        p1 = []
-    in
+    p1 = []
     [ 1, ...p1 ]

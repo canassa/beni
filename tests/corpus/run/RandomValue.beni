@@ -10,13 +10,11 @@ import Random
 
 main : Node.Program
 main =
-    let
-        rolls = Random.value (Random.list (Random.int 1 6) 100)
-        first = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
-        second = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
-        fraction = Random.value (Random.float 0 1)
-        held = (Random.step (Random.int 1 6) (Random.initialSeed 42)).0
-    in
+    rolls = Random.value (Random.list (Random.int 1 6) 100)
+    first = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
+    second = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
+    fraction = Random.value (Random.float 0 1)
+    held = (Random.step (Random.int 1 6) (Random.initialSeed 42)).0
     Node.printLines
         [ "rolls in 1..6: "
             ++ (if List.all rolls (λn -> n >= 1 && n <= 6) then

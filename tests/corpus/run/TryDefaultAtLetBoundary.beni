@@ -12,15 +12,11 @@ import Node exposing (Program)
 
 pair : Int -> ( Result String Int, Result Int Int )
 pair n =
-    let
-        unwrap u = u?
-    in
+    unwrap u = u?
     ( unwrap (Ok (Ok n)), unwrap (Err 7) )
 
 
 main : Program
 main =
-    let
-        ( first, second ) = pair 1
-    in
+    ( first, second ) = pair 1
     Node.printLines [ Debug.toString first, Debug.toString second ]

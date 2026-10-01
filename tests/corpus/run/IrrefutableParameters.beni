@@ -90,25 +90,19 @@ countUnit Unit = 1
 
 letUnwrap : Box -> Int
 letUnwrap b =
-    let
-        (Box n) = b
-    in
+    (Box n) = b
     n
 
 
 letNested : Pair -> Int
 letNested p =
-    let
-        Pair (Box a) (Box b) = p
-    in
+    Pair (Box a) (Box b) = p
     a + b
 
 
 letBoundFn : Int
 letBoundFn =
-    let
-        f (Box n) = n
-    in
+    f (Box n) = n
     f (Box 11)
 
 
@@ -118,9 +112,7 @@ withBox b body = body b
 
 bound : Int
 bound =
-    let
-        Box n <- withBox (Box 12)
-    in
+    Box n <- withBox (Box 12)
     n
 
 

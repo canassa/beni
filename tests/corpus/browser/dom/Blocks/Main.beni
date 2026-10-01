@@ -44,9 +44,7 @@ badge label = <b>{label}</b>
 
 view : Model -> Html Msg
 view model =
-    let
-        greeting = <em>{if model.on then "on" else "off"}</em>
-    in
+    greeting = <em>{if model.on then "on" else "off"}</em>
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>
         <p id="classes" class={[ ( "base", True ), ( "on", model.on ) ]}>{greeting}</p>

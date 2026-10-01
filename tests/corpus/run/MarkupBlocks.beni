@@ -42,11 +42,9 @@ counter n = <button onClick={n + 1}>{n}</button>
 
 view : Bool -> Html Msg
 view on =
-    let
-        greeting = <>Hello, <b>world</b></>
+    greeting = <>Hello, <b>world</b></>
 
-        box = { body = item "boxed" }
-    in
+    box = { body = item "boxed" }
     <div>
         {greeting}
         {Html.text "<escaped & text>"}
