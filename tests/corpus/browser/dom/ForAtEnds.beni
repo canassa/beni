@@ -75,9 +75,9 @@ shape model =
     else if model.shape == 3 then
         plain
     else if model.shape == 4 then
-        Html.map (trailing model.items) (λm -> m)
+        Html.map (trailing model.items) λm -> m
     else
-        Html.map (leading model.items) (λm -> m)
+        Html.map (leading model.items) λm -> m
 
 
 view : Model -> Html Msg

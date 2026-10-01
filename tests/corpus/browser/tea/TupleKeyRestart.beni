@@ -43,7 +43,7 @@ work name _ =
                 Cancelled ->
                     Debug.log "${name} cancelled" ()
         )
-        (λ_ -> Time.sleep (Time.millis 100))
+        λ_ -> Time.sleep (Time.millis 100)
 
 
 view : Int -> Html Msg

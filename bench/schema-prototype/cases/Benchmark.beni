@@ -20,7 +20,7 @@ numericText =
                 Just value ->
                     Ok value
         )
-        (λ_ value -> Ok (String.fromInt value))
+        λ_ value -> Ok (String.fromInt value)
 
 
 pub run : Int -> Int

@@ -117,7 +117,7 @@ bound =
 
 
 lambdas : List Int
-lambdas = List.map [ Box 1, Box 2 ] (λ(Box n) -> n)
+lambdas = List.map [ Box 1, Box 2 ] λ(Box n) -> n
 
 
 main : Program

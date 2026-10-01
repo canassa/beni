@@ -63,7 +63,7 @@ set area key value =
                 Ok ()
             )
             (λerror -> isDomError error "QuotaExceededError")
-            (λ_ -> Err QuotaExceeded)
+            λ_ -> Err QuotaExceeded
 
 
 --| Forget the key.
@@ -108,7 +108,7 @@ storage area =
                     Js.global "sessionStorage"
         )
         (λerror -> isDomError error "SecurityError")
-        (λ_ -> Js.null)
+        λ_ -> Js.null
 
 
 isDomError : Js.Value, String -> Bool

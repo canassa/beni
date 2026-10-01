@@ -40,15 +40,13 @@ comparePoint a b =
 
 
 points : List Point
-points =
-    List.concatMap
-        (List.range 0 (blocks - 1))
-        (λblock -> List.map (List.range 1 perBlock) (λi -> { x = block, y = i }))
+points = List.concatMap (List.range 0 (blocks - 1)) λblock ->
+    List.map (List.range 1 perBlock) λi -> { x = block, y = i }
 
 
 main : Program
 main =
-    dict = List.foldl points (Dict.empty comparePoint) (λp d -> Dict.insert d p (p.x + p.y))
+    dict = List.foldl points (Dict.empty comparePoint) λp d -> Dict.insert d p (p.x + p.y)
 
-    total = List.foldl points 0 (λp acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
+    total = List.foldl points 0 λp acc -> acc + Maybe.withDefault (Dict.get dict p) 0
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

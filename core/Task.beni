@@ -190,8 +190,8 @@ uninterruptible work = unmask (work (mask ()))
 pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a
 bracket acquire release use =
     resource = uninterruptible acquire
-    result = use (pushFinalizer resource (λ() -> release resource Cancelled))
-    uninterruptible (λ() -> after (release resource (Done (popFinalizer result))) result)
+    result = use (pushFinalizer resource λ() -> release resource Cancelled)
+    uninterruptible λ() -> after (release resource (Done (popFinalizer result))) result
 
 
 after : (), a -> a

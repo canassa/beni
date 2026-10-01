@@ -20,14 +20,14 @@ import Node exposing (Program)
 
 
 tallies u =
-    countEach xs = List.map xs (λx -> List.foldl xs 0 (λy n -> if x == y then n + 1 else n))
+    countEach xs = List.map xs λx -> List.foldl xs 0 λy n -> if x == y then n + 1 else n
     ( countEach [ 1, 2, 1 ], countEach [ "b", "a", "b" ] )
 
 
 nested u =
     pairs xs =
         both a b = a == b && xs == xs
-        List.map xs (λx -> both x x)
+        List.map xs λx -> both x x
     pairs [ 'a', 'b' ]
 
 

@@ -91,7 +91,7 @@ printAt value indent depth =
                 "[]"
             else
                 items
-                    |> List.map (λitem -> printAt item indent (depth + 1))
+                    |> List.map λitem -> printAt item indent (depth + 1)
                     |> block "[" "]" indent depth
 
         Object fields ->
@@ -99,7 +99,7 @@ printAt value indent depth =
                 "{}"
             else
                 fields
-                    |> List.map (λ( key, item ) -> printField key item indent depth)
+                    |> List.map λ( key, item ) -> printField key item indent depth
                     |> block "{" "}" indent depth
 
 
@@ -197,7 +197,7 @@ same a b =
             List.length xs
                 == List.length ys
                 && List.all
-                    (List.map2 xs ys (λ( k1, v1 ) ( k2, v2 ) -> k1 == k2 && same v1 v2))
+                    (List.map2 xs ys λ( k1, v1 ) ( k2, v2 ) -> k1 == k2 && same v1 v2)
                     identity
 
         _ ->

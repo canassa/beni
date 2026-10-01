@@ -13,19 +13,19 @@ type alias Item =
 
 
 pub countIn : Array Item, Int -> Int
-countIn items c = Array.foldl items 0 (λit n -> if it.category == c then n + 1 else n)
+countIn items c = Array.foldl items 0 λit n -> if it.category == c then n + 1 else n
 
 
 pub total : Array Item -> Float
-total items = Array.foldl items 0.0 (λit s -> s + it.price)
+total items = Array.foldl items 0.0 λit s -> s + it.price
 
 
 pub inCategory : Array Item, Int -> Array Item
-inCategory items c = Array.filter items (λit -> it.category == c)
+inCategory items c = Array.filter items λit -> it.category == c
 
 
 pub cheapest : Array Item, Int -> Array Item
-cheapest items k = Array.slice (Array.sortWith items (λa b -> compare a.price b.price)) 0 k
+cheapest items k = Array.slice (Array.sortWith items λa b -> compare a.price b.price) 0 k
 
 
 find : Array Item, Int, Int, Int -> Maybe Item

@@ -181,9 +181,9 @@ afterRender body = Cmd [ After (Hosted.later body) ]
 --| Run `work`, as `perform` runs a body, and send what it returns through
 --| `tag`: the command form of calling `work` directly.
 pub task : (() -> a), (a -> msg) -> Cmd msg
-task work tag = perform (λsend -> send (tag (work ())))
+task work tag = perform λsend -> send (tag (work ()))
 
 
 --| Run `work`, as `perform` runs a body, for what it does.
 pub do : (() -> ()) -> Cmd msg
-do work = perform (λ_ -> work ())
+do work = perform λ_ -> work ()

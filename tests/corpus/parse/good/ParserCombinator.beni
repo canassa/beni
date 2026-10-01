@@ -21,52 +21,43 @@ run (Parser p) input =
 
 
 pub succeed : a -> Parser a
-succeed value = Parser (λinput -> Ok ( value, input ))
+succeed value = Parser λinput -> Ok ( value, input )
 
 
 pub fail : String -> Parser a
-fail message = Parser (λ_ -> Err message)
+fail message = Parser λ_ -> Err message
 
 
 pub char : Char -> Parser Char
-char expected =
-    Parser
-        (λinput ->
-            case String.uncons input of
-                Just ( c, rest ) ->
-                    if c == expected then
-                        Ok ( c, rest )
-                    else
-                        Err "expected ${expected} but got ${c}"
+char expected = Parser λinput ->
+    case String.uncons input of
+        Just ( c, rest ) ->
+            if c == expected then
+                Ok ( c, rest )
+            else
+                Err "expected ${expected} but got ${c}"
 
-                Nothing ->
-                    Err "unexpected end of input"
-        )
+        Nothing ->
+            Err "unexpected end of input"
 
 
 pub map : Parser a, (a -> b) -> Parser b
-map (Parser p) f =
-    Parser
-        (λinput ->
-            case p input of
-                Ok ( value, rest ) ->
-                    Ok ( f value, rest )
+map (Parser p) f = Parser λinput ->
+    case p input of
+        Ok ( value, rest ) ->
+            Ok ( f value, rest )
 
-                Err message ->
-                    Err message
-        )
+        Err message ->
+            Err message
 
 
 pub andThen : Parser a, (a -> Parser b) -> Parser b
-andThen (Parser p) f =
-    Parser
-        (λinput ->
-            step ( value, rest ) =
-                case f value of
-                    Parser q ->
-                        q rest
-            p input |> Result.andThen step
-        )
+andThen (Parser p) f = Parser λinput ->
+    step ( value, rest ) =
+        case f value of
+            Parser q ->
+                q rest
+    p input |> Result.andThen step
 
 
 pub many : Parser a -> Parser (List a)
@@ -82,37 +73,32 @@ many (Parser p) =
 
 
 pub oneOf : List (Parser a) -> Parser a
-oneOf parsers =
-    Parser
-        (λinput ->
-            try remaining =
-                case remaining of
-                    [] ->
-                        Err "no parser matched"
+oneOf parsers = Parser λinput ->
+    try remaining =
+        case remaining of
+            [] ->
+                Err "no parser matched"
 
-                    [ (Parser p), ...rest ] ->
-                        case p input of
-                            Ok result ->
-                                Ok result
+            [ (Parser p), ...rest ] ->
+                case p input of
+                    Ok result ->
+                        Ok result
 
-                            Err _ ->
-                                try rest
-            try parsers
-        )
+                    Err _ ->
+                        try rest
+    try parsers
 
 
 pub digits : Parser Int
 digits =
     many (oneOf (List.map [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ] char))
-        |> andThen
-            (λcs ->
-                case String.toInt (String.fromList cs) of
-                    Just n ->
-                        succeed n
+        |> andThen λcs ->
+            case String.toInt (String.fromList cs) of
+                Just n ->
+                    succeed n
 
-                    Nothing ->
-                        fail "expected digits"
-            )
+                Nothing ->
+                    fail "expected digits"
 
 
 sumOf : String, String -> Result String Int

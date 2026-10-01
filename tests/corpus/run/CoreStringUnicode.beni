@@ -47,15 +47,12 @@ main =
         , String.join (List.map (String.toList emoji) String.fromChar) "|"
         , Debug.toString (String.uncons "\u{1F600}b")
         , String.pad "\u{1F600}" 3 '.'
-        , String.map
-            emoji
-            (λc ->
-                if c == '\u{1F600}' then
-                    '!'
-                else
-                    c
-            )
-        , String.foldl emoji "" (λc acc -> String.cons acc c)
+        , String.map emoji λc ->
+            if c == '\u{1F600}' then
+                '!'
+            else
+                c
+        , String.foldl emoji "" λc acc -> String.cons acc c
         , String.fromInt (Char.toCode '\u{1F600}')
         , String.fromChar (Char.fromCode 128512)
         , String.fromChar (Char.fromCode 55296)

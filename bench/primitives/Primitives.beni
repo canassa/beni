@@ -10,8 +10,7 @@ import String
 --| `n` strings of 8 to 20 characters, most sharing a prefix with the
 --| previous one, so a comparison walks past the first character.
 pub strings : Int -> List String
-strings n =
-    List.map (List.range 1 n) (λi -> "item-${String.fromInt (Int.mod (i * 7919) 1009)}-tail")
+strings n = List.map (List.range 1 n) λi -> "item-${String.fromInt (Int.mod (i * 7919) 1009)}-tail"
 
 
 --| The same strings, as text separated by spaces and new lines.
@@ -21,7 +20,7 @@ text n = String.join (strings n) " \n"
 
 --| `n` digit strings.
 pub numerals : Int -> List String
-numerals n = List.map (List.range 1 n) (λi -> String.fromInt (i * 31))
+numerals n = List.map (List.range 1 n) λi -> String.fromInt (i * 31)
 
 
 pub ints : Int -> List Int
@@ -55,29 +54,25 @@ sort xs = List.sort xs
 
 
 pub length : List String -> Int
-length xs = List.foldl xs 0 (λs acc -> acc + String.length s)
+length xs = List.foldl xs 0 λs acc -> acc + String.length s
 
 
 pub slice : List String -> List String
-slice xs = List.map xs (λs -> String.slice s 2 (-2))
+slice xs = List.map xs λs -> String.slice s 2 (-2)
 
 
 pub indexes : List String -> Int
-indexes xs = List.foldl xs 0 (λs acc -> acc + List.length (String.indexes s "t"))
+indexes xs = List.foldl xs 0 λs acc -> acc + List.length (String.indexes s "t")
 
 
 pub toInt : List String -> Int
-toInt xs =
-    List.foldl xs
-        0
-        (λs acc ->
-            case String.toInt s of
-                Just n ->
-                    acc + n
+toInt xs = List.foldl xs 0 λs acc ->
+    case String.toInt s of
+        Just n ->
+            acc + n
 
-                Nothing ->
-                    acc
-        )
+        Nothing ->
+            acc
 
 
 pub fromInt : List Int -> List String
@@ -100,18 +95,11 @@ split s = List.length (String.split s "-")
 pub fnv : List String -> Int
 fnv xs =
     Int32.toUnsignedInt
-        (List.foldl xs
-            (Int32.fromInt 0x811C9DC5)
-            (λs h ->
-                List.foldl
-                    (String.toList s)
-                    h
-                    (λc acc ->
-                        Int32.mul
-                            (Int32.xor acc (Int32.fromInt (Char.toCode c)))
-                            (Int32.fromInt 0x01000193)
-                    )
-            )
+        (List.foldl xs (Int32.fromInt 0x811C9DC5) λs h ->
+            List.foldl (String.toList s) h λc acc ->
+                Int32.mul
+                    (Int32.xor acc (Int32.fromInt (Char.toCode c)))
+                    (Int32.fromInt 0x01000193)
         )
 
 
@@ -119,52 +107,37 @@ fnv xs =
 pub divisions : List Int -> Int
 divisions ns =
     Int32.toInt
-        (List.foldl ns
-            (Int32.fromInt 1)
-            (λn acc ->
-                x = Int32.fromInt (n * 2654435761)
-                Int32.add
-                    acc
-                    (Int32.add
-                        (Int32.div x (Int32.fromInt (n + 3)))
-                        (Int32.add (Int32.rem x (Int32.fromInt 7)) (Int32.mod x (Int32.fromInt 13)))
-                    )
-            )
+        (List.foldl ns (Int32.fromInt 1) λn acc ->
+            x = Int32.fromInt (n * 2654435761)
+            Int32.add
+                acc
+                (Int32.add
+                    (Int32.div x (Int32.fromInt (n + 3)))
+                    (Int32.add (Int32.rem x (Int32.fromInt 7)) (Int32.mod x (Int32.fromInt 13)))
+                )
         )
 
 
 --| `Char`'s four over every character: its code point, the next one, and
 --| both case mappings.
 pub chars : List String -> Int
-chars xs =
-    List.foldl xs
-        0
-        (λs acc ->
-            List.foldl
-                (String.toList s)
-                acc
-                (λc n ->
-                    n
-                        + Char.toCode (Char.fromCode (Char.toCode c + 1))
-                        + Char.toCode (Char.toUpper c)
-                        + Char.toCode (Char.toLower c)
-                )
-        )
+chars xs = List.foldl xs 0 λs acc ->
+    List.foldl (String.toList s) acc λc n ->
+        n
+            + Char.toCode (Char.fromCode (Char.toCode c + 1))
+            + Char.toCode (Char.toUpper c)
+            + Char.toCode (Char.toLower c)
 
 
 --| `Basics`' conversions and arithmetic over every number.
 pub math : List Int -> Int
-math ns =
-    List.foldl ns
-        0
-        (λn acc ->
-            x = toFloat n / 7
-            acc
-                + floor x
-                + round (sqrt x)
-                + ceiling (Float.log x 2)
-                + truncate (sin x * 100)
-                + Int.mod n 13
-                + Int.rem n 11
-                + n // 3
-        )
+math ns = List.foldl ns 0 λn acc ->
+    x = toFloat n / 7
+    acc
+        + floor x
+        + round (sqrt x)
+        + ceiling (Float.log x 2)
+        + truncate (sin x * 100)
+        + Int.mod n 13
+        + Int.rem n 11
+        + n // 3

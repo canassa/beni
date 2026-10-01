@@ -17,16 +17,10 @@ import Task
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            ended =
-                Task.scope
-                    (λs ->
-                        unread = Task.spawnIn s (λ() -> Say.say "spawned child ran")
-                        inList = [ Task.spawnIn s (λ() -> Say.say "child in a list ran") ]
-                        _ = Io.sleep 1
-                        "scope ended"
-                    )
-            Node.print ended
-        )
+main = Io.run λ() ->
+    ended = Task.scope λs ->
+        unread = Task.spawnIn s λ() -> Say.say "spawned child ran"
+        inList = [ Task.spawnIn s λ() -> Say.say "child in a list ran" ]
+        _ = Io.sleep 1
+        "scope ended"
+    Node.print ended

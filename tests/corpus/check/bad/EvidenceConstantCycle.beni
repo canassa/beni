@@ -10,7 +10,7 @@
 
 zs : List a
     where a.eq : a, a -> Bool
-zs = List.filter zs (λx -> x == x)
+zs = List.filter zs λx -> x == x
 
 
 ints : List Int

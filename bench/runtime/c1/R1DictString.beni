@@ -35,14 +35,12 @@ perBlock = 500
 
 
 keys : List String
-keys =
-    List.concatMap
-        (List.range 0 (blocks - 1))
-        (λblock -> List.map (List.range 1 perBlock) (λi -> String.fromInt (block * perBlock + i)))
+keys = List.concatMap (List.range 0 (blocks - 1)) λblock ->
+    List.map (List.range 1 perBlock) λi -> String.fromInt (block * perBlock + i)
 
 
 main : Program
 main =
-    dict = List.foldl keys Dict.empty (λk d -> Dict.insert d k (String.length k))
-    total = List.foldl keys 0 (λk acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
+    dict = List.foldl keys Dict.empty λk d -> Dict.insert d k (String.length k)
+    total = List.foldl keys 0 λk acc -> acc + Maybe.withDefault (Dict.get dict k) 0
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

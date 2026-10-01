@@ -32,6 +32,6 @@ main =
         , describe ( 0, 1, 2 )
         , describe ( 1, 2, 3 )
         , String.join
-            (List.map (List.map [ ( 1, 2 ), ( 3, 4 ) ] (λp -> p.0 + p.1)) String.fromInt)
+            (List.map (List.map [ ( 1, 2 ), ( 3, 4 ) ] λp -> p.0 + p.1) String.fromInt)
             ","
         ]

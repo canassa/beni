@@ -45,7 +45,7 @@ parseValue chars =
 
         [ '"', ...rest ] ->
             parseString rest []
-                |> Result.map (λ( s, after ) -> ( Text s, after ))
+                |> Result.map λ( s, after ) -> ( Text s, after )
 
         [ '[', ...rest ] ->
             parseArray (skipSpace rest)
@@ -131,7 +131,7 @@ parseHex4 chars =
         [ a, b, c, d, ...rest ] ->
             digits = [ a, b, c, d ]
             if List.all digits Char.isHexDigit then
-                Ok ( List.foldl digits 0 (λdigit total -> total * 16 + hexValue digit), rest )
+                Ok ( List.foldl digits 0 λdigit total -> total * 16 + hexValue digit, rest )
             else
                 Err "expecting four hexadecimal digits after \\u"
 

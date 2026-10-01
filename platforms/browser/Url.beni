@@ -187,4 +187,4 @@ percentDecode str =
     Js.catchIf
         (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
         (λerror -> Js.instanceOf error (Js.global "URIError"))
-        (λ_ -> Nothing)
+        λ_ -> Nothing

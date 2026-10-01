@@ -30,7 +30,7 @@ update msg model =
             { model | rows = List.reverse model.rows }
 
         Drop ->
-            { model | rows = List.filter model.rows (λn -> n /= 2 && n /= 3) }
+            { model | rows = List.filter model.rows λn -> n /= 2 && n /= 3 }
 
 
 nothing : Html msg

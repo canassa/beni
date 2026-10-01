@@ -94,25 +94,25 @@ update msg model =
             select model Nothing
 
         SetTitle title ->
-            editSelected model (λnote -> { note | title = title })
+            editSelected model λnote -> { note | title = title }
 
         SetBody body ->
-            editSelected model (λnote -> { note | body = body })
+            editSelected model λnote -> { note | body = body }
 
         AddTag tag ->
             clean = String.trim (String.toLower tag)
             if String.isEmpty clean then
                 model
             else
-                editSelected model (λnote -> { note | tags = Set.insert note.tags clean })
+                editSelected model λnote -> { note | tags = Set.insert note.tags clean }
 
         RemoveTag tag ->
-            editSelected model (λnote -> { note | tags = Set.remove note.tags tag })
+            editSelected model λnote -> { note | tags = Set.remove note.tags tag }
 
         TogglePin id ->
             model
                 |> pushHistory
-                |> editNote id (λnote -> { note | pinned = not note.pinned })
+                |> editNote id λnote -> { note | pinned = not note.pinned }
 
         Delete id ->
             remaining = Dict.remove model.notes id
@@ -246,8 +246,7 @@ visibleNotes model =
 
 pub allTags : Model -> List ( String, Int )
 allTags model =
-    count tag counts =
-        Dict.update counts tag (λexisting -> Just (Maybe.withDefault existing 0 + 1))
+    count tag counts = Dict.update counts tag λexisting -> Just (Maybe.withDefault existing 0 + 1)
 
     countNote note counts = Set.foldl note.tags counts count
 
@@ -288,14 +287,12 @@ viewTags : Model -> Html Msg
 viewTags model =
     ul [ class "tags" ]
         [ li [ onClick (FilterTag Nothing) ] [ text "all" ]
-        , ...List.map (allTags model)
-            (λ( tag, n ) ->
-                li
-                    [ classList [ ( "active", model.activeTag == Just tag ) ]
-                    , onClick (FilterTag (Just tag))
-                    ]
-                    [ text "${tag} (${n})" ]
-            )
+        , ...List.map (allTags model) λ( tag, n ) ->
+            li
+                [ classList [ ( "active", model.activeTag == Just tag ) ]
+                , onClick (FilterTag (Just tag))
+                ]
+                [ text "${tag} (${n})" ]
         ]
 
 
@@ -334,14 +331,14 @@ preview body =
 
 viewEditor : Model -> Html Msg
 viewEditor model =
-    case model.selected |> Maybe.andThen (λid -> Dict.get model.notes id) of
+    case model.selected |> Maybe.andThen λid -> Dict.get model.notes id of
         Just note ->
             div [ class "editor" ]
                 [ input [ value note.title, onInput SetTitle ] []
                 , textarea [ value note.body, onInput SetBody ] []
                 , ul [ class "note-tags" ]
-                    (List.map (Set.toList note.tags)
-                        (λtag -> li [ onClick (RemoveTag tag) ] [ text tag ])
+                    (List.map (Set.toList note.tags) λtag ->
+                        li [ onClick (RemoveTag tag) ] [ text tag ]
                     )
                 , input [ placeholder "Add tag", onInput AddTag ] []
                 , span [ class "meta" ] [ text "updated ${note.updatedAt}" ]

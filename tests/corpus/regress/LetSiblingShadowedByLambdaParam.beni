@@ -9,6 +9,6 @@
 -- 100k-line corpus reported five of these. Expected: one `shadowing` at
 -- 14:37, naming `total`, bound on line 16.
 compute left right =
-    first = List.foldl [ left ] 0 (λtotal carry -> carry + total)
+    first = List.foldl [ left ] 0 λtotal carry -> carry + total
     total = right + 1
     first + total

@@ -27,16 +27,13 @@ atLoad = twice (λn -> n * 3) 2
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            pure = List.map [ 1, 2, 3 ] (λn -> n * 10)
-            waited = List.map [ 1, 2, 3 ] slowInc
-            both = twice slowInc 5 + twice (λn -> n + 100) 0
-            Node.printLines
-                [ String.join (List.map pure String.fromInt) ","
-                , String.join (List.map waited String.fromInt) ","
-                , String.fromInt both
-                , String.fromInt atLoad
-                ]
-        )
+main = Io.run λ() ->
+    pure = List.map [ 1, 2, 3 ] λn -> n * 10
+    waited = List.map [ 1, 2, 3 ] slowInc
+    both = twice slowInc 5 + twice (λn -> n + 100) 0
+    Node.printLines
+        [ String.join (List.map pure String.fromInt) ","
+        , String.join (List.map waited String.fromInt) ","
+        , String.fromInt both
+        , String.fromInt atLoad
+        ]

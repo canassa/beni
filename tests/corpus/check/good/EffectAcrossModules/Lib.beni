@@ -33,4 +33,4 @@ callApi api =
 
 pub countEq : List a, a -> Int
     where a.eq : a, a -> Bool
-countEq xs x = List.length (List.filter xs (λy -> y == x))
+countEq xs x = List.length (List.filter xs λy -> y == x)

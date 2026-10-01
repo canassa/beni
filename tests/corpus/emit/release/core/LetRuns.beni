@@ -21,13 +21,9 @@ count xs =
 
     last = Js.ref (Js.get xs "first")
 
-    _ =
-        Js.each
-            xs
-            (λx ->
-                _ = Js.write n (Js.read n + 1)
-                Js.write last x
-            )
+    _ = Js.each xs λx ->
+        _ = Js.write n (Js.read n + 1)
+        Js.write last x
 
     _ = Js.write total (Js.read total + Js.read n)
 

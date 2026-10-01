@@ -42,19 +42,15 @@ filterRecHelp xs keep acc =
 
 --| `map` as a fold that pushes: the accumulator version, with no `reverse`.
 pub mapAcc : List a, (a -> b) -> List b
-mapAcc xs f = List.foldl xs [] (λx acc -> List.push acc (f x))
+mapAcc xs f = List.foldl xs [] λx acc -> List.push acc (f x)
 
 
 pub filterAcc : List a, (a -> Bool) -> List a
-filterAcc xs keep =
-    List.foldl xs
-        []
-        (λx acc ->
-            if keep x then
-                List.push acc x
-            else
-                acc
-        )
+filterAcc xs keep = List.foldl xs [] λx acc ->
+    if keep x then
+        List.push acc x
+    else
+        acc
 
 
 -- 2. `x :: rest` recursion -----------------------------------------------------
@@ -76,7 +72,7 @@ sumHelp xs acc =
 
 --| The walk an array-first programmer reaches for first.
 pub sumFold : List Int -> Int
-sumFold xs = List.foldl xs 0 (λx acc -> acc + x)
+sumFold xs = List.foldl xs 0 λx acc -> acc + x
 
 
 pub takeWhile : List a, (a -> Bool) -> List a

@@ -2,7 +2,7 @@ import Plat
 
 
 pub onType : (Int -> String) -> Int
-onType f = Plat.onEvent (λn -> f (n + 1))
+onType f = Plat.onEvent λn -> f (n + 1)
 
 
 pub load : Int -> String

@@ -76,7 +76,7 @@ capture xs acc =
             acc
 
         [ _, ...rest ] ->
-            capture rest (List.push acc (λ() -> List.length rest))
+            capture rest (List.push acc λ() -> List.length rest)
 
 
 pub pairwise : List Int -> List ( Int, Int )

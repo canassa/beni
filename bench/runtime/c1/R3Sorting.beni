@@ -55,11 +55,8 @@ modulus = 1000003
 -- Scattered rather than ascending: a sorted input would measure the best
 -- case of a merge sort and nothing else.
 values : List Int
-values =
-    List.concatMap
-        (List.range 0 (blocks - 1))
-        (λb -> List.map (List.range 1 perBlock) (λi -> Int.mod ((b * perBlock + i) * 7919) 104729)
-        )
+values = List.concatMap (List.range 0 (blocks - 1)) λb ->
+    List.map (List.range 1 perBlock) λi -> Int.mod ((b * perBlock + i) * 7919) 104729
 
 
 strings : List String
@@ -67,13 +64,13 @@ strings = List.map values String.fromInt
 
 
 people : List Person
-people = List.map values (λn -> { name = String.fromInt n, age = Int.mod n 97 })
+people = List.map values λn -> { name = String.fromInt n, age = Int.mod n 97 }
 
 
 -- Order-sensitive over the whole list: swapping any two distinct elements
 -- changes the answer.
 hash : List Int -> Int
-hash xs = List.foldl xs 0 (λx acc -> Int.mod (acc * 31 + x) modulus)
+hash xs = List.foldl xs 0 λx acc -> Int.mod (acc * 31 + x) modulus
 
 
 toInt : String -> Int
@@ -82,21 +79,13 @@ toInt s = Maybe.withDefault (String.toInt s) 0
 
 main : Program
 main =
-    total =
-        List.foldl
-            (List.range 1 reps)
-            0
-            (λ_ acc ->
-                ints = hash (List.sort values)
+    total = List.foldl (List.range 1 reps) 0 λ_ acc ->
+        ints = hash (List.sort values)
 
-                texts = hash (List.map (List.sort strings) toInt)
+        texts = hash (List.map (List.sort strings) toInt)
 
-                ages =
-                    hash
-                        (List.map
-                            (List.sortBy people (λp -> p.age))
-                            (λp -> p.age * 1000 + toInt p.name)
-                        )
-                Int.mod (acc + ints + texts + ages) modulus
-            )
+        ages =
+            hash
+                (List.map (List.sortBy people λp -> p.age) λp -> p.age * 1000 + toInt p.name)
+        Int.mod (acc + ints + texts + ages) modulus
     Node.print (String.join [ String.fromInt (List.length values), String.fromInt total ] " ")

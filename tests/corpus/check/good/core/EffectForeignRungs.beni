@@ -45,7 +45,7 @@ both id = get (now ())
 
 
 pub schedule : () -> ()
-schedule u = later (λ() -> get 1)
+schedule u = later λ() -> get 1
 
 
 pub reading : () -> Int

@@ -112,13 +112,12 @@
                 (ident List.filter)
                 (field_access .todos
                   (ident model))
-                (paren
-                  (lambda
-                    (pat_var t)
-                    (neq
-                      (field_access .id
-                        (ident t))
-                      (ident id)))))))
+                (lambda
+                  (pat_var t)
+                  (neq
+                    (field_access .id
+                      (ident t))
+                    (ident id))))))
           (list)))
       (branch
         (pat_ctor Check
@@ -155,12 +154,11 @@
                 (ident List.map)
                 (field_access .todos
                   (ident model))
-                (paren
-                  (lambda
-                    (pat_var t)
-                    (record_update t
-                      (field done
-                        (ident isDone))))))))
+                (lambda
+                  (pat_var t)
+                  (record_update t
+                    (field done
+                      (ident isDone)))))))
           (list)))
       (branch
         (pat_ctor DeleteComplete)
@@ -171,13 +169,12 @@
                 (ident List.filter)
                 (field_access .todos
                   (ident model))
-                (paren
-                  (lambda
-                    (pat_var t)
-                    (apply
-                      (ident not)
-                      (field_access .done
-                        (ident t))))))))
+                (lambda
+                  (pat_var t)
+                  (apply
+                    (ident not)
+                    (field_access .done
+                      (ident t)))))))
           (list)))
       (branch
         (pat_ctor ChangeVisibility

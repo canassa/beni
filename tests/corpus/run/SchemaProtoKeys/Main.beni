@@ -84,7 +84,7 @@ main =
             showOdd
         , Show.result (Schema.parse odd "{\"__proto__\":1,\"constructor\":2}") showOdd
         , Show.result (Schema.parseWith odd all "{}") showOdd
-        , Show.result (Schema.print odd { proto = 1, ctor = 2, text = Present "three" }) (λs -> s)
+        , Show.result (Schema.print odd { proto = 1, ctor = 2, text = Present "three" }) λs -> s
         , Show.result
             (Schema.write odd { proto = 4, ctor = 5, text = Missing }
                 |> Result.andThen (Schema.read odd _)
@@ -96,17 +96,15 @@ main =
                 { defaultOptions | unknownKeys = Reject }
                 "{\"a\":1,\"__proto__\":{\"polluted\":true}}"
             )
-            (λp -> String.fromInt p.a)
-        , Show.result
-            (Schema.parse plain "{\"a\":1,\"__proto__\":{\"polluted\":true}}")
-            (λp -> String.fromInt p.a)
+            λp -> String.fromInt p.a
+        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"polluted\":true}}") λp ->
+            String.fromInt p.a
         , Show.result
             (Schema.parse Schema.value "{\"a\":1,\"__proto__\":{\"polluted\":true}}")
             Show.json
-        , Show.result
-            (Schema.parse plain "{\"a\":1,\"__proto__\":{\"a\":\"inherited\"}}")
-            (λp -> String.fromInt p.a)
-        , Show.result (Schema.parse plain "{\"__proto__\":{\"a\":1}}") (λp -> String.fromInt p.a)
+        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"a\":\"inherited\"}}") λp ->
+            String.fromInt p.a
+        , Show.result (Schema.parse plain "{\"__proto__\":{\"a\":1}}") λp -> String.fromInt p.a
         ]
 
 

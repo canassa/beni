@@ -125,22 +125,19 @@ matches otherName other =
 pub all : List (Validator a) -> Validator a
 all validators =
     λfield value ->
-        List.foldl validators
-            (Valid value)
-            (λvalidator acc ->
-                case ( acc, validator field value ) of
-                    ( Valid _, Valid v ) ->
-                        Valid v
+        List.foldl validators (Valid value) λvalidator acc ->
+            case ( acc, validator field value ) of
+                ( Valid _, Valid v ) ->
+                    Valid v
 
-                    ( Valid _, Invalid errors ) ->
-                        Invalid errors
+                ( Valid _, Invalid errors ) ->
+                    Invalid errors
 
-                    ( Invalid errors, Valid _ ) ->
-                        Invalid errors
+                ( Invalid errors, Valid _ ) ->
+                    Invalid errors
 
-                    ( Invalid left, Invalid right ) ->
-                        Invalid (left ++ right)
-            )
+                ( Invalid left, Invalid right ) ->
+                    Invalid (left ++ right)
 
 
 pub firstOf : List (Validator a) -> Validator a
@@ -215,7 +212,7 @@ validateSignUp form =
             )
         |> andMap ((firstOf [ required, email ]) "email" form.email)
         |> andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
-        |> andMap (parseAge "age" form.age |> andThen (λv -> (intBetween 13 120) "age" v))
+        |> andMap (parseAge "age" form.age |> andThen λv -> (intBetween 13 120) "age" v)
         |> andMap ((firstOf [ required, oneOfSet countries ]) "country" form.country)
         |> andMap (Valid form.newsletter)
         |> andThen (checkConfirm form _)
@@ -224,7 +221,7 @@ validateSignUp form =
 
 usernameChars : Validator String
 usernameChars field value =
-    if String.all value (λc -> Char.isAlphaNum c || c == '_') then
+    if String.all value λc -> Char.isAlphaNum c || c == '_' then
         Valid value
     else
         fail field "may only contain letters, digits and underscores"
@@ -276,13 +273,9 @@ errorsByField validation =
             Dict.empty
 
         Invalid errors ->
-            List.foldl errors
-                Dict.empty
-                (λ( field, message ) acc ->
-                    Dict.update acc
-                        field
-                        (λexisting -> Just (Maybe.withDefault existing [] ++ [ message ]))
-                )
+            List.foldl errors Dict.empty λ( field, message ) acc ->
+                Dict.update acc field λexisting ->
+                    Just (Maybe.withDefault existing [] ++ [ message ])
 
 
 pub errorSummary : Validation a -> String
@@ -293,7 +286,7 @@ errorSummary validation =
 
         Invalid errors ->
             errors
-                |> List.map (λ( field, message ) -> "${field} ${message}")
+                |> List.map λ( field, message ) -> "${field} ${message}"
                 |> String.join "; "
 
 

@@ -39,7 +39,7 @@ tail x =
             _ = note "body"
             x + 1
         )
-        (λ() -> note "cleanup")
+        λ() -> note "cleanup"
 
 
 --| As a value: bound, then used after the cleanup ran.
@@ -51,7 +51,7 @@ valued x =
                 _ = note "body"
                 x * 2
             )
-            (λ() -> note "cleanup")
+            λ() -> note "cleanup"
 
     _ = note "after"
     String.fromInt v
@@ -60,7 +60,7 @@ valued x =
 --| Discarded: the body's statements, then the cleanup's.
 pub discarded : () -> String
 discarded () =
-    _ = Js.finally (λ() -> note "body") (λ() -> note "cleanup")
+    _ = Js.finally (λ() -> note "body") λ() -> note "cleanup"
     _ = note "after"
     "done"
 
@@ -73,7 +73,7 @@ throwsTail () =
             _ = note "body"
             fail "boom"
         )
-        (λ() -> note "cleanup")
+        λ() -> note "cleanup"
 
 
 --| The body throws where its value is bound: nothing after it runs.
@@ -86,7 +86,7 @@ throwsValued () =
                 _ = note "body"
                 fail "bang"
             )
-            (λ() -> note "cleanup")
+            λ() -> note "cleanup"
 
     _ = note "unreached"
     v
@@ -95,7 +95,7 @@ throwsValued () =
 --| The body throws where its value is discarded.
 pub throwsDiscarded : () -> String
 throwsDiscarded () =
-    _ = Js.finally (λ() -> fail "crash") (λ() -> note "cleanup")
+    _ = Js.finally (λ() -> fail "crash") λ() -> note "cleanup"
     _ = note "unreached"
     "unreached"
 
@@ -110,9 +110,9 @@ nested () =
                     _ = note "inner"
                     fail "deep"
                 )
-                (λ() -> note "inner cleanup")
+                λ() -> note "inner cleanup"
         )
-        (λ() -> note "outer cleanup")
+        λ() -> note "outer cleanup"
 
 
 --| A function made by a call that records it.
@@ -155,7 +155,7 @@ apply h f g = h f g
 pub latched : (() -> ()) -> ()
 latched f =
     _ = note "lock"
-    _ = Js.finally f (λ() -> note "unlock")
+    _ = Js.finally f λ() -> note "unlock"
     note "unlocked"
 
 
@@ -164,6 +164,6 @@ latched f =
 pub sumTo : Int, Int -> Int
 sumTo n acc =
     if n == 0 then
-        Js.finally (λ() -> acc) (λ() -> note "summed")
+        Js.finally (λ() -> acc) λ() -> note "summed"
     else
         sumTo (n - 1) (acc + n)

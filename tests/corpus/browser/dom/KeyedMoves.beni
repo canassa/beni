@@ -46,13 +46,13 @@ update msg rows =
             swap rows
 
         DropB ->
-            List.filter rows (λrow -> row.label /= "b")
+            List.filter rows λrow -> row.label /= "b"
 
         AddE ->
             rows ++ [ { id = 2, label = "e" } ]
 
         DropTwos ->
-            List.filter rows (λrow -> row.id /= 2)
+            List.filter rows λrow -> row.id /= 2
 
         AddF ->
             [ { id = 2, label = "f" }, ...rows ]

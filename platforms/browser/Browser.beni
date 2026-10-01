@@ -203,10 +203,10 @@ afterRender () =
     _ = Js.write busy True
     Js.finally
         (λ() ->
-            _ = Js.each resumes (λresume -> Js.to (Js.apply resume [ Js.null ]))
-            Js.each work (λf -> Js.to (Js.apply f []))
+            _ = Js.each resumes λresume -> Js.to (Js.apply resume [ Js.null ])
+            Js.each work λf -> Js.to (Js.apply f [])
         )
-        (λ() -> Js.write busy False)
+        λ() -> Js.write busy False
 
 
 -- Apply every message the inbox holds from `i` on, in the order they were
@@ -242,7 +242,7 @@ host p root flushing phase stop =
     _ = Js.write loop flushing
 
     -- A fiber that throws stops the page, as a handler that throws does.
-    _ = Task.onDefect (λ() -> Js.to (Js.apply stop []))
+    _ = Task.onDefect λ() -> Js.to (Js.apply stop [])
     _ = Js.write setPhase phase
     _ = Js.apply phase [ Js.from afterRender ]
 
@@ -251,7 +251,7 @@ host p root flushing phase stop =
             _ = Js.call root "$$root" [ msg ]
             ()
 
-    _ = Js.write nudge (Js.from (λ() -> send skip))
+    _ = Js.write nudge (Js.from λ() -> send skip)
     model = Js.ref (Js.to Js.null)
     started = Js.ref False
     dirty = Js.ref False
@@ -289,10 +289,9 @@ host p root flushing phase stop =
                             _ = drain 0
                             ()
                         )
-                        (λ() ->
+                        λ() ->
                             _ = Js.write inbox (Js.array [])
                             Js.write dispatching False
-                        )
         , view =
             λ() ->
                 if not (Js.read started) then
@@ -311,5 +310,5 @@ host p root flushing phase stop =
                             _ = Js.write shown (p.view (Js.read model))
                             Js.read shown
                         )
-                        (λ() -> Js.write busy False)
+                        λ() -> Js.write busy False
         }

@@ -59,7 +59,7 @@ view model =
         </ul>
         <p>picked {model.picked}</p>
         <input id="draft" value={model.draft} onInput={Typed} onFocus={Focused} />
-        {Html.map (Html.map leaf (λs -> s ++ " inner")) (λs -> Wrapped (s ++ " outer"))}
+        {Html.map (Html.map leaf λs -> s ++ " inner") λs -> Wrapped (s ++ " outer")}
         <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 

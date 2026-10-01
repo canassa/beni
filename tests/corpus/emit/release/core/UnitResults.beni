@@ -39,11 +39,9 @@ watch node s =
     Js.set
         node
         "$$send"
-        (Js.from
-            (λmsg ->
-                _ = tick (Js.read seen)
-                Js.write seen (Js.to msg)
-            )
+        (Js.from λmsg ->
+            _ = tick (Js.read seen)
+            Js.write seen (Js.to msg)
         )
 
 

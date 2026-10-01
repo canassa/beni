@@ -34,9 +34,9 @@ update msg n =
             _ = Log.info "update: run"
             ( n
             , if fibers then
-                bodies True (λ() -> pause False)
+                bodies True λ() -> pause False
               else
-                bodies False (λ() -> ())
+                bodies False λ() -> ()
             )
 
         Sent fibers what ->
@@ -62,18 +62,18 @@ pause yes =
 bodies : Bool, (() -> ()) -> Cmd Msg
 bodies fibers hold =
     Cmd.batch
-        [ Cmd.perform (λsend -> say send fibers hold "first")
-        , Cmd.perform (λsend -> waiting send fibers)
-        , Cmd.perform (λsend -> say send fibers hold "third")
+        [ Cmd.perform λsend -> say send fibers hold "first"
+        , Cmd.perform λsend -> waiting send fibers
+        , Cmd.perform λsend -> say send fibers hold "third"
         ]
 
 
 more : Bool -> Cmd Msg
 more fibers =
     if fibers then
-        Cmd.perform (λsend -> say send fibers (λ() -> pause False) "more")
+        Cmd.perform λsend -> say send fibers (λ() -> pause False) "more"
     else
-        Cmd.perform (λsend -> say send fibers (λ() -> ()) "more")
+        Cmd.perform λsend -> say send fibers (λ() -> ()) "more"
 
 
 say : Cmd.Send Msg, Bool, (() -> ()), String -> ()

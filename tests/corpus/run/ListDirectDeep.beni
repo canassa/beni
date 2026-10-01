@@ -27,35 +27,32 @@ ends xs =
 
 main : Program
 main =
-    ( odd, even ) = List.partition cells (λn -> Int.mod n 2 == 1)
-    ( firsts, seconds ) = List.unzip (List.map cells (λn -> ( n, n * 2 )))
+    ( odd, even ) = List.partition cells λn -> Int.mod n 2 == 1
+    ( firsts, seconds ) = List.unzip (List.map cells λn -> ( n, n * 2 ))
     Node.printLines
-        [ ends (List.map cells (λn -> n * 2))
-        , ends (List.filter cells (λn -> Int.mod n 3 == 0))
+        [ ends (List.map cells λn -> n * 2)
+        , ends (List.filter cells λn -> Int.mod n 3 == 0)
         , ends
-            (List.filterMap
-                cells
-                (λn ->
-                    if Int.mod n 3 == 0 then
-                        Nothing
-                    else
-                        Just n
-                )
+            (List.filterMap cells λn ->
+                if Int.mod n 3 == 0 then
+                    Nothing
+                else
+                    Just n
             )
-        , ends (List.indexedMap cells (λi n -> i + n))
+        , ends (List.indexedMap cells λi n -> i + n)
         , ends (List.take cells 99999)
         , ends (List.append cells [ 0 ])
         , ends (cells ++ cells)
         , ends (List.concat [ cells, [], cells ])
-        , ends (List.concatMap cells (λn -> [ n, n ]))
-        , ends (List.map2 cells cells (λa b -> a - b))
-        , ends (List.map3 cells cells cells (λa b c -> a + b + c))
-        , ends (List.map4 cells cells cells cells (λa b c d -> a + b + c + d))
-        , ends (List.map5 cells cells cells cells cells (λa b c d v -> a + b + c + d + v))
+        , ends (List.concatMap cells λn -> [ n, n ])
+        , ends (List.map2 cells cells λa b -> a - b)
+        , ends (List.map3 cells cells cells λa b c -> a + b + c)
+        , ends (List.map4 cells cells cells cells λa b c d -> a + b + c + d)
+        , ends (List.map5 cells cells cells cells cells λa b c d v -> a + b + c + d + v)
         , ends odd
         , ends even
         , ends firsts
         , ends seconds
         , ends (List.intersperse cells 0)
-        , ends (List.sortWith cells (λa b -> Basics.compare b a))
+        , ends (List.sortWith cells λa b -> Basics.compare b a)
         ]

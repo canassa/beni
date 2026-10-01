@@ -36,7 +36,7 @@ show value =
 main : Program
 main =
     Node.printLines
-        [ show (X [ Y (M.Fn (λn -> n)) XLeaf ] == X [ Y (M.Fn (λn -> n + 1)) XLeaf ])
+        [ show (X [ Y (M.Fn λn -> n) XLeaf ] == X [ Y (M.Fn λn -> n + 1) XLeaf ])
         , show (X [] == XLeaf)
         , show (fnTag == fnTag)
         , show (fnTag < A.Tag 2)

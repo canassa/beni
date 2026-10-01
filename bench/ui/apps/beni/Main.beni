@@ -149,7 +149,7 @@ swapRows : List Row -> List Row
 swapRows rows =
     case ( at rows 1, at rows 998 ) of
         ( Just a, Just b ) ->
-            List.indexedMap rows (λi row -> if i == 1 then b else if i == 998 then a else row)
+            List.indexedMap rows λi row -> if i == 1 then b else if i == 998 then a else row
 
         _ ->
             rows
@@ -171,11 +171,8 @@ update msg model =
         Update ->
             { model
                 | rows =
-                    List.indexedMap
-                        model.rows
-                        (λi row ->
-                            if Int.mod i 10 == 0 then { row | label = row.label ++ " !!!" } else row
-                        )
+                    List.indexedMap model.rows λi row ->
+                        if Int.mod i 10 == 0 then { row | label = row.label ++ " !!!" } else row
             }
 
         Clear ->
@@ -188,7 +185,7 @@ update msg model =
             { model | selected = Just id }
 
         Remove id ->
-            { model | rows = List.filter model.rows (λrow -> row.id /= id) }
+            { model | rows = List.filter model.rows λrow -> row.id /= id }
 
 
 rowClass : Model, Row -> String

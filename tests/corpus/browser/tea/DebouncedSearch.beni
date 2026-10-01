@@ -63,13 +63,9 @@ update api msg model =
 
 search : Api, String, Cmd.Send Msg -> ()
 search api q send =
-    Task.bracket
-        (λ() -> Debug.log "start ${q}" ())
-        (λ_ _ -> Debug.log "release ${q}" ())
-        (λ_ ->
-            _ = Time.sleep (Time.millis 250)
-            Task.uninterruptible (λ() -> send (Got q (api.search q)))
-        )
+    Task.bracket (λ() -> Debug.log "start ${q}" ()) (λ_ _ -> Debug.log "release ${q}" ()) λ_ ->
+        _ = Time.sleep (Time.millis 250)
+        Task.uninterruptible λ() -> send (Got q (api.search q))
 
 
 view : Model -> Html Msg

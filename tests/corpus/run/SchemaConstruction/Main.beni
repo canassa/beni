@@ -73,31 +73,23 @@ type T
 
 
 injA : Schema.Injection { a : Int } T
-injA =
-    Schema.injection
-        A
-        (λt ->
-            case t of
-                A r ->
-                    Just r
+injA = Schema.injection A λt ->
+    case t of
+        A r ->
+            Just r
 
-                B ->
-                    Nothing
-        )
+        B ->
+            Nothing
 
 
 injB : Schema.Injection () T
-injB =
-    Schema.injection
-        (λ() -> B)
-        (λt ->
-            case t of
-                B ->
-                    Just ()
+injB = Schema.injection (λ() -> B) λt ->
+    case t of
+        B ->
+            Just ()
 
-                A _ ->
-                    Nothing
-        )
+        A _ ->
+            Nothing
 
 
 aRecord : Schema { a : Int } { a : Int }
@@ -129,7 +121,7 @@ notARecord =
         [ Schema.variant
             "A"
             "a"
-            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) (λr -> Ok r.a)))
+            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) λr -> Ok r.a))
             intA
             injA
         , Schema.nullary "B" "b" injB injB
@@ -143,30 +135,26 @@ empty = Schema.tagged "k" []
 -- The body runs the schema it is building, and keeps what that answered as
 -- its conversion's failure.
 early : Schema Int Int
-early =
-    Schema.recursive
-        "Early"
-        (λself ->
-            answer = Schema.decode self 1
-            Schema.converted
-                Schema.int
-                (Schema.conversion
-                    (λn ->
-                        case answer of
-                            Ok _ ->
-                                Ok n
+early = Schema.recursive "Early" λself ->
+    answer = Schema.decode self 1
+    Schema.converted
+        Schema.int
+        (Schema.conversion
+            (λn ->
+                case answer of
+                    Ok _ ->
+                        Ok n
 
-                            Err found ->
-                                Err found
-                    )
-                    Ok
-                )
+                    Err found ->
+                        Err found
+            )
+            Ok
         )
 
 
 -- `Loop` converts itself: nothing is read on the way round.
 loop : Schema Int Int
-loop = Schema.recursive "Loop" (λself -> Schema.converted self (Schema.conversion Ok Ok))
+loop = Schema.recursive "Loop" λself -> Schema.converted self (Schema.conversion Ok Ok)
 
 
 decimalInt : Conversion String Int
@@ -180,7 +168,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (λn -> Ok (String.fromInt n))
+        λn -> Ok (String.fromInt n)
 
 
 counted : Schema String Int
@@ -188,7 +176,7 @@ counted = Schema.converted Schema.string decimalInt
 
 
 issues : Result (List Schema.Issue) a -> String
-issues r = Show.result r (λ_ -> "built")
+issues r = Show.result r λ_ -> "built"
 
 
 invalid : Schema e a -> String
@@ -242,14 +230,10 @@ host text =
 
 
 intA : Schema.Injection Int T
-intA =
-    Schema.injection
-        (λn -> A { a = n })
-        (λt ->
-            case t of
-                A r ->
-                    Just r.a
+intA = Schema.injection (λn -> A { a = n }) λt ->
+    case t of
+        A r ->
+            Just r.a
 
-                B ->
-                    Nothing
-        )
+        B ->
+            Nothing

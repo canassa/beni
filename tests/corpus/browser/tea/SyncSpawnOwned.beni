@@ -24,13 +24,13 @@ update msg model =
     case msg of
         Run fibers ->
             if fibers then
-                ( model, Cmd.do (λ() -> spawning (λ() -> pause False)) )
+                ( model, Cmd.do λ() -> spawning λ() -> pause False )
             else
-                ( model, Cmd.do (λ() -> spawning (λ() -> ())) )
+                ( model, Cmd.do λ() -> spawning λ() -> () )
 
         Joined ->
             ( model
-            , Cmd.do (λ() -> Task.join (Task.spawn (λ() -> Log.info "joined child runs")))
+            , Cmd.do λ() -> Task.join (Task.spawn λ() -> Log.info "joined child runs")
             )
 
 
@@ -46,7 +46,7 @@ pause yes =
 spawning : (() -> ()) -> ()
 spawning hold =
     _ = hold ()
-    _ = Task.spawn (λ() -> Log.info "child runs")
+    _ = Task.spawn λ() -> Log.info "child runs"
     Log.info "body returns"
 
 

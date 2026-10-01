@@ -54,7 +54,7 @@ update msg model =
                 )
 
         Delete id ->
-            ( { model | todos = List.filter model.todos (λt -> t.id /= id) }, [] )
+            ( { model | todos = List.filter model.todos λt -> t.id /= id }, [] )
 
         Check id isDone ->
             updateTodo t =
@@ -65,10 +65,10 @@ update msg model =
             ( { model | todos = List.map model.todos updateTodo }, [] )
 
         CheckAll isDone ->
-            ( { model | todos = List.map model.todos (λt -> { t | done = isDone }) }, [] )
+            ( { model | todos = List.map model.todos λt -> { t | done = isDone } }, [] )
 
         DeleteComplete ->
-            ( { model | todos = List.filter model.todos (λt -> not t.done) }, [] )
+            ( { model | todos = List.filter model.todos λt -> not t.done }, [] )
 
         ChangeVisibility visibility ->
             ( { model | visibility = visibility }, [ "now showing ${visibilityName visibility}" ] )

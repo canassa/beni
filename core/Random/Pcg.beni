@@ -62,17 +62,11 @@ step (Generator generator) seed = generator seed
 --| A generator of seeds independent of the one that made them: for a
 --| piece of a program that keeps a seed of its own.
 pub independentSeed : Generator Seed
-independentSeed =
-    map3
-        (int 0 4294967295)
-        (int 0 4294967295)
-        (int 0 4294967295)
-        (λstate b c ->
-            next
-                (Seed
-                    (Int32.fromInt state)
-                    (Int32.or Int32.one (Int32.xor (Int32.fromInt b) (Int32.fromInt c)))
-                )
+independentSeed = map3 (int 0 4294967295) (int 0 4294967295) (int 0 4294967295) λstate b c ->
+    next
+        (Seed
+            (Int32.fromInt state)
+            (Int32.or Int32.one (Int32.xor (Int32.fromInt b) (Int32.fromInt c)))
         )
 
 
@@ -89,7 +83,7 @@ int a b =
 
     -- 2³² mod range: the outputs below it would favour the low values.
     threshold = Int.mod (4294967296 - range) range
-    Generator (λseed -> unbiased seed lo range threshold)
+    Generator λseed -> unbiased seed lo range threshold
 
 
 unbiased : Seed, Int, Int, Int -> ( Int, Seed )
@@ -113,32 +107,29 @@ maxInt = 2147483647
 
 --| A float from `a` to `b`, from 53 bits of randomness.
 pub float : Float, Float -> Generator Float
-float a b =
-    Generator
-        (λseed0 ->
-            seed1 = next seed0
-            lo = toFloat (Js.bitAnd (peel seed1) 67108863)
-            hi = toFloat (Js.bitAnd (peel seed0) 134217727)
-            value = (hi * 67108864.0 + lo) / 9007199254740992.0
-            ( value * abs (b - a) + a, next seed1 )
-        )
+float a b = Generator λseed0 ->
+    seed1 = next seed0
+    lo = toFloat (Js.bitAnd (peel seed1) 67108863)
+    hi = toFloat (Js.bitAnd (peel seed0) 134217727)
+    value = (hi * 67108864.0 + lo) / 9007199254740992.0
+    ( value * abs (b - a) + a, next seed1 )
 
 
 --| Always this value.
 pub constant : a -> Generator a
-constant value = Generator (λseed -> ( value, seed ))
+constant value = Generator λseed -> ( value, seed )
 
 
 --| Two values, one from each generator.
 pub pair : Generator a, Generator b -> Generator ( a, b )
-pair first second = map2 first second (λx y -> ( x, y ))
+pair first second = map2 first second λx y -> ( x, y )
 
 
 --| `n` values from the generator.
 --|
 --|     Random.list (Random.int 1 6) 3
 pub list : Generator a, Int -> Generator (List a)
-list (Generator generator) n = Generator (λseed -> listHelp [] n generator seed)
+list (Generator generator) n = Generator λseed -> listHelp [] n generator seed
 
 
 listHelp : List a, Int, (Seed -> ( a, Seed )), Seed -> ( List a, Seed )
@@ -155,7 +146,7 @@ listHelp done n generator seed =
 --|
 --|     Random.uniform "heads" [ "tails" ]
 pub uniform : a, List a -> Generator a
-uniform value values = weighted ( 1, value ) (List.map values (λv -> ( 1, v )))
+uniform value values = weighted ( 1, value ) (List.map values λv -> ( 1, v ))
 
 
 --| One of the values, each as likely as its weight against the rest.
@@ -163,8 +154,8 @@ uniform value values = weighted ( 1, value ) (List.map values (λv -> ( 1, v )))
 --|     Random.weighted ( 80, Sunny ) [ ( 20, Rainy ) ]
 pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
 weighted first others =
-    total = abs first.0 + List.sum (List.map others (λo -> abs o.0))
-    map (float 0 total) (λcountdown -> byWeight first others countdown)
+    total = abs first.0 + List.sum (List.map others λo -> abs o.0)
+    map (float 0 total) λcountdown -> byWeight first others countdown
 
 
 byWeight : ( Float, a ), List ( Float, a ), Float -> a
@@ -184,54 +175,42 @@ byWeight ( weight, value ) others countdown =
 --|
 --|     Random.map (Random.int 1 6) (λn -> n * 2)
 pub map : Generator a, (a -> b) -> Generator b
-map (Generator generator) f =
-    Generator
-        (λseed ->
-            case generator seed of
-                ( value, after ) ->
-                    ( f value, after )
-        )
+map (Generator generator) f = Generator λseed ->
+    case generator seed of
+        ( value, after ) ->
+            ( f value, after )
 
 
 --| Two generators' values, combined.
 pub map2 : Generator a, Generator b, (a, b -> c) -> Generator c
-map2 (Generator ga) (Generator gb) f =
-    Generator
-        (λseed0 ->
-            case ga seed0 of
-                ( a, seed1 ) ->
-                    case gb seed1 of
-                        ( b, seed2 ) ->
-                            ( f a b, seed2 )
-        )
+map2 (Generator ga) (Generator gb) f = Generator λseed0 ->
+    case ga seed0 of
+        ( a, seed1 ) ->
+            case gb seed1 of
+                ( b, seed2 ) ->
+                    ( f a b, seed2 )
 
 
 --| Three generators' values, combined.
 pub map3 : Generator a, Generator b, Generator c, (a, b, c -> d) -> Generator d
-map3 (Generator ga) (Generator gb) (Generator gc) f =
-    Generator
-        (λseed0 ->
-            case ga seed0 of
-                ( a, seed1 ) ->
-                    case gb seed1 of
-                        ( b, seed2 ) ->
-                            case gc seed2 of
-                                ( c, seed3 ) ->
-                                    ( f a b c, seed3 )
-        )
+map3 (Generator ga) (Generator gb) (Generator gc) f = Generator λseed0 ->
+    case ga seed0 of
+        ( a, seed1 ) ->
+            case gb seed1 of
+                ( b, seed2 ) ->
+                    case gc seed2 of
+                        ( c, seed3 ) ->
+                            ( f a b c, seed3 )
 
 
 --| A generator chosen by the value of another.
 pub andThen : Generator a, (a -> Generator b) -> Generator b
-andThen (Generator generator) f =
-    Generator
-        (λseed ->
-            case generator seed of
-                ( value, after ) ->
-                    step (f value) after
-        )
+andThen (Generator generator) f = Generator λseed ->
+    case generator seed of
+        ( value, after ) ->
+            step (f value) after
 
 
 --| A generator made only when it is run: for one that refers to itself.
 pub lazy : (() -> Generator a) -> Generator a
-lazy make = Generator (λseed -> step (make ()) seed)
+lazy make = Generator λseed -> step (make ()) seed

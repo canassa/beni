@@ -50,13 +50,9 @@ main =
     b2 = branch False
     l1 = lazy False 1
     l2 = lazy True 2
-    calls =
-        List.map
-            [ 1, 2 ]
-            (λx ->
-                y = note "lambda" x
-                y * 10
-            )
+    calls = List.map [ 1, 2 ] λx ->
+        y = note "lambda" x
+        y * 10
     Node.printLines
         [ String.fromInt o
         , String.fromInt (b1 + b2)

@@ -50,15 +50,12 @@ attempt label path =
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            Node.printLines
-                [ attempt "missing" "no such file.txt"
-                , attempt "directory" "."
-                , attempt "through a file" "ReadFileErrors.beni/inside.txt"
-                , attempt "long name" (String.repeat "a" 4096)
-                , attempt "nul" "a\u{0}b"
-                , attempt "itself" "ReadFileErrors.beni"
-                ]
-        )
+main = Io.run λ() ->
+    Node.printLines
+        [ attempt "missing" "no such file.txt"
+        , attempt "directory" "."
+        , attempt "through a file" "ReadFileErrors.beni/inside.txt"
+        , attempt "long name" (String.repeat "a" 4096)
+        , attempt "nul" "a\u{0}b"
+        , attempt "itself" "ReadFileErrors.beni"
+        ]

@@ -29,16 +29,16 @@ members = Set.fromList [ 1, 2, 3 ]
 
 main : Program
 main =
-    listLeft = List.foldl [ 1, 2, 3 ] [] (λx acc -> [ note "List.foldl" x, ...acc ])
-    listRight = List.foldr [ 1, 2, 3 ] [] (λx acc -> [ note "List.foldr" x, ...acc ])
-    stringLeft = String.foldl "abc" "" (λch acc -> String.cons acc (noteChar "String.foldl" ch))
+    listLeft = List.foldl [ 1, 2, 3 ] [] λx acc -> [ note "List.foldl" x, ...acc ]
+    listRight = List.foldr [ 1, 2, 3 ] [] λx acc -> [ note "List.foldr" x, ...acc ]
+    stringLeft = String.foldl "abc" "" λch acc -> String.cons acc (noteChar "String.foldl" ch)
 
-    stringRight = String.foldr "abc" "" (λch acc -> String.cons acc (noteChar "String.foldr" ch))
+    stringRight = String.foldr "abc" "" λch acc -> String.cons acc (noteChar "String.foldr" ch)
 
-    dictLeft = Dict.foldl numbers [] (λk _ acc -> [ note "Dict.foldl" k, ...acc ])
-    dictRight = Dict.foldr numbers [] (λk _ acc -> [ note "Dict.foldr" k, ...acc ])
-    setLeft = Set.foldl members [] (λv acc -> [ note "Set.foldl" v, ...acc ])
-    setRight = Set.foldr members [] (λv acc -> [ note "Set.foldr" v, ...acc ])
+    dictLeft = Dict.foldl numbers [] λk _ acc -> [ note "Dict.foldl" k, ...acc ]
+    dictRight = Dict.foldr numbers [] λk _ acc -> [ note "Dict.foldr" k, ...acc ]
+    setLeft = Set.foldl members [] λv acc -> [ note "Set.foldl" v, ...acc ]
+    setRight = Set.foldr members [] λv acc -> [ note "Set.foldr" v, ...acc ]
     Node.printLines
         [ Debug.toString listLeft
         , Debug.toString listRight

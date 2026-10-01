@@ -274,7 +274,7 @@ update msg model =
                 Ok cards ->
                     { model
                         | cards = cards |> List.map (λc -> ( c.id, c )) |> Dict.fromList
-                        , nextId = 1 + List.foldl cards 0 (λc acc -> max acc c.id)
+                        , nextId = 1 + List.foldl cards 0 λc acc -> max acc c.id
                     }
 
                 Err error ->
@@ -301,7 +301,7 @@ updateCard id f model =
 toggleLabel : String, Card -> Card
 toggleLabel label card =
     if List.member card.labels label then
-        { card | labels = List.filter card.labels (λl -> l /= label) }
+        { card | labels = List.filter card.labels λl -> l /= label }
     else
         { card | labels = [ label, ...card.labels ] }
 
@@ -346,8 +346,8 @@ renumber : Model -> Model
 renumber model =
     renumberColumn column cards =
         cardsIn column model
-            |> List.indexedMap (λindex card -> { card | order = index })
-            |> List.foldl cards (λcard acc -> Dict.insert acc card.id card)
+            |> List.indexedMap λindex card -> { card | order = index }
+            |> List.foldl cards λcard acc -> Dict.insert acc card.id card
     { model | cards = List.foldl columns model.cards renumberColumn }
 
 
@@ -355,7 +355,7 @@ cardsIn : Column, Model -> List Card
 cardsIn column model =
     model.cards
         |> Dict.values
-        |> List.filter (λcard -> card.column == column)
+        |> List.filter λcard -> card.column == column
         |> List.sortBy .order
 
 
@@ -370,7 +370,7 @@ matchesFilter filter card =
     String.isEmpty filter
         || String.contains (String.toLower card.title) filter
         || String.contains (String.toLower card.description) filter
-        || List.any card.labels (λlabel -> String.contains (String.toLower label) filter)
+        || List.any card.labels λlabel -> String.contains (String.toLower label) filter
 
 
 handleKey : String, Model -> Model
@@ -471,7 +471,7 @@ viewErrors errors =
             text ""
 
         _ ->
-            ul [ class "errors" ] (List.map errors (λerr -> li [] [ text err ]))
+            ul [ class "errors" ] (List.map errors λerr -> li [] [ text err ])
 
 
 viewColumn : Model, Column -> Html Msg
@@ -611,15 +611,12 @@ truncate80 s =
 viewLabels : Card -> Html Msg
 viewLabels card =
     ul [ class "labels" ]
-        (List.map
-            (List.sortBy card.labels identity)
-            (λlabel ->
-                li
-                    [ class "label label-${label}"
-                    , onClick (ToggleLabel card.id label)
-                    ]
-                    [ text label ]
-            )
+        (List.map (List.sortBy card.labels identity) λlabel ->
+            li
+                [ class "label label-${label}"
+                , onClick (ToggleLabel card.id label)
+                ]
+                [ text label ]
         )
 
 
@@ -679,15 +676,13 @@ cardDecoder =
 columnDecoder : Decoder Column
 columnDecoder =
     Decode.string
-        |> Decode.andThen
-            (λkey ->
-                case columnFromKey key of
-                    Just column ->
-                        Decode.succeed column
+        |> Decode.andThen λkey ->
+            case columnFromKey key of
+                Just column ->
+                    Decode.succeed column
 
-                    Nothing ->
-                        Decode.fail "unknown column: ${key}"
-            )
+                Nothing ->
+                    Decode.fail "unknown column: ${key}"
 
 
 pub load : String -> Result String Model
@@ -699,8 +694,8 @@ load json =
 
 
 pub summary : Model -> List ( String, Int )
-summary model =
-    List.map columns (λcolumn -> ( columnName column, List.length (cardsIn column model) ))
+summary model = List.map columns λcolumn ->
+    ( columnName column, List.length (cardsIn column model) )
 
 
 pub labelsInUse : Model -> List String

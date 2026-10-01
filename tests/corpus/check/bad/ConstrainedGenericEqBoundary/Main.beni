@@ -6,5 +6,5 @@ pub type Wrapper
 
 
 bad =
-    Wrapper (Guarded.Guarded (λvalue -> value + 1))
-        == Wrapper (Guarded.Guarded (λvalue -> value - 1))
+    Wrapper (Guarded.Guarded λvalue -> value + 1)
+        == Wrapper (Guarded.Guarded λvalue -> value - 1)

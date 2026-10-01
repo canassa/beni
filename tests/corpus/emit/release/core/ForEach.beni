@@ -7,7 +7,7 @@ import Js
 
 
 pub flush : Js.Value -> ()
-flush queue = Js.each queue (λrender -> Js.to (Js.apply render []))
+flush queue = Js.each queue λrender -> Js.to (Js.apply render [])
 
 
 start : Js.Value -> ()
@@ -17,7 +17,7 @@ start m =
 
 
 pub run : Js.Value -> ()
-run programs = Js.each programs (λm -> start m)
+run programs = Js.each programs λm -> start m
 
 
 pub notify : Js.Value, (Js.Value -> ()) -> ()

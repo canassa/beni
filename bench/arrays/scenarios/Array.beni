@@ -105,7 +105,7 @@ repeat value n = fromList (List.repeat value n)
 
 
 pub map : Array a, (a -> b) -> Array b
-map arr func = fromList (List.reverse (foldl arr [] (λx acc -> [ func x, ...acc ])))
+map arr func = fromList (List.reverse (foldl arr [] λx acc -> [ func x, ...acc ]))
 
 
 pub indexedMap : Array a, (Int, a -> b) -> Array b
@@ -123,7 +123,7 @@ indexedMapHelp arr i n acc func =
 --| Keeps the input's identity when every element is kept (report 38 §7).
 pub filter : Array a, (a -> Bool) -> Array a
 filter arr isGood =
-    kept = foldr arr [] (λx acc -> if isGood x then [ x, ...acc ] else acc)
+    kept = foldr arr [] λx acc -> if isGood x then [ x, ...acc ] else acc
 
     n = List.length kept
     if n == length arr then

@@ -10,7 +10,7 @@ type alias History =
 
 
 pub start : Int -> History
-start n = { current = Array.initialize n (λi -> i), past = [] }
+start n = { current = Array.initialize n λi -> i, past = [] }
 
 
 pub edit : History, Int, Int -> History
@@ -45,4 +45,4 @@ editsHelp h j k seed =
 
 
 pub sum : History -> Int
-sum h = Array.foldl h.current 0 (λv s -> s + v)
+sum h = Array.foldl h.current 0 λv s -> s + v

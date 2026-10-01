@@ -34,7 +34,7 @@ update msg model =
 
         Twice ->
             _ = Debug.log "twice begins" ()
-            _ = Maybe.withDefault (Maybe.map model.send (λsend -> send (Echo 1))) ()
+            _ = Maybe.withDefault (Maybe.map model.send λsend -> send (Echo 1)) ()
             _ = Debug.log "twice ends" ()
             ( model, Cmd.none )
 
@@ -65,7 +65,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform (λsend -> send (Captured send)) )
+        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform λsend -> send (Captured send) )
         , update = update
         , view = view
         , subscriptions = λ_ -> Sub.none

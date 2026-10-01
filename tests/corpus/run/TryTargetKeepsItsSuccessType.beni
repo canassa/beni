@@ -10,7 +10,7 @@ import Node exposing (Program)
 
 f u =
     g k = k (u?)
-    ( g (λv -> Ok v), g (λv -> Ok (String.fromInt v)) )
+    ( g λv -> Ok v, g λv -> Ok (String.fromInt v) )
 
 
 main : Program

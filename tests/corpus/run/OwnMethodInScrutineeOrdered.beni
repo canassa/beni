@@ -24,7 +24,7 @@ boxes u =
     case (K u).makeBox () of
         o ->
             g h = o.map2 h
-            ( g (λx -> x + 1), g String.fromInt )
+            ( g λx -> x + 1, g String.fromInt )
 
 
 unbox (Box v) = v

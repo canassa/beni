@@ -36,7 +36,7 @@ onOwnType m = m.scale 3
 
 
 pub onImportedType : List Int -> List Int
-onImportedType xs = xs.map (λx -> x)
+onImportedType xs = xs.map λx -> x
 
 
 pub onRecord : Handler -> Int

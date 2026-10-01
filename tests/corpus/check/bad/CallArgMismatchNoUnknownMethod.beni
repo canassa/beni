@@ -17,7 +17,7 @@ key t u =
 
 same : List a, a -> Bool
     where a.key : a, () -> Int
-same xs z = List.all xs (λx -> x.key () == z.key ())
+same xs z = List.all xs λx -> x.key () == z.key ()
 
 
 wrongFirst : Bool

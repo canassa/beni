@@ -11,14 +11,8 @@ pub foreign suspends get : Int -> Int
 
 
 body : Int -> Int
-body n =
-    Js.finally
-        (λ() -> get n)
-        (λ() -> ())
+body n = Js.finally (λ() -> get n) λ() -> ()
 
 
 cleanup : Int -> Int
-cleanup n =
-    Js.finally
-        (λ() -> n)
-        (λ() -> Task.yieldNow ())
+cleanup n = Js.finally (λ() -> n) λ() -> Task.yieldNow ()

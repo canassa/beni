@@ -41,13 +41,11 @@ schedule () =
 
         _ =
             Js.apply (Js.global "queueMicrotask")
-                [ Js.from
-                    (λ() ->
-                        if Js.read scheduled then
-                            flush ()
-                        else
-                            ()
-                    )
+                [ Js.from λ() ->
+                    if Js.read scheduled then
+                        flush ()
+                    else
+                        ()
                 ]
         ()
 

@@ -56,29 +56,23 @@ main =
     b = [ 3, 4 ]
     joined = List.concat [ [], a, [], b, [], [] ]
 
-    mapped =
-        List.concatMap [ 1, 2, 3 ]
-            (λn ->
-                if n == 2 then
-                    b
-                else
-                    []
-            )
+    mapped = List.concatMap [ 1, 2, 3 ] λn ->
+        if n == 2 then
+            b
+        else
+            []
 
-    mappedTwo =
-        List.concatMap [ 1, 2, 3 ]
-            (λn ->
-                if n == 3 then
-                    []
-                else if n == 1 then
-                    a
-                else
-                    b
-            )
+    mappedTwo = List.concatMap [ 1, 2, 3 ] λn ->
+        if n == 3 then
+            []
+        else if n == 1 then
+            a
+        else
+            b
 
-    ( kept, _ ) = List.partition rows (λr -> r.id < 2)
+    ( kept, _ ) = List.partition rows λr -> r.id < 2
     Node.printLines
-        [ show "filter element" (firstOf (List.filter rows (λr -> r.id == 1)))
+        [ show "filter element" (firstOf (List.filter rows λr -> r.id == 1))
         , show "take element" (firstOf (List.take rows 2))
         , show "partition element" (firstOf kept)
         , show "append element" (firstOf (List.append rows [ { id = 9 } ]))

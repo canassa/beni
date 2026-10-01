@@ -60,14 +60,13 @@
     (pat_var value)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_var input)
-          (apply
-            (ctor Ok)
-            (tuple
-              (ident value)
-              (ident input)))))))
+      (lambda
+        (pat_var input)
+        (apply
+          (ctor Ok)
+          (tuple
+            (ident value)
+            (ident input))))))
   (annotation pub fail
     (type_fn
       (type_con String)
@@ -77,12 +76,11 @@
     (pat_var message)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_wild)
-          (apply
-            (ctor Err)
-            (ident message))))))
+      (lambda
+        (pat_wild)
+        (apply
+          (ctor Err)
+          (ident message)))))
   (annotation pub char
     (type_fn
       (type_con Char)
@@ -92,42 +90,41 @@
     (pat_var expected)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_var input)
-          (case
-            (apply
-              (ident String.uncons)
-              (ident input))
-            (branch
-              (pat_ctor Just
-                (pat_tuple
-                  (pat_var c)
-                  (pat_var rest)))
-              (if
-                (eq
+      (lambda
+        (pat_var input)
+        (case
+          (apply
+            (ident String.uncons)
+            (ident input))
+          (branch
+            (pat_ctor Just
+              (pat_tuple
+                (pat_var c)
+                (pat_var rest)))
+            (if
+              (eq
+                (ident c)
+                (ident expected))
+              (apply
+                (ctor Ok)
+                (tuple
                   (ident c)
-                  (ident expected))
-                (apply
-                  (ctor Ok)
-                  (tuple
-                    (ident c)
-                    (ident rest)))
-                (apply
-                  (ctor Err)
-                  (string
-                    (chunk "expected ")
-                    (interp
-                      (ident expected))
-                    (chunk " but got ")
-                    (interp
-                      (ident c))))))
-            (branch
-              (pat_ctor Nothing)
+                  (ident rest)))
               (apply
                 (ctor Err)
                 (string
-                  (chunk "unexpected end of input")))))))))
+                  (chunk "expected ")
+                  (interp
+                    (ident expected))
+                  (chunk " but got ")
+                  (interp
+                    (ident c))))))
+          (branch
+            (pat_ctor Nothing)
+            (apply
+              (ctor Err)
+              (string
+                (chunk "unexpected end of input"))))))))
   (annotation pub map
     (type_fn
       (type_con Parser
@@ -145,31 +142,30 @@
     (pat_var f)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_var input)
-          (case
+      (lambda
+        (pat_var input)
+        (case
+          (apply
+            (ident p)
+            (ident input))
+          (branch
+            (pat_ctor Ok
+              (pat_tuple
+                (pat_var value)
+                (pat_var rest)))
             (apply
-              (ident p)
-              (ident input))
-            (branch
-              (pat_ctor Ok
-                (pat_tuple
-                  (pat_var value)
-                  (pat_var rest)))
-              (apply
-                (ctor Ok)
-                (tuple
-                  (apply
-                    (ident f)
-                    (ident value))
-                  (ident rest))))
-            (branch
-              (pat_ctor Err
-                (pat_var message))
-              (apply
-                (ctor Err)
-                (ident message))))))))
+              (ctor Ok)
+              (tuple
+                (apply
+                  (ident f)
+                  (ident value))
+                (ident rest))))
+          (branch
+            (pat_ctor Err
+              (pat_var message))
+            (apply
+              (ctor Err)
+              (ident message)))))))
   (annotation pub andThen
     (type_fn
       (type_con Parser
@@ -188,31 +184,30 @@
     (pat_var f)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_var input)
-          (block
-            (let_def step
-              (pat_tuple
-                (pat_var value)
-                (pat_var rest))
-              (case
+      (lambda
+        (pat_var input)
+        (block
+          (let_def step
+            (pat_tuple
+              (pat_var value)
+              (pat_var rest))
+            (case
+              (apply
+                (ident f)
+                (ident value))
+              (branch
+                (pat_ctor Parser
+                  (pat_var q))
                 (apply
-                  (ident f)
-                  (ident value))
-                (branch
-                  (pat_ctor Parser
-                    (pat_var q))
-                  (apply
-                    (ident q)
-                    (ident rest)))))
-            (pipe_right
-              (apply
-                (ident p)
-                (ident input))
-              (apply
-                (ident Result.andThen)
-                (ident step))))))))
+                  (ident q)
+                  (ident rest)))))
+          (pipe_right
+            (apply
+              (ident p)
+              (ident input))
+            (apply
+              (ident Result.andThen)
+              (ident step)))))))
   (annotation pub many
     (type_fn
       (type_con Parser
@@ -273,46 +268,45 @@
     (pat_var parsers)
     (apply
       (ctor Parser)
-      (paren
-        (lambda
-          (pat_var input)
-          (block
-            (let_def try
-              (pat_var remaining)
-              (case
-                (ident remaining)
-                (branch
-                  (pat_list)
+      (lambda
+        (pat_var input)
+        (block
+          (let_def try
+            (pat_var remaining)
+            (case
+              (ident remaining)
+              (branch
+                (pat_list)
+                (apply
+                  (ctor Err)
+                  (string
+                    (chunk "no parser matched"))))
+              (branch
+                (pat_list
+                  (pat_paren
+                    (pat_ctor Parser
+                      (pat_var p)))
+                  (pat_spread
+                    (pat_var rest)))
+                (case
                   (apply
-                    (ctor Err)
-                    (string
-                      (chunk "no parser matched"))))
-                (branch
-                  (pat_list
-                    (pat_paren
-                      (pat_ctor Parser
-                        (pat_var p)))
-                    (pat_spread
-                      (pat_var rest)))
-                  (case
+                    (ident p)
+                    (ident input))
+                  (branch
+                    (pat_ctor Ok
+                      (pat_var result))
                     (apply
-                      (ident p)
-                      (ident input))
-                    (branch
-                      (pat_ctor Ok
-                        (pat_var result))
-                      (apply
-                        (ctor Ok)
-                        (ident result)))
-                    (branch
-                      (pat_ctor Err
-                        (pat_wild))
-                      (apply
-                        (ident try)
-                        (ident rest)))))))
-            (apply
-              (ident try)
-              (ident parsers)))))))
+                      (ctor Ok)
+                      (ident result)))
+                  (branch
+                    (pat_ctor Err
+                      (pat_wild))
+                    (apply
+                      (ident try)
+                      (ident rest)))))))
+          (apply
+            (ident try)
+            (ident parsers))))))
   (annotation pub digits
     (type_con Parser
       (type_con Int)))
@@ -340,28 +334,27 @@
                 (ident char))))))
       (apply
         (ident andThen)
-        (paren
-          (lambda
-            (pat_var cs)
-            (case
+        (lambda
+          (pat_var cs)
+          (case
+            (apply
+              (ident String.toInt)
+              (paren
+                (apply
+                  (ident String.fromList)
+                  (ident cs))))
+            (branch
+              (pat_ctor Just
+                (pat_var n))
               (apply
-                (ident String.toInt)
-                (paren
-                  (apply
-                    (ident String.fromList)
-                    (ident cs))))
-              (branch
-                (pat_ctor Just
-                  (pat_var n))
-                (apply
-                  (ident succeed)
-                  (ident n)))
-              (branch
-                (pat_ctor Nothing)
-                (apply
-                  (ident fail)
-                  (string
-                    (chunk "expected digits"))))))))))
+                (ident succeed)
+                (ident n)))
+            (branch
+              (pat_ctor Nothing)
+              (apply
+                (ident fail)
+                (string
+                  (chunk "expected digits")))))))))
   (annotation sumOf
     (type_fn
       (type_con String)

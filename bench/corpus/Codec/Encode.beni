@@ -71,5 +71,5 @@ maybe item encoder =
 pub optionalFields : List ( String, Maybe Value ) -> Value
 optionalFields fields =
     fields
-        |> List.filterMap (λ( name, item ) -> Maybe.map item (λpresent -> ( name, present )))
+        |> List.filterMap λ( name, item ) -> Maybe.map item λpresent -> ( name, present )
         |> Object

@@ -100,7 +100,7 @@ main =
     Node.printLines
         [ summary backwards
         , summary (List.reverse backwards)
-        , summary (List.foldr backwards [] (λx acc -> [ x * 2, ...acc ]))
+        , summary (List.foldr backwards [] λx acc -> [ x * 2, ...acc ])
         , summary (growBack size [])
         , summary (growPlus size [])
         , summary stack.top

@@ -565,12 +565,10 @@ fieldNode name k renamed isOptional n =
 withField : Fields pe pa, String, Schema e a, Bool -> Fields qe qa
 withField fs name s isOptional =
     b = fieldsOf fs
-    Js.pure
-        (λ() ->
-            fieldsBox
-                (appended b.fields (toHost (fieldNode name name False isOptional (nodeOf s))))
-                b.problem
-        )
+    Js.pure λ() ->
+        fieldsBox
+            (appended b.fields (toHost (fieldNode name name False isOptional (nodeOf s))))
+            b.problem
 
 
 --| A required field, read and written under its own name until `key`
@@ -607,33 +605,31 @@ firstProblem problem message =
 pub key : Fields pe pa, String -> Fields pe pa
 key fs external =
     b = fieldsOf fs
-    Js.pure
-        (λ() ->
-            n = lengthOf b.fields
-            if n == 0 then
+    Js.pure λ() ->
+        n = lengthOf b.fields
+        if n == 0 then
+            fieldsBox
+                b.fields
+                (firstProblem
+                    b.problem
+                    "Schema.key renames the field added before it, and there is none"
+                )
+        else
+            last = fieldAt b.fields (n - 1)
+            if last.renamed then
                 fieldsBox
                     b.fields
                     (firstProblem
                         b.problem
-                        "Schema.key renames the field added before it, and there is none"
+                        "the field ${last.name} already has the key \"${last.key}\""
                     )
             else
-                last = fieldAt b.fields (n - 1)
-                if last.renamed then
-                    fieldsBox
-                        b.fields
-                        (firstProblem
-                            b.problem
-                            "the field ${last.name} already has the key \"${last.key}\""
-                        )
-                else
-                    fieldsBox
-                        (appended
-                            (Js.call b.fields "slice" [ Js.from 0, Js.from (n - 1) ])
-                            (toHost (fieldNode last.name external True last.optional last.node))
-                        )
-                        b.problem
-        )
+                fieldsBox
+                    (appended
+                        (Js.call b.fields "slice" [ Js.from 0, Js.from (n - 1) ])
+                        (toHost (fieldNode last.name external True last.optional last.node))
+                    )
+                    b.problem
 
 
 --| How the products of `fields` become the records of each endpoint, and
@@ -652,32 +648,30 @@ record fs encoded typed =
     encodedMaps = cast encoded
     typedMaps : Pair
     typedMaps = cast typed
-    Js.pure
-        (λ() ->
-            case b.problem of
-                Just problem ->
-                    box (NBroken problem)
+    Js.pure λ() ->
+        case b.problem of
+            Just problem ->
+                box (NBroken problem)
 
-                Nothing ->
-                    case duplicateIn b.fields fieldName of
-                        Just name ->
-                            box (NBroken "two fields are named ${name}")
+            Nothing ->
+                case duplicateIn b.fields fieldName of
+                    Just name ->
+                        box (NBroken "two fields are named ${name}")
 
-                        Nothing ->
-                            case duplicateIn b.fields fieldKey of
-                                Just k ->
-                                    box (NBroken "two fields read and write the key \"${k}\"")
+                    Nothing ->
+                        case duplicateIn b.fields fieldKey of
+                            Just k ->
+                                box (NBroken "two fields read and write the key \"${k}\"")
 
-                                Nothing ->
-                                    box
-                                        (NRecord b.fields
-                                            { toE = encodedMaps.there
-                                            , fromE = encodedMaps.back
-                                            , toA = typedMaps.there
-                                            , fromA = typedMaps.back
-                                            }
-                                        )
-        )
+                            Nothing ->
+                                box
+                                    (NRecord b.fields
+                                        { toE = encodedMaps.there
+                                        , fromE = encodedMaps.back
+                                        , toA = typedMaps.there
+                                        , fromA = typedMaps.back
+                                        }
+                                    )
 
 
 fieldName : FieldNode -> String
@@ -735,39 +729,36 @@ nullary name tag injectE injectA =
 --| object whose discriminator holds one variant's tag and whose other keys
 --| are that variant's payload.
 pub tagged : String, List (Variant e a) -> Schema e a
-tagged discriminator variants =
-    Js.pure
-        (λ() ->
-            given = plain (toHost variants)
-            vs = Js.array []
-            case collectVariants given vs 0 (lengthOf given) of
-                Just problem ->
-                    box (NBroken problem)
+tagged discriminator variants = Js.pure λ() ->
+    given = plain (toHost variants)
+    vs = Js.array []
+    case collectVariants given vs 0 (lengthOf given) of
+        Just problem ->
+            box (NBroken problem)
 
-                Nothing ->
-                    if lengthOf vs == 0 then
-                        box (NBroken "a tagged schema needs a variant")
-                    else
-                        case duplicateIn vs variantTag of
-                            Just tag ->
-                                box (NBroken "two variants have the tag \"${tag}\"")
+        Nothing ->
+            if lengthOf vs == 0 then
+                box (NBroken "a tagged schema needs a variant")
+            else
+                case duplicateIn vs variantTag of
+                    Just tag ->
+                        box (NBroken "two variants have the tag \"${tag}\"")
+
+                    Nothing ->
+                        case duplicateIn vs variantName of
+                            Just name ->
+                                box (NBroken "two variants are named ${name}")
 
                             Nothing ->
-                                case duplicateIn vs variantName of
+                                case clash discriminator vs 0 (lengthOf vs) of
                                     Just name ->
-                                        box (NBroken "two variants are named ${name}")
+                                        box
+                                            (NBroken
+                                                "the variant ${name} has a field on the discriminator \"${discriminator}\""
+                                            )
 
                                     Nothing ->
-                                        case clash discriminator vs 0 (lengthOf vs) of
-                                            Just name ->
-                                                box
-                                                    (NBroken
-                                                        "the variant ${name} has a field on the discriminator \"${discriminator}\""
-                                                    )
-
-                                            Nothing ->
-                                                box (NTagged discriminator vs)
-        )
+                                        box (NTagged discriminator vs)
 
 
 variantTag : VariantNode -> String
@@ -2033,7 +2024,7 @@ parseWith s o text =
                 Js.catchIf
                     (λ() -> Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
                     (λthrown -> Js.instanceOf thrown (Js.global "SyntaxError"))
-                    (λthrown -> Err (stringOf (Js.get thrown "message")))
+                    λthrown -> Err (stringOf (Js.get thrown "message"))
             of
                 Err message ->
                     rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"

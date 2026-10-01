@@ -7,7 +7,7 @@ direct = Plat.program { init = 0, view = Plat.get }
 
 
 viaLib : Int
-viaLib = Lib.page (λn -> Plat.get (n + 1))
+viaLib = Lib.page λn -> Plat.get (n + 1)
 
 
 fine : Int

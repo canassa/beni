@@ -54,7 +54,7 @@ nested xss = String.join (List.map xss ints) " | "
 
 
 points : List Point -> String
-points ps = String.join (List.map ps (λp -> ints [ p.x, p.y ])) " | "
+points ps = String.join (List.map ps λp -> ints [ p.x, p.y ]) " | "
 
 
 main : Program

@@ -15,7 +15,7 @@ pub make : Int, Int -> Grid
 make w h =
     { w = w
     , h = h
-    , cells = Array.initialize (w * h) (λi -> if Int.mod (i * 7) 5 == 0 then 1 else 0)
+    , cells = Array.initialize (w * h) λi -> if Int.mod (i * 7) 5 == 0 then 1 else 0
     }
 
 
@@ -64,4 +64,4 @@ tickHelp g j k seed =
 
 
 pub population : Grid -> Int
-population g = Array.foldl g.cells 0 (λv s -> s + v)
+population g = Array.foldl g.cells 0 λv s -> s + v

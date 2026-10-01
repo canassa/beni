@@ -130,13 +130,11 @@ idiv a b =
     if b == 0 then
         0
     else
-        Js.pure
-            (λ() ->
-                Js.to
-                    (Js.call (Js.global "Math") "trunc"
-                        [ Js.from (Js.to (Js.from a) / Js.to (Js.from b)) ]
-                    )
-            )
+        Js.pure λ() ->
+            Js.to
+                (Js.call (Js.global "Math") "trunc"
+                    [ Js.from (Js.to (Js.from a) / Js.to (Js.from b)) ]
+                )
 
 
 --| Exponentiation. What `^` desugars to.
@@ -225,21 +223,21 @@ toFloat n = Js.to (Js.from n)
 --|     round 1.5 == 2
 --|     round (-1.5) == -1
 pub round : Float -> Int
-round x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "round" [ Js.from x ]))
+round x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "round" [ Js.from x ])
 
 
 --| Floor a number, rounding down.
 --|
 --|     floor 1.9 == 1
 pub floor : Float -> Int
-floor x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ]))
+floor x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ])
 
 
 --| Ceiling a number, rounding up.
 --|
 --|     ceiling 1.1 == 2
 pub ceiling : Float -> Int
-ceiling x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "ceil" [ Js.from x ]))
+ceiling x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "ceil" [ Js.from x ])
 
 
 --| Truncate a number, dropping the decimal part.
@@ -247,61 +245,61 @@ ceiling x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "ceil" [ Js.from 
 --|     truncate 1.9 == 1
 --|     truncate (-1.9) == -1
 pub truncate : Float -> Int
-truncate x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ]))
+truncate x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ])
 
 
 --| Take the square root of a number.
 --|
 --|     sqrt 9 == 3
 pub sqrt : Float -> Float
-sqrt x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ]))
+sqrt x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ])
 
 
 --| An approximation of Euler's constant.
 pub e : Float
-e = Js.pure (λ() -> Js.to (Js.get (Js.global "Math") "E"))
+e = Js.pure λ() -> Js.to (Js.get (Js.global "Math") "E")
 
 
 --| An approximation of pi.
 pub pi : Float
-pi = Js.pure (λ() -> Js.to (Js.get (Js.global "Math") "PI"))
+pi = Js.pure λ() -> Js.to (Js.get (Js.global "Math") "PI")
 
 
 --| Figure out the cosine of an angle in radians.
 pub cos : Float -> Float
-cos x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "cos" [ Js.from x ]))
+cos x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "cos" [ Js.from x ])
 
 
 --| Figure out the sine of an angle in radians.
 pub sin : Float -> Float
-sin x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "sin" [ Js.from x ]))
+sin x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "sin" [ Js.from x ])
 
 
 --| Figure out the tangent of an angle in radians.
 pub tan : Float -> Float
-tan x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "tan" [ Js.from x ]))
+tan x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "tan" [ Js.from x ])
 
 
 --| Figure out the arccosine of a number, in radians.
 pub acos : Float -> Float
-acos x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "acos" [ Js.from x ]))
+acos x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "acos" [ Js.from x ])
 
 
 --| Figure out the arcsine of a number, in radians.
 pub asin : Float -> Float
-asin x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "asin" [ Js.from x ]))
+asin x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "asin" [ Js.from x ])
 
 
 --| Figure out the arctangent of a number, in radians. Prefer `atan2` when you
 --| have both sides of the triangle: it can tell the quadrants apart.
 pub atan : Float -> Float
-atan x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "atan" [ Js.from x ]))
+atan x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "atan" [ Js.from x ])
 
 
 --| Figure out the arctangent of `y / x` in radians, keeping the signs of both
 --| arguments so the answer lands in the right quadrant.
 pub atan2 : Float, Float -> Float
-atan2 y x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "atan2" [ Js.from y, Js.from x ]))
+atan2 y x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "atan2" [ Js.from y, Js.from x ])
 
 
 --| Determine whether a float is an undefined or unrepresentable number.
@@ -309,7 +307,7 @@ atan2 y x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "atan2" [ Js.from
 --|     isNaN (0 / 0) == True
 --|     isNaN (sqrt (-1)) == True
 pub isNaN : Float -> Bool
-isNaN x = Js.pure (λ() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from x ]))
+isNaN x = Js.pure λ() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from x ])
 
 
 --| Determine whether a float is positive or negative infinity.
@@ -318,8 +316,7 @@ isNaN x = Js.pure (λ() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from
 pub isInfinite : Float -> Bool
 isInfinite x =
     -- NaN's absolute value is NaN, which is not `Infinity`.
-    Js.pure
-        (λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity"))
+    Js.pure λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity")
 
 
 --| Negate a number.

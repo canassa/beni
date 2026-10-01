@@ -41,7 +41,7 @@ main =
         , String.fromInt ((pick True) 5)
         , String.fromInt ((pick False) 5)
         , String.join (List.map (List.map [ 1, 2 ] (pick True)) String.fromInt) ","
-        , String.fromInt ((identity (λn -> n - 1)) 10)
+        , String.fromInt ((identity λn -> n - 1) 10)
         , String.fromInt (16 |> bump)
         , String.fromInt ((λn -> n + 1) ((λn -> n * 2) 5))
         ]

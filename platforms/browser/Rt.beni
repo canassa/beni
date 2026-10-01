@@ -332,7 +332,7 @@ flush () =
                 _ = Js.write scheduled False
                 renders = Js.read queued
                 _ = Js.write queued (Js.array [])
-                _ = Js.each renders (λrender -> Js.to (Js.apply render []))
+                _ = Js.each renders λrender -> Js.to (Js.apply render [])
 
                 _ =
                     if Js.isNullish (Js.read phase) then
@@ -341,7 +341,7 @@ flush () =
                         Js.to (Js.apply (Js.read phase) [])
                 Js.write ok True
             )
-            (λ() -> if Js.read ok then () else stop ())
+            λ() -> if Js.read ok then () else stop ()
 
 
 -- `(program)`: start every program the array holds, in order.
@@ -350,10 +350,10 @@ run program =
     ok = Js.ref False
     Js.finally
         (λ() ->
-            _ = Js.each program (λm -> startOne m)
+            _ = Js.each program λm -> startOne m
             Js.write ok True
         )
-        (λ() -> if Js.read ok then () else stop ())
+        λ() -> if Js.read ok then () else stop ()
 
 
 startOne : V -> ()
@@ -391,7 +391,7 @@ startOne m =
     else
         mount
             (Js.apply (Js.get m "h")
-                [ root, Js.from flush, Js.from (λf -> setPhase f), Js.from stop ]
+                [ root, Js.from flush, Js.from λf -> setPhase f, Js.from stop ]
             )
             root
 
@@ -419,29 +419,27 @@ mount program root =
         Js.set
             root
             "$$root"
-            (Js.from
-                (λmsg ->
-                    -- A stopped page applies no message, from a
-                    -- handler, a fiber or after-render work alike.
-                    if Js.read dead then
-                        ()
-                    else
-                        _ =
-                            if Js.read waiting then
+            (Js.from λmsg ->
+                -- A stopped page applies no message, from a
+                -- handler, a fiber or after-render work alike.
+                if Js.read dead then
+                    ()
+                else
+                    _ =
+                        if Js.read waiting then
+                            ()
+                        else
+                            _ = Js.write waiting True
+                            _ = Js.call (Js.read queued) "push" [ Js.from render ]
+                            if Js.read scheduled then
                                 ()
                             else
-                                _ = Js.write waiting True
-                                _ = Js.call (Js.read queued) "push" [ Js.from render ]
-                                if Js.read scheduled then
-                                    ()
-                                else
-                                    _ = Js.write scheduled True
-                                    Js.to
-                                        (Js.apply (Js.global "queueMicrotask")
-                                            [ Js.from (λ() -> microtask ()) ]
-                                        )
-                        Js.write model (Js.call program "update" [ msg, Js.read model ])
-                )
+                                _ = Js.write scheduled True
+                                Js.to
+                                    (Js.apply (Js.global "queueMicrotask")
+                                        [ Js.from λ() -> microtask () ]
+                                    )
+                    Js.write model (Js.call program "update" [ msg, Js.read model ])
             )
     childHtml s (Js.call program "view" [ Js.read model ])
 
@@ -938,7 +936,7 @@ trimmed s items keyOf row same was now =
                             && Js.same (Js.get parent "lastChild") (last (Js.at old (m - 1)))
                     then
                         _ = Js.set parent "textContent" (Js.from "")
-                        Js.each next (λi -> put parent i Js.null)
+                        Js.each next λi -> put parent i Js.null
                     else if aStart /= p || aStart < aEnd || aStart < bEnd then
                         _ =
                             reconcile
@@ -1268,18 +1266,14 @@ keyedPass s items keyOf row same was now =
     ( distinct, shifted ) =
         keyedRows s (elements items) keyOf row same was now stamp old byKey next 0 True False
 
-    _ =
-        Js.each
-            old
-            (λo ->
-                if
-                    Js.to (Js.get o "kv") /= stamp
-                        && Js.same (Js.call byKey "get" [ Js.get o "k" ]) o
-                then
-                    Js.to (Js.call byKey "delete" [ Js.get o "k" ])
-                else
-                    ()
-            )
+    _ = Js.each old λo ->
+        if
+            Js.to (Js.get o "kv") /= stamp
+                && Js.same (Js.call byKey "get" [ Js.get o "k" ]) o
+        then
+            Js.to (Js.call byKey "delete" [ Js.get o "k" ])
+        else
+            ()
 
     _ =
         if shifted || not (Js.same (Js.get next "length") (Js.get old "length")) then
@@ -1295,7 +1289,7 @@ keyedPass s items keyOf row same was now =
                             Js.get s "m"
                         else
                             first (Js.get s "i")
-                    Js.each next (λi -> put parent i before)
+                    Js.each next λi -> put parent i before
                 else if
                     Js.to (Js.get next "length")
                         == 0
@@ -1587,22 +1581,16 @@ classes el list previous =
         if Js.isNull old then
             ()
         else
-            Js.each
-                old
-                (λname ->
-                    if Js.to (Js.call next "has" [ name ]) then
-                        ()
-                    else
-                        Js.to (Js.call (Js.get el "classList") "remove" [ name ])
-                )
-    Js.each
-        next
-        (λname ->
-            if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
-                Js.to (Js.call (Js.get el "classList") "add" [ name ])
-            else
-                ()
-        )
+            Js.each old λname ->
+                if Js.to (Js.call next "has" [ name ]) then
+                    ()
+                else
+                    Js.to (Js.call (Js.get el "classList") "remove" [ name ])
+    Js.each next λname ->
+        if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
+            Js.to (Js.call (Js.get el "classList") "add" [ name ])
+        else
+            ()
 
 
 -- The names whose flag is `True`, a name holding whitespace being several.
@@ -1610,22 +1598,15 @@ classSet : V -> V
 classSet list =
     names = Js.construct (Js.global "Set") []
 
-    _ =
-        Js.each
-            (elements list)
-            (λentry ->
-                if Js.to (Js.get entry "b") then
-                    Js.each
-                        (Js.call (Js.get entry "a") "split" [ spaces ])
-                        (λname ->
-                            if Js.same name (Js.from "") then
-                                ()
-                            else
-                                Js.to (Js.call names "add" [ name ])
-                        )
-                else
+    _ = Js.each (elements list) λentry ->
+        if Js.to (Js.get entry "b") then
+            Js.each (Js.call (Js.get entry "a") "split" [ spaces ]) λname ->
+                if Js.same name (Js.from "") then
                     ()
-            )
+                else
+                    Js.to (Js.call names "add" [ name ])
+        else
+            ()
     names
 
 
@@ -1653,24 +1634,16 @@ styles el list previous =
         if Js.isNull old then
             ()
         else
-            Js.each
-                (Js.call old "keys" [])
-                (λname ->
-                    if Js.to (Js.call next "has" [ name ]) then
-                        ()
-                    else
-                        Js.to (Js.call style "removeProperty" [ name ])
-                )
-    Js.each
-        next
-        (λentry ->
-            if
-                Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1))
-            then
-                Js.to (Js.call style "setProperty" [ Js.at entry 0, Js.at entry 1 ])
-            else
-                ()
-        )
+            Js.each (Js.call old "keys" []) λname ->
+                if Js.to (Js.call next "has" [ name ]) then
+                    ()
+                else
+                    Js.to (Js.call style "removeProperty" [ name ])
+    Js.each next λentry ->
+        if Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1)) then
+            Js.to (Js.call style "setProperty" [ Js.at entry 0, Js.at entry 1 ])
+        else
+            ()
 
 
 -- Each property's last value.
@@ -1678,10 +1651,8 @@ styleMap : V -> V
 styleMap list =
     values = Js.construct (Js.global "Map") []
 
-    _ =
-        Js.each
-            (elements list)
-            (λentry -> Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]))
+    _ = Js.each (elements list) λentry ->
+        Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ])
     values
 
 
@@ -1793,7 +1764,7 @@ fire node event key flags =
                             Js.to (Js.call root "$$root" [ msg ])
                     Js.write ok True
                 )
-                (λ() -> if Js.read ok then () else stop ())
+                λ() -> if Js.read ok then () else stop ()
         if Js.bitAnd flags 2 /= 0 then
             Js.to (Js.call event "stopPropagation" [])
         else
@@ -1853,17 +1824,13 @@ registered = Js.construct (Js.global "Set") []
 
 -- `(names)`: listen for each delegated event name once.
 pub delegate : V -> ()
-delegate names =
-    Js.each
-        names
-        (λname ->
-            if Js.to (Js.call registered "has" [ name ]) then
-                ()
-            else
-                _ = Js.call registered "add" [ name ]
-                Js.to
-                    (Js.call (Js.global "document") "addEventListener" [ name, Js.from delegated ])
-        )
+delegate names = Js.each names λname ->
+    if Js.to (Js.call registered "has" [ name ]) then
+        ()
+    else
+        _ = Js.call registered "add" [ name ]
+        Js.to
+            (Js.call (Js.global "document") "addEventListener" [ name, Js.from delegated ])
 
 
 -- `(data)`: the program's start data — the delegated names of every
@@ -1884,12 +1851,10 @@ listen el name flags =
     Js.to
         (Js.call el "addEventListener"
             [ Js.from name
-            , Js.from
-                (λevent ->
-                    if Js.isUndefined (Js.get el key) then
-                        ()
-                    else
-                        fire el event key flags
-                )
+            , Js.from λevent ->
+                if Js.isUndefined (Js.get el key) then
+                    ()
+                else
+                    fire el event key flags
             ]
         )

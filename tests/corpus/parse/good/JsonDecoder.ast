@@ -58,34 +58,33 @@
       (ident Decode.string)
       (apply
         (ident Decode.andThen)
-        (paren
-          (lambda
-            (pat_var s)
-            (case
-              (ident s)
-              (branch
-                (pat_string "admin")
-                (apply
-                  (ident Decode.succeed)
-                  (ctor Admin)))
-              (branch
-                (pat_string "member")
-                (apply
-                  (ident Decode.succeed)
-                  (ctor Member)))
-              (branch
-                (pat_string "guest")
-                (apply
-                  (ident Decode.succeed)
-                  (ctor Guest)))
-              (branch
-                (pat_var other)
-                (apply
-                  (ident Decode.fail)
-                  (string
-                    (chunk "unknown role: ")
-                    (interp
-                      (ident other)))))))))))
+        (lambda
+          (pat_var s)
+          (case
+            (ident s)
+            (branch
+              (pat_string "admin")
+              (apply
+                (ident Decode.succeed)
+                (ctor Admin)))
+            (branch
+              (pat_string "member")
+              (apply
+                (ident Decode.succeed)
+                (ctor Member)))
+            (branch
+              (pat_string "guest")
+              (apply
+                (ident Decode.succeed)
+                (ctor Guest)))
+            (branch
+              (pat_var other)
+              (apply
+                (ident Decode.fail)
+                (string
+                  (chunk "unknown role: ")
+                  (interp
+                    (ident other))))))))))
   (annotation pub users
     (type_con Decoder
       (type_paren

@@ -18,10 +18,10 @@ pub compose f g x = f (g x)
 pub sizes xs = List.map xs String.length
 
 
-pub loud xs = List.map xs (λx -> Debug.log "x" x)
+pub loud xs = List.map xs λx -> Debug.log "x" x
 
 
-pub hand x = apply (λy -> y) (λz -> Debug.log "z" z)
+pub hand x = apply (λy -> y) λz -> Debug.log "z" z
 
 
 pub withLog f x =

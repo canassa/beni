@@ -39,7 +39,7 @@ view model =
         <ul>
             <For each={model.keys} keyed={λk -> k}>{λk -> <li>{Net.load k}</li>}</For>
         </ul>
-        {Html.map (<p>{model.draft}</p>) (λm -> Saved (Net.load "last"))}
+        {Html.map (<p>{model.draft}</p>) λm -> Saved (Net.load "last")}
     </main>
 
 

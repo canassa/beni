@@ -45,7 +45,7 @@ onUrlChange tag = Sub.listen UrlChange (eachUrlChange _) tag
 -- Elm's: `popstate`, which a browser fires for a fragment followed as for
 -- the back and forward buttons. The address is read when the event fires.
 follow : Send Url -> ()
-follow send = Listen.each "window" "popstate" (λ_ -> currentUrl ()) (λurl -> sendUrl send url)
+follow send = Listen.each "window" "popstate" (λ_ -> currentUrl ()) λurl -> sendUrl send url
 
 
 sendUrl : Send Url, Maybe Url -> ()

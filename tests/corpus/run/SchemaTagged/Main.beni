@@ -34,7 +34,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (λn -> Ok (String.fromInt n))
+        λn -> Ok (String.fromInt n)
 
 
 toValue ( (), v ) = { value = v }
@@ -58,78 +58,60 @@ message =
             "Text"
             "text"
             (payload Schema.string)
-            (Schema.injection
-                WireText
-                (λw ->
-                    case w of
-                        WireText p ->
-                            Just p
+            (Schema.injection WireText λw ->
+                case w of
+                    WireText p ->
+                        Just p
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
-            (Schema.injection
-                Text
-                (λm ->
-                    case m of
-                        Text p ->
-                            Just p
+            (Schema.injection Text λm ->
+                case m of
+                    Text p ->
+                        Just p
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
         , Schema.variant
             "Count"
             "count"
             (payload (Schema.converted Schema.string decimalInt))
-            (Schema.injection
-                WireCount
-                (λw ->
-                    case w of
-                        WireCount p ->
-                            Just p
+            (Schema.injection WireCount λw ->
+                case w of
+                    WireCount p ->
+                        Just p
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
-            (Schema.injection
-                Count
-                (λm ->
-                    case m of
-                        Count p ->
-                            Just p
+            (Schema.injection Count λm ->
+                case m of
+                    Count p ->
+                        Just p
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
         , Schema.nullary
             "Ping"
             "ping"
-            (Schema.injection
-                (λ() -> WirePing)
-                (λw ->
-                    case w of
-                        WirePing ->
-                            Just ()
+            (Schema.injection (λ() -> WirePing) λw ->
+                case w of
+                    WirePing ->
+                        Just ()
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
-            (Schema.injection
-                (λ() -> Ping)
-                (λm ->
-                    case m of
-                        Ping ->
-                            Just ()
+            (Schema.injection (λ() -> Ping) λm ->
+                case m of
+                    Ping ->
+                        Just ()
 
-                        _ ->
-                            Nothing
-                )
+                    _ ->
+                        Nothing
             )
         ]
 
@@ -172,44 +154,32 @@ fromChildren r = ( (), r.children )
 
 
 tree : Schema Tree Tree
-tree =
-    Schema.recursive
-        "Tree"
-        (λself ->
-            leaf =
-                Schema.injection
-                    Leaf
-                    (λt ->
-                        case t of
-                            Leaf p ->
-                                Just p
+tree = Schema.recursive "Tree" λself ->
+    leaf = Schema.injection Leaf λt ->
+        case t of
+            Leaf p ->
+                Just p
 
-                            _ ->
-                                Nothing
-                    )
+            _ ->
+                Nothing
 
-            branch =
-                Schema.injection
-                    Branch
-                    (λt ->
-                        case t of
-                            Branch p ->
-                                Just p
+    branch = Schema.injection Branch λt ->
+        case t of
+            Branch p ->
+                Just p
 
-                            _ ->
-                                Nothing
-                    )
+            _ ->
+                Nothing
 
-            children =
-                Schema.record
-                    (Schema.fields |> Schema.field "children" (Schema.list self))
-                    (Schema.mapping toChildren fromChildren)
-                    (Schema.mapping toChildren fromChildren)
-            Schema.tagged "type"
-                [ Schema.variant "Leaf" "leaf" (payload Schema.int) leaf leaf
-                , Schema.variant "Branch" "branch" children branch branch
-                ]
-        )
+    children =
+        Schema.record
+            (Schema.fields |> Schema.field "children" (Schema.list self))
+            (Schema.mapping toChildren fromChildren)
+            (Schema.mapping toChildren fromChildren)
+    Schema.tagged "type"
+        [ Schema.variant "Leaf" "leaf" (payload Schema.int) leaf leaf
+        , Schema.variant "Branch" "branch" children branch branch
+        ]
 
 
 showTree : Tree -> String
@@ -249,9 +219,9 @@ main =
                 "{\"extra\":1,\"kind\":\"text\",\"value\":\"a\"}"
             )
             showMessage
-        , Show.result (Schema.print message (Count { value = 7 })) (λs -> s)
-        , Show.result (Schema.print message (Text { value = "hi" })) (λs -> s)
-        , Show.result (Schema.print message Ping) (λs -> s)
+        , Show.result (Schema.print message (Count { value = 7 })) λs -> s
+        , Show.result (Schema.print message (Text { value = "hi" })) λs -> s
+        , Show.result (Schema.print message Ping) λs -> s
         , Show.result (Schema.decode message (WireCount { value = "12" })) showMessage
         , Show.result (Schema.decode message (WireCount { value = "1 2" })) showMessage
         , Show.result (Schema.encode message (Count { value = 12 })) showWire
@@ -274,7 +244,7 @@ main =
                 tree
                 (Branch { children = [ Leaf { value = 1 }, Branch { children = [] } ] })
             )
-            (λs -> s)
+            λs -> s
         , Show.result
             (Schema.encode
                 tree

@@ -54,7 +54,7 @@ type Answer
 
 request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
-    case Task.callback (λresume -> start method url contentType body json resume) of
+    case Task.callback λresume -> start method url contentType body json resume of
         Answered result ->
             result
 
@@ -101,8 +101,8 @@ start method url contentType body json resume =
 
         _ =
             Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
-                [ Js.from (λresponse -> received response json abort resume)
-                , Js.from (λerror -> failed error abort resume)
+                [ Js.from λresponse -> received response json abort resume
+                , Js.from λerror -> failed error abort resume
                 ]
         λ() -> Js.to (Js.call abort "abort" [])
     else
@@ -121,7 +121,7 @@ parses url =
             True
         )
         (λerror -> Js.instanceOf error (Js.global "TypeError"))
-        (λ_ -> False)
+        λ_ -> False
 
 
 -- The response came: read its body, then answer.
@@ -129,8 +129,8 @@ received : Js.Value, Bool, Js.Value, Resume Answer -> ()
 received response json abort resume =
     _ =
         Js.call (Js.call response "text" []) "then"
-            [ Js.from (λtext -> resumeWith resume (answered response json text))
-            , Js.from (λerror -> failed error abort resume)
+            [ Js.from λtext -> resumeWith resume (answered response json text)
+            , Js.from λerror -> failed error abort resume
             ]
     ()
 
@@ -149,12 +149,11 @@ answered response json text =
                 Answered (Ok (Js.to text))
             )
             (λ_ -> True)
-            (λerror ->
+            λerror ->
                 if Js.instanceOf error (Js.global "SyntaxError") then
                     Answered (Err (BadBody "not JSON"))
                 else
                     Defect error
-            )
     else
         Answered (Ok (Js.to text))
 

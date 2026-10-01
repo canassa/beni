@@ -19,7 +19,7 @@ loud =
             _ = Debug.log "a conversion ran" s
             Ok 0
         )
-        (λn -> Ok (String.fromInt n))
+        λn -> Ok (String.fromInt n)
 
 
 one ( (), a ) = { a = a }
@@ -66,29 +66,21 @@ type Shape2
 
 shape2 : Schema Shape2 Shape2
 shape2 =
-    dot =
-        Schema.injection
-            (λ() -> Dot)
-            (λs ->
-                case s of
-                    Dot ->
-                        Just ()
+    dot = Schema.injection (λ() -> Dot) λs ->
+        case s of
+            Dot ->
+                Just ()
 
-                    _ ->
-                        Nothing
-            )
+            _ ->
+                Nothing
 
-    circle =
-        Schema.injection
-            Circle
-            (λs ->
-                case s of
-                    Circle r ->
-                        Just r
+    circle = Schema.injection Circle λs ->
+        case s of
+            Circle r ->
+                Just r
 
-                    _ ->
-                        Nothing
-            )
+            _ ->
+                Nothing
     Schema.tagged "shape"
         [ Schema.nullary "Dot" "dot" dot dot
         , Schema.variant
@@ -115,53 +107,45 @@ type Inner
 
 
 inner : Schema Inner Inner
-inner =
-    Schema.recursive
-        "Inner"
-        (λself ->
-            i = Schema.injection Inner (λ(Inner r) -> Just r)
-            Schema.tagged "t"
-                [ Schema.variant
-                    "Inner"
-                    "inner"
-                    (Schema.record
-                        (Schema.fields |> Schema.field "a" (Schema.list self))
-                        (Schema.mapping one unOne)
-                        (Schema.mapping one unOne)
-                    )
-                    i
-                    i
-                ]
-        )
+inner = Schema.recursive "Inner" λself ->
+    i = Schema.injection Inner λ(Inner r) -> Just r
+    Schema.tagged "t"
+        [ Schema.variant
+            "Inner"
+            "inner"
+            (Schema.record
+                (Schema.fields |> Schema.field "a" (Schema.list self))
+                (Schema.mapping one unOne)
+                (Schema.mapping one unOne)
+            )
+            i
+            i
+        ]
 
 
 outer : Schema Outer Outer
-outer =
-    Schema.recursive
-        "Outer"
-        (λself ->
-            o = Schema.injection Outer (λ(Outer r) -> Just r)
-            Schema.tagged "t"
-                [ Schema.variant
-                    "Outer"
-                    "outer"
-                    (Schema.record
-                        (Schema.fields
-                            |> Schema.field "a" inner
-                            |> Schema.field "b" (Schema.list self)
-                        )
-                        (Schema.mapping two unTwo)
-                        (Schema.mapping two unTwo)
-                    )
-                    o
-                    o
-                ]
-        )
+outer = Schema.recursive "Outer" λself ->
+    o = Schema.injection Outer λ(Outer r) -> Just r
+    Schema.tagged "t"
+        [ Schema.variant
+            "Outer"
+            "outer"
+            (Schema.record
+                (Schema.fields
+                    |> Schema.field "a" inner
+                    |> Schema.field "b" (Schema.list self)
+                )
+                (Schema.mapping two unTwo)
+                (Schema.mapping two unTwo)
+            )
+            o
+            o
+        ]
 
 
 -- Two schemas, one name.
 twice : Schema (List Int) (List Int)
-twice = Schema.list (Schema.recursive "Same" (λ_ -> Schema.int))
+twice = Schema.list (Schema.recursive "Same" λ_ -> Schema.int)
 
 
 twins : Schema { a : List Int, b : List Int } { a : List Int, b : List Int }
@@ -169,7 +153,7 @@ twins =
     Schema.record
         (Schema.fields
             |> Schema.field "a" twice
-            |> Schema.field "b" (Schema.list (Schema.recursive "Same" (λ_ -> Schema.int)))
+            |> Schema.field "b" (Schema.list (Schema.recursive "Same" λ_ -> Schema.int))
         )
         (Schema.mapping two unTwo)
         (Schema.mapping two unTwo)

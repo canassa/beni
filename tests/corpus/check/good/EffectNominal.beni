@@ -28,7 +28,7 @@ run p s =
 
 
 pub loudParser : Parser String
-loudParser = Parser (λs -> Debug.log "parse" (Just s))
+loudParser = Parser λs -> Debug.log "parse" (Just s)
 
 
 pub useLoud : String -> Maybe String
@@ -36,7 +36,7 @@ useLoud s = run loudParser s
 
 
 pub useQuiet : String -> Maybe String
-useQuiet s = run (Parser (λx -> Just x)) s
+useQuiet s = run (Parser λx -> Just x) s
 
 
 pub nth : Stream, Int -> Int

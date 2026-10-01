@@ -56,18 +56,17 @@ key = "todos-beni"
 
 
 encode : List Todo -> String
-encode todos = String.join (List.map todos (λt -> (if t.done then "1" else "0") ++ t.title)) "\n"
+encode todos = String.join (List.map todos λt -> (if t.done then "1" else "0") ++ t.title) "\n"
 
 
 decode : String -> List Todo
 decode text =
-    List.indexedMap
-        (List.filter (String.lines text) (λline -> not (String.isEmpty line)))
-        (λi line -> { id = i, title = String.dropLeft line 1, done = String.startsWith line "1" })
+    List.indexedMap (List.filter (String.lines text) λline -> not (String.isEmpty line)) λi line ->
+        { id = i, title = String.dropLeft line 1, done = String.startsWith line "1" }
 
 
 save : List Todo -> Cmd Msg
-save todos = Cmd.do (λ() -> saved (Storage.set Local key (encode todos)))
+save todos = Cmd.do λ() -> saved (Storage.set Local key (encode todos))
 
 
 -- A todo list too big for the quota, or storage the browser withholds,
@@ -80,7 +79,7 @@ saved _ = ()
 
 filterOf : Maybe Url -> Filter
 filterOf url =
-    case Maybe.andThen url (λu -> u.fragment) of
+    case Maybe.andThen url λu -> u.fragment of
         Just "/active" ->
             Active
 
@@ -134,16 +133,16 @@ update msg model =
         Toggle id ->
             changed
                 model
-                (List.map model.todos (λt -> if t.id == id then { t | done = not t.done } else t))
+                (List.map model.todos λt -> if t.id == id then { t | done = not t.done } else t)
 
         ToggleAll done ->
-            changed model (List.map model.todos (λt -> { t | done = done }))
+            changed model (List.map model.todos λt -> { t | done = done })
 
         Destroy id ->
-            changed model (List.filter model.todos (λt -> t.id /= id))
+            changed model (List.filter model.todos λt -> t.id /= id)
 
         ClearCompleted ->
-            changed model (List.filter model.todos (λt -> not t.done))
+            changed model (List.filter model.todos λt -> not t.done)
 
         UrlChanged url ->
             ( { model | filter = filterOf (Just url) }, Cmd.none )
@@ -168,7 +167,7 @@ visible filter todo =
 
 view : Model -> Html Msg
 view model =
-    left = List.length (List.filter model.todos (λt -> not t.done))
+    left = List.length (List.filter model.todos λt -> not t.done)
     <section class="todoapp">
         <header class="header">
             <h1>todos</h1>

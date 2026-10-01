@@ -32,9 +32,8 @@ shiftRightZero a n = Js.shiftRightZero a n
 --| The operators passed as values: the sibling's functions.
 pub viaValues : Int, Int -> List Int
 viaValues a b =
-    List.map
-        [ Js.rem, Js.bitOr, Js.bitXor, Js.shiftLeft, Js.shiftRight, Js.shiftRightZero ]
-        (λf -> f a b)
+    List.map [ Js.rem, Js.bitOr, Js.bitXor, Js.shiftLeft, Js.shiftRight, Js.shiftRightZero ] λf ->
+        f a b
 
 
 --| `typeof` of a string, a number, a list (an array, so `"object"`) and a
@@ -44,7 +43,7 @@ kinds () =
     [ Js.to (Js.typeOf (Js.from "s"))
     , Js.to (Js.typeOf (Js.from 1))
     , Js.to (Js.typeOf (Js.from [ 1 ]))
-    , Js.to (Js.typeOf (Js.from (λ() -> ())))
+    , Js.to (Js.typeOf (Js.from λ() -> ()))
     ]
 
 

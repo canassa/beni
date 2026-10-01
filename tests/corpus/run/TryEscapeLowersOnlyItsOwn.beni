@@ -34,5 +34,5 @@ f k =
 
 main : Program
 main =
-    ( first, second ) = f (λp -> Just p)
+    ( first, second ) = f λp -> Just p
     Node.printLines [ Debug.toString first, String.fromInt second ]

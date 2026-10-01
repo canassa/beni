@@ -31,7 +31,7 @@ row id = { id = id, label = "row " ++ String.fromInt id }
 
 
 pub create : Int -> Model
-create n = { rows = Array.initialize n (λi -> row (i + 1)), selected = 0, nextId = n + 1 }
+create n = { rows = Array.initialize n λi -> row (i + 1), selected = 0, nextId = n + 1 }
 
 
 pub updateLabel : Int -> Msg
@@ -66,14 +66,13 @@ pub update : Msg, Model -> Model
 update msg model =
     case msg of
         UpdateLabel i ->
-            { model | rows = Array.update model.rows i (λr -> { r | label = r.label ++ " !!!" }) }
+            { model | rows = Array.update model.rows i λr -> { r | label = r.label ++ " !!!" } }
 
         UpdateEvery10th ->
             { model
                 | rows =
-                    Array.indexedMap model.rows
-                        (λi r -> if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r
-                        )
+                    Array.indexedMap model.rows λi r ->
+                        if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r
             }
 
         Swap i j ->
@@ -90,12 +89,11 @@ update msg model =
                     model
 
         Remove id ->
-            { model | rows = Array.filter model.rows (λr -> r.id /= id) }
+            { model | rows = Array.filter model.rows λr -> r.id /= id }
 
         Append n ->
             { model
-                | rows =
-                    Array.append model.rows (Array.initialize n (λi -> row (model.nextId + i)))
+                | rows = Array.append model.rows (Array.initialize n λi -> row (model.nextId + i))
                 , nextId = model.nextId + n
             }
 

@@ -403,20 +403,20 @@ update dict targetKey alter =
 --| the first dictionary.
 pub union : Dict k v, Dict k v -> Dict k v
     where k.compare : k, k -> Order
-union t1 t2 = foldl t1 t2 (λkey value dict -> insert dict key value)
+union t1 t2 = foldl t1 t2 λkey value dict -> insert dict key value
 
 
 --| Keep a key-value pair when its key appears in the second dictionary.
 pub intersect : Dict k v, Dict k v -> Dict k v
     where k.compare : k, k -> Order
-intersect t1 t2 = filter t1 (λkey _ -> member t2 key)
+intersect t1 t2 = filter t1 λkey _ -> member t2 key
 
 
 --| Keep a key-value pair when its key does not appear in the second
 --| dictionary.
 pub diff : Dict k a, Dict k b -> Dict k a
     where k.compare : k, k -> Order
-diff t1 t2 = foldl t2 t1 (λkey _ t -> remove t key)
+diff t1 t2 = foldl t2 t1 λkey _ t -> remove t key
 
 
 --| The most general way of combining two dictionaries. The two dictionaries
@@ -456,7 +456,7 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
                         ( rest, bothStep lKey lValue rValue result )
 
     ( leftovers, intermediateResult ) = foldl rightDict ( toList leftDict, initialResult ) stepState
-    List.foldl leftovers intermediateResult (λ( key, value ) result -> leftStep key value result)
+    List.foldl leftovers intermediateResult λ( key, value ) result -> leftStep key value result
 
 
 --| Apply a function to all values in a dictionary. The keys, and therefore
@@ -524,16 +524,11 @@ foldrTree tree acc func =
 --|     filter animals (λ_ animal -> animal == Cat)
 pub filter : Dict k v, (k, v -> Bool) -> Dict k v
     where k.compare : k, k -> Order
-filter (Dict tree) isGood =
-    foldlTree
-        tree
-        empty
-        (λkey value dict ->
-            if isGood key value then
-                insert dict key value
-            else
-                dict
-        )
+filter (Dict tree) isGood = foldlTree tree empty λkey value dict ->
+    if isGood key value then
+        insert dict key value
+    else
+        dict
 
 
 --| Partition a dictionary according to some test. The first dictionary
@@ -556,14 +551,14 @@ partition (Dict tree) isGood =
 --|
 --|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
 pub keys : Dict k v -> List k
-keys dict = foldl dict [] (λkey _ keyList -> List.push keyList key)
+keys dict = foldl dict [] λkey _ keyList -> List.push keyList key
 
 
 --| Get all of the values in a dictionary, in the order of their keys.
 --|
 --|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
 pub values : Dict k v -> List v
-values dict = foldl dict [] (λ_ value valueList -> List.push valueList value)
+values dict = foldl dict [] λ_ value valueList -> List.push valueList value
 
 
 --| Convert a dictionary into an association list of key-value pairs, sorted
@@ -572,7 +567,7 @@ values dict = foldl dict [] (λ_ value valueList -> List.push valueList value)
 --|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ])
 --|         == [ ( "a", 0 ), ( "b", 1 ) ]
 pub toList : Dict k v -> List ( k, v )
-toList dict = foldl dict [] (λkey value list -> List.push list ( key, value ))
+toList dict = foldl dict [] λkey value list -> List.push list ( key, value )
 
 
 --| Convert an association list into a dictionary, ordered by the key type's
@@ -581,4 +576,4 @@ toList dict = foldl dict [] (λkey value list -> List.push list ( key, value ))
 --|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
 pub fromList : List ( k, v ) -> Dict k v
     where k.compare : k, k -> Order
-fromList assocs = List.foldl assocs empty (λ( key, value ) dict -> insert dict key value)
+fromList assocs = List.foldl assocs empty λ( key, value ) dict -> insert dict key value

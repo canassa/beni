@@ -18,7 +18,7 @@ update : Msg, Int -> ( Int, Cmd Msg )
 update msg count =
     case msg of
         After ->
-            ( count + 10, Cmd.afterRender (λ_ -> Debug.todo "after-render threw") )
+            ( count + 10, Cmd.afterRender λ_ -> Debug.todo "after-render threw" )
 
         Inc ->
             ( count + 1, Cmd.none )

@@ -23,10 +23,6 @@ sandbox init view = program { init = init, view = view }
 
 
 pub page : Int
-page =
-    sandbox
-        0
-        (λn ->
-            () = log "view"
-            String.fromInt n
-        )
+page = sandbox 0 λn ->
+    () = log "view"
+    String.fromInt n

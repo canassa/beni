@@ -17,12 +17,12 @@ type alias Line =
 
 
 pub lines : Array Item -> Array Line
-lines items =
-    Array.map items (λit -> { id = it.id, text = it.name ++ " " ++ String.fromFloat it.price })
+lines items = Array.map items λit ->
+    { id = it.id, text = it.name ++ " " ++ String.fromFloat it.price }
 
 
 pub prices : Array Item -> Array Float
-prices items = Array.map items (λit -> it.price)
+prices items = Array.map items λit -> it.price
 
 
 pub reprice : Array Float, Int -> Array Float
@@ -30,4 +30,4 @@ reprice ps i = Array.set ps i 0.5
 
 
 pub rename : Array Line, Int -> Array Line
-rename ls i = Array.update ls i (λl -> { l | text = "renamed" })
+rename ls i = Array.update ls i λl -> { l | text = "renamed" }

@@ -583,15 +583,14 @@
                     (ident List.foldl)
                     (ident cards)
                     (int 0)
-                    (paren
-                      (lambda
-                        (pat_var c)
-                        (pat_var acc)
-                        (apply
-                          (ident max)
-                          (ident acc)
-                          (field_access .id
-                            (ident c))))))))))
+                    (lambda
+                      (pat_var c)
+                      (pat_var acc)
+                      (apply
+                        (ident max)
+                        (ident acc)
+                        (field_access .id
+                          (ident c)))))))))
           (branch
             (pat_ctor Err
               (pat_var error))
@@ -683,12 +682,11 @@
             (ident List.filter)
             (field_access .labels
               (ident card))
-            (paren
-              (lambda
-                (pat_var l)
-                (neq
-                  (ident l)
-                  (ident label)))))))
+            (lambda
+              (pat_var l)
+              (neq
+                (ident l)
+                (ident label))))))
       (record_update card
         (field labels
           (list
@@ -824,26 +822,24 @@
               (ident model))
             (apply
               (ident List.indexedMap)
-              (paren
-                (lambda
-                  (pat_var index)
-                  (pat_var card)
-                  (record_update card
-                    (field order
-                      (ident index)))))))
+              (lambda
+                (pat_var index)
+                (pat_var card)
+                (record_update card
+                  (field order
+                    (ident index))))))
           (apply
             (ident List.foldl)
             (ident cards)
-            (paren
-              (lambda
-                (pat_var card)
-                (pat_var acc)
-                (apply
-                  (ident Dict.insert)
-                  (ident acc)
-                  (field_access .id
-                    (ident card))
-                  (ident card)))))))
+            (lambda
+              (pat_var card)
+              (pat_var acc)
+              (apply
+                (ident Dict.insert)
+                (ident acc)
+                (field_access .id
+                  (ident card))
+                (ident card))))))
       (record_update model
         (field cards
           (apply
@@ -869,13 +865,12 @@
           (ident Dict.values))
         (apply
           (ident List.filter)
-          (paren
-            (lambda
-              (pat_var card)
-              (eq
-                (field_access .column
-                  (ident card))
-                (ident column))))))
+          (lambda
+            (pat_var card)
+            (eq
+              (field_access .column
+                (ident card))
+              (ident column)))))
       (apply
         (ident List.sortBy)
         (accessor .order))))
@@ -934,16 +929,15 @@
             (ident List.any)
             (field_access .labels
               (ident card))
-            (paren
-              (lambda
-                (pat_var label)
-                (apply
-                  (ident String.contains)
-                  (paren
-                    (apply
-                      (ident String.toLower)
-                      (ident label)))
-                  (ident filter)))))))))
+            (lambda
+              (pat_var label)
+              (apply
+                (ident String.contains)
+                (paren
+                  (apply
+                    (ident String.toLower)
+                    (ident label)))
+                (ident filter))))))))
   (annotation handleKey
     (type_fn
       (type_con String)
@@ -1250,16 +1244,15 @@
             (apply
               (ident List.map)
               (ident errors)
-              (paren
-                (lambda
-                  (pat_var err)
-                  (apply
-                    (ident li)
-                    (list)
-                    (list
-                      (apply
-                        (ident text)
-                        (ident err))))))))))))
+              (lambda
+                (pat_var err)
+                (apply
+                  (ident li)
+                  (list)
+                  (list
+                    (apply
+                      (ident text)
+                      (ident err)))))))))))
   (annotation viewColumn
     (type_fn
       (type_con Model)
@@ -1690,30 +1683,29 @@
               (field_access .labels
                 (ident card))
               (ident identity)))
-          (paren
-            (lambda
-              (pat_var label)
-              (apply
-                (ident li)
-                (list
-                  (apply
-                    (ident class)
-                    (string
-                      (chunk "label label-")
-                      (interp
-                        (ident label))))
-                  (apply
-                    (ident onClick)
-                    (paren
-                      (apply
-                        (ctor ToggleLabel)
-                        (field_access .id
-                          (ident card))
-                        (ident label)))))
-                (list
-                  (apply
-                    (ident text)
-                    (ident label))))))))))
+          (lambda
+            (pat_var label)
+            (apply
+              (ident li)
+              (list
+                (apply
+                  (ident class)
+                  (string
+                    (chunk "label label-")
+                    (interp
+                      (ident label))))
+                (apply
+                  (ident onClick)
+                  (paren
+                    (apply
+                      (ctor ToggleLabel)
+                      (field_access .id
+                        (ident card))
+                      (ident label)))))
+              (list
+                (apply
+                  (ident text)
+                  (ident label)))))))))
   (annotation viewCardActions
     (type_fn
       (type_con Card)
@@ -1984,27 +1976,26 @@
       (ident Decode.string)
       (apply
         (ident Decode.andThen)
-        (paren
-          (lambda
-            (pat_var key)
-            (case
+        (lambda
+          (pat_var key)
+          (case
+            (apply
+              (ident columnFromKey)
+              (ident key))
+            (branch
+              (pat_ctor Just
+                (pat_var column))
               (apply
-                (ident columnFromKey)
-                (ident key))
-              (branch
-                (pat_ctor Just
-                  (pat_var column))
-                (apply
-                  (ident Decode.succeed)
-                  (ident column)))
-              (branch
-                (pat_ctor Nothing)
-                (apply
-                  (ident Decode.fail)
-                  (string
-                    (chunk "unknown column: ")
-                    (interp
-                      (ident key)))))))))))
+                (ident Decode.succeed)
+                (ident column)))
+            (branch
+              (pat_ctor Nothing)
+              (apply
+                (ident Decode.fail)
+                (string
+                  (chunk "unknown column: ")
+                  (interp
+                    (ident key))))))))))
   (annotation pub load
     (type_fn
       (type_con String)
@@ -2049,20 +2040,19 @@
     (apply
       (ident List.map)
       (ident columns)
-      (paren
-        (lambda
-          (pat_var column)
-          (tuple
-            (apply
-              (ident columnName)
-              (ident column))
-            (apply
-              (ident List.length)
-              (paren
-                (apply
-                  (ident cardsIn)
-                  (ident column)
-                  (ident model)))))))))
+      (lambda
+        (pat_var column)
+        (tuple
+          (apply
+            (ident columnName)
+            (ident column))
+          (apply
+            (ident List.length)
+            (paren
+              (apply
+                (ident cardsIn)
+                (ident column)
+                (ident model))))))))
   (annotation pub labelsInUse
     (type_fn
       (type_con Model)

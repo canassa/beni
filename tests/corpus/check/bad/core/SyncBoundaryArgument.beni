@@ -15,7 +15,7 @@ pub foreign pure program : { init : Int, view : sync (Int -> String) } -> Int
 
 
 direct : Int
-direct = onEvent (λn -> get n)
+direct = onEvent λn -> get n
 
 
 load : Int -> String
@@ -29,7 +29,7 @@ viaLoad = onEvent load
 
 
 each : Int -> String
-each n = String.concat (List.map [ n ] (λx -> get x))
+each n = String.concat (List.map [ n ] λx -> get x)
 
 
 viaMap : Int

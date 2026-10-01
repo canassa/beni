@@ -51,5 +51,5 @@ main =
         { init = ( { count = 0, ticks = 0 }, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Time.every (Time.millis 100) (λ_ -> Tick)
+        , subscriptions = λ_ -> Time.every (Time.millis 100) λ_ -> Tick
         }

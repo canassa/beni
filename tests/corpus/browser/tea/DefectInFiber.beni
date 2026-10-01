@@ -24,12 +24,10 @@ update msg count =
         Go ->
             ( count + 10
             , Cmd.batch
-                [ Cmd.perform
-                    (λsend ->
-                        _ = Time.sleep (Time.millis 50)
-                        send Late
-                    )
-                , Cmd.perform (λ_ -> Debug.todo "body threw")
+                [ Cmd.perform λsend ->
+                    _ = Time.sleep (Time.millis 50)
+                    send Late
+                , Cmd.perform λ_ -> Debug.todo "body threw"
                 ]
             )
 

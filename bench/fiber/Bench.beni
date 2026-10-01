@@ -80,8 +80,8 @@ loopYielding n acc =
 --| and summed.
 pub fanOut : Int -> Int
 fanOut n =
-    fibers = List.map (List.range 1 n) (λi -> Task.spawn (λ() -> worker i))
-    List.foldl fibers 0 (λf acc -> acc + Task.join f)
+    fibers = List.map (List.range 1 n) λi -> Task.spawn λ() -> worker i
+    List.foldl fibers 0 λf acc -> acc + Task.join f
 
 
 worker : Int -> Int
@@ -93,14 +93,7 @@ worker i =
 --| The spike's four primitives together, for the size of what a program
 --| that uses them ships: a scope, a bracket, a spawn and a join.
 pub together : Int -> Int
-together n =
-    Task.scope
-        (λs ->
-            Task.bracket
-                (λ() -> n)
-                (λ_ _ -> ())
-                (λr ->
-                    f = Task.spawnIn s (λ() -> worker r)
-                    Task.join f
-                )
-        )
+together n = Task.scope λs ->
+    Task.bracket (λ() -> n) (λ_ _ -> ()) λr ->
+        f = Task.spawnIn s λ() -> worker r
+        Task.join f

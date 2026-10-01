@@ -148,10 +148,7 @@ make encoded decoded decodeValue encodeValue =
 
 
 pub fromEndpoint : Endpoint a -> Schema a a
-fromEndpoint item =
-    make item item
-        (λ_ value -> Ok value)
-        (λ_ value -> Ok value)
+fromEndpoint item = make item item (λ_ value -> Ok value) λ_ value -> Ok value
 
 
 pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
@@ -260,11 +257,10 @@ transform schema target decodeTransform encodeTransform =
             _ <- Result.andThen (schema.decoded.validate context value)
             decodeTransform context value
         )
-        (λcontext value ->
+        λcontext value ->
             original <- Result.andThen (encodeTransform context value)
             _ <- Result.andThen (schema.decoded.validate context original)
             schema.encodeValue context original
-        )
 
 
 pub refine : Endpoint a, String, (a -> Bool) -> Endpoint a
@@ -275,13 +271,12 @@ refine base message predicate =
         }
         base.readValue
         base.writeValue
-        (λcontext value ->
+        λcontext value ->
             _ <- Result.andThen (base.validate context value)
             if predicate value then
                 Ok ()
             else
                 Err [ issue context (Invalid "refinement") message ]
-        )
 
 
 pub describe : Schema e a -> { encoded : Description, decoded : Description }
@@ -299,7 +294,7 @@ stringEndpoint =
                     expected context "string"
         )
         (λ_ text -> Ok (Wire.Text text))
-        (λ_ _ -> Ok ())
+        λ_ _ -> Ok ()
 
 
 pub string : Schema String String
@@ -317,7 +312,7 @@ boolEndpoint =
                     expected context "boolean"
         )
         (λ_ flag -> Ok (Wire.Flag flag))
-        (λ_ _ -> Ok ())
+        λ_ _ -> Ok ()
 
 
 pub bool : Schema Bool Bool
@@ -335,7 +330,7 @@ nullEndpoint =
                     expected context "null"
         )
         (λ_ _ -> Ok Wire.Null)
-        (λ_ _ -> Ok ())
+        λ_ _ -> Ok ()
 
 
 pub null : Schema () ()
@@ -351,13 +346,12 @@ int =
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        (λcontext value ->
+        λcontext value ->
             asFloat = toFloat value
             if isSafeWhole asFloat then
                 Ok asFloat
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
-        )
 
 
 numberEndpoint : Endpoint Float
@@ -376,7 +370,7 @@ numberEndpoint =
             else
                 Ok (Wire.Number number)
         )
-        (λ_ _ -> Ok ())
+        λ_ _ -> Ok ()
 
 
 intEndpoint : Endpoint Int
@@ -399,12 +393,11 @@ intEndpoint =
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        (λcontext value ->
+        λcontext value ->
             if isSafeWhole (toFloat value) then
                 Ok ()
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
-        )
 
 
 isSafeWhole : Float -> Bool
@@ -420,7 +413,7 @@ pub list : Schema e a -> Schema (List e) (List a)
 list item =
     make (listEndpoint item.encoded) (listEndpoint item.decoded)
         (λcontext values -> traverse context values item.decodeValue)
-        (λcontext values -> traverse context values item.encodeValue)
+        λcontext values -> traverse context values item.encodeValue
 
 
 pub listEndpoint : Endpoint a -> Endpoint (List a)
@@ -439,10 +432,9 @@ listEndpoint item =
             nested <- Result.andThen (enter context)
             Result.map (traverse nested values item.writeValue) Wire.Array
         )
-        (λcontext values ->
+        λcontext values ->
             nested <- Result.andThen (enter context)
-            Result.map (traverse nested values item.validate) (λ_ -> ())
-        )
+            Result.map (traverse nested values item.validate) λ_ -> ()
 
 
 pub nullable : Schema e a -> Schema (Nullable e) (Nullable a)
@@ -455,13 +447,12 @@ nullable schema =
                 NonNull inner ->
                     Result.map (schema.decodeValue context inner) NonNull
         )
-        (λcontext value ->
+        λcontext value ->
             case value of
                 Null ->
                     Ok Null
                 NonNull inner ->
                     Result.map (schema.encodeValue context inner) NonNull
-        )
 
 
 pub nullableEndpoint : Endpoint a -> Endpoint (Nullable a)
@@ -484,13 +475,12 @@ nullableEndpoint item =
                 NonNull inner ->
                     item.writeValue context inner
         )
-        (λcontext value ->
+        λcontext value ->
             case value of
                 Null ->
                     Ok ()
                 NonNull inner ->
                     item.validate context inner
-        )
 
 
 pub requiredField : String, Endpoint a -> Field a
@@ -510,7 +500,7 @@ requiredField key item =
     , writeField =
         λcontext value ->
             _ <- Result.andThen (item.validate (atKey context key) value)
-            Result.map (item.writeValue (atKey context key) value) (λwire -> [ ( key, wire ) ])
+            Result.map (item.writeValue (atKey context key) value) λwire -> [ ( key, wire ) ]
     , validateField = λcontext value -> item.validate (atKey context key) value
     }
 
@@ -536,9 +526,8 @@ optionalField key item =
                     Ok []
                 Present inner ->
                     _ <- Result.andThen (item.validate (atKey context key) inner)
-                    Result.map
-                        (item.writeValue (atKey context key) inner)
-                        (λwire -> [ ( key, wire ) ])
+                    Result.map (item.writeValue (atKey context key) inner) λwire ->
+                        [ ( key, wire ) ]
     , validateField =
         λcontext value ->
             case value of
@@ -572,10 +561,9 @@ object1Endpoint name field build get =
             nested <- Result.andThen (enter context)
             Result.map (field.writeField nested (get value)) Wire.Object
         )
-        (λcontext value ->
+        λcontext value ->
             nested <- Result.andThen (enter context)
             field.validateField nested (get value)
-        )
 
 
 pub object2Endpoint :
@@ -613,12 +601,11 @@ object2Endpoint name first second build getFirst getSecond =
             secondResult = second.writeField nested (getSecond value)
             combineFields nested.options.errors firstResult secondResult
         )
-        (λcontext value ->
+        λcontext value ->
             nested <- Result.andThen (enter context)
             firstResult = first.validateField nested (getFirst value)
             secondResult = second.validateField nested (getSecond value)
             combineValidations nested.options.errors firstResult secondResult
-        )
 
 
 pub deferEndpoint : String, (() -> Endpoint a) -> Endpoint a
@@ -632,10 +619,9 @@ deferEndpoint name get =
             target = get ()
             target.writeValue context value
         )
-        (λcontext value ->
+        λcontext value ->
             target = get ()
             target.validate context value
-        )
 
 
 pub recursiveEndpoint : String, Shape, (() -> Endpoint a) -> Endpoint a
@@ -701,27 +687,22 @@ unknown context known fields =
         IgnoreUnknown ->
             Ok ()
         RejectUnknown ->
-            issues =
-                List.foldl
-                    fields
-                    []
-                    (λ( key, _ ) found ->
-                        if List.member known key then
-                            found
-                        else
-                            case context.options.errors of
-                                FirstError ->
-                                    if found == [] then
-                                        [ issue (atKey context key) UnknownField "unknown field"
-                                        ]
-                                    else
-                                        found
+            issues = List.foldl fields [] λ( key, _ ) found ->
+                if List.member known key then
+                    found
+                else
+                    case context.options.errors of
+                        FirstError ->
+                            if found == [] then
+                                [ issue (atKey context key) UnknownField "unknown field"
+                                ]
+                            else
+                                found
 
-                                AllErrors ->
-                                    [ issue (atKey context key) UnknownField "unknown field"
-                                    , ...found
-                                    ]
-                    )
+                        AllErrors ->
+                            [ issue (atKey context key) UnknownField "unknown field"
+                            , ...found
+                            ]
             if issues == [] then
                 Ok ()
             else

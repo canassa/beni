@@ -9,4 +9,4 @@ pub eq : Inner, Inner -> Bool
 eq _ _ = True
 
 
-bad = Basics.eq (Inner (λvalue -> value + 1)) (Inner (λvalue -> value - 1))
+bad = Basics.eq (Inner λvalue -> value + 1) (Inner λvalue -> value - 1)

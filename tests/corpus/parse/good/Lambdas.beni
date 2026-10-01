@@ -19,7 +19,7 @@ curried = λa -> λb -> λc -> a + b + c
 applyTwice f x = (λg y -> g (g y)) f x
 
 
-sumPairs xs = List.map xs (λ( a, b ) -> a + b)
+sumPairs xs = List.map xs λ( a, b ) -> a + b
 
 
 ignoreAll = λ_ _ _ -> ()

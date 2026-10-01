@@ -60,22 +60,19 @@ main =
         , int "\"1\""
         , Show.result (Schema.parse Schema.finiteFloat "1e400") String.fromFloat
         , Show.result (Schema.parse Schema.float "1e400") String.fromFloat
-        , Show.result
-            (Schema.parse Schema.bool "0")
-            (λb ->
-                if b then
-                    "True"
-                else
-                    "False"
-            )
+        , Show.result (Schema.parse Schema.bool "0") λb ->
+            if b then
+                "True"
+            else
+                "False"
         , "-- printing"
-        , Show.result (Schema.print Schema.float nan) (λs -> s)
-        , Show.result (Schema.print reading { value = infinity }) (λs -> s)
-        , Show.result (Schema.print reading { value = -0.0 }) (λs -> s)
-        , Show.result (Schema.print (Schema.list Schema.float) [ 1.5, nan ]) (λs -> s)
+        , Show.result (Schema.print Schema.float nan) λs -> s
+        , Show.result (Schema.print reading { value = infinity }) λs -> s
+        , Show.result (Schema.print reading { value = -0.0 }) λs -> s
+        , Show.result (Schema.print (Schema.list Schema.float) [ 1.5, nan ]) λs -> s
         , Show.result (Schema.encode Schema.finiteFloat nan) String.fromFloat
         , Show.result (Schema.decode Schema.float nan) String.fromFloat
         , Show.value (Schema.write Schema.float nan)
-        , Show.result (Schema.print Schema.string "quote \" and\nline") (λs -> s)
-        , Show.result (Schema.parse Schema.string "\"\\u00e9t\\u00e9\"") (λs -> s)
+        , Show.result (Schema.print Schema.string "quote \" and\nline") λs -> s
+        , Show.result (Schema.parse Schema.string "\"\\u00e9t\\u00e9\"") λs -> s
         ]

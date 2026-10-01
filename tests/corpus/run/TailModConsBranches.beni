@@ -121,16 +121,13 @@ show xs = String.join (List.map xs String.fromInt) ","
 
 
 opsFor : Int -> List Op
-opsFor n =
-    List.map (List.range 1 n)
-        (λi ->
-            if Int.mod i 3 == 0 then
-                Skip
-            else if Int.mod i 3 == 1 then
-                Keep i
-            else
-                Dup i
-        )
+opsFor n = List.map (List.range 1 n) λi ->
+    if Int.mod i 3 == 0 then
+        Skip
+    else if Int.mod i 3 == 1 then
+        Keep i
+    else
+        Dup i
 
 
 main : Program
@@ -149,9 +146,8 @@ main =
         , String.fromInt (List.sum (countdown 100000))
         , String.fromInt (List.sum (withLet big))
         , String.join
-            (List.map
-                (chunks [ 1, 2, 3, 4, 5 ] 2)
-                (λc -> String.join (List.map c String.fromInt) "+")
+            (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) λc ->
+                String.join (List.map c String.fromInt) "+"
             )
             ","
         , String.fromInt (List.length (chunks big 3))

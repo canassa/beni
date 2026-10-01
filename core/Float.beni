@@ -15,9 +15,6 @@ import Js
 --|
 --|     Float.log 100 10 == 2
 pub log : Float, Float -> Float
-log x base =
-    Js.pure
-        (λ() ->
-            Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
-                / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])
-        )
+log x base = Js.pure λ() ->
+    Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
+        / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])

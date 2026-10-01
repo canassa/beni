@@ -41,7 +41,7 @@ samples =
 
     chosen =
         (Random.step
-            (Random.andThen die (λn -> Random.map (Random.int 0 n) (λm -> m <= n)))
+            (Random.andThen die λn -> Random.map (Random.int 0 n) λm -> m <= n)
             seed
         ).0
 

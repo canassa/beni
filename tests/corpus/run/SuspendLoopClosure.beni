@@ -20,4 +20,4 @@ build n acc =
 
 
 main : Program
-main = Io.run (λ() -> Node.printLines (List.map (build 3 []) (λf -> String.fromInt (f 0))))
+main = Io.run λ() -> Node.printLines (List.map (build 3 []) λf -> String.fromInt (f 0))

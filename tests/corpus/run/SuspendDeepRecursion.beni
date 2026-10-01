@@ -33,8 +33,5 @@ countdown n acc =
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            Node.printLines [ String.fromInt (depth 200000), String.fromInt (countdown 200000 0) ]
-        )
+main = Io.run λ() ->
+    Node.printLines [ String.fromInt (depth 200000), String.fromInt (countdown 200000 0) ]

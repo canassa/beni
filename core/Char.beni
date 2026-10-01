@@ -29,7 +29,7 @@ pub toCode : Char -> Int
 toCode char =
     -- `codePointAt` and not `charCodeAt`: the second halves an astral
     -- character and answers a surrogate, which is not a scalar value.
-    Js.pure (λ() -> Js.to (Js.call (Js.from char) "codePointAt" [ Js.from 0 ]))
+    Js.pure λ() -> Js.to (Js.call (Js.from char) "codePointAt" [ Js.from 0 ])
 
 
 --| Convert a Unicode code point to a character.
@@ -40,46 +40,38 @@ fromCode code =
     -- Out of range, a fraction or a surrogate half is replaced rather than
     -- thrown: U+FFFD is the Unicode replacement character, the
     -- specification's own answer to "this is not a scalar value".
-    Js.pure
-        (λ() ->
-            if
-                Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from code ])
-                    && 0 <= code
-                    && code <= 0x10FFFF
-                    && (code < 0xD800 || 0xDFFF < code)
-            then
-                Js.to (Js.call (Js.global "String") "fromCodePoint" [ Js.from code ])
-            else
-                '\u{FFFD}'
-        )
+    Js.pure λ() ->
+        if
+            Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from code ])
+                && 0 <= code
+                && code <= 0x10FFFF
+                && (code < 0xD800 || 0xDFFF < code)
+        then
+            Js.to (Js.call (Js.global "String") "fromCodePoint" [ Js.from code ])
+        else
+            '\u{FFFD}'
 
 
 --| Convert to upper case.
 --|
 --|     toUpper 'a' == 'A'
 pub toUpper : Char -> Char
-toUpper char =
-    Js.pure
-        (λ() ->
-            mapped = Js.call (Js.from char) "toUpperCase" []
-            points : Int
-            points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
-            if points == 1 then Js.to mapped else char
-        )
+toUpper char = Js.pure λ() ->
+    mapped = Js.call (Js.from char) "toUpperCase" []
+    points : Int
+    points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
+    if points == 1 then Js.to mapped else char
 
 
 --| Convert to lower case.
 --|
 --|     toLower 'A' == 'a'
 pub toLower : Char -> Char
-toLower char =
-    Js.pure
-        (λ() ->
-            mapped = Js.call (Js.from char) "toLowerCase" []
-            points : Int
-            points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
-            if points == 1 then Js.to mapped else char
-        )
+toLower char = Js.pure λ() ->
+    mapped = Js.call (Js.from char) "toLowerCase" []
+    points : Int
+    points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
+    if points == 1 then Js.to mapped else char
 
 
 --| Detect upper case ASCII characters.

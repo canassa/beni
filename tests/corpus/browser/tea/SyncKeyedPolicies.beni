@@ -62,9 +62,9 @@ update msg n =
 keyed : Bool, String, Cmd.Policy, String -> Cmd Msg
 keyed fibers key policy what =
     if fibers then
-        Cmd.keyed key policy (λsend -> say send (λ() -> pause False) what)
+        Cmd.keyed key policy λsend -> say send (λ() -> pause False) what
     else
-        Cmd.keyed key policy (λsend -> say send (λ() -> ()) what)
+        Cmd.keyed key policy λsend -> say send (λ() -> ()) what
 
 
 name : Cmd.Policy -> String
@@ -101,10 +101,8 @@ say send hold what =
 
 sleeper : Cmd.Send Msg -> ()
 sleeper _ =
-    Task.bracket
-        (λ() -> Log.info "sleeper starts")
-        (λ_ _ -> Log.info "sleeper cleans up")
-        (λ_ -> Time.sleep (Time.millis 1000))
+    Task.bracket (λ() -> Log.info "sleeper starts") (λ_ _ -> Log.info "sleeper cleans up") λ_ ->
+        Time.sleep (Time.millis 1000)
 
 
 view : Int -> Html Msg

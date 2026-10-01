@@ -230,12 +230,12 @@ step s n =
         else if op == 11 then
             extra = List.range x (x + pick seed1 40)
             { list = v.list ++ extra
-            , model = List.foldl extra v.model (λitem m -> modelPush m item)
+            , model = List.foldl extra v.model λitem m -> modelPush m item
             }
         else if op == 12 then
             extra = List.range x (x + pick seed2 3)
             { list = [ ...v.list, ...extra ]
-            , model = List.foldl extra v.model (λitem m -> modelPush m item)
+            , model = List.foldl extra v.model λitem m -> modelPush m item
             }
         else
             { list = List.push (List.push v.list x) (x + 1)

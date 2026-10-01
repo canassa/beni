@@ -55,23 +55,19 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) (λn -> Int.mod (n * 7919) 499)
+values = List.map (List.range 1 500) λn -> Int.mod (n * 7919) 499
 
 
 -- Level 3: the work. Everything it knows about `a` arrives as evidence.
 tally : List a, a -> Int
     where a.compare : a, a -> Order
-tally xs mark =
-    List.foldl xs
-        0
-        (λx acc ->
-            case x.compare mark of
-                LT ->
-                    acc + 1
+tally xs mark = List.foldl xs 0 λx acc ->
+    case x.compare mark of
+        LT ->
+            acc + 1
 
-                _ ->
-                    acc
-        )
+        _ ->
+            acc
 
 
 -- Level 2 and level 1: pure forwarding, which is the point. Each one is
@@ -95,9 +91,6 @@ tallyBy xs mark = level1 xs mark
 
 main : Program
 main =
-    total =
-        List.foldl
-            (List.range 1 outerReps)
-            0
-            (λ_ acc -> List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot))
+    total = List.foldl (List.range 1 outerReps) 0 λ_ acc ->
+        List.foldl (List.range 1 innerReps) acc λ_ n -> n + tallyBy values pivot
     Node.print (String.fromInt total)

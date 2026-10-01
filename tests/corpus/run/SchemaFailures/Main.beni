@@ -25,7 +25,7 @@ logged name =
             else
                 Ok s
         )
-        (λs -> Ok s)
+        λs -> Ok s
 
 
 type alias Three =
@@ -61,7 +61,7 @@ joined =
                 _ = Debug.log "whole record" t.x
                 Ok (t.x ++ t.y ++ t.z)
             )
-            (λs -> Ok { x = s, y = "", z = "" })
+            λs -> Ok { x = s, y = "", z = "" }
         )
 
 
@@ -76,7 +76,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (λn -> Ok (String.fromInt n))
+        λn -> Ok (String.fromInt n)
 
 
 type alias Mixed b =
@@ -129,7 +129,7 @@ picky =
                           }
                         ]
         )
-        (λx -> Ok [ x ])
+        λx -> Ok [ x ]
 
 
 type alias Box =
@@ -184,7 +184,7 @@ reported = { all | reportInput = True }
 
 
 issues : Result (List Issue) a -> String
-issues r = Show.result r (λ_ -> "")
+issues r = Show.result r λ_ -> ""
 
 
 bad : String
@@ -206,12 +206,10 @@ main =
         , issues (Schema.parseWith three first "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
         , issues (Schema.parseWith three all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
         , issues (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
-        , Show.result
-            (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}")
-            (λs -> s)
+        , Show.result (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}") λs -> s
         , "-- a conversion's issues"
         , issues (Schema.parse wrapper "{\"in\":[1,2,3]}")
         , issues (Schema.parse wrapper "{\"in\":[]}")
-        , Show.result (Schema.parse wrapper "{\"in\":[7]}") (λw -> String.fromInt w.inner)
+        , Show.result (Schema.parse wrapper "{\"in\":[7]}") λw -> String.fromInt w.inner
         , issues (Schema.decodeWith wrapper reported { inner = [ 1, 2 ] })
         ]

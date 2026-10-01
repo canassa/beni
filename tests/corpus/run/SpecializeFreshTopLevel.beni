@@ -33,7 +33,7 @@ positive =
             else
                 Err { message = "not positive", value = n }
         )
-        (λn -> Ok (n * 2))
+        λn -> Ok (n * 2)
 
 
 run : Check, Int -> String

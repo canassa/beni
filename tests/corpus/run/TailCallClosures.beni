@@ -22,4 +22,4 @@ build n acc =
 
 
 main : Program
-main = Node.printLines (List.map (build 3 []) (λf -> String.fromInt (f 0)))
+main = Node.printLines (List.map (build 3 []) λf -> String.fromInt (f 0))

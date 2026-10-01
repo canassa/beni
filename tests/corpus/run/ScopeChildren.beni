@@ -24,31 +24,19 @@ held name work =
                 Cancelled ->
                     Debug.log (name ++ " released: cancelled") ()
         )
-        (λ_ -> work ())
+        λ_ -> work ()
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            answer =
-                Task.scope
-                    (λs ->
-                        _ =
-                            Task.spawnIn
-                                s
-                                (λ() -> held "slowChild" (λ() -> Io.sleep 100000))
-                        quick = Task.spawnIn s (λ() -> held "quickChild" (λ() -> 42))
-                        Task.join quick
-                    )
-            _ = Debug.log "scope returned" answer
-            parent =
-                Task.spawn
-                    (λ() ->
-                        _ = Task.spawn (λ() -> held "orphan" (λ() -> Io.sleep 100000))
-                        _ = Io.sleep 1
-                        "parent done"
-                    )
-            said = Task.join parent
-            Node.print said
-        )
+main = Io.run λ() ->
+    answer = Task.scope λs ->
+        _ = Task.spawnIn s λ() -> held "slowChild" λ() -> Io.sleep 100000
+        quick = Task.spawnIn s λ() -> held "quickChild" λ() -> 42
+        Task.join quick
+    _ = Debug.log "scope returned" answer
+    parent = Task.spawn λ() ->
+        _ = Task.spawn λ() -> held "orphan" λ() -> Io.sleep 100000
+        _ = Io.sleep 1
+        "parent done"
+    said = Task.join parent
+    Node.print said

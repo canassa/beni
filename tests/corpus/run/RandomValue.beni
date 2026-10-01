@@ -17,7 +17,7 @@ main =
     held = (Random.step (Random.int 1 6) (Random.initialSeed 42)).0
     Node.printLines
         [ "rolls in 1..6: "
-            ++ (if List.all rolls (λn -> n >= 1 && n <= 6) then
+            ++ (if List.all rolls λn -> n >= 1 && n <= 6 then
                    "yes"
                 else
                    "no"

@@ -54,21 +54,19 @@ pub type Status
 pub tierDecoder : Decoder Tier
 tierDecoder =
     Decode.string
-        |> Decode.andThen
-            (λs ->
-                case String.toLower s of
-                    "free" ->
-                        Decode.succeed Free
+        |> Decode.andThen λs ->
+            case String.toLower s of
+                "free" ->
+                    Decode.succeed Free
 
-                    "pro" ->
-                        Decode.succeed Pro
+                "pro" ->
+                    Decode.succeed Pro
 
-                    "enterprise" ->
-                        Decode.succeed Enterprise
+                "enterprise" ->
+                    Decode.succeed Enterprise
 
-                    other ->
-                        Decode.fail "unknown tier: ${other}"
-            )
+                other ->
+                    Decode.fail "unknown tier: ${other}"
 
 
 pub tierToString : Tier -> String
@@ -125,24 +123,22 @@ lineItemDecoder =
 pub statusDecoder : Decoder Status
 statusDecoder =
     Decode.field "kind" Decode.string
-        |> Decode.andThen
-            (λkind ->
-                case kind of
-                    "pending" ->
-                        Decode.succeed Pending
+        |> Decode.andThen λkind ->
+            case kind of
+                "pending" ->
+                    Decode.succeed Pending
 
-                    "paid" ->
-                        Decode.map (Decode.field "at" Decode.int) Paid
+                "paid" ->
+                    Decode.map (Decode.field "at" Decode.int) Paid
 
-                    "shipped" ->
-                        Decode.map (Decode.field "tracking" Decode.string) Shipped
+                "shipped" ->
+                    Decode.map (Decode.field "tracking" Decode.string) Shipped
 
-                    "cancelled" ->
-                        Decode.map (optionalField "reason" Decode.string "") Cancelled
+                "cancelled" ->
+                    Decode.map (optionalField "reason" Decode.string "") Cancelled
 
-                    other ->
-                        Decode.fail "unknown status kind: ${other}"
-            )
+                other ->
+                    Decode.fail "unknown status kind: ${other}"
 
 
 pub orderDecoder : Decoder Order
@@ -240,7 +236,7 @@ encodeOrder order =
 pub orderTotal : Order -> Float
 orderTotal order =
     order.items
-        |> List.map (λitem -> toFloat item.quantity * item.unitPrice)
+        |> List.map λitem -> toFloat item.quantity * item.unitPrice
         |> List.sum
 
 
@@ -280,7 +276,7 @@ pub summarize : String -> Result String (Dict String Int)
 summarize json =
     orders = parseOrders json?
 
-    bump counts key = Dict.update counts key (λexisting -> Just (Maybe.withDefault existing 0 + 1))
+    bump counts key = Dict.update counts key λexisting -> Just (Maybe.withDefault existing 0 + 1)
 
     statusKey order =
         case order.status of
@@ -295,4 +291,4 @@ summarize json =
 
             Cancelled _ ->
                 "cancelled"
-    Ok (List.foldl orders Dict.empty (λorder counts -> bump counts (statusKey order)))
+    Ok (List.foldl orders Dict.empty λorder counts -> bump counts (statusKey order))

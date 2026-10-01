@@ -27,7 +27,7 @@ twice n body = body n ++ "/" ++ body (n + 1)
 
 
 usingAll : List (Int -> Int), (List Int -> String) -> String
-usingAll fs body = body (List.map fs (λf -> f 7))
+usingAll fs body = body (List.map fs λf -> f 7)
 
 
 insideRest : String

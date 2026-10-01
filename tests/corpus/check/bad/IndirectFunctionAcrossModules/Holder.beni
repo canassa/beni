@@ -6,4 +6,4 @@ pub type HasFn
 
 
 pub wrap : Int -> HasFn
-wrap n = HasFn (λx -> x + n)
+wrap n = HasFn λx -> x + n

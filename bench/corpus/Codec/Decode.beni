@@ -96,71 +96,56 @@ indent text = String.join (String.split text "\n") "\n    "
 
 -- Primitives
 pub string : Decoder String
-string =
-    Decoder
-        (λvalue ->
-            case value of
-                Text s ->
-                    Ok s
+string = Decoder λvalue ->
+    case value of
+        Text s ->
+            Ok s
 
-                _ ->
-                    Err (Failure "Expecting a STRING" value)
-        )
+        _ ->
+            Err (Failure "Expecting a STRING" value)
 
 
 pub int : Decoder Int
-int =
-    Decoder
-        (λvalue ->
-            case value of
-                Number n ->
-                    if toFloat (round n) == n then
-                        Ok (round n)
-                    else
-                        Err (Failure "Expecting an INT" value)
+int = Decoder λvalue ->
+    case value of
+        Number n ->
+            if toFloat (round n) == n then
+                Ok (round n)
+            else
+                Err (Failure "Expecting an INT" value)
 
-                _ ->
-                    Err (Failure "Expecting an INT" value)
-        )
+        _ ->
+            Err (Failure "Expecting an INT" value)
 
 
 pub float : Decoder Float
-float =
-    Decoder
-        (λvalue ->
-            case value of
-                Number n ->
-                    Ok n
+float = Decoder λvalue ->
+    case value of
+        Number n ->
+            Ok n
 
-                _ ->
-                    Err (Failure "Expecting a FLOAT" value)
-        )
+        _ ->
+            Err (Failure "Expecting a FLOAT" value)
 
 
 pub bool : Decoder Bool
-bool =
-    Decoder
-        (λvalue ->
-            case value of
-                Boolean b ->
-                    Ok b
+bool = Decoder λvalue ->
+    case value of
+        Boolean b ->
+            Ok b
 
-                _ ->
-                    Err (Failure "Expecting a BOOL" value)
-        )
+        _ ->
+            Err (Failure "Expecting a BOOL" value)
 
 
 pub null : a -> Decoder a
-null result =
-    Decoder
-        (λvalue ->
-            case value of
-                Null ->
-                    Ok result
+null result = Decoder λvalue ->
+    case value of
+        Null ->
+            Ok result
 
-                _ ->
-                    Err (Failure "Expecting null" value)
-        )
+        _ ->
+            Err (Failure "Expecting null" value)
 
 
 pub raw : Decoder Value
@@ -169,17 +154,14 @@ raw = Decoder Ok
 
 -- Structure
 pub field : String, Decoder a -> Decoder a
-field name decoder =
-    Decoder
-        (λvalue ->
-            case Value.get value name of
-                Just inner ->
-                    decodeValue decoder inner
-                        |> Result.mapError (Field name _)
+field name decoder = Decoder λvalue ->
+    case Value.get value name of
+        Just inner ->
+            decodeValue decoder inner
+                |> Result.mapError (Field name _)
 
-                Nothing ->
-                    Err (Failure "Expecting an OBJECT with a field named `${name}`" value)
-        )
+        Nothing ->
+            Err (Failure "Expecting an OBJECT with a field named `${name}`" value)
 
 
 pub at : List String, Decoder a -> Decoder a
@@ -187,35 +169,29 @@ at names decoder = List.foldr names decoder field
 
 
 pub index : Int, Decoder a -> Decoder a
-index i decoder =
-    Decoder
-        (λvalue ->
-            case value of
-                Array items ->
-                    case List.head (List.drop items i) of
-                        Just item ->
-                            decodeValue decoder item
-                                |> Result.mapError (Index i _)
+index i decoder = Decoder λvalue ->
+    case value of
+        Array items ->
+            case List.head (List.drop items i) of
+                Just item ->
+                    decodeValue decoder item
+                        |> Result.mapError (Index i _)
 
-                        Nothing ->
-                            Err (Failure "Expecting a LONGER array. Need index ${i}" value)
+                Nothing ->
+                    Err (Failure "Expecting a LONGER array. Need index ${i}" value)
 
-                _ ->
-                    Err (Failure "Expecting an ARRAY" value)
-        )
+        _ ->
+            Err (Failure "Expecting an ARRAY" value)
 
 
 pub list : Decoder a -> Decoder (List a)
-list decoder =
-    Decoder
-        (λvalue ->
-            case value of
-                Array items ->
-                    listHelp decoder 0 items []
+list decoder = Decoder λvalue ->
+    case value of
+        Array items ->
+            listHelp decoder 0 items []
 
-                _ ->
-                    Err (Failure "Expecting a LIST" value)
-        )
+        _ ->
+            Err (Failure "Expecting a LIST" value)
 
 
 listHelp : Decoder a, Int, List Value, List a -> Result Error (List a)
@@ -234,16 +210,13 @@ listHelp decoder i items acc =
 
 
 pub keyValuePairs : Decoder a -> Decoder (List ( String, a ))
-keyValuePairs decoder =
-    Decoder
-        (λvalue ->
-            case value of
-                Object fields ->
-                    pairsHelp decoder fields []
+keyValuePairs decoder = Decoder λvalue ->
+    case value of
+        Object fields ->
+            pairsHelp decoder fields []
 
-                _ ->
-                    Err (Failure "Expecting an OBJECT" value)
-        )
+        _ ->
+            Err (Failure "Expecting an OBJECT" value)
 
 
 pairsHelp :
@@ -279,7 +252,7 @@ nullable decoder = oneOf [ null Nothing, map decoder Just ]
 
 
 pub oneOf : List (Decoder a) -> Decoder a
-oneOf decoders = Decoder (λvalue -> oneOfHelp decoders value [])
+oneOf decoders = Decoder λvalue -> oneOfHelp decoders value []
 
 
 oneOfHelp : List (Decoder a), Value, List Error -> Result Error a
@@ -299,49 +272,40 @@ oneOfHelp decoders value errors =
 
 -- Combinators
 pub succeed : a -> Decoder a
-succeed result = Decoder (λ_ -> Ok result)
+succeed result = Decoder λ_ -> Ok result
 
 
 pub fail : String -> Decoder a
-fail message = Decoder (λvalue -> Err (Failure message value))
+fail message = Decoder λvalue -> Err (Failure message value)
 
 
 pub andThen : Decoder a, (a -> Decoder b) -> Decoder b
-andThen decoder next =
-    Decoder
-        (λvalue ->
-            decodeValue decoder value
-                |> Result.andThen (λa -> decodeValue (next a) value)
-        )
+andThen decoder next = Decoder λvalue ->
+    decodeValue decoder value
+        |> Result.andThen λa -> decodeValue (next a) value
 
 
 pub map : Decoder a, (a -> value) -> Decoder value
-map decoder f = Decoder (λvalue -> Result.map (decodeValue decoder value) f)
+map decoder f = Decoder λvalue -> Result.map (decodeValue decoder value) f
 
 
 pub map2 : Decoder a, Decoder b, (a, b -> value) -> Decoder value
-map2 da db f = Decoder (λvalue -> Result.map2 (decodeValue da value) (decodeValue db value) f)
+map2 da db f = Decoder λvalue -> Result.map2 (decodeValue da value) (decodeValue db value) f
 
 
 pub map3 : Decoder a, Decoder b, Decoder c, (a, b, c -> value) -> Decoder value
-map3 da db dc f =
-    Decoder
-        (λvalue ->
-            Result.map3 (decodeValue da value) (decodeValue db value) (decodeValue dc value) f
-        )
+map3 da db dc f = Decoder λvalue ->
+    Result.map3 (decodeValue da value) (decodeValue db value) (decodeValue dc value) f
 
 
 pub map4 : Decoder a, Decoder b, Decoder c, Decoder d, (a, b, c, d -> value) -> Decoder value
-map4 da db dc dd f =
-    Decoder
-        (λvalue ->
-            Result.map4
-                (decodeValue da value)
-                (decodeValue db value)
-                (decodeValue dc value)
-                (decodeValue dd value)
-                f
-        )
+map4 da db dc dd f = Decoder λvalue ->
+    Result.map4
+        (decodeValue da value)
+        (decodeValue db value)
+        (decodeValue dc value)
+        (decodeValue dd value)
+        f
 
 
 pub map5 :
@@ -352,17 +316,14 @@ pub map5 :
     , Decoder e
     , (a, b, c, d, e -> value)
     -> Decoder value
-map5 da db dc dd de f =
-    Decoder
-        (λvalue ->
-            Result.map5
-                (decodeValue da value)
-                (decodeValue db value)
-                (decodeValue dc value)
-                (decodeValue dd value)
-                (decodeValue de value)
-                f
-        )
+map5 da db dc dd de f = Decoder λvalue ->
+    Result.map5
+        (decodeValue da value)
+        (decodeValue db value)
+        (decodeValue dc value)
+        (decodeValue dd value)
+        (decodeValue de value)
+        f
 
 
 pub map6 :
@@ -375,7 +336,4 @@ pub map6 :
     , (a, b, c, d, e, f -> value)
     -> Decoder value
 map6 da db dc dd de df f =
-    map2
-        (map5 da db dc dd de (λa b c d five -> f a b c d five _))
-        df
-        (λpartial last -> partial last)
+    map2 (map5 da db dc dd de λa b c d five -> f a b c d five _) df λpartial last -> partial last

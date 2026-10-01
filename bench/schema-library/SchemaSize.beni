@@ -68,4 +68,4 @@ main =
             Node.print text
 
         Err issues ->
-            Node.exitWith (String.join (List.map issues (λi -> i.message)) "\n") 1
+            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1

@@ -6,7 +6,7 @@
 inc = λn -> n + 1
 
 
-pairs xs = List.map xs (λ( a, b ) -> a + b)
+pairs xs = List.map xs λ( a, b ) -> a + b
 
 
 nested = λa -> λb -> a + b
@@ -27,4 +27,4 @@ text =
 escaped = λ_ -> "a\\b"
 
 
-rows items = <ul>{List.map items (λi -> <li onClick={λ_ -> i}>{i}</li>)}</ul>
+rows items = <ul>{List.map items λi -> <li onClick={λ_ -> i}>{i}</li>}</ul>

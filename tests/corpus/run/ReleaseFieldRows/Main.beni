@@ -230,7 +230,7 @@ main =
 
     pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
 
-    byPair = Dict.fromList (List.map pairs (λp -> ( p, p.zeta + p.alpha )))
+    byPair = Dict.fromList (List.map pairs λp -> ( p, p.zeta + p.alpha ))
 
     letters : Letters
     letters = { a = 1, b = "b" }

@@ -31,7 +31,7 @@ update : Msg, Model -> Model
 update msg model =
     case msg of
         Rename ->
-            { model | user = Maybe.map model.user (λu -> { u | name = u.name ++ "!" }) }
+            { model | user = Maybe.map model.user λu -> { u | name = u.name ++ "!" } }
 
         Next ->
             { model | user = Just { id = 2, name = "Grace" } }

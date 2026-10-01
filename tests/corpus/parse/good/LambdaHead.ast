@@ -10,14 +10,13 @@
     (apply
       (ident List.map)
       (ident xs)
-      (paren
-        (lambda
-          (pat_tuple
-            (pat_var a)
-            (pat_var b))
-          (add
-            (ident a)
-            (ident b))))))
+      (lambda
+        (pat_tuple
+          (pat_var a)
+          (pat_var b))
+        (add
+          (ident a)
+          (ident b)))))
   (definition nested
     (lambda
       (pat_var a)
@@ -51,13 +50,12 @@
         (apply
           (ident List.map)
           (ident items)
-          (paren
-            (lambda
-              (pat_var i)
-              (markup_element li
-                (markup_attr onClick braced
-                  (lambda
-                    (pat_wild)
-                    (ident i)))
-                (markup_hole
-                  (ident i))))))))))
+          (lambda
+            (pat_var i)
+            (markup_element li
+              (markup_attr onClick braced
+                (lambda
+                  (pat_wild)
+                  (ident i)))
+              (markup_hole
+                (ident i)))))))))

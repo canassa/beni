@@ -60,15 +60,12 @@ loop n acc =
 
 
 main : Program
-main =
-    Io.run
-        (λ() ->
-            Node.printLines
-                [ classify 3
-                , classify 4
-                , classify 5
-                , if check 2 then "yes" else "no"
-                , if check 4 then "yes" else "no"
-                , String.fromInt (loop 10 0)
-                ]
-        )
+main = Io.run λ() ->
+    Node.printLines
+        [ classify 3
+        , classify 4
+        , classify 5
+        , if check 2 then "yes" else "no"
+        , if check 4 then "yes" else "no"
+        , String.fromInt (loop 10 0)
+        ]

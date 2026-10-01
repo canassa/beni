@@ -15,7 +15,7 @@ import Node
 area : Int, Int -> List Int
 area w h =
     r = { w = w * 2, h = h + 1 }
-    List.map [ 1, 2 ] (λk -> k * r.w + r.h)
+    List.map [ 1, 2 ] λk -> k * r.w + r.h
 
 
 turns : Int, List (() -> Int) -> List (() -> Int)
@@ -52,7 +52,7 @@ main : Node.Program
 main =
     Node.printLines
         (List.map (area 3 4 ++ area 5 6) String.fromInt
-            ++ List.map (turns 3 []) (λf -> String.fromInt (f ()))
+            ++ List.map (turns 3 []) λf -> String.fromInt (f ())
             ++ [ String.fromInt (useOne { name = "one", apply = double })
                , String.fromInt (useOne { name = "two", apply = double })
                , String.fromInt (useEither { name = "d", apply = double })

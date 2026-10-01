@@ -45,7 +45,7 @@ view model =
         , Page.element
             "ul"
             []
-            (List.map model.saved (λtext -> Page.element "li" [] [ Page.text text ]))
+            (List.map model.saved λtext -> Page.element "li" [] [ Page.text text ])
         ]
 
 

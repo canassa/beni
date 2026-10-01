@@ -50,7 +50,7 @@ tail throws =
                 "fine"
         )
         (λerr -> isType err)
-        (λerr -> "caught ${message err}")
+        λerr -> "caught ${message err}"
 
 
 --| Bound, then used after the `try`.
@@ -65,7 +65,7 @@ valued throws =
                     1
             )
             (λerr -> isType err)
-            (λ_ -> 2)
+            λ_ -> 2
 
     _ = note "after"
     String.fromInt v
@@ -83,7 +83,7 @@ discarded throws =
                     note "body"
             )
             (λerr -> isType err)
-            (λerr -> note "caught ${message err}")
+            λerr -> note "caught ${message err}"
 
     _ = note "after"
     "done"
@@ -101,10 +101,10 @@ rethrown () =
                     fail "RangeError" "far"
                 )
                 (λerr -> isType err)
-                (λ_ -> "inner took it")
+                λ_ -> "inner took it"
         )
         (λerr -> Js.instanceOf err (Js.global "RangeError"))
-        (λerr -> "outer took ${message err}")
+        λerr -> "outer took ${message err}"
 
 
 --| A test that reads what was thrown: a `DOMException` caught by its
@@ -122,10 +122,10 @@ named name =
                     Js.instanceOf err (Js.global "DOMException")
                         && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
                 )
-                (λ_ -> "over the quota")
+                λ_ -> "over the quota"
         )
         (λerr -> Js.instanceOf err (Js.global "DOMException"))
-        (λerr -> "thrown on: ${nameOf err}")
+        λerr -> "thrown on: ${nameOf err}"
 
 
 nameOf : Js.Value -> String
@@ -134,11 +134,8 @@ nameOf err = Js.to (Js.get err "name")
 
 --| The test and the handler name the caught value differently.
 pub renamed : () -> String
-renamed () =
-    Js.catchIf
-        (λ() -> fail "TypeError" "two names")
-        (λfirst -> isType first)
-        (λsecond -> message second)
+renamed () = Js.catchIf (λ() -> fail "TypeError" "two names") (λfirst -> isType first) λsecond ->
+    message second
 
 
 --| A function made by a call that records it.
@@ -204,7 +201,7 @@ apply k f t h = k f t h
 pub sumTo : Int, Int -> Int
 sumTo n acc =
     if n == 0 then
-        Js.catchIf (λ() -> acc) (λerr -> isType err) (λ_ -> 0)
+        Js.catchIf (λ() -> acc) (λerr -> isType err) λ_ -> 0
     else
         sumTo (n - 1) (acc + n)
 

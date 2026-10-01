@@ -112,7 +112,7 @@ toList (Set dict) = Dict.keys dict
 --|     Set.fromList [ "a", "b", "a" ]
 pub fromList : List t -> Set t
     where t.compare : t, t -> Order
-fromList list = List.foldl list empty (λvalue set -> insert set value)
+fromList list = List.foldl list empty λvalue set -> insert set value
 
 
 --| Map a function onto a set, creating a new set with no duplicates. The
@@ -129,14 +129,14 @@ map set func = fromList (List.map (toList set) func)
 --|
 --|     Set.foldl numbers 0 (λn total -> n + total)
 pub foldl : Set t, b, (t, b -> b) -> b
-foldl (Set dict) initial func = Dict.foldl dict initial (λkey _ acc -> func key acc)
+foldl (Set dict) initial func = Dict.foldl dict initial λkey _ acc -> func key acc
 
 
 --| Fold over the values in a set, in order from highest to lowest.
 --|
 --|     foldr (fromList [ "b", "a" ]) [] (λname acc -> [ name, ...acc ]) == [ "a", "b" ]
 pub foldr : Set t, b, (t, b -> b) -> b
-foldr (Set dict) initial func = Dict.foldr dict initial (λkey _ acc -> func key acc)
+foldr (Set dict) initial func = Dict.foldr dict initial λkey _ acc -> func key acc
 
 
 --| Only keep elements that pass the given test.
@@ -144,7 +144,7 @@ foldr (Set dict) initial func = Dict.foldr dict initial (λkey _ acc -> func key
 --|     Set.filter numbers (λn -> n > 0)
 pub filter : Set t, (t -> Bool) -> Set t
     where t.compare : t, t -> Order
-filter (Set dict) isGood = Set (Dict.filter dict (λkey _ -> isGood key))
+filter (Set dict) isGood = Set (Dict.filter dict λkey _ -> isGood key)
 
 
 --| Create two new sets. The first contains all the elements that passed the
@@ -154,5 +154,5 @@ filter (Set dict) isGood = Set (Dict.filter dict (λkey _ -> isGood key))
 pub partition : Set t, (t -> Bool) -> ( Set t, Set t )
     where t.compare : t, t -> Order
 partition (Set dict) isGood =
-    ( trues, falses ) = Dict.partition dict (λkey _ -> isGood key)
+    ( trues, falses ) = Dict.partition dict λkey _ -> isGood key
     ( Set trues, Set falses )

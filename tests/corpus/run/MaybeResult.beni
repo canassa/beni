@@ -25,7 +25,7 @@ main =
         , parse "1.3"
         , String.fromInt (Maybe.withDefault (String.toInt "42") 0)
         , String.fromInt (Maybe.withDefault (String.toInt "x") 0)
-        , String.fromInt (Maybe.withDefault (Maybe.map (Just 21) (λn -> n * 2)) 0)
+        , String.fromInt (Maybe.withDefault (Maybe.map (Just 21) λn -> n * 2) 0)
         , String.fromInt (Result.withDefault (Ok 7) 0)
         , String.fromInt (Result.withDefault (Err "nope") 0)
         , String.fromInt (Maybe.withDefault (List.head [ 5, 6 ]) 0)

@@ -45,7 +45,7 @@ fromUrl url =
     segments =
         url.path
             |> String.split "/"
-            |> List.filter (λs -> not (String.isEmpty s))
+            |> List.filter λs -> not (String.isEmpty s)
             |> List.map decodeSegment
 
     params = parseQuery url.query
@@ -236,7 +236,7 @@ usersQueryString query =
 
             ByActivity ->
                 Just ( "sort", "activity" )
-        , Maybe.map query.filter (λf -> ( "filter", encodeSegment f ))
+        , Maybe.map query.filter λf -> ( "filter", encodeSegment f )
         ]
             |> List.filterMap identity
     case pairs of
@@ -244,7 +244,7 @@ usersQueryString query =
             ""
 
         _ ->
-            "?" ++ String.join (List.map pairs (λ( k, v ) -> "${k}=${v}")) "&"
+            "?" ++ String.join (List.map pairs λ( k, v ) -> "${k}=${v}") "&"
 
 
 tabName : SettingsTab -> String

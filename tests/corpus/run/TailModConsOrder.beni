@@ -50,5 +50,5 @@ main =
     out = logged [ 1, 2 ]
     Node.printLines
         [ String.join (List.map out String.fromInt) ","
-        , String.join (List.map (adders [ 10, 20, 30 ]) (λf -> String.fromInt (f 0))) ","
+        , String.join (List.map (adders [ 10, 20, 30 ]) λf -> String.fromInt (f 0)) ","
         ]

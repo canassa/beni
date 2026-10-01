@@ -42,4 +42,4 @@ alive g i =
 
 
 pub step : Grid -> Grid
-step g = { g | cells = Array.initialize (g.w * g.h) (λi -> alive g i) }
+step g = { g | cells = Array.initialize (g.w * g.h) λi -> alive g i }

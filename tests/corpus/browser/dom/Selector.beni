@@ -44,13 +44,12 @@ update msg model =
             { model
                 | selected = Just id
                 , rows =
-                    List.map
-                        model.rows
-                        (λrow -> if row.id == 1 then { row | label = "${row.label}!" } else row)
+                    List.map model.rows λrow ->
+                        if row.id == 1 then { row | label = "${row.label}!" } else row
             }
 
         Drop id ->
-            { model | rows = List.filter model.rows (λrow -> row.id /= id) }
+            { model | rows = List.filter model.rows λrow -> row.id /= id }
 
         Cursor n ->
             { model | cursor = n }

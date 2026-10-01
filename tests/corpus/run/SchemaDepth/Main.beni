@@ -26,42 +26,30 @@ fromNext r = ( (), r.next )
 
 
 chain : Schema Chain Chain
-chain =
-    Schema.recursive
-        "Chain"
-        (λself ->
-            link =
-                Schema.injection
-                    Link
-                    (λc ->
-                        case c of
-                            Link r ->
-                                Just r
+chain = Schema.recursive "Chain" λself ->
+    link = Schema.injection Link λc ->
+        case c of
+            Link r ->
+                Just r
 
-                            End ->
-                                Nothing
-                    )
+            End ->
+                Nothing
 
-            end =
-                Schema.injection
-                    (λ() -> End)
-                    (λc ->
-                        case c of
-                            End ->
-                                Just ()
+    end = Schema.injection (λ() -> End) λc ->
+        case c of
+            End ->
+                Just ()
 
-                            Link _ ->
-                                Nothing
-                    )
+            Link _ ->
+                Nothing
 
-            next =
-                Schema.record
-                    (Schema.fields |> Schema.field "next" self)
-                    (Schema.mapping toNext fromNext)
-                    (Schema.mapping toNext fromNext)
-            Schema.tagged "t"
-                [ Schema.nullary "End" "end" end end, Schema.variant "Link" "link" next link link ]
-        )
+    next =
+        Schema.record
+            (Schema.fields |> Schema.field "next" self)
+            (Schema.mapping toNext fromNext)
+            (Schema.mapping toNext fromNext)
+    Schema.tagged "t"
+        [ Schema.nullary "End" "end" end end, Schema.variant "Link" "link" next link link ]
 
 
 text : Int -> String
@@ -107,13 +95,10 @@ issues r =
 
         Err found ->
             String.join
-                (List.map
-                    found
-                    (λi ->
-                        Show.issue { i | path = [] }
-                            ++ " at depth "
-                            ++ String.fromInt (List.length i.path)
-                    )
+                (List.map found λi ->
+                    Show.issue { i | path = [] }
+                        ++ " at depth "
+                        ++ String.fromInt (List.length i.path)
                 )
                 " | "
 
@@ -125,15 +110,12 @@ at d n =
         ++ ", "
         ++ String.fromInt n
         ++ " links: "
-        ++ Show.result (Schema.parseWith chain (bound d) (text n)) (λc -> String.fromInt (links c))
+        ++ Show.result (Schema.parseWith chain (bound d) (text n)) λc -> String.fromInt (links c)
         ++ " / "
-        ++ Show.result
-            (Schema.decodeWith chain (bound d) (typed n))
-            (λc -> String.fromInt (links c))
+        ++ Show.result (Schema.decodeWith chain (bound d) (typed n)) λc -> String.fromInt (links c)
         ++ " / "
-        ++ Show.result
-            (Schema.printWith chain (bound d) (typed n))
-            (λs -> String.fromInt (String.length s))
+        ++ Show.result (Schema.printWith chain (bound d) (typed n)) λs ->
+            String.fromInt (String.length s)
 
 
 over : Int, Int -> String
@@ -180,22 +162,20 @@ main =
         , at Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2)
         , over Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2 + 1)
         , "-- the default is 512"
-        , Show.result (Schema.parse chain (text 256)) (λc -> String.fromInt (links c))
+        , Show.result (Schema.parse chain (text 256)) λc -> String.fromInt (links c)
         , issues (Schema.parse chain (text 257))
         , "-- options"
         , issues (Schema.parseWith chain (bound (Schema.maxDepthCeiling + 1)) (text 0))
         , issues (Schema.parseWith chain (bound (-1)) (text 0))
         , issues (Schema.decodeWith Schema.int (bound 0) 5)
         , "-- a Value"
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) (λs -> s)
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) (λs -> s)
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) λs -> s
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) λs -> s
         , issues (Schema.printWith Schema.value (bound 3) (nested 5))
         , issues (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 4 ])
-        , Show.result
-            (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ])
-            (λs -> s)
+        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) λs -> s
         , issues
-            (Schema.parse Schema.value deep |> Result.andThen (λv -> Schema.print Schema.value v))
+            (Schema.parse Schema.value deep |> Result.andThen λv -> Schema.print Schema.value v)
         ]
 
 

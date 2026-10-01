@@ -36,7 +36,7 @@ foreign impure finish : Exit Program -> ()
 
 --| Wait `ms` milliseconds. Only the fiber that sleeps waits; the others run.
 pub sleep : Int -> ()
-sleep ms = Task.callback (λresume -> startTimer ms resume)
+sleep ms = Task.callback λresume -> startTimer ms resume
 
 
 foreign impure startTimer : Int, Resume () -> (() -> ())
@@ -73,7 +73,7 @@ pub type FileError
 --|   can.
 --| - `TooLarge`: it is larger than any string can hold.
 pub readFile : String -> Result FileError String
-readFile path = Task.callback (λresume -> startRead path resume)
+readFile path = Task.callback λresume -> startRead path resume
 
 
 foreign impure startRead : String, Resume (Result FileError String) -> (() -> ())

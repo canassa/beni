@@ -36,9 +36,8 @@ type alias Model =
 
 fresh : Model, Int -> ( List Row, Int )
 fresh model count =
-    ( List.map
-        (List.range 0 (count - 1))
-        (λk -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" })
+    ( List.map (List.range 0 (count - 1)) λk ->
+        { id = model.next + k, label = "r${String.fromInt (model.next + k)}" }
     , model.next + count
     )
 

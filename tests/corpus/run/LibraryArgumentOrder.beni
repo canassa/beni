@@ -51,7 +51,7 @@ main =
         , show (List.take (List.range 1 5) 2)
         , show (List.drop (List.range 1 5) 3)
         -- subject first, function last, so the lambda is the final word.
-        , String.foldl "time" "" (λchar acc -> String.cons acc char)
+        , String.foldl "time" "" λchar acc -> String.cons acc char
         , String.join (String.split "a,b,c" ",") "-"
         -- The three builders that LOST an argument when the comparator
         -- left: `Dict.fromList` and `Set.fromList` took an ordering last,
@@ -62,5 +62,5 @@ main =
         -- silently mis-ordered.
         , String.join (Dict.keys (Dict.fromList [ ( "b", 1 ), ( "a", 0 ) ])) ","
         , String.join (Set.toList (Set.fromList [ "b", "a", "b" ])) ","
-        , show (Set.toList (Set.map (Set.fromList [ 3, 1, 2 ]) (λn -> n * 10)))
+        , show (Set.toList (Set.map (Set.fromList [ 3, 1, 2 ]) λn -> n * 10))
         ]

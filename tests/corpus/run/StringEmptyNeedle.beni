@@ -38,7 +38,7 @@ yesNo b =
 
 shown : List String -> String
 shown xs =
-    String.fromInt (List.length xs) ++ ":" ++ String.join (List.map xs (λx -> "<" ++ x ++ ">")) ","
+    String.fromInt (List.length xs) ++ ":" ++ String.join (List.map xs λx -> "<" ++ x ++ ">") ","
 
 
 main : Program

@@ -110,14 +110,11 @@ shapesRight = List.map (List.range 1 listLength) makeShape
 -- instead of elements, tells these apart from `shapesLeft` and a naive one
 -- does not.
 shapesLastDiffers : List Shape
-shapesLastDiffers =
-    List.indexedMap shapesLeft
-        (λi s ->
-            if i == listLength - 1 then
-                Dot
-            else
-                s
-        )
+shapesLastDiffers = List.indexedMap shapesLeft λi s ->
+    if i == listLength - 1 then
+        Dot
+    else
+        s
 
 
 shapesShorter : List Shape
@@ -125,24 +122,22 @@ shapesShorter = List.take shapesLeft (listLength - 1)
 
 
 nestedLeft : Maybe (List Int)
-nestedLeft = Just (List.map (List.range 1 10) (λn -> n * 3))
+nestedLeft = Just (List.map (List.range 1 10) λn -> n * 3)
 
 
 nestedRight : Maybe (List Int)
-nestedRight = Just (List.map (List.range 1 10) (λn -> n * 3))
+nestedRight = Just (List.map (List.range 1 10) λn -> n * 3)
 
 
 -- One element of the ten differs.
 nestedOneOff : Maybe (List Int)
 nestedOneOff =
     Just
-        (List.map (List.range 1 10)
-            (λn ->
-                if n == 7 then
-                    0
-                else
-                    n * 3
-            )
+        (List.map (List.range 1 10) λn ->
+            if n == 7 then
+                0
+            else
+                n * 3
         )
 
 
@@ -185,59 +180,34 @@ nothingInt = Nothing
 
 
 countTrue : List Bool -> Int
-countTrue bs =
-    List.foldl bs
-        0
-        (λb n ->
-            if b then
-                n + 1
-            else
-                n
-        )
+countTrue bs = List.foldl bs 0 λb n ->
+    if b then
+        n + 1
+    else
+        n
 
 
 main : Program
 main =
-    recordHits =
-        List.foldl
-            (List.range 1 recordReps)
-            0
-            (λ_ acc ->
-                List.foldl records
-                    acc
-                    (λr n ->
-                        if r == probe then
-                            n + 1
-                        else
-                            n
-                    )
-            )
+    recordHits = List.foldl (List.range 1 recordReps) 0 λ_ acc ->
+        List.foldl records acc λr n ->
+            if r == probe then
+                n + 1
+            else
+                n
 
-    nestedHits =
-        List.foldl
-            (List.range 1 nestedOuter)
-            0
-            (λ_ acc ->
-                List.foldl (List.range 1 nestedInner)
-                    acc
-                    (λ_ n ->
-                        if nestedLeft == nestedRight then
-                            n + 1
-                        else
-                            n
-                    )
-            )
+    nestedHits = List.foldl (List.range 1 nestedOuter) 0 λ_ acc ->
+        List.foldl (List.range 1 nestedInner) acc λ_ n ->
+            if nestedLeft == nestedRight then
+                n + 1
+            else
+                n
 
-    listHits =
-        List.foldl
-            (List.range 1 listReps)
-            0
-            (λ_ acc ->
-                if shapesLeft == shapesRight then
-                    acc + 1
-                else
-                    acc
-            )
+    listHits = List.foldl (List.range 1 listReps) 0 λ_ acc ->
+        if shapesLeft == shapesRight then
+            acc + 1
+        else
+            acc
     Node.print
         (String.join
             [ String.fromInt recordHits

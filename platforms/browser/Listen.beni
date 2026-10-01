@@ -20,8 +20,8 @@ import Task
 --| or `"document"`), in order, for as long as the calling fiber runs. The
 --| listener is added when the body starts and removed however it ends.
 pub each : String, String, sync (Js.Value -> a), Browser.Send a -> ()
-each target name read emit =
-    Task.bracket (λ() -> open target name read) (λl _ -> close l) (λl -> pump l emit)
+each target name read emit = Task.bracket (λ() -> open target name read) (λl _ -> close l) λl ->
+    pump l emit
 
 
 open : String, String, sync (Js.Value -> a) -> Js.Value
@@ -56,7 +56,7 @@ pump l emit =
 
 -- The oldest value not yet taken, waiting for one when there is none.
 next : Js.Value -> a
-next l = Task.callback (λresume -> take l resume)
+next l = Task.callback λresume -> take l resume
 
 
 take : Js.Value, Task.Resume a -> (() -> ())

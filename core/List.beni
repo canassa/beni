@@ -503,7 +503,7 @@ reverseHelp a top i n b =
 --|     member [ 1, 4, 9 ] 4 == True
 pub member : List a, a -> Bool
     where a.eq : a, a -> Bool
-member xs value = any xs (λx -> x == value)
+member xs value = any xs λx -> x == value
 
 
 --| Determine if all elements satisfy some test.
@@ -511,7 +511,7 @@ member xs value = any xs (λx -> x == value)
 --|     all [ 2, 4 ] (λn -> Int.mod n 2 == 0) == True
 --|     all [] (λn -> Int.mod n 2 == 0) == True
 pub all : List a, (a -> Bool) -> Bool
-all xs isOkay = not (any xs (λx -> not (isOkay x)))
+all xs isOkay = not (any xs λx -> not (isOkay x))
 
 
 --| Determine if any elements satisfy some test.
@@ -827,7 +827,7 @@ map5Help ax ox ay oy az oz aw ow av ov i n func b =
 --| type for its `compare` method and sorts by what it answers.
 pub sort : List a -> List a
     where a.compare : a, a -> Order
-sort xs = sortWith xs (λx y -> x.compare y)
+sort xs = sortWith xs λx y -> x.compare y
 
 
 --| Sort values by a key read out of each of them. The key can be of any
@@ -853,13 +853,11 @@ sort xs = sortWith xs (λx y -> x.compare y)
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
-    decorated = map xs (λx -> ( toKey x, x ))
+    decorated = map xs λx -> ( toKey x, x )
     if length decorated < 2 then
         xs
     else
-        map
-            (sortWith decorated (λ( left, _ ) ( right, _ ) -> left.compare right))
-            (λ( _, x ) -> x)
+        map (sortWith decorated λ( left, _ ) ( right, _ ) -> left.compare right) λ( _, x ) -> x
 
 
 --| Sort values with an ordering function you write yourself, which is how
