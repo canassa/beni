@@ -1,0 +1,39 @@
+--! A copy of a name (`backend.md` §9 item 1, amended 2026-10-02): what a
+--! function called once returns, written where it is called, is a name the
+--! caller's binding copies.
+
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- An object the host makes, given a tag, returned by name.
+made : String -> V
+made tag =
+    o = Js.call (Js.global "Object") "create" [ Js.null ]
+    _ = Js.set o "tag" (Js.from tag)
+    o
+
+
+-- Another, so that each caller below writes its own copy.
+other : String -> V
+other tag =
+    o = Js.call (Js.global "Object") "create" [ Js.null ]
+    _ = Js.set o "tag" (Js.from tag)
+    o
+
+
+-- `item`, read twice where it is bound, is the name `made` returns: each
+-- read is that name, and the copy goes. `kept` is read inside a function,
+-- where another name could come to be spelt like the one it copies: its
+-- copy stays.
+pub demo : () -> List String
+demo () =
+    item = made "first"
+    holder = Js.call (Js.global "Object") "create" [ Js.null ]
+    _ = Js.set holder "item" item
+    kept = other "second"
+    later = λ() -> Js.to (Js.get kept "tag") ++ Js.to (Js.get kept "tag")
+    [ Js.to (Js.get item "tag"), Js.to (Js.get (Js.get holder "item") "tag"), later () ]

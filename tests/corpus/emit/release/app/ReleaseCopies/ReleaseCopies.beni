@@ -1,0 +1,12 @@
+-- emit: a copy of a name (`backend.md` §9 item 1, amended 2026-10-02), in
+-- a platform module (`platform/Copies.beni`): `made` and `other`, each
+-- called once, are written where they are called, and the caller's binding
+-- of what each returns is a copy of the name it returns. `item`'s reads are
+-- all where it is bound, so each is that name and its binding goes; `kept`'s
+-- are inside a function, so its copy stays.
+import Copies
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Copies.demo ())

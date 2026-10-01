@@ -1,0 +1,11 @@
+-- A copy of a name (`backend.md` §9 item 1, amended 2026-10-02), printing
+-- the same in both builds: in the platform module, a binding of what a
+-- function called once returns, read where it is bound and through an
+-- object that holds it, is that name; one read inside a function keeps
+-- its copy.
+import Copies
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Copies.demo ())

@@ -161,6 +161,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .decls = try arena.alloc(u32, ir.names.len),
         .binds = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
+        .rebound = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .inlined = try arena.alloc(Node.OptionalIndex, ir.nodes.len),
@@ -215,6 +216,10 @@ const Opt = struct {
     /// reassigns an `$in$<i>` slot per iteration, so a read of one is not a
     /// stable read and a chain rooted at one may not move.
     assigned: []bool,
+    /// Whether an `assign_stmt` in this declaration targets the name
+    /// itself — `x = v`, not `x.p = v`: what `copy` asks, since writing a
+    /// property of a binding's object leaves the binding the same name.
+    rebound: []bool,
     dropped: []u32,
     inlined: []Node.OptionalIndex,
     /// `Plan.repeated`.
@@ -225,6 +230,8 @@ const Opt = struct {
     /// as the use site. One slot rather than a returned pair, because the
     /// count and the node are wanted at different depths of the same walk.
     found: Node.OptionalIndex = .none,
+    /// `copy`'s use sites, found by `ownUsesInto`.
+    found_all: std.ArrayList(Index) = .empty,
 
     // ---- The counting walk ------------------------------------------------
 
@@ -236,6 +243,7 @@ const Opt = struct {
         o.decls[i] = 0;
         o.binds[i] = 0;
         o.assigned[i] = false;
+        o.rebound[i] = false;
     }
 
     fn use(o: *Opt, n: NameIndex) void {
@@ -294,6 +302,10 @@ const Opt = struct {
             },
             .assign_stmt => {
                 o.markAssigned(@enumFromInt(d.lhs));
+                if (o.ir.tag(@enumFromInt(d.lhs)) == .ident) if (@as(NameIndex, @enumFromInt(o.ir.data(@enumFromInt(d.lhs)).lhs)).unwrap()) |i| if (i < o.rebound.len) {
+                    o.touch(i);
+                    o.rebound[i] = true;
+                };
                 try o.countExpr(@enumFromInt(d.lhs));
                 try o.countExpr(@enumFromInt(d.rhs));
             },
@@ -490,6 +502,7 @@ const Opt = struct {
                 if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) == 0) o.drop(stmt);
                 continue;
             }
+            if (try o.copy(stmts[i + 1 ..], stmt, n, idx)) continue;
             if (t != .const_decl) continue;
             if (o.readOf(idx, "uses") != 1 or o.readOf(idx, "decls") != 1) continue;
             const value: Index = @enumFromInt(d.rhs);
@@ -507,6 +520,77 @@ const Opt = struct {
             const at = try o.findUse(stmts[i + 1 ..], n) orelse continue;
             o.drop(stmt);
             o.inlined[at.int()] = o.compress(value).toOptional();
+        }
+    }
+
+    /// **A copy of a name** (`backend.md` §9 item 1, amended 2026-10-02):
+    /// `const f = e` (or a `let` nothing assigns) read more than once,
+    /// whose initialiser is — after `compress` — a local `e` bound once in
+    /// the declaration and assigned nowhere, is `e` at every use, when every
+    /// use is in the own expressions of the statements after it in its list
+    /// (`ownUses`: none in a branch, a loop body or a function, where
+    /// another binding could come to be spelt as `e`). `e` holds one value
+    /// from its binding on and is in scope wherever `f` is, so each use
+    /// reads what it read. True when the binding is planned away.
+    fn copy(o: *Opt, rest: []const Index, stmt: Index, n: NameIndex, idx: u32) Allocator.Error!bool {
+        const t = o.ir.tag(stmt);
+        const uses = o.readOf(idx, "uses");
+        if (uses < 2 or o.readOf(idx, "binds") != 1 or o.stamp[idx] != o.current or o.rebound[idx]) return false;
+        const at = stmt.int();
+        if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) != 0) return false;
+        const init: Index = switch (t) {
+            .const_decl => @enumFromInt(o.ir.data(stmt).rhs),
+            .let_decl => @as(Node.OptionalIndex, @enumFromInt(o.ir.data(stmt).rhs)).unwrap() orelse return false,
+            else => return false,
+        };
+        const value = o.compress(init);
+        if (o.ir.tag(value) != .ident) return false;
+        const e: NameIndex = @enumFromInt(o.ir.data(value).lhs);
+        const ei = e.unwrap() orelse return false;
+        if (ei >= o.binds.len or o.ir.name(e).module != .none) return false;
+        if (o.readOf(ei, "binds") != 1 or (o.stamp[ei] == o.current and o.rebound[ei])) return false;
+        if (std.mem.indexOfScalar(NameIndex, o.mutable, e) != null) return false;
+        const base = o.found_all.items.len;
+        defer o.found_all.shrinkRetainingCapacity(base);
+        for (rest) |later| {
+            if (o.found_all.items.len - base >= uses) break;
+            try o.ownUsesInto(later, n);
+        }
+        if (o.found_all.items.len - base != uses) return false;
+        o.drop(stmt);
+        for (o.found_all.items[base..]) |use_site| o.inlined[use_site.int()] = value.toOptional();
+        return true;
+    }
+
+    /// `ownUses`, every `ident` of `n` found appended to `found_all`.
+    fn ownUsesInto(o: *Opt, stmt: Index, n: NameIndex) Allocator.Error!void {
+        const d = o.ir.data(stmt);
+        switch (o.ir.tag(stmt)) {
+            .const_decl => try o.exprUsesInto(@enumFromInt(d.rhs), n),
+            .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try o.exprUsesInto(v, n),
+            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try o.exprUsesInto(v, n),
+            .assign_stmt => {
+                try o.exprUsesInto(@enumFromInt(d.lhs), n);
+                try o.exprUsesInto(@enumFromInt(d.rhs), n);
+            },
+            .if_stmt, .switch_stmt => try o.exprUsesInto(@enumFromInt(d.lhs), n),
+            .for_of => try o.exprUsesInto(o.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).iterable, n),
+            .expr_stmt, .throw_stmt => try o.exprUsesInto(@enumFromInt(d.lhs), n),
+            else => {},
+        }
+    }
+
+    fn exprUsesInto(o: *Opt, root: Index, n: NameIndex) Allocator.Error!void {
+        const base = o.stack.items.len;
+        defer o.stack.shrinkRetainingCapacity(base);
+        try o.stack.append(o.arena, root);
+        while (o.stack.items.len > base) {
+            const node = JsIr.popOperand(&o.stack).?;
+            switch (o.ir.tag(node)) {
+                .ident => if (@as(NameIndex, @enumFromInt(o.ir.data(node).lhs)) == n) try o.found_all.append(o.arena, node),
+                .arrow => {},
+                else => try o.ir.pushOperands(o.arena, &o.stack, node),
+            }
         }
     }
 

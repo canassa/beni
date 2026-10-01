@@ -21,11 +21,11 @@
 -- model nothing reads now, so the parameter, its argument and the mount
 -- record's field go (*a parameter nothing reads*); the kind's `m` reads
 -- neither of its two, so its call passes none (*unused trailing
--- arguments*) — and what the page
--- calls from one place is
--- written there: `slot` and `parentOf` in their callers, `drop` at the end
--- of `swap`, and `template`, called once at this module's top level, is its
--- cell beside the kind that clones it.
+-- arguments*) — and what the page calls from one place is written there:
+-- `slot` and `parentOf` in their callers, `drop` at the end of `swap`, and
+-- `template`, called once at this module's top level, is its cell beside
+-- the kind that clones it; `unit`, written in `childHtml`, returns a name
+-- its caller's binding no longer copies (§9 item 1, *a copy of a name*).
 import Browser
 import Html exposing (Html)
 

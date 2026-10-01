@@ -4106,6 +4106,27 @@ member-chain depth, the single-use scan's 64 statements — or it is not a budge
 walks to the root, because its give-up answer was the unsafe "not assigned". The same audit found
 `boundary.md` §4's check 1 answering "concrete" when its 64-slot stack filled; it walks
 the whole type now.
+
+*Amended 2026-10-02: a copy of a name* (`Opt.copy`; `plans/runtime-in-beni.md`, *The empty page's
+last items*). A binding read more than once was never folded: its initialiser would be evaluated as
+many times. One whose initialiser is a **name** evaluates nothing, so it may be: `const f = e` (or a
+`let` nothing rebinds) read two or more times, whose initialiser is — after `compress` — a local `e`
+bound once in the declaration and rebound by no assignment (writing a property of either is not
+rebinding it: the name still holds the same object), not a `Js.Ref`'s `let` (`mutable`), is `e` at
+every use, and the binding goes. **Every use must stand in the own expressions of the statements
+after it in its list** (`ownUses`, as the single use's scan reads them): the printed `e` then sits
+in the scope where the dropped `const f = e` named `e`, so `Rename`, which reads the IR as written,
+has kept every name of that scope off `e`'s spelling — a use in a branch, a loop body or a function
+could meet a name of an inner scope spelt like `e`, and keeps the copy. It is exact: `e` is in scope
+wherever `f` is, holds one value from its binding on, and reading a name does nothing. The copies
+come from *A function called once*: `i = unit b cx` written in is `const i' = kind.m(…); const i =
+i'`, and the empty page's `let e=c.m(),f=e` is `let e=c.m()`. Measured (release, brotli, the whole
+bundle): the empty `browser` page and `Tea.sandbox` 450 → **446**; `bench/size.mjs` −198 over its
+368 lines (20 smaller, none larger: the schema programs −1 to −48); the `browser/` pages −34 (7
+smaller, none larger); `Tea.element`, effects, `random` and the `bench/ui` app byte-identical.
+Fixtures: `emit/release/app/ReleaseCopies` (a copy read where it is bound goes; one read inside a
+function stays), `run/ReleaseCopies`, `emit/release/split/EmptyPage`.
+
 **Where:** inside `Emit.emitModules`, between `Lower.lower` and `Print.print`
 (`src/js/Emit.zig:760-786`), on the `JsIr` the lowering just produced.
 
