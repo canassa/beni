@@ -827,3 +827,23 @@ byte-identical (their hosted loop calls `stop` from eight places, where the call
 4 larger by 1–23 with fewer raw bytes (`dom/Selector` +23: removing a declaration renames every
 one after it). The assignment runs only when a guard sees its body fail, so no page's success path
 changed and `bench/ui` was not re-timed.
+
+**The table's `Spec` and `Opt` rows** (2026-10-02, each a general rule with fixtures of its own,
+priced alone against the compiler before it over `bench/size.mjs`'s lines and every `browser/`
+page; `backend.md` §9 has each one's amendment):
+
+| rule | empty page | `bench/size.mjs` | `browser/` pages |
+|---|--:|--:|--:|
+| fact 5 past a guard: `run`'s body is not `null`, so `parentOf` is the read and the slot's `m` goes | 480 → 466 | −41 | −280 |
+| a parameter nothing reads, its argument and the record field that held it (`mount`'s program) | 466 → 450 | −358 | −243 |
+| unused trailing arguments (`c.m(null,null)` is `c.m()`) | 450 → 450 (raw −9) | −41 | −29 |
+| a copy of a name (`let e=c.m(),f=e`) | 450 → **446** | −198 | −34 |
+
+The `bench/ui` app is byte-identical through all four, so its timings cannot move; each rule only
+removes work (a test, an argument, a binding). The empty page is now **446** brotli bytes. Left of
+the study's list: nothing on this page that a general rule priced here reaches; what remains
+between 446 and the study's 157 is its whole-program steps 19–24 (scalar replacement of the slot,
+the cloner called once, one program's render queue as a flag).
+
+`runtime.js` is deleted (`boundary.md` §5.2, amended): the manifest's `"runtime"` is optional when
+the runtime module is the whole runtime, which `browser`'s now is.
