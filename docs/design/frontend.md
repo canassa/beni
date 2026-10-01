@@ -1185,6 +1185,7 @@ defaults, so that inside a project `beni build` and `beni serve` need no argumen
 | `"build"."platform"` | what `--platform` would say | none: `build needs --platform=<name>`, exit 2, as before |
 | `"build"."paths"` | the `<path>...` arguments, as written | none: `build needs at least one path`, exit 2, as before |
 | `"build"."out"` | what `--out` would say | `out` |
+| `"build"."base"` | the URL path `--out` is served under: what the page shell writes before the entry file (`{{entry}}`) and for `{{base}}`, and what `serve` takes off a request's path (*amended 2026-10-01*). It ends in `/` and holds no quote, `<`, `>` or whitespace, or it is `beni: beni.json's "build" "base" must be a URL path ending in '/', not '<value>'`, exit 2. It has no flag | `/` |
 | `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
 
 **The command line wins, field by field**: a `--platform`, a positional path or an `--out` replaces
@@ -1278,9 +1279,12 @@ and `cache-control: no-store`: `.html` `text/html`, `.mjs` and `.js` `text/javas
 `.svg` `image/svg+xml`, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.ico`, `.wasm`, `.woff2`, and
 `application/octet-stream` otherwise. **A path that names no file and whose last segment has no `.`
 is answered with `index.html`, status 200** — the single-page-application fallback, so a client-side
-route survives a reload (a route that nests needs the page's `<base href="/">`, `backend.md` §2's
-*The page shell*); a missing path with an extension is `404`, because a missing `.mjs` answered
-with HTML is a confusing failure in the browser's console instead of a plain one.
+route survives a reload — a nested one too, since the page names its entry by an absolute path
+(`backend.md` §2's *The page shell*); a missing path with an extension is `404`, because a missing
+`.mjs` answered with HTML is a confusing failure in the browser's console instead of a plain one.
+When the project's `"base"` is an absolute path other than `/`, a request path under it has it
+taken off first, so `/app/_main.mjs` is `<out>/_main.mjs` and the page behaves as it will when
+deployed under `/app/`; a path outside it is served as it is.
 
 **Live reload is the server's, never the build's.** Every `text/html` response gets one inline
 `<script type="module">` inserted before its last `</body>` (appended when there is none) that polls

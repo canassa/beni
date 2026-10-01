@@ -79,7 +79,9 @@ the line, when it rebuilds and reloads again. Stop the server with Ctrl-C.
 beni build --release
 ```
 
-`out/` then holds `index.html` and one minified `_main.mjs`: copy the directory to any static host.
+`out/` then holds `index.html` and one minified `_main.mjs`: copy the directory to any static host,
+at the domain's root (or see *Hosting under a sub-path*). For client-side routes, have the host
+answer unknown paths with `index.html`, as `beni serve` does.
 The live-reload script is never in a file the build writes; `beni serve` adds it to the pages it
 serves, on the way out.
 
@@ -128,9 +130,25 @@ In `index.html`, write `{{entry}}` where the program's script goes:
 
 A page that never says `{{entry}}` is refused, since it would never load the program.
 
-`{{entry}}` becomes `./_main.mjs`, a path relative to the page, so `out/` works hosted at a
-domain's root or under a sub-path. If your app has nested client-side routes (`/todos/3`) and is
-hosted at the root, add `<base href="/">` to the `<head>` so the script still loads from them.
+`{{entry}}` becomes `/_main.mjs`, an absolute path, so the page loads the program from any URL —
+`/todos/3` included, which is what client-side routes need.
+
+## Hosting under a sub-path
+
+If the site will live under a path rather than at a domain's root — `https://example.com/app/` —
+say so once with `"base"`:
+
+```json
+{
+  "name": "counter",
+  "build": { "platform": "browser-tea", "paths": ["src"], "out": "out", "base": "/app/" }
+}
+```
+
+The page then loads `/app/_main.mjs`, and `beni serve` answers `/app/…` from `out/`, so you
+develop at <http://127.0.0.1:8000/app/> exactly as it will be deployed. In your own page,
+`{{base}}` stands for the base by itself: `<a href="{{base}}about">About</a>`. A base
+must end in `/`.
 
 The build copies only what it writes: an image or a stylesheet beside your page is not copied into
 `out/` yet, so keep styles inline in the page for now.

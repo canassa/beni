@@ -108,6 +108,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
         else => return fail(stderr, "beni: cannot read '{s}': it is not a JSON object", .{Manifest.pathIn(arena, app_root)}),
     };
+    loaded.platform.base = build.base;
     if (app) |m| if (m.html) |html| {
         loaded.platform.html = html;
         loaded.platform.html_root = app_root;

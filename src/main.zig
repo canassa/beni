@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) u8 {
             error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
             else => return fail(stderr, "beni: cannot read '{s}': it is not a JSON object", .{Manifest.pathIn(arena, root)}),
         };
-        if (manifest) |m| defaults = .{ .platform = m.build.platform, .paths = m.build.paths, .out = m.build.out };
+        if (manifest) |m| defaults = .{ .platform = m.build.platform, .paths = m.build.paths, .out = m.build.out, .base = m.build.base };
     }
     const parsed = Cli.parseWith(arena, rest, defaults) catch
         return fail(stderr, "beni: out of memory", .{});

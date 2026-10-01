@@ -170,6 +170,9 @@ pub const Platform = struct {
     html: ?[]const u8 = null,
     /// The directory holding the `beni.json` that named `html`.
     html_root: []const u8 = "",
+    /// The URL path the output is served under (`frontend.md` §10.1): a
+    /// page shell's `{{base}}`, and what `{{entry}}` begins with.
+    base: []const u8 = "/",
 };
 
 /// The page shell's output name (§2, *The page shell*). No `_`: every
@@ -178,6 +181,8 @@ pub const html_file = "index.html";
 
 /// What a page shell writes for the entry file.
 pub const html_placeholder = "{{entry}}";
+/// What a page shell writes for the URL path the output is served under.
+pub const base_placeholder = "{{base}}";
 
 /// The markup lowerings compiled into this binary (`boundary.md` §9.5),
 /// sorted by name: the registry `build.zig` generates from every platform's
@@ -3831,7 +3836,9 @@ const Emitter = struct {
     }
 
     /// §2's *The page shell*: the template the chain or the app names,
-    /// every `{{entry}}` replaced by `./<entry file>`, written as
+    /// every `{{entry}}` replaced by `<base><entry file>` and every
+    /// `{{base}}` by the base (`frontend.md` §10.1, `/` unless the project
+    /// says otherwise), written as
     /// `index.html`. A template that cannot be read is reported against
     /// the manifest that named it; one that never names the entry, against
     /// itself — a page that loads nothing is a build that does nothing.
@@ -3853,7 +3860,7 @@ const Emitter = struct {
         ,
             .{ path, html_file, html_placeholder },
         );
-        const replacement = try std.fmt.allocPrint(e.scratch, "./{s}", .{p.entry});
+        const replacement = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ p.base, p.entry });
         const count = std.mem.count(u8, template, html_placeholder);
         if (count == 0) return e.reportInFile(
             .invalid_html_shell,
@@ -3867,9 +3874,8 @@ const Emitter = struct {
         ,
             .{ html_placeholder, html_placeholder, html_placeholder, replacement },
         );
-        const size = template.len - count * html_placeholder.len + count * replacement.len;
-        const out = try e.scratch.alloc(u8, size);
-        _ = std.mem.replace(u8, template, html_placeholder, replacement, out);
+        const with_entry = try std.mem.replaceOwned(u8, e.scratch, template, html_placeholder, replacement);
+        const out = try std.mem.replaceOwned(u8, e.scratch, with_entry, base_placeholder, p.base);
         try e.produce(html_file, out, path);
     }
 

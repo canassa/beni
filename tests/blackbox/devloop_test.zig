@@ -72,7 +72,7 @@ test "a browser build writes the platform's page shell, the same in development 
         \\    <meta charset="utf-8">
         \\    <meta name="viewport" content="width=device-width, initial-scale=1">
         \\    <title>beni</title>
-        \\    <script type="module" src="./_main.mjs"></script>
+        \\    <script type="module" src="/_main.mjs"></script>
         \\  </head>
         \\  <body></body>
         \\</html>
@@ -120,9 +120,37 @@ test "an app's own page shell replaces the platform's, and every {{entry}} is th
 
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     try testing.expectEqualStrings(
-        \\<link rel="modulepreload" href="./_main.mjs"><script type="module" src="./_main.mjs"></script>
+        \\<link rel="modulepreload" href="/_main.mjs"><script type="module" src="/_main.mjs"></script>
         \\
     , try w.read("out/index.html"));
+}
+
+test "a project's base puts the page under a sub-path, and a base without a trailing slash is refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", browser_main);
+    try w.write("beni.json",
+        \\{ "html": "page.html", "build": { "platform": "browser", "paths": ["src"], "base": "/app/" } }
+    );
+    try w.write("page.html",
+        \\<link rel="icon" href="{{base}}favicon.ico"><script type="module" src="{{entry}}"></script>
+        \\
+    );
+
+    const built = try w.runWith(&.{"build"}, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualStrings(
+        \\<link rel="icon" href="/app/favicon.ico"><script type="module" src="/app/_main.mjs"></script>
+        \\
+    , try w.read("out/index.html"));
+
+    try w.write("beni.json",
+        \\{ "build": { "platform": "browser", "paths": ["src"], "base": "/app" } }
+    );
+    const refused = try w.runWith(&.{"build"}, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), refused.exit_code);
+    try testing.expectEqualStrings("beni: beni.json's \"build\" \"base\" must be a URL path ending in '/', not '/app'\n", refused.stderr);
 }
 
 test "a page shell that never names the entry file is refused, and nothing is written" {
@@ -147,7 +175,7 @@ test "a page shell that never names the entry file is refused, and nothing is wr
             "program.\n" ++
             "\n" ++
             "Write `<script type=\"module\" src=\"{{entry}}\"></script>` where the program should\n" ++
-            "load; the build replaces `{{entry}}` with the entry file, `./_main.mjs`\n" ++
+            "load; the build replaces `{{entry}}` with the entry file, `/_main.mjs`\n" ++
             "(`docs/design/backend.md` §2, *The page shell*).",
     }, built.diagnostics[0]);
     try testing.expect(!w.exists("out"));
@@ -298,6 +326,9 @@ test "serve answers from the output directory, falls back to index.html, and cou
     const root = try get(&w, port, "/");
     const module = try get(&w, port, "/_main.mjs?v=1");
     const route = try get(&w, port, "/todos/3");
+    // A nested route loads: the script the fallback page names, resolved
+    // against `/todos/3` as a browser resolves it, is the program.
+    const nested_script = try get(&w, port, try resolveAgainst(&w, "/todos/3", try scriptSrc(route.body)));
     const missing = try get(&w, port, "/missing.mjs");
     const escape = try get(&w, port, "/%2e%2e/beni.json");
     const before = try get(&w, port, "/_beni/build");
@@ -312,13 +343,16 @@ test "serve answers from the output directory, falls back to index.html, and cou
     try testing.expectEqual(std.process.Child.Term{ .exited = 0 }, term);
     try testing.expectEqual(@as(u16, 200), root.status);
     try testing.expectEqualStrings("text/html; charset=utf-8", root.content_type);
-    try testing.expect(std.mem.indexOf(u8, root.body, "<script type=\"module\" src=\"./_main.mjs\"></script>") != null);
+    try testing.expect(std.mem.indexOf(u8, root.body, "<script type=\"module\" src=\"/_main.mjs\"></script>") != null);
     // The reload script is in the response, before `</body>`.
     try testing.expect(std.mem.indexOf(u8, root.body, "<body><script type=\"module\">/* beni serve: live reload */") != null);
     try testing.expectEqual(@as(u16, 200), module.status);
     try testing.expectEqualStrings("text/javascript; charset=utf-8", module.content_type);
     try testing.expectEqual(@as(u16, 200), route.status);
     try testing.expectEqualStrings(root.body, route.body);
+    try testing.expectEqual(@as(u16, 200), nested_script.status);
+    try testing.expectEqualStrings("text/javascript; charset=utf-8", nested_script.content_type);
+    try testing.expectEqualStrings(module.body, nested_script.body);
     try testing.expectEqual(@as(u16, 404), missing.status);
     try testing.expectEqual(@as(u16, 400), escape.status);
     try testing.expectEqualStrings("1", before.body);
@@ -424,6 +458,24 @@ const Live = struct {
         return std.fmt.parseInt(u16, rest[0..end], 10);
     }
 };
+
+/// The `src` of the first `<script type="module" src="…">` in `html`.
+fn scriptSrc(html: []const u8) ![]const u8 {
+    const marker = "<script type=\"module\" src=\"";
+    const at = std.mem.indexOf(u8, html, marker) orelse return error.NoScript;
+    const rest = html[at + marker.len ..];
+    return rest[0 .. std.mem.indexOfScalar(u8, rest, '"') orelse return error.NoScript];
+}
+
+/// `src` resolved against the page path `page`, as a browser resolves a
+/// path reference: an absolute one is itself, a relative one is taken from
+/// the page's directory.
+fn resolveAgainst(w: *World, page: []const u8, src: []const u8) ![]const u8 {
+    if (std.mem.startsWith(u8, src, "/")) return src;
+    const dir = page[0 .. std.mem.lastIndexOfScalar(u8, page, '/').? + 1];
+    const rel = if (std.mem.startsWith(u8, src, "./")) src[2..] else src;
+    return std.fmt.allocPrint(w.arena.allocator(), "{s}{s}", .{ dir, rel });
+}
 
 const Response = struct { status: u16, content_type: []const u8, body: []const u8 };
 

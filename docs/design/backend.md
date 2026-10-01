@@ -341,8 +341,9 @@ artifact's shape and differs by platform — `node` has none.
   `browser` declares it and `browser-tea` gets it. The **app's** `beni.json` may name its own, relative
   to the manifest's directory (`frontend.md` §10.1), and then it replaces the chain's: that is how a
   project adds a stylesheet, a title or a mount element without a compiler change.
-- **The placeholder.** The template is copied byte for byte except that every `{{entry}}` becomes
-  `./` and the entry file's name — `./_main.mjs`, or what the platform's `"entry"` says. **It must
+- **The placeholders.** The template is copied byte for byte except that every `{{entry}}` becomes
+  the base and the entry file's name — `/_main.mjs` by default, or what the platform's `"entry"` and
+  the project's `"base"` say — and every `{{base}}` the base alone. **`{{entry}}` must
   occur at least once**: a page that never loads the program is a build that succeeded and does
   nothing, the silent wrong answer this project refuses, so a template without it is
   `invalid_html_shell`, reported against the template at `1:1` with no excerpt. A template that
@@ -358,12 +359,18 @@ artifact's shape and differs by platform — `node` has none.
 - **Development and `--release` write the same page.** The release entry is still one file with the
   same name, so the page is identical; nothing is inlined. No live-reload script is ever in it — that
   is `beni serve`'s, injected into the HTTP response and never written (`frontend.md` §10.4).
-- **Deterministic**: the bytes are a function of the template and the entry name alone.
-- **Relative, on purpose.** `./_main.mjs` resolves against the page's own URL, so the output works
-  hosted at a domain's root or under a sub-path (a project site on a static host) alike. The price:
-  a single-page app whose routes nest (`/todos/3`) and whose server answers every route with this
-  page resolves `./_main.mjs` under the route. Such an app writes its own shell with `<base
-  href="/">`, which states the one assumption — hosted at the root — that the default cannot make.
+- **Deterministic**: the bytes are a function of the template, the entry name and the base alone.
+- **Absolute, from the base** (*amended 2026-10-01, the manager's decision before merge*). The
+  entry path is the project's `"build"."base"` (`frontend.md` §10.1) followed by the entry file's
+  name, and the base defaults to `/`, so the page loads `/_main.mjs`. An absolute path is what makes
+  a single-page app's nested routes work out of the box: `/todos/3`, answered with this page by
+  `beni serve`'s fallback or a host's rewrite rule, still loads `/_main.mjs` — a relative
+  `./_main.mjs`, the first draft, resolved to `/todos/_main.mjs` and loaded nothing. Routing is next
+  on the roadmap and base `/` is the common default (Vite's). An app hosted under a sub-path says so
+  once, `"base": "/app/"`; a template may also write `{{base}}` for its own links
+  (`{{base}}favicon.ico`). A base must end in `/` — `/app` would make `/app_main.mjs` — and may not
+  hold a quote, `<`, `>` or whitespace, which would end the attribute it is written into; anything
+  else is an exit-2 line naming the value (`frontend.md` §10.1).
 
 ## 3. `JsIr` — the second IR
 

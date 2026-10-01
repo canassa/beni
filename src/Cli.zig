@@ -295,6 +295,9 @@ pub const Build = struct {
     /// `--poll-interval=<ms>`: how often a watch looks at its inputs.
     /// Refused without `--watch`, since it would do nothing.
     poll_interval_ms: u32 = default_poll_interval_ms,
+    /// The URL path `--out` is served under (`frontend.md` §10.1's
+    /// `"base"`): what the page shell puts before the entry file's name.
+    base: []const u8 = default_base,
     /// No `source_maps` field: `parseBuild` refuses that flag outright, so
     /// nothing downstream can be handed a setting the backend does not
     /// honour.
@@ -303,6 +306,7 @@ pub const Build = struct {
 
 pub const default_out = "out";
 pub const default_poll_interval_ms: u32 = 200;
+pub const default_base = "/";
 
 /// `beni serve` (`frontend.md` §10.4): a `build --watch` and a static HTTP
 /// server for its `--out`.
@@ -334,6 +338,8 @@ pub const Defaults = struct {
     platform: ?[]const u8 = null,
     paths: ?[]const []const u8 = null,
     out: ?[]const u8 = null,
+    /// `"build"."base"`: the URL path the output is served under.
+    base: ?[]const u8 = null,
 };
 
 pub const Fmt = struct {
@@ -747,6 +753,9 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     }
     const platform = s.specific.platform orelse defaults.platform orelse
         return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
+    if (defaults.base) |base| if (!validBase(base)) {
+        return .{ .usage = .init("beni: beni.json's \"build\" \"base\" must be a URL path ending in '/', not '{s}'", .{base}) };
+    };
     const default_paths = defaults.paths orelse &.{};
     if (s.positionals.items.len == 0 and default_paths.len == 0) {
         return .{ .usage = .init("beni: {s} needs at least one path", .{command}) };
@@ -760,6 +769,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .cache = s.specific.cache,
         .platform = platform,
         .out = s.specific.out orelse defaults.out orelse default_out,
+        .base = defaults.base orelse default_base,
         .library = s.specific.library,
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
@@ -767,6 +777,18 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,
         .paths = paths,
     } } };
+}
+
+/// Whether `base` can stand before the entry file's name in the page shell
+/// (`frontend.md` §10.1): it ends in `/` — `/app` would make `/app_main.mjs`,
+/// a page that loads nothing — and holds nothing that could end the
+/// attribute it is written into.
+pub fn validBase(base: []const u8) bool {
+    if (base.len == 0 or base[base.len - 1] != '/') return false;
+    for (base) |c| {
+        if (c <= ' ' or c == 0x7f or c == '"' or c == '\'' or c == '<' or c == '>' or c == '`') return false;
+    }
+    return true;
 }
 
 /// `serve`'s flags beside `build`'s (`frontend.md` §10.4).
@@ -1360,6 +1382,16 @@ test "a project's build defaults fill what the command line leaves out, field by
         &.{"build"},
         .{ .platform = "browser-tea", .paths = &.{"src"} },
     );
+    // `"base"` is the project's alone, and it must end in `/`.
+    try expectCommandWith(
+        .{ .build = .{ .platform = "browser", .base = "/app/", .paths = &.{"src"} } },
+        &.{"build"},
+        .{ .platform = "browser", .paths = &.{"src"}, .base = "/app/" },
+    );
+    const bad_base = try parseWith(testing.allocator, &.{"build"}, .{ .platform = "node", .paths = &.{"src"}, .base = "/app" });
+    try testing.expectEqualStrings("beni: beni.json's \"build\" \"base\" must be a URL path ending in '/', not '/app'", bad_base.usage.message());
+    for ([_][]const u8{ "/", "./", "/a/b/", "https://cdn.example/x/" }) |good| try testing.expect(validBase(good));
+    for ([_][]const u8{ "", "/app", "/a b/", "/\"x/", "/<x>/" }) |bad| try testing.expect(!validBase(bad));
     // Without them, the messages are what they were.
     try expectUsage("beni: build needs --platform=<name>", &.{"build"});
     const no_paths = try parseWith(testing.allocator, &.{"build"}, .{ .platform = "node", .paths = &.{} });

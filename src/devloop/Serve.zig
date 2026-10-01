@@ -47,6 +47,8 @@ const Shared = struct {
     io: Io,
     out: []const u8,
     reload: bool,
+    /// The project's `"base"`, taken off the front of a request path.
+    base: []const u8,
     /// Successful builds since the server started.
     builds: std.atomic.Value(u32) = .init(0),
 
@@ -62,7 +64,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     var server = address.listen(io, .{ .reuse_address = true }) catch |err|
         return fail(stderr, "beni: cannot listen on {s}:{d}: {t}", .{ serve.host, serve.port, err });
 
-    var shared: Shared = .{ .io = io, .out = serve.build.out, .reload = serve.reload };
+    var shared: Shared = .{ .io = io, .out = serve.build.out, .reload = serve.reload, .base = serve.build.base };
     stdout.print("beni: serving {s}/ at http://{f}/\n", .{ serve.build.out, server.socket.address }) catch {};
     stdout.flush() catch {};
 
@@ -130,8 +132,9 @@ fn respond(shared: *Shared, request: *http.Server.Request) !void {
         });
     }
     var path_buffer: [4096]u8 = undefined;
-    const rel = resolveTarget(&path_buffer, request.head.target) orelse
+    const target = resolveTarget(&path_buffer, request.head.target) orelse
         return request.respond("bad request\n", .{ .status = .bad_request, .extra_headers = &.{ text_plain, no_store } });
+    const rel = underBase(target, shared.base);
 
     if (std.mem.startsWith(u8, rel, own_prefix)) {
         if (std.mem.eql(u8, rel, build_endpoint[1..])) {
@@ -222,6 +225,18 @@ pub fn resolveTarget(buffer: []u8, target: []const u8) ?[]const u8 {
     return path;
 }
 
+/// `rel` with the project's `"base"` taken off its front (§10.4): a page
+/// built for `/app/` asks for `/app/_main.mjs`, which is `_main.mjs` in
+/// `--out`. A path outside the base, and every path when the base is `/` or
+/// relative, is left as it is.
+pub fn underBase(rel: []const u8, base: []const u8) []const u8 {
+    if (base.len < 2 or base[0] != '/') return rel;
+    const prefix = base[1..]; // `app/`
+    if (std.mem.eql(u8, rel, prefix[0 .. prefix.len - 1])) return "";
+    if (std.mem.startsWith(u8, rel, prefix)) return rel[prefix.len..];
+    return rel;
+}
+
 /// §10.4's table.
 pub fn mimeType(path: []const u8) []const u8 {
     const Row = struct { []const u8, []const u8 };
@@ -280,6 +295,15 @@ test "a request target is a path under the output directory, or nothing" {
     for ([_][]const u8{ "", "x", "/..", "/a/../b", "/./a", "/a//b", "/%2e%2e/x", "/a%00", "/a%5cb", "/a\\b", "/%zz", "/%4" }) |bad| {
         try testing.expectEqual(@as(?[]const u8, null), resolveTarget(&buffer, bad));
     }
+}
+
+test "a request under the project's base is a path in the output directory" {
+    try testing.expectEqualStrings("_main.mjs", underBase("_main.mjs", "/"));
+    try testing.expectEqualStrings("_main.mjs", underBase("app/_main.mjs", "/app/"));
+    try testing.expectEqualStrings("", underBase("app", "/app/"));
+    try testing.expectEqualStrings("todos/3", underBase("a/b/todos/3", "/a/b/"));
+    try testing.expectEqualStrings("other/x", underBase("other/x", "/app/"));
+    try testing.expectEqualStrings("app/x", underBase("app/x", "./"));
 }
 
 test "MIME types and the reload script's place" {

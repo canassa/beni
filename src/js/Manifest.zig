@@ -87,6 +87,7 @@ pub const Build = struct {
     platform: ?[]const u8 = null,
     paths: ?[]const []const u8 = null,
     out: ?[]const u8 = null,
+    base: ?[]const u8 = null,
 };
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
