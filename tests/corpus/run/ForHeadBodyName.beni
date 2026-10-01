@@ -1,0 +1,39 @@
+-- A release build writes `let i=a;while(c){…;i=e}` as `for(let i=a;c;i=e){…}`
+-- (`backend.md` §9, *Compact statements*), and the update then runs in the
+-- loop's head, outside the body. `walk`'s loop, written where its one caller
+-- is, updates `scanned` from `s`, which the inner loop leaves in a `let` of
+-- the body: in the head, `s` named another binding (a function), and the
+-- count was wrong at exit 0. The update stays in the body when it reads a
+-- name the body declares; both builds print 90 and 170.
+import Node exposing (Program)
+
+
+count : Int -> Int
+count limit =
+    let
+        n = walk limit 0 0 0
+    in
+    n * 10 + limit
+
+
+walk : Int, Int, Int, Int -> Int
+walk limit at scanned total =
+    if at > limit then
+        total
+    else
+        let
+            ( s, p ) = advance at scanned total
+        in
+        walk limit (at + 7) s p
+
+
+advance : Int, Int, Int -> ( Int, Int )
+advance at scanned total =
+    if scanned < at then
+        advance at (scanned + 2) (total + 1)
+    else
+        ( scanned, total )
+
+
+main : Program
+main = Node.printLines [ String.fromInt (count 20), String.fromInt (count 30) ]

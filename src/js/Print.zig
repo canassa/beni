@@ -726,10 +726,43 @@ const Printer = struct {
             if (p.ir.tag(target) != .ident) return null;
             if (try p.mentions(u, @enumFromInt(p.ir.data(target).lhs))) return null;
         }
+        // Nor may it read a name the body declares: in the head it runs
+        // outside the body's block, where that name is another binding or
+        // none (`run/ForHeadBodyName`).
+        if (try p.readsBodyName(u, body)) return null;
         shape.update = u;
         if (try p.loopJumpsOrMakes(body)) return null;
         for (after) |s| if (try p.mentions(s, n)) return null;
         return shape;
+    }
+
+    /// Whether statement `u` reads a name some declaration in `body` binds —
+    /// a `const`, `let` or `function`, at any depth of its blocks.
+    fn readsBodyName(p: *Printer, u: Index, body: JsIr.SubRange) Allocator.Error!bool {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(p.spelled);
+        try stack.appendSlice(p.spelled, p.ir.extraSlice(body, Index));
+        while (stack.pop()) |at| {
+            const d = p.ir.data(at);
+            switch (p.ir.tag(at)) {
+                .const_decl, .let_decl, .func_decl, .gen_decl => if (try p.mentions(u, @enumFromInt(d.lhs))) return true,
+                .if_stmt => {
+                    const b = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.thenBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
+                },
+                .while_true, .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .switch_stmt => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .for_of => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).body(), Index)),
+                .try_stmt => {
+                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                },
+                else => {},
+            }
+        }
+        return false;
     }
 
     /// `for(let n=a;c;update)body`, `forHead`'s answer.
