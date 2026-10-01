@@ -15,4 +15,8 @@ const JsIntrinsics$second = (xs$1) => xs$1[1];
 const JsIntrinsics$fail = (message$1) => {
   throw globalThis.Error(message$1);
 };
-export { JsIntrinsics$read, JsIntrinsics$readIndexed, JsIntrinsics$write, JsIntrinsics$insert, JsIntrinsics$make, JsIntrinsics$tests, JsIntrinsics$flag, JsIntrinsics$pair, JsIntrinsics$callback, JsIntrinsics$back, JsIntrinsics$second, JsIntrinsics$fail };
+const JsIntrinsics$store = (xs$1, k$2, v$3) => {
+  xs$1[k$2] = v$3;
+  return null;
+};
+export { JsIntrinsics$read, JsIntrinsics$readIndexed, JsIntrinsics$write, JsIntrinsics$insert, JsIntrinsics$make, JsIntrinsics$tests, JsIntrinsics$flag, JsIntrinsics$pair, JsIntrinsics$callback, JsIntrinsics$back, JsIntrinsics$second, JsIntrinsics$fail, JsIntrinsics$store };

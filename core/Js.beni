@@ -100,6 +100,10 @@ pub foreign impure each : Value, (Value -> ()) -> ()
 pub foreign impure at : Value, Int -> Value
 
 
+--| `o[k] = v`, a statement: an element of an array written.
+pub foreign impure setAt : Value, Int, Value -> ()
+
+
 --| `throw v`, a statement. Nothing after it runs.
 pub foreign impure throw : Value -> a
 

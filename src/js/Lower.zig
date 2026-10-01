@@ -6917,6 +6917,11 @@ const Lowerer = struct {
                 break :blk l.add(.new_call, p, v[0].int(), @intFromEnum(record));
             },
             W.at => l.add(.index_get, p, v[0].int(), v[1].int()),
+            W.setAt => blk: {
+                const target = try l.add(.index_get, p, v[0].int(), v[1].int());
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), v[2].int()));
+                break :blk l.nullNode(p);
+            },
             // A `Js.Ref` that escapes is a cell, `{ v }` (§4).
             W.ref => l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "v"), v[0], p)}, p),
             W.read => l.member(v[0], try l.interner.getOrPut(l.gpa, "v"), p),
@@ -7905,7 +7910,7 @@ const Lowerer = struct {
                             if (l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) != .type_unit) return false;
                         },
                         .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
-                            .write, .set, .throw, .each => {},
+                            .write, .set, .setAt, .throw, .each => {},
                             else => return false,
                         },
                         else => return false,

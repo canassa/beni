@@ -32,6 +32,10 @@ export const each = (xs, f) => {
   return null;
 };
 export const at = (o, k) => o[k];
+export const setAt = (o, k, v) => {
+  o[k] = v;
+  return null;
+};
 const throw_ = (v) => {
   throw v;
 };
