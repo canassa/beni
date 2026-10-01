@@ -7,7 +7,9 @@
 -- anything else all — read at start from `Browser.Navigation.currentUrl`
 -- and followed with `onUrlChange` as the filter links are clicked. The
 -- page starts with two todos stored and at `#/active`, so the completed
--- one is hidden until the filter goes back to all.
+-- one is hidden until the filter goes back to all. The rows are keyed by the
+-- todo's id, and the page has todomvc.com's toggle-all box, a destroy button
+-- per row and its `h1`.
 import Browser.Navigation
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -39,6 +41,8 @@ type Msg
     = Typed String
     | KeyDown Html.Event
     | Toggle Int
+    | ToggleAll Bool
+    | Destroy Int
     | ClearCompleted
     | UrlChanged Url
 
@@ -135,6 +139,12 @@ update msg model =
         Toggle id ->
             changed model (List.map model.todos (\t -> if t.id == id then { t | done = not t.done } else t))
 
+        ToggleAll done ->
+            changed model (List.map model.todos (\t -> { t | done = done }))
+
+        Destroy id ->
+            changed model (List.filter model.todos (\t -> t.id /= id))
+
         ClearCompleted ->
             changed model (List.filter model.todos (\t -> not t.done))
 
@@ -169,16 +179,20 @@ view model =
 
     <section class="todoapp">
         <header class="header">
+            <h1>todos</h1>
             <input id="new-todo" class="new-todo" value={model.draft} onInput={Typed} onKeyDown={KeyDown} />
         </header>
         <section class="main" hidden={List.isEmpty model.todos}>
+            <input id="toggle-all" class="toggle-all" type="checkbox" checked={left == 0} onCheck={ToggleAll} />
+            <label for="toggle-all">Mark all as complete</label>
             <ul class="todo-list">
-                <For each={List.filter model.todos (visible model.filter _)} keyed={False}>
+                <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
                     {\todo ->
                         <li class={[ ( "completed", todo.done ) ]}>
                             <div class="view">
                                 <input class="toggle" type="checkbox" checked={todo.done} onCheck={\_ -> Toggle todo.id} />
                                 <label>{todo.title}</label>
+                                <button class="destroy" onClick={Destroy todo.id} />
                             </div>
                         </li>
                     }

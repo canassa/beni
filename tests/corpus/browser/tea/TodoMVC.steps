@@ -7,5 +7,8 @@ key #new-todo Enter code:Enter
 click .todo-list>li:nth-child(1)>div>input
 # The filter follows the address.
 hash "#/"
+# Destroy the first row, then mark every todo complete with the toggle-all box.
+click .todo-list>li:nth-child(1)>div>button
+click #toggle-all
 click #clear-completed
 storage local

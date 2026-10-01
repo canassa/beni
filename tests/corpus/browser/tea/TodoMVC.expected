@@ -4,14 +4,18 @@
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"buy milk"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -40,14 +44,18 @@
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="write tests">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"buy milk"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -77,20 +85,25 @@
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"buy milk"</label>
+            <button class="destroy"></button>
           </div>
         </li>
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"write tests"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -119,14 +132,18 @@
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"write tests"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -155,26 +172,32 @@
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
         <li class="completed">
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=true>
             <label>"buy milk"</label>
+            <button class="destroy"></button>
           </div>
         </li>
         <li class="completed">
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=true>
             <label>"walk the dog"</label>
+            <button class="destroy"></button>
           </div>
         </li>
         <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"write tests"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -199,18 +222,29 @@
     </footer>
   </section>
 </body>
--- click #clear-completed
+-- click .todo-list>li:nth-child(1)>div>button
 <body>
   <section class="todoapp">
     <header class="header">
+      <h1>"todos"</h1>
       <input id="new-todo" class="new-todo" .value="">
     </header>
     <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
       <ul class="todo-list">
-        <li class="">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"walk the dog"</label>
+            <button class="destroy"></button>
+          </div>
+        </li>
+        <li>
           <div class="view">
             <input class="toggle" type="checkbox" .value="on" .checked=false>
             <label>"write tests"</label>
+            <button class="destroy"></button>
           </div>
         </li>
       </ul>
@@ -231,10 +265,89 @@
           <a href="#/completed">"Completed"</a>
         </li>
       </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click #toggle-all
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"walk the dog"</label>
+            <button class="destroy"></button>
+          </div>
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write tests"</label>
+            <button class="destroy"></button>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click #clear-completed
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main" hidden="">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list"></ul>
+    </section>
+    <footer class="footer" hidden="">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
       <button id="clear-completed" class="clear-completed" hidden="">"Clear completed"</button>
     </footer>
   </section>
 </body>
 -- storage local
-(localStorage: {"todos-beni":"0write tests"})
+(localStorage: {"todos-beni":""})
 (the DOM did not change)
