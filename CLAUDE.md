@@ -478,6 +478,26 @@ form stays and produces the same type. The open decisions are the owner's, in
 [`plans/browser-decisions.md`](plans/browser-decisions.md); the plan is
 [`plans/browser-platform.md`](plans/browser-platform.md).
 
+### 9. No runtime errors — by wrapping every host API precisely, never by catching broadly
+
+The owner, 2026-10-02: beni promises **no runtime errors**, and **how** it keeps
+that promise matters as much as the promise. `core/` and the platforms wrap every
+browser and Node API they expose, capture each failure the API documents
+**individually**, and return it as a properly typed beni error (a `Result` whose
+error type names that failure: `BadUrl`, `QuotaExceeded`, `NotFound`, …).
+
+- **No broad `try`/`catch` is allowed.** Never `catch (e)` and map everything to one
+  error, never `.catch(() => …)` or a promise rejection handler that swallows every
+  reason, never a catch that "keeps going". A `catch` names what it expects —
+  `e instanceof TypeError`, `e.name === "QuotaExceededError"`, a `DOMException`
+  code — and **re-throws everything else**.
+- **An unknown error crashes.** A failure the wrapper did not anticipate is a bug in
+  beni or in the host, not a value: it must stop the program (the decided defect
+  rule: a crash screen in development, logged and stopped in release), never be
+  disguised as a typed error or silently dropped.
+- `Js.finally` (cleanup that always runs and does not catch) is not a `catch` and
+  stays allowed. A review that finds a broad catch treats it as a defect.
+
 ## Operational
 
 ### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
