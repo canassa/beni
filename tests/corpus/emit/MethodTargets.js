@@ -12,3 +12,4 @@ const MethodTargets$onRecord = (h$1) => h$1.run(1);
 const MethodTargets$onVariable = ($m$0, x$1, factor$2) => $m$0(x$1, factor$2);
 const MethodTargets$main = Node$printLines([]);
 export { MethodTargets$Metre$$compare, MethodTargets$Metre$$eq, MethodTargets$main, MethodTargets$scale, MethodTargets$onOwnType, MethodTargets$onImportedType, MethodTargets$onRecord, MethodTargets$onVariable };
+//# sourceMappingURL=MethodTargets.mjs.map

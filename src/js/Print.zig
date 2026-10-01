@@ -37,6 +37,7 @@ const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
+const SourceMap = @import("SourceMap.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -80,6 +81,11 @@ pub const Names = struct {
 
     fn text(names: Names, symbol: InternPool.Symbol) []const u8 {
         return names.lookup(names.context, symbol);
+    }
+
+    /// The same lookup, for `SourceMap.write`'s `names`.
+    pub fn forMap(names: Names) SourceMap.NameText {
+        return .{ .context = names.context, .lookup = names.lookup };
     }
 };
 
@@ -127,6 +133,12 @@ pub const Options = struct {
     /// with no entry is pinned and printed as its text. Null prints every
     /// field as its text.
     fields: ?*const Fields.Table = null,
+    /// A development build's source map (`backend.md` §11): where to record
+    /// a mapping at each statement and expression with a position. Null
+    /// records nothing, which is every build without maps.
+    marks: ?*SourceMap.Marks = null,
+    /// Bytes written after the module: its `//# sourceMappingURL=` line.
+    footer: []const u8 = "",
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -153,6 +165,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .bare_globals = options.bare_globals,
         .bare_blocked = options.bare_blocked,
         .fields = options.fields,
+        .marks = options.marks,
         .spelled = scratch,
         .spellings = spellings,
     };
@@ -176,6 +189,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
     }
     // A release module is one line, and a file ends with a newline.
     if (p.compact and p.joiner.length != 0) try p.push("\n");
+    try p.joiner.push(options.footer);
     return p.joiner.blit();
 }
 
@@ -371,6 +385,64 @@ const Printer = struct {
     /// `Options.bare_globals` and `Options.bare_blocked`.
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
+    /// `Options.marks`.
+    marks: ?*SourceMap.Marks = null,
+    /// Each name's entry in the map's `names` (`mapName`), by `NameIndex`;
+    /// allocated the first time a name is mapped.
+    map_names: []u32 = &.{},
+    /// The name the next mark carries (`nameFunction`).
+    function_name: u32 = SourceMap.Mapping.no_name,
+
+    // ---- Source map ---------------------------------------------------------
+
+    /// Record that `node` starts at the next byte (`backend.md` §11). A
+    /// node the lowering invented has no position and maps nothing: the
+    /// mapping before it covers it.
+    inline fn mark(p: *Printer, node: Index) Allocator.Error!void {
+        const marks = p.marks orelse return;
+        const at = p.ir.pos(node);
+        if (at == Node.no_pos) return;
+        const carried = p.function_name;
+        p.function_name = SourceMap.Mapping.no_name;
+        try marks.add(p.joiner.length, at, carried);
+    }
+
+    /// A named function's first byte carries its name too: an engine names
+    /// a stack frame by the mapping at the start of the function it is in
+    /// (Node's `--enable-source-maps` does exactly that), and `Main$f`'s
+    /// arrow starts after the `=`, not at the name.
+    fn nameFunction(p: *Printer, index: JsIr.NameIndex) Allocator.Error!void {
+        const marks = p.marks orelse return;
+        p.function_name = try p.mapName(marks, index);
+    }
+
+    /// The same for a declaration's name, carrying its beni spelling into
+    /// the map's `names` where the printed one differs from it.
+    fn markName(p: *Printer, node: Index, index: JsIr.NameIndex) Allocator.Error!void {
+        const marks = p.marks orelse return;
+        const at = p.ir.pos(node);
+        if (at == Node.no_pos) return;
+        try marks.add(p.joiner.length, at, try p.mapName(marks, index));
+    }
+
+    /// `index`'s entry in the map's `names`, numbered the first time it is
+    /// asked for, or `no_name` for a name printed as written or a temporary
+    /// the lowering invented (`$t`), which has no beni name to give.
+    fn mapName(p: *Printer, marks: *SourceMap.Marks, index: JsIr.NameIndex) Allocator.Error!u32 {
+        const n = p.ir.name(index);
+        if (n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
+        if (std.mem.startsWith(u8, p.names.text(n.base), "$")) return SourceMap.Mapping.no_name;
+        if (p.map_names.len == 0) {
+            p.map_names = try p.spelled.alloc(u32, p.ir.names.len);
+            @memset(p.map_names, SourceMap.Mapping.no_name);
+        }
+        const slot = &p.map_names[index.int()];
+        if (slot.* == SourceMap.Mapping.no_name) {
+            slot.* = @intCast(marks.names.items.len);
+            try marks.names.append(marks.allocator, n.base);
+        }
+        return slot.*;
+    }
 
     // ---- Bytes out ---------------------------------------------------------
 
@@ -940,6 +1012,9 @@ const Printer = struct {
         const single = p.single;
         p.single = false;
         try p.indent(level);
+        if (p.ir.tag(node) == .func_decl or p.ir.tag(node) == .gen_decl) try p.nameFunction(@enumFromInt(p.ir.data(node).lhs));
+        try p.mark(node);
+        p.function_name = SourceMap.Mapping.no_name;
         switch (p.ir.tag(node)) {
             .import_stmt => {
                 const imp = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
@@ -990,9 +1065,12 @@ const Printer = struct {
                 // the name, and in compact mode the adjacency guard puts that
                 // one back — `const` then `a` cannot run together.
                 try p.tok("const ", "let");
+                try p.markName(node, @enumFromInt(d.lhs));
                 try p.name(@enumFromInt(d.lhs), .binding);
                 try p.tok(" = ", "=");
+                if (p.ir.tag(@enumFromInt(d.rhs)) == .arrow) try p.nameFunction(@enumFromInt(d.lhs));
                 try p.expression(@enumFromInt(d.rhs), 0, level);
+                p.function_name = SourceMap.Mapping.no_name;
                 try p.terminate();
                 try p.endLine(level);
             },
@@ -1009,6 +1087,7 @@ const Printer = struct {
             .func_decl, .gen_decl => {
                 const generator = p.ir.tag(node) == .gen_decl;
                 try p.tok(if (generator) "function* " else "function ", if (generator) "function*" else "function");
+                try p.markName(node, @enumFromInt(d.lhs));
                 try p.name(@enumFromInt(d.lhs), .binding);
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
                 try p.params(f);
@@ -1914,6 +1993,7 @@ const Printer = struct {
     /// under `recursion_limit`. The bytes must be `expand`'s exactly; the test
     /// "the recursive and the iterative printer write the same bytes" holds it.
     fn rawRecursive(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        try p.mark(node);
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
             .ident => try p.name(@enumFromInt(d.lhs), .binding),
@@ -2052,6 +2132,7 @@ const Printer = struct {
     /// in reverse, and return the first child for `run` to take next. The
     /// comments give each form in print order.
     fn expand(p: *Printer, node: Index, level: u32) Allocator.Error!?Work {
+        try p.mark(node);
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
             .ident => try p.name(@enumFromInt(d.lhs), .binding),

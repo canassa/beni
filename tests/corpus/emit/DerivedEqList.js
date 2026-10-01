@@ -6,3 +6,4 @@ const DerivedEqList$sameInts = (a$1, b$2) => List$eq(DerivedEqList$eq$prim, a$1,
 const DerivedEqList$sameRows = (a$1, b$2) => List$eq(($p$1, $p$2) => DerivedEqList$eq$r$x(DerivedEqList$eq$prim, $p$1, $p$2), a$1, b$2);
 const DerivedEqList$main = Node$printLines([]);
 export { DerivedEqList$main, DerivedEqList$sameInts, DerivedEqList$sameRows };
+//# sourceMappingURL=DerivedEqList.mjs.map

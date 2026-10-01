@@ -77,12 +77,16 @@ test "a platform layered on another builds a program with its base's program and
     // directory no module name can reach.
     try testing.expectEqualDeep(@as([]const []const u8, &.{
         "Main.mjs",
+        "Main.mjs.map",
         "_main.mjs",
         "_manifest.txt",
         "_platform/Top.mjs",
+        "_platform/Top.mjs.map",
         "_platform/_layered-base/Base.foreign.mjs",
         "_platform/_layered-base/Base.mjs",
+        "_platform/_layered-base/Base.mjs.map",
         "_platform/_layered-base/Hidden.mjs",
+        "_platform/_layered-base/Hidden.mjs.map",
         "_platform/_layered-base/run.foreign.mjs",
     }), try treeOf(&w, "out"));
 
@@ -294,9 +298,12 @@ test "a dependency platform's output directory is named for its manifest's name"
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     try testing.expectEqualDeep(@as([]const []const u8, &.{
         "Main.mjs",
+        "Main.mjs.map",
         "_manifest.txt",
         "_platform/_lib-one/One.mjs",
+        "_platform/_lib-one/One.mjs.map",
         "_platform/_plain/Two.mjs",
+        "_platform/_plain/Two.mjs.map",
     }), try treeOf(&w, "out"));
 }
 
@@ -475,7 +482,7 @@ test "a library for a platform with no program builds, and one that keeps a mark
     // `html`'s module is not written: nothing the library keeps reaches it.
     try testing.expectEqual(@as(u8, 0), library.exit_code);
     try testing.expectEqual(@as(usize, 0), library.diagnostics.len);
-    try testing.expectEqualDeep(@as([]const []const u8, &.{ "Label.mjs", "_manifest.txt" }), try treeOf(&w, "lib"));
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "Label.mjs", "Label.mjs.map", "_manifest.txt" }), try treeOf(&w, "lib"));
     try testing.expectEqual(@as(u8, 1), refused.exit_code);
     try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
     try testing.expectEqualDeep(diagnostic.Diagnostic{

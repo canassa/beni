@@ -50,3 +50,4 @@ const EqAgainstConstructor$nested = (m$1, n$2) => {
 const EqAgainstConstructor$listField = (p$1) => EqAgainstConstructor$Pair$$eq(p$1, { $: "Pair", a: [1], b: "a" });
 const EqAgainstConstructor$main = Node$printLines([]);
 export { EqAgainstConstructor$Pair$$compare, EqAgainstConstructor$Pair$$eq, EqAgainstConstructor$main, EqAgainstConstructor$isSelected, EqAgainstConstructor$nothing, EqAgainstConstructor$nested, EqAgainstConstructor$listField };
+//# sourceMappingURL=EqAgainstConstructor.mjs.map

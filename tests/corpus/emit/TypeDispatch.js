@@ -8,3 +8,4 @@ const TypeDispatch$asMetre = TypeDispatch$make(TypeDispatch$fromInt, 7);
 const TypeDispatch$asString = TypeDispatch$make(String$fromInt, 42);
 const TypeDispatch$main = Node$printLines([]);
 export { TypeDispatch$Metre$$compare, TypeDispatch$Metre$$eq, TypeDispatch$main, TypeDispatch$fromInt, TypeDispatch$asMetre, TypeDispatch$asString };
+//# sourceMappingURL=TypeDispatch.mjs.map

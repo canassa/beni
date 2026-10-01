@@ -16,3 +16,4 @@ const DceDerived$Payload$$eq = ($x, $y) => $x.a === $y.a;
 const DceDerived$same = (a$1, b$2) => DceDerived$Kept$$eq(a$1, b$2) ? "yes" : "no";
 const DceDerived$main = Node$printLines([DceDerived$same(DceDerived$Empty, { $: "Holds", a: { $: "Payload", a: 1 } }), String$fromInt(0)]);
 export { DceDerived$Kept$$eq, DceDerived$Payload$$eq, DceDerived$main, DceDerived$same };
+//# sourceMappingURL=DceDerived.mjs.map

@@ -42,3 +42,4 @@ const DerivedCompare$order = ($m$0, x$1, y$2) => $m$0(x$1, y$2);
 const DerivedCompare$rank = (r$1) => DerivedCompare$order(($p$1, $p$2) => DerivedCompare$compare$r$x$y(DerivedCompare$compare$prim, String$compare, $p$1, $p$2), r$1, r$1);
 const DerivedCompare$main = Node$printLines([]);
 export { DerivedCompare$main, DerivedCompare$before, DerivedCompare$atLeast, DerivedCompare$pairAtMost, DerivedCompare$mixedAfter, DerivedCompare$tripleBefore, DerivedCompare$unitAtMost, DerivedCompare$rank };
+//# sourceMappingURL=DerivedCompare.mjs.map

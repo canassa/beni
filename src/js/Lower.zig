@@ -1401,6 +1401,10 @@ const Lowerer = struct {
             .twin => try l.twinName(l.module_name, l.bir.symbol(d.name)),
         };
         const p = l.pos(body);
+        // The binding itself is where the definition's name is written,
+        // which is what a source map names it by (§11); its value keeps the
+        // body's position.
+        const decl_p: u32 = if (d.name_token < l.in.token_starts.len) l.in.token_starts[d.name_token] else p;
         // The declaration's own arrow: suspendable, or not (§16.3).
         const own_suspends = l.suspendsHere(l.in.dispatch.effectDecl(index).own);
         // §8.1: the hidden leading parameters, one per entry of this
@@ -1417,7 +1421,7 @@ const Lowerer = struct {
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, own_suspends))) try l.unobserved_arrows.append(l.scratch, arrow);
-                try l.constDecl(out, n, arrow, p);
+                try l.constDecl(out, n, arrow, decl_p);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
             // parameterless declaration inherits its name, because `f x = e`
@@ -1431,11 +1435,11 @@ const Lowerer = struct {
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p, l.functionSuspends(body));
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
-                try l.constDecl(out, n, arrow, p);
+                try l.constDecl(out, n, arrow, decl_p);
             },
-            .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), p),
+            .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), decl_p),
             // `($m…) => value`, its value kept per evidence.
-            .thunk => try l.constDecl(out, n, try l.memoArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, &.{}, body, p), p),
+            .thunk => try l.constDecl(out, n, try l.memoArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, &.{}, body, p), decl_p),
             .constant => {
                 var stmts: StmtList = .empty;
                 // A module-level `Js.Ref` that does not escape is a
@@ -1448,7 +1452,7 @@ const Lowerer = struct {
                         try stmts.append(l.scratch, try l.returnStmt(init, p));
                         break :blk try l.call(try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p), &.{}, p);
                     };
-                    try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(value.toOptional())));
+                    try out.append(l.scratch, try l.add(.let_decl, decl_p, @intFromEnum(n), @intFromEnum(value.toOptional())));
                     return;
                 }
                 const value = try l.expr(&stmts, body);
@@ -1457,12 +1461,12 @@ const Lowerer = struct {
                 // place lowering emits an IIFE and the one place §9.2's
                 // peephole exists to remove.
                 if (stmts.items.len == 0) {
-                    try l.constDecl(out, n, value, p);
+                    try l.constDecl(out, n, value, decl_p);
                     return;
                 }
                 try stmts.append(l.scratch, try l.returnStmt(value, p));
                 const arrow = try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p);
-                try l.constDecl(out, n, try l.call(arrow, &.{}, p), p);
+                try l.constDecl(out, n, try l.call(arrow, &.{}, p), decl_p);
             },
         }
     }

@@ -10,3 +10,4 @@ const RecordFieldOrder$unsortedAtoms = (a$1, b$2) => ({ alpha: b$2, zed: a$1 });
 const RecordFieldOrder$unsortedOne = (a$1, b$2) => ({ alpha: b$2, zed: RecordFieldOrder$bump(a$1) });
 const RecordFieldOrder$main = Node$printLines([]);
 export { RecordFieldOrder$main, RecordFieldOrder$sortedFields, RecordFieldOrder$unsortedFields, RecordFieldOrder$unsortedAtoms, RecordFieldOrder$unsortedOne };
+//# sourceMappingURL=RecordFieldOrder.mjs.map

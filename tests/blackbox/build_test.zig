@@ -2834,13 +2834,13 @@ test "a _manifest.txt that cannot be written is reported by its own path" {
     try testing.expectEqual(@as(usize, 0), (try w.listFiles("out")).len);
 }
 
-test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
+test "--release builds and runs with no map, and --release --source-maps exits 2" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `backend.md` §2: `--release` is accepted, and
-    // `--source-maps` keeps its own refusal — in a `--release` build too, so the
-    // pair exits 2 on the source-map line and writes nothing.
+    // `backend.md` §2, §11: `--release` is accepted and writes no map —
+    // release maps are not built yet — so asking for them in a release
+    // build exits 2 on the source-map line and writes nothing.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -2867,10 +2867,12 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
     try w.expectProgram(world.entry_file, .{ .stdout = "x\n" });
+    for (try w.listFiles("out")) |path| try testing.expect(!std.mem.endsWith(u8, path, ".map"));
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/_main.mjs"), "sourceMappingURL") == null);
 
     try testing.expectEqual(@as(u8, 2), both.exit_code);
     try testing.expectEqualStrings(
-        "beni: --source-maps is not implemented yet; this build would write no .map file\n",
+        "beni: --source-maps is not implemented for --release yet; a release build writes no .map file\n",
         both.stderr,
     );
 
@@ -3699,7 +3701,180 @@ test "the debug_in_release site list does not depend on thread count or argument
     try testing.expect(!w.exists("c"));
 }
 
-test "--source-maps is refused rather than silently writing no .map file" {
+/// Read a module's source map with a decoder written from the format
+/// (ECMA-426) and nothing else, and print where each needle of the module
+/// maps to: the segment covering its first occurrence, which is the last
+/// on its line at or before it. Then run the program under Node with
+/// `--enable-source-maps` and print the `.beni` frames of its crash —
+/// Node's own reading of the same map.
+///
+/// usage: node check-map.mjs <module.mjs> <source.beni> <needle>...
+const check_map_script =
+    \\import { readFileSync, realpathSync } from "node:fs";
+    \\import { spawnSync } from "node:child_process";
+    \\import { basename } from "node:path";
+    \\import { fileURLToPath, pathToFileURL } from "node:url";
+    \\
+    \\const [modulePath, sourcePath, ...needles] = process.argv.slice(2);
+    \\const code = readFileSync(modulePath, "utf8");
+    \\const comment = /\n\/\/# sourceMappingURL=([^\n]+)\n$/.exec(code);
+    \\if (!comment) throw new Error("no sourceMappingURL line at the end of " + modulePath);
+    \\const mapUrl = new URL(comment[1], pathToFileURL(modulePath));
+    \\const map = JSON.parse(readFileSync(mapUrl, "utf8"));
+    \\const source = fileURLToPath(new URL(map.sources[0], mapUrl));
+    \\console.log(`version ${map.version}, file ${map.file}, sources ${map.sources.join(" ")}`);
+    \\console.log(`source is the file: ${realpathSync(source) === realpathSync(sourcePath)}`);
+    \\console.log(`sourcesContent is its text: ${map.sourcesContent[0] === readFileSync(sourcePath, "utf8")}`);
+    \\
+    \\const digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    \\const lines = [];
+    \\const state = [0, 0, 0, 0, 0];
+    \\for (const line of map.mappings.split(";")) {
+    \\  const segments = [];
+    \\  state[0] = 0;
+    \\  for (const text of line ? line.split(",") : []) {
+    \\    const fields = [];
+    \\    let value = 0, shift = 0;
+    \\    for (const ch of text) {
+    \\      const d = digits.indexOf(ch);
+    \\      if (d < 0) throw new Error("not a base64 digit: " + ch);
+    \\      value += (d & 31) << shift;
+    \\      if (d & 32) { shift += 5; continue; }
+    \\      fields.push(value & 1 ? -(value >>> 1) : value >>> 1);
+    \\      value = 0; shift = 0;
+    \\    }
+    \\    if (fields.length !== 4 && fields.length !== 5) throw new Error("a segment of " + fields.length + " fields: " + text);
+    \\    fields.forEach((delta, i) => { state[i] += delta; });
+    \\    segments.push({ column: state[0], source: state[1], line: state[2], sourceColumn: state[3], name: fields.length === 5 ? map.names[state[4]] : null });
+    \\  }
+    \\  lines.push(segments);
+    \\}
+    \\
+    \\for (const needle of needles) {
+    \\  const at = code.indexOf(needle);
+    \\  if (at < 0) throw new Error("not in the module: " + needle);
+    \\  const before = code.slice(0, at).split("\n");
+    \\  const line = before.length - 1, column = before[line].length;
+    \\  const hit = (lines[line] ?? []).filter((s) => s.column <= column).pop();
+    \\  const where = hit ? `${basename(map.sources[hit.source])}:${hit.line + 1}:${hit.sourceColumn + 1}` : "unmapped";
+    \\  console.log(`${needle} -> ${where}${hit?.name ? " " + hit.name : ""}`);
+    \\}
+    \\
+    \\const run = spawnSync(process.execPath, ["--enable-source-maps", "out/_main.mjs"], { encoding: "utf8" });
+    \\for (const frame of run.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.beni:\d+:\d+)\)$/gm)) {
+    \\  console.log(`frame ${frame[1]} ${frame[2]}`);
+    \\}
+    \\console.log(`exit ${run.status}`);
+    \\
+;
+
+test "a development build maps a crash in a case arm back to the beni line and column" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11: every module of a development build has a map
+    // beside it, and a frame of a crash, a call in a `case` arm, an arm's
+    // test and a declaration's name each map to the token that wrote them.
+    // The source is under `src/` and the output under `out/`, so the map's
+    // `sources` climbs out of the output tree to the file itself.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type Step
+        \\    = Go Int
+        \\    | Stop
+        \\
+        \\
+        \\describe : Step -> String
+        \\describe step =
+        \\    case step of
+        \\        Go n ->
+        \\            String.fromInt (twice n)
+        \\
+        \\        Stop ->
+        \\            Debug.todo "stop is not done"
+        \\
+        \\
+        \\twice : Int -> Int
+        \\twice n =
+        \\    n * 2
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ describe (Go 21), describe Stop ]
+        \\
+    );
+    try w.write("check-map.mjs", check_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-map.mjs",
+        "out/Main.mjs",
+        "src/Main.beni",
+        "Debug$todo(",
+        "String$fromInt(",
+        "Main$twice(n",
+        "if (step$1",
+        "const Main$twice",
+        "Main$twice =",
+        "(n$1) =>",
+        "n$1 * 2",
+        "Main$describe(Main$Stop",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Main.mjs, sources ../src/Main.beni
+        \\source is the file: true
+        \\sourcesContent is its text: true
+        \\Debug$todo( -> Main.beni:17:13
+        \\String$fromInt( -> Main.beni:14:13
+        \\Main$twice(n -> Main.beni:14:29
+        \\if (step$1 -> Main.beni:13:9
+        \\const Main$twice -> Main.beni:21:1
+        \\Main$twice = -> Main.beni:21:1 twice
+        \\(n$1) => -> Main.beni:22:7 twice
+        \\n$1 * 2 -> Main.beni:22:5
+        \\Main$describe(Main$Stop -> Main.beni:27:41
+        \\frame describe Main.beni:17:13
+        \\frame <anonymous> Main.beni:27:41
+        \\exit 1
+        \\
+    , checked.stdout);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // A map beside every emitted module, core's and the platform's
+    // included, whose source is embedded and named `beni:///`; none beside
+    // the hand-written siblings, which are what the debugger shows as they
+    // are, nor beside the entry file, which no beni line wrote.
+    const files = try w.listFiles("out");
+    for (files) |path| {
+        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, ".foreign.mjs") and !std.mem.eql(u8, path, "_main.mjs");
+        const map = try std.fmt.allocPrint(w.arena.allocator(), "{s}.map", .{path});
+        var has_map = false;
+        for (files) |other| has_map = has_map or std.mem.eql(u8, other, map);
+        try testing.expectEqual(is_module, has_map);
+    }
+    const core_map = try w.read("out/_core/String.mjs.map");
+    try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"String.mjs\",\"sources\":[\"beni:///core/String.beni\"],\"sourcesContent\":[\""));
+}
+
+test "--no-source-maps writes no map and no comment, and contradicting it is refused" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3718,26 +3893,22 @@ test "--source-maps is refused rather than silently writing no .map file" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.runWith(&.{ "build", "--platform=node", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    const off = try w.runWith(&.{ "build", "--platform=node", "--no-source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    const both = try w.runWith(&.{ "build", "--platform=node", "--no-source-maps", "--source-maps", "--out=both", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // Positions ride in the IR (backend.md §9.6) but the VLQ encoder does
-    // not exist yet (§11), so the flag has nothing to do. Accepting it in
-    // silence is how a user believes they asked for a `.map` and got one;
-    // `--release` is refused for the same reason.
-    try testing.expectEqual(@as(u8, 2), r.exit_code);
-    try testing.expectEqualStrings(
-        "beni: --source-maps is not implemented yet; this build would write no .map file\n",
-        r.stderr,
-    );
+    try expectBuilt(off);
+    try testing.expectEqual(@as(u8, 2), both.exit_code);
+    try testing.expectEqualStrings("beni: --source-maps and --no-source-maps contradict each other\n", both.stderr);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("out"));
-    try testing.expectEqualStrings("", r.stdout);
+    for (try w.listFiles("out")) |path| try testing.expect(!std.mem.endsWith(u8, path, ".map"));
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/Main.mjs"), "sourceMappingURL") == null);
+    try testing.expect(!w.exists("both"));
 }
 
 test "Debug.todo compiles as anything and crashes with its message when reached" {
@@ -3945,6 +4116,15 @@ fn expectEveryFileIsEsm(w: *World, dir: []const u8) !void {
         // module and is never loaded (§2, *The output directory holds what
         // the last build wrote*).
         if (std.mem.eql(u8, path, "_manifest.txt")) continue;
+        // A module's source map (§11) is not loaded as a module either; it
+        // is named for the `.mjs` beside it, which must be there.
+        if (std.mem.endsWith(u8, path, ".mjs.map")) {
+            if (for (files) |other| {
+                if (std.mem.eql(u8, other, path[0 .. path.len - ".map".len])) break true;
+            } else false) continue;
+            std.debug.print("{s}/{s} is a map with no module beside it (backend.md §11)\n", .{ dir, path });
+            return error.NotAnEsModule;
+        }
         std.debug.print("{s}/{s} is not a .mjs file (backend.md §2)\n", .{ dir, path });
         return error.NotAnEsModule;
     }

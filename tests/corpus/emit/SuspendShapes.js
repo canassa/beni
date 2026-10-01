@@ -62,3 +62,4 @@ const SuspendShapes$twice$s = (f$1, x$2) => Task$andThen(f$1(x$2), ($t$7) => f$1
 const SuspendShapes$both = (n$1) => Task$andThen(SuspendShapes$twice$s(SuspendShapes$fetch, n$1), ($t$9) => $t$9 + SuspendShapes$twice((k$2) => k$2 + 1, n$1));
 const SuspendShapes$plain = (n$1) => n$1 <= 0 ? 0 : n$1 + SuspendShapes$plain(n$1 - 1);
 export { SuspendShapes$fetch, SuspendShapes$pick, SuspendShapes$total, SuspendShapes$fetchAll, SuspendShapes$both, SuspendShapes$plain };
+//# sourceMappingURL=SuspendShapes.mjs.map

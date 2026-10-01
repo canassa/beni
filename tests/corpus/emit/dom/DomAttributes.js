@@ -85,3 +85,4 @@ const DomAttributes$fields = (r$1) => {
   return { t: DomAttributes$k68, v: [$t$15, $t$16, $t$17, $t$18, $t$19] };
 };
 export { DomAttributes$inPlace, DomAttributes$lists, DomAttributes$fields };
+//# sourceMappingURL=DomAttributes.mjs.map

@@ -49,3 +49,4 @@ const DomComponents$page = (r$1) => {
   return { t: DomComponents$k14, v: [$t$1, { t: DomComponents$k14n4, v: [$t$2] }, (children$21) => Card$view({ children: children$21, title: $t$1 }), "static", DomComponents$b14n6, (children$27) => Card$view({ children: children$27, title: "static" })] };
 };
 export { DomComponents$page };
+//# sourceMappingURL=DomComponents.mjs.map

@@ -3604,7 +3604,10 @@ test "a comment in the module that declares a payload's method is cut off and wr
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeDerivedProject(&w, holder_by_eq);
-    const build = [_][]const u8{ "build", "--platform=node", "--jobs=1", "--diagnostics=json" };
+    // Without maps: a comment moves every line below it, which is what a
+    // source map is for (`backend.md` §11), and this is a claim about the
+    // JavaScript.
+    const build = [_][]const u8{ "build", "--platform=node", "--jobs=1", "--diagnostics=json", "--no-source-maps" };
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │

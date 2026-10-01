@@ -177,3 +177,4 @@ const DerivedCompareNominal$Wrapper$$compare = ($x, $y) => $x.a < $y.a ? "LT" : 
 const DerivedCompareNominal$Wrapper$$eq = ($x, $y) => $x.a === $y.a;
 const DerivedCompareNominal$main = Node$printLines([]);
 export { DerivedCompareNominal$Colour$$compare, DerivedCompareNominal$Colour$$eq, DerivedCompareNominal$Label$$compare, DerivedCompareNominal$Label$$eq, DerivedCompareNominal$Outcome$$compare, DerivedCompareNominal$Outcome$$eq, DerivedCompareNominal$Shape$$compare, DerivedCompareNominal$Shape$$eq, DerivedCompareNominal$Tree$$compare, DerivedCompareNominal$Tree$$eq, DerivedCompareNominal$Wrapper$$compare, DerivedCompareNominal$Wrapper$$eq, DerivedCompareNominal$main };
+//# sourceMappingURL=DerivedCompareNominal.mjs.map

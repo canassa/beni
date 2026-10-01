@@ -14,6 +14,7 @@
 //!
 //! ```
 //! out/Main.mjs                       the app's modules, mirroring their names
+//! out/Main.mjs.map                   a development build's source map of each (§11.1)
 //! out/_core/List.mjs                 core, and its hand-written half beside it
 //! out/_core/List.foreign.mjs
 //! out/_platform/Node.mjs             the platform, its sibling, and its runtime
@@ -83,6 +84,7 @@ const Convention = @import("../check/Convention.zig");
 const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
+const SourceMap = @import("SourceMap.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
 const Arena = @import("../Arena.zig");
@@ -252,9 +254,11 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
-    // No `source_maps`: the VLQ encoder is not written (§11), so
-    // `--source-maps` is refused in `Cli.parseBuild` and never reaches here.
-    // Positions ride in the IR either way (§9.6).
+    /// §11: a `.mjs.map` beside every module this build emits, and the
+    /// `//# sourceMappingURL=` line that names it. On by default in a
+    /// development build; `Cli` never sets it with `release`, which has no
+    /// maps yet.
+    source_maps: bool = false,
 };
 
 pub const Result = struct {
@@ -2226,6 +2230,9 @@ const Emitter = struct {
         else
             null;
 
+        // §11: where the output tree is, absolutely, for the source URLs.
+        const maps: ?MapRoot = if (e.options.source_maps and !e.options.release) try e.mapRoot() else null;
+
         var slots: []ModuleSlot = &.{};
         var todo: std.ArrayList(u32) = .empty;
         var insts: usize = 0;
@@ -2256,6 +2263,7 @@ const Emitter = struct {
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
+                if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
                 if (lowering != null and vocabulary != null and markup_output != null) slot.markup = .{
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
@@ -2372,6 +2380,10 @@ const Emitter = struct {
             const text = slot.text orelse continue;
             slot.text = null;
             try e.produceOwned(paths[i], text, e.session.store.path(file));
+            if (slot.map) |map| {
+                slot.map = null;
+                try e.produceOwned(slot.map_file, map, e.session.store.path(file));
+            }
         }
         if (hoist) |*h| {
             if (e.diagnostics.items.len == 0) try e.linkHoisted(slots, h);
@@ -2422,10 +2434,19 @@ const Emitter = struct {
         /// The module's bytes, gpa-owned until `produceOwned` takes them.
         text: ?[]u8 = null,
         rename_failure: ?Rename.Failure = null,
+        /// §11, in a build with maps: the map's path in the output tree
+        /// (empty for no map), the line that names it at the end of the
+        /// module, and the source's URL relative to it. Scratch-owned.
+        map_file: []const u8 = "",
+        map_footer: []const u8 = "",
+        source_url: []const u8 = "",
+        /// The map's bytes, gpa-owned until `produceOwned` takes them.
+        map: ?[]u8 = null,
 
         fn deinit(slot: *ModuleSlot, gpa: Allocator) void {
             if (slot.lowered) |*lowered| lowered.deinit(gpa);
             if (slot.text) |text| gpa.free(text);
+            if (slot.map) |map| gpa.free(map);
             slot.overlay.deinit(gpa);
             slot.* = undefined;
         }
@@ -2486,7 +2507,29 @@ const Emitter = struct {
             };
             slot.start = start;
             if (!e.options.release) {
-                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{ .unobserved = lowered.unobserved });
+                const names: Print.Names = .fromOverlay(&slot.overlay);
+                var marks: SourceMap.Marks = .init(scratch);
+                const mapped = slot.map_file.len != 0;
+                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, names, .{
+                    .unobserved = lowered.unobserved,
+                    .marks = if (mapped) &marks else null,
+                    .footer = slot.map_footer,
+                });
+                // §11: the map, from the bytes just printed and the marks
+                // the printer recorded on the way.
+                if (mapped) {
+                    const store = &e.session.store;
+                    slot.map = try SourceMap.write(e.gpa, scratch, .{
+                        .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
+                        .source_url = slot.source_url,
+                        .source = store.bytes(file),
+                        .line_starts = store.lineStarts(file),
+                        .generated = slot.text.?,
+                        .mappings = marks.list.items,
+                        .names = marks.names.items,
+                        .name_text = names.forMap(),
+                    });
+                }
                 // Nothing after this reads the tree or the overlay: the bytes
                 // are what is left of the module.
                 lowered.deinit(e.gpa);
@@ -3996,6 +4039,40 @@ const Emitter = struct {
     /// because the printer's buffer is freed as soon as the module is done.
     /// `produce` for bytes the build already owns, gpa-allocated: they are
     /// taken rather than copied, and freed when the phase ends.
+    /// What every module's map is placed against (§11): the working
+    /// directory, which turns `--out` and a source path into absolute ones.
+    /// Without one, `/` stands in for it, which gives the same relative URL
+    /// for any two paths that do not climb above it.
+    const MapRoot = struct { cwd: []const u8 };
+
+    fn mapRoot(e: *Emitter) Allocator.Error!MapRoot {
+        const cwd = std.process.currentPathAlloc(e.session.io, e.scratch) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return .{ .cwd = "/" },
+        };
+        return .{ .cwd = cwd };
+    }
+
+    /// §11: the map a module's `.mjs` at `path` gets — `path.map` beside
+    /// it, the `//# sourceMappingURL=` line naming it by its base name, and
+    /// the URL of `file` relative to it. A file read from disk is named by
+    /// its own path, so a stack trace under Node points at the file the
+    /// developer edits; an embedded one has no path on disk and is
+    /// `beni:///` and its store path (`beni:///core/List.beni`). Either way
+    /// the map carries the text, so nothing is fetched.
+    fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
+        const store = &e.session.store;
+        slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
+        slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
+        if (store.isEmbedded(file)) {
+            slot.source_url = try std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
+            return;
+        }
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, slot.map_file }));
+        const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
+        slot.source_url = try SourceMap.relativeUrl(e.scratch, map_path, source_path);
+    }
+
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {
         {
             errdefer e.gpa.free(bytes);

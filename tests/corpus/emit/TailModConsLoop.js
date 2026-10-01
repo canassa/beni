@@ -53,3 +53,4 @@ const TailModConsLoop$filterRec = (xs$1, keep$2) => {
 const TailModConsLoop$plain = (n$1, xs$2) => List$cons(n$1, xs$2);
 const TailModConsLoop$main = Node$printLines([]);
 export { TailModConsLoop$main, TailModConsLoop$mapRec, TailModConsLoop$twice, TailModConsLoop$filterRec, TailModConsLoop$plain };
+//# sourceMappingURL=TailModConsLoop.mjs.map

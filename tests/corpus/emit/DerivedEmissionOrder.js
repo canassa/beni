@@ -48,3 +48,4 @@ const DerivedEmissionOrder$sorted = (a$1, b$2) => DerivedEmissionOrder$compare$r
 const DerivedEmissionOrder$same = (a$1, b$2) => DerivedEmissionOrder$eq$r$hue$name(DerivedEmissionOrder$eq$prim, DerivedEmissionOrder$eq$prim, a$1, b$2);
 const DerivedEmissionOrder$main = Node$printLines([]);
 export { DerivedEmissionOrder$Amber$$compare, DerivedEmissionOrder$Amber$$eq, DerivedEmissionOrder$Zinc$$compare, DerivedEmissionOrder$Zinc$$eq, DerivedEmissionOrder$main, DerivedEmissionOrder$sorted, DerivedEmissionOrder$same };
+//# sourceMappingURL=DerivedEmissionOrder.mjs.map

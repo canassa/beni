@@ -157,3 +157,4 @@ const MatchNested$nested = (i$1) => {
 };
 const MatchNested$main = Node$printLines([]);
 export { MatchNested$Colour$$compare, MatchNested$Colour$$eq, MatchNested$Inner$$compare, MatchNested$Inner$$eq, MatchNested$Shape$$compare, MatchNested$Shape$$eq, MatchNested$main, MatchNested$describe, MatchNested$nested };
+//# sourceMappingURL=MatchNested.mjs.map

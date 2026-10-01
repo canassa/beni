@@ -8,3 +8,4 @@ const JsDevelopment$note = () => {
   return 1;
 };
 export { JsDevelopment$describe, JsDevelopment$check, JsDevelopment$flag, JsDevelopment$note };
+//# sourceMappingURL=JsDevelopment.mjs.map

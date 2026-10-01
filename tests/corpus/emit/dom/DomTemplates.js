@@ -105,3 +105,4 @@ const DomTemplates$attributes = (r$1) => {
 };
 const DomTemplates$nothing = DomTemplates$b55;
 export { DomTemplates$static, DomTemplates$text, DomTemplates$only, DomTemplates$attributes, DomTemplates$nothing };
+//# sourceMappingURL=DomTemplates.mjs.map

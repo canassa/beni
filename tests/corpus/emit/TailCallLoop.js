@@ -12,3 +12,4 @@ const TailCallLoop$countUp = (n$1, acc$2, step$3) => {
 const TailCallLoop$plain = (n$1) => n$1 <= 0 ? 0 : 1 + TailCallLoop$plain(n$1 - 1);
 const TailCallLoop$main = Node$printLines([]);
 export { TailCallLoop$main, TailCallLoop$countUp, TailCallLoop$plain };
+//# sourceMappingURL=TailCallLoop.mjs.map

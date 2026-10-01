@@ -8,3 +8,4 @@ const DceEvidenceOnly$eq = (a$1, b$2) => DceEvidenceOnly$byLength(a$1) === DceEv
 const DceEvidenceOnly$anyEqual = ($m$0, x$1, y$2) => $m$0(x$1, y$2);
 const DceEvidenceOnly$main = Node$printLines([String$fromInt(DceEvidenceOnly$anyEqual(DceEvidenceOnly$eq, { $: "Tagged", a: "a" }, { $: "Tagged", a: "b" }) ? 1 : 0)]);
 export { DceEvidenceOnly$main, DceEvidenceOnly$eq, DceEvidenceOnly$byLength, DceEvidenceOnly$anyEqual };
+//# sourceMappingURL=DceEvidenceOnly.mjs.map

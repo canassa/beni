@@ -91,3 +91,4 @@ const ListPatterns$second = (xs$1) => {
 };
 const ListPatterns$main = Node$printLines([]);
 export { ListPatterns$main, ListPatterns$describe, ListPatterns$exact, ListPatterns$nestedHead, ListPatterns$aliased, ListPatterns$firstOnly, ListPatterns$second };
+//# sourceMappingURL=ListPatterns.mjs.map

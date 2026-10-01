@@ -71,3 +71,4 @@ const NestingShapes$pick = (k$1) => {
   return Basics$append(name$2, "!");
 };
 export { NestingShapes$short, NestingShapes$long, NestingShapes$every, NestingShapes$pick };
+//# sourceMappingURL=NestingShapes.mjs.map

@@ -11,3 +11,4 @@ const EvidenceParameters$outer = ($m$0, x$1, factor$2) => EvidenceParameters$mid
 const EvidenceParameters$grow = (m$1) => EvidenceParameters$outer(EvidenceParameters$scale, m$1, 3);
 const EvidenceParameters$main = Node$printLines([]);
 export { EvidenceParameters$Metre$$compare, EvidenceParameters$Metre$$eq, EvidenceParameters$main, EvidenceParameters$scale, EvidenceParameters$grow };
+//# sourceMappingURL=EvidenceParameters.mjs.map

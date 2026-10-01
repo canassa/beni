@@ -62,6 +62,7 @@ const Parse = beni.Parse;
 const Lower = beni.Lower;
 const JsLower = beni.js.Lower;
 const JsPrint = beni.js.Print;
+const JsSourceMap = beni.js.SourceMap;
 const Bir = beni.Bir;
 const Graph = beni.resolve.Graph;
 const iface_bytes = beni.resolve.iface_bytes;
@@ -201,9 +202,11 @@ pub fn main(init: std.process.Init) !u8 {
         }
     }
     if (phases.contains(.emit)) {
-        const emitted = try measureEmit(gpa, io, corpus, options.iterations);
+        const emitted = try measureEmit(gpa, io, corpus, options.iterations, false);
         try printEmitLine(stdout, emitted);
         total.ns += emitted.ns;
+        // Outside `total`, which stays comparable with every earlier run.
+        try printEmitMapsLine(stdout, emitted, try measureEmit(gpa, io, corpus, options.iterations, true));
     }
     try printLine(stdout, "total", total);
 
@@ -655,9 +658,14 @@ const EmitMeasurement = struct {
     lines: u64 = 0,
     nodes: u64 = 0,
     ns: u64 = 0,
+    /// Bytes of source map beside them, when `measureEmit` wrote maps.
+    map_bytes: u64 = 0,
 };
 
-fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32) !EmitMeasurement {
+/// One cold emit of every module: lowering and printing, and with `maps`
+/// the development build's source map of each too (`backend.md` §11), so
+/// the two lines' difference is what maps cost.
+fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, maps: bool) !EmitMeasurement {
     var sink: Io.Writer.Discarding = .init(&.{});
     var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
     defer session.deinit();
@@ -692,6 +700,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
         var bytes: u64 = 0;
         var lines: u64 = 0;
         var nodes: u64 = 0;
+        var map_bytes: u64 = 0;
         const start = Io.Timestamp.now(io, .awake);
         for (0..count) |i| {
             const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
@@ -719,9 +728,28 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
                 gpa.free(lowered.diagnostics);
             }
             nodes += lowered.ir.nodes.len;
-            const text = try JsPrint.print(gpa, arena.allocator(), &lowered.ir, .fromOverlay(&overlay), .{});
+            const names: JsPrint.Names = .fromOverlay(&overlay);
+            var marks: JsSourceMap.Marks = .init(arena.allocator());
+            const text = try JsPrint.print(gpa, arena.allocator(), &lowered.ir, names, .{
+                .marks = if (maps) &marks else null,
+                .footer = if (maps) "//# sourceMappingURL=M.mjs.map\n" else "",
+            });
             defer gpa.free(text);
             bytes += text.len;
+            if (maps) {
+                const map = try JsSourceMap.write(gpa, arena.allocator(), .{
+                    .file = "M.mjs",
+                    .source_url = "M.beni",
+                    .source = session.store.bytes(file),
+                    .line_starts = session.store.lineStarts(file),
+                    .generated = text,
+                    .mappings = marks.list.items,
+                    .names = marks.names.items,
+                    .name_text = names.forMap(),
+                });
+                map_bytes += map.len;
+                gpa.free(map);
+            }
             arena.reset(.retain_capacity);
             lines += session.store.lineStarts(file).len;
         }
@@ -731,6 +759,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
         m.bytes = bytes;
         m.lines = lines;
         m.nodes = nodes;
+        m.map_bytes = map_bytes;
     }
     m.ns = if (best == std.math.maxInt(u64)) 0 else best;
     return m;
@@ -744,6 +773,17 @@ fn printEmitLine(writer: *Io.Writer, m: EmitMeasurement) !void {
         "{{\"phase\":\"emit\",\"modules\":{d},\"js_bytes\":{d},\"nodes\":{d},\"lines\":{d}," ++
             "\"ms\":{d:.2},\"mb_per_s\":{d:.1},\"loc_per_s\":{d}}}\n",
         .{ m.modules, m.bytes, m.nodes, m.lines, milliseconds(m.ns), mb_per_s, loc_per_s },
+    );
+}
+
+/// The same emit with a source map per module (`backend.md` §11): its
+/// time, the maps' bytes, and both against the line above.
+fn printEmitMapsLine(writer: *Io.Writer, plain: EmitMeasurement, m: EmitMeasurement) !void {
+    const extra_ms = milliseconds(m.ns) - milliseconds(plain.ns);
+    try writer.print(
+        "{{\"phase\":\"emit+maps\",\"modules\":{d},\"js_bytes\":{d},\"map_bytes\":{d},\"ms\":{d:.2}," ++
+            "\"extra_ms\":{d:.2},\"extra_pct\":{d:.1}}}\n",
+        .{ m.modules, m.bytes, m.map_bytes, milliseconds(m.ns), extra_ms, 100 * extra_ms / @max(milliseconds(plain.ns), 0.001) },
     );
 }
 

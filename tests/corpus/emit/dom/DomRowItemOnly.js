@@ -83,3 +83,4 @@ const DomRowItemOnly$table = (model$1) => {
   }, w: true, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
 };
 export { DomRowItemOnly$Msg$$compare, DomRowItemOnly$Msg$$eq, DomRowItemOnly$table };
+//# sourceMappingURL=DomRowItemOnly.mjs.map

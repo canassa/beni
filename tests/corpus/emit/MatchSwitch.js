@@ -91,3 +91,4 @@ const MatchSwitch$weekday = (n$1) => {
 };
 const MatchSwitch$main = Node$printLines([]);
 export { MatchSwitch$Colour$$compare, MatchSwitch$Colour$$eq, MatchSwitch$Size$$compare, MatchSwitch$Size$$eq, MatchSwitch$main, MatchSwitch$name, MatchSwitch$toggle, MatchSwitch$measure, MatchSwitch$weekday };
+//# sourceMappingURL=MatchSwitch.mjs.map

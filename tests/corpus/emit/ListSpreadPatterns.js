@@ -49,3 +49,4 @@ const ListSpreadPatterns$headOr = (xs$1) => {
 };
 const ListSpreadPatterns$main = Node$printLines([]);
 export { ListSpreadPatterns$main, ListSpreadPatterns$lastOr, ListSpreadPatterns$middle, ListSpreadPatterns$endsInZero, ListSpreadPatterns$headOr };
+//# sourceMappingURL=ListSpreadPatterns.mjs.map

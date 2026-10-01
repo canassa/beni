@@ -36,3 +36,4 @@ const NullaryConstant$isRun = (m$1) => m$1.$ === "Run" ? true : false;
 const NullaryConstant$order = "LT";
 const NullaryConstant$main = Node$printLines([]);
 export { NullaryConstant$Msg$$compare, NullaryConstant$Msg$$eq, NullaryConstant$main, NullaryConstant$idle, NullaryConstant$button, NullaryConstant$both, NullaryConstant$none, NullaryConstant$isRun, NullaryConstant$order };
+//# sourceMappingURL=NullaryConstant.mjs.map

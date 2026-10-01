@@ -12,3 +12,4 @@ const DomCustomElement$k7 = { m: (v$1, cx$2) => {
 } };
 const DomCustomElement$view = (s$1) => ({ t: DomCustomElement$k7, v: [s$1] });
 export { DomCustomElement$view };
+//# sourceMappingURL=DomCustomElement.mjs.map

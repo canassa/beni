@@ -24,8 +24,9 @@
 //!
 //! **Every node carries a source position from the start** (§9.6), a byte
 //! offset into the module's source or `Node.no_pos` for a node the lowering
-//! invented. Source maps are not written yet and the field is still here on
-//! purpose: Elm never threaded positions through codegen and consequently
+//! invented. It is what a development build's source map is made of
+//! (backend.md §11.1, `js/SourceMap.zig`), and it was here before the maps
+//! were: Elm never threaded positions through codegen and consequently
 //! has no source maps at all, and retrofitting one means touching every
 //! pass rather than only the printer. An offset and not a `{line, col}`
 //! because §5 rule 4 says offsets, and the line table is already in the

@@ -11,3 +11,4 @@ const DerivedEqShapes$sameUnit = (a$1, b$2) => DerivedEqShapes$eq$unit(a$1, b$2)
 const DerivedEqShapes$differs = (a$1, b$2) => !DerivedEqShapes$eq$r$x$y(DerivedEqShapes$eq$prim, DerivedEqShapes$eq$prim, a$1, b$2);
 const DerivedEqShapes$main = Node$printLines([]);
 export { DerivedEqShapes$main, DerivedEqShapes$samePoint, DerivedEqShapes$sameLabel, DerivedEqShapes$samePair, DerivedEqShapes$sameMixed, DerivedEqShapes$sameUnit, DerivedEqShapes$differs };
+//# sourceMappingURL=DerivedEqShapes.mjs.map

@@ -13,3 +13,4 @@ const MarkupSsr$greet = (user$1) => {
 };
 const MarkupSsr$list = (items$1) => ({ t: MarkupSsr$k35[0] + $markup$list(items$1, (item$5) => ({ t: MarkupSsr$k33[0] + $markup$escape(item$5) + MarkupSsr$k33[1] }), null) + MarkupSsr$k35[1] });
 export { MarkupSsr$static, MarkupSsr$greet, MarkupSsr$list };
+//# sourceMappingURL=MarkupSsr.mjs.map

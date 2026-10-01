@@ -449,6 +449,17 @@ pub const World = struct {
 
     /// `node` with its own wall-clock bound, for a caller that bounds the
     /// compiler differently too (the corpus walker's `BENI_CASE_TIMEOUT_MS`).
+    /// `node <args>…` in the project directory: a script of the test's own
+    /// with its arguments, always run (no record covers it).
+    pub fn runNode(world: *World, args: []const []const u8) !Result {
+        const arena = world.arena.allocator();
+        const exe = world.node_exe orelse return error.NodeNotOnPath;
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.append(arena, exe);
+        try argv.appendSlice(arena, args);
+        return spawnAndCapture(arena, world.gpa, world.io, argv.items, .{ .dir = world.tmp.dir }, default_timeout_ms);
+    }
+
     pub fn nodeWith(world: *World, script: []const u8, timeout_ms: i64) !Result {
         const arena = world.arena.allocator();
         const exe = world.node_exe orelse return error.NodeNotOnPath;

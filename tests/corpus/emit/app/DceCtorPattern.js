@@ -19,3 +19,4 @@ const DceCtorPattern$describe = (s$1) => {
 };
 const DceCtorPattern$main = Node$printLines([DceCtorPattern$describe(DceCtorPattern$Red), DceCtorPattern$describe(DceCtorPattern$Amber), DceCtorPattern$describe({ $: "Go", a: 3 })]);
 export { DceCtorPattern$main, DceCtorPattern$describe };
+//# sourceMappingURL=DceCtorPattern.mjs.map
