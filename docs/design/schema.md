@@ -1240,3 +1240,18 @@ implement them with identical results and identical issues. The Q3 row in the op
 above is superseded by this entry; the exact surface syntax is the next schema slice's to
 specify against `references/effect` (`Schema.optionalWith`, `withDecodingDefault`,
 `withConstructorDefault`, `optionalToRequired`, and their v4 equivalents).
+
+### A.8 — A schema derived from a type, as Roc decodes (2026-10-02)
+
+The owner accepted that the zero-ceremony end of the feature is **type-directed decoding**: a
+`Json.decode`-style operation whose decoder is derived from the type the program uses the result
+at — annotated or inferred, through static dispatch's return-type dispatch, the way `eq` and
+`compare` are derived — so a value parsed from JSON is validated against the shape the program
+reads before any field is touched (Roc's `Decode` ability is the model; verify its exact
+behaviour from primary sources before specifying). A derived decoder is a schema generated from a
+type and runs on the same engine as declared schemas: the same issues, specialisation,
+differential testing and release behaviour. Declared `schema`s (A.7's Effect-class power:
+renames, two representations, defaults, transformations) remain the tool when the JSON does not
+look like the type. Open questions the specification slice must settle: closed versus open
+inferred records, extra JSON fields, and what a refactor that stops reading a field does to the
+check.
