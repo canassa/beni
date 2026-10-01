@@ -1366,3 +1366,10 @@ of them except W7, whose answer needs a value to push (W47). **All ten answered 
 
 The steps, and what each measured: [`plans/runtime-in-beni.md`](runtime-in-beni.md).
 | **R47-4** | **Platform packages may write `sync (A -> B)` in ordinary beni signatures**, not only in `foreign` ones (the owner, 2026-10-02), so a runtime piece moved from JavaScript to beni keeps its "must not suspend" guarantee (`Browser.program`'s `update`/`view`, event handlers, the effects host). User packages still cannot write `sync`. |
+
+## Syntax — 2026-10-02
+
+| # | Decision |
+|---|---|
+| **S1** | **Lambdas are written with `λ` and only `λ`** (the owner: "only λ. there is only one way"). `\` is no longer part of the language; it gets a removal diagnostic with the `λ` spelling, and a migration rewrites existing code. |
+| **S2** | **`let … in` is dropped** (the owner). A definition's or branch's body is an indentation block: bindings and statement lines, the last line being the block's value (Roc's and F#'s model). Specified before it is built (`language.md`), with a migration. |
