@@ -6,7 +6,7 @@ f x = x
 
 
 pub g :
-    Int
+      Int
     -> Int
     -> Int
 g a b = a + b

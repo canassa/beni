@@ -39,7 +39,7 @@ call =
 
 
 signature :
-    { host : String, port : Int, user : String, password : String, timeout : Int }
+      { host : String, port : Int, user : String, password : String, timeout : Int }
     , Result String { host : String, port : Int }
     -> Bool
 signature _ _ = True

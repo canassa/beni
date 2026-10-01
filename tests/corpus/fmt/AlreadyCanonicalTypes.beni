@@ -2,8 +2,9 @@
 -- indented 4, a single-constructor type, `pub opaque`, a doc block with a
 -- space after the marker, a record alias that fits on one line, a vertical
 -- record alias with leading delimiters, and an annotation too long for one
--- line broken with the comma leading each parameter and `->` leading the
--- result (§9, function types).
+-- line broken with the comma leading each parameter, the first indented 6
+-- into their column, and `->` leading the result (§9, function types;
+-- §12.5).
 --| The message type.
 pub type Msg
     = Increment
@@ -17,15 +18,15 @@ pub opaque type Id
 
 
 type alias Point =
-    { x : Float, y : Float }
+    x : Float
+    y : Float
 
 
 type alias Config =
-    { host : String
-    , port : Int
-    , retries : Int
-    , onError : String -> Msg
-    }
+    host : String
+    port : Int
+    retries : Int
+    onError : String -> Msg
 
 
 pub type alias Handler model msg =
@@ -33,7 +34,7 @@ pub type alias Handler model msg =
 
 
 pub update :
-    Msg
+      Msg
     , { host : String, port : Int, retries : Int, onError : String -> Msg }
     -> ( { host : String, port : Int, retries : Int, onError : String -> Msg }, List String )
 update msg config = ( config, [] )

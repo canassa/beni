@@ -1,0 +1,62 @@
+-- Formatter: between a standalone `--` comment and the next token, one blank
+-- line is kept when the source has one, so a comment that labels a section
+-- is not glued to its first line (language.md §12.5, §9 comments). More
+-- than one blank line becomes one; none stays none. A doc comment is
+-- unchanged and sits directly on its declaration, and so does a definition
+-- on its annotation. No blank line goes before `then`, `else` or `in`.
+
+-- Section: arithmetic
+
+add a b = a + b
+
+
+-- glued
+sub a b = a - b
+
+
+--| Documented.
+mul a b = a * b
+
+
+div : Int, Int -> Int
+-- between annotation and definition
+div a b = a // b
+
+
+steps n =
+    let
+        -- inputs
+
+        a = n + 1
+        b = a * 2
+        -- the answer
+        c = b - 1
+
+        -- before in
+    in
+    if c > 0 then
+        c
+        -- before else
+    else
+        0
+
+
+branch m =
+    case m of
+        -- the empty case
+
+        Nothing ->
+            0
+
+        -- the full case
+
+        Just x ->
+            x
+
+
+items =
+    [ 1
+    -- the rest
+
+    , 2
+    ]

@@ -1,0 +1,23 @@
+-- Formatter: an `if` written on one line stays there when it fits in 100
+-- columns and its parts have one-line forms (language.md §12.5, §9 `if`).
+-- `pick` joins its `=` line like any one-line body; `grade` is an `else if`
+-- chain, which is one `if` for the rule; `inList` sits in a list and a call.
+-- Everything else is vertical as before: `long` passes column 100, `vertical`
+-- was written across lines, `withCase` holds a `case`, `brokenList` a list
+-- the author broke, and `nested` is an `if` written on one line inside a
+-- vertical one, which stays on its line.
+pick t id = if t.id == id then { t | done = not t.done } else t
+grade s = if s >= 90 then "A" else if s >= 80 then "B" else "F"
+inList flag = [ if flag then 1 else 0, max (if flag then 2 else 3) 4 ]
+long flag = if flag then "a fairly long string literal on this side" else "and another long one on that side"
+vertical b = if b then 1
+    else 0
+withCase b = if b then case b of
+    _ -> 1 else 0
+brokenList b = if b then [ 1
+    , 2 ] else []
+nested a b =
+    if a then
+        if b then 2 else 1
+    else
+        0

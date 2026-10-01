@@ -9,4 +9,5 @@ authorBroke f = f <|
     \x -> x + 1
 
 
-otherBlocks a b c = text <| if a then b else c
+otherBlocks a b c = text <| if a then b
+    else c

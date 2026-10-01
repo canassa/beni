@@ -22,7 +22,7 @@ pub type alias Handlers msg =
 
 
 pub reduce :
-    (element, accumulator -> accumulator)
+      (element, accumulator -> accumulator)
     , accumulator
     , List element
     -> accumulator

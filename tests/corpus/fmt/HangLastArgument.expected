@@ -1,0 +1,75 @@
+-- Formatter: an application whose last argument is a list, a record or a
+-- record update hangs it (language.md §12.5, §9 applications). When the
+-- application must break, the callee and the other arguments stay on one
+-- line whatever breaks the source has between them, and the last argument
+-- goes on the next line indented 4, in its own one-line or vertical form.
+-- The definition's body stays below `=`: only a hung lambda joins it.
+-- `fold` was broken between its head arguments, which are joined; `long`'s
+-- list does not fit on its own line either and is vertical; the rest did not
+-- fit. An application that does not qualify breaks as before: `middle` has a
+-- vertical argument before the last, `wide` a head line that does not fit,
+-- `paren` ends in a parenthesised lambda and `plain` in a name.
+view model =
+    div [ class "app" ]
+        [ header model, content model, footer model, sidebar model, extraContent model ]
+
+
+fold xs =
+    List.foldl xs 0
+        [ 1, 2, 3 ]
+
+
+long =
+    Html.ul [ class "list" ]
+        [ viewItem "first"
+        , viewItem "second"
+        , viewItem "third"
+        , viewItem "fourth"
+        , viewItem "fifth"
+        , viewItem "sixth"
+        ]
+
+
+init flags =
+    Model.create flags.seed
+        { name = "board", columns = 12, rows = 40, theme = "dark", accent = "blue" }
+
+
+step m =
+    Model.apply m.history m.cursor
+        { m | count = m.count + 1, name = "a long name here", zoom = m.zoom * 2 }
+
+
+tall items =
+    Html.ul [ class "list" ]
+        [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth" ]
+        |> wrap
+
+
+middle =
+    f
+        [ 1
+        , 2
+        ]
+        [ 3 ]
+
+
+wide =
+    someFunction
+        aVeryLongArgumentNameNumberOne
+        aVeryLongArgumentNameNumberTwo
+        aVeryLongArgumentName3
+        [ 1 ]
+
+
+paren xs =
+    List.map
+        xs
+        (\x -> x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789)
+
+
+plain =
+    someFunction
+        aVeryLongArgumentNameNumberOne
+        aVeryLongArgumentNameNumberTwo
+        aVeryLongArgument3456789

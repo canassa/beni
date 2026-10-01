@@ -1,7 +1,7 @@
 -- Already canonical (§9): lambdas with `\x -> body` spacing, a lambda whose
 -- body is a block, an application that fits on one line, one that does not
--- with each argument on its own line indented 4, and nested parenthesised
--- arguments.
+-- with its head on one line and its last argument, a list, hanging below it
+-- indented 4 (§12.5), and nested parenthesised arguments.
 inc = \n -> n + 1
 
 
@@ -22,9 +22,7 @@ short f x = f x 1
 
 
 long =
-    List.foldl
-        (\item acc -> acc + String.length item * 2)
-        0
+    List.foldl (\item acc -> acc + String.length item * 2) 0
         [ "some", "long", "list", "of", "strings", "here", "and", "more", "and", "more" ]
 
 

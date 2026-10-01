@@ -1688,7 +1688,7 @@ const ugly_module =
     "import Set\n" ++
     "import Dict\n" ++
     "x   =   [1,2]\n" ++
-    "y = if x then 1 else 2\n";
+    "y = if x then 1\n  else 2\n";
 
 const canonical_module =
     "import Dict\n" ++

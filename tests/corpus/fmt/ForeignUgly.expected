@@ -4,7 +4,7 @@
 -- inserted, two blank lines between declarations.
 --| Add two numbers.
 pub foreign pure add :
-    number
+      number
     -> number
     -> number
 

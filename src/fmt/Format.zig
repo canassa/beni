@@ -42,10 +42,11 @@
 //!   when it would fit; one that does not fit is broken. The measurer
 //!   records a written break as "does not fit", and the saturating width
 //!   sums carry it to every enclosing construct, so a vertical list inside
-//!   a record keeps the record vertical too. `if`, `case` and `let` are
-//!   always vertical: elm-format never writes a one-line `if`. Patterns
-//!   are exempt (below) and so are lambdas: `\x ->` keeps its body on the
-//!   line when the body is a one-line thing that fits.
+//!   a record keeps the record vertical too. `case` and `let` are always
+//!   vertical; an `if` is vertical unless the author wrote it on one line
+//!   and it fits there (language.md §12.5), an `else if` tail going with
+//!   its chain. Patterns are exempt (below) and so are lambdas: `\x ->`
+//!   keeps its body on the line when the body is a one-line thing that fits.
 //! - Binary operator chains flatten only the operators of ONE precedence
 //!   level: `a > 0 && b < 1` broken at `&&` keeps `a > 0` on one line
 //!   (`AlreadyCanonicalOperators`). elm-format breaks at every operator of
@@ -79,11 +80,16 @@
 //!   `Decode.map4 User` / fields), and from the first source break on every
 //!   remaining argument gets its own line indented 4; an application with
 //!   no source break that does not fit puts the function on its own line
-//!   and every argument on a line of its own.
+//!   and every argument on a line of its own. The exception is an
+//!   application whose last argument is a list, record, record update or
+//!   markup (language.md §12.5): when it must break and its head fits on
+//!   one line, the head goes there whatever breaks the source had, and the
+//!   last argument hangs on the next line indented 4 (`Printer.hangs`).
 //! - A type annotation is one line or broken at EVERY arrow, the arrows
-//!   leading continuation lines at the type's column; a `type alias` always
-//!   has its body on the next line, whatever its width; `foreign` values
-//!   follow annotations. A constructor's arguments follow the application
+//!   leading continuation lines at the type's column, the first parameter
+//!   2 further in, under the others after their `, ` (language.md §12.5);
+//!   a `type alias` always has its body on the next line, whatever its
+//!   width; `foreign` values follow annotations. A constructor's arguments follow the application
 //!   rule above, the vertical ones indented 4 under the `|`.
 //! - A definition's body — top-level, `let`, `let` pattern — sits on the
 //!   `=` line when it has a one-line form that fits there and no comment
@@ -97,9 +103,14 @@
 //!   (`AlreadyCanonicalComments`). A blank line directly before an own-line
 //!   comment is kept (at most one) whenever the previous line ends a value
 //!   — a name, a literal, a closing bracket, another comment — and dropped
-//!   after an opener (`=`, `->`, `let`, `[`, …). No blank line is kept
-//!   between a comment and the token after it. Comments before the end of
-//!   the file are separated from the last declaration like a declaration.
+//!   after an opener (`=`, `->`, `let`, `[`, …). A blank line between a
+//!   plain own-line comment and the token after it is kept (at most one)
+//!   so a comment that labels a section stays apart from it (language.md
+//!   §12.5), except before `then`, `else`, `in`, `of`, a closing bracket or
+//!   the end of the file, and between an annotation and its definition;
+//!   a doc comment always sits on what it documents. Comments before the
+//!   end of the file are separated from the last declaration like a
+//!   declaration.
 //! - The module doc block prints its comments in order, `--!` lines with the
 //!   space inserted and blank lines inside the block dropped (two blocks
 //!   merge, §2.3), then one blank line before whatever follows.
@@ -933,12 +944,21 @@ const Measurer = struct {
                 try m.measure(l.body);
                 m.set(n, width +| 4 +| m.w(l.body), main, m.last(l.body));
             },
+            // `if c then a else b` (language.md §12.5): the sum of its parts
+            // when the author wrote it on one line and each part has a
+            // one-line form, else `no_fit`. An `else if` chain is one `if`:
+            // its tail is measured the same way and carried by the sum.
             .@"if" => {
                 const i = tree.fullIf(n);
                 try m.measure(i.cond);
                 try m.measure(i.then_expr);
                 try m.measure(i.else_expr);
-                m.set(n, no_fit, main, m.last(i.else_expr));
+                const last_tok = m.last(i.else_expr);
+                const width = if (m.tok_lines[main] != m.tok_lines[last_tok])
+                    no_fit
+                else
+                    3 +| m.w(i.cond) +| 6 +| m.w(i.then_expr) +| 6 +| m.w(i.else_expr);
+                m.set(n, width, main, last_tok);
             },
             .let => {
                 const l = tree.fullLet(n);
@@ -1487,17 +1507,36 @@ const Printer = struct {
         if (cs.len == 0) return;
         var prev_line: u32 = p.tok_lines[t - 1];
         var allow_blank = blank_ok and endsValue(p.tags[t - 1]);
-        for (cs) |c| {
+        for (cs, 0..) |c, k| {
             const line = p.commentLine(c);
             if (line == prev_line) continue; // trails the previous token: printed with it
             const blank = allow_blank and line > prev_line + 1;
             const ind = indent orelse if (p.pending > 0) p.next_indent else if (p.col == p.line_indent) p.line_indent else p.line_indent + indent_step;
             p.blankLines(if (blank) 1 else 0, ind);
             try p.writeComment(c);
-            p.newline(ind);
+            const blank_after = blank_ok and k + 1 == cs.len and p.blankAfterComment(c, t);
+            p.blankLines(if (blank_after) 1 else 0, ind);
             prev_line = line;
             allow_blank = true;
         }
+    }
+
+    /// Whether the canonical form keeps a blank line between the standalone
+    /// comment `c` and the token `t` right after it (language.md §12.5, *a
+    /// blank line after a comment*): the source has one, `c` is a plain
+    /// comment (a doc comment sits on what it documents), and `t` opens
+    /// something a comment may label — not `then`, `else`, `in` or `of`,
+    /// which §9 never puts a blank line before, nor a closing bracket or
+    /// the end of the file, which have nothing to label.
+    fn blankAfterComment(p: *const Printer, c: Token.Comment, t: TokenIndex) bool {
+        if (c.kind != .plain) return false;
+        switch (p.tags[t]) {
+            .keyword_then, .keyword_else, .keyword_in, .keyword_of => return false,
+            .r_paren, .r_bracket, .r_brace, .interp_end, .eof => return false,
+            .markup_gt, .markup_self_close, .markup_close_open => return false,
+            else => {},
+        }
+        return p.tok_lines[t] > p.commentLine(c) + 1;
     }
 
     /// The comment on `t`'s source line after it, if any: appended to the
@@ -1629,7 +1668,8 @@ const Printer = struct {
             const blank = !in_doc and prev_line != null and line > prev_line.? + 1;
             p.blankLines(if (blank) 1 else 0, 0);
             try p.writeComment(c);
-            if (in_doc and i + 1 == doc.end) p.blankLines(1, 0) else p.newline(0);
+            const blank_after = (in_doc and i + 1 == doc.end) or (i + 1 == hi and p.blankAfterComment(c, 0));
+            p.blankLines(if (blank_after) 1 else 0, 0);
             prev_line = line;
         }
     }
@@ -1937,11 +1977,12 @@ const Printer = struct {
         p.leading_done = item_token;
 
         var prev_line = p.tok_lines[delimiter];
-        for (commentsBefore(p.comments, item_token)) |c| {
+        const cs = commentsBefore(p.comments, item_token);
+        for (cs, 0..) |c, k| {
             const line = p.commentLine(c);
             p.blankLines(if (line > prev_line + 1) 1 else 0, indent);
             try p.writeComment(c);
-            p.newline(indent);
+            p.blankLines(if (k + 1 == cs.len and p.blankAfterComment(c, item_token)) 1 else 0, indent);
             prev_line = line;
         }
     }
@@ -1970,6 +2011,9 @@ const Printer = struct {
         p.leading_done = field_token;
 
         var prev_line = p.tok_lines[delimiter];
+        // The last comment is the field's doc comment (a plain one cannot
+        // come between a doc comment and its field), so no blank line
+        // follows it (language.md §12.5).
         for (cs) |c| {
             const line = p.commentLine(c);
             if (line == p.tok_lines[delimiter] and c.kind == .plain) {
@@ -2248,6 +2292,32 @@ const Printer = struct {
         }
     }
 
+    /// Whether an application that must break hangs its last argument
+    /// (language.md §12.5, *hanging the last argument*): the last argument
+    /// is a list, a record, a record update or markup, and the callee with
+    /// every other argument fits on one line from the cursor with no comment
+    /// between them. The source breaks between those are not consulted —
+    /// the one place the never-join rule does not hold — so the head line a
+    /// first run writes is the head line every later run keeps.
+    ///
+    /// A lambda is the other kind §12.5 hangs, and the only one that joins
+    /// the `=` line; it is not here because no lambda can be a last argument
+    /// without parentheses until trailing lambdas parse (§12.3), and a
+    /// parenthesised one is a `paren`, which breaks as before.
+    fn hangs(p: *const Printer, a: Ast.full.Apply) bool {
+        const last_arg = a.args[a.args.len - 1];
+        switch (p.tree.nodeTag(last_arg)) {
+            .list, .record, .record_update, .markup_element, .markup_fragment, .markup_for, .markup_show => {},
+            else => return false,
+        }
+        var width = p.widths[a.function.int()];
+        for (a.args[0 .. a.args.len - 1]) |arg| {
+            if (commentsBefore(p.comments, p.first(arg)).len != 0) return false;
+            width +|= 1 +| p.widths[arg.int()];
+        }
+        return width != no_fit and p.curCol() +| width <= max_width;
+    }
+
     // ---- Dispatch --------------------------------------------------------
 
     fn node(p: *Printer, n: Index, comptime kind: Kind, indent: u32) Error!void {
@@ -2372,6 +2442,17 @@ const Printer = struct {
             .apply => {
                 const a = tree.fullApply(n);
                 const one_line = p.fits(n);
+                if (!one_line and p.hangs(a)) {
+                    // `f a b` / `[ … ]` (language.md §12.5): the head on one
+                    // line, the last argument below it in its own form.
+                    try p.expr(a.function, indent);
+                    for (a.args[0 .. a.args.len - 1]) |arg| {
+                        try p.space();
+                        try p.expr(arg, indent);
+                    }
+                    p.newline(indent + indent_step);
+                    return p.expr(a.args[a.args.len - 1], indent + indent_step);
+                }
                 try p.expr(a.function, indent);
                 try p.args(p.last(a.function), a.args, .expr, one_line, indent);
             },
@@ -2795,6 +2876,22 @@ const Printer = struct {
         const else_tok = p.last(i.then_expr) + 1;
         const else_is_if = p.tree.nodeTag(i.else_expr) == .@"if";
         const kw = keyword_col orelse p.curCol();
+        // Written on one line, with one-line parts, and it fits
+        // (language.md §12.5): it stays there, an `else if` tail with it.
+        // The tail of a chain printed vertically is vertical too.
+        if (keyword_col == null and p.widths[n.int()] != no_fit and p.fits(n)) {
+            try p.tok(i.if_token);
+            try p.space();
+            try p.expr(i.cond, indent);
+            try p.space();
+            try p.tok(then_tok);
+            try p.space();
+            try p.expr(i.then_expr, indent);
+            try p.space();
+            try p.tok(else_tok);
+            try p.space();
+            return p.expr(i.else_expr, indent);
+        }
         try p.tok(i.if_token);
         if (p.fitsWith(i.cond, 1 + 5, then_tok)) {
             try p.space();
@@ -3006,6 +3103,10 @@ const Printer = struct {
         const one_line = !force_vertical and p.fits(top);
         const col = p.curCol();
         const inner = if (one_line) indent else col;
+        // A broken type that starts a line indents its first parameter 2
+        // more, into the column of every parameter after a leading `, `
+        // (language.md §12.5, *aligned parameters*).
+        if (!one_line and p.pending > 0) p.next_indent = col + 2;
         var node_i = top;
         while (true) {
             const f = p.tree.fullTypeFn(node_i);
@@ -3415,7 +3516,7 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\
         \\--| Add.
         \\pub foreign pure add :
-        \\    number
+        \\      number
         \\    -> number
         \\    -> number
         \\
@@ -3487,14 +3588,17 @@ test "case: head on its own line, branches indented 4, arrow at line end, bodies
     );
 }
 
-test "if is always vertical; else-if chains continue on the else line; a mid-line if hangs off its keyword" {
+test "an if written across lines is vertical; else-if chains continue on the else line; a mid-line if hangs off its keyword" {
     try check(
         \\tiny b = if b
         \\  then 1
         \\    else 0
-        \\grade s = if s >= 90 then "A" else if s >= 80 then "B" else "F"
-        \\nested a b = if a then if b then 2 else 1 else 0
-        \\inList flag = [ if flag then 1 else 0, let one = 1 in one, case flag of
+        \\grade s = if s >= 90 then "A"
+        \\  else if s >= 80 then "B" else "F"
+        \\nested a b = if a then if b then 2
+        \\  else 1 else 0
+        \\inList flag = [ if flag then 1
+        \\  else 0, let one = 1 in one, case flag of
         \\    True -> 1
         \\    False -> 0 ]
         \\
@@ -3540,6 +3644,48 @@ test "if is always vertical; else-if chains continue on the else line; a mid-lin
         \\        False ->
         \\            0
         \\    ]
+        \\
+    );
+}
+
+test "an if written on one line stays there when it fits; a chain's tail follows the chain; one that does not fit breaks" {
+    try check(
+        \\pick t id = if t.id == id then { t | done = not t.done } else t
+        \\chain s = if s > 1 then "A" else if s > 0 then "B" else "C"
+        \\tail s = if s > 1 then "A"
+        \\    else if s > 0 then "B" else "C"
+        \\arg flag = max (if flag then 1 else 2) 3
+        \\exact = if aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa then bbbbbbbbbbbbbbbbbbbbbbbbbbb else ccccccccccccccccc
+        \\over = if aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa then bbbbbbbbbbbbbbbbbbbbbbbbbbb else ccccccccccccccccc
+        \\
+    ,
+        \\pick t id = if t.id == id then { t | done = not t.done } else t
+        \\
+        \\
+        \\chain s = if s > 1 then "A" else if s > 0 then "B" else "C"
+        \\
+        \\
+        \\tail s =
+        \\    if s > 1 then
+        \\        "A"
+        \\    else if s > 0 then
+        \\        "B"
+        \\    else
+        \\        "C"
+        \\
+        \\
+        \\arg flag = max (if flag then 1 else 2) 3
+        \\
+        \\
+        \\exact =
+        \\    if aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa then bbbbbbbbbbbbbbbbbbbbbbbbbbb else ccccccccccccccccc
+        \\
+        \\
+        \\over =
+        \\    if aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa then
+        \\        bbbbbbbbbbbbbbbbbbbbbbbbbbb
+        \\    else
+        \\        ccccccccccccccccc
         \\
     );
 }
@@ -3717,7 +3863,8 @@ test "operator chains: one line when they fit and were written so, else broken b
 
 test "a chain of two operands ending in a block keeps the operator at the end of the first line" {
     try check(
-        \\f = text <| if a then b else c
+        \\f = text <| if a then b
+        \\    else c
         \\g = decode <|
         \\      \x -> x + 1
         \\h = foo <| let
@@ -3814,7 +3961,7 @@ test "lambdas: `\\x y ->` with the body inline when it fits, else on the next li
     );
 }
 
-test "application: one line when it fits and was written so; head-line arguments stay, the rest go one per line" {
+test "application: one line when it fits and was written so; a last list, record or update hangs below the head; otherwise head-line arguments stay, the rest go one per line" {
     try check(
         \\short =
         \\  max
@@ -3832,9 +3979,7 @@ test "application: one line when it fits and was written so; head-line arguments
         \\
         \\
         \\long =
-        \\    List.foldl
-        \\        (\item acc -> acc + String.length item)
-        \\        0
+        \\    List.foldl (\item acc -> acc + String.length item) 0
         \\        [ "a very long string literal", "another very long string literal", "and one more" ]
         \\
         \\
@@ -3846,6 +3991,49 @@ test "application: one line when it fits and was written so; head-line arguments
         \\            )
         \\            3
         \\        )
+        \\
+    );
+}
+
+test "a comment between head arguments keeps an application from hanging; one before the hung argument does not" {
+    try check(
+        \\commented = Html.ul [ class "list" ] -- the attributes
+        \\    [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth", viewItem "x" ]
+        \\between = Html.ul -- the callee
+        \\    [ class "list" ] [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth", viewItem "x" ]
+        \\
+    ,
+        \\commented =
+        \\    Html.ul [ class "list" ] -- the attributes
+        \\        [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth", viewItem "x" ]
+        \\
+        \\
+        \\between =
+        \\    Html.ul -- the callee
+        \\        [ class "list" ]
+        \\        [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth", viewItem "x" ]
+        \\
+    );
+}
+
+test "the blank line after a standalone comment survives a dropped record brace and comma" {
+    try check(
+        \\type alias Config = {
+        \\    -- the host
+        \\
+        \\    host : String
+        \\    , -- the port
+        \\
+        \\    port : Int }
+        \\
+    ,
+        \\type alias Config =
+        \\    -- the host
+        \\
+        \\    host : String
+        \\    -- the port
+        \\
+        \\    port : Int
         \\
     );
 }
@@ -4318,7 +4506,7 @@ test "every type form; annotations broken at every arrow when they do not fit; r
         \\
         \\
         \\pub update :
-        \\    Msg
+        \\      Msg
         \\    -> { host : String, port : Int, retries : Int, onError : String -> Msg }
         \\    -> ( Model, List String )
         \\update msg config = ( config, [] )

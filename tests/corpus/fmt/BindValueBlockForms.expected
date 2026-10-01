@@ -1,7 +1,8 @@
--- §9: `if`, `let` and `case` have no single-line form, so a `<-` binding
--- whose value contains one must not be printed as though it fit: the block
--- breaks anyway and every enclosing decision — keyword alignment, body
--- indentation — has to be made on the real widths.
+-- §9: `let` and `case` have no single-line form, nor has an `if` written
+-- across lines (§12.5), so a `<-` binding whose value contains one must not
+-- be printed as though it fit: the block breaks anyway and every enclosing
+-- decision — keyword alignment, body indentation — has to be made on the
+-- real widths.
 withIf a =
     let
         x <- Result.andThen
