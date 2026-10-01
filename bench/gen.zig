@@ -565,7 +565,7 @@ pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!voi
         },
         .@"deep-lambdas" => {
             try w.writeAll("main =\n    ");
-            for (0..100_000) |_| try w.writeAll("\\x -> ");
+            for (0..100_000) |_| try w.writeAll("λx -> ");
             try w.writeAll("1\n");
         },
         .@"constraint-chain" => try writeConstraintChain(w, which.n),
@@ -1204,8 +1204,8 @@ const Module = struct {
             try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
             try g.line(0, "sum{d} xs =", .{g.index});
             try g.line(4, "let", .{});
-            try g.line(8, "counts = List.foldl xs Dict.empty (\\x acc -> acc.insert x 1)", .{});
-            try g.line(8, "unique = List.foldl xs Set.empty (\\x acc -> acc.insert x)", .{});
+            try g.line(8, "counts = List.foldl xs Dict.empty (λx acc -> acc.insert x 1)", .{});
+            try g.line(8, "unique = List.foldl xs Set.empty (λx acc -> acc.insert x)", .{});
             try g.line(4, "in", .{});
             try g.line(4, "Maybe.withDefault (counts.get 3) 0 + Set.size unique", .{});
             return;
@@ -1399,8 +1399,8 @@ const Module = struct {
         var i: u32 = 0;
         while (i < steps) : (i += 1) {
             switch (g.rng.uintLessThan(u8, 4)) {
-                0 => try g.line(8, "|> List.filter (\\x -> x > {d})", .{g.rng.uintLessThan(u32, 50)}),
-                1 => try g.line(8, "|> List.map (\\x -> x * {d})", .{1 + g.rng.uintLessThan(u32, 9)}),
+                0 => try g.line(8, "|> List.filter (λx -> x > {d})", .{g.rng.uintLessThan(u32, 50)}),
+                1 => try g.line(8, "|> List.map (λx -> x * {d})", .{1 + g.rng.uintLessThan(u32, 9)}),
                 2 => if (g.dispatch())
                     // `x.m _` is the placeholder over a method call
                     // (`static-dispatch-spike.md` §1.1, the `x.m _ b` row):
@@ -1413,7 +1413,7 @@ const Module = struct {
             }
         }
         if (g.chance(50)) {
-            try g.line(8, "|> List.foldl 0 (\\x acc -> acc + x)", .{});
+            try g.line(8, "|> List.foldl 0 (λx acc -> acc + x)", .{});
         } else {
             try g.line(8, "|> sum{d}", .{g.index});
         }
@@ -1635,7 +1635,7 @@ const Module = struct {
                 try g.w.print("List.foldl [ ", .{});
                 g.scopeReset(mark);
                 try g.atom();
-                try g.w.print(" ] 0 (\\{s} carry -> carry + {s})", .{ param, param });
+                try g.w.print(" ] 0 (λ{s} carry -> carry + {s})", .{ param, param });
             },
             5 => {
                 try g.w.writeAll("Maybe.withDefault (Just ");
@@ -1974,8 +1974,8 @@ test "the dispatch tree is the same project as the plain one, written with dispa
         if (std.mem.indexOf(u8, text, "    where a.helper") != null) found.where_method = true;
         if (std.mem.indexOf(u8, text, "if model == init") != null) found.record_eq = true;
         if (std.mem.indexOf(u8, text, "if msg == Reset then") != null) found.custom_eq = true;
-        if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty (\\x acc -> acc.insert x 1)") != null) found.dict = true;
-        if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty (\\x acc -> acc.insert x)") != null) found.set = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty (λx acc -> acc.insert x 1)") != null) found.dict = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty (λx acc -> acc.insert x)") != null) found.set = true;
         if (std.mem.indexOf(u8, text, "|> List.map ((Reset).helper") != null) found.placeholder = true;
     }
     // Every part of the M1b shape is really in the tree. A flag that

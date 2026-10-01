@@ -28,7 +28,7 @@ const browser_main =
     \\
     \\main : Browser.Program
     \\main =
-    \\    Browser.program { init = 0, update = \_ n -> n, view = view }
+    \\    Browser.program { init = 0, update = λ_ n -> n, view = view }
     \\
 ;
 

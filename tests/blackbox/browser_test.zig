@@ -325,7 +325,7 @@ test "a library build's page delivers the events its markup delegates, with no p
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = \n _ -> n, view = view }
+        \\    Browser.program { init = 0, update = λn _ -> n, view = view }
         \\
     );
     try w.write("page.steps", "click #inc\nclick #inc\n");

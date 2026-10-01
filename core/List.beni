@@ -352,7 +352,7 @@ rangeHelp lo i n b =
 --| Create a list of `n` elements, calling `func` on each index from 0 to
 --| `n - 1` in that order. A count of zero or less is `[]`.
 --|
---|     initialize 4 (\i -> i * i) == [ 0, 1, 4, 9 ]
+--|     initialize 4 (λi -> i * i) == [ 0, 1, 4, 9 ]
 --|
 --| O(n).
 pub initialize : Int, (Int -> a) -> List a
@@ -398,7 +398,7 @@ mapHelp xs a o i n func b same =
 --| starting at zero. The result is `xs` itself when every result is the
 --| element it was given, as `map`'s is.
 --|
---|     indexedMap [ "a", "b" ] (\i x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
+--|     indexedMap [ "a", "b" ] (λi x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a -> b) -> List b
 indexedMap xs func =
     indexedMapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
@@ -418,7 +418,7 @@ indexedMapHelp xs a o i n func b same =
 
 --| Keep the elements that pass the test.
 --|
---|     filter [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == [ 2, 4 ]
+--|     filter [ 1, 2, 3, 4 ] (λn -> modBy n 2 == 0) == [ 2, 4 ]
 --|
 --| `isGood` is asked about the first element first. When it keeps every
 --| element the result is `xs` itself, not an equal copy (`backend.md` §4,
@@ -514,16 +514,16 @@ member xs value = any xs (λx -> x == value)
 
 --| Determine if all elements satisfy some test.
 --|
---|     all [ 2, 4 ] (\n -> modBy n 2 == 0) == True
---|     all [] (\n -> modBy n 2 == 0) == True
+--|     all [ 2, 4 ] (λn -> modBy n 2 == 0) == True
+--|     all [] (λn -> modBy n 2 == 0) == True
 pub all : List a, (a -> Bool) -> Bool
 all xs isOkay = not (any xs (λx -> not (isOkay x)))
 
 
 --| Determine if any elements satisfy some test.
 --|
---|     any [ 2, 3 ] (\n -> modBy n 2 == 0) == True
---|     any [] (\n -> modBy n 2 == 0) == False
+--|     any [ 2, 3 ] (λn -> modBy n 2 == 0) == True
+--|     any [] (λn -> modBy n 2 == 0) == False
 pub any : List a, (a -> Bool) -> Bool
 any xs isOkay = anyFrom (base xs) (offset xs) (offset xs + length xs) isOkay
 
@@ -601,7 +601,7 @@ pub foreign pure concat : List (List a) -> List a
 
 --| Map a given function onto a list and flatten the resulting lists.
 --|
---|     concatMap [ 1, 2 ] (\x -> [ x, x ]) == [ 1, 1, 2, 2 ]
+--|     concatMap [ 1, 2 ] (λx -> [ x, x ]) == [ 1, 1, 2, 2 ]
 --|
 --| `func` is called on the first element first, and once per element. It
 --| is `concat (map xs func)`: when exactly one of the answers is not empty
@@ -853,7 +853,7 @@ sort xs = sortWith xs (λx y -> x.compare y)
 --| first** (`checker.md` Appendix B), which is what decorate–sort–undecorate
 --| buys: `map` reads the keys in list order, the pairs are sorted by their
 --| first component alone, and `map` reads the elements back out. The
---| spelling this replaced, `sortWith xs (\x y -> (toKey x).compare (toKey
+--| spelling this replaced, `sortWith xs (λx y -> (toKey x).compare (toKey
 --| y))`, called `toKey` once per COMPARISON — six times for a three-element
 --| list, and not at all for a one-element one — so an expensive key was
 --| recomputed and an effectful one would run its effect a number of times
@@ -881,7 +881,7 @@ sortBy xs toKey =
 --| Sort values with an ordering function you write yourself, which is how
 --| you sort by something that is not the type's own order.
 --|
---|     sortWith [ 1, 2, 3 ] (\x y -> Basics.compare y x) == [ 3, 2, 1 ]
+--|     sortWith [ 1, 2, 3 ] (λx y -> Basics.compare y x) == [ 3, 2, 1 ]
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in, and that is a contract rather than an accident of the merge
@@ -1025,7 +1025,7 @@ last xs = get xs (length xs - 1)
 --| called once in range and not at all out of range, where the result is
 --| the list itself.
 --|
---|     update [ 1, 2, 3 ] 1 (\x -> x * 10) == [ 1, 20, 3 ]
+--|     update [ 1, 2, 3 ] 1 (λx -> x * 10) == [ 1, 20, 3 ]
 --|
 --| The cost of `set`, and its identities.
 pub update : List a, Int, (a -> a) -> List a
@@ -1040,7 +1040,7 @@ update xs i func =
 --| that satisfy the test, and the second list contains all the value that do
 --| not.
 --|
---|     partition [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
+--|     partition [ 1, 2, 3, 4 ] (λn -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
 --|
 --| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a -> Bool) -> ( List a, List a )

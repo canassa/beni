@@ -1785,7 +1785,7 @@ test "a constrained function constant rewritten with parameters keeps its import
 }
 
 test "a constrained function constant rewritten as a lambda keeps its importer's cached calling convention" {
-    try expectConventionEdit("h =\n    \\a b -> maxOf a b\n");
+    try expectConventionEdit("h =\n    λa b -> maxOf a b\n");
 }
 
 test "a constrained function constant rewritten as a let keeps its importer's cached calling convention" {
@@ -3788,7 +3788,7 @@ test "a warm build of a markup program after a view's markup is edited writes wh
         \\card props =
         \\    <section class={[ ( "card", True ), ( "empty", props.items == [] ) ]}>
         \\        <h2>{props.title}</h2>
-        \\        <ul><For each={props.items}>{\item -> <li>{item}</li>}</For></ul>
+        \\        <ul><For each={props.items}>{λitem -> <li>{item}</li>}</For></ul>
         \\    </section>
         \\
     ;
@@ -4723,7 +4723,7 @@ fn writeMarkupProject(w: *World, card_class: []const u8) !void {
         \\view rows =
         \\    <ul>
         \\        <Card title="Rows" />
-        \\        <For each={rows}>{\r -> <li onClick={Picked r.id}>{r.label}</li>}</For>
+        \\        <For each={rows}>{λr -> <li onClick={Picked r.id}>{r.label}</li>}</For>
         \\    </ul>
         \\
     );

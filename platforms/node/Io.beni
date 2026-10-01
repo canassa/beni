@@ -8,7 +8,7 @@
 --!
 --!     main : Program
 --!     main =
---!         Io.run (\() ->
+--!         Io.run (λ() ->
 --!             let
 --!                 _ = Io.sleep 10
 --!             in

@@ -2214,7 +2214,7 @@ test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an ope
     defer w.deinit();
     try w.write("Main.beni",
         \\total xs =
-        \\    xs |> List.map (\x -> x * 2) |> List.sum
+        \\    xs |> List.map (λx -> x * 2) |> List.sum
         \\
     );
 
@@ -3029,7 +3029,7 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
             "    Model\n" ++
             "\n" ++
             "Hint: every call supplies every argument. To make a function out of this one,\n" ++
-            "write the missing argument as `_`: `f a _` is `\\x -> f a x`.\n",
+            "write the missing argument as `_`: `f a _` is `λx -> f a x`.\n",
     }, r.diagnostics[0]);
 }
 
@@ -3268,7 +3268,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\later =
-        \\    \() -> logged 4
+        \\    λ() -> logged 4
         \\
         \\
         \\each f xs =
@@ -3280,7 +3280,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\quiet xs =
-        \\    List.map xs (\x -> x + 1)
+        \\    List.map xs (λx -> x + 1)
         \\
     );
 

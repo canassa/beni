@@ -11162,12 +11162,12 @@ test "a lambda is an n-ary function expression, of exactly its parameters" {
         \\
         \\pub answer : Int
         \\answer =
-        \\    apply (\a -> a + 1) 1
+        \\    apply (λa -> a + 1) 1
         \\
         \\
         \\pub twice : Int
         \\twice =
-        \\    apply (\b -> b * 2) 21
+        \\    apply (λb -> b * 2) 21
         \\
     );
 }
@@ -11242,7 +11242,7 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\                    total
         \\
         \\                else
-        \\                    inner (i - 1) ((\x -> x + i) total)
+        \\                    inner (i - 1) ((λx -> x + i) total)
         \\        in
         \\        outer (n - 1) (inner 3 acc)
         \\

@@ -28,7 +28,7 @@ f8001000 v0 v1 v2 =
 
 pub f8001001 : (List Int), (Base.Seq Int) -> ( Int, Base.Seq Int )
 f8001001 v0 v1 =
-    ( List.foldl (List.filter (List.map v0 (\v2 -> v2 * 2)) (\v3 -> v3 == 4)) 0 (\v4 v5 -> v5 - v4) + (v1 |> Base.srev |> Base.slen), Base.SCons 5 v1 )
+    ( List.foldl (List.filter (List.map v0 (λv2 -> v2 * 2)) (λv3 -> v3 == 4)) 0 (λv4 v5 -> v5 - v4) + (v1 |> Base.srev |> Base.slen), Base.SCons 5 v1 )
 
 
 pub entry : Int -> Int

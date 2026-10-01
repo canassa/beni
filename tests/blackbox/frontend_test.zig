@@ -94,13 +94,13 @@ const every_section =
     \\            { p | x = a + 1 }
     \\
     \\        twice =
-    \\            \n -> n * 2
+    \\            λn -> n * 2
     \\    in
     \\    "${name}: ${twice moved.x} \t ${b}"
     \\
     \\
     \\tail =
-    \\    [ 1, 2, 3 ] |> List.map (\n -> n + 1)
+    \\    [ 1, 2, 3 ] |> List.map (λn -> n + 1)
     \\
 ;
 

@@ -530,7 +530,8 @@ pub const P = struct {
         const multi_body = p.multi(x.b);
         switch (p.lang) {
             .beni, .elm, .purescript => {
-                try p.out("\\");
+                // beni's lambda head is `λ` (language.md §12.1).
+                try p.out(if (p.lang == .beni) "λ" else "\\");
                 for (ps[0..n], 0..) |l, i| {
                     if (i > 0) try p.out(" ");
                     if (p.psTyped(l)) {

@@ -29,7 +29,7 @@ fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u
     try out.writeAll("r =\n    { ");
     for (1..n + 1) |i| {
         if (i != 1) try out.writeAll(", ");
-        if (i == fn_at) try out.print("f{d} = \\x -> x", .{i}) else try out.print("f{d} = 1", .{i});
+        if (i == fn_at) try out.print("f{d} = λx -> x", .{i}) else try out.print("f{d} = 1", .{i});
     }
     try out.print(" }}\n\n\nsame : Bool\nsame =\n    {s}\n", .{compare});
     return source.toOwnedSlice();
@@ -565,7 +565,7 @@ fn wideLiteralCase(flag: []const u8, scrutinee: []const u8, stdout: []const u8) 
     try out.writeAll(
         \\main : Program
         \\main =
-        \\    Node.printLines (List.map [ 0, 16383, 16384, 16399, 16400, -5 ] (\k -> String.fromInt (g k)))
+        \\    Node.printLines (List.map [ 0, 16383, 16384, 16399, 16400, -5 ] (λk -> String.fromInt (g k)))
         \\
     );
     try w.write("Main.beni", source.written());

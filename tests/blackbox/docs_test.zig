@@ -78,7 +78,7 @@ const skips = [_]Skip{
     .{ .module = "Basics", .text = "append \"butter\" \"fly\" == \"butterfly\"", .reason = cycle_reason },
     .{ .module = "Basics", .text = "append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]", .reason = cycle_reason },
     .{ .module = "Basics", .text = "List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]", .reason = cycle_reason },
-    .{ .module = "List", .text = "indexedMap [ \"a\", \"b\" ] (\\i x -> ( i, x )) == [ ( 0, \"a\" ), ( 1, \"b\" ) ]", .reason = cycle_reason },
+    .{ .module = "List", .text = "indexedMap [ \"a\", \"b\" ] (λi x -> ( i, x )) == [ ( 0, \"a\" ), ( 1, \"b\" ) ]", .reason = cycle_reason },
     .{ .module = "List", .text = "intersperse [ \"turtles\", \"turtles\" ] \"on\" == [ \"turtles\", \"on\", \"turtles\" ]", .reason = cycle_reason },
 };
 
@@ -310,7 +310,7 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         \\main =
         \\    Node.printLines
         \\        (List.filterMap entries
-        \\            (\entry ->
+        \\            (λentry ->
         \\                case entry of
         \\                    ( origin, ok ) ->
         \\                        if ok then

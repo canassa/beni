@@ -336,10 +336,10 @@ fn writeMarkupProject(w: *World) !void {
         \\page : List View.Row, Maybe String -> Html msg
         \\page rows title =
         \\    <main>
-        \\        <Show when={title} keyed fallback={<h1>Untitled</h1>}>{\t -> <h1 title={t}>{t} &amp; co</h1>}</Show>
+        \\        <Show when={title} keyed fallback={<h1>Untitled</h1>}>{λt -> <h1 title={t}>{t} &amp; co</h1>}</Show>
         \\        <table>
         \\            <tbody>
-        \\                <For each={rows} keyed={.id}>{\r -> <View.row item={r} selected={2} />}</For>
+        \\                <For each={rows} keyed={.id}>{λr -> <View.row item={r} selected={2} />}</For>
         \\            </tbody>
         \\        </table>
         \\    </main>
@@ -3206,12 +3206,12 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\
         \\view : List Int -> Html msg
         \\view xs =
-        \\    <ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>
+        \\    <ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\    Browser.program { init = [ 1, 2 ], update = λmsg model -> model, view = view }
         \\
     ;
     try w.write("plain/Main.beni", page);
@@ -3222,12 +3222,12 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\
         \\view : List Int -> Html msg
         \\view xs =
-        \\    Html.map (<ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>) (\msg -> msg)
+        \\    Html.map (<ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>) (λmsg -> msg)
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\    Browser.program { init = [ 1, 2 ], update = λmsg model -> model, view = view }
         \\
     );
 
@@ -3274,7 +3274,7 @@ test "a release page ships the hosted program's loop only when it mounts one" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = \msg model -> model, view = view }
+        \\    Browser.program { init = 0, update = λmsg model -> model, view = view }
         \\
     );
     try w.write("hosted/Main.beni",
@@ -3289,7 +3289,7 @@ test "a release page ships the hosted program's loop only when it mounts one" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.hosted { init = \host -> 0, update = \host msg model -> model, settle = \host model -> model, view = view }
+        \\    Browser.hosted { init = λhost -> 0, update = λhost msg model -> model, settle = λhost model -> model, view = view }
         \\
     );
 
@@ -3342,7 +3342,7 @@ test "a page with no delegated event calls no start and ships no listener" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = \msg model -> model + 1, view = view }
+        \\    Browser.program { init = 0, update = λmsg model -> model + 1, view = view }
         \\
     ;
     try w.write("quiet/Main.beni", head ++ "    <p>still</p>" ++ tail);
@@ -3383,9 +3383,9 @@ fn elementPage(comptime cmd: []const u8) []const u8 {
     \\
     \\main : Browser.Program
     \\main =
-    \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model,
+    \\    Tea.element { init = ( 0, Cmd.none ), update = λmsg model -> ( model,
     ++ cmd ++
-        \\ ), view = view, subscriptions = \_ -> Sub.none }
+        \\ ), view = view, subscriptions = λ_ -> Sub.none }
         \\
     ;
 }
@@ -3403,7 +3403,7 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("none/Main.beni", elementPage("Cmd.none"));
-    try w.write("waits/Main.beni", elementPage("Cmd.do (\\() -> Time.sleep (Time.millis 1))"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do (λ() -> Time.sleep (Time.millis 1))"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3432,8 +3432,8 @@ test "an element whose commands never wait ships no fiber runtime" {
     // waits; the keyed body only sends.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) (\\n -> n)"));
-    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart (\\send -> send 1)"));
+    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) (λn -> n)"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart (λsend -> send 1)"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -4192,7 +4192,7 @@ test "an unannotated pub function constant with a constraint builds and runs" {
         \\
         \\
         \\pub eqs =
-        \\    \a b -> a == b
+        \\    λa b -> a == b
         \\
         \\
         \\pub bigger =
@@ -4341,10 +4341,10 @@ test "core List's loops read and write their arrays in place" {
         \\            List.range 1 10
         \\
         \\        kept =
-        \\            List.map xs (\x -> x)
+        \\            List.map xs (λx -> x)
         \\
         \\        sorted =
-        \\            List.sortWith (List.filter xs (\x -> x > 2)) (\a b -> Basics.compare b a)
+        \\            List.sortWith (List.filter xs (λx -> x > 2)) (λa b -> Basics.compare b a)
         \\    in
         \\    Node.print (String.join (List.map (List.map2 kept sorted (+)) String.fromInt) "," ++ " " ++ String.fromInt (List.length xs))
         \\

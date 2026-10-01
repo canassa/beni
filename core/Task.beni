@@ -62,7 +62,7 @@ pub foreign pure isWaiting : a -> Bool
 --| before the function returns, nothing waits at all.
 --|
 --|     sleep ms =
---|         Task.callback (\resume -> startTimer ms resume)
+--|         Task.callback (λresume -> startTimer ms resume)
 pub foreign suspends callback : sync (Resume a -> (() -> ())) -> a
 
 
@@ -166,7 +166,7 @@ foreign impure popFinalizer : a -> a
 --| started in the scope that is still running and wait for them.
 --|
 --|     both a b =
---|         Task.scope (\s ->
+--|         Task.scope (λs ->
 --|             let
 --|                 x = Task.spawnIn s a
 --|                 y = Task.spawnIn s b
@@ -190,7 +190,7 @@ uninterruptible work = unmask (work (mask ()))
 --| `Done` with the use's value, or `Cancelled` when the fiber was cancelled
 --| during the use. Acquire and release cannot be interrupted.
 --|
---|     Task.bracket (\() -> open path) (\file _ -> close file) (\file -> read file)
+--|     Task.bracket (λ() -> open path) (λfile _ -> close file) (λfile -> read file)
 pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a
 bracket acquire release use =
     let

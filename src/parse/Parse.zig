@@ -4278,7 +4278,7 @@ test "types: the comma is the parameter separator and the arrow right-associates
 
 test "every atom: literals, names, brackets, operator functions, strings, multiline" {
     try expectClean(
-        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", \a b -> a, if a then b else c )
+        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", λa b -> a, if a then b else c )
         \\m =
         \\    \\a
         \\    \\b
@@ -4841,7 +4841,7 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
     // The tree stays complete after each report, so one bad pipe does not
     // swallow the declarations after it.
     try expectTree(
-        \\e1 xs = xs |> \x -> x
+        \\e1 xs = xs |> λx -> x
         \\e2 c a b = a |> if c then b else a
         \\e3 x f = x |> f 1 + 2
         \\e4 = (|>)
@@ -4892,14 +4892,14 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
 
 test "block expressions as the last operand of a chain, and as a bare argument (error)" {
     try expectTree(
-        \\b1 f = f <| \x -> x + 1
-        \\b2 xs = xs |> List.map (\x -> x)
+        \\b1 f = f <| λx -> x + 1
+        \\b2 xs = xs |> List.map (λx -> x)
         \\b3 t a b c = text <| if a then b else c
         \\b4 x = x + let y = 1 in y
         \\b5 x = x + case x of
         \\  1 -> 2
         \\  _ -> 3
-        \\b6 f = f \x -> x
+        \\b6 f = f λx -> x
         \\
     ,
         \\(module
@@ -5179,7 +5179,7 @@ test "layout: brackets do not suspend it, operators and keywords may lead a line
         \\ ]
         \\call =
         \\        List.map
-        \\  (\x -> x)
+        \\  (λx -> x)
         \\     [ 1 ]
         \\branch m =
         \\    case
@@ -5937,7 +5937,7 @@ const fragment_pieces = [_][]const u8{
     "u x = if x then 1 else 2\n",
     "l = [ 1, 2, 3 ]\n",
     "r = { a = 1, b = \"${x}\" }\n",
-    "s = \\a b -> a\n",
+    "s = λa b -> a\n",
     "t = f <| g <| x |> h\n",
     "q s = parse s? |> f\n",
     "m =\n    \\\\a\n    \\\\b\n",
@@ -5948,7 +5948,7 @@ const fragment_pieces = [_][]const u8{
     "schema Page item = { items : List item via (convert item) }\n",
     "schema Message tagged \"kind\" of Count Int as \"count\" | Reset\n",
     "v =\n    <div class=\"a\" id={x} hidden>Hi {x}!<br /><></></div>\n",
-    "w = (<For each={xs} keyed={.id}>{\\x -> <li>{x}</li>}</For>)\n",
+    "w = (<For each={xs} keyed={.id}>{λx -> <li>{x}</li>}</For>)\n",
     "c = <Card {...d} title=\"t\">{-- n\n    }</Card>\n",
     "pub element \"input\" void\n",
     "pub event \"onInput\" on \"input\" via value : String\n",

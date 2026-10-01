@@ -683,7 +683,7 @@ padRight str n char = str ++ repeat (fromChar char) (n - length str)
 
 --| Transform every character in a string.
 --|
---|     map "a/b/c" (\char -> if char == '/' then '.' else char) == "a.b.c"
+--|     map "a/b/c" (λchar -> if char == '/' then '.' else char) == "a.b.c"
 pub map : String, (Char -> Char) -> String
 map str func = fromList (List.map (toList str) func)
 
@@ -697,14 +697,14 @@ filter str isGood = fromList (List.filter (toList str) isGood)
 
 --| Reduce a string from the left, starting from an initial value.
 --|
---|     foldl "time" "" (\char acc -> cons acc char) == "emit"
+--|     foldl "time" "" (λchar acc -> cons acc char) == "emit"
 pub foldl : String, b, (Char, b -> b) -> b
 foldl str acc func = List.foldl (toList str) acc func
 
 
 --| Reduce a string from the right, starting from an initial value.
 --|
---|     foldr "time" "" (\char acc -> cons acc char) == "time"
+--|     foldr "time" "" (λchar acc -> cons acc char) == "time"
 pub foldr : String, b, (Char, b -> b) -> b
 foldr str acc func = List.foldr (toList str) acc func
 

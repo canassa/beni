@@ -152,9 +152,9 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
         \\view rows title =
         \\    <Card title="Rows">
         \\        <input onInput={Typed} class={[ ( "wide", True ) ]} "formaction"="/rows" />
-        \\        <For each={rows}>{\r -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
-        \\        <Show when={title} keyed>{\t -> <p>{t}</p>}</Show>
-        \\        {List.map rows (\r -> <p>{r.label}</p>)}
+        \\        <For each={rows}>{λr -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
+        \\        <Show when={title} keyed>{λt -> <p>{t}</p>}</Show>
+        \\        {List.map rows (λr -> <p>{r.label}</p>)}
         \\    </Card>
         \\
     );

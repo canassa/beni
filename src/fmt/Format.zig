@@ -3889,15 +3889,15 @@ test "lists, records and tuples: one line when they fit and were written so, emp
 
 test "nested breaking: a pipeline inside a list inside a record, and a field value on its own line" {
     try check(
-        \\view model = { title = "Board", body = [ model.items |> List.filter (\i -> i.done) |> List.map (\i -> viewItem model i) |> List.reverse, footer model ] }
+        \\view model = { title = "Board", body = [ model.items |> List.filter (λi -> i.done) |> List.map (λi -> viewItem model i) |> List.reverse, footer model ] }
         \\
     ,
         \\view model =
         \\    { title = "Board"
         \\    , body =
         \\        [ model.items
-        \\            |> List.filter (\i -> i.done)
-        \\            |> List.map (\i -> viewItem model i)
+        \\            |> List.filter (λi -> i.done)
+        \\            |> List.map (λi -> viewItem model i)
         \\            |> List.reverse
         \\        , footer model
         \\        ]
@@ -3912,7 +3912,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\valid r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)
         \\sum r = r.width * r.height + r.padding * 2 * (r.width + r.height) + r.margin * 2 * (r.width + r.height + r.padding * 4)
         \\process xs = xs |>
-        \\    List.map (\x -> x * 2) |>
+        \\    List.map (λx -> x * 2) |>
         \\    List.sum
         \\negated x y = -x - -y
         \\
@@ -3936,7 +3936,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\
         \\process xs =
         \\    xs
-        \\        |> List.map (\x -> x * 2)
+        \\        |> List.map (λx -> x * 2)
         \\        |> List.sum
         \\
         \\
@@ -3950,7 +3950,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\f = text <| if a then b
         \\    else c
         \\g = decode <|
-        \\      \x -> x + 1
+        \\      λx -> x + 1
         \\h = foo <| let
         \\     a = 1 in a
         \\
@@ -3964,7 +3964,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\
         \\
         \\g =
-        \\    decode <| \x ->
+        \\    decode <| λx ->
         \\    x + 1
         \\
         \\
@@ -3983,7 +3983,7 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
         \\partial xs = List.map (add    1    _) xs
         \\pipeline r = let
         \\    scope <- Task.scope
-        \\    conn   <-   Task.bracket (\() -> Db.open r.url) Db.close
+        \\    conn   <-   Task.bracket (λ() -> Db.open r.url) Db.close
         \\    a = 1
         \\    h <- Result.andThen (readHeader r)
         \\  in
@@ -3996,7 +3996,7 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
         \\pipeline r =
         \\    let
         \\        scope <- Task.scope
-        \\        conn <- Task.bracket (\() -> Db.open r.url) Db.close
+        \\        conn <- Task.bracket (λ() -> Db.open r.url) Db.close
         \\        a = 1
         \\        h <- Result.andThen (readHeader r)
         \\    in
@@ -4007,35 +4007,35 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
 
 test "a trailing `<|` lambda keeps its body at the indentation of the `<|` line (§9)" {
     try check(
-        \\chain url = Task.attempt (Http.get url) <| \response -> Task.attempt (Json.decode response) <| \value -> renderTheDecodedValue value withSomeContext andAnotherArgument
+        \\chain url = Task.attempt (Http.get url) <| λresponse -> Task.attempt (Json.decode response) <| λvalue -> renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     ,
         \\chain url =
-        \\    Task.attempt (Http.get url) <| \response ->
-        \\    Task.attempt (Json.decode response) <| \value ->
+        \\    Task.attempt (Http.get url) <| λresponse ->
+        \\    Task.attempt (Json.decode response) <| λvalue ->
         \\    renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     );
 }
 
-test "lambdas: `\\x y ->` with the body inline when it fits, else on the next line indented 4" {
+test "lambdas: `λx y ->` with the body inline when it fits, else on the next line indented 4" {
     try check(
-        \\f=\x->x+1
-        \\h = \(a,b) {c} _->
+        \\f=λx->x+1
+        \\h = λ(a,b) {c} _->
         \\  a+b+c
-        \\describe = \x -> case x of
+        \\describe = λx -> case x of
         \\  0 -> "zero"
         \\  _ -> "other"
         \\
     ,
-        \\f = \x -> x + 1
+        \\f = λx -> x + 1
         \\
         \\
-        \\h = \( a, b ) { c } _ -> a + b + c
+        \\h = λ( a, b ) { c } _ -> a + b + c
         \\
         \\
         \\describe =
-        \\    \x ->
+        \\    λx ->
         \\        case x of
         \\            0 ->
         \\                "zero"
@@ -4051,7 +4051,7 @@ test "application: one line when it fits and was written so; a last list, record
         \\  max
         \\      1
         \\   2
-        \\long = List.foldl (\item acc -> acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
+        \\long = List.foldl (λitem acc -> acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
         \\nestedCall = f (g (h 1
         \\  2) 3)
         \\
@@ -4063,7 +4063,7 @@ test "application: one line when it fits and was written so; a last list, record
         \\
         \\
         \\long =
-        \\    List.foldl (\item acc -> acc + String.length item) 0
+        \\    List.foldl (λitem acc -> acc + String.length item) 0
         \\        [ "a very long string literal", "another very long string literal", "and one more" ]
         \\
         \\
@@ -4129,7 +4129,7 @@ test "grouping parentheses are kept as written, without inner spaces, and close 
         \\d x = ( x + 1 ) * 2
         \\e2 fn x = fn ( -x )
         \\g x = [ ( x ) ]
-        \\run k = (\k2 ->
+        \\run k = (λk2 ->
         \\   case k2 of
         \\     0 -> 1
         \\     _ -> k2) k
@@ -4151,7 +4151,7 @@ test "grouping parentheses are kept as written, without inner spaces, and close 
         \\
         \\
         \\run k =
-        \\    (\k2 ->
+        \\    (λk2 ->
         \\        case k2 of
         \\            0 ->
         \\                1
@@ -4520,10 +4520,6 @@ test "migrating lambdas leaves a file with a syntax error alone" {
     try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x ->\n"));
 }
 
-test "a lambda prints the head it was written with" {
-    try check("f = λ x->x\ng = \\x->x\n", "f = λx -> x\n\n\ng = \\x -> x\n");
-}
-
 test "strings, chars, numbers, interpolations and multiline strings are printed byte for byte" {
     try check("a = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\"\n" ++
         "b = '\\u{00041}'\n" ++
@@ -4567,7 +4563,7 @@ test "every pattern form with canonical spacing" {
         \\  () -> 4
         \\  _ -> 0
         \\g p = let (a,b)=p in a
-        \\h = \(a,b)->a
+        \\h = λ(a,b)->a
         \\k (Just x) { a } ( b, c ) = -x
         \\
     ,
@@ -4600,7 +4596,7 @@ test "every pattern form with canonical spacing" {
         \\    a
         \\
         \\
-        \\h = \( a, b ) -> a
+        \\h = λ( a, b ) -> a
         \\
         \\
         \\k (Just x) { a } ( b, c ) = -x
@@ -4999,25 +4995,25 @@ const stress_decls = [_][]const u8{
     "i2{d} x = if aVeryLongConditionNameNumberOne x && aVeryLongConditionNameNumberTwo x then aVeryLongThenBranch x else 0\n",
     "col{d} = ( [ 1, 2, 3 ], { a = 1, b = \"${x} and ${ y }\" }, ( 1, 2 ), [], {}, () )\n",
     "long{d} = [ \"alpha\", \"bravo\", \"charlie\", \"delta\", \"echo\", \"foxtrot\", \"golf\", \"hotel\", \"india\", \"juliet\", \"kilo\" ]\n",
-    "s{d} = \\a b -> a\n",
-    "s2{d} = \\( a, b ) { c } _ -> a + b + c\n",
+    "s{d} = λa b -> a\n",
+    "s2{d} = λ( a, b ) { c } _ -> a + b + c\n",
     "t{d} = f <| g <| h x\n",
     "t2{d} = text <| if a then b else c\n",
-    "pipe{d} xs = xs\n    |> List.map (\\x -> x * 2)\n    |> List.filter (\\x -> x > 10)\n    |> List.sum\n",
+    "pipe{d} xs = xs\n    |> List.map (λx -> x * 2)\n    |> List.filter (λx -> x > 10)\n    |> List.sum\n",
     "q{d} s = parse s? |> f\n",
     "acc{d} r t = r.a.b + t.0.1 + (f r).x + List.map .name []\n",
     "m{d} =\n    \\\\a\n    \\\\b   \n",
     "p{d} (Just x) { a } ( b, c ) = -x\n",
     "u{d} m = { m | count = m.count + 1, aVeryLongFieldNameToMakeItWide = m.aVeryLongFieldNameToMakeItWide + 1 }\n",
     "op{d} = ( + ) 1 2 + (++) [ 1 ] [ ...[], 2 ] + ( ^ ) 1 2\n",
-    "app{d} = List.foldl (\\item acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
+    "app{d} = List.foldl (λitem acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
     "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
     "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)\n",
     "cmt{d} x = -- after equals\n    let\n        -- before binding\n        y = 1 -- after body\n        -- before in\n    in\n    -- before body\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True -> 1 -- after branch\n            -- between branches\n            False -> [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
     "str{d} = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\" ++ \"${a}\"\n",
     "num{d} = ( 0xDeadBEEF, 1.50e+03, '\\u{00041}', -1 )\n",
     "par{d} = ( ( x ) )\n",
-    "nest{d} m flag =\n  case m of\n     Just n ->\n       if flag then\n           let\n             doubled = n * 2\n           in\n               doubled\n       else (\\k ->\n              case k of\n                   0 -> 1\n                   _ -> k\n             ) n\n     Nothing ->\n              0\n",
+    "nest{d} m flag =\n  case m of\n     Just n ->\n       if flag then\n           let\n             doubled = n * 2\n           in\n               doubled\n       else (λk ->\n              case k of\n                   0 -> 1\n                   _ -> k\n             ) n\n     Nothing ->\n              0\n",
 };
 
 const stress_imports = [_][]const u8{

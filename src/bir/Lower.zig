@@ -5143,15 +5143,15 @@ test "`?` in a top-level constant, even under let constants, is question_outside
 test "`?` under a lambda is question_in_lambda, whatever encloses the lambda" {
     try expectErrors(
         \\f x =
-        \\    (\y -> y?) x
+        \\    (λy -> y?) x
         \\
         \\
         \\g =
-        \\    \y -> y?
+        \\    λy -> y?
         \\
     , .{}, &.{
-        .{ .code = .question_in_lambda, .line = 2, .col = 13 },
-        .{ .code = .question_in_lambda, .line = 6, .col = 12 },
+        .{ .code = .question_in_lambda, .line = 2, .col = 14 },
+        .{ .code = .question_in_lambda, .line = 6, .col = 13 },
     });
 }
 
@@ -5235,7 +5235,7 @@ test "`if` becomes a two-branch case on the prelude Bool constructors" {
 test "lambdas stay n-ary and an accessor becomes a one-parameter lambda around a field access" {
     try expectDecls(
         \\f =
-        \\    ( \a b -> a, .name )
+        \\    ( λa b -> a, .name )
         \\
     ,
         \\decl 0: value f
@@ -5568,11 +5568,11 @@ test "unbound names in every namespace, and an unknown module alias" {
 test "sibling scopes may reuse a name; nested ones may not" {
     try expectErrors(
         \\ok =
-        \\    ( \k -> k, \k -> k )
+        \\    ( λk -> k, λk -> k )
         \\
         \\
         \\bad =
-        \\    \k -> \k -> k
+        \\    λk -> λk -> k
         \\
         \\
         \\branches m =
@@ -5584,7 +5584,7 @@ test "sibling scopes may reuse a name; nested ones may not" {
         \\            n
         \\
     , .{}, &.{
-        .{ .code = .shadowing, .line = 6, .col = 12 },
+        .{ .code = .shadowing, .line = 6, .col = 14 },
     });
 }
 
@@ -5650,13 +5650,13 @@ test "a name bound twice in one pattern set is duplicate_pattern_variable, not s
         \\
         \\
         \\g =
-        \\    \{ x, x } -> x
+        \\    λ{ x, x } -> x
         \\
     , .{}, &.{
         .{ .code = .duplicate_pattern_variable, .line = 1, .col = 5 },
         .{ .code = .duplicate_pattern_variable, .line = 3, .col = 16 },
         .{ .code = .duplicate_pattern_variable, .line = 3, .col = 26 },
-        .{ .code = .duplicate_pattern_variable, .line = 8, .col = 11 },
+        .{ .code = .duplicate_pattern_variable, .line = 8, .col = 12 },
     });
 }
 
@@ -6116,7 +6116,7 @@ test "fuzz: arbitrary bytes never panic and always lower in bounds" {
         }
     }.testOne, .{ .corpus = &.{
         "x = a |> b <| c\n",
-        "f x = let y = x? in \\z -> z?\n",
+        "f x = let y = x? in λz -> z?\n",
         "import A exposing (a, B)\ntype B = B\na = B\n",
         "x = \"a ${ b } \\u{41}\" ++ \\\\raw\n",
         "type alias R = { a : b }\nr = { r | a = .a }\n",

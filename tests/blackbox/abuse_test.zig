@@ -807,7 +807,7 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
     for ([_]usize{ 119, 120 }) |depth| {
         var source: std.ArrayList(u8) = .empty;
         try source.appendSlice(a, "import Node exposing (Program)\n\n\nxs : Int\nxs =\n    ");
-        for (0..depth) |i| try source.print(a, "(\\x{d} -> ", .{i});
+        for (0..depth) |i| try source.print(a, "(λx{d} -> ", .{i});
         try source.appendSlice(a, "1");
         for (0..depth) |_| try source.appendSlice(a, ") 1");
         try source.appendSlice(a, "\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt xs ]\n");
@@ -1285,7 +1285,7 @@ test "a row of glued siblings past the line's width formats to output linear in 
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
-    const item = "<For each={x.rows}>{\\r -> <li>{r}</li>}</For>";
+    const item = "<For each={x.rows}>{λr -> <li>{r}</li>}</For>";
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
     var want: std.ArrayList(u8) = .empty;

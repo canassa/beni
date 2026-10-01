@@ -41,7 +41,11 @@ pub fn count(text: []const u8) Counts {
             while (i < text.len and isWord(text[i])) i += 1;
         } else if (isOp(ch)) {
             while (i < text.len and isOp(text[i])) i += 1;
-        } else i += 1;
+        } else {
+            // One character, however many bytes: `λ` is one token.
+            i += 1;
+            while (i < text.len and text[i] & 0xC0 == 0x80) i += 1;
+        }
     }
     if (line_has) c.lines += 1;
     return c;

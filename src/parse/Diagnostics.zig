@@ -409,7 +409,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\I was parsing {s} and ran into `{s}`, which cannot be an argument on its own.
                     \\
                     \\A `let`, `if`, `case` or lambda may end an expression, but as an argument it must
-                    \\be wrapped in parentheses: `f (\x -> x)`.
+                    \\be wrapped in parentheses: `f (λx -> x)`.
                 , .{ contextText(item.context), text });
             } else {
                 try w.print("I was parsing {s} and ran into `{s}`. I was expecting {s}.", .{ contextText(item.context), text, constructText(item.construct) });
@@ -571,15 +571,15 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\I found a `_` where an expression should be.
             \\
             \\`_` is the placeholder for an argument a call does not supply: `f a _ c` is
-            \\`\x -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,
+            \\`λx -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,
             \\be an operand, or sit in parentheses. For a value you do not care about, name it.
         ),
         .multiple_placeholders => try w.writeAll(
             \\I found a second `_` in the same call.
             \\
-            \\A call may leave one argument open: `f a _ c` is `\x -> f a x c`. Two open
+            \\A call may leave one argument open: `f a _ c` is `λx -> f a x c`. Two open
             \\arguments have no shorter form than the lambda they stand for, so write `f _ b _`
-            \\out in full: `\x y -> f x b y`.
+            \\out in full: `λx y -> f x b y`.
         ),
         .operator_not_a_function => try w.print(
             \\I found `({s})`, but `{s}` is not a function.
@@ -596,7 +596,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\on the right, so the right of `|>` must be that call — a function, or a call it is
             \\one argument short of. A `let`, `if`, `case` or lambda has no argument list to
             \\insert into. Parentheses do not hand it over as a value either — they are looked
-            \\through, so `5 |> (\y -> y + 1)` CALLS the lambda on `5` and is `6`. Write that if
+            \\through, so `5 |> (λy -> y + 1)` CALLS the lambda on `5` and is `6`. Write that if
             \\it is what you meant. When the block is the argument rather than the function, it
             \\belongs on the right of `<|`, which does carry one: `f a <| case x of ...`.
         , .{text}),
@@ -983,12 +983,12 @@ test "message: the soft errors" {
 
 test "message: the placeholder and the bind (language.md §6.7)" {
     try expectMessage(
-        "I found a `_` where an expression should be.\n\n`_` is the placeholder for an argument a call does not supply: `f a _ c` is\n`\\x -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,\nbe an operand, or sit in parentheses. For a value you do not care about, name it.",
+        "I found a `_` where an expression should be.\n\n`_` is the placeholder for an argument a call does not supply: `f a _ c` is\n`λx -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,\nbe an operand, or sit in parentheses. For a value you do not care about, name it.",
         .{ .code = .placeholder_outside_argument, .start = 4, .end = 5, .context = .expression },
         "y = _ + 1",
     );
     try expectMessage(
-        "I found a second `_` in the same call.\n\nA call may leave one argument open: `f a _ c` is `\\x -> f a x c`. Two open\narguments have no shorter form than the lambda they stand for, so write `f _ b _`\nout in full: `\\x y -> f x b y`.",
+        "I found a second `_` in the same call.\n\nA call may leave one argument open: `f a _ c` is `λx -> f a x c`. Two open\narguments have no shorter form than the lambda they stand for, so write `f _ b _`\nout in full: `λx y -> f x b y`.",
         .{ .code = .multiple_placeholders, .start = 10, .end = 11, .context = .expression },
         "y = f _ b _",
     );

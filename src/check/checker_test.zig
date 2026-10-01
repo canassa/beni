@@ -603,7 +603,7 @@ test "the arity rule of §8.3 fires before the generic mismatch" {
     try expectCodes(&.{.type_mismatch},
         \\pub total : List Int -> Int
         \\total xs =
-        \\    List.foldl (\x -> x) 0 xs
+        \\    List.foldl (λx -> x) 0 xs
         \\
     );
     // `_` is how a call leaves one argument open, and it is not an arity

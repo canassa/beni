@@ -421,9 +421,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             other,
             if (std.mem.eql(u8, other, "For")) @as([]const u8, "each item") else "the value",
             if (std.mem.eql(u8, other, "For"))
-                @as([]const u8, "<For each={items}>{\\item -> <li>{item.label}</li>}</For>")
+                @as([]const u8, "<For each={items}>{λitem -> <li>{item.label}</li>}</For>")
             else
-                "<Show when={model.user} keyed>{\\user -> <UserEditor user={user} />}</Show>",
+                "<Show when={model.user} keyed>{λuser -> <UserEditor user={user} />}</Show>",
         }),
         .unknown_form_attribute => {
             const is_for = std.mem.eql(u8, other, "For");
@@ -435,12 +435,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             .missing_each => try w.writeAll(
                 \\This `<For>` has no `each`: the list it renders.
                 \\
-                \\    <For each={items} keyed={.id}>{\item -> <li>{item.label}</li>}</For>
+                \\    <For each={items} keyed={.id}>{λitem -> <li>{item.label}</li>}</For>
             ),
             .missing_when => try w.writeAll(
                 \\This `<Show>` has no `when`: the `Maybe` whose value it shows.
                 \\
-                \\    <Show when={model.user} keyed>{\user -> <UserEditor user={user} />}</Show>
+                \\    <Show when={model.user} keyed>{λuser -> <UserEditor user={user} />}</Show>
             ),
             else => {
                 try w.writeAll(
@@ -635,8 +635,8 @@ test "message: a name with an earlier occurrence quotes its line" {
     );
     try expectMessage(
         "The name `k` is already bound on line 1.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope, whether\nfrom an enclosing binding, a top-level declaration, an `exposing` list or the\nprelude. Rename one of them.",
-        .{ .code = .shadowing, .start = 7, .end = 8, .other_start = 2, .other_end = 3 },
-        "f k = \\k -> k\n",
+        .{ .code = .shadowing, .start = 8, .end = 9, .other_start = 2, .other_end = 3 },
+        "f k = λk -> k\n",
     );
 }
 

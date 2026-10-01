@@ -387,7 +387,7 @@ moveRedRight tree =
 --| The function is last, so the one you write inline reads after the key it
 --| applies to.
 --|
---|     update animals "Tom" (\_ -> Just Cat)
+--|     update animals "Tom" (λ_ -> Just Cat)
 pub update : Dict k v, k, (Maybe v -> Maybe v) -> Dict k v
     where k.compare : k, k -> Order
 update dict targetKey alter =
@@ -465,7 +465,7 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
 --| Apply a function to all values in a dictionary. The keys, and therefore
 --| the ordering, are untouched.
 --|
---|     map (fromList [ ( "a", 1 ) ]) (\_ value -> value + 1)
+--|     map (fromList [ ( "a", 1 ) ]) (λ_ value -> value + 1)
 --|
 --| `func` is called in ascending key order (`checker.md` Appendix B), which
 --| is what `mapTree` binds its three pieces in order to get.
@@ -491,7 +491,7 @@ mapTree tree func =
 --| Fold over the key-value pairs in a dictionary from lowest key to highest
 --| key.
 --|
---|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (\_ _ count -> count + 1) == 2
+--|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (λ_ _ count -> count + 1) == 2
 pub foldl : Dict k v, b, (k, v, b -> b) -> b
 foldl (Dict tree) acc func = foldlTree tree acc func
 
@@ -509,7 +509,7 @@ foldlTree tree acc func =
 --| Fold over the key-value pairs in a dictionary from highest key to lowest
 --| key.
 --|
---|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (\key _ names -> [ key, ...names ]) == [ "a", "b" ]
+--|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (λkey _ names -> [ key, ...names ]) == [ "a", "b" ]
 pub foldr : Dict k v, b, (k, v, b -> b) -> b
 foldr (Dict tree) acc func = foldrTree tree acc func
 
@@ -526,7 +526,7 @@ foldrTree tree acc func =
 
 --| Keep only the key-value pairs that pass the given test.
 --|
---|     filter animals (\_ animal -> animal == Cat)
+--|     filter animals (λ_ animal -> animal == Cat)
 pub filter : Dict k v, (k, v -> Bool) -> Dict k v
     where k.compare : k, k -> Order
 filter (Dict tree) isGood =
@@ -545,7 +545,7 @@ filter (Dict tree) isGood =
 --| contains all key-value pairs which passed the test, and the second
 --| contains the pairs that did not.
 --|
---|     partition animals (\_ animal -> animal == Cat)
+--|     partition animals (λ_ animal -> animal == Cat)
 pub partition : Dict k v, (k, v -> Bool) -> ( Dict k v, Dict k v )
     where k.compare : k, k -> Order
 partition (Dict tree) isGood =

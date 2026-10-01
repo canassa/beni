@@ -77,8 +77,8 @@ map2 ma mb func =
 
 --| Apply a function if all three `Maybe` values are `Just` a value.
 --|
---|     map3 (Just 1) (Just 2) (Just 3) (\a b c -> a + b + c) == Just 6
---|     map3 (Just 1) Nothing (Just 3) (\a b c -> a + b + c) == Nothing
+--|     map3 (Just 1) (Just 2) (Just 3) (λa b c -> a + b + c) == Just 6
+--|     map3 (Just 1) Nothing (Just 3) (λa b c -> a + b + c) == Nothing
 pub map3 : Maybe a, Maybe b, Maybe c, (a, b, c -> value) -> Maybe value
 map3 ma mb mc func =
     case ma of
@@ -171,8 +171,8 @@ map5 ma mb mc md me func =
 
 --| Chain together many computations that may fail.
 --|
---|     andThen (Just 1) (\x -> Just (x + 1)) == Just 2
---|     andThen Nothing (\x -> Just (x + 1)) == Nothing
+--|     andThen (Just 1) (λx -> Just (x + 1)) == Just 2
+--|     andThen Nothing (λx -> Just (x + 1)) == Nothing
 --|
 --| The callback comes last, so `let x <- andThen maybe` binds the rest of the
 --| block as the callback. The `?` operator does the same thing with less

@@ -765,7 +765,7 @@ pub const Reporter = struct {
         w.writeAll(
             \\
             \\Hint: every call supplies every argument. To make a function out of this one,
-            \\write the missing argument as `_`: `f a _` is `\x -> f a x`.
+            \\write the missing argument as `_`: `f a _` is `λx -> f a x`.
             \\
         ) catch return error.OutOfMemory;
         try r.emit(.too_few_args, region, &out);
