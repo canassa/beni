@@ -73,7 +73,7 @@ listLength = 1000
 
 
 makeRecord : Int -> Rec5
-makeRecord n = { a = n, b = String.fromInt n, c = modBy n 2 == 0, d = toFloat n, e = 500 - n }
+makeRecord n = { a = n, b = String.fromInt n, c = Int.mod n 2 == 0, d = toFloat n, e = 500 - n }
 
 
 records : List Rec5
@@ -86,7 +86,7 @@ probe = makeRecord 499
 
 makeShape : Int -> Shape
 makeShape n =
-    case modBy n 3 of
+    case Int.mod n 3 of
         0 ->
             Circle (toFloat n)
 

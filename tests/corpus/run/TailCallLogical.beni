@@ -22,7 +22,7 @@ reaches n target = n >= target || reaches (n + 1) target
 
 
 stays : Int, Int -> Bool
-stays n stop = n >= stop || (modBy n 7 /= 3 || n < 999990) && stays (n + 1) stop
+stays n stop = n >= stop || (Int.mod n 7 /= 3 || n < 999990) && stays (n + 1) stop
 
 
 either : Int, Int -> Bool

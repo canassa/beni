@@ -10,7 +10,8 @@ import String
 --| `n` strings of 8 to 20 characters, most sharing a prefix with the
 --| previous one, so a comparison walks past the first character.
 pub strings : Int -> List String
-strings n = List.map (List.range 1 n) (λi -> "item-${String.fromInt (modBy (i * 7919) 1009)}-tail")
+strings n =
+    List.map (List.range 1 n) (λi -> "item-${String.fromInt (Int.mod (i * 7919) 1009)}-tail")
 
 
 --| The same strings, as text separated by spaces and new lines.
@@ -165,9 +166,9 @@ math ns =
             acc
                 + floor x
                 + round (sqrt x)
-                + ceiling (logBase x 2)
+                + ceiling (Float.log x 2)
                 + truncate (sin x * 100)
-                + modBy n 13
-                + remainderBy n 11
+                + Int.mod n 13
+                + Int.rem n 11
                 + n // 3
         )

@@ -50,7 +50,7 @@ type alias State =
 
 -- MINSTD: every product stays below 2^53, so the sequence is exact.
 next : Int -> Int
-next seed = modBy (seed * 48271) 2147483647
+next seed = Int.mod (seed * 48271) 2147483647
 
 
 pick : Int, Int -> Int
@@ -58,7 +58,7 @@ pick seed n =
     if n <= 0 then
         0
     else
-        modBy (seed // 256) n
+        Int.mod (seed // 256) n
 
 
 empty : Model
@@ -292,7 +292,7 @@ walk s v n =
                     tail = { list = rest, model = modelDrop v.model 1 }
 
                     s2 =
-                        if modBy n 97 == 0 then
+                        if Int.mod n 97 == 0 then
                             note s ("re-cons at " ++ String.fromInt n)
                                 { list = [ h, ...rest ], model = v.model }
                         else

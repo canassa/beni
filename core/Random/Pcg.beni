@@ -92,7 +92,7 @@ int a b =
         range = max a b - lo + 1
 
         -- 2³² mod range: the outputs below it would favour the low values.
-        threshold = modBy (4294967296 - range) range
+        threshold = Int.mod (4294967296 - range) range
     in
     Generator (λseed -> unbiased seed lo range threshold)
 
@@ -105,7 +105,7 @@ unbiased seed lo range threshold =
     if x < threshold then
         unbiased (next seed) lo range threshold
     else
-        ( lo + modBy x range, next seed )
+        ( lo + Int.mod x range, next seed )
 
 
 --| The least integer `int` takes.

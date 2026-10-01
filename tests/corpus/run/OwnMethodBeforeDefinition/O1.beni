@@ -12,4 +12,4 @@ eq left right =
         T x ->
             case right of
                 T y ->
-                    modBy x 10 == modBy y 10
+                    Int.mod x 10 == Int.mod y 10

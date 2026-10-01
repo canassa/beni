@@ -20,7 +20,7 @@ use a b = T a == T b
 eq (T x) (T y) = helper x y
 
 
-helper x y = modBy x 10 == modBy y 10
+helper x y = Int.mod x 10 == Int.mod y 10
 
 
 show : Bool -> String

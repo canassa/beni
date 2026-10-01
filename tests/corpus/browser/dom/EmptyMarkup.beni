@@ -56,7 +56,7 @@ view model =
         <ul>
             <For each={model.rows} keyed={λn -> n}>
                 {λn ->
-                    if modBy n 2 == 1 then
+                    if Int.mod n 2 == 1 then
                         <></>
                     else
                         <li>{n}</li>

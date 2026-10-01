@@ -90,7 +90,7 @@ total ts acc =
 
 tokenFor : Int -> Token
 tokenFor n =
-    case Basics.modBy n 9 of
+    case Int.mod n 9 of
         0 ->
             Plus
 

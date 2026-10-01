@@ -13,7 +13,7 @@ eq : T, T -> Bool
 eq a b =
     case ( a, b ) of
         ( T x, T y ) ->
-            modBy x 10 == modBy y 10
+            Int.mod x 10 == Int.mod y 10
 
 
 pub inside : T, T -> Bool

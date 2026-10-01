@@ -13,12 +13,15 @@ type alias Grid =
 
 pub make : Int, Int -> Grid
 make w h =
-    { w = w, h = h, cells = Array.initialize (w * h) (λi -> if modBy (i * 7) 5 == 0 then 1 else 0) }
+    { w = w
+    , h = h
+    , cells = Array.initialize (w * h) (λi -> if Int.mod (i * 7) 5 == 0 then 1 else 0)
+    }
 
 
 cell : Grid, Int, Int -> Int
 cell g x y =
-    case Array.get g.cells (modBy y g.h * g.w + modBy x g.w) of
+    case Array.get g.cells (Int.mod y g.h * g.w + Int.mod x g.w) of
         Just v ->
             v
 
@@ -49,15 +52,15 @@ tickHelp g j k seed =
         g
     else
         let
-            i = modBy (seed + j * 7919) (g.w * g.h)
+            i = Int.mod (seed + j * 7919) (g.w * g.h)
 
-            x = modBy i g.w
+            x = Int.mod i g.w
 
             y = i // g.w
 
             n = neighbours g x y
 
-            v = cell g x y + 1 + modBy n 2
+            v = cell g x y + 1 + Int.mod n 2
         in
         tickHelp { g | cells = Array.set g.cells i v } (j + 1) k seed
 

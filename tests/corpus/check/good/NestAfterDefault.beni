@@ -25,7 +25,7 @@ f m =
     f m
 
 
-eq (K a) (K b) = modBy 10 a == modBy 10 b
+eq (K a) (K b) = Int.mod 10 a == Int.mod 10 b
 
 
 pub h : Result String K -> Result String Int

@@ -22,14 +22,14 @@ map xs = List.map xs (λx -> x + 1)
 
 
 pub filter : List Int -> List Int
-filter xs = List.filter xs (λx -> modBy x 2 == 0)
+filter xs = List.filter xs (λx -> Int.mod x 2 == 0)
 
 
 pub filterMap : List Int -> List Int
 filterMap xs =
     List.filterMap xs
         (λx ->
-            if modBy x 2 == 0 then
+            if Int.mod x 2 == 0 then
                 Just x
             else
                 Nothing
@@ -69,7 +69,7 @@ map5 xs = List.map5 xs xs xs xs xs (λa b c d v -> a + b + c + d + v)
 
 
 pub partition : List Int -> ( List Int, List Int )
-partition xs = List.partition xs (λx -> modBy x 2 == 0)
+partition xs = List.partition xs (λx -> Int.mod x 2 == 0)
 
 
 pub unzip : List ( Int, Int ) -> ( List Int, List Int )

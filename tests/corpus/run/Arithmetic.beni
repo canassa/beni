@@ -16,6 +16,6 @@ main =
         , String.fromInt (abs (0 - 9))
         , String.fromFloat (7 / 2)
         , String.fromInt (7 // 2)
-        , String.fromInt (modBy (0 - 1) 4)
-        , String.fromInt (remainderBy (0 - 1) 4)
+        , String.fromInt (Int.mod (0 - 1) 4)
+        , String.fromInt (Int.rem (0 - 1) 4)
         ]

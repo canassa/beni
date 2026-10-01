@@ -60,7 +60,7 @@ lookupsHelp items j k acc =
         acc
     else
         let
-            id = modBy (j * 7919) (Array.length items)
+            id = Int.mod (j * 7919) (Array.length items)
         in
         case find items id 0 (Array.length items - 1) of
             Just it ->

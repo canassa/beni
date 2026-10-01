@@ -64,7 +64,7 @@ main =
         , show (List.filter [] (λx -> x > 1))
         , show (List.filter [ 1, 2, 3, 4 ] (λx -> x > 10))
         , show (List.filter [ 1, 2, 3, 4 ] (λx -> x > 0))
-        , show (List.filter [ 1, 2, 3, 4 ] (λx -> modBy x 2 == 1))
+        , show (List.filter [ 1, 2, 3, 4 ] (λx -> Int.mod x 2 == 1))
         , show
             (List.filterMap
                 [ 1, 2, 3 ]

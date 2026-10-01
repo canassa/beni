@@ -14,7 +14,7 @@ main =
         , String.fromInt (List.foldr [ 1, 2, 3 ] 0 (λx acc -> x - acc))
         , String.fromInt (List.sum (List.map (List.range 1 5) (λn -> n * n)))
         , String.fromInt (List.product [ 1, 2, 3, 4 ])
-        , String.fromInt (List.length (List.filter (List.range 1 10) (λn -> modBy n 2 == 0)))
+        , String.fromInt (List.length (List.filter (List.range 1 10) (λn -> Int.mod n 2 == 0)))
         , String.join (List.map (List.sort [ 3, 1, 2 ]) String.fromInt) ","
         , String.join (List.map (List.take (List.range 1 10) 3) String.fromInt) ","
         , String.join (List.map (List.drop (List.range 1 10) 7) String.fromInt) ","

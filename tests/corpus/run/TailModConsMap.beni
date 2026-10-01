@@ -47,7 +47,7 @@ main =
     let
         big = List.range 1 100000
         doubled = mapRec big (λx -> x * 2)
-        odd = filterRec big (λx -> modBy x 2 == 1)
+        odd = filterRec big (λx -> Int.mod x 2 == 1)
     in
     Node.printLines
         [ show (mapRec [ 1, 2, 3 ] (λx -> x * 10))

@@ -125,7 +125,7 @@ readers ( name, xs ) =
     in
     String.join
         [ name
-        , String.fromInt (List.foldr xs 0 (λx acc -> acc * 3 + x |> modBy 1000003))
+        , String.fromInt (List.foldr xs 0 (λx acc -> acc * 3 + x |> Int.mod 1000003))
         , String.fromInt (weighted (List.reverse xs))
         , String.fromInt (weighted (List.sortWith xs (λa b -> compare b a)))
         , ends
@@ -170,6 +170,6 @@ main =
                , String.join (List.foldl words [] (λw acc -> List.push acc w)) "-"
                , String.join (afterFirst [ "x", ...words ]) "+"
                , Debug.toString
-                   (Dict.toList (Dict.fromList (List.map pushed (λn -> ( modBy n 7, n )))))
+                   (Dict.toList (Dict.fromList (List.map pushed (λn -> ( Int.mod n 7, n )))))
                ]
         )

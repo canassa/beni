@@ -44,7 +44,7 @@ libMap xs = List.map xs (λx -> x * 3 + 1)
 
 
 pub libFilter : List Int -> List Int
-libFilter xs = List.filter xs (λx -> modBy x 3 /= 0)
+libFilter xs = List.filter xs (λx -> Int.mod x 3 /= 0)
 
 
 -- 4. building by prepending in a fold ---------------------------------------------
@@ -79,7 +79,7 @@ partitionFold xs =
         (λx pair ->
             case pair of
                 ( evens, odds ) ->
-                    if modBy x 2 == 0 then
+                    if Int.mod x 2 == 0 then
                         ( [ x, ...evens ], odds )
                     else
                         ( evens, [ x, ...odds ] )

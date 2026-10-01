@@ -13,7 +13,7 @@ type alias Grid =
 
 cell : Grid, Int, Int -> Int
 cell g x y =
-    case Array.get g.cells (modBy y g.h * g.w + modBy x g.w) of
+    case Array.get g.cells (Int.mod y g.h * g.w + Int.mod x g.w) of
         Just v ->
             v
 
@@ -24,7 +24,7 @@ cell g x y =
 alive : Grid, Int -> Int
 alive g i =
     let
-        x = modBy i g.w
+        x = Int.mod i g.w
         y = i // g.w
 
         n =

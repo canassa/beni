@@ -23,7 +23,7 @@ showBool b =
 main : Program
 main =
     Node.printLines
-        [ String.fromFloat (logBase 100.0 10.0)
+        [ String.fromFloat (Float.log 100.0 10.0)
         , String.fromFloat e
         , String.fromFloat pi
         , String.fromFloat (cos 0.0)

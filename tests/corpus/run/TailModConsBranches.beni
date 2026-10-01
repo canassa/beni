@@ -129,9 +129,9 @@ opsFor : Int -> List Op
 opsFor n =
     List.map (List.range 1 n)
         (λi ->
-            if modBy i 3 == 0 then
+            if Int.mod i 3 == 0 then
                 Skip
-            else if modBy i 3 == 1 then
+            else if Int.mod i 3 == 1 then
                 Keep i
             else
                 Dup i

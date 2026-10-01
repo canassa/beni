@@ -106,13 +106,13 @@ nouns =
 -- Solid's `Math.random` never meets (`plans/runtime-in-beni.md`, *Append
 -- against Solid 1*).
 next : Int -> Int
-next seed = modBy (seed * 16807) 1073741789
+next seed = Int.mod (seed * 16807) 1073741789
 
 
 -- A word by its index: `List.get`, not `List.drop` then `List.head`, which
 -- makes a view of the list to read one element.
 pick : List String, Int, Int -> String
-pick words count seed = List.get words (modBy seed count) |> Maybe.withDefault ""
+pick words count seed = List.get words (Int.mod seed count) |> Maybe.withDefault ""
 
 
 -- `count` rows with ids from `id` up, and the seed after them.
@@ -180,7 +180,7 @@ update msg model =
                     List.indexedMap
                         model.rows
                         (λi row ->
-                            if modBy i 10 == 0 then { row | label = row.label ++ " !!!" } else row
+                            if Int.mod i 10 == 0 then { row | label = row.label ++ " !!!" } else row
                         )
             }
 

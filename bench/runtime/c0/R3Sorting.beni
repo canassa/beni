@@ -53,7 +53,7 @@ values : List Int
 values =
     List.concatMap
         (List.range 0 (blocks - 1))
-        (λb -> List.map (List.range 1 perBlock) (λi -> modBy ((b * perBlock + i) * 7919) 104729))
+        (λb -> List.map (List.range 1 perBlock) (λi -> Int.mod ((b * perBlock + i) * 7919) 104729))
 
 
 strings : List String
@@ -61,13 +61,13 @@ strings = List.map values String.fromInt
 
 
 people : List Person
-people = List.map values (λn -> { name = String.fromInt n, age = modBy n 97 })
+people = List.map values (λn -> { name = String.fromInt n, age = Int.mod n 97 })
 
 
 -- Order-sensitive over the whole list: swapping any two distinct elements
 -- changes the answer.
 hash : List Int -> Int
-hash xs = List.foldl xs 0 (λx acc -> modBy (acc * 31 + x) modulus)
+hash xs = List.foldl xs 0 (λx acc -> Int.mod (acc * 31 + x) modulus)
 
 
 toInt : String -> Int
@@ -94,7 +94,7 @@ main =
                                     (λp -> p.age * 1000 + toInt p.name)
                                 )
                     in
-                    modBy (acc + ints + texts + ages) modulus
+                    Int.mod (acc + ints + texts + ages) modulus
                 )
     in
     Node.print (String.join [ String.fromInt (List.length values), String.fromInt total ] " ")

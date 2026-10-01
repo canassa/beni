@@ -72,7 +72,7 @@ update msg model =
             { model
                 | rows =
                     Array.indexedMap model.rows
-                        (λi r -> if modBy i 10 == 0 then { r | label = r.label ++ " !!!" } else r)
+                        (λi r -> if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r)
             }
 
         Swap i j ->

@@ -25,7 +25,7 @@ pub ma (K n) x =
     in
     if not flag then
         x
-    else if modBy 2 n == 0 then
+    else if Int.mod 2 n == 0 then
         let
             ( again, _ ) = twice x
         in

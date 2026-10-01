@@ -28,7 +28,7 @@ main =
                         (λx acc ->
                             let
                                 _ =
-                                    if modBy x 1000 == 0 then
+                                    if Int.mod x 1000 == 0 then
                                         Task.yieldNow ()
                                     else
                                         ()

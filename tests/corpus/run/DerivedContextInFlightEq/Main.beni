@@ -20,7 +20,7 @@ pub type T
 
 pub eq (T a) (T b) =
     if a > 100 then
-        modBy a 10 == modBy b 10
+        Int.mod a 10 == Int.mod b 10
     else
         viaBox (T (a + 100)) (T (b + 100))
 

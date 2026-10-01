@@ -4,4 +4,4 @@ pub type K
 
 
 pub eq : K, K -> Bool
-eq (K a) (K b) = modBy a 10 == modBy b 10
+eq (K a) (K b) = Int.mod a 10 == Int.mod b 10

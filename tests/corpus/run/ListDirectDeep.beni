@@ -28,17 +28,17 @@ ends xs =
 main : Program
 main =
     let
-        ( odd, even ) = List.partition cells (λn -> modBy n 2 == 1)
+        ( odd, even ) = List.partition cells (λn -> Int.mod n 2 == 1)
         ( firsts, seconds ) = List.unzip (List.map cells (λn -> ( n, n * 2 )))
     in
     Node.printLines
         [ ends (List.map cells (λn -> n * 2))
-        , ends (List.filter cells (λn -> modBy n 3 == 0))
+        , ends (List.filter cells (λn -> Int.mod n 3 == 0))
         , ends
             (List.filterMap
                 cells
                 (λn ->
-                    if modBy n 3 == 0 then
+                    if Int.mod n 3 == 0 then
                         Nothing
                     else
                         Just n

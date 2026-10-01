@@ -40,7 +40,7 @@ type alias Person =
 
 
 numbers : List Int
-numbers = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
+numbers = List.map (List.range 1 500) (λn -> Int.mod (n * 7919) 499)
 
 
 texts : List String
@@ -48,7 +48,7 @@ texts = List.map numbers String.fromInt
 
 
 people : List Person
-people = List.map numbers (λn -> { name = String.fromInt n, age = modBy n 97 })
+people = List.map numbers (λn -> { name = String.fromInt n, age = Int.mod n 97 })
 
 
 numberMark : Int

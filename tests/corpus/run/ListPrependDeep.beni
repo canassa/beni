@@ -62,7 +62,7 @@ churn i s =
     else
         let
             top =
-                case modBy i 3 of
+                case Int.mod i 3 of
                     2 ->
                         case s.top of
                             [ _, ...rest ] ->
@@ -75,7 +75,7 @@ churn i s =
                         [ i, ...s.top ]
 
             kept =
-                if modBy i 10000 == 0 then
+                if Int.mod i 10000 == 0 then
                     List.push s.kept top
                 else
                     s.kept

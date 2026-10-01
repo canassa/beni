@@ -51,5 +51,5 @@ main =
                 )
             )
         , String.fromInt (Int32.toInt (Int32.fromInt 4294967297))
-        , String.fromInt (7 // 0 + modBy 7 0 + remainderBy 7 0)
+        , String.fromInt (7 // 0 + Int.mod 7 0 + Int.rem 7 0)
         ]

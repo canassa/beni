@@ -23,7 +23,7 @@ type Step
 
 stepFor : Int -> Step
 stepFor n =
-    case Basics.modBy n 4 of
+    case Int.mod n 4 of
         0 ->
             Up
 

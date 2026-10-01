@@ -55,7 +55,7 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
+values = List.map (List.range 1 500) (λn -> Int.mod (n * 7919) 499)
 
 
 -- Level 3: the work. Everything it knows about `a` arrives as evidence.

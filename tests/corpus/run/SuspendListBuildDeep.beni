@@ -39,7 +39,7 @@ main =
                 slow n =
                     let
                         _ =
-                            if modBy n 1000 == 0 then
+                            if Int.mod n 1000 == 0 then
                                 Task.yieldNow ()
                             else
                                 ()
@@ -48,12 +48,12 @@ main =
             in
             Node.printLines
                 [ ends (List.map cells (λn -> n * Task.join one))
-                , ends (List.filter cells (λn -> modBy n (2 * Task.join one) == 0))
+                , ends (List.filter cells (λn -> Int.mod n (2 * Task.join one) == 0))
                 , ends
                     (List.filterMap
                         cells
                         (λn ->
-                            if modBy n 3 == Task.join one then
+                            if Int.mod n 3 == Task.join one then
                                 Nothing
                             else
                                 Just n

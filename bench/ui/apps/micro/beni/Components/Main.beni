@@ -72,7 +72,7 @@ update msg model =
 
 bump : Model -> Model
 bump model =
-    case modBy model.tick 50 of
+    case Int.mod model.tick 50 of
         0 ->
             { model | tick = model.tick + 1, v0 = model.v0 + 1 }
 

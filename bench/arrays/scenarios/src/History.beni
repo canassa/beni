@@ -38,7 +38,7 @@ editsHelp h j k seed =
         h
     else
         editsHelp
-            (edit h (modBy (seed + j * 7919) (Array.length h.current)) (-1 - seed - j))
+            (edit h (Int.mod (seed + j * 7919) (Array.length h.current)) (-1 - seed - j))
             (j + 1)
             k
             seed

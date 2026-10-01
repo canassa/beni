@@ -36,9 +36,9 @@ main =
         , String.repeat "ab" 3
         , "ab" |> String.repeat 3
         -- number first, then the modulus / the bounds.
-        , String.fromInt (Basics.modBy 11 4)
-        , String.fromInt (11 |> Basics.modBy 4)
-        , String.fromInt (Basics.remainderBy 11 4)
+        , String.fromInt (Int.mod 11 4)
+        , String.fromInt (11 |> Int.mod 4)
+        , String.fromInt (Int.rem 11 4)
         , String.fromInt (Basics.clamp 10 0 5)
         -- subject, then what to look for, then what to put in its place.
         , String.replace "a,b,c" "," "/"

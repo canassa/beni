@@ -44,7 +44,7 @@ notBoth a b = not (a && b) || not a
 
 
 pub divide : Int, Int -> Int
-divide a b = a // b + modBy b a + remainderBy b a
+divide a b = a // b + Int.mod b a + Int.rem b a
 
 
 pub wrap : Int32, Int32 -> Int
