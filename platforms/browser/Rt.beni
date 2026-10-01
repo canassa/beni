@@ -229,7 +229,12 @@ place s i =
 pub childHtml : V, V -> ()
 childHtml s b =
     if Js.isNull (Js.get s "i") then
-        place s (unit b (Js.get s "cx"))
+        -- `place`'s first arm, written here: this branch knows the slot is
+        -- empty, so a page whose only holes are these ships no `swap`
+        -- (`bench/minify/empty-page`, step 01).
+        i = unit b (Js.get s "cx")
+        _ = put (parentOf s) i (Js.get s "m")
+        Js.set s "i" i
     else
         Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
 

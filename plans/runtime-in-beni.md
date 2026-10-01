@@ -770,3 +770,50 @@ C=a=>{let b=[],c=Array.isArray(a)?a:a.$plain();for(let a of c){for(let c of a)b.
 
 The outer loop is `for…of` where the JavaScript counted; the printer braces a loop whose body is
 another loop.
+
+### The empty page's last items
+
+What the empty `browser` page still shipped after the port (539 brotli), each candidate priced
+alone on its release file by hand first (`hand-minify`: brotli 11, one edit at a time), then built:
+
+| item | priced alone | kind |
+|---|--:|---|
+| `childHtml` writes `place`'s first arm itself, so `swap` and `drop` go | −50 | `Rt.beni` source rule (`bench/minify/empty-page` step 01) |
+| a slot's `p` never `null` after `run`'s mount check: `parentOf` folds, the slot's `m` goes | −13 | `Spec` fact (narrowing past a `throw`) |
+| `mount`'s unread program parameter, its argument and the record it was | −11 | `Spec` (an unread parameter of a function every call of which is seen) |
+| `stop` (`()=>{f=true}`) written where it is called | −8 | `Spec` slice 8 for a statement body |
+| the kind's `m` called with its two unread arguments | −3 | `Spec`, as the parameter above |
+| `let e=…,f=e` | −3 | `Spec`/`Opt` (a copy of an unreassigned name) |
+
+**`childHtml` writes the first arm of `place` itself.** The branch has just tested that the slot is
+empty, and `place` tests it again; written in place, `childHtml` does one test and one call
+fewer, and a page whose only holes are `Html` holes no longer reaches `swap` or `drop` through
+`place` (`patch` still reaches `swap` where a page has another kind of block). A variant that kept
+the arm in a helper both called (`fill`) was measured and was larger on 46 of 56 pages (+442
+in all), so it was not taken.
+
+Release, brotli, every page (the step's previous commit against this one): the empty `browser`
+and `Tea.sandbox` pages **539 → 485** (−54), `Tea.element` 1 258 → 1 241, the `bench/ui` app
+5 679 → **5 644** (−35), 51 of the 56 `browser/` pages smaller (−3 to −60, −1 126 in all), four
+larger by 2–7 with less JavaScript (raw −63: brotli's matches moving), and `dom/ShowAndBranches`
++15 (raw +32): its keyed `Show` keeps `place`, so the arm is written twice.
+
+**Speed** (`bench/ui`, Chromium 153, Ryzen 9 5950X, `--taskset=8-15`, release builds of the app
+before and after, Solid 1 and Solid 2 in the same batches, each under 5 minutes; script median ms
+[IQR]). The app reaches `childHtml` once per render, at its root, where the slot is full: the same
+work as before.
+
+| | before | after | Solid 1 | Solid 2 |
+|---|--:|--:|--:|--:|
+| run1k (n = 10) | 3.67 [3.59–3.71] | 3.68 [3.60–3.74] | 3.76 | 4.63 |
+| replace1k (n = 16) | 7.82 [7.70–7.86] | 7.81 [7.76–7.85] | 8.65 | 9.74 |
+| update10th (n = 24) | 1.25 [1.11–1.57] | 1.35 [1.10–1.47] | 1.60 | 2.21 (n = 16) |
+| select (n = 10) | 1.11 [0.89–1.23] | 1.09 [0.84–1.25] | 1.22 | 2.56 |
+| swap (n = 8) | 0.97 [0.77–1.23] | 0.95 [0.76–1.00] | 1.23 | 1.48 |
+| remove (n = 8) | 0.47 [0.44–0.48] | 0.47 [0.46–0.48] | 0.50 | 0.89 |
+| create10k (n = 8) | 38.2 [38.0–38.9] | 38.6 [38.2–39.5] | 43.0 | 52.3 |
+| append1k (n = 8) | 3.78 [3.75–3.86] | 3.80 [3.77–3.93] | 4.00 | 5.02 |
+| clear (n = 8) | 15.6 [15.2–16.0] | 15.7 [15.5–16.0] | 16.0 | 17.9 |
+
+Every interquartile range overlaps (`update10th` was 1.06 / 1.23 at n = 16 and flipped at n = 24;
+`replace1k` was 7.72 / 7.85 at n = 10 and tied at n = 16); beni is ahead of both Solids on all nine.
