@@ -5642,6 +5642,21 @@ path, so there is no overflow case (research 36 §3.3). These walks and writes a
 access `boundary.md` §9.4.4 allows emitted code: on nodes the runtime's cloner returned, and no other
 object.
 
+**Markup with no nodes** (`<></>`, a fragment of nothing) still owns a place on the page, and holds
+it with one empty comment, cloned like any markup from a template of its own: `<!>`, no flag.
+**Not `document.createComment("")`** (`bench/minify/empty-page` step 22), nor `new Comment()`,
+measured and refused on 2026-10-02: a comment made in the page's document is not of the document a
+template's content lives in, so each one placed in a cloned instance is adopted into that inert
+document and then, with its row, back. Made 50 000 at a time into a fragment of the page, the made
+comment is the faster (Chrome 153: a clone 14.1 ms, `new Comment()` 13.6, `createComment` 12.4); on
+the table benchmark with one empty fragment per row it is the slower — `run1k` 5.32 ms against
+5.51 for `new Comment()` (n = 24, interquartile ranges apart), `append1k` 5.86 against 6.05 — while
+`template.content.ownerDocument.createComment("")` ties the clone (5.31 against 5.35). And it buys
+bytes only where the page has no other template (the empty page, −45 brotli bytes); beside one it
+costs them (`createComment`: +16 on the `bench/ui` app with an empty fragment per row). The test is
+`emit/dom/DomTemplates`'s `nothing` and the page `browser/dom/EmptyMarkup`. dom-expressions has no
+counterpart: an empty fragment there is an empty array, which `insert` holds no node for.
+
 **What each hole compiles to**, decided by the markup section of the checker's record
 (`checker-v2.md` §25.7) and the vocabulary row's facts, never by the value at run time. Items are
 written in source order, attributes and events interleaved (`language.md` §11.5):

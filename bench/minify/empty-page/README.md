@@ -158,6 +158,11 @@ overfits one brotli version and one page's set of kept units. terser's local
 4. **The `dom` lowering: a template that is one empty comment is
    `createComment("")`** (−21 here, every page's fragment and empty-hole
    markers, 11–20 % faster in Chrome) — small, and a rule for every page.
+   **Measured and refused 2026-10-02** (`backend.md` §15.3, *Markup with no
+   nodes*): faster alone, but a comment made in the page's document is
+   adopted into the inert document of the cloned row it is placed in, so on
+   the table with an empty fragment per row it is 3–4 % slower to create;
+   and beside other templates it costs bytes. It pays only on this page.
 5. **Printer and compactor passes for every page**: the emitted half's
    newlines (−13), `const` → `let` decided over the kept tokens rather than the
    whole file (−10 br, −16 gz; `Minify.constToLet` reads `assignedNames` over

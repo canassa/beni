@@ -1,0 +1,73 @@
+-- Markup with no nodes, in a page (backend.md §15.3, *Markup with no
+-- nodes*): `<></>` holds its place with one empty comment, cloned from
+-- its template, `<!>`. No page ran one before. A hole
+-- switches between an element and nothing and back, keeping its place
+-- among its siblings; a keyed row is nothing for odd ids, so a row of
+-- nothing is moved, removed and replaced with the others; and a
+-- component that renders nothing sits between two text runs.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Toggle
+    | Reverse
+    | Drop
+
+
+type alias Model =
+    { on : Bool, rows : List Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Toggle ->
+            { model | on = not model.on }
+
+        Reverse ->
+            { model | rows = List.reverse model.rows }
+
+        Drop ->
+            { model | rows = List.filter model.rows (\n -> n /= 2 && n /= 3) }
+
+
+nothing : Html msg
+nothing =
+    <></>
+
+
+maybeBold : Bool -> Html msg
+maybeBold on =
+    if on then
+        <b>on</b>
+
+    else
+        <></>
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="drop" onClick={Drop}>drop</button>
+        <p>before {maybeBold model.on} after</p>
+        <p>a {nothing} b</p>
+        <ul>
+            <For each={model.rows} keyed={\n -> n}>
+                {\n ->
+                    if modBy n 2 == 1 then
+                        <></>
+
+                    else
+                        <li>{n}</li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { on = False, rows = [ 1, 2, 3, 4 ] }, update = update, view = view }

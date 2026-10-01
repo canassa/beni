@@ -77,6 +77,13 @@ const DomTemplates$k51 = { m: (v$36, cx$37) => {
     i$39.a3 = v$40[3];
   }
 } };
+const DomTemplates$t55 = Rt$template("<!>", 0);
+const DomTemplates$k55 = { m: (v$41, cx$42) => {
+  const r$43 = DomTemplates$t55();
+  return { s: r$43, q: null, e: r$43 };
+}, p: (i$44, v$45) => {
+} };
+const DomTemplates$b55 = { t: DomTemplates$k55, v: null };
 const DomTemplates$static = DomTemplates$b3;
 const DomTemplates$text = (r$1) => {
   const $t$6 = r$1.name;
@@ -96,4 +103,5 @@ const DomTemplates$attributes = (r$1) => {
   const $t$35 = r$1.tab;
   return { t: DomTemplates$k51, v: [$t$32, $t$33, $t$34, $t$35] };
 };
-export { DomTemplates$static, DomTemplates$text, DomTemplates$only, DomTemplates$attributes };
+const DomTemplates$nothing = DomTemplates$b55;
+export { DomTemplates$static, DomTemplates$text, DomTemplates$only, DomTemplates$attributes, DomTemplates$nothing };

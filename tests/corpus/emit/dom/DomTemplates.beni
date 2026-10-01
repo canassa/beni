@@ -8,7 +8,10 @@
 -- end tag the parser implies is left out. A text hole that is its
 -- parent's only child is a text node of the template; any other is made
 -- at mount before its marker — the next node of the template, or a `<!>`
--- between two text runs or where its parent has several holes.
+-- between two text runs or where its parent has several holes. Markup with
+-- no nodes holds its place with one empty comment, cloned from a template
+-- of its own, `<!>`, like any other markup (backend.md §15.3, *Markup with
+-- no nodes*).
 import Html exposing (Html)
 
 
@@ -30,3 +33,8 @@ only row =
 pub attributes : { id : String, title : String, off : Bool, tab : Int } -> Html msg
 attributes r =
     <div id={r.id} title={r.title} hidden={r.off} tabindex={r.tab} aria-label="static"><input disabled type="text" /></div>
+
+
+pub nothing : Html msg
+nothing =
+    <></>
