@@ -147,6 +147,19 @@ eval: []Var.Optional = &.{},
 readings: []Readings = &.{},
 /// What `run` solved; empty before it.
 solved: Solved = .{},
+/// The effect block a use is applying, read once (`decode`): its classes,
+/// its sites, and per class the index of its first site or `none`. Reused
+/// from use to use. Read per class or per site instead — `class` and
+/// `sites` walk the block from its start, and the first site of a class
+/// is a search — a check of `abuse_wide_test`'s 65 535-entry row, a
+/// declaration of a hundred `where` methods used 656 times, took 4 294
+/// million instructions; read once per use, 3 195 (2026-10-02).
+block_classes: std.ArrayList(Interface.EffectBlock.Class) = .empty,
+block_sites: std.ArrayList(Interface.EffectBlock.Site) = .empty,
+block_first: std.ArrayList(u32) = .empty,
+/// Per site of that block, the index of the next site of its class, or
+/// `none`: each class's sites in order, for a walk of a class's deps.
+block_next: std.ArrayList(u32) = .empty,
 
 pub const Readings = struct {
     scheme_start: u32 = none,
@@ -208,6 +221,10 @@ pub fn deinit(e: *Effects) void {
     gpa.free(e.eval);
     gpa.free(e.readings);
     e.solved.deinit(gpa);
+    e.block_classes.deinit(gpa);
+    e.block_sites.deinit(gpa);
+    e.block_first.deinit(gpa);
+    e.block_next.deinit(gpa);
     e.* = undefined;
 }
 
@@ -346,13 +363,13 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
     }
     const count = block.classCount();
     if (count == 0) return;
+    try e.decode(block);
     // A handful of classes, the common case, on the stack.
     var small: [8]Var.Optional = undefined;
     const reps = if (count <= small.len) small[0..count] else try e.gpa.alloc(Var.Optional, count);
     defer if (count > small.len) e.gpa.free(reps);
     @memset(reps, .none);
-    var sites = block.sites();
-    while (sites.next()) |site| {
+    for (e.block_sites.items) |site| {
         const v = e.follow(iface, site, body, quantified) orelse continue;
         if (reps[site.class].unwrap()) |rep| {
             try e.join(rep, v);
@@ -360,7 +377,7 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
     }
     for (0..count) |c| {
         const rep = reps[c].unwrap() orelse continue;
-        const class = block.class(@intCast(c));
+        const class = e.block_classes.items[c];
         const rung: Rung = @enumFromInt(@min(class.rung, 2));
         try e.seed(rep, rung);
         // Where a `sync` chain ends (§15.4): this use suspends by itself.
@@ -370,7 +387,7 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
             try e.uncalled(from, rep);
         }
         // §15.3: the use's copy of a `sync` class must not suspend.
-        if (class.sync) try e.demand(e.importedDemand(iface, scheme, block, @intCast(c), rep, site_inst));
+        if (class.sync) try e.demand(e.importedDemand(iface, scheme, e.firstSite(@intCast(c)), rep, site_inst));
     }
 }
 
@@ -380,15 +397,48 @@ fn uncalled(e: *Effects, a: Var, b: Var) Error!void {
     try e.sites.append(e.gpa, .{});
 }
 
-/// The demand a use of an imported value puts on `rep`, its copy of class
-/// `c`: where the class sits, read off the class's first site (§15.4 needs
-/// the parameter to point at, and the field or `where` method to name).
-fn importedDemand(e: *const Effects, iface: *const Interface, scheme: Interface.Scheme, block: Interface.EffectBlock, c: u32, rep: Var, site_inst: u32) Demand {
+/// Read `block` into `block_classes`, `block_sites`, `block_first` and
+/// `block_next`: one pass over its words, for a use that asks of every
+/// class or every site.
+fn decode(e: *Effects, block: Interface.EffectBlock) Error!void {
+    const gpa = e.gpa;
+    e.block_classes.clearRetainingCapacity();
+    e.block_sites.clearRetainingCapacity();
+    e.block_first.clearRetainingCapacity();
+    e.block_next.clearRetainingCapacity();
+    var classes = block.classIter();
+    while (classes.next()) |class| try e.block_classes.append(gpa, class);
+    try e.block_first.appendNTimes(gpa, none, e.block_classes.items.len);
+    // Each class's sites as a chain in site order: `last` is the chain's
+    // end so far, reusing `block_next`'s slot of it.
+    const last = try e.gpa.alloc(u32, e.block_classes.items.len);
+    defer e.gpa.free(last);
+    var sites = block.sites();
+    while (sites.next()) |site| {
+        const at: u32 = @intCast(e.block_sites.items.len);
+        try e.block_sites.append(gpa, site);
+        try e.block_next.append(gpa, none);
+        if (site.class >= e.block_first.items.len) continue;
+        if (e.block_first.items[site.class] == none) {
+            e.block_first.items[site.class] = at;
+        } else e.block_next.items[last[site.class]] = at;
+        last[site.class] = at;
+    }
+}
+
+/// Class `c`'s first site in the block `decode` read, or null.
+fn firstSite(e: *const Effects, c: u32) ?Interface.EffectBlock.Site {
+    if (c >= e.block_first.items.len) return null;
+    const at = e.block_first.items[c];
+    return if (at == none) null else e.block_sites.items[at];
+}
+
+/// The demand a use of an imported value puts on `rep`, its copy of a
+/// class whose first site is `site`: where the class sits (§15.4 needs the
+/// parameter to point at, and the field or `where` method to name).
+fn importedDemand(e: *const Effects, iface: *const Interface, scheme: Interface.Scheme, site: ?Interface.EffectBlock.Site, rep: Var, site_inst: u32) Demand {
     var d: Demand = .{ .v = rep, .kind = .argument, .site = site_inst, .holder = e.isHolder(rep) };
-    var it = block.sites();
-    const first = while (it.next()) |s| {
-        if (s.class == c) break s;
-    } else return d;
+    const first = site orelse return d;
     if (first.root != 0) {
         // A `where` type: which quantifier's, and which of its constraints.
         var left = first.root - 1;
@@ -467,33 +517,34 @@ fn whereType(store: *TypeStore, quantified: []const Var, k: u32) ?Var {
 pub fn applyPlain(e: *Effects, iface: *const Interface, scheme: Interface.Scheme, method_type: Var, subs: []const Var.Optional, site_inst: u32) Error!void {
     const block = iface.effectBlock(scheme) orelse return;
     if (block.twin()) try e.uses.append(e.gpa, .{ .site = site_inst, .v = method_type });
+    try e.decode(block);
     // The method's own arrow is the site at the body's root with no step.
     var own: ?u32 = null;
-    var sites = block.sites();
-    while (sites.next()) |site| {
+    for (e.block_sites.items) |site| {
         if (site.root == 0 and site.steps.len == 0) own = site.class;
     }
     // A `where` type's own arrow that must not suspend (§15.3): the sub-wanted
     // that answers it is demanded, whether or not the method depends on it.
-    var it = block.sites();
-    while (it.next()) |site| {
-        if (site.root == 0 or site.steps.len != 0 or !block.class(site.class).sync) continue;
+    for (e.block_sites.items) |site| {
+        if (site.root == 0 or site.steps.len != 0 or site.class >= e.block_classes.items.len or !e.block_classes.items[site.class].sync) continue;
         const q = whereQuantifier(iface, scheme, site.root - 1) orelse continue;
         if (q >= subs.len) continue;
         const sub = subs[q].unwrap() orelse continue;
-        var d = e.importedDemand(iface, scheme, block, site.class, sub, site_inst);
+        var d = e.importedDemand(iface, scheme, e.firstSite(site.class), sub, site_inst);
         d.v = sub;
         try e.demand(d);
     }
     const c = own orelse return;
-    const class = block.class(c);
+    if (c >= e.block_classes.items.len) return;
+    const class = e.block_classes.items[c];
     const rung: Rung = @enumFromInt(@min(class.rung, 2));
     try e.seed(method_type, rung);
     if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = method_type, .site = site_inst });
     for (class.deps) |d| {
-        var deps = block.sites();
-        while (deps.next()) |site| {
-            if (site.class != d or site.root == 0 or site.steps.len != 0) continue;
+        var at = if (d < e.block_first.items.len) e.block_first.items[d] else none;
+        while (at != none) : (at = e.block_next.items[at]) {
+            const site = e.block_sites.items[at];
+            if (site.root == 0 or site.steps.len != 0) continue;
             // A `where` type's own arrow: which quantifier's?
             const q = whereQuantifier(iface, scheme, site.root - 1) orelse continue;
             if (q >= subs.len) continue;

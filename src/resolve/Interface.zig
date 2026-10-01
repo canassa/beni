@@ -244,6 +244,27 @@ pub const EffectBlock = struct {
         }
     }
 
+    /// The classes in order, each read once: `class` walks the table from
+    /// its start, so a reader of every class uses this instead.
+    pub const Classes = struct {
+        words: []const u32,
+        at: u32,
+        left: u32,
+
+        pub fn next(it: *Classes) ?Class {
+            if (it.left == 0) return null;
+            it.left -= 1;
+            const at = it.at;
+            const deps = it.words[at + 1];
+            it.at += 2 + deps;
+            return .{ .rung = it.words[at] & 0xff, .sync = it.words[at] & sync_bit != 0, .sensitive = it.words[at] & sensitive_bit != 0, .deps = it.words[at + 2 ..][0..deps] };
+        }
+    };
+
+    pub fn classIter(b: EffectBlock) Classes {
+        return .{ .words = b.words, .at = 1, .left = b.classCount() };
+    }
+
     /// Where the site table starts: its count.
     fn sitesAt(b: EffectBlock) u32 {
         var at: u32 = 1;
