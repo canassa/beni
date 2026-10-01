@@ -2035,6 +2035,104 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
     , try w.read("Main.beni"));
 }
 
+test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses only where they are redundant" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.5, language.md §12.3 and §12.5: a later `|>` stage's
+    // lambda loses its parentheses, since the next stage begins a line at
+    // the column of its own; the first operand's keeps them, as do a lambda
+    // followed on its line by an operator or `?`. A lambda whose body is
+    // below hangs, its head line joining the `=`; `f a <| λx ->` is
+    // `f a λx ->`; a markup hole's `}` ends a bare lambda.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pipeline todos =
+        \\    todos
+        \\        |> List.filter (λt -> t.done)
+        \\        |> List.length
+        \\
+        \\
+        \\first xs =
+        \\    List.map xs (λx -> x)
+        \\        |> List.length
+        \\
+        \\
+        \\flat xs = xs |> List.filter (λt -> t) |> List.length
+        \\
+        \\
+        \\question m = Maybe.map m (λx -> x)?
+        \\
+        \\
+        \\toggle id todos =
+        \\    List.map todos
+        \\        (λt ->
+        \\            if t == id then
+        \\                0
+        \\            else
+        \\                t
+        \\        )
+        \\
+        \\
+        \\chain url =
+        \\    Task.attempt (Http.get url) <| λresponse ->
+        \\    render response
+        \\
+        \\
+        \\rows items = <ul>{List.map items (λi -> <li>{i}</li>)}</ul>
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-trailing-lambda", "Main.beni" });
+    const again = try w.run(&.{ "fmt", "--check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\pipeline todos =
+        \\    todos
+        \\        |> List.filter λt -> t.done
+        \\        |> List.length
+        \\
+        \\
+        \\first xs =
+        \\    List.map xs (λx -> x)
+        \\        |> List.length
+        \\
+        \\
+        \\flat xs = xs |> List.filter (λt -> t) |> List.length
+        \\
+        \\
+        \\question m = Maybe.map m (λx -> x)?
+        \\
+        \\
+        \\toggle id todos = List.map todos λt ->
+        \\    if t == id then
+        \\        0
+        \\    else
+        \\        t
+        \\
+        \\
+        \\chain url = Task.attempt (Http.get url) λresponse -> render response
+        \\
+        \\
+        \\rows items = <ul>{List.map items λi -> <li>{i}</li>}</ul>
+        \\
+    , try w.read("Main.beni"));
+}
+
 test "fmt --check on a canonical file exits 0 with nothing on either stream" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

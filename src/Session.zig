@@ -195,6 +195,10 @@ pub const Options = struct {
     /// `beni fmt --migrate-let` (hidden): format, printing every `let … in`
     /// as the block it becomes (frontend.md §11.5).
     migrate_let: bool = false,
+    /// `beni fmt --migrate-trailing-lambda` (hidden): format, printing
+    /// every last-argument lambda whose parentheses are redundant, and every
+    /// `f a <| λx ->`, as a trailing lambda (frontend.md §11.5).
+    migrate_trailing_lambda: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -1621,7 +1625,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         text,
         session.store.lineStarts(file),
         &out.writer,
-        .{ .migrate_let = session.options.migrate_let },
+        .{ .migrate_let = session.options.migrate_let, .trailing_lambdas = session.options.migrate_trailing_lambda },
     )) catch |err| switch (err) {
         // Guarded above; belt and braces, and the file is left alone.
         error.SyntaxErrors => {

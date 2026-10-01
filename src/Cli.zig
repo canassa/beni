@@ -362,6 +362,10 @@ pub const Fmt = struct {
     /// `--migrate-let`, hidden: format, printing every `let … in` as the
     /// block it becomes (`Format.Options.migrate_let`).
     migrate_let: bool = false,
+    /// `--migrate-trailing-lambda`, hidden: format, printing every
+    /// last-argument lambda as a trailing lambda where its parentheses are
+    /// redundant (`Format.Options.trailing_lambdas`).
+    migrate_trailing_lambda: bool = false,
     paths: []const []const u8,
 };
 
@@ -904,9 +908,14 @@ const FmtSpecific = struct {
     migrate_lambda: bool = false,
     migrate_names: bool = false,
     migrate_let: bool = false,
+    migrate_trailing_lambda: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-names")) {
+        if (std.mem.eql(u8, name, "--migrate-trailing-lambda")) {
+            if (value != null) return noValue(name);
+            self.migrate_trailing_lambda = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-names")) {
             if (value != null) return noValue(name);
             self.migrate_names = true;
             self.consumed = true;
@@ -953,7 +962,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
         @intFromBool(s.specific.migrate_lambda) +
         @intFromBool(s.specific.migrate_names) +
-        @intFromBool(s.specific.migrate_let);
+        @intFromBool(s.specific.migrate_let) +
+        @intFromBool(s.specific.migrate_trailing_lambda);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
@@ -966,6 +976,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_lambda = s.specific.migrate_lambda,
         .migrate_names = s.specific.migrate_names,
         .migrate_let = s.specific.migrate_let,
+        .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

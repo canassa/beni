@@ -1,0 +1,49 @@
+-- run: a lambda as the last argument without parentheses (language.md §12.3)
+-- is the argument it is in parentheses. Each stage of a `|>` pipeline written
+-- one per line is its own call (decision Y9): `kept` filters, then maps, then
+-- joins, printing "20,30". `_` among the other arguments makes a function of
+-- the call ("101,102"); on the right of `<-` the rest of the block is passed
+-- after the trailing lambda ("21"); a body below the `->` is a block
+-- ("2,5,10").
+import Node exposing (Program)
+import String
+
+
+kept : List Int -> String
+kept xs =
+    xs
+        |> List.filter λx -> x > 1
+        |> List.map λx -> String.fromInt (x * 10)
+        |> String.join ","
+
+
+addEach : List Int -> List Int
+addEach xs =
+    bump = List.map _ λx -> x + 100
+    bump xs
+
+
+withBoth : (Int -> Int), (Int -> String) -> String
+withBoth f k = k (f 20)
+
+
+bound : String
+bound =
+    x <- withBoth λy -> y + 1
+    String.fromInt x
+
+
+squares : List Int -> List Int
+squares xs = List.map xs λx ->
+    y = x * x
+    y + 1
+
+
+main : Program
+main =
+    Node.printLines
+        [ kept [ 1, 2, 3 ]
+        , String.join (List.map (addEach [ 1, 2 ]) String.fromInt) ","
+        , bound
+        , String.join (List.map (squares [ 1, 2, 3 ]) String.fromInt) ","
+        ]

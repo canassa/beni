@@ -2246,7 +2246,7 @@ fn parsePostfix(p: *Parse) Allocator.Error!Index {
     return node;
 }
 
-/// App := Atom Atom*
+/// App := Atom Arg* TrailingLambda?    (language.md §12.3)
 fn parseApp(p: *Parse) Allocator.Error!Index {
     const function = try p.parseAtomAccess(true);
     return p.parseArgs(function);
@@ -2255,9 +2255,12 @@ fn parseApp(p: *Parse) Allocator.Error!Index {
 /// Arguments after `function`, if any. `Arg := Atom | '_'` (§3): the
 /// placeholder is an argument and only an argument, and at most one per
 /// application (§6.7), so both of its diagnostics are decided here, where
-/// the application is. A block form (`let`, `if`, `case`, lambda) as a bare
-/// argument is an error (§3 notes) but is parsed as the last argument so the
-/// expression still has a shape.
+/// the application is. A lambda may be the last argument without
+/// parentheses (language.md §12.3, `parseTrailingLambda`); an argument after
+/// one is `unexpected_token`, reported and parsed on so the tree stays
+/// whole. Another block form (`let`, `if`, `case`) as a bare argument is an
+/// error (§3 notes) but is parsed as the last argument so the expression
+/// still has a shape.
 fn parseArgs(p: *Parse, function: Index) Allocator.Error!Index {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
@@ -2276,6 +2279,20 @@ fn parseArgs(p: *Parse, function: Index) Allocator.Error!Index {
         } else if (canStartAtom(tag)) {
             try p.pushScratch(try p.parseAtomAccess(false));
             p.assertProgress(before);
+        } else if (tag == .lambda or tag == .backslash) {
+            try p.pushScratch(try p.parseTrailingLambda());
+            // Its body came next, so nothing on its lines is another
+            // argument: one that reaches here began a later line at or
+            // left of the body's limit (§12.3) and was meant as one.
+            const after = p.peek();
+            if (canStartAtom(after) or after == .underscore or after == .lambda or after == .backslash) {
+                @branchHint(.cold);
+                var item = p.itemAt(.unexpected_token);
+                item.construct = .argument_after_lambda;
+                _ = try p.report(item);
+                continue;
+            }
+            break;
         } else if (isBlockStart(tag)) {
             @branchHint(.cold);
             var item = p.itemAt(.unexpected_token);
@@ -3278,6 +3295,29 @@ fn parseString(p: *Parse) Allocator.Error!Index {
 /// The head is `λ` or the old `\` (language.md §12.1); the node is the
 /// same either way, and its main token is the head.
 fn parseLambda(p: *Parse) Allocator.Error!Index {
+    return p.parseLambdaWith(null);
+}
+
+/// TrailingLambda := 'λ' Param+ '->' Body    (language.md §12.3)
+///
+/// A lambda that is the last argument of an application. Its body is a
+/// block when it begins a later line than the `->`; otherwise it is an
+/// expression that ends at the first token on a later line whose column is
+/// not greater than *L*, the column of the first token of the line the `λ`
+/// is on, so that a `|>` pipeline of trailing lambdas reads stage by stage
+/// (decision Y9).
+fn parseTrailingLambda(p: *Parse) Allocator.Error!Index {
+    const head = p.tok_i;
+    var first = head;
+    while (first > 0 and p.lines[first - 1] == p.lines[head]) first -= 1;
+    // Never below the enclosing indent: a `λ` in a hole or a nested block
+    // that starts mid-line keeps that construct's own bound.
+    return p.parseLambdaWith(@max(p.indent, p.col(first)));
+}
+
+/// A lambda; `trailing_indent` is set for a trailing one, the column its
+/// body is bounded by when it starts on the `->` line.
+fn parseLambdaWith(p: *Parse, trailing_indent: ?u32) Allocator.Error!Index {
     const saved_context = p.setContext(.lambda);
     defer p.context = saved_context;
     const head = p.next();
@@ -3301,7 +3341,17 @@ fn parseLambda(p: *Parse) Allocator.Error!Index {
         item.head_end = if (p.tags[arrow] == .arrow) p.tokenEnd(arrow) else item.head_start;
         _ = try p.report(item);
     }
-    const body = try p.parseBody(.continues);
+    const body = if (trailing_indent) |indent| body: {
+        if (p.rawTag() != .eof and p.lines[p.tok_i] > p.lines[arrow]) break :body try p.parseBody(.opens);
+        // On the `->` line: bounded by *L*, with `block_col` cleared as
+        // `startBlock` clears it, so a token at the enclosing item's column
+        // ends the body like any other at or left of *L*.
+        const saved: Saved = .{ .indent = p.indent, .head = p.head, .block_col = p.block_col, .context = p.context };
+        defer p.endBlock(saved);
+        p.indent = indent;
+        p.block_col = 0;
+        break :body try p.parseExpr();
+    } else try p.parseBody(.continues);
     const extra = try p.addExtra(params);
     return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
 }
@@ -5127,7 +5177,7 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
     });
 }
 
-test "block expressions as the last operand of a chain, and as a bare argument (error)" {
+test "block expressions as the last operand of a chain, and a lambda as the last argument" {
     try expectTree(
         \\b1 f = f <| λx -> x + 1
         \\b2 xs = xs |> List.map (λx -> x)
@@ -5189,7 +5239,7 @@ test "block expressions as the last operand of a chain, and as a bare argument (
         \\        (pat_var x)
         \\        (ident x)))))
         \\
-    , &.{.{ .code = .unexpected_token, .line = 7, .col = 10 }});
+    , &.{});
 }
 
 test "strings: chunks and interpolations in every arrangement" {

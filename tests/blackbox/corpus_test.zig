@@ -1549,7 +1549,10 @@ const Case = struct {
 
         // Structure-preserving: both parse to the same AST. The formatter
         // sorts imports (language.md §9), so the dumps are compared with
-        // their import entries in sorted order.
+        // their import entries in sorted order, and with a last-argument
+        // lambda's parentheses or `<|` undone (`withoutLambdaSpelling`):
+        // the formatter writes a trailing lambda bare where that reads the
+        // same, and in parentheses where it would not (language.md §12.5).
         // Markup's text runs are left out of the comparison: the formatter
         // re-indents them and may break a line where the page shows
         // nothing (language.md §11.15), so their bytes move while what
@@ -1559,7 +1562,7 @@ const Case = struct {
         const after = try c.inProject(&.{ "dump", "--stage=ast", "Fixed.beni" });
         try expectExit(0, before);
         try expectExit(0, after);
-        if (!std.mem.eql(u8, try withoutMarkupText(c.arena, try sortImports(c.arena, before.stdout)), try withoutMarkupText(c.arena, try sortImports(c.arena, after.stdout)))) {
+        if (!std.mem.eql(u8, try withoutMarkupText(c.arena, try sortImports(c.arena, try withoutLambdaSpelling(c.arena, before.stdout))), try withoutMarkupText(c.arena, try sortImports(c.arena, try withoutLambdaSpelling(c.arena, after.stdout))))) {
             detail("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
         }
@@ -2443,6 +2446,87 @@ fn withoutMarkupText(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
     try out.appendSlice(arena, dump[pos..]);
     return out.items;
 }
+
+/// An AST dump with the spelling of every last-argument lambda undone:
+/// `(paren (lambda …))` is the lambda, and `(pipe_left f (lambda …))` is
+/// `f`'s callee applied to its arguments and the lambda. Those are the three
+/// spellings `beni fmt` moves a trailing lambda between (language.md §12.3,
+/// §12.5), and the parser builds the same application from each but for
+/// the `paren` and the `pipe_left`, which lower to nothing.
+fn withoutLambdaSpelling(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var pos: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, dump, pos, '(')) |at| {
+        pos = at;
+        const node = try Sexp.parse(arena, dump, &pos);
+        try node.write(arena, &out, 0);
+        try out.append(arena, '\n');
+    }
+    return out.items;
+}
+
+/// A node of an AST dump: its head (the tag and its atoms) and children.
+const Sexp = struct {
+    head: std.ArrayList(u8) = .empty,
+    children: std.ArrayList(*Sexp) = .empty,
+
+    fn parse(arena: std.mem.Allocator, s: []const u8, pos: *usize) !*Sexp {
+        const node = try arena.create(Sexp);
+        node.* = .{};
+        pos.* += 1; // `(`
+        while (pos.* < s.len) {
+            switch (s[pos.*]) {
+                '(' => try node.children.append(arena, try parse(arena, s, pos)),
+                ')' => {
+                    pos.* += 1;
+                    break;
+                },
+                ' ', '\n' => pos.* += 1,
+                else => {
+                    const start = pos.*;
+                    if (s[start] == '"') {
+                        pos.* += 1;
+                        while (pos.* < s.len and s[pos.*] != '"') : (pos.* += 1) {
+                            if (s[pos.*] == '\\') pos.* += 1;
+                        }
+                        pos.* = @min(pos.* + 1, s.len);
+                    } else {
+                        while (pos.* < s.len and std.mem.indexOfScalar(u8, " \n()", s[pos.*]) == null) pos.* += 1;
+                    }
+                    if (node.head.items.len != 0) try node.head.append(arena, ' ');
+                    try node.head.appendSlice(arena, s[start..pos.*]);
+                },
+            }
+        }
+        const children = node.children.items;
+        const is = struct {
+            fn tag(n: *const Sexp, t: []const u8) bool {
+                return std.mem.eql(u8, n.head.items, t);
+            }
+        };
+        if (is.tag(node, "paren") and children.len == 1 and is.tag(children[0], "lambda")) return children[0];
+        if (is.tag(node, "pipe_left") and children.len == 2 and is.tag(children[1], "lambda")) {
+            if (is.tag(children[0], "apply")) {
+                try children[0].children.append(arena, children[1]);
+                return children[0];
+            }
+            node.head.clearRetainingCapacity();
+            try node.head.appendSlice(arena, "apply");
+        }
+        return node;
+    }
+
+    fn write(node: *const Sexp, arena: std.mem.Allocator, out: *std.ArrayList(u8), depth: usize) !void {
+        try out.appendNTimes(arena, ' ', 2 * depth);
+        try out.append(arena, '(');
+        try out.appendSlice(arena, node.head.items);
+        for (node.children.items) |child| {
+            try out.append(arena, '\n');
+            try child.write(arena, out, depth + 1);
+        }
+        try out.append(arena, ')');
+    }
+};
 
 fn sortImports(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
     // Each import block as `[start, end)` offsets into `dump`.

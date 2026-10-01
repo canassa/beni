@@ -1,0 +1,10 @@
+-- A lambda without parentheses is the last argument of its call (language.md
+-- §12.3): its body ends at the first line at or left of the line the `λ` is
+-- on, so a line there that holds an argument is one the lambda would have had
+-- to be parenthesised for. unexpected_token at `close` (9:9); the call is
+-- parsed on, so the second lambda is its last argument and reports nothing.
+bracket with open close use url =
+    with
+        λ() -> open url
+        close
+        λconn -> use conn

@@ -1458,6 +1458,19 @@ formatter prints a `let` only under `--migrate-let`, which accepts a file whose 
 are `let_removed` and does not report them, as `--migrate-lambda` does for `\`. The parser's
 `.continues` body (above) is kept for the `let`'s body, so a refused `let` still parses as it did.
 
+*As built, trailing lambdas (2026-10-02).* `parseArgs` takes a `λ` (or a refused `\`) as the last
+argument through `parseTrailingLambda` and stops. *L* is the column of the first token whose line is
+the `λ`'s, but never less than the enclosing `indent` — a hole or a construct whose head is on the
+same line keeps its own bound. A body that begins on a later line than the `->` is
+`parseBody(.opens)`, so the `.continues` exemption above belongs to a `<| λx ->` lambda only; a
+body on the `->` line is `parseExpr` with `indent` at *L* and `block_col` cleared, as `startBlock`
+clears it, so a `|>` at the enclosing item's column ends the body as one at *L* does. A token that
+can start an argument and still belongs to the application after the lambda — one on a later line
+at or left of *L*, right of the enclosing block — is `unexpected_token` with the construct
+`argument_after_lambda`, whose message shows the parenthesised form; the call is parsed on, so the
+tree stays whole (`parse/bad/ArgumentAfterLambda`). The message for an `if` or `case` as a bare
+argument no longer names the lambda.
+
 ### 11.3 AST, BIR and versions
 
 - AST (§3.5): **`block`** (`main_token` its first item's first token; `lhs` an extra `SubRange` of
@@ -1546,6 +1559,38 @@ the flag lists them.
   on: the parentheses of a last-argument lambda dropped where no operator or `?` follows, and
   `f <| λx ->` written `f λx ->`. The rule becomes the formatter's own in the slice after the
   migration, when the gate already holds every file in that form.
+
+*As built, trailing lambdas in the formatter (2026-10-02).* `Printer.trailingPlan` decides, for an
+application whose last argument is a lambda, how it prints; the gaps the rules above left are
+closed so that the formatter never writes a lambda without parentheses that would read
+differently:
+
+- **What may follow a bare lambda.** "No operator or `?` follows" is read over lines, not on the
+  `)`'s line only: an operator on a later line that begins a line right of the `λ`'s line would
+  continue the body too (§12.3). A pre-pass records, for each such application, the operator or
+  `?` that follows it (`tail_op`); `chain` records, before printing an operand, where each of its
+  operators lands (`op_place`). The lambda is bare when nothing follows, or when the operator
+  begins a line at or left of the line the `λ` is printed on — a later stage of a vertical
+  pipeline. The first operand of a broken chain, any operand of a one-line chain but the last, and
+  the operand of `?` keep their parentheses, and a lambda written bare in one of those places — the
+  parser reads `f λx -> x` / `|> g` at an item's column that way — is printed in parentheses
+  (`fmt/TrailingLambdaLayout`). So *"the lambda ends its line"* of `language.md` §12.5 is read as
+  "nothing that would continue its body follows it": a closing bracket or a comma may, as in
+  §12.6's `List.length (List.filter model.todos λt -> not t.done)`.
+- **Layout.** One line when the application fits with the lambda bare; else the callee and the
+  other arguments on one line whatever breaks the source had, when they fit (the `λparams ->`
+  head is not counted, as a pattern is never broken), `λparams ->` ending it and the body below
+  when it does not fit after the `->`; else one argument per line. A definition or binding keeps
+  that head line on its `=` line when the head and `λparams ->` fit there (`rhs`). The body joins
+  the `->` line whenever it fits, which is what makes a first run's output a fixed point.
+- **What is left as written.** A parenthesised lambda with a comment on either parenthesis, and
+  `f a <| λx ->` when the left of `<|` is not a call without `_`, a name or an accessor, or a
+  comment sits at the `<|`, or the `<|` is not the chain's only one (`g <| f a <| λx ->`): those
+  keep their spelling.
+- **Structure.** Parentheses dropped or added and a `<|` written as an application are the one
+  difference between the AST before and after; the formatter's tests and the `fmt/` corpus compare
+  the dumps with that spelling undone (`withoutLambdaSpelling`), and the BIR, which lowers `paren`
+  and `<|` to nothing, does not differ at all.
 
 ### 11.6 The `beni fmt --check` gate
 

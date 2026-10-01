@@ -1,0 +1,139 @@
+(module
+  (annotation stages
+    (type_fn
+      (type_con List
+        (type_record
+          (record_type_field done
+            (type_con Bool))
+          (record_type_field title
+            (type_con String))))
+      (type_con String)))
+  (definition stages
+    (pat_var todos)
+    (pipe_right
+      (pipe_right
+        (pipe_right
+          (ident todos)
+          (apply
+            (ident List.filter)
+            (lambda
+              (pat_var t)
+              (field_access .done
+                (ident t)))))
+        (apply
+          (ident List.map)
+          (lambda
+            (pat_var t)
+            (field_access .title
+              (ident t)))))
+      (apply
+        (ident String.join)
+        (string
+          (chunk ", ")))))
+  (annotation oneLine
+    (type_fn
+      (type_con List
+        (type_record
+          (record_type_field done
+            (type_con Bool))))
+      (type_con Int)))
+  (definition oneLine
+    (pat_var xs)
+    (pipe_right
+      (ident xs)
+      (apply
+        (ident List.filter)
+        (lambda
+          (pat_var t)
+          (pipe_right
+            (field_access .done
+              (ident t))
+            (ident List.length))))))
+  (annotation blockBody
+    (type_fn
+      (type_con List
+        (type_con Int))
+      (type_con List
+        (type_con Int))))
+  (definition blockBody
+    (pat_var xs)
+    (apply
+      (ident List.map)
+      (ident xs)
+      (lambda
+        (pat_var x)
+        (block
+          (let_def y
+            (add
+              (ident x)
+              (int 1)))
+          (mul
+            (ident y)
+            (int 2))))))
+  (annotation placeholder
+    (type_fn
+      (type_con List
+        (type_paren
+          (type_con List
+            (type_con Int))))
+      (type_con List
+        (type_paren
+          (type_con List
+            (type_con Int))))))
+  (definition placeholder
+    (pat_var xss)
+    (apply
+      (ident List.map)
+      (ident xss)
+      (paren
+        (apply
+          (ident List.map)
+          (placeholder)
+          (lambda
+            (pat_var x)
+            (add
+              (ident x)
+              (int 1)))))))
+  (annotation bind
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_con Maybe
+        (type_con Int))))
+  (definition bind
+    (pat_var m)
+    (block
+      (let_bind
+        (pat_var x)
+        (apply
+          (ident Maybe.andThen)
+          (paren
+            (apply
+              (ident Maybe.map)
+              (ident m)
+              (lambda
+                (pat_var y)
+                (add
+                  (ident y)
+                  (int 1)))))))
+      (apply
+        (ctor Just)
+        (ident x))))
+  (annotation hole
+    (type_fn
+      (type_con List
+        (type_con String))
+      (type_con Html
+        (type_var msg))))
+  (definition hole
+    (pat_var items)
+    (markup_element ul
+      (markup_hole
+        (apply
+          (ident List.map)
+          (ident items)
+          (lambda
+            (pat_var i)
+            (markup_element li
+              (markup_hole
+                (ident i)))))))))

@@ -149,6 +149,9 @@ pub const Construct = enum {
     binding_head,
     /// A `,` after a parenthesised block's items (language.md §12.2, B6).
     block_in_tuple,
+    /// An argument after a lambda written without parentheses, which is
+    /// always the last argument of its call (language.md §12.3).
+    argument_after_lambda,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -214,7 +217,7 @@ fn constructText(c: Construct) []const u8 {
         .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
         .stray_spread => "an expression",
         .spread_operand => "a name or `_`",
-        .binding_head, .block_in_tuple => "something else",
+        .binding_head, .block_in_tuple, .argument_after_lambda => "something else",
     };
 }
 
@@ -369,6 +372,17 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\    ( a, b ) = pair
                 , .{text});
+            } else if (item.construct == .argument_after_lambda) {
+                try w.print(
+                    \\I was parsing {s} and ran into `{s}`, an argument after a lambda that has
+                    \\no parentheses.
+                    \\
+                    \\A lambda written without parentheses is the last argument of its call: its
+                    \\body takes the rest of its line, or the block below it, so nothing can follow
+                    \\it as another argument. To pass more after a lambda, put it in parentheses:
+                    \\
+                    \\    Task.bracket (λ() -> open url) close λconn -> use conn
+                , .{ contextText(item.context), text });
             } else if (item.construct == .block_in_tuple) {
                 try w.writeAll(
                     \\I found a `,` after a block in parentheses. A block is not a tuple element:
@@ -434,8 +448,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 try w.print(
                     \\I was parsing {s} and ran into `{s}`, which cannot be an argument on its own.
                     \\
-                    \\An `if`, `case` or lambda may end an expression, but as an argument it must
-                    \\be wrapped in parentheses: `f (λx -> x)`.
+                    \\An `if` or `case` may end an expression, but as an argument it must be
+                    \\wrapped in parentheses: `f (if c then a else b)`. A lambda alone may be the
+                    \\last argument without them: `f a λx -> x`.
                 , .{ contextText(item.context), text });
             } else {
                 try w.print("I was parsing {s} and ran into `{s}`. I was expecting {s}.", .{ contextText(item.context), text, constructText(item.construct) });
@@ -993,7 +1008,7 @@ fn writeSpaced(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
 }
 
 fn isBlockStart(text: []const u8) bool {
-    return std.mem.eql(u8, text, "let") or std.mem.eql(u8, text, "if") or std.mem.eql(u8, text, "case") or std.mem.eql(u8, text, "\\");
+    return std.mem.eql(u8, text, "let") or std.mem.eql(u8, text, "if") or std.mem.eql(u8, text, "case");
 }
 
 // ---------------------------------------------------------------------------

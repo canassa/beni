@@ -85,6 +85,12 @@
 //!   markup (language.md §12.5): when it must break and its head fits on
 //!   one line, the head goes there whatever breaks the source had, and the
 //!   last argument hangs on the next line indented 4 (`Printer.hangs`).
+//! - A lambda as the last argument (language.md §12.3, §12.5) is printed
+//!   without parentheses only where what follows the application ends its
+//!   body: nothing, a closer or comma, or an operator that begins a line at
+//!   or left of the `λ`'s (`Printer.trailingPlan`, frontend.md §11.5). It
+//!   hangs as a list does, `λparams ->` ending the head line and its body
+//!   below as a block, and that head line joins a definition's `=` line.
 //! - A type annotation is one line or broken at EVERY arrow, the arrows
 //!   leading continuation lines at the type's column, the first parameter
 //!   2 further in, under the others after their `, ` (language.md §12.5);
@@ -162,6 +168,28 @@ pub const Error = Allocator.Error || Io.Writer.Error || error{
 
 const no_fit = std.math.maxInt(u32);
 
+/// `tail_op` of an application nothing follows.
+const no_node = std.math.maxInt(u32);
+/// `op_place` of an operator whose chain has not been laid out.
+const place_unknown = std.math.maxInt(u32);
+/// `op_place` of an operator printed on the line of the operand before it.
+const place_same_line = std.math.maxInt(u32) - 1;
+
+/// What the printer does to a lambda, or to the parentheses around one,
+/// that an application prints as its trailing lambda (language.md §12.3).
+const LambdaMark = packed struct(u8) {
+    /// A `paren` around a last-argument lambda whose parentheses are
+    /// dropped.
+    drop_parens: bool = false,
+    /// A lambda written without parentheses where it would read
+    /// differently: printed in parentheses.
+    add_parens: bool = false,
+    /// A lambda after `<|` printed as the trailing lambda of the
+    /// application on the operator's left: the `<|` is dropped.
+    drop_pipe: bool = false,
+    _: u5 = 0,
+};
+
 /// Print the canonical form of `tree` to `w`. `scratch` provides the side
 /// arrays and the small chain stacks; an arena reset after the call is the
 /// intended owner. `tokens`, `comments`, `source` and `line_starts` are the
@@ -183,6 +211,11 @@ pub const Options = struct {
     /// `beni fmt --migrate-let` (frontend.md §11.5): print every `let … in`
     /// as the block it becomes.
     migrate_let: bool = false,
+    /// `beni fmt --migrate-trailing-lambda` (frontend.md §11.5): print a
+    /// parenthesised last-argument lambda without its parentheses wherever
+    /// they are redundant, and `f a <| λx -> e` as `f a λx -> e`
+    /// (language.md §12.5, *trailing lambdas*).
+    trailing_lambdas: bool = false,
 };
 
 /// `format`, with `options`.
@@ -224,8 +257,41 @@ pub fn formatWith(
         if (tag == .block) block_starts[main] = true;
     }
 
+    // For every application whose last argument is a lambda, the operator
+    // or `?` that follows it, if any (`Printer.trailingPlan`): a lambda
+    // without parentheses would take that operator into its body unless
+    // the operator begins a line at or left of the lambda's line.
+    const tail_op = try scratch.alloc(u32, n);
+    @memset(tail_op, no_node);
+    for (tree.nodes.items(.tag), 0..) |tag, i| {
+        const follower: Index = @enumFromInt(i);
+        var s: Index = if (tag.isBinop())
+            @enumFromInt(tree.nodeData(follower).lhs)
+        else if (tag == .question)
+            tree.operand(follower)
+        else
+            continue;
+        while (true) {
+            const s_tag = tree.nodeTag(s);
+            if (s_tag.isBinop()) {
+                s = @enumFromInt(tree.nodeData(s).rhs);
+            } else {
+                if (s_tag == .apply) tail_op[s.int()] = @intCast(i);
+                break;
+            }
+        }
+    }
+    const op_place = try scratch.alloc(u32, n);
+    @memset(op_place, place_unknown);
+    const lambda_marks = try scratch.alloc(LambdaMark, n);
+    @memset(lambda_marks, .{});
+
     var p: Printer = .{
         .block_starts = block_starts,
+        .tail_op = tail_op,
+        .op_place = op_place,
+        .lambda_marks = lambda_marks,
+        .trailing_lambdas = options.trailing_lambdas,
         .migrate_let = options.migrate_let,
         .w = w,
         .source = source,
@@ -1709,6 +1775,19 @@ const Printer = struct {
     stack: std.ArrayList(u32) = .empty,
     /// Per token: whether a block begins there.
     block_starts: []const bool,
+    /// Per `apply` whose last argument is a lambda: the binary operator or
+    /// `?` node whose operator follows it, or `no_node`.
+    tail_op: []const u32,
+    /// Per binary operator node: the indentation of the line its operator
+    /// is printed at the start of, `place_same_line`, or `place_unknown`
+    /// until its chain is laid out (`chain`, before any operand).
+    op_place: []u32,
+    /// Per node: `LambdaMark`, set by `trailingPlan` for the node it plans.
+    lambda_marks: []LambdaMark,
+    /// `--migrate-trailing-lambda` (frontend.md §11.5): a parenthesised
+    /// last-argument lambda loses its parentheses where they are
+    /// redundant, and `f a <| λx -> e` prints as `f a λx -> e`.
+    trailing_lambdas: bool = false,
     /// `--migrate-let` (frontend.md §11.5): every `let` prints as a block.
     migrate_let: bool = false,
 
@@ -2649,7 +2728,14 @@ const Printer = struct {
     /// is `no_fit` for `if`, `case`, `let`, a multiline string and a
     /// comment inside), is the whole test.
     fn rhs(p: *Printer, body: Index, indent: u32) Error!void {
-        if (p.fitsAt(body, p.curCol() + 1) and commentsBefore(p.comments, p.first(body)).len == 0) {
+        const no_comment = commentsBefore(p.comments, p.first(body)).len == 0;
+        if (p.fitsAt(body, p.curCol() + 1) and no_comment) {
+            try p.space();
+            try p.expr(body, indent);
+        } else if (no_comment and try p.joinsEquals(body, indent)) {
+            // An application hanging a lambda keeps its head line on the
+            // `=` line when that line fits (language.md §12.5,
+            // *hanging the last argument*): `todos = List.map xs λt ->`.
             try p.space();
             try p.expr(body, indent);
         } else {
@@ -2710,9 +2796,10 @@ const Printer = struct {
     /// first run writes is the head line every later run keeps.
     ///
     /// A lambda is the other kind §12.5 hangs, and the only one that joins
-    /// the `=` line; it is not here because no lambda can be a last argument
-    /// without parentheses until trailing lambdas parse (§12.3), and a
-    /// parenthesised one is a `paren`, which breaks as before.
+    /// the `=` line; it is not here but in `trailingPlan`, because whether
+    /// it prints without parentheses depends on where it lands. A
+    /// parenthesised one that keeps them is a `paren`, which breaks as
+    /// before.
     fn hangs(p: *const Printer, a: Ast.full.Apply) bool {
         const last_arg = a.args[a.args.len - 1];
         switch (p.tree.nodeTag(last_arg)) {
@@ -2725,6 +2812,207 @@ const Printer = struct {
             width +|= 1 +| p.widths[arg.int()];
         }
         return width != no_fit and p.curCol() +| width <= max_width;
+    }
+
+    // ---- Trailing lambdas (language.md §12.3, §12.5) ---------------------
+
+    /// An application whose last argument is a lambda, and how it prints.
+    const TrailingPlan = struct {
+        /// The `apply`, or the `pipe_left` printed as one.
+        node: Index,
+        callee: Index,
+        /// Every argument, the last being the lambda or its parentheses.
+        args: []const Index,
+        lambda: Index,
+        /// The parentheses around the lambda in the source, if any.
+        paren: ?Index = null,
+        /// The `<|` before the lambda, when `node` is `f a <| λx -> e`.
+        pipe: bool = false,
+        form: enum { bare, parenthesised },
+        layout: enum { one_line, hang, vertical },
+    };
+
+    /// How the application `n` (`callee` applied to `args`) prints its
+    /// last-argument lambda, the cursor at column `col` on a line indented
+    /// `line_indent`; null when it has none, or when a parenthesised one
+    /// keeps its parentheses and the application prints as before.
+    ///
+    /// Without parentheses the lambda takes into its body everything on its
+    /// `->` line, and every later line indented past the line the `λ` is on
+    /// (§12.3). So it is printed bare only where what follows the
+    /// application ends the body anyway: nothing, a closing bracket or a
+    /// comma, or an operator that begins a later line at or left of the
+    /// `λ`'s line — a stage of a vertical `|>` pipeline after the first.
+    /// A bare one anywhere else is printed in parentheses; a parenthesised
+    /// one keeps them. A comment on either parenthesis keeps them too.
+    fn trailingPlan(p: *const Printer, n: Index, callee: Index, arg_list: []const Index, indent: u32, col: u32, line_indent: u32) ?TrailingPlan {
+        const tree = p.tree;
+        const last_arg = arg_list[arg_list.len - 1];
+        var plan: TrailingPlan = .{ .node = n, .callee = callee, .args = arg_list, .lambda = last_arg, .form = .bare, .layout = .one_line };
+        switch (tree.nodeTag(last_arg)) {
+            .lambda => {},
+            .paren => {
+                if (!p.trailing_lambdas) return null;
+                const inner = tree.operand(last_arg);
+                if (tree.nodeTag(inner) != .lambda) return null;
+                const open = tree.nodeMainToken(last_arg);
+                if (commentsBefore(p.comments, open + 1).len != 0 or commentsBefore(p.comments, p.last(inner) + 1).len != 0) return null;
+                plan.lambda = inner;
+                plan.paren = last_arg;
+            },
+            else => return null,
+        }
+        const base = p.widths[n.int()];
+        const width = if (plan.paren != null and base != no_fit) base - 2 else base;
+        plan.layout = p.trailingLayout(&plan, width, col);
+        const lambda_line = if (plan.layout == .vertical) indent + indent_step else line_indent;
+        if (p.followSafe(n, lambda_line)) return plan;
+        if (plan.paren != null) return null;
+        plan.form = .parenthesised;
+        plan.layout = if (base != no_fit and ((p.flat and !p.commentIn(n)) or col +| base +| 2 <= max_width)) .one_line else .vertical;
+        return plan;
+    }
+
+    /// `f a <| λx -> e` under `trailing_lambdas`, planned as the application
+    /// `f a λx -> e` it is written as (§12.5): when its left side is a call
+    /// without a `_`, or a name, and no comment sits at the `<|`.
+    /// Otherwise null, and it prints as the operator chain it is.
+    fn pipePlan(p: *const Printer, n: Index, col: u32) Error!?TrailingPlan {
+        const tree = p.tree;
+        const d = tree.nodeData(n);
+        const lhs: Index = @enumFromInt(d.lhs);
+        const lambda: Index = @enumFromInt(d.rhs);
+        if (tree.nodeTag(lambda) != .lambda) return null;
+        const op = tree.nodeMainToken(n);
+        if (commentsBefore(p.comments, op).len != 0 or commentsBefore(p.comments, op + 1).len != 0) return null;
+        var callee = lhs;
+        var head_args: []const Index = &.{};
+        switch (tree.nodeTag(lhs)) {
+            .apply => {
+                const a = tree.fullApply(lhs);
+                for (a.args) |arg| if (tree.nodeTag(arg) == .placeholder) return null;
+                callee = a.function;
+                head_args = a.args;
+            },
+            .ident, .ctor, .field_access, .tuple_index => {},
+            else => return null,
+        }
+        const all = try p.scratch.alloc(Index, head_args.len + 1);
+        @memcpy(all[0..head_args.len], head_args);
+        all[head_args.len] = lambda;
+        var plan: TrailingPlan = .{ .node = n, .callee = callee, .args = all, .lambda = lambda, .pipe = true, .form = .bare, .layout = .one_line };
+        const width = if (p.tok_lines[p.last(lhs)] != p.tok_lines[op + 1])
+            no_fit
+        else
+            p.widths[lhs.int()] +| 1 +| p.widths[lambda.int()];
+        plan.layout = p.trailingLayout(&plan, width, col);
+        return plan;
+    }
+
+    /// One line when the application fits from `col` with its lambda bare;
+    /// else hanging the lambda when the callee and the other arguments fit
+    /// on one line, whatever source breaks lie between them (§12.5); else
+    /// an argument per line.
+    fn trailingLayout(p: *const Printer, plan: *const TrailingPlan, width: u32, col: u32) @FieldType(TrailingPlan, "layout") {
+        if ((p.flat and !p.commentIn(plan.node)) or (width != no_fit and col +| width <= max_width)) return .one_line;
+        return if (p.headFits(plan, col, 0)) .hang else .vertical;
+    }
+
+    /// Whether the callee and every argument before the lambda fit on one
+    /// line from `col`, `extra` more bytes after them, with no comment
+    /// before any of them or before the lambda.
+    fn headFits(p: *const Printer, plan: *const TrailingPlan, col: u32, extra: u32) bool {
+        var width = p.widths[plan.callee.int()];
+        for (plan.args) |arg| {
+            if (commentsBefore(p.comments, p.first(arg)).len != 0) return false;
+            if (arg == plan.args[plan.args.len - 1]) break;
+            width +|= 1 +| p.widths[arg.int()];
+        }
+        if (commentsBefore(p.comments, p.tree.nodeMainToken(plan.lambda)).len != 0) return false;
+        return width != no_fit and col +| width +| extra <= max_width;
+    }
+
+    /// Whether a lambda printed without parentheses at the end of the
+    /// application `n`, on a line indented `lambda_line`, ends where the
+    /// application does: nothing follows it, or the operator after it
+    /// begins a line at or left of that one (§12.3).
+    fn followSafe(p: *const Printer, n: Index, lambda_line: u32) bool {
+        const follower = p.tail_op[n.int()];
+        if (follower == no_node) return true;
+        if (p.tree.nodeTag(@enumFromInt(follower)) == .question) return false;
+        const place = p.op_place[follower];
+        if (place == place_unknown or place == place_same_line) return false;
+        return place <= lambda_line;
+    }
+
+    /// `λparams ->`'s width.
+    fn lambdaHeadWidth(p: *const Printer, lambda: Index) u32 {
+        const l = p.tree.fullLambda(lambda);
+        var width: u32 = @intCast(p.text(l.head).len + 3);
+        for (l.params, 0..) |param, i| width +|= p.widths[param.int()] +| @as(u32, if (i == 0) 0 else 1);
+        return width;
+    }
+
+    /// The application `plan` describes: the callee, then its arguments on
+    /// its line, hanging the lambda, or one per line (`trailingLayout`).
+    fn applyTrailing(p: *Printer, plan: TrailingPlan, indent: u32) Error!void {
+        switch (plan.form) {
+            .bare => if (plan.paren) |paren| {
+                p.lambda_marks[paren.int()].drop_parens = true;
+            },
+            .parenthesised => p.lambda_marks[plan.lambda.int()].add_parens = true,
+        }
+        if (plan.pipe) p.lambda_marks[plan.lambda.int()].drop_pipe = true;
+        try p.expr(plan.callee, indent);
+        switch (plan.layout) {
+            .one_line => try p.args(p.last(plan.callee), plan.args, .expr, true, indent),
+            // `f a b λx ->` / body: the lambda prints its body below when it
+            // does not fit after the `->`.
+            .hang => for (plan.args) |arg| {
+                try p.space();
+                try p.expr(arg, indent);
+            },
+            .vertical => try p.args(p.last(plan.callee), plan.args, .expr, false, indent),
+        }
+    }
+
+    /// A lambda written without parentheses where it would read
+    /// differently, printed in them, as `wrapped` prints a `paren`.
+    fn parenthesisedLambda(p: *Printer, n: Index, indent: u32) Error!void {
+        p.lambda_marks[n.int()].add_parens = false;
+        try p.leading(p.tree.nodeMainToken(n), null);
+        const col = p.curCol();
+        const width = p.widths[n.int()];
+        const one_line = (p.flat and !p.commentIn(n)) or (width != no_fit and col +| width +| 2 <= max_width);
+        try p.raw("(");
+        if (one_line) {
+            try p.expr(n, indent);
+        } else {
+            try p.expr(n, col);
+            p.newline(col);
+        }
+        try p.raw(")");
+    }
+
+    /// Whether a definition's body, planned on the `=` line (`rhs`), is an
+    /// application that prints its lambda bare there: on that line whole,
+    /// or with its head line and `λparams ->` on it.
+    fn joinsEquals(p: *const Printer, body: Index, indent: u32) Error!bool {
+        const col = p.curCol() + 1;
+        const plan = switch (p.tree.nodeTag(body)) {
+            .apply => blk: {
+                const a = p.tree.fullApply(body);
+                break :blk p.trailingPlan(body, a.function, a.args, indent, col, p.lineIndent());
+            },
+            .pipe_left => if (p.trailing_lambdas) try p.pipePlan(body, col) else null,
+            else => null,
+        } orelse return false;
+        if (plan.form != .bare) return false;
+        return switch (plan.layout) {
+            .one_line => true,
+            .hang => p.headFits(&plan, col, 1 + p.lambdaHeadWidth(plan.lambda)),
+            .vertical => false,
+        };
     }
 
     // ---- Dispatch --------------------------------------------------------
@@ -2795,6 +3083,12 @@ const Printer = struct {
     fn wrapped(p: *Printer, n: Index, comptime kind: Kind, indent: u32) Error!void {
         const inner = p.tree.operand(n);
         const open = p.tree.nodeMainToken(n);
+        if (kind == .expr and p.lambda_marks[n.int()].drop_parens) {
+            // A trailing lambda's redundant parentheses (`trailingPlan`).
+            try p.skipTok(open);
+            try p.expr(inner, indent);
+            return p.skipTok(p.last(inner) + 1);
+        }
         if (kind == .expr and p.migrate_let and p.tree.nodeTag(inner) == .let) {
             return p.letParenthesised(inner, indent, .{ .open = open, .close = p.last(inner) + 1 });
         }
@@ -2827,6 +3121,9 @@ const Printer = struct {
         const tree = p.tree;
         const tag = tree.nodeTag(n);
         const main = tree.nodeMainToken(n);
+        if (tag == .pipe_left and p.trailing_lambdas) {
+            if (try p.pipePlan(n, p.curCol())) |plan| return p.applyTrailing(plan, indent);
+        }
         if (tag.isBinop()) return p.chain(n, indent);
         if (isAccess(tag)) return p.access(n, indent);
         switch (tag) {
@@ -2863,6 +3160,7 @@ const Printer = struct {
             },
             .apply => {
                 const a = tree.fullApply(n);
+                if (p.trailingPlan(n, a.function, a.args, indent, p.curCol(), p.lineIndent())) |plan| return p.applyTrailing(plan, indent);
                 const one_line = p.fits(n);
                 if (!one_line and p.hangs(a)) {
                     // `f a b` / `[ … ]` (language.md §12.5): the head on one
@@ -2880,6 +3178,9 @@ const Printer = struct {
             },
             .lambda => {
                 const l = tree.fullLambda(n);
+                const mark = p.lambda_marks[n.int()];
+                if (mark.add_parens) return p.parenthesisedLambda(n, indent);
+                if (mark.drop_pipe) try p.skipTok(l.head - 1);
                 const one_line = p.fits(n);
                 try p.tok(l.head);
                 var arrow = l.head + 1;
@@ -3218,6 +3519,17 @@ const Printer = struct {
         // A `let` under `--migrate-let` is a parenthesised block, which is
         // an operand like any other.
         const block_tail = !one_line and count == 1 and isBlockForm(tail_tag) and !(p.migrate_let and tail_tag == .let);
+
+        // Where each operator lands, before any operand is printed: an
+        // operand that ends in a lambda without parentheses needs it
+        // (`trailingPlan`). Operator `i` is the spine node's main token,
+        // the spine stored outermost first.
+        for (0..count) |i| {
+            const spine: Index = @enumFromInt(p.stack.items[if (right) mark + i else mark + count - 1 - i]);
+            const operand_tag = p.tree.nodeTag(@enumFromInt(p.stack.items[operands_at + 1 + i]));
+            const flat_lambda = i + 1 == count and tag == .pipe_left and operand_tag == .lambda;
+            p.op_place[spine.int()] = if (one_line or block_tail or flat_lambda) place_same_line else indent + indent_step;
+        }
 
         try p.expr(@enumFromInt(p.stack.items[operands_at]), indent);
         for (0..count) |i| {
@@ -3806,8 +4118,9 @@ fn expectStable(arena: Allocator, first: Run, exact_dump: bool) !void {
     // A text run's bytes move under formatting while what it says does
     // not (language.md §11.15); the black-box `fmt/` corpus compares what
     // it says, through the lowered file.
-    const before = try withoutMarkupText(arena, first.dump);
-    const after = try withoutMarkupText(arena, again.dump);
+    // A last-argument lambda's spelling moves too (language.md §12.5).
+    const before = try withoutMarkupText(arena, try withoutLambdaSpelling(arena, first.dump));
+    const after = try withoutMarkupText(arena, try withoutLambdaSpelling(arena, again.dump));
     if (exact_dump) {
         try testing.expectEqualStrings(before, after);
     } else {
@@ -3847,6 +4160,85 @@ fn withoutMarkupText(arena: Allocator, dump: []const u8) ![]const u8 {
     try out.appendSlice(arena, dump[pos..]);
     return out.items;
 }
+
+/// An AST dump with the spelling of every last-argument lambda undone, as
+/// `tests/blackbox/corpus_test.zig` undoes it for the `fmt/` corpus:
+/// `(paren (lambda …))` is the lambda, and `(pipe_left f (lambda …))` is
+/// `f`'s callee applied to its arguments and the lambda.
+fn withoutLambdaSpelling(arena: Allocator, dump: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var pos: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, dump, pos, '(')) |at| {
+        pos = at;
+        const node = try Sexp.parse(arena, dump, &pos);
+        try node.write(arena, &out, 0);
+        try out.append(arena, '\n');
+    }
+    return out.items;
+}
+
+/// A node of an AST dump: its head (the tag and its atoms) and children.
+const Sexp = struct {
+    head: std.ArrayList(u8) = .empty,
+    children: std.ArrayList(*Sexp) = .empty,
+
+    fn parse(arena: Allocator, s: []const u8, pos: *usize) !*Sexp {
+        const node = try arena.create(Sexp);
+        node.* = .{};
+        pos.* += 1; // `(`
+        while (pos.* < s.len) {
+            switch (s[pos.*]) {
+                '(' => try node.children.append(arena, try parse(arena, s, pos)),
+                ')' => {
+                    pos.* += 1;
+                    break;
+                },
+                ' ', '\n' => pos.* += 1,
+                else => {
+                    const start = pos.*;
+                    if (s[start] == '"') {
+                        pos.* += 1;
+                        while (pos.* < s.len and s[pos.*] != '"') : (pos.* += 1) {
+                            if (s[pos.*] == '\\') pos.* += 1;
+                        }
+                        pos.* = @min(pos.* + 1, s.len);
+                    } else {
+                        while (pos.* < s.len and std.mem.indexOfScalar(u8, " \n()", s[pos.*]) == null) pos.* += 1;
+                    }
+                    if (node.head.items.len != 0) try node.head.append(arena, ' ');
+                    try node.head.appendSlice(arena, s[start..pos.*]);
+                },
+            }
+        }
+        const children = node.children.items;
+        const is = struct {
+            fn tag(n: *const Sexp, t: []const u8) bool {
+                return std.mem.eql(u8, n.head.items, t);
+            }
+        };
+        if (is.tag(node, "paren") and children.len == 1 and is.tag(children[0], "lambda")) return children[0];
+        if (is.tag(node, "pipe_left") and children.len == 2 and is.tag(children[1], "lambda")) {
+            if (is.tag(children[0], "apply")) {
+                try children[0].children.append(arena, children[1]);
+                return children[0];
+            }
+            node.head.clearRetainingCapacity();
+            try node.head.appendSlice(arena, "apply");
+        }
+        return node;
+    }
+
+    fn write(node: *const Sexp, arena: Allocator, out: *std.ArrayList(u8), depth: usize) !void {
+        try out.appendNTimes(arena, ' ', 2 * depth);
+        try out.append(arena, '(');
+        try out.appendSlice(arena, node.head.items);
+        for (node.children.items) |child| {
+            try out.append(arena, '\n');
+            try child.write(arena, out, depth + 1);
+        }
+        try out.append(arena, ')');
+    }
+};
 
 fn sortedLines(arena: Allocator, text: []const u8) ![]u8 {
     var lines: std.ArrayList([]const u8) = .empty;

@@ -269,7 +269,10 @@ reason this corpus does not rot the way Elm's did:
   that alters behaviour fails one, by name.
 - `fmt/` has three extra invariants checked mechanically: formatting an
   `.expected` again is a fixed point, `parse(fmt(s))` equals `parse(s)`
-  modulo positions, and the input and the output carry **the same comments
+  modulo positions and the spelling of a last-argument lambda (its
+  parentheses, or a `<|` before it, which the formatter moves between and
+  which lower to nothing — `frontend.md` §11.5), and the input and the
+  output carry **the same comments
   in the same order**. The last one is its own check — through
   `dump --stage=tokens`, by kind and text — because the AST dump carries a
   doc comment as `(doc …)` and drops a plain `--` one entirely, so a lost or
