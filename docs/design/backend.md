@@ -5574,6 +5574,68 @@ select 1.28 / 1.30 / 1.82 (n = 30), swap 1.67 / 1.15 / 2.22, remove 0.51 / 0.52 
 operation within noise of master or ahead, each slower-looking one re-run (replace, select,
 clear) to a tie; ahead of Solid 1 on all nine.
 
+**As built — the worklist** (*added 2026-10-01*, `Spec.Pts.fixpoint`, `Spec.sweeps`). The facts are
+the ones above, sweep for sweep; what changed is how much of the program a sweep walks. A release
+build of a TodoMVC-sized page spent 1.3 of its 3.0 billion instructions here, most of it fact 3
+sweeping the whole program about eleven times a round, from scratch every round.
+
+- **A sweep walks only what read something that changed since it was last walked.** Every read of
+  a fact records the unit that made it: for fact 3 a var (`view`), a site's escape and unknown-key
+  writes (`seeSite`) and a site's list of properties (`seeProps`); for facts 1, 2, 4 and 5 a
+  whole-program name's `escaped` and `assigned`, a site's `prop_lat`, `ret_lat` and spread, and a
+  parameter (read by its own declaration alone). A change wakes the units that read it. A unit
+  nothing woke would read what it read before, make the joins it made before — no-ops — and
+  change nothing, so skipping it is exact: each sweep leaves the state a walk of everything
+  would, the sweeps are as many (the caps of 64 and 24 mean what they meant), and a fixpoint is
+  the same fixpoint. Facts 1, 2, 4 and 5's units are the top-level statements; fact 3's are the
+  top-level statements and every function body, a body walked where the walk of what holds it
+  reaches it — never alone — when it or a body inside it was woken, so the order of every walk
+  is the order of a sweep of everything. **The order is kept on purpose**: fact 3 is not
+  order-free. A var that is `top` still gathers `prim`, `null` and `undefined`, and which it
+  gathers depends on what transient values it was joined with before it went `top`; the DOM
+  node-maker fact and `appendChild` read `prim` beside `top`. Walking units in another order (a
+  reversed sweep, a body alone) gave a different, equally sound fixpoint on
+  `run/CallbackOrderDict`, so it is not done.
+- **A node's value is its unit's last walk's.** `vals` and what they point into live across a
+  fixpoint's sweeps, so the sweep of everything after the fixpoint that a whole-program pass
+  needs to fill them is not taken. `rewrite` likewise takes a statement's values from its last
+  sweep and only counts its names, unless it was left woken at the fixpoint or reads a
+  module-level constant this rewrite has already patched (`nameValue` reads the initialiser).
+- **What every round asked of the whole program, it asks of what changed.** `namedIn` answers
+  every whole-program name at once from one walk of the module, kept while the module's `version`
+  stands; inside `rewrite`, which only takes mentions away, a name the walk did not meet is still
+  not met, and an identifier of a name being written as that name's own value needs no walk
+  when the module has one name for it. `inlineOne`'s mention counts are kept per module the
+  same way, and `nameRead` of a whole-program name reads them.
+- **Rounds still start from ⊥.** A round's program is the last one rewritten — calls dropped,
+  branches gone — so its least fixpoint lies below the last round's facts; starting from those
+  would keep what the rewrite made false, and print a different program.
+- **Checked.** A safety build computes each fixpoint of a program of at most 1 500 nodes twice —
+  every unit walked every sweep, then by the worklist — and stops if any fact, node value or
+  sweep count differs.
+
+Measured in millions of instructions of the ReleaseSafe compiler the tests run, a `--release`
+build in a fresh project; every output byte for byte as before (the `emit/release/` goldens, every
+release run hash, and every `run/` and `browser/` program built by both compilers and compared):
+
+| build | before | after |
+|---|--:|--:|
+| `browser/tea/TodoMVC` | 2 962 (specialisation 1 302) | **2 087** (about 420) |
+| `browser/tea/DirectEvents` | 2 904 | 2 104 |
+| `browser/tea/SyncKeyedPolicies` | 2 845 | 2 058 |
+| `browser/tea/UrlAddress` | 2 691 | 2 006 |
+| `browser/tea/DebouncedSearch` | 2 596 | 1 939 |
+| `browser/tea/Policies` | 2 519 | 1 936 |
+| `browser/tea/KeySubscription` | 2 418 | 1 888 |
+| `browser/tea/LatestTagger` | 2 420 | 1 932 |
+| `bench/size.mjs`'s pages: `browser`, `Tea.sandbox`, `Tea.element`, effects, `random` | 979, 1 035, 1 425, 2 187, 1 626 | 970, 1 024, 1 310, 1 810, 1 454 |
+| `zig build bench -- --generate=100000` with a `main` reaching every module, `--no-cache` | 49 244 (specialisation 41 177) | **12 611** (about 4 550) |
+
+The 100 000 lines spent 23.7 billion in `rewrite` alone: `namedIn` walked a module once per
+name it was asked of, and `inlineOne` counted the whole program once per function it wrote in.
+
+### Compact statements
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print
