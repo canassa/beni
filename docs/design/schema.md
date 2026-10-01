@@ -14,9 +14,9 @@ to Appendix A.
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
 | Q3 | Does v1 have defaults? **Answered 2026-10-02 (A.7): yes, Effect-class defaults in the declaration.** | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
-| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
-| Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost with specialisation. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
-| Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | The library is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
+| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? **Answered 2026-10-02 (A.9): everything.** | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
+| Q9 | Where does differential testing enter the gates? **Answered 2026-10-02 (A.9): in the gates, as recommended.** | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost with specialisation. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
+| Q11 | What is the stored-function abstraction after P2? **Answered 2026-10-02 (A.9): conversions may suspend; inferred per schema.** | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | The library is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
 
 The source of settled decisions is [the queue](../../plans/queue.md), *Owner
 decisions on schemas*, 2026-09-21 and 2026-09-22, and the commissioned fork
@@ -1255,3 +1255,21 @@ renames, two representations, defaults, transformations) remain the tool when th
 look like the type. Open questions the specification slice must settle: closed versus open
 inferred records, extra JSON fields, and what a refactor that stops reading a field does to the
 check.
+
+### A.9 — Q6, Q9 and Q11 answered (2026-10-02)
+
+The owner answered the remaining open questions:
+
+- **Q6 — everything.** Inspection (the description), JSON Schema output, sample-data generators,
+  and the rest of what Effect derives from a schema (pretty printing, equivalence, and the like)
+  are part of the schema milestone, not later libraries. A check written as a beni function is
+  carried as an explicit opaque check — never dropped or weakened — in every derived artefact.
+- **Q9 — agreed.** Every schema semantic fixture runs both execution paths (specialised code and
+  the library interpreter) inside the gates, in development and release, and also asserts an
+  independently written expected answer.
+- **Q11 — yes.** A conversion may suspend. Whether a schema suspends is inferred from its
+  conversions: a schema whose conversions never suspend stays synchronous at no cost; one that
+  may suspend decodes and encodes as suspending operations, and the `sync` rule refuses it where
+  suspension is not allowed (`view`, `update`).
+
+The open-decisions table at the top is superseded by A.7–A.9; no schema question is open.
