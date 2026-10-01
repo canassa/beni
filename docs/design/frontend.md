@@ -1257,7 +1257,10 @@ flag that does nothing is refused, `beni: --poll-interval needs --watch`.
 ### 10.4 `beni serve`
 
 `build --watch` and a static HTTP server for the output directory in one process: the server answers
-from `--out` while the watch rebuilds it. It takes every `build` flag, `--watch` implied, and:
+from `--out` while the watch rebuilds it. *Amended 2026-10-01:* a development build writes a
+`.mjs.map` beside every module (`backend.md` §11.1) with the `.beni` text inside it, so serving
+`--out` is all a browser's debugger needs; `--no-source-maps` is one of the `build` flags `serve`
+takes. It takes every `build` flag, `--watch` implied, and:
 
 | Flag | Meaning | Default |
 |---|---|---|

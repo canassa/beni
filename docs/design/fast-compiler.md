@@ -1464,6 +1464,13 @@ But position tracking must exist in the IR *from the start* even while maps are 
 means touching every pass, not just the printer, and Elm never threaded positions through codegen and
 consequently has no source maps at all (03 §4).
 
+*Amended 2026-10-01:* development maps are built and **on by default** in a development build, per
+[`backend.md`](backend.md) §11.1, which supersedes "off by default" here for that build: a
+development build is not shipped, so a map's size is disk and not page weight, and the browser-first
+rule makes an unmapped debugger the first thing a user hits. Recorded in the print pass as specified;
+the line/column conversion is one forward scan of the printed bytes after it, not a tree walk.
+Release maps, and the join-time rebasing they need, remain M5.
+
 ## 10. Parallelism — and where not to use it
 
 **Parallelise:** lexing, parsing and BIR lowering (per file, no cross-file knowledge); per-module

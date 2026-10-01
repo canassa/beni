@@ -79,7 +79,14 @@ beni build [options] <entry>...      compile to JavaScript
 | `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); **refuses a build that reaches `Debug`**; later chunks (§10), integer tags, maps off | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
-| `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
+| `--source-maps` | a `.mjs.map` beside every emitted module (§11.1); `--no-source-maps` writes none | on in dev; refused with `--release` until release maps exist |
+
+*Amended 2026-10-01: development source maps are built (§11.1).* A development build writes a map
+beside every module by default; `--source-maps` states that default and `--no-source-maps` turns
+it off (both together exit 2). The refusal described next survives for `--release` only:
+`--release --source-maps` exits 2 with `beni: --source-maps is not implemented for --release yet; a
+release build writes no .map file`, by the same argument, and `--release` alone writes no map. The
+two paragraphs below are kept as the record of why.
 
 **`--source-maps` is refused, not ignored.** It is not implemented — the encoder is M5 (§11) — and a
 flag that is accepted while doing nothing makes a user believe they asked for something: a silent,
@@ -157,7 +164,8 @@ and the platform's runtime out as `.js`, and Node then reparsed each one and war
 "module"` to a `package.json`. That is the dependency this rule exists to avoid, arriving through
 the back door. (*Amended 2026-09-28:* the rule is about files that are LOADED; the one
 file a build writes that is not a module, `_manifest.txt` — *The output directory holds what the
-last build wrote* below — is not `.mjs` and is never imported.) A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
+last build wrote* below — is not `.mjs` and is never imported. *Amended 2026-10-01:* nor is a
+development build's `<module>.mjs.map` (§11.1), which a debugger reads and nothing imports.) A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
 generated module, so it takes **`.foreign.mjs`**: it says which half of the module it is, and it
 cannot collide — a generated file is named for its module, every segment of a module name is an
 upper identifier, so no generated file has two dots in its base name. The `.js` names in `core/` and
@@ -5840,6 +5848,113 @@ only test is the degenerate case is a pass that will be wrong the first time it 
 Fused into the print pass — a mapping recorded at each emit site, never a second traversal —
 delta-encoded, per-file chunks rebased once at join time. On by default in dev, off in release.
 Positions live in `JsIr` from the start even while maps are off.
+
+### 11.1 Development maps (specified and built 2026-10-01)
+
+Pulled forward from M5 by `plans/status-2026-10.md` Milestone 1, item 4: beni is a browser language
+first, and debugging emitted JavaScript without a map is the first thing a user of `beni serve`
+hits. This subsection is the contract for the **development** build; `--release` writes no map yet
+(below). Code: `src/js/SourceMap.zig`, the printer's `mark`/`markName` (`src/js/Print.zig`), and
+`Emitter.planMap` (`src/js/Emit.zig`).
+
+**One map per emitted module, beside it.** Every `.mjs` a development build lowers from a `.beni`
+module — the app's, `_core/`'s and `_platform/`'s alike — gets `<path>.mjs.map` in the same
+directory, and the module ends with one line, `//# sourceMappingURL=<basename>.mjs.map`. The URL is
+relative, so the output tree is self-contained: `beni serve` serves it as it serves the modules
+(`frontend.md` §10.4 already types `.map` as `application/json`), and the tree can be moved or
+served under any `"base"`. **Not mapped**, each for a stated reason: a hand-written sibling
+(`*.foreign.mjs`) and a lowering's runtime are copied byte for byte, so the file the debugger shows
+IS the source and an identity map would add a file and say nothing; the entry file (`_main.mjs`)
+and the derived-comparison runtime (`_core/_derived.mjs`) were written by no beni line; the page
+shell is HTML. A `.mjs.map` is never an ES module, and §2's "every emitted file is `.mjs`" reads
+"every emitted file a host loads"; a map is named for the module beside it and never stands alone.
+
+**The format is Source Map v3** (ECMA-426): `version`, `file` (the module's base name), one entry in
+`sources`, the same one in `sourcesContent`, `names`, `mappings`. No `sourceRoot`, no index maps, no
+`ignoreList`. Columns on both sides are **UTF-16 code units**, which is what the format counts and
+what a browser means by a column; a generated line ends at `\n`, `\r` and U+2028/U+2029, as a
+JavaScript engine counts lines.
+
+- **`sources`** names the `.beni` file relative to the map: for a file read from disk, the path
+  from the map's directory to it, both made absolute against the working directory and normalised
+  lexically (`../src/Main.beni` for `beni build src --out=out`), so Node's `--enable-source-maps`
+  prints a path the developer can open; for a file embedded in the compiler (core, an embedded
+  platform), `beni:///` and its store path (`beni:///core/List.beni`), a URL that names it
+  honestly and that no server is asked for.
+- **`sourcesContent`** always carries the module's text. The output tree is what a browser can
+  reach — the source tree is not served, and core is not on disk at all — so without it DevTools
+  would show an empty file.
+- **`names`** gives a binding its beni name where the printed one differs: `Main$twice` is
+  `twice`, `n$2` is `n`. A temporary the lowering invented (`$t…`) has none. Two locals printed
+  `x$2` and `x$5` are two entries. A **named function's first byte carries its name too** — the
+  arrow after `const Main$twice = `, a `function` declaration's keyword — because an engine names a
+  stack frame by the mapping at the start of the enclosing function (Node's does exactly that), so
+  a crash in `describe` prints `at describe (…/Main.beni:17:13)` and not `at Main$describe`.
+
+**Granularity: every statement and every expression whose `JsIr` node has a position.** `mark` runs
+at the start of `statement`, `rawRecursive` and `expand` — the three places a node starts printing
+— and records `(generated byte offset, source byte offset)`; a binding's name gets a second mark
+at the name. A node the lowering invented (`Node.no_pos`) records nothing and is covered by the
+mark before it. Where several nodes start at the same generated byte — a call and its callee, a
+binary and its left operand — the **innermost** wins, since it is the token the reader sees first
+there (`n * 2` maps to `n`, not to the `*` the binary is positioned on). The encoder drops a
+segment that repeats the previous one's source position on the same generated line. What that
+gives, by construction rather than by a list: a declaration maps to its name (its `const` and its
+name to the definition's name token — `Lower.declarationAs` positions the binding there and the
+value at its body); a call maps to its first token; a `case` arm's test maps to the arm's pattern
+and its body to the arm's expression; `Debug.todo` and every other call maps to the call, which is
+where a thrown error's frame points. **Markup** is lowered by the platform's lowering through the
+interface (`boundary.md` §9.4), whose `at` positions each built node at the markup node it came
+from: a hole's patch and mount code map to the hole (`{r.maybe}`), a template and its kind to the
+element that opens it, and the walk the lowering invents between them to the mark before it.
+
+**Determinism** (rule 5): the map is a function of the printed bytes, the marks (in print order)
+and the source; `names` is numbered in first-use order; nothing reads thread timing. The only input
+outside the build's arguments is the working directory, and it enters only as the common prefix
+the relative URL cancels.
+
+**Cost**, measured 2026-10-01 on `zig build bench -- --generate=100000` (624 files, 100 159 lines,
+one core, ReleaseFast): the `emit` line 34–37 ms without maps; the new `emit+maps` line, which
+records the marks and writes every map, 10–14 ms more (≈30%), of which `sourcesContent` is about
+2.5 ms and the marks in the printer 2–4 ms. A whole cold `beni build --library` of the same tree:
+182 → 208 ms at `--jobs=1`, 61 → 73 ms at `--jobs=8`, the difference including 627 more files
+written. Size: 2.54 MB of maps beside 1.63 MB of JavaScript, 2.03 MB of it `sourcesContent`;
+mappings average about 6 bytes a segment. A development build is not shipped, so this is disk and
+write time, not page weight; `--no-source-maps` drops all of it.
+
+**Tests.** `build_test`'s *a development build maps a crash in a case arm back to the beni line and
+column* builds a program whose `case` arm calls `Debug.todo`, decodes `Main.mjs.map` with a VLQ
+reader written in the test from the format alone, and pins where named spots of the module map —
+the `Debug.todo` call, a call inside an arm, an arm's test, a declaration's name and its arrow,
+both carrying `twice` — and then runs the program under Node's `--enable-source-maps` and pins the
+crash's frames (`at describe (…Main.beni:17:13)`); it also checks a map beside every module and
+none beside a sibling or the entry file. A neighbour pins `--no-source-maps` and the contradiction.
+Every `emit/` development golden ends with its module's `//# sourceMappingURL=` line, and the
+determinism test byte-compares the maps with everything else. Chrome is not in the gates:
+`tests/browser/sourcemap-chrome.mjs <chrome> <out-dir>` (Chrome from `nix develop .#browser`)
+serves a browser build, waits for its first uncaught exception over the DevTools protocol, and
+resolves each frame through the `sourceMappingURL` Chrome reported in `Debugger.scriptParsed` —
+run on 2026-10-01 against a page whose view calls `Debug.todo` from a hole, it printed
+`Main$label /Main.mjs:17:41 -> /src/Main.beni:9:13` and `Main$view … -> /src/Main.beni:17:9`, the
+frames below them in `beni:///platforms/browser/Rt.beni`, and the sibling's and entry file's
+frames `unmapped`. By hand: `beni serve`, open DevTools, and look for the `.beni` files in the
+Sources panel under the page's origin (`src/`, where `../src/` lands at the server's root) and
+under `beni://`; that half — the panel, breakpoints, stepping — has not been checked by a test.
+
+**The flags.** A development build writes maps unless `--no-source-maps` is given; `--source-maps`
+says so explicitly and is accepted; giving both is a usage error (exit 2). `--release` writes none,
+and `--release --source-maps` is refused with exit 2 and a one-line message rather than accepted
+while writing no `.map` — §2's original reason, kept for the half that is not built.
+
+**Deferred.** (1) **Release maps**: the one scope-hoisted file and the multi-file release layout
+need the marks to survive Opt's dropped statements and inlined initialisers, compact printing's
+inserted spaces, Rename's short names (whose `names` entry is then the long beni name — the point
+of `names` in a minified build) and §9's per-module pieces joined into one file, which is the
+"rebased once at join time" above; none of that is built. (2) **Hand-written JavaScript** is
+unmapped in development (above) and, under `--release`, compacted by `Minify.zig`, which would then
+owe a map of its own. (3) A crash screen (`Rt.crashScreen`, development only) shows the message and
+points at the console, where DevTools already applies these maps to the stack; resolving frames on
+the screen itself would need a map reader in the runtime and is not built.
 
 ## 12. Testing
 
