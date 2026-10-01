@@ -25,7 +25,6 @@ combine (Box a) z = Box (a.mix z)
 f n =
     let
         r = g n
-
         q z = (Box r).combine z
     in
     ( q 1, q "s" )

@@ -41,9 +41,7 @@ main : Program
 main =
     let
         mapped = Dict.map numbers (\k value -> note "Dict.map" k + value)
-
         kept = Dict.filter numbers (\k _ -> note "Dict.filter" k /= 3)
-
         ( splitKept, splitDropped ) = Dict.partition numbers (\k _ -> note "Dict.partition" k /= 3)
 
         merged =
@@ -55,7 +53,6 @@ main =
                 (\k _ acc -> note "merge.right" k + acc)
 
         setMapped = Set.map members (\v -> note "Set.map" v * 10)
-
         setKept = Set.filter members (\v -> note "Set.filter" v /= 3)
 
         ( setSplitKept, setSplitDropped ) =

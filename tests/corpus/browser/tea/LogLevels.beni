@@ -15,9 +15,7 @@ update : Msg, Int -> Int
 update Go n =
     let
         _ = Log.info "went ${String.fromInt (n + 1)}"
-
         _ = Log.warn "careful"
-
         _ = Log.error "not really"
     in
     n + 1

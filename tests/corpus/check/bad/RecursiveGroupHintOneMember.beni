@@ -25,7 +25,6 @@ pub mb (K n) x = (K n).ma x
 pub mc (K n) x =
     let
         hh z = ( z, (K 0).mb z )
-
         ( ha, hb ) = ( hh 1, hh "s" )
     in
     x

@@ -7,9 +7,7 @@
 g r =
     let
         b = Basics.eq r r
-
         n = r.x + 1
-
         fn = r.f
     in
     ( b, fn n )

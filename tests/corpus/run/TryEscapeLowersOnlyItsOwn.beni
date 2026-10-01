@@ -22,7 +22,6 @@ f k =
         g u =
             let
                 v = u?
-
                 twice x = ( x, x )
             in
             k ( twice v, twice "s" )

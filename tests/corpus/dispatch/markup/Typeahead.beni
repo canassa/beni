@@ -61,7 +61,6 @@ viewHit : Model, Hit -> Html Msg
 viewHit model hit =
     let
         isFav = List.member model.favourites hit.id
-
         isSaving = List.member model.saving hit.id
     in
     <li class="hit">

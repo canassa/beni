@@ -50,7 +50,6 @@ request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
     let
         answer = Task.callback (\resume -> start method url contentType body json resume)
-
         defect = Js.get (Js.from answer) "d"
     in
     if Js.isUndefined defect then answer else Js.throw defect

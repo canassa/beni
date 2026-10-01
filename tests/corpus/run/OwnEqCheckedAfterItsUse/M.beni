@@ -21,7 +21,6 @@ pub type K
 pub compare left right =
     let
         direct = T 1 == T 2
-
         nested = { v = T 1 } == { v = T 2 }
     in
     case left of

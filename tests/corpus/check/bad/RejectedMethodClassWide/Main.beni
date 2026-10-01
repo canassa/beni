@@ -13,11 +13,8 @@ import T exposing (T)
 f1 x y =
     let
         a = x.foo ()
-
         b = [ x, T.T 1 ]
-
         c = [ x, y ]
-
         d = y.foo ()
     in
     0
@@ -26,11 +23,8 @@ f1 x y =
 f2 x y =
     let
         a = x.foo ()
-
         b = [ x, T.T 1 ]
-
         c = [ y, x ]
-
         d = y.foo ()
     in
     0

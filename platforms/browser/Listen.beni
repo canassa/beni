@@ -28,14 +28,12 @@ open : String, String, sync (Js.Value -> a) -> Js.Value
 open target name read =
     let
         on = Js.global target
-
         l = Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
 
         handler =
             \event ->
                 let
                     v = Js.from (read event)
-
                     waiting = Js.at l 1
                 in
                 if Js.isNull waiting then
@@ -47,7 +45,6 @@ open target name read =
                     Js.to (Js.apply waiting [ v ])
 
         _ = Js.setAt l 4 (Js.from handler)
-
         _ = Js.call on "addEventListener" [ Js.from name, Js.from handler ]
     in
     l

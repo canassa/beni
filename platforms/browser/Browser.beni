@@ -122,7 +122,6 @@ onRendered resume =
     else
         let
             _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
-
             _ = Js.apply (Js.read nudge) []
         in
         \() ->
@@ -203,13 +202,9 @@ afterRender : () -> ()
 afterRender () =
     let
         resumes = Js.read waiters
-
         work = Js.read later
-
         _ = Js.write waiters (Js.array [])
-
         _ = Js.write later (Js.array [])
-
         _ = Js.write busy True
     in
     Js.finally
@@ -259,9 +254,7 @@ host p root flushing phase stop =
 
         -- A fiber that throws stops the page, as a handler that throws does.
         _ = Task.onDefect (\() -> Js.to (Js.apply stop []))
-
         _ = Js.write setPhase phase
-
         _ = Js.apply phase [ Js.from afterRender ]
 
         send =
@@ -272,15 +265,10 @@ host p root flushing phase stop =
                 ()
 
         _ = Js.write nudge (Js.from (\() -> send skip))
-
         model = Js.ref (Js.to Js.null)
-
         started = Js.ref False
-
         dirty = Js.ref False
-
         shown = Js.ref (Js.to Js.null)
-
         self : Host msg
         self =
             Js.to
@@ -321,7 +309,6 @@ host p root flushing phase stop =
                         (\() ->
                             let
                                 _ = apply msg
-
                                 _ = drain 0
                             in
                             ()
@@ -337,9 +324,7 @@ host p root flushing phase stop =
                 if not (Js.read started) then
                     let
                         _ = Js.write started True
-
                         _ = Js.write model (p.settle self (p.init self))
-
                         _ = Js.write shown (p.view (Js.read model))
                     in
                     Js.read shown
@@ -348,14 +333,12 @@ host p root flushing phase stop =
                 else
                     let
                         _ = Js.write dirty False
-
                         _ = Js.write busy True
                     in
                     Js.finally
                         (\() ->
                             let
                                 _ = Js.write model (p.settle self (Js.read model))
-
                                 _ = Js.write shown (p.view (Js.read model))
                             in
                             Js.read shown

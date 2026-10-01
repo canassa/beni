@@ -25,7 +25,6 @@ alive : Grid, Int -> Int
 alive g i =
     let
         x = modBy i g.w
-
         y = i // g.w
 
         n =

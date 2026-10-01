@@ -8,9 +8,7 @@ split : ( Int, ( String, Bool ) ) -> String
 split input =
     let
         ( n, ( s, flag ) ) = input
-
         person = { name = s, age = n }
-
         { name, age } = person
 
         ( first, second ) =
@@ -22,7 +20,6 @@ split input =
                     ( n, n )
 
         _ = flag
-
         total : Int
         total = first + second + age
     in

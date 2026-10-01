@@ -44,7 +44,6 @@ subscriptions : Model -> Sub String
 subscriptions _ =
     let
         a = { first = 1, second = 2 }
-
         b = { first = 2, second = 1 }
     in
     Sub.batch

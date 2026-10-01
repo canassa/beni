@@ -47,11 +47,8 @@ main : Program
 main =
     let
         tup = ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
-
         lst = [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
-
         ctor = Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
-
         updated = { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
 
         interpolated =

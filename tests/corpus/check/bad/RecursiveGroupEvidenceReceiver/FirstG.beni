@@ -24,7 +24,6 @@ g n =
 f n =
     let
         r = g n
-
         q z = useMix r z
     in
     ( q 1, q "s" )

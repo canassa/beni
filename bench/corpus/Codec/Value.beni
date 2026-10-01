@@ -122,7 +122,6 @@ block parts open close indent depth =
     else
         let
             inner = "\n" ++ String.repeat " " (indent * (depth + 1))
-
             outer = "\n" ++ String.repeat " " (indent * depth)
         in
         open ++ inner ++ String.join parts ("," ++ inner) ++ outer ++ close

@@ -158,7 +158,6 @@ pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
 decodeWith options schema value =
     let
         context = rootContext options Decoding
-
         _ <- Result.andThen (schema.encoded.validate context value)
         decodedValue <- Result.andThen (schema.decodeValue context value)
         _ <- Result.andThen (schema.decoded.validate context decodedValue)
@@ -174,7 +173,6 @@ pub encodeWith : Options, Schema e a, a -> Result (List Issue) e
 encodeWith options schema value =
     let
         context = rootContext options Encoding
-
         _ <- Result.andThen (schema.decoded.validate context value)
         encodedValue <- Result.andThen (schema.encodeValue context value)
         _ <- Result.andThen (schema.encoded.validate context encodedValue)
@@ -190,7 +188,6 @@ pub readWith : Options, Schema e a, Value -> Result (List Issue) a
 readWith options schema value =
     let
         context = rootContext options Decoding
-
         encodedValue <- Result.andThen (schema.encoded.readValue context value)
     in
     decodeWith options schema encodedValue
@@ -204,7 +201,6 @@ pub writeWith : Options, Schema e a, a -> Result (List Issue) Value
 writeWith options schema value =
     let
         context = rootContext options Encoding
-
         encodedValue <- Result.andThen (encodeWith options schema value)
     in
     schema.encoded.writeValue context encodedValue

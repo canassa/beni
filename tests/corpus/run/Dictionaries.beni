@@ -11,7 +11,6 @@ main : Program
 main =
     let
         empty = Dict.empty
-
         counts = Dict.insert (Dict.insert empty "a" 1) "b" 2
     in
     Node.printLines

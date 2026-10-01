@@ -236,9 +236,7 @@ strongPassword : Validator String
 strongPassword field value =
     let
         hasDigit = String.any value Char.isDigit
-
         hasUpper = String.any value Char.isUpper
-
         hasLower = String.any value Char.isLower
     in
     if hasDigit && hasUpper && hasLower then

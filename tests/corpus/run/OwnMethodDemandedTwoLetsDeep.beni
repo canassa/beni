@@ -31,9 +31,7 @@ outer u =
 pub size (Box v) u =
     let
         h y = ( y, v )
-
         ( _, _ ) = h True
-
         ( one, _ ) = h 1
     in
     one

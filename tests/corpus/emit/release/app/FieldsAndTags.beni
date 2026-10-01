@@ -42,7 +42,6 @@ main : Node.Program
 main =
     let
         m = bump (bump { label = "m", count = 1, total = 0 })
-
         lights = [ Green, Amber m.count, Red ]
     in
     Node.printLines

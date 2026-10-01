@@ -10,13 +10,9 @@ main : Node.Program
 main =
     let
         next = Cells.counter 10
-
         a = next ()
-
         b = next ()
-
         t1 = Cells.tick ()
-
         t2 = Cells.tick ()
     in
     Node.printLines

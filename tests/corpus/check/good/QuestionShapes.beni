@@ -5,7 +5,6 @@ pub parseBoth : String, String -> Result String Int
 parseBoth a b =
     let
         left = parseOne a?
-
         right = parseOne b?
     in
     Ok (left + right)

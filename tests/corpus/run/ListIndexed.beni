@@ -37,9 +37,7 @@ main : Program
 main =
     let
         built = List.initialize 4 (\i -> Debug.log (i * i) "initialize")
-
         updated = List.update xs 1 (\x -> Debug.log (x + 1) "update in range")
-
         missed = List.update xs 3 (\x -> Debug.log (x + 1) "update out of range")
     in
     Node.printLines

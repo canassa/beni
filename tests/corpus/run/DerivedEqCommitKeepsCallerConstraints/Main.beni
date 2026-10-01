@@ -16,7 +16,6 @@ one = 1
 viaTuple x y =
     let
         cx = x < x
-
         cy = y < y
     in
     ( cx && cy, ( Trip.Trip x y one 5, 0 ) == ( Trip.Trip x y one 5, 0 ) )
@@ -25,7 +24,6 @@ viaTuple x y =
 viaRecord x y =
     let
         cx = x < x
-
         cy = y < y
     in
     ( cx || cy, { t = Trip.Trip x y one 5 } == { t = Trip.Trip x y one 6 } )

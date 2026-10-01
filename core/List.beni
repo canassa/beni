@@ -387,7 +387,6 @@ mapHelp xs a o i n func b same =
     if i < n then
         let
             x = at a (o + i)
-
             y = func x
         in
         mapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
@@ -410,7 +409,6 @@ indexedMapHelp xs a o i n func b same =
     if i < n then
         let
             x = at a (o + i)
-
             y = func i x
         in
         indexedMapHelp xs a o (i + 1) n func (put b i y) (same && identical x y)
@@ -807,9 +805,7 @@ sortRange xs lo hi cmp =
     else
         let
             mid = lo + half (hi - lo)
-
             left = sortRange xs lo mid cmp
-
             right = sortRange xs mid hi cmp
         in
         merge left 0 (length left) right 0 (length right) cmp (builder (hi - lo))
@@ -829,7 +825,6 @@ merge xs i n ys j m cmp b =
     else
         let
             x = at xs i
-
             y = at ys j
         in
         case cmp x y of

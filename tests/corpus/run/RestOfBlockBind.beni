@@ -35,7 +35,6 @@ mixed : String
 mixed =
     let
         prefix = "p"
-
         s <- scope "c"
         suffix = "q"
     in

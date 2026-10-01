@@ -48,9 +48,7 @@ main : Program
 main =
     let
         first = n "let.first" 1
-
         second = n "let.second" 2
-
         third = n "let.third" 3
 
         onceSimple =
@@ -82,11 +80,8 @@ main =
                 n "if.else" 20
 
         andShort = b "and.short.left" False && b "and.short.right" True
-
         andBoth = b "and.both.left" True && b "and.both.right" False
-
         orShort = b "or.short.left" True || b "or.short.right" False
-
         orBoth = b "or.both.left" False || b "or.both.right" True
 
         andShortStatements =

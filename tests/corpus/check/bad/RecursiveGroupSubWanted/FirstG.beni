@@ -28,7 +28,6 @@ g n =
 f n =
     let
         r = g n
-
         q z = (Box r).combine z
     in
     ( q 1, q "s" )

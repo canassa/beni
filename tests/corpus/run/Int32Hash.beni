@@ -58,7 +58,6 @@ xorshift32 : Int32 -> Int32
 xorshift32 seed =
     let
         a = Int32.xor seed (Int32.shiftLeft seed 13)
-
         b = Int32.xor a (Int32.shiftRightZero a 17)
     in
     Int32.xor b (Int32.shiftLeft b 5)
@@ -79,11 +78,8 @@ fmix32 : Int32 -> Int32
 fmix32 h =
     let
         a = Int32.xor h (Int32.shiftRightZero h 16)
-
         b = Int32.mul a (Int32.fromInt 0x85EBCA6B)
-
         c = Int32.xor b (Int32.shiftRightZero b 13)
-
         d = Int32.mul c (Int32.fromInt 0xC2B2AE35)
     in
     Int32.xor d (Int32.shiftRightZero d 16)

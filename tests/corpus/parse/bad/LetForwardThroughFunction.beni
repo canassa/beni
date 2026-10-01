@@ -8,11 +8,8 @@
 g =
     let
         a = f 1
-
         f x = x + b
-
         b = 2
-
         later = f 10
     in
     a + later

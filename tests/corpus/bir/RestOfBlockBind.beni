@@ -14,7 +14,6 @@ around : Int -> Int
 around n =
     let
         before = n + 1
-
         x <- withScope before
         after = x * 2
     in

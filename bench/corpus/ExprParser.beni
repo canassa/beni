@@ -78,7 +78,6 @@ tokenizeChars chars acc =
             if Char.isDigit c then
                 let
                     ( digits, remaining ) = span isNumberChar chars
-
                     text = String.fromList digits
                 in
                 case String.toFloat text of
@@ -121,7 +120,6 @@ pub parse : String -> Result String Expr
 parse input =
     let
         tokens = tokenize input?
-
         ( expr, rest ) = parseExpr 0 tokens?
     in
     case rest of
@@ -305,7 +303,6 @@ eval env expr =
         Binary op left right ->
             let
                 l = eval env left?
-
                 r = eval env right?
             in
             case op of

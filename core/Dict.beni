@@ -482,9 +482,7 @@ mapTree tree func =
         Node color key value left right ->
             let
                 newLeft = mapTree left func
-
                 newValue = func key value
-
                 newRight = mapTree right func
             in
             Node color key newValue newLeft newRight

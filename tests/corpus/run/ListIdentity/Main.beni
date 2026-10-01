@@ -43,7 +43,6 @@ main : Node.Program
 main =
     let
         rows = [ { id = 1 }, { id = 2 }, { id = 3 } ]
-
         single = [ 5 ]
 
         firstOf xs =
@@ -55,9 +54,7 @@ main =
                     False
 
         a = [ 1, 2 ]
-
         b = [ 3, 4 ]
-
         joined = List.concat [ [], a, [], b, [], [] ]
 
         mapped =

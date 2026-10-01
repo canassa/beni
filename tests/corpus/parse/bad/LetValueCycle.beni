@@ -7,7 +7,6 @@
 c =
     let
         a = b + 1
-
         b = a
     in
     a + b

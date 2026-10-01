@@ -26,11 +26,8 @@ main : Program
 main =
     let
         folded = List.foldl xs 0 (\x acc -> note "foldl" x + acc)
-
         mapped = List.map xs (\x -> note "map" x * 10)
-
         indexed = List.indexedMap xs (\at x -> note "indexedMap" x + at)
-
         kept = List.filter xs (\x -> note "filter" x /= 2)
 
         picked =
@@ -43,13 +40,9 @@ main =
                 )
 
         flattened = List.concatMap xs (\x -> [ note "concatMap" x, x ])
-
         zipped = List.map2 xs [ 10, 20, 30 ] (\x y -> note "map2" x + y)
-
         split = List.partition xs (\x -> note "partition" x /= 2)
-
         searched = List.any xs (\x -> note "any" x == 2)
-
         every = List.all xs (\x -> note "all" x /= 3)
     in
     Node.printLines

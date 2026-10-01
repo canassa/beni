@@ -18,7 +18,6 @@ main =
             inner * 10
 
         double n = n * 2
-
         quadruple n = double (double n)
     in
     Node.printLines
@@ -29,7 +28,6 @@ main =
         , String.fromInt
             (let
                 a = 2
-
                 b = 3
              in
              a * b

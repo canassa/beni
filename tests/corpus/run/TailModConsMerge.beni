@@ -58,11 +58,8 @@ main : Program
 main =
     let
         evens = List.map (List.range 1 50000) (\x -> x * 2)
-
         odds = List.map (List.range 0 49999) (\x -> x * 2 + 1)
-
         merged = merge evens odds
-
         sorted = mergeSort (List.reverse (List.range 1 100000))
     in
     Node.printLines

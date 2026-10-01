@@ -7,9 +7,7 @@ n : Int
 n =
     let
         g = ( [ List.singleton, identity ], [ Just, identity ] )
-
         h = g
-
         k = g
     in
     0

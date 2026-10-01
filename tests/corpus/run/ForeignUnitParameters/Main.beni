@@ -12,7 +12,6 @@ main : Node.Program
 main =
     let
         first = Units.tick ()
-
         second = Units.tick ()
     in
     Node.printLines

@@ -20,7 +20,6 @@ pub take : () -> String
 take () =
     let
         seen = Js.read log
-
         _ = Js.write log ""
     in
     seen
@@ -71,7 +70,6 @@ pub discarded : () -> String
 discarded () =
     let
         _ = Js.finally (\() -> note "body") (\() -> note "cleanup")
-
         _ = note "after"
     in
     "done"
@@ -115,7 +113,6 @@ pub throwsDiscarded : () -> String
 throwsDiscarded () =
     let
         _ = Js.finally (\() -> fail "crash") (\() -> note "cleanup")
-
         _ = note "unreached"
     in
     "unreached"
@@ -185,7 +182,6 @@ pub latched : (() -> ()) -> ()
 latched f =
     let
         _ = note "lock"
-
         _ = Js.finally f (\() -> note "unlock")
     in
     note "unlocked"

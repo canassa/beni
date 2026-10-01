@@ -30,13 +30,9 @@ main : Program
 main =
     let
         callsLater = twice (n "let.callsLater" 3)
-
         deferred = \_ -> later + 1
-
         later = n "let.later" 5
-
         usesEarlier = later * 10
-
         twice k = n "let.twice" (k * 2)
 
         isEven k =

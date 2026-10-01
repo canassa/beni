@@ -30,9 +30,7 @@ pub joins : Int -> Int
 joins n =
     let
         one = n * 2
-
         two = one * 3
-
         three = two * 4
     in
     one + two + three

@@ -27,9 +27,7 @@ main : Program
 main =
     let
         q = Q (Debug.log 1 "zed") (Debug.log 2 "alpha")
-
         outer = Outer (Q 3 4) "o"
-
         half = Q 5 _
     in
     Node.printLines

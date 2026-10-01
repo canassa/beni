@@ -21,7 +21,6 @@ template html =
                 if Js.isNull (Js.read node) then
                     let
                         t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
-
                         _ = Js.set t "innerHTML" (Js.from html)
                     in
                     Js.write node (Js.get (Js.get t "content") "firstChild")
@@ -74,7 +73,6 @@ pub counted : Int -> Int
 counted n =
     let
         r = cell n
-
         _ = bump r
     in
     Js.read r

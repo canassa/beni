@@ -15,7 +15,6 @@ pub combine (K a) z = K a
 pub mb (K n) y =
     let
         _ = (K n).ma (K 1)
-
         _ = (K n).md 0
     in
     y
@@ -24,7 +23,6 @@ pub mb (K n) y =
 pub ma (K n) x =
     let
         _ = (K n).mb 0
-
         q z = x.combine z
     in
     ( q 1, q "s" )

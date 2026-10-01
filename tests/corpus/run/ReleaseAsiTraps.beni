@@ -65,7 +65,6 @@ pieces : Int -> String
 pieces n =
     let
         tag = "n"
-
         body = "${tag}=${String.fromInt n}"
     in
     String.concat [ body, "|", "one\ntwo", "|", "a\tb", "|", "d\${}e" ]

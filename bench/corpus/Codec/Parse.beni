@@ -15,7 +15,6 @@ pub parse : String -> Result String Value
 parse input =
     let
         chars = String.toList input
-
         ( value, rest ) = parseValue chars?
     in
     case skipSpace rest of
@@ -163,7 +162,6 @@ parseNumber : List Char -> Step Value
 parseNumber chars =
     let
         ( digits, rest ) = span chars isNumberChar
-
         text = String.fromList digits
     in
     case String.toFloat text of

@@ -131,7 +131,6 @@ pub int : Int, Int -> Generator Int
 int a b =
     let
         lo = min a b
-
         range = max a b - lo + 1
 
         -- 2³² mod range: the outputs below it would favour the low values.
@@ -168,11 +167,8 @@ float a b =
         (\seed0 ->
             let
                 seed1 = next seed0
-
                 lo = toFloat (Js.bitAnd (peel seed1) 67108863)
-
                 hi = toFloat (Js.bitAnd (peel seed0) 134217727)
-
                 value = (hi * 67108864.0 + lo) / 9007199254740992.0
             in
             ( value * abs (b - a) + a, next seed1 )

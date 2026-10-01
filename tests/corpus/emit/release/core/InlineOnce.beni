@@ -24,7 +24,6 @@ putRun : Js.Value, Js.Value, Js.Value, Js.Value -> ()
 putRun parent n end before =
     let
         next = Js.get n "nextSibling"
-
         _ = Js.call parent "insertBefore" [ n, before ]
     in
     if Js.same n end then

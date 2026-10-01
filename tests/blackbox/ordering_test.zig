@@ -94,13 +94,11 @@ test "a let's markup and the call that decides its handler infer one type in eit
     const written = try readRepo(a, "tests/corpus/check/good/markup/LetMarkupObligationLater.beni");
     const markup_first =
         \\        v = <input onInput={g} />
-        \\
         \\        z = g "x"
         \\
     ;
     const call_first =
         \\        z = g "x"
-        \\
         \\        v = <input onInput={g} />
         \\
     ;
