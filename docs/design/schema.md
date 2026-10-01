@@ -2063,7 +2063,10 @@ program that only builds schemas with the library builds and runs, under `--rele
   slowdown; as the bench's **`--library`** build, which specialises nothing, 5–38 % slower (read
   flat 402 → 501 ns, decode flat 320 → 442 ns, parse list 0.92 → 1.05 ms): the hand-written
   engine was specialised by hand, and a library build of beni-written core is not specialised at
-  all. That is the wall, recorded in `plans/core-in-beni.md`.
+  all. That is the wall, recorded in `plans/core-in-beni.md`. *Amended 2026-10-02:* a library
+  build is specialised now (`backend.md` §9, amended), a self-call after `||` or `&&` is a tail
+  call (§8, amended), and the record loop writes `Object.hasOwn` and `push` out: the bench is
+  within 1–3 % on valid input and 4–6 % on failures (`plans/core-in-beni.md`).
 - **The ceiling** (§5's amendment): `maxDepthCeiling` 1 024, default 512. The deepest value one
   cold operation survived in a fresh Node 24 process (default stack, 984 KB), by bisection over
   processes, in depth units: a tree whose level is a payload, a field and an element (three

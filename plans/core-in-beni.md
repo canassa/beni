@@ -18,7 +18,7 @@ spelling — it is kept minimal, and the step says why.
 | 2 | **`core/Task.js`**: the fiber runtime | to come |
 | 3 | **`core/List.js`**: the array-backed list and its views | to come; needs `Js`'s list positions loosened as step 1 loosened its names (*What step 1 leaves*) |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js`, `Dom.js`, `runtime.js`'s `safeUrl`, `html`'s `Html.js`, and the `node` platform | to come |
-| 5 | **`core/Schema.js`**: the schema library's engine | **built 2026-10-01**, below: all of it, the sibling deleted; size and application speed meet the bar, the `--library` bench does not |
+| 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
 
@@ -463,3 +463,54 @@ stand as the measured cost.
 **Test cost.** Every test is inside its budget. A Schema program costs more to build:
 `run/SchemaFailures` 413 → 596 M instructions in development and 1 229 → 2 078 M under
 `--release` (the specialiser working through the engine), on the ReleaseSafe compiler.
+
+### Landed (2026-10-02): the wall moved into the compiler, and what is left of it
+
+The engine stayed beni (`CLAUDE.md` rule 10); the compiler changed, in three pieces, each measured
+with `bench/schema-library/run.mjs` against the JavaScript engine (the compiler before this step),
+4 alternating runs, `taskset -c 22`, load 1.3–1.7, medians:
+
+1. **A `--library` build is specialised** (`backend.md` §9, *Whole-program specialisation*,
+   amended): `Emit.specialise` runs for a library too, every name a root-package module exports in
+   `Input.escaping`. `read` 1.27 → 1.14×, `decode` 1.30 → 1.15×, the rest 1.02–1.16×. Four
+   `emit/release/` fixtures — built `--library` — were given inputs a library's caller supplies so
+   that what each pins is not folded first (`ReleaseInline`'s `held`, `CompactIf`'s `classify`,
+   `InlineOnce`'s `twice` and `answer`, `StatementShapes`'s `start`); the six others' new goldens
+   are the specialised output with their claims intact.
+2. **A self-call on the right of `||` or `&&` in tail position is a tail call** (`backend.md` §8,
+   amended; `run/TailCallLogical`, red before: `RangeError`). The engine's key searches —
+   `claims`, `fieldOn` — were a frame per field; `unknown_key` 1.16 → 1.07×. It is the language's,
+   not the engine's: `run/OperatorSectionApplied` is 427 brotli bytes smaller for it.
+3. **The record loop writes `Object.hasOwn` and `push` out** (`fieldsFrom`, `listItems`,
+   `collect`, `failAt`), as step 1 wrote `charCodeAt` out in `compare`: profiled in a process that
+   runs every workload, as the bench does, V8 inlined neither helper into the loop (5 % of the
+   samples between them) where it inlined everything into the hand-written engine's `recordOf`.
+
+| workload | JavaScript engine | beni engine | |
+|---|--:|--:|--:|
+| parse flat valid | 1 213 ns | 1 241 | 1.02× |
+| read flat valid | 446 | 458 | 1.03× |
+| parse flat wrong_type | 1 115 | 1 162 | 1.04× |
+| parse flat missing_key | 980 | 1 035 | 1.06× |
+| parse flat unknown_key | 1 355 | 1 406 | 1.04× |
+| parse list valid | 845 µs | 861 µs | 1.02× |
+| decode flat | 366 | 370 | 1.01× |
+| print flat valid | 1 638 | 1 670 | 1.02× |
+| print list valid | 1 302 µs | 1 322 µs | 1.02× |
+
+**What is left, the wall as it stands.** The valid paths are within 1–3 %; the three failure paths
+are 4–6 % slower, reproducibly (1.04–1.06× in each of three runs). Each failure builds the same
+issue, path array and record the hand-written `failAt` built, so what differs is the shape V8 sees,
+and no compiler change found here moves it. Tried and not kept: letting slice 8 write in a small
+function at every call when the whole is no larger than the declaration (`a.length`, `push`,
+`Object.hasOwn` wrappers): no measurable change on this bench. **And the bytes**: `SchemaSize`'s
+release brotli is 4 531 → **4 489**, but the corpus's schema programs, which reach more of the engine
+than a small schema does, are larger — `bench/size.mjs` release brotli, the JavaScript engine against
+this: `run/SchemaFailures` 5 712 → 6 198 (+8.5 %), `SchemaDescribe` 3 650 → 4 039, `SchemaTagged`
++248, `SchemaConstruction` +247, `SchemaDepth` +132, `SchemaDirections` +127, three others within
+±17. The engine as the other step left it measured the same (+505 on `SchemaFailures`); it is the
+engine's beni, specialised, against hand-minified JavaScript, and it is the next thing to measure
+with `hand-minify`'s method.
+
+`bench/size.mjs` over all 349 programs, before this step and after: release brotli 381 023 →
+382 038 (+0.27 %), all of it the schema programs above; `bench/corpus` −194, the pages unchanged.
