@@ -266,6 +266,43 @@ The test was 6 million under the line before the step. The fix being built elsew
 checks only the core it reaches — removes the cost the step adds; the rest of the gates pass, as
 do `test-run-hashes` and every `run/` and `browser/` program in both builds.
 
+### Landed (2026-10-01), on master at `dfc1cf2d`
+
+**The wall is gone, narrowly.** With a process checking only the core it reaches (`0367d3c3`,
+`66879eb6`), `abuse_wide_test`'s 65 535-entry check measures **4 288 million** with the step on
+it: inside the budget by 12 million, because the prelude still reaches `String`, and `String`
+now reaches `Js`. The next thing core adds to the prelude's closure will meet it again. The
+cut-off and reach tests count `Js` among the modules every check reaches, which it is.
+
+**A second budget the step met**: `rules_test`'s *no hash map is keyed by a dense id* reads all of
+`src/` in a Debug build and measured **4 302 million** once the step's Zig was in it. The cost
+was the test's own search, not the rule: `indexOfPos` for a needle of four bytes compares at
+every byte in Debug, three passes over 6 MB of source, and a line number counted from the start
+of the file for each candidate. One vectorised scalar scan per first byte, and the line number
+counted only for a line reported: **651 million**, the rule unchanged.
+
+**`String.compare` is the code-unit walk** (the owner, 2026-10-02, `browser-decisions.md` S7:
+processing time beats bytes): units compared with `charCodeAt` until the first that differ,
+then the code points there, or one unit back when the unit before opens a surrogate pair in
+either string — written as "its code point is astral" (`codePointAt(i - 1) > 0xFFFF`), which
+needs no `isHigh`/`isLow` helpers and costs half the bytes of the first version (+42 to +73
+brotli). Same compiler, the two cores, 10 rounds, load 1.1, `taskset -c 22`:
+`<` **314.7 → 69.6 µs (0.22×)**, `List.sort` of strings **3 112 → 700 µs (0.22×)**. Its price,
+`bench/size.mjs` release brotli against the array version: 27 programs larger, every one a
+`compare` user, **+8 to +26 B** (+45 raw); the 332 programs' total +481 B (+0.13 %).
+`run/StringOrdering` gained a line that sorts a BMP character above the surrogates against
+astral ones and two astral ones sharing their first unit (`a\u{FFFF}` below `a😀` below `a😁`).
+
+**The step against master `dfc1cf2d`** (the same sources; master's emitted output had not moved
+since `9541d2ea`): release brotli over the 332 programs **374 401 → 372 072 (−0.62 %)**, release
+raw 1 059 658 → 1 049 864, **no program larger raw**; 222 smaller, 51 equal, 72 larger by brotli
+(the 55 "names only" above, plus the `compare` users). `bench/primitives`, master's compiler
+against this one, 10 rounds, load 1.0–1.3: `compare` 315.5 → **68.3** (0.22×), `sort` 3 342 →
+**688** (0.21×), every other workload 0.98–1.01×.
+
+**TodoMVC whole** (keyed rows, toggle-all, destroy, the `h1`) rides with the landing: 3 929
+million instructions with Node running, 3 237 million on a recorded hash.
+
 ### What step 1 leaves
 
 `Char.js` and `Basics.js`, for the graph's reason above. For step 3, `Js`'s list positions

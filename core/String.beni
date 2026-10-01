@@ -81,9 +81,7 @@ slice s start end =
                 ""
             else
                 Js.to
-                    (Js.call
-                        (Js.call points "slice" [ Js.from from, Js.from to ])
-                        "join"
+                    (Js.call (Js.call points "slice" [ Js.from from, Js.from to ]) "join"
                         [ Js.from "" ]
                     )
         )
@@ -113,56 +111,72 @@ append a b =
 --|     compare "a" "b" == LT
 --|     compare "b" "b" == EQ
 --|
---| This is the replacement for Elm's `"a" < "b"`, which does not compile in
---| beni: comparison operators are numbers only.
+--| `"a" < "b"` calls it: it is `String`'s own `compare` method.
 pub compare : String, String -> Order
 compare a b =
     Js.pure
         (\() ->
-            -- By code points, which is what `<` on two JavaScript strings is
-            -- NOT: it compares UTF-16 code units, so an astral character would
-            -- sort below U+E000. `Array.from` of a string is its code points.
+            -- Code units are compared until the first that differ. Code unit
+            -- order is not code point order — an astral character is a pair
+            -- of units in 0xD800…0xDFFF and sorts above U+FFFF, which `<` on
+            -- two JavaScript strings gets wrong — so the answer is the code
+            -- points' there: at that unit, or at the one before it when that
+            -- one opens a surrogate pair in either string (the code point
+            -- there is astral). No array is made: `<` on two strings is a
+            -- walk, not a copy.
             let
-                x = Js.call (Js.global "Array") "from" [ Js.from a ]
-                y = Js.call (Js.global "Array") "from" [ Js.from b ]
+                x = Js.from a
+                y = Js.from b
                 la : Int
                 la = Js.to (Js.get x "length")
                 lb : Int
                 lb = Js.to (Js.get y "length")
 
-                i =
-                    firstDifference
-                        x
-                        y
-                        0
-                        (Js.to (Js.call (Js.global "Math") "min" [ Js.from la, Js.from lb ]))
+                n =
+                    if la < lb then
+                        la
+                    else
+                        lb
+
+                i = firstDifference x y 0 n
             in
-            if i < la && i < lb then
-                if pointAt (Js.at x i) < pointAt (Js.at y i) then
+            if i == n then
+                if la < lb then
+                    LT
+                else if la > lb then
+                    GT
+                else
+                    EQ
+            else
+                let
+                    at =
+                        if i > 0 && (pointAt x (i - 1) > 0xFFFF || pointAt y (i - 1) > 0xFFFF) then
+                            i - 1
+                        else
+                            i
+                in
+                if pointAt x at < pointAt y at then
                     LT
                 else
                     GT
-            else if la < lb then
-                LT
-            else if la > lb then
-                GT
-            else
-                EQ
         )
 
 
--- The first index below `n` where the two lists of code points differ, or
+-- The first index below `n` where the two strings' code units differ, or
 -- `n`.
 firstDifference : Js.Value, Js.Value, Int, Int -> Int
 firstDifference x y i n =
-    if i < n && Js.same (Js.at x i) (Js.at y i) then
+    if
+        i < n
+            && Js.same (Js.call x "charCodeAt" [ Js.from i ]) (Js.call y "charCodeAt" [ Js.from i ])
+    then
         firstDifference x y (i + 1) n
     else
         i
 
 
-pointAt : Js.Value -> Int
-pointAt c = Js.to (Js.call c "codePointAt" [ Js.from 0 ])
+pointAt : Js.Value, Int -> Int
+pointAt s i = Js.to (Js.call s "codePointAt" [ Js.from i ])
 
 
 --| Convert a string to all upper case. Useful for case-insensitive
@@ -219,9 +233,7 @@ words s =
     Js.pure
         (\() ->
             Js.to
-                (Js.call
-                    (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ])
-                    "filter"
+                (Js.call (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ]) "filter"
                     [ Js.from isWord ]
                 )
         )
@@ -390,9 +402,7 @@ toFloat s =
         (\() ->
             if
                 Js.to
-                    (Js.call
-                        (Js.regExp "^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$" "")
-                        "test"
+                    (Js.call (Js.regExp "^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$" "") "test"
                         [ Js.from s ]
                     )
             then

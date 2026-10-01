@@ -41,6 +41,7 @@ main =
         , show ("a" < "A")
         , String.join (List.sort [ "pear", "apple", "fig" ]) ","
         , String.join (List.sort [ "\u{10000}", "\u{E000}", "a" ]) ","
+        , String.join (List.sort [ "a\u{1F601}", "a\u{FFFF}", "ab", "a\u{1F600}", "a" ]) ","
         , String.join (Dict.keys fruit) ","
         , String.fromInt (Maybe.withDefault (Dict.get fruit "apple") 0)
         ]
