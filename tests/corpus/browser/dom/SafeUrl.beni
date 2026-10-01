@@ -1,0 +1,49 @@
+-- A URL attribute in a page goes through the runtime's `safeUrl`
+-- (backend.md §15.3, Elm's rule): a `javascript:` or `data:text/html`
+-- URL is written as nothing, in any case and with whitespace or a control
+-- character wherever a browser would ignore one, both at the mount and when
+-- a render changes the attribute; any other URL is written as it is,
+-- `data:` of another type and a path that merely begins `javascript`
+-- included; and so is every URL attribute (`action` here).
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Flip
+
+
+type alias Model =
+    unsafe : Bool
+
+
+update : Msg, Model -> Model
+update _ model = { model | unsafe = not model.unsafe }
+
+
+-- Each link's URL in the two states: refused ones first, kept ones second.
+url : Bool, String, String -> String
+url unsafe bad good =
+    if unsafe then
+        bad
+    else
+        good
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <a id="plain" href={url model.unsafe "javascript:alert(1)" "/a"}>plain</a>
+        <a id="cased" href={url model.unsafe "JaVaScRiPt:alert(1)" "/b"}>cased</a>
+        <a id="spaced" href={url model.unsafe " \u{0001}\tjava\nscript :x" "/c"}>spaced</a>
+        <a id="html" href={url model.unsafe "data:text/html,<b>x</b>" "/d"}>html</a>
+        <a id="html64" href={url model.unsafe "DATA: text / html ;base64,eA==" "/e"}>html64</a>
+        <a id="image" href={url model.unsafe "data:image/png,x" "/f"}>image</a>
+        <a id="path" href={url model.unsafe "javascript.html" "/g"}>path</a>
+        <form id="form" action={url model.unsafe "\tjavascript:x" "/h"} />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = { unsafe = True }, update = update, view = view }

@@ -21,6 +21,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop with `Js.finally`, below |
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
+| 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | `safeUrl` **landed**, at the end: `runtime.js` exports nothing |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -688,3 +689,46 @@ deoptimisation still happened). Writing them away is a whole-program optimiser's
 small function at several call sites, then a tag test on a known constructor folded — which
 `Spec` does not do yet. Nothing in `core/List.js`'s `append` or in `forKeyed`'s append path was
 the gap, and neither changed.
+
+## Step 6 — what was left
+
+### `safeUrl`
+
+**What moved.** `safeUrl` and its pattern are declarations of `Rt.beni`; the pattern is
+`Js.regExp` (`backend.md` §4, *`Js.regExp` is a literal*), which core gained since step 5 and which
+was all the move waited for: a top-level value made once, written as the hand-written literal.
+`runtime.js` exports nothing; it stays only because the manifest's `"runtime"` and
+`"markup".runtime` name a file, and `Sibling`'s test that every shipped file exports something
+allows a runtime file whose runtime module supplies everything. The function tests one pattern and
+throws nothing, so there is nothing to catch (`CLAUDE.md` rule 9).
+
+**The page.** New: `browser/dom/SafeUrl` — `javascript:` plain, in mixed case and with whitespace
+and a control character inside and before the scheme; `data:text/html` plain and spaced with
+`;base64`; `data:image/png` and a path beginning `javascript` kept; `action` as well as `href`;
+each refused at the mount and again on a patch. Blessed with the hand-written function, passes
+unchanged with this one. `emit/dom/DomAttributes` imports `Rt$safeUrl` where it imported the
+file's `safeUrl`.
+
+**Sizes** (release, brotli, the whole bundle; master against this step, every `browser/` page
+built for its platform, the empty pages and the `bench/ui` app):
+
+| page | master | step 6 | |
+|---|--:|--:|--:|
+| `dom/SafeUrl` (new) | 1 450 | **1 440** | −10 (raw −14) |
+| `dom/Holes` | 3 101 | **3 090** | −11 (raw −14) |
+| `tea/TodoMVC` | 9 802 | **9 761** | −41 (raw −14) |
+| `dom/Blocks` | 3 424 | 3 427 | +3 (raw −14) |
+| every other page, the empty pages, the `bench/ui` app | | | byte-identical |
+
+`dom/Blocks`'s +3 is the place its text moved to: the regular expression is now written among the
+module's declarations rather than before them, the same 14 bytes shorter.
+
+**Speed.** The `bench/ui` app writes no URL attribute; its release file is byte-identical, so its
+timings cannot move. The function is the same test of the same literal, one call per URL write.
+
+**Shape**, from `dom/Blocks`'s release file:
+
+```js
+const ra=/^[\s\x00-\x20]*(j\s*a\s*v\s*a…\s*h\s*t\s*m\s*l\s*[,;])/i;const Y=a=>(ra.test(a)?"":a);
+H=/^[\s\x00-\x20]*(j\s*a\s*v\s*a…\s*h\s*t\s*m\s*l\s*[,;])/i,I=a=>H.test(a)?"":a
+```

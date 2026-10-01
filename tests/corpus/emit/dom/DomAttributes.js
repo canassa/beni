@@ -1,5 +1,4 @@
-import { safeUrl as $markup$safeUrl } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$classes, Rt$styles } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$classes, Rt$styles, Rt$safeUrl } from "./_platform/Rt.mjs";
 const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x", 0);
 const DomAttributes$k27 = { m: (v$3, cx$4) => {
   const r$5 = DomAttributes$t27();
@@ -40,15 +39,15 @@ const DomAttributes$k68 = { m: (v$20, cx$21) => {
   const w$23 = r$22.firstChild;
   const w$24 = w$23.nextSibling;
   const w$25 = w$24.nextSibling;
-  r$22.setAttribute("action", $markup$safeUrl(v$20[0]));
+  r$22.setAttribute("action", Rt$safeUrl(v$20[0]));
   w$23.value = v$20[1];
   w$23.checked = v$20[2];
-  w$24.setAttribute("href", $markup$safeUrl(v$20[3]));
-  w$25.setAttribute("src", $markup$safeUrl(v$20[4]));
+  w$24.setAttribute("href", Rt$safeUrl(v$20[3]));
+  w$25.setAttribute("src", Rt$safeUrl(v$20[4]));
   return { s: r$22, q: null, e: r$22, w0: r$22, w1: w$23, w2: w$24, w4: w$25, a0: v$20[0], a1: v$20[1], a2: v$20[2], a3: v$20[3], a4: v$20[4] };
 }, p: (i$26, v$27) => {
   if (v$27[0] !== i$26.a0) {
-    i$26.w0.setAttribute("action", $markup$safeUrl(v$27[0]));
+    i$26.w0.setAttribute("action", Rt$safeUrl(v$27[0]));
     i$26.a0 = v$27[0];
   }
   if (i$26.w1.value !== v$27[1]) {
@@ -58,11 +57,11 @@ const DomAttributes$k68 = { m: (v$20, cx$21) => {
     i$26.w1.checked = v$27[2];
   }
   if (v$27[3] !== i$26.a3) {
-    i$26.w2.setAttribute("href", $markup$safeUrl(v$27[3]));
+    i$26.w2.setAttribute("href", Rt$safeUrl(v$27[3]));
     i$26.a3 = v$27[3];
   }
   if (v$27[4] !== i$26.a4) {
-    i$26.w4.setAttribute("src", $markup$safeUrl(v$27[4]));
+    i$26.w4.setAttribute("src", Rt$safeUrl(v$27[4]));
     i$26.a4 = v$27[4];
   }
 } };

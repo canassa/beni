@@ -7258,3 +7258,8 @@ nothing. A hosted mount is handed `stop` as `h`'s fourth argument and gives it t
 `browser/tea/ThrowRecovers`, which pinned recovery, is replaced by `browser/tea/DefectInUpdate`,
 `DefectInRender`, `DefectAfterRender`, `DefectInFiber`, `HttpDefect` and `browser/dom/DefectInHandler`,
 each with a `.release-expected` that has no screen.
+
+*Amended: `safeUrl` is written in beni* (`plans/runtime-in-beni.md`, step 6). With `Js.regExp`
+(§4), `Rt.beni` holds `safeUrl` and its pattern, a top-level regular expression literal made once;
+`runtime.js` exports nothing and is kept only because a manifest names a runtime file. A page that
+writes a URL attribute calls `Rt$safeUrl`; what it writes is unchanged (`browser/dom/SafeUrl`).

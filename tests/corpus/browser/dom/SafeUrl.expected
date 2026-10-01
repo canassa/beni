@@ -1,0 +1,42 @@
+-- load
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <a id="plain" href="">"plain"</a>
+    <a id="cased" href="">"cased"</a>
+    <a id="spaced" href="">"spaced"</a>
+    <a id="html" href="">"html"</a>
+    <a id="html64" href="">"html64"</a>
+    <a id="image" href="data:image/png,x">"image"</a>
+    <a id="path" href="javascript.html">"path"</a>
+    <form id="form" action=""></form>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <a id="plain" href="/a">"plain"</a>
+    <a id="cased" href="/b">"cased"</a>
+    <a id="spaced" href="/c">"spaced"</a>
+    <a id="html" href="/d">"html"</a>
+    <a id="html64" href="/e">"html64"</a>
+    <a id="image" href="/f">"image"</a>
+    <a id="path" href="/g">"path"</a>
+    <form id="form" action="/h"></form>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <a id="plain" href="">"plain"</a>
+    <a id="cased" href="">"cased"</a>
+    <a id="spaced" href="">"spaced"</a>
+    <a id="html" href="">"html"</a>
+    <a id="html64" href="">"html64"</a>
+    <a id="image" href="data:image/png,x">"image"</a>
+    <a id="path" href="javascript.html">"path"</a>
+    <form id="form" action=""></form>
+  </main>
+</body>
