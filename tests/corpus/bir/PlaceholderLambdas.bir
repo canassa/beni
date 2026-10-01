@@ -181,3 +181,5 @@ imports
   prelude String
   prelude Char
   prelude Debug
+  prelude Int
+  prelude Float

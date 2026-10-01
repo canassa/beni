@@ -5501,6 +5501,8 @@ test "every resolution form: local, top, ctor, import_value, import_ctor, qualif
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , &.{});
 }
@@ -5840,6 +5842,8 @@ test "foreign declarations are rejected without --core and accepted with it" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , &.{});
 }
@@ -5956,6 +5960,8 @@ test "the interface skeleton lists every pub declaration and nothing private" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , &.{});
 }
@@ -6064,6 +6070,8 @@ test "an empty file lowers to an empty module with the prelude rows" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , &.{});
 }

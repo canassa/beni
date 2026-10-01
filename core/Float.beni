@@ -1,0 +1,23 @@
+--! Floating-point functions whose Elm names would read wrong in
+--! subject-first order (`language.md` §12.4).
+--!
+--! The `Float` type itself is declared in `Basics`, with the arithmetic,
+--! the conversions and the trigonometry, and every module sees it. This
+--! module is in the prelude's module aliases, so `Float.log x 10` needs no
+--! import. Its values are functions, not methods: `Float`'s methods are
+--! `Basics`'s, so write `Float.log x 10`, not `x.log 10`.
+
+import Js
+
+
+--| The logarithm of a number in a given base: the number first, then the
+--| base.
+--|
+--|     Float.log 100 10 == 2
+pub log : Float, Float -> Float
+log x base =
+    Js.pure
+        (λ() ->
+            Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
+                / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])
+        )

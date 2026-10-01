@@ -41,7 +41,7 @@
 //! **A prelude row is an edge only when the module uses a name from it.**
 //! checker.md §4.3 says "prelude imports are edges to core", and taken
 //! literally that makes the standard library cyclic with itself: lowering
-//! gives EVERY file all seven prelude rows (language.md Appendix A), so
+//! gives EVERY file all nine prelude rows (language.md Appendix A), so
 //! `Basics` would depend on `List` and `List` on `Basics` before a line of
 //! either was read. The prelude is not an import anyone wrote — it is a
 //! fallback name table inside the compiler — so what makes it a dependency
@@ -613,12 +613,16 @@ pub fn dropUnreached(g: *const Graph, scratch: Allocator, roots: []const bool, k
 }
 
 /// The core modules the compiler names itself, with no edge from the module
-/// that observes them: the seven prelude modules and `Task`. A build
-/// always keeps them (`Session.isLazy`), so whether one is in it never
-/// depends on what the build imports, and `core_surface` is one term over
-/// exactly these
-/// (`fast-compiler.md` §8, amended 2026-10-01; `isImplicitCore`).
-pub const implicit_core = prelude.modules ++ [_]InternPool.WellKnown{.Task};
+/// that observes them: the seven prelude modules that existed before
+/// `Int` and `Float`, and `Task`. A build always keeps them
+/// (`Session.isLazy`), so whether one is in it never depends on what the
+/// build imports, and `core_surface` is one term over exactly these
+/// (`fast-compiler.md` §8, amended 2026-10-01; `isImplicitCore`). The
+/// prelude modules `Int` and `Float` are not here: they hold three
+/// functions and no type, so nothing reads them unless a module writes
+/// `Int.mod` or `Float.log`, and that reference is an edge like any import
+/// (`Session.nextWave` loads them for it).
+pub const implicit_core = [_]InternPool.WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Task };
 
 /// Whether module `m` is one of `implicit_core`.
 pub fn isImplicitCore(g: *const Graph, m: Index) bool {

@@ -144,6 +144,7 @@ const Parse = @import("../parse/Parse.zig");
 const InternPool = @import("../InternPool.zig");
 const diagnostic = @import("diagnostic");
 const markup_text = @import("../markup/text.zig");
+const prelude = @import("../bir/prelude.zig");
 const Node = Ast.Node;
 const Index = Node.Index;
 const TokenIndex = Ast.TokenIndex;
@@ -440,6 +441,263 @@ pub fn migrateLambda(
     return null;
 }
 
+/// What `migrateNames` could not rewrite, at `start` in the source. A
+/// `shadowed` or `alias_taken` note leaves the whole file alone; a
+/// `method_shape` note names one use for a hand edit and the rest of the
+/// file is still rewritten.
+pub const NamesNote = struct {
+    start: u32,
+    kind: Kind,
+    /// The removed name, or the alias, the note is about.
+    name: []const u8,
+
+    pub const Kind = enum {
+        /// The file declares, binds or imports from another module a value
+        /// with a removed name, so an unqualified use may not be
+        /// `Basics`'s.
+        shadowed,
+        /// `Int` or `Float` is the alias of another module's import here,
+        /// so `Int.mod` would not name core's module.
+        alias_taken,
+        /// `x.modBy` that is not a call with one argument.
+        method_shape,
+    };
+
+    pub fn fatal(n: NamesNote) bool {
+        return n.kind != .method_shape;
+    }
+};
+
+/// `beni fmt --migrate-names` (frontend.md §11.4): `source` with every use
+/// of `Basics.modBy`, `remainderBy` and `logBase` written as `Int.mod`,
+/// `Int.rem` and `Float.log` (`prelude.removed`), and nothing else touched
+/// — an edit, like `migrateLambda`. A use is found by the file's own names,
+/// which is all lowering's resolution of it reads (language.md §6.2):
+///
+/// - an unqualified name, when nothing in the file declares or binds that
+///   name and no other import exposes it — otherwise the file is left
+///   alone, with a `shadowed` note, since the use may not be `Basics`'s;
+/// - a qualified name whose alias is `Basics`'s (`Basics.modBy`, or
+///   `B.modBy` under `import Basics as B`);
+/// - an entry of `import Basics exposing (…)`, dropped, and the `exposing`
+///   with it when nothing is left;
+/// - a method `x.modBy k`, written `Int.mod x k` (the types stay in
+///   `Basics`, so there is no `x.mod k`); one that is not called with one
+///   argument is left and noted.
+///
+/// A file where `Int` or `Float` is the alias of another module's import is
+/// left alone (`alias_taken`). The output is parsed again, as
+/// `migrateLambda`'s is; a file with any syntax error is not touched. A
+/// rewrite never writes a removed name, so running the flag again changes
+/// nothing — except a method call whose receiver holds another use, whose
+/// inner use the second run takes.
+pub fn migrateNames(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    w: *Io.Writer,
+    notes: *std.ArrayList(NamesNote),
+) Error!?LambdaProblem {
+    if (tree.errors.len != 0) return error.SyntaxErrors;
+    const n = tree.nodes.len;
+    var m: Measurer = .{
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = try scratch.alloc(u32, n),
+        .firsts = try scratch.alloc(u32, n),
+        .lasts = try scratch.alloc(u32, n),
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+    const tags = m.tags;
+    const starts = m.starts;
+
+    // What each token is, for the tokens that matter: the main token of an
+    // `ident` or a `field_access` (with the node), or an `exposed` entry of
+    // an import of `Basics` or of another module.
+    const Role = enum(u8) { none, ident, exposed_basics, exposed_other, method };
+    const roles = try scratch.alloc(Role, tags.len);
+    @memset(roles, .none);
+    const role_node = try scratch.alloc(u32, tags.len);
+    // Per node: its argument count when it is the function of an `apply`.
+    const applied = try scratch.alloc(u32, n);
+    @memset(applied, std.math.maxInt(u32));
+    for (0..n) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        switch (tree.nodeTag(node)) {
+            .ident, .field_access => |tag| {
+                const t = tree.nodeMainToken(node);
+                roles[t] = if (tag == .ident) .ident else .method;
+                role_node[t] = @intCast(i);
+            },
+            .apply => {
+                const a = tree.fullApply(node);
+                applied[a.function.int()] = @intCast(a.args.len);
+            },
+            else => {},
+        }
+    }
+
+    const Edit = struct { start: u32, end: u32, text: []const u8 };
+    var edits: std.ArrayList(Edit) = .empty;
+    var basics_aliases: std.ArrayList([]const u8) = .empty;
+    var basics_shadowed = false;
+    var fatal = false;
+
+    // The imports: which aliases are `Basics`'s, which exposed entries are
+    // its, and whether `Int` or `Float` names some other module here.
+    const BasicsImport = struct { alias_end: u32, exposed: []const Index, removed: u32 };
+    var basics_imports: std.ArrayList(BasicsImport) = .empty;
+    for (tree.rootItems()) |item| {
+        if (tree.nodeTag(item) != .import) continue;
+        const imp = tree.fullImport(item);
+        const name_token = imp.name orelse continue;
+        const module = m.tokenText(name_token);
+        const alias_token = imp.alias orelse name_token;
+        const alias = m.tokenText(alias_token);
+        const is_basics = std.mem.eql(u8, module, "Basics");
+        for (imp.exposed) |e| roles[tree.nodeMainToken(e)] = if (is_basics) .exposed_basics else .exposed_other;
+        if (is_basics) {
+            try basics_aliases.append(scratch, alias);
+            var removed: u32 = 0;
+            for (imp.exposed) |e| {
+                if (prelude.removedName(m.tokenText(tree.nodeMainToken(e))) != null) removed += 1;
+            }
+            if (removed != 0) try basics_imports.append(scratch, .{
+                .alias_end = m.endOf(alias_token),
+                .exposed = imp.exposed,
+                .removed = removed,
+            });
+        } else if (std.mem.eql(u8, alias, "Basics")) {
+            basics_shadowed = true;
+        }
+        if ((std.mem.eql(u8, alias, "Int") or std.mem.eql(u8, alias, "Float")) and !std.mem.eql(u8, module, alias)) {
+            try notes.append(scratch, .{ .start = starts[alias_token], .kind = .alias_taken, .name = alias });
+            fatal = true;
+        }
+    }
+    if (!basics_shadowed) try basics_aliases.append(scratch, "Basics");
+
+    for (tags, 0..) |tag, ti| {
+        const t: u32 = @intCast(ti);
+        switch (tag) {
+            .lower_ident => {
+                const r = prelude.removedName(m.tokenText(t)) orelse continue;
+                switch (roles[t]) {
+                    .ident => try edits.append(scratch, .{
+                        .start = starts[t],
+                        .end = m.endOf(t),
+                        .text = try std.fmt.allocPrint(scratch, "{s}.{s}", .{ r.module, r.name }),
+                    }),
+                    // Dropped with its list, below.
+                    .exposed_basics => {},
+                    .exposed_other, .none, .method => {
+                        try notes.append(scratch, .{ .start = starts[t], .kind = .shadowed, .name = r.old });
+                        fatal = true;
+                    },
+                }
+            },
+            .qualified_lower => {
+                const full = m.tokenText(t);
+                const dot = std.mem.lastIndexOfScalar(u8, full, '.') orelse continue;
+                const r = prelude.removedName(full[dot + 1 ..]) orelse continue;
+                for (basics_aliases.items) |b| {
+                    if (!std.mem.eql(u8, b, full[0..dot])) continue;
+                    try edits.append(scratch, .{
+                        .start = starts[t],
+                        .end = m.endOf(t),
+                        .text = try std.fmt.allocPrint(scratch, "{s}.{s}", .{ r.module, r.name }),
+                    });
+                    break;
+                }
+            },
+            .dot_lower => {
+                if (roles[t] != .method) continue;
+                const r = prelude.removedName(m.tokenText(t)[1..]) orelse continue;
+                const access = role_node[t];
+                if (applied[access] != 1) {
+                    try notes.append(scratch, .{ .start = starts[t], .kind = .method_shape, .name = r.old });
+                    continue;
+                }
+                const target: Index = @enumFromInt(tree.nodeData(@enumFromInt(access)).lhs);
+                const target_start = starts[m.first(target)];
+                try edits.append(scratch, .{
+                    .start = target_start,
+                    .end = m.endOf(t),
+                    .text = try std.fmt.allocPrint(scratch, "{s}.{s} {s}", .{ r.module, r.name, source[target_start..starts[t]] }),
+                });
+            },
+            else => {},
+        }
+    }
+    if (fatal) {
+        try w.writeAll(source);
+        return null;
+    }
+
+    // An `exposing` list that named a removed value: the list without it,
+    // or no `exposing` at all when nothing is left.
+    for (basics_imports.items) |b| {
+        var close = tree.nodeMainToken(b.exposed[b.exposed.len - 1]);
+        while (close < tags.len and tags[close] != .r_paren) close += 1;
+        if (close == tags.len) continue;
+        if (b.removed == b.exposed.len) {
+            try edits.append(scratch, .{ .start = b.alias_end, .end = m.endOf(close), .text = "" });
+            continue;
+        }
+        var open = tree.nodeMainToken(b.exposed[0]);
+        while (open > 0 and tags[open] != .l_paren) open -= 1;
+        var list: std.ArrayList(u8) = .empty;
+        try list.append(scratch, '(');
+        var any = false;
+        for (b.exposed) |e| {
+            const entry = m.tokenText(tree.nodeMainToken(e));
+            if (prelude.removedName(entry) != null) continue;
+            if (any) try list.appendSlice(scratch, ", ");
+            try list.appendSlice(scratch, entry);
+            any = true;
+        }
+        try list.append(scratch, ')');
+        try edits.append(scratch, .{ .start = starts[open], .end = m.endOf(close), .text = list.items });
+    }
+
+    if (edits.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+    std.mem.sort(Edit, edits.items, {}, struct {
+        fn lessThan(_: void, a: Edit, b: Edit) bool {
+            return a.start < b.start;
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    var at: u32 = 0;
+    for (edits.items) |e| {
+        // An edit inside a method call's receiver, which the outer edit
+        // copied as written: the next run takes it.
+        if (e.start < at) continue;
+        try out.appendSlice(scratch, source[at..e.start]);
+        try out.appendSlice(scratch, e.text);
+        at = e.end;
+    }
+    try out.appendSlice(scratch, source[at..]);
+    if (try reparseProblem(scratch, try scratch.dupeZ(u8, out.items))) |problem| {
+        try w.writeAll(source);
+        // Offsets move with the rewrite; the line of the first edit is
+        // where to look.
+        return .{ .code = problem.code, .start = edits.items[0].start };
+    }
+    try w.writeAll(out.items);
+    return null;
+}
+
 /// The first lexical or syntax diagnostic of `text`, if any.
 fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?LambdaProblem {
     var interner: InternPool.Local = .empty;
@@ -638,6 +896,10 @@ const Measurer = struct {
     /// source order, else `fallback` (the keyword before the name).
     fn headerFirst(_: *const Measurer, h: Ast.DeclHeader, fallback: TokenIndex) TokenIndex {
         return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.equatable_token.unwrap() orelse fallback;
+    }
+
+    fn tokenText(m: *const Measurer, t: TokenIndex) []const u8 {
+        return m.source[m.starts[t]..m.endOf(t)];
     }
 
     fn tokenWidth(m: *const Measurer, t: TokenIndex) u32 {

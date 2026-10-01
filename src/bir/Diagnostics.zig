@@ -235,7 +235,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\
                 \\A qualified name starts with an import's alias (`import Json.Decode as D` makes
                 \\`D`, and `import Json.Decode` alone makes `Json.Decode`) or with one of the
-                \\prelude modules: Basics, List, Maybe, Result, String, Char, Debug.
+                \\prelude modules: Basics, List, Maybe, Result, String, Char, Debug, Int, Float.
             , .{ text[0..dot], text });
         },
         .annotation_without_definition => try w.print(
@@ -650,7 +650,7 @@ test "message: duplicate exposed name points at the earlier import" {
 
 test "message: unknown module alias splits the alias from the name" {
     try expectMessage(
-        "I cannot find a module named `Dict` for `Dict.empty`.\n\nA qualified name starts with an import's alias (`import Json.Decode as D` makes\n`D`, and `import Json.Decode` alone makes `Json.Decode`) or with one of the\nprelude modules: Basics, List, Maybe, Result, String, Char, Debug.",
+        "I cannot find a module named `Dict` for `Dict.empty`.\n\nA qualified name starts with an import's alias (`import Json.Decode as D` makes\n`D`, and `import Json.Decode` alone makes `Json.Decode`) or with one of the\nprelude modules: Basics, List, Maybe, Result, String, Char, Debug, Int, Float.",
         .{ .code = .unknown_module_alias, .start = 4, .end = 14 },
         "x = Dict.empty\n",
     );

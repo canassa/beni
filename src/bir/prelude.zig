@@ -26,10 +26,13 @@ pub fn wellKnown(symbol: Symbol) ?WellKnown {
     return if (i < WellKnown.count) @enumFromInt(i) else null;
 }
 
-/// True for the seven module aliases usable in qualified names.
+/// True for the nine module aliases usable in qualified names. `Int` and
+/// `Float` are modules here and types of `Basics` (`typeModule`): the
+/// modules hold `Int.mod`, `Int.rem` and `Float.log` and declare no type
+/// (language.md §12.4, amended 2026-10-01).
 pub fn isModule(w: WellKnown) bool {
     return switch (w) {
-        .Basics, .List, .Maybe, .Result, .String, .Char, .Debug => true,
+        .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float => true,
         else => false,
     };
 }
@@ -111,12 +114,37 @@ pub fn valueModule(w: WellKnown) ?WellKnown {
     };
 }
 
+/// A `Basics` value that left the language because its Elm name reads
+/// backwards in subject-first order (language.md §12.4), and what replaced
+/// it: `module.name`, with the arguments in the order they already had.
+pub const Removed = struct {
+    old: []const u8,
+    module: []const u8,
+    name: []const u8,
+};
+
+/// The removed-names table (language.md §12.4): `--migrate-names` rewrites
+/// each `old` to its replacement.
+pub const removed = [_]Removed{
+    .{ .old = "modBy", .module = "Int", .name = "mod" },
+    .{ .old = "remainderBy", .module = "Int", .name = "rem" },
+    .{ .old = "logBase", .module = "Float", .name = "log" },
+};
+
+/// The table's row for `old`, or null.
+pub fn removedName(old: []const u8) ?Removed {
+    for (removed) |r| {
+        if (std.mem.eql(u8, r.old, old)) return r;
+    }
+    return null;
+}
+
 /// The prelude modules in Appendix A's order, for the import table's
 /// prelude rows.
-pub const modules = [_]WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug };
+pub const modules = [_]WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float };
 
 test "every prelude name has exactly the namespaces Appendix A gives it" {
-    // Counts from Appendix A: 7 modules, 10 types, 9 constructors, 36 values.
+    // Counts from Appendix A: 9 modules, 10 types, 9 constructors, 36 values.
     var n_modules: u32 = 0;
     var n_types: u32 = 0;
     var n_ctors: u32 = 0;
@@ -131,7 +159,7 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
         // functions and `main` are neither.
         try std.testing.expect(!(ctorModule(w) != null and valueModule(w) != null));
     }
-    try std.testing.expectEqual(@as(u32, 7), n_modules);
+    try std.testing.expectEqual(@as(u32, 9), n_modules);
     try std.testing.expectEqual(@as(u32, 10), n_types);
     try std.testing.expectEqual(@as(u32, 9), n_ctors);
     try std.testing.expectEqual(@as(u32, 36), n_values);

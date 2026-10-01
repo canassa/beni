@@ -1852,6 +1852,82 @@ test "fmt --migrate-lambda names a file whose rewrite would not parse and leaves
     try testing.expectEqualStrings(source, try w.read("Main.beni"));
 }
 
+test "fmt --migrate-names rewrites each form of a removed name in place and restyles nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.4: unqualified, qualified through `Basics` and
+    // through an alias, an `exposing` entry, a pipeline and a method call;
+    // `y`'s spacing is not canonical and stays so, and a record field
+    // read with a removed name's accessor is not a use.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Basics as B exposing (max, modBy)
+        \\import Debug exposing (todo)
+        \\f n = modBy n 2 + Basics.remainderBy n 3 + B.modBy (n.modBy 4) 5
+        \\y   =   logBase 100 10
+        \\h n = n |> Basics.modBy 7
+        \\a = .remainderBy
+        \\
+    );
+    try w.write("Other.beni", "import Basics exposing (logBase)\nz = logBase 8 2\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-names", "Main.beni", "Other.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\import Basics as B exposing (max)
+        \\import Debug exposing (todo)
+        \\f n = Int.mod n 2 + Int.rem n 3 + Int.mod (Int.mod n 4) 5
+        \\y   =   Float.log 100 10
+        \\h n = n |> Int.mod 7
+        \\a = .remainderBy
+        \\
+    , try w.read("Main.beni"));
+    try testing.expectEqualStrings("import Basics\nz = Float.log 8 2\n", try w.read("Other.beni"));
+}
+
+test "fmt --migrate-names leaves a file that binds a removed name alone and names it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An unqualified `modBy` in a file that declares one is that file's
+    // own, not `Basics.modBy`; nothing in the file is touched.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const source = "modBy a b = a\nf n = modBy n 2 + Basics.modBy n 3\n";
+    try w.write("Main.beni", source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-names", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":1,\"col\":1}") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "left this file alone") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(source, try w.read("Main.beni"));
+}
+
 test "fmt --check on a canonical file exits 0 with nothing on either stream" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -2261,6 +2337,8 @@ test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an ope
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , r.stdout);
     try testing.expectEqualStrings("", r.stderr);
@@ -5863,6 +5941,8 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , field.stdout);
     try testing.expectEqualStrings(
@@ -5883,6 +5963,8 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , tag.stdout);
     try testing.expectEqualStrings(
@@ -5901,6 +5983,8 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude String
         \\  prelude Char
         \\  prelude Debug
+        \\  prelude Int
+        \\  prelude Float
         \\
     , discriminator.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{

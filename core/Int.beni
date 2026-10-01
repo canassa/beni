@@ -1,0 +1,40 @@
+--! Integer division's two remainders.
+--!
+--! The `Int` type itself is declared in `Basics`, with the arithmetic and
+--! the comparisons, and every module sees it; this module holds the
+--! functions whose names would read wrong in subject-first order as Elm
+--! spells them (`language.md` §12.4). It is in the prelude's module
+--! aliases, so `Int.mod n 2` needs no import. These are functions, not
+--! methods: `Int`'s methods are `Basics`'s, so write `Int.mod n 2`, not
+--! `n.mod 2`.
+--!
+--! Both answer `0` for a zero divisor, as `//` does, and as `Int32.mod` and
+--! `Int32.rem` do: nothing here is an exception or an infinity.
+
+import Js
+
+
+--| Modular arithmetic: the number first, then the modulus. The result has
+--| the sign of the modulus, so it is the one for wrapping an index into a
+--| table.
+--|
+--|     Int.mod 7 3 == 1
+--|     Int.mod (-1) 4 == 3
+--|     Int.mod 11 4 == 3
+--|     Int.mod 7 0 == 0
+pub mod : Int, Int -> Int
+mod n k =
+    -- `%` takes the sign of the dividend; this answer takes the modulus's.
+    if k == 0 then 0 else Js.rem (Js.rem n k + k) k
+
+
+--| The remainder after dividing the first number by the second. The
+--| result has the sign of the dividend, the number being divided, as
+--| JavaScript's `%` does.
+--|
+--|     Int.rem 7 3 == 1
+--|     Int.rem (-1) 4 == -1
+--|     Int.rem 11 4 == 3
+--|     Int.rem 7 0 == 0
+pub rem : Int, Int -> Int
+rem n k = if k == 0 then 0 else Js.rem n k

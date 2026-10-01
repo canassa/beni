@@ -359,6 +359,10 @@ pub const Fmt = struct {
     /// `--migrate-lambda`, hidden: write the `\` that begins every lambda
     /// as `λ` (`Format.migrateLambda`) instead of formatting.
     migrate_lambda: bool = false,
+    /// `--migrate-names`, hidden: write `modBy`, `remainderBy` and
+    /// `logBase` as `Int.mod`, `Int.rem` and `Float.log`
+    /// (`Format.migrateNames`) instead of formatting.
+    migrate_names: bool = false,
     paths: []const []const u8,
 };
 
@@ -900,9 +904,14 @@ const FmtSpecific = struct {
     migrate_cons: bool = false,
     migrate_let_blanks: bool = false,
     migrate_lambda: bool = false,
+    migrate_names: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-lambda")) {
+        if (std.mem.eql(u8, name, "--migrate-names")) {
+            if (value != null) return noValue(name);
+            self.migrate_names = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-lambda")) {
             if (value != null) return noValue(name);
             self.migrate_lambda = true;
             self.consumed = true;
@@ -943,7 +952,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
     }
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
-        @intFromBool(s.specific.migrate_let_blanks) + @intFromBool(s.specific.migrate_lambda);
+        @intFromBool(s.specific.migrate_let_blanks) + @intFromBool(s.specific.migrate_lambda) +
+        @intFromBool(s.specific.migrate_names);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
@@ -955,6 +965,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_cons = s.specific.migrate_cons,
         .migrate_let_blanks = s.specific.migrate_let_blanks,
         .migrate_lambda = s.specific.migrate_lambda,
+        .migrate_names = s.specific.migrate_names,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

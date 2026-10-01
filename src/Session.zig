@@ -190,6 +190,10 @@ pub const Options = struct {
     /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
     /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
     migrate_lambda: bool = false,
+    /// `beni fmt --migrate-names` (hidden): write the removed `Basics`
+    /// names as their replacements and touch nothing else
+    /// (`Format.migrateNames`).
+    migrate_names: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -794,7 +798,11 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
         const bir = session.artifacts.bir(file);
         const local = &session.workers[session.artifacts.worker(file)].interner;
         for (bir.imports) |imp| {
-            if (imp.prelude) continue;
+            // A prelude row names an implicit core module, already lowered
+            // — except `Int` and `Float` (`Graph.implicit_core`), which a
+            // file reaches only by a reference through the row.
+            if (imp.prelude and (isImplicitCoreName(local.slice(bir.symbol(imp.module))) or
+                !referencesModule(bir, bir.symbol(imp.module)))) continue;
             try session.lowerNext(waiting.items, local.slice(bir.symbol(imp.module)), out);
         }
         // A minted type is an edge with no import (`Graph.mintedNames`).
@@ -806,6 +814,26 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
             return a.int() < b.int();
         }
     }.lessThan);
+}
+
+fn isImplicitCoreName(name: []const u8) bool {
+    for (Graph.implicit_core) |w| {
+        if (std.mem.eql(u8, name, @tagName(w))) return true;
+    }
+    return false;
+}
+
+/// Whether one of `bir`'s references is an import from module `module`:
+/// what makes a prelude row an edge (`Graph`'s `markReferencedModules`).
+fn referencesModule(bir: *const Bir, module: InternPool.Symbol) bool {
+    for (bir.refs) |ref| {
+        switch (ref.kind) {
+            .import_value, .import_ctor, .import_type, .import_schema => {},
+            .top_value, .top_ctor, .top_type, .top_schema => continue,
+        }
+        if (bir.symbol(@enumFromInt(ref.a)) == module) return true;
+    }
+    return false;
 }
 
 /// Source bytes one per-file worker is worth spawning for, when the run
@@ -1489,7 +1517,64 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     var out: Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     var skipped: u32 = 0;
-    if (session.options.migrate_lambda) {
+    if (session.options.migrate_names) {
+        var notes: std.ArrayList(Format.NamesNote) = .empty;
+        const problem = Format.migrateNames(
+            worker.arena.allocator(),
+            tree,
+            session.artifacts.tokens(file),
+            session.artifacts.comments(file),
+            text,
+            &out.writer,
+            &notes,
+        ) catch |err| switch (err) {
+            error.SyntaxErrors => {
+                out.deinit();
+                return;
+            },
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
+        };
+        const line_starts = session.store.lineStarts(file);
+        if (problem) |found| {
+            out.deinit();
+            const at = diagnostic.position(line_starts, found.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            try message.writer.print(
+                "`beni fmt --migrate-names` left this file alone: rewritten, it does not parse ({t}). Rewrite the uses of the removed names by hand.",
+                .{found.code},
+            );
+            try worker.report(session, file, .name_removed, at, at, message.written());
+            return;
+        }
+        var left_alone = false;
+        for (notes.items) |note| {
+            const at = diagnostic.position(line_starts, note.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            switch (note.kind) {
+                .shadowed => try message.writer.print(
+                    "`beni fmt --migrate-names` left this file alone: it declares, binds or imports from another module a value named `{s}`, so an unqualified `{s}` in it may not be `Basics.{s}`. Rename that value, or rewrite the uses by hand.",
+                    .{ note.name, note.name, note.name },
+                ),
+                .alias_taken => try message.writer.print(
+                    "`beni fmt --migrate-names` left this file alone: `{s}` is the alias of another module here, so `{s}.` would not name core's `{s}` module. Change the alias, or rewrite the uses by hand.",
+                    .{ note.name, note.name, note.name },
+                ),
+                .method_shape => try message.writer.print(
+                    "`beni fmt --migrate-names` left this `.{s}` alone: it is not a method call with one argument, so it has no `Int.mod x k` form to take. Rewrite it by hand.",
+                    .{note.name},
+                ),
+            }
+            try worker.reportAs(session, file, .name_removed, if (note.fatal()) .@"error" else .warning, at, at, message.written());
+            if (note.fatal()) left_alone = true;
+        }
+        if (left_alone) {
+            out.deinit();
+            return;
+        }
+    } else if (session.options.migrate_lambda) {
         const problem = Format.migrateLambda(worker.arena.allocator(), tree, session.artifacts.tokens(file), text, &out.writer) catch |err| switch (err) {
             error.SyntaxErrors => {
                 out.deinit();

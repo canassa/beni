@@ -1,0 +1,45 @@
+-- `Int.mod`, `Int.rem` and `Float.log` (language.md §12.4) give the answers
+-- `modBy`, `remainderBy` and `logBase` gave: `mod` takes the sign of the
+-- modulus, `rem` the sign of the dividend, both are 0 for a zero divisor,
+-- and `log` takes the number first, then the base. Each module is reached
+-- through the prelude's module aliases, with no import, and `Int.mod` is
+-- also passed as a value.
+import Node exposing (Program)
+import String
+
+
+pairs : List ( Int, Int )
+pairs =
+    [ ( 7, 3 )
+    , ( -7, 3 )
+    , ( 7, -3 )
+    , ( -7, -3 )
+    , ( 7, 0 )
+    , ( -7, 0 )
+    , ( 0, 5 )
+    , ( 11, 4 )
+    , ( -1, 4 )
+    ]
+
+
+row : ( Int, Int ) -> String
+row ( a, b ) =
+    String.join
+        [ String.fromInt a
+        , String.fromInt b
+        , String.fromInt (Int.mod a b)
+        , String.fromInt (Int.rem a b)
+        ]
+        " "
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map pairs row
+            ++ [ String.fromFloat (Float.log 100 10)
+               , String.fromFloat (Float.log 1024 2)
+               , String.fromFloat (Float.log 1 10)
+               , String.join (List.map (List.map [ 5, 6, 7, 8 ] (Int.mod _ 4)) String.fromInt) ","
+               ]
+        )

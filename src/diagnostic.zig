@@ -337,6 +337,12 @@ pub const Code = enum {
     /// Appended with `λ` (language.md §12.1): a lambda written with the
     /// removed `\`, whose message is the head written `λ`.
     backslash_lambda_removed,
+    /// Appended with the names that read right subject first (language.md
+    /// §12.4): a use of `modBy`, `remainderBy` or `logBase`, whose
+    /// message is the call written with `Int.mod`, `Int.rem` or
+    /// `Float.log`; also what `beni fmt --migrate-names` reports a use it
+    /// left alone under.
+    name_removed,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -499,6 +505,7 @@ pub fn title(code: Code) []const u8 {
         .two_spreads_in_pattern => "TWO SPREADS IN ONE PATTERN",
         .invalid_html_shell => "INVALID PAGE SHELL",
         .backslash_lambda_removed => "REMOVED LAMBDA SYNTAX",
+        .name_removed => "REMOVED NAME",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

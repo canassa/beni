@@ -1453,6 +1453,18 @@ accepts a file whose only syntax errors are that code and does not report them, 
 `--migrate-cons` does for `cons_removed` (an error filter, not a parser option). The formatter
 therefore only ever prints `λ`.
 
+*As built, `--migrate-names` without its `Debug.log` half (2026-10-01):* `Format.migrateNames`
+reads the file's own names, which is all lowering's resolution of them is: an `ident` whose token
+is a removed name is `Basics`'s when the file has no other token of that name — no declaration,
+binding, record field or other module's `exposing` entry — and a file that has one is left alone
+and named, since its unqualified uses may be its own. A qualified name is rewritten when its alias
+is one `Basics` has in the file (`Basics` itself unless another import took that alias, and any
+`import Basics as B`); a file where `Int` or `Float` is another module's alias is left alone. A
+method `x.modBy k` becomes `Int.mod x k` when it is called with one argument, and is named for a
+hand edit otherwise; a `.modBy` accessor is a record field's and is never touched. An emptied
+`exposing` list goes with its keyword. The output is parsed again, as `--migrate-lambda`'s is. The
+removed names are one table, `prelude.removed`, which `name_removed` reads too.
+
 ### 11.5 `--migrate-let` and `--migrate-trailing-lambda`: reformats
 
 These two cannot be edits: a block's layout is not `let`'s, and a parenthesis dropped from a lambda
