@@ -243,18 +243,20 @@ every `beni` run its whole check. That made writing core in beni a tax on every 
 engine's 1 300 lines took `Schema`'s check from 0.34 ms to 34 ms in every process and pushed four
 tests over their instruction budget (`schema.md` §16, *As built — S3*). The rule now:
 
-- **The roots** are every module that is not core's (the root package's and the platform
-  chain's), every core module whose file the command line named (`beni check core` checks all of
-  core, and `dump --stage=… core/Dict.beni` dumps `Dict`), and the **implicit core modules** —
+- **The roots** are every module of the root package, the platform modules `boundary.md` §9.1
+  (amended the same day) makes roots — every module of a directory platform, and of an embedded
+  one those its manifests name — every module whose file the command line named (`beni check
+  core` checks all of core, and `dump --stage=… core/Dict.beni` dumps `Dict`), and the
+  **implicit core modules** —
   the seven prelude modules and `Task`, the core modules the compiler itself names with no edge
   from the module that observes them (`Graph.implicit_core`: the prelude's names, the well-known
   types, `Lower`'s `Basics.eq`, `String.compare`, `Maybe.Nothing`, `Result.Err`, and the
   suspension protocol's `Task.andThen` and `Task.isWaiting`). `Schema` is not one of them: every
   construct that needs it mints an edge to it (§4 item 3, `static-dispatch-spike.md` §6.8).
 - **The front end runs in waves** (`Session.firstWave`, `nextWave`): the first is every file
-  but the core modules that are not roots; each next one is the core modules an explicit import
-  of the last wave names, or whose type one of its files mints, until a wave adds nothing. A core
-  module no wave reaches is never lowered — and under `--core-root`, never read.
+  but the core and platform modules that are not roots; each next one is the modules an explicit
+  import of the last wave names, or whose type one of its files mints, until a wave adds nothing.
+  A module no wave reaches is never lowered — and under `--core-root`, never read.
 - **The graph keeps what an edge reaches** (`Graph.dropUnreached`). Item 3 builds it over the
   lowered files; every module no root reaches through the edges of item 3 — explicit imports,
   used prelude rows, the markup vocabulary, minted types — is left out, and the graph is built

@@ -563,41 +563,28 @@ pub fn build(
     return g;
 }
 
-/// The core modules a build checks (checker.md §4.1, *amended 2026-10-01*):
-/// the ones the build's roots reach. `keep` — one `bool` per FILE, the mask
-/// this graph was built with — is cleared for every core module nothing
-/// reaches, for `build` to leave out the second time. True when one was.
+/// The modules a build checks (checker.md §4 and boundary.md §9.1, both
+/// amended 2026-10-01): the ones its roots reach. `roots` is one `bool` per
+/// FILE (`Session.isLazy` says which files are not roots); `keep`, also per
+/// file and the mask this graph was built with, is cleared for every module
+/// nothing reaches, for `build` to leave out the second time. True when one
+/// was.
 ///
-/// The roots are every module that is not core's — the root package's and
-/// the platform chain's — every core module the command line named
-/// (`SourceStore.isNamed`: `beni check core` checks all of core), and the
-/// core modules the compiler itself names: the seven prelude modules
-/// (`prelude.modules`) and `Task`, whose `andThen` and `isWaiting` the code
-/// of a body that may suspend calls with no edge to say so
-/// (`js/Lower.zig`'s `coreValue`). From those, every edge `build` made is
-/// followed — explicit imports, used prelude rows, the markup vocabulary and
-/// minted types (`Schema` included) — so a module is left out only when no
-/// root can observe it.
-///
-/// A function of the graph alone, which is a function of the input: the
-/// same files are left out at every `--jobs` (rule 5).
-pub fn dropUnreached(g: *const Graph, scratch: Allocator, store: *const SourceStore, keep: []bool) Allocator.Error!bool {
+/// From the roots every edge `build` made is followed — explicit imports,
+/// used prelude rows, the markup vocabulary and minted types (`Schema`
+/// included) — so a module is left out only when no root can observe it.
+/// A function of the graph and the roots, which are functions of the
+/// input: the same files are left out at every `--jobs` (rule 5).
+pub fn dropUnreached(g: *const Graph, scratch: Allocator, roots: []const bool, keep: []bool) Allocator.Error!bool {
     const n = g.modules.len;
     const reached = try scratch.alloc(bool, n);
     @memset(reached, false);
     var stack: std.ArrayList(Index) = .empty;
-    const packages = g.modules.items(.package);
     const files = g.modules.items(.file);
     for (0..n) |i| {
-        if (packages[i] == .core and !store.isNamed(files[i])) continue;
+        if (!roots[files[i].int()]) continue;
         reached[i] = true;
         try stack.append(scratch, @enumFromInt(i));
-    }
-    for (implicit_core) |w| {
-        const m = g.find(.core, w.symbol()) orelse continue;
-        if (reached[m.int()]) continue;
-        reached[m.int()] = true;
-        try stack.append(scratch, m);
     }
     while (stack.pop()) |m| {
         for (g.dependencies(m)) |dep| {
@@ -616,9 +603,10 @@ pub fn dropUnreached(g: *const Graph, scratch: Allocator, store: *const SourceSt
 }
 
 /// The core modules the compiler names itself, with no edge from the module
-/// that observes them: the seven prelude modules and `Task`. `dropUnreached`
-/// always keeps them, so whether one is in a build never depends on what the
-/// build imports, and `core_surface` is one term over exactly these
+/// that observes them: the seven prelude modules and `Task`. A build
+/// always keeps them (`Session.isLazy`), so whether one is in it never
+/// depends on what the build imports, and `core_surface` is one term over
+/// exactly these
 /// (`fast-compiler.md` §8, amended 2026-10-01; `isImplicitCore`).
 pub const implicit_core = prelude.modules ++ [_]InternPool.WellKnown{.Task};
 

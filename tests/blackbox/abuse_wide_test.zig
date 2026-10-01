@@ -508,10 +508,7 @@ test "a derived row of more than 65 535 context entries checks" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    // No `--platform`: the index is the checker's, and a platform adds only
-    // its own check and its siblings' to a scenario that sits near the
-    // instruction budget (it grew past it when `core/List` did).
-    const checked = try w.run(&.{ "check", "--no-cache", "H.beni", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "H.beni", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │

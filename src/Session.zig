@@ -159,7 +159,7 @@ io_failure: ?IoFailure = null,
 /// Shared by all workers: the next position in `wave` to claim.
 next_file: std.atomic.Value(u32) = .init(0),
 /// The files the per-file phase is running over now, in index order: every
-/// file, or under `Phases.lazy_core` one wave of them (`firstWave`,
+/// file, or under `Phases.lazy` one wave of them (`firstWave`,
 /// `nextWave`). Borrowed from `run`'s frame for the duration of a wave.
 wave: []const SourceStore.Index = &.{},
 /// Owned. Per file, whether the per-file phase ran on it this run. Every
@@ -324,10 +324,11 @@ pub const Phases = struct {
     /// `beni fmt` that refuses `notes.beni` or `my-scratch.beni` refuses to
     /// do the one job it has for a file it can read, parse and print.
     module_names: bool = true,
-    /// Lower a core module only once something imports it, in waves
-    /// (`firstWave`, `nextWave`; checker.md §4.1, amended 2026-10-01). Only
-    /// for the phases that lower: an import is read off a file's `Bir`.
-    lazy_core: bool = false,
+    /// Lower a core or platform module only once something imports it, in
+    /// waves (`firstWave`, `nextWave`; checker.md §4, boundary.md §9.1, both
+    /// amended 2026-10-01). Only for the phases that lower: an import is
+    /// read off a file's `Bir`.
+    lazy: bool = false,
 };
 
 /// Read the bytes, tokenize, install the lexical artifacts, report
@@ -346,13 +347,13 @@ pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 /// `lower_phases` per file, then — serially, once — the module graph
 /// and cross-module name resolution (checker.md §4). What `check` and
 /// `dump --stage=interface` run.
-pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveModules, .lazy_core = true };
+pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveModules, .lazy = true };
 
 /// `resolve_phases`, then type-check every module in the graph's
 /// topological order (checker.md §6). What `check` and the two typed dumps
 /// run. Serial for now; §4.4 allows DAG parallelism and the data is laid
 /// out for it.
-pub const check_phases: Phases = .{ .per_file = lowerPhase, .after = checkSerial, .lazy_core = true };
+pub const check_phases: Phases = .{ .per_file = lowerPhase, .after = checkSerial, .lazy = true };
 
 /// `parse_phases`, then format into the file's `formatted` column.
 /// What `fmt` runs. Formatting is per-file work with no cross-file
@@ -579,16 +580,17 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     // than the thread it costs to avoid, and one spawn is microseconds
     // against a 2 ms process start.
     //
-    // Under `Phases.lazy_core` it runs in WAVES (checker.md §4.1, amended
-    // 2026-10-01): the first is every file but the core modules nothing is
-    // known to need yet, and each next one is the core modules the last one
-    // imports by name, until a wave imports nothing new. Which files a wave
+    // Under `Phases.lazy` it runs in WAVES (checker.md §4, amended
+    // 2026-10-01): the first is every file but the core and platform modules
+    // nothing is known to need yet (`isLazy`), and each next one is the
+    // modules the last one imports by name or mints a type of, until a wave
+    // adds nothing. Which files a wave
     // holds is a function of the input alone, and the interners are merged
     // in file order after the last one, so a symbol's id does not depend on
     // which wave lowered its file (rule 5).
     while (wave.items.len != 0) {
         try session.runWave(wave.items, phases);
-        if (!phases.lazy_core) break;
+        if (!phases.lazy) break;
         try session.nextWave(wave.items, &next);
         std.mem.swap(std.ArrayList(SourceStore.Index), &wave, &next);
     }
@@ -680,11 +682,9 @@ fn runWave(session: *Session, files: []const SourceStore.Index, phases: Phases) 
 }
 
 /// The per-file phase's first wave, into `out`, with `lowered` set for
-/// every file in it. Every file, unless the phases are `lazy_core` and the
-/// run enumerated the core package; then every file but the core modules
-/// that are neither named on the command line nor one of the implicit core
-/// modules (`Graph.implicit_core`) — the ones a module needs only if it
-/// imports them, which `nextWave` finds out.
+/// every file in it: every file, or under `Phases.lazy` every file `isLazy`
+/// does not hold back — the core and platform modules a module needs only
+/// if it imports them, which `nextWave` finds out.
 fn firstWave(session: *Session, phases: Phases, out: *std.ArrayList(SourceStore.Index)) Allocator.Error!void {
     const gpa = session.gpa;
     const count = session.store.count();
@@ -695,13 +695,13 @@ fn firstWave(session: *Session, phases: Phases, out: *std.ArrayList(SourceStore.
     try out.ensureTotalCapacity(gpa, count);
     for (0..count) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
-        if (phases.lazy_core and session.options.core_package and session.isLazyCore(file)) continue;
+        if (phases.lazy and session.isLazy(file)) continue;
         session.lowered[i] = true;
         out.appendAssumeCapacity(file);
     }
 }
 
-/// Queue the waiting core module called `name`, if there is one and no
+/// Queue the waiting module called `name`, if there is one and no
 /// wave has it yet.
 fn lowerNext(session: *Session, waiting: []const SourceStore.Index, name: []const u8, out: *std.ArrayList(SourceStore.Index)) Allocator.Error!void {
     for (waiting) |target| {
@@ -712,23 +712,62 @@ fn lowerNext(session: *Session, waiting: []const SourceStore.Index, name: []cons
     }
 }
 
-/// Whether `file` is a core module the per-file phase leaves until an
-/// import names it: one of package `core`, with a module path, that the
-/// command line did not name and the compiler does not name itself.
-fn isLazyCore(session: *const Session, file: SourceStore.Index) bool {
-    if (session.store.package(file) != .core) return false;
+/// Whether `file` is a module the build reads, lowers and checks only once
+/// something reaches it, rather than a root (checker.md §4, boundary.md
+/// §9.1, both amended 2026-10-01). Never a file the command line named,
+/// nor one of the root package. A core module is lazy unless it is one of
+/// the implicit core modules (`Graph.implicit_core`); a module of a platform
+/// the binary carries is lazy unless the chain's manifests name it
+/// (`isPlatformRoot`).
+fn isLazy(session: *const Session, file: SourceStore.Index) bool {
     if (session.store.isNamed(file) or !session.store.modulePathValid(file)) return false;
     const name = session.store.moduleName(file);
-    for (Graph.implicit_core) |w| {
-        if (std.mem.eql(u8, name, @tagName(w))) return false;
+    switch (session.store.package(file)) {
+        .app => return false,
+        .core => {
+            // A run that did not enumerate the core package (the hermetic
+            // tests' `TestProject`) has none of its own to leave out.
+            if (!session.options.core_package) return false;
+            for (Graph.implicit_core) |w| {
+                if (std.mem.eql(u8, name, @tagName(w))) return false;
+            }
+            return true;
+        },
+        // Only a platform the binary carries, which beni's own tests check
+        // whole as they do core. One read from a directory is somebody's
+        // code under development, and every module of it is a root, so a
+        // mistake in it is reported whatever the program imports.
+        .platform => return session.store.isEmbedded(file) and !session.isPlatformRoot(name),
     }
-    return true;
 }
 
-/// The next wave, into `out` (cleared first): every core module not lowered
-/// yet whose name an explicit import of a file of `done` spells, or whose
-/// type one of them mints (`Graph.mintedNames`), in index
-/// order, with `lowered` set for each. Over-approximate on purpose — an app
+/// Whether a manifest of the chain names the platform module `name`, so the
+/// compiler reaches it with no import: the module of `"program"`'s type,
+/// `"markup"`'s runtime `"module"`, its `"vocabulary"`, and the module of
+/// its `"type"` (`boundary.md` §5, §9.2). With no chain, every platform
+/// module is a root.
+fn isPlatformRoot(session: *const Session, name: []const u8) bool {
+    const chain = session.options.chain orelse return true;
+    for (chain.layers) |layer| {
+        const m = layer.manifest;
+        if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
+        if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
+        if (m.markup.module) |module| if (std.mem.eql(u8, module, name)) return true;
+        if (m.markup.vocabulary) |module| if (std.mem.eql(u8, module, name)) return true;
+    }
+    return false;
+}
+
+/// `Node` of `Node.Program`: the module part of a qualified name.
+fn moduleOf(qualified: []const u8) []const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, qualified, '.') orelse return qualified;
+    return qualified[0..dot];
+}
+
+/// The next wave, into `out` (cleared first): every core or platform module
+/// not lowered yet whose name an explicit import of a file of `done` spells,
+/// or whose type one of them mints (`Graph.mintedNames`), in index order,
+/// with `lowered` set for each. Over-approximate on purpose — an app
 /// module of the same name may be what the import resolves to — because the
 /// graph decides that, and `Graph.dropUnreached` leaves out what no import
 /// resolved to. A prelude row is skipped: it only ever names an implicit
@@ -740,12 +779,12 @@ fn isLazyCore(session: *const Session, file: SourceStore.Index) bool {
 fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayList(SourceStore.Index)) Allocator.Error!void {
     const gpa = session.gpa;
     out.clearRetainingCapacity();
-    // The core modules still waiting, a handful: each import is compared
+    // The modules still waiting, a handful: each import is compared
     // with these and not with every file of the project.
     var waiting: std.ArrayList(SourceStore.Index) = .empty;
     defer waiting.deinit(gpa);
     for (session.lowered, 0..) |lowered, i| {
-        if (!lowered and session.store.package(@enumFromInt(i)) == .core) try waiting.append(gpa, @enumFromInt(i));
+        if (!lowered and session.store.package(@enumFromInt(i)) != .app) try waiting.append(gpa, @enumFromInt(i));
     }
     if (waiting.items.len == 0) return;
     for (done) |file| {
@@ -1510,17 +1549,17 @@ fn resolveModules(session: *Session) RunError!void {
     // no wave reached was never read (`nextWave`).
     const keep = try worker.arena.allocator().dupe(bool, session.lowered);
     session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner, platforms, keep);
-    // Core is checked as far as the build reaches it and no further
-    // (checker.md §4.1, amended 2026-10-01): a core module no root reaches
-    // is not a module of this build, so nothing downstream — resolution,
-    // the check, the cache, emit — pays for it. The waves lowered every
-    // core module an import NAMES; the graph knows which of those an
-    // import actually resolves to, and is built a second time without the
-    // rest rather than filtered in place, so every per-module array keeps
-    // one shape and one meaning. Only a run that enumerated the core
-    // package prunes it: one that did not (the hermetic tests'
-    // `TestProject`) has no core of its own to leave out.
-    if (session.options.core_package and try session.graph.dropUnreached(worker.arena.allocator(), &session.store, keep)) {
+    // Core and the platform are checked as far as the build reaches them
+    // and no further (checker.md §4, boundary.md §9.1, both amended
+    // 2026-10-01): a module no root reaches is not a module of this build,
+    // so nothing downstream — resolution, the check, the cache, emit — pays
+    // for it. The waves lowered every module an import NAMES; the graph
+    // knows which of those an import actually resolves to, and is built a
+    // second time without the rest rather than filtered in place, so every
+    // per-module array keeps one shape and one meaning.
+    const roots = try worker.arena.allocator().alloc(bool, session.lowered.len);
+    for (roots, session.lowered, 0..) |*root, lowered, i| root.* = lowered and !session.isLazy(@enumFromInt(i));
+    if (try session.graph.dropUnreached(worker.arena.allocator(), roots, keep)) {
         session.graph.deinit(gpa);
         session.graph = .empty;
         session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner, platforms, keep);

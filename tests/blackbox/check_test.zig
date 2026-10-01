@@ -618,3 +618,51 @@ test "the core modules a build reaches are the same at every --jobs, and nothing
         }
     }
 }
+
+test "a platform the binary carries is checked as far as the program reaches it, and a directory platform whole" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `node` names `Node` (its program type) and `html`, which it depends
+    // on, names `Html` (its markup vocabulary): those are roots of every
+    // build against it. `Io` and `Ssr` are modules a program imports or does
+    // not, and this one does not (boundary.md §9.1, amended 2026-10-01). A
+    // platform read from a directory is someone's code under development:
+    // its modules are all roots, so `Unused`, which nothing imports, is
+    // still checked.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProgram(&w);
+    try writeUserPlatform(&w);
+    try w.write("myplat/Unused.beni", "pub unused : Int\nunused =\n    1\n");
+    try w.write("mine/Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hi"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const embedded = try w.run(&.{ "dump", "--stage=graph", "--platform=node", "Main.beni" });
+    const directory = try w.run(&.{ "dump", "--stage=graph", "--platform=./myplat", "mine/Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), embedded.exit_code);
+    try testing.expect(std.mem.indexOf(u8, embedded.stdout, "app:Main -> platform:Node\n") != null);
+    try testing.expect(std.mem.indexOf(u8, embedded.stdout, "platform:Html -> ") != null);
+    for ([_][]const u8{ "platform:Io", "platform:Ssr" }) |module| {
+        if (std.mem.indexOf(u8, embedded.stdout, module) != null) {
+            std.debug.print("{s} is in the graph:\n{s}", .{ module, embedded.stdout });
+            return error.UnreachedModuleInGraph;
+        }
+    }
+    try testing.expectEqual(@as(u8, 0), directory.exit_code);
+    try testing.expect(std.mem.indexOf(u8, directory.stdout, "platform:Unused -> core:Basics\n") != null);
+}

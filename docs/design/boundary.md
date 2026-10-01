@@ -954,6 +954,20 @@ readings of the example above:
   Browser.Program`, so a TEA program writes `main : Tea.Program` without importing `Browser`
   (`tests/corpus/browser/tea/TwoPrograms`, which imports it for `Browser.mountAt`).
 
+*Amended 2026-10-01: a platform the binary carries is checked as far as the program reaches it*
+(the rule `checker.md` §4 gives core, amended the same day). Every package of the chain is still
+enumerated, but a module of an EMBEDDED package is read, lowered and checked only when a root
+reaches it through imports — and the roots of a chain are the modules its manifests name, which the
+compiler reaches with no import: the module of `"program"`'s type, `"markup"`'s runtime `"module"`,
+its `"vocabulary"` and the module of its `"type"`. A program for `node` that never imports `Io` or
+`Ssr` does not check them; one for `browser-tea` that never imports `Random` does not check it. The
+embedded packages are beni's own and are checked whole by its tests, as core is. **A platform read
+from a directory is checked whole**: it is somebody's code under development, and a mistake in a
+module the program does not import is still theirs to hear about, so every module of it is a root.
+*Measured:* `abuse_wide_test`'s 65 600-entry derived row, checked with `--platform=node` again, is
+back under its budget: 4 264 M instructions, where the whole platform made it 4 308 M, past the
+4 300 M budget.
+
 ### 9.2 The `markup` manifest key
 
 ```json
