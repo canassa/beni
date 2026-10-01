@@ -1,6 +1,5 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
-import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$slot, Rt$forKeyed, Rt$forPosition } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
 const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
 const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
@@ -17,20 +16,20 @@ const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
   const c$29 = Rt$slot(r$19, w$23, cx$18);
   const c$30 = Rt$slot(r$19, w$24, cx$18);
   const c$31 = Rt$slot(r$19, w$25, cx$18);
-  $markup$forKeyed(c$26, v$17[0], v$17[1], v$17[2], v$17[3]);
-  $markup$forKeyed(c$27, v$17[4], v$17[5], v$17[6], v$17[7]);
-  $markup$forKeyed(c$28, v$17[8], v$17[9], v$17[10], v$17[11]);
-  $markup$forPosition(c$29, v$17[12], v$17[13], v$17[14]);
-  $markup$forKeyed(c$30, v$17[15], v$17[16], v$17[17], v$17[18]);
-  $markup$forKeyed(c$31, v$17[19], v$17[20], v$17[21], v$17[22]);
+  Rt$forKeyed(c$26, v$17[0], v$17[1], v$17[2], v$17[3]);
+  Rt$forKeyed(c$27, v$17[4], v$17[5], v$17[6], v$17[7]);
+  Rt$forKeyed(c$28, v$17[8], v$17[9], v$17[10], v$17[11]);
+  Rt$forPosition(c$29, v$17[12], v$17[13], v$17[14]);
+  Rt$forKeyed(c$30, v$17[15], v$17[16], v$17[17], v$17[18]);
+  Rt$forKeyed(c$31, v$17[19], v$17[20], v$17[21], v$17[22]);
   return { s: r$19, q: null, e: r$19, c0: c$26, c1: c$27, c2: c$28, c3: c$29, c4: c$30, c5: c$31 };
 }, p: (i$32, v$33) => {
-  $markup$forKeyed(i$32.c0, v$33[0], v$33[1], v$33[2], v$33[3]);
-  $markup$forKeyed(i$32.c1, v$33[4], v$33[5], v$33[6], v$33[7]);
-  $markup$forKeyed(i$32.c2, v$33[8], v$33[9], v$33[10], v$33[11]);
-  $markup$forPosition(i$32.c3, v$33[12], v$33[13], v$33[14]);
-  $markup$forKeyed(i$32.c4, v$33[15], v$33[16], v$33[17], v$33[18]);
-  $markup$forKeyed(i$32.c5, v$33[19], v$33[20], v$33[21], v$33[22]);
+  Rt$forKeyed(i$32.c0, v$33[0], v$33[1], v$33[2], v$33[3]);
+  Rt$forKeyed(i$32.c1, v$33[4], v$33[5], v$33[6], v$33[7]);
+  Rt$forKeyed(i$32.c2, v$33[8], v$33[9], v$33[10], v$33[11]);
+  Rt$forPosition(i$32.c3, v$33[12], v$33[13], v$33[14]);
+  Rt$forKeyed(i$32.c4, v$33[15], v$33[16], v$33[17], v$33[18]);
+  Rt$forKeyed(i$32.c5, v$33[19], v$33[20], v$33[21], v$33[22]);
 } };
 const DomSelectorNearMiss$t68 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$t98 = Rt$template("<p> ", 0);

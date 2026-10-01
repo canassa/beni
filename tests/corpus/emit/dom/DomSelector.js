@@ -1,5 +1,4 @@
-import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot, Rt$delegate } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$slot, Rt$forKeyed, Rt$delegate } from "./_platform/Rt.mjs";
 const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
 const DomSelector$k173 = { m: (v$13, cx$14) => {
   const r$15 = DomSelector$t173();
@@ -13,18 +12,18 @@ const DomSelector$k173 = { m: (v$13, cx$14) => {
   const c$23 = Rt$slot(r$15, w$18, cx$14);
   const c$24 = Rt$slot(r$15, w$19, cx$14);
   const c$25 = Rt$slot(r$15, w$20, cx$14);
-  $markup$forKeyed(c$21, v$13[0], v$13[1], v$13[2], v$13[3]);
-  $markup$forKeyed(c$22, v$13[4], v$13[5], v$13[6], v$13[7]);
-  $markup$forKeyed(c$23, v$13[8], null, v$13[9], v$13[10]);
-  $markup$forKeyed(c$24, v$13[11], v$13[12], v$13[13], v$13[14]);
-  $markup$forKeyed(c$25, v$13[15], v$13[16], v$13[17], v$13[18]);
+  Rt$forKeyed(c$21, v$13[0], v$13[1], v$13[2], v$13[3]);
+  Rt$forKeyed(c$22, v$13[4], v$13[5], v$13[6], v$13[7]);
+  Rt$forKeyed(c$23, v$13[8], null, v$13[9], v$13[10]);
+  Rt$forKeyed(c$24, v$13[11], v$13[12], v$13[13], v$13[14]);
+  Rt$forKeyed(c$25, v$13[15], v$13[16], v$13[17], v$13[18]);
   return { s: r$15, q: null, e: r$15, c0: c$21, c1: c$22, c2: c$23, c3: c$24, c4: c$25 };
 }, p: (i$26, v$27) => {
-  $markup$forKeyed(i$26.c0, v$27[0], v$27[1], v$27[2], v$27[3]);
-  $markup$forKeyed(i$26.c1, v$27[4], v$27[5], v$27[6], v$27[7]);
-  $markup$forKeyed(i$26.c2, v$27[8], null, v$27[9], v$27[10]);
-  $markup$forKeyed(i$26.c3, v$27[11], v$27[12], v$27[13], v$27[14]);
-  $markup$forKeyed(i$26.c4, v$27[15], v$27[16], v$27[17], v$27[18]);
+  Rt$forKeyed(i$26.c0, v$27[0], v$27[1], v$27[2], v$27[3]);
+  Rt$forKeyed(i$26.c1, v$27[4], v$27[5], v$27[6], v$27[7]);
+  Rt$forKeyed(i$26.c2, v$27[8], null, v$27[9], v$27[10]);
+  Rt$forKeyed(i$26.c3, v$27[11], v$27[12], v$27[13], v$27[14]);
+  Rt$forKeyed(i$26.c4, v$27[15], v$27[16], v$27[17], v$27[18]);
 } };
 const DomSelector$t83 = Rt$template("<p> ", 0);
 const DomSelector$t108 = Rt$template("<p> ", 0);

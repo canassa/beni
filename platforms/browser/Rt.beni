@@ -1,7 +1,7 @@
 --! The slot and mount half of the browser platform's runtime, the holes,
---! attribute writes and markup primitives of a template, and its events,
---! written in beni over core's `Js` (research 47; `plans/runtime-in-beni.md`,
---! steps 1–3).
+--! attribute writes and markup primitives of a template, its events, and its
+--! keyed and positional lists, written in beni over core's `Js` (research 47;
+--! `plans/runtime-in-beni.md`, steps 1–4).
 --! Each declaration is the hand-written JavaScript function of the same
 --! name it replaced, statement for statement where beni allows it. It is
 --! this platform's runtime module (`boundary.md` §9.2, *A runtime module*):
@@ -15,7 +15,11 @@
 --! call. A `let` the JavaScript assigns is a `Js.Ref`, which the compiler
 --! writes as that `let` (`backend.md` §4, *A `Js.Ref` that does not escape
 --! is a `let`*); which is why `mount`'s closures hold what `send` and
---! `queue` were: a cell passed to a helper would escape.
+--! `queue` were: a cell passed to a helper would escape. A loop whose locals
+--! the JavaScript goes on using after it is a loop called once whose value
+--! is bound — a name, or a tuple of names when it leaves several — which a
+--! release build writes where the call is (`backend.md` §9, *A function
+--! called once is written where it is called*).
 import Js
 
 
@@ -498,6 +502,1478 @@ childMaybe s b =
 pub insertText : V, V, V -> V
 insertText parent marker value =
     Js.call parent "insertBefore" [ Js.call (Js.global "document") "createTextNode" [ value ], marker ]
+
+
+-- ---- Lists and conditionals (backend.md §15.5) ---------------------------
+
+
+-- A list's elements, by backend.md §4's protocol: the array itself, or a
+-- view's or a trie's plain copy (made once per list and cached). Read,
+-- never written. `pub` for `runtime.js`'s class and style lists.
+pub elements : V -> V
+elements list =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
+        list
+
+    else
+        Js.call list "$plain" []
+
+
+-- `(slot, list)`: a `List Html` hole, its blocks matched by position.
+pub childList : V, V -> ()
+childList s list =
+    if Js.same list (Js.get s "b") then
+        ()
+
+    else
+        let
+            _ =
+                Js.set s "b" list
+
+            _ =
+                if Js.isNull (Js.get s "u") then
+                    Js.set s "u" (Js.array [])
+
+                else
+                    ()
+
+            u =
+                Js.get s "u"
+
+            a =
+                elements list
+
+            _ =
+                childrenFrom s u a 0
+        in
+        dropPast u (Js.to (Js.get a "length"))
+
+
+-- Block `k` onwards of `a` shown by instance `k` onwards of `u`: patched,
+-- or mounted past the end.
+childrenFrom : V, V, V, Int -> ()
+childrenFrom s u a k =
+    if k < Js.to (Js.get a "length") then
+        let
+            _ =
+                if k < Js.to (Js.get u "length") then
+                    Js.setAt u k (patch (Js.at u k) (Js.at a k) (Js.get s "cx"))
+
+                else
+                    let
+                        i =
+                            unit (Js.at a k) (Js.get s "cx")
+
+                        _ =
+                            put (parentOf s) i (Js.get s "m")
+                    in
+                    Js.to (Js.call u "push" [ i ])
+        in
+        childrenFrom s u a (k + 1)
+
+    else
+        ()
+
+
+-- The instances past the first `k`, taken out of the page and the array.
+dropPast : V, Int -> ()
+dropPast u k =
+    if Js.to (Js.get u "length") > k then
+        let
+            _ =
+                drop (Js.call u "pop" [])
+        in
+        dropPast u k
+
+    else
+        ()
+
+
+-- A row is `{ m, p, i, f }` for a row compiled in place — `m(item,
+-- position, cx)` mounts an instance, `p(inst, item, position)` patches one
+-- — or `{ b, i, f }` for any other row, `b(item, position)` its block. `i`
+-- says whether the row reads its position; `f` is the fallback's block or
+-- null. The row's inputs are an array compared by identity, or null.
+--
+-- A row with `w` mounts through its patch (backend.md §15.5): `m` clones
+-- and walks, and `p`, meeting nothing written yet, writes every value — so
+-- the code an edit runs is the code every mount ran, as a Solid effect's is.
+mountRow : V, V, Int, V -> V
+mountRow row item position cx =
+    let
+        i =
+            if Js.isUndefined (Js.get row "b") then
+                let
+                    j =
+                        Js.call row "m" [ item, Js.from position, cx ]
+
+                    _ =
+                        if Js.same (Js.get row "w") (Js.from True) then
+                            Js.to (Js.call row "p" [ j, item, Js.from position ])
+
+                        else
+                            ()
+                in
+                j
+
+            else
+                unit (Js.call row "b" [ item, Js.from position ]) cx
+
+        _ =
+            Js.set i "x" item
+
+        _ =
+            Js.set i "y" (Js.from position)
+
+        _ =
+            Js.set i "k" Js.null
+
+        _ =
+            Js.set i "n" Js.null
+
+        _ =
+            Js.set i "kv" (Js.from 0)
+
+        _ =
+            Js.set i "kc" Js.null
+
+        _ =
+            Js.set i "kt" Js.null
+    in
+    i
+
+
+-- The row patched with its item; a new instance when a block row's kind
+-- changed.
+patchRow : V, V, V, Int, V -> V
+patchRow row i item position cx =
+    if Js.isUndefined (Js.get row "b") then
+        let
+            _ =
+                Js.call row "p" [ i, item, Js.from position ]
+        in
+        i
+
+    else
+        let
+            n =
+                patch i (Js.call row "b" [ item, Js.from position ]) cx
+
+            _ =
+                if Js.same n i then
+                    ()
+
+                else
+                    let
+                        _ =
+                            Js.set n "k" (Js.get i "k")
+
+                        _ =
+                            Js.set n "n" Js.null
+
+                        _ =
+                            Js.set n "kv" (Js.from 0)
+
+                        _ =
+                            Js.set n "kc" (Js.get i "kc")
+                    in
+                    Js.set n "kt" Js.null
+        in
+        n
+
+
+-- Whether two renders' inputs are the same, element by element.
+sameInputs : V, V -> Bool
+sameInputs a b =
+    if Js.same a b then
+        True
+
+    else if Js.isNull a || Js.isNull b || not (Js.same (Js.get a "length") (Js.get b "length")) then
+        False
+
+    else
+        let
+            k =
+                sameFrom a b 0
+        in
+        k == Js.to (Js.get a "length")
+
+
+-- Where `a` and `b` first differ from `k` on, or their length.
+sameFrom : V, V, Int -> Int
+sameFrom a b k =
+    if k < Js.to (Js.get a "length") && Js.same (Js.at a k) (Js.at b k) then
+        sameFrom a b (k + 1)
+
+    else
+        k
+
+
+-- Every input but the `g`th, a keyed list's selector, as last time.
+sameInputsBut : V, V, Int -> Bool
+sameInputsBut a b g =
+    if Js.same a b then
+        True
+
+    else if Js.isNull a || Js.isNull b || not (Js.same (Js.get a "length") (Js.get b "length")) then
+        False
+
+    else
+        let
+            k =
+                sameFromBut a b g 0
+        in
+        k == Js.to (Js.get a "length")
+
+
+sameFromBut : V, V, Int, Int -> Int
+sameFromBut a b g k =
+    if k < Js.to (Js.get a "length") && (k == g || Js.same (Js.at a k) (Js.at b k)) then
+        sameFromBut a b g (k + 1)
+
+    else
+        k
+
+
+-- What no key is: both of a render's probes when its selection did not
+-- change, so no row is patched for it.
+none : V
+none =
+    Js.from {}
+
+
+-- The rows whose key is `key` — its first row and the chain of rows that
+-- share it — patched with the item and position they show.
+reselect : V, V, V -> ()
+reselect s row key =
+    let
+        _ =
+            reselectFrom row (Js.call (Js.get s "x") "get" [ key ])
+    in
+    ()
+
+
+-- (`isNullish`: the map answers undefined for no row, and a chain ends in
+-- null.)
+reselectFrom : V, V -> ()
+reselectFrom row i =
+    if Js.isNullish i then
+        ()
+
+    else
+        let
+            _ =
+                Js.call row "p" [ i, Js.get i "x", Js.get i "y" ]
+        in
+        reselectFrom row (Js.get i "n")
+
+
+-- A detached run of nodes that moves back into the list later.
+parked : Js.Ref V
+parked =
+    Js.ref Js.null
+
+
+park : V -> ()
+park i =
+    let
+        f =
+            first i
+    in
+    if Js.same f (last i) then
+        Js.to (Js.call f "remove" [])
+
+    else
+        let
+            _ =
+                if Js.isNull (Js.read parked) then
+                    Js.write parked (Js.call (Js.global "document") "createDocumentFragment" [])
+
+                else
+                    ()
+        in
+        put (Js.read parked) i Js.null
+
+
+-- The rows `a` were become the rows `b`, moving as few as it can: udomdiff
+-- over instances rather than nodes, each instance a run of siblings. Only
+-- `a[aStart, aEnd)` and `b[bStart, bEnd)` differ: the rows before the
+-- starts are in place and the same in both, and so are the rows after the
+-- ranges, which begin at `after` (the node after the list when there are
+-- none); `b`'s rows end at `bLength`. `indices`, each row of `b`'s range by
+-- its index, is made the first time a row is looked up: null until then.
+reconcile : V, V, V, Int, V, Int, Int, Int, Int, V -> ()
+reconcile parent a b bLength after aStart aEnd bStart bEnd indices =
+    if not (aStart < aEnd || bStart < bEnd) then
+        ()
+
+    else if Js.same (Js.at a aStart) (Js.at b bStart) then
+        reconcile parent a b bLength after (aStart + 1) aEnd (bStart + 1) bEnd indices
+
+    else
+        let
+            ( aTo, bTo ) =
+                sameEnds a b aStart aEnd bStart bEnd
+        in
+        if aTo == aStart then
+            let
+                node =
+                    if bTo < bLength then
+                        if bStart /= 0 then
+                            Js.get (last (Js.at b (bStart - 1))) "nextSibling"
+
+                        else
+                            first (Js.at b bTo)
+
+                    else
+                        after
+
+                _ =
+                    putRange parent b bStart bTo node
+            in
+            reconcile parent a b bLength after aStart aTo bTo bTo indices
+
+        else if bTo == bStart then
+            let
+                _ =
+                    dropRange a indices aStart aTo
+            in
+            reconcile parent a b bLength after aTo aTo bStart bTo indices
+
+        else if Js.same (Js.at a aStart) (Js.at b (bTo - 1)) && Js.same (Js.at b bStart) (Js.at a (aTo - 1)) then
+            let
+                node =
+                    Js.get (last (Js.at a (aTo - 1))) "nextSibling"
+
+                _ =
+                    put parent (Js.at b bStart) (Js.get (last (Js.at a aStart)) "nextSibling")
+
+                _ =
+                    put parent (Js.at b (bTo - 1)) node
+
+                _ =
+                    Js.setAt a (aTo - 1) (Js.at b (bTo - 1))
+            in
+            reconcile parent a b bLength after (aStart + 1) (aTo - 1) (bStart + 1) (bTo - 1) indices
+
+        else
+            let
+                positions =
+                    if Js.isNull indices then
+                        Js.construct (Js.global "Map") []
+
+                    else
+                        indices
+
+                _ =
+                    if Js.isNull indices then
+                        indexRange positions b bStart bTo
+
+                    else
+                        ()
+
+                found =
+                    Js.call positions "get" [ Js.at a aStart ]
+            in
+            if Js.isUndefined found then
+                let
+                    _ =
+                        drop (Js.at a aStart)
+                in
+                reconcile parent a b bLength after (aStart + 1) aTo bStart bTo positions
+
+            else
+                let
+                    index : Int
+                    index =
+                        Js.to found
+                in
+                if bStart < index && index < bTo then
+                    let
+                        sequence =
+                            sameRun positions a aTo bTo index (aStart + 1) 1
+                    in
+                    if sequence > index - bStart then
+                        let
+                            _ =
+                                putBefore parent b bStart index (first (Js.at a aStart))
+                        in
+                        reconcile parent a b bLength after aStart aTo index bTo positions
+
+                    else
+                        let
+                            old =
+                                Js.at a aStart
+
+                            _ =
+                                put parent (Js.at b bStart) (first old)
+
+                            _ =
+                                park old
+                        in
+                        reconcile parent a b bLength after (aStart + 1) aTo (bStart + 1) bTo positions
+
+                else
+                    reconcile parent a b bLength after (aStart + 1) aTo bStart bTo positions
+
+
+-- The rows the two ranges end with that are the same, taken off.
+sameEnds : V, V, Int, Int, Int, Int -> ( Int, Int )
+sameEnds a b aStart aEnd bStart bEnd =
+    if aEnd > aStart && bEnd > bStart && Js.same (Js.at a (aEnd - 1)) (Js.at b (bEnd - 1)) then
+        sameEnds a b aStart (aEnd - 1) bStart (bEnd - 1)
+
+    else
+        ( aEnd, bEnd )
+
+
+-- `b[from, to)` put before `node`, in order.
+putRange : V, V, Int, Int, V -> ()
+putRange parent b from to node =
+    if from < to then
+        let
+            _ =
+                put parent (Js.at b from) node
+        in
+        putRange parent b (from + 1) to node
+
+    else
+        ()
+
+
+putBefore : V, V, Int, Int, V -> ()
+putBefore parent b from to node =
+    if from < to then
+        let
+            _ =
+                put parent (Js.at b from) node
+        in
+        putBefore parent b (from + 1) to node
+
+    else
+        ()
+
+
+-- `a[from, to)` taken out of the page, but for the rows `b` holds, which
+-- are parked.
+dropRange : V, V, Int, Int -> ()
+dropRange a indices from to =
+    if from < to then
+        let
+            _ =
+                if Js.isNull indices || not (Js.to (Js.call indices "has" [ Js.at a from ])) then
+                    drop (Js.at a from)
+
+                else
+                    ()
+        in
+        dropRange a indices (from + 1) to
+
+    else
+        ()
+
+
+indexRange : V, V, Int, Int -> ()
+indexRange positions b from to =
+    if from < to then
+        let
+            _ =
+                Js.call positions "set" [ Js.at b from, Js.from from ]
+        in
+        indexRange positions b (from + 1) to
+
+    else
+        ()
+
+
+-- How many rows of `a` from `aStart - 1` stand in `b` in the same order.
+sameRun : V, V, Int, Int, Int, Int, Int -> Int
+sameRun positions a aEnd bEnd index i sequence =
+    if i < aEnd && i < bEnd && Js.same (Js.call positions "get" [ Js.at a i ]) (Js.from (index + sequence)) then
+        sameRun positions a aEnd bEnd index (i + 1) (sequence + 1)
+
+    else
+        sequence
+
+
+-- Each render of a keyed list that runs its rows has a stamp of its own.
+stamps : Js.Ref Int
+stamps =
+    Js.ref 0
+
+
+-- The keyed list when last render's keys were distinct, matched as Solid's
+-- `mapArray` and dom-expressions' `reconcileArrays` match a list: the rows
+-- whose keys are where they were at the start, then at the end, then a
+-- pair of rows at the two ends that changed places, again until none does.
+-- Only what is left between them is looked up in the key map, so a
+-- selection, a label edit, a remove, an append and a swap of two rows
+-- touch the map for the rows they add or remove and no others. An item
+-- identical to its row's last item has that row's key, so its key is not
+-- asked for. No row past the start is patched or moved until every key is
+-- known to be distinct: false, having patched only the rows at the start
+-- (which do not move) and mounted rows for new keys, when two items share
+-- a key; `forKeyed` then goes through the whole list, where a row already
+-- patched is by then as last time and a row mounted is its key's first.
+trimmed : V, V, V, V, Bool, V, V -> Bool
+trimmed s items keyOf row same was now =
+    let
+        old =
+            Js.get s "u"
+
+        m : Int
+        m =
+            Js.to (Js.get old "length")
+    in
+    -- A list that was empty or is: the full pass mounts it in one walk
+    -- or empties the parent at once.
+    if m == 0 || Js.to (Js.get items "length") == 0 then
+        False
+
+    else
+        let
+            _ =
+                Js.write stamps (Js.read stamps + 1)
+
+            stamp =
+                Js.read stamps
+
+            a =
+                elements items
+
+            p =
+                startRows s a old keyOf row same was now stamp m 0
+        in
+        if p == m && p == Js.to (Js.get a "length") then
+            True
+
+        else
+            let
+                -- The rest of the items, each key asked for once and only
+                -- if needed.
+                xs =
+                    Js.call a "slice" [ Js.from p ]
+
+                n =
+                    p + Js.to (Js.get xs "length")
+
+                ks =
+                    Js.construct (Js.global "Array") [ Js.get xs "length" ]
+
+                -- The key the item at `b` has, asked for once: `ks` holds
+                -- the keys of the items from `p`.
+                keyAt =
+                    \b ->
+                        let
+                            k =
+                                Js.at ks (b - p)
+                        in
+                        if Js.isUndefined k then
+                            let
+                                item =
+                                    Js.at xs (b - p)
+
+                                key =
+                                    if Js.isNull keyOf then
+                                        item
+
+                                    else
+                                        Js.apply keyOf [ item ]
+
+                                _ =
+                                    Js.setAt ks (b - p) key
+                            in
+                            key
+
+                        else
+                            k
+
+                -- Row `i` shows item `b`: the same item, or failing that the
+                -- same key.
+                hit =
+                    \i b -> Js.same (Js.get i "x") (Js.at xs (b - p)) || Js.same (Js.get i "k") (keyAt b)
+
+                next =
+                    Js.construct (Js.global "Array") [ Js.from n ]
+
+                _ =
+                    copyRows next old p 0
+
+                -- The end, written out: it is most of a remove.
+                ( aOuter, bOuter ) =
+                    endRows old xs keyAt next p stamp m n
+
+                ( aStart, aEnd, bEnd ) =
+                    crossRows old hit next stamp p aOuter bOuter
+
+                -- What is left: its keys looked up, a new key's row mounted
+                -- (and marked with the stamp's negation), a key found twice
+                -- handing over. A row mounted here that the full pass is
+                -- handed is its key's first row.
+                byKey =
+                    Js.get s "x"
+
+                -- A row mounted this render: the stamp's negation.
+                unseen =
+                    0 - stamp
+
+                ( found, kept ) =
+                    lookUpRows s xs keyAt next row byKey p stamp unseen bEnd aStart 0
+            in
+            if found < bEnd then
+                False
+
+            else
+                let
+                    _ =
+                        patchRows s old xs next row byKey p stamp unseen same was now n p
+
+                    _ =
+                        forgetRows old byKey stamp aStart aEnd
+
+                    -- No row kept, and the rows all the parent holds: a
+                    -- replacement. The parent is emptied at once, as a clear
+                    -- is, rather than a thousand rows removed one by one —
+                    -- which is what Solid's `reconcileArrays` does — and the
+                    -- new rows go in after.
+                    parent =
+                        parentOf s
+
+                    _ =
+                        if
+                            kept
+                                == 0
+                                && aStart
+                                == p
+                                && p
+                                == 0
+                                && aOuter
+                                == m
+                                && bOuter
+                                == n
+                                && Js.same (Js.get parent "firstChild") (first (Js.at old 0))
+                                && Js.same (Js.get parent "lastChild") (last (Js.at old (m - 1)))
+                        then
+                            let
+                                _ =
+                                    Js.set parent "textContent" (Js.from "")
+                            in
+                            Js.each next (\i -> put parent i Js.null)
+
+                        else if aStart /= p || aStart < aEnd || aStart < bEnd then
+                            let
+                                _ =
+                                    reconcile
+                                        parent
+                                        old
+                                        next
+                                        bOuter
+                                        (if bOuter < n then
+                                            first (Js.at next bOuter)
+
+                                         else
+                                            Js.get (last (Js.at old (m - 1))) "nextSibling"
+                                        )
+                                        p
+                                        aOuter
+                                        p
+                                        bOuter
+                                        Js.null
+                            in
+                            if Js.isNull (Js.read parked) then
+                                ()
+
+                            else
+                                Js.write parked Js.null
+
+                        else
+                            ()
+
+                    _ =
+                        Js.set s "u" next
+                in
+                True
+
+
+-- The rows at the start whose items or keys are where they were, patched
+-- in passing, up to the first that is not: its position.
+startRows : V, V, V, V, V, Bool, V, V, Int, Int, Int -> Int
+startRows s a old keyOf row same was now stamp m p =
+    if p < Js.to (Js.get a "length") && p < m then
+        let
+            i =
+                Js.at old p
+
+            item =
+                Js.at a p
+
+            hit =
+                Js.same (Js.get i "x") item
+        in
+        if not hit && not (Js.same (Js.get i "k") (if Js.isNull keyOf then item else Js.apply keyOf [ item ])) then
+            p
+
+        else if hit && same && not (Js.same (Js.get i "k") was) && not (Js.same (Js.get i "k") now) then
+            let
+                _ =
+                    Js.set i "kv" (Js.from stamp)
+            in
+            startRows s a old keyOf row same was now stamp m (p + 1)
+
+        else
+            let
+                n =
+                    patchRow row i item p (Js.get s "cx")
+
+                _ =
+                    if Js.same n i then
+                        ()
+
+                    else
+                        let
+                            _ =
+                                Js.setAt old p n
+
+                            _ =
+                                Js.call (Js.get s "x") "set" [ Js.get n "k", n ]
+                        in
+                        Js.set n "y" (Js.from p)
+
+                _ =
+                    Js.set n "x" item
+
+                _ =
+                    Js.set n "kv" (Js.from stamp)
+            in
+            startRows s a old keyOf row same was now stamp m (p + 1)
+
+    else
+        p
+
+
+-- `next[k]` for `k` below `p`: the rows at the start.
+copyRows : V, V, Int, Int -> ()
+copyRows next old p k =
+    if k < p then
+        let
+            _ =
+                Js.setAt next k (Js.at old k)
+        in
+        copyRows next old p (k + 1)
+
+    else
+        ()
+
+
+-- The rows at the end whose items or keys are where they were.
+endRows : V, V, sync (Int -> V), V, Int, Int, Int, Int -> ( Int, Int )
+endRows old xs keyAt next p stamp aEnd bEnd =
+    if p < aEnd && p < bEnd then
+        let
+            i =
+                Js.at old (aEnd - 1)
+        in
+        if not (Js.same (Js.get i "x") (Js.at xs (bEnd - 1 - p))) && not (Js.same (Js.get i "k") (keyAt (bEnd - 1))) then
+            ( aEnd, bEnd )
+
+        else
+            let
+                _ =
+                    Js.set i "kv" (Js.from stamp)
+
+                _ =
+                    Js.setAt next (bEnd - 1) i
+            in
+            endRows old xs keyAt next p stamp (aEnd - 1) (bEnd - 1)
+
+    else
+        ( aEnd, bEnd )
+
+
+-- Pairs of rows at the two ends that changed places, each followed by the
+-- rows then in place at the start and at the end, until no pair is left.
+-- The two starts move together, so one is both.
+crossRows : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> ( Int, Int, Int )
+crossRows old hit next stamp aStart aEnd bEnd =
+    if aEnd - aStart > 1 && bEnd - aStart > 1 && hit (Js.at old aStart) (bEnd - 1) && hit (Js.at old (aEnd - 1)) aStart then
+        let
+            i =
+                Js.at old aStart
+
+            j =
+                Js.at old (aEnd - 1)
+
+            _ =
+                Js.set i "kv" (Js.from stamp)
+
+            _ =
+                Js.set j "kv" (Js.from stamp)
+
+            _ =
+                Js.setAt next (bEnd - 1) i
+
+            _ =
+                Js.setAt next aStart j
+
+            inner =
+                crossStart old hit next stamp (aStart + 1) (aEnd - 1) (bEnd - 1)
+
+            ( aTo, bTo ) =
+                crossEnd old hit next stamp inner (aEnd - 1) (bEnd - 1)
+        in
+        crossRows old hit next stamp inner aTo bTo
+
+    else
+        ( aStart, aEnd, bEnd )
+
+
+crossStart : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> Int
+crossStart old hit next stamp aStart aEnd bEnd =
+    if aStart < aEnd && aStart < bEnd then
+        let
+            k =
+                Js.at old aStart
+        in
+        if not (hit k aStart) then
+            aStart
+
+        else
+            let
+                _ =
+                    Js.set k "kv" (Js.from stamp)
+
+                _ =
+                    Js.setAt next aStart k
+            in
+            crossStart old hit next stamp (aStart + 1) aEnd bEnd
+
+    else
+        aStart
+
+
+crossEnd : V, sync (V, Int -> Bool), V, Int, Int, Int, Int -> ( Int, Int )
+crossEnd old hit next stamp aStart aEnd bEnd =
+    if aStart < aEnd && aStart < bEnd && hit (Js.at old (aEnd - 1)) (bEnd - 1) then
+        let
+            k =
+                Js.at old (aEnd - 1)
+
+            _ =
+                Js.set k "kv" (Js.from stamp)
+
+            _ =
+                Js.setAt next (bEnd - 1) k
+        in
+        crossEnd old hit next stamp aStart (aEnd - 1) (bEnd - 1)
+
+    else
+        ( aEnd, bEnd )
+
+
+-- Rows `b` to `bEnd` found by key or mounted, and how many were found; it
+-- stops where a key is found twice.
+lookUpRows : V, V, sync (Int -> V), V, V, V, Int, Int, Int, Int, Int, Int -> ( Int, Int )
+lookUpRows s xs keyAt next row byKey p stamp unseen bEnd b kept =
+    if b < bEnd then
+        let
+            key =
+                keyAt b
+
+            h =
+                Js.call byKey "get" [ key ]
+        in
+        if Js.isUndefined h then
+            let
+                i =
+                    mountRow row (Js.at xs (b - p)) b (Js.get s "cx")
+
+                _ =
+                    Js.set i "k" key
+
+                _ =
+                    Js.set i "kv" (Js.from unseen)
+
+                _ =
+                    Js.call byKey "set" [ key, i ]
+
+                _ =
+                    Js.setAt next b i
+            in
+            lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) kept
+
+        else if Js.to (Js.get h "kv") == stamp || Js.to (Js.get h "kv") == unseen then
+            ( b, kept )
+
+        else
+            let
+                _ =
+                    Js.set h "kv" (Js.from stamp)
+
+                _ =
+                    Js.setAt next b h
+            in
+            lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) (kept + 1)
+
+    else
+        ( b, kept )
+
+
+-- Each row from `b` patched with its item and position, unless it was
+-- mounted this render or is as last time; `next[b]` is the row shown.
+patchRows : V, V, V, V, V, V, Int, Int, Int, Bool, V, V, Int, Int -> ()
+patchRows s old xs next row byKey p stamp unseen same was now n b =
+    if b < n then
+        let
+            item =
+                Js.at xs (b - p)
+
+            i =
+                Js.at next b
+
+            _ =
+                if Js.to (Js.get i "kv") == unseen then
+                    Js.set i "kv" (Js.from stamp)
+
+                else if not same || not (Js.same (Js.get i "x") item) || (Js.to (Js.get row "i") && Js.to (Js.get i "y") /= b) || Js.same (Js.get i "k") was || Js.same (Js.get i "k") now then
+                    let
+                        r =
+                            patchRow row i item b (Js.get s "cx")
+                    in
+                    if Js.same r i then
+                        ()
+
+                    else
+                        let
+                            _ =
+                                Js.setAt old (Js.to (Js.get i "y")) r
+
+                            _ =
+                                Js.set r "kv" (Js.from stamp)
+
+                            _ =
+                                Js.call byKey "set" [ Js.get r "k", r ]
+                        in
+                        Js.setAt next b r
+
+                else
+                    ()
+
+            shown =
+                Js.at next b
+
+            _ =
+                Js.set shown "x" item
+
+            _ =
+                Js.set shown "y" (Js.from b)
+        in
+        patchRows s old xs next row byKey p stamp unseen same was now n (b + 1)
+
+    else
+        ()
+
+
+-- The keys of the rows `old[a, aEnd)` no longer shown, out of the map.
+forgetRows : V, V, Int, Int, Int -> ()
+forgetRows old byKey stamp a aEnd =
+    if a < aEnd then
+        let
+            _ =
+                if Js.to (Js.get (Js.at old a) "kv") /= stamp then
+                    Js.to (Js.call byKey "delete" [ Js.get (Js.at old a) "k" ])
+
+                else
+                    ()
+        in
+        forgetRows old byKey stamp (a + 1) aEnd
+
+    else
+        ()
+
+
+-- `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
+-- key by the item itself. A row keeps its nodes while its key is in the
+-- list; items that share a key are matched by their rank among them, so
+-- every item renders once. A row whose item, position (when it reads it)
+-- and inputs are all as last time is not run at all, and the rows move
+-- only when the order of keys changed. `s.d` says last render's keys were
+-- distinct, which is what lets `trimmed` run.
+--
+-- **The key map `s.x` is kept from render to render**: it maps a key to the
+-- first row that has it, and the rows after it that share it are a chain,
+-- in list order, through `n`. A render stamps each row it keeps (`kv`), so
+-- a surviving row costs one lookup and a few field writes, and the rows
+-- left unstamped are dropped from the map afterwards. The chain is rebuilt
+-- as the render goes: a key's first item takes the first row of its old
+-- chain, its `k`th item the old chain's `k`th row — `kc` is where the old
+-- chain is up to, `kt` the new chain's last row, both kept on the first —
+-- and a key with more items than rows mounts the rest, with fewer leaves
+-- the rest unstamped.
+--
+-- **A selector** (backend.md §15.5): a row compiled in place may name one
+-- input, `row.g`, that its body reads only to compare with the row's own
+-- key, and carry `row.z`, that input's probe — the one key the comparison
+-- can hold for, or a value no key is. A row whose item and other inputs
+-- are as last time is then patched only when its key is the old probe or
+-- the new one; when that is all that changed, those rows are found in the
+-- key map, and no other row is visited. A `For`'s fallback is shown while
+-- the list is empty.
+pub forKeyed : V, V, V, V, V -> ()
+forKeyed s items keyOf row inputs =
+    let
+        g =
+            Js.get row "g"
+
+        rendered =
+            not (Js.isNull (Js.get s "b"))
+
+        same =
+            rendered
+                && (if Js.isUndefined g then
+                        sameInputs (Js.get s "y") inputs
+
+                    else
+                        sameInputsBut (Js.get s "y") inputs (Js.to g)
+                   )
+
+        moving =
+            not (Js.isUndefined g) && rendered && not (Js.same (Js.get s "z") (Js.get row "z"))
+
+        was =
+            if moving then
+                Js.get s "z"
+
+            else
+                none
+
+        now =
+            if moving then
+                Js.get row "z"
+
+            else
+                none
+
+        _ =
+            if Js.isUndefined g then
+                ()
+
+            else
+                Js.set s "z" (Js.get row "z")
+
+        _ =
+            if Js.same items (Js.get s "b") && same then
+                if Js.same was now then
+                    ()
+
+                else
+                    let
+                        _ =
+                            Js.set s "y" inputs
+
+                        _ =
+                            reselect s row was
+                    in
+                    reselect s row now
+
+            else
+                let
+                    _ =
+                        Js.set s "b" items
+
+                    _ =
+                        Js.set s "y" inputs
+                in
+                if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
+                    ()
+
+                else
+                    keyedPass s items keyOf row same was now
+    in
+    childMaybe
+        s
+        (if Js.to (Js.get items "length") == 0 then
+            Js.get row "f"
+
+         else
+            Js.null
+        )
+
+
+-- The full pass: every item's row found by its key's rank, patched or
+-- mounted, and the rows moved when their order changed.
+keyedPass : V, V, V, V, Bool, V, V -> ()
+keyedPass s items keyOf row same was now =
+    let
+        _ =
+            Js.write stamps (Js.read stamps + 1)
+
+        stamp =
+            Js.read stamps
+
+        old =
+            if Js.isNull (Js.get s "u") then
+                Js.array []
+
+            else
+                Js.get s "u"
+
+        _ =
+            if Js.isNull (Js.get s "x") then
+                Js.set s "x" (Js.construct (Js.global "Map") [])
+
+            else
+                ()
+
+        byKey =
+            Js.get s "x"
+
+        next =
+            Js.array []
+
+        ( distinct, shifted ) =
+            keyedRows s (elements items) keyOf row same was now stamp old byKey next 0 True False
+
+        _ =
+            Js.each
+                old
+                (\o ->
+                    if Js.to (Js.get o "kv") /= stamp && Js.same (Js.call byKey "get" [ Js.get o "k" ]) o then
+                        Js.to (Js.call byKey "delete" [ Js.get o "k" ])
+
+                    else
+                        ()
+                )
+
+        _ =
+            if shifted || not (Js.same (Js.get next "length") (Js.get old "length")) then
+                let
+                    parent =
+                        parentOf s
+
+                    _ =
+                        if Js.to (Js.get old "length") == 0 then
+                            -- Each row straight into the page, as Solid's
+                            -- `appendNodes` puts them: a fragment first moved
+                            -- every node twice.
+                            let
+                                before =
+                                    if Js.isNull (Js.get s "i") then
+                                        Js.get s "m"
+
+                                    else
+                                        first (Js.get s "i")
+                            in
+                            Js.each next (\i -> put parent i before)
+
+                        else if
+                            Js.to (Js.get next "length")
+                                == 0
+                                && Js.same (Js.get parent "firstChild") (first (Js.at old 0))
+                                && Js.same (Js.get parent "lastChild") (last (Js.at old (Js.to (Js.get old "length") - 1)))
+                        then
+                            -- The rows are all the parent holds: empty it at
+                            -- once, as Solid does, rather than remove a
+                            -- thousand rows one by one.
+                            Js.set parent "textContent" (Js.from "")
+
+                        else
+                            reconcile
+                                parent
+                                old
+                                next
+                                (Js.to (Js.get next "length"))
+                                (Js.get (last (Js.at old (Js.to (Js.get old "length") - 1))) "nextSibling")
+                                0
+                                (Js.to (Js.get old "length"))
+                                0
+                                (Js.to (Js.get next "length"))
+                                Js.null
+                in
+                if Js.isNull (Js.read parked) then
+                    ()
+
+                else
+                    Js.write parked Js.null
+
+            else
+                ()
+
+        _ =
+            Js.set s "u" next
+    in
+    Js.set s "d" (Js.from distinct)
+
+
+-- Item `position` onwards: each row found by its key's rank among the items
+-- that share it, patched when anything it shows changed, or mounted.
+-- Whether the keys were distinct, and whether a row moved.
+keyedRows : V, V, V, V, Bool, V, V, Int, V, V, V, Int, Bool, Bool -> ( Bool, Bool )
+keyedRows s a keyOf row same was now stamp old byKey next position distinct moved =
+    if position < Js.to (Js.get a "length") then
+        let
+            item =
+                Js.at a position
+
+            key =
+                if Js.isNull keyOf then
+                    item
+
+                else
+                    Js.apply keyOf [ item ]
+
+            h =
+                Js.call byKey "get" [ key ]
+
+            -- The key's first item in this render: the chain starts again.
+            starts =
+                Js.isUndefined h || Js.to (Js.get h "kv") /= stamp
+
+            found =
+                if Js.isUndefined h then
+                    Js.undefined
+
+                else if starts then
+                    let
+                        _ =
+                            Js.set h "kc" (Js.get h "n")
+                    in
+                    h
+
+                else
+                    let
+                        c =
+                            Js.get h "kc"
+
+                        _ =
+                            if Js.isNullish c then
+                                ()
+
+                            else
+                                Js.set h "kc" (Js.get c "n")
+                    in
+                    c
+
+            i =
+                if Js.isNullish found then
+                    let
+                        j =
+                            mountRow row item position (Js.get s "cx")
+
+                        _ =
+                            Js.set j "k" key
+
+                        _ =
+                            if starts then
+                                Js.to (Js.call byKey "set" [ key, j ])
+
+                            else
+                                ()
+                    in
+                    j
+
+                else if not same || not (Js.same (Js.get found "x") item) || (Js.to (Js.get row "i") && Js.to (Js.get found "y") /= position) || Js.same (Js.get found "k") was || Js.same (Js.get found "k") now then
+                    let
+                        y =
+                            Js.get found "y"
+
+                        n =
+                            patchRow row found item position (Js.get s "cx")
+
+                        _ =
+                            if Js.same n found then
+                                ()
+
+                            else
+                                let
+                                    _ =
+                                        Js.setAt old (Js.to y) n
+                                in
+                                if starts then
+                                    Js.to (Js.call byKey "set" [ key, n ])
+
+                                else
+                                    ()
+                    in
+                    n
+
+                else
+                    found
+
+            shifted =
+                moved || Js.isNullish found || not (Js.same (Js.at old position) i)
+
+            _ =
+                Js.set i "kv" (Js.from stamp)
+
+            _ =
+                Js.set i "x" item
+
+            _ =
+                Js.set i "y" (Js.from position)
+
+            _ =
+                if Js.isNull (Js.get i "n") then
+                    ()
+
+                else
+                    Js.set i "n" Js.null
+
+            _ =
+                if starts then
+                    Js.set i "kt" i
+
+                else
+                    let
+                        _ =
+                            Js.set (Js.get h "kt") "n" i
+                    in
+                    Js.set h "kt" i
+
+            _ =
+                Js.call next "push" [ i ]
+        in
+        keyedRows s a keyOf row same was now stamp old byKey next (position + 1) (distinct && starts) shifted
+
+    else
+        ( distinct, moved )
+
+
+-- `(slot, items, row, inputs)`: the list matched by position; row `k`
+-- shows item `k`, and rows past the end are removed.
+pub forPosition : V, V, V, V -> ()
+forPosition s items row inputs =
+    let
+        same =
+            not (Js.isNull (Js.get s "b")) && sameInputs (Js.get s "y") inputs
+
+        _ =
+            if Js.same items (Js.get s "b") && same then
+                ()
+
+            else
+                let
+                    _ =
+                        Js.set s "b" items
+
+                    _ =
+                        Js.set s "y" inputs
+
+                    _ =
+                        if Js.isNull (Js.get s "u") then
+                            Js.set s "u" (Js.array [])
+
+                        else
+                            ()
+
+                    u =
+                        Js.get s "u"
+
+                    a =
+                        elements items
+
+                    _ =
+                        positionsFrom s u a row same 0
+                in
+                dropPast u (Js.to (Js.get a "length"))
+    in
+    childMaybe
+        s
+        (if Js.to (Js.get items "length") == 0 then
+            Js.get row "f"
+
+         else
+            Js.null
+        )
+
+
+-- Item `k` onwards shown by row `k` onwards: patched unless its item is
+-- the same, or mounted past the end, before the fallback's nodes.
+positionsFrom : V, V, V, V, Bool, Int -> ()
+positionsFrom s u a row same k =
+    if k < Js.to (Js.get a "length") then
+        let
+            item =
+                Js.at a k
+
+            _ =
+                if k < Js.to (Js.get u "length") then
+                    let
+                        i =
+                            Js.at u k
+                    in
+                    if not same || not (Js.same (Js.get i "x") item) then
+                        let
+                            n =
+                                patchRow row i item k (Js.get s "cx")
+
+                            _ =
+                                Js.setAt u k n
+                        in
+                        Js.set n "x" item
+
+                    else
+                        ()
+
+                else
+                    let
+                        i =
+                            mountRow row item k (Js.get s "cx")
+
+                        _ =
+                            put
+                                (parentOf s)
+                                i
+                                (if Js.isNull (Js.get s "i") then
+                                    Js.get s "m"
+
+                                 else
+                                    first (Js.get s "i")
+                                )
+                    in
+                    Js.to (Js.call u "push" [ i ])
+        in
+        positionsFrom s u a row same (k + 1)
+
+    else
+        ()
+
+
+-- `(slot, key, block)`: a keyed `Show` showing its body. A new key, or a
+-- slot that showed the fallback, remounts; the same key patches.
+pub show : V, V, V -> ()
+show s key b =
+    let
+        _ =
+            if not (Js.isNull (Js.get s "i")) && not (Js.same (Js.get s "y") (Js.from True)) && Js.same (Js.get s "x") key then
+                Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
+
+            else
+                place s (unit b (Js.get s "cx"))
+
+        _ =
+            Js.set s "x" key
+    in
+    Js.set s "y" (Js.from False)
+
+
+-- `(slot, fallback or null)`: a keyed `Show` on `Nothing`.
+pub hide : V, V -> ()
+hide s f =
+    let
+        _ =
+            if Js.isNull f then
+                childMaybe s f
+
+            else if Js.same (Js.get s "y") (Js.from True) && not (Js.isNull (Js.get s "i")) then
+                Js.set s "i" (patch (Js.get s "i") f (Js.get s "cx"))
+
+            else
+                place s (unit f (Js.get s "cx"))
+
+        _ =
+            Js.set s "x" Js.null
+    in
+    Js.set s "y" (Js.from True)
 
 
 -- ---- Attributes (backend.md §15.3, §15.6) --------------------------------

@@ -19,7 +19,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 1 | **Slot and mount**: an instance's nodes (`first`, `last`, `put`, `drop`, `swap`), `template`, `slot`, `parentOf`, `unit`, `patch`, `place`, `childHtml`, the render queue, `flush`, `run` and the mount | **landed 2026-10-02**, below |
 | 2 | **Templates and holes**: `childMaybe`, `childList`, `insertText`, `attr`, `attrNS`, `rawHtml`, `safeUrl`, the text and map kinds (`text`, `map`) | **landed 2026-10-02**, below; `childList` moves with step 4, `safeUrl` stays |
 | 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop stay |
-| 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback` | open |
+| 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | open |
 
 ## Step 1 — slot and mount (2026-10-02)
@@ -341,3 +341,120 @@ Two bytes a later pass could take: `(d&1)!==0` in `fire`'s first test is not the
 yet looked into — its test for a comparison referenced once is the likely one), and `b.n===null` in `run` reads a key every description writes as
 `null` — a "constant property" fact beside fact 3 would fold it, and the mount's error message with
 it.
+
+## Step 4 — keyed and positional lists (2026-10-02)
+
+**What moved.** `Rt.beni` now holds the whole of `backend.md` §15.5's runtime: `forKeyed` (its full
+pass, the key map with its rank chains, the selector's two probes), `trimmed` (the ends first, the
+crossed pairs, the key lookups that hand over on a duplicate key, the replacement that empties the
+parent), `reconcile` (udomdiff over instances, `park`), `forPosition`, `childList`, `show`,
+`hide`, `mountRow`, `patchRow`, `sameInputs`/`sameInputsBut`, `reselect`, and `elements` (the
+list protocol's reader, `pub` for `runtime.js`'s class and style lists, which stay for step 5).
+`fallback` is `childMaybe s (if empty then f else null)`, which is what it was. `runtime.js` is the
+class and style diffs and `safeUrl`. Every loop is a tail-recursive function called once; the
+mutable locals the JavaScript reassigns are its variables; `keyAt` and `hit` are the closures they
+were, passed to the loops as `sync` parameters (a call of an unknown function would otherwise make
+the loop one that may suspend, which is never written in place).
+
+**The compiler features it needed** (`backend.md` §9, three amendments of 2026-10-02):
+
+1. **A loop whose value is bound or discarded is written in place** (*A function called once is
+   written where it is called*): `x = loop …`, `( a, b ) = loop …` (each exit's tuple written into
+   the names, no tuple built), `_ = loop …`. Exits `break`; a name every exit gives from one
+   variable the loop reassigns becomes that variable. Without it every inner loop of `reconcile`
+   and `trimmed` was a call, and `trimmed`'s crossed-pair loop returned an object. Red first:
+   `emit/release/core/BoundLoops` against the compiler before keeps each call and the tuple
+   `{a:b,b:c}`. With it, three `Lower` rules that drop a copy the hand-written code never makes: a
+   bound `case` writes its binding, a leaf `case` and a leaf `let … in x` write the tree's
+   temporary, a binding of an unreassigned name is that name.
+2. **`Js.setAt`**, `o[k] = v` (`core/Js.beni`), which step 2 built and took out again.
+3. **Short names reused across scopes** (*Item 2*, amended): the flat per-declaration alphabet
+   gave `trimmed`'s fiftieth local a two-letter name and every loop body names of its own; the
+   keyed code written in beni was 469 raw bytes *smaller* than the hand-written and still 31
+   brotli bytes larger on `bench/ui`, and this was most of the difference. It is a renamer change,
+   so every page moved: 7–118 brotli bytes smaller on every `browser/` page.
+4. **The loops print as a hand minifier writes them** (*Compact statements*, amended):
+   `while(c){…}` for an exit `break`, `for(let i=a;c;i++)` when the variable is declared just
+   before and updated last, `i++`, `a!=b`.
+
+**Sizes** (release, brotli, the whole bundle; master at `a9ee5efb` against this step, built from
+the same pages; `--allow-debug` where a page logs). Every page is smaller:
+
+| page | master | step 4 | |
+|---|--:|--:|--:|
+| empty `browser` | 615 | **605** | −10 |
+| empty `Tea.sandbox` | 615 | **605** | −10 |
+| empty `Tea.element` | 1 501 | **1 475** | −26 |
+| `Tea.element` with effects | 5 651 | **5 590** | −61 |
+| `bench/ui` app | 5 868 | **5 850** | −18 |
+| `dom/Keyed` | 5 011 | **5 004** | −7 |
+| `dom/KeyedEnds` | 5 850 | **5 771** | −79 |
+| `dom/KeyedInPlace` | 4 913 | **4 879** | −34 |
+| `dom/KeyedMoves` | 4 712 | **4 706** | −6 |
+| `dom/KeyedReplace` | 4 728 | **4 711** | −17 |
+| `dom/Selector` | 4 312 | **4 241** | −71 |
+| `dom/RowItemOnly` | 3 783 | **3 770** | −13 |
+| `dom/RowMountOrder` | 4 787 | **4 706** | −81 |
+| `dom/ForAtEnds` | 4 307 | **4 281** | −26 |
+| `dom/Blocks` | 3 521 | **3 440** | −81 |
+| `dom/Holes` | 3 174 | **3 114** | −60 |
+| `dom/Events` | 4 692 | **4 670** | −22 |
+| `dom/RenderLoop` | 3 566 | **3 540** | −26 |
+| `dom/HelperSkip`, `NullaryHelperSkip`, `ShowAndBranches` | | | −51, −31, −27 |
+| `tea/` pages (15) | | | −14 to −118 |
+
+The list code alone, on `bench/ui` (the region from `elements` to the end of `forKeyed`): 5 078 raw
+and 1 929 brotli hand-written, 4 552 and 1 929 in beni. The order of the work mattered: with the
+bound loops and the printing alone the keyed pages were 150–220 bytes *larger*; the renamer took
+them to −24…+45, and the `for` head and a loop's variable kept off its surrounding scope's
+spellings to the table above.
+
+**Speed.** `bench/ui`, Chromium 153, Ryzen 9 5950X, `--taskset=8-15`, release builds of the same app
+by master ("before") and this step, and Solid 1, three batches of three operations (each under 5
+minutes), n = 12; script median ms [IQR]:
+
+| | before | step 4 | Solid 1 | load |
+|---|--:|--:|--:|--:|
+| run1k | 4.75 [4.71–4.81] | 4.77 [4.73–4.79] | 4.94 | 0.5–0.8 |
+| replace1k | 10.39 [10.33–10.58] | 10.36 [10.31–10.40] | 11.79 | 0.4–0.9 |
+| update10th | 1.50 [1.35–1.60] | 1.48 [1.15–1.52] | 1.48 | 0.9 |
+| select | 1.22 [1.05–1.30] | 1.24 [1.04–1.40] | 1.59 | 0.7–0.9 |
+| swap | 0.98 [0.82–1.02] | 0.86 [0.79–1.02] | 1.54 | 0.9 |
+| remove | 0.50 [0.50–0.51] | 0.50 [0.48–0.50] | 0.56 | 0.8–0.9 |
+| create10k | 52.67 [52.14–53.07] | 52.21 [51.64–52.57] | 56.13 | 0.4–0.8 |
+| append1k | 5.39 [5.38–5.43] | 5.45 [5.42–5.50] | 5.25 | 0.5–0.6 |
+| clear | 22.01 [21.03–22.17] | 22.00 [21.69–22.28] | 22.79 | 0.5–0.8 |
+
+Re-run: `append1k`, `select`, `run1k` at n = 16 (load 0.4–0.8) — before 5.36 / 1.26 / 4.80, step 4
+5.43 / 1.15 / 4.75, Solid 1 5.23 / 1.63 / 4.94; `append1k` again at n = 30 (load 0.6–1.3) — before
+5.43 [5.38–5.51], step 4 5.45 [5.40–5.49], Solid 1 5.27. Every range overlaps; `append1k` ties at
+n = 30 and `select` flips. No operation is slower. Against Solid 1, as before: ahead on all but
+append, which both builds trail by ~3 %.
+
+**Shape**, the hand-written loop against the beni one, from `bench/ui`'s release file:
+
+```js
+// trimmed: the start
+for(;s<h.length&&s<K;s++){let a=i[s];const r=h[s];if(a.x!==r){if(a.k!==(E===null?r:E(r)))break}else if(F&&a.k!==G&&a.k!==H){a.kv=y;continue}const t=Aa(n,a,r,s,c.cx);if(t!==a){i[s]=t;c.x.set(t.k,t);t.y=s;a=t}a.x=r;a.kv=y}
+while(p<o.length&&p<m){let c=l[p],q=o[p],r=c.x===q;if(!r&&c.k!==(f===null?q:f(q)))break;if(r&&h&&c.k!==i&&c.k!==k){c.kv=n;p++}else{let s=w(g,c,q,p,a.cx);if(s!==c){l[p]=s;a.x.set(s.k,s);s.y=p}s.x=q;s.kv=n;p++}}
+// trimmed: the end, and the crossed pairs with their two inner loops
+while(q<v&&p<o){const a=i[v-1];if(a.x!==I[o-1-s]&&a.k!==S(o-1))break;a.kv=y;w[--o]=a;v--}…while(v-q>1&&o-p>1&&$(i[q],o-1)&&$(i[v-1],p)){_=true;const a=i[q++];const fa=i[--v];a.kv=y;fa.kv=y;w[--o]=a;w[p++]=fa;while(q<v&&p<o){const x=i[q];if(x.x!==I[p-s]&&x.k!==S(p))break;x.kv=y;w[p++]=x;q++}while(q<v&&p<o&&$(i[v-1],o-1)){const x=i[--v];x.kv=y;w[--o]=x}}
+while(p<z&&p<A){let a=l[z-1];if(a.x!==q[A-1-p]&&a.k!==t(A-1))break;a.kv=n;y[A-1]=a;z--;A--}let F=p,G=z,H=A;while(G-F>1&&H-F>1&&x(l[F],H-1)&&x(l[G-1],F)){let a=l[F],c=l[G-1];a.kv=n;c.kv=n;y[H-1]=a;y[F]=c;let f=F+1,g=G-1,h=H-1;while(f<g&&f<h){let a=l[f];if(!x(a,f))break;a.kv=n;y[f]=a;f++}let i=G-1,k=H-1;while(f<i&&f<k&&x(l[i-1],k-1)){let a=l[i-1];a.kv=n;y[k-1]=a;i--;k--}F=f;G=i;H=k}
+// reconcile: the end trim, a run put before a node, the index map
+while(v>q&&o>p&&h[v-1]===g[o-1]){v--;o--} … while(p<o)e(parent,g[p++],O) … for(let a=p;a<o;a++)J.set(g[a],a)
+let o=k,p=m;while(o>j&&p>l&&c[o-1]===g[p-1]){o--;p--} … for(let r=l;r<p;r++)e(a,g[r],q) … for(let v=l;v<p;v++)s.set(g[v],v)
+// sameInputs
+for(let x=0;x<h.length;x++)if(h[x]!==g[x])return false;return true
+let c=0;while(c<a.length&&a[c]===b[c])c++;return c===a.length
+```
+
+Every loop is a JavaScript loop in its function, with no call and no allocation the hand-written
+one does not make; the loop variables are `let`s, the crossed pairs' three results are three
+variables, and every early exit is a `break` or a `return`. Three differences that are not bytes:
+the crossed-pair loop's `crossed` flag is `aStart !== p` (it moved iff the start did); the two
+starts move together, so one variable is both, where the JavaScript kept `q` and `p` equal by hand;
+and `patchRows` re-reads `next[b]` for the row it shows instead of a variable each branch assigns.
+
+**What stayed, and why.** The class and style lists (`classes`, `styles`, `classSet`, `styleMap`)
+are step 5's; `safeUrl`, for step 2's reason. The `For`'s `Js.each` over the rows to insert is a
+`for…of`, as in the JavaScript.

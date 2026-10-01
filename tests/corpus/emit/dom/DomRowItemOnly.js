@@ -1,13 +1,12 @@
-import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot, Rt$delegate } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$slot, Rt$forKeyed, Rt$delegate } from "./_platform/Rt.mjs";
 const DomRowItemOnly$t53 = Rt$template("<table>", 0);
 const DomRowItemOnly$k53 = { m: (v$4, cx$5) => {
   const r$6 = DomRowItemOnly$t53();
   const c$7 = Rt$slot(r$6, null, cx$5);
-  $markup$forKeyed(c$7, v$4[0], v$4[1], v$4[2], v$4[3]);
+  Rt$forKeyed(c$7, v$4[0], v$4[1], v$4[2], v$4[3]);
   return { s: r$6, q: null, e: r$6, c0: c$7 };
 }, p: (i$8, v$9) => {
-  $markup$forKeyed(i$8.c0, v$9[0], v$9[1], v$9[2], v$9[3]);
+  Rt$forKeyed(i$8.c0, v$9[0], v$9[1], v$9[2], v$9[3]);
 } };
 const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x", 0);
 const DomRowItemOnly$Msg$$order = { Select: 0, Remove: 1 };

@@ -1,5 +1,4 @@
-import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$insertText, Rt$slot, Rt$childHtml, Rt$text } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$insertText, Rt$slot, Rt$childHtml, Rt$forKeyed, Rt$text } from "./_platform/Rt.mjs";
 const DomHelpers$t10 = Rt$template("<b> <!>", 0);
 const DomHelpers$k10 = { m: (v$1, cx$2) => {
   const r$3 = DomHelpers$t10();
@@ -39,10 +38,10 @@ const DomHelpers$t44 = Rt$template("<ul>", 0);
 const DomHelpers$k44 = { m: (v$19, cx$20) => {
   const r$21 = DomHelpers$t44();
   const c$22 = Rt$slot(r$21, null, cx$20);
-  $markup$forKeyed(c$22, v$19[0], null, v$19[1], null);
+  Rt$forKeyed(c$22, v$19[0], null, v$19[1], null);
   return { s: r$21, q: null, e: r$21, c0: c$22 };
 }, p: (i$23, v$24) => {
-  $markup$forKeyed(i$23.c0, v$24[0], null, v$24[1], null);
+  Rt$forKeyed(i$23.c0, v$24[0], null, v$24[1], null);
 } };
 const DomHelpers$t42 = Rt$template("<li>", 0);
 const DomHelpers$t69 = Rt$template("<b> ", 0);

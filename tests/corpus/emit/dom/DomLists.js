@@ -1,5 +1,4 @@
-import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition, show as $markup$show, hide as $markup$hide } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot, Rt$insertText } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$slot, Rt$forKeyed, Rt$forPosition, Rt$insertText, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
 const DomLists$t18 = Rt$template("<li> ", 0);
 const DomLists$k18 = { m: (v$1, cx$2) => {
@@ -18,10 +17,10 @@ const DomLists$k44 = { m: (v$10, cx$11) => {
   const r$12 = DomLists$t44();
   const w$13 = r$12.firstChild;
   const c$14 = Rt$slot(w$13, null, cx$11);
-  $markup$forKeyed(c$14, v$10[0], v$10[1], v$10[2], v$10[3]);
+  Rt$forKeyed(c$14, v$10[0], v$10[1], v$10[2], v$10[3]);
   return { s: r$12, q: null, e: r$12, c0: c$14 };
 }, p: (i$15, v$16) => {
-  $markup$forKeyed(i$15.c0, v$16[0], v$16[1], v$16[2], v$16[3]);
+  Rt$forKeyed(i$15.c0, v$16[0], v$16[1], v$16[2], v$16[3]);
 } };
 const DomLists$t42 = Rt$template("<tr><td> ", 0);
 const DomLists$t62 = Rt$template("<li>none", 0);
@@ -40,14 +39,14 @@ const DomLists$k81 = { m: (v$38, cx$39) => {
   const c$44 = Rt$slot(w$41, null, cx$39);
   const c$45 = Rt$slot(w$42, null, cx$39);
   const c$46 = Rt$slot(w$43, null, cx$39);
-  $markup$forPosition(c$44, v$38[0], v$38[1], null);
-  $markup$forKeyed(c$45, v$38[2], null, v$38[3], v$38[4]);
-  $markup$forKeyed(c$46, v$38[5], null, v$38[6], null);
+  Rt$forPosition(c$44, v$38[0], v$38[1], null);
+  Rt$forKeyed(c$45, v$38[2], null, v$38[3], v$38[4]);
+  Rt$forKeyed(c$46, v$38[5], null, v$38[6], null);
   return { s: r$40, q: null, e: r$40, c0: c$44, c1: c$45, c2: c$46 };
 }, p: (i$47, v$48) => {
-  $markup$forPosition(i$47.c0, v$48[0], v$48[1], null);
-  $markup$forKeyed(i$47.c1, v$48[2], null, v$48[3], v$48[4]);
-  $markup$forKeyed(i$47.c2, v$48[5], null, v$48[6], null);
+  Rt$forPosition(i$47.c0, v$48[0], v$48[1], null);
+  Rt$forKeyed(i$47.c1, v$48[2], null, v$48[3], v$48[4]);
+  Rt$forKeyed(i$47.c2, v$48[5], null, v$48[6], null);
 } };
 const DomLists$t58 = Rt$template("<li>. <!>", 0);
 const DomLists$t72 = Rt$template("<li>blank", 0);
@@ -87,9 +86,9 @@ const DomLists$k104 = { m: (v$84, cx$85) => {
     const value$91 = v$84[0].a;
     key$89 = v$84[1](value$91);
     shown$90 = value$91;
-    $markup$show(c$88, key$89, v$84[3](value$91));
+    Rt$show(c$88, key$89, v$84[3](value$91));
   } else {
-    $markup$hide(c$88, v$84[2]);
+    Rt$hide(c$88, v$84[2]);
   }
   return { s: null, q: c$88, e: w$87, c0: c$88, a0k: key$89, a0v: shown$90, a0i0: v$84[4] };
 }, p: (i$92, v$93) => {
@@ -100,11 +99,11 @@ const DomLists$k104 = { m: (v$84, cx$85) => {
       i$92.a0k = key$95;
       i$92.a0v = value$94;
       i$92.a0i0 = v$93[4];
-      $markup$show(i$92.c0, key$95, v$93[3](value$94));
+      Rt$show(i$92.c0, key$95, v$93[3](value$94));
     }
   } else {
     i$92.a0k = i$92.c0;
-    $markup$hide(i$92.c0, v$93[2]);
+    Rt$hide(i$92.c0, v$93[2]);
   }
 } };
 const DomLists$t102 = Rt$template("<p> of <!>", 0);
