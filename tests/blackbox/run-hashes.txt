@@ -9,7 +9,7 @@ abuse_wide_test.test.== on a record builds and runs at the widest positional evi
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 231bf6189ff43895017e691f770c5f86802e2664324ba07831e5c440175e1886
 abuse_wide_test.test.a 2 000-element list builds and runs #0 267dc4a342169ea145e09c8db2fe1dfcc47eb9b2b4890e2f0f296a5c4d062fd5
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 58c1568c957a278fa1ae706d22fd01742213aaec4d23424066fd38486fcab637
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 95f9ad4c3c4fc565f68c98a7e8688b3dcd13ae6b89571bb7a232cdd3e5224eac
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 b1d261770ebad57c09d04cdb98f6f97d45698ed1a57286fc04d5ac6dceeb8da8
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 cfa93b25de5f50473099e4d01f295c6302009aadc37bc411b6c2d507d2d8113e
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
@@ -64,7 +64,7 @@ build_test.test.an unannotated pub function constant with a constraint builds an
 build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 1dc52ae7b84fd195fcc87a44f9760327594e302cb9d23fa7b022a9e79ad0b6c4
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 d52cfa282e4cf80620a062cb88d479f108a012f6c3ac932bbebb598381027024
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 09732b1bb76b09ffa18ed7dba0b4aa5f8b1072a97a97e6e68b5758efb31f4914
-build_test.test.core List's loops read and write their arrays in place #0 f9ca2322618a4043c220bfaebd55f36ada113202f6ac430f380116c836bb4c36
+build_test.test.core List's loops read and write their arrays in place #0 87cc0d54ba6fa42b3920baa193b21189aa1254722f081392b78ea17d2a9109f9
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 49d47f751e8affbe273becdbe75c6ace495589716d6c19a16cfa58d7fa38a466
 build_test.test.modules import each other through ESM, and the program runs #0 84a8df8968ce2e82e149986c9d8d86a927d902d65d87fb7a6169b3bc8ec36b6b
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 e747468b38d939c7477b0b75af6c2bb08fd9f6398a13d2e96d82c3c291eff3b1
@@ -105,7 +105,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 b31a1a1241af146481b0d86eb82e5fed50a0ef103fb5ad35167650612526acee
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 3d04b578705459cafef1c75ba52db33d49688324f5691af88aba70b3a21cea1c
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 588f8f8b1df0b353ad63951bfc3ce27aee835efd8c507663c42741081ff426ae
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 524251e675fd990301b69f467fd8a6e5046f86a676b17df06ce9665867ddec95
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 12d256d5fd26ce4f6bef7add899fe3385ec1b7c0e41f065282956dccf714a6db

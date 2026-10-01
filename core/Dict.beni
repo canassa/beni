@@ -387,7 +387,7 @@ moveRedRight tree =
 --| The function is last, so the one you write inline reads after the key it
 --| applies to.
 --|
---|     update animals "Tom" (λ_ -> Just Cat)
+--|     update animals "Tom" λ_ -> Just Cat
 pub update : Dict k v, k, (Maybe v -> Maybe v) -> Dict k v
     where k.compare : k, k -> Order
 update dict targetKey alter =
@@ -462,7 +462,7 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
 --| Apply a function to all values in a dictionary. The keys, and therefore
 --| the ordering, are untouched.
 --|
---|     map (fromList [ ( "a", 1 ) ]) (λ_ value -> value + 1)
+--|     map (fromList [ ( "a", 1 ) ]) λ_ value -> value + 1
 --|
 --| `func` is called in ascending key order (`checker.md` Appendix B), which
 --| is what `mapTree` binds its three pieces in order to get.

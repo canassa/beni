@@ -3220,7 +3220,7 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\
         \\view : List Int -> Html msg
         \\view xs =
-        \\    Html.map (<ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>) (λmsg -> msg)
+        \\    Html.map (<ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>) λmsg -> msg
         \\
         \\
         \\main : Browser.Program
@@ -3401,7 +3401,7 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("none/Main.beni", elementPage("Cmd.none"));
-    try w.write("waits/Main.beni", elementPage("Cmd.do (λ() -> Time.sleep (Time.millis 1))"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do λ() -> Time.sleep (Time.millis 1)"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3430,8 +3430,8 @@ test "an element whose commands never wait ships no fiber runtime" {
     // waits; the keyed body only sends.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) (λn -> n)"));
-    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart (λsend -> send 1)"));
+    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn -> n"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart λsend -> send 1"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -4338,10 +4338,10 @@ test "core List's loops read and write their arrays in place" {
         \\        List.range 1 10
         \\
         \\    kept =
-        \\        List.map xs (λx -> x)
+        \\        List.map xs λx -> x
         \\
         \\    sorted =
-        \\        List.sortWith (List.filter xs (λx -> x > 2)) (λa b -> Basics.compare b a)
+        \\        List.sortWith (List.filter xs λx -> x > 2) λa b -> Basics.compare b a
         \\    Node.print (String.join (List.map (List.map2 kept sorted (+)) String.fromInt) "," ++ " " ++ String.fromInt (List.length xs))
         \\
     );
@@ -4397,7 +4397,7 @@ test "a schema program's issues get short fields and integer tags under --releas
         \\positive =
         \\    Schema.converted
         \\        Schema.int
-        \\        (Schema.conversion (λn -> if n > 0 then Ok n else Err []) (λn -> Ok n))
+        \\        (Schema.conversion (λn -> if n > 0 then Ok n else Err []) λn -> Ok n)
         \\
         \\
         \\main : Program
@@ -4407,7 +4407,7 @@ test "a schema program's issues get short fields and integer tags under --releas
         \\            Node.print (String.fromInt n)
         \\
         \\        Err issues ->
-        \\            Node.print (String.join (List.map issues (λi -> i.message)) ",")
+        \\            Node.print (String.join (List.map issues λi -> i.message) ",")
         \\
     );
 

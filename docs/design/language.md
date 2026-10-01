@@ -762,7 +762,7 @@ call does not supply: `f a _ c` is `λx -> f a x c` for a fresh `x`.
 | `placeholder_outside_argument`, `multiple_placeholders` | `_` is an argument, never an expression of its own: `let y = _`, `_ + 1` and `f (_)` are `placeholder_outside_argument`, which takes precedence over the generic `unexpected_token` that §10 would otherwise give. At most one `_` per application (`multiple_placeholders`), as in Gleam; two omitted arguments are written as a lambda. |
 | position, and what the lambda wraps | a placeholder may fill any position, the first included. The lambda wraps the **innermost enclosing application**: in `f (g _) b` the placeholder belongs to `g`, and what `f` receives is `λx -> g x`. |
 | order against pipes | **pipes rewrite before placeholders lift** (§8): `e \|> f a _` is `f e a _` and then `λx -> f e a x`. Lifting first would leave a lambda as the pipe's right operand and reject the program. |
-| `f _.name` | applies `f` to the placeholder **and** to the accessor `.name`, because a `dot_lower` must abut an `Atom` and `_` is not one. Write `f (λr -> r.name)` for the other reading. |
+| `f _.name` | applies `f` to the placeholder **and** to the accessor `.name`, because a `dot_lower` must abut an `Atom` and `_` is not one. Write `f λr -> r.name` for the other reading. |
 | in patterns, and against §6.6 | `_` keeps its pattern meaning (§3, `PatAtom`) everywhere a pattern is expected, and the two positions never overlap. **A placeholder is a lambda** for §6.6, so a `?` inside the application it lifts is `question_in_lambda`: `f a? _` is rejected. |
 
 **`|>` is pipe-first syntax.** `e |> f a b` rewrites to `f e a b` and `e |> f` to `f e`: the left

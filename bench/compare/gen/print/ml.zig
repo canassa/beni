@@ -42,6 +42,10 @@ pub const P = struct {
     line_ind: usize = 0,
     /// The `foldl` lambda whose parameters print swapped (§2.3).
     swaps: std.ArrayList(u32) = .empty,
+    /// beni only: an operator follows the expression being printed, so a
+    /// lambda that ends it keeps its parentheses — without them its body
+    /// would take the operator (language.md §12.3).
+    followed: bool = false,
     /// Roc only: literals to write with a type suffix (`validate.rocDefaulted`).
     roc_defaulted: ?Defaulted = null,
     /// PureScript only: binders to write a type on (`validate.psAmbiguous`).
@@ -435,10 +439,14 @@ pub const P = struct {
             .pipe => {
                 const op = if (p.lang == .purescript) " # " else " |> ";
                 try p.group(x.a, ind);
-                for (t.extraList(x.b)) |st| {
+                const saved = p.followed;
+                const stages = t.extraList(x.b);
+                for (stages, 0..) |st, k| {
                     try p.out(op);
+                    p.followed = saved or k + 1 < stages.len;
                     try p.expr(st, ind + 8);
                 }
+                p.followed = saved;
             },
         }
     }
@@ -458,7 +466,10 @@ pub const P = struct {
         const open: []const u8 = if (p.lang == .gleam) "{ " else "(";
         const close: []const u8 = if (p.lang == .gleam) "}" else ")";
         try p.out(open);
+        const saved = p.followed;
+        p.followed = false;
         try p.expr(e, ind + 1);
+        p.followed = saved;
         if (p.multi(e)) try p.nl(ind);
         if (p.lang == .gleam and !p.multi(e)) try p.out(" ");
         try p.out(close);
@@ -481,9 +492,13 @@ pub const P = struct {
     fn juxtapose(p: *P, args: []const u32, ind: usize) !void {
         var vertical = false;
         for (args) |a| vertical = vertical or p.multi(a);
-        for (args) |a| {
+        for (args, 0..) |a, i| {
             if (vertical) try p.nl(ind + 4) else try p.out(" ");
-            try p.group(a, if (vertical) ind + 4 else ind);
+            // beni's last-argument lambda goes without parentheses where
+            // nothing follows to continue its body (language.md §12.3).
+            if (p.lang == .beni and i + 1 == args.len and !p.followed and p.t.expr(a).tag == .lambda) {
+                try p.expr(a, if (vertical) ind + 4 else ind);
+            } else try p.group(a, if (vertical) ind + 4 else ind);
         }
     }
 
@@ -884,6 +899,8 @@ pub const P = struct {
         // innermost last.
         var vertical = p.multi(cur);
         for (spine[0..n]) |r| vertical = vertical or p.multi(r);
+        const saved = p.followed;
+        p.followed = true;
         try p.operand(cur, ind);
         var i: usize = n;
         const txt = p.opText(x.op);
@@ -892,8 +909,10 @@ pub const P = struct {
             if (vertical) try p.nl(ind + 4) else try p.out(" ");
             try p.out(txt);
             try p.out(" ");
+            if (i == 0) p.followed = saved;
             try p.operand(spine[i], if (vertical) ind + 8 else ind);
         }
+        p.followed = saved;
     }
 
     fn operand(p: *P, e: u32, ind: usize) !void {
@@ -908,7 +927,10 @@ pub const P = struct {
         const open: []const u8 = if (p.lang == .gleam) "{ " else "(";
         const close: []const u8 = if (p.lang == .gleam) " }" else ")";
         try p.out(open);
+        const saved = p.followed;
+        p.followed = false;
         try p.expr(e, ind + 1);
+        p.followed = saved;
         if (p.multi(e)) {
             try p.nl(ind);
             try p.out(close[close.len - 1 ..]);

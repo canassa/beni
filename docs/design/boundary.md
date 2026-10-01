@@ -1785,8 +1785,8 @@ pub cancel : k -> Cmd msg                                         where k.compar
 pub cancelAll : Cmd msg                                           -- every keyed body at this path and below
 pub map : Cmd a, k, (a -> msg) -> Cmd msg                         where k.compare : k, k -> Order
 pub afterRender : (Send msg -> ()) -> Cmd msg                     -- §9.8.6
-pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform (λsend -> send (tag (work ())))
-pub do : (() -> ()) -> Cmd msg                                    -- perform (λ_ -> work ())
+pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform λsend -> send (tag (work ()))
+pub do : (() -> ()) -> Cmd msg                                    -- perform λ_ -> work ()
 ```
 
 A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,

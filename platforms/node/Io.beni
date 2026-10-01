@@ -7,10 +7,9 @@
 --! changes — it is still a `Node.Program`.
 --!
 --!     main : Program
---!     main =
---!         Io.run (λ() ->
---!             Io.sleep 10
---!             Node.print "later")
+--!     main = Io.run λ() ->
+--!         Io.sleep 10
+--!         Node.print "later"
 --!
 --! A primitive here is written in beni over `Task.callback` and one `impure`
 --! `foreign` that starts the host's operation and returns what cancels it,

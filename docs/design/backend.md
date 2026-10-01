@@ -1882,7 +1882,7 @@ of a loop; both builds), `check/bad/core/CatchIfSuspends`. Red first: with the c
 
 ### `Js.pure` is its body
 
-*Added 2026-10-01 (`plans/core-in-beni.md`, step 1).* `Js.pure (λ() -> body)` (`boundary.md`
+*Added 2026-10-01 (`plans/core-in-beni.md`, step 1).* `Js.pure λ() -> body` (`boundary.md`
 §4.2) is written as `body` — wherever the call stands, a value, a tail or a discarded position, the
 body stands there instead and is lowered as it would be (`Lower.pureBody`); with any other
 argument it is a call of it. What it changes is the checker's answer, not a byte: `Js.pure` is
@@ -3373,7 +3373,7 @@ proved by running still holds, and the shape claim gets exactly one golden.
 | `TailCallClosures` | the capture hazard: cons a `λx -> x + n` each iteration, then apply each to `0` | `1`, `2`, `3`; in-place reassignment prints `0`, `0`, `0` |
 | `TailCallNesting` | a tail call reached through `case` inside `let` inside `if`, and a nested `case` | any deep result, run at a depth that overflows without the loop |
 | `TailCallNotTail` | `f n = if n <= 0 then 0 else 1 + f (n - 1)` must NOT loop, and a function with one tail and one non-tail self-call must still be right | small depths, exact answers |
-| `TailCallBind` | `let m <- f (n - 1)`: the call loops, the continuation does not | `sumTo 3 (λx -> x)` is `1` |
+| `TailCallBind` | `let m <- f (n - 1)`: the call loops, the continuation does not | `sumTo 3 λx -> x` is `1` |
 | `TailCallEvidence` | a `where`-constrained function looping deep with evidence forwarded, **and** a tail self-call at a different instantiation whose evidence therefore changes | exact counts; the second half is the polymorphic-recursion case above |
 | `TailCallLetFunction` | a `let`-bound helper counting to 1 000 000 | as `TailCallDeep` |
 | `TailCallLambdaBody` | `f = λn acc -> … f …` counting to 1 000 000 | as `TailCallDeep` |

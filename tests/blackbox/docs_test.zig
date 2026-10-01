@@ -309,15 +309,13 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         \\main : Program
         \\main =
         \\    Node.printLines
-        \\        (List.filterMap entries
-        \\            (λentry ->
-        \\                case entry of
-        \\                    ( origin, ok ) ->
-        \\                        if ok then
-        \\                            Nothing
-        \\                        else
-        \\                            Just origin
-        \\            )
+        \\        (List.filterMap entries λentry ->
+        \\            case entry of
+        \\                ( origin, ok ) ->
+        \\                    if ok then
+        \\                        Nothing
+        \\                    else
+        \\                        Just origin
         \\        )
         \\
     );

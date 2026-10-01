@@ -3569,7 +3569,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\quiet xs =
-        \\    List.map xs (λx -> x + 1)
+        \\    List.map xs λx -> x + 1
         \\
     );
 

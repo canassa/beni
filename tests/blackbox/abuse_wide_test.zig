@@ -565,7 +565,7 @@ fn wideLiteralCase(flag: []const u8, scrutinee: []const u8, stdout: []const u8) 
     try out.writeAll(
         \\main : Program
         \\main =
-        \\    Node.printLines (List.map [ 0, 16383, 16384, 16399, 16400, -5 ] (λk -> String.fromInt (g k)))
+        \\    Node.printLines (List.map [ 0, 16383, 16384, 16399, 16400, -5 ] λk -> String.fromInt (g k))
         \\
     );
     try w.write("Main.beni", source.written());

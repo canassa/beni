@@ -723,7 +723,7 @@ generic makes `List.sortBy people .name` fail for no reason a reader could state
 
 Everything stays declared and exported. `eq`, `neq`, `lt`, `gt`, `le`, `ge` and `compare` are no
 longer what `language.md` §6.5's operators mean (§3.1) but remain ordinary callable functions, so
-`compare a b` in a `case` and `List.sortWith xs (λa b -> compare b a)` keep working unchanged.
+`compare a b` in a `case` and `List.sortWith xs λa b -> compare b a` keep working unchanged.
 
 ### 5.7 Two deletions
 
@@ -835,7 +835,7 @@ Roc does this and says why (`references/roc/src/check/Check.zig:20045-20054`):
 > call's arguments are. A closure argument then has its parameters seeded before its body is
 > checked."*
 
-Without it, `xs.map (λx -> x.field)` checks the lambda against a fresh variable, the lambda's
+Without it, `xs.map λx -> x.field` checks the lambda against a fresh variable, the lambda's
 parameter type is unknown while its body is checked, and `x.field` becomes a second deferred
 constraint that fails somewhere else — report 20 §9 row S3-9.
 
@@ -1669,7 +1669,7 @@ import Dict exposing (Dict)
 
 pub tally : List String -> Dict String Int
 tally names =
-    List.foldl names Dict.empty (λn d -> Dict.insert d n 1)
+    List.foldl names Dict.empty λn d -> Dict.insert d n 1
 ```
 
 ```
@@ -3337,7 +3337,7 @@ what answers and it answers exactly once (A.57). Pinned by
 **A `where` constraint that meets a record only after a field access is refused.** §6.2's Rule U0
 resolves a method against a receiver that is already concrete and never retries one that was still
 a variable; §6.3 refuses an OPEN record, and reading a field off a lambda parameter is what opens
-one. So `List.foldl points Dict.empty (λp d -> Dict.insert d p (p.x + p.y))` is
+one. So `List.foldl points Dict.empty λp d -> Dict.insert d p (p.x + p.y)` is
 `no_methods_on_shape` on a record the author wrote closed, while the same fold with the value
 behind an annotated helper compiles. This is A.28 and §6.2's "what it does not buy" meeting in a
 program a user would plausibly write, and `bench/runtime/c1/R2DictRecord.beni` is the first

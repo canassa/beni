@@ -154,7 +154,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
         \\        <input onInput={Typed} class={[ ( "wide", True ) ]} "formaction"="/rows" />
         \\        <For each={rows}>{λr -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
         \\        <Show when={title} keyed>{λt -> <p>{t}</p>}</Show>
-        \\        {List.map rows (λr -> <p>{r.label}</p>)}
+        \\        {List.map rows λr -> <p>{r.label}</p>}
         \\    </Card>
         \\
     );

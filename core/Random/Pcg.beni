@@ -173,7 +173,7 @@ byWeight ( weight, value ) others countdown =
 
 --| The generator's values, transformed.
 --|
---|     Random.map (Random.int 1 6) (λn -> n * 2)
+--|     Random.map (Random.int 1 6) λn -> n * 2
 pub map : Generator a, (a -> b) -> Generator b
 map (Generator generator) f = Generator λseed ->
     case generator seed of

@@ -161,7 +161,7 @@ fetchSummary id =
 
 fetchAll : List UserId -> List User
 fetchAll ids =
-    List.map ids (λid -> getUser id)
+    List.map ids λid -> getUser id
 ```
 
 Both are ordinary beni. Note that `fetchAll` is the line P1 could not actually write: under P1's
@@ -333,7 +333,7 @@ fetchActive ids =
         users = Result.combine (List.map ids getUser)?
         Log.info ("got " ++ String.fromInt (List.length users))
     in
-    List.filter users (λu -> u.isActive)
+    List.filter users λu -> u.isActive
 ```
 
 **Separable.** This is useful without any of the rest of this document — it is what `Debug.log`
@@ -427,7 +427,7 @@ and a resource bracket sit flat at the top of a block instead of indenting every
 let
     scope <- Task.scope
     conn  <- Task.bracket (λ() -> Db.open url) Db.close
-    (user, prefs) = Task.par2 (λ() -> getUser id) (λ() -> getPrefs id)
+    (user, prefs) = Task.par2 (λ() -> getUser id) λ() -> getPrefs id
     Log.info "loaded"
 in
 Dashboard user prefs
@@ -1817,7 +1817,7 @@ registers the host's callback and returns its canceller:
 ```elm
 pub sleep : Int -> ()
 sleep ms =
-    Task.callback (λresume -> startTimer ms resume)
+    Task.callback λresume -> startTimer ms resume
 
 foreign impure startTimer : Int, Resume () -> (() -> ())
 ```

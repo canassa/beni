@@ -61,7 +61,7 @@ visibility () =
 --| Call `f` with the window's new size each time it is resized. A size
 --| that changes faster than `f` takes it is coalesced into the latest.
 --|
---|     Task.spawn (λ() -> Browser.Events.eachResize (λsize -> Log.info (String.fromInt size.width)))
+--|     Task.spawn λ() -> Browser.Events.eachResize λsize -> Log.info (String.fromInt size.width)
 pub eachResize : (Size -> ()) -> ()
 eachResize f = watch "window" "resize" size f
 
@@ -104,7 +104,7 @@ onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) ta
 --| reading the event as a markup handler does (Elm's `onKeyDown` with a
 --| decoder):
 --|
---|     Browser.Events.onKeyDown (λevent -> KeyPressed (Html.key event))
+--|     Browser.Events.onKeyDown λevent -> KeyPressed (Html.key event)
 --|
 --| No key is lost or merged. The function runs one fiber turn after the
 --| event, so it cannot prevent the key's default; a handler on an element

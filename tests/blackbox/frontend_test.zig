@@ -98,7 +98,7 @@ const every_section =
     \\
     \\
     \\tail =
-    \\    [ 1, 2, 3 ] |> List.map (λn -> n + 1)
+    \\    [ 1, 2, 3 ] |> List.map λn -> n + 1
     \\
 ;
 
