@@ -31,62 +31,53 @@ type alias RL =
 
 
 type alias Both =
-    { r : Rec.Type, t : R.Type }
+    r : Rec.Type
+    t : R.Type
 
 
-type H =
-    H RW
+type H
+    = H RW
 
 
-type W =
-    W RecW
+type W
+    = W RecW
 
 
 same : RW, RW -> Bool
-same p q =
-    p == q
+same p q = p == q
 
 
 less : RE, RE -> Bool
-less p q =
-    p < q
+less p q = p < q
 
 
 method : RW, RW -> Bool
-method p q =
-    Basics.eq p q
+method p q = Basics.eq p q
 
 
 records : RecW, RecW -> Bool
-records p q =
-    p == q
+records p q = p == q
 
 
 sorted : RL -> RL
-sorted xs =
-    List.sort xs
+sorted xs = List.sort xs
 
 
 fields : Both, Both -> Bool
-fields p q =
-    p == q
+fields p q = p == q
 
 
 wrapped : H, H -> Bool
-wrapped p q =
-    p < q
+wrapped p q = p < q
 
 
 wrappedRecord : W, W -> Bool
-wrappedRecord p q =
-    p == q
+wrappedRecord p q = p == q
 
 
 field : RecW -> Int
-field r =
-    r.x
+field r = r.x
 
 
 direct : R.Type -> RW
-direct r =
-    r
+direct r = r

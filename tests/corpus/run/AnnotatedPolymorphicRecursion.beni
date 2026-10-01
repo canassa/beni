@@ -17,10 +17,9 @@ depth xs =
             1
                 + depth rest
                 + (if False then
-                    depth [ 1 ]
-
+                      depth [ 1 ]
                    else
-                    0
+                      0
                   )
 
 
@@ -36,15 +35,13 @@ inner u =
                     1
                         + d rest
                         + (if False then
-                            d [ 1 ]
-
+                              d [ 1 ]
                            else
-                            0
+                              0
                           )
     in
     d [ "a", "b" ]
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (depth [ "x", "y" ]), String.fromInt (inner 0) ]
+main = Node.printLines [ String.fromInt (depth [ "x", "y" ]), String.fromInt (inner 0) ]

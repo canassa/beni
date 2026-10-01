@@ -12,20 +12,16 @@ type T
 
 
 pub same : T, T -> Bool
-same (T a) (T b) =
-    a == b
+same (T a) (T b) = a == b
 
 
 f n x =
     let
-        pairK z =
-            ( z, z.same z )
+        pairK z = ( z, z.same z )
 
-        ( a1, _ ) =
-            pairK (T 1)
+        ( a1, _ ) = pairK (T 1)
 
-        ( a2, _ ) =
-            pairK "s"
+        ( a2, _ ) = pairK "s"
     in
     g n x
 
@@ -33,6 +29,5 @@ f n x =
 g n x =
     if n > 0 then
         x
-
     else
         f 1 x

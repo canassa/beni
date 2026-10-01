@@ -8,6 +8,5 @@ pub type Holder a
 pub compare (Holder x) (Holder y) =
     if Basics.eq x y then
         EQ
-
     else
         LT

@@ -10,24 +10,23 @@ import Node
 
 
 type alias Model =
-    { rows : List { id : Int }, selected : Int, title : String }
+    rows : List { id : Int }
+    selected : Int
+    title : String
 
 
 select : Model, Int -> Model
-select model id =
-    { model | selected = id }
+select model id = { model | selected = id }
 
 
 rename : Model, String -> Model
-rename model title =
-    { model | title = title }
+rename model title = { model | title = title }
 
 
 show : Bool -> String
 show b =
     if b then
         "same"
-
     else
         "different"
 
@@ -35,14 +34,11 @@ show b =
 main : Node.Program
 main =
     let
-        model =
-            { rows = [ { id = 1 }, { id = 2 } ], selected = 0, title = "t" }
+        model = { rows = [ { id = 1 }, { id = 2 } ], selected = 0, title = "t" }
 
-        next =
-            select model 3
+        next = select model 3
 
-        later =
-            rename (select next 4) "u"
+        later = rename (select next 4) "u"
     in
     Node.printLines
         [ show (Identity.refEq model.rows next.rows)

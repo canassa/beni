@@ -9,23 +9,22 @@ import Node exposing (Program)
 
 
 type alias Settings =
-    { name : String, verbose : Bool, scale : Int }
+    name : String
+    verbose : Bool
+    scale : Int
 
 
 settings : String -> Settings
-settings name =
-    { name = name, verbose = False, scale = 3 }
+settings name = { name = name, verbose = False, scale = 3 }
 
 
 describe : Settings, Int -> String
 describe s n =
     if s.verbose then
         "${s.name}: ${String.fromInt n} (verbose)"
-
     else
         "${s.name}: ${String.fromInt (s.scale * n)}"
 
 
 main : Program
-main =
-    Node.printLines [ describe (settings "a") 1, describe (settings "b") 2 ]
+main = Node.printLines [ describe (settings "a") 1, describe (settings "b") 2 ]

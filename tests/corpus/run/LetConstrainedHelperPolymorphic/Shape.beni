@@ -1,6 +1,5 @@
 -- See Main.beni: a second type with a `render` method.
 
-
 pub type Shape
     = Square Int
 

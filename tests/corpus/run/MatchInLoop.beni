@@ -45,7 +45,6 @@ walk : Int, Int, Bool -> Int
 walk n acc flag =
     if n <= 0 then
         acc
-
     else
         case ( stepFor n, flag ) of
             ( Up, True ) ->

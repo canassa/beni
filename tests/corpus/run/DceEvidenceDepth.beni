@@ -41,27 +41,23 @@ eq a b =
 
 pub inner : a, a -> Bool
     where a.eq : a, a -> Bool
-inner x y =
-    x.eq y
+inner x y = x.eq y
 
 
 pub middle : a, a -> Bool
     where a.eq : a, a -> Bool
-middle x y =
-    inner x y
+middle x y = inner x y
 
 
 pub outer : a, a -> Bool
     where a.eq : a, a -> Bool
-outer x y =
-    middle x y
+outer x y = middle x y
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

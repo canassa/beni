@@ -21,21 +21,21 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, mark : String }
+    rows : List Row
+    mark : String
 
 
 marked : Model, Row -> String
-marked model r =
-    Debug.log "${model.mark}${String.fromInt r.id}" "mark"
+marked model r = Debug.log "${model.mark}${String.fromInt r.id}" "mark"
 
 
 named : String, Row -> String
-named list r =
-    Debug.log r.label "${list} label"
+named list r = Debug.log r.label "${list} label"
 
 
 update : Msg, Model -> Model
@@ -48,7 +48,9 @@ update msg model =
             { model | mark = "*" }
 
         Rename ->
-            { model | rows = List.map model.rows (\r -> if r.id == 1 then { r | label = "A" } else r) }
+            { model
+                | rows = List.map model.rows (\r -> if r.id == 1 then { r | label = "A" } else r)
+            }
 
 
 view : Model -> Html Msg
@@ -58,13 +60,23 @@ view model =
         <button id="mark" onClick={Mark}>mark</button>
         <button id="rename" onClick={Rename}>rename</button>
         <ul id="after">
-            <For each={model.rows} keyed={.id}>{\r -> <li class={marked model r}>{named "after" r}</li>}</For>
+            <For each={model.rows} keyed={.id}>
+                {\r -> <li class={marked model r}>{named "after" r}</li>}
+            </For>
         </ul>
         <ul id="before">
-            <For each={model.rows} keyed={.id}>{\r -> <li title={named "before" r} class={marked model r} />}</For>
+            <For each={model.rows} keyed={.id}>
+                {\r -> <li title={named "before" r} class={marked model r} />}
+            </For>
         </ul>
         <ul id="toggled">
-            <For each={model.rows} keyed={.id}>{\r -> <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>{named "toggled" r}</li>}</For>
+            <For each={model.rows} keyed={.id}>
+                {\r ->
+                    <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>
+                        {named "toggled" r}
+                    </li>
+                }
+            </For>
         </ul>
     </main>
 

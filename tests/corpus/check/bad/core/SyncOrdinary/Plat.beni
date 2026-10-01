@@ -10,10 +10,8 @@ pub foreign suspends get : Int -> String
 
 
 pub program : { init : Int, view : sync (Int -> String) } -> Int
-program p =
-    p.init
+program p = p.init
 
 
 pub race : sync (Int -> String), Bool -> String
-race f fast =
-    (if fast then f else get) 1
+race f fast = (if fast then f else get) 1

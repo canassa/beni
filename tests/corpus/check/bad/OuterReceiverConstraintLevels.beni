@@ -4,24 +4,20 @@
 -- Generalising it would publish `f : a -> ( b, c ) where a.combine : a, d -> e`
 -- — free `d`, `e` — and the program would build, printing 6, 5s and NaN.
 
-
 type T
     = T Int
 
 
 pub combine : T, Int -> Int
-combine (T a) b =
-    a + b
+combine (T a) b = a + b
 
 
 f x =
     let
-        g y =
-            x.combine y
+        g y = x.combine y
     in
     ( g 1, g "s" )
 
 
 pair : ( Int, Int )
-pair =
-    f (T 5)
+pair = f (T 5)

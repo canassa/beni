@@ -13,16 +13,18 @@ import Html exposing (Html)
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, selected : Int, names : List String }
+    rows : List Row
+    selected : Int
+    names : List String
 
 
 viewName : String -> Html msg
-viewName name =
-    <li>{name}</li>
+viewName name = <li>{name}</li>
 
 
 pub table : Model -> Html msg
@@ -30,7 +32,9 @@ table model =
     <table>
         <tbody>
             <For each={model.rows} keyed={.id}>
-                {\row -> <tr class={[ ( "danger", row.id == model.selected ) ]}><td>{row.label}</td></tr>}
+                {\row ->
+                    <tr class={[ ( "danger", row.id == model.selected ) ]}><td>{row.label}</td></tr>
+                }
             </For>
         </tbody>
     </table>
@@ -41,10 +45,16 @@ lists model =
     <div>
         <ol><For each={model.names} keyed={False}>{\name i -> <li>{i}. {name}</li>}</For></ol>
         <ul><For each={model.names} fallback={<li>none</li>}>{viewName}</For></ul>
-        <ul><For each={model.names}>{\name -> if name == "" then <li>blank</li> else <li>{name}</li>}</For></ul>
+        <ul>
+            <For each={model.names}>
+                {\name -> if name == "" then <li>blank</li> else <li>{name}</li>}
+            </For>
+        </ul>
     </div>
 
 
 pub first : Model -> Html msg
 first model =
-    <Show when={List.head model.rows} keyed={.id} fallback={<p>none</p>}>{\row -> <p>{row.label} of {model.selected}</p>}</Show>
+    <Show when={List.head model.rows} keyed={.id} fallback={<p>none</p>}>
+        {\row -> <p>{row.label} of {model.selected}</p>}
+    </Show>

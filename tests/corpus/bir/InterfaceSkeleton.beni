@@ -21,22 +21,18 @@ type Hidden
 
 
 type alias PrivateAlias =
-    { id : Id }
+    id : Id
 
 
 pub annotated : Int -> Int
-annotated n =
-    n + secret
+annotated n = n + secret
 
 
-pub bare =
-    Red
+pub bare = Red
 
 
 secret : Int
-secret =
-    1
+secret = 1
 
 
-unannotatedPrivate =
-    Hidden 1
+unannotatedPrivate = Hidden 1

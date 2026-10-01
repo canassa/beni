@@ -2,6 +2,5 @@
 --! moment the call is evaluated, not when the program ends. Only a platform
 --! may write `foreign`, and `impure` is the rung that says so.
 
-
 --| Write `text` and a newline, now.
 pub foreign impure say : String -> ()

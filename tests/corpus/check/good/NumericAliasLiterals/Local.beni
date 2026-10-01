@@ -18,27 +18,23 @@ pub type alias Text =
 
 
 pub type alias Point =
-    { x : Int }
+    x : Int
 
 
 pub count : Count
-count =
-    1
+count = 1
 
 
 pub ratio : Ratio
-ratio =
-    1
+ratio = 1
 
 
 pub countAgain : CountAgain
-countAgain =
-    2
+countAgain = 2
 
 
 pub asCount : Int -> Count
-asCount n =
-    n
+asCount n = n
 
 
 pub chooseCount flag =
@@ -49,10 +45,8 @@ pub chooseCount flag =
 
 
 pub text : Text
-text =
-    "left" ++ "right"
+text = "left" ++ "right"
 
 
 pub point : Point
-point =
-    { x = 1 }
+point = { x = 1 }

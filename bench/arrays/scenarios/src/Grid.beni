@@ -40,8 +40,7 @@ neighbours g x y =
 
 --| One tick that changes `k` cells, chosen from `seed`.
 pub tick : Grid, Int, Int -> Grid
-tick g k seed =
-    tickHelp g 0 k seed
+tick g k seed = tickHelp g 0 k seed
 
 
 tickHelp : Grid, Int, Int, Int -> Grid
@@ -50,24 +49,18 @@ tickHelp g j k seed =
         g
     else
         let
-            i =
-                modBy (seed + j * 7919) (g.w * g.h)
+            i = modBy (seed + j * 7919) (g.w * g.h)
 
-            x =
-                modBy i g.w
+            x = modBy i g.w
 
-            y =
-                i // g.w
+            y = i // g.w
 
-            n =
-                neighbours g x y
+            n = neighbours g x y
 
-            v =
-                cell g x y + 1 + modBy n 2
+            v = cell g x y + 1 + modBy n 2
         in
         tickHelp { g | cells = Array.set g.cells i v } (j + 1) k seed
 
 
 pub population : Grid -> Int
-population g =
-    Array.foldl g.cells 0 (\v s -> s + v)
+population g = Array.foldl g.cells 0 (\v s -> s + v)

@@ -59,14 +59,14 @@ pub type Tree
 
 
 type alias Row =
-    { name : String, rank : Rank }
+    name : String
+    rank : Rank
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

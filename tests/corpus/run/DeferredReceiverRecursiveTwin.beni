@@ -16,7 +16,6 @@ import Node exposing (Program)
 f n x =
     if n > 5 then
         g n
-
     else
         x.combine n
 
@@ -24,11 +23,9 @@ f n x =
 g n =
     if n > 5 then
         n
-
     else
         f n { combine = \z -> z + 1 }
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (g 1) ]
+main = Node.printLines [ String.fromInt (g 1) ]

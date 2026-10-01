@@ -16,20 +16,17 @@ import Node exposing (Program)
 
 h m =
     let
-        v =
-            m?
+        v = m?
     in
     if m == m then
         Just (v + 1)
-
     else
         Nothing
 
 
 f k =
     let
-        g u =
-            k (u?)
+        g u = k (u?)
     in
     ( g (Just 1), Maybe.withDefault (k 5) 0 )
 
@@ -37,7 +34,11 @@ f k =
 main : Program
 main =
     let
-        ( first, second ) =
-            f (\n -> Just (n + 1))
+        ( first, second ) = f (\n -> Just (n + 1))
     in
-    Node.printLines [ Debug.toString (h (Just 1)), Debug.toString (h Nothing), Debug.toString first, String.fromInt second ]
+    Node.printLines
+        [ Debug.toString (h (Just 1))
+        , Debug.toString (h Nothing)
+        , Debug.toString first
+        , String.fromInt second
+        ]

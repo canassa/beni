@@ -2,14 +2,13 @@
 -- (language.md §0, "everything else is Elm's"), so `User` is both a type
 -- and a function of its fields. Both appear in the interface.
 pub type alias User =
-    { name : String, age : Int }
+    name : String
+    age : Int
 
 
 pub make : String, Int -> User
-make name age =
-    User name age
+make name age = User name age
 
 
 pub rename : User, String -> User
-rename user name =
-    { user | name = name }
+rename user name = { user | name = name }

@@ -15,12 +15,10 @@ main =
     Node.print
         (if W (H.Holder (T 1)) == W (H.Holder (T 1)) then
             "T"
-
          else
             "F"
         )
 
 
 pub key : T, () -> Int
-key (T x) _ =
-    x
+key (T x) _ = x

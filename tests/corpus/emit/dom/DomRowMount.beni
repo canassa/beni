@@ -19,7 +19,8 @@ type Msg
 
 
 type alias Model =
-    { rows : List { id : Int, label : String }, picked : Int }
+    rows : List { id : Int, label : String }
+    picked : Int
 
 
 pub after : Model -> Html Msg
@@ -27,7 +28,10 @@ after model =
     <ul>
         <For each={model.rows} keyed={.id}>
             {\row ->
-                <li class={if model.picked == row.id then "on" else ""} style={[ ( "order", String.fromInt row.id ) ]}>
+                <li
+                    class={if model.picked == row.id then "on" else ""}
+                    style={[ ( "order", String.fromInt row.id ) ]}
+                >
                     <a onClick={Pick row.id}>{row.label}</a>
                     <input onInput={Typed row.id _} />
                 </li>
@@ -39,12 +43,16 @@ after model =
 pub before : Model -> Html Msg
 before model =
     <ul>
-        <For each={model.rows} keyed={.id}>{\row -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}</For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}
+        </For>
     </ul>
 
 
 pub toggled : Model -> Html Msg
 toggled model =
     <ul>
-        <For each={model.rows} keyed={.id}>{\row -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}</For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}
+        </For>
     </ul>

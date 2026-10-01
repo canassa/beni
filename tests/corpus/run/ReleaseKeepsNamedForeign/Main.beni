@@ -58,8 +58,7 @@ applySync k text =
 
 
 unitText : () -> String
-unitText _ =
-    ""
+unitText _ = ""
 
 
 report : Int -> Int
@@ -70,7 +69,6 @@ report n =
         branch =
             if n > 0 then
                 Say.say "branch"
-
             else
                 ()
         ( left, right ) = ( Say.say "tuple", n )
@@ -82,4 +80,5 @@ report n =
 
 main : Program
 main =
-    Node.printLines [ String.fromInt (report 2 + applyTo Say.say "passed" + applySync Say.say "passed") ]
+    Node.printLines
+        [ String.fromInt (report 2 + applyTo Say.say "passed" + applySync Say.say "passed") ]

@@ -39,14 +39,12 @@ render c n =
 
 label : a, Int -> String
     where a.render : a, Int -> String
-label x n =
-    x.render n
+label x n = x.render n
 
 
 pairEq x y =
     let
-        inner a b =
-            a == b
+        inner a b = a == b
     in
     inner x y && inner [ x ] [ y ]
 
@@ -54,8 +52,7 @@ pairEq x y =
 describe : Colour, Shape -> String
 describe c s =
     let
-        show x =
-            "<" ++ label x 1 ++ ">"
+        show x = "<" ++ label x 1 ++ ">"
     in
     show c ++ show s
 
@@ -64,7 +61,6 @@ text : Bool -> String
 text b =
     if b then
         "True"
-
     else
         "False"
 

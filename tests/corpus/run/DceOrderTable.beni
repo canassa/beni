@@ -46,15 +46,13 @@ pub larger : a, a -> a
 larger x y =
     if x < y then
         y
-
     else
         x
 
 
 pub highest : a, a, a -> a
     where a.compare : a, a -> Order
-highest x y z =
-    larger (larger x y) z
+highest x y z = larger (larger x y) z
 
 
 main : Program

@@ -1,4 +1,6 @@
-pub type B a = B a
+pub type B a
+    = B a
+
 
 pub compare : B a, B a -> Order
     where a.eq : a, a -> Bool

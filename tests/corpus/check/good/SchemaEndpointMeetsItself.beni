@@ -13,19 +13,16 @@ schema A =
 
 
 pub la : List A.Type
-la =
-    []
+la = []
 
 
 pub ma : Maybe A.Type
-ma =
-    Nothing
+ma = Nothing
 
 
 pub two c =
     if c then
         la
-
     else
         la
 
@@ -33,7 +30,6 @@ pub two c =
 pub twoMaybe c =
     if c then
         ma
-
     else
         ma
 
@@ -41,7 +37,6 @@ pub twoMaybe c =
 pub h n =
     if n == 0 then
         la
-
     else
         k (n - 1)
 
@@ -49,7 +44,6 @@ pub h n =
 pub k n =
     if n == 0 then
         la
-
     else
         h (n - 1)
 
@@ -59,19 +53,16 @@ type alias Tagged t =
 
 
 pub lt : List (Tagged String)
-lt =
-    []
+lt = []
 
 
 pub lb : List (Tagged Bool)
-lb =
-    []
+lb = []
 
 
 pub pickTagged c =
     if c then
         lt
-
     else
         lt
 
@@ -79,6 +70,5 @@ pub pickTagged c =
 pub pickDiffering c =
     if c then
         lt
-
     else
         lb

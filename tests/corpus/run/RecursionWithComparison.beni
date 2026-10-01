@@ -22,7 +22,6 @@ import Node exposing (Program)
 countdown n =
     if n == 0 then
         True
-
     else
         countdown (n - 1)
 
@@ -30,7 +29,6 @@ countdown n =
 growTo n m =
     if m == n then
         True
-
     else
         growTo (n ++ "x") m
 
@@ -38,7 +36,6 @@ growTo n m =
 sumDown n =
     if n > 0 then
         n + sumDown (n - 1)
-
     else
         0
 
@@ -52,7 +49,6 @@ largest xs m =
             largest r
                 (if x > m then
                     x
-
                  else
                     m
                 )
@@ -61,13 +57,11 @@ largest xs m =
 sym x y =
     if x == y then
         True
-
     else
         symFlip x y
 
 
-symFlip x y =
-    sym y x
+symFlip x y = sym y x
 
 
 findMax xs best =
@@ -82,7 +76,6 @@ findMax xs best =
 step r x best =
     if x > best then
         findMax r x
-
     else
         findMax r best
 
@@ -95,7 +88,6 @@ a1 xs ys =
         [ x, ...r ] ->
             (if List.member ys x then
                 1
-
              else
                 0
             )
@@ -110,7 +102,6 @@ b1 xs ys =
         [ y, ...r ] ->
             if y < y then
                 99
-
             else
                 a1 xs r
 
@@ -119,7 +110,6 @@ flag : Bool -> String
 flag b =
     if b then
         "T"
-
     else
         "F"
 

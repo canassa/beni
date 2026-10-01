@@ -323,8 +323,7 @@ viewNoteItem selected note =
         ]
         [ span [ class "title" ] [ text note.title ]
         , span [ class "preview" ] [ text (preview note.body) ]
-        , button
-            [ onClick (TogglePin note.id) ]
+        , button [ onClick (TogglePin note.id) ]
             [ text
                 (if note.pinned then
                     "unpin"

@@ -6,7 +6,8 @@ import Html exposing (Html)
 
 
 type alias Todo =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 pub view : List Todo, Maybe Todo -> Html msg
@@ -18,5 +19,4 @@ view todos editing =
 
 
 pub list : List a, (a -> k), (a -> Html msg) -> Html msg
-list items key row =
-    <ul><For each={items} keyed={key}>{row}</For></ul>
+list items key row = <ul><For each={items} keyed={key}>{row}</For></ul>

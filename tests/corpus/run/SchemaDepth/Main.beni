@@ -61,8 +61,7 @@ chain =
                         (Schema.mapping toNext fromNext)
                         (Schema.mapping toNext fromNext)
             in
-            Schema.tagged
-                "t"
+            Schema.tagged "t"
                 [ Schema.nullary "End" "end" end end, Schema.variant "Link" "link" next link link ]
         )
 

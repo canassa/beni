@@ -7,7 +7,6 @@ pub absolute : number -> number
 absolute n =
     if n < 0 then
         negate n
-
     else
         n
 
@@ -16,11 +15,9 @@ pub larger : number, number -> number
 larger a b =
     if a < b then
         b
-
     else
         a
 
 
 pub sameNum : number, number -> Bool
-sameNum x y =
-    number.eq x y && x == y
+sameNum x y = number.eq x y && x == y

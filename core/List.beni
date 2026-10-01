@@ -620,7 +620,13 @@ intersperse xs sep =
     if isEmpty xs then
         []
     else
-        intersperseHelp (base xs) (offset xs) sep 1 (length xs) (put (builder (2 * length xs - 1)) 0 (unsafeGet xs 0))
+        intersperseHelp
+            (base xs)
+            (offset xs)
+            sep
+            1
+            (length xs)
+            (put (builder (2 * length xs - 1)) 0 (unsafeGet xs 0))
 
 
 intersperseHelp : List a, Int, a, Int, Int, Builder a -> List a
@@ -667,10 +673,31 @@ map3 xs ys zs func =
     map3Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) 0 n func (builder n)
 
 
-map3Help : List a, Int, List b, Int, List c, Int, Int, Int, (a, b, c -> result), Builder result -> List result
+map3Help :
+      List a
+    , Int
+    , List b
+    , Int
+    , List c
+    , Int
+    , Int
+    , Int
+    , (a, b, c -> result)
+    , Builder result
+    -> List result
 map3Help ax ox ay oy az oz i n func b =
     if i < n then
-        map3Help ax ox ay oy az oz (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i))))
+        map3Help
+            ax
+            ox
+            ay
+            oy
+            az
+            oz
+            (i + 1)
+            n
+            func
+            (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i))))
     else
         done b n
 
@@ -681,20 +708,57 @@ map4 xs ys zs ws func =
     let
         n = min (min (length xs) (length ys)) (min (length zs) (length ws))
     in
-    map4Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) 0 n func (builder n)
+    map4Help
+        (base xs)
+        (offset xs)
+        (base ys)
+        (offset ys)
+        (base zs)
+        (offset zs)
+        (base ws)
+        (offset ws)
+        0
+        n
+        func
+        (builder n)
 
 
-map4Help : List a, Int, List b, Int, List c, Int, List d, Int, Int, Int, (a, b, c, d -> result), Builder result -> List result
+map4Help :
+      List a
+    , Int
+    , List b
+    , Int
+    , List c
+    , Int
+    , List d
+    , Int
+    , Int
+    , Int
+    , (a, b, c, d -> result)
+    , Builder result
+    -> List result
 map4Help ax ox ay oy az oz aw ow i n func b =
     if i < n then
-        map4Help ax ox ay oy az oz aw ow (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i)) (at aw (ow + i))))
+        map4Help
+            ax
+            ox
+            ay
+            oy
+            az
+            oz
+            aw
+            ow
+            (i + 1)
+            n
+            func
+            (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i)) (at aw (ow + i))))
     else
         done b n
 
 
 --| Combine five lists, combining them with the given function.
 pub map5 :
-    List a
+      List a
     , List b
     , List c
     , List d
@@ -705,11 +769,25 @@ map5 xs ys zs ws vs func =
     let
         n = min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs))
     in
-    map5Help (base xs) (offset xs) (base ys) (offset ys) (base zs) (offset zs) (base ws) (offset ws) (base vs) (offset vs) 0 n func (builder n)
+    map5Help
+        (base xs)
+        (offset xs)
+        (base ys)
+        (offset ys)
+        (base zs)
+        (offset zs)
+        (base ws)
+        (offset ws)
+        (base vs)
+        (offset vs)
+        0
+        n
+        func
+        (builder n)
 
 
 map5Help :
-    List a
+      List a
     , Int
     , List b
     , Int
@@ -726,7 +804,31 @@ map5Help :
     -> List result
 map5Help ax ox ay oy az oz aw ow av ov i n func b =
     if i < n then
-        map5Help ax ox ay oy az oz aw ow av ov (i + 1) n func (put b i (func (at ax (ox + i)) (at ay (oy + i)) (at az (oz + i)) (at aw (ow + i)) (at av (ov + i))))
+        map5Help
+            ax
+            ox
+            ay
+            oy
+            az
+            oz
+            aw
+            ow
+            av
+            ov
+            (i + 1)
+            n
+            func
+            (put
+                b
+                i
+                (func
+                    (at ax (ox + i))
+                    (at ay (oy + i))
+                    (at az (oz + i))
+                    (at aw (ow + i))
+                    (at av (ov + i))
+                )
+            )
     else
         done b n
 
@@ -943,7 +1045,15 @@ update xs i func =
 --| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a -> Bool) -> ( List a, List a )
 partition xs pred =
-    partitionHelp (base xs) (offset xs) 0 (length xs) pred (builder (length xs)) (builder (length xs)) 0
+    partitionHelp
+        (base xs)
+        (offset xs)
+        0
+        (length xs)
+        pred
+        (builder (length xs))
+        (builder (length xs))
+        0
 
 
 --| `k` is how many passed: the rest, `i - k`, did not.
@@ -966,7 +1076,13 @@ partitionHelp a o i n pred yes no k =
 --|     unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )
 pub unzip : List ( a, b ) -> ( List a, List b )
 unzip pairs =
-    unzipHelp (base pairs) (offset pairs) 0 (length pairs) (builder (length pairs)) (builder (length pairs))
+    unzipHelp
+        (base pairs)
+        (offset pairs)
+        0
+        (length pairs)
+        (builder (length pairs))
+        (builder (length pairs))
 
 
 unzipHelp : List ( a, b ), Int, Int, Int, Builder a, Builder b -> ( List a, List b )

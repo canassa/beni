@@ -9,22 +9,18 @@
 -- order where the dot-call is the older wanted would answer the class
 -- `field`, and elaboration would then find an evidence miscount. Both
 -- orders give `no_methods_on_shape`.
-h a =
-    a.combine 1
+h a = a.combine 1
 
 
 f x =
     let
-        p =
-            x.combine 1
+        p = x.combine 1
 
-        q =
-            h x
+        q = h x
 
         r =
             if True then
                 x
-
             else
                 { combine = \n -> n + 100 }
     in

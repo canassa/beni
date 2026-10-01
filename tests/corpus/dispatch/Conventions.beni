@@ -5,38 +5,31 @@
 -- `arity=2` with no parameters); `thunk` takes evidence and is
 -- not a function (`blank`), so every read runs it.
 
-
 maxOf : a, a -> a
     where a.compare : a, a -> Order
 maxOf a b =
     if a < b then
         b
-
     else
         a
 
 
 pointFree : a, a -> a
     where a.compare : a, a -> Order
-pointFree =
-    maxOf
+pointFree = maxOf
 
 
-viaLambda =
-    \x y -> x == y
+viaLambda = \x y -> x == y
 
 
 blank : List a
     where a.eq : a, a -> Bool
-blank =
-    []
+blank = []
 
 
 plainFunction : Int, Int -> Int
-plainFunction =
-    pointFree
+plainFunction = pointFree
 
 
 plainConstant : List Int
-plainConstant =
-    blank
+plainConstant = blank

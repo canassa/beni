@@ -13,11 +13,11 @@ view model =
             {\item ->
                 <section>
                     <h2>{item.title}</h2>
-                </section>}
+                </section>
+            }
         </Show>
         <Show when={model.hovered}>{viewCard}</Show>
     </div>
 
 
-viewCard card =
-    <p>{card.title}</p>
+viewCard card = <p>{card.title}</p>

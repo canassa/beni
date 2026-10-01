@@ -9,14 +9,12 @@ pub type U
 
 pub compare a b =
     let
-        s =
-            T 1 == T 2
+        s = T 1 == T 2
     in
     case ( a, b ) of
         ( U x, U y ) ->
             if s then
                 LT
-
             else
                 EQ
 

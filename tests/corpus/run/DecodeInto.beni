@@ -36,8 +36,7 @@ pub type Tag
 
 
 pub fromList : List Char -> Tag
-fromList chars =
-    Tag (String.fromList chars)
+fromList chars = Tag (String.fromList chars)
 
 
 pub label : Tag -> String
@@ -49,43 +48,36 @@ label t =
 
 decodeInto : String -> a
     where a.fromList : List Char -> a
-decodeInto s =
-    a.fromList (String.toList s)
+decodeInto s = a.fromList (String.toList s)
 
 
 decodeTwo : String, String -> ( a, a )
     where a.fromList : List Char -> a
-decodeTwo x y =
-    ( decodeInto x, decodeInto y )
+decodeTwo x y = ( decodeInto x, decodeInto y )
 
 
 asTag : Tag
-asTag =
-    decodeInto "tag"
+asTag = decodeInto "tag"
 
 
 asString : String
-asString =
-    decodeInto "str"
+asString = decodeInto "str"
 
 
 pair : ( Tag, Tag )
-pair =
-    decodeTwo "one" "two"
+pair = decodeTwo "one" "two"
 
 
 later : String
 later =
     let
-        t =
-            decodeInto "zz"
+        t = decodeInto "zz"
     in
     label t
 
 
 sameNum : number, number -> Bool
-sameNum x y =
-    number.eq x y
+sameNum x y = number.eq x y
 
 
 pairLabels : String
@@ -104,7 +96,6 @@ main =
         , later
         , if sameNum 3 3 then
             "same"
-
           else
             "different"
         ]

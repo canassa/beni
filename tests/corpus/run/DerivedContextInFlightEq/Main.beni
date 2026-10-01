@@ -21,24 +21,20 @@ pub type T
 pub eq (T a) (T b) =
     if a > 100 then
         modBy a 10 == modBy b 10
-
     else
         viaBox (T (a + 100)) (T (b + 100))
 
 
-viaBox (T x) (T y) =
-    B.Box (T x) == B.Box (T y)
+viaBox (T x) (T y) = B.Box (T x) == B.Box (T y)
 
 
 show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ show (T 1 == T 11), show (T 1 == T 2), show (B.Box (T 3) == B.Box (T 13)) ]
+main = Node.printLines [ show (T 1 == T 11), show (T 1 == T 2), show (B.Box (T 3) == B.Box (T 13)) ]

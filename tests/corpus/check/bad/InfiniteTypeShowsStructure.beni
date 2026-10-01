@@ -3,6 +3,4 @@
 -- occurs walk returns the cycle's path, rendered before poisoning), never
 -- the literal `a  =  … a …`.
 
-
-f r =
-    { r | x = r }
+f r = { r | x = r }

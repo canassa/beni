@@ -14,19 +14,30 @@ import Ssr
 view : Bool, String -> Html msg
 view selected color =
     <div>
-        <p class={[ ( "row", True ), ( "gone", False ), ( "a b", True ), ( "row", True ) ]}>constant</p>
+        <p class={[ ( "row", True ), ( "gone", False ), ( "a b", True ), ( "row", True ) ]}>
+            constant
+        </p>
         <p class={[ ( "row", True ), ( "danger", selected ), ( "a  row", selected ) ]}>dynamic</p>
         <p class={classes selected}>variable</p>
         <p class="plain &amp; simple">string</p>
-        <p style={[ ( "color", "red" ), ( "margin", "0" ), ( "color", "blue" ), ( "gap", "1px" ), ( "gap", "" ) ]}>constant</p>
+        <p
+            style={[ ( "color", "red" )
+                   , ( "margin", "0" )
+                   , ( "color", "blue" )
+                   , ( "gap", "1px" )
+                   , ( "gap", "" )
+                   ]
+                  }
+        >
+            constant
+        </p>
         <p style={[ ( "color", color ), ( "--gap", "2px" ) ]}>dynamic</p>
         <p style="color: red">string</p>
     </div>
 
 
 classes : Bool -> List ( String, Bool )
-classes on =
-    [ ( "x", on ), ( "y\"<", True ) ]
+classes on = [ ( "x", on ), ( "y\"<", True ) ]
 
 
 main : Node.Program

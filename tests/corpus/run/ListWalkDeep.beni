@@ -17,15 +17,13 @@ import String
 
 
 size : Int
-size =
-    100000
+size = 100000
 
 
 type alias Walk =
-    { items : List Int
-    , total : Int
-    , steps : Int
-    }
+    items : List Int
+    total : Int
+    steps : Int
 
 
 walk : Walk -> Walk
@@ -49,13 +47,11 @@ walkPairs w =
 
 
 pushed : List Int
-pushed =
-    List.foldl (List.range 1 size) [] (\n acc -> List.push acc n)
+pushed = List.foldl (List.range 1 size) [] (\n acc -> List.push acc n)
 
 
 prepended : List Int
-prepended =
-    List.foldr (List.range 1 size) [] (\n acc -> [ n, ...acc ])
+prepended = List.foldr (List.range 1 size) [] (\n acc -> [ n, ...acc ])
 
 
 viewOf : List Int -> List Int
@@ -71,13 +67,18 @@ viewOf xs =
 show : String, List Int -> String
 show label xs =
     let
-        one =
-            walk { items = xs, total = 0, steps = 0 }
+        one = walk { items = xs, total = 0, steps = 0 }
 
-        two =
-            walkPairs { items = xs, total = 0, steps = 0 }
+        two = walkPairs { items = xs, total = 0, steps = 0 }
     in
-    String.join [ label, String.fromInt one.steps, String.fromInt one.total, String.fromInt two.steps, String.fromInt two.total ] " "
+    String.join
+        [ label
+        , String.fromInt one.steps
+        , String.fromInt one.total
+        , String.fromInt two.steps
+        , String.fromInt two.total
+        ]
+        " "
 
 
 main : Program

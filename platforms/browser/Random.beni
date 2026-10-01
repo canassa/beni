@@ -81,9 +81,7 @@ entropy : () -> Int
 entropy () =
     let
         words =
-            Js.call
-                (Js.global "crypto")
-                "getRandomValues"
+            Js.call (Js.global "crypto") "getRandomValues"
                 [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
     in
     Js.to (Js.at words 0)

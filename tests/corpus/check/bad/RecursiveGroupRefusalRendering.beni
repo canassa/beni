@@ -11,8 +11,7 @@ type K
 
 pub ma (K n) x =
     let
-        _ =
-            (K n).mb 0
+        _ = (K n).mb 0
     in
     x == x
 
@@ -20,10 +19,8 @@ pub ma (K n) x =
 pub mb (K n) y =
     if n > 0 then
         y
-
     else
         let
-            _ =
-                (K 1).ma (\q -> q)
+            _ = (K 1).ma (\q -> q)
         in
         y

@@ -39,12 +39,13 @@ type alias Model =
 
 fakeApi : Api
 fakeApi =
-    { search = \q ->
-        let
-            _ = Debug.log q "request"
-            _ = Time.sleep (Time.millis 100)
-        in
-        [ q ++ "!" ]
+    { search =
+        \q ->
+            let
+                _ = Debug.log q "request"
+                _ = Time.sleep (Time.millis 100)
+            in
+            [ q ++ "!" ]
     }
 
 
@@ -73,7 +74,8 @@ search api q send =
             let
                 _ = Time.sleep (Time.millis 250)
             in
-            Task.uninterruptible (\() -> send (Got q (api.search q))))
+            Task.uninterruptible (\() -> send (Got q (api.search q)))
+        )
 
 
 view : Model -> Html Msg

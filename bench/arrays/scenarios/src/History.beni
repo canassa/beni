@@ -10,13 +10,11 @@ type alias History =
 
 
 pub start : Int -> History
-start n =
-    { current = Array.initialize n (\i -> i), past = [] }
+start n = { current = Array.initialize n (\i -> i), past = [] }
 
 
 pub edit : History, Int, Int -> History
-edit h i v =
-    { current = Array.set h.current i v, past = List.take [ h.current, ...h.past ] 100 }
+edit h i v = { current = Array.set h.current i v, past = List.take [ h.current, ...h.past ] 100 }
 
 
 pub undo : History -> History
@@ -31,8 +29,7 @@ undo h =
 
 --| `k` edits, one cell each, at indices chosen from `seed`.
 pub edits : History, Int, Int -> History
-edits h k seed =
-    editsHelp h 0 k seed
+edits h k seed = editsHelp h 0 k seed
 
 
 editsHelp : History, Int, Int, Int -> History
@@ -40,9 +37,12 @@ editsHelp h j k seed =
     if j >= k then
         h
     else
-        editsHelp (edit h (modBy (seed + j * 7919) (Array.length h.current)) (-1 - seed - j)) (j + 1) k seed
+        editsHelp
+            (edit h (modBy (seed + j * 7919) (Array.length h.current)) (-1 - seed - j))
+            (j + 1)
+            k
+            seed
 
 
 pub sum : History -> Int
-sum h =
-    Array.foldl h.current 0 (\v s -> s + v)
+sum h = Array.foldl h.current 0 (\v s -> s + v)

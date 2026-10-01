@@ -1,1 +1,2 @@
-schema Bad = Int String
+schema Bad =
+    Int String

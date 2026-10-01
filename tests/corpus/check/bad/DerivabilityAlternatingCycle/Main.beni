@@ -13,6 +13,5 @@ import Pb exposing (B)
 f x =
     if List.isEmpty [ x, A (B x) ] then
         ( x, 1 ) == ( x, 1 )
-
     else
         False

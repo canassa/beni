@@ -13,23 +13,19 @@ type alias Item =
 
 
 pub countIn : Array Item, Int -> Int
-countIn items c =
-    Array.foldl items 0 (\it n -> if it.category == c then n + 1 else n)
+countIn items c = Array.foldl items 0 (\it n -> if it.category == c then n + 1 else n)
 
 
 pub total : Array Item -> Float
-total items =
-    Array.foldl items 0.0 (\it s -> s + it.price)
+total items = Array.foldl items 0.0 (\it s -> s + it.price)
 
 
 pub inCategory : Array Item, Int -> Array Item
-inCategory items c =
-    Array.filter items (\it -> it.category == c)
+inCategory items c = Array.filter items (\it -> it.category == c)
 
 
 pub cheapest : Array Item, Int -> Array Item
-cheapest items k =
-    Array.slice (Array.sortWith items (\a b -> compare a.price b.price)) 0 k
+cheapest items k = Array.slice (Array.sortWith items (\a b -> compare a.price b.price)) 0 k
 
 
 find : Array Item, Int, Int, Int -> Maybe Item
@@ -38,8 +34,7 @@ find items id lo hi =
         Nothing
     else
         let
-            mid =
-                (lo + hi) // 2
+            mid = (lo + hi) // 2
         in
         case Array.get items mid of
             Just it ->
@@ -56,8 +51,7 @@ find items id lo hi =
 
 --| `k` lookups by id, each a binary search over the id-sorted items.
 pub lookups : Array Item, Int -> Float
-lookups items k =
-    lookupsHelp items 0 k 0.0
+lookups items k = lookupsHelp items 0 k 0.0
 
 
 lookupsHelp : Array Item, Int, Int, Float -> Float
@@ -66,8 +60,7 @@ lookupsHelp items j k acc =
         acc
     else
         let
-            id =
-                modBy (j * 7919) (Array.length items)
+            id = modBy (j * 7919) (Array.length items)
         in
         case find items id 0 (Array.length items - 1) of
             Just it ->
@@ -79,8 +72,7 @@ lookupsHelp items j k acc =
 
 --| One page of a paginated view: `size` items from `start`, read by index.
 pub page : Array Item, Int, Int -> List String
-page items start size =
-    pageHelp items (start + size - 1) start []
+page items start size = pageHelp items (start + size - 1) start []
 
 
 pageHelp : Array Item, Int, Int, List String -> List String

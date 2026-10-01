@@ -16,13 +16,12 @@ import Set exposing (Set)
 
 --| A single card on the board.
 pub type alias Card =
-    { id : Int
-    , title : String
-    , description : String
-    , labels : List String
-    , column : Column
-    , order : Int
-    }
+    id : Int
+    title : String
+    description : String
+    labels : List String
+    column : Column
+    order : Int
 
 
 --| The three fixed columns.
@@ -41,21 +40,19 @@ type Editing
 
 --| Drag state: which card is being dragged and which column is hovered.
 type alias Drag =
-    { cardId : Int
-    , over : Maybe Column
-    }
+    cardId : Int
+    over : Maybe Column
 
 
 pub type alias Model =
-    { cards : Dict Int Card
-    , nextId : Int
-    , editing : Editing
-    , drag : Maybe Drag
-    , filter : String
-    , collapsed : Set String
-    , newCardTitle : String
-    , errors : List String
-    }
+    cards : Dict Int Card
+    nextId : Int
+    editing : Editing
+    drag : Maybe Drag
+    filter : String
+    collapsed : Set String
+    newCardTitle : String
+    errors : List String
 
 
 pub type Msg
@@ -94,8 +91,7 @@ init =
 
 
 pub columns : List Column
-columns =
-    [ Backlog, InProgress, Done ]
+columns = [ Backlog, InProgress, Done ]
 
 
 pub columnName : Column -> String
@@ -177,8 +173,7 @@ update msg model =
 
         AddCard ->
             let
-                title =
-                    String.trim model.newCardTitle
+                title = String.trim model.newCardTitle
             in
             if String.isEmpty title then
                 addError "A card needs a title." model
@@ -294,8 +289,7 @@ update msg model =
 
 
 addError : String, Model -> Model
-addError message model =
-    { model | errors = [ message, ...List.take model.errors 4 ] }
+addError message model = { model | errors = [ message, ...List.take model.errors 4 ] }
 
 
 updateCard : Int, (Card -> Card), Model -> Model
@@ -319,8 +313,7 @@ toggleLabel label card =
 commitEdit : Model -> Model
 commitEdit model =
     let
-        finished =
-            { model | editing = NotEditing }
+        finished = { model | editing = NotEditing }
     in
     case model.editing of
         NotEditing ->
@@ -465,11 +458,9 @@ viewHeader model =
 countLabel : Model -> String
 countLabel model =
     let
-        total =
-            Dict.size model.cards
+        total = Dict.size model.cards
 
-        done =
-            cardsIn Done model |> List.length
+        done = cardsIn Done model |> List.length
     in
     if total == 0 then
         "no cards"
@@ -498,14 +489,11 @@ viewErrors errors =
 viewColumn : Model, Column -> Html Msg
 viewColumn model column =
     let
-        key =
-            columnKey column
+        key = columnKey column
 
-        collapsed =
-            Set.member model.collapsed key
+        collapsed = Set.member model.collapsed key
 
-        cards =
-            visibleCardsIn column model
+        cards = visibleCardsIn column model
 
         hovered =
             case model.drag of
@@ -692,8 +680,7 @@ encodeCard card =
 
 
 pub cardsDecoder : Decoder (List Card)
-cardsDecoder =
-    Decode.field "cards" (Decode.list cardDecoder)
+cardsDecoder = Decode.field "cards" (Decode.list cardDecoder)
 
 
 cardDecoder : Decoder Card

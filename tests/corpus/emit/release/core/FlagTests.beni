@@ -9,10 +9,8 @@ pub pick : Int, Js.Value -> Js.Value
 pick flags node =
     if Js.bitAnd flags 2 /= 0 && Js.bitAnd flags 4 == 0 then
         Js.get node "firstChild"
-
     else if Js.bitAnd flags 1 /= 0 then
         node
-
     else
         Js.null
 
@@ -21,11 +19,9 @@ pub label : Int -> String
 label flags =
     if Js.bitAnd flags 8 /= 0 then
         "wide"
-
     else
         "narrow"
 
 
 pub wide : Int -> Bool
-wide flags =
-    Js.bitAnd flags 8 /= 0
+wide flags = Js.bitAnd flags 8 /= 0

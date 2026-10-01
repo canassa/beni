@@ -7,14 +7,12 @@ import Schema exposing (Conversion)
 
 
 mk : Int -> Conversion Int Int
-mk n =
-    Debug.todo "checker-only conversion"
+mk n = Debug.todo "checker-only conversion"
 
 
 conv =
     if Loop.Encoded.Step { payload = 1 } == Loop.Encoded.Step { payload = 2 } then
         mk 0
-
     else
         mk 1
 

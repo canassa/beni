@@ -2,6 +2,5 @@
 --! error the Fetch standard does not document — a `RangeError` — which no
 --! program can arrange by itself (`boundary.md` §4.1, §9.8.10 (c)).
 
-
 --| From now on, every `fetch` rejects with a `RangeError`.
 pub foreign impure breakFetch : () -> ()

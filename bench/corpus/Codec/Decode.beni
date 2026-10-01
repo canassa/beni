@@ -249,7 +249,7 @@ keyValuePairs decoder =
 
 
 pairsHelp :
-    Decoder a
+      Decoder a
     , List ( String, Value )
     , List ( String, a )
     -> Result Error (List ( String, a ))
@@ -347,7 +347,7 @@ map4 da db dc dd f =
 
 
 pub map5 :
-    Decoder a
+      Decoder a
     , Decoder b
     , Decoder c
     , Decoder d
@@ -368,7 +368,7 @@ map5 da db dc dd de f =
 
 
 pub map6 :
-    Decoder a
+      Decoder a
     , Decoder b
     , Decoder c
     , Decoder d

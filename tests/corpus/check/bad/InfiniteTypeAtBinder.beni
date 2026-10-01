@@ -11,16 +11,13 @@
 -- node does the same, so `y` is poisoned before `"s"` is unified and there
 -- is no second diagnostic.
 
-
 g : Int -> Int
 g x =
     let
-        _ =
-            (\y -> y y) (\y -> y y)
+        _ = (\y -> y y) (\y -> y y)
     in
     x
 
 
 f : Int -> Int
-f z =
-    (\y -> y y) "s"
+f z = (\y -> y y) "s"

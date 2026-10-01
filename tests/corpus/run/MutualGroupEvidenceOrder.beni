@@ -17,7 +17,6 @@ import Node exposing (Program)
 f n x1 x2 y1 y2 =
     if n == 0 then
         x1 == x2
-
     else
         g (n - 1) y1 y2 x1 x2
 
@@ -25,7 +24,6 @@ f n x1 x2 y1 y2 =
 g n p1 p2 q1 q2 =
     if n == 0 then
         p1 < p2
-
     else
         f (n - 1) q1 q2 p1 p2
 
@@ -34,11 +32,15 @@ show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
 main =
-    Node.printLines [ show (f 0 1 1 "a" "b"), show (f 1 1 1 "a" "b"), show (g 0 "a" "b" 1 1), show (g 1 "a" "b" 1 2) ]
+    Node.printLines
+        [ show (f 0 1 1 "a" "b")
+        , show (f 1 1 1 "a" "b")
+        , show (g 0 "a" "b" 1 1)
+        , show (g 1 "a" "b" 1 2)
+        ]

@@ -8,17 +8,14 @@
 -- (P6) follows the chain to its end and treats it as failed: the module
 -- has its message, so no evidence is written and no `internal` is added.
 apply : (Int -> Int) -> Int
-apply f =
-    f 1
+apply f = f 1
 
 
 h x =
     let
-        p =
-            ( x, 1 )
+        p = ( x, 1 )
     in
     if p == p then
         p == p && apply x == 0
-
     else
         False

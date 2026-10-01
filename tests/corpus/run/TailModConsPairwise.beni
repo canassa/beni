@@ -24,14 +24,14 @@ pairwise xs =
 main : Program
 main =
     let
-        small =
-            pairwise [ 1, 2, 3, 4 ]
+        small = pairwise [ 1, 2, 3, 4 ]
 
-        big =
-            pairwise (List.range 1 100000)
+        big = pairwise (List.range 1 100000)
     in
     Node.printLines
-        [ String.join (List.map small (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b)) ","
+        [ String.join
+            (List.map small (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b))
+            ","
         , String.fromInt (List.length (pairwise [ 1 ]))
         , String.fromInt (List.length big)
         , String.fromInt (List.foldl big 0 (\( a, b ) acc -> acc + b - a))

@@ -4,7 +4,6 @@
 -- not depend on the declaration order (checker-v2.md §10.6). It is never
 -- METHOD NEEDS AN ANNOTATION, in either order.
 
-
 type K
     = K Int
 
@@ -15,8 +14,7 @@ type Box a
 
 pub eq (Box a) (Box b) =
     let
-        _ =
-            \w -> (K 0).show ()
+        _ = \w -> (K 0).show ()
     in
     True
 
@@ -24,9 +22,7 @@ pub eq (Box a) (Box b) =
 pub show (K n) u =
     if Box 1 == Box 2 then
         "a"
-
     else if Box "x" == Box "y" then
         "b"
-
     else
         "c"

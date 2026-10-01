@@ -17,7 +17,7 @@ type Msg
 
 
 type alias Model =
-    { step : Int }
+    step : Int
 
 
 update : Msg, Model -> Model
@@ -34,10 +34,8 @@ classesAt : Int -> List ( String, Bool )
 classesAt step =
     if step == 0 then
         [ ( "row", True ), ( "gone", False ), ( "a  b", True ), ( "row", True ) ]
-
     else if step == 1 then
         [ ( "row", True ), ( "a", False ), ( "b\tc\nd", True ), ( "", True ) ]
-
     else
         []
 
@@ -45,11 +43,14 @@ classesAt step =
 stylesAt : Int -> List ( String, String )
 stylesAt step =
     if step == 0 then
-        [ ( "color", "red" ), ( "margin", "0px" ), ( "color", "blue" ), ( "gap", "1px" ), ( "gap", "" ) ]
-
+        [ ( "color", "red" )
+        , ( "margin", "0px" )
+        , ( "color", "blue" )
+        , ( "gap", "1px" )
+        , ( "gap", "" )
+        ]
     else if step == 1 then
         [ ( "color", "blue" ), ( "padding", "2px" ) ]
-
     else
         [ ( "order", "1" ) ]
 
@@ -72,10 +73,15 @@ view model =
         <button id="back" onClick={Back}>back</button>
         <p id="c" class={classesAt model.step}>classes</p>
         <p id="s" style={stylesAt model.step}>styles</p>
-        <p id="v" class={rest [ ( "skip", True ), ...classesAt model.step ]} style={rest [ ( "skip", "1px" ), ...stylesAt model.step ]}>views</p>
+        <p
+            id="v"
+            class={rest [ ( "skip", True ), ...classesAt model.step ]}
+            style={rest [ ( "skip", "1px" ), ...stylesAt model.step ]}
+        >
+            views
+        </p>
     </main>
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { step = 0 }, update = update, view = view }
+main = Browser.program { init = { step = 0 }, update = update, view = view }

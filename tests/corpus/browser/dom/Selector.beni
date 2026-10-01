@@ -20,11 +20,15 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, selected : Maybe Int, cursor : Int, ids : List Int }
+    rows : List Row
+    selected : Maybe Int
+    cursor : Int
+    ids : List Int
 
 
 update : Msg, Model -> Model
@@ -37,7 +41,13 @@ update msg model =
             { model | selected = Nothing }
 
         PickAndEdit id ->
-            { model | selected = Just id, rows = List.map model.rows (\row -> if row.id == 1 then { row | label = "${row.label}!" } else row) }
+            { model
+                | selected = Just id
+                , rows =
+                    List.map
+                        model.rows
+                        (\row -> if row.id == 1 then { row | label = "${row.label}!" } else row)
+            }
 
         Drop id ->
             { model | rows = List.filter model.rows (\row -> row.id /= id) }
@@ -61,12 +71,25 @@ view model =
         <button id="cursor2" onClick={Cursor 2}>cursor 2</button>
         <ul>
             <For each={model.rows} keyed={.id}>
-                {\row -> <li class={rowClass model row}><a id="pick${String.fromInt row.id}" onClick={Pick row.id}>{row.label}</a></li>}
+                {\row ->
+                    <li class={rowClass model row}>
+                        <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>{row.label}</a>
+                    </li>
+                }
             </For>
         </ul>
         <ol>
             <For each={model.ids}>
-                {\n -> <li class={Debug.log (if n /= model.cursor then "" else "at") "id ${String.fromInt n}"}>{n}</li>}
+                {\n ->
+                    <li
+                        class={Debug.log
+                                  (if n /= model.cursor then "" else "at")
+                                  "id ${String.fromInt n}"
+                              }
+                    >
+                        {n}
+                    </li>
+                }
             </For>
         </ol>
     </main>
@@ -76,7 +99,12 @@ main : Browser.Program
 main =
     Browser.program
         { init =
-            { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" }, { id = 3, label = "three" }, { id = 2, label = "twin" } ]
+            { rows =
+                [ { id = 1, label = "one" }
+                , { id = 2, label = "two" }
+                , { id = 3, label = "three" }
+                , { id = 2, label = "twin" }
+                ]
             , selected = Nothing
             , cursor = 1
             , ids = [ 1, 2, 3 ]

@@ -5,12 +5,10 @@
 -- would never finish. Where each is reported is open (see the
 -- `.codes`).
 
-
 f : Int -> Int
 f z =
     let
-        k y =
-            ( y, y ) == y
+        k y = ( y, y ) == y
     in
     z
 

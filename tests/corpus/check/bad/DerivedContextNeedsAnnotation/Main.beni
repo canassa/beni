@@ -13,6 +13,5 @@ pub type W a
 pub key (T x) u =
     if W (H.Holder (T x)) == W (H.Holder (T x)) then
         0
-
     else
         1

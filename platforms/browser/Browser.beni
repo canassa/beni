@@ -24,7 +24,7 @@ pub foreign type Program
 --| `update` and `view` are `sync`: the page calls them while it handles an
 --| event or renders, so neither may suspend.
 pub program :
-    { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) }
+      { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) }
     -> Program
 program p =
     -- One mount, `{ a, n }`: the record, and no element id. Written in beni
@@ -75,11 +75,11 @@ pub foreign type Host msg
 --| returns the model that is. All four are `sync`: the page calls them
 --| while it handles an event or renders.
 pub hosted :
-    { init : sync (Host msg -> model)
-    , update : sync (Host msg, msg, model -> model)
-    , settle : sync (Host msg, model -> model)
-    , view : sync (model -> Html msg)
-    }
+      { init : sync (Host msg -> model)
+      , update : sync (Host msg, msg, model -> model)
+      , settle : sync (Host msg, model -> model)
+      , view : sync (model -> Html msg)
+      }
     -> Program
 hosted p =
     -- One mount, `{ h, n }`: no element id, and the function the runtime
@@ -88,7 +88,9 @@ hosted p =
     -- the page when a fiber throws (`boundary.md` §9.8.10 (c)).
     Js.to
         (Js.array
-            [ Js.from { h = \root flushing phase stop -> host p root flushing phase stop, n = Js.null } ]
+            [ Js.from
+                { h = \root flushing phase stop -> host p root flushing phase stop, n = Js.null }
+            ]
         )
 
 
@@ -238,11 +240,11 @@ drain i =
 -- renders only when a message was applied since the last — a render `skip`
 -- queued shows again what was shown.
 host :
-    { init : sync (Host msg -> model)
-    , update : sync (Host msg, msg, model -> model)
-    , settle : sync (Host msg, model -> model)
-    , view : sync (model -> Html msg)
-    }
+      { init : sync (Host msg -> model)
+      , update : sync (Host msg, msg, model -> model)
+      , settle : sync (Host msg, model -> model)
+      , view : sync (model -> Html msg)
+      }
     , Js.Value
     , Js.Value
     , Js.Value

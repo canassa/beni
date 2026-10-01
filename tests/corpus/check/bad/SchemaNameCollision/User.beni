@@ -1,2 +1,2 @@
 pub type alias Type =
-    { name : String }
+    name : String

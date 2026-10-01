@@ -2,24 +2,19 @@
 -- parameters (PatAtom), and a one-line definition. A list parameter is not
 -- among them: it can never match every list, so §7 makes it a parse error
 -- wherever a pattern has to match (`parse/bad/RefutableParameterList`).
-zero =
-    0
+zero = 0
 
 
-one x =
-    x
+one x = x
 
 
-many a b c d =
-    a + b + c + d
+many a b c d = a + b + c + d
 
 
-ignore _ _ =
-    ()
+ignore _ _ = ()
 
 
-unpack ( a, b ) { name } (Wrapped first) =
-    ( a, b, name, first )
+unpack ( a, b ) { name } (Wrapped first) = ( a, b, name, first )
 
 
 inline x = x * 2

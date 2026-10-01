@@ -19,8 +19,8 @@
 -- inside a record, inside a tuple, inside a `Maybe`, and two deep. The last
 -- two put the constrained value's own evidence one and two levels down, so
 -- they are the nesting §7.1 says the `parts` ranges do.
-import Node exposing (Program)
 import Maybe exposing (Maybe)
+import Node exposing (Program)
 
 
 pub type Box a
@@ -39,15 +39,13 @@ eq x y =
 
 
 sameBox : Box Int, Box Int -> Bool
-sameBox a b =
-    a == b
+sameBox a b = a == b
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

@@ -34,19 +34,16 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 
 
 left : Result Id Int
-left =
-    Err (Id 1 2)
+left = Err (Id 1 2)
 
 
 right : Result Id Int
-right =
-    Err (Id 1 99)
+right = Err (Id 1 99)
 
 
 main : Program

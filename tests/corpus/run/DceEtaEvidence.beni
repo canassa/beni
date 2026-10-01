@@ -22,8 +22,8 @@
 --
 -- `Pair` compares its FIRST slot only, so a build that silently substituted
 -- a structural walk would print the opposite on every line.
-import Node exposing (Program)
 import Maybe exposing (Maybe)
+import Node exposing (Program)
 
 
 pub type Pair a
@@ -44,7 +44,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

@@ -8,11 +8,9 @@
 -- boundary, where the escape poisons the rigid and settles it silently.
 f x =
     let
-        s =
-            "${x}"
+        s = "${x}"
 
         g : a -> a
-        g y =
-            if True then y else x
+        g y = if True then y else x
     in
     ( s, g 1 )

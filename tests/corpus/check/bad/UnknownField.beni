@@ -1,9 +1,9 @@
 -- check/bad: a record literal with a field the alias never declared — and a
 -- near miss, so the typo hint fires.
 pub type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 pub origin : Point
-origin =
-    { x = 0, y = 0, z = 0 }
+origin = { x = 0, y = 0, z = 0 }

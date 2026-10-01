@@ -7,10 +7,8 @@ type K
 pub ma (K n) x =
     if n > 0 then
         (K n).mb ()
-
     else
         x.size ()
 
 
-pub mb (K n) u =
-    (K 0).ma 3
+pub mb (K n) u = (K 0).ma 3

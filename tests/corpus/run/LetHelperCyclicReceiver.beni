@@ -13,8 +13,7 @@ import Node exposing (Program)
 
 pairEq x y =
     let
-        inner a b =
-            a == b
+        inner a b = a == b
     in
     inner x y && inner [ x ] [ y ]
 
@@ -23,11 +22,9 @@ text : Bool -> String
 text b =
     if b then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ text (pairEq 'a' 'a'), text (pairEq 'a' 'b') ]
+main = Node.printLines [ text (pairEq 'a' 'a'), text (pairEq 'a' 'b') ]

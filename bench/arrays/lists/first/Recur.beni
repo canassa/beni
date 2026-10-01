@@ -8,11 +8,9 @@ import List
 
 -- 1. map and filter by hand -------------------------------------------------
 
-
 --| `map` by hand: walk with `x :: rest`, build with `push`. A tail call.
 pub mapRec : List a, (a -> b) -> List b
-mapRec xs f =
-    mapRecHelp xs f []
+mapRec xs f = mapRecHelp xs f []
 
 
 mapRecHelp : List a, (a -> b), List b -> List b
@@ -26,8 +24,7 @@ mapRecHelp xs f acc =
 
 
 pub filterRec : List a, (a -> Bool) -> List a
-filterRec xs keep =
-    filterRecHelp xs keep []
+filterRec xs keep = filterRecHelp xs keep []
 
 
 filterRecHelp : List a, (a -> Bool), List a -> List a
@@ -39,15 +36,13 @@ filterRecHelp xs keep acc =
         [ x, ...rest ] ->
             if keep x then
                 filterRecHelp rest keep (List.push acc x)
-
             else
                 filterRecHelp rest keep acc
 
 
 --| `map` as a fold that pushes: the accumulator version, with no `reverse`.
 pub mapAcc : List a, (a -> b) -> List b
-mapAcc xs f =
-    List.foldl xs [] (\x acc -> List.push acc (f x))
+mapAcc xs f = List.foldl xs [] (\x acc -> List.push acc (f x))
 
 
 pub filterAcc : List a, (a -> Bool) -> List a
@@ -57,7 +52,6 @@ filterAcc xs keep =
         (\x acc ->
             if keep x then
                 List.push acc x
-
             else
                 acc
         )
@@ -65,11 +59,9 @@ filterAcc xs keep =
 
 -- 2. `x :: rest` recursion -----------------------------------------------------
 
-
 --| The same walk as the cons version: `x :: rest` is a view here.
 pub sum : List Int -> Int
-sum xs =
-    sumHelp xs 0
+sum xs = sumHelp xs 0
 
 
 sumHelp : List Int, Int -> Int
@@ -84,13 +76,11 @@ sumHelp xs acc =
 
 --| The walk an array-first programmer reaches for first.
 pub sumFold : List Int -> Int
-sumFold xs =
-    List.foldl xs 0 (\x acc -> acc + x)
+sumFold xs = List.foldl xs 0 (\x acc -> acc + x)
 
 
 pub takeWhile : List a, (a -> Bool) -> List a
-takeWhile xs keep =
-    takeWhileHelp xs keep []
+takeWhile xs keep = takeWhileHelp xs keep []
 
 
 takeWhileHelp : List a, (a -> Bool), List a -> List a
@@ -102,7 +92,6 @@ takeWhileHelp xs keep acc =
         [ x, ...rest ] ->
             if keep x then
                 takeWhileHelp rest keep (List.push acc x)
-
             else
                 acc
 
@@ -110,8 +99,7 @@ takeWhileHelp xs keep acc =
 --| Neighbouring pairs: `[1, 2, 3]` gives `[(1, 2), (2, 3)]`. The rest is
 --| passed on as it was matched; nothing is put back on its front.
 pub pairwise : List a -> List ( a, a )
-pairwise xs =
-    pairwiseHelp xs []
+pairwise xs = pairwiseHelp xs []
 
 
 pairwiseHelp : List a, List ( a, a ) -> List ( a, a )
@@ -134,16 +122,13 @@ pairwiseHelp xs acc =
 pub mergeSort : List Int -> List Int
 mergeSort xs =
     let
-        n =
-            List.length xs
+        n = List.length xs
     in
     if n <= 1 then
         xs
-
     else
         let
-            half =
-                n // 2
+            half = n // 2
         in
         merge (mergeSort (List.take xs half)) (mergeSort (List.drop xs half)) []
 
@@ -160,6 +145,5 @@ merge xs ys acc =
         ( [ x, ...xt ], [ y, ...yt ] ) ->
             if x <= y then
                 merge xt ys (List.push acc x)
-
             else
                 merge xs yt (List.push acc y)

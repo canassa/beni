@@ -1,23 +1,21 @@
 --! A platform module written in beni over core's `Js` (research 47): a
 --! platform may import it, and every call is the JavaScript it names.
+
 import Js
 
 
 --| A fresh empty object.
 object : () -> Js.Value
-object _ =
-    Js.apply (Js.global "Object") []
+object _ = Js.apply (Js.global "Object") []
 
 
 --| Count to `n` in a property of an object, one tail call per step.
 pub countTo : Int -> Int
 countTo n =
     let
-        o =
-            object ()
+        o = object ()
 
-        _ =
-            Js.set o "n" (Js.from 0)
+        _ = Js.set o "n" (Js.from 0)
     in
     step o n
 
@@ -26,35 +24,29 @@ step : Js.Value, Int -> Int
 step o n =
     let
         k : Int
-        k =
-            Js.to (Js.get o "n")
+        k = Js.to (Js.get o "n")
     in
     if k == n then
         k
-
     else
         let
-            _ =
-                Js.set o "n" (Js.from (k + 1))
+            _ = Js.set o "n" (Js.from (k + 1))
         in
         step o n
 
 
 --| A method call with its arguments spread from a list literal.
 pub joined : String
-joined =
-    Js.to (Js.call (Js.array [ Js.from "a", Js.from "b", Js.from "c" ]) "join" [ Js.from "-" ])
+joined = Js.to (Js.call (Js.array [ Js.from "a", Js.from "b", Js.from "c" ]) "join" [ Js.from "-" ])
 
 
 --| A property whose name is not an identifier is read by index.
 pub dashed : String
 dashed =
     let
-        o =
-            object ()
+        o = object ()
 
-        _ =
-            Js.set o "x-y" (Js.from "dashed")
+        _ = Js.set o "x-y" (Js.from "dashed")
     in
     Js.to (Js.get o "x-y")
 
@@ -63,8 +55,7 @@ dashed =
 pub tests : List Bool
 tests =
     let
-        o =
-            object ()
+        o = object ()
     in
     [ Js.isNull Js.null
     , Js.isNullish Js.undefined
@@ -77,8 +68,7 @@ tests =
 
 --| `6 & 3`.
 pub bits : Int
-bits =
-    Js.bitAnd 6 3
+bits = Js.bitAnd 6 3
 
 
 --| The read written first happens first: `String(o.v, (o.v = 2, null))`
@@ -86,11 +76,9 @@ bits =
 pub readThenWrite : String
 readThenWrite =
     let
-        o =
-            object ()
+        o = object ()
 
-        _ =
-            Js.set o "v" (Js.from 1)
+        _ = Js.set o "v" (Js.from 1)
     in
     Js.to (Js.apply (Js.global "String") [ Js.get o "v", Js.from (Js.set o "v" (Js.from 2)) ])
 
@@ -98,15 +86,13 @@ readThenWrite =
 bump : Js.Value -> Int
 bump o =
     let
-        _ =
-            Js.set o "v" (Js.from 2)
+        _ = Js.set o "v" (Js.from 2)
     in
     0
 
 
 second : Int, Int -> String
-second _ b =
-    String.fromInt b
+second _ b = String.fromInt b
 
 
 --| A property read bound before a call that writes the property keeps what
@@ -115,11 +101,9 @@ second _ b =
 pub readBeforeCall : () -> String
 readBeforeCall () =
     let
-        o =
-            Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
+        o = Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
 
         v : Int
-        v =
-            Js.to (Js.get o "v")
+        v = Js.to (Js.get o "v")
     in
     second (bump o) v

@@ -36,23 +36,20 @@ pub pair : a, a, b, b -> Bool
     where
         a.eq : a, a -> Bool
         , b.eq : b, b -> Bool
-pair x1 x2 y1 y2 =
-    x1 == x2 && y1 == y2
+pair x1 x2 y1 y2 = x1 == x2 && y1 == y2
 
 
 pub less : a, a, b, b -> Bool
     where
         a.compare : a, a -> Order
         , b.compare : b, b -> Order
-less x1 x2 y1 y2 =
-    x1 < x2 && y1 < y2
+less x1 x2 y1 y2 = x1 < x2 && y1 < y2
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

@@ -12,15 +12,13 @@ import Node exposing (Program)
 
 
 limit : Int
-limit =
-    3
+limit = 3
 
 
 pad : Int, String -> String
 pad width s =
     if String.length s >= width then
         s
-
     else
         pad width (s ++ ".")
 
@@ -29,7 +27,6 @@ scale : Int, Int -> Int
 scale factor n =
     if factor == 1 then
         n
-
     else
         n * factor
 
@@ -38,7 +35,6 @@ clamp : Int -> Int
 clamp n =
     if n > limit * 2 then
         limit * 2
-
     else
         n
 
@@ -47,11 +43,17 @@ shout : Bool, String -> String
 shout loud s =
     if loud then
         String.toUpper s
-
     else
         s
 
 
 main : Program
 main =
-    Node.printLines [ pad 6 "ab", pad 6 "abcdefgh", String.fromInt (scale 1 5), String.fromInt (scale 1 7), String.fromInt (clamp 9), shout False "quiet" ]
+    Node.printLines
+        [ pad 6 "ab"
+        , pad 6 "abcdefgh"
+        , String.fromInt (scale 1 5)
+        , String.fromInt (scale 1 7)
+        , String.fromInt (clamp 9)
+        , shout False "quiet"
+        ]

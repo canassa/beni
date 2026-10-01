@@ -15,8 +15,7 @@ import Node
 area : Int, Int -> List Int
 area w h =
     let
-        r =
-            { w = w * 2, h = h + 1 }
+        r = { w = w * 2, h = h + 1 }
     in
     List.map [ 1, 2 ] (\k -> k * r.w + r.h)
 
@@ -24,38 +23,33 @@ area w h =
 turns : Int, List (() -> Int) -> List (() -> Int)
 turns n acc =
     let
-        r =
-            { v = n }
+        r = { v = n }
     in
     if n == 0 then
         acc
-
     else
         turns (n - 1) [ \_ -> r.v * 10, ...acc ]
 
 
 type alias Op =
-    { name : String, apply : Int -> Int }
+    name : String
+    apply : Int -> Int
 
 
 double : Int -> Int
-double n =
-    n * 2
+double n = n * 2
 
 
 square : Int -> Int
-square n =
-    n * n
+square n = n * n
 
 
 useOne : Op -> Int
-useOne op =
-    op.apply 7
+useOne op = op.apply 7
 
 
 useEither : Op -> Int
-useEither op =
-    op.apply 5
+useEither op = op.apply 5
 
 
 main : Node.Program

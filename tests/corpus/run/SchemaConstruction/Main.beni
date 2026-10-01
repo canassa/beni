@@ -26,7 +26,7 @@ unTwo r = ( ( (), r.a ), r.b )
 
 
 pair :
-    Schema Int Int
+      Schema Int Int
     , Schema Int Int
     , String
     , String
@@ -125,8 +125,7 @@ onDiscriminator =
 
 notARecord : Schema T T
 notARecord =
-    Schema.tagged
-        "k"
+    Schema.tagged "k"
         [ Schema.variant
             "A"
             "a"

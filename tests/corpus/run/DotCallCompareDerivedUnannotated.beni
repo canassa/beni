@@ -11,10 +11,8 @@ type Colour
     | Blue
 
 
-before x y =
-    x.compare y == LT
+before x y = x.compare y == LT
 
 
 main : Program
-main =
-    Node.printLines [ if before Red Blue then "T" else "F" ]
+main = Node.printLines [ if before Red Blue then "T" else "F" ]

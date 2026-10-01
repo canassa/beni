@@ -28,18 +28,15 @@ run p s =
 
 
 pub loudParser : Parser String
-loudParser =
-    Parser (\s -> Debug.log (Just s) "parse")
+loudParser = Parser (\s -> Debug.log (Just s) "parse")
 
 
 pub useLoud : String -> Maybe String
-useLoud s =
-    run loudParser s
+useLoud s = run loudParser s
 
 
 pub useQuiet : String -> Maybe String
-useQuiet s =
-    run (Parser (\x -> Just x)) s
+useQuiet s = run (Parser (\x -> Just x)) s
 
 
 pub nth : Stream, Int -> Int
@@ -50,7 +47,6 @@ nth stream n =
                 ( value, rest ) ->
                     if n == 0 then
                         value
-
                     else
                         nth rest (n - 1)
 

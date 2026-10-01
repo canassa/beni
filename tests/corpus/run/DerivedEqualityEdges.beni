@@ -36,25 +36,21 @@ pub type Boxed
 
 sameAs : a, a -> Bool
     where a.eq : a, a -> Bool
-sameAs x y =
-    x == y
+sameAs x y = x == y
 
 
 nan : Float
-nan =
-    0.0 / 0.0
+nan = 0.0 / 0.0
 
 
 negativeZero : Float
-negativeZero =
-    0.0 * -1.0
+negativeZero = 0.0 * -1.0
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

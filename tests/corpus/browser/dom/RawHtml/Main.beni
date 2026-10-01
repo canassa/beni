@@ -17,5 +17,4 @@ view on =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = False, update = \on _ -> on, view = view }
+main = Browser.program { init = False, update = \on _ -> on, view = view }

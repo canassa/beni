@@ -1,9 +1,16 @@
-schema Row = { tree : Tree }
+schema Row =
+    tree : Tree
+
+
 schema Tree tagged "kind" of
     Empty
     Branch
         row : Row
+
+
 pub good : Tree.Type
 good = Tree.Branch { row = { tree = Tree.Empty } }
+
+
 pub encoded : Tree.Encoded
 encoded = Tree.Encoded.Branch { row = { tree = Tree.Encoded.Empty } }

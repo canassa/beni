@@ -23,31 +23,36 @@ type Status
 
 
 type alias Model =
-    { on : Bool, status : Status, items : List String }
+    on : Bool
+    status : Status
+    items : List String
 
 
 update : Msg, Model -> Model
 update msg model =
     case msg of
         Toggle ->
-            { on = not model.on, status = Busy (List.length model.items + 1), items = [ "x", ...model.items ] }
+            { on = not model.on
+            , status = Busy (List.length model.items + 1)
+            , items = [ "x", ...model.items ]
+            }
 
 
 badge : String -> Html msg
-badge label =
-    <b>{label}</b>
+badge label = <b>{label}</b>
 
 
 view : Model -> Html Msg
 view model =
     let
-        greeting =
-            <em>{if model.on then "on" else "off"}</em>
+        greeting = <em>{if model.on then "on" else "off"}</em>
     in
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>
         <p id="classes" class={[ ( "base", True ), ( "on", model.on ) ]}>{greeting}</p>
-        <a id="link" href={if model.on then "https://example.com/" else "javascript:alert(1)"}>link</a>
+        <a id="link" href={if model.on then "https://example.com/" else "javascript:alert(1)"}>
+            link
+        </a>
         {case model.status of
             Idle ->
                 badge "idle"
@@ -59,10 +64,15 @@ view model =
             {Html.text "text"} and <b>markup</b>
         </Card>
         <ol>{List.map model.items (\item -> <li>{item}</li>)}</ol>
-        <ul><For each={model.items} keyed={False} fallback={<li>empty</li>}>{\item -> <li>{item}</li>}</For></ul>
+        <ul>
+            <For each={model.items} keyed={False} fallback={<li>empty</li>}>
+                {\item -> <li>{item}</li>}
+            </For>
+        </ul>
     </main>
 
 
 main : Browser.Program
 main =
-    Browser.program { init = { on = False, status = Idle, items = [] }, update = update, view = view }
+    Browser.program
+        { init = { on = False, status = Idle, items = [] }, update = update, view = view }

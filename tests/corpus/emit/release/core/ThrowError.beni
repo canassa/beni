@@ -11,26 +11,21 @@ pub refuse : Js.Value, Js.Value -> ()
 refuse m root =
     let
         id : String
-        id =
-            Js.to (Js.get m "n")
+        id = Js.to (Js.get m "n")
     in
     if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
         Js.throw
-            (Js.construct
-                (Js.global "Error")
+            (Js.construct (Js.global "Error")
                 [ Js.from
                     (if Js.isNull root then
                         "no element has the id \"${id}\""
-
                      else if Js.isNull (Js.get m "n") then
                         "the body is taken"
-
                      else
                         "the element \"${id}\" is taken"
                     )
                 ]
             )
-
     else
         ()
 
@@ -39,9 +34,7 @@ pub label : Int -> String
 label n =
     if n < 0 then
         "minus"
-
     else if n == 0 then
         "zero"
-
     else
         "plus"

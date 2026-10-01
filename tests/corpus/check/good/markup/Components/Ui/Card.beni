@@ -6,12 +6,13 @@ import Html exposing (Html)
 
 
 type alias Props msg =
-    { title : String, open : Bool, children : Html msg }
+    title : String
+    open : Bool
+    children : Html msg
 
 
 pub defaults : Props msg
-defaults =
-    { title = "Untitled", open = False, children = <></> }
+defaults = { title = "Untitled", open = False, children = <></> }
 
 
 pub view : Props msg -> Html msg
@@ -23,10 +24,8 @@ view props =
 
 
 pub header : { title : String } -> Html msg
-header props =
-    <header>{props.title}</header>
+header props = <header>{props.title}</header>
 
 
 pub counter : { count : Int } -> Html Int
-counter props =
-    <button onClick={props.count + 1}>{props.count}</button>
+counter props = <button onClick={props.count + 1}>{props.count}</button>

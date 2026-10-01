@@ -68,9 +68,9 @@ decl 3: value timeout (annotated)
 interface
 
 imports
+  import Http
   import Json.Decode
   import Json.Encode as E
-  import Http
   prelude Basics
   prelude List
   prelude Maybe

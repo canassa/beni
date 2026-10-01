@@ -21,7 +21,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

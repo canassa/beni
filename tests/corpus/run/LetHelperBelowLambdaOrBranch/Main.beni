@@ -7,8 +7,8 @@
 -- always `True` and `B`'s always `False`, so structural evidence would
 -- print differently: each `same` must receive its own type's `eq`.
 -- Expected `TF`, `TF`, `TF`, `TF`.
-import Node exposing (Program)
 import B exposing (B)
+import Node exposing (Program)
 
 
 type A
@@ -16,13 +16,11 @@ type A
 
 
 pub eq : A, A -> Bool
-eq a b =
-    True
+eq a b = True
 
 
 verdict : Bool, Bool -> String
-verdict x y =
-    (if x then "T" else "F") ++ (if y then "T" else "F")
+verdict x y = (if x then "T" else "F") ++ (if y then "T" else "F")
 
 
 inLambda : List Int -> List String
@@ -30,8 +28,7 @@ inLambda xs =
     List.map xs
         (\x ->
             let
-                same p q =
-                    p == q
+                same p q = p == q
             in
             verdict (same (A x) (A 0)) (same (B.B x) (B.B x))
         )
@@ -42,8 +39,7 @@ inCase n =
     case n of
         0 ->
             let
-                same p q =
-                    p == q
+                same p q = p == q
             in
             verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
 
@@ -55,15 +51,12 @@ inIf : Int -> String
 inIf n =
     if n == 0 then
         let
-            same p q =
-                p == q
+            same p q = p == q
         in
         verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
-
     else
         "y"
 
 
 main : Program
-main =
-    Node.printLines (inLambda [ 1, 2 ] ++ [ inCase 0, inIf 0 ])
+main = Node.printLines (inLambda [ 1, 2 ] ++ [ inCase 0, inIf 0 ])

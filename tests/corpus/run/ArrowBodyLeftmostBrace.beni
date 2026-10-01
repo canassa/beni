@@ -11,34 +11,30 @@ import String
 
 
 type alias P =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 bump : P, Int -> Int
-bump r n =
-    { r | x = n }.x
+bump r n = { r | x = n }.x
 
 
 callField : Int -> Int
-callField n =
-    { f = \k -> k * 2 }.f n
+callField n = { f = \k -> k * 2 }.f n
 
 
 inner : Int -> Int
-inner n =
-    { a = { b = n } }.a.b
+inner n = { a = { b = n } }.a.b
 
 
 firstOf : Int -> Bool
-firstOf n =
-    ( n, 1 ).0 == 3
+firstOf n = ( n, 1 ).0 == 3
 
 
 pick : Bool -> String
 pick b =
     if { t = b }.t then
         "yes"
-
     else
         "no"
 

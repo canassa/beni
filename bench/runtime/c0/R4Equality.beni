@@ -43,49 +43,45 @@ type Shape
 
 
 type alias Rec5 =
-    { a : Int, b : String, c : Bool, d : Float, e : Int }
+    a : Int
+    b : String
+    c : Bool
+    d : Float
+    e : Int
 
 
 recordReps : Int
-recordReps =
-    400
+recordReps = 400
 
 
 -- 40 x 500 rather than `List.range 1 20000`: a range that long recurses
 -- past the JavaScript stack until the tail-call loop lands.
 nestedOuter : Int
-nestedOuter =
-    40
+nestedOuter = 40
 
 
 nestedInner : Int
-nestedInner =
-    500
+nestedInner = 500
 
 
 listReps : Int
-listReps =
-    200
+listReps = 200
 
 
 listLength : Int
-listLength =
-    1000
+listLength = 1000
 
 
 makeRecord : Int -> Rec5
-makeRecord n =
-    { a = n, b = String.fromInt n, c = modBy n 2 == 0, d = toFloat n, e = 500 - n }
+makeRecord n = { a = n, b = String.fromInt n, c = modBy n 2 == 0, d = toFloat n, e = 500 - n }
 
 
 records : List Rec5
-records =
-    List.map (List.range 1 500) makeRecord
+records = List.map (List.range 1 500) makeRecord
 
 
 probe : Rec5
-probe =
-    makeRecord 499
+probe = makeRecord 499
 
 
 makeShape : Int -> Shape
@@ -102,13 +98,11 @@ makeShape n =
 
 
 shapesLeft : List Shape
-shapesLeft =
-    List.map (List.range 1 listLength) makeShape
+shapesLeft = List.map (List.range 1 listLength) makeShape
 
 
 shapesRight : List Shape
-shapesRight =
-    List.map (List.range 1 listLength) makeShape
+shapesRight = List.map (List.range 1 listLength) makeShape
 
 
 -- The same list with only its LAST element changed, and the same list one
@@ -121,25 +115,21 @@ shapesLastDiffers =
         (\i s ->
             if i == listLength - 1 then
                 Dot
-
             else
                 s
         )
 
 
 shapesShorter : List Shape
-shapesShorter =
-    List.take shapesLeft (listLength - 1)
+shapesShorter = List.take shapesLeft (listLength - 1)
 
 
 nestedLeft : Maybe (List Int)
-nestedLeft =
-    Just (List.map (List.range 1 10) (\n -> n * 3))
+nestedLeft = Just (List.map (List.range 1 10) (\n -> n * 3))
 
 
 nestedRight : Maybe (List Int)
-nestedRight =
-    Just (List.map (List.range 1 10) (\n -> n * 3))
+nestedRight = Just (List.map (List.range 1 10) (\n -> n * 3))
 
 
 -- One element of the ten differs.
@@ -150,7 +140,6 @@ nestedOneOff =
             (\n ->
                 if n == 7 then
                     0
-
                 else
                     n * 3
             )
@@ -192,8 +181,7 @@ controlProbes =
 
 
 nothingInt : Maybe Int
-nothingInt =
-    Nothing
+nothingInt = Nothing
 
 
 countTrue : List Bool -> Int
@@ -203,7 +191,6 @@ countTrue bs =
         (\b n ->
             if b then
                 n + 1
-
             else
                 n
         )
@@ -222,7 +209,6 @@ main =
                         (\r n ->
                             if r == probe then
                                 n + 1
-
                             else
                                 n
                         )
@@ -238,7 +224,6 @@ main =
                         (\_ n ->
                             if nestedLeft == nestedRight then
                                 n + 1
-
                             else
                                 n
                         )
@@ -251,7 +236,6 @@ main =
                 (\_ acc ->
                     if shapesLeft == shapesRight then
                         acc + 1
-
                     else
                         acc
                 )

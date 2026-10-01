@@ -7,13 +7,11 @@
 -- The recursive twin, where `f` calls `g` back and the
 -- record reaches `f` before it is generalised, is accepted:
 -- `tests/corpus/run/DeferredReceiverRecursiveTwin.beni`.
-f n x =
-    x.combine n
+f n x = x.combine n
 
 
 g n =
     if n > 5 then
         n
-
     else
         f n { combine = \z -> z + 1 }

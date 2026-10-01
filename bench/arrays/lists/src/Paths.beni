@@ -42,7 +42,6 @@ undoSession n =
 
                     [] ->
                         ( current, history )
-
             else
                 ( i, [ current, ...history ] )
         )

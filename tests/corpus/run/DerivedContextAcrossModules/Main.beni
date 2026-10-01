@@ -22,15 +22,13 @@ type Y
 
 
 fnTag : A.Tag (Int -> Int)
-fnTag =
-    A.Tag 1
+fnTag = A.Tag 1
 
 
 show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 

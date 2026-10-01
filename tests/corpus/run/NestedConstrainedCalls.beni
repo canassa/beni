@@ -47,7 +47,6 @@ keepLarger box candidate =
         Holding held ->
             if held < candidate then
                 Holding candidate
-
             else
                 Holding held
 
@@ -65,17 +64,13 @@ unwrap box fallback =
 main : Program
 main =
     let
-        empty =
-            Empty
+        empty = Empty
 
-        letters =
-            keepLarger (keepLarger (keepLarger empty "b") "q") "f"
+        letters = keepLarger (keepLarger (keepLarger empty "b") "q") "f"
 
-        reversed =
-            keepLarger (keepLarger empty "z") "a"
+        reversed = keepLarger (keepLarger empty "z") "a"
 
-        numbers =
-            keepLarger (keepLarger empty 5) 3
+        numbers = keepLarger (keepLarger empty 5) 3
     in
     Node.printLines
         [ unwrap letters "?"

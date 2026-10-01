@@ -44,11 +44,9 @@ pub same : Kept, Kept -> String
 same a b =
     if a == b then
         "yes"
-
     else
         "no"
 
 
 main : Program
-main =
-    Node.printLines [ same Empty (Holds (Payload 1)), String.fromInt 0 ]
+main = Node.printLines [ same Empty (Holds (Payload 1)), String.fromInt 0 ]

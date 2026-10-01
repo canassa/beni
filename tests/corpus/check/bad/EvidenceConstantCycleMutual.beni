@@ -5,19 +5,15 @@
 -- component, at `evens` — never a clean check whose built program
 -- overflows the stack at load.
 
-
 evens : List a
     where a.eq : a, a -> Bool
-evens =
-    List.filter odds (\x -> x == x)
+evens = List.filter odds (\x -> x == x)
 
 
 odds : List a
     where a.eq : a, a -> Bool
-odds =
-    List.reverse evens
+odds = List.reverse evens
 
 
 count : Int
-count =
-    List.length (evens ++ [ 1 ])
+count = List.length (evens ++ [ 1 ])

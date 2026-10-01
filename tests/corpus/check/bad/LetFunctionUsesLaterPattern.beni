@@ -8,17 +8,13 @@
 -- checker-v2.md §6.2: a pattern is an SCC target for every
 -- variable it binds.
 
-
 f p =
     let
-        c u =
-            a
+        c u = a
 
-        ( a, b ) =
-            p
+        ( a, b ) = p
     in
     ( c 1, String.length a )
 
 
-bad =
-    f ( 5, 0 )
+bad = f ( 5, 0 )

@@ -9,30 +9,23 @@
 import Node exposing (Program)
 
 
-w1 x =
-    ( x, x )
+w1 x = ( x, x )
 
 
-w2 x =
-    w1 (w1 x)
+w2 x = w1 (w1 x)
 
 
-w3 x =
-    w2 (w2 x)
+w3 x = w2 (w2 x)
 
 
-w4 x =
-    w3 (w3 x)
+w4 x = w3 (w3 x)
 
 
-w5 x =
-    w4 (w4 x)
+w5 x = w4 (w4 x)
 
 
-w6 x =
-    w5 (w5 x)
+w6 x = w5 (w5 x)
 
 
 main : Program
-main =
-    Node.printLines [ if w6 1 == w6 2 then "T" else "F" ]
+main = Node.printLines [ if w6 1 == w6 2 then "T" else "F" ]

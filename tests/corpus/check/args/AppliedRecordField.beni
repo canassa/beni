@@ -1,9 +1,8 @@
 -- check/args: a record field that holds a value, applied as though it held
 -- a function.
 pub type alias Settings =
-    { retries : Int }
+    retries : Int
 
 
 pub attempts : Settings -> Int
-attempts s =
-    s.retries 2
+attempts s = s.retries 2

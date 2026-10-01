@@ -6,23 +6,26 @@ import Models
 
 
 pub schema User =
-    { --| The external identifier survives frontend lowering.
-      userId : Models.Id via Conversions.userId as "user-id"
-    , nickname : String optional nullable
-    , aliases : List (Maybe String)
-    , settings : { theme : String }
-    , score : Int via (Conversions.between 0 100)
-    , normalized : String via (\value -> Conversions.trim value)
-    }
+    --| The external identifier survives frontend lowering.
+    userId : Models.Id via Conversions.userId as "user-id"
+    nickname : String optional nullable
+    aliases : List (Maybe String)
+    settings :
+        theme : String
+    score : Int via (Conversions.between 0 100)
+    normalized : String via (\value -> Conversions.trim value)
 
 
 schema Page item =
-    { items : List item }
+    items : List item
 
 
-schema Trimmed = String via Conversions.trim nullable
+schema Trimmed =
+    String via Conversions.trim nullable
 
 
 pub schema Tree tagged "kind" of
-      Leaf { value : Int } as "leaf"
-    | Branch { children : List Tree } as "branch"
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree

@@ -35,7 +35,8 @@ pub type alias RL =
 
 
 pub type alias Both =
-    { r : Rec.Type, t : R.Type }
+    r : Rec.Type
+    t : R.Type
 
 
 pub type alias PageW a =
@@ -47,9 +48,8 @@ pub type alias PrivW =
 
 
 pub mkPriv : Int -> PrivW
-mkPriv n =
-    Priv.P { w = n }
+mkPriv n = Priv.P { w = n }
 
 
-pub type H =
-    H RW
+pub type H
+    = H RW

@@ -10,65 +10,53 @@ type alias Local =
     Models.R.Type
 
 
-type L =
-    L Local
+type L
+    = L Local
 
 
 same : Models.RW, Models.RW -> Bool
-same p q =
-    p == q
+same p q = p == q
 
 
 less : Models.RE, Models.RE -> Bool
-less p q =
-    p < q
+less p q = p < q
 
 
 records : Models.RecW, Models.RecW -> Bool
-records p q =
-    p == q
+records p q = p == q
 
 
 sorted : Models.RL -> Models.RL
-sorted xs =
-    List.sort xs
+sorted xs = List.sort xs
 
 
 fields : Models.Both, Models.Both -> Bool
-fields p q =
-    p == q
+fields p q = p == q
 
 
 pages : Models.PageW Int, Models.PageW Int -> Bool
-pages p q =
-    p == q
+pages p q = p == q
 
 
 wrapped : Models.H, Models.H -> Bool
-wrapped p q =
-    p == q
+wrapped p q = p == q
 
 
 local : L, L -> Bool
-local p q =
-    p < q
+local p q = p < q
 
 
 private : Models.PrivW, Models.PrivW -> Bool
-private p q =
-    p == q
+private p q = p == q
 
 
 usePrivate : Int -> Bool
-usePrivate n =
-    private (Models.mkPriv n) (Models.mkPriv 2)
+usePrivate n = private (Models.mkPriv n) (Models.mkPriv 2)
 
 
 field : Models.RecW -> Int
-field r =
-    r.x
+field r = r.x
 
 
 pub back : Local -> Models.RW
-back r =
-    r
+back r = r

@@ -1,8 +1,8 @@
 -- check/good (project): a `type alias` for a record, exported.
 pub type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 pub origin : Point
-origin =
-    { x = 0, y = 0 }
+origin = { x = 0, y = 0 }

@@ -7,9 +7,9 @@
 -- a record is `no_methods_on_shape` instead (§11's deferred-receiver row,
 -- `check/bad/MethodOnTuple` and the hint in §10.3).
 pub type alias Handler =
-    { name : String, run : Int -> Int }
+    name : String
+    run : Int -> Int
 
 
 pub invoke : Handler -> Int
-invoke handler =
-    handler.run 1
+invoke handler = handler.run 1

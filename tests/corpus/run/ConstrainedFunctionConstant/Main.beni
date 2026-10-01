@@ -8,24 +8,20 @@ maxOf : a, a -> a
 maxOf a b =
     if a < b then
         b
-
     else
         a
 
 
-h =
-    maxOf
+h = maxOf
 
 
-same =
-    (==)
+same = (==)
 
 
 tf : Bool -> String
 tf b =
     if b then
         "t"
-
     else
         "f"
 

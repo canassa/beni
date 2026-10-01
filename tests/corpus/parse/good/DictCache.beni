@@ -6,15 +6,13 @@ import Dict exposing (Dict)
 
 
 type alias Cache =
-    { hits : Int
-    , misses : Int
-    , table : Dict Int Int
-    }
+    hits : Int
+    misses : Int
+    table : Dict Int Int
 
 
 pub empty : Cache
-empty =
-    { hits = 0, misses = 0, table = Dict.empty }
+empty = { hits = 0, misses = 0, table = Dict.empty }
 
 
 pub fib : Int, Cache -> ( Int, Cache )
@@ -28,14 +26,11 @@ fib n cache =
                 ( n, { cache | misses = cache.misses + 1 } )
             else
                 let
-                    ( a, cache1 ) =
-                        fib (n - 1) cache
+                    ( a, cache1 ) = fib (n - 1) cache
 
-                    ( b, cache2 ) =
-                        fib (n - 2) cache1
+                    ( b, cache2 ) = fib (n - 2) cache1
 
-                    result =
-                        a + b
+                    result = a + b
                 in
                 ( result
                 , { cache2
@@ -50,8 +45,7 @@ fibAll ns cache =
     let
         step n ( acc, c ) =
             let
-                ( value, c1 ) =
-                    fib n c
+                ( value, c1 ) = fib n c
             in
             ( [ value, ...acc ], c1 )
     in
@@ -62,8 +56,7 @@ fibAll ns cache =
 pub hitRate : Cache -> Float
 hitRate cache =
     let
-        total =
-            cache.hits + cache.misses
+        total = cache.hits + cache.misses
     in
     if total == 0 then
         0

@@ -10,14 +10,12 @@ import Schema exposing (Conversion)
 
 
 mk : Int -> Conversion Int (Int -> Int)
-mk n =
-    Debug.todo "checker-only conversion"
+mk n = Debug.todo "checker-only conversion"
 
 
 conv =
     if Loop.Step { payload = \x -> x } == Loop.Step { payload = \x -> x + 1 } then
         mk 0
-
     else
         mk 1
 

@@ -21,8 +21,7 @@ import Node exposing (Program)
 
 tallies u =
     let
-        countEach xs =
-            List.map xs (\x -> List.foldl xs 0 (\y n -> if x == y then n + 1 else n))
+        countEach xs = List.map xs (\x -> List.foldl xs 0 (\y n -> if x == y then n + 1 else n))
     in
     ( countEach [ 1, 2, 1 ], countEach [ "b", "a", "b" ] )
 
@@ -31,8 +30,7 @@ nested u =
     let
         pairs xs =
             let
-                both a b =
-                    a == b && xs == xs
+                both a b = a == b && xs == xs
             in
             List.map xs (\x -> both x x)
     in
@@ -75,8 +73,7 @@ mutual u =
 
 values u =
     let
-        twice y =
-            [ y ] == [ y ]
+        twice y = [ y ] == [ y ]
     in
     List.map [ ( 1, 2 ) ] twice ++ List.map [ "a" ] twice
 
@@ -85,27 +82,22 @@ text : Bool -> String
 text b =
     if b then
         "True"
-
     else
         "False"
 
 
 ints : List Int -> String
-ints xs =
-    String.join (List.map xs String.fromInt) ","
+ints xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
     let
-        ( a, b ) =
-            tallies ()
+        ( a, b ) = tallies ()
 
-        ( c, d ) =
-            loops ()
+        ( c, d ) = loops ()
 
-        ( g, h ) =
-            mutual ()
+        ( g, h ) = mutual ()
     in
     Node.printLines
         [ ints a

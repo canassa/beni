@@ -27,15 +27,15 @@ update msg count =
 
 view : Int -> Node Msg
 view count =
-    Page.element "main"
-        []
-        [ Page.element "button" [ Page.attribute "id" "dec", Page.onClick Decrement ] [ Page.text "-" ]
+    Page.element "main" []
+        [ Page.element "button" [ Page.attribute "id" "dec", Page.onClick Decrement ]
+            [ Page.text "-" ]
         , Page.element "output" [] [ Page.text (String.fromInt count) ]
-        , Page.element "button" [ Page.attribute "id" "inc", Page.onClick Increment ] [ Page.text "+" ]
+        , Page.element "button" [ Page.attribute "id" "inc", Page.onClick Increment ]
+            [ Page.text "+" ]
         , Page.element "button" [ Page.attribute "id" "none", Page.onClick Stay ] [ Page.text "?" ]
         ]
 
 
 main : Page.Program
-main =
-    Page.sandbox { init = 0, update = update, view = view }
+main = Page.sandbox { init = 0, update = update, view = view }

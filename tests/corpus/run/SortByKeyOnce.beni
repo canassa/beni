@@ -23,32 +23,28 @@ import String
 
 
 type alias Row =
-    { rank : Int, tag : String }
+    rank : Int
+    tag : String
 
 
 note : String, Int -> Int
-note tag n =
-    Debug.log n tag
+note tag n = Debug.log n tag
 
 
 tags : List Row -> String
-tags rs =
-    String.join (List.map rs (\r -> r.tag)) ""
+tags rs = String.join (List.map rs (\r -> r.tag)) ""
 
 
 ints : List Int -> String
-ints xs =
-    String.join (List.map xs String.fromInt) ","
+ints xs = String.join (List.map xs String.fromInt) ","
 
 
 three : List Int
-three =
-    [ 3, 1, 3 ]
+three = [ 3, 1, 3 ]
 
 
 eight : List Int
-eight =
-    [ 5, 3, 8, 1, 5, 9, 2, 8 ]
+eight = [ 5, 3, 8, 1, 5, 9, 2, 8 ]
 
 
 rows : List Row
@@ -64,26 +60,19 @@ rows =
 main : Program
 main =
     let
-        none =
-            List.sortBy [] (\x -> note "zero" x)
+        none = List.sortBy [] (\x -> note "zero" x)
 
-        one =
-            List.sortBy [ 5 ] (\x -> note "one" x)
+        one = List.sortBy [ 5 ] (\x -> note "one" x)
 
-        few =
-            List.sortBy three (\x -> note "three" x)
+        few = List.sortBy three (\x -> note "three" x)
 
-        many =
-            List.sortBy eight (\x -> note "eight" x)
+        many = List.sortBy eight (\x -> note "eight" x)
 
-        stable =
-            List.sortBy rows (\r -> r.rank)
+        stable = List.sortBy rows (\r -> r.rank)
 
-        spelled =
-            List.sortWith rows (\x y -> compare x.rank y.rank)
+        spelled = List.sortWith rows (\x y -> compare x.rank y.rank)
 
-        huge =
-            List.sortBy (List.range 1 20000) (\n -> 0 - n)
+        huge = List.sortBy (List.range 1 20000) (\n -> 0 - n)
     in
     Node.printLines
         [ ints none

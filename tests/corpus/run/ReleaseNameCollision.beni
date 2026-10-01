@@ -30,29 +30,24 @@
 --     which is the case where the local alphabet has to start past the short
 --     names the globals took. Get the skip set wrong and a local shadows a
 --     function this very declaration calls.
+import List
 import Node exposing (Program)
 import String
-import List
 
 
 -- Source names that are JavaScript reserved words, and one that is `eval`.
 newClass : Int -> Int
 newClass class =
     let
-        new =
-            class + 1
+        new = class + 1
 
-        eval =
-            new * 2
+        eval = new * 2
 
-        arguments =
-            eval - 1
+        arguments = eval - 1
 
-        typeof =
-            arguments + 3
+        typeof = arguments + 3
 
-        var =
-            typeof * 2
+        var = typeof * 2
     in
     var
 
@@ -147,8 +142,7 @@ labelled labelledN acc =
         acc
     else
         let
-            step =
-                acc + labelledN
+            step = acc + labelledN
         in
         labelled (labelledN - 1) step
 
@@ -157,20 +151,15 @@ labelled labelledN acc =
 crowded : List Int -> String
 crowded xs =
     let
-        total =
-            List.foldl xs 0 (\x sum -> sum + x)
+        total = List.foldl xs 0 (\x sum -> sum + x)
 
-        count =
-            List.length xs
+        count = List.length xs
 
-        biggest =
-            List.foldl xs 0 (\x best -> if x > best then x else best)
+        biggest = List.foldl xs 0 (\x best -> if x > best then x else best)
 
-        shown =
-            String.join (List.map xs String.fromInt) ","
+        shown = String.join (List.map xs String.fromInt) ","
 
-        reversed =
-            String.join (List.map (List.reverse xs) String.fromInt) ","
+        reversed = String.join (List.map (List.reverse xs) String.fromInt) ","
     in
     String.concat
         [ String.fromInt total

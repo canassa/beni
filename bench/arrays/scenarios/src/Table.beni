@@ -27,48 +27,39 @@ type Msg
 
 
 row : Int -> Row
-row id =
-    { id = id, label = "row " ++ String.fromInt id }
+row id = { id = id, label = "row " ++ String.fromInt id }
 
 
 pub create : Int -> Model
-create n =
-    { rows = Array.initialize n (\i -> row (i + 1)), selected = 0, nextId = n + 1 }
+create n = { rows = Array.initialize n (\i -> row (i + 1)), selected = 0, nextId = n + 1 }
 
 
 pub updateLabel : Int -> Msg
-updateLabel i =
-    UpdateLabel i
+updateLabel i = UpdateLabel i
 
 
 pub updateEvery10th : Msg
-updateEvery10th =
-    UpdateEvery10th
+updateEvery10th = UpdateEvery10th
 
 
 pub swap : Int, Int -> Msg
-swap i j =
-    Swap i j
+swap i j = Swap i j
 
 
 pub remove : Int -> Msg
-remove id =
-    Remove id
+remove id = Remove id
 
 
 pub append : Int -> Msg
-append n =
-    Append n
+append n = Append n
 
 
 pub addOne : Msg
-addOne =
-    AddOne
+addOne = AddOne
 
 
 pub select : Int -> Msg
-select id =
-    Select id
+select id = Select id
 
 
 pub update : Msg, Model -> Model

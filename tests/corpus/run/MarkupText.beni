@@ -25,8 +25,7 @@ references =
 
 
 spaces : Html msg
-spaces =
-    <p>a  b   c d e&nbsp;f</p>
+spaces = <p>a  b   c d e&nbsp;f</p>
 
 
 lines : Html msg
@@ -39,18 +38,18 @@ lines =
 
 
 between : Html msg
-between =
-    <p><b>a</b> <i>b</i><i>c</i></p>
+between = <p><b>a</b> <i>b</i><i>c</i></p>
 
 
 hole : Html msg
-hole =
-    <p>{"&amp; < >"}</p>
+hole = <p>{"&amp; < >"}</p>
 
 
 rawText : Html msg
 rawText =
-    <div><style>a &gt; b &amp; c{"{ content: \"</style>\" }"}</style><textarea>{"<b>&"} &amp; more</textarea></div>
+    <div>
+        <style>a &gt; b &amp; c{"{ content: \"</style>\" }"}</style><textarea>{"<b>&"} &amp; more</textarea>
+    </div>
 
 
 main : Node.Program

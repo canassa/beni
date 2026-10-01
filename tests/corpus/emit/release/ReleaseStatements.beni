@@ -20,21 +20,18 @@ pub sum : Int, Int -> Int
 sum n acc =
     if n <= 0 then
         acc
-
     else
         sum (n - 1) (acc + n)
 
 
 tick : () -> Int
-tick () =
-    7
+tick () = 7
 
 
 say : Int -> ()
 say n =
     let
-        _ =
-            Debug.log n "say"
+        _ = Debug.log n "say"
     in
     ()
 
@@ -42,13 +39,11 @@ say n =
 pub twice : Bool -> Int
 twice c =
     let
-        _ =
-            say 1
+        _ = say 1
 
         _ =
             if c then
                 say (tick ())
-
             else
                 ()
     in
@@ -58,12 +53,10 @@ twice c =
 pub quiet : Int -> Int
 quiet n =
     let
-        _ =
-            n * 2
+        _ = n * 2
     in
     n
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

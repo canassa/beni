@@ -8,16 +8,12 @@
 -- `Basics.eq x y` directly, are refused at these same positions (the first
 -- argument, and the first argument of the call).
 
-
 same : a, a -> Bool
-same x y =
-    Basics.eq [ x ] [ y ]
+same x y = Basics.eq [ x ] [ y ]
 
 
-same2 x y =
-    Basics.eq ( x, 1 ) ( y, 1 )
+same2 x y = Basics.eq ( x, 1 ) ( y, 1 )
 
 
 use : Bool
-use =
-    same2 (\n -> n + 1) (\n -> n + 1)
+use = same2 (\n -> n + 1) (\n -> n + 1)

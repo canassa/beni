@@ -23,12 +23,12 @@ import String
 
 
 type alias Slot =
-    { section : String, index : Int }
+    section : String
+    index : Int
 
 
 label : Slot -> String
-label slot =
-    slot.section ++ "#" ++ String.fromInt slot.index
+label slot = slot.section ++ "#" ++ String.fromInt slot.index
 
 
 main : Program

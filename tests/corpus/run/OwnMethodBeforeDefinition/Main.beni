@@ -9,7 +9,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 
@@ -24,7 +23,6 @@ main =
         , show (O1.use 3 13)
         , if Row75.compare (Row75.U 1) (Row75.U 2) == LT then
             "custom eq used"
-
           else
             "custom eq ignored"
         ]

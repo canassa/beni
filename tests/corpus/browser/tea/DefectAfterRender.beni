@@ -35,4 +35,5 @@ view count =
 
 main : Tea.Program
 main =
-    Tea.element { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+    Tea.element
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

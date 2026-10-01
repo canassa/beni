@@ -4,33 +4,27 @@
 -- clean `check` followed by a `build` that stops with INTERNAL ERROR "The
 -- hidden arguments of this call do not add up".
 
-
 type Box a
     = Box a
 
 
-pub combine (Box a) z =
-    Box a
+pub combine (Box a) z = Box a
 
 
 g n =
     if n > 100 then
         Box n
-
     else
         let
-            _ =
-                f (n + 1)
+            _ = f (n + 1)
         in
         Box n
 
 
 f n =
     let
-        r =
-            g n
+        r = g n
 
-        q z =
-            r.combine z
+        q z = r.combine z
     in
     ( q 1, q "s" )

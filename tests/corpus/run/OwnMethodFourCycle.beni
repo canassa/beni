@@ -16,7 +16,6 @@ type K
 pub ma (K n) u =
     if n <= 0 then
         0
-
     else
         (K (n - 1)).mb () + 1
 
@@ -24,7 +23,6 @@ pub ma (K n) u =
 pub mb (K n) u =
     if n <= 0 then
         0
-
     else
         (K (n - 1)).mc () + 10
 
@@ -32,7 +30,6 @@ pub mb (K n) u =
 pub mc (K n) u =
     if n <= 0 then
         0
-
     else
         (K (n - 1)).md () + 100
 
@@ -40,11 +37,9 @@ pub mc (K n) u =
 pub md (K n) u =
     if n <= 0 then
         0
-
     else
         (K (n - 1)).ma () + 1000
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt ((K 5).ma ()), String.fromInt ((K 7).mc ()) ]
+main = Node.printLines [ String.fromInt ((K 5).ma ()), String.fromInt ((K 7).mc ()) ]

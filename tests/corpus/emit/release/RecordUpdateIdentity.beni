@@ -5,9 +5,10 @@
 -- depends on. The golden pins the spread; `emit/release/` pins it again
 -- where an optimiser would break it.
 type alias Model =
-    { rows : List Int, selected : Int, title : String }
+    rows : List Int
+    selected : Int
+    title : String
 
 
 pub select : Model, Int -> Model
-select model id =
-    { model | selected = id }
+select model id = { model | selected = id }

@@ -5,7 +5,6 @@
 -- either (`references/elm/compiler/src/Reporting/Error/Pattern.hs`,
 -- lines 139-165; language.md §6.8 for the syntax).
 
-
 type Shape
     = Circle Int
     | Square Int

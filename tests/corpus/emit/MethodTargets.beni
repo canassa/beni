@@ -20,7 +20,8 @@ pub type Metre
 
 
 pub type alias Handler =
-    { name : String, run : Int -> Int }
+    name : String
+    run : Int -> Int
 
 
 pub scale : Metre, Int -> Metre
@@ -31,26 +32,21 @@ scale m factor =
 
 
 pub onOwnType : Metre -> Metre
-onOwnType m =
-    m.scale 3
+onOwnType m = m.scale 3
 
 
 pub onImportedType : List Int -> List Int
-onImportedType xs =
-    xs.map (\x -> x)
+onImportedType xs = xs.map (\x -> x)
 
 
 pub onRecord : Handler -> Int
-onRecord h =
-    h.run 1
+onRecord h = h.run 1
 
 
 pub onVariable : a, Int -> a
     where a.scale : a, Int -> a
-onVariable x factor =
-    x.scale factor
+onVariable x factor = x.scale factor
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

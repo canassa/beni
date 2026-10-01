@@ -5,4 +5,7 @@ import Node exposing (Program)
 
 main : Program
 main =
-    Node.printLines [ Debug.toString (M.inside (M.T 1) (M.T 11)), Debug.toString (M.insideTuple (M.T 1) (M.T 11)) ]
+    Node.printLines
+        [ Debug.toString (M.inside (M.T 1) (M.T 11))
+        , Debug.toString (M.insideTuple (M.T 1) (M.T 11))
+        ]

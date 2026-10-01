@@ -6,7 +6,6 @@ import List
 
 -- 1. map and filter by hand -------------------------------------------------
 
-
 --| The textbook `map`: not a tail call, one stack frame per element.
 pub mapRec : List a, (a -> b) -> List b
 mapRec xs f =
@@ -28,15 +27,13 @@ filterRec xs keep =
         [ x, ...rest ] ->
             if keep x then
                 [ x, ...filterRec rest keep ]
-
             else
                 filterRec rest keep
 
 
 --| `map` the stack-safe way: an accumulator, then one `reverse`.
 pub mapAcc : List a, (a -> b) -> List b
-mapAcc xs f =
-    mapAccHelp xs f []
+mapAcc xs f = mapAccHelp xs f []
 
 
 mapAccHelp : List a, (a -> b), List b -> List b
@@ -50,8 +47,7 @@ mapAccHelp xs f acc =
 
 
 pub filterAcc : List a, (a -> Bool) -> List a
-filterAcc xs keep =
-    filterAccHelp xs keep []
+filterAcc xs keep = filterAccHelp xs keep []
 
 
 filterAccHelp : List a, (a -> Bool), List a -> List a
@@ -63,17 +59,14 @@ filterAccHelp xs keep acc =
         [ x, ...rest ] ->
             if keep x then
                 filterAccHelp rest keep [ x, ...acc ]
-
             else
                 filterAccHelp rest keep acc
 
 
 -- 2. `x :: rest` recursion -----------------------------------------------------
 
-
 pub sum : List Int -> Int
-sum xs =
-    sumHelp xs 0
+sum xs = sumHelp xs 0
 
 
 sumHelp : List Int, Int -> Int
@@ -88,8 +81,7 @@ sumHelp xs acc =
 
 --| The same sum through the library (added for research/38 §17).
 pub sumFold : List Int -> Int
-sumFold xs =
-    List.foldl xs 0 (\x acc -> acc + x)
+sumFold xs = List.foldl xs 0 (\x acc -> acc + x)
 
 
 pub takeWhile : List a, (a -> Bool) -> List a
@@ -101,7 +93,6 @@ takeWhile xs keep =
         [ x, ...rest ] ->
             if keep x then
                 [ x, ...takeWhile rest keep ]
-
             else
                 []
 
@@ -159,6 +150,5 @@ merge xs ys =
         ( [ x, ...xt ], [ y, ...yt ] ) ->
             if x <= y then
                 [ x, ...merge xt [ y, ...yt ] ]
-
             else
                 [ y, ...merge [ x, ...xt ] yt ]

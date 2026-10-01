@@ -20,19 +20,16 @@ pub type alias Pair a =
 
 
 pub names : List Name
-names =
-    [ "x" ]
+names = [ "x" ]
 
 
 pub labels : List Label
-labels =
-    [ "y" ]
+labels = [ "y" ]
 
 
 pub f n =
     if n == 0 then
         names
-
     else
         g (n - 1)
 
@@ -40,7 +37,6 @@ pub f n =
 pub g n =
     if n == 0 then
         labels
-
     else
         f (n - 1)
 
@@ -48,7 +44,6 @@ pub g n =
 pub pick c =
     if c then
         names
-
     else
         labels
 
@@ -56,42 +51,35 @@ pub pick c =
 pub pickSwapped c =
     if c then
         labels
-
     else
         names
 
 
 named : Maybe Name
-named =
-    Just "n"
+named = Just "n"
 
 
 plain : Maybe String
-plain =
-    Nothing
+plain = Nothing
 
 
 pub maybe c =
     if c then
         named
-
     else
         plain
 
 
 twoNames : Pair Name
-twoNames =
-    ( "a", "b" )
+twoNames = ( "a", "b" )
 
 
 twoLabels : Pair Label
-twoLabels =
-    ( "c", "d" )
+twoLabels = ( "c", "d" )
 
 
 pub pair c =
     if c then
         twoNames
-
     else
         twoLabels

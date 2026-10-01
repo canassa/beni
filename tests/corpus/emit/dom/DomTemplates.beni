@@ -16,25 +16,23 @@ import Html exposing (Html)
 
 
 pub static : Html msg
-static =
-    <div class="a b" id="x"><span>hi</span><br /><p>there <b>you &amp; me</b></p></div>
+static = <div class="a b" id="x"><span>hi</span><br /><p>there <b>you &amp; me</b></p></div>
 
 
 pub text : { name : String, count : Int, more : Float } -> Html msg
-text r =
-    <p>Hello {r.name}, you have {r.count} items and {r.more} more.</p>
+text r = <p>Hello {r.name}, you have {r.count} items and {r.more} more.</p>
 
 
 pub only : { id : Int, label : String } -> Html msg
-only row =
-    <tr><td class="col-md-1">{row.id}</td><td class="col-md-4"><a>{row.label}</a></td></tr>
+only row = <tr><td class="col-md-1">{row.id}</td><td class="col-md-4"><a>{row.label}</a></td></tr>
 
 
 pub attributes : { id : String, title : String, off : Bool, tab : Int } -> Html msg
 attributes r =
-    <div id={r.id} title={r.title} hidden={r.off} tabindex={r.tab} aria-label="static"><input disabled type="text" /></div>
+    <div id={r.id} title={r.title} hidden={r.off} tabindex={r.tab} aria-label="static">
+        <input disabled type="text" />
+    </div>
 
 
 pub nothing : Html msg
-nothing =
-    <></>
+nothing = <></>

@@ -12,8 +12,7 @@ import Node
 
 
 pick : List String, Int -> String
-pick words i =
-    List.get words (Debug.log i "index") |> Maybe.withDefault "none"
+pick words i = List.get words (Debug.log i "index") |> Maybe.withDefault "none"
 
 
 firstOr : List Int, Int -> Int
@@ -29,8 +28,7 @@ firstOr xs d =
 shown : List Int -> String
 shown xs =
     let
-        m =
-            List.head xs
+        m = List.head xs
     in
     case m of
         Just x ->
@@ -44,24 +42,20 @@ sign : Int -> Maybe String
 sign n =
     if n > 0 then
         Just "positive"
-
     else if n < 0 then
         Just "negative"
-
     else
         Nothing
 
 
 describe : Int -> String
-describe n =
-    Maybe.withDefault (sign n) "zero"
+describe n = Maybe.withDefault (sign n) "zero"
 
 
 main : Node.Program
 main =
     let
-        words =
-            [ "a", "b", "c" ]
+        words = [ "a", "b", "c" ]
     in
     Node.printLines
         [ pick words 1

@@ -26,7 +26,8 @@ import String
 
 
 type alias Sample =
-    { id : Int32, label : String }
+    id : Int32
+    label : String
 
 
 type Tagged
@@ -35,8 +36,7 @@ type Tagged
 
 
 show : Int32 -> String
-show n =
-    String.fromInt (Int32.toInt n)
+show n = String.fromInt (Int32.toInt n)
 
 
 yesNo : Bool -> String
@@ -48,8 +48,7 @@ yesNo b =
 
 
 samples : List Int32
-samples =
-    [ Int32.fromInt 0xFFFFFFFF, Int32.minValue, Int32.one, Int32.zero, Int32.maxValue ]
+samples = [ Int32.fromInt 0xFFFFFFFF, Int32.minValue, Int32.one, Int32.zero, Int32.maxValue ]
 
 
 counts : Dict Int32 String

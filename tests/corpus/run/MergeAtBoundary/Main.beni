@@ -11,8 +11,8 @@
 -- Oracle twin: this project with `eq : Box a, Box
 -- a -> Bool where a.eq : a, a -> Bool` annotated prints `custom`. As
 -- written, it must not be refused with METHOD NEEDS AN ANNOTATION.
-import Node exposing (Program)
 import K exposing (K)
+import Node exposing (Program)
 
 
 type Box a
@@ -21,11 +21,9 @@ type Box a
 
 f m =
     let
-        _ =
-            m == m
+        _ = m == m
 
-        y =
-            m?
+        y = m?
 
         _ =
             case y of
@@ -37,8 +35,7 @@ f m =
 
 eq (Box a) (Box b) =
     let
-        _ =
-            \u -> f u
+        _ = \u -> f u
     in
     a == b
 
@@ -48,7 +45,6 @@ main =
     Node.printLines
         [ if Box (K 1) == Box (K 11) then
             "custom"
-
           else
             "structural"
         ]

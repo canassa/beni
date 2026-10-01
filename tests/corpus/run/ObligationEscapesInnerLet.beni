@@ -13,34 +13,34 @@ import Node exposing (Program)
 
 
 snd : ( Int, Int ) -> Int
-snd ( _, b ) =
-    b
+snd ( _, b ) = b
 
 
 f p =
     let
-        a =
-            p.0
+        a = p.0
     in
     a + snd p
 
 
-g p =
-    snd p + p.0
+g p = snd p + p.0
 
 
-k p =
-    p.0 + snd p
+k p = p.0 + snd p
 
 
 h n =
     let
-        s =
-            "n = ${n}"
+        s = "n = ${n}"
     in
     s ++ String.fromInt (String.length n)
 
 
 main : Program
 main =
-    Node.printLines [ String.fromInt (f ( 1, 2 )), String.fromInt (g ( 1, 2 )), String.fromInt (k ( 1, 2 )), h "x" ]
+    Node.printLines
+        [ String.fromInt (f ( 1, 2 ))
+        , String.fromInt (g ( 1, 2 ))
+        , String.fromInt (k ( 1, 2 ))
+        , h "x"
+        ]

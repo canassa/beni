@@ -2,7 +2,6 @@
 --! sibling that takes all, some or none of that run (`boundary.md` §4, check
 --! 4, as amended 2026-10-02). Every call passes `null` for each `()`.
 
-
 --| Count calls: the sibling takes no parameter at all.
 pub foreign impure tick : () -> Int
 

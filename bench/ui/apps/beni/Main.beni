@@ -35,23 +35,65 @@ type Msg
 
 adjectives : List String
 adjectives =
-    [ "pretty", "large", "big", "small", "tall", "short", "long", "handsome", "plain", "quaint"
-    , "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd", "unsightly"
-    , "adorable", "important", "inexpensive", "cheap", "expensive", "fancy"
+    [ "pretty"
+    , "large"
+    , "big"
+    , "small"
+    , "tall"
+    , "short"
+    , "long"
+    , "handsome"
+    , "plain"
+    , "quaint"
+    , "clean"
+    , "elegant"
+    , "easy"
+    , "angry"
+    , "crazy"
+    , "helpful"
+    , "mushy"
+    , "odd"
+    , "unsightly"
+    , "adorable"
+    , "important"
+    , "inexpensive"
+    , "cheap"
+    , "expensive"
+    , "fancy"
     ]
 
 
 colours : List String
 colours =
-    [ "red", "yellow", "blue", "green", "pink", "brown", "purple", "brown", "white", "black"
+    [ "red"
+    , "yellow"
+    , "blue"
+    , "green"
+    , "pink"
+    , "brown"
+    , "purple"
+    , "brown"
+    , "white"
+    , "black"
     , "orange"
     ]
 
 
 nouns : List String
 nouns =
-    [ "table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger"
-    , "pizza", "mouse", "keyboard"
+    [ "table"
+    , "chair"
+    , "house"
+    , "bbq"
+    , "desk"
+    , "car"
+    , "pony"
+    , "cookie"
+    , "sandwich"
+    , "burger"
+    , "pizza"
+    , "mouse"
+    , "keyboard"
     ]
 
 
@@ -64,41 +106,33 @@ nouns =
 -- Solid's `Math.random` never meets (`plans/runtime-in-beni.md`, *Append
 -- against Solid 1*).
 next : Int -> Int
-next seed =
-    modBy (seed * 16807) 1073741789
+next seed = modBy (seed * 16807) 1073741789
 
 
 -- A word by its index: `List.get`, not `List.drop` then `List.head`, which
 -- makes a view of the list to read one element.
 pick : List String, Int, Int -> String
-pick words count seed =
-    List.get words (modBy seed count) |> Maybe.withDefault ""
+pick words count seed = List.get words (modBy seed count) |> Maybe.withDefault ""
 
 
 -- `count` rows with ids from `id` up, and the seed after them.
 build : Int, Int, Int -> ( List Row, Int )
-build count id seed =
-    buildFrom (id + count - 1) id seed []
+build count id seed = buildFrom (id + count - 1) id seed []
 
 
 buildFrom : Int, Int, Int, List Row -> ( List Row, Int )
 buildFrom id first seed rows =
     if id < first then
         ( rows, seed )
-
     else
         let
-            a =
-                next seed
+            a = next seed
 
-            c =
-                next a
+            c = next a
 
-            n =
-                next c
+            n = next c
 
-            label =
-                "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
+            label = "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
         in
         buildFrom (id - 1) first n [ { id = id, label = label }, ...rows ]
 
@@ -106,15 +140,13 @@ buildFrom id first seed rows =
 replace : Model, Int -> Model
 replace model count =
     let
-        ( rows, seed ) =
-            build count model.nextId model.seed
+        ( rows, seed ) = build count model.nextId model.seed
     in
     { model | rows = rows, nextId = model.nextId + count, seed = seed }
 
 
 at : List Row, Int -> Maybe Row
-at rows index =
-    List.get rows index
+at rows index = List.get rows index
 
 
 swapRows : List Row -> List Row
@@ -138,13 +170,19 @@ update msg model =
 
         Add ->
             let
-                ( rows, seed ) =
-                    build 1000 model.nextId model.seed
+                ( rows, seed ) = build 1000 model.nextId model.seed
             in
             { model | rows = model.rows ++ rows, nextId = model.nextId + 1000, seed = seed }
 
         Update ->
-            { model | rows = List.indexedMap model.rows (\i row -> if modBy i 10 == 0 then { row | label = row.label ++ " !!!" } else row) }
+            { model
+                | rows =
+                    List.indexedMap
+                        model.rows
+                        (\i row ->
+                            if modBy i 10 == 0 then { row | label = row.label ++ " !!!" } else row
+                        )
+            }
 
         Clear ->
             { model | rows = [] }
@@ -163,7 +201,6 @@ rowClass : Model, Row -> String
 rowClass model row =
     if model.selected == Just row.id then
         "danger"
-
     else
         ""
 
@@ -171,7 +208,9 @@ rowClass model row =
 button : String, String, Msg -> Html Msg
 button id label msg =
     <div class="col-sm-6 smallpad">
-        <button type="button" class="btn btn-primary btn-block" id={id} onClick={msg}>{label}</button>
+        <button type="button" class="btn btn-primary btn-block" id={id} onClick={msg}>
+            {label}
+        </button>
     </div>
 
 
@@ -201,7 +240,9 @@ view model =
                             <td class="col-md-1">{row.id}</td>
                             <td class="col-md-4"><a onClick={Select row.id}>{row.label}</a></td>
                             <td class="col-md-1">
-                                <a onClick={Remove row.id}><span class="glyphicon glyphicon-remove" aria-hidden="true" /></a>
+                                <a onClick={Remove row.id}>
+                                    <span class="glyphicon glyphicon-remove" aria-hidden="true" />
+                                </a>
                             </td>
                             <td class="col-md-6" />
                         </tr>
@@ -215,4 +256,8 @@ view model =
 
 main : Browser.Program
 main =
-    Tea.sandbox { init = { rows = [], selected = Nothing, nextId = 1, seed = 42 }, update = update, view = view }
+    Tea.sandbox
+        { init = { rows = [], selected = Nothing, nextId = 1, seed = 42 }
+        , update = update
+        , view = view
+        }

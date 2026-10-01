@@ -2,4 +2,5 @@ schema Page item =
     item : item
 
 
-schema Bad = Page
+schema Bad =
+    Page

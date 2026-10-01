@@ -18,5 +18,4 @@ firstBigger r limit =
 
 pub bigger : a, a -> Bool
     where a.compare : a, a -> Order
-bigger x y =
-    x.compare y == GT
+bigger x y = x.compare y == GT

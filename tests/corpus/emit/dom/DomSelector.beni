@@ -15,21 +15,24 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, selected : Maybe Int, cursor : Int, ids : List Int, theme : String }
+    rows : List Row
+    selected : Maybe Int
+    cursor : Int
+    ids : List Int
+    theme : String
 
 
 rowClass : Model, Row -> String
-rowClass model row =
-    if model.selected == Just row.id then "danger" else ""
+rowClass model row = if model.selected == Just row.id then "danger" else ""
 
 
 isOn : Maybe Int, Int -> String
-isOn selected id =
-    if selected == Just id then "on" else ""
+isOn selected id = if selected == Just id then "on" else ""
 
 
 pub table : Model -> Html Msg
@@ -39,13 +42,18 @@ table model =
             {\row -> <p class={rowClass model row} onClick={Select row.id}>{row.label}</p>}
         </For>
         <For each={model.rows} keyed={\r -> r.id}>
-            {\{ id, label } -> <p class={if Just id == model.selected then "on" else ""}>{label}</p>}
+            {\{ id, label } -> <p class={if Just id == model.selected then "on" else ""}>{label}</p>
+            }
         </For>
         <For each={model.ids}>
             {\n -> <p class={if n /= model.cursor then "" else "at"}>{n}</p>}
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={model.theme}><b class={if model.cursor == row.id then "at" else ""}>{row.label}</b></p>}
+            {\row ->
+                <p class={model.theme}>
+                    <b class={if model.cursor == row.id then "at" else ""}>{row.label}</b>
+                </p>
+            }
         </For>
         <For each={model.rows} keyed={.id}>
             {\row -> <p class={isOn model.selected row.id}>{row.label}</p>}

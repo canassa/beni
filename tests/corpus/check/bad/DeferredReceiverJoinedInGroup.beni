@@ -10,31 +10,25 @@ type K
     = K Int
 
 
-h a =
-    a.combine 1
+h a = a.combine 1
 
 
 pub mb (K n) y =
     if n > 0 then
         y
-
     else
         let
-            _ =
-                (K 1).ma { combine = \z -> z + 1 }
+            _ = (K 1).ma { combine = \z -> z + 1 }
         in
         y
 
 
 pub ma (K n) x =
     let
-        _ =
-            (K n).mb 0
+        _ = (K n).mb 0
 
-        p =
-            x.combine 1
+        p = x.combine 1
 
-        q =
-            h x
+        q = h x
     in
     p + q

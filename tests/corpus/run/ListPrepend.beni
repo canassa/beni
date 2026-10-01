@@ -55,8 +55,7 @@ pushMany xs from n =
 
 
 both : String, List Int, List Int -> String
-both label input result =
-    label ++ " " ++ summary input ++ " -> " ++ summary result
+both label input result = label ++ " " ++ summary input ++ " -> " ++ summary result
 
 
 forms : List ( String, List Int )
@@ -77,13 +76,13 @@ forms =
 prepends : ( String, List Int ) -> String
 prepends ( label, xs ) =
     let
-        one =
-            [ 100, ...xs ]
+        one = [ 100, ...xs ]
 
-        two =
-            [ 200, 201, ...xs ]
+        two = [ 200, 201, ...xs ]
     in
-    String.join [ both label xs one, summary two, summary [ 300, ...one ], summary [ 400, ...one ] ] " "
+    String.join
+        [ both label xs one, summary two, summary [ 300, ...one ], summary [ 400, ...one ] ]
+        " "
 
 
 appends : ( String, List Int ) -> String
@@ -103,37 +102,28 @@ appends ( label, xs ) =
 main : Program
 main =
     let
-        base =
-            pushMany [] 1 40
+        base = pushMany [] 1 40
 
         -- Two prepends onto one version, both kept: the second may not
         -- write the head slot the first claimed.
-        first =
-            [ 1000, ...base ]
+        first = [ 1000, ...base ]
 
-        second =
-            [ 2000, ...base ]
+        second = [ 2000, ...base ]
 
-        third =
-            [ 3000, ...first ]
+        third = [ 3000, ...first ]
 
         -- 32 prepends fill the head; the 33rd makes it a leaf.
-        full =
-            prependMany base 500 32
+        full = prependMany base 500 32
 
-        fuller =
-            [ 999, ...full ]
+        fuller = [ 999, ...full ]
 
         -- The runtime re-cons: the view's backing array holds 0 just
         -- before it, so `[ 0, ...v ]` is the wider list.
-        v =
-            tail (List.range 0 40)
+        v = tail (List.range 0 40)
 
-        again =
-            [ 0, ...v ]
+        again = [ 0, ...v ]
 
-        other =
-            [ 5, ...v ]
+        other = [ 5, ...v ]
     in
     Node.printLines
         (List.map forms prepends

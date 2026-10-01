@@ -5,15 +5,12 @@
 -- but the wrong code, and never a clean check that runs `String.length`
 -- on a number.
 
-
 snd : ( Int, Int ) -> Int
-snd ( _, b ) =
-    b
+snd ( _, b ) = b
 
 
 f p =
     let
-        a =
-            p.0
+        a = p.0
     in
     ( a + snd p, String.length a )

@@ -9,11 +9,9 @@
 -- the place is the same as the guard's.
 f x =
     let
-        y =
-            x?
+        y = x?
     in
     if True then
         y
-
     else
         x

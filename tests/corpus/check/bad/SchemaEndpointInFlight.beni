@@ -15,14 +15,12 @@ import Schema exposing (Conversion)
 
 
 mk : Int -> Conversion Int Int
-mk n =
-    Debug.todo "checker-only conversion"
+mk n = Debug.todo "checker-only conversion"
 
 
 conv =
     if Page.One { item = 1, extra = 1 } == Page.One { item = 2, extra = 2 } then
         mk 0
-
     else
         mk 1
 

@@ -30,18 +30,15 @@ type Mood
 
 
 loud : String
-loud =
-    Debug.log "!" "loud"
+loud = Debug.log "!" "loud"
 
 
 quiet : String
-quiet =
-    Debug.log "..." "quiet"
+quiet = Debug.log "..." "quiet"
 
 
 wiped : String
-wiped =
-    Debug.log "" "wiped"
+wiped = Debug.log "" "wiped"
 
 
 louder : Request -> Request

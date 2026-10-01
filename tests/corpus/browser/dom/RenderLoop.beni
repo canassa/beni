@@ -17,7 +17,9 @@ type Msg
 
 
 type alias Model =
-    { rows : List String, selected : String, ticks : Int }
+    rows : List String
+    selected : String
+    ticks : Int
 
 
 update : Msg, Model -> Model
@@ -38,7 +40,8 @@ view model =
         <p>{Debug.log model.ticks "view"}</p>
         <ul>
             <For each={model.rows}>
-                {\row -> <li class={[ ( "sel", Debug.log row "row" == model.selected ) ]}>{row}</li>}
+                {\row -> <li class={[ ( "sel", Debug.log row "row" == model.selected ) ]}>{row}</li>
+                }
             </For>
         </ul>
     </main>
@@ -46,4 +49,8 @@ view model =
 
 main : Browser.Program
 main =
-    Browser.program { init = { rows = [ "a", "b", "c" ], selected = "", ticks = 0 }, update = update, view = view }
+    Browser.program
+        { init = { rows = [ "a", "b", "c" ], selected = "", ticks = 0 }
+        , update = update
+        , view = view
+        }

@@ -19,22 +19,17 @@ type K
 
 pub ma (K n) x =
     let
-        twice y =
-            ( y, y )
+        twice y = ( y, y )
 
-        ( flag, _ ) =
-            twice (n > 0)
+        ( flag, _ ) = twice (n > 0)
     in
     if not flag then
         x
-
     else if modBy 2 n == 0 then
         let
-            ( again, _ ) =
-                twice x
+            ( again, _ ) = twice x
         in
         (K (n - 1)).mb again
-
     else
         (K (n - 1)).mc x
 
@@ -42,7 +37,6 @@ pub ma (K n) x =
 pub mb (K n) x =
     if n <= 0 then
         x
-
     else
         (K (n - 1)).ma x
 
@@ -50,11 +44,9 @@ pub mb (K n) x =
 pub mc (K n) x =
     if n <= 0 then
         x
-
     else
         (K (n - 1)).ma x
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt ((K 5).ma 3), (K 4).ma "s", String.fromInt ((K 3).mb 8) ]
+main = Node.printLines [ String.fromInt ((K 5).ma 3), (K 4).ma "s", String.fromInt ((K 3).mb 8) ]

@@ -30,8 +30,7 @@ type alias Model =
 
 
 pulses : (Int -> msg) -> Sub msg
-pulses tag =
-    Sub.listen Pulse (beat 1 _) tag
+pulses tag = Sub.listen Pulse (beat 1 _) tag
 
 
 beat : Int, Cmd.Send Int -> ()
@@ -65,8 +64,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.batch [ pulses (Pulsed model.label _), Sub.map (pulses identity) Child ]
+subscriptions model = Sub.batch [ pulses (Pulsed model.label _), Sub.map (pulses identity) Child ]
 
 
 view : Model -> Html Msg

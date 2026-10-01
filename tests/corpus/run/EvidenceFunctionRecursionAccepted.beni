@@ -12,8 +12,7 @@ import Node exposing (Program)
 
 
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g =
-    \x -> f (g x)
+compose f g = \x -> f (g x)
 
 
 keep : a -> a
@@ -21,7 +20,6 @@ keep : a -> a
 keep x =
     if x == x then
         x
-
     else
         x
 
@@ -32,7 +30,6 @@ countDown =
     \n x ->
         if n == 0 then
             keep x
-
         else
             countDown (n - 1) x
 
@@ -42,7 +39,6 @@ countUp : Int, a -> Int
 countUp n x =
     if keep x == x && n < 3 then
         countUp (n + 1) x
-
     else
         n
 
@@ -53,7 +49,6 @@ ping =
     \n x ->
         if n <= 0 then
             0
-
         else
             1 + pong (n - 1) x
 
@@ -63,15 +58,13 @@ pong : Int, a -> Int
 pong n x =
     if keep x == x then
         ping n x
-
     else
         0
 
 
 twiceKeep : a -> a
     where a.eq : a, a -> Bool
-twiceKeep =
-    compose keep keep
+twiceKeep = compose keep keep
 
 
 main : Program

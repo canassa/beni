@@ -2,23 +2,20 @@
 -- OPEN record, a literal is closed, and an update keeps the base's type — so
 -- `label` works on any record with a `name`, and `bump` returns exactly what
 -- it was given.
-pub label r =
-    r.name
+pub label r = r.name
 
 
-pub bump r =
-    { r | count = r.count + 1 }
+pub bump r = { r | count = r.count + 1 }
 
 
 pub type alias Person =
-    { name : String, age : Int }
+    name : String
+    age : Int
 
 
 pub birthday : Person -> Person
-birthday p =
-    { p | age = p.age + 1 }
+birthday p = { p | age = p.age + 1 }
 
 
 pub describe : Person -> String
-describe p =
-    "${p.name} is ${p.age}"
+describe p = "${p.name} is ${p.age}"

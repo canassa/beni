@@ -11,8 +11,7 @@ import Node exposing (Program)
 pick : Int, Int -> Int
 pick a _ =
     let
-        _ =
-            Debug.log a "body"
+        _ = Debug.log a "body"
     in
     a + a
 
@@ -21,19 +20,16 @@ countDown : Int, Int -> Int
 countDown n acc =
     if n == 0 then
         acc
-
     else
         countDown (n - 1) (acc + Debug.log n "step")
 
 
 total : Int -> Int
-total n =
-    countDown n 0
+total n = countDown n 0
 
 
 first : Int, Int -> Int
-first a unread =
-    a
+first a unread = a
 
 
 run : () -> Int
@@ -42,5 +38,4 @@ run () =
 
 
 main : Program
-main =
-    Node.print (String.fromInt (run ()))
+main = Node.print (String.fromInt (run ()))

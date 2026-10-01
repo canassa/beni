@@ -5,7 +5,8 @@
 -- writes an event handler — and an empty name (15:9) names nothing. Each is
 -- invalid_attribute_name at the quoted name; `"data-ok"` is a name.
 view model =
-    <p  "x onclick"="a"
+    <p
+        "x onclick"="a"
         "a=1 onclick"="b"
         "x\nonclick"="c"
         "\u{0}onclick"="d"
@@ -13,4 +14,5 @@ view model =
         "a/b"="f"
         "a>b"="g"
         ""="h"
-        "data-ok"="i" />
+        "data-ok"="i"
+    />

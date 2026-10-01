@@ -31,11 +31,15 @@ type Msg
 
 
 countries =
-    [ ( "br", "Brazil" ), ( "de", "Germany" ), ( "jp", "Japan" ), ( "pt", "Portugal" ), ( "us", "United States" ) ]
+    [ ( "br", "Brazil" )
+    , ( "de", "Germany" )
+    , ( "jp", "Japan" )
+    , ( "pt", "Portugal" )
+    , ( "us", "United States" )
+    ]
 
 
-errorFor field message =
-    <p class="help is-danger" id="${field}-error" role="alert">{message}</p>
+errorFor field message = <p class="help is-danger" id="${field}-error" role="alert">{message}</p>
 
 
 field label key value msg problem =
@@ -79,10 +83,42 @@ view model =
         <p class="subtitle">
             It takes a minute &mdash; and you can change every answer later.
         </p>
-        {field "Name" "name" model.name Name (if model.submitted && model.name == "" then "Please tell us your name." else "")}
-        {field "Email" "email" model.email Email (if model.submitted && not (String.contains "@" model.email) then "That does not look like an email address." else "")}
-        {field "Password" "password" model.password Password (if model.submitted && String.length model.password < 12 then "Use at least twelve characters." else "")}
-        {field "Confirm password" "confirm" model.confirm Confirm (if model.confirm /= model.password then "The two passwords differ." else "")}
+        {field
+            "Name"
+            "name"
+            model.name
+            Name
+            (if model.submitted && model.name == "" then "Please tell us your name." else "")
+        }
+        {field
+            "Email"
+            "email"
+            model.email
+            Email
+            (if model.submitted && not (String.contains "@" model.email) then
+                "That does not look like an email address."
+             else
+                ""
+            )
+        }
+        {field
+            "Password"
+            "password"
+            model.password
+            Password
+            (if model.submitted && String.length model.password < 12 then
+                "Use at least twelve characters."
+             else
+                ""
+            )
+        }
+        {field
+            "Confirm password"
+            "confirm"
+            model.confirm
+            Confirm
+            (if model.confirm /= model.password then "The two passwords differ." else "")
+        }
         <div class="field">
             <label class="label" for="country">Country</label>
             <div class="control">
@@ -91,7 +127,9 @@ view model =
                         <option value="" disabled selected={model.country == ""}>Pick one</option>
                         <For each={countries} keyed={\( code, _ ) -> code}>
                             {\( code, label ) ->
-                                <option value={code} selected={model.country == code}>{label}</option>
+                                <option value={code} selected={model.country == code}>
+                                    {label}
+                                </option>
                             }
                         </For>
                     </select>
@@ -113,19 +151,20 @@ view model =
         </div>
         <div class="field is-grouped">
             <div class="control">
-                <button class="button is-link" type="submit" disabled={not model.terms}>Sign up</button>
+                <button class="button is-link" type="submit" disabled={not model.terms}>
+                    Sign up
+                </button>
             </div>
             <div class="control">
                 <a class="button is-link is-light" href="/">Cancel</a>
             </div>
         </div>
-        {-- The summary under the form, shown once the form was sent.
+        { -- The summary under the form, shown once the form was sent.
         }
         {if model.submitted then
             <section class="notification is-info">
                 <p>Thanks, {model.name}! We sent a link to <strong>{model.email}</strong>.</p>
             </section>
-
          else
             <></>
         }

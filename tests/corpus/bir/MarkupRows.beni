@@ -6,16 +6,13 @@
 -- of this file's functions it passes them to — `rowClass` reads
 -- `model.selected`, and `label`'s record pattern `{ title }` the path
 -- `title` — and `theme` is read as `theme.dark`.
-rowClass model row =
-    if model.selected == row.id then "danger" else ""
+rowClass model row = if model.selected == row.id then "danger" else ""
 
 
-label { title } =
-    title
+label { title } = title
 
 
-viewRow model row =
-    <tr>{row.name}{model.count}</tr>
+viewRow model row = <tr>{row.name}{model.count}</tr>
 
 
 view model =

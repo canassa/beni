@@ -6,11 +6,9 @@
 -- annotation's `a`, is the wrong place: the report is at the use's own
 -- region, not at a region nothing set.
 
-
 type Unrelated
     = Unrelated Int
 
 
 direct : a, a -> Bool
-direct x y =
-    [ x ] == [ y ]
+direct x y = [ x ] == [ y ]

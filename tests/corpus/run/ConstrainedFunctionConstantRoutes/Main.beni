@@ -28,19 +28,16 @@ maxOf : a, a -> a
 maxOf a b =
     if a < b then
         b
-
     else
         a
 
 
 top : a, a -> a
     where a.compare : a, a -> Order
-top =
-    maxOf
+top = maxOf
 
 
-lam =
-    \x y -> maxOf x y
+lam = \x y -> maxOf x y
 
 
 lamA : a, a -> a
@@ -49,15 +46,13 @@ lamA =
     \x y ->
         if x < y then
             y
-
         else
             x
 
 
 eqA : a, a -> Bool
     where a.eq : a, a -> Bool
-eqA =
-    (==)
+eqA = (==)
 
 
 pick : a, a -> a
@@ -65,7 +60,6 @@ pick : a, a -> a
 pick =
     if 1 < 2 then
         maxOf
-
     else
         M.minOf
 
@@ -74,8 +68,7 @@ viaLet : a, a -> a
     where a.compare : a, a -> Order
 viaLet =
     let
-        f =
-            maxOf
+        f = maxOf
     in
     f
 
@@ -94,8 +87,7 @@ clampAll =
 
 biggest : List a, a -> a
     where a.compare : a, a -> Order
-biggest =
-    \xs acc -> go xs acc
+biggest = \xs acc -> go xs acc
 
 
 go : List a, a -> a
@@ -111,27 +103,23 @@ go xs acc =
 
 none : List a
     where a.eq : a, a -> Bool
-none =
-    []
+none = []
 
 
 apply2 : (a, a -> b), a, a -> b
-apply2 f x y =
-    f x y
+apply2 f x y = f x y
 
 
 tf : Bool -> String
 tf b =
     if b then
         "t"
-
     else
         "f"
 
 
 ints : List Int -> String
-ints xs =
-    String.join (List.map xs String.fromInt) ","
+ints xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program

@@ -5,11 +5,9 @@
 --
 f x =
     let
-        y =
-            x?
+        y = x?
     in
     if True then
         y
-
     else
         x

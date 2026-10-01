@@ -11,24 +11,20 @@ import Node
 
 
 para : Html msg
-para =
-    <p><div>x</div></p>
+para = <p><div>x</div></p>
 
 
 table : Html msg
-table =
-    <table><tr><td>x</td></tr></table>
+table = <table><tr><td>x</td></tr></table>
 
 
 style : Html msg
-style =
-    <style>a { } &lt;/STYLE&gt;</style>
+style = <style>a {} &lt;/STYLE&gt;</style>
 
 
 main : Node.Program
 main =
     let
-        _ =
-            [ para, table, style ]
+        _ = [ para, table, style ]
     in
     Node.print "unreachable"

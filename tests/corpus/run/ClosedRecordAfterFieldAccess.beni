@@ -12,14 +12,12 @@ import Node exposing (Program)
 main : Program
 main =
     let
-        p =
-            { x = "b", y = "a" }
+        p = { x = "b", y = "a" }
     in
     Node.printLines
         [ p.y
         , if p == { x = "b", y = "a" } then
             "eq"
-
           else
             "ne"
         ]

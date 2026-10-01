@@ -1,5 +1,5 @@
-thing =
-    1
+thing = 1
 
 
-schema Wrapper = thing
+schema Wrapper =
+    thing

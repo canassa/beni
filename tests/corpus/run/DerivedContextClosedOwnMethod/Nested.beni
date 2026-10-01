@@ -13,14 +13,11 @@ pub type W
 pub key (T x) u =
     if x == 0 then
         0
-
     else if W (H.Holder (T 0)) == W (H.Holder (T 0)) then
         x
-
     else
         0
 
 
 pub same : Int, Int -> Bool
-same a b =
-    W (H.Holder (T a)) == W (H.Holder (T b))
+same a b = W (H.Holder (T a)) == W (H.Holder (T b))

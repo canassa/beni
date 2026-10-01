@@ -118,10 +118,18 @@ article =
                 <tr><th>Command</th><th>What it does</th><th>Typical time</th></tr>
             </thead>
             <tbody>
-                <tr><td><code>beni check</code></td><td>type-checks the project</td><td>&lt; 100 ms</td></tr>
-                <tr><td><code>beni build</code></td><td>writes JavaScript</td><td>&lt; 200 ms</td></tr>
-                <tr><td><code>beni fmt</code></td><td>formats every file</td><td>&lt; 50 ms</td></tr>
-                <tr><td><code>beni dump</code></td><td>prints a phase&apos;s output</td><td>&lt; 10 ms</td></tr>
+                <tr>
+                    <td><code>beni check</code></td><td>type-checks the project</td><td>&lt; 100 ms</td>
+                </tr>
+                <tr>
+                    <td><code>beni build</code></td><td>writes JavaScript</td><td>&lt; 200 ms</td>
+                </tr>
+                <tr>
+                    <td><code>beni fmt</code></td><td>formats every file</td><td>&lt; 50 ms</td>
+                </tr>
+                <tr>
+                    <td><code>beni dump</code></td><td>prints a phase&apos;s output</td><td>&lt; 10 ms</td>
+                </tr>
             </tbody>
         </table>
     </article>

@@ -16,15 +16,12 @@ pub type Remote
 
 
 pub eq : Remote, Remote -> Bool
-eq (Remote a) (Remote b) =
-    lookup a == lookup b
+eq (Remote a) (Remote b) = lookup a == lookup b
 
 
 pub compare : Remote, Remote -> Order
-compare x y =
-    if eq x y then EQ else LT
+compare x y = if eq x y then EQ else LT
 
 
 same : List Remote, List Remote -> Bool
-same xs ys =
-    xs == ys
+same xs ys = xs == ys

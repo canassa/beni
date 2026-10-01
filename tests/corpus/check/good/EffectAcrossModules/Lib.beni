@@ -10,35 +10,29 @@ pub type alias Handler =
 
 
 pub type alias Api =
-    { log : String -> ()
-    , size : Int
-    }
+    log : String -> ()
+    size : Int
 
 
 pub logged : a -> a
-logged x =
-    Debug.log x "logged"
+logged x = Debug.log x "logged"
 
 
-pub apply f x =
-    f x
+pub apply f x = f x
 
 
 pub runHandler : Handler, Int -> Int
-runHandler h x =
-    h x
+runHandler h x = h x
 
 
 pub callApi : Api -> Int
 callApi api =
     let
-        () =
-            api.log "called"
+        () = api.log "called"
     in
     api.size
 
 
 pub countEq : List a, a -> Int
     where a.eq : a, a -> Bool
-countEq xs x =
-    List.length (List.filter xs (\y -> y == x))
+countEq xs x = List.length (List.filter xs (\y -> y == x))

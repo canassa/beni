@@ -40,7 +40,16 @@ update msg lines =
             ( lines, Cmd.task (\() -> Http.get "data:text/plain,hello") Got )
 
         Break ->
-            ( lines, Cmd.task (\() -> let _ = Fault.breakFetch () in Http.get "data:text/plain,hello") Got )
+            ( lines
+            , Cmd.task
+                (\() ->
+                    let
+                        _ = Fault.breakFetch ()
+                    in
+                    Http.get "data:text/plain,hello"
+                )
+                Got
+            )
 
         Got result ->
             ( lines ++ [ show result ], Cmd.none )
@@ -61,4 +70,5 @@ view lines =
 
 main : Tea.Program
 main =
-    Tea.element { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

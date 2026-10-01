@@ -1,5 +1,6 @@
 --! A vocabulary layered on `browser` that disagrees with the page's parser:
 --! it does not say `br` is void.
+
 import Html exposing (Html)
 
 
@@ -10,9 +11,21 @@ pub markup map : Html a, (a -> b) -> Html b
 
 
 pub element "br"
+
+
 pub element "div"
+
+
 pub element "p"
+
+
 pub element "style"
+
+
 pub element "table"
+
+
 pub element "td"
+
+
 pub element "tr"

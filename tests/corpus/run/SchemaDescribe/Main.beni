@@ -93,8 +93,7 @@ shape2 =
                             Nothing
                 )
     in
-    Schema.tagged
-        "shape"
+    Schema.tagged "shape"
         [ Schema.nullary "Dot" "dot" dot dot
         , Schema.variant
             "Circle"
@@ -127,8 +126,7 @@ inner =
             let
                 i = Schema.injection Inner (\(Inner r) -> Just r)
             in
-            Schema.tagged
-                "t"
+            Schema.tagged "t"
                 [ Schema.variant
                     "Inner"
                     "inner"
@@ -151,8 +149,7 @@ outer =
             let
                 o = Schema.injection Outer (\(Outer r) -> Just r)
             in
-            Schema.tagged
-                "t"
+            Schema.tagged "t"
                 [ Schema.variant
                     "Outer"
                     "outer"

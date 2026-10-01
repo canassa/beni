@@ -36,7 +36,10 @@ main =
                     Task.scope
                         (\s ->
                             let
-                                _ = Task.spawnIn s (\() -> held "slowChild" (\() -> Io.sleep 100000))
+                                _ =
+                                    Task.spawnIn
+                                        s
+                                        (\() -> held "slowChild" (\() -> Io.sleep 100000))
                                 quick = Task.spawnIn s (\() -> held "quickChild" (\() -> 42))
                             in
                             Task.join quick

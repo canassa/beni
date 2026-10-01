@@ -1,7 +1,6 @@
 --! A test platform that makes Web Storage fail, each way no program can
 --! arrange by itself (`boundary.md` §4.1, §9.8.10 (b)).
 
-
 --| From now on, `setItem` throws a `QuotaExceededError`.
 pub foreign impure fillQuota : () -> ()
 

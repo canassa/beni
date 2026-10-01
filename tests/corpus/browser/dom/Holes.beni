@@ -21,7 +21,10 @@ type Msg
 
 
 type alias Model =
-    { shown : Bool, count : Int, on : Bool, got : Int }
+    shown : Bool
+    count : Int
+    on : Bool
+    got : Int
 
 
 update : Msg, Model -> Model
@@ -47,14 +50,12 @@ items : Int -> List (Html msg)
 items n =
     if n <= 0 then
         []
-
     else
         [ ...items (n - 1), <li>item {String.fromInt n} of {String.fromInt n}</li> ]
 
 
 inner : Int -> Html Int
-inner step =
-    <button id="inner" onClick={step}>inner</button>
+inner step = <button id="inner" onClick={step}>inner</button>
 
 
 view : Model -> Html Msg
@@ -70,10 +71,11 @@ view model =
         {Html.map (inner (if model.on then 10 else 1)) Inner}
         <input id="field" disabled={model.on} />
         <a id="link" href={if model.on then "javascript:alert(1)" else "/ok"}>link</a>
-        <my-icon "xlink:href"={if model.on then "#a" else "#b"}></my-icon>
+        <my-icon "xlink:href"={if model.on then "#a" else "#b"} />
     </main>
 
 
 main : Browser.Program
 main =
-    Browser.program { init = { shown = True, count = 2, on = False, got = 0 }, update = update, view = view }
+    Browser.program
+        { init = { shown = True, count = 2, on = False, got = 0 }, update = update, view = view }

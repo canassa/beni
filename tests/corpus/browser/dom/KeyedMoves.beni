@@ -20,7 +20,8 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 swap : List Row -> List Row
@@ -76,7 +77,12 @@ view rows =
 main : Browser.Program
 main =
     Browser.program
-        { init = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 2, label = "c" }, { id = 3, label = "d" } ]
+        { init =
+            [ { id = 1, label = "a" }
+            , { id = 2, label = "b" }
+            , { id = 2, label = "c" }
+            , { id = 3, label = "d" }
+            ]
         , update = update
         , view = view
         }

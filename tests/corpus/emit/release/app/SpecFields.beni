@@ -10,18 +10,20 @@ import Node exposing (Program)
 
 
 type alias Point =
-    { x : Int, y : Int, label : String, rank : Int, tag : String }
+    x : Int
+    y : Int
+    label : String
+    rank : Int
+    tag : String
 
 
 point : Int -> Point
-point n =
-    { x = n, y = n * 2, label = "unused", rank = 7, tag = "shown" }
+point n = { x = n, y = n * 2, label = "unused", rank = 7, tag = "shown" }
 
 
 main : Program
 main =
     let
-        p =
-            point 3
+        p = point 3
     in
     Node.printLines [ String.fromInt (p.x + p.y), p.tag ]

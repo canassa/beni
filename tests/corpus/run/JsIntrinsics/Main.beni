@@ -13,7 +13,6 @@ show : Bool -> String
 show b =
     if b then
         "true"
-
     else
         "false"
 

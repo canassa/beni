@@ -20,7 +20,9 @@ type Msg
 
 
 type alias Model =
-    { picked : Int, draft : String, log : List String }
+    picked : Int
+    draft : String
+    log : List String
 
 
 update : Msg, Model -> Model
@@ -32,7 +34,6 @@ update msg model =
         Typed text ->
             if String.contains text "!" then
                 model
-
             else
                 { model | draft = text }
 
@@ -44,15 +45,16 @@ update msg model =
 
 
 leaf : Html String
-leaf =
-    <button id="leaf" onClick={"leaf"}>leaf</button>
+leaf = <button id="leaf" onClick={"leaf"}>leaf</button>
 
 
 view : Model -> Html Msg
 view model =
     <main>
         <ul>
-            <For each={[ 1, 2, 3 ]}>{\n -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}</For>
+            <For each={[ 1, 2, 3 ]}>
+                {\n -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}
+            </For>
         </ul>
         <p>picked {model.picked}</p>
         <input id="draft" value={model.draft} onInput={Typed} onFocus={Focused} />
@@ -62,5 +64,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { picked = 0, draft = "", log = [] }, update = update, view = view }
+main = Browser.program { init = { picked = 0, draft = "", log = [] }, update = update, view = view }

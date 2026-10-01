@@ -6,11 +6,10 @@ import Json.Decode as Decode exposing (Decoder)
 
 
 type alias User =
-    { id : Int
-    , name : String
-    , email : Maybe String
-    , role : Role
-    }
+    id : Int
+    name : String
+    email : Maybe String
+    role : Role
 
 
 type Role
@@ -49,10 +48,8 @@ role =
 
 
 pub users : Decoder (List User)
-users =
-    Decode.list user
+users = Decode.list user
 
 
 pub decodeUsers : String -> Result Decode.Error (List User)
-decodeUsers json =
-    Decode.decodeString users json
+decodeUsers json = Decode.decodeString users json

@@ -17,18 +17,15 @@ pub maxOf : a, a -> a
 maxOf a b =
     if a < b then
         b
-
     else
         a
 
 
 pub h : a, a -> a
     where a.compare : a, a -> Order
-h =
-    maxOf
+h = maxOf
 
 
 pub blank : List a
     where a.eq : a, a -> Bool
-blank =
-    []
+blank = []

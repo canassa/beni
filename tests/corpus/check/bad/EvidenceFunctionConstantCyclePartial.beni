@@ -4,8 +4,7 @@
 -- `cyclic_value`, as without the `where` — never a clean check whose
 -- program overflows the stack when run.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g =
-    \x -> f (g x)
+compose f g = \x -> f (g x)
 
 
 keep : a -> a
@@ -13,17 +12,14 @@ keep : a -> a
 keep x =
     if x == x then
         x
-
     else
         x
 
 
 applyTo : a, (a -> b) -> b
-applyTo x f =
-    f x
+applyTo x f = f x
 
 
 h : a -> a
     where a.eq : a, a -> Bool
-h =
-    applyTo keep (compose h _)
+h = applyTo keep (compose h _)

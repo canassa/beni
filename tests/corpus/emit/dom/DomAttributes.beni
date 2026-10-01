@@ -13,12 +13,16 @@ import Html exposing (Html)
 
 pub inPlace : { danger : Bool, color : String } -> Html msg
 inPlace r =
-    <tr class={[ ( "row", True ), ( "gone", False ), ( "danger", r.danger ) ]} style={[ ( "font-size", "12px" ), ( "color", r.color ) ]}><td>x</td></tr>
+    <tr
+        class={[ ( "row", True ), ( "gone", False ), ( "danger", r.danger ) ]}
+        style={[ ( "font-size", "12px" ), ( "color", r.color ) ]}
+    >
+        <td>x</td>
+    </tr>
 
 
 pub lists : { classes : List ( String, Bool ), styles : List ( String, String ) } -> Html msg
-lists r =
-    <p class={r.classes} style={r.styles}>x</p>
+lists r = <p class={r.classes} style={r.styles}>x</p>
 
 
 pub fields : { text : String, on : Bool, url : String } -> Html msg

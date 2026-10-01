@@ -61,8 +61,7 @@ ifInList : Bool -> List Int
 ifInList flag =
     [ if flag then 1 else 0
     , let
-        one =
-            1
+        one = 1
       in
       one
     , case flag of

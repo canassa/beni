@@ -8,7 +8,6 @@
 -- `green` and `size 1 1 (Square 7)` prints `7`. The same file without `pub`
 -- reports both errors, at the positions below.
 
-
 type Colour
     = Red
     | Green
@@ -28,7 +27,6 @@ pub pick a b c =
 
             Green ->
                 "green"
-
     else
         "no"
 
@@ -36,6 +34,5 @@ pub pick a b c =
 pub size a b (Circle r) =
     if a == b then
         r
-
     else
         0

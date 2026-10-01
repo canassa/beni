@@ -30,7 +30,12 @@ describe xs =
             "one " ++ String.fromInt x
 
         [ x, y, ...rest ] ->
-            String.fromInt x ++ ", " ++ String.fromInt y ++ " and " ++ String.fromInt (List.length rest) ++ " more"
+            String.fromInt x
+                ++ ", "
+                ++ String.fromInt y
+                ++ " and "
+                ++ String.fromInt (List.length rest)
+                ++ " more"
 
 
 pub exact : List Int -> Int
@@ -87,5 +92,4 @@ second xs =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

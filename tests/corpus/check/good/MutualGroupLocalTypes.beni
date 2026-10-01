@@ -5,10 +5,7 @@
 -- `v : number, a, b -> c` — never `u : number, a -> b` and
 -- `v : number, a, number -> b`, which reading `u`'s locals from `v`'s slice gives.
 
-
-pub u x y =
-    v 1 y x
+pub u x y = v 1 y x
 
 
-pub v p q r =
-    u r q
+pub v p q r = u r q

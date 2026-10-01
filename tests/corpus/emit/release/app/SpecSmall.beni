@@ -17,42 +17,36 @@ import Node
 
 
 identity : a -> a
-identity x =
-    x
+identity x = x
 
 
 twice : Int -> Int
-twice n =
-    String.length (String.repeat "ab" n) * 2
+twice n = String.length (String.repeat "ab" n) * 2
 
 
 addThen : Int, Int -> Int
-addThen a b =
-    a + twice b
+addThen a b = a + twice b
 
 
 thenAdd : Int, Int -> Int
-thenAdd a b =
-    twice a + b
+thenAdd a b = twice a + b
 
 
 half : Int -> Int
-half n =
-    n // 2
+half n = n // 2
 
 
 quarter : Int -> Int
-quarter n =
-    half (half n)
+quarter n = half (half n)
 
 
 type alias Op =
-    { name : String, apply : Int -> Int }
+    name : String
+    apply : Int -> Int
 
 
 apply : Op, Int -> Int
-apply op n =
-    op.apply n
+apply op n = op.apply n
 
 
 main : Node.Program

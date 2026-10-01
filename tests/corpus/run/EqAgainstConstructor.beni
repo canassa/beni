@@ -22,30 +22,25 @@ type Pair
 
 
 selected : Maybe Int
-selected =
-    Just 3
+selected = Just 3
 
 
 none : Maybe Int
-none =
-    Nothing
+none = Nothing
 
 
 shape : Shape
-shape =
-    Rect 1 2
+shape = Rect 1 2
 
 
 parsed : Result String Int
-parsed =
-    Ok 1
+parsed = Ok 1
 
 
 yes : String, Bool -> String
 yes name b =
     if b then
         "${name}: yes"
-
     else
         "${name}: no"
 

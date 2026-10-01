@@ -44,7 +44,6 @@ rose : Int, Rose -> Rose
 rose n acc =
     if n == 0 then
         acc
-
     else
         rose (n - 1) (Rose n [ acc ])
 
@@ -53,7 +52,6 @@ evens : Int, Even -> Even
 evens n acc =
     if n == 0 then
         acc
-
     else
         evens (n - 1) (E n (O ( n, acc )))
 
@@ -62,7 +60,6 @@ spine : Int, Tree (Maybe Int) -> Tree (Maybe Int)
 spine n acc =
     if n == 0 then
         acc
-
     else
         spine (n - 1) (Node acc (Just n) Leaf)
 
@@ -71,7 +68,6 @@ show : String, Bool -> String
 show label b =
     if b then
         label ++ ": True"
-
     else
         label ++ ": False"
 
@@ -79,23 +75,17 @@ show label b =
 main : Program
 main =
     let
-        r =
-            rose 25000 (Rose 0 [])
+        r = rose 25000 (Rose 0 [])
 
-        r1 =
-            rose 25000 (Rose 1 [])
+        r1 = rose 25000 (Rose 1 [])
 
-        ev =
-            evens 25000 EEnd
+        ev = evens 25000 EEnd
 
-        ev1 =
-            evens 25000 (E 0 (O ( 0, EEnd )))
+        ev1 = evens 25000 (E 0 (O ( 0, EEnd )))
 
-        t =
-            spine 25000 Leaf
+        t = spine 25000 Leaf
 
-        t1 =
-            spine 25000 (Node Leaf Nothing Leaf)
+        t1 = spine 25000 (Node Leaf Nothing Leaf)
     in
     Node.printLines
         [ show "rose == rose" (r == rose 25000 (Rose 0 []))

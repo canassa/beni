@@ -10,27 +10,22 @@ type T
     = T Int
 
 
-eq (T x) (T y) =
-    helper x y
+eq (T x) (T y) = helper x y
 
 
-helper x y =
-    modBy x 10 == modBy y 10
+helper x y = modBy x 10 == modBy y 10
 
 
-use a b =
-    T a == T b
+use a b = T a == T b
 
 
 show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ show (use 1 11), show (use 1 2) ]
+main = Node.printLines [ show (use 1 11), show (use 1 2) ]

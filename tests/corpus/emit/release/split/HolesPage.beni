@@ -13,12 +13,12 @@ import Html exposing (Html)
 
 
 type alias Model =
-    { on : Bool, count : Int }
+    on : Bool
+    count : Int
 
 
 flip : Model -> Html Bool
-flip model =
-    <button onClick={not model.on}>flip</button>
+flip model = <button onClick={not model.on}>flip</button>
 
 
 view : Model -> Html Bool
@@ -28,10 +28,14 @@ view model =
         {if model.on then Just (<b>on</b>) else Nothing}
         {Html.map (flip model) identity}
         <input disabled={model.on} />
-        <my-icon "xml:lang"={if model.on then "en" else "pt"}></my-icon>
+        <my-icon "xml:lang"={if model.on then "en" else "pt"} />
     </main>
 
 
 main : Browser.Program
 main =
-    Browser.program { init = { on = False, count = 0 }, update = \on m -> { on = on, count = m.count + 1 }, view = view }
+    Browser.program
+        { init = { on = False, count = 0 }
+        , update = \on m -> { on = on, count = m.count + 1 }
+        , view = view
+        }

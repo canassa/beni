@@ -12,7 +12,8 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 type Item

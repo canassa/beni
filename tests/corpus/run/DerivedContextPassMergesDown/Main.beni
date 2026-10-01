@@ -24,18 +24,15 @@ type W
     = W (H.Holder T)
 
 
-same a b =
-    W (H.Holder (T a)) == W (H.Holder (T b))
+same a b = W (H.Holder (T a)) == W (H.Holder (T b))
 
 
 key (T x) u =
     if x > 100 then
         if same 1 2 then
             0
-
         else
             x
-
     else
         x
 
@@ -44,11 +41,9 @@ show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ show (same 1 1), show (same 1 2), show (same 300 300) ]
+main = Node.printLines [ show (same 1 1), show (same 1 2), show (same 300 300) ]

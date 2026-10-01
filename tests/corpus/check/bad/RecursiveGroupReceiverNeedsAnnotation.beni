@@ -11,22 +11,18 @@
 -- The column is left open (`31:*`): the call `q "s"` or its argument, either
 -- is a fair place for the report.
 
-
 type Box a
     = Box a
 
 
-pub combine (Box a) z =
-    Box a
+pub combine (Box a) z = Box a
 
 
 f n =
     let
-        r =
-            g n
+        r = g n
 
-        q z =
-            r.combine z
+        q z = r.combine z
     in
     ( q 1, q "s" )
 
@@ -34,10 +30,8 @@ f n =
 g n =
     if n > 100 then
         Box n
-
     else
         let
-            _ =
-                f (n + 1)
+            _ = f (n + 1)
         in
         Box n

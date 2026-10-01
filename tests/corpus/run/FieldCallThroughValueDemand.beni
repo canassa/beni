@@ -18,8 +18,7 @@ type K
 
 pub ma (K n) x =
     let
-        _ =
-            mb (K n) 0
+        _ = mb (K n) 0
     in
     x.combine 1
 
@@ -27,15 +26,12 @@ pub ma (K n) x =
 pub mb (K n) y =
     if n > 0 then
         y
-
     else
         let
-            _ =
-                (K 1).ma { combine = \z -> z + 1 }
+            _ = (K 1).ma { combine = \z -> z + 1 }
         in
         y
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt ((K 0).mb 5) ]
+main = Node.printLines [ String.fromInt ((K 0).mb 5) ]

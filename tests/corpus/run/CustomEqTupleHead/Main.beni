@@ -1,7 +1,7 @@
 -- See H.beni.
 import H
-import Node exposing (Program)
 import Nocase
+import Node exposing (Program)
 
 
 type W
@@ -12,7 +12,6 @@ show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 

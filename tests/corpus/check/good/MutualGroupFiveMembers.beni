@@ -24,7 +24,6 @@ pub m1 n pair =
 pub m2 flag k pair =
     if flag then
         m3 pair k
-
     else
         m1 k pair
 
@@ -35,13 +34,11 @@ pub m3 pair k =
             m4 "${k}" b k ( s, b )
 
 
-pub m4 label flag k pair =
-    m5 pair (label ++ pair.0) k flag
+pub m4 label flag k pair = m5 pair (label ++ pair.0) k flag
 
 
 pub m5 pair label k flag =
     if flag then
         label
-
     else
         m1 (k - 1) pair

@@ -11,7 +11,6 @@ pub isEven : Int -> Bool
 isEven n =
     if n == 0 then
         True
-
     else
         isOdd (n - 1)
 
@@ -20,7 +19,6 @@ pub isOdd : Int -> Bool
 isOdd n =
     if n == 0 then
         Debug.log False "odd"
-
     else
         isEven (n - 1)
 
@@ -28,13 +26,11 @@ isOdd n =
 pub ping n =
     if n == 0 then
         0
-
     else
         pong (n - 1)
 
 
-pub pong n =
-    Debug.log (ping n) "pong"
+pub pong n = Debug.log (ping n) "pong"
 
 
 pub walk : List a, (a -> ()) -> ()
@@ -45,8 +41,7 @@ walk xs visit =
 
         [ x, ...rest ] ->
             let
-                () =
-                    visit x
+                () = visit x
             in
             walk rest visit
 
@@ -55,6 +50,5 @@ pub countdown : Int -> Int
 countdown n =
     if n == 0 then
         0
-
     else
         countdown (n - 1)

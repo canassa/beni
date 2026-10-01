@@ -37,12 +37,13 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String, done : Bool }
+    id : Int
+    label : String
+    done : Bool
 
 
 row : Int, String -> Row
-row id label =
-    { id = id, label = label, done = False }
+row id label = { id = id, label = label, done = False }
 
 
 swapAt : List Row, Int, Int -> List Row
@@ -56,13 +57,11 @@ swapAt rows i j =
 
 
 insertAt : List Row, Int, Row -> List Row
-insertAt rows k r =
-    List.take rows k ++ [ r, ...List.drop rows k ]
+insertAt rows k r = List.take rows k ++ [ r, ...List.drop rows k ]
 
 
 lastOf : List Row -> Row
-lastOf rows =
-    List.reverse rows |> List.head |> Maybe.withDefault (row 0 "none")
+lastOf rows = List.reverse rows |> List.head |> Maybe.withDefault (row 0 "none")
 
 
 update : Msg, List Row -> List Row
@@ -84,7 +83,14 @@ update msg rows =
             List.map rows (\r -> if r.id == 7 then row 8 "h" else r)
 
         EditEnd ->
-            List.indexedMap (List.drop rows 1) (\k r -> if k == List.length rows - 2 then { r | label = r.label ++ "!", done = True } else r)
+            List.indexedMap
+                (List.drop rows 1)
+                (\k r ->
+                    if k == List.length rows - 2 then
+                        { r | label = r.label ++ "!", done = True }
+                    else
+                        r
+                )
 
         CopyLast ->
             insertAt rows 1 (lastOf rows)
@@ -98,10 +104,15 @@ update msg rows =
                     rows
 
         Dedupe ->
-            List.foldr rows [] (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else [ r, ...kept ])
+            List.foldr
+                rows
+                []
+                (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else [ r, ...kept ])
 
         Flip ->
-            List.indexedMap (swapAt rows 0 (List.length rows - 1)) (\k r -> if k == List.length rows - 1 then { r | done = not r.done } else r)
+            List.indexedMap
+                (swapAt rows 0 (List.length rows - 1))
+                (\k r -> if k == List.length rows - 1 then { r | done = not r.done } else r)
 
         Twins ->
             insertAt (insertAt rows 1 (row 9 "i")) 3 (row 9 "j")
@@ -111,7 +122,6 @@ viewRow : Row -> Html Msg
 viewRow r =
     if r.done then
         <li class="done">{r.label}</li>
-
     else
         <li><input />{r.label}</li>
 

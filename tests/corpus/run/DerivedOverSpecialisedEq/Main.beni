@@ -7,8 +7,7 @@ type W a
 
 
 same : W Int, W Int -> Bool
-same l r =
-    l == r
+same l r = l == r
 
 
 main : Program

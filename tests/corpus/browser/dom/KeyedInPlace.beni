@@ -22,21 +22,26 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String, done : Bool }
+    id : Int
+    label : String
+    done : Bool
 
 
 type alias Model =
-    { rows : List Row, mark : Int }
+    rows : List Row
+    mark : Int
 
 
 rows : List Row
 rows =
-    [ { id = 1, label = "one", done = False }, { id = 2, label = "two", done = False }, { id = 3, label = "three", done = False } ]
+    [ { id = 1, label = "one", done = False }
+    , { id = 2, label = "two", done = False }
+    , { id = 3, label = "three", done = False }
+    ]
 
 
 edit : List Row, (Row -> Row) -> List Row
-edit list f =
-    List.map list (\row -> if row.id == 2 then f row else row)
+edit list f = List.map list (\row -> if row.id == 2 then f row else row)
 
 
 rotate : List a -> List a
@@ -86,7 +91,12 @@ view model =
         <button id="clear" onClick={Clear}>clear</button>
         <ul id="alone">
             <For each={model.rows} keyed={.id}>
-                {\row -> if row.done then <li class="done">{row.label}</li> else <li><input />{row.label} {model.mark}</li>}
+                {\row ->
+                    if row.done then
+                        <li class="done">{row.label}</li>
+                    else
+                        <li><input />{row.label} {model.mark}</li>
+                }
             </For>
         </ul>
         <ol id="framed">
@@ -98,5 +108,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { rows = rows, mark = 0 }, update = update, view = view }
+main = Browser.program { init = { rows = rows, mark = 0 }, update = update, view = view }

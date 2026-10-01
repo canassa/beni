@@ -7,8 +7,7 @@ type Y a
     = Y (M.W a) a
 
 
-same l r =
-    l == r
+same l r = l == r
 
 
 main : Program

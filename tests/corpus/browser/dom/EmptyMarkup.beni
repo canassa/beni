@@ -16,7 +16,8 @@ type Msg
 
 
 type alias Model =
-    { on : Bool, rows : List Int }
+    on : Bool
+    rows : List Int
 
 
 update : Msg, Model -> Model
@@ -33,15 +34,13 @@ update msg model =
 
 
 nothing : Html msg
-nothing =
-    <></>
+nothing = <></>
 
 
 maybeBold : Bool -> Html msg
 maybeBold on =
     if on then
         <b>on</b>
-
     else
         <></>
 
@@ -59,7 +58,6 @@ view model =
                 {\n ->
                     if modBy n 2 == 1 then
                         <></>
-
                     else
                         <li>{n}</li>
                 }

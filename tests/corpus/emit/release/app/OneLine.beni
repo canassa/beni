@@ -9,23 +9,20 @@ import Node exposing (Program)
 
 
 type alias Shower =
-    { show : Int, Int -> String }
+    show : Int, Int -> String
 
 
 first : Int, Int -> String
-first n _ =
-    String.fromInt n
+first n _ = String.fromInt n
 
 
 render : Shower, Int -> String
-render s k =
-    s.show k (k * 2)
+render s k = s.show k (k * 2)
 
 
 main : Program
 main =
     let
-        s =
-            { show = first }
+        s = { show = first }
     in
     Node.printLines [ render s 1, render s 2 ]

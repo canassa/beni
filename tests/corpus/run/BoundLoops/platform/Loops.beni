@@ -2,47 +2,42 @@
 --! function called once is written where it is called*): under `--release`
 --! each is written where its call is, its exits writing the binding, and the
 --! program sees what the development build's calls give.
+
 import Js
 
 
 -- How many calls `tick` has had.
 calls : Js.Ref Int
-calls =
-    Js.ref 0
+calls = Js.ref 0
 
 
 --| Count a call, and answer `n`.
 pub tick : Int -> Int
 tick n =
     let
-        _ =
-            Js.write calls (Js.read calls + 1)
+        _ = Js.write calls (Js.read calls + 1)
     in
     n
 
 
 --| How many calls `tick` has had.
 pub ticks : () -> Int
-ticks () =
-    Js.read calls
+ticks () = Js.read calls
 
 
 -- A name bound to a loop's variable: the variable is read after the loop.
 -- `[1, 2, null, 4]`.
 sample : () -> Js.Value
-sample () =
-    Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
+sample () = Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
 
 
 --| The first `null` of the sample from `from`, times ten.
 pub firstNull : Int -> Int
 firstNull from =
     let
-        xs =
-            sample ()
+        xs = sample ()
 
-        k =
-            upToNull xs (tick from)
+        k = upToNull xs (tick from)
     in
     k * 10
 
@@ -51,7 +46,6 @@ upToNull : Js.Value, Int -> Int
 upToNull xs k =
     if k < Js.to (Js.get xs "length") && not (Js.isNull (Js.at xs k)) then
         upToNull xs (k + 1)
-
     else
         k
 
@@ -61,11 +55,9 @@ upToNull xs k =
 pub mirror : List Int -> String
 mirror list =
     let
-        xs =
-            Js.from list
+        xs = Js.from list
 
-        ( a, b ) =
-            inward xs 0 (Js.to (Js.get xs "length"))
+        ( a, b ) = inward xs 0 (Js.to (Js.get xs "length"))
     in
     "${String.fromInt a} ${String.fromInt b}"
 
@@ -74,7 +66,6 @@ inward : Js.Value, Int, Int -> ( Int, Int )
 inward xs a b =
     if a < b - 1 && Js.same (Js.at xs a) (Js.at xs (b - 1)) then
         inward xs (a + 1) (b - 1)
-
     else
         ( a, b )
 
@@ -84,11 +75,9 @@ inward xs a b =
 pub squares : Int -> List Int
 squares n =
     let
-        xs =
-            Js.array []
+        xs = Js.array []
 
-        _ =
-            fillSquares xs n 0
+        _ = fillSquares xs n 0
     in
     Js.to xs
 
@@ -97,11 +86,9 @@ fillSquares : Js.Value, Int, Int -> ()
 fillSquares xs n k =
     if k < n then
         let
-            _ =
-                Js.setAt xs k (Js.from (k * k))
+            _ = Js.setAt xs k (Js.from (k * k))
         in
         fillSquares xs n (k + 1)
-
     else
         ()
 
@@ -110,19 +97,16 @@ fillSquares xs n k =
 --| The sum, over rows, of each row's length up to its first `null`: of
 --| the sample, `[1, null]` and `[]`.
 pub widths : Int
-widths =
-    sumRows (Js.array [ sample (), Js.array [ Js.from 1, Js.null ], Js.array [] ]) 0 0
+widths = sumRows (Js.array [ sample (), Js.array [ Js.from 1, Js.null ], Js.array [] ]) 0 0
 
 
 sumRows : Js.Value, Int, Int -> Int
 sumRows rows r total =
     if r < Js.to (Js.get rows "length") then
         let
-            w =
-                upToNull2 (Js.at rows r) 0
+            w = upToNull2 (Js.at rows r) 0
         in
         sumRows rows (r + 1) (total + w)
-
     else
         total
 
@@ -131,7 +115,6 @@ upToNull2 : Js.Value, Int -> Int
 upToNull2 xs k =
     if k < Js.to (Js.get xs "length") && not (Js.isNull (Js.at xs k)) then
         upToNull2 xs (k + 1)
-
     else
         k
 
@@ -149,8 +132,7 @@ pub type Step
 pub run : List Step -> String
 run steps =
     let
-        ( total, at ) =
-            walk steps 0 0
+        ( total, at ) = walk steps 0 0
     in
     "${String.fromInt total} at ${String.fromInt at}"
 

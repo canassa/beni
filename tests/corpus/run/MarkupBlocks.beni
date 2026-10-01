@@ -23,8 +23,7 @@ type Tree
 
 
 item : String -> Html msg
-item label =
-    <li>{label}</li>
+item label = <li>{label}</li>
 
 
 tree : Tree -> Html msg
@@ -38,18 +37,15 @@ tree t =
 
 
 counter : Int -> Html Int
-counter n =
-    <button onClick={n + 1}>{n}</button>
+counter n = <button onClick={n + 1}>{n}</button>
 
 
 view : Bool -> Html Msg
 view on =
     let
-        greeting =
-            <>Hello, <b>world</b></>
+        greeting = <>Hello, <b>world</b></>
 
-        box =
-            { body = item "boxed" }
+        box = { body = item "boxed" }
     in
     <div>
         {greeting}
@@ -63,7 +59,9 @@ view on =
 
 ordered : Html msg
 ordered =
-    <p title={Debug.log "first" "1"}>{Debug.log "second" "2"}<b id={Debug.log "third" "3"}>{Debug.log "fourth" "4"}</b></p>
+    <p title={Debug.log "first" "1"}>
+        {Debug.log "second" "2"}<b id={Debug.log "third" "3"}>{Debug.log "fourth" "4"}</b>
+    </p>
 
 
 main : Node.Program

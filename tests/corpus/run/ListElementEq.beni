@@ -23,8 +23,8 @@
 -- and nesting — `List (List Int)` and `List (Maybe Id)`, where the
 -- evidence handed to the outer `List$eq` is itself a function that takes
 -- evidence and must therefore be the eta-expansion of §8.2.
-import Node exposing (Program)
 import Maybe exposing (Maybe)
+import Node exposing (Program)
 
 
 pub type Id
@@ -45,7 +45,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

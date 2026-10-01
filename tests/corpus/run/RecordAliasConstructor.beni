@@ -14,25 +14,22 @@ import Node exposing (Program)
 
 
 type alias P =
-    { x : Int, y : String }
+    x : Int
+    y : String
 
 
 getY : P -> String
-getY r =
-    r.y
+getY r = r.y
 
 
 main : Program
 main =
     let
-        p =
-            P 1 "a"
+        p = P 1 "a"
 
-        q =
-            { x = 2, y = "b" }
+        q = { x = 2, y = "b" }
 
-        partial =
-            P 2 _
+        partial = P 2 _
     in
     Node.printLines
         [ String.toUpper (P 1 "a").y

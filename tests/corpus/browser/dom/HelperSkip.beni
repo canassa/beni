@@ -16,7 +16,8 @@ type Msg
 
 
 type alias Model =
-    { count : Int, other : Int }
+    count : Int
+    other : Int
 
 
 update : Msg, Model -> Model
@@ -30,8 +31,7 @@ update msg model =
 
 
 tag : String -> Html Msg
-tag name =
-    <i>{Debug.log name "tag"}</i>
+tag name = <i>{Debug.log name "tag"}</i>
 
 
 card : String, Int -> Html Msg
@@ -43,16 +43,14 @@ card title n =
 
 
 boxed : { n : Int } -> Html Msg
-boxed r =
-    <p>{Debug.log r.n "boxed"}</p>
+boxed r = <p>{Debug.log r.n "boxed"}</p>
 
 
 view : Model -> Html Msg
 view model =
     let
         local : Int -> Html Msg
-        local n =
-            <em>{Debug.log n "local"}</em>
+        local n = <em>{Debug.log n "local"}</em>
     in
     <main>
         <button id="count" onClick={Count}>count</button>
@@ -65,5 +63,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { count = 0, other = 0 }, update = update, view = view }
+main = Browser.program { init = { count = 0, other = 0 }, update = update, view = view }

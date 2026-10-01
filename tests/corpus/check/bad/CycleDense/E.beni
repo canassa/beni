@@ -1,7 +1,6 @@
-import B exposing (b)
 import A exposing (a)
+import B exposing (b)
 
 
 pub e : Int
-e =
-    a + b
+e = a + b

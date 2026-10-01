@@ -1,6 +1,6 @@
 -- One module exports independent record, generic and tagged schema namespaces.
-import Schema exposing (Conversion)
 import Conversions
+import Schema exposing (Conversion)
 
 
 pub schema User =
@@ -13,53 +13,53 @@ pub schema Audit =
     at : Int nullable
 
 
-pub schema OnlyNull = Null
+pub schema OnlyNull =
+    Null
 
 
 pub nullProgram : OnlyNull.Type
-nullProgram =
-    Schema.Null
+nullProgram = Schema.Null
 
 
 pub nullEncoded : OnlyNull.Encoded
-nullEncoded =
-    Schema.Null
+nullEncoded = Schema.Null
 
 
-pub schema Finite = FiniteFloat
+pub schema Finite =
+    FiniteFloat
 
 
 pub finiteProgram : Finite.Type
-finiteProgram =
-    1.0
+finiteProgram = 1.0
 
 
 pub finiteEncoded : Finite.Encoded
-finiteEncoded =
-    1.0
+finiteEncoded = 1.0
 
 
-pub schema TextId = String
+pub schema TextId =
+    String
 
 
 declaredConversion : Conversion Int String
-declaredConversion =
-    Debug.todo "checker-only conversion"
+declaredConversion = Debug.todo "checker-only conversion"
 
 
 -- The schema sees this unannotated alias before its declaration. Its inferred
 -- Conversion type must join the same dependency/SCC work as ordinary values.
-pub schema NumberId = Int via inferredConversion
+pub schema NumberId =
+    Int via inferredConversion
 
 
-inferredConversion =
-    declaredConversion
+inferredConversion = declaredConversion
 
 
-pub schema AnnotatedId = Int via declaredConversion
+pub schema AnnotatedId =
+    Int via declaredConversion
 
 
-pub schema ImportedId = Int via Conversions.convert
+pub schema ImportedId =
+    Int via Conversions.convert
 
 
 pub schema Page item =
@@ -89,8 +89,7 @@ addCount message extra =
 -- second nominal endpoint in the same module and still has derived evidence;
 -- spelling `left < right` for Tree would hit the module-rule name clash.
 pub compare : Message.Type, Message.Type -> Order
-compare left right =
-    EQ
+compare left right = EQ
 
 
 pub schema Tree tagged "kind" of
@@ -102,8 +101,7 @@ pub schema Tree tagged "kind" of
 
 -- This use precedes the private schema declaration and must resolve through
 -- the source-order schema skeleton rather than a checker pass boundary.
-privateDescription =
-    Private.schema ()
+privateDescription = Private.schema ()
 
 
 schema Private =
@@ -115,8 +113,7 @@ schema Hidden item =
 
 
 pub hiddenInt : Hidden.Type Int
-hiddenInt =
-    { value = 1 }
+hiddenInt = { value = 1 }
 
 
 schema PrivateEvent tagged "kind" of
@@ -127,13 +124,11 @@ schema PrivateEvent tagged "kind" of
 
 
 privateEvent : PrivateEvent.Type
-privateEvent =
-    PrivateEvent.Open { id = 1 }
+privateEvent = PrivateEvent.Open { id = 1 }
 
 
 privateEncodedEvent : PrivateEvent.Encoded
-privateEncodedEvent =
-    PrivateEvent.Encoded.Closed { reason = "done" }
+privateEncodedEvent = PrivateEvent.Encoded.Closed { reason = "done" }
 
 
 privateCase : PrivateEvent.Type -> Bool

@@ -2,6 +2,5 @@
 --! fiber, so a page can be written that would suspend where the page cannot
 --! wait.
 
-
 --| The text stored under a key, from a store that may be slow to answer.
 pub foreign suspends load : String -> String

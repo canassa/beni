@@ -9,17 +9,16 @@ import String
 
 
 type alias Person =
-    { name : String, age : Int }
+    name : String
+    age : Int
 
 
 people : List Person
-people =
-    [ { name = "Bob", age = 7 }, { name = "Ada", age = 36 }, { name = "Cy", age = 21 } ]
+people = [ { name = "Bob", age = 7 }, { name = "Ada", age = 36 }, { name = "Cy", age = 21 } ]
 
 
 names : List Person -> String
-names ps =
-    String.join (List.map ps (\p -> p.name)) ","
+names ps = String.join (List.map ps (\p -> p.name)) ","
 
 
 main : Program

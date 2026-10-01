@@ -9,8 +9,7 @@ import Node exposing (Program)
 note : Int -> ()
 note n =
     let
-        _ =
-            Debug.log n "note"
+        _ = Debug.log n "note"
     in
     ()
 
@@ -18,14 +17,11 @@ note n =
 main : Program
 main =
     let
-        u =
-            note 1
+        u = note 1
 
-        m =
-            Just (note 2)
+        m = Just (note 2)
 
-        xs =
-            [ note 3, u ]
+        xs = [ note 3, u ]
     in
     Node.printLines
         [ Debug.toString u

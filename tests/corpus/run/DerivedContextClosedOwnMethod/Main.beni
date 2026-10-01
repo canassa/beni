@@ -15,24 +15,22 @@ pub type W
 pub key (T x) u =
     if u == () then
         x
-
     else
         0
 
 
-same a b =
-    W (H.Holder (T a)) == W (H.Holder (T b))
+same a b = W (H.Holder (T a)) == W (H.Holder (T b))
 
 
 show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
 main =
-    Node.printLines [ show (same 1 1), show (same 1 2), show (Nested.same 1 1), show (Nested.same 1 2) ]
+    Node.printLines
+        [ show (same 1 1), show (same 1 2), show (Nested.same 1 1), show (Nested.same 1 2) ]

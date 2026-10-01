@@ -19,15 +19,13 @@ type Pair a
 
 pub eq : Pair a, Pair a -> Bool
     where a.eq : a, a -> Bool
-eq (Pair x i) (Pair y j) =
-    x == y && i == j
+eq (Pair x i) (Pair y j) = x == y && i == j
 
 
 yesNo : Bool -> String
 yesNo b =
     if b then
         "yes"
-
     else
         "no"
 
@@ -36,7 +34,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 

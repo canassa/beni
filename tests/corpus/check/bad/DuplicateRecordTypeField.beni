@@ -4,6 +4,6 @@
 -- does not have a `a` field: `{ a : a }` … need `{ a : Int, a : String }`",
 -- with the declaration dumped as `? -> String`.
 
-
 type alias R =
-    { a : Int, a : String }
+    a : Int
+    a : String

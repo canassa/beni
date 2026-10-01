@@ -6,8 +6,7 @@
 -- check here would build a program that overflows the stack
 -- (`RangeError`) on the first read.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g =
-    \x -> f (g x)
+compose f g = \x -> f (g x)
 
 
 keep : a -> a
@@ -15,12 +14,10 @@ keep : a -> a
 keep x =
     if x == x then
         x
-
     else
         x
 
 
 h : a -> a
     where a.eq : a, a -> Bool
-h =
-    compose h keep
+h = compose h keep

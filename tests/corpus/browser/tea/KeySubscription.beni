@@ -24,8 +24,7 @@ type alias Model =
 
 
 held : String, Bool -> String
-held name on =
-    if on then " " ++ name else ""
+held name on = if on then " " ++ name else ""
 
 
 describe : String, Html.Event -> Msg

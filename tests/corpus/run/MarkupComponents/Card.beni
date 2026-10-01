@@ -3,12 +3,13 @@ import Html exposing (Html)
 
 
 pub type alias Props msg =
-    { title : String, wide : Bool, children : Html msg }
+    title : String
+    wide : Bool
+    children : Html msg
 
 
 pub defaults : Props msg
-defaults =
-    { title = "untitled", wide = False, children = <></> }
+defaults = { title = "untitled", wide = False, children = <></> }
 
 
 pub view : Props msg -> Html msg
@@ -20,15 +21,12 @@ view props =
 
 
 pub header : { text : String } -> Html msg
-header props =
-    <header>{props.text}</header>
+header props = <header>{props.text}</header>
 
 
 pub listOf : { items : List String, children : String -> Html msg } -> Html msg
-listOf props =
-    <ul><For each={props.items}>{props.children}</For></ul>
+listOf props = <ul><For each={props.items}>{props.children}</For></ul>
 
 
 pub badge : { label : String, children : Html msg } -> Html msg
-badge props =
-    <span title={props.label}>{props.children}</span>
+badge props = <span title={props.label}>{props.children}</span>

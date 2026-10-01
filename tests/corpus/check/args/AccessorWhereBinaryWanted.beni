@@ -3,9 +3,8 @@
 -- one-argument function to reach for and the easiest place to make this
 -- mistake.
 pub type alias Person =
-    { name : String }
+    name : String
 
 
 pub joined : List Person -> String
-joined people =
-    List.foldl people "" .name
+joined people = List.foldl people "" .name

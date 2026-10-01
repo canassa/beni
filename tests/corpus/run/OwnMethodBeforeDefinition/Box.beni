@@ -22,18 +22,14 @@ pub type Box
 
 pub compare x y =
     let
-        same =
-            x == y
+        same = x == y
 
-        viaTuple =
-            ( x, 0 ) == ( y, 0 )
+        viaTuple = ( x, 0 ) == ( y, 0 )
 
-        viaRecord =
-            { v = x } == { v = y }
+        viaRecord = { v = x } == { v = y }
     in
     if same && viaTuple && viaRecord then
         EQ
-
     else
         case x of
             Box _ m ->

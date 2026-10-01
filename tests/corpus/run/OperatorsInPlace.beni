@@ -19,7 +19,6 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 
@@ -27,11 +26,9 @@ show b =
 main : Program
 main =
     let
-        top =
-            Int32.fromInt 2147483647
+        top = Int32.fromInt 2147483647
 
-        minus8 =
-            Int32.fromInt (-8)
+        minus8 = Int32.fromInt (-8)
     in
     Node.printLines
         [ String.fromInt (7 + 3 * 2 - (7 - 3))
@@ -46,7 +43,13 @@ main =
         , String.fromInt (Int32.toInt (Int32.sub (Int32.fromInt (-2147483648)) (Int32.fromInt 1)))
         , String.fromInt (Int32.toInt (Int32.shiftRightZero minus8 1))
         , String.fromInt (Int32.toUnsignedInt minus8)
-        , String.fromInt (Int32.toInt (Int32.xor (Int32.and minus8 (Int32.fromInt 12)) (Int32.or (Int32.shiftLeft (Int32.fromInt 1) 31) (Int32.shiftRight minus8 2))))
+        , String.fromInt
+            (Int32.toInt
+                (Int32.xor
+                    (Int32.and minus8 (Int32.fromInt 12))
+                    (Int32.or (Int32.shiftLeft (Int32.fromInt 1) 31) (Int32.shiftRight minus8 2))
+                )
+            )
         , String.fromInt (Int32.toInt (Int32.fromInt 4294967297))
         , String.fromInt (7 // 0 + modBy 7 0 + remainderBy 7 0)
         ]

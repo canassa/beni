@@ -53,8 +53,7 @@ payload s =
 
 message : Schema Wire Message
 message =
-    Schema.tagged
-        "kind"
+    Schema.tagged "kind"
         [ Schema.variant
             "Text"
             "text"
@@ -208,8 +207,7 @@ tree =
                         (Schema.mapping toChildren fromChildren)
                         (Schema.mapping toChildren fromChildren)
             in
-            Schema.tagged
-                "type"
+            Schema.tagged "type"
                 [ Schema.variant "Leaf" "leaf" (payload Schema.int) leaf leaf
                 , Schema.variant "Branch" "branch" children branch branch
                 ]

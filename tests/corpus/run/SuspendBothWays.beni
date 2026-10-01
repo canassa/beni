@@ -13,8 +13,7 @@ import Task
 
 
 twice : (Int -> Int), Int -> Int
-twice f x =
-    f (f x)
+twice f x = f (f x)
 
 
 slowInc : Int -> Int
@@ -26,8 +25,7 @@ slowInc n =
 
 
 atLoad : Int
-atLoad =
-    twice (\n -> n * 3) 2
+atLoad = twice (\n -> n * 3) 2
 
 
 main : Program

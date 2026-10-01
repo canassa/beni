@@ -7,24 +7,20 @@ pub minOf : a, a -> a
 minOf a b =
     if a < b then
         a
-
     else
         b
 
 
 pub h : a, a -> a
     where a.compare : a, a -> Order
-h =
-    minOf
+h = minOf
 
 
 pub lam : a, a -> Bool
     where a.eq : a, a -> Bool
-lam =
-    \x y -> x == y
+lam = \x y -> x == y
 
 
 pub blank : List a
     where a.eq : a, a -> Bool
-blank =
-    []
+blank = []

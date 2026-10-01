@@ -3,7 +3,5 @@
 -- `(x.eq) a` to call the field `eq`" belongs to a dot-call only, never to
 -- this `==`.
 
-
 same : { r | x : Int }, { r | x : Int } -> Bool
-same p q =
-    p == q
+same p q = p == q

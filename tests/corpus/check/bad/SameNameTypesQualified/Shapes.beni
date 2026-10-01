@@ -5,4 +5,4 @@ pub type T
 
 
 pub type alias Name =
-    { n : Int }
+    n : Int

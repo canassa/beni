@@ -10,35 +10,52 @@ import Html exposing (Html)
 
 
 type alias Row =
-    { id : Int, parent : Int, label : String }
+    id : Int
+    parent : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, selected : Maybe Int, pick : { at : Maybe Int } }
+    rows : List Row
+    selected : Maybe Int
+    pick :
+        at : Maybe Int
 
 
 isOn : Maybe Int, Int -> String
-isOn selected id =
-    if selected == Just id then "on" else ""
+isOn selected id = if selected == Just id then "on" else ""
 
 
 pub table : Model -> Html msg
 table model =
     <div>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={if model.selected == Just row.parent then "on" else ""}>{row.label}</p>}
+            {\row ->
+                <p class={if model.selected == Just row.parent then "on" else ""}>{row.label}</p>
+            }
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={if model.selected == Just row.id then "on" else ""}>{Maybe.withDefault model.selected 0}</p>}
+            {\row ->
+                <p class={if model.selected == Just row.id then "on" else ""}>
+                    {Maybe.withDefault model.selected 0}
+                </p>
+            }
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row -> let sel = model.selected in <p class={if sel == Just row.id then "on" else ""}>{row.label}</p>}
+            {\row ->
+                let
+                    sel = model.selected
+                in
+                <p class={if sel == Just row.id then "on" else ""}>{row.label}</p>
+            }
         </For>
         <For each={model.rows} keyed={False}>
             {\row -> <p class={if model.selected == Just row.id then "on" else ""}>{row.label}</p>}
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={if { at = Just row.id } == model.pick then "on" else ""}>{row.label}</p>}
+            {\row ->
+                <p class={if { at = Just row.id } == model.pick then "on" else ""}>{row.label}</p>
+            }
         </For>
         <For each={model.rows} keyed={.id}>
             {\row -> <p class={isOn model.selected (row.id + 1)}>{row.label}</p>}

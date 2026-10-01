@@ -19,10 +19,8 @@ type Box a
 pub show (K n) u =
     if Box 1 == Box 2 && n == 0 then
         "a"
-
     else if Box "x" == Box "y" then
         "b"
-
     else
         "c"
 
@@ -30,12 +28,10 @@ pub show (K n) u =
 pub eq : Box a, Box a -> Bool
 eq (Box a) (Box b) =
     let
-        _ =
-            \w -> (K 0).show ()
+        _ = \w -> (K 0).show ()
     in
     True
 
 
 main : Program
-main =
-    Node.printLines [ (K 0).show (), (K 1).show () ]
+main = Node.printLines [ (K 0).show (), (K 1).show () ]

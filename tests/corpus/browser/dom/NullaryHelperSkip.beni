@@ -16,7 +16,7 @@ type Msg
 
 
 type alias Model =
-    { count : Int }
+    count : Int
 
 
 update : Msg, Model -> Model
@@ -30,13 +30,11 @@ update msg model =
 
 
 button : String, Msg -> Html Msg
-button id msg =
-    <button id={id} onClick={msg}>{Debug.log id "button"}</button>
+button id msg = <button id={id} onClick={msg}>{Debug.log id "button"}</button>
 
 
 maybeText : Maybe String -> Html Msg
-maybeText m =
-    <i>{Debug.log (Maybe.withDefault m "none") "maybeText"}</i>
+maybeText m = <i>{Debug.log (Maybe.withDefault m "none") "maybeText"}</i>
 
 
 view : Model -> Html Msg
@@ -50,5 +48,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { count = 0 }, update = update, view = view }
+main = Browser.program { init = { count = 0 }, update = update, view = view }

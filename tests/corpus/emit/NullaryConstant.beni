@@ -18,20 +18,17 @@ pub type Msg
 
 
 pub idle : Msg
-idle =
-    Run
+idle = Run
 
 
 pub button : String -> { label : String, msg : Msg }
-button label =
-    { label = label, msg = Run }
+button label = { label = label, msg = Run }
 
 
 pub both : Bool -> ( Msg, Msg )
 both b =
     if b then
         ( Run, Add 1 )
-
     else
         ( Run, Run )
 
@@ -40,7 +37,6 @@ pub none : Int -> Maybe Int
 none n =
     if n > 0 then
         Just n
-
     else
         Nothing
 
@@ -56,10 +52,8 @@ isRun m =
 
 
 pub order : Order
-order =
-    LT
+order = LT
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

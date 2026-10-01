@@ -1,8 +1,7 @@
 -- check/bad: `.0` on a record. Records are indexed by field name.
 pub type alias Point =
-    { x : Int }
+    x : Int
 
 
 pub firstOf : Point -> Int
-firstOf p =
-    p.0
+firstOf p = p.0

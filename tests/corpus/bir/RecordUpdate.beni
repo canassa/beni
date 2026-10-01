@@ -5,24 +5,21 @@ import Defaults exposing (config)
 
 
 type alias Model =
-    { count : Int, name : String }
+    count : Int
+    name : String
 
 
 initial : Model
-initial =
-    { count = 0, name = "" }
+initial = { count = 0, name = "" }
 
 
 bumpLocal : Model -> Model
-bumpLocal model =
-    { model | count = model.count + 1 }
+bumpLocal model = { model | count = model.count + 1 }
 
 
 bumpTop : Model
-bumpTop =
-    { initial | count = 1, name = "one" }
+bumpTop = { initial | count = 1, name = "one" }
 
 
 bumpImport : Int -> { timeout : Int }
-bumpImport t =
-    { config | timeout = t }
+bumpImport t = { config | timeout = t }

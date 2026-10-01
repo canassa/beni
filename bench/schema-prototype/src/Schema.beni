@@ -120,7 +120,7 @@ rootContext options direction = { options = options, path = [], depth = 0, direc
 
 
 pub endpoint :
-    Description
+      Description
     , (Context, Value -> Result (List Issue) a)
     , (Context, a -> Result (List Issue) Value)
     , (Context, a -> Result (List Issue) ())
@@ -134,7 +134,7 @@ endpoint description readValue writeValue validate =
 
 
 pub make :
-    Endpoint e
+      Endpoint e
     , Endpoint a
     , (Context, e -> Result (List Issue) a)
     , (Context, a -> Result (List Issue) e)
@@ -256,7 +256,7 @@ encodedOnly schema = fromEndpoint schema.encoded
 
 
 pub transform :
-    Schema e a
+      Schema e a
     , Endpoint b
     , (Context, a -> Result (List Issue) b)
     , (Context, b -> Result (List Issue) a)
@@ -582,7 +582,7 @@ optionalField key item =
 
 
 pub object1Endpoint :
-    String
+      String
     , Field a
     , (a -> record)
     , (record -> a)
@@ -617,7 +617,7 @@ object1Endpoint name field build get =
 
 
 pub object2Endpoint :
-    String
+      String
     , Field a
     , Field b
     , (a, b -> record)
@@ -787,7 +787,7 @@ traverse context values func = traverseHelp context values func 0 [] []
 
 
 traverseHelp :
-    Context
+      Context
     , List a
     , (Context, a -> Result (List Issue) b)
     , Int
@@ -820,7 +820,7 @@ traverseHelp context values func index results issues =
 
 
 combineObject2 :
-    ErrorMode
+      ErrorMode
     , Result (List Issue) ()
     , Result (List Issue) a
     , Result (List Issue) b
@@ -839,7 +839,7 @@ combineObject2 mode unknownResult first second build =
 
 
 combineObject1 :
-    ErrorMode
+      ErrorMode
     , Result (List Issue) ()
     , Result (List Issue) a
     , (a -> record)
@@ -863,7 +863,7 @@ combineObject1 mode unknownResult fieldResult build =
 
 
 combineAfterUnknown :
-    ErrorMode
+      ErrorMode
     , List Issue
     , Result (List Issue) a
     , Result (List Issue) b
@@ -893,7 +893,7 @@ combineAfterUnknown mode prior first second build =
 
 
 combineFields :
-    ErrorMode
+      ErrorMode
     , Result (List Issue) (List ( String, Value ))
     , Result (List Issue) (List ( String, Value ))
     -> Result (List Issue) Value
@@ -918,7 +918,7 @@ combineFields mode first second =
 
 
 combineValidations :
-    ErrorMode
+      ErrorMode
     , Result (List Issue) ()
     , Result (List Issue) ()
     -> Result (List Issue) ()

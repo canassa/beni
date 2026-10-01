@@ -1,6 +1,7 @@
 --! Definite initialisation (`backend.md` §9, *Slice 4*, amended
 --! 2026-10-03) where it fires and beside what must defeat it: each answer
 --! is the same in both builds.
+
 import Js
 
 
@@ -9,27 +10,22 @@ type alias V =
 
 
 kind : V
-kind =
-    Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+kind = Js.from { m = \_ -> Js.from { s = Js.from "node" } }
 
 
 block : V
-block =
-    Js.from { t = kind }
+block = Js.from { t = kind }
 
 
 -- Every instance `m` makes gets `t` and `b` before anything reads them.
 unit : V -> V
 unit b =
     let
-        i =
-            Js.call (Js.get b "t") "m" [ Js.from 0 ]
+        i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
-        _ =
-            Js.set i "t" (Js.get b "t")
+        _ = Js.set i "t" (Js.get b "t")
 
-        _ =
-            Js.set i "b" b
+        _ = Js.set i "b" b
     in
     i
 
@@ -38,25 +34,21 @@ patch : V, V -> String
 patch i b =
     if Js.same b (Js.get i "b") then
         "same"
-
     else
         "other"
 
 
 -- One call writes `b`, the other does not: a read may be `undefined`.
 bare : () -> V
-bare () =
-    Js.from { s = Js.from "node" }
+bare () = Js.from { s = Js.from "node" }
 
 
 marked : () -> V
 marked () =
     let
-        i =
-            bare ()
+        i = bare ()
 
-        _ =
-            Js.set i "b" block
+        _ = Js.set i "b" block
     in
     i
 
@@ -65,7 +57,6 @@ shown : V -> String
 shown i =
     if Js.isUndefined (Js.get i "b") then
         "nothing shown"
-
     else
         "a block shown"
 
@@ -75,15 +66,13 @@ shown i =
 -- method, as `unit`'s does, and `describe` is called twice, so that neither
 -- is written where it is called.
 other : V
-other =
-    Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+other = Js.from { m = \_ -> Js.from { s = Js.from "node" } }
 
 
 describe : V -> String
 describe i =
     if Js.isUndefined (Js.get i "c") then
         "unset"
-
     else
         "set"
 
@@ -91,11 +80,9 @@ describe i =
 described : () -> V
 described () =
     let
-        i =
-            Js.call other "m" [ Js.from 0 ]
+        i = Js.call other "m" [ Js.from 0 ]
 
-        _ =
-            Js.set i "c" (Js.from (describe i))
+        _ = Js.set i "c" (Js.from (describe i))
     in
     i
 

@@ -23,13 +23,16 @@ logged xs =
             []
 
         [ x, ...rest ] ->
-            [ Debug.log x "head", (case x of
-                        2 ->
-                            Debug.log 20 "case"
+            [ Debug.log x "head"
+            , (case x of
+                  2 ->
+                      Debug.log 20 "case"
 
-                        _ ->
-                            Debug.log 0 "case"
-                   ), ...logged (Debug.log rest "arg") ]
+                  _ ->
+                      Debug.log 0 "case"
+              )
+            , ...logged (Debug.log rest "arg")
+            ]
 
 
 adders : List Int -> List (Int -> Int)
@@ -45,8 +48,7 @@ adders xs =
 main : Program
 main =
     let
-        out =
-            logged [ 1, 2 ]
+        out = logged [ 1, 2 ]
     in
     Node.printLines
         [ String.join (List.map out String.fromInt) ","

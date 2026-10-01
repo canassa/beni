@@ -10,5 +10,4 @@ pub choose : a, a, b -> a
         a.pick : a, a -> a
         , b.render : b, Int -> a
         , a.eq : a, a -> Bool
-choose x y tag =
-    if x.eq y then tag.render 1 else x.pick y
+choose x y tag = if x.eq y then tag.render 1 else x.pick y

@@ -20,8 +20,7 @@ import String
 
 
 size : Int
-size =
-    100000
+size = 100000
 
 
 prependAll : Int, List Int -> List Int
@@ -50,9 +49,8 @@ growPlus n acc =
 
 
 type alias Stack =
-    { top : List Int
-    , kept : List (List Int)
-    }
+    top : List Int
+    kept : List (List Int)
 
 
 -- Two pushes and a pop at the front, over and over; every 10 000th
@@ -99,11 +97,9 @@ summary xs =
 main : Program
 main =
     let
-        backwards =
-            prependAll size []
+        backwards = prependAll size []
 
-        stack =
-            churn 0 { top = [], kept = [] }
+        stack = churn 0 { top = [], kept = [] }
     in
     Node.printLines
         [ summary backwards

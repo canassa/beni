@@ -71,7 +71,6 @@ merge xs ys =
                 [ y, ...restY ] ->
                     if x <= y then
                         [ x, ...merge restX ys ]
-
                     else
                         [ y, ...merge xs restY ]
 
@@ -80,7 +79,6 @@ countDown : List Int, Int, Int -> Int
 countDown xs n acc =
     if n > 0 then
         countDown xs (n - 1) (acc + 1)
-
     else
         case xs of
             [] ->
@@ -96,7 +94,6 @@ dropWhile xs keep =
         [ x, ...rest ] ->
             if keep x then
                 dropWhile rest keep
-
             else
                 xs
 
@@ -108,7 +105,6 @@ dropTwo : List Int, Int -> List Int
 dropTwo xs n =
     if n <= 0 then
         xs
-
     else
         case xs of
             [ _, _, ...rest ] ->
@@ -146,7 +142,6 @@ whole xs acc =
                 case xs of
                     all ->
                         List.append acc all
-
             else
                 whole rest (List.push acc x)
 
@@ -185,7 +180,6 @@ mergeRe xs ys =
         ( [ x, ...restX ], [ y, ...restY ] ) ->
             if x <= y then
                 [ x, ...mergeRe restX [ y, ...restY ] ]
-
             else
                 [ y, ...mergeRe [ x, ...restX ] restY ]
 
@@ -200,13 +194,11 @@ upToBig : List Int, Int -> List Int
 upToBig xs n =
     if n == 0 then
         []
-
     else
         case xs of
             [ x, ...rest ] ->
                 if x > 30 then
                     [ x, ...rest ]
-
                 else
                     upToBig rest (n - 1)
 
@@ -225,15 +217,13 @@ logged xs acc =
 
 
 ints : List Int -> String
-ints xs =
-    String.join (List.map xs String.fromInt) ","
+ints xs = String.join (List.map xs String.fromInt) ","
 
 
 same : String, Bool -> String
 same label b =
     if b then
         label ++ " same"
-
     else
         label ++ " copied"
 
@@ -250,11 +240,9 @@ forms =
 report : ( String, List Int ) -> List String
 report ( name, xs ) =
     let
-        fromThree =
-            List.drop xs 2
+        fromThree = List.drop xs 2
 
-        fromBig =
-            List.drop xs 30
+        fromBig = List.drop xs 30
     in
     [ name ++ " sum " ++ String.fromInt (sumFrom xs 0)
     , name ++ " pairs " ++ ints (pairSums xs [])
@@ -269,7 +257,14 @@ report ( name, xs ) =
     , same (name ++ " dropWhile none") (Identity.refEq (dropWhile xs (\x -> x > 100)) xs)
     , same (name ++ " dropTwo 0") (Identity.refEq (dropTwo xs 0) xs)
     , same (name ++ " whole at the start") (Identity.refEq (whole fromThree []) fromThree)
-    , name ++ " pairwise " ++ String.join (List.map (List.take (pairwise xs) 3) (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b)) ","
+    , name
+        ++ " pairwise "
+        ++ String.join
+            (List.map
+                (List.take (pairwise xs) 3)
+                (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b)
+            )
+            ","
     , name ++ " mergeRe " ++ ints (List.take (mergeRe xs (List.range 2 6)) 12)
     , name ++ " upToBig " ++ ints (upToBig xs 100)
     , same (name ++ " upToBig re-consed at the start") (Identity.refEq (upToBig fromBig 5) fromBig)

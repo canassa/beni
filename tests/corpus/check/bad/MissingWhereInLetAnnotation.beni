@@ -5,12 +5,10 @@
 -- annotation: `where a.eq : a, a -> Bool`",
 -- and which is UNEXPECTED TOKEN when written.
 
-
 f : List Int -> Bool
 f xs =
     let
         g : a, a -> Bool
-        g p q =
-            p == q
+        g p q = p == q
     in
     g xs xs

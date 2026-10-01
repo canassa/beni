@@ -10,7 +10,9 @@ import Ssr
 
 
 type alias Group =
-    { name : String, items : List String, lead : Maybe String }
+    name : String
+    items : List String
+    lead : Maybe String
 
 
 view : String, List Group -> Html msg
@@ -29,4 +31,11 @@ view sep groups =
 
 main : Node.Program
 main =
-    Node.print (Ssr.render (view "/" [ { name = "a", items = [ "x", "y" ], lead = Just "L" }, { name = "b", items = [], lead = Nothing } ]))
+    Node.print
+        (Ssr.render
+            (view "/"
+                [ { name = "a", items = [ "x", "y" ], lead = Just "L" }
+                , { name = "b", items = [], lead = Nothing }
+                ]
+            )
+        )

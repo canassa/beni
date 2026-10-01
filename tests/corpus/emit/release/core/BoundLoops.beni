@@ -17,8 +17,7 @@ import Js
 pub scan : Js.Value, Int -> Int
 scan xs m =
     let
-        p =
-            upTo xs m 0
+        p = upTo xs m 0
     in
     p * 2
 
@@ -27,7 +26,6 @@ upTo : Js.Value, Int, Int -> Int
 upTo xs m k =
     if k < m && not (Js.isNull (Js.at xs k)) then
         upTo xs m (k + 1)
-
     else
         k
 
@@ -35,8 +33,7 @@ upTo xs m k =
 pub fill : Js.Value, Int -> Int
 fill xs n =
     let
-        _ =
-            fillFrom xs n 0
+        _ = fillFrom xs n 0
     in
     n
 
@@ -45,11 +42,9 @@ fillFrom : Js.Value, Int, Int -> ()
 fillFrom xs n k =
     if k == n then
         ()
-
     else
         let
-            _ =
-                Js.call xs "push" [ Js.from k ]
+            _ = Js.call xs "push" [ Js.from k ]
         in
         fillFrom xs n (k + 1)
 
@@ -57,8 +52,7 @@ fillFrom xs n k =
 pub ends : Js.Value, Int -> Int
 ends xs n =
     let
-        ( a, b ) =
-            both xs 0 n
+        ( a, b ) = both xs 0 n
     in
     a + b
 
@@ -67,7 +61,6 @@ both : Js.Value, Int, Int -> ( Int, Int )
 both xs a b =
     if a < b && Js.same (Js.at xs a) (Js.at xs (b - 1)) then
         both xs (a + 1) (b - 1)
-
     else
         ( a, b )
 
@@ -75,8 +68,7 @@ both xs a b =
 pub pick : Js.Value -> Int
 pick xs =
     let
-        big =
-            firstBig xs 0
+        big = firstBig xs 0
     in
     big + 1
 
@@ -85,28 +77,23 @@ firstBig : Js.Value, Int -> Int
 firstBig xs k =
     if k == Js.to (Js.get xs "length") then
         -1
-
     else if Js.to (Js.at xs k) > 9 then
         Js.to (Js.at xs k)
-
     else
         firstBig xs (k + 1)
 
 
 pub total : Js.Value -> Int
-total rows =
-    rowsFrom rows 0 0
+total rows = rowsFrom rows 0 0
 
 
 rowsFrom : Js.Value, Int, Int -> Int
 rowsFrom rows r sum =
     if r == Js.to (Js.get rows "length") then
         sum
-
     else
         let
-            s =
-                rowSum (Js.at rows r) 0 0
+            s = rowSum (Js.at rows r) 0 0
         in
         rowsFrom rows (r + 1) (sum + s)
 
@@ -115,6 +102,5 @@ rowSum : Js.Value, Int, Int -> Int
 rowSum row k sum =
     if k == Js.to (Js.get row "length") then
         sum
-
     else
         rowSum row (k + 1) (sum + Js.to (Js.at row k))

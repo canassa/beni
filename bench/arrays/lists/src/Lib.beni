@@ -5,66 +5,53 @@ import List
 
 -- 3. the library ------------------------------------------------------------
 
-
 --| `foldr` building a list, the Elm idiom for an order-keeping map.
 pub foldrBuild : List Int -> List Int
-foldrBuild xs =
-    List.foldr xs [] (\x acc -> [ x * 2, ...acc ])
+foldrBuild xs = List.foldr xs [] (\x acc -> [ x * 2, ...acc ])
 
 
 pub foldrSum : List Int -> Int
-foldrSum xs =
-    List.foldr xs 0 (\x acc -> x + acc)
+foldrSum xs = List.foldr xs 0 (\x acc -> x + acc)
 
 
 pub rangeSum : Int -> Int
-rangeSum n =
-    List.sum (List.range 1 n)
+rangeSum n = List.sum (List.range 1 n)
 
 
 pub zip : List a, List b -> List ( a, b )
-zip xs ys =
-    List.map2 xs ys (\a b -> ( a, b ))
+zip xs ys = List.map2 xs ys (\a b -> ( a, b ))
 
 
 pub concatMapPairs : List Int -> List Int
-concatMapPairs xs =
-    List.concatMap xs (\x -> [ x, x + 1 ])
+concatMapPairs xs = List.concatMap xs (\x -> [ x, x + 1 ])
 
 
 --| `acc ++ [ x ]` in a loop: quadratic for a cons list too.
 pub appendLoop : List Int -> List Int
-appendLoop xs =
-    List.foldl xs [] (\x acc -> acc ++ [ x ])
+appendLoop xs = List.foldl xs [] (\x acc -> acc ++ [ x ])
 
 
 pub appendTwo : List a, List a -> List a
-appendTwo xs ys =
-    xs ++ ys
+appendTwo xs ys = xs ++ ys
 
 
 pub reverse : List a -> List a
-reverse xs =
-    List.reverse xs
+reverse xs = List.reverse xs
 
 
 pub libMap : List Int -> List Int
-libMap xs =
-    List.map xs (\x -> x * 3 + 1)
+libMap xs = List.map xs (\x -> x * 3 + 1)
 
 
 pub libFilter : List Int -> List Int
-libFilter xs =
-    List.filter xs (\x -> modBy x 3 /= 0)
+libFilter xs = List.filter xs (\x -> modBy x 3 /= 0)
 
 
 -- 4. building by prepending in a fold ---------------------------------------------
 
-
 --| The accumulator is the fold's own state.
 pub prependFold : List Int -> List Int
-prependFold xs =
-    List.reverse (List.foldl xs [] (\x acc -> [ x * 2, ...acc ]))
+prependFold xs = List.reverse (List.foldl xs [] (\x acc -> [ x * 2, ...acc ]))
 
 
 type alias Scan =
@@ -77,7 +64,10 @@ pub recordFold : List Int -> List Int
 recordFold xs =
     let
         final =
-            List.foldl xs { seen = [], count = 0 } (\x st -> { st | seen = [ x * 2, ...st.seen ], count = st.count + 1 })
+            List.foldl
+                xs
+                { seen = [], count = 0 }
+                (\x st -> { st | seen = [ x * 2, ...st.seen ], count = st.count + 1 })
     in
     List.reverse final.seen
 
@@ -91,7 +81,6 @@ partitionFold xs =
                 ( evens, odds ) ->
                     if modBy x 2 == 0 then
                         ( [ x, ...evens ], odds )
-
                     else
                         ( evens, [ x, ...odds ] )
         )

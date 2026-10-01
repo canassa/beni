@@ -23,22 +23,21 @@ type Msg
 
 pub create : Int -> Model
 create n =
-    { items = List.map (List.range 1 n) (\i -> { id = i, label = "todo", done = False }), nextId = n + 1 }
+    { items = List.map (List.range 1 n) (\i -> { id = i, label = "todo", done = False })
+    , nextId = n + 1
+    }
 
 
 pub add : Msg
-add =
-    Add
+add = Add
 
 
 pub remove : Int -> Msg
-remove id =
-    Remove id
+remove id = Remove id
 
 
 pub toggle : Int -> Msg
-toggle id =
-    Toggle id
+toggle id = Toggle id
 
 
 pub update : Msg, Model -> Model
@@ -60,7 +59,6 @@ update msg model =
                         (\i ->
                             if i.id == id then
                                 { i | done = not i.done }
-
                             else
                                 i
                         )

@@ -7,26 +7,25 @@ import Node exposing (Program)
 
 
 type alias Point =
-    { x : Int, y : Int, label : String, tag : String }
+    x : Int
+    y : Int
+    label : String
+    tag : String
 
 
 point : Int -> Point
-point n =
-    { x = n, y = n * 2, label = "unused", tag = "read" }
+point n = { x = n, y = n * 2, label = "unused", tag = "read" }
 
 
 shown : Int -> Point
-shown n =
-    { x = n, y = 0, label = "kept", tag = "t" }
+shown n = { x = n, y = 0, label = "kept", tag = "t" }
 
 
 main : Program
 main =
     let
-        p =
-            point 3
+        p = point 3
 
-        q =
-            shown 4
+        q = shown 4
     in
     Node.printLines [ String.fromInt (p.x + p.y), p.tag, Debug.toString q ]

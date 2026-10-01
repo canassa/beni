@@ -11,16 +11,12 @@
 -- lexed which file, so a two-module form (`Aaa` + `Main`) would be
 -- red only most of the time at `--jobs` > 1.
 
-
 f : { omega : { beta : Int }, alpha : { apple : Int } } -> Int
-f r =
-    0
+f r = 0
 
 
 g : { alpha : { cherry : Int }, omega : { delta : Int } }
-g =
-    { alpha = { cherry = 1 }, omega = { delta = 2 } }
+g = { alpha = { cherry = 1 }, omega = { delta = 2 } }
 
 
-main =
-    f g
+main = f g

@@ -52,7 +52,6 @@ merge xs ys =
                 [ y, ...restY ] ->
                     if x <= y then
                         [ x, ...merge restX ys ]
-
                     else
                         [ y, ...merge xs restY ]
 
@@ -63,7 +62,6 @@ dropWhile xs keep =
         [ x, ...rest ] ->
             if keep x then
                 dropWhile rest keep
-
             else
                 xs
 
@@ -102,5 +100,4 @@ notAWalk xs n =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

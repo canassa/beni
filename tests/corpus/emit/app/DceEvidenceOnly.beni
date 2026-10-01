@@ -31,8 +31,7 @@ pub type Tagged
 
 
 pub eq : Tagged, Tagged -> Bool
-eq a b =
-    byLength a == byLength b
+eq a b = byLength a == byLength b
 
 
 pub byLength : Tagged -> Int
@@ -43,16 +42,13 @@ byLength t =
 
 
 pub unusedMethod : Tagged -> Int
-unusedMethod t =
-    byLength t + 1
+unusedMethod t = byLength t + 1
 
 
 pub anyEqual : a, a -> Bool
     where a.eq : a, a -> Bool
-anyEqual x y =
-    x.eq y
+anyEqual x y = x.eq y
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (if anyEqual (Tagged "a") (Tagged "b") then 1 else 0) ]
+main = Node.printLines [ String.fromInt (if anyEqual (Tagged "a") (Tagged "b") then 1 else 0) ]

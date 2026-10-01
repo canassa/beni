@@ -14,19 +14,16 @@ type alias Id a =
 
 
 wrap : a -> Id a
-wrap x =
-    x
+wrap x = x
 
 
 g : Bool
 g =
     let
-        a0 =
-            wrap 1
+        a0 = wrap 1
     in
     a0 == a0
 
 
 main : Program
-main =
-    Node.printLines [ if g then "T" else "F" ]
+main = Node.printLines [ if g then "T" else "F" ]

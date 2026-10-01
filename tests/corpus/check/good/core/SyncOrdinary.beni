@@ -9,22 +9,19 @@ pub foreign impure log : String -> ()
 
 
 pub program : { init : Int, view : sync (Int -> String) } -> Int
-program p =
-    p.init
+program p = p.init
 
 
 pub hosted : sync (Int, Int -> Int), Int -> Int
 hosted update model =
     let
-        step m =
-            update m 1
+        step m = update m 1
     in
     step model
 
 
 pub sandbox : Int, (Int -> String) -> Int
-sandbox init view =
-    program { init = init, view = view }
+sandbox init view = program { init = init, view = view }
 
 
 pub page : Int

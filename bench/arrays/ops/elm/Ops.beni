@@ -5,43 +5,35 @@ import List
 
 
 pub get : List a, Int -> Maybe a
-get xs i =
-    List.head (List.drop xs i)
+get xs i = List.head (List.drop xs i)
 
 
 pub set : List a, Int, a -> List a
-set xs i v =
-    List.take xs i ++ [ v, ...List.drop xs (i + 1) ]
+set xs i v = List.take xs i ++ [ v, ...List.drop xs (i + 1) ]
 
 
 pub push : List a, a -> List a
-push xs v =
-    xs ++ [ v ]
+push xs v = xs ++ [ v ]
 
 
 pub pop : List a -> List a
-pop xs =
-    List.take xs (List.length xs - 1)
+pop xs = List.take xs (List.length xs - 1)
 
 
 pub slice : List a, Int, Int -> List a
-slice xs from to =
-    List.take (List.drop xs from) (to - from)
+slice xs from to = List.take (List.drop xs from) (to - from)
 
 
 pub concat : List a, List a -> List a
-concat xs ys =
-    xs ++ ys
+concat xs ys = xs ++ ys
 
 
 pub insert : List a, Int, a -> List a
-insert xs i v =
-    List.take xs i ++ [ v, ...List.drop xs i ]
+insert xs i v = List.take xs i ++ [ v, ...List.drop xs i ]
 
 
 pub remove : List a, Int -> List a
-remove xs i =
-    List.take xs i ++ List.drop xs (i + 1)
+remove xs i = List.take xs i ++ List.drop xs (i + 1)
 
 
 pub swap : List a, Int, Int -> List a
@@ -52,10 +44,8 @@ swap xs i j =
                 (\k x ->
                     if k == i then
                         b
-
                     else if k == j then
                         a
-
                     else
                         x
                 )
@@ -65,26 +55,21 @@ swap xs i j =
 
 
 pub map : List a, (a -> b) -> List b
-map xs f =
-    List.map xs f
+map xs f = List.map xs f
 
 
 pub filter : List a, (a -> Bool) -> List a
-filter xs keep =
-    List.filter xs keep
+filter xs keep = List.filter xs keep
 
 
 pub foldl : List a, b, (a, b -> b) -> b
-foldl xs acc f =
-    List.foldl xs acc f
+foldl xs acc f = List.foldl xs acc f
 
 
 pub eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
-eq xs ys =
-    xs == ys
+eq xs ys = xs == ys
 
 
 pub sort : List a, (a, a -> Order) -> List a
-sort xs cmp =
-    List.sortWith xs cmp
+sort xs cmp = List.sortWith xs cmp

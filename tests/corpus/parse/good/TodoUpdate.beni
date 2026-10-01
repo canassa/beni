@@ -2,18 +2,16 @@
 -- every branch, a `let` helper inside a branch, `List.map`/`List.filter` with
 -- lambdas over records, string interpolation and a tuple result.
 type alias Todo =
-    { id : Int
-    , title : String
-    , done : Bool
-    }
+    id : Int
+    title : String
+    done : Bool
 
 
 type alias Model =
-    { todos : List Todo
-    , field : String
-    , nextId : Int
-    , visibility : Visibility
-    }
+    todos : List Todo
+    field : String
+    nextId : Int
+    visibility : Visibility
 
 
 type Visibility
@@ -44,8 +42,7 @@ update msg model =
 
         Add ->
             let
-                title =
-                    String.trim model.field
+                title = String.trim model.field
             in
             if String.isEmpty title then
                 ( model, [] )
@@ -82,8 +79,7 @@ update msg model =
 
 
 newTodo : String, Int -> Todo
-newTodo title id =
-    { id = id, title = title, done = False }
+newTodo title id = { id = id, title = title, done = False }
 
 
 visibilityName : Visibility -> String

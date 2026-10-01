@@ -26,19 +26,16 @@ eq left right =
 
 markerFirst x y =
     let
-        _ =
-            Basics.eq x x
+        _ = Basics.eq x x
     in
     x == y
 
 
 markerAfter x y =
     let
-        r =
-            x == y
+        r = x == y
 
-        _ =
-            Basics.eq x x
+        _ = Basics.eq x x
     in
     r
 
@@ -47,7 +44,6 @@ show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 

@@ -10,20 +10,16 @@ pub type W
     = W (H.Holder T)
 
 
-same a b =
-    W (H.Holder (T a)) == W (H.Holder (T b))
+same a b = W (H.Holder (T a)) == W (H.Holder (T b))
 
 
 pub key (T x) u =
     if x == 0 then
         0
-
     else if W (H.Holder (T 0)) == W (H.Holder (T 0)) then
         x
-
     else
         0
 
 
-other =
-    (T 1).key "s"
+other = (T 1).key "s"

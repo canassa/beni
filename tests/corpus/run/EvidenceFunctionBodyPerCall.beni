@@ -15,13 +15,11 @@ lookup : a -> a
     where a.eq : a, a -> Bool
 lookup =
     let
-        table =
-            Debug.log (List.range 1 3) "table (where)"
+        table = Debug.log (List.range 1 3) "table (where)"
     in
     \x ->
         if List.length table == 3 && x == x then
             x
-
         else
             x
 
@@ -29,13 +27,11 @@ lookup =
 lookupPlain : Int -> Int
 lookupPlain =
     let
-        table =
-            Debug.log (List.range 1 3) "table (plain)"
+        table = Debug.log (List.range 1 3) "table (plain)"
     in
     \x ->
         if List.length table == 3 then
             x
-
         else
             x
 

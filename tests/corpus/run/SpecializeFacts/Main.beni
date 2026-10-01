@@ -14,29 +14,29 @@ import Probe
 
 
 type alias Shape =
-    { kind : String, size : Int, mode : String }
+    kind : String
+    size : Int
+    mode : String
 
 
 shape : Int -> Shape
-shape n =
-    { kind = "box", size = n, mode = "plain" }
+shape n = { kind = "box", size = n, mode = "plain" }
 
 
 small : Shape
-small =
-    { kind = "box", size = 1, mode = "plain" }
+small = { kind = "box", size = 1, mode = "plain" }
 
 
 describe : Shape -> String
-describe s =
-    "${s.kind} ${String.fromInt s.size} ${s.mode}"
+describe s = "${s.kind} ${String.fromInt s.size} ${s.mode}"
 
 
 main : Node.Program
 main =
     let
-        loud =
-            { small | mode = "loud" }
+        loud = { small | mode = "loud" }
     in
     Node.printLines
-        ([ describe (shape 2), describe small, describe loud, Debug.toString small ] ++ Probe.demo ())
+        ([ describe (shape 2), describe small, describe loud, Debug.toString small ]
+            ++ Probe.demo ()
+        )

@@ -6,21 +6,22 @@ import List
 
 --| Accumulate one result per input by `push`.
 pub collect : Int -> Array Int
-collect n =
-    List.foldl (List.range 1 n) Array.empty (\x acc -> Array.push acc (modBy (x * x) 1000))
+collect n = List.foldl (List.range 1 n) Array.empty (\x acc -> Array.push acc (modBy (x * x) 1000))
 
 
 --| Count `samples` into `buckets` buckets.
 pub histogram : List Int, Int -> Array Int
 histogram samples buckets =
-    List.foldl samples (Array.repeat 0 buckets) (\x acc -> Array.update acc (modBy x buckets) (\c -> c + 1))
+    List.foldl
+        samples
+        (Array.repeat 0 buckets)
+        (\x acc -> Array.update acc (modBy x buckets) (\c -> c + 1))
 
 
 --| Fewest coins making each amount up to `n`, by a table built with `push`
 --| whose every entry reads four earlier ones.
 pub coins : Int -> Array Int
-coins n =
-    coinsHelp 1 n (Array.push Array.empty 0)
+coins n = coinsHelp 1 n (Array.push Array.empty 0)
 
 
 coinsHelp : Int, Int, Array Int -> Array Int
@@ -29,8 +30,7 @@ coinsHelp i n dp =
         dp
     else
         let
-            best =
-                min (min (via dp i 1) (via dp i 5)) (min (via dp i 11) (via dp i 23))
+            best = min (min (via dp i 1) (via dp i 5)) (min (via dp i 11) (via dp i 23))
         in
         coinsHelp (i + 1) n (Array.push dp best)
 
@@ -46,5 +46,4 @@ via dp i coin =
 
 
 pub total : Array Int -> Int
-total arr =
-    Array.foldl arr 0 (\v s -> s + v)
+total arr = Array.foldl arr 0 (\v s -> s + v)

@@ -105,7 +105,7 @@ map3 ra rb rc func =
 
 --| Apply a function if all four results are `Ok`.
 pub map4 :
-    Result x a
+      Result x a
     , Result x b
     , Result x c
     , Result x d
@@ -137,7 +137,7 @@ map4 ra rb rc rd func =
 
 --| Apply a function if all five results are `Ok`.
 pub map5 :
-    Result x a
+      Result x a
     , Result x b
     , Result x c
     , Result x d

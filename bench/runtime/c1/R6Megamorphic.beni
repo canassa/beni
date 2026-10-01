@@ -47,47 +47,40 @@ import String
 
 
 outerReps : Int
-outerReps =
-    4
+outerReps = 4
 
 
 innerReps : Int
-innerReps =
-    500
+innerReps = 500
 
 
 type alias Person =
-    { name : String, age : Int }
+    name : String
+    age : Int
 
 
 numbers : List Int
-numbers =
-    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+numbers = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
 
 
 texts : List String
-texts =
-    List.map numbers String.fromInt
+texts = List.map numbers String.fromInt
 
 
 people : List Person
-people =
-    List.map numbers (\n -> { name = String.fromInt n, age = modBy n 97 })
+people = List.map numbers (\n -> { name = String.fromInt n, age = modBy n 97 })
 
 
 numberMark : Int
-numberMark =
-    250
+numberMark = 250
 
 
 textMark : String
-textMark =
-    "250"
+textMark = "250"
 
 
 personMark : Person
-personMark =
-    { name = "250", age = 48 }
+personMark = { name = "250", age = 48 }
 
 
 -- Level 3: one function, one `x.compare mark` call site, three element types
@@ -109,29 +102,24 @@ tally xs mark =
 
 level2 : List a, a -> Int
     where a.compare : a, a -> Order
-level2 xs mark =
-    tally xs mark
+level2 xs mark = tally xs mark
 
 
 level1 : List a, a -> Int
     where a.compare : a, a -> Order
-level1 xs mark =
-    level2 xs mark
+level1 xs mark = level2 xs mark
 
 
 tallyNumbers : List Int, Int -> Int
-tallyNumbers xs mark =
-    level1 xs mark
+tallyNumbers xs mark = level1 xs mark
 
 
 tallyTexts : List String, String -> Int
-tallyTexts xs mark =
-    level1 xs mark
+tallyTexts xs mark = level1 xs mark
 
 
 tallyPeople : List Person, Person -> Int
-tallyPeople xs mark =
-    level1 xs mark
+tallyPeople xs mark = level1 xs mark
 
 
 main : Program

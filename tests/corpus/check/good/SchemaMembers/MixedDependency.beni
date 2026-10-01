@@ -4,8 +4,7 @@ import Schema exposing (Conversion)
 
 
 seed : Conversion Int String
-seed =
-    Debug.todo "checker-only conversion"
+seed = Debug.todo "checker-only conversion"
 
 
 conversion () =
@@ -14,4 +13,5 @@ conversion () =
             seed
 
 
-pub schema Cyclic = Int via (conversion ())
+pub schema Cyclic =
+    Int via (conversion ())

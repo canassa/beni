@@ -13,35 +13,29 @@ import Node
 
 
 idle : Msg
-idle =
-    Run
+idle = Run
 
 
 run : Int -> Msg
-run _ =
-    Run
+run _ = Run
 
 
 alsoRun : Bool -> Msg
-alsoRun _ =
-    Run
+alsoRun _ = Run
 
 
 add : Int -> Msg
-add n =
-    Add n
+add n = Add n
 
 
 none : Int -> Maybe Int
-none _ =
-    Nothing
+none _ = Nothing
 
 
 show : Bool -> String
 show b =
     if b then
         "same"
-
     else
         "different"
 
@@ -54,6 +48,7 @@ main =
         , show (Identity.refEq idle (run 3))
         , show (Identity.refEq (Msgs.stop 1) (Msgs.stop 2))
         , show (Identity.refEq (none 1) Nothing)
-        , show (Identity.refEq (List.head [ 1 ] |> Maybe.andThen (\_ -> List.head [])) (List.head []))
+        , show
+            (Identity.refEq (List.head [ 1 ] |> Maybe.andThen (\_ -> List.head [])) (List.head []))
         , show (Identity.refEq (add 1) (add 1))
         ]

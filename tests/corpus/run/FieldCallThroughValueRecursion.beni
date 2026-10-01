@@ -18,8 +18,7 @@ import Node exposing (Program)
 
 fa n x =
     let
-        _ =
-            fb n 0
+        _ = fb n 0
     in
     x.combine 1
 
@@ -27,15 +26,12 @@ fa n x =
 fb n y =
     if n > 0 then
         y
-
     else
         let
-            _ =
-                fa 1 { combine = \z -> z + 1 }
+            _ = fa 1 { combine = \z -> z + 1 }
         in
         y
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt (fb 0 5) ]
+main = Node.printLines [ String.fromInt (fb 0 5) ]

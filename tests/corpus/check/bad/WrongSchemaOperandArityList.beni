@@ -1,1 +1,2 @@
-schema Bad = List
+schema Bad =
+    List

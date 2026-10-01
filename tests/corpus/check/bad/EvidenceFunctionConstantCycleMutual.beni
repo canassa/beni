@@ -3,8 +3,7 @@
 -- defined through the other: one `cyclic_value` for the circle, at `h`.
 -- A clean check here would build a program that overflows the stack when run.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g =
-    \x -> f (g x)
+compose f g = \x -> f (g x)
 
 
 keep : a -> a
@@ -12,23 +11,19 @@ keep : a -> a
 keep x =
     if x == x then
         x
-
     else
         x
 
 
 twice : (a -> a) -> (a -> a)
-twice f =
-    \x -> f (f x)
+twice f = \x -> f (f x)
 
 
 h : a -> a
     where a.eq : a, a -> Bool
-h =
-    compose k keep
+h = compose k keep
 
 
 k : a -> a
     where a.eq : a, a -> Bool
-k =
-    twice h
+k = twice h

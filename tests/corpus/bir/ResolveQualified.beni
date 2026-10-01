@@ -2,19 +2,17 @@
 -- through the import aliases to `qualified(alias -> module, name)`: a full
 -- path used as its own alias, an explicit `as` alias, and a qualified
 -- constructor in expression and pattern position (§6.2).
+import Http
 import Json.Decode
 import Json.Encode as E
-import Http
 
 
 decoder : Json.Decode.Decoder Int
-decoder =
-    Json.Decode.int
+decoder = Json.Decode.int
 
 
 encode : Int -> E.Value
-encode n =
-    E.int n
+encode n = E.int n
 
 
 isTimeout : Http.Error -> Bool
@@ -28,5 +26,4 @@ isTimeout err =
 
 
 timeout : Http.Error
-timeout =
-    Http.Timeout
+timeout = Http.Timeout

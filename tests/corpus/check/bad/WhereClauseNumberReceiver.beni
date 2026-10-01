@@ -9,44 +9,35 @@
 -- built, `f1 1 2` would die in `String.toUpper` and the others print `LT1`,
 -- `EQ1` and `t`.
 
-
 f1 : a, a -> String
     where a.eq : a, a -> String
-f1 x y =
-    String.toUpper (x.eq y)
+f1 x y = String.toUpper (x.eq y)
 
 
 f2 : a, a -> Int
     where a.compare : a, a -> Int
-f2 x y =
-    x.compare y + 1
+f2 x y = x.compare y + 1
 
 
-g x =
-    f2 x x
+g x = f2 x x
 
 
 f4 : a, a -> Bool
     where a.compare : a, a -> Bool
-f4 x y =
-    x.compare y
+f4 x y = x.compare y
 
 
 use1 : String
-use1 =
-    f1 1 2
+use1 = f1 1 2
 
 
 use2 : Int
-use2 =
-    f2 1 2
+use2 = f2 1 2
 
 
 use3 : Int
-use3 =
-    g 1 + 1
+use3 = g 1 + 1
 
 
 use4 : Bool
-use4 =
-    f4 1 2
+use4 = f4 1 2

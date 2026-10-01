@@ -6,9 +6,17 @@
 -- records its entries; a list held in a name, or one whose names are not
 -- literals, does not.
 view model classes name =
-    <div id="main" hidden tabindex={0} offset={-1} lang={"en"} open={True} spellcheck={False}
+    <div
+        id="main"
+        hidden
+        tabindex={0}
+        offset={-1}
+        lang={"en"}
+        open={True}
+        spellcheck={False}
         class={[ ( "row", True ), ( "danger", model.on ), ( "big", False ) ]}
-        style={[ ( "color", "red" ), ( "--gap", model.gap ) ]}>
+        style={[ ( "color", "red" ), ( "--gap", model.gap ) ]}
+    >
         <p class={classes} />
         <p class={[ ( name, True ) ]} />
     </div>

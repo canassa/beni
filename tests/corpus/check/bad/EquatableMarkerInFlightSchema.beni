@@ -11,25 +11,21 @@ import Schema exposing (Conversion)
 
 
 mk : Int -> Conversion Int (Int -> Int)
-mk n =
-    Debug.todo "checker-only conversion"
+mk n = Debug.todo "checker-only conversion"
 
 
 mkLoop : Int -> Loop.Type
-mkLoop n =
-    Debug.todo "l"
+mkLoop n = Debug.todo "l"
 
 
 h n =
     if Basics.eq (mkLoop n) (mkLoop 2) then
         n
-
     else
         n
 
 
-conv =
-    mk (h 1)
+conv = mk (h 1)
 
 
 pub schema Loop tagged "kind" of

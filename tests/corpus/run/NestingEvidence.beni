@@ -16,36 +16,28 @@ type T
 
 
 pub eq : T, T -> Bool
-eq a b =
-    True
+eq a b = True
 
 
-w0 x =
-    [ x ]
+w0 x = [ x ]
 
 
-w1 x =
-    w0 (w0 x)
+w1 x = w0 (w0 x)
 
 
-w2 x =
-    w1 (w1 x)
+w2 x = w1 (w1 x)
 
 
-w3 x =
-    w2 (w2 x)
+w3 x = w2 (w2 x)
 
 
-w4 x =
-    w3 (w3 x)
+w4 x = w3 (w3 x)
 
 
-w5 x =
-    w4 (w4 x)
+w5 x = w4 (w4 x)
 
 
-deep x =
-    w5 (w3 x)
+deep x = w5 (w3 x)
 
 
 main : Program

@@ -25,7 +25,6 @@ chain : Int, Chain -> Chain
 chain n acc =
     if n == 0 then
         acc
-
     else
         chain (n - 1) (Link (Key n) acc)
 
@@ -34,7 +33,6 @@ show : String, Bool -> String
 show label b =
     if b then
         label ++ ": True"
-
     else
         label ++ ": False"
 
@@ -42,23 +40,17 @@ show label b =
 main : Program
 main =
     let
-        one =
-            chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+        one = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
 
-        same =
-            chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+        same = chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
 
-        other =
-            chain 20000 (Stop (Just (Key 25001)) (Just (Key 30000)))
+        other = chain 20000 (Stop (Just (Key 25001)) (Just (Key 30000)))
 
-        equal =
-            one == same
+        equal = one == same
 
-        differ =
-            one == other
+        differ = one == other
 
-        before =
-            one < other
+        before = one < other
     in
     Node.printLines
         [ show "equal" equal

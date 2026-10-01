@@ -101,7 +101,7 @@ map3 ma mb mc func =
 
 --| Apply a function if all four `Maybe` values are `Just` a value.
 pub map4 :
-    Maybe a
+      Maybe a
     , Maybe b
     , Maybe c
     , Maybe d
@@ -133,7 +133,7 @@ map4 ma mb mc md func =
 
 --| Apply a function if all five `Maybe` values are `Just` a value.
 pub map5 :
-    Maybe a
+      Maybe a
     , Maybe b
     , Maybe c
     , Maybe d

@@ -17,7 +17,9 @@ pub type Holder a
 
 
 pub eq : Holder ( a, b ), Holder ( a, b ) -> Bool
-    where a.eq : a, a -> Bool, b.eq : b, b -> Bool
+    where
+        a.eq : a, a -> Bool
+        , b.eq : b, b -> Bool
 eq left right =
     case left of
         Holder ( la, lb ) ->

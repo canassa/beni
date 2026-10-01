@@ -1,6 +1,5 @@
 --! A one-capability page platform: a program is a heading.
 
-
 pub foreign type Program
 
 

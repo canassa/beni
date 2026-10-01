@@ -43,20 +43,17 @@ show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 
 
 sameAs : a, a -> Bool
     where a.eq : a, a -> Bool
-sameAs x y =
-    x == y
+sameAs x y = x == y
 
 
 left : Tree
-left =
-    Node (Node Leaf 1 Leaf) 2 Leaf
+left = Node (Node Leaf 1 Leaf) 2 Leaf
 
 
 main : Program

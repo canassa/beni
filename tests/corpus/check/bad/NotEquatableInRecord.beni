@@ -2,9 +2,9 @@
 -- walk finds it there too. Derivation is structural and recursive (§3.3),
 -- so the function stops it before a shape key is ever computed (§6.3).
 pub type alias Handler =
-    { name : String, run : Int -> Int }
+    name : String
+    run : Int -> Int
 
 
 pub same : Handler, Handler -> Bool
-same a b =
-    a == b
+same a b = a == b

@@ -5,16 +5,13 @@
 -- Checked clean, `f` would be `a -> String`, and `f 5` would reach
 -- `String.toUpper` with an Int.
 
-
 f x =
     let
         g : a -> a
-        g y =
-            x
+        g y = x
     in
     g "hello"
 
 
 shout : String
-shout =
-    String.toUpper (f 5)
+shout = String.toUpper (f 5)

@@ -33,7 +33,8 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 show : Bool -> String
@@ -45,18 +46,15 @@ show b =
 
 
 ints : List Int -> String
-ints xs =
-    String.join (List.map xs String.fromInt) ","
+ints xs = String.join (List.map xs String.fromInt) ","
 
 
 nested : List (List Int) -> String
-nested xss =
-    String.join (List.map xss ints) " | "
+nested xss = String.join (List.map xss ints) " | "
 
 
 points : List Point -> String
-points ps =
-    String.join (List.map ps (\p -> ints [ p.x, p.y ])) " | "
+points ps = String.join (List.map ps (\p -> ints [ p.x, p.y ])) " | "
 
 
 main : Program

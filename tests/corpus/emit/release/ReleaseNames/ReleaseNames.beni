@@ -26,17 +26,16 @@ import String
 
 
 type alias Sized =
-    { size : Int, label : String }
+    size : Int
+    label : String
 
 
 pub describe : Shape -> Sized
 describe s =
     let
-        measured =
-            Shapes.area s
+        measured = Shapes.area s
 
-        twice =
-            Shapes.double measured
+        twice = Shapes.double measured
     in
     { size = twice, label = String.fromInt measured }
 
@@ -44,11 +43,9 @@ describe s =
 pub biggest : Shape, Shape -> Int
 biggest one other =
     let
-        a =
-            Shapes.area one
+        a = Shapes.area one
 
-        b =
-            Shapes.area other
+        b = Shapes.area other
     in
     if a > b then
         a
@@ -57,5 +54,4 @@ biggest one other =
 
 
 main : Program
-main =
-    Node.printLines []
+main = Node.printLines []

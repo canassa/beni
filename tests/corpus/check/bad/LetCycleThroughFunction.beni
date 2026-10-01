@@ -5,14 +5,11 @@
 -- "Naming `get` here reads `n`, which is bound further down this
 -- `let`, on line 15" when line 15 is `n`'s own binding.
 
-
 value : Int
 value =
     let
-        get u =
-            n + 1
+        get u = n + 1
 
-        n =
-            get ()
+        n = get ()
     in
     n

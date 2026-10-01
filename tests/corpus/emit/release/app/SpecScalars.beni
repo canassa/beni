@@ -12,44 +12,42 @@ import Node
 
 
 type alias Box =
-    { w : Int, h : Int, name : String }
+    w : Int
+    h : Int
+    name : String
 
 
 area : Int, Int -> Int
 area w h =
     let
-        r =
-            { w = w * 2, h = h + 1, name = "r" }
+        r = { w = w * 2, h = h + 1, name = "r" }
     in
     r.w * r.h + String.length r.name
 
 
 describe : Box -> String
-describe b =
-    "${b.name} ${String.fromInt b.w}"
+describe b = "${b.name} ${String.fromInt b.w}"
 
 
 kept : Int -> String
 kept w =
     let
-        r =
-            { w = w, h = 1, name = "kept" }
+        r = { w = w, h = 1, name = "kept" }
     in
     describe r ++ String.fromInt r.h
 
 
 type alias Shape =
-    { label : String, measure : Int -> Int }
+    label : String
+    measure : Int -> Int
 
 
 measure : Int -> Int
-measure n =
-    n * n + 1
+measure n = n * n + 1
 
 
 run : Shape -> String
-run shape =
-    String.fromInt (shape.measure 3)
+run shape = String.fromInt (shape.measure 3)
 
 
 main : Node.Program

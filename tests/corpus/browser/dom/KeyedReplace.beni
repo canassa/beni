@@ -25,16 +25,22 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, next : Int }
+    rows : List Row
+    next : Int
 
 
 fresh : Model, Int -> ( List Row, Int )
 fresh model count =
-    ( List.map (List.range 0 (count - 1)) (\k -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" }), model.next + count )
+    ( List.map
+        (List.range 0 (count - 1))
+        (\k -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" })
+    , model.next + count
+    )
 
 
 update : Msg, Model -> Model
@@ -50,8 +56,7 @@ update msg model =
 
         Promote ->
             let
-                ( rows, next ) =
-                    fresh model 1
+                ( rows, next ) = fresh model 1
             in
             case model.rows of
                 [ _, second, ..._ ] ->
@@ -62,15 +67,13 @@ update msg model =
 
         ReplaceAll ->
             let
-                ( rows, next ) =
-                    fresh model 3
+                ( rows, next ) = fresh model 3
             in
             { rows = rows, next = next }
 
         KeepMiddle ->
             let
-                ( rows, next ) =
-                    fresh model 2
+                ( rows, next ) = fresh model 2
             in
             case ( rows, List.drop model.rows 1 |> List.head ) of
                 ( [ a, b ], Just kept ) ->
@@ -101,7 +104,10 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ], next = 10 }
+        { init =
+            { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+            , next = 10
+            }
         , update = update
         , view = view
         }

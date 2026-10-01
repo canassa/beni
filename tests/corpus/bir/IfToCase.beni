@@ -12,5 +12,4 @@ sign n =
 
 
 clamp01 : Float -> Float
-clamp01 x =
-    max 0 (if x > 1 then 1 else x)
+clamp01 x = max 0 (if x > 1 then 1 else x)

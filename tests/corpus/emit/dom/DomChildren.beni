@@ -12,20 +12,16 @@ import Html exposing (Html)
 
 
 pub branch : Bool -> Html msg
-branch on =
-    <div>{if on then <b>on</b> else <i>off</i>}</div>
+branch on = <div>{if on then <b>on</b> else <i>off</i>}</div>
 
 
 pub holes : { one : Html msg, maybe : Maybe (Html msg), many : List (Html msg) } -> Html msg
-holes r =
-    <section><h1>title</h1>{r.one}{r.maybe}<ul>{r.many}</ul></section>
+holes r = <section><h1>title</h1>{r.one}{r.maybe}<ul>{r.many}</ul></section>
 
 
 pub fragment : String -> Html msg
-fragment name =
-    <>Hi {name}<hr />{Html.text name}</>
+fragment name = <>Hi {name}<hr />{Html.text name}</>
 
 
 pub mapped : Html Int -> Html String
-mapped inner =
-    <div>{Html.map inner String.fromInt}</div>
+mapped inner = <div>{Html.map inner String.fromInt}</div>

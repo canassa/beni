@@ -42,17 +42,26 @@ update : Msg, List String -> ( List String, Cmd Msg )
 update msg lines =
     case msg of
         Save ->
-            ( lines ++ [ written (Storage.set Local "draft" "eggs"), report Local "draft" ], Cmd.none )
+            ( lines ++ [ written (Storage.set Local "draft" "eggs"), report Local "draft" ]
+            , Cmd.none
+            )
 
         Forget ->
             let
-                _ =
-                    Storage.remove Local "todos"
+                _ = Storage.remove Local "todos"
             in
-            ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ], Cmd.none )
+            ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ]
+            , Cmd.none
+            )
 
         SaveSession ->
-            ( lines ++ [ written (Storage.set Session "tab" "1"), report Session "tab", report Session "draft" ], Cmd.none )
+            ( lines
+                ++ [ written (Storage.set Session "tab" "1")
+                   , report Session "tab"
+                   , report Session "draft"
+                   ]
+            , Cmd.none
+            )
 
 
 view : List String -> Html Msg

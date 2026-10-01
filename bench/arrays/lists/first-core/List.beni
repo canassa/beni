@@ -17,7 +17,6 @@
 --! The sibling in this directory only has to pass the build's four checks;
 --! `lists.mjs` swaps in `ports/first.js` when it bundles.
 
-
 pub equatable foreign type List a
 
 
@@ -83,13 +82,11 @@ foreign pure done : Builder a -> List a
 
 
 pub singleton : a -> List a
-singleton value =
-    [ value ]
+singleton value = [ value ]
 
 
 pub isEmpty : List a -> Bool
-isEmpty xs =
-    length xs == 0
+isEmpty xs = length xs == 0
 
 
 pub get : List a, Int -> Maybe a
@@ -101,13 +98,11 @@ get xs i =
 
 
 pub head : List a -> Maybe a
-head xs =
-    get xs 0
+head xs = get xs 0
 
 
 pub last : List a -> Maybe a
-last xs =
-    get xs (length xs - 1)
+last xs = get xs (length xs - 1)
 
 
 --| Everything but the first element: a view, O(1).
@@ -130,8 +125,7 @@ update xs i func =
 
 
 pub foldl : List a, b, (a, b -> b) -> b
-foldl xs acc func =
-    foldlHelp xs 0 (length xs) acc func
+foldl xs acc func = foldlHelp xs 0 (length xs) acc func
 
 
 foldlHelp : List a, Int, Int, b, (a, b -> b) -> b
@@ -143,8 +137,7 @@ foldlHelp xs i n acc func =
 
 
 pub foldr : List a, b, (a, b -> b) -> b
-foldr xs acc func =
-    foldrHelp xs (length xs - 1) acc func
+foldr xs acc func = foldrHelp xs (length xs - 1) acc func
 
 
 foldrHelp : List a, Int, b, (a, b -> b) -> b
@@ -156,8 +149,7 @@ foldrHelp xs i acc func =
 
 
 pub initialize : Int, (Int -> a) -> List a
-initialize n func =
-    initializeHelp 0 n func (builder n)
+initialize n func = initializeHelp 0 n func (builder n)
 
 
 initializeHelp : Int, Int, (Int -> a), Builder a -> List a
@@ -169,8 +161,7 @@ initializeHelp i n func b =
 
 
 pub repeat : a, Int -> List a
-repeat value n =
-    repeatHelp value n (builder n)
+repeat value n = repeatHelp value n (builder n)
 
 
 repeatHelp : a, Int, Builder a -> List a
@@ -182,8 +173,7 @@ repeatHelp value n b =
 
 
 pub range : Int, Int -> List Int
-range lo hi =
-    rangeHelp lo hi (builder (hi - lo + 1))
+range lo hi = rangeHelp lo hi (builder (hi - lo + 1))
 
 
 rangeHelp : Int, Int, Builder Int -> List Int
@@ -195,8 +185,7 @@ rangeHelp lo hi b =
 
 
 pub map : List a, (a -> b) -> List b
-map xs func =
-    mapHelp xs 0 (length xs) func (builder (length xs))
+map xs func = mapHelp xs 0 (length xs) func (builder (length xs))
 
 
 mapHelp : List a, Int, Int, (a -> b), Builder b -> List b
@@ -208,8 +197,7 @@ mapHelp xs i n func b =
 
 
 pub indexedMap : List a, (Int, a -> b) -> List b
-indexedMap xs func =
-    indexedMapHelp xs 0 (length xs) func (builder (length xs))
+indexedMap xs func = indexedMapHelp xs 0 (length xs) func (builder (length xs))
 
 
 indexedMapHelp : List a, Int, Int, (Int, a -> b), Builder b -> List b
@@ -224,8 +212,7 @@ indexedMapHelp xs i n func b =
 pub filter : List a, (a -> Bool) -> List a
 filter xs isGood =
     let
-        kept =
-            filterHelp xs 0 (length xs) isGood (builder 0)
+        kept = filterHelp xs 0 (length xs) isGood (builder 0)
     in
     if length kept == length xs then
         xs
@@ -239,8 +226,7 @@ filterHelp xs i n isGood b =
         done b
     else
         let
-            x =
-                unsafeGet xs i
+            x = unsafeGet xs i
         in
         if isGood x then
             filterHelp xs (i + 1) n isGood (add b x)
@@ -249,8 +235,7 @@ filterHelp xs i n isGood b =
 
 
 pub filterMap : List a, (a -> Maybe b) -> List b
-filterMap xs func =
-    filterMapHelp xs 0 (length xs) func (builder 0)
+filterMap xs func = filterMapHelp xs 0 (length xs) func (builder 0)
 
 
 filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b -> List b
@@ -267,8 +252,7 @@ filterMapHelp xs i n func b =
 
 
 pub reverse : List a -> List a
-reverse xs =
-    reverseHelp xs (length xs - 1) (builder (length xs))
+reverse xs = reverseHelp xs (length xs - 1) (builder (length xs))
 
 
 reverseHelp : List a, Int, Builder a -> List a
@@ -281,18 +265,15 @@ reverseHelp xs i b =
 
 pub member : List a, a -> Bool
     where a.eq : a, a -> Bool
-member xs value =
-    any xs (\x -> x == value)
+member xs value = any xs (\x -> x == value)
 
 
 pub all : List a, (a -> Bool) -> Bool
-all xs isOkay =
-    not (any xs (\x -> not (isOkay x)))
+all xs isOkay = not (any xs (\x -> not (isOkay x)))
 
 
 pub any : List a, (a -> Bool) -> Bool
-any xs isOkay =
-    anyHelp xs 0 (length xs) isOkay
+any xs isOkay = anyHelp xs 0 (length xs) isOkay
 
 
 anyHelp : List a, Int, Int, (a -> Bool) -> Bool
@@ -326,13 +307,11 @@ minimum xs =
 
 
 pub sum : List number -> number
-sum xs =
-    foldl xs 0 (+)
+sum xs = foldl xs 0 (+)
 
 
 pub product : List number -> number
-product xs =
-    foldl xs 1 (*)
+product xs = foldl xs 1 (*)
 
 
 addAll : Builder a, List a, Int, Int -> Builder a
@@ -344,8 +323,7 @@ addAll b xs i n =
 
 
 pub concat : List (List a) -> List a
-concat lists =
-    done (foldl lists (builder 0) (\xs b -> addAll b xs 0 (length xs)))
+concat lists = done (foldl lists (builder 0) (\xs b -> addAll b xs 0 (length xs)))
 
 
 pub concatMap : List a, (a -> List b) -> List b
@@ -355,8 +333,7 @@ concatMap xs func =
             (builder 0)
             (\x b ->
                 let
-                    ys =
-                        func x
+                    ys = func x
                 in
                 addAll b ys 0 (length ys)
             )
@@ -376,8 +353,7 @@ intersperse xs sep =
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
     let
-        n =
-            min (length xs) (length ys)
+        n = min (length xs) (length ys)
     in
     map2Help xs ys 0 n func (builder n)
 
@@ -403,7 +379,7 @@ map4 xs ys zs ws func =
 
 
 pub map5 :
-    List a
+      List a
     , List b
     , List c
     , List d
@@ -412,24 +388,28 @@ pub map5 :
     -> List result
 map5 xs ys zs ws vs func =
     initialize (min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i) (unsafeGet vs i))
+        (\i ->
+            func
+                (unsafeGet xs i)
+                (unsafeGet ys i)
+                (unsafeGet zs i)
+                (unsafeGet ws i)
+                (unsafeGet vs i)
+        )
 
 
 pub sort : List a -> List a
     where a.compare : a, a -> Order
-sort xs =
-    sortWith xs (\x y -> x.compare y)
+sort xs = sortWith xs (\x y -> x.compare y)
 
 
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
     let
-        decorated =
-            map xs (\x -> ( toKey x, x ))
+        decorated = map xs (\x -> ( toKey x, x ))
 
-        sorted =
-            sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
+        sorted = sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
     in
     map sorted (\( _, x ) -> x)
 
@@ -438,21 +418,17 @@ sortBy xs toKey =
 pub sortWith : List a, (a, a -> Order) -> List a
 sortWith xs cmp =
     let
-        n =
-            length xs
+        n = length xs
     in
     if n <= 1 then
         xs
     else
         let
-            half =
-                n // 2
+            half = n // 2
 
-            left =
-                sortWith (slice xs 0 half) cmp
+            left = sortWith (slice xs 0 half) cmp
 
-            right =
-                sortWith (slice xs half n) cmp
+            right = sortWith (slice xs half n) cmp
         in
         mergeHelp left 0 (length left) right 0 (length right) cmp (builder n)
 
@@ -465,11 +441,9 @@ mergeHelp xs i n ys j m cmp b =
         done (addAll b xs i n)
     else
         let
-            x =
-                unsafeGet xs i
+            x = unsafeGet xs i
 
-            y =
-                unsafeGet ys j
+            y = unsafeGet ys j
         in
         case cmp x y of
             GT ->
@@ -496,8 +470,7 @@ drop xs n =
 
 
 pub partition : List a, (a -> Bool) -> ( List a, List a )
-partition xs pred =
-    partitionHelp xs 0 (length xs) pred (builder 0) (builder 0)
+partition xs pred = partitionHelp xs 0 (length xs) pred (builder 0) (builder 0)
 
 
 partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a -> ( List a, List a )
@@ -506,8 +479,7 @@ partitionHelp xs i n pred yes no =
         ( done yes, done no )
     else
         let
-            x =
-                unsafeGet xs i
+            x = unsafeGet xs i
         in
         if pred x then
             partitionHelp xs (i + 1) n pred (add yes x) no
@@ -516,8 +488,7 @@ partitionHelp xs i n pred yes no =
 
 
 pub unzip : List ( a, b ) -> ( List a, List b )
-unzip pairs =
-    unzipHelp pairs 0 (length pairs) (builder 0) (builder 0)
+unzip pairs = unzipHelp pairs 0 (length pairs) (builder 0) (builder 0)
 
 
 unzipHelp : List ( a, b ), Int, Int, Builder a, Builder b -> ( List a, List b )

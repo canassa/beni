@@ -31,47 +31,39 @@ order x y =
 
 same : a, a -> Bool
     where a.eq : a, a -> Bool
-same x y =
-    x == y
+same x y = x == y
 
 
 show : Bool -> String
 show b =
     if b then
         "True"
-
     else
         "False"
 
 
 ints : Int, Int -> String
-ints a b =
-    order a b
+ints a b = order a b
 
 
 floats : Float, Float -> String
-floats a b =
-    order a b
+floats a b = order a b
 
 
 chars : Char, Char -> String
-chars a b =
-    order a b
+chars a b = order a b
 
 
 strings : String, String -> String
-strings a b =
-    order a b
+strings a b = order a b
 
 
 sameInts : Int, Int -> Bool
-sameInts a b =
-    same a b
+sameInts a b = same a b
 
 
 sameChars : Char, Char -> Bool
-sameChars a b =
-    same a b
+sameChars a b = same a b
 
 
 main : Program

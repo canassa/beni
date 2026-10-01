@@ -18,7 +18,8 @@ type Msg
 
 
 type alias Model =
-    { draft : String, keys : List String }
+    draft : String
+    keys : List String
 
 
 update : Msg, Model -> Model

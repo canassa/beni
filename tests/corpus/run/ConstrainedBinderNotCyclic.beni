@@ -7,14 +7,12 @@
 import Node exposing (Program)
 
 
-f x y =
-    x == y
+f x y = x == y
 
 
 g x y =
     if x == y then
         Basics.eq x y
-
     else
         False
 
@@ -23,11 +21,9 @@ show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ show (f 1 1), show (g "a" "a"), show (g 1 2) ]
+main = Node.printLines [ show (f 1 1), show (g "a" "a"), show (g 1 2) ]

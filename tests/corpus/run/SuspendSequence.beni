@@ -38,8 +38,7 @@ fast done label =
 
 
 pair : Int, Int -> Int
-pair a b =
-    a * 100 + b
+pair a b = a * 100 + b
 
 
 main : Program

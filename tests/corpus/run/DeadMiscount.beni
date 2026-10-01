@@ -16,11 +16,9 @@ import Node exposing (Program)
 f x y n =
     if n == 0 then
         x == y
-
     else
         f x y (n - 1)
 
 
 main : Program
-main =
-    Node.printLines [ "x" ]
+main = Node.printLines [ "x" ]

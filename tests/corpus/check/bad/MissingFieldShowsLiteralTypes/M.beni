@@ -5,13 +5,14 @@
 -- have a `extra` field: `{ n : a, name : b }`", which is what unifying the
 -- literal with `M.R` before its fields are typed would print.
 pub type alias R =
-    { name : String, n : Int, extra : Bool }
+    name : String
+    n : Int
+    extra : Bool
 
 
 pub describe : R -> String
 describe r =
     if r.extra then
         r.name
-
     else
         "no"

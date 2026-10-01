@@ -39,18 +39,15 @@ update msg lines =
     case msg of
         Quota ->
             let
-                _ =
-                    Fault.fillQuota ()
+                _ = Fault.fillQuota ()
             in
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
         Blocked ->
             let
-                _ =
-                    Fault.blockSession ()
+                _ = Fault.blockSession ()
 
-                _ =
-                    Storage.remove Session "k"
+                _ = Storage.remove Session "k"
 
                 found =
                     case Storage.get Session "k" of
@@ -60,12 +57,17 @@ update msg lines =
                         Nothing ->
                             "nothing"
             in
-            ( lines ++ [ found, "keys ${String.fromInt (List.length (Storage.keys Session))}", written (Storage.set Session "k" "v") ], Cmd.none )
+            ( lines
+                ++ [ found
+                   , "keys ${String.fromInt (List.length (Storage.keys Session))}"
+                   , written (Storage.set Session "k" "v")
+                   ]
+            , Cmd.none
+            )
 
         Broken ->
             let
-                _ =
-                    Fault.breakStorage ()
+                _ = Fault.breakStorage ()
             in
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
@@ -86,4 +88,5 @@ view lines =
 
 main : Tea.Program
 main =
-    Tea.element { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

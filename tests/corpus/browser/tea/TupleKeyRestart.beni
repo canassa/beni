@@ -21,10 +21,14 @@ update : Msg, Int -> ( Int, Cmd Msg )
 update msg n =
     case msg of
         ByTuple id ->
-            ( n + 1, Cmd.keyed ( "row", id ) Cmd.Restart (work "tuple ${String.fromInt (n + 1)}" _) )
+            ( n + 1
+            , Cmd.keyed ( "row", id ) Cmd.Restart (work "tuple ${String.fromInt (n + 1)}" _)
+            )
 
         ByRecord id ->
-            ( n + 1, Cmd.keyed { row = id } Cmd.Restart (work "record ${String.fromInt (n + 1)}" _) )
+            ( n + 1
+            , Cmd.keyed { row = id } Cmd.Restart (work "record ${String.fromInt (n + 1)}" _)
+            )
 
 
 work : String, Cmd.Send Msg -> ()
@@ -37,7 +41,8 @@ work name _ =
                     Debug.log () "${name} done"
 
                 Cancelled ->
-                    Debug.log () "${name} cancelled")
+                    Debug.log () "${name} cancelled"
+        )
         (\_ -> Time.sleep (Time.millis 100))
 
 

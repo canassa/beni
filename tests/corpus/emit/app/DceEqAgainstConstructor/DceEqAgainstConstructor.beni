@@ -22,7 +22,6 @@ isPicked : Maybe Int, Int -> String
 isPicked picked n =
     if picked == Just n then
         "picked"
-
     else
         "not picked"
 
@@ -31,11 +30,9 @@ notTwo : Shape -> String
 notTwo shape =
     if shape /= Circle 2 then
         "other"
-
     else
         "circle 2"
 
 
 main : Program
-main =
-    Node.printLines [ isPicked (Just 3) 3, notTwo (Square 2) ]
+main = Node.printLines [ isPicked (Just 3) 3, notTwo (Square 2) ]

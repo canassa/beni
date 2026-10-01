@@ -8,13 +8,10 @@
 -- `\x -> True` for the filter, which no longer compares), is VALUE
 -- DEFINED IN TERMS OF ITSELF at the position below.
 
-
 zs : List a
     where a.eq : a, a -> Bool
-zs =
-    List.filter zs (\x -> x == x)
+zs = List.filter zs (\x -> x == x)
 
 
 ints : List Int
-ints =
-    zs
+ints = zs

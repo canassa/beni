@@ -4,7 +4,6 @@
 -- `styles` (14:15) and an element named twice after `on` (17:15) are each
 -- `duplicate_declaration`, and the row is published as absent.
 
-
 pub element "img" void void
 
 

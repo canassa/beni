@@ -12,7 +12,8 @@ type Msg
 
 
 type alias Model =
-    { draft : String, saved : List String }
+    draft : String
+    saved : List String
 
 
 update : Msg, Model -> Model
@@ -21,29 +22,32 @@ update msg model =
         Typed text ->
             if String.contains text "!" then
                 model
-
             else
                 { model | draft = text }
 
         Pressed key ->
             if key == "Enter" then
                 { draft = "", saved = [ model.draft, ...model.saved ] }
-
             else
                 model
 
 
 view : Model -> Node Msg
 view model =
-    Page.element "form"
-        []
+    Page.element "form" []
         [ Page.element "input"
-            [ Page.attribute "id" "draft", Page.value model.draft, Page.onInput Typed, Page.onKeyDown Pressed ]
+            [ Page.attribute "id" "draft"
+            , Page.value model.draft
+            , Page.onInput Typed
+            , Page.onKeyDown Pressed
+            ]
             []
-        , Page.element "ul" [] (List.map model.saved (\text -> Page.element "li" [] [ Page.text text ]))
+        , Page.element
+            "ul"
+            []
+            (List.map model.saved (\text -> Page.element "li" [] [ Page.text text ]))
         ]
 
 
 main : Page.Program
-main =
-    Page.sandbox { init = { draft = "", saved = [] }, update = update, view = view }
+main = Page.sandbox { init = { draft = "", saved = [] }, update = update, view = view }

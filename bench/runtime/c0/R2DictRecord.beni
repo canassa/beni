@@ -17,17 +17,16 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 blocks : Int
-blocks =
-    120
+blocks = 120
 
 
 perBlock : Int
-perBlock =
-    500
+perBlock = 500
 
 
 comparePoint : Point, Point -> Order
@@ -50,10 +49,8 @@ points =
 main : Program
 main =
     let
-        dict =
-            List.foldl points (Dict.empty comparePoint) (\p d -> Dict.insert d p (p.x + p.y))
+        dict = List.foldl points (Dict.empty comparePoint) (\p d -> Dict.insert d p (p.x + p.y))
 
-        total =
-            List.foldl points 0 (\p acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
+        total = List.foldl points 0 (\p acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
     in
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

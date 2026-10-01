@@ -14,19 +14,16 @@ type Tag a
 
 
 t : Tag (Int -> Int)
-t =
-    Tag 1
+t = Tag 1
 
 
 show : Bool -> String
 show value =
     if value then
         "True"
-
     else
         "False"
 
 
 main : Program
-main =
-    Node.printLines [ show (t == Tag 1), show (t < Tag 2) ]
+main = Node.printLines [ show (t == Tag 1), show (t < Tag 2) ]

@@ -21,11 +21,13 @@ type Msg
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 type alias Model =
-    { rows : List Row, tags : List String }
+    rows : List Row
+    tags : List String
 
 
 rotate : List a -> List a
@@ -48,7 +50,12 @@ update msg model =
             { model | rows = List.reverse model.rows }
 
         Relabel ->
-            { model | rows = List.map model.rows (\row -> if row.id == 2 then { row | label = "two" } else row) }
+            { model
+                | rows =
+                    List.map
+                        model.rows
+                        (\row -> if row.id == 2 then { row | label = "two" } else row)
+            }
 
         Duplicate ->
             { model | tags = [ "a", ...model.tags ] }
@@ -62,7 +69,9 @@ view model =
         <button id="relabel" onClick={Relabel}>relabel</button>
         <button id="duplicate" onClick={Duplicate}>duplicate</button>
         <ul id="keyed">
-            <For each={model.rows} keyed={.id}>{\row -> <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>
+                {\row -> <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}
+            </For>
         </ul>
         <ul id="position">
             <For each={model.rows} keyed={False}>{\row -> <li><input />{row.label}</li>}</For>
@@ -76,7 +85,11 @@ view model =
 main : Browser.Program
 main =
     Browser.program
-        { init = { rows = [ { id = 1, label = "one" }, { id = 2, label = "2" }, { id = 3, label = "three" } ], tags = [ "a", "b", "a" ] }
+        { init =
+            { rows =
+                [ { id = 1, label = "one" }, { id = 2, label = "2" }, { id = 3, label = "three" } ]
+            , tags = [ "a", "b", "a" ]
+            }
         , update = update
         , view = view
         }

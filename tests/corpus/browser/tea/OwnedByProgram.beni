@@ -43,8 +43,7 @@ worker _ =
 
 
 view : () -> Html Msg
-view () =
-    <button id="go" onClick={Go}>go</button>
+view () = <button id="go" onClick={Go}>go</button>
 
 
 main : Tea.Program

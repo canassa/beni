@@ -6,9 +6,8 @@
 -- arguments of a method call are a range inside its payload and not `rhs`
 -- itself, so the fallback would have underlined the whole call.
 pub type alias Adder =
-    { add : Int, Int -> Int }
+    add : Int, Int -> Int
 
 
 pub sum : Adder -> Int
-sum adder =
-    adder.add 1 "two"
+sum adder = adder.add 1 "two"

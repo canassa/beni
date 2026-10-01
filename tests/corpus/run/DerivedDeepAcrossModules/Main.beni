@@ -22,7 +22,6 @@ chain : Int, Wrap U -> U
 chain n acc =
     if n == 0 then
         U 0 acc
-
     else
         chain (n - 1) (Wrap.Wrap n (U n acc))
 
@@ -31,7 +30,6 @@ show : String, Bool -> String
 show label b =
     if b then
         label ++ ": True"
-
     else
         label ++ ": False"
 
@@ -39,14 +37,11 @@ show label b =
 main : Program
 main =
     let
-        one =
-            chain 100000 Wrap.Empty
+        one = chain 100000 Wrap.Empty
 
-        same =
-            chain 100000 Wrap.Empty
+        same = chain 100000 Wrap.Empty
 
-        other =
-            chain 100000 (Wrap.Wrap 0 UEnd)
+        other = chain 100000 (Wrap.Wrap 0 UEnd)
     in
     Node.printLines
         [ show "same ==" (one == same)

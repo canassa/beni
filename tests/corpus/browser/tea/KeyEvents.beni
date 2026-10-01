@@ -46,8 +46,7 @@ pressed event =
 
 
 flag : Bool, String -> String
-flag on name =
-    if on then name ++ " " else ""
+flag on name = if on then name ++ " " else ""
 
 
 describe : Html.Event -> String
@@ -70,5 +69,4 @@ view model =
 
 
 main : Tea.Program
-main =
-    Tea.sandbox { init = { draft = "", items = [], last = "" }, update = update, view = view }
+main = Tea.sandbox { init = { draft = "", items = [], last = "" }, update = update, view = view }

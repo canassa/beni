@@ -16,11 +16,16 @@ type Status
 
 
 type alias Hit =
-    { id : String, title : String }
+    id : String
+    title : String
 
 
 type alias Model =
-    { query : String, width : Int, status : Status, favourites : List String, saving : List String }
+    query : String
+    width : Int
+    status : Status
+    favourites : List String
+    saving : List String
 
 
 type Msg

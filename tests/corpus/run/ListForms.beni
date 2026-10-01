@@ -21,8 +21,7 @@ import String
 
 
 plain : List Int
-plain =
-    List.range 1 40
+plain = List.range 1 40
 
 
 view : List Int
@@ -36,13 +35,11 @@ view =
 
 
 pushed : List Int
-pushed =
-    List.foldl (List.range 1 40) [] (\n acc -> List.push acc n)
+pushed = List.foldl (List.range 1 40) [] (\n acc -> List.push acc n)
 
 
 prepended : List Int
-prepended =
-    List.foldr (List.range 1 40) [] (\n acc -> [ n, ...acc ])
+prepended = List.foldr (List.range 1 40) [] (\n acc -> [ n, ...acc ])
 
 
 pushedTail : List Int
@@ -77,20 +74,17 @@ forms =
 
 
 weighted : List Int -> Int
-weighted xs =
-    List.foldl (List.indexedMap xs (\i x -> (i + 1) * x)) 0 (+)
+weighted xs = List.foldl (List.indexedMap xs (\i x -> (i + 1) * x)) 0 (+)
 
 
 bools : List Bool -> String
-bools bs =
-    String.concat (List.map bs (\b -> if b then "T" else "F"))
+bools bs = String.concat (List.map bs (\b -> if b then "T" else "F"))
 
 
 line : ( String, List Int ) -> String
 line ( name, xs ) =
     let
-        others =
-            List.map forms (\( _, ys ) -> ys)
+        others = List.map forms (\( _, ys ) -> ys)
     in
     String.join
         [ name
@@ -98,7 +92,16 @@ line ( name, xs ) =
         , String.join (List.map others (\ys -> Debug.toString (xs.compare ys))) ","
         , Debug.toString (xs.compare [ ...plain, 41 ])
         , Debug.toString (xs.compare (List.set plain 39 41))
-        , String.join (List.map others (\ys -> String.fromInt (List.length (xs ++ ys)) ++ "/" ++ String.fromInt (weighted (xs ++ ys)))) ","
+        , String.join
+            (List.map
+                others
+                (\ys ->
+                    String.fromInt (List.length (xs ++ ys))
+                        ++ "/"
+                        ++ String.fromInt (weighted (xs ++ ys))
+                )
+            )
+            ","
         , String.join (List.map others (\ys -> String.fromInt (weighted [ ...ys, ...xs ]))) ","
         , Debug.toString xs
         ]
@@ -111,7 +114,11 @@ readers ( name, xs ) =
         ends =
             case xs of
                 [ first, ...middle, last ] ->
-                    String.fromInt first ++ ".." ++ String.fromInt (List.length middle) ++ ".." ++ String.fromInt last
+                    String.fromInt first
+                        ++ ".."
+                        ++ String.fromInt (List.length middle)
+                        ++ ".."
+                        ++ String.fromInt last
 
                 _ ->
                     "short"
@@ -139,17 +146,18 @@ afterFirst xs =
 
 letterTrie : List Char
 letterTrie =
-    List.foldl (String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN") [] (\c acc -> List.push acc c)
+    List.foldl
+        (String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN")
+        []
+        (\c acc -> List.push acc c)
 
 
 letterView : List Char
-letterView =
-    afterFirst (String.toList "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN")
+letterView = afterFirst (String.toList "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN")
 
 
 words : List String
-words =
-    List.map (List.range 1 40) String.fromInt
+words = List.map (List.range 1 40) String.fromInt
 
 
 main : Program
@@ -161,6 +169,7 @@ main =
                , String.fromList letterView
                , String.join (List.foldl words [] (\w acc -> List.push acc w)) "-"
                , String.join (afterFirst [ "x", ...words ]) "+"
-               , Debug.toString (Dict.toList (Dict.fromList (List.map pushed (\n -> ( modBy n 7, n )))))
+               , Debug.toString
+                   (Dict.toList (Dict.fromList (List.map pushed (\n -> ( modBy n 7, n )))))
                ]
         )

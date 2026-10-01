@@ -1,20 +1,16 @@
 -- See PFirst.beni. The same module with `q = h x` written first.
-h a =
-    a.combine 1
+h a = a.combine 1
 
 
 f x =
     let
-        q =
-            h x
+        q = h x
 
-        p =
-            x.combine 1
+        p = x.combine 1
 
         r =
             if True then
                 x
-
             else
                 { combine = \n -> n + 100 }
     in

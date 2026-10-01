@@ -3,7 +3,5 @@
 -- so (checker-v2.md §15.3), not "this is a function, so it may be
 -- missing an argument".
 
-
 strings : List String
-strings =
-    List.map String.fromInt [ 1, 2 ]
+strings = List.map String.fromInt [ 1, 2 ]

@@ -36,18 +36,14 @@ main : Node.Program
 main =
     let
         p : Point
-        p =
-            { x = 3, label = "p" }
+        p = { x = 3, label = "p" }
 
-        o =
-            Probe.origin ()
+        o = Probe.origin ()
 
-        made =
-            Probe.fromJs ()
+        made = Probe.fromJs ()
 
         item : Item
-        item =
-            Probe.keep { label = "kept", weight = 7 }
+        item = Probe.keep { label = "kept", weight = 7 }
     in
     Node.printLines
         [ Probe.describe p

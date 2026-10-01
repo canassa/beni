@@ -23,26 +23,22 @@ pub type Unused
 
 
 pub unusedEqual : Unused, Unused -> Bool
-unusedEqual a b =
-    a == b
+unusedEqual a b = a == b
 
 
 pub unusedGeneric : a, a -> Bool
     where a.eq : a, a -> Bool
-unusedGeneric x y =
-    x.eq y
+unusedGeneric x y = x.eq y
 
 
 pub unusedConstant : String
-unusedConstant =
-    String.fromInt (String.length "abc")
+unusedConstant = String.fromInt (String.length "abc")
 
 
 pub unusedRecursive : Int -> Int
 unusedRecursive n =
     if n <= 0 then
         0
-
     else
         1 + unusedRecursive (n - 1)
 
@@ -51,7 +47,6 @@ pub unusedEven : Int -> Bool
 unusedEven n =
     if n == 0 then
         True
-
     else
         unusedOdd (n - 1)
 
@@ -60,16 +55,13 @@ pub unusedOdd : Int -> Bool
 unusedOdd n =
     if n == 0 then
         False
-
     else
         unusedEven (n - 1)
 
 
 greet : String -> String
-greet who =
-    "hello, " ++ who
+greet who = "hello, " ++ who
 
 
 main : Program
-main =
-    Node.printLines [ greet "world", String.fromInt 1 ]
+main = Node.printLines [ greet "world", String.fromInt 1 ]

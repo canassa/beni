@@ -430,7 +430,7 @@ diff t1 t2 = foldl t2 t1 (\key _ t -> remove t key)
 --| You then traverse all the keys from lowest to highest, building up
 --| whatever you want.
 pub merge :
-    Dict k a
+      Dict k a
     , Dict k b
     , result
     , (k, a, result -> result)

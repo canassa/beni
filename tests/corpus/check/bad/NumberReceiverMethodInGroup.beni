@@ -10,10 +10,8 @@
 ma n x =
     if n > 0 then
         mb n
-
     else
         x.size ()
 
 
-mb n =
-    ma 0 3
+mb n = ma 0 3

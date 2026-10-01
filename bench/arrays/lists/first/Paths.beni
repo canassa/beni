@@ -40,7 +40,6 @@ undoSession n =
 
                     Nothing ->
                         ( current, history )
-
             else
                 ( i, List.push history current )
         )

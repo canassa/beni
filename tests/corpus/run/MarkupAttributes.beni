@@ -19,8 +19,18 @@ type Msg
 view : String, Int, Bool -> Html Msg
 view name size on =
     <div>
-        <p title="Fish &amp; &quot;chips&quot; <b>" class="size-${String.fromInt size}" id={name}>x</p>
-        <input type="checkbox" tabindex={3} maxlength={size} disabled checked={on} required={False} readonly={not on} />
+        <p title="Fish &amp; &quot;chips&quot; <b>" class="size-${String.fromInt size}" id={name}>
+            x
+        </p>
+        <input
+            type="checkbox"
+            tabindex={3}
+            maxlength={size}
+            disabled
+            checked={on}
+            required={False}
+            readonly={not on}
+        />
         <a href="javascript:alert(1)">a</a>
         <a href={"  JavaScript:alert(2)"}>b</a>
         <a href={"/next?a=1&b=2"}>c</a>

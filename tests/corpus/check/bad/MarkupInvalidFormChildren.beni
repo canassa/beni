@@ -8,5 +8,5 @@ view model =
         <For each={model.a}>{\x -> <p />} and</For>
         <For each={model.a}>{\x -> <p />}<p /></For>
         <For each={model.a}>{} {\x -> <p />} {\y -> <p />}</For>
-        <Show when={model.b} keyed></Show>
+        <Show when={model.b} keyed />
     </div>

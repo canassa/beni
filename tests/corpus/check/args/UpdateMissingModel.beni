@@ -2,7 +2,7 @@
 -- model, and the call passes only the message. The result is used where a
 -- `Model` is wanted, so the partial application cannot be right.
 pub type alias Model =
-    { count : Int }
+    count : Int
 
 
 pub type Msg
@@ -21,5 +21,4 @@ update msg model =
 
 
 pub step : Model -> Model
-step model =
-    update Increment
+step model = update Increment

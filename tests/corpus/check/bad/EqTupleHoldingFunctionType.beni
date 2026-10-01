@@ -13,6 +13,5 @@ type Handler
 check h =
     if ( h, 1 ) == ( h, 1 ) then
         [ h, Handler (\n -> n) ]
-
     else
         []

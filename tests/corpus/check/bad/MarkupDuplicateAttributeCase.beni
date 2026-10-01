@@ -4,5 +4,7 @@
 -- (language.md §11.5). The same for two quoted names that differ in case
 -- (8:25).
 view model =
-    <div><p title="a" "TITLE"="b" />
-        <p "data-X"="1" "DATA-x"="2" /></div>
+    <div>
+        <p title="a" "TITLE"="b" />
+        <p "data-X"="1" "DATA-x"="2" />
+    </div>

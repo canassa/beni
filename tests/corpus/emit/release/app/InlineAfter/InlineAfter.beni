@@ -21,27 +21,22 @@ import Node exposing (Program)
 
 
 addTwo : Int -> Int
-addTwo =
-    Helpers.adder 2
+addTwo = Helpers.adder 2
 
 
 twice : Int -> Int
-twice n =
-    n * 2
+twice n = n * 2
 
 
 describe : Bool, Int -> String
 describe verbose n =
     let
-        b =
-            Helpers.box "item" n
+        b = Helpers.box "item" n
 
-        doubled =
-            twice n
+        doubled = twice n
     in
     if verbose then
         "${Helpers.label n} ${b.name}"
-
     else
         "${Helpers.label doubled} ${b.name} ${String.fromInt b.size}"
 
@@ -49,8 +44,7 @@ describe verbose n =
 main : Program
 main =
     let
-        fourteen =
-            twice 7
+        fourteen = twice 7
     in
     Node.printLines
         [ describe False 3

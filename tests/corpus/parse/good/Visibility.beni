@@ -9,8 +9,8 @@ pub type Color
     | Green
 
 
-pub opaque type Token =
-    Token String
+pub opaque type Token
+    = Token String
 
 
 type Hidden
@@ -18,18 +18,14 @@ type Hidden
 
 
 pub greeting : String
-greeting =
-    "hi"
+greeting = "hi"
 
 
-pub answer =
-    42
+pub answer = 42
 
 
 helper : Int -> Int
-helper n =
-    n + 1
+helper n = n + 1
 
 
-private =
-    helper 1
+private = helper 1

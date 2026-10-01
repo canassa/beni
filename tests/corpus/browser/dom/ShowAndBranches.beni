@@ -18,11 +18,13 @@ type Msg
 
 
 type alias User =
-    { id : Int, name : String }
+    id : Int
+    name : String
 
 
 type alias Model =
-    { user : Maybe User, left : Bool }
+    user : Maybe User
+    left : Bool
 
 
 update : Msg, Model -> Model
@@ -42,7 +44,6 @@ side : Bool -> Html msg
 side left =
     if left then
         <input id="left" />
-
     else
         <input id="right" />
 
@@ -65,4 +66,8 @@ view model =
 
 main : Browser.Program
 main =
-    Browser.program { init = { user = Just { id = 1, name = "Ada" }, left = True }, update = update, view = view }
+    Browser.program
+        { init = { user = Just { id = 1, name = "Ada" }, left = True }
+        , update = update
+        , view = view
+        }

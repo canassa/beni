@@ -15,47 +15,40 @@ import Node
 
 
 identity : a -> a
-identity x =
-    x
+identity x = x
 
 
 wrap : Int -> Int
-wrap n =
-    twice n + 1
+wrap n = twice n + 1
 
 
 twice : Int -> Int
-twice n =
-    Debug.log n "twice" * 2
+twice n = Debug.log n "twice" * 2
 
 
 addThen : Int, Int -> Int
-addThen a b =
-    a + twice b
+addThen a b = a + twice b
 
 
 thenAdd : Int, Int -> Int
-thenAdd a b =
-    twice a + b
+thenAdd a b = twice a + b
 
 
 both : Int -> Int
-both n =
-    n * n
+both n = n * n
 
 
 ignore : Int -> Int
-ignore _ =
-    0
+ignore _ = 0
 
 
 type alias Op =
-    { name : String, apply : Int -> Int }
+    name : String
+    apply : Int -> Int
 
 
 apply : Op, Int -> Int
-apply op n =
-    op.apply n
+apply op n = op.apply n
 
 
 main : Node.Program

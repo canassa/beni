@@ -7,7 +7,8 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 type Wrapped
@@ -15,8 +16,7 @@ type Wrapped
 
 
 taxicab : Point -> Int
-taxicab { x, y } =
-    x + y
+taxicab { x, y } = x + y
 
 
 firstOf : List Int -> String

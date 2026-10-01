@@ -3,4 +3,5 @@
 -- `count` field, an `Int`, as a `String`, and the message shows the field's
 -- type, never "This is not a record with a `count` field".
 pub type alias Counter =
-    { count : Int, label : String }
+    count : Int
+    label : String

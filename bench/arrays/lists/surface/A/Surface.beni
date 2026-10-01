@@ -1,8 +1,8 @@
 -- research/38 §17's size measurement: every public function of today's two
 -- sequence types, `List` (core) and §15's `Array` (scenarios/Array.beni),
 -- reached from one module so that nothing is eliminated.
-import List
 import Array exposing (Array)
+import List
 
 
 pub list =
@@ -68,25 +68,20 @@ pub array =
 
 
 pub member : List Int, Int -> Bool
-member xs x =
-    List.member xs x
+member xs x = List.member xs x
 
 
 pub sort : List Int -> List Int
-sort xs =
-    List.sort xs
+sort xs = List.sort xs
 
 
 pub sortBy : List Int, (Int -> Int) -> List Int
-sortBy xs f =
-    List.sortBy xs f
+sortBy xs f = List.sortBy xs f
 
 
 pub eq : List Int, List Int -> Bool
-eq xs ys =
-    xs == ys
+eq xs ys = xs == ys
 
 
 pub lt : List Int, List Int -> Bool
-lt xs ys =
-    xs < ys
+lt xs ys = xs < ys

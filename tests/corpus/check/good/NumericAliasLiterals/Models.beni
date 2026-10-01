@@ -10,19 +10,16 @@ pub type alias Score =
 
 
 pub type alias Box =
-    { value : Int }
+    value : Int
 
 
 pub defaultId : Id
-defaultId =
-    0
+defaultId = 0
 
 
 pub defaultScore : Score
-defaultScore =
-    0
+defaultScore = 0
 
 
 pub defaultBox : Box
-defaultBox =
-    { value = 0 }
+defaultBox = { value = 0 }

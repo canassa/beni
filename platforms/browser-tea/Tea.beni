@@ -36,7 +36,7 @@ pub type alias Program =
 --| message a handler sends goes through `update`. Several messages in one
 --| task are rendered once, after the task.
 pub sandbox :
-    { init : model, update : msg, model -> model, view : model -> Html msg }
+      { init : model, update : msg, model -> model, view : model -> Html msg }
     -> Program
 sandbox app = Browser.program app
 
@@ -50,11 +50,11 @@ sandbox app = Browser.program app
 --| message started it. A command that never waits runs where its fiber
 --| would have started, with none.
 pub element :
-    { init : ( model, Cmd msg )
-    , update : msg, model -> ( model, Cmd msg )
-    , view : model -> Html msg
-    , subscriptions : model -> Sub msg
-    }
+      { init : ( model, Cmd msg )
+      , update : msg, model -> ( model, Cmd msg )
+      , view : model -> Html msg
+      , subscriptions : model -> Sub msg
+      }
     -> Program
 element app =
     Browser.hosted
@@ -210,7 +210,7 @@ starter policy old =
 
 
 startAfter :
-    Policy
+      Policy
     , List (Run msg)
     , Run msg
     , (Host msg, Scope, Job msg -> Run msg)

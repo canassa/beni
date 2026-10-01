@@ -53,12 +53,12 @@ boundField =
 main : Program
 main =
     let
-        (Box four _) =
-            Debug.log (Box 4 "d") "letPattern"
+        (Box four _) = Debug.log (Box 4 "d") "letPattern"
 
         five =
             case ( Debug.log 0 "tupleElement", 5 ) of
                 ( _, k ) ->
                     k
     in
-    Node.printLines (List.map [ nullary, wildFields (Box 0 "b"), boundField, four, five ] String.fromInt)
+    Node.printLines
+        (List.map [ nullary, wildFields (Box 0 "b"), boundField, four, five ] String.fromInt)

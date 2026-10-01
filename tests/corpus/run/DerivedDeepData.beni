@@ -37,7 +37,6 @@ list : Int, L -> L
 list n acc =
     if n == 0 then
         acc
-
     else
         list (n - 1) (Cons n acc)
 
@@ -46,7 +45,6 @@ deep : Int, Maybe Deep -> Maybe Deep
 deep n acc =
     if n == 0 then
         acc
-
     else
         deep (n - 1) (Just (Deep { next = acc, v = n }))
 
@@ -55,7 +53,6 @@ show : String, Bool -> String
 show label b =
     if b then
         label ++ ": True"
-
     else
         label ++ ": False"
 
@@ -63,26 +60,19 @@ show label b =
 main : Program
 main =
     let
-        same =
-            list 100000 Nil
+        same = list 100000 Nil
 
-        twin =
-            list 100000 Nil
+        twin = list 100000 Nil
 
-        longer =
-            list 100000 (Cons 0 Nil)
+        longer = list 100000 (Cons 0 Nil)
 
-        bigger =
-            list 100000 (Cons 1 Nil)
+        bigger = list 100000 (Cons 1 Nil)
 
-        nested =
-            deep 10000 Nothing
+        nested = deep 10000 Nothing
 
-        nestedTwin =
-            deep 10000 Nothing
+        nestedTwin = deep 10000 Nothing
 
-        nestedOther =
-            deep 10000 (Just (Deep { next = Nothing, v = 0 }))
+        nestedOther = deep 10000 (Just (Deep { next = Nothing, v = 0 }))
     in
     Node.printLines
         [ show "list == list" (same == twin)

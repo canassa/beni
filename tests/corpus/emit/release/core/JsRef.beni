@@ -50,8 +50,7 @@ schedule () =
             _ = Js.write scheduled True
 
             _ =
-                Js.apply
-                    (Js.global "queueMicrotask")
+                Js.apply (Js.global "queueMicrotask")
                     [ Js.from
                         (\() ->
                             if Js.read scheduled then

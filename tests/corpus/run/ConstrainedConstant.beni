@@ -17,27 +17,23 @@ import String
 
 blank : List a
     where a.eq : a, a -> Bool
-blank =
-    []
+blank = []
 
 
 -- Two instantiations at different types. Each site applies its OWN
 -- evidence, so neither may be a closure the other shares.
 blankInts : List Int
-blankInts =
-    blank
+blankInts = blank
 
 
 blankStrings : List String
-blankStrings =
-    blank
+blankStrings = blank
 
 
 yn : Bool -> String
 yn b =
     if b then
         "T"
-
     else
         "F"
 

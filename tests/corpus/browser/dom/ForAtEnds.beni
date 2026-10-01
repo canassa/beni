@@ -20,7 +20,8 @@ type Msg
 
 
 type alias Model =
-    { shape : Int, items : List String }
+    shape : Int
+    items : List String
 
 
 update : Msg, Model -> Model
@@ -60,27 +61,21 @@ only items =
 
 
 plain : Html msg
-plain =
-    <li>plain</li>
+plain = <li>plain</li>
 
 
 shape : Model -> Html msg
 shape model =
     if model.shape == 0 then
         leading model.items
-
     else if model.shape == 1 then
         trailing model.items
-
     else if model.shape == 2 then
         only model.items
-
     else if model.shape == 3 then
         plain
-
     else if model.shape == 4 then
         Html.map (trailing model.items) (\m -> m)
-
     else
         Html.map (leading model.items) (\m -> m)
 
@@ -100,5 +95,4 @@ view model =
 
 
 main : Browser.Program
-main =
-    Browser.program { init = { shape = 0, items = [ "a", "b" ] }, update = update, view = view }
+main = Browser.program { init = { shape = 0, items = [ "a", "b" ] }, update = update, view = view }

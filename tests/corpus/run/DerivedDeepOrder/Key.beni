@@ -12,7 +12,6 @@ note : Int, String, a -> a
 note n method answer =
     if modBy n 5000 == 0 then
         Debug.log answer (method ++ " " ++ String.fromInt n)
-
     else
         answer
 

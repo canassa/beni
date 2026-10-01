@@ -18,24 +18,20 @@ type alias Tagged t =
 
 
 a : Tagged String
-a =
-    1
+a = 1
 
 
 b : Tagged Bool
-b =
-    2
+b = 2
 
 
 c : Int
-c =
-    3
+c = 3
 
 
 f n =
     if n == 0 then
         a
-
     else
         g (n - 1)
 
@@ -43,24 +39,19 @@ f n =
 g n =
     if n == 0 then
         c
-
     else
         f (n - 1)
 
 
 retag : Tagged x -> Tagged y
-retag x =
-    x
+retag x = x
 
 
-k =
-    [ f 1, b ]
+k = [ f 1, b ]
 
 
-both =
-    [ a, b ]
+both = [ a, b ]
 
 
 main : Program
-main =
-    Node.printLines (List.map (k ++ both ++ [ retag a ]) String.fromInt)
+main = Node.printLines (List.map (k ++ both ++ [ retag a ]) String.fromInt)

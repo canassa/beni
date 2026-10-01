@@ -7,7 +7,6 @@ tf : Bool -> String
 tf b =
     if b then
         "t"
-
     else
         "f"
 

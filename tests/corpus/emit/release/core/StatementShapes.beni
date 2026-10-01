@@ -10,12 +10,14 @@ import Js
 
 later : Js.Ref Bool -> ()
 later scheduled =
-    Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from (\() -> if Js.read scheduled then tick () else ()) ])
+    Js.to
+        (Js.apply (Js.global "queueMicrotask")
+            [ Js.from (\() -> if Js.read scheduled then tick () else ()) ]
+        )
 
 
 tick : () -> ()
-tick () =
-    Js.set (Js.global "document") "title" (Js.from "tick")
+tick () = Js.set (Js.global "document") "title" (Js.from "tick")
 
 
 -- The flag is the caller's: with `Js.ref True` here, whole-program
@@ -24,8 +26,7 @@ tick () =
 pub start : Bool -> ()
 start flag =
     let
-        scheduled =
-            Js.ref flag
+        scheduled = Js.ref flag
     in
     later scheduled
 
@@ -34,7 +35,6 @@ pub runPhase : Js.Value -> ()
 runPhase phase =
     if Js.isNullish phase then
         ()
-
     else
         Js.to (Js.apply phase [])
 
@@ -43,6 +43,5 @@ pub notify : Js.Value -> ()
 notify target =
     if Js.isNullish target then
         ()
-
     else
         Js.to (Js.call target "dispatch" [ Js.from 1 ])

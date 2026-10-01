@@ -4,6 +4,7 @@
 --! tagged type, and `Js.from`/`Js.to` used at a record type. Every field and
 --! tag it names keeps its source spelling under `--release`; everything else
 --! the program builds is renamed (`backend.md` §9, *Item 4, taken up*).
+
 import Js
 
 
@@ -42,11 +43,9 @@ foreign pure made : () -> Js.Value
 
 --| A record that crosses by `Js.to`.
 pub fromJs : () -> { kind : String, count : Int }
-fromJs () =
-    Js.to (made ())
+fromJs () = Js.to (made ())
 
 
 --| A record that crosses by `Js.from` and is read back by name.
 pub second : { first : Int, second : String } -> String
-second r =
-    Js.to (Js.get (Js.from r) "second")
+second r = Js.to (Js.get (Js.from r) "second")

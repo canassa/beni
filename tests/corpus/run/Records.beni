@@ -6,26 +6,25 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 type alias Named =
-    { name : String, point : Point }
+    name : String
+    point : Point
 
 
 shift : Int, Point -> Point
-shift dx p =
-    { p | x = p.x + dx }
+shift dx p = { p | x = p.x + dx }
 
 
 main : Program
 main =
     let
-        origin =
-            { x = 0, y = 0 }
+        origin = { x = 0, y = 0 }
 
-        here =
-            { name = "here", point = shift 3 origin }
+        here = { name = "here", point = shift 3 origin }
     in
     Node.printLines
         [ String.fromInt origin.x

@@ -5,17 +5,13 @@
 -- §8.7). Neither list below gets "The 1st element of this list does
 -- not match all the previous elements … previous elements are String".
 
-
 xs : List String
-xs =
-    [ 1, 2 ]
+xs = [ 1, 2 ]
 
 
 shout : List String -> String
-shout words =
-    String.concat words
+shout words = String.concat words
 
 
 said : String
-said =
-    shout [ 1 ]
+said = shout [ 1 ]

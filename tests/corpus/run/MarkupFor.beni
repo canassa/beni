@@ -12,22 +12,20 @@ import Ssr
 
 
 type alias Row =
-    { id : Int, label : String }
+    id : Int
+    label : String
 
 
 viewRow : Row -> Html msg
-viewRow row =
-    <li>{row.label}</li>
+viewRow row = <li>{row.label}</li>
 
 
 viewCell : String, Row -> Html msg
-viewCell prefix row =
-    <li>{prefix}{row.id}</li>
+viewCell prefix row = <li>{prefix}{row.id}</li>
 
 
 viewAt : String, Int -> Html msg
-viewAt name position =
-    <li>{position}:{name}</li>
+viewAt name position = <li>{position}:{name}</li>
 
 
 view : String, List Row, List String -> Html msg
@@ -37,15 +35,20 @@ view prefix rows names =
             <For each={rows} keyed={.id} fallback={<li>none</li>}>
                 {\{ id, label } ->
                     let
-                        text =
-                            String.toUpper label
+                        text = String.toUpper label
                     in
                     <li id="row-${String.fromInt id}">{text}</li>
                 }
             </For>
         </ul>
-        <ol><For each={names} keyed={False}>{\name position -> <li>{position} {name}</li>}</For></ol>
-        <ol><For each={rows} keyed>{\row -> if row.id > 1 then <b>{row.label}</b> else <i>{row.label}</i>}</For></ol>
+        <ol>
+            <For each={names} keyed={False}>{\name position -> <li>{position} {name}</li>}</For>
+        </ol>
+        <ol>
+            <For each={rows} keyed>
+                {\row -> if row.id > 1 then <b>{row.label}</b> else <i>{row.label}</i>}
+            </For>
+        </ol>
         <ul><For each={rows} keyed={.id}>{viewRow}</For></ul>
         <ul><For each={rows} keyed={.id}>{viewCell prefix _}</For></ul>
         <ul><For each={names}>{viewAt}</For></ul>
@@ -55,6 +58,9 @@ view prefix rows names =
 main : Node.Program
 main =
     Node.printLines
-        [ Ssr.render (view "#" [ { id = 1, label = "a<" }, { id = 2, label = "b" }, { id = 2, label = "b" } ] [ "x", "y" ])
+        [ Ssr.render
+            (view "#" [ { id = 1, label = "a<" }, { id = 2, label = "b" }, { id = 2, label = "b" } ]
+                [ "x", "y" ]
+            )
         , Ssr.render (view "#" [] [])
         ]

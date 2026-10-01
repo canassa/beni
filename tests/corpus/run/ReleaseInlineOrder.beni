@@ -36,23 +36,21 @@ import String
 
 
 type alias Point =
-    { x : Int, y : Int }
+    x : Int
+    y : Int
 
 
 log : String, Int -> Int
-log label v =
-    Debug.log v label
+log label v = Debug.log v label
 
 
 -- Hazard 1: a surviving effectful call sits between the binding and its use.
 afterEffect : Point -> Int
 afterEffect p =
     let
-        first =
-            log "inline.first" p.x
+        first = log "inline.first" p.x
 
-        second =
-            log "inline.second" p.y
+        second = log "inline.second" p.y
     in
     first + second
 
@@ -61,11 +59,9 @@ afterEffect p =
 insideLambda : Point -> Int
 insideLambda p =
     let
-        v =
-            log "inline.lambda" p.x
+        v = log "inline.lambda" p.x
 
-        f =
-            \_ -> v + 1
+        f = \_ -> v + 1
     in
     f () + f ()
 
@@ -74,8 +70,7 @@ insideLambda p =
 insideLoop : Point -> Int
 insideLoop p =
     let
-        v =
-            log "inline.loop" p.x
+        v = log "inline.loop" p.x
 
         go k total =
             if k == 0 then

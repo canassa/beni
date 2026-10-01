@@ -19,7 +19,6 @@ type K
 pub ma (K n) x =
     if n <= 0 then
         x
-
     else
         (K (n - 1)).mb x
 
@@ -27,7 +26,6 @@ pub ma (K n) x =
 pub mb (K n) x =
     if n <= 0 then
         x
-
     else
         (K (n - 1)).mc x
 
@@ -35,11 +33,9 @@ pub mb (K n) x =
 pub mc (K n) x =
     if n <= 0 then
         x
-
     else
         (K (n - 1)).ma x
 
 
 main : Program
-main =
-    Node.printLines [ String.fromInt ((K 4).ma 7), (K 5).mb "s", String.fromInt ((K 2).mc 3) ]
+main = Node.printLines [ String.fromInt ((K 4).ma 7), (K 5).mb "s", String.fromInt ((K 2).mc 3) ]
