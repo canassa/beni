@@ -352,6 +352,10 @@ pub const Fmt = struct {
     /// `--migrate-cons`, hidden: rewrite `::` in the list syntax
     /// (`Format.migrateCons`) instead of formatting.
     migrate_cons: bool = false,
+    /// `--migrate-let-blanks`, hidden: delete the blank lines between
+    /// one-line `let` bindings (`Format.migrateLetBlanks`) instead of
+    /// formatting.
+    migrate_let_blanks: bool = false,
     paths: []const []const u8,
 };
 
@@ -891,9 +895,14 @@ const FmtSpecific = struct {
     check: bool = false,
     stdout: bool = false,
     migrate_cons: bool = false,
+    migrate_let_blanks: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-cons")) {
+        if (std.mem.eql(u8, name, "--migrate-let-blanks")) {
+            if (value != null) return noValue(name);
+            self.migrate_let_blanks = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-cons")) {
             if (value != null) return noValue(name);
             self.migrate_cons = true;
             self.consumed = true;
@@ -925,11 +934,16 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
     }
+    if (s.specific.migrate_cons and s.specific.migrate_let_blanks) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: fmt --migrate-cons and --migrate-let-blanks are mutually exclusive", .{}) };
+    }
     return .{ .command = .{ .fmt = .{
         .common = s.common,
         .check = s.specific.check,
         .stdout = s.specific.stdout,
         .migrate_cons = s.specific.migrate_cons,
+        .migrate_let_blanks = s.specific.migrate_let_blanks,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

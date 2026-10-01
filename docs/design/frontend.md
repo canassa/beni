@@ -55,6 +55,17 @@ a file in the list syntax (`language.md` §6.8) instead of formatting it — an 
 file's own layout, applied to files whose only syntax errors are `cons_removed`, which it does not
 report. It is `Format.migrateCons`, and it is how the repository moved off `::`.
 
+*Added 2026-10-02:* a second hidden flag, **`--migrate-let-blanks`**, deletes the blank lines between
+consecutive `let` bindings that are each one line — the old style's blank line between every
+binding, which reads oddly once a short body sits on its `=` line (`language.md` §9). Like
+`--migrate-cons` it is an edit, not a formatting: nothing else in the file moves. A binding is one
+line when its source span holds no line break (a comment ending its last line does not count); a
+gap that holds a comment line is kept whole, and a blank line next to a multi-line binding stays,
+because it separates a block. Nested `let`s are reached, one run is the fixed point, and a file
+with a syntax error is left alone. It is `Format.migrateLetBlanks`, a one-time cleanup: the
+formatter's rule — at most one blank line between bindings, kept if present — is unchanged. The
+two flags are mutually exclusive.
+
 That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
 closing paragraph naming the flag **when, and only when, the module it could not find is a module of
 a platform that ships in the binary and no `--platform` was given**. The hint can be honest about
