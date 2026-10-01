@@ -33,7 +33,7 @@ focus : String, Cmd.Send Msg -> ()
 focus id send =
     case Dom.focus id of
         Ok () ->
-            Debug.log () "focused ${id}"
+            Debug.log "focused ${id}" ()
 
         Err why ->
             send (Failed why)
@@ -62,7 +62,7 @@ openThenFocus : Cmd.Send Msg -> ()
 openThenFocus send =
     let
         _ = send Opened
-        _ = Debug.log () "waiting for the render"
+        _ = Debug.log "waiting for the render" ()
         _ = Dom.rendered ()
     in
     focus "second" send

@@ -1419,7 +1419,7 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     try w.write("src/Lib.beni",
         \\pub step : Int -> Int
         \\step n =
-        \\    Debug.log (n + 1) "step"
+        \\    Debug.log "step" (n + 1)
         \\
     );
     const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--cache-dir=cache", "src" }, "bit-warm.json");
@@ -2913,7 +2913,7 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     try w.write("src/Noisy.beni",
         \\pub shout : Int -> Int
         \\shout n =
-        \\    Debug.log n "shouting"
+        \\    Debug.log "shouting" n
         \\
     );
 

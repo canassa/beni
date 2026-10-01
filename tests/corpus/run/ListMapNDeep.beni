@@ -27,7 +27,7 @@ import String
 
 
 note : String, Int -> Int
-note tag n = Debug.log n tag
+note tag n = Debug.log tag n
 
 
 -- One list, handed to every argument of every map: five separate

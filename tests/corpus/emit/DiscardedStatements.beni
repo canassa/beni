@@ -20,7 +20,7 @@ import Node exposing (Program)
 say : String -> ()
 say s =
     let
-        _ = Debug.log s "say"
+        _ = Debug.log "say" s
     in
     ()
 

@@ -20,9 +20,9 @@ import Task
 slow : String -> Int
 slow label =
     let
-        _ = Debug.log label "before sleep"
+        _ = Debug.log "before sleep" label
         _ = Io.sleep 1
-        _ = Debug.log label "after sleep"
+        _ = Debug.log "after sleep" label
     in
     String.length label
 
@@ -30,9 +30,9 @@ slow label =
 fast : Task.Fiber Int, String -> Int
 fast done label =
     let
-        _ = Debug.log label "before join"
+        _ = Debug.log "before join" label
         n = Task.join done
-        _ = Debug.log label "after join"
+        _ = Debug.log "after join" label
     in
     n
 
@@ -48,9 +48,9 @@ main =
             let
                 done = Task.spawn (λ() -> 7)
                 _ = Io.sleep 1
-                a = pair (Debug.log 1 "first argument") (slow "second argument")
+                a = pair (Debug.log "first argument" 1) (slow "second argument")
                 b = fast done "joined"
-                r = { x = Debug.log 2 "field x", y = slow "field y" }
+                r = { x = Debug.log "field x" 2, y = slow "field y" }
             in
             Node.printLines [ String.fromInt a, String.fromInt b, String.fromInt (r.x + r.y) ]
         )

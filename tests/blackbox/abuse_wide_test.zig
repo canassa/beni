@@ -538,7 +538,7 @@ test "a derived row of more than 65 535 context entries checks" {
 test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs" {
     try wideLiteralCase(
         "--no-cache",
-        "Debug.log k \"s\"",
+        "Debug.log \"s\" k",
         "s: 0\ns: 16383\ns: 16384\ns: 16399\ns: 16400\ns: -5\n1\n16384\n16385\n16400\n-1\n-1\n",
     );
 }

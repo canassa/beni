@@ -23,15 +23,15 @@ logged xs =
             []
 
         [ x, ...rest ] ->
-            [ Debug.log x "head"
+            [ Debug.log "head" x
             , (case x of
                   2 ->
-                      Debug.log 20 "case"
+                      Debug.log "case" 20
 
                   _ ->
-                      Debug.log 0 "case"
+                      Debug.log "case" 0
               )
-            , ...logged (Debug.log rest "arg")
+            , ...logged (Debug.log "arg" rest)
             ]
 
 

@@ -16,7 +16,7 @@ import Node exposing (Program)
 
 
 note : String, Int -> Int
-note label n = Debug.log n label
+note label n = Debug.log label n
 
 
 walk : Int, Int, Int -> String
@@ -48,7 +48,7 @@ ticks n acc () =
     if n <= 0 then
         acc
     else
-        ticks (note "n" (n - 1)) (acc + n) (Debug.log () "tick")
+        ticks (note "n" (n - 1)) (acc + n) (Debug.log "tick" ())
 
 
 main : Program

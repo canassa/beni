@@ -31,26 +31,26 @@ update msg model =
 
 
 tag : String -> Html Msg
-tag name = <i>{Debug.log name "tag"}</i>
+tag name = <i>{Debug.log "tag" name}</i>
 
 
 card : String, Int -> Html Msg
 card title n =
     <section>
         {tag title}
-        <b>{Debug.log n title}</b>
+        <b>{Debug.log title n}</b>
     </section>
 
 
 boxed : { n : Int } -> Html Msg
-boxed r = <p>{Debug.log r.n "boxed"}</p>
+boxed r = <p>{Debug.log "boxed" r.n}</p>
 
 
 view : Model -> Html Msg
 view model =
     let
         local : Int -> Html Msg
-        local n = <em>{Debug.log n "local"}</em>
+        local n = <em>{Debug.log "local" n}</em>
     in
     <main>
         <button id="count" onClick={Count}>count</button>

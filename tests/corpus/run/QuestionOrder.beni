@@ -18,7 +18,7 @@ import String
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 step : String, Int -> Result String Int
@@ -26,7 +26,7 @@ step label v = Ok (n label v)
 
 
 stop : String -> Result String Int
-stop label = Err (Debug.log label "stop")
+stop label = Err (Debug.log "stop" label)
 
 
 two : Int, Int -> Int

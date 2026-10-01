@@ -29,15 +29,15 @@ type Shape
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 b : String, Bool -> Bool
-b label v = Debug.log v label
+b label v = Debug.log label v
 
 
 shape : String, Shape -> Shape
-shape label v = Debug.log v label
+shape label v = Debug.log label v
 
 
 subject : Shape

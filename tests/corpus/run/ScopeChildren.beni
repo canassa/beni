@@ -15,14 +15,14 @@ import Task exposing (Cancelled, Done)
 held : String, (() -> a) -> a
 held name work =
     Task.bracket
-        (λ() -> Debug.log name "acquired")
+        (λ() -> Debug.log "acquired" name)
         (λ_ exit ->
             case exit of
                 Done _ ->
-                    Debug.log () (name ++ " released: done")
+                    Debug.log (name ++ " released: done") ()
 
                 Cancelled ->
-                    Debug.log () (name ++ " released: cancelled")
+                    Debug.log (name ++ " released: cancelled") ()
         )
         (λ_ -> work ())
 
@@ -44,7 +44,7 @@ main =
                             in
                             Task.join quick
                         )
-                _ = Debug.log answer "scope returned"
+                _ = Debug.log "scope returned" answer
                 parent =
                     Task.spawn
                         (λ() ->

@@ -13,15 +13,15 @@ import String
 
 
 step : Int -> Int
-step n = Debug.log (n + 1) "step"
+step n = Debug.log "step" (n + 1)
 
 
 twice : Int -> Int
-twice n = Debug.log (Debug.log (n * 2) "inner") "outer"
+twice n = Debug.log "outer" (Debug.log "inner" (n * 2))
 
 
 label : Int -> String
-label n = Debug.toString (Debug.log n "label")
+label n = Debug.toString (Debug.log "label" n)
 
 
 main : Program

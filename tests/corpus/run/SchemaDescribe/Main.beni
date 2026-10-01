@@ -17,7 +17,7 @@ loud =
     Schema.conversion
         (λs ->
             let
-                _ = Debug.log s "a conversion ran"
+                _ = Debug.log "a conversion ran" s
             in
             Ok 0
         )

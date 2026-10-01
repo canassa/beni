@@ -37,10 +37,10 @@ view model =
     <main>
         <button id="tick" onClick={Tick}>tick</button>
         <button id="select" onClick={Select "b"}>select</button>
-        <p>{Debug.log model.ticks "view"}</p>
+        <p>{Debug.log "view" model.ticks}</p>
         <ul>
             <For each={model.rows}>
-                {λrow -> <li class={[ ( "sel", Debug.log row "row" == model.selected ) ]}>{row}</li>
+                {λrow -> <li class={[ ( "sel", Debug.log "row" row == model.selected ) ]}>{row}</li>
                 }
             </For>
         </ul>

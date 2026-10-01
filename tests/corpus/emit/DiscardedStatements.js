@@ -2,7 +2,7 @@ import { Debug$log } from "./_core/Debug.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const DiscardedStatements$say = (s$1) => {
-  Debug$log(s$1, "say");
+  Debug$log("say", s$1);
 };
 const DiscardedStatements$twice = (c$1) => {
   DiscardedStatements$say("a");

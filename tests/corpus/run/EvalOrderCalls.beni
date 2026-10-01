@@ -13,11 +13,11 @@ import String
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 s : String, String -> String
-s label v = Debug.log v label
+s label v = Debug.log label v
 
 
 three : Int, Int, Int -> Int

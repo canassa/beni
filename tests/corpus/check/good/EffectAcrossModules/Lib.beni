@@ -15,7 +15,7 @@ pub type alias Api =
 
 
 pub logged : a -> a
-logged x = Debug.log x "logged"
+logged x = Debug.log "logged" x
 
 
 pub apply f x = f x

@@ -41,7 +41,7 @@ type alias Point =
 
 
 log : String, Int -> Int
-log label v = Debug.log v label
+log label v = Debug.log label v
 
 
 -- Hazard 1: a surviving effectful call sits between the binding and its use.

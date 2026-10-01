@@ -36,10 +36,10 @@ sender send =
 worker : Cmd.Send Msg -> ()
 worker _ =
     let
-        _ = Debug.log () "worker starts"
+        _ = Debug.log "worker starts" ()
         _ = Time.sleep (Time.millis 100)
     in
-    Debug.log () "worker ends"
+    Debug.log "worker ends" ()
 
 
 view : () -> Html Msg

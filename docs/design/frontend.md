@@ -1465,6 +1465,15 @@ hand edit otherwise; a `.modBy` accessor is a record field's and is never touche
 `exposing` list goes with its keyword. The output is parsed again, as `--migrate-lambda`'s is. The
 removed names are one table, `prelude.removed`, which `name_removed` reads too.
 
+*As built, the `Debug.log` half (2026-10-01):* a call of `Debug.log` — through `Debug` or any
+alias `import Debug as D` gives it — with two arguments, the second a string literal and the first
+not, has the two exchanged, the bytes between them kept; a call whose first argument is the literal
+is already label first and is left, so the flag can be run again on a merged file and never turns a
+call back. Every other use is named in a warning for a hand edit: a pipeline into `Debug.log`, one
+argument, two string literals, or none (a label held in a variable, `Debug.log v label`). The
+repository's 49 such uses were turned round by hand in the same commit. A call inside another
+call's rewritten argument is copied as written and taken by a second run.
+
 ### 11.5 `--migrate-let` and `--migrate-trailing-lambda`: reformats
 
 These two cannot be edits: a block's layout is not `let`'s, and a parenthesis dropped from a lambda

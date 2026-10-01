@@ -16,7 +16,7 @@ import String
 
 
 note : String, Int -> Int
-note tag n = Debug.log n tag
+note tag n = Debug.log tag n
 
 
 -- Five keys, so the tree has a shape: a pre-order walk and an ascending walk

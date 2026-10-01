@@ -16,4 +16,4 @@ import Zed
 
 
 main : Program
-main = Node.printLines [ Zed.value, Alpha.value, Debug.log "main" "load" ]
+main = Node.printLines [ Zed.value, Alpha.value, Debug.log "load" "main" ]

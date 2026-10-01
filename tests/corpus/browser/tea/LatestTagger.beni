@@ -36,8 +36,8 @@ pulses tag = Sub.listen Pulse (beat 1 _) tag
 beat : Int, Cmd.Send Int -> ()
 beat n send =
     Task.bracket
-        (λ() -> Debug.log () "acquire")
-        (λ_ _ -> Debug.log () "release")
+        (λ() -> Debug.log "acquire" ())
+        (λ_ _ -> Debug.log "release" ())
         (λ_ -> loop n send)
 
 

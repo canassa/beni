@@ -15,7 +15,7 @@ main =
         (λ() ->
             let
                 reader = Task.spawn (λ() -> Io.readFile "this file does not exist.txt")
-                _ = Task.spawn (λ() -> Debug.log () "another fiber ran")
+                _ = Task.spawn (λ() -> Debug.log "another fiber ran" ())
                 answer =
                     case Task.join reader of
                         Ok text ->

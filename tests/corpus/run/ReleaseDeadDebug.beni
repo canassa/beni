@@ -30,7 +30,7 @@ import String
 
 
 log : String, Int -> Int
-log label v = Debug.log v label
+log label v = Debug.log label v
 
 
 pub dropped : Int

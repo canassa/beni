@@ -2308,7 +2308,7 @@ scrutinee — or tuple element — that nothing reads is still evaluated, as a s
 above was of fan-outs, and two kinds of fan-out print a different number of discriminants than
 one. A fan with one label, the sole constructor of a one-constructor type (`case e of Inc ->`,
 `case e of Box _ _ ->`), prints none, yet counted as the one read, so `e` was left unbound and
-never evaluated: `case Debug.log m "m" of Inc ->` logged nothing in either build. A fan wider than
+never evaluated: `case Debug.log "m" m of Inc ->` logged nothing in either build. A fan wider than
 `max_switch_cases` prints one `switch` per chunk, each reading its discriminant, yet counted once,
 so an unbound call ran once per `switch` its value was not found in. Each fan now counts its
 printed discriminants: none for one label, one for two, and one per `switch` above. A root read
@@ -4543,7 +4543,7 @@ of the 107 `run/` programs still print their `.expected` byte for byte**. The fo
 closed list `Basics.eq`/`neq`, `List.cons`/`eq`/`compare` and `Debug.log`/`todo`/`toString`, and only
 the last two read a field **name**.
 
-There is no per-type answer available: `Debug.log : a, String -> a` is a type variable and the record
+There is no per-type answer available: `Debug.log : String, a -> a` is a type variable and the record
 can arrive through any number of generic frames, so "which records reach Debug" is not a question the
 backend can ask. **The conservative rule needs no decision and is one membership test**: if `core/Debug`'s
 `log` or `toString` survives §9's reachability walk — a *foreign binding* node, §9's table — field

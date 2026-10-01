@@ -15,7 +15,7 @@ main =
         (λ() ->
             let
                 _ = Fault.breakReads ()
-                _ = Debug.log () "before the read"
+                _ = Debug.log "before the read" ()
             in
             case Io.readFile "anything.txt" of
                 Ok _ ->

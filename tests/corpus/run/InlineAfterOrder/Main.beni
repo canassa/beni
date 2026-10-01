@@ -20,7 +20,7 @@ next = Cells.counter 5
 logged : Int -> Int
 logged n =
     let
-        _ = Debug.log n "inside"
+        _ = Debug.log "inside" n
     in
     n + 1
 
@@ -36,10 +36,10 @@ total n = Cells.sumTo 0 n
 main : Node.Program
 main =
     let
-        seed = Debug.log 41 "seed"
-        _ = Debug.log 0 "before"
+        seed = Debug.log "seed" 41
+        _ = Debug.log "before" 0
         x = logged seed
-        _ = Debug.log x "after"
+        _ = Debug.log "after" x
         a = next ()
         b = next ()
         c = next ()

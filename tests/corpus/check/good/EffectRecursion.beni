@@ -18,7 +18,7 @@ isEven n =
 pub isOdd : Int -> Bool
 isOdd n =
     if n == 0 then
-        Debug.log False "odd"
+        Debug.log "odd" False
     else
         isEven (n - 1)
 
@@ -30,7 +30,7 @@ pub ping n =
         pong (n - 1)
 
 
-pub pong n = Debug.log (ping n) "pong"
+pub pong n = Debug.log "pong" (ping n)
 
 
 pub walk : List a, (a -> ()) -> ()

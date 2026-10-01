@@ -32,11 +32,11 @@ countUp step n =
 
 
 guarded : Bool, Int -> Bool
-guarded on n = on && Debug.log n "and-right" > 0
+guarded on n = on && Debug.log "and-right" n > 0
 
 
 either : Bool, Int -> Bool
-either off n = off || Debug.log n "or-right" > 0
+either off n = off || Debug.log "or-right" n > 0
 
 
 square : Int -> Int

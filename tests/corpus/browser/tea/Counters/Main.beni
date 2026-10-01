@@ -36,7 +36,7 @@ update msg model =
 view : Model -> Html Msg
 view model =
     <main>
-        <p>total {Debug.log (model.left + model.right) "view"}</p>
+        <p>total {Debug.log "view" (model.left + model.right)}</p>
         {Html.map (Counter.view "left" model.left) Left}
         {Html.map (Counter.view "right" model.right) Right}
     </main>

@@ -1881,7 +1881,8 @@ that is a contract too, not an accident, because a record-keyed `sortBy` depends
   `"a" < "b"` compiles and means what it reads as.
 - `Char`: declares `pub equatable foreign type Char`; `foreign` classification and conversion.
   Its `compare` comes from the well-known table and is a **code-point** comparison (spec §3.2).
-- `Debug`: `foreign log : a, String -> a` (subject first, so `value |> Debug.log "label"` reads),
+- `Debug`: `foreign log : String, a -> a` (*amended 2026-10-01, `language.md` §12.4:* the label
+  first again, Elm's order; it was subject first, so that `value |> Debug.log "label"` read),
   `foreign todo : String -> a`, `foreign toString : a -> String`.
 - `Dict`, `Set`: beni, with the key's ordering taken from its own `compare` method rather than from
   a parameter. `Dict.empty : Dict k v` and `Dict.singleton : k, v -> Dict k v` are unconstrained —

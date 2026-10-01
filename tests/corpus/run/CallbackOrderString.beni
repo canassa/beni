@@ -10,7 +10,7 @@ import String
 
 
 noteChar : String, Char -> Char
-noteChar tag ch = Debug.log ch tag
+noteChar tag ch = Debug.log tag ch
 
 
 main : Program

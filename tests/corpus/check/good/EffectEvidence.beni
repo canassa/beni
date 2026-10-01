@@ -15,7 +15,7 @@ pub eq : Loud, Loud -> Bool
 eq a b =
     case ( a, b ) of
         ( Loud x, Loud y ) ->
-            Debug.log (x == y) "Loud.eq"
+            Debug.log "Loud.eq" (x == y)
 
 
 pub sameLoud : Loud, Loud -> Bool

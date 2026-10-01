@@ -34,9 +34,9 @@ update msg model =
 
         Twice ->
             let
-                _ = Debug.log () "twice begins"
+                _ = Debug.log "twice begins" ()
                 _ = Maybe.withDefault (Maybe.map model.send (λsend -> send (Echo 1))) ()
-                _ = Debug.log () "twice ends"
+                _ = Debug.log "twice ends" ()
             in
             ( model, Cmd.none )
 
@@ -44,22 +44,22 @@ update msg model =
             ( model, Cmd.afterRender afterWork )
 
         Echo n ->
-            ( { model | echoes = Debug.log (model.echoes + n) "echo" }, Cmd.none )
+            ( { model | echoes = Debug.log "echo" (model.echoes + n) }, Cmd.none )
 
 
 afterWork : Cmd.Send Msg -> ()
 afterWork send =
     let
-        _ = Debug.log () "after-render sends"
+        _ = Debug.log "after-render sends" ()
         _ = send (Echo 2)
     in
-    Debug.log () "after-render ends"
+    Debug.log "after-render ends" ()
 
 
 view : Model -> Html Msg
 view model =
     let
-        _ = Debug.log model.echoes "render"
+        _ = Debug.log "render" model.echoes
     in
     <main>
         <button id="twice" onClick={Twice}>twice</button>

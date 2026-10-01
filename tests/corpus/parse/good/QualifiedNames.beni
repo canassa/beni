@@ -54,4 +54,4 @@ nested = Json.Decode.list (Json.Decode.maybe Json.Decode.int)
 
 
 logged : Int -> Int
-logged n = Debug.log n "n"
+logged n = Debug.log "n" n

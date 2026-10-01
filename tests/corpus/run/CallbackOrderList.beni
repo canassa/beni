@@ -15,7 +15,7 @@ import String
 
 
 note : String, Int -> Int
-note tag n = Debug.log n tag
+note tag n = Debug.log tag n
 
 
 xs : List Int

@@ -11,7 +11,7 @@ import Node exposing (Program)
 pick : Int, Int -> Int
 pick a _ =
     let
-        _ = Debug.log a "body"
+        _ = Debug.log "body" a
     in
     a + a
 
@@ -21,7 +21,7 @@ countDown n acc =
     if n == 0 then
         acc
     else
-        countDown (n - 1) (acc + Debug.log n "step")
+        countDown (n - 1) (acc + Debug.log "step" n)
 
 
 total : Int -> Int
@@ -34,7 +34,7 @@ first a unread = a
 
 run : () -> Int
 run () =
-    pick (Debug.log 1 "first") (Debug.log 2 "second") + total 3 + first 0 (Debug.log 4 "unread")
+    pick (Debug.log "first" 1) (Debug.log "second" 2) + total 3 + first 0 (Debug.log "unread" 4)
 
 
 main : Program

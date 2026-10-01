@@ -9,7 +9,7 @@ import Node exposing (Program)
 note : Int -> ()
 note n =
     let
-        _ = Debug.log n "note"
+        _ = Debug.log "note" n
     in
     ()
 

@@ -15,7 +15,7 @@ worker : String, Int -> Int
 worker name ms =
     let
         _ = Io.sleep ms
-        _ = Debug.log name "woke"
+        _ = Debug.log "woke" name
     in
     ms * 2
 

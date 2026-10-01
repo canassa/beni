@@ -213,7 +213,7 @@ logged xs acc =
             acc
 
         [ x, ...rest ] ->
-            logged rest (acc + Debug.log x "step")
+            logged rest (acc + Debug.log "step" x)
 
 
 ints : List Int -> String

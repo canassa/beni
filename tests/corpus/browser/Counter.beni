@@ -16,7 +16,7 @@ update : Msg, Int -> Int
 update msg count =
     case msg of
         Increment ->
-            Debug.log (count + 1) "count"
+            Debug.log "count" (count + 1)
 
         Decrement ->
             count - 1

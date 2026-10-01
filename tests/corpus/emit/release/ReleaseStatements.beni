@@ -31,7 +31,7 @@ tick () = 7
 say : Int -> ()
 say n =
     let
-        _ = Debug.log n "say"
+        _ = Debug.log "say" n
     in
     ()
 

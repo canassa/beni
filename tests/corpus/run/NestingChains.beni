@@ -20,19 +20,19 @@ import Node exposing (Program)
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 s : String, String -> String
-s label v = Debug.log v label
+s label v = Debug.log label v
 
 
 b : String, Bool -> Bool
-b label v = Debug.log v label
+b label v = Debug.log label v
 
 
 inc : Int -> Int
-inc x = Debug.log (x + 1) "inc"
+inc x = Debug.log "inc" (x + 1)
 
 
 main : Program

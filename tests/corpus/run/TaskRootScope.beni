@@ -14,7 +14,7 @@ import Task exposing (Cancelled, Done)
 
 
 say : String -> ()
-say line = Debug.log () line
+say line = Debug.log line ()
 
 
 main : Program
@@ -24,9 +24,9 @@ main =
             let
                 root = Task.openRoot ()
                 quick = Task.spawnIn root (λ() -> say "quick runs")
-                _ = Debug.log (Task.running quick) "quick running"
+                _ = Debug.log "quick running" (Task.running quick)
                 _ = Task.join quick
-                _ = Debug.log (Task.running quick) "quick running"
+                _ = Debug.log "quick running" (Task.running quick)
                 slow =
                     Task.spawnIn
                         root
@@ -47,7 +47,7 @@ main =
                 _ = say "closed"
                 _ = Task.wait slow
                 late = Task.spawnIn root (λ() -> say "late runs")
-                _ = Debug.log (Task.wait late) "late ended"
+                _ = Debug.log "late ended" (Task.wait late)
             in
             Node.done
         )

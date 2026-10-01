@@ -23,7 +23,7 @@ wrap n = twice n + 1
 
 
 twice : Int -> Int
-twice n = Debug.log n "twice" * 2
+twice n = Debug.log "twice" n * 2
 
 
 addThen : Int, Int -> Int
@@ -56,16 +56,16 @@ main =
     Node.printLines
         (List.map
             [ identity 1
-            , identity (Debug.log 2 "identity")
+            , identity (Debug.log "identity" 2)
             , wrap 3
-            , wrap (Debug.log 4 "wrap")
-            , addThen (Debug.log 5 "a") 6
-            , addThen 7 (Debug.log 8 "b")
-            , thenAdd 9 (Debug.log 10 "after")
+            , wrap (Debug.log "wrap" 4)
+            , addThen (Debug.log "a" 5) 6
+            , addThen 7 (Debug.log "b" 8)
+            , thenAdd 9 (Debug.log "after" 10)
             , thenAdd 11 12
-            , both (Debug.log 13 "both")
+            , both (Debug.log "both" 13)
             , both 14
-            , ignore (Debug.log 15 "ignored")
+            , ignore (Debug.log "ignored" 15)
             , ignore 16
             , apply { name = "w", apply = wrap } 17
             , apply { name = "v", apply = wrap } 18

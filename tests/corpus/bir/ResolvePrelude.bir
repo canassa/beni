@@ -149,8 +149,8 @@ decl 4: value qualified (annotated)
   %17 = import_value Basics.add
   %18 = call %17 [%13, %16]
   %19 = qualified Debug.log
-  %20 = int 0
-  %21 = string "n"
+  %20 = string "n"
+  %21 = int 0
   %22 = call %19 [%20, %21]
   %23 = import_value Basics.add
   %24 = call %23 [%18, %22]

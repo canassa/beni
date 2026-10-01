@@ -8,7 +8,7 @@ import Node exposing (Program)
 
 
 b : String, Int -> Int
-b label v = Debug.log v label
+b label v = Debug.log label v
 
 
 conj : Int -> Bool

@@ -58,7 +58,7 @@ update msg model =
 
 rowClass : Model, Row -> String
 rowClass model row =
-    Debug.log (if model.selected == Just row.id then "on" else "") "row ${String.fromInt row.id}"
+    Debug.log "row ${String.fromInt row.id}" (if model.selected == Just row.id then "on" else "")
 
 
 view : Model -> Html Msg
@@ -83,8 +83,8 @@ view model =
                 {λn ->
                     <li
                         class={Debug.log
-                                  (if n /= model.cursor then "" else "at")
                                   "id ${String.fromInt n}"
+                                  (if n /= model.cursor then "" else "at")
                               }
                     >
                         {n}

@@ -32,7 +32,7 @@ type alias Outer =
 
 updateOuter : OuterMsg, Outer -> Outer
 updateOuter msg model =
-    case Debug.log msg "outer got" of
+    case Debug.log "outer got" msg of
         Bump ->
             { model | bumps = model.bumps + 1 }
 
@@ -62,7 +62,7 @@ updateInner : InnerMsg, Int -> Int
 updateInner msg n =
     case msg of
         Inc ->
-            Debug.log (n + 1) "inner counted"
+            Debug.log "inner counted" (n + 1)
 
 
 viewInner : Int -> Html InnerMsg

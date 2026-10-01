@@ -25,7 +25,7 @@ update msg n =
         FromUpdate ->
             let
                 _ = Browser.flush ()
-                _ = Debug.log () "update flushed"
+                _ = Debug.log "update flushed" ()
             in
             ( n + 1, Cmd.none )
 
@@ -37,16 +37,16 @@ flushing : Cmd.Send Msg -> ()
 flushing send =
     let
         _ = send Bump
-        _ = Debug.log () "sent"
+        _ = Debug.log "sent" ()
         _ = Browser.flush ()
     in
-    Debug.log () "flushed"
+    Debug.log "flushed" ()
 
 
 view : Int -> Html Msg
 view n =
     let
-        _ = Debug.log n "render"
+        _ = Debug.log "render" n
     in
     <main>
         <button id="fiber" onClick={FromFiber}>fiber</button>

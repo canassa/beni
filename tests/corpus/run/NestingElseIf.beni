@@ -19,11 +19,11 @@ import Node exposing (Program)
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 c : Int, Int -> Bool
-c k i = Debug.log (k == i) ("test " ++ String.fromInt i)
+c k i = Debug.log ("test " ++ String.fromInt i) (k == i)
 
 
 tailChain : Int -> String
@@ -223,7 +223,7 @@ shortChain k =
 
 
 above : Int, Int -> Bool
-above k i = Debug.log (k > i) ("above " ++ String.fromInt i)
+above k i = Debug.log ("above " ++ String.fromInt i) (k > i)
 
 
 thenTail : Int -> String

@@ -3388,7 +3388,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
     defer w.deinit();
     try w.write("src/Main.beni",
         \\logged x =
-        \\    Debug.log x "x"
+        \\    Debug.log "x" x
         \\
         \\
         \\counter =
@@ -4564,7 +4564,7 @@ fn writeRecordShapes(w: *World) !void {
                 \\
                 \\pub call{d} : Api{d}, String -> Int
                 \\call{d} api s =
-                \\    Debug.log (api.zulu (api.alpha s)) "call"
+                \\    Debug.log "call" (api.zulu (api.alpha s))
                 \\
             , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n }),
         );

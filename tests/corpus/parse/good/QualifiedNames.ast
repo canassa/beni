@@ -109,6 +109,6 @@
     (pat_var n)
     (apply
       (ident Debug.log)
-      (ident n)
       (string
-        (chunk "n")))))
+        (chunk "n"))
+      (ident n))))

@@ -31,11 +31,11 @@ type alias Model =
 
 
 marked : Model, Row -> String
-marked model r = Debug.log "${model.mark}${String.fromInt r.id}" "mark"
+marked model r = Debug.log "mark" "${model.mark}${String.fromInt r.id}"
 
 
 named : String, Row -> String
-named list r = Debug.log r.label "${list} label"
+named list r = Debug.log "${list} label" r.label
 
 
 update : Msg, Model -> Model

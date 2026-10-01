@@ -31,10 +31,10 @@ update msg n =
 work : String, Cmd.Send Msg -> ()
 work name _ =
     let
-        _ = Debug.log () "start ${name}"
+        _ = Debug.log "start ${name}" ()
         _ = Time.sleep (Time.millis 100)
     in
-    Debug.log () "end ${name}"
+    Debug.log "end ${name}" ()
 
 
 view : Int -> Html Msg

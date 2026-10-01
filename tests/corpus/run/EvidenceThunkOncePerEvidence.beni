@@ -16,7 +16,7 @@ type Colour
 
 blank : List a
     where a.eq : a, a -> Bool
-blank = Debug.log [] "blank"
+blank = Debug.log "blank" []
 
 
 sizeInts : List Int -> Int

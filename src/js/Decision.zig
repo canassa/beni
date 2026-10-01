@@ -177,7 +177,7 @@ pub const Tree = struct {
     /// A fan counts once per discriminant the emitter prints for it (§7,
     /// dated note 2026-09-29). One with a single label — the sole
     /// constructor of a one-constructor type — prints no test and reads
-    /// nothing; counting it once left `case Debug.log m "m" of Inc ->` with
+    /// nothing; counting it once left `case Debug.log "m" m of Inc ->` with
     /// its scrutinee unbound and never read, so the call was never made.
     /// One wider than `max_labels` is split into consecutive `switch`es,
     /// each reading its discriminant; counting it once let an unbound

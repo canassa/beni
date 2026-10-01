@@ -11,7 +11,7 @@ pub type Key
 note : Int, String, a -> a
 note n method answer =
     if Int.mod n 5000 == 0 then
-        Debug.log answer (method ++ " " ++ String.fromInt n)
+        Debug.log (method ++ " " ++ String.fromInt n) answer
     else
         answer
 

@@ -20,7 +20,7 @@ logged name =
     Schema.conversion
         (λs ->
             let
-                _ = Debug.log s name
+                _ = Debug.log name s
             in
             if s == "bad" then
                 Err [ Schema.issue (name ++ " is bad") ]
@@ -61,7 +61,7 @@ joined =
         (Schema.conversion
             (λt ->
                 let
-                    _ = Debug.log t.x "whole record"
+                    _ = Debug.log "whole record" t.x
                 in
                 Ok (t.x ++ t.y ++ t.z)
             )

@@ -47,7 +47,7 @@ classify n =
 check : Int -> Bool
 check n =
     let
-        ok = n > 3 && Debug.log (slow n) "right operand" > 0
+        ok = n > 3 && Debug.log "right operand" (slow n) > 0
     in
     ok
 

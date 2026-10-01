@@ -23,7 +23,7 @@ import String
 
 
 n : String, Int -> Int
-n label v = Debug.log v label
+n label v = Debug.log label v
 
 
 main : Program

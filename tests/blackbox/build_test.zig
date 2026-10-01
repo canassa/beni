@@ -3494,7 +3494,7 @@ test "--release refuses a build that reaches Debug; the same program builds and 
         \\
         \\report : Int -> Int
         \\report n =
-        \\    Debug.log (n + 1) "report"
+        \\    Debug.log "report" (n + 1)
         \\
         \\
         \\main : Program
@@ -3571,7 +3571,7 @@ test "a Debug call that reachability drops does not refuse the release build" {
         \\
         \\unused : Int -> Int
         \\unused n =
-        \\    Debug.log n "unused"
+        \\    Debug.log "unused" n
         \\
         \\
         \\main : Program
@@ -3683,7 +3683,7 @@ test "the debug_in_release site list does not depend on thread count or argument
     try w.write("Aid.beni",
         \\pub help : Int -> String
         \\help n =
-        \\    Debug.toString (Debug.log n "help")
+        \\    Debug.toString (Debug.log "help" n)
         \\
     );
     try w.write("Main.beni",

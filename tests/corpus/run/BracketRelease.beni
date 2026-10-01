@@ -18,7 +18,7 @@ import Task exposing (Cancelled, Done, Exit)
 
 
 say : String -> ()
-say line = Debug.log () line
+say line = Debug.log line ()
 
 
 describe : Exit Int -> String

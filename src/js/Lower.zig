@@ -9193,7 +9193,7 @@ const Lowerer = struct {
                 // still evaluated, once and here (§7, dated note
                 // 2026-09-29). A statement and not a `const`: no binding is
                 // written, so §9 item 1 has none to drop, and a
-                // `case Debug.log m "m" of Inc ->` logs in both builds. A
+                // `case Debug.log "m" m of Inc ->` logs in both builds. A
                 // name or a field read has nothing to evaluate and is left
                 // out whole.
                 if (!l.isRead(value)) try out.append(l.scratch, try l.add(.expr_stmt, p, value.int(), Node.Data.unused));

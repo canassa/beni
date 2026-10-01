@@ -12,11 +12,11 @@ import String
 
 
 note : String, Int -> Int
-note tag n = Debug.log n tag
+note tag n = Debug.log tag n
 
 
 noteChar : String, Char -> Char
-noteChar tag ch = Debug.log ch tag
+noteChar tag ch = Debug.log tag ch
 
 
 numbers : Dict Int Int

@@ -28,7 +28,7 @@ type alias Row =
 
 
 note : String, Int -> Int
-note tag n = Debug.log n tag
+note tag n = Debug.log tag n
 
 
 tags : List Row -> String

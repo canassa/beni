@@ -59,8 +59,8 @@ view on =
 
 ordered : Html msg
 ordered =
-    <p title={Debug.log "first" "1"}>
-        {Debug.log "second" "2"}<b id={Debug.log "third" "3"}>{Debug.log "fourth" "4"}</b>
+    <p title={Debug.log "1" "first"}>
+        {Debug.log "2" "second"}<b id={Debug.log "3" "third"}>{Debug.log "4" "fourth"}</b>
     </p>
 
 

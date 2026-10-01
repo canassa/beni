@@ -38,10 +38,10 @@ work name _ =
         (λ_ exit ->
             case exit of
                 Done _ ->
-                    Debug.log () "${name} done"
+                    Debug.log "${name} done" ()
 
                 Cancelled ->
-                    Debug.log () "${name} cancelled"
+                    Debug.log "${name} cancelled" ()
         )
         (λ_ -> Time.sleep (Time.millis 100))
 

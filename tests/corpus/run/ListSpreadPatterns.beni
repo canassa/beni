@@ -67,7 +67,7 @@ pairUp pair =
 
 
 note : String, a -> a
-note tag x = Debug.log x tag
+note tag x = Debug.log tag x
 
 
 main : Program

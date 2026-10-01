@@ -14,13 +14,12 @@
 --| unchanged. Because the value comes back out, a `log` can be dropped into
 --| the middle of an expression without moving any other code.
 --|
---|     total = List.sum (Debug.log prices "prices")
+--|     total = List.sum (Debug.log "prices" prices)
 --|
---| The value is the first argument and the label the second, so dropping one
---| into a pipeline costs nothing but the step itself:
---|
---|     total = prices |> Debug.log "prices" |> List.sum
-pub foreign impure log : a, String -> a
+--| The label comes first, as in Elm: it is short and the value is often
+--| long, so the label stays beside the word `log` when the call wraps an
+--| expression (`language.md` §12.4). As a statement, `Debug.log "done" ()`.
+pub foreign impure log : String, a -> a
 
 
 --| Say that some code is not done yet, with a message about what is missing.

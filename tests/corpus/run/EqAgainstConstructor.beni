@@ -66,6 +66,6 @@ main =
         , yes "ok" (parsed == Ok 1)
         , yes "err" (parsed == Err "1")
         , yes "list field" (Pair [ 1 ] "a" == Pair [ 1 ] "a")
-        , yes "order, tags agree" (Debug.log selected "left" == Just (Debug.log 3 "right"))
-        , yes "order, tags differ" (Debug.log none "left" == Just (Debug.log 4 "right"))
+        , yes "order, tags agree" (Debug.log "left" selected == Just (Debug.log "right" 3))
+        , yes "order, tags differ" (Debug.log "left" none == Just (Debug.log "right" 4))
         ]

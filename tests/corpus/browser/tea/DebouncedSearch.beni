@@ -42,7 +42,7 @@ fakeApi =
     { search =
         λq ->
             let
-                _ = Debug.log q "request"
+                _ = Debug.log "request" q
                 _ = Time.sleep (Time.millis 100)
             in
             [ q ++ "!" ]
@@ -60,7 +60,7 @@ update api msg model =
 
         Got q hits ->
             let
-                _ = Debug.log q "got"
+                _ = Debug.log "got" q
             in
             ( { model | results = hits }, Cmd.none )
 
@@ -68,8 +68,8 @@ update api msg model =
 search : Api, String, Cmd.Send Msg -> ()
 search api q send =
     Task.bracket
-        (λ() -> Debug.log () "start ${q}")
-        (λ_ _ -> Debug.log () "release ${q}")
+        (λ() -> Debug.log "start ${q}" ())
+        (λ_ _ -> Debug.log "release ${q}" ())
         (λ_ ->
             let
                 _ = Time.sleep (Time.millis 250)

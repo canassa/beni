@@ -9,7 +9,7 @@ abuse_wide_test.test.== on a record builds and runs at the widest positional evi
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 231bf6189ff43895017e691f770c5f86802e2664324ba07831e5c440175e1886
 abuse_wide_test.test.a 2 000-element list builds and runs #0 743d866dff63615aaf5621d5d8095f21de1df47f67ffcd3ad1cfff9d2d61fbb2
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 37d5224ea72cc7b503aa55f94f998dc3e6f0a3b7c189d42f5ddd499e371d1b98
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 9da1838a020b84c8f187250c804259535c4ae12016c4016c310f2f382940072b
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 b1d261770ebad57c09d04cdb98f6f97d45698ed1a57286fc04d5ac6dceeb8da8
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 cfa93b25de5f50473099e4d01f295c6302009aadc37bc411b6c2d507d2d8113e
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
@@ -32,9 +32,9 @@ blackbox_test.test.a type that is not pub still exports the method another modul
 blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 b4fa28b3e724e2f980813d25ee87dd570665969ebf90280f00e1e82bcf975628
 blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 d1ac3ff4cab7ec2e3da42a51599abe9b2e1b6d987a692b0de45b1df7c536d8ab
 build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 bc29cfb8ff107012aa371842cd583dcd68cba4d44c50ca00fca73b5bfee9ba59
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 4571930a19ae862b6288c6af5464c47ad90952dc57ce6d98b07de8b0adcd57e1
-build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 1cc22ffabc8e70f0c81a1ca9faa2d6780bc60b8fa5ec0a5468d7e1669f7d2c5f
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 c1d9351aaad191d554dda5cfffc7f68a3675d9106a1d621e401cd344f3156e6c
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 2b65d7e9d097f2faac012d091f60dc87b48bd2f83835a08f0e6535c5b77e8ee1
+build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 130dd78eec7840d97811bc5011413beeb5cc4fcfea024466c54e91af08dc4c9b
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 28de5e2993ef98950c050250eac107eaadfa88a944c575f1b3fa9ea2a0e154fb
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 102ee985a56e29cbf52c647d1e4a33d29f7c2600fae9d02695d15ea8ca28240e
@@ -105,7 +105,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 b31a1a1241af146481b0d86eb82e5fed50a0ef103fb5ad35167650612526acee
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 f72cac08764ee5c3eb4f80686c8514a777b71228cd65bea8c7a87427cee6f482
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 67fe43588f02f8eeb3bd635ca46daa4fdf72790c179350e517a2734a8a8cf335
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 524251e675fd990301b69f467fd8a6e5046f86a676b17df06ce9665867ddec95
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 7c7574edca14d82a1b672e0faf2b638c4ca87e7f85134b161fb4c3ff66550fa1

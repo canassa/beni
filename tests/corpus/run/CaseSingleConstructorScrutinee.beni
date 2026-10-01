@@ -31,21 +31,21 @@ type Box
 
 nullary : Int
 nullary =
-    case Debug.log Inc "nullary" of
+    case Debug.log "nullary" Inc of
         Inc ->
             1
 
 
 wildFields : Box -> Int
 wildFields b =
-    case Debug.log b "wildFields" of
+    case Debug.log "wildFields" b of
         Box _ _ ->
             2
 
 
 boundField : Int
 boundField =
-    case Debug.log (Box 3 "c") "boundField" of
+    case Debug.log "boundField" (Box 3 "c") of
         Box k _ ->
             k
 
@@ -53,10 +53,10 @@ boundField =
 main : Program
 main =
     let
-        (Box four _) = Debug.log (Box 4 "d") "letPattern"
+        (Box four _) = Debug.log "letPattern" (Box 4 "d")
 
         five =
-            case ( Debug.log 0 "tupleElement", 5 ) of
+            case ( Debug.log "tupleElement" 0, 5 ) of
                 ( _, k ) ->
                     k
     in

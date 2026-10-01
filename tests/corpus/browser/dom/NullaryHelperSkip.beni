@@ -30,11 +30,11 @@ update msg model =
 
 
 button : String, Msg -> Html Msg
-button id msg = <button id={id} onClick={msg}>{Debug.log id "button"}</button>
+button id msg = <button id={id} onClick={msg}>{Debug.log "button" id}</button>
 
 
 maybeText : Maybe String -> Html Msg
-maybeText m = <i>{Debug.log (Maybe.withDefault m "none") "maybeText"}</i>
+maybeText m = <i>{Debug.log "maybeText" (Maybe.withDefault m "none")}</i>
 
 
 view : Model -> Html Msg

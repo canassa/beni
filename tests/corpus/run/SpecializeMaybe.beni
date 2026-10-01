@@ -12,17 +12,17 @@ import Node
 
 
 pick : List String, Int -> String
-pick words i = List.get words (Debug.log i "index") |> Maybe.withDefault "none"
+pick words i = List.get words (Debug.log "index" i) |> Maybe.withDefault "none"
 
 
 firstOr : List Int, Int -> Int
 firstOr xs d =
     case List.head xs of
         Just x ->
-            Debug.log (x * 2) "just"
+            Debug.log "just" (x * 2)
 
         Nothing ->
-            Debug.log d "nothing"
+            Debug.log "nothing" d
 
 
 shown : List Int -> String

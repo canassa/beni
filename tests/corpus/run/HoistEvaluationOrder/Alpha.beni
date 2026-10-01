@@ -2,4 +2,4 @@ import Mid
 
 
 pub value : String
-value = Debug.log ("alpha after " ++ Mid.value) "load"
+value = Debug.log "load" ("alpha after " ++ Mid.value)

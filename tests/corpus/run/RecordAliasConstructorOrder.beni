@@ -26,7 +26,7 @@ same a b = a == b
 main : Program
 main =
     let
-        q = Q (Debug.log 1 "zed") (Debug.log 2 "alpha")
+        q = Q (Debug.log "zed" 1) (Debug.log "alpha" 2)
         outer = Outer (Q 3 4) "o"
         half = Q 5 _
     in
