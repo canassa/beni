@@ -1899,6 +1899,56 @@ test "fmt --migrate-names rewrites each form of a removed name in place and rest
     try testing.expectEqualStrings("import Basics\nz = Float.log 8 2\n", try w.read("Other.beni"));
 }
 
+test "fmt --migrate-names turns Debug.log round to its label first, once, and names a pipeline into it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.4: a value and a string literal are exchanged, the
+    // text between them kept; a call already label first is left, which is
+    // what makes a second run safe; a pipeline cannot be turned round and
+    // is named for a hand edit, with the rest of the file still written.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Debug as D
+        \\a = Debug.log (f x) "label"
+        \\b = Debug.log "done" x
+        \\c = x |> Debug.log "p"
+        \\d = D.log y
+        \\    "q"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const first = try w.run(&.{ "fmt", "--migrate-names", "Main.beni" });
+    const once = try w.read("Main.beni");
+    const second = try w.run(&.{ "fmt", "--migrate-names", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    try testing.expect(std.mem.indexOf(u8, first.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":4,\"col\":10}") != null);
+    try testing.expect(std.mem.indexOf(u8, first.stderr, "\"severity\":\"warning\"") != null);
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\import Debug as D
+        \\a = Debug.log "label" (f x)
+        \\b = Debug.log "done" x
+        \\c = x |> Debug.log "p"
+        \\d = D.log "q"
+        \\    y
+        \\
+    , once);
+    try testing.expectEqualStrings(once, try w.read("Main.beni"));
+}
+
 test "fmt --migrate-names leaves a file that binds a removed name alone and names it" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

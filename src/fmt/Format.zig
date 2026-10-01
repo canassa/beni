@@ -461,10 +461,15 @@ pub const NamesNote = struct {
         alias_taken,
         /// `x.modBy` that is not a call with one argument.
         method_shape,
+        /// A `Debug.log` whose arguments are not one non-literal and a
+        /// string literal, in that order or the new one: a pipeline into
+        /// it, a call with one argument, or two arguments of which both or
+        /// neither are string literals.
+        debug_shape,
     };
 
     pub fn fatal(n: NamesNote) bool {
-        return n.kind != .method_shape;
+        return n.kind != .method_shape and n.kind != .debug_shape;
     }
 };
 
@@ -486,11 +491,21 @@ pub const NamesNote = struct {
 ///   argument is left and noted.
 ///
 /// A file where `Int` or `Float` is the alias of another module's import is
-/// left alone (`alias_taken`). The output is parsed again, as
-/// `migrateLambda`'s is; a file with any syntax error is not touched. A
-/// rewrite never writes a removed name, so running the flag again changes
-/// nothing — except a method call whose receiver holds another use, whose
-/// inner use the second run takes.
+/// left alone (`alias_taken`).
+///
+/// It also turns `Debug.log` round to its label first (language.md §12.4):
+/// a call with two arguments of which the second is a string literal and
+/// the first is not has the two exchanged, the text between them kept. A
+/// call whose first argument is the literal is already done, so a second
+/// run leaves it, which is what makes the flag safe to run again on a
+/// merged file. Every other use — a pipeline into `Debug.log`, one
+/// argument, two literals or none — is noted for a hand edit.
+///
+/// The output is parsed again, as `migrateLambda`'s is; a file with any
+/// syntax error is not touched. A rewrite never writes a removed name or a
+/// `Debug.log` with its label last, so running the flag again changes
+/// nothing — except a call inside another call's rewritten argument, which
+/// the outer edit copies as written and the second run takes.
 pub fn migrateNames(
     scratch: Allocator,
     tree: *const Ast,
@@ -526,9 +541,11 @@ pub fn migrateNames(
     const roles = try scratch.alloc(Role, tags.len);
     @memset(roles, .none);
     const role_node = try scratch.alloc(u32, tags.len);
-    // Per node: its argument count when it is the function of an `apply`.
+    // Per node: its argument count when it is the function of an `apply`,
+    // and that `apply`.
     const applied = try scratch.alloc(u32, n);
     @memset(applied, std.math.maxInt(u32));
+    const apply_of = try scratch.alloc(u32, n);
     for (0..n) |i| {
         const node: Index = @enumFromInt(@as(u32, @intCast(i)));
         switch (tree.nodeTag(node)) {
@@ -540,6 +557,7 @@ pub fn migrateNames(
             .apply => {
                 const a = tree.fullApply(node);
                 applied[a.function.int()] = @intCast(a.args.len);
+                apply_of[a.function.int()] = @intCast(i);
             },
             else => {},
         }
@@ -549,6 +567,8 @@ pub fn migrateNames(
     var edits: std.ArrayList(Edit) = .empty;
     var basics_aliases: std.ArrayList([]const u8) = .empty;
     var basics_shadowed = false;
+    var debug_aliases: std.ArrayList([]const u8) = .empty;
+    var debug_shadowed = false;
     var fatal = false;
 
     // The imports: which aliases are `Basics`'s, which exposed entries are
@@ -578,12 +598,18 @@ pub fn migrateNames(
         } else if (std.mem.eql(u8, alias, "Basics")) {
             basics_shadowed = true;
         }
+        if (std.mem.eql(u8, module, "Debug")) {
+            try debug_aliases.append(scratch, alias);
+        } else if (std.mem.eql(u8, alias, "Debug")) {
+            debug_shadowed = true;
+        }
         if ((std.mem.eql(u8, alias, "Int") or std.mem.eql(u8, alias, "Float")) and !std.mem.eql(u8, module, alias)) {
             try notes.append(scratch, .{ .start = starts[alias_token], .kind = .alias_taken, .name = alias });
             fatal = true;
         }
     }
     if (!basics_shadowed) try basics_aliases.append(scratch, "Basics");
+    if (!debug_shadowed) try debug_aliases.append(scratch, "Debug");
 
     for (tags, 0..) |tag, ti| {
         const t: u32 = @intCast(ti);
@@ -607,6 +633,37 @@ pub fn migrateNames(
             .qualified_lower => {
                 const full = m.tokenText(t);
                 const dot = std.mem.lastIndexOfScalar(u8, full, '.') orelse continue;
+                if (roles[t] == .ident and std.mem.eql(u8, full[dot + 1 ..], "log") and
+                    containsText(debug_aliases.items, full[0..dot]))
+                {
+                    const call = role_node[t];
+                    if (applied[call] != 2) {
+                        try notes.append(scratch, .{ .start = starts[t], .kind = .debug_shape, .name = full });
+                        continue;
+                    }
+                    const args = tree.fullApply(@enumFromInt(apply_of[call])).args;
+                    const value_literal = isStringLiteral(tree, args[0]);
+                    const label_literal = isStringLiteral(tree, args[1]);
+                    if (value_literal and !label_literal) continue; // label first already
+                    if (value_literal or !label_literal) {
+                        try notes.append(scratch, .{ .start = starts[t], .kind = .debug_shape, .name = full });
+                        continue;
+                    }
+                    const value_start = starts[m.first(args[0])];
+                    const value_end = m.endOf(m.last(args[0]));
+                    const label_start = starts[m.first(args[1])];
+                    const label_end = m.endOf(m.last(args[1]));
+                    try edits.append(scratch, .{
+                        .start = value_start,
+                        .end = label_end,
+                        .text = try std.fmt.allocPrint(scratch, "{s}{s}{s}", .{
+                            source[label_start..label_end],
+                            source[value_end..label_start],
+                            source[value_start..value_end],
+                        }),
+                    });
+                    continue;
+                }
                 const r = prelude.removedName(full[dot + 1 ..]) orelse continue;
                 for (basics_aliases.items) |b| {
                     if (!std.mem.eql(u8, b, full[0..dot])) continue;
@@ -696,6 +753,21 @@ pub fn migrateNames(
     }
     try w.writeAll(out.items);
     return null;
+}
+
+fn containsText(list: []const []const u8, text: []const u8) bool {
+    for (list) |item| {
+        if (std.mem.eql(u8, item, text)) return true;
+    }
+    return false;
+}
+
+/// A string literal, one-line or multiline, without parentheses.
+fn isStringLiteral(tree: *const Ast, node: Index) bool {
+    return switch (tree.nodeTag(node)) {
+        .string, .multiline_string => true,
+        else => false,
+    };
 }
 
 /// The first lexical or syntax diagnostic of `text`, if any.

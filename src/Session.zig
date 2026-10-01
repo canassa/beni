@@ -1562,6 +1562,10 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
                     "`beni fmt --migrate-names` left this file alone: `{s}` is the alias of another module here, so `{s}.` would not name core's `{s}` module. Change the alias, or rewrite the uses by hand.",
                     .{ note.name, note.name, note.name },
                 ),
+                .debug_shape => try message.writer.print(
+                    "`beni fmt --migrate-names` left this `{s}` alone: `Debug.log` takes its label first now, `Debug.log \"label\" value`, and this use is not a call of a value and a string literal it could turn round. Write it in that order by hand.",
+                    .{note.name},
+                ),
                 .method_shape => try message.writer.print(
                     "`beni fmt --migrate-names` left this `.{s}` alone: it is not a method call with one argument, so it has no `Int.mod x k` form to take. Rewrite it by hand.",
                     .{note.name},
