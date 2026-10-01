@@ -1,0 +1,36 @@
+-- `Log` (boundary.md §9.8.10 (d)): a line on the console at three levels,
+-- kept by a release build, which refuses `Debug` — the release pass of
+-- this page prints the same three lines. Each call is made where `update`
+-- runs, in order.
+import Html exposing (Html)
+import Log
+import Tea
+
+
+type Msg
+    = Go
+
+
+update : Msg, Int -> Int
+update Go n =
+    let
+        _ =
+            Log.info "went ${String.fromInt (n + 1)}"
+
+        _ =
+            Log.warn "careful"
+
+        _ =
+            Log.error "not really"
+    in
+    n + 1
+
+
+view : Int -> Html Msg
+view n =
+    <button id="go" onClick={Go}>{String.fromInt n}</button>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = 0, update = update, view = view }

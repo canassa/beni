@@ -45,7 +45,8 @@
 //                               on the window or the document, in one task
 //   url "<url>"                 `history.replaceState` to the URL, relative to
 //                               the page's (`"?q=1#/active"`); nothing fires
-//   hash "<#fragment>"          the same, then one `hashchange` on the window
+//   hash "<#fragment>"          the same, then one `popstate` and one
+//                               `hashchange` on the window
 //                               in the step's task — what following a link
 //                               to the fragment does, without happy-dom's
 //                               second event
@@ -75,7 +76,7 @@
 // `input`.
 
 import { Console } from "node:console";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import process from "node:process";
 import { Writable } from "node:stream";
@@ -90,7 +91,7 @@ import { pathToFileURL } from "node:url";
 function prelude() {
   const record = { log: [], errors: [] };
   globalThis.__beniHarness = record;
-  // Every page starts with empty storage: Chrome keeps a `file:` page's
+  // Every page starts with empty storage: Chrome keeps an origin's
   // across the pages of one run, happy-dom's window starts empty.
   try {
     localStorage.clear();
@@ -112,6 +113,19 @@ function prelude() {
     clock.timers = clock.timers.filter((t) => t.id !== id);
   };
   Date.now = () => clock.now;
+  // The page's entropy is a fixed sequence (an LCG from 1), so a program
+  // that seeds `Random` from `crypto.getRandomValues` is deterministic.
+  let entropy = 1;
+  Object.defineProperty(globalThis.crypto, "getRandomValues", {
+    configurable: true,
+    value: (array) => {
+      for (let i = 0; i < array.length; i++) {
+        entropy = (Math.imul(entropy, 1664525) + 1013904223) >>> 0;
+        array[i] = entropy;
+      }
+      return array;
+    },
+  });
   const show = (value) => {
     if (typeof value === "string") return value;
     try {
@@ -189,6 +203,7 @@ function step(s) {
   if (s.command === "hash") {
     const oldURL = location.href;
     history.replaceState(null, "", s.text);
+    dispatchEvent(new PopStateEvent("popstate", { state: null }));
     dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
     return null;
   }
@@ -394,13 +409,50 @@ if (stepsPath !== undefined) {
   });
 }
 
-// The page the program runs in: an empty document at this URL, in the
-// directory the driver runs in (the test's project). Chrome loads it from
-// the file, which the driver writes.
-const pageFile = resolve("_page.html");
-const pageUrl = pathToFileURL(pageFile).href;
-const entryUrl = pathToFileURL(resolve(entry)).href;
+// The page the program runs in: an empty document whose address is
+// `http://127.0.0.1:<port>/_page.html`, so that it is an `http` page as a
+// deployed one is (`Url.fromString` reads no `file:` address) and its path
+// is the same on every machine. Chrome loads it, and the program's files,
+// from a server the driver starts (`/fs/<absolute path>` serves a file);
+// happy-dom only names the address and imports the program from disk.
+// Only the port differs between the two, so no fixture shows it.
+const entryFile = resolve(entry);
+let pageUrl = "http://127.0.0.1:8000/_page.html";
+let entryUrl = pathToFileURL(entryFile).href;
 const blank = "<!DOCTYPE html><html><head></head><body></body></html>";
+
+async function serve() {
+  const { createServer } = await import("node:http");
+  const types = { ".mjs": "text/javascript", ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json" };
+  const server = createServer((request, response) => {
+    const path = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
+    if (path === "/_page.html") {
+      response.writeHead(200, { "content-type": "text/html" });
+      return void response.end(blank);
+    }
+    if (!path.startsWith("/fs/")) {
+      response.writeHead(404);
+      return void response.end();
+    }
+    const file = path.slice("/fs".length);
+    let bytes;
+    try {
+      bytes = readFileSync(file);
+    } catch (error) {
+      if (error?.code !== "ENOENT" && error?.code !== "EISDIR") throw error;
+      response.writeHead(404);
+      return void response.end();
+    }
+    const dot = file.lastIndexOf(".");
+    response.writeHead(200, { "content-type": types[dot === -1 ? "" : file.slice(dot)] ?? "application/octet-stream" });
+    response.end(bytes);
+  });
+  await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  pageUrl = `${origin}/_page.html`;
+  entryUrl = `${origin}/fs${entryFile.split("\\").join("/")}`;
+  return server;
+}
 
 // A page: `run(fn, arg)` calls one page function with a JSON argument and
 // resolves to its JSON result.
@@ -456,7 +508,7 @@ async function happyDomPage(domPath) {
 }
 
 async function chromePage(endpoint) {
-  writeFileSync(pageFile, blank);
+  const server = await serve();
   const socket = new WebSocket(endpoint);
   await new Promise((opened, failed) => {
     socket.onopen = opened;
@@ -505,6 +557,7 @@ async function chromePage(endpoint) {
     close: async () => {
       await send("Target.closeTarget", { targetId });
       socket.close();
+      server.close();
     },
   };
 }

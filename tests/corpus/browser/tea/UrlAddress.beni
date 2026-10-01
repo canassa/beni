@@ -1,0 +1,115 @@
+-- The page's address (boundary.md §9.8.10 (b)): `Url` is elm/url's —
+-- `fromString` splits an `http` or `https` URL into Elm's record and
+-- refuses anything else, `toString` writes one back, and percent encoding
+-- is JavaScript's, with `percentDecode` `Nothing` for text that is not
+-- encoded UTF-8. `Browser.Navigation.currentUrl` reads the page's address
+-- (the driver's page is `http://127.0.0.1:<port>/_page.html`, set to
+-- `?filter=x#/active` before the load), and `onUrlChange` follows each
+-- fragment the page goes to. The port is the driver's, so only whether
+-- there is one is shown.
+import Browser.Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Changed Url
+
+
+describe : Maybe Url -> String
+describe url =
+    case url of
+        Nothing ->
+            "no url"
+
+        Just u ->
+            let
+                protocol =
+                    case u.protocol of
+                        Url.Http ->
+                            "http"
+
+                        Url.Https ->
+                            "https"
+
+                port_ =
+                    case u.port_ of
+                        Just _ ->
+                            "a port"
+
+                        Nothing ->
+                            "no port"
+            in
+            "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment}"
+
+
+shown : Maybe String -> String
+shown s =
+    case s of
+        Just text ->
+            "[${text}]"
+
+        Nothing ->
+            "-"
+
+
+checks : List String
+checks =
+    let
+        parsed =
+            Url.fromString "https://example.com:8042/over/there?name=ferret#nose"
+
+        written =
+            case parsed of
+                Just u ->
+                    Url.toString u
+
+                Nothing ->
+                    "unparsed"
+
+        decoded =
+            case Url.percentDecode "%E2%82%AC%20" of
+                Just text ->
+                    text
+
+                Nothing ->
+                    "undecodable"
+
+        broken =
+            case Url.percentDecode "%C2" of
+                Just _ ->
+                    "decoded"
+
+                Nothing ->
+                    "undecodable"
+    in
+    [ describe parsed
+    , written
+    , describe (Url.fromString "example.com")
+    , describe (Url.fromString "http://tom@example.com")
+    , describe (Url.fromString "http://example.com:port")
+    , describe (Url.fromString "ftp://example.com")
+    , Url.percentEncode "to be €"
+    , decoded
+    , broken
+    ]
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <ul><For each={checks} keyed={False}>{\line -> <li>{line}</li>}</For></ul>
+        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [ describe (Browser.Navigation.currentUrl ()) ], Cmd.none )
+        , update = \(Changed url) lines -> ( lines ++ [ describe (Just url) ], Cmd.none )
+        , view = view
+        , subscriptions = \_ -> Browser.Navigation.onUrlChange Changed
+        }

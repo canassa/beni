@@ -185,11 +185,15 @@ a task per character — `key` with modifiers and a `code:`, logging a
 prevented default — `focus`, one CSS selector each; `advance
 <ms>`, which moves the page's virtual clock and fires the timers that come
 due, so a debounce or a `Time.every` costs no wall-clock time; `event
-window|document <name> [<n>]`; `url`, `hash` (one `hashchange`), `store`
+window|document <name> [<n>]`; `url`, `hash` (a `popstate` and a `hashchange`), `store`
 and `storage` for the address and Web Storage, the first two kinds also
 before the load; and `throws <step>` for a step that must throw) and a
 blessed `.expected` transcript of `document.body` after the load and each
-step. A service a program waits on
+step. The page is `http://127.0.0.1:<port>/_page.html` and its
+`crypto.getRandomValues` a fixed sequence, so an address or a `Random`
+seed is deterministic; a defect the page is stopped by is shown as the
+`throws` step's `(threw: …)` and, in development, the crash screen. A
+service a program waits on
 is a record of functions that sleep on the virtual clock, never a network. The gates run it under happy-dom in Node;
 `zig build test-browser` runs the same fixtures in headless Chrome, and a
 difference between the two is either a `.chrome-expected` with its reason

@@ -1,0 +1,11 @@
+-- load
+<body>
+  <button id="go">"0"</button>
+</body>
+-- click #go
+console.info: went 1
+console.warn: careful
+console.error: not really
+<body>
+  <button id="go">"1"</button>
+</body>

@@ -1,0 +1,42 @@
+-- load
+<body>
+  <main>
+    <button id="quota">"quota"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="broken">"broken"</button>
+    <button id="inc">"inc"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #quota
+<body>
+  <main>
+    <button id="quota">"quota"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="broken">"broken"</button>
+    <button id="inc">"inc"</button>
+    <ol>
+      <li>"over the quota"</li>
+    </ol>
+  </main>
+</body>
+-- click #blocked
+<body>
+  <main>
+    <button id="quota">"quota"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="broken">"broken"</button>
+    <button id="inc">"inc"</button>
+    <ol>
+      <li>"over the quota"</li>
+      <li>"nothing"</li>
+      <li>"keys 0"</li>
+      <li>"no storage"</li>
+    </ol>
+  </main>
+</body>
+-- throws click #broken
+(threw: TypeError: storage broke)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)

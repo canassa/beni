@@ -1,0 +1,89 @@
+-- Each failure Web Storage documents is a value, and nothing else is
+-- (CLAUDE.md rule 9; boundary.md §9.8.10 (b)): a `QuotaExceededError` from
+-- `setItem` is `Err QuotaExceeded`; a `SecurityError` reading the area
+-- makes it unavailable — `get` finds nothing, `keys` is empty, `remove`
+-- does nothing and `set` is `Err Unavailable`; and a `TypeError` from
+-- `setItem`, which no standard documents, is a defect that stops the page
+-- (the development build's crash screen; `_expected.release-expected` has
+-- none).
+import Cmd exposing (Cmd)
+import Fault
+import Html exposing (Html)
+import Storage exposing (Area, Local, Session)
+import Sub
+import Tea
+
+
+type Msg
+    = Quota
+    | Blocked
+    | Broken
+    | Inc
+
+
+written : Result Storage.Error () -> String
+written result =
+    case result of
+        Ok () ->
+            "written"
+
+        Err Storage.QuotaExceeded ->
+            "over the quota"
+
+        Err Storage.Unavailable ->
+            "no storage"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Quota ->
+            let
+                _ =
+                    Fault.fillQuota ()
+            in
+            ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
+
+        Blocked ->
+            let
+                _ =
+                    Fault.blockSession ()
+
+                _ =
+                    Storage.remove Session "k"
+
+                found =
+                    case Storage.get Session "k" of
+                        Just _ ->
+                            "found"
+
+                        Nothing ->
+                            "nothing"
+            in
+            ( lines ++ [ found, "keys ${String.fromInt (List.length (Storage.keys Session))}", written (Storage.set Session "k" "v") ], Cmd.none )
+
+        Broken ->
+            let
+                _ =
+                    Fault.breakStorage ()
+            in
+            ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
+
+        Inc ->
+            ( lines ++ [ "inc" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="quota" onClick={Quota}>quota</button>
+        <button id="blocked" onClick={Blocked}>blocked</button>
+        <button id="broken" onClick={Broken}>broken</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

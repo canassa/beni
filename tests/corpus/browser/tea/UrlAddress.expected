@@ -1,0 +1,61 @@
+-- url "?filter=x#/active"
+-- load
+<body>
+  <main>
+    <ul>
+      <li>"https example.com a port /over/there [name=ferret] [nose]"</li>
+      <li>"https://example.com:8042/over/there?name=ferret#nose"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"to%20be%20%E2%82%AC"</li>
+      <li>"€ "</li>
+      <li>"undecodable"</li>
+    </ul>
+    <ol>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] [/active]"</li>
+    </ol>
+  </main>
+</body>
+-- hash "#/completed"
+<body>
+  <main>
+    <ul>
+      <li>"https example.com a port /over/there [name=ferret] [nose]"</li>
+      <li>"https://example.com:8042/over/there?name=ferret#nose"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"to%20be%20%E2%82%AC"</li>
+      <li>"€ "</li>
+      <li>"undecodable"</li>
+    </ul>
+    <ol>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] [/active]"</li>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] [/completed]"</li>
+    </ol>
+  </main>
+</body>
+-- hash "#"
+<body>
+  <main>
+    <ul>
+      <li>"https example.com a port /over/there [name=ferret] [nose]"</li>
+      <li>"https://example.com:8042/over/there?name=ferret#nose"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"no url"</li>
+      <li>"to%20be%20%E2%82%AC"</li>
+      <li>"€ "</li>
+      <li>"undecodable"</li>
+    </ul>
+    <ol>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] [/active]"</li>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] [/completed]"</li>
+      <li>"http 127.0.0.1 a port /_page.html [filter=x] []"</li>
+    </ol>
+  </main>
+</body>

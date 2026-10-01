@@ -1,0 +1,30 @@
+--! A log a shipped program keeps (`docs/design/boundary.md` §9.8.10 (d)):
+--! a line on the browser's console at one of three levels. `Debug.log` is
+--! for development and a `--release` build refuses it; these are kept by
+--! every build, and a call is never dropped, since writing is what it is
+--! for.
+--!
+--! A line is text: a program that logs a value formats it, because
+--! `Debug.toString`'s text is not a promise.
+--!
+--!     _ = Log.warn "saving took ${String.fromInt ms} ms"
+
+import Js
+
+
+--| `console.info` of the line.
+pub info : String -> ()
+info line =
+    Js.to (Js.call (Js.global "console") "info" [ Js.from line ])
+
+
+--| `console.warn` of the line.
+pub warn : String -> ()
+warn line =
+    Js.to (Js.call (Js.global "console") "warn" [ Js.from line ])
+
+
+--| `console.error` of the line.
+pub error : String -> ()
+error line =
+    Js.to (Js.call (Js.global "console") "error" [ Js.from line ])

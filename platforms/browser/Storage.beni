@@ -1,0 +1,82 @@
+--! Web Storage (`docs/design/boundary.md` §9.8.10 (b)): text kept by key
+--! in the browser, for this origin — `Local` until it is cleared, `Session`
+--! for as long as the tab. Every call answers at once.
+--!
+--! Each failure the Web Storage standard documents is a value: storage the
+--! browser will not hand over (disabled, a sandboxed frame) holds nothing,
+--! so a read finds nothing and a write is `Err Unavailable`; a write past
+--! the quota is `Err QuotaExceeded`. Anything else is a defect.
+--!
+--!     save todos =
+--!         case Storage.set Storage.Local "todos" (encode todos) of
+--!             Ok () -> Saved
+--!             Err Storage.QuotaExceeded -> TooMuch
+--!             Err Storage.Unavailable -> NotSaved
+
+import Js
+
+
+--| Which storage: `Local`, kept across visits, or `Session`, kept while
+--| the tab is open.
+pub type Area
+    = Local
+    | Session
+
+
+--| Why a write did not happen.
+pub type Error
+    = QuotaExceeded
+    | Unavailable
+
+
+--| The text stored under the key, or `Nothing`.
+pub get : Area, String -> Maybe String
+get area key =
+    let
+        v =
+            getItem (isLocal area) key
+    in
+    if Js.isNull v then Nothing else Just (Js.to v)
+
+
+--| Store the text under the key, replacing what was there.
+pub set : Area, String, String -> Result Error ()
+set area key value =
+    case setItem (isLocal area) key value of
+        0 ->
+            Ok ()
+
+        1 ->
+            Err QuotaExceeded
+
+        _ ->
+            Err Unavailable
+
+
+--| Forget the key.
+pub remove : Area, String -> ()
+remove area key =
+    removeItem (isLocal area) key
+
+
+--| Every key stored, in the browser's order.
+pub keys : Area -> List String
+keys area =
+    allKeys (isLocal area)
+
+
+isLocal : Area -> Bool
+isLocal area =
+    area == Local
+
+
+foreign impure getItem : Bool, String -> Js.Value
+
+
+foreign impure setItem : Bool, String, String -> Int
+
+
+foreign impure removeItem : Bool, String -> ()
+
+
+foreign impure allKeys : Bool -> List String

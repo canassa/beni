@@ -1,0 +1,54 @@
+--! The page's address (`docs/design/boundary.md` §9.8.10 (b)). Elm's
+--! `Browser.application` hands `init` the `Url` and takes `onUrlChange`;
+--! until `Tea.application` and this module's navigation key land, these
+--! two read the address and follow its changes. Read-only: nothing here
+--! changes the address.
+
+import Browser exposing (Send)
+import Js
+import Listen
+import Sub exposing (Sub)
+import Url exposing (Url)
+
+
+--| The page's address, or `Nothing` when it is not an `http` or `https`
+--| one (a page opened from a file).
+--|
+--|     init =
+--|         case Browser.Navigation.currentUrl () of
+--|             Just url -> filterOf url.fragment
+--|             Nothing -> All
+pub currentUrl : () -> Maybe Url
+currentUrl () =
+    Url.fromString (Js.to (Js.get (Js.global "location") "href"))
+
+
+type Key
+    = UrlChange
+
+
+--| The page's new address each time it changes: a link to a fragment
+--| (`#/active`) followed, or the back and forward buttons. An address that
+--| is not a `Url` sends nothing.
+pub onUrlChange : (Url -> msg) -> Sub msg
+onUrlChange tag =
+    Sub.listen UrlChange (follow _) tag
+
+
+-- Elm's: `popstate`, which a browser fires for a fragment followed as for
+-- the back and forward buttons. The address is read when the event fires.
+follow : Send Url -> ()
+follow send =
+    Listen.each "window" "popstate" (\_ -> currentUrl ()) (\url -> sendUrl send url)
+
+
+sendUrl : Send Url, Maybe Url -> ()
+sendUrl send url =
+    case url of
+        Just u ->
+            send u
+
+        Nothing ->
+            ()
+
+

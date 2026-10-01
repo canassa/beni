@@ -2095,6 +2095,42 @@ formats it. No `debug` level (that is `Debug.log`'s job in development), no stru
 reporting hook and no log context (A7's third slot) — each can be added without changing these
 three. Being `impure`, a call is never dropped by `--release`, and an unused `Log` costs nothing.
 
+*As built, 2026-10-01* (`platforms/html/Html.beni`; `platforms/browser/`: `Listen.beni`,
+`Browser/Events.beni`, `Browser/Navigation.beni`, `Url.beni`/`.js`, `Random.beni`,
+`Storage.beni`/`.js`, `Log.beni`, `Rt.beni`, `Browser.beni`, `Http.beni`/`.js`; `core/Task.js`,
+`core/Js.beni`), as specified above, every module but `Listen` re-exported by `browser-tea`.
+Written in beni over `Js` except three siblings' worth of `catch`: `Storage.js`, `Url.js`'s
+`decodes` and `Http.js`. The pages are `tests/corpus/browser/tea/`: `KeyEvents`,
+`KeySubscription`, `RandomValues`, `UrlAddress`, `StorageBasics`, `StorageFaults`, `LogLevels`,
+`DefectInUpdate`, `DefectInRender`, `DefectAfterRender`, `DefectInFiber`, `HttpDefect`,
+`browser/dom/DefectInHandler`, and **`TodoMVC`**, the acceptance test: Enter adds a todo and
+prevents the key's default, the list is saved after every change and read back at start, and the
+filter follows `#/active` from the address the page was opened at and from each change of it.
+Its rows are positional (`keyed={False}`): keyed rows took the page over the per-test
+instruction budget, and a row holds no state of its own.
+
+**Measured** (`--release`, the page's one file, brotli 11, against `master` at the time): the
+empty `Browser.program` page 490 → **536**, a click counter on `Tea.sandbox` 892 → **958**, the
+empty `Tea.element` 1 499 → **1 576** — the defect rule's guards and flag, the only change every
+page pays. A page that imports every new module and calls none is byte for byte the empty page.
+Each capability, priced against the counter: an Enter handler with `preventDefault` +51, a
+`Log.info` in `update` +21, a `Storage.set` +169; `Random.generate` on `Tea.element` +1 707,
+almost all of it the fiber runtime a command needs; `currentUrl` with `onUrlChange` 5 239 in all,
+the fiber runtime, the subscription diff and the URL parser. `TodoMVC` is 8 120. A message
+through the delegated listener costs the same within noise (happy-dom, 20 000 clicks, a render per
+thousand: 2 789 ns before, 2 820 after, almost all of it happy-dom's own dispatch).
+
+**Where this departs from Elm, and why** (the owner's 2026-10-01 instruction): event reading is
+by functions of the event, not `Json.Decode` decoders — beni has no decoder library until
+schemas parse, and its handlers are already typed functions of the event, so a "decoder" cannot
+fail and a key the program ignores is a message `update` ignores; `preventDefault` is a call in
+a handler, not a `Bool` returned beside the message, because a handler may be impure; every
+argument order is subject-first; `Random.generate` seeds from `crypto.getRandomValues`, not the
+clock, and its products are exact; the page's address is read by two stand-ins in
+`Browser.Navigation` until `Tea.application` lands, and `currentUrl` is a `Maybe` where Elm's
+`application` crashes on an address that is not `http` or `https`; `Url.percentEncode` writes a
+lone surrogate as U+FFFD where Elm's would throw; `Storage` and `Log` have no Elm counterpart.
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,

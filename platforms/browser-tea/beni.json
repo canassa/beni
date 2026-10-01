@@ -2,5 +2,5 @@
   "platform": true,
   "name": "browser-tea",
   "platforms": ["browser"],
-  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events"]
+  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Url", "Random", "Storage", "Log"]
 }

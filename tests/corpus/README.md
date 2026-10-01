@@ -117,10 +117,11 @@ in a project) against it, one step per line, `#` for a comment:
                                 task
     url "<url>"                 `history.replaceState` to the URL, relative to
                                 the page's (`"?q=1#/active"`); nothing fires
-    hash "<#fragment>"          the same, then one `hashchange` on the window
-                                in the step's task, as following a link to the
-                                fragment would (happy-dom's own `location.hash`
-                                fires two)
+    hash "<#fragment>"          the same, then one `popstate` and one
+                                `hashchange` on the window in the step's
+                                task, as following a link to the fragment
+                                does (happy-dom's own `location.hash` fires
+                                two `hashchange`s and no `popstate`)
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key
@@ -142,6 +143,13 @@ page settles — the fibers it resumed run, and may set the next timer —
 before the next fires. A service a program waits on (`Http`, a search API)
 is faked with a record of functions that sleep on this clock
 (`boundary.md` §9.8.9).
+
+**The page is an `http` page with fixed entropy.** Its address is
+`http://127.0.0.1:<port>/_page.html` in both DOMs — Chrome loads it, and
+the program, from a server the driver starts — so `Url.fromString` reads
+it and its path is the same on every machine; only the port differs, and
+no fixture shows it. `crypto.getRandomValues` is a fixed sequence, so a
+program that seeds `Random` from it is deterministic.
 
 A selector is one CSS selector without spaces and must match an element.
 The two lines in parentheses are logged when the step's own task ends,

@@ -1,0 +1,177 @@
+--! URLs (`docs/design/boundary.md` §9.8.10 (b)): Elm's `Url` (elm/url) —
+--! its record, its two protocols, its parser and printer, and percent
+--! encoding. A program gets the page's own address from
+--! `Browser.Navigation.currentUrl` and `onUrlChange`.
+--!
+--! Nothing here decodes: `fromString` only splits a URL into its parts, and
+--! `query` and `fragment` are as written, so a query parser can still tell
+--! a `&` that separates from one that was escaped.
+
+import Js
+
+
+--| A URL, split into its parts.
+--|
+--|     https://example.com:8042/over/there?name=ferret#nose
+--|     \___/   \______/ \__/\_________/ \_________/ \__/
+--|       |        |      |       |           |        |
+--|     scheme   host    port   path        query   fragment
+pub type alias Url =
+    protocol : Protocol
+    host : String
+    port_ : Maybe Int
+    path : String
+    query : Maybe String
+    fragment : Maybe String
+
+
+--| Only `http` and `https`, as Elm's: a page served any other way has no
+--| `Url`.
+pub type Protocol
+    = Http
+    | Https
+
+
+--| The parts of an `http` or `https` URL, or `Nothing` for anything else:
+--| no protocol, user information (`tom@`), no host, or a port that is not
+--| a number.
+--|
+--|     Url.fromString "https://example.com/hats?q=top%20hat"
+--|     -- Just { protocol = Https, host = "example.com", port_ = Nothing,
+--|     --        path = "/hats", query = Just "q=top%20hat", fragment = Nothing }
+pub fromString : String -> Maybe Url
+fromString str =
+    if String.startsWith str "http://" then
+        afterProtocol Http (String.dropLeft str 7)
+    else if String.startsWith str "https://" then
+        afterProtocol Https (String.dropLeft str 8)
+    else
+        Nothing
+
+
+afterProtocol : Protocol, String -> Maybe Url
+afterProtocol protocol str =
+    if String.isEmpty str then
+        Nothing
+    else
+        case String.indexes str "#" of
+            [] ->
+                beforeFragment protocol Nothing str
+
+            [ i, ..._ ] ->
+                beforeFragment protocol (Just (String.dropLeft str (i + 1))) (String.left str i)
+
+
+beforeFragment : Protocol, Maybe String, String -> Maybe Url
+beforeFragment protocol fragment str =
+    if String.isEmpty str then
+        Nothing
+    else
+        case String.indexes str "?" of
+            [] ->
+                beforeQuery protocol Nothing fragment str
+
+            [ i, ..._ ] ->
+                beforeQuery protocol (Just (String.dropLeft str (i + 1))) fragment (String.left str i)
+
+
+beforeQuery : Protocol, Maybe String, Maybe String, String -> Maybe Url
+beforeQuery protocol query fragment str =
+    if String.isEmpty str then
+        Nothing
+    else
+        case String.indexes str "/" of
+            [] ->
+                beforePath protocol "/" query fragment str
+
+            [ i, ..._ ] ->
+                beforePath protocol (String.dropLeft str i) query fragment (String.left str i)
+
+
+beforePath : Protocol, String, Maybe String, Maybe String, String -> Maybe Url
+beforePath protocol path query fragment str =
+    if String.isEmpty str || String.contains str "@" then
+        Nothing
+    else
+        case String.indexes str ":" of
+            [] ->
+                Just { protocol = protocol, host = str, port_ = Nothing, path = path, query = query, fragment = fragment }
+
+            [ i ] ->
+                case String.toInt (String.dropLeft str (i + 1)) of
+                    Nothing ->
+                        Nothing
+
+                    port_ ->
+                        Just { protocol = protocol, host = String.left str i, port_ = port_, path = path, query = query, fragment = fragment }
+
+            _ ->
+                Nothing
+
+
+--| The URL written out again.
+--|
+--|     Url.toString { protocol = Https, host = "example.com", port_ = Just 8042,
+--|                    path = "/over/there", query = Just "name=ferret", fragment = Nothing }
+--|     -- "https://example.com:8042/over/there?name=ferret"
+pub toString : Url -> String
+toString url =
+    let
+        scheme =
+            case url.protocol of
+                Http ->
+                    "http://"
+
+                Https ->
+                    "https://"
+
+        withPort =
+            case url.port_ of
+                Nothing ->
+                    scheme ++ url.host
+
+                Just p ->
+                    "${scheme}${url.host}:${String.fromInt p}"
+    in
+    withPort ++ url.path ++ prefixed "?" url.query ++ prefixed "#" url.fragment
+
+
+prefixed : String, Maybe String -> String
+prefixed prefix segment =
+    case segment of
+        Nothing ->
+            ""
+
+        Just s ->
+            prefix ++ s
+
+
+--| Escape a string for a URL, as JavaScript's `encodeURIComponent` does:
+--| UTF-8, every byte but the unreserved ones as `%XX`. A lone surrogate,
+--| which UTF-8 cannot hold, is written as U+FFFD.
+--|
+--|     Url.percentEncode "to be" == "to%20be"
+--|     Url.percentEncode "€" == "%E2%82%AC"
+pub percentEncode : String -> String
+percentEncode str =
+    Js.to (Js.apply (Js.global "encodeURIComponent") [ Js.call (Js.from str) "toWellFormed" [] ])
+
+
+--| Undo `percentEncode`, or `Nothing` when the string is not percent
+--| encoded UTF-8: a `%` without two hex digits after it, or bytes that are
+--| not UTF-8.
+--|
+--|     Url.percentDecode "to%20be" == Just "to be"
+--|     Url.percentDecode "%C2" == Nothing
+pub percentDecode : String -> Maybe String
+percentDecode str =
+    if decodes str then
+        Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ]))
+    else
+        Nothing
+
+
+-- Whether `decodeURIComponent` takes the string: the one failure it
+-- documents, `URIError`, is caught in the sibling, since `Js` writes no
+-- `catch`.
+foreign pure decodes : String -> Bool

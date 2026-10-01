@@ -1,0 +1,75 @@
+-- Web Storage (boundary.md §9.8.10 (b)): `init` reads what the page was
+-- given before it loaded, `set` writes and answers `Ok`, `remove` forgets,
+-- `keys` lists, and the two areas are apart — `Session` holds nothing
+-- `Local` does. The `storage` steps show what the browser holds.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Storage exposing (Area, Local, Session)
+import Sub
+import Tea
+
+
+type Msg
+    = Save
+    | Forget
+    | SaveSession
+
+
+report : Area, String -> String
+report area key =
+    case Storage.get area key of
+        Just text ->
+            "${key} = ${text}"
+
+        Nothing ->
+            "${key} unset"
+
+
+written : Result Storage.Error () -> String
+written result =
+    case result of
+        Ok () ->
+            "written"
+
+        Err Storage.QuotaExceeded ->
+            "over the quota"
+
+        Err Storage.Unavailable ->
+            "no storage"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Save ->
+            ( lines ++ [ written (Storage.set Local "draft" "eggs"), report Local "draft" ], Cmd.none )
+
+        Forget ->
+            let
+                _ =
+                    Storage.remove Local "todos"
+            in
+            ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ], Cmd.none )
+
+        SaveSession ->
+            ( lines ++ [ written (Storage.set Session "tab" "1"), report Session "tab", report Session "draft" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="save" onClick={Save}>save</button>
+        <button id="forget" onClick={Forget}>forget</button>
+        <button id="session" onClick={SaveSession}>session</button>
+        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [ report Local "todos", report Local "draft" ], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }
