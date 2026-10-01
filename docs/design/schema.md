@@ -593,6 +593,165 @@ path. Effect's callbacks can receive options and construct issues themselves;
 copying that escape would reintroduce report 33's gap. No per-behavior owner
 question is needed where this pinned implementation already supplies the rule.
 
+### The builder API
+
+*Added 2026-10-01, before the library was written* (§16, S3; the "concrete builder API" the
+paragraph above asks for). This is `core/Schema`'s surface for building and running a schema
+at run time. A declaration (§2) means exactly what the builders below build from it, and S4's
+specialised code must agree with them (§10).
+
+**Types.** `Schema e a` and `Conversion b a` stay `pub foreign type`s (A.6). Four builder types
+are added, all `pub opaque type`s:
+
+| Type | Holds |
+|---|---|
+| `Fields pe pa` | the fields of a record schema being built, with two products: `pe` holds the fields' Encoded values and `pa` their Type values, each a tuple nested to the left, `( ( ( (), a ), b ), c )` |
+| `Mapping p r` | a product turned into a record (`to : p -> r`) and back (`from : r -> p`) |
+| `Variant e a` | one variant of a tagged schema |
+| `Injection p a` | a variant's constructor `p -> a`, and the test `a -> Maybe p` that takes it apart |
+
+**Builders.**
+
+```text
+string : Schema String String         bool  : Schema Bool Bool
+int    : Schema Int Int               float : Schema Float Float
+finiteFloat : Schema Float Float      null  : Schema (Nullable Never) (Nullable Never)
+value  : Schema Value Value
+
+list     : Schema e a -> Schema (List e) (List a)
+nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+
+fields   : Fields () ()
+field    : Fields pe pa, String, Schema e a -> Fields ( pe, e ) ( pa, a )
+optional : Fields pe pa, String, Schema e a -> Fields ( pe, Presence e ) ( pa, Presence a )
+key      : Fields pe pa, String -> Fields pe pa
+mapping  : sync (p -> r), sync (r -> p) -> Mapping p r
+record   : Fields pe pa, Mapping pe e, Mapping pa a -> Schema e a
+
+injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
+variant   : String, String, Schema pe pa, Injection pe e, Injection pa a -> Variant e a
+nullary   : String, String, Injection () e, Injection () a -> Variant e a
+tagged    : String, List (Variant e a) -> Schema e a
+
+conversion : sync (b -> Result (List Issue) a), sync (a -> Result (List Issue) b) -> Conversion b a
+converted  : Schema e b, Conversion b a -> Schema e a
+issue      : String -> Issue
+issueAt    : List PathSegment, String -> Issue
+
+recursive  : String, sync (Schema e a -> Schema e a) -> Schema e a
+flip, typeOnly, encodedOnly, describe   -- as listed above
+defaultOptions : Options              maxDepthCeiling : Int
+decodeWith : Schema e a, Options, e -> Result (List Issue) a       -- and encodeWith, readWith,
+                                                                    -- writeWith, parseWith, printWith
+```
+
+The ten operations listed above keep their signatures; each also has its `…With` form, which takes
+`Options` after the schema.
+
+**Each declaration form, built.** Every form §2 accepts is a composition of these builders, which
+is what makes the library the semantics of a declaration:
+
+| Declaration | Builders |
+|---|---|
+| a primitive or `Value` operand | `string`, `bool`, `int`, `float`, `finiteFloat`, `null`, `value` |
+| `List S` | `list s` |
+| `f : S` | `field fs "f" s` |
+| `f : S as "k"` | `field fs "f" s \|> key "k"` |
+| `f : S nullable` | `field fs "f" (nullable s)` |
+| `f : S optional` (and `optional nullable`) | `optional fs "f" s` (and `optional fs "f" (nullable s)`) |
+| `f : S via c` | `field fs "f" (converted s c)` |
+| a record body | `record fs mapping mapping`; the two mappings are often one polymorphic pair, because both records have the declared field names |
+| `tagged "k" of A as "a" { … } \| B` | `tagged "k" [ variant "A" "a" payload injE injA, nullary "B" "B" injE injA ]`, where the payload is a `record` |
+| a parameter `a` | an ordinary function argument: `page : Schema e a -> Schema (Page e) (Page a)` |
+| a reference to a recursive schema | `recursive "Tree" (\tree -> …)` |
+
+```elm
+-- §2's `User`, built: Encoded and Type are both { userId : Int, nickname : Presence (Nullable String) }.
+toUser ( ( (), userId ), nickname ) =
+    { userId = userId, nickname = nickname }
+
+fromUser u =
+    ( ( (), u.userId ), u.nickname )
+
+user =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "userId" Schema.int
+            |> Schema.key "user-id"
+            |> Schema.optional "nickname" (Schema.nullable Schema.string))
+        (Schema.mapping toUser fromUser)
+        (Schema.mapping toUser fromUser)
+```
+
+**What the builders decide.**
+
+- **A construction failure is carried, not thrown.** These are failures of the schema, not of a
+  value: two fields with one name or one external key, `key` with no field before it or a second
+  `key` on one field, two variants with one tag or one name, a payload field on the
+  discriminator's key, a variant payload that is not a `record`, a `tagged` with no variant, a
+  recursive schema used while its body is being built (the only way a reference can dangle), and
+  reading or writing an endpoint that holds a conversion's target (below). Every operation on a
+  schema that reaches one returns `Err` with one `InvalidSchema` issue at the root path, before it
+  reads its input; `describe` shows the place as `Invalid`. Which failure is reported is the first
+  in declared order.
+- **An endpoint holding a conversion's target has no external form** (§5, A.4). `read`, `write`,
+  `parse` and `print` refuse a host end on such an endpoint before reading anything: reading a
+  flipped `String via decimalInt`, or `typeOnly` of it. Its typed operations work: `typeOnly`
+  decodes and encodes an opaque target as identity (no checks exist until S6).
+- **Recursion.** `recursive name f` passes `f` the schema it defines and builds the body once, the
+  first time it is needed. A reference resolves by the definition's identity, never by `name`: two
+  schemas built with one name are two definitions. A reference entered again at the same position,
+  with no field, element or payload read in between, is the nonproductive cycle of §4 and fails
+  there with `InvalidSchema`.
+- **`flip (flip s)` is `s`**, the same schema, so a double flip restores its values, failures and
+  description exactly.
+- **Options.** `defaultOptions` is `FirstError`, `Ignore`, `maxDepth = 512`, `reportInput = False`.
+  A `maxDepth` below 0 or above `maxDepthCeiling` is `InvalidOptions` at the root, before the
+  schema is looked at. The ceiling is the measured one of §16's *As built* note.
+- **Issues.** A path segment names a key as the operation's **input** names it: the external key
+  when the input is Encoded (`decode`, `read`, `parse`), the declared name when it is a Type value
+  (`encode`, `write`, `print`). A failure of what is **written** — a non-finite `Float` printed, a
+  `Value` that nests past the bound — is named as the output names it. `endpoint` is relative to the
+  schema the operation was called on: the input endpoint for a failure of the input; the output
+  endpoint for a conversion's failure, for any failure below an encoding conversion (its output is
+  on its way to the Encoded endpoint), and for a failure of what is written. A conversion's own
+  issues keep their `code` and `message`; the engine puts the current path in front of theirs and
+  sets `direction`, `endpoint` and `input`, and an empty `Err` is one `ConversionFailed`.
+- **Codes.** `WrongShape`: not the JSON type the schema reads (and not an object, array or `null`
+  where one is needed). `InvalidValue`: a number outside the safe-integer range, or a non-finite one
+  for `finiteFloat`. `MissingKey` at the key; `UnknownKey` at the key, under `Reject`, in the
+  object's own-key order; `UnknownTag` at the discriminator, for an unknown or non-string tag;
+  `DepthExceeded` at the child the bound stopped; `ParseFailed` at the root, with the host's
+  message; `PrintFailed` at the value JSON cannot hold.
+- **Host values.** Reading tests own keys only. Writing builds each object with no prototype, its
+  keys in field order and a variant's discriminator first, so `__proto__` and `constructor` are
+  ordinary keys both ways.
+- **A typed tagged value** is matched by the variants' projections in order; a value none of them
+  takes (an `Injection` left out) is `InvalidSchema` at its path.
+- **Effects.** The builders are `foreign pure`; every function they keep — a mapping, an
+  injection, a conversion, a recursive schema's body — is declared `sync`, because the engine
+  calls it during a run (`boundary.md` §4), so a conversion that may suspend is refused where it is
+  passed. The runners and `describe` are `foreign impure`: they call those functions, and an
+  impure one must not be dropped or moved with the call. S9's join table (§13.2) replaces the
+  `sync` marks with directional classes; S3 makes no H4 claim.
+
+**The engine is the sibling, and why.** The engine is `core/Schema.js`, and `Schema.beni` declares
+the builders and runners over it as `foreign`s — §6's and A.1's "library interpretation uses
+privileged core foreign primitives over the same host value". It was first written in beni over
+core's `Js`, and that version is measured in §16's *As built* note: **core is checked whole by every
+compilation**, the engine's 1 300 lines of beni added about 33 ms (a ReleaseSafe compiler) to every
+`beni` process whether or not the program imported `Schema`, and `zig build test-blackbox` went
+from 563 to 1 142 user-seconds. Declared as `foreign`s, the same surface costs 2.4 ms. The
+sibling builds and reads the beni values it shares with the program — `Ok` and `Err`, `Present` and
+`Missing`, `Null` and `NonNull`, `Just` and `Nothing`, an `Issue`, a `Shape`, a tuple, a list —
+by the representation of `backend.md` §4, and every such type is named in a `foreign` annotation
+here, so `--release` keeps its field names and string tags (`boundary.md` §4, *What JavaScript may
+read of a beni value*). A value at a type variable — a user's record, a `Type` value — the engine
+only passes to the functions it was handed, never reads. `JSON.parse` reports malformed text by
+throwing a `SyntaxError`; the engine catches exactly that error and re-throws any other (CLAUDE.md
+rule 9). `JSON.stringify` needs no catch: what the engine prints is objects and arrays it built,
+finite numbers, strings, booleans and `null`, nested no deeper than the bound.
+
 ## 6. Codegen
 
 A declaration emits ordinary module-local top-level values/functions. A
