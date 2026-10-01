@@ -121,7 +121,8 @@ pub foreign type Soon
 --| fiber `spawn`ed now would first run — but with no fiber of its own:
 --| `work` must not suspend, and it runs outside any fiber, as `main` does.
 --| What a page program runs a command with when its body cannot suspend
---| (`boundary.md` §9.8.11). Nothing stops it: a fiber that has not started
+--| (`boundary.md` §9.8.11). What `work` starts with `spawn` belongs to it,
+--| as a fiber's children do, and is cancelled when it returns. Nothing stops it: a fiber that has not started
 --| runs until it first suspends before anything can cancel it, and work
 --| that never suspends runs to its end.
 pub foreign impure soon : sync (() -> ()) -> Soon

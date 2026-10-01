@@ -1,0 +1,65 @@
+-- A fiber a command's body starts with `Task.spawn` belongs to the body,
+-- and is cancelled when the body returns (`core/Task.beni`, *Structured*),
+-- whether the body runs in a fiber or, never waiting, with none
+-- (boundary.md §9.8.11 (b)). `#direct`'s body never waits; `#fibers`' is
+-- the same body with a wait on a branch no run takes, so it runs in a
+-- fiber. Each body starts a child that would log, then returns: in both,
+-- the child is cancelled before it runs, and never logs. A child the body
+-- joins is not cancelled: `#joined` waits for one, which logs.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Run Bool
+    | Joined
+
+
+update : Msg, () -> ( (), Cmd Msg )
+update msg model =
+    case msg of
+        Run fibers ->
+            if fibers then
+                ( model, Cmd.do (\() -> spawning (\() -> pause False)) )
+            else
+                ( model, Cmd.do (\() -> spawning (\() -> ())) )
+
+        Joined ->
+            ( model, Cmd.do (\() -> Task.join (Task.spawn (\() -> Log.info "joined child runs"))) )
+
+
+-- Waits only when asked to, which no run does.
+pause : Bool -> ()
+pause yes =
+    if yes then
+        Task.yieldNow ()
+    else
+        ()
+
+
+spawning : (() -> ()) -> ()
+spawning hold =
+    let
+        _ = hold ()
+        _ = Task.spawn (\() -> Log.info "child runs")
+    in
+    Log.info "body returns"
+
+
+view : () -> Html Msg
+view _ =
+    <main>
+        <button id="direct" onClick={Run False}>direct</button>
+        <button id="fibers" onClick={Run True}>fibers</button>
+        <button id="joined" onClick={Joined}>joined</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( (), Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

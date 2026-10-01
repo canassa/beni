@@ -367,7 +367,23 @@ export const callback = (register) =>
     return typeof cancel === "function" ? cancel : null;
   });
 
-export const spawn = (work) => fork(current, work, null);
+// Outside any fiber but inside work `soon` runs, a child belongs to that
+// work and is cancelled when it returns — where a fiber's `finish` would
+// have cancelled it (boundary.md §9.8.11 (b)). It cannot have run yet: it
+// is queued behind the work.
+const endSoon = (s) => {
+  for (const f of s.kids) interrupt(f);
+};
+
+export const spawn = (work) => {
+  if (current !== null || soonRunning === null) return fork(current, work, null);
+  const s = soonRunning;
+  const child = fork(null, work, null);
+  s.kids ??= [];
+  s.kids.push(child);
+  s.end = endSoon;
+  return child;
+};
 
 export const spawnIn = (scope, work) => fork(current, work, scope);
 
@@ -450,15 +466,26 @@ export const running = (fiber) => fiber.outcome === null;
 
 // Work run in no fiber, where a fiber started now would first run
 // (boundary.md §9.8.11): `{ w }`, the work until it runs.
+// Work that runs owns what it `spawn`s, as a fiber does its children: they
+// are cancelled when it returns (`spawn` below), so a body keeps the
+// structure a fiber gave it. No fiber is made: the record is the work's
+// own, and `end` is set only by a `spawn`, so a build that never spawns
+// keeps nothing of cancellation here.
+let soonRunning = null;
+
 const runSoon = (s) => {
   const w = s.w;
   s.w = null;
+  const outer = soonRunning;
+  soonRunning = s;
   w(null);
+  soonRunning = outer;
+  if (s.end !== null) s.end(s);
   return true;
 };
 
 export const soon = (work) => {
-  const s = { w: work };
+  const s = { w: work, end: null };
   schedule(runSoon, s, null, null);
   return s;
 };

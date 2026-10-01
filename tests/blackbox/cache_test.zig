@@ -3004,35 +3004,42 @@ fn wideImportProject(w: *World, gpa: std.mem.Allocator, n: usize, extra: []const
     try w.write("Main.beni", main.written());
 }
 
-test "an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited" {
+// `static-dispatch-spike.md` §9.2's wide form (A.87) across a module
+// boundary, which needs interface v3's `u16` arity: past 4 096 evidence
+// entries a derived function takes ONE array `$m`, and every caller packs
+// the same count. `T` has 4 097 parameters, the narrowest count that takes
+// the array, so `Wide` emits `T`'s `eq` and `compare` in the wide form, and
+// `Main` — which counts the entries from what it imported — must pack 4 097.
+// An importer that read the count through a `u8`, or fell back to
+// positional evidence, would call `Wide$T$$eq` with 4 097 arguments: exit 0,
+// then `TypeError: $m[0] is not a function` at run time.
+//
+// The count an importer uses on a warm build is the one a cached RECORD
+// states, and there are two such records, so two tests, each a build over
+// a cache directory a `check` filled:
+//   - warm: nothing is checked, and `Main`'s cached dispatch table states
+//     the count;
+//   - `Main` edited: `Wide` comes from the cache and `Main` is checked
+//     against `Wide`'s loaded interface, which states it.
+// A cold build would take the count from the interface in memory, which no
+// cached record states, so the cache is filled by a `check` of both modules
+// instead; the switch itself, in one module, is `abuse_wide_test.zig`'s.
+// Both builds are development builds: `--release` renames the same lowered
+// calls and has no branch of its own at the switch. Which module an edit
+// re-checks is `cutoff_test.zig`'s, and each build here costs a whole build
+// of a type 4 097 wide — which is why the two are two tests (the budget).
+const WidePass = struct {
+    what: []const u8,
+    edit: ?[]const u8,
+    checked: u64,
+    hits_at_least: u64,
+    expected: []const u8,
+};
+
+fn wideImportPass(pass: WidePass) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `static-dispatch-spike.md` §9.2's wide form (A.87) across a module
-    // boundary, which needs interface v3's `u16` arity: past 4 096 evidence
-    // entries a derived function takes ONE array `$m`, and every caller
-    // packs the same count. `T` has 4 097 parameters, the narrowest count
-    // that takes the array, so `Wide` emits `T`'s `eq` and `compare` in the
-    // wide form, and `Main` — which counts the entries from what it
-    // imported — must pack 4 097. An importer that read the count through a
-    // `u8`, or fell back to positional evidence, would call `Wide$T$$eq`
-    // with 4 097 arguments: exit 0, then `TypeError: $m[0] is not a
-    // function` at run time.
-    //
-    // The count an importer uses on a warm build is the one a cached RECORD
-    // states, and there are two such records, so two builds over one cache
-    // directory, each after a `check` that fills it:
-    //   - warm: nothing is checked, and `Main`'s cached dispatch table states
-    //     the count;
-    //   - `Main` edited: `Wide` comes from the cache and `Main` is checked
-    //     against `Wide`'s loaded interface, which states it.
-    // A cold build would take the count from the interface in memory, which
-    // no cached record states, so the cache is filled by a `check` of both
-    // modules instead; the switch itself, in one module, is
-    // `abuse_wide_test.zig`'s. Both builds are development builds: `--release`
-    // renames the same lowered calls and has no branch of its own at the
-    // switch. Which module an edit re-checks is `cutoff_test.zig`'s, and
-    // each build here costs a whole build of a type 4 097 wide.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -3040,58 +3047,54 @@ test "an imported type of 4 097 parameters compares in the wide form from a warm
     defer w.deinit();
     const n = 4_097;
     try wideImportProject(&w, arena, n, "");
-    const expected = "True\nFalse\nTrue\nFalse\n";
     const cold = try runCounted(&w, arena, &.{ "check", "--platform=node", "--cache-dir=cache", "--jobs=1", "Main.beni", "Wide.beni" }, "cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
     try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+    if (pass.edit) |extra| try wideImportProject(&w, arena, n, extra);
 
-    const passes = [_]struct {
-        what: []const u8,
-        edit: ?[]const u8,
-        checked: u64,
-        hits_at_least: u64,
-        expected: []const u8,
-    }{
-        .{ .what = "warm", .edit = null, .checked = 0, .hits_at_least = 2, .expected = expected },
-        .{ .what = "Main edited", .edit = ", show (y == y)", .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
-    };
-    for (passes, 0..) |pass, i| {
-        if (pass.edit) |extra| try wideImportProject(&w, arena, n, extra);
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--out=out", "--cache-dir=cache", "--jobs=1", "Main.beni", "Wide.beni" },
+        "pass.json",
+    );
 
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        const built = try runCounted(
-            &w,
-            arena,
-            &.{ "build", "--platform=node", "--out=out", "--cache-dir=cache", "--jobs=1", "Main.beni", "Wide.beni" },
-            try std.fmt.allocPrint(arena, "pass{d}.json", .{i}),
-        );
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (built.result.exit_code != 0) std.debug.print("{s}: {s}\n", .{ pass.what, built.result.stderr });
+    try testing.expectEqual(@as(u8, 0), built.result.exit_code);
+    try testing.expectEqualStrings("", built.result.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = pass.expected });
 
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        if (built.result.exit_code != 0) std.debug.print("{s}: {s}\n", .{ pass.what, built.result.stderr });
-        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
-        try testing.expectEqualStrings("", built.result.stderr);
-        try w.expectProgram(world.entry_file, .{ .stdout = pass.expected });
-
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY SIDE EFFECTS                 │
-        // └─────────────────────────────────────┘
-        // Which modules the build checked and which it took from the cache:
-        // the reason for two builds, not a detail of them.
-        if (built.counters.checked != pass.checked or built.counters.hits < pass.hits_at_least) {
-            std.debug.print("{s}: checked {d}, hits {d}\n", .{ pass.what, built.counters.checked, built.counters.hits });
-            return error.UnexpectedCacheUse;
-        }
-
-        // The importer really does pack the array: one `$m` of 4 097
-        // entries per call, never 4 097 arguments.
-        const main_js = try w.read("out/Main.mjs");
-        try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$eq([") != null);
-        try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$compare([") != null);
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Which modules the build checked and which it took from the cache: the
+    // reason for two tests, not a detail of them.
+    if (built.counters.checked != pass.checked or built.counters.hits < pass.hits_at_least) {
+        std.debug.print("{s}: checked {d}, hits {d}\n", .{ pass.what, built.counters.checked, built.counters.hits });
+        return error.UnexpectedCacheUse;
     }
+
+    // The importer really does pack the array: one `$m` of 4 097 entries per
+    // call, never 4 097 arguments.
+    const main_js = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$eq([") != null);
+    try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$compare([") != null);
+}
+
+const wide_expected = "True\nFalse\nTrue\nFalse\n";
+
+test "an imported type of 4 097 parameters compares in the wide form from a warm cache" {
+    try wideImportPass(.{ .what = "warm", .edit = null, .checked = 0, .hits_at_least = 2, .expected = wide_expected });
+}
+
+test "an imported type of 4 097 parameters compares in the wide form with only the importer edited" {
+    try wideImportPass(.{ .what = "Main edited", .edit = ", show (y == y)", .checked = 1, .hits_at_least = 1, .expected = wide_expected ++ "True\n" });
 }
 
 fn runFlagged(

@@ -77,10 +77,18 @@
 
 import { Console } from "node:console";
 import { readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { enableCompileCache } from "node:module";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import process from "node:process";
 import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
+
+// happy-dom is one 890 kB file that every run compiles. V8's code cache for
+// it (and this file), kept between runs, makes a run about 100 million
+// instructions cheaper — the test budget counts Node's. It changes nothing a
+// page does: a stale or missing cache is compiled again.
+enableCompileCache(join(tmpdir(), "beni-browser-driver"));
 
 // ---------------------------------------------------------------------------
 // Page code. Each function is self-contained: Chrome receives its source.

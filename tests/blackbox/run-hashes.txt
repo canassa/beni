@@ -98,8 +98,8 @@ cache_test.test.a warm rebuild is a cold build: constructors reordered, which re
 cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #1 4cba10a55f72c476423d7057204bd40a3f3644d910f5b3c74d43629ce16385f0
 cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 0a073abb4ac4fc3f88991a8099c492dcc018211e64d1d57e71bf672a1d8df18e
 cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 4fc3e53e7ab5834cd3c00475b5fedfe9b12bff72660ecc964404f05abe3c23e0
-cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #0 1e0236f04fe2f84bbe9c8e78232099e7ca221209286178d8c20648b52077a62a
-cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 a97d5cd582b694e352e84f4a74b53a1dc7b7acf4e610bb2e1b8532c4fc800ede
+cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache #0 1e0236f04fe2f84bbe9c8e78232099e7ca221209286178d8c20648b52077a62a
+cache_test.test.an imported type of 4 097 parameters compares in the wide form with only the importer edited #0 a97d5cd582b694e352e84f4a74b53a1dc7b7acf4e610bb2e1b8532c4fc800ede
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 f54edaad921527ad6019f33838535517ac97bb595cef2ace61eb357e6dabe465
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa

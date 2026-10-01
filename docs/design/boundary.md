@@ -2220,12 +2220,19 @@ runtime — `Random.generate` cost 1 707 bytes over a counter, almost all of it 
   or `Queued soon outlet` per body, and every step that waits for or cancels a fiber is in an
   `InFiber` arm, so a program that builds no `Perform` and no `Keyed` reaches none of them
   (`backend.md` §9, *A `case` arm on a constructor nothing builds*).
-- **What is not the same.** A body run with no fiber has no fiber to own what it starts:
-  `Task.spawn` from it starts a fiber with no parent, as from `main`, where under a fiber the
-  child was cancelled when the body returned — before it ever ran. `Task.closeRoot` (which
-  nothing calls yet, W51) does not reach queued work. And the choice is as precise as the class:
-  a function chosen at run time between one that waits and one that does not (`if b then f else
-  g`) may wait, and runs in a fiber.
+- **Structured concurrency does not change** (*amended 2026-10-02*, the manager's review). A
+  fiber started with `Task.spawn` belongs to the fiber that started it and is cancelled when that
+  one ends; a body that runs with no fiber owns what it spawns the same way. While `soon`'s work
+  runs, `spawn` outside any fiber makes the child the work's own — no fiber is made: the run's
+  record keeps its children — and when the work returns each is cancelled, where a fiber's
+  `finish` would have cancelled it. Such a child is queued behind the body, so it is cancelled
+  before it runs, in both forms; a child the body must wait for (`Task.join`) makes the body one
+  that may suspend, which runs in a fiber. The one thing a fiber did beyond this — staying
+  *running* until its cancelled children had unwound — no one can observe of a queued body,
+  whose children never run. `browser/tea/SyncSpawnOwned` pins it, the same log both ways.
+- **What is not the same.** `Task.closeRoot` (which nothing calls yet, W51) does not reach queued
+  work. And the choice is as precise as the class: a function chosen at run time between one that
+  waits and one that does not (`if b then f else g`) may wait, and runs in a fiber.
 
 **The proof that ordering is unchanged** is a pair of pages that do the same work both ways,
 each body written once and made one that may wait by a wait on a branch no run takes:

@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="fibers">"fibers"</button>
+    <button id="joined">"joined"</button>
+  </main>
+</body>
+-- click #direct
+console.info: body returns
+(the DOM did not change)
+-- click #fibers
+console.info: body returns
+(the DOM did not change)
+-- click #joined
+console.info: joined child runs
+(the DOM did not change)
