@@ -5466,6 +5466,31 @@ index and in each arm, a `Maybe` read whole by `Debug.toString` and so made, and
 choosing among three), `emit/release/split/EmptyPage`, `HolesPage`, `emit/release/app/SpecScalars`,
 `SpecSmall`, `SpecNodes`.
 
+**Measured again over field renaming** (*added 2026-10-03*; *Item 4, taken up* landed while slices
+6–9 were built, and moved every baseline). Release, brotli, the whole bundle, `bench/size.mjs`'s
+pages and the `bench/ui` app, each slice's compiler in turn:
+
+| | before | definite init | 6–7 | 8 | 9 | self-assignments |
+|---|--:|--:|--:|--:|--:|--:|
+| empty `browser`, `Tea.sandbox` | 605 | 557 | 550 | 503 | 496 | **493** |
+| `Tea.element` | 1 217 | 1 217 | 1 202 | 1 184 | 1 173 | |
+| with effects | 5 258 | 5 258 | 5 258 | 5 236 | 5 228 | |
+| `bench/ui` app | 5 639 | 5 639 | 5 626 | 5 613 | **5 613** | |
+
+`run/` programs, release brotli summed over those both compilers build: −3 849 (raw −18 585),
+122 bytes of it lost by 20 programs, none by more than 43. **Speed**, Node 24 on the list read
+(`List.get` then `withDefault`, and `drop` then `head` then `withDefault`, 3 million reads of a
+13-word list, the whole process pinned to one core, n = 15, median ms [IQR]): `get` 164.4
+[162.2–164.5] → **147.6** [146.8–149.0], with TurboFan off (`--no-opt`, the cold loop's tier)
+192.2 → **152.3**; `drop` 188.6 → **170.4**, cold 227.1 → **196.8** — the `Just` is gone from
+both, `drop`'s view stays. `bench/ui` in Chromium 153 (`--taskset=8-15`, script medians, the
+master build, this one, and Solid 1; load 4–22 from other work on the machine): run1k 4.82 /
+4.81 / 5.05 (n = 16), replace1k 10.6 / 10.7 / 12.2 (n = 30), update10th 1.68 / 1.44 / 1.99,
+select 1.28 / 1.30 / 1.82 (n = 30), swap 1.67 / 1.15 / 2.22, remove 0.51 / 0.52 / 0.59, create10k
+55.9 / 54.8 / 62.1, append1k 5.16 / 4.98 / 5.23, clear 24.5 / 24.3 / 24.9 (n = 20): every
+operation within noise of master or ahead, each slower-looking one re-run (replace, select,
+clear) to a tie; ahead of Solid 1 on all nine.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print
