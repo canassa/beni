@@ -72,8 +72,8 @@ emits nonempty record bodies and tagged variants as layout, and unresolved
 schema plans survive in AST/BIR dumps and the frontend cache. The checker
 resolves schema namespaces and both endpoint types, publishes
 member/constructor schemes, and caches an immutable resolved plan.
-`core/Schema` supplies the public type surface; executable library functions
-are still to come. `check` and interface dumps accept schemas; `build` refuses
+`core/Schema` supplies the public type surface and, since 2026-10-02, the
+library interpreter (builders, runners, `describe`; `schema.md` §5, §16 slice S3). `check` and interface dumps accept schemas; `build` refuses
 them from emit before any output, with `not_implemented`: their parse and
 print are not generated yet. A.6 owns interface v2, frontend artifact v3 (now
 v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
