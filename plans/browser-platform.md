@@ -1354,3 +1354,24 @@ on `bench/corpus/` building markup (`frontend.md` §9.3).
 
 **Total**: about 5 350–7 350 lines of Zig and ~530 of JavaScript, research 36's estimate plus the
 interface, the layering, markup's BIR and the review's additions, which it did not have.
+
+## 8. The defect teardown slice plan (2026-10-02)
+
+The contract is [`boundary.md`](../docs/design/boundary.md) §9.8.14: a defect closes every root
+scope, every finaliser runs once with `Cancelled`, a finaliser that suspends is bounded by a
+1 000 ms deadline, and one that throws is a separate host report that never replaces the original.
+The eight choices it took for the owner are its table (o); each slice below lands with `zig build
+gates` green and its own fixtures, red first.
+
+| Slice | What | Fixtures |
+|---|---|---|
+| **1. Driver** | `timers` and `listeners <window\|document> [<name>]` steps in `tests/browser/driver.mjs` and the README; the prelude counts what the page adds and removes. Changing the driver re-records every browser run hash once, here | none of its own: `browser/tea/DefectInFiber` gains a `timers` step whose golden records today's leak, `(timers: 1)` after the stop, which slice 3 turns to 0 |
+| **2. Kernel** | `core/Task.js` and `Task.beni`: the root registry, *stopping*/*stopped*, `Task.shutdown deadline done`, `soon` entries dropped while stopping, finaliser boundaries and the cut back to one, the deadline's abandonment, `interrupt` queuing before its canceller, the outside record's leftovers, the drain guard's two paths (first throw; a throw while stopping). Nothing calls `shutdown` but a test | `run/TaskShutdown` (order, a dropped `soon`, a spawn cancelled before it runs, a second call a no-op, the deadline), `run/TaskDefectOnNode` (`.crash`: Node unchanged) |
+| **3. Browser wiring** | `Rt.beni`'s `teardown` reference and fifth mount argument; `Browser.beni`'s `host` hands it the after-render queue's emptying and `Task.shutdown` with the deadline; the `console.warn` for abandoned cleanups; the crash screen's later-throw list and abandoned line, its listener kept until the end | `DefectRunsReleases`, `DefectReleasesHost`, `DefectQueuedDropped`, `DefectInViewReleases`, `DefectEveryProgram`, `browser/dom/HostedRootReleases`; `DefectInFiber`'s `(timers: 1)` becomes `(timers: 0)` |
+| **4. The hard cases** | nothing new in the code if slices 2–3 are right; this slice is the fixtures that would catch them wrong, and the measurement | `DefectReleaseSuspends`, `DefectReleaseThrows`, `DefectReleaseRunning`; `bench/size.mjs` lines for the `Http` + `Time` page and the empty `Tea.element` (the latter must not move); `zig build test-browser` in Chrome for every new page; the *As built* note in §9.8.14 |
+
+Slices 2 and 1 are independent; 3 needs both; 4 needs 3. Estimated size: about 70 lines of
+`Task.js`, 25 of beni, 40 of driver, and ten pages. If the owner reverses a choice: 1 changes
+`Exit` and every `case` on it (before slice 2); 2 adds per-root attribution (slice 3); 3 and 8 are
+constants; 5 adds a page `AbortController` (slice 3); 6 moves the close into `Tea` (slice 3); 7 adds
+a Node hook (slice 2).

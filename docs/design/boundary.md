@@ -2001,7 +2001,8 @@ superseded by §9.8.12, HTTP version 2; `Nav` and `Tea.application` are §9.8.13
   built**: a `foreign` that throws inside a fiber escapes the scheduler's microtask as an uncaught
   exception, and nothing yet closes the scope. *(Amended 2026-10-01: the rest of W2 is built —
   a throw in a program's own code stops the page, with a development crash screen, §9.8.10 (c);
-  closing the scope and a fiber's throw are still owed there.)*
+  closing the scope and a fiber's throw are still owed there.)* *(Amended again 2026-10-02:
+  closing the scope is specified in §9.8.14.)*
 
 *As built, 2026-10-01* (`platforms/browser/`: `Browser.beni`, `Hosted.beni`, `Cmd.beni`,
 `Sub.beni`, `Time.beni`, `Dom.beni`, `Http.beni`, `Browser/Events.beni` and their siblings,
@@ -2178,7 +2179,8 @@ the branch the build takes, in reachability and in lowering.
   `error` listener on the window, which the throw reaches after the cleanup ran.
 - **Not yet:** the program's scope is not closed (W2 option (b), R45 §8 item 8): a fiber parked
   when the page stops stays parked, never resumed. Closing it needs the host to reach `Tea`'s root
-  scope, which is the next step.
+  scope, which is the next step. *(Amended 2026-10-02: specified in §9.8.14 — core keeps every
+  root scope, and a defect's teardown closes them all, each finaliser running once.)*
 - **This replaces `browser/tea/ThrowRecovers`**, which pinned the opposite — a throw left the loop
   able to run the next message.
 
@@ -2325,7 +2327,7 @@ runtime — `Random.generate` cost 1 707 bytes over a counter, almost all of it 
   *running* until its cancelled children had unwound — no one can observe of a queued body,
   whose children never run. `browser/tea/SyncSpawnOwned` pins it, the same log both ways.
 - **What is not the same.** `Task.closeRoot` (which nothing calls yet, W51) does not reach queued
-  work. And the choice is as precise as the class: a function chosen at run time between one that
+  work. *(Amended 2026-10-02: a defect's teardown, §9.8.14, drops queued work unrun.)* And the choice is as precise as the class: a function chosen at run time between one that
   waits and one that does not (`if b then f else g`) may wait, and runs in a fiber.
 
 **The proof that ordering is unchanged** is a pair of pages that do the same work both ways,
@@ -2909,6 +2911,311 @@ from it. A static host in production needs the same fallback configured; the use
   a beni view is one markup tree.
 - **An application opened at a non-`http(s)` address stops as a defect**, as Elm's did, with the
   crash screen saying why instead of `Debug.crash`'s code 1.
+
+#### 9.8.14 A defect closes the program's scope
+
+*Added 2026-10-02.* The rest of the owner's W2 — option (b), *tear down the mount: close the root
+scope, so finalisers run and requests abort* — and R45 §8 item 8, which §9.8.10 (c) left as **Not
+yet**. Today a defect stops the page and leaves every fiber where it was: a request in flight runs to
+its end, a timer fires into a stopped scheduler, a subscription's listener stays on the window, and
+no `bracket` release runs. This section specifies the teardown. Nothing in it changes what a program
+that has no defect does, and nothing in it is a `catch` (`CLAUDE.md` rule 9).
+
+**(a) The guarantee.** When a defect stops a page, every finaliser that the page's fibers hold runs
+**exactly once**, in the order (e) gives, and is told `Cancelled`; every host resource a parked
+fiber holds is released; and no other code of the program runs. What is reached, and how:
+
+| What | Held as | Released by |
+|---|---|---|
+| a `Task.bracket` release | a fiber's finaliser list | the fiber's unwinding, with `Cancelled` |
+| a nested `Task.scope` | a finaliser of the fiber that opened it | the same unwinding: its fibers cancelled and waited for |
+| a timer (`Time.sleep`, `Time.every`'s body), a request (`Http`), a listener (`Listen.each`, every `each…` and subscription), a `Dom.rendered` wait | the canceller a parked fiber's `Task.callback` registered | the interrupt itself, at once (step 1 of (d)) |
+| a command's body in a fiber, keyed or not, a subscription's fiber, a `Restart`'s cancelling fiber | a child of the program's root scope | the root scope's close |
+| what any of those `spawn`ed | a child fiber | its parent's unwinding, children first (A11) |
+| a command's body queued with no fiber (`Task.soon`, §9.8.11 (b)) | the scheduler's queue | nothing: it is dropped unrun, and what it would have spawned never exists |
+| after-render work (`Hosted.afterRender`, `Cmd.afterRender`) | `Browser.beni`'s `later` queue | nothing: dropped unrun, as every render after the defect is |
+| a `bracket` left open outside any fiber by the throw (in `soon` work, in `init`) | the outside-any-fiber record's finaliser list | a fiber of its own, step 4 of (d) |
+
+A dropped body or after-render function is program code, which (c) of §9.8.10 says no longer runs; it
+holds no finaliser — work that cannot suspend cannot have parked on anything — so dropping it
+releases nothing that needed releasing. Outlets and relays are not closed one by one: every send is
+already dead through the page's `dead` flag, from a body, a finaliser or a listener alike.
+
+**What cancellation already lets a cancelled fiber do, it may do here, and nothing more.** A fiber
+interrupted inside an uninterruptible region — a `bracket`'s acquire — finishes the region and runs
+on to its next suspension point, where the interrupt is delivered (`transparent-effects-proposal.md`
+§16.4; report 43 §9.2's rule 2). Delivering it at the end of the region instead would leak the
+resource the acquire just returned, whose release `bracket` registers only after the region, so the
+rule is kept. That code can no longer send, render or start a fiber that runs (below), so what it
+can do is what a release can do.
+
+**(b) Three phases: stop, report, tear down.** A defect is a throw that escapes one of the guards
+§9.8.10 (c) lists — the listeners' `fire`, the hosted dispatcher, the render loop's `flush`, `run`,
+and core's scheduler drain. Its handling is split in three, so that **nothing that can throw runs
+while the original throw is in flight**:
+
+1. **Stop**, synchronously, in the guard's cleanup (a `Js.finally`, or `Task.js`'s `finally`): the
+   page's `dead` flag is set; core's scheduler enters *stopping* (it runs nothing until the teardown
+   starts); the after-render queue is emptied; in a development build the crash screen is shown.
+   No program code, no finaliser and no canceller runs here. If any of them threw inside the
+   cleanup, JavaScript would replace the original exception with theirs, and the defect the
+   developer must see would be lost.
+2. **Report.** The throw goes on, unchanged, to the host, which reports it as an uncaught
+   exception: the console with its stack, `window.onerror` and the crash screen's `error` listener.
+3. **Tear down**, in a macrotask core schedules during the stop (`Task.js`'s `macrotask`:
+   `setImmediate` where it exists, a `MessageChannel` otherwise), so it starts only after the host
+   has reported the original. A microtask would also run after the report in a browser, but a
+   macrotask also lets a page that stopped mid-flush finish its task before the teardown begins, and
+   it is the same in both of the test driver's DOMs.
+
+**(c) How the host reaches every root scope: core keeps them.** The teardown is the runtime's, not
+the architecture's. Core's `Task.js` already holds every fiber it has started, except for the
+roots. It now also keeps a registry of **every root**, in creation order: each scope `openRoot`
+made that `closeRoot` has not closed, each fiber `start` made that has not ended, and the record of
+work outside any fiber. One new kernel operation closes them all:
+
+```elm
+--| Stop every fiber: close every root scope, cancel every fiber and run its cleanup, drop queued
+--| work, and start nothing new. Cleanup that suspends is given `deadline` milliseconds from the
+--| call; `done` is called once every fiber has ended, with how many cleanups were cut short.
+--| What a platform calls when its program stops; a program never does.
+pub foreign impure shutdown : Int, sync (Int -> ()) -> ()
+```
+
+**`shutdown` itself does only phase 1's part**: it enters *stopping* and schedules the teardown's
+macrotask, and returns; it calls no canceller and no finaliser, so it is safe inside a guard's
+cleanup. A second call does nothing. **Why core, and not `Tea`.** `Tea.element` opens its root scope in
+`init` and keeps it in its state, which the platform cannot see, and an architecture written
+straight on `Browser.hosted` opens its own. If each had to hand its scope to the host, an
+architecture that forgot to would leak, and the page's guarantee would rest on every framework
+remembering it. With a registry, **`Tea` changes by nothing**, and so does any other `hosted`
+program: every root `openRoot` makes is closed, whoever made it. A `Browser.program` page runs no
+fibers and reaches no `Task`; its stop is today's. The registry costs one array in `Task.js` and a
+push and a removal per root, and only a build that keeps `openRoot` or `start` keeps it.
+
+**Who calls it.** Two paths reach one teardown:
+
+- **A throw in a fiber** (or in `soon` work): core's drain guard enters *stopping*, notes the fiber
+  that threw (the *culprit*) or the `soon` work, resets the state the throw left behind (the
+  current fiber, the pending suspension, the running `soon` record, the outside record's masks),
+  schedules the teardown with the deadline the platform gave, and calls the platform's
+  `Task.onDefect` hook, which stops the page as before.
+- **A throw in the program's own code** outside any fiber (a handler, `update`, `view`, `settle`,
+  after-render work, `init`): `Rt.beni`'s `stop` calls the page's *teardown*, a reference that is
+  null until a hosted mount fills it. The runtime hands a hosted mount a fifth argument for it —
+  `h(root, flush, setPhase, stop, onStop)`, `onStop` storing the function — and `Browser.beni`'s
+  `host` passes a function that empties the after-render queue and calls `Task.shutdown deadline
+  finished`. A page whose mounts are all
+  `Browser.program`s fills nothing and ships nothing of `Task`, as now (§9.8.9's measurements).
+
+`deadline` is a constant of the `browser` platform, **1 000 ms** (choice 3 below), as W3's slice
+and budget are the platform's.
+
+**(d) The teardown, step by step.** Every step runs in the teardown's macrotask or in the drains
+after it; each is deterministic, ordered by creation and by the scheduler's FIFO.
+
+1. **The sweep.** Every root in the registry, in creation order: a root scope is marked closed and
+   each of its fibers interrupted, in the order they were started; a root fiber is interrupted;
+   the outside record's children are interrupted. The culprit, if any, is unwound as an
+   interrupted fiber is (its continuations discarded, its children cancelled, its finalisers run)
+   unless it was unwinding already, when its stack is cut back to its next finaliser (step 3). An
+   interrupt delivered to a parked fiber calls its wait's canceller **now**, so every timer is
+   cleared, every request aborted, every listener removed and every `Dom.rendered` wait dropped
+   before any finaliser runs: what the host holds is released by platform code alone, which no slow
+   or failing finaliser can delay. **The interrupted fiber is queued before its canceller is
+   called**, so a canceller that throws ((g)) cannot leave a fiber that never unwinds.
+2. **Queued work.** In *stopping*, the drain drops every `soon` entry unrun and cancels any child it
+   had spawned before the defect. Fiber entries run, and each fiber that runs is already
+   interrupted.
+3. **Unwinding.** The drain runs as it always does — FIFO, 64 resumptions and then a macrotask —
+   and each fiber unwinds by the existing rule: its children are cancelled and waited for, then
+   its finalisers run, **last first**, uninterruptibly, then it ends `Cancelled`, and whoever
+   joined or waited on it is answered. Each finaliser runs above a **boundary** on the fiber's stack,
+   so the teardown can tell one finaliser's continuations from the next one's ((f), (g)).
+   Finalisers may suspend, as ever (report 43 §9.4): a finaliser that waits on a timer or a request
+   is resumed normally, until the deadline.
+4. **Leftovers outside any fiber.** Finalisers a throw left on the outside-any-fiber record — a
+   `bracket` whose use threw in `soon` work or in `init` — run last first, in one fiber the teardown
+   starts for them after the sweep, under the same rules.
+5. **Nothing new runs.** A fiber spawned while *stopping* — by a finaliser, `spawnIn` a closed root,
+   `start` — is cancelled before it runs, as a fiber spawned into a closed root scope is today
+   (§9.8.7). `Task.soon` queues nothing. A `send` does nothing (`dead`); `Browser.flush` does nothing;
+   `Dom.rendered` never answers, since no render comes.
+6. **The end.** When every fiber has ended, the deadline's timer is cleared, the scheduler stops for
+   good (no drain runs again, and a late host callback finds its wait done and is dropped, as
+   today), and `done` is called with the number of finalisers the deadline cut short, normally 0.
+
+Each finaliser runs exactly once because each fiber unwinds once (`unwinding` makes a second
+interrupt a no-op), a fiber's finaliser list is taken whole when it starts to unwind, and a
+finaliser is popped before it is called — so one that threw or was cut short is never started
+again. A `bracket` whose release was running when the defect struck had already popped it, on its
+success path, and is not released twice. A root scope closed once is not closed again, and a second
+`shutdown` does nothing.
+
+**(e) The order, in one place.** The host's resources, all at once in the sweep, in root creation
+order and then fiber start order. Then each fiber's cleanup in the order the scheduler reaches it:
+the root scopes' fibers in start order, interleaving only where a finaliser suspends; within one
+fiber, its children's cleanup first, then its own finalisers, last registered first. Several
+programs' roots in the order the programs were started (`Browser.programs`' order). This is the
+order `Task.closeRoot` and `Task.scope`'s close already use, and Effect's `interruptAll` (children
+interrupted in insertion order, then awaited); a test can therefore pin it with a log.
+
+**(f) A finaliser that suspends: a deadline, not a hang.** A finaliser that waits forever — on a
+request no server answers, on `Dom.rendered` — holds up only its own fiber, since fibers unwind side
+by side and the page's thread is never blocked. But it would hold back **the finalisers registered
+before it on the same fiber**, which would then never run. So the teardown has a **deadline**,
+P2 §6.3's *bounded shield* (Trio's `move_on_after(CLEANUP_TIMEOUT, shield=True)`, not Kotlin's
+unbounded `NonCancellable`), counted from the sweep on the host's timer (`setTimeout`, which the
+test driver's virtual clock owns). When it passes:
+
+- each fiber parked inside a finaliser has its wait cancelled (its canceller runs, its late answer
+  is dropped) and **the rest of that finaliser is abandoned** — its continuations, back to the
+  finaliser's boundary, are discarded — and the fiber goes on to its next finaliser;
+- from then on, each finaliser still to run runs until its first suspension and is abandoned
+  there.
+
+Every finaliser therefore **starts** exactly once, and the teardown ends in bounded time. The count
+of abandoned ones reaches `done`; the `browser` platform writes one `console.warn` line when it is
+not 0 (in both builds: it is a cleanup that did not happen, which a release's log should hold, and
+it costs one short string) and, in a development build, adds the same line to the crash screen. A
+synchronous loop that never returns cannot be interrupted under any lowering (P2 §6.2) and hangs the
+page as it would anywhere; nothing here claims otherwise.
+
+**(g) A finaliser that throws.** A1 makes a finaliser infallible in its type (`-> ()`), but a
+`foreign` it calls may still throw, and so may a canceller in the sweep or the masked code of (a).
+**Nothing catches it.** The drain's guard, a `finally`, sees the drain did not complete and, since
+the runtime is already *stopping*: cuts the throwing fiber's stack back to its next finaliser
+boundary (the finaliser that threw counts as run) and queues it again — or, for a throw out of
+masked code, unwinds the fiber as the sweep would have; resumes the sweep at the next root, for a
+throw from a canceller; and schedules the drain to go on in a new macrotask. The throw then goes on
+to the host **as its own uncaught exception**: the console shows it with its stack, `window.onerror`
+sees it. It does not call `onDefect` again and does not re-enter *stopping*.
+
+So **the original defect is never swallowed and never replaced**: it reached the host a task before
+any finaliser ran ((b)), and each later throw is a separate report. Nor are they combined into one
+value, as Effect's `Cause` combines them — beni has no `Cause` (A1), and the host's two reports
+are the two facts. In a development build the crash screen keeps the original as its message and
+lists each later one beneath it under *While stopping, cleanup also threw:*; its `error` listener
+stays registered until the teardown ends rather than `once`. Every other finaliser, of that fiber
+and every other, still runs.
+
+**(h) The render loop and after-render work.** Nothing renders after the stop: a flush already
+queued finds `dead` and does nothing, `settle` — and so `Tea`'s subscription diff — never runs again
+(subscriptions end through their fibers, not through the diff), and `view` is not called. The DOM is
+left as the last render wrote it, a half-written patch included, under the development crash screen,
+to be inspected. After-render work queued but not run is dropped ((a)); a fiber waiting in
+`Dom.rendered` is a parked fiber and is interrupted in the sweep, its canceller taking it out of the
+waiters. The hosted loop's latches (`busy`, `dispatching`) are released by their own `Js.finally`
+cleanups, as today, though nothing reads them again. **The delegated and own listeners stay on the
+document, inert** (they test `dead`; choice 5); every listener a *fiber* added is removed by its
+canceller.
+
+**(i) Several programs: one defect stops them all** (choice 2). §9.8.10 (c) already stops every
+program of the page, and the teardown follows it: every root scope of every program is closed. One
+build is one application, its programs share one heap, one scheduler and one fiber runtime, and A1's
+defect is a bug in core or a platform, not in one program's code: the scheduler's own queue is
+shared, and a throw out of its drain leaves it mid-run for every program. Continuing the others
+would run them on state nobody can vouch for, which is what A1 forbids. A host page that embeds an
+independent beni application builds it separately, and gets its own runtime. Isolating programs
+would need every fiber attributed to a program (each knows its root through its parent chain, so it
+is possible), a guard per mount for synchronous throws, and a crash screen per mount; it is the
+road to W51's unmount, which closes one root with the same steps 1–3, and is not taken now.
+
+**(j) Development and release.** **The teardown is the same in both builds**: finalisers are the
+program's semantics, and a release build behaves exactly as its development build does
+(`language.md` §6). The differences are only what §9.8.10 (c) already makes them: the crash screen,
+with its later-throw list and its abandoned-cleanup line, is in no release build (`Js.development`).
+A release build's log is the host's reports of the throws and the one `console.warn` of (f).
+
+**(k) Node is unchanged** (choice 7). Under Node an uncaught exception ends the process before any
+macrotask can run, so a teardown there would need a process-wide `uncaughtException` handler to keep
+it alive — a hook that, unlike a guard, does stop the exception from crashing the process, and must
+then reproduce Node's report and its exit code by hand. Node keeps
+`transparent-effects-proposal.md` §16.5's *A defect on Node*: the report, exit 1, no finaliser;
+the operating system closes what the process held. The kernel's `shutdown` is platform-free and is
+tested under Node by calling it directly ((m)).
+
+**(l) Against Effect v4**, the gold standard for interruption and finalisers
+(`references/effect`, `packages/effect/src/internal/effect.ts`). Effect's run loop turns a throw
+into a defect, `exitDie(error)`, and unwinds the fiber's stack through every `onExit` with that
+`Exit` (`runLoop`, `OnExit`'s `contE`); a scope closes with an `Exit`, running its finalisers last
+first and sequentially, each one's own outcome collected with `exit(…)` so one failure skips none,
+and the failures combined into the closing cause (`scopeCloseUnsafe`, `scopeCloseFinalizers`,
+`combineFinalizerCause`); a finaliser added to a closed scope runs at once; `fiberInterruptAll`
+interrupts every child, then awaits them all; and no deadline bounds a finaliser. beni keeps every
+one of those structural rules: last first, every finaliser run even after one fails, children
+before the parent's finalisers, work added after the close cancelled at once, interrupt all and
+then wait. It departs in three places, each forced: **the defect is not a value** (A1; a release
+is told `Cancelled`, choice 1), **a later failure is a separate host report, not a combined cause**
+(there is no `Cause`, and rule 9 keeps the original intact), and **the teardown has a deadline**,
+because a page has no process exit to fall back on and P2 §6.3 already chose the bounded shield.
+Effect's own `runLoop` turns *every* throw into a value with a broad `catch (error)`; beni's guards
+are `finally` blocks that let the throw go on, which is rule 9's requirement.
+
+**(m) What changes, for the implementer.**
+
+- **`core/Task.js`**: the root registry; the *stopping* and *stopped* states; `shutdown`; the drain
+  guard's stopping path (culprit, state reset, scheduling, `onDefect`) and its secondary-throw path
+  ((g)); `soon` entries dropped while stopping; finaliser boundaries on the unwinding stack and the
+  cut back to one; the deadline's timer and its abandonment; `interrupt` queuing the fiber before
+  calling the canceller; the outside record's leftover finalisers. `core/Task.beni` gains the
+  declaration in (c). `openRoot`, `closeRoot`, `onDefect` and `start` keep their signatures.
+- **`platforms/browser/Rt.beni`**: a `teardown` reference, the fifth mount argument, and `stop`
+  calling the teardown, once, after setting `dead`; the crash screen's later-throw list, its
+  abandoned-cleanup line, and its `error` listener kept until the teardown ends.
+- **`platforms/browser/Browser.beni`**: `host` hands `onStop` the function of (c) — the
+  after-render queue emptied, then `Task.shutdown` with the deadline and its `done` (the warning,
+  and the screen's line in development).
+- **`platforms/browser-tea/Tea.beni`**: nothing.
+
+Estimated cost: about 70 lines of `Task.js` and 25 of beni. A page whose mounts are all
+`Browser.program`s and an `element` that runs no fiber are byte for byte unchanged; a page that
+runs fibers pays the registry, `shutdown` and the deadline, estimated 250–350 bytes brotli, to be
+measured on `bench/size.mjs`'s `Http` + `Time` page.
+
+**(n) Tests.** The pages are `tests/corpus/browser/tea/` (and one `browser/dom/` page on `hosted`),
+each with a `throws` step for the defect and the transcript as golden, a `.release-expected` where
+the crash screen differs, and run hashes; the virtual clock drives every timer, and so the deadline.
+Two driver steps come first, so that what the host still holds is visible without program code:
+
+| Step | Logs |
+|---|---|
+| `timers` | `(timers: <n>)`, the virtual clock's pending timers |
+| `listeners <window\|document> [<name>]` | `(listeners: <n>)`, the listeners of that target (of that event) the page added and has not removed, counted by the prelude's wrapper |
+
+A finaliser's running is shown by a `Log.info` line in its release (not `Debug.log`, so the release
+pass needs no exemption), which prints the `Exit` it was given.
+
+| Fixture | Pins |
+|---|---|
+| `DefectRunsReleases` | two bodies in fibers, one inside two nested `bracket`s, the other inside one; a third body throws. The releases log, each once, inner before outer, the first body's before the second's, each told `Cancelled`; nothing the bodies would have sent after arrives |
+| `DefectReleasesHost` | R45 §8 item 8: a body sleeping, a keyed `Http` request to a faked service sleeping on the clock, a `Time.every` and an `onResize` subscription; a defect in `update`. Before it `timers` and `listeners window resize` count them; after it both are 0, and `advance` sends nothing |
+| `DefectQueuedDropped` | a body that cannot suspend queued behind the one that throws, and an after-render body queued in the same update: neither logs; a fiber waiting in `Dom.rendered` has its release run |
+| `DefectReleaseSuspends` | a release that sleeps 200 ms and then logs; another fiber's release that sleeps 5 000 ms, followed by an earlier-registered release in the same fiber. `advance 200` logs the first; `advance 1000` reaches the deadline: the long one never logs its second line, the one after it in its fiber logs, the warning is logged, and the development screen shows it |
+| `DefectReleaseThrows` | a release that throws during the teardown, and two others. The `throws` step records the original, then the release's, in that order; both other releases log; the screen keeps the original first and lists the second |
+| `DefectReleaseRunning` | a `Restart` in progress — the old body cancelled and its release mid-sleep — when another body throws: the release runs once, not twice |
+| `DefectEveryProgram` | `Browser.programs` with two `Tea.element`s; a defect in the first's `update` runs the second's releases, and a click on the second does nothing |
+| `DefectInViewReleases` | the synchronous path through the render loop's guard: a throw in `view` closes the root scope as a fiber's throw does |
+| `browser/dom/HostedRootReleases` | a program straight on `Browser.hosted` with a root scope of its own, never handed to the platform, whose fiber's release runs: the registry, not `Tea`, reaches it |
+| `run/TaskShutdown` (Node) | `Task.shutdown` called directly, with a deadline of 100 and a `done` that prints its count: releases in the order (e) gives, a `soon` dropped, a new spawn cancelled before it runs, a second call doing nothing |
+| `run/TaskDefectOnNode` (Node, `.crash`) | the unchanged Node path: a fiber's throw exits 1 with the report, its release unrun |
+
+`browser/tea/DefectInFiber`'s golden gains a `timers` step after the throw, now 0 where the timer
+used to fire into a stopped scheduler. Every page also runs under `zig build test-browser` in Chrome.
+
+**(o) Choices for the owner.** Each was taken here as recommended, so the slices can proceed; each
+is reversible until it ships.
+
+| # | Choice | Recommendation | Alternative |
+|---|---|---|---|
+| 1 | What a release is told on a defect | **`Cancelled`**: `Exit` stays `Done a \| Cancelled` (A1: a defect is not a value), and a release cannot recover anything anyway | a third constructor, `Defected`, so a release can tell a crash from an ordinary cancel (Effect's `Exit.Failure` with a `Die` cause); every `case` on `Exit` changes |
+| 2 | `Browser.programs`: does one program's defect stop the others? | **Yes, all stop and all are torn down**: one heap, one scheduler, and A1's defect is core's or a platform's | stop only the culprit's program and close its root; attribute fibers by root, a guard and a crash screen per mount; the way to W51's unmount |
+| 3 | A finaliser that suspends during the teardown | **Allowed, bounded by a 1 000 ms deadline** (a `browser` platform constant), then cut at its wait, the next finaliser going on | 0 ms: each finaliser runs to its first suspension and no further; or unbounded, as Effect, at the cost of the finalisers after a stuck one |
+| 4 | A finaliser that throws during the teardown | **A separate host report**, the rest of the teardown going on in a new macrotask; the original stays first; the development screen lists the later ones | the screen shows only the original (later throws in the console only) |
+| 5 | The page's delegated and own listeners | **Left on the document, inert** behind `dead`: removing them changes nothing a user sees and costs a registry | one `AbortController` for the page, its `signal` on every `addEventListener`, aborted at the stop (W2's literal "remove every listener"; worth it with W51's unmount) |
+| 6 | Who closes the roots | **Core's registry of roots**, so `Tea` and any other `hosted` architecture change by nothing | each architecture hands its root scope to the host (`Hosted.onStop`); a framework that forgets leaks |
+| 7 | Node | **Unchanged**: report, exit 1, no finaliser; no `uncaughtException` hook | an `uncaughtException` hook that prints Node's report, runs the teardown under the same deadline, then exits 1 |
+| 8 | The abandoned-cleanup warning | **`console.warn` in both builds**, and on the screen in development | development only, so a release ships no string for it |
 
 ## Appendix — what is deliberately not done
 

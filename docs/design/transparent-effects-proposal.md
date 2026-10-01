@@ -1870,7 +1870,11 @@ re-throws rejects a promise no one handles. Node treats both alike under its def
 so the program's own output so far stands and nothing after the defect runs. That is the whole crash
 path on Node, and the smallest one: a fiber's defect is not delivered to its parent, no scope is
 closed and no finaliser runs (W2's teardown, `boundary.md` §9.8.9, is still not built). `run/`
-fixtures assert it with a `.crash` golden (`tests/corpus/README.md`).
+fixtures assert it with a `.crash` golden (`tests/corpus/README.md`). *(Amended 2026-10-02:
+the browser's teardown is specified in `boundary.md` §9.8.14 — core's new `Task.shutdown` closes
+every root scope and runs every finaliser once, with `Cancelled`, under a deadline — and Node keeps
+this paragraph, by that section's (k): an uncaught exception ends the process before a teardown
+could run.)*
 
 **`let _ = e` is kept.** `backend.md` §9 item 1 drops a binding nothing reads, initialiser and
 all; `let _ = Task.spawn work` is written for the spawn. A `let` whose pattern binds nothing (`_`,
