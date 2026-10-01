@@ -2,10 +2,9 @@
   "platform": true,
   "name": "browser",
   "program": "Browser.Program",
-  "runtime": "runtime.js",
   "html": "index.html",
   "platforms": ["html"],
   "reexports": ["Html"],
-  "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" },
+  "markup": { "lowering": "dom", "module": "Rt" },
   "zig": "zig/root.zig"
 }

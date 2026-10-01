@@ -653,6 +653,19 @@ that is about a file rather than a place inside one. *Corrected 2026-09-19: it u
 file 0, token 0, which is the first token of the USER'S source, so a fault in the platform package
 put a caret under an `import` the reader wrote.*
 
+**`"runtime"` is optional when the runtime module is the whole runtime** (*amended 2026-10-02*,
+`plans/runtime-in-beni.md` step 6). A chain that declares a `"program"` needs something for the
+entry file to hand `main` to: a `"runtime"` file, as above, or — when the chain names a markup
+`"lowering"` and a runtime module (`"markup".module`, §9.2) and no `"runtime"` and no
+`"markup".runtime` at all — the module's `run`. Such a chain has no hand-written runtime: the
+module supplies `run` and every export of §9.4.5's union, and each one it does not declare as a
+`pub` value with a body is `foreign_export_mismatch`, reported against the manifest that named the
+module at `1:1` (a markup primitive at its declaration, as with a file) — there is no file to hold
+it instead. A build writes no runtime file, and the entry file imports `run` (and `start`) from the
+module's output. A chain that names neither is refused before a source is read, as before. A chain
+with no `"program"` asks the module for no `run`. `browser` is such a platform since this
+amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server
@@ -1114,6 +1127,13 @@ package that declares `"runtime"`:
 
 A lowering does not change: `cx.runtime(name)` answers the name emitted code reads either way, and
 the lowering's `Lowering.runtime` list is its contract with both halves together.
+
+**A runtime module with no file** (*amended 2026-10-02*). `runtime` may be left out when `module`
+is given and the package names no program `"runtime"` either (§5.2's amendment): the module is
+then the whole markup and program runtime, held to the whole union, and the `lowering` and the
+`module` must come from one package — a chain whose first `module` is another package's than its
+first `lowering` is the exit-2 `markup_split` failure. `browser` declares
+`"markup": { "lowering": "dom", "module": "Rt" }` and nothing else since then.
 
 `browser` has a runtime module since 2026-10-02: `Rt.beni` holds the slot and mount half and the
 render loop, `runtime.js` the rest (`backend.md` §15.11's last amendment;

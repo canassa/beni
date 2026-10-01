@@ -870,7 +870,6 @@ test "every sibling that ships in the box passes checks 3 and 4" {
         scanned += 1;
     }
     for (platform_packages.platforms) |platform| {
-        const manifest = try @import("Manifest.zig").parse(a.allocator(), platform.manifest);
         for (platform.assets) |asset| {
             if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
             const result = try scanOnce(a.allocator(), asset.bytes);
@@ -878,12 +877,7 @@ test "every sibling that ships in the box passes checks 3 and 4" {
                 std.debug.print("{s} reaches `{s}` without importing it\n", .{ asset.path, result.unbound[0].text });
                 return error.UnboundReference;
             }
-            // A runtime file whose every export its runtime module supplies
-            // (`boundary.md` §9.2) may export nothing: `browser`'s, since
-            // `safeUrl` moved to `Rt.beni`.
-            const supplied = manifest.markup.module != null and manifest.runtime != null and
-                std.mem.eql(u8, std.fs.path.basename(asset.path), manifest.runtime.?);
-            if (!supplied) try testing.expect(result.exports.len != 0);
+            try testing.expect(result.exports.len != 0);
             try expectCountable(asset.path, result);
             scanned += 1;
         }

@@ -1061,10 +1061,22 @@ const Emitter = struct {
         return try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, rel });
     }
 
+    /// Whether the chain names no runtime file at all, program or markup,
+    /// and a runtime module and a lowering this binary has: the module is
+    /// then the whole runtime, and supplies every export, `run` among them
+    /// (`boundary.md` §5.2 and §9.2, amended 2026-10-02).
+    fn moduleIsRuntime(e: *const Emitter) bool {
+        const p = e.options.platform;
+        if (p.runtime != null or p.markup_runtime != null or p.markup_module == null) return false;
+        return findLowering(p.lowering orelse return false) != null;
+    }
+
     /// Whether the markup runtime is also the program runtime (§9.2): one
-    /// file, copied once, whose exports include `run`.
+    /// file, copied once, whose exports include `run` — or no file, the
+    /// runtime module being both (`moduleIsRuntime`).
     fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
         const p = e.options.platform;
+        if (e.moduleIsRuntime()) return true;
         const markup = p.markup_runtime orelse return false;
         const program = p.runtime orelse return false;
         return std.mem.eql(u8, markup, program) and std.mem.eql(u8, p.lowering_root, p.runtime_root);
@@ -1084,11 +1096,15 @@ const Emitter = struct {
     /// markup primitive of the vocabulary, and `run` when it is also the
     /// program runtime — as a sibling is against its module's `foreign`s.
     fn checkMarkupRuntime(e: *Emitter) !void {
-        const path = try e.markupRuntimePath() orelse return;
+        const runtime_file = try e.markupRuntimePath();
+        if (runtime_file == null and !e.moduleIsRuntime()) return;
         const lowering = findLowering(e.options.platform.lowering.?).?;
         var expected: std.ArrayList(Expected) = .empty;
         for (lowering.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
-        if (e.markupRuntimeIsProgramRuntime()) try expected.append(e.scratch, .{ .name = "run", .arity = 1 });
+        // With no runtime file, `run` is asked of the module only when the
+        // chain declares a `program` for it to run.
+        const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.options.platform.program != null);
+        if (runs) try expected.append(e.scratch, .{ .name = "run", .arity = 1 });
         if (e.graph().markup.vocabulary) |vocabulary| {
             const b = e.bir(vocabulary);
             const file = e.graph().moduleFile(vocabulary);
@@ -1136,6 +1152,7 @@ const Emitter = struct {
         // The runtime module supplies what it declares; the file, the rest.
         try e.takeSupplied(&expected, lowering.name);
 
+        const path = runtime_file orelse return e.reportUnsupplied(expected.items, lowering.name);
         const bytes = e.readAsset(path) orelse {
             try e.reportInFile(
                 .foreign_sibling_missing,
@@ -1251,6 +1268,56 @@ const Emitter = struct {
                 \\nothing. Import a package, or inline the helper.
             ,
                 .{specifier.text},
+            );
+        }
+    }
+
+    /// A chain with no runtime file (`moduleIsRuntime`): every export the
+    /// runtime module does not supply has nowhere else to come from, so
+    /// each is reported — a markup primitive at its declaration, the rest
+    /// against the manifest that named the module.
+    fn reportUnsupplied(e: *Emitter, unsupplied: []const Expected, lowering_name: []const u8) !void {
+        // A module that is not there was reported by `takeSupplied`.
+        if (e.runtime_module == null) return;
+        const module_name = e.options.platform.markup_module.?;
+        for (unsupplied) |want| {
+            if (want.primitive) |p| {
+                try e.report(
+                    .foreign_export_mismatch,
+                    p.file,
+                    p.token,
+                    \\The runtime module `{s}` declares no `pub` value `{s}`, and this platform names no
+                    \\markup runtime file to supply it.
+                    \\
+                    \\A markup primitive is implemented by the build's markup runtime
+                    \\(`docs/design/boundary.md` §9.3, §9.4.5), which here is the module alone (§9.2).
+                    \\Declare `{s}` in it.
+                ,
+                    .{ module_name, want.name, want.name },
+                );
+                continue;
+            }
+            try e.reportInFile(
+                .foreign_export_mismatch,
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                \\The runtime module `{s}` declares no `pub` value `{s}`, which {s}, and this
+                \\platform names no runtime file to supply it.
+                \\
+                \\A platform whose manifest names no `"runtime"` has its runtime module as its whole
+                \\runtime (`docs/design/boundary.md` §5.2, §9.2), so the module must declare every
+                \\export: here `{s}`, taking {d} parameter{s}.
+            ,
+                .{
+                    module_name,
+                    want.name,
+                    if (std.mem.eql(u8, want.name, "run"))
+                        "the entry file hands `main` to"
+                    else
+                        try std.fmt.allocPrint(e.scratch, "the markup lowering `{s}` imports", .{lowering_name}),
+                    want.name,
+                    want.arity,
+                    plural(want.arity),
+                },
             );
         }
     }
@@ -2258,10 +2325,12 @@ const Emitter = struct {
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
-                if (lowering != null and vocabulary != null and markup_output != null) slot.markup = .{
+                // With no runtime file the module supplies every export, and
+                // nothing is imported from the file's specifier.
+                if (lowering != null and vocabulary != null and (markup_output != null or e.moduleIsRuntime())) slot.markup = .{
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
-                    .runtime = try relativeSpecifier(e.scratch, paths[i], markup_output.?),
+                    .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
                     .build = .{ .release = e.options.release, .library = e.options.library },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
@@ -2856,7 +2925,9 @@ const Emitter = struct {
         files: []HandFile,
         /// ES module evaluation order of the multi-file layout.
         order: []const Piece,
-        runtime: u32,
+        /// The program runtime file, or null when the runtime module is the
+        /// whole runtime (`moduleIsRuntime`).
+        runtime: ?u32,
         /// The program start call (`boundary.md` §9.4.5): the file whose
         /// `start` it calls, and its argument.
         start: ?struct { file: ?u32, data: []const u8 },
@@ -2888,17 +2959,21 @@ const Emitter = struct {
             sibling_of[i] = @intCast(files.items.len);
             try files.append(scratch, .{ .out = try e.siblingOutputPath(m), .origin = source, .bytes = bytes });
         }
-        const runtime = e.options.platform.runtime orelse return null;
-        const runtime_source = try std.fmt.allocPrint(scratch, "{s}/{s}", .{ e.options.platform.runtime_root, runtime });
-        const runtime_index: u32 = @intCast(files.items.len);
-        try files.append(scratch, .{
-            .out = try e.runtimeOutputPath(),
-            .origin = runtime_source,
-            .bytes = e.readAsset(runtime_source) orelse return null,
-        });
-        // `run` and `start` are the file's unless the runtime module supplies
-        // them (`backend.md` §15.1, *The runtime module*).
-        if (e.suppliedAs("run") == null) try files.items[runtime_index].keep.appendSlice(scratch, &.{"run"});
+        // No runtime file when the runtime module is the whole runtime
+        // (`moduleIsRuntime`): it supplies `run`, `start` and `flush`.
+        var runtime_index: ?u32 = null;
+        if (e.options.platform.runtime) |runtime| {
+            const runtime_source = try std.fmt.allocPrint(scratch, "{s}/{s}", .{ e.options.platform.runtime_root, runtime });
+            runtime_index = @intCast(files.items.len);
+            try files.append(scratch, .{
+                .out = try e.runtimeOutputPath(),
+                .origin = runtime_source,
+                .bytes = e.readAsset(runtime_source) orelse return null,
+            });
+            // `run` and `start` are the file's unless the runtime module
+            // supplies them (`backend.md` §15.1, *The runtime module*).
+            if (e.suppliedAs("run") == null) try files.items[runtime_index.?].keep.appendSlice(scratch, &.{"run"});
+        } else if (!e.moduleIsRuntime() or e.suppliedAs("run") == null) return null;
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
@@ -2964,7 +3039,7 @@ const Emitter = struct {
 
         // The entry file's own imports, in `emitEntry`'s order.
         var entry_edges: std.ArrayList(Piece) = .empty;
-        try entry_edges.append(scratch, .{ .file = runtime_index });
+        if (runtime_index) |x| try entry_edges.append(scratch, .{ .file = x });
         const module_piece: ?Piece = if (e.runtime_module) |rt|
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
@@ -2977,7 +3052,7 @@ const Emitter = struct {
                 start = .{ .file = null, .data = s.data };
             } else {
                 const x = file_at.get(s.path) orelse return null;
-                if (x != runtime_index) try entry_edges.append(scratch, .{ .file = x });
+                if (runtime_index != x) try entry_edges.append(scratch, .{ .file = x });
                 try files.items[x].keep.append(scratch, "start");
                 start = .{ .file = x, .data = s.data };
             }
@@ -3094,7 +3169,7 @@ const Emitter = struct {
             for (f.read.imports) |imp| if (!std.mem.startsWith(u8, imp.specifier, "node:")) return null;
             // `run` and `start` are imported from a declined runtime as
             // written, for the harness that reads the entry file's import.
-            if (x == runtime_index or (start != null and start.?.file == @as(?u32, @intCast(x)))) {
+            if (runtime_index == @as(?u32, @intCast(x)) or (start != null and start.?.file == @as(?u32, @intCast(x)))) {
                 for ([_][]const u8{ "run", "start" }) |w| {
                     for (files.items) |g| if (!g.declined and g.read.free.contains(w)) return null;
                     try skip.put(scratch, w, {});
@@ -3288,7 +3363,7 @@ const Emitter = struct {
         };
 
         // The entry file's calls, by the names the bindings have here.
-        const runtime = &h.files[h.runtime];
+        const runtime: ?*HandFile = if (h.runtime) |x| &h.files[x] else null;
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
         if (h.start) |s| {
@@ -3300,7 +3375,7 @@ const Emitter = struct {
         }
         const run_name = if (e.suppliedAs("run") != null)
             try e.moduleSpelling(e.runtime_module.?, "run")
-        else if (runtime.declined) "run" else runtime.spelling(runtime.read.exportBinding("run").?);
+        else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
         try out.print(scratch, "{s}({s});", .{ run_name, main_name });
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
@@ -3314,8 +3389,8 @@ const Emitter = struct {
                 var buf: [8]u8 = undefined;
                 try out.print(scratch, "export{{{s} as flush}};", .{Rename.spell(ordinal, &buf)});
             }
-        } else if (!runtime.declined) if (runtime.read.exportBinding("flush")) |binding| {
-            const spelled = runtime.spelling(binding);
+        } else if (runtime) |r| if (!r.declined) if (r.read.exportBinding("flush")) |binding| {
+            const spelled = r.spelling(binding);
             if (std.mem.eql(u8, spelled, "flush"))
                 try out.appendSlice(scratch, "export{flush};")
             else
@@ -3350,7 +3425,7 @@ const Emitter = struct {
         try e.produceHandWritten(f.out, f.bytes, f.origin, f.keep.items);
         // `run` and `start` in a statement of their own, in the form the
         // multi-file entry file writes and `tests/browser/driver.mjs` reads.
-        const runs = x == h.runtime;
+        const runs = h.runtime == x;
         const starts = h.start != null and h.start.?.file == x;
         // On a line of its own, which is how the driver finds it.
         if ((runs or starts) and out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
@@ -3918,7 +3993,9 @@ const Emitter = struct {
             try out.append(e.scratch, ']');
         }
         try out.appendSlice(e.scratch, "}");
-        return .{ .path = (try e.markupRuntimeOutputPath()).?, .data = out.items };
+        // No path when the runtime module is the whole runtime: it supplies
+        // `start` (`moduleIsRuntime`).
+        return .{ .path = try e.markupRuntimeOutputPath() orelse "", .data = out.items };
     }
 
     /// §2's *The page shell*: the template the chain or the app names,

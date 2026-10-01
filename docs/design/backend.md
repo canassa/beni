@@ -7291,3 +7291,9 @@ id, `programs` a loop that pushes every mount of every program, the list read by
 build specialises them like the rest (`mountAt (…) "inner"` writes the id into the function).
 `browser/tea/MountedPrograms` pins a nested and an empty `programs` and `mountAt` of a hosted
 program.
+
+*Amended: no `runtime.js`* (2026-10-02). The manifest's `"runtime"` and `"markup".runtime` are
+optional when the runtime module is the whole runtime (`boundary.md` §5.2, §9.2), so the empty file
+is deleted and `browser` names only `"markup": { "lowering": "dom", "module": "Rt" }`. A build
+writes no `runtime.foreign.mjs`; the entry file imports `run` and `start` from `Rt`'s output, as it
+already did, and a release build's one file is unchanged byte for byte.

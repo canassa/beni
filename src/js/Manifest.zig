@@ -22,7 +22,10 @@
 //! - `runtime` — the JavaScript file, relative to the package root, whose
 //!   `run` export is handed `main`'s value. This is §5.2's "a platform
 //!   declares its output shape", at the smallest size that is still a real
-//!   declaration rather than a hardcoded one.
+//!   declaration rather than a hardcoded one. Optional since 2026-10-02 when
+//!   `markup` names a `lowering` and a runtime `module` and no `runtime`
+//!   of its own: the module is then the whole runtime, `run` included
+//!   (§5.2, §9.2).
 //! - `entry` — the name of the entry file itself, optional, defaulting to
 //!   `Emit.default_entry_file`. It completes the previous key: until
 //!   2026-09-21 the entry file's NAME was the one part of the output shape

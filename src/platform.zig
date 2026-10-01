@@ -169,6 +169,13 @@ pub fn resolveChain(arena: Allocator, io: Io, requested: []const u8, failure: *?
             .lowering = chain.layers[lowering.layer].name,
             .runtime = chain.layers[module.layer].name,
         } });
+    } else if (chain.firstMarkup("module")) |module| {
+        // No runtime file: the runtime module is the whole runtime, and it
+        // too is written for the lowering (§9.2, amended 2026-10-02).
+        if (lowering.layer != module.layer) return r.fail(.{ .markup_split = .{
+            .lowering = chain.layers[lowering.layer].name,
+            .runtime = chain.layers[module.layer].name,
+        } });
     };
     return chain;
 }
@@ -379,17 +386,23 @@ pub const Loaded = struct {
 
 pub const LoadError = error{
     /// A build of a program whose chain declares a `program` and no
-    /// `runtime`, or the reverse.
+    /// `runtime` (nor a runtime module to be the whole runtime), or the
+    /// reverse.
     Incomplete,
 } || Allocator.Error;
 
 /// The output shape, inherited field by field down the chain (§9.1). A
-/// `program` without a `runtime` or the reverse is `Incomplete` for a program
-/// build; `check` and a library build need neither.
+/// `program` without a `runtime` — or a markup `lowering` and runtime
+/// `module`, which then is the whole runtime — or the reverse is `Incomplete`
+/// for a program build; `check` and a library build need neither.
 pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_program: bool) LoadError!Loaded {
     const program = chain.first("program");
     const runtime = chain.first("runtime");
-    if (needs_program and (program == null or runtime == null)) return error.Incomplete;
+    // A chain whose runtime module is the whole runtime names no file
+    // (`boundary.md` §5.2, amended 2026-10-02): the module's `run` is what
+    // the entry file hands `main` to, held to that by `Emit`.
+    const module_runtime = chain.firstMarkup("lowering") != null and chain.firstMarkup("module") != null;
+    if (needs_program and (program == null or (runtime == null and !module_runtime))) return error.Incomplete;
     const entry = chain.first("entry");
     const html = chain.first("html");
     const lowering = chain.firstMarkup("lowering");
