@@ -754,6 +754,31 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\and `[ x, ...xs ]` is the same list written in brackets.
         ),
+        .backslash_lambda_removed => if (item.head_end > item.head_start) {
+            try w.writeAll(
+                \\A lambda begins with `λ` now, not `\`. Write this one as:
+                \\
+                \\    λ
+            );
+            // The head from its first parameter to its `->`, on one line.
+            var space = false;
+            for (std.mem.trim(u8, head, " \t\r\n")) |c| {
+                if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
+                    space = true;
+                    continue;
+                }
+                if (space) try w.writeByte(' ');
+                space = false;
+                try w.writeByte(c);
+            }
+            try w.writeAll(
+                \\
+                \\
+                \\`beni fmt --migrate-lambda <file>` writes every lambda of a file this way.
+            );
+        } else try w.writeAll(
+            \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
+        ),
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),

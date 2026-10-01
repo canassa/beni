@@ -1445,8 +1445,12 @@ naming it — a file whose output does not parse cleanly.
 every `lambda` node that is a `backslash`, so a multiline string's `\\` and an escape, which are
 other tokens, cannot be reached. It lexes and parses its output again; when that fails, the file is
 written unchanged and reported with the re-parse's first diagnostic code at its line, under a
-message that names the flag and the column shift. Until `\` is refused, the formatter prints a
-lambda's head as it was written.
+message that names the flag and the column shift. `\` is refused since the repository moved
+(2026-10-02): the parser reports `backslash_lambda_removed` from `parseLambda`, its message the
+head from the first parameter to `->` written after `λ` on one line, and goes on; the flag
+accepts a file whose only syntax errors are that code and does not report them, as
+`--migrate-cons` does for `cons_removed` (an error filter, not a parser option). The formatter
+therefore only ever prints `λ`.
 
 ### 11.5 `--migrate-let` and `--migrate-trailing-lambda`: reformats
 

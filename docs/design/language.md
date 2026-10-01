@@ -92,7 +92,7 @@ Where text written before §12 says `\x ->` or `let … in`, read `λx ->` and a
 | `div [ class "a" ] [ text name ]` | `<div class="a">{name}</div>`, typed against a platform's vocabulary; an untouched record field keeps its identity | §11 |
 | `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*; *amended the same day, E1tp:* `[ x, ...xs ]` is amortised O(1), not a copy) | §6.8 |
 | `x :: xs`, `x :: rest ->`, `(::)` | `[ x, ...xs ]`, `[ x, ...rest ] ->`, `List.cons`; and what Elm cannot write, `[ ...xs, x ]`, `[ ...a, ...b ]`, `[ ...init, last ] ->`, `[ first, ...middle, last ] ->` (*2026-10-01, built*) | §6.8 |
-| `\x -> e` | `λx -> e`; `\` is `backslash_lambda_removed` (*2026-10-02, specified, not built*) | §12.1 |
+| `\x -> e` | `λx -> e`; `\` is `backslash_lambda_removed` (*2026-10-02, built*) | §12.1 |
 | `let` / `x = 1` / `in` / `x + 1` | a block: `x = 1` / `x + 1`, with statements of type `()` between the lines (*2026-10-02, specified, not built*) | §12.2 |
 | `f a (\x -> e)`, `f a <\| \x -> e` | `f a λx -> e` (*2026-10-02, specified, not built*) | §12.3 |
 | `modBy 2 n`, `remainderBy 3 n`, `logBase 10 x`, `Debug.log "l" v` | `Int.mod n 2`, `Int.rem n 3`, `Float.log x 10`, `Debug.log "l" v` (*2026-10-02, specified, not built*) | §12.4 |

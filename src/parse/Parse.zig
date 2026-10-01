@@ -3234,7 +3234,19 @@ fn parseLambda(p: *Parse) Allocator.Error!Index {
         item.construct = .pattern;
         _ = try p.report(item);
     }
+    const arrow = p.tok_i;
     _ = try p.expectToken(.arrow);
+    if (p.tags[head] == .backslash) {
+        // `\` left the language (language.md §12.1): reported once per
+        // lambda, the message quoting the head from its parameters to its
+        // `->` so it can write it with `λ`, and parsed as before, so the
+        // rest of the file still parses and checks.
+        @branchHint(.cold);
+        var item = p.itemAtToken(.backslash_lambda_removed, head);
+        item.head_start = p.tokenEnd(head);
+        item.head_end = if (p.tags[arrow] == .arrow) p.tokenEnd(arrow) else item.head_start;
+        _ = try p.report(item);
+    }
     const body = try p.parseExpr();
     const extra = try p.addExtra(params);
     return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
@@ -5717,7 +5729,7 @@ test "recovery: broken imports, records, interpolations and lambdas keep their s
         \\      (chunk " c"))))
         \\
     , &.{ .{ .code = .unexpected_token, .line = 1, .col = 11 }, .{ .code = .expected_token, .line = 1, .col = 19 } });
-    try expectTree("f = \\ -> 1\ng = \\x y",
+    try expectTree("f = λ -> 1\ng = λx y",
         \\(module
         \\  (definition f
         \\    (lambda
@@ -5728,7 +5740,7 @@ test "recovery: broken imports, records, interpolations and lambdas keep their s
         \\      (pat_var y)
         \\      (error unexpected_token))))
         \\
-    , &.{ .{ .code = .unexpected_token, .line = 1, .col = 7 }, .{ .code = .expected_token, .line = 2, .col = 9 } });
+    , &.{ .{ .code = .unexpected_token, .line = 1, .col = 8 }, .{ .code = .expected_token, .line = 2, .col = 10 } });
 }
 
 test "the soft declaration errors: annotation without definition, pub on definition, opaque misuse, import order" {

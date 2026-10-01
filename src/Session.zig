@@ -1090,6 +1090,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     for (tree.errors) |item| {
         // `fmt --migrate-cons` is the fix for these: it rewrites them.
         if (session.options.migrate_cons and item.code == .cons_removed) continue;
+        if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1479,7 +1480,8 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     try parsePhase(session, worker, file);
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
-    if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree))) return;
+    if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
+        !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree))) return;
 
     const gpa = session.gpa;
     const text = session.store.bytes(file);

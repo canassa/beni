@@ -1,0 +1,26 @@
+-- `\` no longer begins a lambda (language.md §12.1): each one is
+-- backslash_lambda_removed, once per lambda, at its `\` (7:7, 10:25, 13:10,
+-- 13:16, 16:30, 19:35, 19:54), with the head written `λ` in the message, and
+-- the lambda is parsed as before, so nothing else in the file is reported. A
+-- multiline string's `\\` (23:5) and a string's escape (26:13) are not
+-- lambdas.
+inc = \n -> n + 1
+
+
+pairs xs = List.map xs (\( a, b ) -> a + b)
+
+
+nested = \a -> \b -> a + b
+
+
+thunk = Maybe.map (Just ()) (\() -> 0)
+
+
+rows items = <ul>{List.map items (\i -> <li onClick={\_ -> i}>{i}</li>)}</ul>
+
+
+text =
+    \\raw \x -> x
+
+
+escaped = "a\\b"

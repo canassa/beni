@@ -446,20 +446,20 @@ function measureFloor(options, beni, work) {
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
 const pages = [
-  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = \\_ m -> m, view = view }" },
-  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = \\_ m -> m, view = view }" },
+  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = λ_ m -> m, view = view }" },
+  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m -> m, view = view }" },
   {
     name: "browser-tea element",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Sub\n`,
-    main: "Tea.element { init = ( {}, Cmd.none ), update = \\_ m -> ( m, Cmd.none ), view = view, subscriptions = \\_ -> Sub.none }",
+    main: "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.none ), view = view, subscriptions = λ_ -> Sub.none }",
   },
   {
     name: "browser-tea effects",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( {}, Cmd.none ), update = \\_ m -> ( m, Cmd.keyed () Cmd.Restart (\\send -> send (Http.get \"/x\")) ), view = view, subscriptions = \\_ -> Time.every (Time.seconds 1) (\\_ -> Ok \"tick\") }",
+      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.keyed () Cmd.Restart (λsend -> send (Http.get \"/x\")) ), view = view, subscriptions = λ_ -> Time.every (Time.seconds 1) (λ_ -> Ok \"tick\") }",
     view: "view : {} -> Html (Result Http.Error String)",
   },
   {
@@ -467,7 +467,7 @@ const pages = [
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Random\nimport Sub\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = \\n _ -> ( n, Random.generate (Random.int 1 6) (\\k -> k) ), view = view, subscriptions = \\_ -> Sub.none }",
+      "Tea.element { init = ( 0, Cmd.none ), update = λn _ -> ( n, Random.generate (Random.int 1 6) (λk -> k) ), view = view, subscriptions = λ_ -> Sub.none }",
     view: "view : Int -> Html Int",
   },
 ];

@@ -334,6 +334,9 @@ pub const Code = enum {
     /// platform's or an app's `"html"` template that cannot be read, or that
     /// never names the entry file with `{{entry}}`.
     invalid_html_shell,
+    /// Appended with `λ` (language.md §12.1): a lambda written with the
+    /// removed `\`, whose message is the head written `λ`.
+    backslash_lambda_removed,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -495,6 +498,7 @@ pub fn title(code: Code) []const u8 {
         .cons_removed => "REMOVED OPERATOR",
         .two_spreads_in_pattern => "TWO SPREADS IN ONE PATTERN",
         .invalid_html_shell => "INVALID PAGE SHELL",
+        .backslash_lambda_removed => "REMOVED LAMBDA SYNTAX",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

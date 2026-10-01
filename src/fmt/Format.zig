@@ -390,8 +390,8 @@ pub const LambdaProblem = struct {
 /// branch shares the `of` line (language.md §12.1, *columns*): the output
 /// is therefore lexed and parsed again, and when it does not parse cleanly
 /// the file is written unchanged and the problem returned for the caller to
-/// name. A file with any syntax error is left alone. One run reaches the
-/// fixed point.
+/// name. A file with any syntax error but `backslash_lambda_removed` is left
+/// alone. One run reaches the fixed point.
 pub fn migrateLambda(
     scratch: Allocator,
     tree: *const Ast,
@@ -399,7 +399,7 @@ pub fn migrateLambda(
     source: [:0]const u8,
     w: *Io.Writer,
 ) Error!?LambdaProblem {
-    if (tree.errors.len != 0) return error.SyntaxErrors;
+    if (!onlyBackslashLambdas(tree)) return error.SyntaxErrors;
     const tags = tokens.items(.tag);
     const starts = tokens.items(.start);
     var heads: std.ArrayList(u32) = .empty;
@@ -450,6 +450,15 @@ fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?Lambd
     const tree = try Parse.parse(scratch, scratch, text, lexed.tokens.slice(), lexed.comments.items, lexed.line_starts.items, lex_items);
     if (tree.errors.len != 0) return .{ .code = tree.errors[0].code, .start = tree.errors[0].start };
     return null;
+}
+
+/// Whether every syntax error of `tree` is a lambda written with `\`
+/// (`migrateLambda`'s input).
+pub fn onlyBackslashLambdas(tree: *const Ast) bool {
+    for (tree.errors) |e| {
+        if (e.code != .backslash_lambda_removed) return false;
+    }
+    return true;
 }
 
 /// Whether every syntax error of `tree` is a `::` (`migrateCons`' input).
