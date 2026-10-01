@@ -3419,7 +3419,10 @@ the code with no trigger at all. *Alternative:* `unbound_variable` everywhere an
 well-known table of §3.2; only `String` and `Char` move, as plan §3.5 says. *Why:* `Int` and
 `Float` need the table anyway (they must emit `===` and `<` inline and they share a module), so
 moving the other three buys nothing the spike measures. *Alternative:* give each its own module and
-delete the table, at the cost of five more moves and five more prelude rows.
+delete the table, at the cost of five more moves and five more prelude rows. **Superseded in part
+2026-10-02** (`language.md` §12.4; specified, not built): `Int` and `Float` move to `core/Int.beni`
+and `core/Float.beni`, so that `Int.mod`, `Int.rem` and `Float.log` are their methods; the table
+stays and serves both from there (`checker-v2.md` §29.3). `Bool`, `Order` and `Never` stay.
 
 **A.7 — a `pub foreign` may carry a `where` clause** (§5.2), and its sibling export's arity is
 evidence count + declared arity. **Amended 2026-09-17:** this does *not* extend a build-time check,

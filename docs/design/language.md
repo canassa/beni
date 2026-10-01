@@ -56,6 +56,14 @@ spread, as in JavaScript — `[ x, ...rest ]` and `[ ...init, last ]` as pattern
 `[ ...xs, 4 ]` and `[ ...a, ...b ]` as expressions. §6.8, *The list syntax*, is the contract; where
 the text of §6.8 and `backend.md` written before it still says `x :: rest`, read `[ x, ...rest ]`.
 
+**Blocks, `λ` and trailing lambdas.** Decided by the owner on 2026-10-02, specified here the same
+day, not built (§12): a lambda is written `λx -> e` and only so, `\` being removed; `let … in` leaves
+the language, and a body written as lines is a **block** of bindings and statements whose last line
+is its value, a statement being an expression of type `()`; an application's last argument may be a
+lambda without parentheses; `modBy`, `remainderBy` and `logBase` become `Int.mod`, `Int.rem` and
+`Float.log`, and `Debug.log` takes its label first again; and `beni fmt --check` joins the gates.
+Where text written before §12 says `\x ->` or `let … in`, read `λx ->` and a block.
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
@@ -84,10 +92,15 @@ the text of §6.8 and `backend.md` written before it still says `x :: rest`, rea
 | `div [ class "a" ] [ text name ]` | `<div class="a">{name}</div>`, typed against a platform's vocabulary; an untouched record field keeps its identity | §11 |
 | `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*; *amended the same day, E1tp:* `[ x, ...xs ]` is amortised O(1), not a copy) | §6.8 |
 | `x :: xs`, `x :: rest ->`, `(::)` | `[ x, ...xs ]`, `[ x, ...rest ] ->`, `List.cons`; and what Elm cannot write, `[ ...xs, x ]`, `[ ...a, ...b ]`, `[ ...init, last ] ->`, `[ first, ...middle, last ] ->` (*2026-10-01, built*) | §6.8 |
+| `\x -> e` | `λx -> e`; `\` is `backslash_lambda_removed` (*2026-10-02, specified, not built*) | §12.1 |
+| `let` / `x = 1` / `in` / `x + 1` | a block: `x = 1` / `x + 1`, with statements of type `()` between the lines (*2026-10-02, specified, not built*) | §12.2 |
+| `f a (\x -> e)`, `f a <\| \x -> e` | `f a λx -> e` (*2026-10-02, specified, not built*) | §12.3 |
+| `modBy 2 n`, `remainderBy 3 n`, `logBase 10 x`, `Debug.log "l" v` | `Int.mod n 2`, `Int.rem n 3`, `Float.log x 10`, `Debug.log "l" v` (*2026-10-02, specified, not built*) | §12.4 |
 
-Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
-`if … then … else`, records, record update, lists, tuples, type aliases, custom types, `as`
-patterns, `.field` accessors — is Elm's. (`::` patterns were on this list until 2026-10-01, §6.8.)
+Everything else — application by juxtaposition, `case … of`, `if … then … else`, records, record
+update, lists, tuples, type aliases, custom types, `as` patterns, `.field` accessors — is Elm's.
+(`::` patterns were on this list until 2026-10-01, §6.8; `\x ->` lambdas and `let … in` until
+2026-10-02, §12.)
 
 ## 1. Files and modules
 
@@ -105,7 +118,7 @@ patterns, `.field` accessors — is Elm's. (`::` patterns were on this list unti
 |---|---|
 | newline, whitespace | whitespace is the space character and newlines. Newline is `\n`; `\r\n` is accepted as a single newline; a `\r` not followed by `\n` is `bare_carriage_return`. |
 | tab, other control characters | **a tab byte anywhere in the file is an error** (`tab_in_source`), inside string and character literals and inside comments included. Use `\t` in ordinary strings; raw multiline strings therefore cannot contain a tab. Any other control character outside a string or comment is `invalid_character`. |
-| column, line | both 1-based; column counts *bytes* from the line start. Tabs are forbidden and indentation is always leading spaces, so byte column equals visual column for every token that starts after ASCII-only indentation. Diagnostics report `{line, col}` pairs, derived from token offsets and the file's line-start table. |
+| column, line | both 1-based; column counts *bytes* from the line start. Tabs are forbidden and indentation is always leading spaces, so byte column equals visual column for every token that starts after ASCII-only indentation. Diagnostics report `{line, col}` pairs, derived from token offsets and the file's line-start table. *Amended 2026-10-02:* a `λ` is two bytes and one column on screen; what that costs layout is §12.1's *columns* row. |
 
 ### 2.2 Tokens
 
@@ -142,6 +155,7 @@ eof
 | `..` | one token that no construct uses: it exists so that Elm's `exposing (T(..))` is one diagnostic (§5.2) rather than one per dot. Anywhere else it is `unexpected_token` |
 | `...` | *Added 2026-10-01.* One token, `ellipsis`, wherever code is lexed — longest match, so `...` is never `..` and `.`. It is the spread of a list (§6.8) and, as the first token of a hole in a tag, the spread of a component's attributes (§11.5), which is where it was a token before. Anywhere else it is `unexpected_token`, with a message that says where a spread goes |
 | `::` | *Amended 2026-10-01.* Still one token, `op_colon_colon`, but no construct uses it: it is lexed only so that the parser can report `cons_removed` with the bracket form in the message (§6.8, §10), once for a whole `a :: b :: rest` |
+| `λ`, `\`, `let`, `in` | *Added 2026-10-02 (§12.1, §12.2).* `λ` (`CE BB`) is the symbol `lambda`, the one non-ASCII token. `\` stays the token `backslash` but no construct uses it: it is lexed only so that the parser can report `backslash_lambda_removed`. `let` and `in` stay keywords, used by no construct, so that a `let` can be reported as `let_removed` |
 
 ### 2.3 Comments
 
@@ -174,7 +188,7 @@ upper_ident := [A-Z] [A-Za-z0-9_]*
 
 | Rule | Detail |
 |---|---|
-| ASCII only | a non-ASCII byte outside a string, char or comment is `invalid_character` |
+| ASCII only | a non-ASCII byte outside a string, char or comment is `invalid_character`. *Amended 2026-10-02:* except the two bytes of `λ`, which are the `lambda` token (§12.1) |
 | keywords, never identifiers | `if then else case of let in type alias pub opaque import as exposing foreign`. `True`, `False`, `Nothing`, `Just`, `Ok`, `Err` are ordinary constructors, not keywords. |
 | `_` and `_foo` | `_` alone is the wildcard symbol; `_foo` is a lower identifier (the formatter and checker may warn later; the lexer does not care) |
 | **qualified names** | single tokens with no whitespace inside: `Upper(.Upper)*.lower` is `qualified_lower`, `Upper(.Upper)+` is `qualified_upper`. The lexer decides greedily — after an `upper_ident`, if the next byte is `.` and the byte after that is a letter, the token continues — so `Foo.bar` is *always* a qualified name, never a field access on a constructor. |
@@ -199,7 +213,9 @@ hashing, checksums, PRNGs and binary formats. Those get **`Int32`**, `core/Int32
 `pub equatable foreign type`: a signed 32-bit integer in two's-complement whose arithmetic wraps.
 Every one of its operations is total — a result is always a 32-bit value, nothing throws, and
 division by zero is zero, as it is for `Basics.idiv`, `modBy` and `remainderBy`
-(`fast-compiler.md` §3.1, `checker.md` Appendix B).
+(`fast-compiler.md` §3.1, `checker.md` Appendix B). *Amended 2026-10-02:* `modBy` and `remainderBy`
+become `Int.mod` and `Int.rem` (§12.4), the names `Int32` already uses, with the same signs and the
+same zero.
 
 | About `Int32` | |
 |---|---|
@@ -230,7 +246,7 @@ division by zero is zero, as it is for `Basics.idiv`, `modBy` and `remainderBy`
 | form | Zig's. A line whose first non-space characters are `\\` is one line of a multiline string, raw to the end of the line — no escapes, no interpolation, `${` and `\` are literal. |
 | one literal | consecutive `multiline_line` tokens (no non-blank line in between) form one string literal: each line's text is what follows the `\\`, lines are joined with `\n`, and the final line has no trailing newline |
 | a blank line ends it | **a blank line between two `\\` lines ends the literal** — the second starts a new one, which is then a syntax error where it stands |
-| layout, and vs a lambda | column rules (§4) apply to the `\\` marker like any other token. One byte of lookahead separates it from a lambda: `\` followed by `\` is a multiline line, `\` followed by anything else is the lambda backslash. |
+| layout, and vs a lambda | column rules (§4) apply to the `\\` marker like any other token. One byte of lookahead separates it from a lambda: `\` followed by `\` is a multiline line, `\` followed by anything else is the lambda backslash. *Amended 2026-10-02 (§12.1):* the lambda is `λ`, and a lone `\` is lexed only to be reported as `backslash_lambda_removed`. In a block, consecutive `\\` lines are one literal whatever their column (§12.2 B3). |
 
 ```
 sql =
@@ -352,6 +368,14 @@ There is **no float pattern**: a float's `==` is not something a `case` should p
 `PatCtor` with an optional `as`. A `::` where an operator or a pattern could continue is parsed as
 it was and reported as `cons_removed` (§10); nothing else in the grammar changed.
 
+*Amended 2026-10-02* (§12): `Definition`'s right-hand side, the four `Expr` forms, `LetBinding`,
+`Branch` and `Block` are replaced by §12.2's productions — a body is a `Block` of items or an
+`Expr`, the lambda is `'λ' Param+ '->' Body`, `let … in` is gone, §3's `Block` is renamed
+`TailForm` without `let`, and `Atom` gains the parenthesised block — and `App` gains §12.3's
+`TrailingLambda`. `LetPattern` keeps its name and its rule: it is the pattern of a block's pattern
+binding and of a bind. The old `let` and `\` forms are still parsed, to be reported as `let_removed`
+and `backslash_lambda_removed`.
+
 The rest of this section constrains the grammar above. Rules belonging to one construct are stated
 where it is: records §6.3, operators and negation §6.5, `?` §6.6, `_`, `|>` and `<-` §6.7, §7
 scoping.
@@ -429,7 +453,7 @@ is a sibling only at the field column; an indented `street : String` after
 | Construct | Rule |
 |---|---|
 | `case`, lambda, leading operator | `case` needs at least one branch (`case_without_branches`); a lambda is `\x y -> e`, one or more pattern atoms; an expression may not begin with an operator, except `-` for negation (§6.5) |
-| a `let`, `if`, `case` or lambda | **may be the *last* operand of an operator chain** (`f <\| \x -> x + 1`, `text <\| if a then b else c`), as in Elm; it extends as far as the layout allows, so nothing can follow it in the chain. It may not be a bare application argument: `f \x -> x` is an error, write `f (\x -> x)`. `\|>` is the exception and takes no block (§6.7). |
+| a `let`, `if`, `case` or lambda | **may be the *last* operand of an operator chain** (`f <\| \x -> x + 1`, `text <\| if a then b else c`), as in Elm; it extends as far as the layout allows, so nothing can follow it in the chain. It may not be a bare application argument: `f \x -> x` is an error, write `f (\x -> x)`. `\|>` is the exception and takes no block (§6.7). *Amended 2026-10-02:* `let` is gone and the lambda is `λ` (§12); a lambda **may** now be an application's last argument without parentheses (§12.3), and an `if` or `case` still may not. |
 | access chains | **must abut their atom**: `(f x).name`, `r.a.b`, `t.0.1`, `xs.0` — the `dot_lower` / `dot_index` token must start at the byte right after the atom's last byte. With whitespace, `.field` is an accessor-function atom and application applies: `f .name` is `f` applied to `.name`. |
 | trailing commas | not allowed anywhere. Empty `( )`, `[ ]`, `{ }` may contain whitespace. |
 
@@ -471,6 +495,12 @@ identifier at a column that is neither a sibling column nor right of the field
 is a diagnostic, never silently consumed as a continuation. A dedent to an
 outer field column is valid; a dedent to no enclosing sibling column is not.
 A field head to the right after a type has started is likewise an error (§3).
+*Amended 2026-10-02:* the `let` binding list these rows and rule 3 describe is now the **block**
+(§12.2): a body whose first token begins a line, with items aligned at that token's column, every
+other token of an item right of it or — when it cannot start an expression, a leading `,` or a
+closing bracket — at it. §12.2's B1–B6 are the rules; rule 3 and the two `let` rows above describe
+the removed form, and the worked example below is §12.2's once `let`/`in` are deleted and the
+bindings moved out to the `in` body's column.
 Tagged schema variants use the same aligned-list rule, with payload fields
 right of the variant. Brackets set no column: rule 6 still checks against the
 field's enclosing block, never the opening bracket's column.
@@ -686,6 +716,7 @@ in the precedence table above changes. → `static-dispatch-spike.md` §3.
 | precedence, `args_after_question` | **application binds tighter than `?`, which binds tighter than every binary operator** (§6.5), so `parse s? \|> f` is `((parse s)?) \|> f` and `f (a?) b` is how `?` is applied to one argument. `f a? b` is `args_after_question`: after `?` no further arguments may follow. An adjacent access chain may: `x?.field` is `(x?).field`, `x.field?` is `(x.field)?`, and `r??` applies `?` twice. |
 | what it returns from | **the nearest enclosing definition that has parameters**, top-level or `let`. A `let f x = g x?` inside `view` returns from `f`; a `let y = g x?` (no parameters) inside `view model` returns from `view`, as `let y = g(x)?;` does in Rust. |
 | `question_outside_function`, `question_in_lambda` | the first when no enclosing definition has parameters — a top-level constant, or constants all the way up; the second when a lambda sits between the `?` and that definition, a `_` placeholder and a `<-` callback both counting as lambdas here (§6.7) |
+| in a block | *Added 2026-10-02 (§12.2).* A block's definitions are what a `let`'s were for the two rows above. A statement `e?` yields the `()` a statement must be, so `validate input?` on a line of its own returns the error from the enclosing function or carries on |
 | lowering | each `e?` becomes one `try` instruction standing for the `case` it means (§8), carrying the subject and the definition it returns from; the Maybe/Result choice and the "same shape as the enclosing function" rule are M2, decided on that instruction (`checker.md` §6.5) |
 
 ### 6.7 Saturated calls, `_` and `<-`
@@ -722,6 +753,9 @@ operand becomes the callee's **first** argument. `<|` keeps Elm's meaning: `f <|
 **`let x <- e` binds the rest of the block.** `let x <- f a b in rest` desugars to
 `f a b (\x -> rest)`: the remaining bindings and the body become the callee's last argument. It is
 purely syntactic — no type-constructor table, no dispatch, nothing that depends on inference.
+*Amended 2026-10-02 (§12.2):* with `let` gone a bind is a block item, `x <- f a b`, and `rest` is
+every item after it; a bind is never the last item (`block_ends_in_binding`). The table below holds
+with "the remaining bindings and the body" read as "the remaining items".
 
 ```elm
 let
@@ -775,6 +809,7 @@ observable today; effects will make them observable in what a program *does*.
 | `case` | **the scrutinee exactly once**, then exactly one branch body. A scrutinee that is a tuple literal evaluates each element once, left to right, before any test is made |
 | `e?` | the subject once — `?` is a `case` on it (§6.6) |
 | `let` bindings | **in the order written.** A binding whose right-hand side is a *function* is available throughout the block, so mutual recursion among `let` functions is unrestricted; a binding whose right-hand side is a *value* may only name bindings written before it — and one that does not is `let_forward_reference` (§7), which is the error that makes "in the order written" a total rule rather than an aspiration |
+| a block's items | *Added 2026-10-02 (§12.2).* The row above, with **statements** among the value bindings: each value binding and each statement once, in the order written, then the value. A statement's value is discarded and nothing else about it is special — `_ = e` and a statement `e` evaluate `e` at the same place |
 | a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8). *Amended 2026-10-02:* "before" is what a program can see: each argument reads the parameters as they were, and one that makes a call runs in parameter order, but the loop may rebind a parameter no argument still to come reads (§8, *In place, when nothing captures*) |
 | top-level constants | each before its own first use, at module load |
 | a top-level value with a `where` clause and no parameters | **its initialiser runs once per evidence, at the first use that needs it** (2026-09-26). It takes its evidence as hidden arguments (`static-dispatch-spike.md` §8.1), so it cannot run at load; the emitter keeps the value the last evidence gave, and a read or call with the same evidence reuses it (`static-dispatch-spike.md` A.85 *as amended 2026-09-26*). The memo is ONE slot keyed on the IDENTITY of every evidence argument, so what "the same evidence" means is what the emitter builds: a primitive's evidence, a context-free nominal type's derived function and a `where`-free method are module-level names, and a use whose evidence arguments are all such names runs it once, like the same value without the `where`, only at its first use rather than at load. Evidence built AT the use — a structural type (`List Int`, a record, a tuple) or a nominal type whose derived context is not empty — is a fresh closure at each read, so such a use computes again at each read, as before; so does one instantiation read from two modules, each with its own evidence names. A use with other evidence computes again, and evicts the slot. Hoisting closed evidence to module level, which would make it once per instantiation, is recorded, not done (narrowed 2026-09-26). A body that is itself a reference to a constrained function (`h = maxOf`) computes nothing and is called straight through. `run/EvidenceFunctionBodyPerCall.beni`, `run/EvidenceThunkOncePerEvidence.beni`. *Until 2026-09-26 it ran at EACH read or call.* |
@@ -1113,6 +1148,7 @@ function is `foreign`.
 | provenance of the initialisation rule | Decided 2026-09-18, owner offline; reversible. The alternative considered and rejected was to **re-sort** a `let`'s bindings into dependency order, the way the backend already sorts top-level constants. It was rejected because §6's table is normative and says `let` bindings evaluate in written order: sorting would make the order of two `Debug.log`s — and, when effects land, the order of two effects — depend on which names one initialiser happens to mention. `core/Dict.beni`'s `mapTree` already depends on the written order it has. The TOP-LEVEL half was decided the same day, on the same terms; there the rejected alternative was to leave it to the backend — emit a circle's members as `let` bindings, or wrap each in a thunk — which buys a program nobody can read a run it cannot explain, and costs every constant an indirection to rescue the shapes that are mistakes. |
 | `shadowing`, `duplicate_pattern_variable` | **shadowing is an error**: a binding may not reuse a name already bound in an enclosing scope, including top-level names of this file and names in `exposing` lists. Two sibling scopes may reuse a name (`\x -> …` twice). A pattern may not bind the same name twice: `duplicate_pattern_variable`. |
 | order | `let` bindings are in scope throughout their `let`, **except that a `<-` splits the block** (§6.7): a name bound at or before a `<-` is in scope in the whole block, the `<-`-bound name itself only in `rest` because the desugaring puts it inside a lambda, and a `<-` right-hand side may not reference a binding that appears after it (`bind_rhs_forward_reference`). Mutual recursion through a `<-` is therefore not available — what the desugaring means, not a restriction on top of it. |
+| blocks | *Added 2026-10-02 (§12.2).* Every row above that says `let` holds for a block, item for item; a statement is a value binding that binds nothing, for the initialisation row; a parenthesised block is a block |
 | type variables | scoped to their annotation; annotations may mention free variables, which are implicitly quantified. A type declaration's parameters must be distinct (`duplicate_type_parameter`); a declared parameter unused in the body is fine; an unbound type variable in a `type` or `type alias` body is `unbound_type_variable`. |
 
 ## 8. What lowering produces (BIR), and what it desugars
@@ -1125,6 +1161,7 @@ file's bytes: nothing in it depends on another module. Lowering:
 | 1 | Resolves every name per §6.2 into one of `local(index)`, `top(index)` (this module), `import_value(module, name)`, `import_ctor(module, name)`, `ctor(index)` (this module), `qualified(alias → module, name)`, and records the set of top-level names each declaration references (§9.1 of the design doc: the DCE graph is a byproduct). |
 | 2, ordered | Desugars operators into calls of the corresponding core functions (`a + b` → `add a b`, marked as a `number`-typed builtin — the M2 checker resolves the builtin) — **except the six comparison operators, which become method calls** carrying the operator they were written as, and are resolved by the checker rather than by lowering (§6.5). Then, **in this order**, because the readings disagree otherwise (§6.7): `\|>` into a call whose **first** argument is the left operand (`e \|> f a` → `f e a`, looking through grouping parentheses) and `<\|` into direct application, so every pipeline is a saturated call; then `_` into a lambda over the innermost enclosing application; then `x <- e` into a call of `e` whose last argument is a lambda over the rest of the block. |
 | 2, order-independent | `?` into a `try` instruction, which STANDS FOR `case e of Ok v -> v; Err x -> return (Err x)` without being one: the choice between that shape and the `Maybe` one is the checker's (§6.6), and it needs an instruction of its own to hang on. `backend.md` §4 emits the test and the early `return` from it directly. String interpolation into an `interp` node listing chunks and expressions; `if` into a two-branch `case` on `True`/`False`; `.field` accessor functions into one-parameter lambdas. Multi-parameter lambdas stay n-ary; record update, tuples and lists stay as nodes; field access and tuple index stay as nodes (the checker needs them). *Amended 2026-10-01:* a list literal **with a spread** does not stay a node: it becomes the `List.cons` and `List.append` calls §6.8 spells out (`[ x, ...xs ]` is `call(import_value List.cons, x, xs)`, `[ ...xs ]` is `xs`), each call and its callee stamped with the spread's `...` token, so a cons step (`backend.md` §8) and every diagnostic about the call see the calls `::` and `++` gave them. A list **pattern** stays a node: `pat_list`, whose range may hold one `pat_spread` whose operand is the `pat_var` or `pat_wild` it binds (`frontend.md` §3.6). Calls are n-ary in BIR and always were; what the spec pass changes is that a `call` node is now the *only* reading of an application. |
+| 2, blocks | *Added 2026-10-02 (§12.2, §12.3).* A block lowers to the `let` instruction step 2 already produces for a `let`, its items in written order; a statement to the new `let_stmt`, its operand the expression; a parenthesised block likewise. A trailing lambda is the `lambda` a parenthesised one is. Nothing in step 2's order changes: a bind in a block desugars at the same point, over the items after it |
 | 3 | Emits the module's **interface skeleton**: the `pub` names, aliases, types, and constructor lists — lexically computable, no inference (§8.1 of the design doc). |
 | 4 | Reports the diagnostics of §5.3, §6.2 and §7. |
 
@@ -1155,7 +1192,9 @@ lists, records, record updates, tuples, record types, applications, constructor 
 annotation arrow chains, operator chains — the construct is printed on one line when it fits in 100
 columns *and* the source has no line break between its elements; a source break between elements
 keeps it vertical even when it would fit; a construct that does not fit is broken. `if`, `case` and
-`let` are always vertical. Nonempty closed record bodies of `type alias` and
+`let` are always vertical. *Amended 2026-10-02 (§12.5):* `case` and blocks are always vertical; an
+`if` written on one line stays there when it fits; and a hanging application's head arguments are
+the one place a source break between elements does not pin the vertical form. Nonempty closed record bodies of `type alias` and
 `schema` declarations, and tagged schema variants, are also always vertical
 layout: this overrides the one-line/source-break choice for these bodies.
 
@@ -1164,24 +1203,26 @@ layout: this overrides the one-line/source-break choice for these bodies.
 | **Whitespace and file shape** | |
 | indentation, endings | 4-space indentation. LF line endings. One trailing newline. No trailing whitespace. |
 | file shape | module doc block, blank line, imports sorted by module path one per line, two blank lines, declarations separated by two blank lines. Blank lines between `let` bindings and between `case` branches: at most one, kept if present. |
-| comments | stay attached to the token they precede; a comment on its own line stays on its own line; a trailing comment stays at the end of its line; doc blocks get a space after `--\|` |
+| comments | stay attached to the token they precede; a comment on its own line stays on its own line; a trailing comment stays at the end of its line; doc blocks get a space after `--\|`. *Amended 2026-10-02 (§12.5):* one blank line between a standalone `--` comment and the next token is kept when the source has one |
 | literals | strings, numbers and chars are printed as written, with no escape normalisation; the formatter never changes bytes inside a literal |
 | **Declarations and types** | |
-| annotation, `=` | the annotation goes on its own line directly above its definition, with `pub` on the annotation line; the amendment below leaves it alone. `=` goes at the end of the head line. *Amended 2026-10-02, the owner:* **the body goes on the `=` line when it is a single line that fits in 100 columns there, and on the next line indented 4 otherwise** — for top-level definitions, `let` definitions and `let` patterns (`( a, b ) = pair`) alike. "A single line" is the never-join rule applied to the body alone: the body has a one-line form — it is not, and holds no, `if`, `case` or `let`, is not a multiline string, holds no comment, and holds no multi-element construct the author broke between its elements (a list, record, application or operator chain written across lines stays vertical, and the body with it goes below the `=`). **The line break directly after `=` is not a break between elements** and never pins the vertical form: `x =` / `    f a` prints as `x = f a`. That is what migrates every file written before this amendment with an ordinary `beni fmt`, and it means a short body cannot be kept below its `=`. A comment between `=` and the body — trailing the `=` or on a line of its own — keeps the body on the next line, comment first, as before. Markup takes the same test: one-line markup that fits joins the `=` line, markup written across lines stays below (§11.15). Blank lines between `let` bindings do not change: at most one, kept if present, never added, so a run of one-line bindings stays as tight or as spaced as its author wrote it. A comment between the head and `=` still pushes `=` to a continuation line, and the body then follows the `=` by the same test. *Until 2026-10-02 the body always went on the next line, as elm-format does.* |
+| annotation, `=` | the annotation goes on its own line directly above its definition, with `pub` on the annotation line; the amendment below leaves it alone. `=` goes at the end of the head line. *Amended 2026-10-02, the owner:* **the body goes on the `=` line when it is a single line that fits in 100 columns there, and on the next line indented 4 otherwise** — for top-level definitions, `let` definitions and `let` patterns (`( a, b ) = pair`) alike. "A single line" is the never-join rule applied to the body alone: the body has a one-line form — it is not, and holds no, `if`, `case` or `let`, is not a multiline string, holds no comment, and holds no multi-element construct the author broke between its elements (a list, record, application or operator chain written across lines stays vertical, and the body with it goes below the `=`). **The line break directly after `=` is not a break between elements** and never pins the vertical form: `x =` / `    f a` prints as `x = f a`. That is what migrates every file written before this amendment with an ordinary `beni fmt`, and it means a short body cannot be kept below its `=`. A comment between `=` and the body — trailing the `=` or on a line of its own — keeps the body on the next line, comment first, as before. Markup takes the same test: one-line markup that fits joins the `=` line, markup written across lines stays below (§11.15). Blank lines between `let` bindings do not change: at most one, kept if present, never added, so a run of one-line bindings stays as tight or as spaced as its author wrote it. A comment between the head and `=` still pushes `=` to a continuation line, and the body then follows the `=` by the same test. *Until 2026-10-02 the body always went on the next line, as elm-format does.* *Amended again 2026-10-02 (§12.5):* a body that is a block never joins the `=` line, and a body that is an application hanging a lambda keeps its head line on the `=` line when that line fits, the lambda's body below it: `todos = List.map model.todos λt ->` |
 | declaration record bodies | Always print `type alias Name =` or `schema Name =` with fields on following lines, no braces or commas, even when the input fits on one line. Use four spaces per level, recursively for a whole nonempty closed record field body; put its doc comment directly above it at its column. Preserve field order; schema modifiers have one space between them. Tagged schemas print aligned variant heads and indented payload fields (`schema.md` §2). Empty/extensible records and inline record types retain braces and their existing formatting; ordinary `type` declarations and all record values are unchanged. |
 | annotations, non-record `type alias`, `type` | an annotation or `type alias` prints `name :` … on one line if the type fits in 100 columns, otherwise broken at `->` with the arrows leading continuation lines. A `type` declaration puts `=` and each `\|` at the start of their own lines, indented 4. |
 | **`where` clauses** (§3) | **never joined to the annotation's line**, however short. One constraint shares the `where` line, indented 4; two or more put `where` alone on a continuation line indented 4 and one constraint per line indented 8, each after the first led by its comma — elm-format's vertical form. **Source order is kept, never sorted**, and a constraint's own type is printed flat, so a clause the author broke is joined; a constraint that does not fit overflows the guide rather than breaking, as a pattern does. The renderer that prints a *type* for a diagnostic or a `.iface` golden is a different thing and prints the suffix on one line, sorted — the two legitimately differ. → `static-dispatch-spike.md` §2.5, §6.6. |
-| **function types** | print as `A, B -> C`: one space after each comma, one space either side of `->`. The parameter list is a multi-element construct like any other, so it goes on one line when it fits *and* the author wrote no break between parameters. When a type breaks, the parameters move to the line below `name :` indented 4, one per line with the comma leading each continuation as lists do, and the `->` leads the result's line. |
+| **function types** | print as `A, B -> C`: one space after each comma, one space either side of `->`. The parameter list is a multi-element construct like any other, so it goes on one line when it fits *and* the author wrote no break between parameters. When a type breaks, the parameters move to the line below `name :` indented 4, one per line with the comma leading each continuation as lists do, and the `->` leads the result's line. *Amended 2026-10-02 (§12.5):* the first parameter is indented 6, so that it starts in the column of every parameter after a leading `, `. |
 | **patterns** | **never broken across lines.** A `case` pattern, a definition's parameter list or a `let` pattern that does not fit overflows the 100-column guide rather than wrapping: there is no wrapped form a reader could tell from the `->` that follows. The same holds for the head line of a definition. |
 | **Blocks** | no blank line before `then`, `else`, `in`, or between the last binding and `in` |
-| `let` | `let` alone on a line, bindings indented 4 relative to `let`, `in` aligned with `let`, body aligned with `let` |
+| `let` | `let` alone on a line, bindings indented 4 relative to `let`, `in` aligned with `let`, body aligned with `let`. *Superseded 2026-10-02:* `let` is removed (§12.2), and the next row is its replacement |
+| **a block** | *Added 2026-10-02 (§12.5).* Items one per line at the block's column, 4 right of the indentation of the opener's line; never on the opener's line; at most one blank line between items, kept if present, never added. A parenthesised block: `(` ends its line, the items, `)` alone at the indentation of the line holding `(`. `--migrate-let` writes every `let` as a block (`frontend.md` §11.5) |
 | `case` | `case x of` alone on a line; branches indented 4; `->` at line end; body indented 4 more |
-| `if` | `if c then` / `a` / `else` / `b`, always vertical; `else if` chains continue at the same indentation |
+| `if` | `if c then` / `a` / `else` / `b`, always vertical; `else if` chains continue at the same indentation. *Amended 2026-10-02 (§12.5):* an `if` written on one line stays on one line when it fits and its parts have one-line forms; one written across lines stays vertical |
 | **Expressions** | |
 | lists, records, tuples | on one line when they fit and were written on one line, with elm-format's inner spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r \| a = 1 }`, empty ones as `[]`, `{}`, `()` — else elm-format's vertical form `[ a`, `, b`, `]` with the delimiter leading each line. *Amended 2026-10-01:* a spread is one item, printed with `...` against its operand, in expressions and patterns alike: `[ x, ...rest ]` (§6.8) |
 | operator chains | those that do not fit, or that the author broke, break before the operator, one operator per line, operands indented 4. A chain flattens one precedence level only. |
-| applications | the arguments written on the head line stay there when they fit (`div [ class "app" ]`, `Decode.map4 User`); from the first source line break onward every remaining argument goes on its own line indented 4; an application with no source break that does not fit breaks after the function, every argument on its own line. Constructor argument lists in `type` declarations follow the same rule. **`_`** is an ordinary argument that takes ordinary application spacing; it never forces a break. |
-| **a trailing `<\|` followed by a lambda** | **does not indent**: the lambda's body continues at the indentation of the line the `<\|` is on. This is the one elm-format rule research 14 found to be the binding constraint in Elm (`14/elm` §0.2). |
+| applications | the arguments written on the head line stay there when they fit (`div [ class "app" ]`, `Decode.map4 User`); from the first source line break onward every remaining argument goes on its own line indented 4; an application with no source break that does not fit breaks after the function, every argument on its own line. Constructor argument lists in `type` declarations follow the same rule. **`_`** is an ordinary argument that takes ordinary application spacing; it never forces a break. *Amended 2026-10-02 (§12.5):* an application whose last argument is a lambda, list, record, record update or markup **hangs** it — the callee and the other arguments on one line when they fit, whatever breaks the source has between them, a lambda's `λparams ->` ending that line and its body below as a block, a list, record or markup on the next line indented 4 |
+| **a trailing lambda** | *Added 2026-10-02 (§12.3, §12.5).* A parenthesised last-argument lambda loses its parentheses unless a binary operator or `?` follows its `)` on the same line; its body stays on the `->` line only when it fits there and the lambda ends its line, and is otherwise a block below |
+| **a trailing `<\|` followed by a lambda** | **does not indent**: the lambda's body continues at the indentation of the line the `<\|` is on. This is the one elm-format rule research 14 found to be the binding constraint in Elm (`14/elm` §0.2). *Superseded 2026-10-02 (§12.5):* `f a <\| λx -> e` is written `f a λx -> e`, the row above, which indents its body exactly so |
 | **`<-` bindings** | **print on one line and are never broken**: `x <- f a b`, single spaces around the operator. This is *not* the `=` rule, which moves a body that does not fit to the next line: a bind's right-hand side is a call whose last argument is the rest of the block, and breaking after `<-` would indent a body that is not there. A bind that exceeds the guide overflows it, as a pattern does. **`<-` operators are never aligned**, in a block of binds or a mixed one; nothing else in this section aligns anything. |
 | **markup** | §11.15, and its governing rule: the formatter never changes what a page says — a run of whitespace between children keeps its newlines and its emptiness, and text is re-indented, never re-flowed |
 
@@ -1250,6 +1291,8 @@ foreign_effect_missing  unknown_foreign_effect
 misplaced_sync  sync_boundary  must_not_suspend
 cons_removed  two_spreads_in_pattern
 invalid_html_shell
+backslash_lambda_removed  let_removed  block_ends_in_binding  statement_not_unit
+name_removed  suspicious_argument_order
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1283,6 +1326,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `misplaced_sync`, `sync_boundary`, `must_not_suspend` | effects again | appended on 2026-09-30, again never inserted, with the `sync` step ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15). `misplaced_sync` is lowering's: a `sync` in a `foreign` signature that does not mark a function type written out, or marks one the platform hands back rather than receives. *Amended 2026-10-02:* and any `sync` in a package that may not write `foreign`. The other two are the checker's, and they are the guarantee the feature exists for — a function that may suspend never reaches a caller that cannot wait for it, where it would return a suspension object in place of a value, well typed and wrong at exit 0. `sync_boundary` is at the argument: a function handed to a `sync` parameter, a markup handler, row or key function, or a `foreign`'s evidence. `must_not_suspend` is at a declaration that is a boundary itself: `main`, and a type's `eq` or `compare`. Both name the calls that make it suspend, within the module (§15.4) |
 | `cons_removed`, `two_spreads_in_pattern` | the list syntax | appended on 2026-10-01, again never inserted, with the owner's decision that `::` leaves the language (§6.8, *The list syntax*). Both are the parser's. `cons_removed` is at the first `::` of a chain — in an expression, in a pattern, or as `(::)` — and its message is the bracket form of the whole chain, built from the text the author wrote (`[ a, b, ...rest ]`, `[ x ]`, `List.cons`); the chain is parsed as before and lowered to an error, so it costs one message. `two_spreads_in_pattern` is at a list pattern's second spread, which would make the split between the leading and trailing items ambiguous. A spread outside a list and a pattern spread whose operand is not a name or `_` reuse `unexpected_token`, with messages of their own |
 | `invalid_html_shell` | the backend again | appended on 2026-10-01, again never inserted, with the page shell a platform declares ([`backend.md`](backend.md) §2, *The page shell*; [`boundary.md`](boundary.md) §5.2's `"html"`). A program build writes the shell as `index.html`, its `{{entry}}` replaced by the entry file; a template that never says `{{entry}}` would ship a page that loads nothing — a build that succeeds and does nothing — so it is an error, against the template at `1:1` with no excerpt. A template that cannot be read is the same code, against the `beni.json` that named it |
+| `backslash_lambda_removed` … `suspicious_argument_order` | the syntax batch | the two lines appended on 2026-10-02, again never inserted, with §12 (specified, not built). Three are the parser's: **`backslash_lambda_removed`** at a `\` that begins a lambda, its message the `λ` head; **`let_removed`** at a `let`, its message the block the bindings become (both parse the old form on, as `cons_removed` does, so one mistake costs one message); and **`block_ends_in_binding`** at a block's last item when it is a binding, an annotation or a bind. **`statement_not_unit`** is the checker's ([`checker-v2.md`](checker-v2.md) §29): a statement whose type is not `()`, naming the type, `_ =` and a binding as the fixes. **`name_removed`** is lowering's for an unqualified name and resolution's for a qualified one: `modBy`, `remainderBy` or `logBase`, its message the call rewritten with `Int.mod`, `Int.rem` or `Float.log` (§12.4). **`suspicious_argument_order`** is a `warning`, the checker's, on by default for the root package only: a call of a function §12.4 keeps with an order Elm does not share, in the shape a call written in Elm's order has (§12.5) |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -2113,6 +2157,480 @@ of an object literal (`shared/attr_plan.rs:587-895`, `dom/set_attr.rs:52-115`). 
 through the runtime's diff, a port of Solid's `className` and `style` helpers
 (`backend.md` §15.3). Both agree on what the element ends up with.
 
+## 12. Blocks, `λ` and trailing lambdas (2026-10-02)
+
+*Specified 2026-10-02; not built.* The owner's syntax batch of 2026-10-02
+([`plans/browser-decisions.md`](../../plans/browser-decisions.md), *Syntax — 2026-10-02*) answers a
+readability review of beni code as it is written today: lambdas cost two characters of punctuation
+and a pair of parentheses each, `let … in` spends three lines on a block of one binding and cannot
+hold a statement, Elm names whose argument order beni flipped read backwards to anyone who knows
+Elm, and the formatter breaks lines that read better whole. This section is the contract for all of
+it, in one place, as `static-dispatch-spike.md` is for static dispatch; §0, §2–§10 and Appendix A
+point here at each rule they lose or gain. [`frontend.md`](frontend.md) §11 says how the lexer,
+parser, formatter and migrations build it, [`checker-v2.md`](checker-v2.md) §29 what the checker
+adds, and [`plans/syntax-batch.md`](../../plans/syntax-batch.md) the order of work.
+
+**What does not change.** A block is a `let` with its keywords removed and statements added: the
+BIR it lowers to is the `let` instruction §8 already has, plus one tag for a statement. So the
+checker's binding groups, generalisation and value restriction ([`checker-v2.md`](checker-v2.md)
+§8.4), §7's initialisation rule and its diagnostics, §6's evaluation order, and every byte the
+backend emits for a program written without statements are what they were for the same program
+written with `let`.
+
+### 12.1 `λ` is the only lambda
+
+| Rule | Detail |
+|---|---|
+| the token | **`λ`**, U+03BB GREEK SMALL LETTER LAMDA, the two bytes `CE BB` in UTF-8. It is the token `lambda` and starts a lambda exactly where `\` did: `λx -> x + 1`, `λa b -> a + b`, `λ( k, v ) -> k`, `λ{ name } -> name`, `λ_ -> 0`. Nothing may follow `λ` but a parameter, so it needs no space and the formatter writes none |
+| the lexer | §2.4's "a non-ASCII byte outside a string, char or comment is `invalid_character`" gains one exception: the sequence `CE BB` is the `lambda` token, wherever code is lexed (a markup hole and an attribute value included). `Λ` (U+039B) and every other non-ASCII byte stay `invalid_character`. A `λ` is never part of an identifier, so `λx` is two tokens and `fλ` is `f` then `λ` |
+| columns | §2.1's columns count bytes, so a `λ` moves every later token on its line one column right of where an editor shows it. Layout only ever compares the columns of tokens that **begin** a line (§4, §12.2) — with one exception, a `case` whose first branch shares the `of` line — so this matters only there: a branch aligned by eye under a first branch written after a `λ` on the `of` line is one column off, which is the misaligned-branch `unexpected_token` with both columns quoted, never a silent re-reading. The formatter never writes a first branch on the `of` line |
+| `\` | **removed.** A `\` outside a string or character literal that does not begin `\\` is still lexed, as the token `backslash`, only so that the parser can report **`backslash_lambda_removed`** at it — once per lambda, with the `λ` spelling of that lambda's head in the message (`λx y ->`) — and then parse the lambda as before, so the rest of the file still checks. The same holds inside a markup hole (`onClick={\_ -> Toggle}`) |
+| multiline strings | unchanged: a line whose first non-space characters are `\\` is a `multiline_line` (§2.7). §2.7's "one byte of lookahead separates it from a lambda" is now a lookahead that separates it from the removed token, and a `\\` can never be read as a lambda, or a lambda as a `\\` |
+| a lambda of no arguments | **`λ() -> e`**, the unit pattern as the one parameter — the spelling that exists today, which `backend.md` §6 *A parameter of type `()`* already compiles to a zero-parameter JavaScript function. There is **no shorthand**: `λ-> e` is `unexpected_token` at `->`, whose message says to write `λ() ->`. *Rejected:* a `λ-> e` thunk form. It would be a second spelling of one thing (the owner: "there is only one way"), it saves two characters, and a thunk passed as a trailing lambda (§12.3) reads `Task.spawn λ() ->` either way |
+| typing it | `λ` is not on a keyboard. The language's answer is the formatter's migration (`frontend.md` §11.4) and the editor: an editor mode or the M5 language server turns a typed `\` into `λ`, as Agda and Lean editors do. **`beni fmt` does not**: it formats only valid input (§9), and a file with a `\` lambda is not one |
+
+### 12.2 Blocks
+
+**A block is a body written as lines: bindings and statements, the last line being the block's
+value.** It replaces `let … in`, which leaves the language, and it is how a statement — an
+expression run for its effect — is written at all.
+
+```elm
+update msg model =
+    case msg of
+        Add ->
+            title = String.trim model.draft
+            Log.info "adding ${title}"
+            if String.isEmpty title then
+                model
+            else
+                { model | todos = [ ...model.todos, newTodo model.nextId title ] }
+```
+
+**Grammar** (§3's notation; it replaces §3's `Definition`, `LetBinding`, the four `Expr` forms and
+`Block`, and adds one `Atom`):
+
+```
+Definition  := lower_ident Param* '=' Body                       -- top level and in a block
+Body        := Block | Expr                                      -- Block when it begins a line
+Block       := Item+                                             -- aligned (layout, below)
+Item        := Annotation                                        -- its Definition is the next item
+             | Definition
+             | LetPattern '=' Body                               -- no annotation, no parameters
+             | LetPattern '<-' App                               -- rest-of-block bind, §6.7
+             | Expr                                              -- a statement; the value if last
+Expr        := 'if' Expr 'then' Body 'else' Body
+             | 'case' Expr 'of' Branch+
+             | 'λ' Param+ '->' Body                              -- irrefutable only (§7)
+             | BinOp
+Branch      := Pattern '->' Body
+Atom        := … | '(' Block ')'                                 -- a parenthesised block
+TailForm    := 'if' … | 'case' … | 'λ' …                         -- §3's `Block`, renamed
+```
+
+`BinOp := Postfix (operator Postfix)* (operator TailForm)?` is §3's rule with its last operand
+renamed, so that "block" means one thing; `let` is no longer one of the forms. `App` gains a
+trailing lambda (§12.3).
+
+**Where a block may stand.** A body opens a block exactly when **its first token is the first
+token on its line**, and a body follows one of five openers:
+
+| Opener | The body of |
+|---|---|
+| `=` | a top-level definition; a definition or a pattern binding in a block |
+| `->` | a `case` branch; a lambda, parenthesised or trailing (§12.3) |
+| `then`, `else` | an `if`'s branches (`else if` is an `if` on the `else` line, so never a block) |
+| `(` | a **parenthesised block**: `(` ends its line, the items follow, `)` closes it |
+
+A body that starts on its opener's line is an expression, read exactly as today (§4): `f x = x + 1`,
+`A -> 0`, `if c then a else b`. A block of one item that is an expression is that expression, so
+every body written today that has no `let` means what it meant. Nothing else opens a block — not a
+record field's `=`, not `<|`, not a markup hole's `{`, not a list item: an expression there that
+needs a binding is a parenthesised block, a lambda's body, or a binding lifted into the enclosing
+block. *Rejected:* blocks after every token that can precede an expression (F#'s rule, which
+pushes a context at `(`, `[`, `{`, `=`, `then`, `else`, `->` and more). It buys a second way to
+write every one of those positions and makes a record whose field holds a block legal, at the price
+of reading `{ a =` / `x = 1` / `x` / `, b = 2 }` as a record.
+
+**What an item is** is decided from its **first line**, before it is parsed: it is a **binding**
+when that line holds, outside brackets, string interpolation and markup tags, a `=` or a `<-`, or
+when it begins `lower_ident :`; it is an **expression** otherwise. The test is exact because a
+binding's head — its pattern, or its name and parameters — is never broken across lines (the
+formatter writes it on one line, §9 *patterns*), and because `=`, `<-` and a leading `name :` occur
+in no expression outside those delimiters (`==`, `<=`, `/=` are other tokens, and a record's `=`
+is inside braces). A pattern written across lines, `( a` / `, b ) = pair`, is read as an expression
+and then reported at the `=` as `unexpected_token`, whose message says a binding's head goes on one
+line.
+
+| Item | Rule |
+|---|---|
+| a definition, `name params = body` | as a `let` definition was: in scope throughout the block, function or value (§7) |
+| an annotation, `name : Type` | must be followed by the definition of `name` as the next item, else `annotation_without_definition`; no `where` clause (static-dispatch-spike.md §2.1) |
+| a pattern binding, `pattern = body` | as a `let` pattern was: irrefutable (`refutable_let_pattern`), no annotation, no parameters. `_ = e` evaluates `e` and discards it, **whatever its type** — the explicit way to throw a value away |
+| a bind, `pattern <- call` | §6.7, unchanged: the rest of the block — every item after this one — is the callback's body. The bound pattern is a parameter (`refutable_parameter_pattern`) |
+| a **statement**, any expression that is not the last item | evaluated where it stands, for its effect, and its value is thrown away. **Its type must be `()`**: anything else is **`statement_not_unit`** (checker-v2.md §29), whose message names the type and the two fixes — bind it and use it, or write `_ =` to discard it on purpose. A statement is a value binding with no name for §7's initialisation rule, so it may not read a value written below it (`let_forward_reference`) |
+| the **value**, the last item | an expression, which is the block's value. A block whose last item is a binding, an annotation or a bind is **`block_ends_in_binding`**, reported at that item, whose message says a block ends with the expression it stands for |
+
+**Why a statement must be `()`.** A value thrown away without a word is the commonest way to drop
+work silently in a language with immutable data: `List.push xs 4` on a line of its own builds a
+list and loses it, and `Dict.insert d k v` changes nothing. Requiring `()` makes every such line an
+error that names the type, and `_ =` is the one-token escape for the line whose value really is not
+wanted (rule 7: the guarantee is "no silent wrong answer", the escape keeps it from being a
+restriction). Roc unifies a statement with `{}` for the same reason and says the same thing in its
+message (`references/roc/src/check/report.zig:1580-1597`). `e?` as a statement is the idiom for a
+check that can fail: `validate input?` stops the function with the error, and otherwise yields the
+`()` the statement needs. **A block ending in a binding is an error, not a `()`**: Roc inserts an
+implicit `{}` (`references/roc/src/canonicalize/Can.zig:9401-9406`); beni does not, because a block
+that forgot its last line would otherwise type-check whenever `()` happens to fit.
+
+**`<-` is kept.** Statements do not replace it: a statement runs and continues, while a bind hands
+the rest of the block to a function — `Task.scope`, `Task.bracket`, `Result.andThen` — that decides
+whether, when and how often it runs. Its rules are §6.7's with "the rest of the block" meaning the
+items after it, and §7's *order* row unchanged. A bind can never be the last item, which
+`block_ends_in_binding` says, and which §6.7's "a `<-` may appear … last included, where `rest` is
+the body alone" no longer allows: there is no body apart from the items.
+
+```elm
+render url s =
+    scope <- Task.scope
+    conn <- Task.bracket (λ() -> Db.open url) Db.close
+    h <- Result.andThen (readHeader s)
+    draw scope conn h
+```
+
+**Scoping, mutual recursion and order** are `let`'s, item for item (§6 *Evaluation order*, §7):
+every name a block binds is in scope in every item of the block, so its functions are mutually
+recursive whatever their order; value bindings and statements are evaluated once each, in the order
+written; a value binding or statement that reads a value written below it — directly, or through a
+function of the block — is `let_forward_reference`; and shadowing is an error. Roc forbids a local
+definition from naming a later one and refuses mutual recursion between local functions
+(`references/roc/src/canonicalize/test/local_let_scoping_test.zig:1-6`); beni keeps what `let`
+promised, because §7's analysis already makes the forward case safe and refusing it would refuse
+programs that check today. **Declaration order** — the guarantee `ordering_test.zig` holds, that
+the order of top-level declarations never changes whether a program checks or what it prints — is a
+top-level guarantee and is untouched; inside a block, order is evaluation order and always was.
+
+**Layout.** §4's machinery, with the block in place of the `let` binding list:
+
+| # | Rule |
+|---|---|
+| B1 | A block's **column** *C* is the column of its first item's first token, and must be greater than the enclosing block's indent (§4 rule 2) |
+| B2 | **An item begins at a token at exactly column *C* that can start an expression**: a name, a constructor, a literal, `(`, `[`, `{`, `λ`, `if`, `case`, `_`, a `.field` accessor, a `-` that abuts an atom (negation, §6.5), a markup `<` (below), a `multiline_line` that does not continue a literal (§2.7), and `let` and `\`, so that the removed forms are reported where they stand |
+| B3 | **Every other token of an item is at a column greater than *C*, or at *C* if it cannot start an expression** — `,`, `)`, `]`, `}`, `\|`, a binary operator, `\|>`, `<\|`, `?`, `then`, `else`, `of`, `->`, `=`, `<-`, `:`, a closing tag — and a `multiline_line` directly below another continues that literal wherever it stands. So a list, record or tuple written vertically from the block's column, `[ a` / `, b` / `]`, is one item, as the formatter writes it |
+| B4 | **A token at a column less than *C* ends the block**, and so does a token no item can continue with (a `)` that closes an enclosing group, a `,` of an enclosing list); the enclosing construct decides whether it is legal (§4 rule 4's wording) |
+| B5 | A `case`'s branches inside a block must be right of *C*: §4 rule 4's "branches at the same column as `case` are legal" does not reach a `case` that begins an item, because a branch's pattern at *C* begins the next item (B2). The `case` then has no branches, `case_without_branches` — an error, never a different program |
+| B6 | A parenthesised block's `(` is the last token on its line; its items follow at *C*, and its `)` ends the last item (B4) wherever it stands. A `,` after a parenthesised block's items is `unexpected_token`: a block is not a tuple element |
+
+**Markup at the start of a line.** §11.2 opens markup at `<` only where no operand has just ended,
+and a block's value often follows a binding that ends in one (`x = f a` / `<div>…`), where `<div`
+would read as `a < div`. The rule gains a third row: **a `<` that is the first token on its line,
+followed by an ASCII letter or `>`, opens markup whatever precedes it** (`frontend.md` §9.3). A
+comparison never begins a line that way in canonical form — the formatter writes `<` with a space
+after it — so the row changes the reading only of a hand-written `x` / `<y`, which becomes an
+unclosed element: an error, never a different program.
+
+**What no longer parses the same, and why that is safe.** Before blocks, a token at the column of a
+body's first token was a continuation: `f x =` / `    foo` / `    bar` was `foo bar`. Under B2 it is
+two items, a statement `foo` and the value `bar`, and `foo` — a function — is not `()`, so the
+program is `statement_not_unit` rather than a different program. A program that checks today
+could check with another meaning only if one expression were both a function (to be applied) and
+`()` (to be a statement), which no type is, `Debug.todo` aside. The formatter has never written a
+continuation at its body's first column (§9: arguments, operators and branches are indented), and
+the migration reformats every file it touches (`frontend.md` §11.5), so no file in canonical form
+changes meaning.
+
+**What replaces `let` in expression position.** `let … in` could stand anywhere an expression can.
+A block cannot, by the openers table, and the three replacements are, in order of preference: a
+binding in the enclosing block (when evaluating it earlier changes nothing — it is not inside a
+branch, a lambda, or the right operand of `&&`/`\|\|`); the body of a lambda or a branch the
+expression is already in; and the parenthesised block, which is what `--migrate-let` writes when
+neither applies, because it is the one rewrite that never moves an evaluation:
+
+```elm
+ok =
+    first
+        && (
+            r = check b
+            r.passed
+        )
+```
+
+**The removed form.** `let` and `in` stay reserved words. A `let` is parsed as it was, reported as
+**`let_removed`** at the `let` — one diagnostic per `let`, whose message is the block the bindings
+become — and lowered as before, so the rest of the file still checks; `beni fmt --migrate-let`
+rewrites them all (`frontend.md` §11.5). `let_forward_reference` and `refutable_let_pattern` keep
+their codes, which are stable (§10); their titles and messages say "block".
+
+**Lowering, checking, emitting.** A block lowers to §8's `let` instruction: its bindings become
+`let_def` and `let_pattern` as before, in written order; a bind becomes the call §6.7 gives it, the
+items after it its callback; a statement becomes the new **`let_stmt`**, whose operand is the
+statement's expression; the value is the instruction's body. A parenthesised block is the same
+instruction. `checker-v2.md` §29 checks a `let_stmt` as a pattern binding whose pattern is `()`,
+under its own diagnostic; the backend emits it as `let _ = e` has been emitted since 2026-10-02 —
+the expression as a JavaScript statement (`backend.md` §4, *A discarded value is a statement*).
+`?` (§6.6) returns from the nearest enclosing definition with parameters, a block's included, as it
+did from a `let`'s.
+
+### 12.3 A lambda as the last argument
+
+**The last argument of an application may be a lambda without parentheses**: `List.map todos λt ->
+t.title`. It is the trailing-closure form of Swift, Kotlin and Ruby, and it is why the library is
+function-last (§6.7, *library convention*): `List.foldl xs 0 λx acc -> x + acc`, `Maybe.map2 a b
+λx y -> x + y`, `Task.scope λscope ->`.
+
+```
+App            := Atom Arg* TrailingLambda?
+TrailingLambda := 'λ' Param+ '->' Body
+```
+
+| Rule | Detail |
+|---|---|
+| why it is unambiguous | a lambda was never an argument without parentheses — `f \x -> x` is §3's error, "write `f (\x -> x)`" — so admitting one as the **last** argument changes the reading of no program. Nothing can follow it as a further argument, because its body comes next: `f λx -> x y` is `f (λx -> x y)` |
+| **where its body ends** | a body that **begins on a later line** than the `->` is a block (§12.2), ending where the block ends. A body that **begins on the `->` line** ends at the first token on a later line whose column is not greater than *L*, the column of the first token of the line the `λ` is on — the indentation of the line the lambda starts on, which is what a reader sees. Within that, it is an expression and stops where an expression stops: at `,`, a closing bracket, `then`, `else`, `of` |
+| in a pipeline | so `todos` / `\|> List.filter λt -> t.done` / `\|> List.length` is a three-stage pipeline: the second `\|>` begins a line at column *L* and ends the first lambda's body. On **one** line the body takes everything after its `->`: `xs \|> List.filter λt -> t.done \|> List.length` is `List.filter xs (λt -> t.done \|> List.length)`, a type error at `List.length`. The formatter never writes that line (§9, *trailing lambdas*), so the reading is always the one the layout shows |
+| `\|>` | a trailing lambda is part of its application, so `xs \|> List.map λx -> f x` is an application on the right of `\|>` and is `List.map xs (λx -> f x)` (§6.7 `pipe_rhs_not_application` is satisfied) |
+| `<\|` | `f a <\| λx -> e` keeps its meaning, `f a (λx -> e)`. It is now the second spelling of a trailing lambda, and the formatter writes the first (§9) |
+| `_` | a placeholder may stand among the other arguments: `f _ λx -> e` is `λp -> f p (λx -> e)` (§6.7). A trailing lambda is a lambda for §6.6, so a `?` in its body is `question_in_lambda` |
+| `<-` | a bind's right-hand side may end in a trailing lambda; the callback is then appended after it: `x <- f λy -> g y` is `f (λy -> g y) (λx -> rest)` |
+| markup | a hole or an attribute value may hold an application with a trailing lambda; its body ends at the hole's `}`: `{List.map todos λt -> <li>{t.title}</li>}`, `onInput={λs -> Typed s}` (a bare lambda there needs no rule: it is the whole hole) |
+| parentheses | still legal around a last-argument lambda, and required around one that is not last: `Task.bracket (λ() -> open url) close λconn -> use conn`. The formatter removes them where they are redundant (§9) |
+| lowering | none: the parser builds the same `lambda` node as the last argument of the same `app`, so BIR, checking and emitting cannot tell the two spellings apart |
+
+### 12.4 Names that read right subject first
+
+beni's library is subject first (§6.7), so every Elm function that took its subject last takes its
+arguments in another order under the same name. **The owner's rule is "no Elm name with a flipped
+argument order"** — and since that is every subject-first function, from `List.map` down, the audit
+reads it as the decision's own example does (`modBy` giving way to "names that read right in
+subject-first order"): no Elm name whose call reads wrong, or silently computes something else, in
+beni's order. The audit below covers every `pub` value of
+`core/` and of the platforms that shares a name with an Elm 0.19 function (`elm/core`,
+`elm/random`) and orders its arguments differently. Each function is one of three things:
+
+- **renamed**, when its *name* names an argument by role — `modBy n 2` reads "mod by `n`", but `n`
+  is the dividend — so a call reads backwards to anyone who knows the Elm name. These are also the
+  silent ones: both arguments have one type, so a call written in Elm's order checks and computes
+  something else;
+- **reordered** to Elm's order, for the one function whose subject is not its first argument;
+- **kept**, when the name names no argument and reads right in beni's order. Where Elm's order would
+  still type-check, the warning in §12.5 catches the shape a ported call has.
+
+| Elm | beni today | Verdict | beni after |
+|---|---|---|---|
+| `modBy : Int -> Int -> Int` (modulus, then the number) | `modBy : Int, Int -> Int` (number, modulus) | **renamed** | **`Int.mod : Int, Int -> Int`** — `Int.mod n 2`, `n.mod 2`; the sign of the modulus, as `Int32.mod` |
+| `remainderBy` (divisor, then the number) | `remainderBy : Int, Int -> Int` (number, divisor) | **renamed** | **`Int.rem : Int, Int -> Int`** — `n.rem 3`; the sign of the dividend, as `Int32.rem` |
+| `logBase : Float -> Float -> Float` (base, then the number) | `logBase : Float, Float -> Float` (number, base) | **renamed** | **`Float.log : Float, Float -> Float`** — `Float.log 100 10 == 2`, `x.log 2` |
+| `Debug.log : String -> a -> a` | `Debug.log : a, String -> a` | **reordered** | **`Debug.log : String, a -> a`**, Elm's order: `Debug.log "total" (List.sum xs)`. The label is not the subject — the value passes through — but the label is short and the value long, so label first keeps the label beside the word `log` when the call wraps an expression, which is why Elm chose it; the pipeline spelling it was flipped for (`xs \|> Debug.log "xs"`) occurs once in the repository. As a statement, `Debug.log "done" ()` |
+| `clamp : number -> number -> number -> number` (low, high, n) | `clamp : number, number, number -> number` (n, low, high) | kept | `clamp n low high` reads right, and it is the order Rust, C++ and JavaScript's `Math.clamp` give the same name. Elm's order type-checks: §12.5's warning |
+| `String.split`, `contains`, `startsWith`, `endsWith`, `indexes`, `indices` (the needle first) | the string first | kept | `s.startsWith "http"`, `String.split line ","` read right, and they are JavaScript's, Go's, Rust's and Python's order under the same names. Elm's order type-checks: §12.5's warning |
+| `String.replace` (before, after, string) | string, before, after | kept | as above: `s.replace "a" "b"` is JavaScript's `s.replace(a, b)`; §12.5's warning |
+| `List.repeat : Int -> a -> List a` | `List.repeat : a, Int -> List a` | kept | `List.repeat x 3` reads "repeat `x` 3 times", Rust's `vec![x; 3]` order. Elm's order type-checks for a list of `Int`, and no syntactic shape tells the two apart (`List.repeat 0 3` is both); the doc comment says so |
+| `String.join : String -> List String -> String`, `String.repeat`, `left`, `right`, `dropLeft`, `dropRight`, `slice`, `pad`, `padLeft`, `padRight`, `cons` | the string or list first | kept | the arguments have different types, so a call in Elm's order is a `type_mismatch` whose hint shows the call in beni's order (§12.5) |
+| `Maybe.withDefault`, `Result.withDefault`, `Result.fromMaybe`, `Result.mapError`, `andThen`, `map`, `map2`–`map5` (Maybe, Result, List, Random), `List.foldl`, `foldr`, `filter`, `filterMap`, `concatMap`, `indexedMap`, `member`, `take`, `drop`, `intersperse`, `sortBy`, `sortWith`, `partition`, `any`, `all`, the `String` higher-order functions, `Dict.get`, `member`, `insert`, `remove`, `update`, `map`, `foldl`, `foldr`, `filter`, `partition`, `Set.insert`, `remove`, `member`, `map`, `foldl`, `foldr`, `filter`, `partition`, `Random.list`, `Random.generate`, `Cmd.map`, `Sub.map` | the subject first, the function last | kept | different types, as above. Function last is what makes a trailing lambda possible (§12.3): `Maybe.withDefault m 0` reads "`m` with default 0", and `List.foldl xs 0 λx acc -> x + acc` is the shape the batch exists for |
+
+`List.cons x xs` keeps the element first — Elm's order and the order of the bracket form it spells
+(§6.8) — and was never flipped. `Dict.union`, `intersect`, `diff`, `Set`'s three, `List.range`,
+`List.append`, `String.append`, `always`, `compare`, `atan2`, `Random.int`, `Random.float`,
+`Random.step` and `Random.uniform` already take Elm's order.
+
+**`Int` and `Float` get modules of their own.** `Int.mod` and `n.mod 2` both need `mod` to be a
+`pub` value of the module that **declares** `Int`, under the module rule (static-dispatch-spike.md
+§1.2). So `Int` moves from `core/Basics.beni` to a new `core/Int.beni`, and `Float` to
+`core/Float.beni`, exactly as `String` and `Char` moved on 2026-09-17 (§5.4,
+static-dispatch-spike.md §5.1); this reverses that document's A.6 for these two types, which
+recorded the move as the alternative and declined it only because the spike had no use for it.
+Both stay prelude **types**, and `Int` and `Float` join the prelude's **module aliases**, so no
+module gains an import. What moves with each type is its methods: `core/Int.beni` declares the type,
+`mod`, `rem`, and the `eq` and `compare` that `Basics`'s number-generic functions served it before
+(the well-known table of static-dispatch-spike.md §3.2 keeps serving the operators); `core/Float.beni`
+declares the type, `log`, `eq` and `compare`. The `number`-generic functions — `abs`, `negate`,
+`max`, `min`, `clamp`, `toFloat`, `round` and the rest — stay in `Basics` and in the prelude, as
+functions and not as methods of either type. `Bool`, `Order` and `Never` stay in `Basics`. *If the
+owner prefers no move:* `mod`, `rem` and `log` go into `Basics`, unexposed, and are written
+`n.mod 2` or `Basics.mod n 2` — the methods work because `Basics` declares both types today — at the
+cost of `Int.mod`, which then does not exist.
+
+**The removed names.** `modBy`, `remainderBy` and `logBase` leave `Basics` and the prelude (Appendix
+A); nothing unqualified replaces them, so `mod` and `rem` stay free as local names. A use of one —
+unqualified, as `Basics.modBy`, in an `exposing` list, or as a method `n.modBy 2` — is
+**`name_removed`**, at the name, whose message names the replacement with the call rewritten:
+*`modBy` was removed: beni's `modBy n 2` read as Elm's `modBy 2 n`. Write `Int.mod n 2`.* The
+removed names are a table in the compiler beside the prelude, consulted by lowering for an
+unqualified name and by resolution for a qualified one, before either says `unbound_variable` or
+that the module does not expose the name.
+
+### 12.5 The formatter, its gate, and call-style diagnostics
+
+**Formatter rules** — §9's table carries each as an amended or added row:
+
+| Rule | Detail |
+|---|---|
+| **a one-line `if`** | an `if` the author wrote on one line stays on one line when it fits in 100 columns and its condition and both branches have a one-line form (no `case`, block, multiline string, comment, or construct the author broke): `if t.id == id then { t \| done = not t.done } else t`. An `else if` chain is one `if` for this rule. An `if` written across lines stays vertical, as before: the never-join rule is not relaxed, so the formatter does not join the vertical `if`s it wrote until now |
+| **hanging the last argument** | an application whose last argument is a lambda, a list, a record, a record update or markup **hangs** it. When the application must break — it does not fit, or the author broke it — and the callee with every other argument fits on one line, those stay on that line **whatever source breaks lie between them** (the never-join rule does not apply among a hanging application's head arguments, as it does not to the break after `=`), and the last argument starts there: a lambda's `λparams ->` ends the line and its body follows as a block indented 4 from that line's indentation; a list, record or markup goes on the next line, indented 4, in its own one-line or vertical form. An application that does not qualify breaks as before. A definition or binding whose body is an application hanging a **lambda** keeps the head line on its `=` line when it fits there: `todos = List.map model.todos λt ->` |
+| **trailing lambdas** | a parenthesised lambda that is an application's last argument loses its parentheses, unless the token after the `)` on the same line is a binary operator or `?` (the body would take it, §12.3); `f a <\| λx -> e` is written `f a λx -> e`. A trailing lambda's body stays on the `->` line only when the whole body fits there and the lambda ends its line; otherwise it is a block on the lines below |
+| **blocks** | items one per line at the block's column, which is 4 right of the opener line's indentation; a block always starts on the line after its opener and is never joined to it. At most one blank line between items, kept if present, never added. A parenthesised block is `(` at the end of its line, the items, and `)` alone on a line at the indentation of the line holding `(` |
+| **a blank line after a comment** | between a standalone `--` comment (a comment on a line of its own) and the next token, one blank line is kept when the source has one, so a comment that labels a section is not glued to the section's first line. Doc comments are unchanged |
+| **aligned parameters** | when a function type breaks (§9 *function types*), the first parameter is indented 6 rather than 4, so that every parameter starts in one column under the `, ` that leads the others: `update :` / `      Msg` / `    , Model` / `    -> Model` |
+
+**`beni fmt --check` is a gate.** `zig build gates` gains a step, `beni-fmt-check`, which runs the
+gates' own beni as `beni fmt --check` over every `.beni` file under `core/`, `platforms/`,
+`bench/`, `tests/corpus/` and `tests/platforms/`, except the files that `tests/fmt-exempt.txt`
+names. That file is one glob per line, each followed by `--` and its reason, and it starts with two
+entries: `tests/corpus/fmt/**` (formatter inputs, unformatted on purpose — their `.expected` files
+are already held to be fixed points) and `tests/corpus/parse/bad/**` (files that must not parse).
+Every other exemption is a single file, hand-picked, with its reason — a `parse/good/` fixture that
+pins a layout the formatter never writes, a `check/bad/` fixture whose syntax error is the point —
+and an entry naming a single file that does not exist, or that is already canonical, fails the step,
+so the list cannot rot. A file that fails `--check` fails the gate with the file named; `beni fmt
+<file>` fixes it. The step is `frontend.md` §11.6's to build.
+
+**Call-style diagnostics.** Four places where a habit from JavaScript or Elm meets a beni call:
+
+| Written | Today | After |
+|---|---|---|
+| `xs.length`, `s.trim` — a field access on a value whose type is not a record, naming a `pub` function of the type's module that takes the value first | `type_mismatch`, "This is not a record with a `length` field" | the same code, with a hint: *`length` is a function of `List`, not a field. Write `List.length xs` — a method call needs its other arguments, `xs.take 3`, so one that takes none is written as a call.* |
+| `xs.length ()` — a method call whose only argument is `()` | `too_many_args` | the same code, with the same hint |
+| `f(a, b)` — an application whose one argument is a tuple literal written against the callee, when the callee takes as many parameters as the tuple has elements | `too_few_args` or `type_mismatch` | the same code, with a hint: *beni separates arguments with spaces: `f a b`.* |
+| a call of a `core/` or platform function, in Elm's order, that fails to check | `type_mismatch`; the hint "this function looks like it belongs in the 2nd argument" exists today for a misplaced function | the hint generalises to every function §12.4 lists as kept with a different order: when the call would check with its arguments in Elm's order, the hint shows it in beni's — *`String.join` takes the list first: `String.join names ", "`* |
+
+and one warning, for the kept functions whose Elm-ordered call still type-checks:
+**`suspicious_argument_order`**, a `warning` on by default for the root package only, at a call of
+`clamp`, `String.split`, `contains`, `startsWith`, `endsWith`, `indexes`, `indices` or `replace`
+whose **subject** — the first argument — is a literal while its last argument, where Elm's order
+puts the subject, is not: the shape `String.split "," line`, `clamp 0 100 x`, which beni code
+written for beni never has. The
+message shows the call in beni's order; the escape, when the literal really is the subject, is the
+method form (`",".split line`) or a name. It is a warning and not an error because the call may be
+meant (rule 7). `checker-v2.md` §29 places all five.
+
+### 12.6 One program, before and after
+
+A TodoMVC `update` and `view` for the `browser-tea` platform, and a loop from a core-style module,
+as canonical beni before this section …
+
+```elm
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Add ->
+            let
+                title = String.trim model.draft
+            in
+            if String.isEmpty title then
+                model
+            else
+                { model
+                    | todos = [ ...model.todos, { id = model.nextId, title = title, done = False } ]
+                    , nextId = model.nextId + 1
+                    , draft = ""
+                }
+
+        Toggle id ->
+            { model
+                | todos =
+                    List.map model.todos
+                        (\t ->
+                            if t.id == id then
+                                { t | done = not t.done }
+                            else
+                                t
+                        )
+            }
+
+        ClearDone ->
+            let
+                _ = Debug.log (List.length model.todos) "todos before"
+                _ = Log.info "clearing"
+            in
+            { model | todos = List.filter model.todos (\t -> not t.done) }
+
+
+view : Model -> Html Msg
+view model =
+    let
+        left = List.length (List.filter model.todos (\t -> not t.done))
+    in
+    <section class="todoapp">
+        <ul class="todo-list">
+            <For each={model.todos} keyed={.id}>
+                {\t i ->
+                    let
+                        stripe =
+                            if modBy i 2 == 0 then
+                                "even"
+                            else
+                                "odd"
+                    in
+                    <li class={stripe} onClick={Toggle t.id}>{t.title}</li>}
+            </For>
+        </ul>
+        <span>{left} items left</span>
+    </section>
+
+
+hash : String -> Int
+hash s =
+    String.foldl s 5381 (\c h -> modBy (h * 33 + Char.toCode c) 4294967296)
+```
+
+… and after it, as a programmer writes it now:
+
+```elm
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Add ->
+            title = String.trim model.draft
+            if String.isEmpty title then
+                model
+            else
+                { model
+                    | todos = [ ...model.todos, { id = model.nextId, title = title, done = False } ]
+                    , nextId = model.nextId + 1
+                    , draft = ""
+                }
+
+        Toggle id ->
+            todos = List.map model.todos λt ->
+                if t.id == id then { t | done = not t.done } else t
+            { model | todos = todos }
+
+        ClearDone ->
+            _ = Debug.log "todos before" (List.length model.todos)
+            Log.info "clearing"
+            { model | todos = List.filter model.todos λt -> not t.done }
+
+
+view : Model -> Html Msg
+view model =
+    left = List.length (List.filter model.todos λt -> not t.done)
+    <section class="todoapp">
+        <ul class="todo-list">
+            <For each={model.todos} keyed={.id}>
+                {λt i ->
+                    stripe = if i.mod 2 == 0 then "even" else "odd"
+                    <li class={stripe} onClick={Toggle t.id}>{t.title}</li>}
+            </For>
+        </ul>
+        <span>{left} items left</span>
+    </section>
+
+
+hash : String -> Int
+hash s = String.foldl s 5381 λc h -> Int.mod (h * 33 + Char.toCode c) 4294967296
+```
+
+What each change is: the `let`s are blocks (§12.2), and `Log.info "clearing"`, a `()`, is a
+statement while `Debug.log`'s value is discarded with `_ =`; every lambda is `λ` (§12.1) and every
+last-argument lambda sheds its parentheses (§12.3), the `Toggle` body hanging below its head line
+(§12.5); `Debug.log` takes its label first and `modBy` is `Int.mod`, here also as the method
+`i.mod 2` (§12.4); the `if`s written on one line stay there (§12.5). `<section` and `<li` begin
+their lines after an operand, which is the markup row of §12.2's layout. The migrations
+(`frontend.md` §11.4–§11.5) write the same program less the choices a person makes: they keep
+`_ = Log.info "clearing"` as it was (seeing that its value is `()` needs types), keep the `if`s that
+were vertical vertical (the never-join rule), leave the `Toggle` record update nested rather than
+naming `todos`, and write `modBy i 2` as `Int.mod i 2`, not as a method.
+
 ## Appendix A. The prelude
 
 These names are in scope in every module without an import. The table is a constant inside the
@@ -2130,6 +2648,12 @@ toFloat round floor ceiling truncate max min compare not xor modBy remainderBy n
 clamp sqrt logBase e pi cos sin tan acos asin atan atan2 degrees radians turns toPolar
 fromPolar isNaN isInfinite identity always never
 ```
+
+*Amended 2026-10-02 (§12.4; specified, not built).* `modBy`, `remainderBy` and `logBase` leave the
+exposed values, and a use of one is `name_removed`; nothing unqualified replaces them. `Int` and
+`Float` join the module aliases, as the modules that now declare those two types (`core/Int.beni`,
+`core/Float.beni`), so `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` need no import. The exposed
+types do not change.
 
 Lowering resolves each to `import_value(Basics, name)` / `import_ctor(Maybe, Just)` etc., the same
 form an explicit `import Basics exposing (max)` would produce, so nothing downstream knows the

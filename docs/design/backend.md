@@ -1609,7 +1609,9 @@ and `mod` answer `0` for a zero divisor where `/` and `%` answer `Infinity` or `
 around the operator is a conditional no smaller than the call; `Int32.mul` is `Math.imul`, a host
 global the renamer does not know (research 47 §2.3's `global_this` is how one would be written).
 The rule is **exact equivalence or nothing**: no call is replaced by an operator that answers
-differently for any input the type admits.
+differently for any input the type admits. *Amended 2026-10-02 (`language.md` §12.4; specified,
+not built):* `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, the same siblings under
+`core/Int.js`, and stay calls for the same reason.
 
 **Evaluation order is the call's**: the operands are evaluated once each, left to right, with the
 same pinning a call's arguments get (`orderedExprs`), which is `language.md` §6's *binary
@@ -1654,6 +1656,12 @@ may assume*): an impure `e` is evaluated in both builds, and a pure one is evalu
 development build and dropped whole by the release optimiser, which `Lower` tells through
 `Result.pure_discards` as it tells it the bindings to keep through `effect_keep`. A `let` whose
 pattern binds names is unchanged.
+
+*Amended 2026-10-02 (`language.md` §12.2; specified, not built).* A block's **statement** — the BIR
+`let_stmt` — is emitted exactly as `let _ = e` is, by `Lower.discard`, and `findUnobserved` counts
+it among the discarded positions. A block is the `let` it lowers to, and a trailing lambda the
+`lambda` it is, so neither reaches the backend as anything new: a program migrated from `let … in`
+and parenthesised lambdas emits the bytes it emitted before.
 
 **`Js.throw` in tail position ends its block.** Its value is the `undefined` no `return` can reach,
 and `return undefined;` after a `throw` is no longer written.

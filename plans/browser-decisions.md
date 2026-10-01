@@ -1376,3 +1376,9 @@ The steps, and what each measured: [`plans/runtime-in-beni.md`](runtime-in-beni.
 | **S3** | **A lambda may be the last argument of a call without parentheses** (the owner): `List.map todos λt -> …`; its body runs to the end of the expression or layout. A lambda that is not last keeps its parentheses. |
 | **S4** | **No Elm name with a flipped argument order** (the owner): `modBy`/`remainderBy` give way to names that read right in subject-first order (e.g. `Int.mod i 10`), `Debug.log` keeps label-then-value or is renamed, and every other such function is audited; the old names get removal diagnostics naming the replacement. |
 | **S5** | **Formatter fixes and enforcement** (the owner): a one-line `if` that fits stays on one line; a call that must break keeps its head arguments and hangs only a trailing lambda, list or record; the blank line after a standalone comment is kept; leading-comma type lists align; and `beni fmt --check` over `core/`, `platforms/`, `bench/` and the corpus joins `zig build gates`. Plus diagnostics for call-style traps (`xs.length` suggests `List.length xs`). |
+
+**Specified 2026-10-02:** S1–S5 are [`language.md`](../docs/design/language.md) §12, with
+[`frontend.md`](../docs/design/frontend.md) §11 and [`checker-v2.md`](../docs/design/checker-v2.md)
+§29; the slices and the sixteen choices the specification made for the owner to confirm (Y1–Y16 —
+Y3, Y10 and Y11 before the first mechanical commit they shape) are
+[`plans/syntax-batch.md`](syntax-batch.md).

@@ -66,6 +66,13 @@ with a syntax error is left alone. It is `Format.migrateLetBlanks`, a one-time c
 formatter's rule — at most one blank line between bindings, kept if present — is unchanged. The
 two flags are mutually exclusive.
 
+*Added 2026-10-02 (specified, not built):* four more hidden flags carry the syntax batch
+(`language.md` §12) — **`--migrate-lambda`** and **`--migrate-names`**, edits like `--migrate-cons`,
+and **`--migrate-let`** and **`--migrate-trailing-lambda`**, which reformat the whole file and so
+run only on files the `beni fmt --check` gate holds canonical. §11.4–§11.5 are their contract; all
+six flags are mutually exclusive. And `beni fmt --check` over the repository joins `zig build
+gates` (§11.6).
+
 That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
 closing paragraph naming the flag **when, and only when, the module it could not find is a module of
 a platform that ships in the binary and no `--platform` was given**. The hint can be honest about
@@ -406,6 +413,9 @@ a `pat_list` (`main_token` the `...`, `lhs` a `pat_var` or `pat_wild`). `dump --
 them as `(spread …)` and `(pat_spread …)`. The `cons` and `pat_cons` kinds stay, as what the parser
 builds for a `::` it has reported as `cons_removed`, so that recovery keeps the tree whole.
 
+*Amended 2026-10-02* (`language.md` §12): two node kinds, **`block`** and **`stmt`**, and the `let`
+kind kept only for a `let_removed` form — §11.3.
+
 ### 3.6 BIR
 
 Per file, arena-owned until merged. `Bir.zig` defines: a `MultiArrayList(Inst)` with
@@ -436,6 +446,9 @@ pattern is refused by the parser and lowers to `error`, as does a `::` expressio
 `language.md` §8, each stamped with its spread's `...` token. The frontend artifact's format version
 moves to 11 for the new token use, node kinds, instruction tag and codes, and to 12 when
 `pat_cons` left the tag set.
+
+**Blocks add one instruction tag** (2026-10-02, `language.md` §12.2): `let_stmt`, a statement of a
+block, in its `let`'s range in written order; a block is otherwise the `let` instruction. §11.3.
 
 **Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
 `method_call` and `type_dispatch` join the tag set; a declaration stores its `where` clause as a
@@ -497,6 +510,10 @@ the elements of a construct inside it — so the break directly after `=`, which
 body, is never one the width records, and never keeps the body below. The decision depends only on
 the width and the column of `=`, both the same when the output is formatted again, which keeps the
 formatter idempotent.
+
+*Amended 2026-10-02* (`language.md` §12.5): a one-line `if`, hanging last arguments, trailing
+lambdas, blocks, the blank line after a standalone comment and the aligned first parameter — what
+each changes in the measure is §11.7.
 
 Declaration record bodies and tagged schema variants use the layout sugar in
 `language.md` §3–§4/§9 and `schema.md` §2/A.5: both input spellings must have
@@ -787,7 +804,9 @@ mode, a `<` is a `markup_open` when **both** hold:
    have been an operand, and reading the `<` as markup would cascade).
 
 Otherwise the ordinary longest-match rules apply unchanged (`<=`, `<-`, `<|`, `<`), so every program
-that lexes today lexes to the same tokens. In `children` mode a `<` followed by a letter or `>` is
+that lexes today lexes to the same tokens. *Amended 2026-10-02* (`language.md` §12.2): condition 2
+holds also when the `<` is the first significant token on its line, so a block's markup value opens
+after a binding that ends in an operand (§11.1). In `children` mode a `<` followed by a letter or `>` is
 always `markup_open`, `</` always `markup_close_open`, and any other `<` the error of §9.1. The first
 rule costs ordinary code one test at each `<`, of a byte already in cache.
 
@@ -1323,3 +1342,151 @@ showing the last good build while the errors are on the terminal.
 
 It ends as `--watch` does; open connections are dropped. It is a development server: one thread per
 connection, no TLS, no compression, no range requests, and it is not meant to face a network.
+
+## 11. Blocks, `λ` and trailing lambdas in the front end
+
+*Added 2026-10-02; specified, not built.* How the lexer, parser, AST, BIR, formatter and the
+migrations build [`language.md`](language.md) §12. The language section is the contract for what a
+program means; this one is the contract for the pieces, and for the order the repository moves in
+([`plans/syntax-batch.md`](../../plans/syntax-batch.md) sizes the slices).
+
+### 11.1 The lexer
+
+- **`λ`** is the tag `lambda`, one token of two bytes, recognised where the ASCII-only check would
+  otherwise report `invalid_character` (`language.md` §2.4, §12.1). `dump --stage=tokens` prints it
+  as `lambda`. Nothing else in the token SoA changes (§3.2).
+- **`\`** keeps the tag `backslash`, which is now lexed only to be refused; the multiline-string
+  lookahead is unchanged (`language.md` §2.7).
+- **Markup at the start of a line** is §9.3's third condition: a `<` is `markup_open` when the byte
+  after it is an ASCII letter or `>` and **either** the previous significant token cannot end an
+  operand **or** the `<` is the first significant token on its line (its line differs from the
+  previous token's). The tokenizer already holds the previous token's line, so the test costs a
+  comparison. `language.md` §12.2 says why it cannot change the meaning of canonical code.
+
+### 11.2 The parser
+
+**A body.** Every position `language.md` §12.2's openers table names is parsed by one function,
+`parseBody`: when the next token's line is greater than the opener's and it is the first token of
+its line, it parses a block, and otherwise an expression exactly as `parseExpr` does today. A block
+is a node of its own only when it has more than one item; a one-item block whose item is an
+expression is that expression's node, so every program without `let` parses to the AST it parses to
+now.
+
+**A block** sets its column *C* from its first token and parses items while the next token is at
+column *C* and can start an expression (`language.md` §12.2, B2). The parser's `indent` (a token
+belongs when its column is greater, `language.md` §4) is *C* inside an item, with one addition
+carried in a second field, `block_col`: a token at exactly `block_col` also belongs when it cannot
+start an expression (B3), and a `multiline_line` belongs when the previous token is a
+`multiline_line` on the line above. `block_col` is saved and restored with `indent` by
+`startBlock`/`endBlock`, so a construct nested inside an item — a `case`'s branches, a binding's
+body — sees only its own. A token at a column below *C* ends the block (B4).
+
+**An item's kind** is read from its first line before it is parsed (`language.md` §12.2): scan the
+tokens on the item's first line, tracking depth over `( [ {`, interpolation and markup tags, for a
+depth-0 `equal` or `arrow_left`, or a leading `lower_ident colon`. The scan is bounded by the line,
+so a block costs one extra pass over its head lines. A binding is parsed by today's
+`parseLetBinding` with its body through `parseBody`; an expression by `parseExpr`, and becomes a
+`stmt` node unless it is the last item. A last item that is not an expression is
+`block_ends_in_binding`, reported at it, and the block's value becomes an error node so the tree
+stays whole.
+
+**A parenthesised block** is a `(` whose next token begins a later line: the items are a block,
+then `expectToken(.r_paren)`; a `,` there is `unexpected_token` (B6).
+
+**A trailing lambda.** `parseApp` stops at a `lambda` token today (a block form is not an
+argument); it now parses one as the last argument and stops. The lambda's body is `parseBody`: a
+block when it begins a later line, and otherwise an expression parsed with `indent` set to *L*, the
+column of the first token of the `λ`'s line (`language.md` §12.3), so a continuation line at a
+column not greater than *L* ends it.
+
+**The removed forms.** A `backslash` where an expression starts is reported as
+`backslash_lambda_removed` and parsed as a lambda; a `keyword_let` as `let_removed`, then parsed by
+today's `parseLet`, whose node stays in the AST for exactly this. Neither recovery skips a token, so
+the rest of the file parses and lowers as it did. Under the migration flags (§11.4, §11.5) the
+parser takes an option that accepts each form silently instead; nothing else sets it.
+
+### 11.3 AST, BIR and versions
+
+- AST (§3.5): **`block`** (`main_token` its first item's first token; `lhs` an extra `SubRange` of
+  the items before the value; `rhs` the value), whose items are the existing `let_def`,
+  `let_pattern`, `let_annotation` and `let_bind` nodes and the new **`stmt`** (`lhs` the
+  expression). A parenthesised block is a `paren` around a `block`. `dump --stage=ast` prints
+  `(block …)` and `(stmt …)`. The `let` node kind stays, built only for a `let_removed` form, as
+  `cons` stays for `cons_removed`.
+- BIR (§3.6): one tag, **`let_stmt`** (`lhs` the expression), an item of a `let`'s range in written
+  order. `dump --stage=bir` prints it as `let_stmt %n`. Lowering a `block` is lowering a `let` whose
+  body is the block's value; nothing else in `Lower` changes. A trailing lambda is the `lambda` it
+  always was.
+- The frontend artifact's format version moves for the new token tag, node kinds and instruction
+  tag, and the cache entry's with it (`fast-compiler.md` §8): an artifact cached before cannot be
+  read as one after.
+
+### 11.4 `--migrate-lambda` and `--migrate-names`: edits
+
+Both are hidden `fmt` flags in the family of `--migrate-cons` (§1): **edits** that keep the file's
+own layout and touch only the tokens they rewrite, so they may run on every `.beni` file in the
+repository, the deliberately unformatted ones included. Each is mutually exclusive with the other
+migration flags, reaches its fixed point in one run, re-parses its output, and leaves untouched —
+naming it — a file whose output does not parse cleanly.
+
+- **`--migrate-lambda`** replaces every `backslash` token that begins a lambda with `λ`. It moves no
+  line, so the only layout it can disturb is `language.md` §12.1's *columns* row — a `case` whose
+  first branch follows a lambda on the `of` line — which the re-parse catches.
+- **`--migrate-names`** runs lowering's per-file name resolution (a pure function of the file,
+  `language.md` §6.2) to find every reference to `Basics.modBy`, `Basics.remainderBy` and
+  `Basics.logBase` — unqualified, qualified, exposed, or as a method — and rewrites it to `Int.mod`,
+  `Int.rem` or `Float.log` (a method call `n.modBy 2` to `n.mod 2`; an `exposing` entry is
+  dropped, and an emptied `exposing` list with it). It swaps the two arguments of every call of
+  `Debug.log` written with two argument atoms (a parenthesised expression and `_` are atoms), and
+  names every other use — a pipeline into `Debug.log`, a call with one argument — for a hand edit.
+  Because `Debug.log` keeps its name, its core change and this rewrite land in one commit (§11.7).
+
+### 11.5 `--migrate-let` and `--migrate-trailing-lambda`: reformats
+
+These two cannot be edits: a block's layout is not `let`'s, and a parenthesis dropped from a lambda
+moves where its body ends. Each **parses with the old form accepted and prints the whole file with
+the formatter**, so it is run only on files the `beni fmt --check` gate already holds canonical
+(§11.6), where printing changes nothing but the construct migrated. A fixture outside the gate — a
+`fmt/` input, a `parse/` fixture that pins a layout — is migrated by hand, and the slice that runs
+the flag lists them.
+
+- **`--migrate-let`** prints each `let … in e` as a block: the bindings, then `e`. A `let` that is
+  the value of a block, or the body of another `let`, is flattened into the enclosing block — safe,
+  because the inner names were not in scope above them, the items keep their written order, and the
+  binding groups are recomputed by dependency, not by nesting (`checker-v2.md` §6). A `let` in a
+  position no opener heads (`language.md` §12.2) becomes a parenthesised block, and `( let … )`
+  reuses its parentheses. A comment attached to `in` moves above the value line.
+- **`--migrate-trailing-lambda`** prints with `language.md` §12.5's *trailing lambdas* rule turned
+  on: the parentheses of a last-argument lambda dropped where no operator or `?` follows, and
+  `f <| λx ->` written `f λx ->`. The rule becomes the formatter's own in the slice after the
+  migration, when the gate already holds every file in that form.
+
+### 11.6 The `beni fmt --check` gate
+
+`build.zig` gains the step **`beni-fmt-check`**, part of `gates`. It walks `core/`, `platforms/`,
+`bench/`, `tests/corpus/` and `tests/platforms/` in sorted path order for `.beni` files, drops those
+`tests/fmt-exempt.txt` matches (`language.md` §12.5), and runs the gates' ReleaseSafe beni as
+`beni fmt --check` over the rest, in chunks small enough for the instruction budget. A file that is
+not canonical, or does not parse, fails the step with its path; so does an exemption entry naming a
+single file that does not exist or is canonical. The exemption list is one glob per line (`**` and
+`*`, matched against the repository-relative path), then `--` and a reason; blank lines and lines
+that begin `--` are ignored. `zig build beni-fmt-check` runs the step alone.
+
+### 11.7 The formatter, and the order of work
+
+§3.7's measure carries `language.md` §12.5's rules with two changes to what it records: an `if`'s
+width is no longer "does not fit" by kind — it is the sum of its parts when each has a one-line form
+and the source put no line break inside it — and a block is always "does not fit". A hanging
+application is decided from the widths of its callee and its arguments but the last, all of which
+the measure already has; the source breaks between those arguments are read and ignored, the one
+place the printer does not honour them. The blank line after a standalone comment is read from the
+comment array and the token lines, as blank lines between bindings are. The aligned first parameter
+is a constant in the type printer. Each rule is decided from the AST, the widths and the comment
+array alone, so the printer stays idempotent.
+
+**The order the repository moves in** is the same for every piece, and it is what keeps `zig build
+gates` green at every commit: **teach** (the compiler accepts the new form, and still the old one),
+**migrate** (a mechanical commit that runs the flag and does nothing else), **enforce** (the old
+form is refused, or the formatter prints only the new one). The one exception is `Debug.log`, whose
+order changes under an unchanged name, so its core change and its `--migrate-names` rewrite are one
+commit, whose diff outside `core/Debug.beni` is mechanical.

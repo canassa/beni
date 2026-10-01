@@ -5431,3 +5431,82 @@ a string offset (a field) or a `type_refs` index (a type) — and `cache/dispatc
 
 **The dump.** `dump --stage=dispatch` prints one line per row after a module's other lines:
 `boundary <decl> field <name>` or `boundary <decl> type <Module>.<Type>`, in row order.
+
+## 29. Amendment of 2026-10-02: blocks, statements and call style
+
+*Specified 2026-10-02, not built.* What the checker adds for [`language.md`](language.md) §12. A
+block reaches the checker as the `let` instruction it has always checked (`frontend.md` §11.3), so
+§6's generation order, §8.4's generalisation and value restriction, §9's resolution and §16's
+initialisation pass see a block exactly as they saw a `let` with the same bindings. What is new is
+one instruction, one error, one warning and three hints.
+
+### 29.1 `let_stmt`
+
+**Generation.** A `let_stmt` is generated as a `let_pattern` whose pattern is `()` would be — in
+the frame of its `let`, in written order, a binding group of its own with no binder — with one
+difference: its expression is checked against `()` under the category **`statement`**, and a
+failure there is reported as **`statement_not_unit`** rather than `type_mismatch`. It binds nothing,
+so §6.3 registers no binder and §8.4 has nothing to generalise; the unification with `()` is an
+ordinary equality, so a statement whose type is a variable fixes it to `()` (`run f = f ()` on a
+statement line infers `f : () -> ()`), as Roc's does (`references/roc/src/check/Check.zig:21835-21848`).
+
+**The diagnostic.** `statement_not_unit`, title `UNUSED VALUE`, at the statement's whole expression:
+
+> This line is a statement, so its value is thrown away — but it is a `List Int`, not `()`.
+>
+> `List.push` returns a new list and changes nothing. Bind the result and use it:
+>
+>     xs2 = List.push xs 4
+>
+> or, if throwing it away is what you mean, say so:
+>
+>     _ = List.push xs 4
+
+The type is printed as §15.3 prints any type; the two fixes are always given, with the statement's
+own text. When the expression is a call of a function whose result type is one of its parameter
+types — a "returns a new one" function — the sentence before them says so, naming the function.
+A statement that fails inside — an argument mismatch in `List.push xs "a"` — reports that failure
+and no `statement_not_unit`, under §15.2's rule that a poisoned type reports once.
+
+**Effects and the backend.** A `let_stmt` contributes its expression's effect bits to the enclosing
+function like any binding (§26). Elaboration writes it to the record as the `let _ = e` it emits
+(`backend.md` §4, *A discarded value is a statement*); `--release` keeps it when it may be impure
+or suspend and drops it whole when it is pure, under the rule `language.md` §6 states for every
+unread binding.
+
+### 29.2 `name_removed` at a qualified name
+
+A qualified `Basics.modBy`, `Basics.remainderBy` or `Basics.logBase`, and a method call `n.modBy`
+on an `Int`, is resolved against the removed-names table (`language.md` §12.4) before resolution
+says the module does not expose the name or §9 says the type has no such method, and is reported as
+`name_removed` with the replacement call. The unqualified and `exposing` forms are lowering's.
+
+### 29.3 `Int` and `Float` in their own modules
+
+The well-known table (static-dispatch-spike.md §3.2) keeps serving `==` and `<` on `Int` and
+`Float`; its entries' declaring module becomes `core:Int` and `core:Float`, as `String`'s and
+`Char`'s became `core:String` and `core:Char`. A literal mints its type from the new module, which
+moves the minted edge (static-dispatch-spike.md §6.8) from `core:Basics` to `core:Int` or
+`core:Float` for every module that writes a number — visible in `check/good/TypeOwnerEdges` and the
+graph goldens, and nowhere in emitted JavaScript. A `where a.compare` answered at `Int` is answered
+by `core/Int.beni`'s `compare`.
+
+### 29.4 Call-style hints and `suspicious_argument_order`
+
+`language.md` §12.5 lists them; each is a hint on an existing code, decided where §15's texts are
+built, except the warning.
+
+| Case | Where it is decided |
+|---|---|
+| `xs.length` on a value whose type is not a record | the record-field mismatch text: when the actual type's root is a nominal type whose declaring module has a `pub` value of that name whose first parameter is that type, the hint names `Module.name x` |
+| `xs.length ()` | `too_many_args` at a method call whose one argument is the literal `()`: the same hint |
+| `f(a, b)` | `too_few_args` or `type_mismatch` at an application with one argument that is a tuple literal whose `(` abuts the callee and whose arity is the callee's parameter count |
+| an Elm-ordered call | the existing *subject first* hint (`Diagnostics.zig`, "this function looks like it belongs in the … argument") generalises: when the callee is a function `language.md` §12.4 keeps with an order Elm does not share, and §7.5's speculation finds that the call checks with its arguments in Elm's order, the hint prints the call in beni's order. Speculation runs only for a failed call of one of those functions, so no checked program pays for it |
+
+**`suspicious_argument_order`** is a `warning`, on by default for the root package (as
+`ambiguous_method_receiver` is, static-dispatch-spike.md §6.4), at a call of `Basics.clamp`,
+`String.split`, `contains`, `startsWith`, `endsWith`, `indexes`, `indices` or `replace` that
+checked, whose first argument is a literal and whose last argument — where Elm's order puts the
+subject — is not: a decision on BIR alone, made after the call checked, so it cannot change a type. Its message
+prints the call with the two arguments exchanged and names the method form as the escape when the
+literal is meant.

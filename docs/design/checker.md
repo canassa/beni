@@ -1798,7 +1798,10 @@ that is a contract too, not an accident, because a record-keyed `sortBy` depends
   `always`, `never`, `not`, `xor`, `modBy`, `remainderBy`, `negate`, `abs`, `toFloat`, `round`,
   `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry. **`eq`, `neq`,
   `lt`, `gt`, `le`, `ge` and `compare` are no longer what `language.md` §6.5's operators mean**
-  (spec §3.1); all seven stay declared, exported and callable by name.
+  (spec §3.1); all seven stay declared, exported and callable by name. *Amended 2026-10-02
+  (`language.md` §12.4; specified, not built):* `Int` and `Float` move to `core/Int.beni` and
+  `core/Float.beni`, `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, `logBase` becomes
+  `Float.log`, and `Debug.log` is `String, a -> a`.
 - `List`: `equatable foreign type List a`; `foreign` for `cons` — `foldl` and `foldr` moved into
   beni with the tail-call loop (`backend.md` §8), which is what
   `research/17-platform-primitives.md` §3 says matters beyond tidiness — and for the two
