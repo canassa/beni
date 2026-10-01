@@ -84,10 +84,11 @@ pub hosted :
 hosted p =
     -- One mount, `{ h, n }`: no element id, and the function the runtime
     -- turns into the record it mounts, handed the mount node, the render
-    -- loop's `flush` and what sets the after-render phase.
+    -- loop's `flush`, what sets the after-render phase, and what stops
+    -- the page when a fiber throws (`boundary.md` §9.8.10 (c)).
     Js.to
         (Js.array
-            [ Js.from { h = \root flushing phase -> host p root flushing phase, n = Js.null } ]
+            [ Js.from { h = \root flushing phase stop -> host p root flushing phase stop, n = Js.null } ]
         )
 
 
@@ -147,9 +148,9 @@ onRendered resume =
 -- `Dom.rendered`. The runtime hands a hosted mount what it needs by value —
 -- its `flush`, and a function that sets the after-render phase and answers
 -- whether a flush is queued — and a flush is queued through the mount
--- node's `send`, with `skip`, which renders nothing. Each guard is a
--- `Js.finally`, so a throw in `update`, a render or the after-render phase
--- leaves the loop able to run the next message.
+-- node's `send`, with `skip`, which renders nothing. Each latch is released
+-- in a `Js.finally`, however its work ends; a throw that ends it stops the
+-- page, which is the runtime's guard (`boundary.md` §9.8.10 (c)).
 -- The runtime's loop, once a hosted program has mounted (null before),
 -- what sets its after-render phase, and what queues a flush: the last
 -- hosted mount node's `send`, with `skip`.
@@ -270,11 +271,16 @@ host :
     , Js.Value
     , Js.Value
     , Js.Value
+    , Js.Value
     -> Js.Value
-host p root flushing phase =
+host p root flushing phase stop =
     let
         _ =
             Js.write loop flushing
+
+        -- A fiber that throws stops the page, as a handler that throws does.
+        _ =
+            Task.onDefect (\() -> Js.to (Js.apply stop []))
 
         _ =
             Js.write setPhase phase

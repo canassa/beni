@@ -322,34 +322,130 @@ phase =
     Js.ref Js.null
 
 
+-- ---- A defect stops the page (`boundary.md` §9.8.10 (c)) -----------------
+--
+-- A throw out of a program's own code — a handler, `update`, a render,
+-- after-render work, `init` — stops every program of the page: `dead` is
+-- set, and from then on no listener calls a handler, no message is applied
+-- and nothing renders. Each entry point is guarded by a `Js.finally` whose
+-- body notes that it completed and whose cleanup calls `stop` when it did
+-- not; the throw goes on to the host, which reports it. A development
+-- build also shows a crash screen; a release build has no code for one.
+dead : Js.Ref Bool
+dead =
+    Js.ref False
+
+
+stop : () -> ()
+stop () =
+    let
+        -- Once: two guards may see one throw, an inner one and the one
+        -- around it.
+        _ =
+            if Js.development then
+                if Js.read dead then () else crashScreen ()
+
+            else
+                ()
+    in
+    Js.write dead True
+
+
+-- An overlay above the page, which it leaves in place to inspect. The
+-- error's text arrives with the host's report of the throw, which reaches
+-- the window after the cleanup that called `stop`.
+crashScreen : () -> ()
+crashScreen () =
+    let
+        document =
+            Js.global "document"
+
+        screen =
+            Js.call document "createElement" [ Js.from "div" ]
+
+        _ =
+            Js.call screen "setAttribute" [ Js.from "style", Js.from "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap" ]
+
+        _ =
+            Js.set screen "textContent" (Js.from "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n")
+
+        _ =
+            Js.call (Js.get document "body") "appendChild" [ screen ]
+
+        report =
+            \event ->
+                let
+                    error =
+                        Js.get event "error"
+
+                    message : String
+                    message =
+                        Js.to (Js.apply (Js.global "String") [ if Js.isNullish error then Js.get event "message" else error ])
+
+                    shown : String
+                    shown =
+                        Js.to (Js.get screen "textContent")
+                in
+                Js.set screen "textContent" (Js.from (shown ++ message))
+    in
+    Js.to (Js.call (Js.global "window") "addEventListener" [ Js.from "error", Js.from report, Js.from { once = True } ])
+
+
 -- Render every program a message is waiting on, then run the after-render
--- phase.
+-- phase. Nothing, once the page has stopped.
 pub flush : () -> ()
 flush () =
-    let
-        _ =
-            Js.write scheduled False
-
-        renders =
-            Js.read queued
-
-        _ =
-            Js.write queued (Js.array [])
-
-        _ =
-            Js.each renders (\render -> Js.to (Js.apply render []))
-    in
-    if Js.isNullish (Js.read phase) then
+    if Js.read dead then
         ()
 
     else
-        Js.to (Js.apply (Js.read phase) [])
+        let
+            ok =
+                Js.ref False
+        in
+        Js.finally
+            (\() ->
+                let
+                    _ =
+                        Js.write scheduled False
+
+                    renders =
+                        Js.read queued
+
+                    _ =
+                        Js.write queued (Js.array [])
+
+                    _ =
+                        Js.each renders (\render -> Js.to (Js.apply render []))
+
+                    _ =
+                        if Js.isNullish (Js.read phase) then
+                            ()
+
+                        else
+                            Js.to (Js.apply (Js.read phase) [])
+                in
+                Js.write ok True
+            )
+            (\() -> if Js.read ok then () else stop ())
 
 
 -- `(program)`: start every program the array holds, in order.
 pub run : V -> ()
 run program =
-    Js.each program (\m -> startOne m)
+    let
+        ok =
+            Js.ref False
+    in
+    Js.finally
+        (\() ->
+            let
+                _ =
+                    Js.each program (\m -> startOne m)
+            in
+            Js.write ok True
+        )
+        (\() -> if Js.read ok then () else stop ())
 
 
 startOne : V -> ()
@@ -397,7 +493,7 @@ startOne m =
         mount (Js.get m "a") root
 
     else
-        mount (Js.apply (Js.get m "h") [ root, Js.from flush, Js.from (\f -> setPhase f) ]) root
+        mount (Js.apply (Js.get m "h") [ root, Js.from flush, Js.from (\f -> setPhase f), Js.from stop ]) root
 
 
 setPhase : V -> V
@@ -437,6 +533,12 @@ mount program root =
                 "$$root"
                 (Js.from
                     (\msg ->
+                        -- A stopped page applies no message, from a
+                        -- handler, a fiber or after-render work alike.
+                        if Js.read dead then
+                            ()
+
+                        else
                         let
                             _ =
                                 if Js.read waiting then
@@ -2229,45 +2331,61 @@ identity event =
 -- innermost first. The search starts at the node's parent: a program
 -- renders only inside its mount node, so a mount node's own handler is
 -- the program's around it. `flags` may be `undefined`, a node that
--- declared neither: its bits are then 0.
+-- declared neither: its bits are then 0. A stopped page calls no handler,
+-- and a handler or an `update` that throws stops it.
 fire : V, V, String, Int -> ()
 fire node event key flags =
-    let
-        _ =
-            if Js.bitAnd flags 1 /= 0 then
-                Js.to (Js.call event "preventDefault" [])
-
-            else
-                ()
-
-        x =
-            Js.get node "${key}X"
-
-        msg =
-            through
-                (Js.get node "$$cx")
-                (if Js.isUndefined x then
-                    Js.get node key
-
-                 else
-                    Js.call node key [ Js.apply x [ event ] ]
-                )
-
-        root =
-            mountAbove (Js.get node "parentNode")
-
-        _ =
-            if Js.isNull root then
-                ()
-
-            else
-                Js.to (Js.call root "$$root" [ msg ])
-    in
-    if Js.bitAnd flags 2 /= 0 then
-        Js.to (Js.call event "stopPropagation" [])
+    if Js.read dead then
+        ()
 
     else
-        ()
+        let
+            _ =
+                if Js.bitAnd flags 1 /= 0 then
+                    Js.to (Js.call event "preventDefault" [])
+
+                else
+                    ()
+
+            ok =
+                Js.ref False
+
+            _ =
+                Js.finally
+                    (\() ->
+                        let
+                            x =
+                                Js.get node "${key}X"
+
+                            msg =
+                                through
+                                    (Js.get node "$$cx")
+                                    (if Js.isUndefined x then
+                                        Js.get node key
+
+                                     else
+                                        Js.call node key [ Js.apply x [ event ] ]
+                                    )
+
+                            root =
+                                mountAbove (Js.get node "parentNode")
+
+                            _ =
+                                if Js.isNull root then
+                                    ()
+
+                                else
+                                    Js.to (Js.call root "$$root" [ msg ])
+                        in
+                        Js.write ok True
+                    )
+                    (\() -> if Js.read ok then () else stop ())
+        in
+        if Js.bitAnd flags 2 /= 0 then
+            Js.to (Js.call event "stopPropagation" [])
+
+        else
+            ()
 
 
 -- `msg` through each context from `c` out. (`isNullish`: a node outside

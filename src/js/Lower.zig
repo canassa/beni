@@ -8474,6 +8474,11 @@ const Lowerer = struct {
             try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
             at = @enumFromInt(d.rhs);
         }
+        // An arm no value takes writes nothing, and an `if Js.development`
+        // is the arm the build takes (`backend.md` §4, *`Js.development` is
+        // the build's mode*) — as in `exprValue` and `tailCase`.
+        if (l.deadArm(at)) return;
+        if (l.developmentArm(at)) |body| return l.discard(out, body, p);
         // A `case` (and an `if`) is the tree, each leaf discarded: no
         // temporary assigned in every arm.
         if (l.bir.instTag(at) == .case and !(l.suspendable and l.branchesYield(at))) {

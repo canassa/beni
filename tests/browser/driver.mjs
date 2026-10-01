@@ -442,9 +442,12 @@ async function happyDomPage(domPath) {
   prelude();
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
-  // same.
+  // same, and a browser reports it to the page's `error` listeners: so does
+  // this, which is also how the prelude records it.
   const record = globalThis.__beniHarness;
-  process.on("uncaughtException", (error) => record.errors.push(record.describe(error)));
+  process.on("uncaughtException", (error) =>
+    globalThis.dispatchEvent(new globalThis.ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) })),
+  );
   process.on("unhandledRejection", (error) => record.errors.push(record.describe(error)));
   return {
     run: async (fn, arg) => fn(arg),

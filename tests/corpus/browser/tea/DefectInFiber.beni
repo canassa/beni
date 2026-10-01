@@ -1,0 +1,50 @@
+-- A command's body that throws stops the page (boundary.md §9.8.10 (c)):
+-- the throw is a fiber's, out of core's scheduler, which stops — no fiber
+-- runs again — and calls the hook the hosted mount gave `Task.onDefect`.
+-- The click's render happened first (a body runs after the flush that
+-- shows its message); the next click is not applied, and the timer the
+-- other body waits on fires into a stopped scheduler. The release build
+-- adds no crash screen (`.release-expected`).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Inc
+    | Late
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg count =
+    case msg of
+        Go ->
+            ( count + 10
+            , Cmd.batch
+                [ Cmd.perform (\send -> let _ = Time.sleep (Time.millis 50) in send Late)
+                , Cmd.perform (\_ -> Debug.todo "body threw")
+                ]
+            )
+
+        Inc ->
+            ( count + 1, Cmd.none )
+
+        Late ->
+            ( count + 100, Cmd.none )
+
+
+view : Int -> Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="go" onClick={Go}>go</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

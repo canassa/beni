@@ -159,7 +159,11 @@ attributes, `:focus` on the focused element — or `(the DOM did not
 change)`. An uncaught exception in the page outside a `throws` step (which
 must throw, and records each exception instead), and a step that cannot run,
 fail the case with the step, the message and where it was thrown; they
-are never a golden. `<name>.release-expected` works as in `run/`.
+are never a golden. `<name>.release-expected` works as in `run/`. Under
+happy-dom an exception a microtask throws escapes to Node; the driver
+reports it to the page's `error` listeners, as a browser does, so a page
+that shows the error it was stopped by (`boundary.md` §9.8.10 (c), the
+development crash screen) shows it in both DOMs.
 
 **Which DOM.** The gates run the page in Node under happy-dom,
 `tests/browser/happy-dom.mjs`: one vendored, checksummed file that

@@ -1,0 +1,5 @@
+click #inc
+throws click #bad
+# Stopped: nothing is applied or rendered.
+click #fix
+click #inc

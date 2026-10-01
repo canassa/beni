@@ -112,6 +112,13 @@ pub foreign impure openRoot : () -> Scope
 pub foreign impure closeRoot : Scope -> ()
 
 
+--| What runs when a fiber throws: a defect, after which no fiber runs again
+--| (`boundary.md` §9.8.10 (c)). A platform hands it what stops its program —
+--| the browser stops the page — and the throw goes on to the host. The last
+--| one given is the one called.
+pub foreign impure onDefect : (() -> ()) -> ()
+
+
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
 --| platform's entry point uses; a program asks its platform instead.
 pub foreign impure start : (() -> a), sync (Exit a -> ()) -> ()

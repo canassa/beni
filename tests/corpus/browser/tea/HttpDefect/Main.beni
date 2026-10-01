@@ -1,0 +1,64 @@
+-- An error `fetch` does not document is a defect, not an `Http.Error`
+-- (CLAUDE.md rule 9; boundary.md §9.8.10 (c)): `Http`'s sibling names the
+-- failures it expects — a `TypeError` is `NetworkError` — and resumes the
+-- request's fiber with anything else, which `Http.beni` throws there. The
+-- page stops: the result never arrives, and no later click is applied. A
+-- request to a `data:` URL first shows the working path. The release build
+-- adds no crash screen (`_expected.release-expected`).
+import Cmd exposing (Cmd)
+import Fault
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Fetch
+    | Break
+    | Got (Result Http.Error String)
+    | Inc
+
+
+show : Result Http.Error String -> String
+show result =
+    case result of
+        Ok text ->
+            "ok ${text}"
+
+        Err Http.NetworkError ->
+            "network error"
+
+        Err _ ->
+            "another error"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Fetch ->
+            ( lines, Cmd.task (\() -> Http.get "data:text/plain,hello") Got )
+
+        Break ->
+            ( lines, Cmd.task (\() -> let _ = Fault.breakFetch () in Http.get "data:text/plain,hello") Got )
+
+        Got result ->
+            ( lines ++ [ show result ], Cmd.none )
+
+        Inc ->
+            ( lines ++ [ "inc" ], Cmd.none )
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <button id="fetch" onClick={Fetch}>fetch</button>
+        <button id="break" onClick={Break}>break</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

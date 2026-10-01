@@ -1,7 +1,0 @@
-throws click #boom
-click #inc
-throws click #bad
-click #fix
-click #fiber
-throws click #after
-click #fiber

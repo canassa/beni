@@ -1,0 +1,25 @@
+-- A markup handler that throws stops the page (boundary.md §9.8.10 (c)):
+-- `Browser.program`, with no fibers, guards the delegated listener, so no
+-- later click calls a handler or applies a message. The development
+-- build's crash screen carries the error; the release build adds nothing
+-- (`DefectInHandler.release-expected`).
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Inc
+
+
+view : Int -> Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="boom" onClick={\_ -> Debug.todo "handler threw"}>boom</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = 0, update = \Inc count -> count + 1, view = view }

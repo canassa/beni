@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="fetch">"fetch"</button>
+    <button id="break">"break"</button>
+    <button id="inc">"inc"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #fetch
+<body>
+  <main>
+    <button id="fetch">"fetch"</button>
+    <button id="break">"break"</button>
+    <button id="inc">"inc"</button>
+    <ol>
+      <li>"ok hello"</li>
+    </ol>
+  </main>
+</body>
+-- throws click #break
+(threw: RangeError: the network fell over)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)

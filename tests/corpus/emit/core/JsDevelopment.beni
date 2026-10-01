@@ -35,3 +35,19 @@ check n =
 pub flag : Bool
 flag =
     Js.development
+
+
+-- In a discarded position, the arm the build does not take is not written
+-- either: a release build has no `noted`.
+pub note : () -> Int
+note () =
+    let
+        _ =
+            if Js.development then noted () else ()
+    in
+    1
+
+
+noted : () -> ()
+noted () =
+    Js.to (Js.call (Js.global "console") "log" [ Js.from "noted in a development build" ])

@@ -1,0 +1,55 @@
+-- A throw in `update` stops the page (boundary.md §9.8.10 (c); the owner's
+-- W2): the throw goes on to the host, and from then on no message is
+-- applied — a click's, or a subscription fiber's tick — and nothing
+-- renders. A development build shows a crash screen above the page, with
+-- the error; a release build shows nothing more
+-- (`DefectInUpdate.release-expected`).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Boom
+    | Inc
+    | Tick
+
+
+type alias Model =
+    count : Int
+    ticks : Int
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Boom ->
+            Debug.todo "update threw"
+
+        Inc ->
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+        Tick ->
+            ( { model | ticks = model.ticks + 1 }, Cmd.none )
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <p id="count">{String.fromInt model.count}</p>
+        <p id="ticks">{String.fromInt model.ticks}</p>
+        <button id="boom" onClick={Boom}>boom</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { count = 0, ticks = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Time.every (Time.millis 100) (\_ -> Tick)
+        }

@@ -6887,3 +6887,16 @@ it could not with a sibling: the mount record's unread `init` key goes (fact 3),
 written into `main` (*Once the whole program is in view*), `flush` and `onRendered` are dropped
 by reachability like any declaration, and a unit-valued lambda's `return null`s are not written.
 The empty `Tea.element` page is 1 475 → **1 261** brotli, the effects page 5 590 → **5 412**.
+
+*Amended 2026-10-01: a defect stops the page* (the owner's W2; `boundary.md` §9.8.10 (c), which
+is normative for the behaviour). The runtime gains one flag, `dead`, and `stop`, which sets it and, in a
+development build only (`Js.development`, §4), puts a crash screen above the page. Four entry points
+are guarded — `fire` (a handler and the dispatch it starts), `flush` (renders, `settle`, `view`, the
+after-render phase), `run` (`init` and the first render) and, through `Task.onDefect`, core's
+scheduler — each a `Js.finally` whose body ends by setting a local `ok` and whose cleanup calls `stop`
+unless it was set: `let ok = false; try { …; ok = true } finally { if (!ok) stop() }`, nothing
+caught. Once `dead`, `fire` calls no handler, a mount's `send` applies no message and `flush` renders
+nothing. A hosted mount is handed `stop` as `h`'s fourth argument and gives it to `Task.onDefect`.
+`browser/tea/ThrowRecovers`, which pinned recovery, is replaced by `browser/tea/DefectInUpdate`,
+`DefectInRender`, `DefectAfterRender`, `DefectInFiber`, `HttpDefect` and `browser/dom/DefectInHandler`,
+each with a `.release-expected` that has no screen.

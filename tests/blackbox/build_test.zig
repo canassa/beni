@@ -3304,8 +3304,12 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     try expectBuilt(hosted);
     const plain_js = try w.read("plain-out/_main.mjs");
     const hosted_js = try w.read("hosted-out/_main.mjs");
-    try testing.expect(std.mem.indexOf(u8, plain_js, "finally") == null);
-    try testing.expect(std.mem.indexOf(u8, hosted_js, "finally") != null);
+    // Every page guards `run` and `flush` with a `try … finally` that stops
+    // it on a defect (`boundary.md` §9.8.10 (c)); the hosted loop adds its
+    // own three latches, the dispatcher's, the render's and the
+    // after-render phase's.
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, plain_js, "finally"));
+    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"));
 }
 
 test "a page with no delegated event calls no start and ships no listener" {

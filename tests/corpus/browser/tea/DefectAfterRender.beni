@@ -1,0 +1,38 @@
+-- Two defects outside `update` and `view` stop the page as well
+-- (boundary.md §9.8.10 (c)): after-render work that throws, in the flush's
+-- after-render phase, and — in `DefectInFiber` — a command's body. The
+-- render the message asked for has happened; nothing after it does.
+-- The release build adds no crash screen (`.release-expected`).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = After
+    | Inc
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg count =
+    case msg of
+        After ->
+            ( count + 10, Cmd.afterRender (\_ -> Debug.todo "after-render threw") )
+
+        Inc ->
+            ( count + 1, Cmd.none )
+
+
+view : Int -> Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="after" onClick={After}>after</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }

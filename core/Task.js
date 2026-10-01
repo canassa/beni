@@ -116,21 +116,38 @@ const enqueue = (fiber, value, wait) => {
   queueMicrotask(drain);
 };
 
+// A fiber that throws is a defect (boundary.md §9.8.10 (c)): the scheduler
+// stops — `scheduled` stays set, so nothing drains again — the platform's
+// hook runs, and the throw goes on to the host. Not a `catch`: nothing is
+// caught (CLAUDE.md rule 9).
+let defect = null;
+export const onDefect = (f) => {
+  defect = f;
+  return null;
+};
+
 const drain = () => {
   let count = 0;
-  while (head < queue.length) {
-    if (count === budget) {
-      macrotask(drain);
-      return;
+  let ok = false;
+  try {
+    while (head < queue.length) {
+      if (count === budget) {
+        ok = true;
+        macrotask(drain);
+        return;
+      }
+      const fiber = queue[head];
+      const value = queue[head + 1];
+      const wait = queue[head + 2];
+      queue[head] = queue[head + 1] = queue[head + 2] = undefined;
+      head += 3;
+      if (wait !== null && fiber.parked !== wait) continue;
+      count += 1;
+      run(fiber, value);
     }
-    const fiber = queue[head];
-    const value = queue[head + 1];
-    const wait = queue[head + 2];
-    queue[head] = queue[head + 1] = queue[head + 2] = undefined;
-    head += 3;
-    if (wait !== null && fiber.parked !== wait) continue;
-    count += 1;
-    run(fiber, value);
+    ok = true;
+  } finally {
+    if (!ok && defect !== null) defect(null);
   }
   queue.length = 0;
   head = 0;

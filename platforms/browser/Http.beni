@@ -7,6 +7,7 @@
 --! A program that should be testable without a network takes its requests
 --! as a record of functions, and a test passes one that answers itself.
 
+import Js
 import Task exposing (Resume)
 
 
@@ -46,9 +47,19 @@ postJson url body =
     request "POST" url "application/json" body True
 
 
+-- A failure the sibling did not expect arrives as `{ d: error }` and is
+-- thrown here, in the fiber that asked: a defect, which stops the page
+-- (`docs/design/boundary.md` §9.8.10 (c); CLAUDE.md rule 9).
 request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
-    Task.callback (\resume -> start method url contentType body json resume)
+    let
+        answer =
+            Task.callback (\resume -> start method url contentType body json resume)
+
+        defect =
+            Js.get (Js.from answer) "d"
+    in
+    if Js.isUndefined defect then answer else Js.throw defect
 
 
 foreign impure start : String, String, String, String, Bool, Resume (Result Error String) -> (() -> ())
