@@ -1,0 +1,69 @@
+-- `Browser.programs` and `Browser.mountAt` (boundary.md §5; backend.md
+-- §15.11) on every kind of mount: a list of programs that holds another
+-- list (flattened, in order) and an empty one (nothing), a `Tea.element` —
+-- a hosted mount — placed at an element by `mountAt`, which keeps what
+-- makes it hosted, and a `Tea.sandbox` placed at another. The programs
+-- start in the list's order, so `shell` renders the two elements the
+-- others mount at, and each mounted view goes after its element's
+-- children. Each program sees only its own messages.
+import Browser
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type ShellMsg
+    = Poke
+
+
+shell : Tea.Program
+shell =
+    Tea.sandbox
+        { init = 0
+        , update = λPoke n -> n + 1
+        , view =
+            λn ->
+                <main>
+                    <button id="poke" onClick={Poke}>poke {n}</button>
+                    <div id="a"><span>first child of a</span></div>
+                    <div id="b" />
+                </main>
+        }
+
+
+type CountMsg
+    = Up
+
+
+-- A hosted program: its `update` returns a command.
+counter : Tea.Program
+counter =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = λUp n -> ( n + 10, Cmd.none )
+        , view = λn -> <button id="up" onClick={Up}>up {n}</button>
+        , subscriptions = λ_ -> Sub.none
+        }
+
+
+type NameMsg
+    = Rename
+
+
+namer : Tea.Program
+namer =
+    Tea.sandbox
+        { init = "x"
+        , update = λRename s -> s ++ "y"
+        , view = λs -> <button id="rename" onClick={Rename}>{s}</button>
+        }
+
+
+main : Tea.Program
+main =
+    Browser.programs
+        [ Browser.programs [ shell, Browser.mountAt counter "a" ]
+        , Browser.programs []
+        , Browser.mountAt namer "b"
+        ]

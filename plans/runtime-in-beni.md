@@ -21,7 +21,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop with `Js.finally`, below |
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
-| 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | `safeUrl` **landed**, at the end: `runtime.js` exports nothing |
+| 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -732,3 +732,41 @@ timings cannot move. The function is the same test of the same literal, one call
 const ra=/^[\s\x00-\x20]*(j\s*a\s*v\s*a…\s*h\s*t\s*m\s*l\s*[,;])/i;const Y=a=>(ra.test(a)?"":a);
 H=/^[\s\x00-\x20]*(j\s*a\s*v\s*a…\s*h\s*t\s*m\s*l\s*[,;])/i,I=a=>H.test(a)?"":a
 ```
+
+### `Browser.mountAt` and `Browser.programs`
+
+**What moved.** Both are declarations of `Browser.beni`, and `Browser.js` is deleted. `mountAt` is
+the hand-written `.map` (`Js.call page "map" [ λm -> { a, h, n } ]`); a version that pushed into a
+new array with `Js.each` was measured first and was 3–4 brotli bytes larger on both pages below.
+`programs` is the hand-written loop, the list read with `Array.isArray`/`$plain()`, both loops
+`for…of`.
+
+**The page.** New: `browser/tea/MountedPrograms` — `Browser.programs` holding another
+`Browser.programs` (flattened in order) and an empty one, `mountAt` of a `Tea.element` (a hosted
+mount, whose `h` it must keep) and of a `Tea.sandbox`, each program applying only its own
+messages. Blessed with the hand-written functions; passes unchanged with these, as does
+`tea/TwoPrograms`. (A mount at a missing or taken element throws at load, which no `browser/`
+script can state; `Rt`'s `run`, which throws it, did not change.)
+
+**Sizes** (release, brotli; step 6's `safeUrl` commit against this one):
+
+| page | before | after | |
+|---|--:|--:|--:|
+| `tea/TwoPrograms` | 1 938 | **1 912** | −26 (raw −36) |
+| `tea/MountedPrograms` (new) | 1 982 | **1 966** | −16 (raw −30) |
+| every other page, the empty pages, the `bench/ui` app | | | byte-identical |
+
+**Speed.** Both run once, when the page starts; no page `bench/ui` times reaches them and its
+release file is byte-identical.
+
+**Shape**, from `tea/TwoPrograms`'s release file (the hand-written, then the beni):
+
+```js
+const A=(g,i)=>g.map(b=>({a:b.a,n:i,h:b.h}));
+B=a=>a.map(a=>({a:a.a,h:a.h,n:"inner"}))        // the page's one id written in
+const B=c=>{let e=[];let f=Array.isArray(c)?c:c.$plain();for(let d=0;d<f.length;d++)for(let b of f[d])e.push(b);return e};
+C=a=>{let b=[],c=Array.isArray(a)?a:a.$plain();for(let a of c){for(let c of a)b.push(c)}return b}
+```
+
+The outer loop is `for…of` where the JavaScript counted; the printer braces a loop whose body is
+another loop.

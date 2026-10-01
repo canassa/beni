@@ -42,7 +42,13 @@ program p =
 --|     main : Program
 --|     main =
 --|         Browser.mountAt (Browser.program app) "cart"
-pub foreign pure mountAt : Program, String -> Program
+pub mountAt : Program, String -> Program
+mountAt page id =
+    -- Each mount again, `{ a, h, n }`, with the element's id.
+    Js.to
+        (Js.call (Js.from page) "map"
+            [ Js.from λm -> Js.from { a = Js.get m "a", h = Js.get m "h", n = Js.from id } ]
+        )
 
 
 --| Several programs on one page, started in the order of the list, so a
@@ -52,7 +58,20 @@ pub foreign pure mountAt : Program, String -> Program
 --|     main : Program
 --|     main =
 --|         Browser.programs [ page, Browser.mountAt cart "cart" ]
-pub foreign pure programs : List Program -> Program
+pub programs : List Program -> Program
+programs list =
+    -- Every mount of every program, in order. The list is read as the list
+    -- protocol reads one (`backend.md` §4, *Lists are arrays*).
+    mounts = Js.array []
+
+    items =
+        if Js.to (Js.call (Js.global "Array") "isArray" [ Js.from list ]) then
+            Js.from list
+        else
+            Js.call (Js.from list) "$plain" []
+
+    _ = Js.each items λp -> Js.each p λm -> Js.to (Js.call mounts "push" [ m ])
+    Js.to mounts
 
 
 --| A function that sends a message to a running program: what a command's

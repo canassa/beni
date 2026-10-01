@@ -7263,3 +7263,11 @@ each with a `.release-expected` that has no screen.
 (§4), `Rt.beni` holds `safeUrl` and its pattern, a top-level regular expression literal made once;
 `runtime.js` exports nothing and is kept only because a manifest names a runtime file. A page that
 writes a URL attribute calls `Rt$safeUrl`; what it writes is unchanged (`browser/dom/SafeUrl`).
+
+*Amended: `mountAt` and `programs` are written in beni* (`plans/runtime-in-beni.md`, step 6).
+Both are declarations of `Browser.beni` — `mountAt` a `.map` that writes each mount again with the
+id, `programs` a loop that pushes every mount of every program, the list read by the list protocol
+— and `Browser.js` is gone: no platform JavaScript is left but the empty `runtime.js`. A release
+build specialises them like the rest (`mountAt (…) "inner"` writes the id into the function).
+`browser/tea/MountedPrograms` pins a nested and an empty `programs` and `mountAt` of a hosted
+program.
