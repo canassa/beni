@@ -572,6 +572,11 @@ const Lowerer = struct {
     /// arm on a constructor nothing builds*). Lowered as `undefined`.
     /// Empty when there is none, which is every module of most builds.
     dead_arms: std.DynamicBitSetUnmanaged = .{},
+    /// The body roots of the arms an `if Js.maySuspend f` drops in one
+    /// body of a declaration and not in the other (`backend.md` §4,
+    /// *`Js.maySuspend` is the body's answer*): `Reach` followed nothing out
+    /// of them for that body. Indexed by `Variant`.
+    probe_dead: [2]std.DynamicBitSetUnmanaged = .{ .{}, .{} },
     /// The instruction being lowered, for a diagnostic raised by something
     /// that has no instruction of its own — the synthesised references of
     /// §9.1, and `partEq`'s `err` arm. It is the INNERMOST instruction
@@ -1022,6 +1027,22 @@ const Lowerer = struct {
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
         }
+        // The arm an `if Js.maySuspend f` drops, per body: `True`'s where the
+        // answer is no there, `False`'s where it is yes.
+        for (tags, 0..) |tag, i| {
+            if (tag != .case) continue;
+            const case_inst: Inst.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const probe = JsIntrinsic.probeCall(l.in.graph, l.in.interfaces, l.bir, case_inst, l.interner) orelse continue;
+            const answer = l.in.dispatch.effectAt(probe).body;
+            for ([_]Variant{ .direct, .twin }) |variant| {
+                const taken = answer == .yes or (answer == .poly and variant == .twin);
+                const branch = JsIntrinsic.armOf(l.in.graph, l.in.interfaces, l.bir, case_inst, l.interner, !taken) orelse continue;
+                const body = l.bir.instData(branch).rhs;
+                const set = &l.probe_dead[@intFromEnum(variant)];
+                if (set.bit_length == 0) try set.resize(l.scratch, l.bir.insts.len, false);
+                if (body < set.bit_length) set.set(body);
+            }
+        }
         const r = l.in.live orelse return;
         for (tags, data) |tag, d| {
             if (tag != .branch) continue;
@@ -1061,12 +1082,22 @@ const Lowerer = struct {
         }
     }
 
+    /// The arm an `if Js.maySuspend f` drops in the body being written
+    /// (`backend.md` §4, *`Js.maySuspend` is the body's answer*): `True`'s
+    /// where the call's answer is no here, `False`'s where it is yes.
+    fn probeDroppedArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const probe = JsIntrinsic.probeCall(l.in.graph, l.in.interfaces, l.bir, inst, l.interner) orelse return null;
+        const taken = l.suspendsHere(l.in.dispatch.effectAt(probe).body);
+        return JsIntrinsic.armOf(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !taken);
+    }
+
     /// The body of the arm an `if Js.development` takes in this build, when
     /// `inst` is one whose other arm binds nothing (`backend.md` §4,
     /// *`Js.development` is the build's mode*): the `case` is written as
     /// that body alone, with no test, and the dropped arm not at all.
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
-        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse return null;
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse
+            l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index);
         for (branches) |branch| {
             if (branch == dropped) continue;
@@ -1082,7 +1113,9 @@ const Lowerer = struct {
     /// Whether `inst` is the body of an arm no value takes.
     fn deadArm(l: *const Lowerer, inst: Inst.Index) bool {
         const i = @intFromEnum(inst);
-        return i < l.dead_arms.bit_length and l.dead_arms.isSet(i);
+        if (i < l.dead_arms.bit_length and l.dead_arms.isSet(i)) return true;
+        const probe = &l.probe_dead[@intFromEnum(l.variant)];
+        return i < probe.bit_length and probe.isSet(i);
     }
 
     /// Whether a declaration's suspendable body survived (§16.2).
@@ -6935,6 +6968,14 @@ const Lowerer = struct {
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {
+            // `Js.maySuspend f` is its answer in this body (`backend.md` §4,
+            // *`Js.maySuspend` is the body's answer*); `f` is evaluated for
+            // what it does, which for the reference it always is is nothing.
+            if (which == .maySuspend) {
+                for (arg_insts) |a| try l.discard(out, a, p);
+                const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
+                return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            }
             return l.jsIntrinsicCall(out, which, arg_insts, p);
         }
 
@@ -7273,6 +7314,8 @@ const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.development => l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
+            // Answered at the call, before it gets here (`callExpr`).
+            W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);

@@ -431,10 +431,12 @@ function measureFloor(options, beni, work) {
 /// `plans/browser-platform.md` §7). `browser-tea`'s differs from
 /// `browser`'s by exactly what The Elm Architecture adds in beni.
 ///
-/// Two more pages weigh effects (`boundary.md` §9.8): `element` is
+/// Three more pages weigh effects (`boundary.md` §9.8): `element` is
 /// `Tea.element` with no command and no subscription, the cost of the
 /// architecture when it is asked for no work; `effects` is a page that
-/// fetches with `Http` on a keyed `Restart` and ticks with `Time.every`.
+/// fetches with `Http` on a keyed `Restart` and ticks with `Time.every`;
+/// `random` asks for `Random.generate` on every message, a command whose
+/// body never waits and so runs with no fiber (§9.8.11).
 /// `reaches_task` says whether the page ships core's fiber runtime — a
 /// fiber's record, the one place `interrupted` is written, in the release
 /// file, or else core's `Task` sibling in the development tree, which is
@@ -459,6 +461,14 @@ const pages = [
     main:
       "Tea.element { init = ( {}, Cmd.none ), update = \\_ m -> ( m, Cmd.keyed () Cmd.Restart (\\send -> send (Http.get \"/x\")) ), view = view, subscriptions = \\_ -> Time.every (Time.seconds 1) (\\_ -> Ok \"tick\") }",
     view: "view : {} -> Html (Result Http.Error String)",
+  },
+  {
+    name: "browser-tea random",
+    platform: "browser-tea",
+    imports: `${teaImports}import Cmd\nimport Random\nimport Sub\n`,
+    main:
+      "Tea.element { init = ( 0, Cmd.none ), update = \\n _ -> ( n, Random.generate (Random.int 1 6) (\\k -> k) ), view = view, subscriptions = \\_ -> Sub.none }",
+    view: "view : Int -> Html Int",
   },
 ];
 

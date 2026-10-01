@@ -12,6 +12,7 @@
       <li>"child 4"</li>
     </ul>
     <button id="roll">"roll"</button>
+    <button id="draw">"draw"</button>
     <p id="rolls">""</p>
   </main>
 </body>
@@ -29,6 +30,7 @@
       <li>"child 4"</li>
     </ul>
     <button id="roll">"roll"</button>
+    <button id="draw">"draw"</button>
     <p id="rolls">"3 2 2"</p>
   </main>
 </body>
@@ -46,6 +48,43 @@
       <li>"child 4"</li>
     </ul>
     <button id="roll">"roll"</button>
+    <button id="draw">"draw"</button>
     <p id="rolls">"3 2 2 4 2 2"</p>
+  </main>
+</body>
+-- click #draw
+<body>
+  <main>
+    <ul>
+      <li>"ints 5 2 2 6 4 5 4 2 4 5"</li>
+      <li>"backwards 9 6 6 10 8 9"</li>
+      <li>"coin tails"</li>
+      <li>"weather always"</li>
+      <li>"pair 5 x"</li>
+      <li>"andThen within"</li>
+      <li>"float in [0, 1)"</li>
+      <li>"child 4"</li>
+    </ul>
+    <button id="roll">"roll"</button>
+    <button id="draw">"draw"</button>
+    <p id="rolls">"3 2 2 4 2 2 4 6 2"</p>
+  </main>
+</body>
+-- click #roll
+<body>
+  <main>
+    <ul>
+      <li>"ints 5 2 2 6 4 5 4 2 4 5"</li>
+      <li>"backwards 9 6 6 10 8 9"</li>
+      <li>"coin tails"</li>
+      <li>"weather always"</li>
+      <li>"pair 5 x"</li>
+      <li>"andThen within"</li>
+      <li>"float in [0, 1)"</li>
+      <li>"child 4"</li>
+    </ul>
+    <button id="roll">"roll"</button>
+    <button id="draw">"draw"</button>
+    <p id="rolls">"3 2 2 4 2 2 4 6 2 2 6 3"</p>
   </main>
 </body>

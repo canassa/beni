@@ -76,6 +76,9 @@ const Plan = struct {
     /// choices, bucketed once.
     calls: []std.ArrayList([2]u32),
     fns: []std.ArrayList([2]u32),
+    /// Per declaration: its `Js.maySuspend` calls and their argument's
+    /// node, a class the lowering reads (`backend.md` §4).
+    probes: []std.ArrayList([2]u32),
     choices: []std.ArrayList(Choice),
     choice_nodes: std.ArrayList(u32) = .empty,
     /// Per declaration: it has a sensitive class.
@@ -98,6 +101,7 @@ pub fn build(e: *Effects, in: Input) Error!Result {
         .relevant = try scratch.alloc(u32, n),
         .calls = try scratch.alloc(std.ArrayList([2]u32), decls),
         .fns = try scratch.alloc(std.ArrayList([2]u32), decls),
+        .probes = try scratch.alloc(std.ArrayList([2]u32), decls),
         .choices = try scratch.alloc(std.ArrayList(Choice), decls),
         .twin = try scratch.alloc(bool, decls),
         .tainted = try scratch.alloc(u32, n),
@@ -106,9 +110,10 @@ pub fn build(e: *Effects, in: Input) Error!Result {
     @memset(p.seen, 0);
     @memset(p.poly, 0);
     @memset(p.relevant, 0);
-    for (p.calls, p.fns, p.choices) |*a, *b, *c| {
+    for (p.calls, p.fns, p.probes, p.choices) |*a, *b, *q, *c| {
         a.* = .empty;
         b.* = .empty;
+        q.* = .empty;
         c.* = .empty;
     }
     @memset(p.twin, false);
@@ -180,6 +185,12 @@ fn bucket(p: *Plan) Error!void {
         if (d == none) continue;
         const node = nodeOf(p, f.v) orelse continue;
         try p.fns[d].append(scratch, .{ f.inst, node });
+    }
+    for (e.probes.items) |f| {
+        const d = declOf(bir, f.inst);
+        if (d == none) continue;
+        const node = nodeOf(p, f.v) orelse continue;
+        try p.probes[d].append(scratch, .{ f.inst, node });
     }
     // Imported uses of a declaration with two bodies: every class of the
     // type the use read.
@@ -262,6 +273,7 @@ fn markRelevant(p: *Plan, d: u32, root: ?u32) void {
     const tag = d + 1;
     for (p.calls[d].items) |c| p.relevant[c[1]] = tag;
     for (p.fns[d].items) |f| p.relevant[f[1]] = tag;
+    for (p.probes[d].items) |f| p.relevant[f[1]] = tag;
     if (root) |r| p.relevant[r] = tag;
     for (p.choices[d].items) |c| {
         if (!isTwinTarget(p, c)) continue;
@@ -372,6 +384,13 @@ fn answers(p: *Plan) Error!Result {
         for (p.fns[d].items) |f| {
             const a = answer(p, f[1], tag);
             if (a != .no) try sites.append(gpa, .{ .inst = @enumFromInt(f[0]), .own = a });
+        }
+        // A `Js.maySuspend` call's value is its argument's answer, carried
+        // as the call's choice of body (no reference reads `body` on a
+        // `call`): `true` in a body that takes the answer as yes.
+        for (p.probes[d].items) |f| {
+            const a = answer(p, f[1], tag);
+            if (a != .no) try sites.append(gpa, .{ .inst = @enumFromInt(f[0]), .body = a });
         }
         for (p.choices[d].items) |c| {
             if (!isTwinTarget(p, c)) continue;

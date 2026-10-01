@@ -1,0 +1,42 @@
+-- emit: `Js.maySuspend f` is the checker's answer for `f` at each use of the
+-- declaration that asks (`backend.md` §4, *`Js.maySuspend` is the body's
+-- answer*). `start` asks about its argument, so it has two bodies, each
+-- with only the branch it takes; `quick` uses it with a function that
+-- cannot suspend, so only the direct body is written, and `inFiber`, which
+-- only the other body names, is not. `fixed` asks about a function it names
+-- itself: the answer is written in place and the `case` is its arm alone.
+import Js
+
+
+start : (() -> ()) -> String
+start f = if Js.maySuspend f then inFiber f else direct f
+
+
+inFiber : (() -> ()) -> String
+inFiber _ = "in a fiber"
+
+
+direct : (() -> ()) -> String
+direct f =
+    let
+        _ = f ()
+    in
+    "directly"
+
+
+pub quick : () -> String
+quick () = start (\() -> ())
+
+
+pub fixed : () -> String
+fixed () =
+    case Js.maySuspend quiet of
+        True ->
+            "quiet may suspend"
+
+        False ->
+            "quiet does not suspend"
+
+
+quiet : () -> ()
+quiet () = ()

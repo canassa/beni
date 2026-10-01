@@ -1,6 +1,8 @@
---! Subscriptions to the page's own events (`docs/design/boundary.md`
---! §9.8.8, §9.8.10): the window's size, whether the page is visible, and
---! the keyboard. Each is a `Sub.listen` whose body adds one listener when
+--! The page's own events (`docs/design/boundary.md` §9.8.8, §9.8.10,
+--! §9.8.11): the window's size, whether the page is visible, and the
+--! keyboard. Each has a direct form first — `eachResize f` calls `f` with
+--! every new size for as long as the calling fiber runs — and a
+--! subscription, a `Sub.listen` over it, whose body adds one listener when
 --! its key arrives and removes it when the key leaves. A size or a
 --! visibility that changes faster than the program takes it is coalesced
 --! into the latest; every key is delivered, in order.
@@ -43,18 +45,59 @@ foreign impure hidden : () -> Bool
 --| Whether the page can be seen, now.
 pub visibility : () -> Visibility
 visibility () =
-    if hidden () then Hidden else Visible
+    if hidden () then
+        Hidden
+    else
+        Visible
 
+
+-- ---- Direct forms -------------------------------------------------------------
+--
+-- Each waits for its events for as long as the calling fiber runs, calling
+-- `f` with each, in order, and never returns: cancelling the fiber removes
+-- the listener. A subscription below is `Sub.listen` over one of them
+-- (`boundary.md` §9.8.11).
+
+--| Call `f` with the window's new size each time it is resized. A size
+--| that changes faster than `f` takes it is coalesced into the latest.
+--|
+--|     Task.spawn (\() -> Browser.Events.eachResize (\size -> Log.info (String.fromInt size.width)))
+pub eachResize : (Size -> ()) -> ()
+eachResize f = watch "window" "resize" size f
+
+
+--| Call `f` with whether the page can be seen each time that changes.
+pub eachVisibilityChange : (Visibility -> ()) -> ()
+eachVisibilityChange f = watch "document" "visibilitychange" visibility f
+
+
+--| Call `f` with each key pressed anywhere in the page, in order. No key
+--| is lost or merged; `f` runs one fiber turn after the event, so it cannot
+--| prevent the key's default.
+pub eachKeyDown : (Html.Event -> ()) -> ()
+eachKeyDown f = Listen.each "document" "keydown" event f
+
+
+--| Call `f` with each key released anywhere in the page, in order.
+pub eachKeyUp : (Html.Event -> ()) -> ()
+eachKeyUp f = Listen.each "document" "keyup" event f
+
+
+--| Call `f` with each `keypress` of the page, in order.
+pub eachKeyPress : (Html.Event -> ()) -> ()
+eachKeyPress f = Listen.each "document" "keypress" event f
+
+
+-- ---- Subscriptions --------------------------------------------------------------
 
 --| The window's new size, each time it is resized.
 pub onResize : (Size -> msg) -> Sub msg
-onResize tag = Sub.listen Resize (watch "window" "resize" size _) tag
+onResize tag = Sub.listen Resize (eachResize _) tag
 
 
 --| Whether the page can be seen, each time that changes.
 pub onVisibilityChange : (Visibility -> msg) -> Sub msg
-onVisibilityChange tag =
-    Sub.listen VisibilityChange (watch "document" "visibilitychange" visibility _) tag
+onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) tag
 
 
 --| A message for each key pressed anywhere in the page, in order, made by
@@ -67,18 +110,18 @@ onVisibilityChange tag =
 --| event, so it cannot prevent the key's default; a handler on an element
 --| (`onKeyDown` with `Html.preventDefault`) can.
 pub onKeyDown : (Html.Event -> msg) -> Sub msg
-onKeyDown tag = Sub.listen KeyDown (Listen.each "document" "keydown" event _) tag
+onKeyDown tag = Sub.listen KeyDown (eachKeyDown _) tag
 
 
 --| A message for each key released anywhere in the page, in order.
 pub onKeyUp : (Html.Event -> msg) -> Sub msg
-onKeyUp tag = Sub.listen KeyUp (Listen.each "document" "keyup" event _) tag
+onKeyUp tag = Sub.listen KeyUp (eachKeyUp _) tag
 
 
 --| A message for each `keypress` of the page, in order: a key that types a
 --| character. The DOM deprecates the event; Elm keeps it, and so does this.
 pub onKeyPress : (Html.Event -> msg) -> Sub msg
-onKeyPress tag = Sub.listen KeyPress (Listen.each "document" "keypress" event _) tag
+onKeyPress tag = Sub.listen KeyPress (eachKeyPress _) tag
 
 
 event : Js.Value -> Html.Event

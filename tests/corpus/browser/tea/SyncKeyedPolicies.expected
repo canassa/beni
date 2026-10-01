@@ -1,0 +1,90 @@
+-- load
+<body>
+  <main>
+    <button id="restart-d">"restart"</button>
+    <button id="restart-f">"restart"</button>
+    <button id="ignore-d">"ignore"</button>
+    <button id="ignore-f">"ignore"</button>
+    <button id="queue-d">"queue"</button>
+    <button id="queue-f">"queue"</button>
+    <button id="concurrent-d">"concurrent"</button>
+    <button id="concurrent-f">"concurrent"</button>
+    <button id="cancel-d">"cancel"</button>
+    <button id="cancel-f">"cancel"</button>
+    <button id="sleep">"sleep"</button>
+    <button id="replace-d">"replace"</button>
+    <button id="replace-f">"replace"</button>
+  </main>
+</body>
+-- click #restart-d 2
+(the step's task ended)
+console.info: body: restart 1
+console.info: body: restart 2
+console.info: update: restart 2
+(the DOM did not change)
+-- click #restart-f 2
+(the step's task ended)
+console.info: body: restart 3
+console.info: body: restart 4
+console.info: update: restart 4
+(the DOM did not change)
+-- click #ignore-d 2
+(the step's task ended)
+console.info: body: ignore 5
+console.info: update: ignore 5
+(the DOM did not change)
+-- click #ignore-f 2
+(the step's task ended)
+console.info: body: ignore 7
+console.info: update: ignore 7
+(the DOM did not change)
+-- click #queue-d 2
+(the step's task ended)
+console.info: body: queue 9
+console.info: update: queue 9
+console.info: body: queue 10
+console.info: update: queue 10
+(the DOM did not change)
+-- click #queue-f 2
+(the step's task ended)
+console.info: body: queue 11
+console.info: update: queue 11
+console.info: body: queue 12
+console.info: update: queue 12
+(the DOM did not change)
+-- click #concurrent-d 2
+(the step's task ended)
+console.info: body: concurrent 13
+console.info: update: concurrent 13
+console.info: body: concurrent 14
+console.info: update: concurrent 14
+(the DOM did not change)
+-- click #concurrent-f 2
+(the step's task ended)
+console.info: body: concurrent 15
+console.info: update: concurrent 15
+console.info: body: concurrent 16
+console.info: update: concurrent 16
+(the DOM did not change)
+-- click #cancel-d
+console.info: body: cancelled 17
+(the DOM did not change)
+-- click #cancel-f
+console.info: body: cancelled 18
+(the DOM did not change)
+-- click #sleep
+console.info: sleeper starts
+(the DOM did not change)
+-- click #replace-d
+console.info: sleeper cleans up
+console.info: body: replacement 20
+console.info: update: replacement 20
+(the DOM did not change)
+-- click #sleep
+console.info: sleeper starts
+(the DOM did not change)
+-- click #replace-f
+console.info: sleeper cleans up
+console.info: body: replacement 22
+console.info: update: replacement 22
+(the DOM did not change)

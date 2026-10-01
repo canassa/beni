@@ -1,0 +1,58 @@
+-- A platform module that asks whether a function it is handed may suspend
+-- (`backend.md` §4, *`Js.maySuspend` is the body's answer*). `start` has two
+-- bodies: the direct one, which a use with a function that cannot suspend
+-- takes, keeps only `direct`; the suspendable one keeps only `inFiber`.
+-- `forward` asks through `start`, so it has two bodies too; `fixed` asks
+-- about a function it names itself, whose answer is the same in every body.
+import Js
+
+
+pub start : (() -> ()) -> String
+start f =
+    if Js.maySuspend f then
+        inFiber f
+    else
+        direct f
+
+
+inFiber : (() -> ()) -> String
+inFiber _ = "in a fiber"
+
+
+direct : (() -> ()) -> String
+direct f =
+    let
+        _ = f ()
+    in
+    "directly"
+
+
+pub forward : (() -> ()) -> String
+forward f = start f
+
+
+pub fixed : () -> String
+fixed () =
+    case Js.maySuspend quiet of
+        True ->
+            "quiet may suspend"
+
+        False ->
+            "quiet does not suspend"
+
+
+quiet : () -> ()
+quiet () = ()
+
+
+-- In a discarded position, the arm a body does not take is not written.
+pub count : (() -> ()) -> Int
+count f =
+    let
+        _ =
+            if Js.maySuspend f then
+                ()
+            else
+                f ()
+    in
+    1

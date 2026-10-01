@@ -54,6 +54,32 @@ pub foreign impure emit : Outlet msg, msg -> ()
 pub foreign impure close : Outlet msg -> ()
 
 
+--| A command's body, as `Cmd` carries it (`boundary.md` §9.8.11). Held
+--| in a `foreign type`, so what the body may do is its own: a function in
+--| a constructor's field would share one class with every command it is
+--| batched or returned with (`transparent-effects-proposal.md` §14.5), and
+--| one body that waits would make every body of the program run in a
+--| fiber.
+pub foreign type Job msg
+
+
+--| A body as a job.
+pub foreign pure job : (Browser.Send msg -> ()) -> Job msg
+
+
+--| The same job, its messages passed through `tag`.
+pub foreign pure mapJob : Job a, sync (a -> b) -> Job b
+
+
+--| Run a job in the calling fiber, handed `send`, until it returns.
+pub foreign suspends runJob : Job msg, Browser.Send msg -> ()
+
+
+--| Run a job that cannot suspend, handed `send`: what `Cmd` made of a body
+--| whose every use says it never waits.
+pub foreign impure callJob : Job msg, Browser.Send msg -> ()
+
+
 --| Work to run after a render, and the function its messages go through.
 pub foreign type Later msg
 

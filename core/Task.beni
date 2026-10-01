@@ -24,7 +24,6 @@
 --! expect is a `Result`, and a fiber ends either `Done` with its value or
 --! `Cancelled`.
 
-
 --| How a fiber ended.
 pub type Exit a
     = Done a
@@ -112,6 +111,26 @@ pub foreign impure openRoot : () -> Scope
 pub foreign impure closeRoot : Scope -> ()
 
 
+--| Work queued to run once, in no fiber, where a fiber started now would
+--| first run: `soon` makes one, and it is `queued` until it has run.
+pub foreign type Soon
+
+
+--| Queue `work` to run at the scheduler's next turn, in the queue of the
+--| fibers that are ready, behind those queued before it — exactly where a
+--| fiber `spawn`ed now would first run — but with no fiber of its own:
+--| `work` must not suspend, and it runs outside any fiber, as `main` does.
+--| What a page program runs a command with when its body cannot suspend
+--| (`boundary.md` §9.8.11). Nothing stops it: a fiber that has not started
+--| runs until it first suspends before anything can cancel it, and work
+--| that never suspends runs to its end.
+pub foreign impure soon : sync (() -> ()) -> Soon
+
+
+--| Whether queued work has not run yet.
+pub foreign impure queued : Soon -> Bool
+
+
 --| What runs when a fiber throws: a defect, after which no fiber runs again
 --| (`boundary.md` §9.8.10 (c)). A platform hands it what stops its program —
 --| the browser stops the page — and the throw goes on to the host. The last
@@ -163,8 +182,7 @@ scope body =
 --| Run `work` where cancellation cannot reach it. A cancellation that
 --| arrives meanwhile is delivered at the fiber's next suspension after it.
 pub uninterruptible : (() -> a) -> a
-uninterruptible work =
-    unmask (work (mask ()))
+uninterruptible work = unmask (work (mask ()))
 
 
 --| Acquire a resource, use it, and release it however the use ends:
@@ -182,5 +200,4 @@ bracket acquire release use =
 
 
 after : (), a -> a
-after _ value =
-    value
+after _ value = value

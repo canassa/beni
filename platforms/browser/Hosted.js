@@ -69,6 +69,19 @@ export const close = (o) => {
   return null;
 };
 
+// ---- Jobs: a command's body -------------------------------------------------
+
+// A job is the body itself, a function of its `send`.
+export const job = (body) => body;
+
+export const mapJob = (j, tag) => (send) => j((m) => send(tag(m)));
+
+// The body's own value, or the fiber runtime's sentinel when it parked:
+// either way this call's caller receives what the body returned.
+export const runJob = (j, send) => j(send);
+
+export const callJob = (j, send) => j(send);
+
 // ---- After-render work ------------------------------------------------------
 
 // `{ f, t }`: the body, and the tagger its messages go through or null.

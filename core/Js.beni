@@ -145,3 +145,14 @@ pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
 --| build nothing — a development crash screen ships in no release build
 --| (`backend.md` §4, *`Js.development` is the build's mode*).
 pub foreign pure development : Bool
+
+
+--| Whether `f`, a function, may suspend: the answer the checker infers for
+--| it where this is called, written in place as `true` or `false`. In a
+--| declaration whose argument is the one asked about, that is a question
+--| about each use: the declaration gets a direct body where the answer is
+--| `false` and a suspendable one where it is `true`, and an `if` on it
+--| keeps only the branch each body takes — so what only the other branch
+--| needs costs a program that never takes it nothing (`backend.md` §4,
+--| *`Js.maySuspend` is the body's answer*).
+pub foreign pure maySuspend : f -> Bool

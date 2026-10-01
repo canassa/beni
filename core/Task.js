@@ -77,9 +77,13 @@ const here = () => current ?? (outside ??= newFiber(null));
 
 // ---- The scheduler (§7.5) ---------------------------------------------------
 
-// Ready fibers, FIFO, as triples: the fiber, the value it resumes with, and
-// the wait that value answers (null for a start or an interrupt). A triple
-// whose wait is no longer what the fiber is parked on is stale and skipped.
+// Ready work, FIFO, as quadruples: the step that runs it and its three
+// arguments. A fiber's is `resumeFiber` with the fiber, the value it resumes
+// with, and the wait that value answers (null for a start or an interrupt);
+// `soon`'s is `runSoon` with its record. A step answers whether it ran:
+// a fiber's whose wait is no longer what the fiber is parked on is stale
+// and does not count. The drain names no step, so a build whose only
+// work is `soon`'s keeps no fiber (boundary.md §9.8.11).
 const queue = [];
 let head = 0;
 let scheduled = false;
@@ -109,12 +113,20 @@ const macrotask = (task) => {
   port.postMessage(null);
 };
 
-const enqueue = (fiber, value, wait) => {
-  queue.push(fiber, value, wait);
+const schedule = (task, a, b, c) => {
+  queue.push(task, a, b, c);
   if (scheduled) return;
   scheduled = true;
   queueMicrotask(drain);
 };
+
+const resumeFiber = (fiber, value, wait) => {
+  if (wait !== null && fiber.parked !== wait) return false;
+  run(fiber, value);
+  return true;
+};
+
+const enqueue = (fiber, value, wait) => schedule(resumeFiber, fiber, value, wait);
 
 // A fiber that throws is a defect (boundary.md §9.8.10 (c)): the scheduler
 // stops — `scheduled` stays set, so nothing drains again — the platform's
@@ -136,14 +148,13 @@ const drain = () => {
         macrotask(drain);
         return;
       }
-      const fiber = queue[head];
-      const value = queue[head + 1];
-      const wait = queue[head + 2];
-      queue[head] = queue[head + 1] = queue[head + 2] = undefined;
-      head += 3;
-      if (wait !== null && fiber.parked !== wait) continue;
-      count += 1;
-      run(fiber, value);
+      const task = queue[head];
+      const a = queue[head + 1];
+      const b = queue[head + 2];
+      const c = queue[head + 3];
+      queue[head] = queue[head + 1] = queue[head + 2] = queue[head + 3] = undefined;
+      head += 4;
+      if (task(a, b, c)) count += 1;
     }
     ok = true;
   } finally {
@@ -436,6 +447,23 @@ export const closeScope = (scope, value) => {
 };
 
 export const running = (fiber) => fiber.outcome === null;
+
+// Work run in no fiber, where a fiber started now would first run
+// (boundary.md §9.8.11): `{ w }`, the work until it runs.
+const runSoon = (s) => {
+  const w = s.w;
+  s.w = null;
+  w(null);
+  return true;
+};
+
+export const soon = (work) => {
+  const s = { w: work };
+  schedule(runSoon, s, null, null);
+  return s;
+};
+
+export const queued = (s) => s.w !== null;
 
 // A scope that no fiber's finalisers close, for a platform whose program
 // outlives every call: one literal, the shape of `openScope`'s.

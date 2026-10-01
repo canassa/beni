@@ -411,9 +411,10 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
         for (edges[module.int()].targets(node)) |next| {
             try follow(scratch, modules, edges, &waiting, &stack, module, next);
         }
-        if (node.kind != .ctor) continue;
-        // A constructor just reached: every edge that waited on it is
+        // A guard just reached — a constructor, or a body an `if
+        // Js.maySuspend` arm waits on: every edge that waited on it is
         // looked at again, and waits on the next guard it lacks, if any.
+        if (waiting.count() == 0) continue;
         var blocked = (waiting.fetchRemove(node) orelse continue).value;
         defer blocked.deinit(scratch);
         for (blocked.items) |p| try follow(scratch, modules, edges, &waiting, &stack, p.module, p.target);
@@ -589,7 +590,17 @@ pub const ModuleEdges = struct {
         while (c != 0 and c < e.chains.len and depth < chain_depth) : (depth += 1) {
             const link = e.chains[c];
             for (e.chain_ctors[link.start..link.end]) |guard| {
-                if (guard.module.int() >= modules.len or !modules[guard.module.int()].ctor(guard.index)) return guard;
+                if (guard.module.int() >= modules.len) return guard;
+                const live = &modules[guard.module.int()];
+                // A constructor, or one of a declaration's two bodies (an
+                // `if Js.maySuspend` arm, `Guards`).
+                const reached = switch (guard.kind) {
+                    .ctor => live.ctor(guard.index),
+                    .decl => live.decl(guard.index),
+                    .twin => live.twin(guard.index),
+                    .derived => live.derivedRow(guard.index),
+                };
+                if (!reached) return guard;
             }
             c = link.parent;
         }
@@ -688,7 +699,7 @@ pub const Builder = struct {
                 .value => {},
                 .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
             }
-            try guards.declaration(d);
+            try guards.declaration(@intCast(i), d);
             b.stream.clearRetainingCapacity();
             b.at.clearRetainingCapacity();
             try Edges.declEdgesAt(&b.stream, &b.at, b.scratch, bir, dispatch, @intCast(i), filter);
@@ -708,7 +719,18 @@ pub const Builder = struct {
                 } else guards.at(position);
                 nodes.clearRetainingCapacity();
                 try b.resolve(m, edge, &nodes);
-                for (nodes.items) |node| try decl_targets.append(b.scratch, .{ .node = node, .chain = chain });
+                // A use that always takes its target's suspendable body
+                // (`yes`) writes no name of the direct one: `effectEdges`
+                // adds the edge to the body it does write. So a declaration
+                // with two bodies whose every use suspends keeps one, and
+                // what only its direct body needs — an `if Js.maySuspend`
+                // arm — is not kept for it.
+                const takes_twin = position != Edges.no_position and dispatch.effectAt(@enumFromInt(position)).body == .yes;
+                for (nodes.items) |node| {
+                    if (takes_twin and node.kind == .decl and node.module.int() < b.in.graph.count() and
+                        b.in.dispatchOf(node.module).effectDecl(node.index).twin) continue;
+                    try decl_targets.append(b.scratch, .{ .node = node, .chain = chain });
+                }
             }
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
@@ -882,8 +904,9 @@ pub const Builder = struct {
         /// declarations', in the order they were made.
         chains: std.ArrayList(Chain) = .empty,
         chain_ctors: std.ArrayList(Node) = .empty,
-        /// The declaration being walked: its first instruction, and the
-        /// chain of each of its instructions.
+        /// The declaration being walked: its index, its first instruction,
+        /// and the chain of each of its instructions.
+        decl: u32 = 0,
         start: u32 = 0,
         chain_of: std.ArrayList(u32) = .empty,
         /// Its `.top` targets, for the leg-1 net.
@@ -892,14 +915,29 @@ pub const Builder = struct {
         /// nothing.
         heads: std.DynamicBitSetUnmanaged = .{},
         arms: std.ArrayList(Arm) = .empty,
+        /// The positions, `[from, to]`, of the `False` arms of the
+        /// declaration's `poly` `if Js.maySuspend`: only its direct body
+        /// writes them, so a choice of body there that is `poly` is never
+        /// the suspendable one (`effectEdges`).
+        direct_only: std.ArrayList([2]u32) = .empty,
         stack: std.ArrayList(Open) = .empty,
 
         const Arm = struct { from: u32, to: u32, start: u32, end: u32 };
         const Open = struct { to: u32, chain: u32 };
 
-        fn declaration(g: *Guards, d: Bir.Decl) Allocator.Error!void {
+        /// Guard the arm `branch` of the `case` at `at` on `node` alone.
+        fn guardArm(g: *Guards, branch: Bir.Inst.Index, node: Node, start: u32, case_at: u32) Allocator.Error!void {
+            const arm = g.b.in.birOf(g.m).instData(branch);
+            if (!(arm.lhs >= start and arm.lhs < arm.rhs and arm.rhs < case_at)) return;
+            const first: u32 = @intCast(g.chain_ctors.items.len);
+            try g.chain_ctors.append(g.b.scratch, node);
+            try g.arms.append(g.b.scratch, .{ .from = arm.lhs + 1, .to = arm.rhs, .start = first, .end = first + 1 });
+        }
+
+        fn declaration(g: *Guards, index: u32, d: Bir.Decl) Allocator.Error!void {
             const scratch = g.b.scratch;
             const bir = g.b.in.birOf(g.m);
+            g.decl = index;
             if (g.chains.items.len == 0) try g.chains.append(scratch, .{ .parent = 0, .start = 0, .end = 0 });
             const tags = bir.insts.items(.tag);
             const data = bir.insts.items(.data);
@@ -910,6 +948,7 @@ pub const Builder = struct {
             try g.chain_of.appendNTimes(scratch, 0, end - start);
             g.tops.clearRetainingCapacity();
             g.arms.clearRetainingCapacity();
+            g.direct_only.clearRetainingCapacity();
             try g.heads.resize(scratch, end - start, false);
             g.heads.unsetAll();
 
@@ -933,12 +972,34 @@ pub const Builder = struct {
                 // mode*): guarded by a constructor no build reaches, so no
                 // edge out of it is ever followed.
                 .case => if (g.b.in.interner) |interner| {
-                    const branch = JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, @enumFromInt(@as(u32, @intCast(p))), interner, g.b.in.release) orelse continue;
-                    const arm = bir.instData(branch);
-                    if (!(arm.lhs >= start and arm.lhs < arm.rhs and arm.rhs < p)) continue;
-                    const first: u32 = @intCast(g.chain_ctors.items.len);
-                    try g.chain_ctors.append(scratch, .{ .module = g.m, .kind = .ctor, .index = std.math.maxInt(u32) });
-                    try g.arms.append(scratch, .{ .from = arm.lhs + 1, .to = arm.rhs, .start = first, .end = first + 1 });
+                    const case_inst: Bir.Inst.Index = @enumFromInt(@as(u32, @intCast(p)));
+                    const never: Node = .{ .module = g.m, .kind = .ctor, .index = std.math.maxInt(u32) };
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release)) |branch| {
+                        try g.guardArm(branch, never, start, @intCast(p));
+                        continue;
+                    }
+                    // The arm an `if Js.maySuspend f` drops (`backend.md`
+                    // §4, *`Js.maySuspend` is the body's answer*): in every
+                    // body when the answer is no or yes; and where it is
+                    // `poly`, `True`'s waits on the suspendable body and
+                    // `False`'s on the direct one. An edge waiting on the
+                    // body it is in is followed with it, and one waiting on
+                    // the other body adds only what that body reaches itself.
+                    const call = JsIntrinsic.probeCall(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner) orelse continue;
+                    const yes = JsIntrinsic.armOf(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, true);
+                    const no = JsIntrinsic.armOf(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, false);
+                    switch (g.b.in.dispatchOf(g.m).effectAt(call).body) {
+                        .no => if (yes) |branch| try g.guardArm(branch, never, start, @intCast(p)),
+                        .yes => if (no) |branch| try g.guardArm(branch, never, start, @intCast(p)),
+                        .poly => {
+                            if (yes) |branch| try g.guardArm(branch, .{ .module = g.m, .kind = .twin, .index = g.decl }, start, @intCast(p));
+                            if (no) |branch| {
+                                try g.guardArm(branch, .{ .module = g.m, .kind = .decl, .index = g.decl }, start, @intCast(p));
+                                const arm = bir.instData(branch);
+                                try g.direct_only.append(scratch, .{ arm.lhs + 1, arm.rhs });
+                            }
+                        },
+                    }
                 },
                 else => {},
             };
@@ -977,6 +1038,13 @@ pub const Builder = struct {
         fn at(g: *const Guards, position: u32) u32 {
             if (position < g.start or position - g.start >= g.chain_of.items.len) return 0;
             return g.chain_of.items[position - g.start];
+        }
+
+        /// Whether the instruction at `position` is written by the direct
+        /// body alone (`direct_only`).
+        fn directOnly(g: *const Guards, position: u32) bool {
+            for (g.direct_only.items) |r| if (position >= r[0] and position <= r[1]) return true;
+            return false;
         }
 
         /// Whether an instruction of the declaration is a `.top` of `decl`.
@@ -1055,8 +1123,10 @@ pub const Builder = struct {
         if (sites.len == 0 and own == .no) return;
         var protocol: Dispatch.Suspend = own;
         for (sites) |s| {
-            if (s.own == .yes) protocol = .yes else if (s.own == .poly and protocol == .no) protocol = .poly;
-            if (s.body == .no) continue;
+            // Where only the direct body writes, `poly` is no.
+            const direct_only = guards.directOnly(s.inst.int());
+            if (s.own == .yes) protocol = .yes else if (s.own == .poly and protocol == .no and !direct_only) protocol = .poly;
+            if (s.body == .no or (s.body == .poly and direct_only)) continue;
             const node = b.bodyTarget(m, s.inst) orelse continue;
             const target: Target = .{ .node = node, .chain = guards.at(s.inst.int()) };
             if (s.body == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });
@@ -1064,7 +1134,7 @@ pub const Builder = struct {
         // Evidence a site passes takes the body the site's callee takes.
         for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
             const choice = dispatch.evidenceChoice(bir, site.inst);
-            if (choice == .no) continue;
+            if (choice == .no or (choice == .poly and guards.directOnly(site.inst.int()))) continue;
             try b.evidenceTwins(m, dispatch.argsAt(site.evidence), decl, choice, guards.at(site.inst.int()), direct, twin);
         }
         if (protocol == .no) return;

@@ -1,0 +1,42 @@
+-- `Random.value` on Node (boundary.md §9.8.11): a generator run on the
+-- process's own seed, seeded from `crypto.getRandomValues`, called directly
+-- with no command and no fiber. What it makes is not fixed, so this prints
+-- what is: each value is within its generator's bounds, the seed is
+-- stepped (two draws of 128 random bits differ), and `step` on a seed you
+-- hold is the same in every run.
+import Node
+import Random
+
+
+main : Node.Program
+main =
+    let
+        rolls = Random.value (Random.list (Random.int 1 6) 100)
+        first = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
+        second = Random.value (Random.list (Random.int 0 Random.maxInt) 4)
+        fraction = Random.value (Random.float 0 1)
+        held = (Random.step (Random.int 1 6) (Random.initialSeed 42)).0
+    in
+    Node.printLines
+        [ "rolls in 1..6: "
+            ++ (if List.all rolls (\n -> n >= 1 && n <= 6) then
+                   "yes"
+                else
+                   "no"
+               )
+        , "100 rolls: " ++ String.fromInt (List.length rolls)
+        , "the seed is stepped: "
+            ++ (if first /= second then
+                   "yes"
+                else
+                   "no"
+               )
+        , "float in [0, 1): "
+            ++ (if fraction >= 0 && fraction < 1 then
+                   "yes"
+                else
+                   "no"
+               )
+        , "constant: " ++ Random.value (Random.constant "x")
+        , "step 42: " ++ String.fromInt held
+        ]

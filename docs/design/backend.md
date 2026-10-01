@@ -1861,6 +1861,46 @@ both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform modul
 JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each without the other
 build's declaration).
 
+### `Js.maySuspend` is the body's answer
+
+*Added 2026-10-02* (`boundary.md` §9.8.11 (b): a command whose body cannot suspend runs without a
+fiber). `Js.maySuspend : f -> Bool` (pure) is **whether its argument may suspend: the checker's
+answer for the argument's class at the call, written in place as `true` or `false` in the body
+being written** — the one fact about the effect bits a platform's beni may read, so that a
+declaration can do one thing for a function that waits and another for one that does not, and a
+program that never passes one of the two ships nothing of the other.
+
+- **The checker** records each call of it with its argument's type (`Effects.probe`), and the
+  plan (`EffectPlan`, `transparent-effects-proposal.md` §16.2) reads the argument's class as one
+  the lowering reads — beside a call's callee and a function's own arrow. So a scheme class that
+  reaches it is *sensitive* and its declaration has two bodies, exactly as one that calls its
+  argument does. The answer is `no`, `yes` or `poly`, carried on the call instruction in the
+  dispatch table's `body` column (which no reference reads on a `call`); no column, sidecar or
+  interface format moves.
+- **`Lower`** writes the call as `true` where its answer is `yes`, or `poly` in the suspendable
+  body, and `false` otherwise, the argument evaluated for what it does (a reference: nothing).
+  **A `case` whose scrutinee is the call and whose arms are `True` and `False`** — every `if
+  Js.maySuspend f then … else …` — is written as the taken arm's body alone, as an `if
+  Js.development` is (`developmentArm`), and the dropped arm, where something else writes it, as
+  `undefined`.
+- **`Reach`** guards the arm a body drops (`Guards`): with the answer `no`, `True`'s, and with
+  `yes`, `False`'s, behind a constructor no build reaches; with `poly`, `True`'s waits on the
+  declaration's suspendable body and `False`'s on its direct one — an edge waiting on the body it
+  is in is followed with it, and one waiting on the other body adds only what that body reaches
+  itself — and a choice of body inside the `False` arm that is `poly` is never the suspendable
+  one. A guard may now be a declaration's body as well as a constructor, and any node reached
+  releases the edges that waited on it.
+- **A use that always takes its target's suspendable body keeps no direct one** (*added with
+  it*, a general change): a reference whose answer is `yes` writes only `<name>$s`, so the plain
+  edge to the direct body is not followed. Until now both were kept, the direct one unused.
+  Nothing in the `emit/` corpus moved.
+
+Passed as a value, `Js.maySuspend` is the sibling's, which answers `true`: it cannot know what
+it is asked about, and a function that may suspend is the safe answer. Fixtures: `run/
+JsMaySuspend` (a platform module whose declaration asks, used both ways, through a forwarding
+declaration, about a function it names itself, and in a discarded position) and `emit/core/
+JsMaySuspend` (only the direct body written, and nothing only the other one names).
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

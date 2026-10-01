@@ -1696,6 +1696,11 @@ reaches no `$s` body, and elimination (`backend.md` §9) writes none.
   whose evidence may suspend is itself on its `$s` body there. The suspendable body of a function
   called with arguments that never suspend returns what the direct one does, so erring towards
   it costs only speed.
+- *Amended 2026-10-02* (`backend.md` §4, *`Js.maySuspend` is the body's answer*; `boundary.md`
+  §9.8.11): **the argument of a `Js.maySuspend` call is a class the lowering reads** too, so a
+  declaration that asks about its argument has two bodies, and the call's answer rides in its
+  instruction's choice-of-body column; and a use whose choice is `yes` keeps only the target's
+  `$s` body, where it kept both.
 
 ### 16.3 The lowering
 

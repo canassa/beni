@@ -320,13 +320,13 @@ const Edit = struct {
 // ---------------------------------------------------------------------------
 
 test "a comment in Leaf re-checks Leaf alone: no import's pair moved, so its importers are cut off" {
-    try differential(.{ .what = "comment only", .rechecked = 1, .cut_off = 16, .source = "-- a new comment\n" ++ leaf_source });
+    try differential(.{ .what = "comment only", .rechecked = 1, .cut_off = 17, .source = "-- a new comment\n" ++ leaf_source });
 }
 
 test "a pub signature in Leaf moves its interface hash and re-checks every module downstream" {
     // `Mid` sees `Leaf`'s hash move; `Top` and `Side` see `Mid`'s digest
     // move, because a digest carries its imports' pairs.
-    try differential(.{ .what = "change a pub signature", .rechecked = 4, .cut_off = 13, .source = replace(leaf_source, "pub one : Int", "pub one : Float") });
+    try differential(.{ .what = "change a pub signature", .rechecked = 4, .cut_off = 14, .source = replace(leaf_source, "pub one : Int", "pub one : Float") });
 }
 
 test "an alias body no scheme names moves only Leaf's digest, and Mid is re-checked and refuses" {
@@ -338,7 +338,7 @@ test "an alias body no scheme names moves only Leaf's digest, and Mid is re-chec
     try differential(.{
         .what = "change an alias body no scheme names",
         .rechecked = 4,
-        .cut_off = 13,
+        .cut_off = 14,
         .source = replace(leaf_source, "pub type alias Coord =\n    ( Int, Int )", "pub type alias Coord =\n    ( Float, Int )"),
         .exit_code = 1,
     });
@@ -354,7 +354,7 @@ test "a private alias inside a scheme's alias moves Leaf's record, and Mid reads
     try differential(.{
         .what = "change a private alias a pub scheme reaches",
         .rechecked = 4,
-        .cut_off = 13,
+        .cut_off = 14,
         .source = replace(leaf_source, "type alias Inner =\n    { n : Int }", "type alias Inner =\n    { n : Float }"),
         .exit_code = 1,
     });

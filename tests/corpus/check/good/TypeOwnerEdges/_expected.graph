@@ -17,6 +17,10 @@ core:Js -> core:List
 core:Js -> core:String
 core:List -> core:Basics
 core:List -> core:Maybe
+core:Random.Pcg -> core:Basics
+core:Random.Pcg -> core:Int32
+core:Random.Pcg -> core:Js
+core:Random.Pcg -> core:List
 core:Result -> core:Maybe
 core:Schema -> core:Basics
 core:Schema -> core:List

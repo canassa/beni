@@ -3363,6 +3363,33 @@ test "a page with no delegated event calls no start and ships no listener" {
     try testing.expect(std.mem.indexOf(u8, try w.read("clicks-out/_main.mjs"), "addEventListener") != null);
 }
 
+/// A page on `Tea.element` whose `update` returns `cmd`, for the two tests
+/// below.
+fn elementPage(comptime cmd: []const u8) []const u8 {
+    return
+    \\import Browser
+    \\import Cmd
+    \\import Html exposing (Html)
+    \\import Random
+    \\import Sub
+    \\import Tea
+    \\import Time
+    \\
+    \\
+    \\view : Int -> Html msg
+    \\view _ =
+    \\    <></>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main =
+    \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model,
+    ++ cmd ++
+        \\ ), view = view, subscriptions = \_ -> Sub.none }
+        \\
+    ;
+}
+
 test "an element whose commands are all Cmd.none ships no fiber runtime" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -3372,48 +3399,55 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     // program that never asks for work never builds (`backend.md` §9, *A
     // `case` arm on a constructor nothing builds*). A fiber's record is the
     // one place the runtime writes `interrupted`; the page that performs a
-    // command ships it.
+    // command that may wait ships it.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const head =
-        \\import Browser
-        \\import Cmd
-        \\import Html exposing (Html)
-        \\import Sub
-        \\import Tea
-        \\
-        \\
-        \\view : Int -> Html msg
-        \\view _ =
-        \\    <></>
-        \\
-        \\
-        \\main : Browser.Program
-        \\main =
-        \\
-    ;
-    try w.write("none/Main.beni", head ++
-        \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model, Cmd.none ), view = view, subscriptions = \_ -> Sub.none }
-        \\
-    );
-    try w.write("some/Main.beni", head ++
-        \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model, Cmd.do (\() -> ()) ), view = view, subscriptions = \_ -> Sub.none }
-        \\
-    );
+    try w.write("none/Main.beni", elementPage("Cmd.none"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do (\\() -> Time.sleep (Time.millis 1))"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const none = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=none-out", "none/Main.beni" }, .{ .raw_diagnostics = true });
-    const some = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=some-out", "some/Main.beni" }, .{ .raw_diagnostics = true });
+    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(none);
-    try expectBuilt(some);
+    try expectBuilt(waits);
     try testing.expect(std.mem.indexOf(u8, try w.read("none-out/_main.mjs"), "interrupted") == null);
-    try testing.expect(std.mem.indexOf(u8, try w.read("some-out/_main.mjs"), "interrupted") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("waits-out/_main.mjs"), "interrupted") != null);
+}
+
+test "an element whose commands never wait ships no fiber runtime" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A command whose body never waits runs with no fiber (`boundary.md`
+    // §9.8.11): `Cmd.perform` and `Cmd.keyed` build `Now` and `KeyedNow`
+    // for it, decided where the command is made, and the arms that start a
+    // fiber are on `Perform` and `Keyed`, which these pages never build.
+    // `Random.generate` is `Cmd.task` over `Random.value`, which never
+    // waits; the keyed body only sends.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) (\\n -> n)"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart (\\send -> send 1)"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const random = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=random-out", "random/Main.beni" }, .{ .raw_diagnostics = true });
+    const keyed = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=keyed-out", "keyed/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(random);
+    try expectBuilt(keyed);
+    try testing.expect(std.mem.indexOf(u8, try w.read("random-out/_main.mjs"), "interrupted") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("keyed-out/_main.mjs"), "interrupted") == null);
 }
 
 test "a development build copies hand-written JavaScript byte for byte" {

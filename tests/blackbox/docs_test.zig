@@ -223,14 +223,16 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
     // Everything in `core/` is copied, including the `.js` siblings that
     // `boundary.md` §4's checks read; only the `.beni` of a module with
     // assertions is rewritten.
+    // A module under a directory (`Random/Pcg.beni`) is copied too.
     {
         var dir = try Io.Dir.cwd().openDir(io, core_root, .{ .iterate = true });
         defer dir.close(io);
-        var it = dir.iterate();
-        while (try it.next(io)) |entry| {
+        var walker = try dir.walk(arena);
+        defer walker.deinit();
+        while (try walker.next(io)) |entry| {
             if (entry.kind != .file) continue;
-            const from = try std.fmt.allocPrint(arena, core_root ++ "/{s}", .{entry.name});
-            const to = try std.fmt.allocPrint(arena, "tcore/{s}", .{entry.name});
+            const from = try std.fmt.allocPrint(arena, core_root ++ "/{s}", .{entry.path});
+            const to = try std.fmt.allocPrint(arena, "tcore/{s}", .{entry.path});
             try w.write(to, try Io.Dir.cwd().readFileAlloc(io, from, arena, .limited(world.max_stream_bytes)));
         }
     }

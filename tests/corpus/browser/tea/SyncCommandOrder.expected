@@ -1,0 +1,49 @@
+-- load
+console.info: view
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="fibers">"fibers"</button>
+    <p id="count">"0"</p>
+  </main>
+</body>
+-- click #direct
+console.info: update: run
+console.info: view
+console.info: body: first
+console.info: update: first
+console.info: body: second starts
+console.info: body: third
+console.info: update: third
+console.info: body: more
+console.info: update: more
+console.info: body: second resumes
+console.info: update: second
+console.info: view
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="fibers">"fibers"</button>
+    <p id="count">"4"</p>
+  </main>
+</body>
+-- click #fibers
+console.info: update: run
+console.info: view
+console.info: body: first
+console.info: update: first
+console.info: body: second starts
+console.info: body: third
+console.info: update: third
+console.info: body: more
+console.info: update: more
+console.info: body: second resumes
+console.info: update: second
+console.info: view
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="fibers">"fibers"</button>
+    <p id="count">"8"</p>
+  </main>
+</body>

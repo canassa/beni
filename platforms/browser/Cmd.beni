@@ -4,9 +4,12 @@
 --! it returned without running anything.
 --!
 --! The work is a **body**, an ordinary function handed a `Send`: it may
---! wait (a timer, a request) and it sends its results as messages. Each
---! body runs in a fiber of its own, in the program's scope. Nothing here
---! sequences work: a body sequences with `let`, like any other function.
+--! wait (a timer, a request) and it sends its results as messages. A body
+--! that may wait runs in a fiber of its own, in the program's scope; one
+--! that never waits runs where that fiber would have started, with no
+--! fiber at all, so a program whose commands never wait ships no fiber
+--! runtime (§9.8.11). Nothing here sequences work: a body sequences with
+--! `let`, like any other function.
 --!
 --!     update msg model =
 --!         case msg of
@@ -27,7 +30,8 @@
 --! so two instances of one component never share a key.
 
 import Browser
-import Hosted exposing (Key, Later)
+import Hosted exposing (Job, Key, Later)
+import Js
 
 
 --| How a body sends: `Browser.Send`, which never waits.
@@ -51,10 +55,16 @@ pub type Cmd msg
 --| One piece of a command, as the architecture running it reads it: an
 --| unkeyed body, a keyed one with its key path and policy, a cancellation
 --| of one key path or of every key path under a prefix, or after-render
---| work. A program never needs to build or read one.
+--| work. A body is `Perform` or `Keyed` when it may wait, and `Now` or
+--| `KeyedNow` when it never does — decided where the command is made, from
+--| what the checker inferred of the body there (`Js.maySuspend`), so a
+--| program that never builds `Perform` or `Keyed` reaches no fiber. A
+--| program never needs to build or read one.
 pub type Item msg
-    = Perform (Send msg -> ())
-    | Keyed (List Key) Policy (Send msg -> ())
+    = Perform (Job msg)
+    | Now (Job msg)
+    | Keyed (List Key) Policy (Job msg)
+    | KeyedNow (List Key) Policy (Job msg)
     | Cancel (List Key)
     | CancelAll (List Key)
     | After (Later msg)
@@ -75,14 +85,20 @@ pub items : Cmd msg -> List (Item msg)
 items (Cmd list) = list
 
 
---| Run `body` in a fiber of its own. Nothing can cancel it but the
---| program's end.
+--| Run `body` in a fiber of its own — or, when it never waits, with no
+--| fiber, where that fiber would have started. Nothing can cancel it but
+--| the program's end.
 pub perform : (Send msg -> ()) -> Cmd msg
-perform body = Cmd [ Perform body ]
+perform body =
+    if Js.maySuspend body then
+        Cmd [ Perform (Hosted.job body) ]
+    else
+        Cmd [ Now (Hosted.job body) ]
 
 
---| Run `body` in a fiber of its own under `key`, doing what `policy` says
---| when a body already runs under it:
+--| Run `body` in a fiber of its own under `key` (with no fiber when it
+--| never waits, as `perform`), doing what `policy` says when a body
+--| already runs under it:
 --|
 --|   - `Restart` cancels the running body, waits for its cleanup, then
 --|     starts this one. The cancelled body's `send` does nothing from the
@@ -95,7 +111,11 @@ perform body = Cmd [ Perform body ]
 --| is throttled by `Ignore`.
 pub keyed : k, Policy, (Send msg -> ()) -> Cmd msg
     where k.compare : k, k -> Order
-keyed k policy body = Cmd [ Keyed [ Hosted.key k ] policy body ]
+keyed k policy body =
+    if Js.maySuspend body then
+        Cmd [ Keyed [ Hosted.key k ] policy (Hosted.job body) ]
+    else
+        Cmd [ KeyedNow [ Hosted.key k ] policy (Hosted.job body) ]
 
 
 --| Cancel every body running under `key`. Their `send` does nothing from
@@ -134,11 +154,17 @@ map (Cmd list) segment tag =
 mapItem : Item a, Key, (a -> msg) -> Item msg
 mapItem item segment tag =
     case item of
-        Perform body ->
-            Perform (through body tag)
+        Perform job ->
+            Perform (Hosted.mapJob job tag)
 
-        Keyed path policy body ->
-            Keyed [ segment, ...path ] policy (through body tag)
+        Now job ->
+            Now (Hosted.mapJob job tag)
+
+        Keyed path policy job ->
+            Keyed [ segment, ...path ] policy (Hosted.mapJob job tag)
+
+        KeyedNow path policy job ->
+            KeyedNow [ segment, ...path ] policy (Hosted.mapJob job tag)
 
         Cancel path ->
             Cancel [ segment, ...path ]
@@ -150,10 +176,6 @@ mapItem item segment tag =
             After (Hosted.mapLater work tag)
 
 
-through : (Send a -> ()), (a -> msg) -> (Send msg -> ())
-through body tag = \send -> body (\a -> send (tag a))
-
-
 --| Run `body` in the after-render phase of the flush that renders this
 --| update's model: after every write of the render, before the next
 --| message, synchronously, so the nodes it rendered exist and a focus or
@@ -162,12 +184,12 @@ pub afterRender : (Send msg -> ()) -> Cmd msg
 afterRender body = Cmd [ After (Hosted.later body) ]
 
 
---| Run `work` in a fiber of its own and send what it returns through
---| `tag`.
+--| Run `work`, as `perform` runs a body, and send what it returns through
+--| `tag`: the command form of calling `work` directly.
 pub task : (() -> a), (a -> msg) -> Cmd msg
 task work tag = perform (\send -> send (tag (work ())))
 
 
---| Run `work` in a fiber of its own, for what it does.
+--| Run `work`, as `perform` runs a body, for what it does.
 pub do : (() -> ()) -> Cmd msg
 do work = perform (\_ -> work ())

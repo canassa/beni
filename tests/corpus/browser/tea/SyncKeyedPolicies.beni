@@ -1,0 +1,140 @@
+-- The four policies and `Cmd.cancel` for keyed bodies that never wait,
+-- which run with no fiber (boundary.md §9.8.11), do what they did when
+-- each had a fiber. Each button asks twice in one task, so the second
+-- message arrives while the first body is still queued — running, as a
+-- fiber not yet started is. A `d` button's bodies never wait; an `f`
+-- button's are the same bodies with a wait on a branch no run takes, so
+-- each runs in a fiber. A body logs, then sends; `update` logs what
+-- arrives. Each pair logs one thing:
+--
+--   - `Restart`: the first body still runs, since nothing can stop a body
+--     before it first waits, but its message is dropped; then the second;
+--   - `Ignore`: only the first;
+--   - `Queue` and `Concurrent`: both, in order, with their messages;
+--   - a body cancelled in the update that asked for it runs, and its
+--     message is dropped;
+--   - a body that never waits, under `Restart` of a key whose body waits
+--     in a fiber, starts after that body's cleanup.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Twice Bool Cmd.Policy
+    | Cancelled Bool
+    | Sleep
+    | Replace Bool
+    | Said String
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        Twice fibers policy ->
+            ( n + 1, keyed fibers (name policy) policy "${name policy} ${String.fromInt (n + 1)}" )
+
+        Cancelled fibers ->
+            ( n + 1
+            , Cmd.batch
+                [ keyed fibers "cancel" Cmd.Concurrent "cancelled ${String.fromInt (n + 1)}"
+                , Cmd.cancel "cancel"
+                ]
+            )
+
+        Sleep ->
+            ( n + 1, Cmd.keyed "replace" Cmd.Restart sleeper )
+
+        Replace fibers ->
+            ( n + 1, keyed fibers "replace" Cmd.Restart "replacement ${String.fromInt (n + 1)}" )
+
+        Said what ->
+            let
+                _ = Log.info "update: ${what}"
+            in
+            ( n, Cmd.none )
+
+
+-- The body under `key`: one that never waits, or the same one with a wait
+-- no run takes, which makes it one that may.
+keyed : Bool, String, Cmd.Policy, String -> Cmd Msg
+keyed fibers key policy what =
+    if fibers then
+        Cmd.keyed key policy (\send -> say send (\() -> pause False) what)
+    else
+        Cmd.keyed key policy (\send -> say send (\() -> ()) what)
+
+
+name : Cmd.Policy -> String
+name policy =
+    case policy of
+        Cmd.Restart ->
+            "restart"
+
+        Cmd.Ignore ->
+            "ignore"
+
+        Cmd.Queue ->
+            "queue"
+
+        Cmd.Concurrent ->
+            "concurrent"
+
+
+-- Waits only when asked to, which no run does.
+pause : Bool -> ()
+pause yes =
+    if yes then
+        Task.yieldNow ()
+    else
+        ()
+
+
+say : Cmd.Send Msg, (() -> ()), String -> ()
+say send hold what =
+    let
+        _ = hold ()
+        _ = Log.info "body: ${what}"
+    in
+    send (Said what)
+
+
+sleeper : Cmd.Send Msg -> ()
+sleeper _ =
+    Task.bracket
+        (\() -> Log.info "sleeper starts")
+        (\_ _ -> Log.info "sleeper cleans up")
+        (\_ -> Time.sleep (Time.millis 1000))
+
+
+view : Int -> Html Msg
+view _ =
+    <main>
+        <button id="restart-d" onClick={Twice False Cmd.Restart}>restart</button>
+        <button id="restart-f" onClick={Twice True Cmd.Restart}>restart</button>
+        <button id="ignore-d" onClick={Twice False Cmd.Ignore}>ignore</button>
+        <button id="ignore-f" onClick={Twice True Cmd.Ignore}>ignore</button>
+        <button id="queue-d" onClick={Twice False Cmd.Queue}>queue</button>
+        <button id="queue-f" onClick={Twice True Cmd.Queue}>queue</button>
+        <button id="concurrent-d" onClick={Twice False Cmd.Concurrent}>concurrent</button>
+        <button id="concurrent-f" onClick={Twice True Cmd.Concurrent}>concurrent</button>
+        <button id="cancel-d" onClick={Cancelled False}>cancel</button>
+        <button id="cancel-f" onClick={Cancelled True}>cancel</button>
+        <button id="sleep" onClick={Sleep}>sleep</button>
+        <button id="replace-d" onClick={Replace False}>replace</button>
+        <button id="replace-f" onClick={Replace True}>replace</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

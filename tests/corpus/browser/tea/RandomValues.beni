@@ -2,9 +2,12 @@
 -- from `initialSeed` is pure, so the same seed gives the same values in
 -- every build, and `generate` runs a generator as a command on the page's
 -- seed, which starts from `crypto.getRandomValues` (a fixed sequence under
--- the page driver). `int` stays within its bounds whichever way round they
--- are given; `uniform`, `weighted`, `pair`, `list`, `map`, `andThen`,
--- `constant` and `independentSeed` each make one value here.
+-- the page driver). `value` runs one on the same seed directly, here in
+-- `update` (§9.8.11): `#draw` continues the sequence `#roll` stepped, and
+-- `#roll` after it continues `#draw`'s. `int` stays within its bounds
+-- whichever way round they are given; `uniform`, `weighted`, `pair`,
+-- `list`, `map`, `andThen`, `constant` and `independentSeed` each make one
+-- value here.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Random exposing (Generator)
@@ -15,39 +18,35 @@ import Tea
 type Msg
     = Roll
     | Rolled (List Int)
+    | Draw
 
 
 die : Generator Int
-die =
-    Random.int 1 6
+die = Random.int 1 6
 
 
 samples : List String
 samples =
     let
-        seed =
-            Random.initialSeed 42
+        seed = Random.initialSeed 42
 
-        ints =
-            (Random.step (Random.list die 10) seed).0
+        ints = (Random.step (Random.list die 10) seed).0
 
-        backwards =
-            (Random.step (Random.list (Random.int 10 5) 6) seed).0
+        backwards = (Random.step (Random.list (Random.int 10 5) 6) seed).0
 
-        coin =
-            (Random.step (Random.uniform "heads" [ "tails" ]) seed).0
+        coin = (Random.step (Random.uniform "heads" [ "tails" ]) seed).0
 
-        weather =
-            (Random.step (Random.weighted ( 0, "never" ) [ ( 1, "always" ) ]) seed).0
+        weather = (Random.step (Random.weighted ( 0, "never" ) [ ( 1, "always" ) ]) seed).0
 
-        both =
-            (Random.step (Random.pair die (Random.constant "x")) seed).0
+        both = (Random.step (Random.pair die (Random.constant "x")) seed).0
 
         chosen =
-            (Random.step (Random.andThen die (\n -> Random.map (Random.int 0 n) (\m -> m <= n))) seed).0
+            (Random.step
+                (Random.andThen die (\n -> Random.map (Random.int 0 n) (\m -> m <= n)))
+                seed
+            ).0
 
-        fraction =
-            (Random.step (Random.float 0 1) seed).0
+        fraction = (Random.step (Random.float 0 1) seed).0
 
         fromChild =
             case Random.step Random.independentSeed seed of
@@ -59,8 +58,18 @@ samples =
     , "coin ${coin}"
     , "weather ${weather}"
     , "pair ${String.fromInt both.0} ${both.1}"
-    , "andThen " ++ (if chosen then "within" else "outside")
-    , "float " ++ (if fraction >= 0 && fraction < 1 then "in [0, 1)" else "out of range")
+    , "andThen "
+        ++ (if chosen then
+               "within"
+            else
+               "outside"
+           )
+    , "float "
+        ++ (if fraction >= 0 && fraction < 1 then
+               "in [0, 1)"
+            else
+               "out of range"
+           )
     , "child ${String.fromInt fromChild}"
     ]
 
@@ -74,21 +83,25 @@ update msg rolls =
         Rolled more ->
             ( rolls ++ more, Cmd.none )
 
+        Draw ->
+            ( rolls ++ Random.value (Random.list die 3), Cmd.none )
+
 
 view : List Int -> Html Msg
 view rolls =
     <main>
         <ul><For each={samples} keyed={False}>{\line -> <li>{line}</li>}</For></ul>
         <button id="roll" onClick={Roll}>roll</button>
+        <button id="draw" onClick={Draw}>draw</button>
         <p id="rolls">{nums rolls}</p>
     </main>
 
 
 main : Tea.Program
 main =
-    Tea.element { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
 
 
 nums : List Int -> String
-nums ns =
-    String.join (List.map ns String.fromInt) " "
+nums ns = String.join (List.map ns String.fromInt) " "

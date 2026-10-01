@@ -59,3 +59,8 @@ export { finally_ as finally };
 // as `true` or `false` for the build (backend.md §4, *`Js.development` is
 // the build's mode*), so this is only the export check 2 counts.
 export const development = true;
+
+// The same for `Js.maySuspend`, written in place as its answer: passed as a
+// value it cannot know what it is asked about, and a function that may
+// suspend is the safe answer.
+export const maySuspend = (f) => true;

@@ -1834,6 +1834,9 @@ shrink  : Schema e a, a -> List a
 - `Seed` comes from a core `Random` module. The pure half of `platforms/browser/Random.beni`
   (`Seed`, `Generator`, `step`; PCG, as Elm's is) moves to core, and the platform re-exports it and
   keeps `generate`, the command. A schema library in core cannot import a platform.
+  *Amended 2026-10-02 (`boundary.md` §9.8.11 (a)): done. The core module is **`Random.Pcg`** — a
+  platform module named `Random` shadows a core one of that name and could not import it — and
+  each platform's `Random` names its seeds and generators as Elm does and adds `value`.*
 - **What is generated.** Generation builds an Encoded value that satisfies the known checks, then
   *decodes* it. Conversions, defaults and opaque checks therefore run, and every sample is a value
   the schema accepts. A decode that fails is retried, up to `maxAttempts` (100 by default, in

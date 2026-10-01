@@ -1,0 +1,67 @@
+-- The direct forms of the page's events (boundary.md §9.8.11):
+-- `Browser.Events.eachKeyDown` and `eachKeyUp` and
+-- `Browser.Navigation.eachUrlChange` call a function for each event for as
+-- long as the fiber that calls them runs — here the bodies of keyed
+-- commands, so no subscription is involved. Each body's function sends
+-- what it was handed. `#stop` cancels the bodies: the listeners are
+-- removed, and a key or an address after it sends nothing.
+import Browser.Events
+import Browser.Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Saw String
+    | Stop
+
+
+type Keys
+    = Keys
+
+
+listen : Cmd Msg
+listen =
+    Cmd.batch
+        [ Cmd.keyed
+            Keys
+            Cmd.Restart
+            (\send -> Browser.Events.eachKeyDown (\event -> send (Saw ("down ${Html.key event}"))))
+        , Cmd.keyed
+            Keys
+            Cmd.Concurrent
+            (\send -> Browser.Events.eachKeyUp (\event -> send (Saw ("up ${Html.key event}"))))
+        , Cmd.keyed
+            Keys
+            Cmd.Concurrent
+            (\send ->
+                Browser.Navigation.eachUrlChange
+                    (\url -> send (Saw ("url " ++ Maybe.withDefault url.fragment "")))
+            )
+        ]
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg log =
+    case msg of
+        Saw what ->
+            ( log ++ [ what ], Cmd.none )
+
+        Stop ->
+            ( log ++ [ "stopped" ], Cmd.cancel Keys )
+
+
+view : List String -> Html Msg
+view log =
+    <main>
+        <button id="stop" onClick={Stop}>stop</button>
+        <ul><For each={log} keyed={False}>{\line -> <li>{line}</li>}</For></ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], listen ), update = update, view = view, subscriptions = \_ -> Sub.none }

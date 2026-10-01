@@ -1713,6 +1713,11 @@ every body under `k` and cancels their fibers (from a fiber of the program's sco
 cannot wait); nothing running, nothing happens. Debounce is `Restart` whose body sleeps first;
 throttle is `Ignore` whose body sleeps last (R45 §3.5).
 
+*Amended 2026-10-02 (§9.8.11 (b)):* a body that cannot suspend — what the checker infers of the
+function where `perform` or `keyed` is used — runs with no fiber, queued where its fiber would
+have started, and each policy does for it what it did for the fiber; "a fiber" above is that
+body's fiber or its queued run.
+
 #### 9.8.3 Keys, and `Cmd.map` (W47, amending W7)
 
 **A key path** is a list of keys, the component's own key last: `keyed k` makes `[ k ]`, and
@@ -2020,7 +2025,10 @@ nothing; a beni function always makes a message, which `update` may ignore.
   `crypto.getRandomValues` rather than Elm's clock, so two pages opened in one millisecond do not
   share a sequence (the test driver makes both deterministic). The generator is PCG as Elm's, its
   32-bit products in `Int32` (exact where Elm's `*` on doubles rounds), so a seed gives the same
-  sequence in every beni build, not Elm's sequence.
+  sequence in every beni build, not Elm's sequence. *Amended 2026-10-02 (§9.8.11 (a)):* the
+  generators and seeds are core's `Random.Pcg`; `browser`'s `Random` names them as Elm does and
+  adds `value : Generator a -> a` (`impure`), the direct form, of which `generate` is `Cmd.task`;
+  `node` has the same `Random` without `generate`.
 - **`Url`** is elm/url's `Url` module, pure: Elm's record, its two protocols, its parser and
   printer, percent encoding. **How a program gets the page's address** is Elm's
   `Browser.application`, which hands `init` a `Url` and takes `onUrlChange`; until
@@ -2130,6 +2138,113 @@ clock, and its products are exact; the page's address is read by two stand-ins i
 `Browser.Navigation` until `Tea.application` lands, and `currentUrl` is a `Maybe` where Elm's
 `application` crashes on an address that is not `http` or `https`; `Url.percentEncode` writes a
 lone surrogate as U+FFFD where Elm's would throw; `Storage` and `Log` have no Elm counterpart.
+
+#### 9.8.11 Direct forms first, and commands without fibers
+
+*Added 2026-10-02*, the owner's direction: **The Elm Architecture is a framework on top of beni.
+Every capability has a plain direct form first, usable from any beni code; `Cmd` and `Sub` are
+thin wrappers over it.** Two consequences, one rule each.
+
+**(a) Every capability has a direct form.** The audit of `browser` and `node`, each capability
+that a program could reach only through a `Cmd` or a `Sub` until now, and its direct form:
+
+| Wrapper (Elm's name, kept) | Direct form | Rung |
+|---|---|---|
+| `Random.generate : Generator a, (a -> msg) -> Cmd msg` | **`Random.value : Generator a -> a`**, on `browser` and `node` | `impure` |
+| `Browser.Events.onResize`, `onVisibilityChange` | **`eachResize : (Size -> ()) -> ()`**, **`eachVisibilityChange`**; `size ()` and `visibility ()` read the current one | `suspends` |
+| `Browser.Events.onKeyDown`, `onKeyUp`, `onKeyPress` | **`eachKeyDown : (Html.Event -> ()) -> ()`**, **`eachKeyUp`**, **`eachKeyPress`** | `suspends` |
+| `Browser.Navigation.onUrlChange` | **`eachUrlChange : (Url -> ()) -> ()`**; `currentUrl ()` reads the current one | `suspends` |
+| `Time.every` | `Time.sleep` and `Time.now`, already | — |
+| `Cmd.task`, `Cmd.do` | the function they are handed | — |
+
+Everything else — `Time`, `Dom`, `Http`, `Storage`, `Log`, `Url`, `Io` — had only direct forms
+already. An `each…` form calls `f` with each event, in order, for as long as the calling fiber
+runs, and never returns; cancelling the fiber removes the listener. Each subscription is now
+`Sub.listen` over its direct form (`onKeyDown tag = Sub.listen KeyDown (eachKeyDown _) tag`), so
+the two cannot drift; what §9.8.5 and §9.8.10 (a) say of coalescing and order is the direct
+form's. `browser/tea/DirectEvents` runs three of them in the bodies of keyed commands and
+cancels them.
+
+**`Random` is split between core and each platform** (`schema.md` §14.3, which a core library's
+generator needs). **Core's `Random.Pcg`** is the pure half: `Seed`, `Generator`, `step`,
+`initialSeed`, `independentSeed` and every generator, as §9.8.10 (b) lists them. **Each platform's
+`Random`** is that module by Elm's names — a `type alias` and a one-line definition per name —
+plus the impure seed source: `value` steps one page-wide (`browser`) or process-wide (`node`)
+seed, which its first draw starts from `crypto.getRandomValues` (Web Crypto, a global in Node 19
+and later); `browser`'s adds `generate generator tag = Cmd.task (\() -> value generator) tag`.
+*Why two modules and not one:* module names are unique per package, and a platform module
+shadows the core module of its name for the program and for the platform itself (§9.1), so a
+platform `Random` cannot import a core `Random`; the core half takes elm-random-pcg's name,
+`Random.Pcg`. A library that runs on any platform imports `Random.Pcg`; a program imports
+`Random`. `getRandomValues` throws only for an array that is not of integers or is longer than
+65 536 bytes (rule 9), and the one it is handed is neither, so `value` catches nothing; a host
+with no Web Crypto is a defect. `run/RandomValue` (Node) and `browser/tea/RandomValues`'s
+`#draw` call it directly.
+
+**(b) A command whose body cannot suspend runs without a fiber.** Until now every body ran in a
+fiber spawned into the program's scope, so a page that issued any command shipped the fiber
+runtime — `Random.generate` cost 1 707 bytes over a counter, almost all of it that. Now:
+
+- **The choice is static, per use, from the inferred bit.** `Cmd.perform` and `Cmd.keyed` ask
+  `Js.maySuspend body` (`backend.md` §4, *`Js.maySuspend` is the body's answer*), so each has two
+  bodies: the direct one builds **`Now`** (`KeyedNow`), the suspendable one **`Perform`**
+  (`Keyed`), and each use takes the body the class of the function it passes says. `Cmd.task`,
+  `Cmd.do` and `Random.generate` pass a function of their arguments and inherit the choice. The
+  body is held in a `foreign type`, **`Hosted.Job`**, built by `Hosted.job` and run by
+  `Hosted.runJob` (`suspends`, in a fiber) or `Hosted.callJob` (`impure`): a function in a
+  constructor's field would share one class with every command it is batched or returned with
+  (`transparent-effects-proposal.md` §14.5), and one body that waits would make every body of
+  the program take the suspendable form. `Cmd.map`'s tag goes through `Hosted.mapJob`, `sync` as
+  `mapLater`'s already was.
+- **Where it runs: exactly where its fiber would have started.** A fiber spawned now is queued at
+  the back of the scheduler's ready queue and first runs when the drain reaches it. **Core's
+  `Task.soon : sync (() -> ()) -> Soon`** queues work in that same queue, at that same place, and
+  runs it outside any fiber, as `main` is evaluated; `Task.queued` says it has not run. So
+  everything §9.8.4 orders is ordered as before, by construction: the body runs after the update
+  that asked for it has returned and after the render that update queued (rule 4), in the order
+  the commands were asked for and interleaved with fibers' first runs and resumptions in queue
+  order; its `send` dispatches at once, never re-entrantly (rules 1–2); the drain's budget of 64
+  counts it as a resumption, so a chain of commands answering commands still yields to the host;
+  and a throw in it is a defect through the drain's guard (§9.8.10 (c)). The scheduler's queue
+  holds a step function per entry, so a build whose only queued work is `soon`'s keeps the queue
+  and the drain but no fiber record, run loop, suspension or cancellation.
+- **The policies and `cancel`, for a body that cannot suspend.** Such a body cannot be stopped
+  once it starts, and — exactly as a fiber not yet started runs until its first suspension before
+  its cancellation can reach it — one still queued when a `Restart`, `cancel` or `cancelAll`
+  closes its outlet still runs, to its end, its sends dropped. So a queued body is *running*
+  until it has run (`Ignore` drops a new body meanwhile); `Restart` and `Queue` start a new body
+  that cannot suspend queued, behind the old ones, unless one of them is a fiber, in which case
+  the new body starts in a fiber that cancels (`Restart`) or waits for (`Queue`) them first — the
+  only path on which a body that cannot suspend still takes a fiber, reached only when a `Keyed`
+  body exists; and `Concurrent` queues it beside them. `Tea`'s table keeps `InFiber fiber outlet`
+  or `Queued soon outlet` per body, and every step that waits for or cancels a fiber is in an
+  `InFiber` arm, so a program that builds no `Perform` and no `Keyed` reaches none of them
+  (`backend.md` §9, *A `case` arm on a constructor nothing builds*).
+- **What is not the same.** A body run with no fiber has no fiber to own what it starts:
+  `Task.spawn` from it starts a fiber with no parent, as from `main`, where under a fiber the
+  child was cancelled when the body returned — before it ever ran. `Task.closeRoot` (which
+  nothing calls yet, W51) does not reach queued work. And the choice is as precise as the class:
+  a function chosen at run time between one that waits and one that does not (`if b then f else
+  g`) may wait, and runs in a fiber.
+
+**The proof that ordering is unchanged** is a pair of pages that do the same work both ways,
+each body written once and made one that may wait by a wait on a branch no run takes:
+`browser/tea/SyncCommandOrder` (a batch of two bodies that never wait around one that waits, the
+first one's message asking for a fourth; update, render, bodies and messages log one order for
+both) and `browser/tea/SyncKeyedPolicies` (each policy with two messages in one task, a body
+cancelled in the update that asked for it, and a body that never waits restarting one that waits
+in a fiber, after its cleanup). `build_test`'s *an element whose commands never wait ships no
+fiber runtime* pins the size claim on a `Random.generate` page and a keyed `Restart` page;
+*an element whose commands are all `Cmd.none`* pins the other side, a `Cmd.do` of a function that
+sleeps.
+
+**Measured** (`bench/size.mjs`, `--release`, brotli 11): the `Random.generate` page (`browser-tea
+random`) **2 923 → 1 970**, and it reaches no fiber; the empty `Tea.element` 1 237 → 1 249 (two
+more dead arms in the command table); the `Http` + `Time` page 5 394 → 5 478 (the `Job` calls,
+the `Run` arms and the scheduler's step column). A message whose command's body sends one message
+back costs **196 ns** with no fiber against **383 ns** in a fiber (happy-dom in Node, the update,
+the dispatcher and the body, sent straight to the mount, settled every thousand); a body that
+may wait costs what it did (368 → 383 ns, within noise), and a message with no command 40 ns.
 
 ## Appendix — what is deliberately not done
 

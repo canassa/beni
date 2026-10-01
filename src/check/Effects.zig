@@ -129,6 +129,9 @@ terminals: std.ArrayList(Terminal) = .empty,
 fns: std.ArrayList(Fn) = .empty,
 /// Every imported value's and method's type at its use (§16.2).
 uses: std.ArrayList(Use) = .empty,
+/// Every `Js.maySuspend` call and its argument: a class the lowering
+/// reads, whose answer is the call's value (`backend.md` §4).
+probes: std.ArrayList(Fn) = .empty,
 /// Every own declaration by its scheme's root, `(root, declaration)`
 /// ascending, as the run found them.
 scheme_decl: []const [2]u32 = &.{},
@@ -200,6 +203,7 @@ pub fn deinit(e: *Effects) void {
     e.terminals.deinit(gpa);
     e.fns.deinit(gpa);
     e.uses.deinit(gpa);
+    e.probes.deinit(gpa);
     gpa.free(e.scheme_decl);
     gpa.free(e.eval);
     gpa.free(e.readings);
@@ -232,6 +236,11 @@ pub fn foreignSync(e: *Effects, decl: u32, v: Var) Error!void {
 /// A lambda's or `let` definition's own arrow `v`, made by `inst` (§16.2).
 pub fn function(e: *Effects, inst: u32, v: Var) Error!void {
     try e.fns.append(e.gpa, .{ .inst = inst, .v = v });
+}
+
+/// A `Js.maySuspend` call at `inst`, of an argument of type `v`.
+pub fn probe(e: *Effects, inst: u32, v: Var) Error!void {
+    try e.probes.append(e.gpa, .{ .inst = inst, .v = v });
 }
 
 pub fn join(e: *Effects, a: Var, b: Var) Error!void {

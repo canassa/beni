@@ -1,0 +1,23 @@
+-- `Js.maySuspend f` is the checker's answer for `f` at each use of the
+-- declaration that asks (`backend.md` §4, *`Js.maySuspend` is the body's
+-- answer*): a function that cannot suspend takes the direct body, which
+-- runs it; one that sleeps takes the suspendable body, which does not.
+import Io
+import Node
+import Probe
+
+
+main : Node.Program
+main =
+    Io.run
+        (\() ->
+            Node.printLines
+                [ Probe.start (\() -> ())
+                , Probe.start (\() -> Io.sleep 1)
+                , Probe.forward (\() -> ())
+                , Probe.forward (\() -> Io.sleep 1)
+                , Probe.fixed ()
+                , String.fromInt (Probe.count (\() -> ()))
+                , String.fromInt (Probe.count (\() -> Io.sleep 1))
+                ]
+        )

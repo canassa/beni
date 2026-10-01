@@ -1,0 +1,248 @@
+--! Pseudo-random values, the pure half (`docs/design/boundary.md` §9.8.10
+--! (b), §9.8.11; `schema.md` §14.3): Elm's `Random` (elm/random), every
+--! generator by its name, the generator first where Elm put a function or a
+--! count first. A platform's `Random` module is this one with the platform's
+--! randomness added — `Random.value`, which runs a generator on the page's
+--! or the process's own seed, and on `browser` the command `Random.generate`
+--! — so a program imports `Random`; a library that runs on any platform, as
+--! core's own do, imports this.
+--!
+--! A `Generator a` describes how to make an `a` from randomness; it does
+--! nothing until it is run. `step` runs one on a `Seed` you hold, purely:
+--! the same seed always gives the same value.
+--!
+--!     ( face, next ) = Random.Pcg.step (Random.Pcg.int 1 6) seed
+--!
+--! The generator is PCG, as Elm's is, with its 32-bit products exact, so a
+--! seed gives the same sequence in every beni build.
+
+import Int32 exposing (Int32)
+import Js
+
+
+--| Where a generator's randomness comes from: the same seed, the same
+--| values.
+pub type Seed
+    = Seed Int32 Int32
+
+
+--| How to make an `a` from randomness.
+pub type Generator a
+    = Generator (Seed -> ( a, Seed ))
+
+
+-- ---- Seeds ------------------------------------------------------------------
+next : Seed -> Seed
+next (Seed state incr) = Seed (Int32.add (Int32.mul state (Int32.fromInt 1664525)) incr) incr
+
+
+-- A 32-bit output of the seed, from 0 to 4294967295.
+peel : Seed -> Int
+peel (Seed state _) =
+    let
+        shift = Int32.toInt (Int32.shiftRightZero state 28) + 4
+
+        word =
+            Int32.mul (Int32.xor (Int32.shiftRightZero state shift) state) (Int32.fromInt 277803737)
+    in
+    Int32.toUnsignedInt (Int32.xor (Int32.shiftRightZero word 22) word)
+
+
+--| A seed from an integer: the same integer, the same seed, so a run can
+--| be reproduced.
+pub initialSeed : Int -> Seed
+initialSeed x =
+    case next (Seed Int32.zero (Int32.fromInt 1013904223)) of
+        Seed state incr ->
+            next (Seed (Int32.add state (Int32.fromInt x)) incr)
+
+
+--| Run a generator on a seed: the value, and the seed to use next.
+pub step : Generator a, Seed -> ( a, Seed )
+step (Generator generator) seed = generator seed
+
+
+--| A generator of seeds independent of the one that made them: for a
+--| piece of a program that keeps a seed of its own.
+pub independentSeed : Generator Seed
+independentSeed =
+    map3
+        (int 0 4294967295)
+        (int 0 4294967295)
+        (int 0 4294967295)
+        (\state b c ->
+            next
+                (Seed
+                    (Int32.fromInt state)
+                    (Int32.or Int32.one (Int32.xor (Int32.fromInt b) (Int32.fromInt c)))
+                )
+        )
+
+
+-- ---- Generators -------------------------------------------------------------
+
+--| An integer from `a` to `b`, both included, each as likely. Exact for
+--| any two integers between `minInt` and `maxInt`.
+--|
+--|     Random.int 1 6
+pub int : Int, Int -> Generator Int
+int a b =
+    let
+        lo = min a b
+        range = max a b - lo + 1
+
+        -- 2³² mod range: the outputs below it would favour the low values.
+        threshold = modBy (4294967296 - range) range
+    in
+    Generator (\seed -> unbiased seed lo range threshold)
+
+
+unbiased : Seed, Int, Int, Int -> ( Int, Seed )
+unbiased seed lo range threshold =
+    let
+        x = peel seed
+    in
+    if x < threshold then
+        unbiased (next seed) lo range threshold
+    else
+        ( lo + modBy x range, next seed )
+
+
+--| The least integer `int` takes.
+pub minInt : Int
+minInt = -2147483648
+
+
+--| The greatest integer `int` takes.
+pub maxInt : Int
+maxInt = 2147483647
+
+
+--| A float from `a` to `b`, from 53 bits of randomness.
+pub float : Float, Float -> Generator Float
+float a b =
+    Generator
+        (\seed0 ->
+            let
+                seed1 = next seed0
+                lo = toFloat (Js.bitAnd (peel seed1) 67108863)
+                hi = toFloat (Js.bitAnd (peel seed0) 134217727)
+                value = (hi * 67108864.0 + lo) / 9007199254740992.0
+            in
+            ( value * abs (b - a) + a, next seed1 )
+        )
+
+
+--| Always this value.
+pub constant : a -> Generator a
+constant value = Generator (\seed -> ( value, seed ))
+
+
+--| Two values, one from each generator.
+pub pair : Generator a, Generator b -> Generator ( a, b )
+pair first second = map2 first second (\x y -> ( x, y ))
+
+
+--| `n` values from the generator.
+--|
+--|     Random.list (Random.int 1 6) 3
+pub list : Generator a, Int -> Generator (List a)
+list (Generator generator) n = Generator (\seed -> listHelp [] n generator seed)
+
+
+listHelp : List a, Int, (Seed -> ( a, Seed )), Seed -> ( List a, Seed )
+listHelp done n generator seed =
+    if n < 1 then
+        ( done, seed )
+    else
+        case generator seed of
+            ( value, after ) ->
+                listHelp (List.push done value) (n - 1) generator after
+
+
+--| One of the values, each as likely.
+--|
+--|     Random.uniform "heads" [ "tails" ]
+pub uniform : a, List a -> Generator a
+uniform value values = weighted ( 1, value ) (List.map values (\v -> ( 1, v )))
+
+
+--| One of the values, each as likely as its weight against the rest.
+--|
+--|     Random.weighted ( 80, Sunny ) [ ( 20, Rainy ) ]
+pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
+weighted first others =
+    let
+        total = abs first.0 + List.sum (List.map others (\o -> abs o.0))
+    in
+    map (float 0 total) (\countdown -> byWeight first others countdown)
+
+
+byWeight : ( Float, a ), List ( Float, a ), Float -> a
+byWeight ( weight, value ) others countdown =
+    case others of
+        [] ->
+            value
+
+        [ second, ...rest ] ->
+            if countdown <= abs weight then
+                value
+            else
+                byWeight second rest (countdown - abs weight)
+
+
+--| The generator's values, transformed.
+--|
+--|     Random.map (Random.int 1 6) (\n -> n * 2)
+pub map : Generator a, (a -> b) -> Generator b
+map (Generator generator) f =
+    Generator
+        (\seed ->
+            case generator seed of
+                ( value, after ) ->
+                    ( f value, after )
+        )
+
+
+--| Two generators' values, combined.
+pub map2 : Generator a, Generator b, (a, b -> c) -> Generator c
+map2 (Generator ga) (Generator gb) f =
+    Generator
+        (\seed0 ->
+            case ga seed0 of
+                ( a, seed1 ) ->
+                    case gb seed1 of
+                        ( b, seed2 ) ->
+                            ( f a b, seed2 )
+        )
+
+
+--| Three generators' values, combined.
+pub map3 : Generator a, Generator b, Generator c, (a, b, c -> d) -> Generator d
+map3 (Generator ga) (Generator gb) (Generator gc) f =
+    Generator
+        (\seed0 ->
+            case ga seed0 of
+                ( a, seed1 ) ->
+                    case gb seed1 of
+                        ( b, seed2 ) ->
+                            case gc seed2 of
+                                ( c, seed3 ) ->
+                                    ( f a b c, seed3 )
+        )
+
+
+--| A generator chosen by the value of another.
+pub andThen : Generator a, (a -> Generator b) -> Generator b
+andThen (Generator generator) f =
+    Generator
+        (\seed ->
+            case generator seed of
+                ( value, after ) ->
+                    step (f value) after
+        )
+
+
+--| A generator made only when it is run: for one that refers to itself.
+pub lazy : (() -> Generator a) -> Generator a
+lazy make = Generator (\seed -> step (make ()) seed)

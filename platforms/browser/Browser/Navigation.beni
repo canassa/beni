@@ -1,7 +1,8 @@
 --! The page's address (`docs/design/boundary.md` §9.8.10 (b)). Elm's
 --! `Browser.application` hands `init` the `Url` and takes `onUrlChange`;
 --! until `Tea.application` and this module's navigation key land, these
---! two read the address and follow its changes. Read-only: nothing here
+--! two read the address and follow its changes, each with a direct form
+--! first (`currentUrl`, `eachUrlChange`, §9.8.11). Read-only: nothing here
 --! changes the address.
 
 import Browser exposing (Send)
@@ -26,11 +27,19 @@ type Key
     = UrlChange
 
 
+--| Call `f` with the page's new address each time it changes, for as long
+--| as the calling fiber runs: the direct form of `onUrlChange` (§9.8.11).
+--| It never returns; cancelling the fiber removes the listener. An address
+--| that is not a `Url` is skipped.
+pub eachUrlChange : (Url -> ()) -> ()
+eachUrlChange f = follow f
+
+
 --| The page's new address each time it changes: a link to a fragment
 --| (`#/active`) followed, or the back and forward buttons. An address that
 --| is not a `Url` sends nothing.
 pub onUrlChange : (Url -> msg) -> Sub msg
-onUrlChange tag = Sub.listen UrlChange (follow _) tag
+onUrlChange tag = Sub.listen UrlChange (eachUrlChange _) tag
 
 
 -- Elm's: `popstate`, which a browser fires for a fragment followed as for
@@ -47,5 +56,3 @@ sendUrl send url =
 
         Nothing ->
             ()
-
-

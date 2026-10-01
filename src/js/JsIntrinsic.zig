@@ -45,6 +45,12 @@ pub const Which = enum {
     /// on it keeps only the branch the build takes (`backend.md` §4,
     /// *`Js.development` is the build's mode*).
     development,
+    /// Whether its argument, a function, may suspend: the checker's
+    /// answer for the argument's class at the call, `true` or `false` in
+    /// the body being written, and an `if` on it keeps only the branch
+    /// that body takes (`backend.md` §4, *`Js.maySuspend` is the body's
+    /// answer*).
+    maySuspend,
 };
 
 /// Whether `inst` is a `case` on `Js.development` — what an `if` on it
@@ -59,7 +65,28 @@ pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *cons
     const scrutinee: Inst.Index = @enumFromInt(d.lhs);
     if (scrutinee.int() >= bir.insts.len) return null;
     if ((of(graph, interfaces, bir, scrutinee, interner) orelse return null) != .development) return null;
-    const dropped: []const u8 = if (release) "True" else "False";
+    return armOf(graph, interfaces, bir, inst, interner, release);
+}
+
+/// The `Js.maySuspend` call `inst`, a `case`, tests — what `if
+/// Js.maySuspend f then … else …` desugars to — or null. Which arm a body
+/// drops is read off the call's answer and the body being written:
+/// `True`'s where the answer is no, `False`'s where it is yes (`armOf`).
+pub fn probeCall(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype) ?Inst.Index {
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
+    const scrutinee: Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    if (scrutinee.int() >= bir.insts.len or bir.instTag(scrutinee) != .call) return null;
+    const callee: Inst.Index = @enumFromInt(bir.instData(scrutinee).lhs);
+    if (callee.int() >= bir.insts.len) return null;
+    if ((of(graph, interfaces, bir, callee, interner) orelse return null) != .maySuspend) return null;
+    return scrutinee;
+}
+
+/// The arm of `case` instruction `inst` whose pattern is core's `True`
+/// (`which` true) or `False`: its `branch` instruction, or null.
+pub fn armOf(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, which: bool) ?Inst.Index {
+    const d = bir.instData(inst);
+    const dropped: []const u8 = if (which) "True" else "False";
     for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
         const b = bir.instData(branch);
         const pattern: Inst.Index = @enumFromInt(b.lhs);

@@ -1,0 +1,6 @@
+rolls in 1..6: yes
+100 rolls: 100
+the seed is stepped: yes
+float in [0, 1): yes
+constant: x
+step 42: 5

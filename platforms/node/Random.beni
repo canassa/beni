@@ -1,0 +1,163 @@
+--! Pseudo-random values in a Node program (`docs/design/boundary.md`
+--! §9.8.11): Elm's `Random` (elm/random). The generators are core's
+--! `Random.Pcg`, every one by its Elm name; this module adds the process's
+--! randomness. `value` runs a generator on the process's own seed, anywhere
+--! a function may be impure:
+--!
+--!     roll : () -> Int
+--!     roll () =
+--!         Random.value (Random.int 1 6)
+--!
+--! `step` runs a generator on a `Seed` you hold instead, purely: the same
+--! seed always gives the same value. `browser`'s `Random` is this module
+--! and the command `Random.generate`.
+
+import Js
+import Random.Pcg as Pcg
+
+
+--| Where a generator's randomness comes from: the same seed, the same
+--| values.
+pub type alias Seed =
+    Pcg.Seed
+
+
+--| How to make an `a` from randomness.
+pub type alias Generator a =
+    Pcg.Generator a
+
+
+-- ---- The process's randomness ------------------------------------------------
+
+--| A value from the generator, made from the process's own seed, which it
+--| steps: the first draw seeds it from `crypto.getRandomValues`, so two
+--| processes started at once do not share a sequence.
+--|
+--|     Random.value (Random.int 1 6)
+pub value : Generator a -> a
+value generator =
+    case Pcg.step generator (processSeed ()) of
+        ( v, after ) ->
+            let
+                _ = Js.write seed (Just after)
+            in
+            v
+
+
+-- The process's seed, once something has drawn from it.
+seed : Js.Ref (Maybe Seed)
+seed = Js.ref Nothing
+
+
+processSeed : () -> Seed
+processSeed () =
+    case Js.read seed of
+        Just s ->
+            s
+
+        Nothing ->
+            Pcg.initialSeed (entropy ())
+
+
+-- 32 bits from Node's Web Crypto (`globalThis.crypto`, Node 19 and later).
+-- `getRandomValues` throws only for an array that is not of integers or
+-- longer than 65 536 bytes, and this one is neither.
+entropy : () -> Int
+entropy () =
+    let
+        words =
+            Js.call
+                (Js.global "crypto")
+                "getRandomValues"
+                [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
+    in
+    Js.to (Js.at words 0)
+
+
+-- ---- Seeds and generators: core's `Random.Pcg` --------------------------------
+
+--| A seed from an integer: the same integer, the same seed, so a run can
+--| be reproduced.
+pub initialSeed : Int -> Seed
+initialSeed = Pcg.initialSeed
+
+
+--| Run a generator on a seed: the value, and the seed to use next.
+pub step : Generator a, Seed -> ( a, Seed )
+step = Pcg.step
+
+
+--| A generator of seeds independent of the one that made them: for a
+--| piece of a program that keeps a seed of its own.
+pub independentSeed : Generator Seed
+independentSeed = Pcg.independentSeed
+
+
+--| An integer from `a` to `b`, both included, each as likely.
+pub int : Int, Int -> Generator Int
+int = Pcg.int
+
+
+--| The least integer `int` takes.
+pub minInt : Int
+minInt = Pcg.minInt
+
+
+--| The greatest integer `int` takes.
+pub maxInt : Int
+maxInt = Pcg.maxInt
+
+
+--| A float from `a` to `b`, from 53 bits of randomness.
+pub float : Float, Float -> Generator Float
+float = Pcg.float
+
+
+--| Always this value.
+pub constant : a -> Generator a
+constant = Pcg.constant
+
+
+--| Two values, one from each generator.
+pub pair : Generator a, Generator b -> Generator ( a, b )
+pair = Pcg.pair
+
+
+--| `n` values from the generator.
+pub list : Generator a, Int -> Generator (List a)
+list = Pcg.list
+
+
+--| One of the values, each as likely.
+pub uniform : a, List a -> Generator a
+uniform = Pcg.uniform
+
+
+--| One of the values, each as likely as its weight against the rest.
+pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
+weighted = Pcg.weighted
+
+
+--| The generator's values, transformed.
+pub map : Generator a, (a -> b) -> Generator b
+map = Pcg.map
+
+
+--| Two generators' values, combined.
+pub map2 : Generator a, Generator b, (a, b -> c) -> Generator c
+map2 = Pcg.map2
+
+
+--| Three generators' values, combined.
+pub map3 : Generator a, Generator b, Generator c, (a, b, c -> d) -> Generator d
+map3 = Pcg.map3
+
+
+--| A generator chosen by the value of another.
+pub andThen : Generator a, (a -> Generator b) -> Generator b
+andThen = Pcg.andThen
+
+
+--| A generator made only when it is run: for one that refers to itself.
+pub lazy : (() -> Generator a) -> Generator a
+lazy = Pcg.lazy

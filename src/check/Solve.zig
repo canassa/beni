@@ -684,11 +684,34 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
 }
 
+/// Whether the call at `inst` is of core's `Js.maySuspend`, whose answer is
+/// its argument's class (`backend.md` §4, *`Js.maySuspend` is the body's
+/// answer*). Keyed on the core package, the module's name and the value's,
+/// as `jsCast` is.
+fn isProbe(s: *Solve, inst: Bir.Inst.Index) bool {
+    const bir = s.cx.bir;
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .call) return false;
+    const callee: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return false;
+    const d = bir.instData(callee);
+    const module: Graph.Index = @enumFromInt(d.lhs);
+    if (module.int() >= s.cx.graph.count()) return false;
+    if (s.cx.graph.module(module).package != .core) return false;
+    if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return false;
+    const iface = s.cx.iface(module);
+    if (d.rhs >= iface.values.len) return false;
+    return std.mem.eql(u8, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]), "maySuspend");
+}
+
 fn call(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Call);
     const scratch = s.cx.scratch;
     const args = try scratch.dupe(Var, s.tree.vars(info.args_start, info.args_len));
     defer scratch.free(args);
+    // `Js.maySuspend f`: the lowering reads `f`'s class here (§16.2).
+    if (info.flavor == .call and args.len == 1 and s.isProbe(node.region)) {
+        if (s.cx.effects) |e| try e.probe(@intFromEnum(node.region), args[0]);
+    }
     const st = s.store();
     const given: u32 = @intCast(args.len);
     const arg_regions = s.argRegions(node.region);
