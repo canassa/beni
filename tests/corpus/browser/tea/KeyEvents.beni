@@ -1,0 +1,74 @@
+-- A handler reads a keyboard event (boundary.md §9.8.10): `Html.key`,
+-- `Html.code` and the four modifiers. Enter without Shift adds the draft
+-- and calls `Html.preventDefault`, which a handler may because it runs
+-- while the event is dispatched, so the step logs that the keydown's
+-- default was prevented; every other key only reports what it was, and
+-- its default stands. A click's handler reads no key: `key` is "" and
+-- every modifier `False` for an event that is not a keyboard event.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+    | Add
+    | Pressed String
+
+
+type alias Model =
+    draft : String
+    items : List String
+    last : String
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Typed text ->
+            { model | draft = text }
+
+        Add ->
+            { model | draft = "", items = model.items ++ [ model.draft ] }
+
+        Pressed what ->
+            { model | last = what }
+
+
+pressed : Html.Event -> Msg
+pressed event =
+    if Html.key event == "Enter" && not (Html.shiftKey event) then
+        let
+            _ = Html.preventDefault event
+        in
+        Add
+    else
+        Pressed (describe event)
+
+
+flag : Bool, String -> String
+flag on name =
+    if on then name ++ " " else ""
+
+
+describe : Html.Event -> String
+describe event =
+    flag (Html.ctrlKey event) "ctrl"
+        ++ flag (Html.shiftKey event) "shift"
+        ++ flag (Html.altKey event) "alt"
+        ++ flag (Html.metaKey event) "meta"
+        ++ "key=\"${Html.key event}\" code=\"${Html.code event}\""
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <input id="new" value={model.draft} onInput={Typed} onKeyDown={pressed} />
+        <button id="click" onClick={\event -> Pressed (describe event)}>click</button>
+        <ul><For each={model.items} keyed={False}>{\item -> <li>{item}</li>}</For></ul>
+        <p id="last">{model.last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = { draft = "", items = [], last = "" }, update = update, view = view }

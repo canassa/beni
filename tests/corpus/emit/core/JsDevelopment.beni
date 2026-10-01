@@ -1,0 +1,37 @@
+-- emit: a module that asks which build it is in (`backend.md` §4,
+-- *`Js.development` is the build's mode*). `describe` names a declaration
+-- in each branch of an `if Js.development`, and each build keeps the one
+-- its branch names: `devOnly` is not in a release build, and
+-- `releaseOnly` is not in a development one. `check` is the same test
+-- through a `case`, its arms in the other order.
+import Js
+
+
+pub describe : () -> String
+describe () =
+    if Js.development then devOnly () else releaseOnly ()
+
+
+devOnly : () -> String
+devOnly () =
+    "a development build"
+
+
+releaseOnly : () -> String
+releaseOnly () =
+    "a release build"
+
+
+pub check : Int -> Int
+check n =
+    case Js.development of
+        False ->
+            n * 2
+
+        True ->
+            n + 1
+
+
+pub flag : Bool
+flag =
+    Js.development

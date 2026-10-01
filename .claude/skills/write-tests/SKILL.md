@@ -181,15 +181,19 @@ program (for the `tests/platforms/page` test platform, or a project's own
 `platform/`; under `browser/dom/`, for the real `browser` platform and its
 `dom` lowering; under `browser/tea/`, for `browser-tea`), a `.steps` script
 (`click` — with a count, several in one task — `flush`, `input`, `type` —
-a task per character — `key`, `focus`, one CSS selector each; `advance
+a task per character — `key` with modifiers and a `code:`, logging a
+prevented default — `focus`, one CSS selector each; `advance
 <ms>`, which moves the page's virtual clock and fires the timers that come
-due, so a debounce or a `Time.every` costs no wall-clock time; and `event
-window|document <name> [<n>]`) and a blessed `.expected` transcript of
-`document.body` after the load and each step. A service a program waits on
+due, so a debounce or a `Time.every` costs no wall-clock time; `event
+window|document <name> [<n>]`; `url`, `hash` (one `hashchange`), `store`
+and `storage` for the address and Web Storage, the first two kinds also
+before the load; and `throws <step>` for a step that must throw) and a
+blessed `.expected` transcript of `document.body` after the load and each
+step. A service a program waits on
 is a record of functions that sleep on the virtual clock, never a network. The gates run it under happy-dom in Node;
 `zig build test-browser` runs the same fixtures in headless Chrome, and a
 difference between the two is either a `.chrome-expected` with its reason
-in the fixture's comment or a bug. An uncaught exception in the page fails
+in the fixture's comment or a bug. An uncaught exception in the page outside a `throws` step fails
 the case, never a golden. Run hashes work as in `run/`. Prefer `run/`
 whenever printing can show the behaviour; a page costs about three times a
 Node run (`tests/corpus/README.md`, `browser/`).

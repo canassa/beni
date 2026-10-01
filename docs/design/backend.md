@@ -1818,6 +1818,33 @@ gives each block a scope of its own; `Print` always braces both. Fixtures:
 discarded, in tail position, nested, at the end of a loop, with arguments that are not lambdas, and
 as a value — in both builds), `check/bad/core/FinallySuspends`.
 
+### `Js.development` is the build's mode
+
+*Added 2026-10-01* (`boundary.md` §9.8.10 (c): a crash screen in development builds only).
+`Js.development : Bool` (pure) is **`true` in a development build and `false` under `--release`**,
+written in place as the literal — the one fact about the build a platform's beni may read, so that
+what only a developer needs ships in no release build. A use not in an `if` is the literal; `Js.js`
+exports `true` only for check 2.
+
+**An `if` on it keeps one branch, in both passes.** A `case` whose scrutinee is `Js.development`
+and one of whose arms has the pattern `True` or `False` — every `if Js.development then … else …`,
+and a `case` spelled with those patterns in either order — has a **dropped arm**: `True`'s under
+`--release`, `False`'s otherwise (`JsIntrinsic.droppedArm`, the one predicate both passes ask):
+
+- **`Reach`** guards the dropped arm's positions with a constructor no build reaches (`Guards`,
+  *A `case` arm on a constructor nothing builds*), so no edge out of it is followed: a declaration
+  only that arm names is not in the build;
+- **`Lower`** writes the `case` as the taken arm's body alone, with no test (`developmentArm`,
+  when the taken arm's pattern binds nothing), and otherwise writes the dropped arm as
+  `undefined`, as any arm no value takes — never naming what `Reach` left out.
+
+So a development build writes `() => devOnly()` and a release one `() => "…"`, with `devOnly`
+absent. It is an `if`'s condition and nothing more: `if Js.development && x` is an ordinary test,
+both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform module asking in an
+`if`, a `case` and a constant, its release build printing its own golden), `emit/core/
+JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each without the other
+build's declaration).
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

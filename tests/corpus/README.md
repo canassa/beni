@@ -101,7 +101,12 @@ in a project) against it, one step per line, `#` for a comment:
     input <selector> "<text>"   set `.value`, then `input`
     type <selector> "<text>"    per character, in a task of its own: append
                                 it to the live `.value`, then `input`
-    key <selector> <key>        `keydown` and `keyup` with that `key`
+    key <selector> <key> [<modifier>…] [code:<code>]
+                                `keydown` and `keyup` with that `key`, each
+                                modifier (`ctrl`, `shift`, `alt`, `meta`,
+                                `repeat`) set, `code` given (default `""`);
+                                one whose default a handler prevented logs
+                                `(keydown's default prevented)` (or `keyup's`)
     focus <selector>            `.focus()`
     advance <ms>                move the page's virtual clock on by `ms`,
                                 firing each timer that comes due, earliest
@@ -110,9 +115,23 @@ in a project) against it, one step per line, `#` for a comment:
                                 `n` (default 1) plain `Event`s of that
                                 name on the window or the document, in one
                                 task
+    url "<url>"                 `history.replaceState` to the URL, relative to
+                                the page's (`"?q=1#/active"`); nothing fires
+    hash "<#fragment>"          the same, then one `hashchange` on the window
+                                in the step's task, as following a link to the
+                                fragment would (happy-dom's own `location.hash`
+                                fires two)
+    store <local|session> "<key>" "<value>"
+                                `setItem` on that storage
+    storage <local|session>     log `(localStorage: {…})`, its items by key
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
+
+**Steps before the program loads.** The `url` and `store` steps a script
+begins with run before the program's modules are imported, each a heading
+with nothing under it, then `-- load`: how a fixture starts a page at an
+address or with something stored. Every page starts with empty storage.
 
 **The page's clock is virtual.** The driver replaces `setTimeout`,
 `clearTimeout` and `Date.now` before the program loads: `Date.now()` is 0

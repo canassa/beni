@@ -1,0 +1,7 @@
+key body Escape code:Escape
+key #toggle a ctrl shift code:KeyA
+event document keypress
+# Off: the listeners are removed.
+click #toggle
+key body Escape code:Escape
+event document keypress

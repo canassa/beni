@@ -14,6 +14,8 @@
 --! platform, never through a `view`, so nothing a view holds can become
 --! one (`docs/design/language.md` §11.14).
 
+import Js
+
 
 --| Markup whose handlers produce messages of type `msg`. Its representation
 --| is the build's markup lowering's, which is why no `foreign` of this
@@ -41,6 +43,80 @@ pub foreign impure targetValue : Event -> String
 
 --| Whether the checkbox an event came from is checked.
 pub foreign impure targetChecked : Event -> Bool
+
+
+-- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
+-- Each is the DOM property of the same name, read while the event is
+-- dispatched; one the event does not have reads as `""` or `False`, so a
+-- click's `key` is `""`. Written over `Js`, so a read is the property
+-- access and nothing else.
+
+
+--| The key of a keyboard event, as the DOM names it: the character it
+--| types (`"a"`, `"A"`, `" "`) or the key's name (`"Enter"`, `"Escape"`,
+--| `"ArrowUp"`, `"Backspace"`). `""` for any other event.
+--|
+--|     onKeyDown={\event -> if Html.key event == "Enter" then Add else Ignored}
+pub key : Event -> String
+key event =
+    stringProp event "key"
+
+
+--| The physical key of a keyboard event, whatever the layout types with
+--| it: `"KeyA"`, `"Enter"`, `"Digit1"`. `""` for any other event.
+pub code : Event -> String
+code event =
+    stringProp event "code"
+
+
+--| Whether Control was held during a keyboard or mouse event.
+pub ctrlKey : Event -> Bool
+ctrlKey event =
+    boolProp event "ctrlKey"
+
+
+--| Whether Shift was held during a keyboard or mouse event.
+pub shiftKey : Event -> Bool
+shiftKey event =
+    boolProp event "shiftKey"
+
+
+--| Whether Alt (Option on a Mac) was held during a keyboard or mouse event.
+pub altKey : Event -> Bool
+altKey event =
+    boolProp event "altKey"
+
+
+--| Whether Meta (Command on a Mac, the Windows key elsewhere) was held
+--| during a keyboard or mouse event.
+pub metaKey : Event -> Bool
+metaKey event =
+    boolProp event "metaKey"
+
+
+--| Stop the browser doing what the event would do by default — a key
+--| typing into a field, a link being followed — and return. A handler runs
+--| while its event is dispatched, so calling this in one takes effect; a
+--| subscription's value arrives later, when it is too late.
+--|
+--|     onKeyDown={\event -> if Html.key event == "Tab" then let _ = Html.preventDefault event in Indent else Ignored}
+pub preventDefault : Event -> ()
+preventDefault event =
+    Js.to (Js.call (Js.from event) "preventDefault" [])
+
+
+stringProp : Event, String -> String
+stringProp event name =
+    let
+        v =
+            Js.get (Js.from event) name
+    in
+    if Js.isNullish v then "" else Js.to v
+
+
+boolProp : Event, String -> Bool
+boolProp event name =
+    Js.same (Js.get (Js.from event) name) (Js.from True)
 
 
 -- Elements. A `void` element takes no children.

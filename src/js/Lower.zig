@@ -213,6 +213,9 @@ pub const Input = struct {
     /// `--release`: a function whose result is `()` writes no result
     /// (`backend.md` §4, *A `()` result is not written*).
     unit_results: bool = false,
+    /// What `Js.development` is: `false` under `--release` (`backend.md`
+    /// §4, *`Js.development` is the build's mode*).
+    development: bool = true,
 };
 
 pub const Markup = struct {
@@ -1003,9 +1006,19 @@ const Lowerer = struct {
     /// names may be gone — and ones whose names are all there too, which
     /// no value takes either.
     fn findDeadArms(l: *Lowerer) !void {
-        const r = l.in.live orelse return;
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
+        // The arm of an `if Js.development` the build does not take
+        // (`backend.md` §4, *`Js.development` is the build's mode*): `Reach`
+        // followed nothing out of it, with or without a survivor set.
+        for (tags, 0..) |tag, i| {
+            if (tag != .case) continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @enumFromInt(@as(u32, @intCast(i))), l.interner, !l.in.development) orelse continue;
+            const body = l.bir.instData(branch).rhs;
+            if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
+            if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
+        }
+        const r = l.in.live orelse return;
         for (tags, data) |tag, d| {
             if (tag != .branch) continue;
             if (!l.patternDead(r, @enumFromInt(d.lhs), 0)) continue;
@@ -1042,6 +1055,24 @@ const Lowerer = struct {
             .pat_as => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1),
             else => return false,
         }
+    }
+
+    /// The body of the arm an `if Js.development` takes in this build, when
+    /// `inst` is one whose other arm binds nothing (`backend.md` §4,
+    /// *`Js.development` is the build's mode*): the `case` is written as
+    /// that body alone, with no test, and the dropped arm not at all.
+    fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse return null;
+        const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index);
+        for (branches) |branch| {
+            if (branch == dropped) continue;
+            const b = l.bir.instData(branch);
+            switch (l.bir.instTag(@enumFromInt(b.lhs))) {
+                .pat_ctor, .pat_wild => return @enumFromInt(b.rhs),
+                else => return null,
+            }
+        }
+        return null;
     }
 
     /// Whether `inst` is the body of an arm no value takes.
@@ -4139,6 +4170,7 @@ const Lowerer = struct {
         if (l.jsIntrinsicOf(inst)) |which| switch (which) {
             .null => return l.nullNode(p),
             .undefined => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            .development => return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
         };
@@ -7232,6 +7264,7 @@ const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), v[1].int()));
                 break :blk l.nullNode(p);
             },
+            W.development => l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -8642,6 +8675,7 @@ const Lowerer = struct {
 
     /// A `case` in expression position: §7's last three rows.
     fn caseExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        if (l.developmentArm(inst)) |body| return l.expr(out, body);
         const into = l.case_into;
         l.case_into = .{};
         const p = l.pos(inst);
@@ -8704,6 +8738,7 @@ const Lowerer = struct {
     /// lowered as statements, so each arm returns — or jumps — for itself
     /// and there is no result temporary at all.
     fn tailCase(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: ?*const Loop) !void {
+        if (l.developmentArm(inst)) |body| return l.tailStmts(out, body, loop);
         const p = l.pos(inst);
         var c = try l.planCase(out, inst) orelse {
             const value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);

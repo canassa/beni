@@ -1,0 +1,79 @@
+-- `Browser.Events.onKeyDown`, `onKeyUp` and `onKeyPress` (boundary.md
+-- §9.8.10): every key of the page reaches `update`, in order, made into a
+-- message by a function of the event as a markup handler is — Elm's
+-- decoder. A `key` step's keydown and keyup arrive in one task and both
+-- are delivered, the down first; the driver sends no keypress, and an
+-- `event document keypress` step one with no key. The listeners are the
+-- document's, so a key on the button counts as one anywhere. Turned off,
+-- the listeners are removed and keys do nothing.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pressed String
+    | Toggle
+
+
+type alias Model =
+    on : Bool
+    log : List String
+
+
+held : String, Bool -> String
+held name on =
+    if on then " " ++ name else ""
+
+
+describe : String, Html.Event -> Msg
+describe what event =
+    Pressed
+        ("${what} ${Html.key event} ${Html.code event}"
+            ++ held "ctrl" (Html.ctrlKey event)
+            ++ held "shift" (Html.shiftKey event)
+            ++ held "alt" (Html.altKey event)
+            ++ held "meta" (Html.metaKey event)
+        )
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Pressed line ->
+            ( { model | log = model.log ++ [ line ] }, Cmd.none )
+
+        Toggle ->
+            ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch
+            [ Browser.Events.onKeyDown (describe "down" _)
+            , Browser.Events.onKeyUp (describe "up" _)
+            , Browser.Events.onKeyPress (describe "press" _)
+            ]
+    else
+        Sub.none
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <ol><For each={model.log} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { on = True, log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

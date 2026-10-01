@@ -1,0 +1,15 @@
+-- `Js.development` is `True` in a development build and `False` under
+-- `--release` (`backend.md` §4, *`Js.development` is the build's mode*): the
+-- release build prints its own golden. The platform module's branches each
+-- name a declaration only that build keeps.
+import Mode
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Mode.describe ()
+        , String.fromInt (Mode.check 10)
+        , if Mode.flag then "flag: True" else "flag: False"
+        ]

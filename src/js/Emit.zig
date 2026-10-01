@@ -1107,7 +1107,10 @@ const Emitter = struct {
             const dispatch = e.dispatchOf(vocabulary);
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .vocab_markup) continue;
-                const name = e.session.interner.slice(b.symbol(d.name));
+                // A copy: `supplied` keeps the name past `Lower.internFixedNames`,
+                // which grows the pool, and a slice of it would then point at
+                // the pool's old storage — a primitive no lowering finds.
+                const name = try e.scratch.dupe(u8, e.session.interner.slice(b.symbol(d.name)));
                 // A primitive named like one of the lowering's own exports
                 // would be two exports of one name.
                 var clash = false;
@@ -1987,6 +1990,7 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
+            .release = e.options.release,
             .vocabulary = e.graph().markup.vocabulary,
             .extra_roots = e.extra_roots,
         };
@@ -2460,6 +2464,7 @@ const Emitter = struct {
                 .markup = slot.markup,
                 .inline_once = e.options.release,
                 .unit_results = e.options.release,
+                .development = !e.options.release,
                 .boundary = if (e.boundary) |*b| b else null,
             });
             const lowered = &slot.lowered.?;

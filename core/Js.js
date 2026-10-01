@@ -54,3 +54,8 @@ const finally_ = (body, cleanup) => {
   }
 };
 export { finally_ as finally };
+
+// What a build never reads from here: `Js.development` is written in place
+// as `true` or `false` for the build (backend.md §4, *`Js.development` is
+// the build's mode*), so this is only the export check 2 counts.
+export const development = true;

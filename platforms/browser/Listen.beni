@@ -1,0 +1,100 @@
+--! Every event of one name on the window or the document, as values a
+--! subscription's body sends (`docs/design/boundary.md` §9.8.10): the
+--! platform's own modules build their subscriptions on it — the keyboard
+--! in `Browser.Events`, the address in `Url`. Each event is read while it
+--! is dispatched, so what it carried is not read late, and queued until
+--! the body's fiber takes it, so none is lost when several arrive between
+--! two of its turns. `browser-tea` does not re-export it, as it does not
+--! `Hosted`.
+--!
+--! Written over `Js`: a listener is an array, `[ queue, waiting, target,
+--! name, handler ]` — the values read and not yet taken, the fiber
+--! waiting for one (or null), and what `removeEventListener` needs.
+
+import Browser
+import Js
+import Task
+
+
+--| Send `read event` for each event named `name` on `target` (`"window"`
+--| or `"document"`), in order, for as long as the calling fiber runs. The
+--| listener is added when the body starts and removed however it ends.
+pub each : String, String, sync (Js.Value -> a), Browser.Send a -> ()
+each target name read emit =
+    Task.bracket (\() -> open target name read) (\l _ -> close l) (\l -> pump l emit)
+
+
+open : String, String, sync (Js.Value -> a) -> Js.Value
+open target name read =
+    let
+        on =
+            Js.global target
+
+        l =
+            Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
+
+        handler =
+            \event ->
+                let
+                    v =
+                        Js.from (read event)
+
+                    waiting =
+                        Js.at l 1
+                in
+                if Js.isNull waiting then
+                    Js.to (Js.call (Js.at l 0) "push" [ v ])
+                else
+                    let
+                        _ =
+                            Js.setAt l 1 Js.null
+                    in
+                    Js.to (Js.apply waiting [ v ])
+
+        _ =
+            Js.setAt l 4 (Js.from handler)
+
+        _ =
+            Js.call on "addEventListener" [ Js.from name, Js.from handler ]
+    in
+    l
+
+
+close : Js.Value -> ()
+close l =
+    Js.to (Js.call (Js.at l 2) "removeEventListener" [ Js.at l 3, Js.at l 4 ])
+
+
+pump : Js.Value, Browser.Send a -> ()
+pump l emit =
+    let
+        _ =
+            emit (next l)
+    in
+    pump l emit
+
+
+-- The oldest value not yet taken, waiting for one when there is none.
+next : Js.Value -> a
+next l =
+    Task.callback (\resume -> take l resume)
+
+
+take : Js.Value, Task.Resume a -> (() -> ())
+take l resume =
+    let
+        queue =
+            Js.at l 0
+    in
+    if Js.to (Js.get queue "length") > 0 then
+        let
+            _ =
+                Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
+        in
+        Js.to Js.null
+    else
+        let
+            _ =
+                Js.setAt l 1 (Js.from resume)
+        in
+        \() -> Js.setAt l 1 Js.null

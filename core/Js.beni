@@ -137,3 +137,11 @@ pub foreign impure write : Ref a, a -> ()
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
 pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
+
+
+--| `True` in a development build and `False` under `--release`. An `if`
+--| on it keeps only the branch the build takes: the other is neither
+--| written nor reached, so a declaration only it names costs the other
+--| build nothing — a development crash screen ships in no release build
+--| (`backend.md` §4, *`Js.development` is the build's mode*).
+pub foreign pure development : Bool

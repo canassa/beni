@@ -1,10 +1,14 @@
 --! Subscriptions to the page's own events (`docs/design/boundary.md`
---! §9.8.8): the window's size and whether the page is visible. Each is a
---! `Sub.listen` whose body adds one listener when its key arrives and
---! removes it when the key leaves; events that arrive faster than the
---! program takes them are coalesced into the latest state.
+--! §9.8.8, §9.8.10): the window's size, whether the page is visible, and
+--! the keyboard. Each is a `Sub.listen` whose body adds one listener when
+--! its key arrives and removes it when the key leaves. A size or a
+--! visibility that changes faster than the program takes it is coalesced
+--! into the latest; every key is delivered, in order.
 
 import Browser
+import Html
+import Js
+import Listen
 import Sub exposing (Sub)
 import Task exposing (Exit, Resume)
 
@@ -24,6 +28,9 @@ pub type Visibility
 type Key
     = Resize
     | VisibilityChange
+    | KeyDown
+    | KeyUp
+    | KeyPress
 
 
 --| The window's inner size, now.
@@ -49,6 +56,38 @@ onResize tag =
 pub onVisibilityChange : (Visibility -> msg) -> Sub msg
 onVisibilityChange tag =
     Sub.listen VisibilityChange (watch "document" "visibilitychange" visibility _) tag
+
+
+--| A message for each key pressed anywhere in the page, in order, made by
+--| reading the event as a markup handler does (Elm's `onKeyDown` with a
+--| decoder):
+--|
+--|     Browser.Events.onKeyDown (\event -> KeyPressed (Html.key event))
+--|
+--| No key is lost or merged. The function runs one fiber turn after the
+--| event, so it cannot prevent the key's default; a handler on an element
+--| (`onKeyDown` with `Html.preventDefault`) can.
+pub onKeyDown : (Html.Event -> msg) -> Sub msg
+onKeyDown tag =
+    Sub.listen KeyDown (Listen.each "document" "keydown" event _) tag
+
+
+--| A message for each key released anywhere in the page, in order.
+pub onKeyUp : (Html.Event -> msg) -> Sub msg
+onKeyUp tag =
+    Sub.listen KeyUp (Listen.each "document" "keyup" event _) tag
+
+
+--| A message for each `keypress` of the page, in order: a key that types a
+--| character. The DOM deprecates the event; Elm keeps it, and so does this.
+pub onKeyPress : (Html.Event -> msg) -> Sub msg
+onKeyPress tag =
+    Sub.listen KeyPress (Listen.each "document" "keypress" event _) tag
+
+
+event : Js.Value -> Html.Event
+event v =
+    Js.to v
 
 
 -- A listener: the events of one name on the window or the document,

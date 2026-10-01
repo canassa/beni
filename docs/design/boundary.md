@@ -432,7 +432,14 @@ return, and on a throw before the throw goes on. Written with lambdas, each lamb
 block and no function is made (`backend.md` §4, *`Js.finally` is `try … finally`*). Both are
 `sync`, so neither may suspend: a body that parked would leave the guard before its rest ran.
 There is no `catch`: a platform restores its state on the way out and lets the throw go on, which
-is all the effects host needs (`plans/runtime-in-beni.md`).
+is all the effects host needs (`plans/runtime-in-beni.md`). *(2026-10-01: so is it all the defect
+rule needs, §9.8.10 (c) — a cleanup that finds its body did not complete stops the page — and what
+must `catch`, `Storage`, is a sibling.)*
+
+**`development : Bool`** (pure, 2026-10-01) is `True` in a development build and `False` under
+`--release`; an `if` on it keeps only the branch the build takes, so a development-only
+declaration — `browser`'s crash screen — is in no release build (`backend.md` §4, *`Js.development`
+is the build's mode*).
 
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
@@ -1880,6 +1887,8 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
 **Still owed** from R45 §5: `Http.send` with a request record and a streaming body, `Time.here`,
 `Browser.nextFrame` and `onAnimationFrame`/`onKeyDown`/`onWindow`, `Random`, `Storage`, `Nav` and
 `Tea.application`, `Ws`, and core's `Queue` (W52 settles its handle rule, below).
+*(Amended 2026-10-01: `onKeyDown`, `Random` and `Storage` are §9.8.10's, with `Url` read-only and
+`Log`.)*
 
 #### 9.8.9 The rest of the answers
 
@@ -1893,7 +1902,9 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
   *`browser/`*, the `advance` step).
 - **W2, a defect's teardown**, which R45 §8 item 8 asks to close the program's scope, is **not
   built**: a `foreign` that throws inside a fiber escapes the scheduler's microtask as an uncaught
-  exception, and nothing yet closes the scope.
+  exception, and nothing yet closes the scope. *(Amended 2026-10-01: the rest of W2 is built —
+  a throw in a program's own code stops the page, with a development crash screen, §9.8.10 (c);
+  closing the scope and a fiber's throw are still owed there.)*
 
 *As built, 2026-10-01* (`platforms/browser/`: `Browser.beni`, `Hosted.beni`, `Cmd.beni`,
 `Sub.beni`, `Time.beni`, `Dom.beni`, `Http.beni`, `Browser/Events.beni` and their siblings,
@@ -1939,6 +1950,150 @@ a scope, cancellation and its wait), the keyed-`Restart` table and the subscript
 520), `Dict` (about 370: `get`, `insert` and `foldl`, for the table and the diff), `Http`'s
 request (about 280) and `Hosted.compare` (about 190, the order keys are matched by). Each is used
 by what the page does; the rest is the 980 of any page, and `Time`'s.
+
+#### 9.8.10 Keys, storage, randomness, the address, defects and the log
+
+*Added 2026-10-01* (`plans/status-2026-10.md` §6, Milestone 1 items 1–2; R45 §5). What a
+TodoMVC-class page needs beyond §9.8.8: a handler that reads a key, storage, a random number, the
+page's address, the owner's W2 answer built, and a log a release build keeps. Each capability is a
+module of `browser`, written in beni over `Js` (§4.2) except where it must `catch` (§4.1's recipe),
+re-exported by `browser-tea`; a page that does not import one ships none of it. Where a choice was
+the owner's and was taken here it says so; each is reversible.
+
+**(a) What a handler reads of its event.** `Html`, the vocabulary module, gains:
+
+| | Rung | Is |
+|---|---|---|
+| `key : Event -> String` | impure | `KeyboardEvent.key`: the character typed or the key's name (`"Enter"`, `"Escape"`) |
+| `code : Event -> String` | impure | the physical key (`"KeyA"`) |
+| `ctrlKey`, `shiftKey`, `altKey`, `metaKey : Event -> Bool` | impure | whether the modifier was held |
+| `preventDefault : Event -> ()` | impure | the DOM's `preventDefault()` |
+
+Each reads the property of its name, and is total: an event without it (a click's `key`) reads
+`""` or `False`, never `undefined`. **`preventDefault` takes effect because a handler runs while
+its event is dispatched** (`backend.md` §15.11: the delegated listener calls it), so "Enter adds,
+and the key does nothing else" is `onKeyDown={\event -> if Html.key event == "Enter" then let _ =
+Html.preventDefault event in Add else Ignored}`; a subscription's value arrives a fiber turn later
+(§9.8.5) and cannot. Elm decides a message and the default together in a decoder that may fail;
+here a handler always makes a message, and a key the program ignores is a message `update`
+ignores — one render, which writes nothing. A declaration's own `preventDefault` (`onSubmit`) is
+applied before the handler, as before.
+
+**Elm's API is the model** (the owner, 2026-10-01: mirror Elm's module and function names, adapt
+the argument order to beni's subject-first calls, deviate only where beni forces it, and say why).
+Elm reads an event with a `Json.Decode.Decoder`; **beni has no decoder library until schemas parse
+(`schema.md`), and its handlers are already typed functions of the event** (`language.md` §11), so
+these accessors are what Elm's `targetValue` and `keyCode` decoders are, and a "decoder" is a
+function `Event -> msg`. Elm's `preventDefaultOn` returns the decision with the message; a beni
+handler may call an impure function, so it calls `preventDefault` instead.
+
+`Browser.Events` gains **`onKeyDown`, `onKeyUp`, `onKeyPress : (Html.Event -> msg) -> Sub msg`**,
+Elm's three, each taking the function a handler would be (`onKeyDown (\event -> Pressed
+(Html.key event))`, Elm's `onKeyDown (Decode.map Pressed (Decode.field "key" Decode.string))`).
+Unlike a resize, **no key is coalesced**: each event is queued as it is dispatched until the body's
+fiber takes it, in order, and the function reads it there — the properties it reads do not change
+after dispatch, and only `preventDefault` would come too late. The queue is `Listen.each : String,
+String, sync (Js.Value -> a), Send a -> ()` — the window's or the document's events of one name,
+each `read` as it fires — a module of `browser` for its own modules (`Browser.Navigation` uses it
+too), not re-exported by `browser-tea`, as `Hosted` is not. Elm's decoder may fail, sending
+nothing; a beni function always makes a message, which `update` may ignore.
+
+**(b) Storage, randomness and the address.**
+
+| Module | Signature | Rung |
+|---|---|---|
+| `Random` (elm/random) | `Seed`, `Generator a` (opaque); `int : Int, Int -> Generator Int`, `float : Float, Float -> Generator Float`, `minInt`, `maxInt`, `uniform : a, List a`, `weighted : ( Float, a ), List ( Float, a )`, `constant`, `pair`, `list : Generator a, Int`, `map`, `map2`, `map3`, `andThen`, `lazy` | pure |
+| | `step : Generator a, Seed -> ( a, Seed )`, `initialSeed : Int -> Seed`, `independentSeed : Generator Seed` | pure |
+| | `generate : Generator a, (a -> msg) -> Cmd msg` | — |
+| `Url` (elm/url) | `type alias Url = { protocol : Protocol, host : String, port_ : Maybe Int, path : String, query : Maybe String, fragment : Maybe String }`, `type Protocol = Http \| Https` | — |
+| | `fromString : String -> Maybe Url`, `toString : Url -> String`, `percentEncode : String -> String`, `percentDecode : String -> Maybe String` | pure |
+| `Browser.Navigation` | `currentUrl : () -> Maybe Url`, `onUrlChange : (Url -> msg) -> Sub msg` | impure, — |
+| `Storage` | `type Area = Local \| Session`, `type Error = QuotaExceeded \| Unavailable` | — |
+| | `get : Area, String -> Maybe String`, `keys : Area -> List String`, `remove : Area, String -> ()` | impure |
+| | `set : Area, String, String -> Result Error ()` | impure |
+
+- **`Random`** is elm/random, every name and every generator: a function argument moves last and
+  the generator first (`map : Generator a, (a -> b)`, `list : Generator a, Int`, as core's
+  `List.repeat : a, Int` did with Elm's), and `generate` is Elm's command — subject-first,
+  `Random.generate (Random.int 1 6) Rolled` — run as `Cmd.task` runs work (§9.8.2), each one
+  stepping one page-wide seed, as Elm's effect manager keeps one. That seed starts from
+  `crypto.getRandomValues` rather than Elm's clock, so two pages opened in one millisecond do not
+  share a sequence (the test driver makes both deterministic). The generator is PCG as Elm's, its
+  32-bit products in `Int32` (exact where Elm's `*` on doubles rounds), so a seed gives the same
+  sequence in every beni build, not Elm's sequence.
+- **`Url`** is elm/url's `Url` module, pure: Elm's record, its two protocols, its parser and
+  printer, percent encoding. **How a program gets the page's address** is Elm's
+  `Browser.application`, which hands `init` a `Url` and takes `onUrlChange`; until
+  `Tea.application` and its navigation key land (Milestone 2), **two stand-ins** in
+  `Browser.Navigation`, Elm's navigation module, which they will join: `currentUrl ()`, the page's
+  `location` through `Url.fromString` — `Nothing` for an address that is not `http` or `https`,
+  where Elm's `application` crashes (§4.1: a failure is a value) — and `onUrlChange`, the new
+  address after each `hashchange` or `popstate` (one that does not parse sends nothing). A filter
+  in `#/active` is read by `init` from `currentUrl ()` and kept by `onUrlChange`.
+- **`Storage`** has no Elm counterpart (Elm reaches Web Storage through ports): R45 §5's table
+  with the area a value, since `localStorage` and `sessionStorage` are one API. Each failure the
+  Web Storage standard documents is one value (rule 9, §4.1): **reading the area may throw
+  `SecurityError`** (storage disabled, a sandboxed frame) — the area is then unavailable, holding
+  nothing, so `get` is `Nothing`, `keys` empty, `remove` nothing to do and `set` `Err
+  Unavailable` — and **`setItem` may throw `QuotaExceededError`**, `Err QuotaExceeded`. An area
+  the host leaves `null` is unavailable too. Any other exception is not caught: it is a defect
+  (c). The catches are a sibling's (`Storage.js`), because `Js` writes no `catch` (§4.2).
+  `onChange` (another tab wrote) is still owed.
+
+**(c) A defect stops the program** (the owner's W2, *as recommended*; A1). A throw that escapes a
+program's own code — `init`, `update`, `view`, `subscriptions`, a markup handler, a render's patch
+or after-render work — **stops every program of the page** (one build is one application): from
+that moment no message is applied (a `send` from a handler, a fiber or after-render work does
+nothing), no render or after-render work runs and no listener calls a handler. **The throw goes
+on**, never caught and dropped: the host reports it as an uncaught exception — the console with
+its stack, `window.onerror` for a crash reporter — which is the log in both builds. **In a
+development build the page also shows a crash screen**: a fixed overlay appended to `body`, above
+the page and leaving the page's DOM in place to inspect, saying that the program has stopped
+because of an error, with the error's message (`String(error)`, not its stack, which the console
+has). **A release build adds nothing** — the screen's code is in no release build, through
+`Js.development` (`backend.md` §4, *`Js.development` is the build's mode*), the core intrinsic
+added for it: `True` in a development build, `False` under `--release`, and an `if` on it keeps only
+the branch the build takes, in reachability and in lowering.
+
+- **Where it is caught.** Four guards, each a `Js.finally` whose body ends by noting that it
+  completed and whose cleanup stops the page when it did not: the delegated and own listeners'
+  `fire` (a handler and the dispatch it starts), the hosted dispatcher (a send from a fiber), the
+  render loop's `flush` (renders, `settle`, `view`, after-render work) and `run` (`init` and the
+  first render). The hosted loop's latches are still released in their `Js.finally` cleanups,
+  as before, though nothing reads them once the page has stopped.
+- **A fiber that throws stops the page too.** Core's scheduler guards its drain the same way, and
+  a throw out of a fiber stops it — no fiber runs again, as `Task`'s "a defect ends the program"
+  says — and calls the hook a platform gave `Task.onDefect : (() -> ()) -> ()` (impure, core). A
+  hosted mount hands it the page's stop, which reaches `Browser.beni` as the mount's fourth
+  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7).
+- **An error a primitive did not expect is a throw in the fiber that waited on it** (rule 9):
+  `Http`'s sibling names each failure `fetch` documents — a `TypeError` from `new URL` is
+  `BadUrl`, a rejection with a `TypeError` is `NetworkError`, a `SyntaxError` from `JSON.parse`
+  is `BadBody`, an `AbortError` after the fiber's own abort is nothing (the fiber is gone) — and
+  resumes the fiber with anything else wrapped, `{ d: error }`, which `Http.beni` throws where
+  the request was made. The page stops through the fiber's guard, and the report's stack is the
+  request's.
+- **The message on the screen** arrives with the host's report: stopping registers a one-time
+  `error` listener on the window, which the throw reaches after the cleanup ran.
+- **Not yet:** the program's scope is not closed (W2 option (b), R45 §8 item 8): a fiber parked
+  when the page stops stays parked, never resumed. Closing it needs the host to reach `Tea`'s root
+  scope, which is the next step.
+- **This replaces `browser/tea/ThrowRecovers`**, which pinned the opposite — a throw left the loop
+  able to run the next message.
+
+**(d) A log a release build keeps.** `--release` refuses `Debug` (`backend.md` §9), and report §4
+item 6 found nothing in its place. **`Log`**, a module of `browser`:
+
+| | Rung | Is |
+|---|---|---|
+| `info`, `warn`, `error : String -> ()` | impure | `console.info`, `console.warn`, `console.error` of the string |
+
+*Taken by the implementer as the manager's call, reversible:* the smallest API that gives a shipped
+program a console line at three levels. A `String`, not any value: `Debug.toString`'s text is not a
+promise (its own documentation) and a release build renames fields, so a program that logs a value
+formats it. No `debug` level (that is `Debug.log`'s job in development), no structured fields, no
+reporting hook and no log context (A7's third slot) — each can be added without changing these
+three. Being `impure`, a call is never dropped by `--release`, and an unused `Log` costs nothing.
 
 ## Appendix — what is deliberately not done
 

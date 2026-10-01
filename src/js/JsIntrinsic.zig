@@ -41,7 +41,40 @@ pub const Which = enum {
     ref,
     read,
     write,
+    /// `true` in a development build, `false` under `--release`; an `if`
+    /// on it keeps only the branch the build takes (`backend.md` §4,
+    /// *`Js.development` is the build's mode*).
+    development,
 };
+
+/// Whether `inst` is a `case` on `Js.development` — what an `if` on it
+/// desugars to — and, when it is, which of its arms the build drops: the
+/// `branch` instruction of the arm whose pattern is the constructor the build
+/// does not take (`True` under `--release`, `False` otherwise). `Reach`
+/// follows no edge out of that arm and `Lower` writes it as `undefined`,
+/// so a declaration only it names is neither kept nor named.
+pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool) ?Inst.Index {
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
+    const d = bir.instData(inst);
+    const scrutinee: Inst.Index = @enumFromInt(d.lhs);
+    if (scrutinee.int() >= bir.insts.len) return null;
+    if ((of(graph, interfaces, bir, scrutinee, interner) orelse return null) != .development) return null;
+    const dropped: []const u8 = if (release) "True" else "False";
+    for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+        const b = bir.instData(branch);
+        const pattern: Inst.Index = @enumFromInt(b.lhs);
+        if (pattern.int() >= bir.insts.len or bir.instTag(pattern) != .pat_ctor) continue;
+        const ref: Inst.Index = @enumFromInt(bir.instData(pattern).lhs);
+        if (ref.int() >= bir.insts.len or bir.instTag(ref) != .ext_ctor) continue;
+        const rd = bir.instData(ref);
+        const module: Graph.Index = @enumFromInt(rd.lhs);
+        if (module.int() >= interfaces.len or graph.module(module).package != .core) continue;
+        const iface = &interfaces[module.int()];
+        if (rd.rhs >= iface.ctors.len) continue;
+        if (std.mem.eql(u8, interner.slice(iface.symbols[@intFromEnum(iface.ctors[rd.rhs].name)]), dropped)) return branch;
+    }
+    return null;
+}
 
 /// The intrinsic `inst` names, or null: an `ext_value` of core's `Js`.
 /// `interner` is anything with `slice(Symbol) []const u8`.

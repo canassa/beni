@@ -263,6 +263,8 @@ pub const Input = struct {
     /// (§2, §9). A library's callers are not in the build, so its public
     /// surface is its root set.
     library: bool = false,
+    /// `--release`: which arm of an `if Js.development` the build drops.
+    release: bool = false,
     /// The vocabulary module of a build that lowers markup: an event's
     /// payload extractor is one of its values, reached by the markup leg
     /// (`checker-v2.md` §25.7).
@@ -753,8 +755,9 @@ pub const Builder = struct {
     }
 
     /// Per instruction of `bir`, whether it is a `Js` intrinsic `Lower`
-    /// writes in place (`JsIntrinsic`): the callee of a `call`, or `null`
-    /// and `undefined` wherever they stand. Empty without an interner.
+    /// writes in place (`JsIntrinsic`): the callee of a `call`, or `null`,
+    /// `undefined` and `development` wherever they stand. Empty without an
+    /// interner.
     fn jsInPlace(b: *Builder, bir: *const Bir, m: Graph.Index) Allocator.Error![]const bool {
         const interner = b.in.interner orelse return &.{};
         const dispatch = b.in.dispatchOf(m);
@@ -778,7 +781,7 @@ pub const Builder = struct {
                 }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(i), interner)) |which| {
-                if (which == .null or which == .undefined) marks[i] = true;
+                if (which == .null or which == .undefined or which == .development) marks[i] = true;
             },
             else => {},
         };
@@ -924,6 +927,18 @@ pub const Builder = struct {
                     try g.patternCtors(@enumFromInt(pattern), 0);
                     if (g.chain_ctors.items.len == first) continue;
                     try g.arms.append(scratch, .{ .from = pattern + 1, .to = body, .start = first, .end = @intCast(g.chain_ctors.items.len) });
+                },
+                // The arm of an `if Js.development` this build does not
+                // take (`backend.md` §4, *`Js.development` is the build's
+                // mode*): guarded by a constructor no build reaches, so no
+                // edge out of it is ever followed.
+                .case => if (g.b.in.interner) |interner| {
+                    const branch = JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, @enumFromInt(@as(u32, @intCast(p))), interner, g.b.in.release) orelse continue;
+                    const arm = bir.instData(branch);
+                    if (!(arm.lhs >= start and arm.lhs < arm.rhs and arm.rhs < p)) continue;
+                    const first: u32 = @intCast(g.chain_ctors.items.len);
+                    try g.chain_ctors.append(scratch, .{ .module = g.m, .kind = .ctor, .index = std.math.maxInt(u32) });
+                    try g.arms.append(scratch, .{ .from = arm.lhs + 1, .to = arm.rhs, .start = first, .end = first + 1 });
                 },
                 else => {},
             };

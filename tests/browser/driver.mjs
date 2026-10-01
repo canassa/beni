@@ -29,7 +29,13 @@
 //                               the live `.value`, then an `input` InputEvent;
 //                               the page settles between two characters, as
 //                               it does between two keystrokes
-//   key <selector> <key>        `keydown` then `keyup` KeyboardEvents with that `key`
+//   key <selector> <key> [<modifier>…] [code:<code>]
+//                               `keydown` then `keyup` KeyboardEvents with that
+//                               `key`, each modifier (`ctrl`, `shift`, `alt`,
+//                               `meta`, `repeat`) set and `code` given (default
+//                               ""); each one whose default a handler
+//                               prevented logs `(keydown's default prevented)`
+//                               or `(keyup's …)` when its dispatch returns
 //   focus <selector>            `.focus()`
 //   advance <ms>                move the page's virtual clock on by `ms`,
 //                               firing each timer that comes due, in
@@ -37,6 +43,15 @@
 //   event <window|document> <name> [<n>]
 //                               `n` (default 1) plain `Event`s of that name
 //                               on the window or the document, in one task
+//   url "<url>"                 `history.replaceState` to the URL, relative to
+//                               the page's (`"?q=1#/active"`); nothing fires
+//   hash "<#fragment>"          the same, then one `hashchange` on the window
+//                               in the step's task — what following a link
+//                               to the fragment does, without happy-dom's
+//                               second event
+//   store <local|session> "<key>" "<value>"
+//                               `setItem` on that storage
+//   storage <local|session>     log `(localStorage: {…})`, every item by key
 //   throws <step>               any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
@@ -75,6 +90,12 @@ import { pathToFileURL } from "node:url";
 function prelude() {
   const record = { log: [], errors: [] };
   globalThis.__beniHarness = record;
+  // Every page starts with empty storage: Chrome keeps a `file:` page's
+  // across the pages of one run, happy-dom's window starts empty.
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {}
   // The page's clock is virtual: `Date.now()` starts at 0 and moves only
   // when an `advance` step moves it, and a `setTimeout` callback runs only
   // when an `advance` step reaches its time. The driver keeps the real
@@ -161,6 +182,29 @@ function step(s) {
       return null;
     })();
   }
+  if (s.command === "url") {
+    history.replaceState(null, "", s.text);
+    return null;
+  }
+  if (s.command === "hash") {
+    const oldURL = location.href;
+    history.replaceState(null, "", s.text);
+    dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
+    return null;
+  }
+  if (s.command === "store") {
+    (s.selector === "local" ? localStorage : sessionStorage).setItem(s.key, s.value);
+    return null;
+  }
+  if (s.command === "storage") {
+    const area = s.selector === "local" ? localStorage : sessionStorage;
+    const entries = {};
+    const keys = [];
+    for (let i = 0; i < area.length; i++) keys.push(area.key(i));
+    for (const k of keys.sort()) entries[k] = area.getItem(k);
+    globalThis.__beniHarness.log.push(`(${s.selector}Storage: ${JSON.stringify(entries)})`);
+    return null;
+  }
   if (s.command === "event") {
     const on = s.selector === "window" ? globalThis : document;
     for (let n = 0; n < s.count; n++) on.dispatchEvent(new Event(s.name));
@@ -193,10 +237,12 @@ function step(s) {
       target.value += s.text;
       target.dispatchEvent(new InputEvent("input", { ...init, cancelable: false, inputType: "insertText", data: s.text }));
       return null;
-    case "key":
-      target.dispatchEvent(new KeyboardEvent("keydown", { ...init, key: s.key }));
-      target.dispatchEvent(new KeyboardEvent("keyup", { ...init, key: s.key }));
+    case "key": {
+      const key = { ...init, key: s.key, code: s.code, ...s.modifiers };
+      if (!target.dispatchEvent(new KeyboardEvent("keydown", key))) globalThis.__beniHarness.log.push("(keydown's default prevented)");
+      if (!target.dispatchEvent(new KeyboardEvent("keyup", key))) globalThis.__beniHarness.log.push("(keyup's default prevented)");
       return null;
+    }
     case "focus":
       target.focus();
       return null;
@@ -296,6 +342,22 @@ if (stepsPath !== undefined) {
     if (command === "advance") {
       if (argument !== undefined || !/^[0-9]+$/.test(selector)) usage(`${where}: \`advance\` takes a number of milliseconds`);
       s.ms = Number(selector);
+    } else if (command === "url" || command === "hash") {
+      try {
+        s.text = JSON.parse(argument === undefined ? selector : "");
+      } catch {
+        s.text = undefined;
+      }
+      if (typeof s.text !== "string" || (command === "hash" && !s.text.startsWith("#"))) {
+        usage(`${where}: \`${command}\` takes one JSON string${command === "hash" ? " that starts with `#`" : ""}`);
+      }
+    } else if (command === "store") {
+      const kv = (argument ?? "").match(/^("(?:[^"\\]|\\.)*")\s+("(?:[^"\\]|\\.)*")$/);
+      if ((selector !== "local" && selector !== "session") || kv === null) usage(`${where}: \`store\` takes \`local\` or \`session\` and two JSON strings`);
+      s.key = JSON.parse(kv[1]);
+      s.value = JSON.parse(kv[2]);
+    } else if (command === "storage") {
+      if ((selector !== "local" && selector !== "session") || argument !== undefined) usage(`${where}: \`storage\` takes \`local\` or \`session\``);
     } else if (command === "event") {
       const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
       if ((selector !== "window" && selector !== "document") || e === null) {
@@ -317,8 +379,16 @@ if (stepsPath !== undefined) {
       if (typeof s.text !== "string") usage(`${where}: \`${command}\` takes a selector and a JSON string`);
       if (command === "type" && s.text === "") usage(`${where}: \`type\` takes at least one character`);
     } else if (command === "key") {
-      if (argument === undefined || /\s/.test(argument)) usage(`${where}: \`key\` takes a selector and one key name`);
-      s.key = argument;
+      const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
+      if (words.length === 0) usage(`${where}: \`key\` takes a selector, one key name and at most its modifiers and \`code:<code>\``);
+      s.key = words[0];
+      s.code = "";
+      s.modifiers = {};
+      for (const w of words.slice(1)) {
+        if (["ctrl", "shift", "alt", "meta", "repeat"].includes(w)) s.modifiers[w === "repeat" ? "repeat" : `${w}Key`] = true;
+        else if (/^code:\S+$/.test(w)) s.code = w.slice("code:".length);
+        else usage(`${where}: \`key\` takes \`ctrl\`, \`shift\`, \`alt\`, \`meta\`, \`repeat\` or \`code:<code>\` after the key, not \`${w}\``);
+      }
     } else usage(`${where}: unknown command \`${command}\``);
     steps.push(s);
   });
@@ -484,7 +554,22 @@ const phase = async (title, act, throws = false) => {
 const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?(?:, ?start ?)?\} ?from ?"([^"]+)";$/m);
 const runtime = runtimeImport === null ? `./${basename(entry)}` : runtimeImport[1];
 
-if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
+// The steps before the first that is not `url` or `store` set the page up:
+// they run before the program loads, each a heading with nothing under it.
+const setup = [];
+while (steps.length !== 0 && (steps[0].command === "url" || steps[0].command === "store") && !steps[0].throws) setup.push(steps.shift());
+let setupFault = null;
+for (const s of setup) {
+  transcript.push(`-- ${s.line}`);
+  const why = await page.run(step, s);
+  if (why !== null) {
+    setupFault = `${s.where}: ${s.line}: ${why}`;
+    break;
+  }
+}
+
+if (setupFault !== null) await finish(1, setupFault);
+else if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
   let ok = true;
   for (const s of steps) {
     ok = await phase(s.line, async () => {

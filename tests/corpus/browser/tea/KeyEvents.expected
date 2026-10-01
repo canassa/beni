@@ -1,0 +1,74 @@
+-- load
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul></ul>
+    <p id="last">""</p>
+  </main>
+</body>
+-- type #new "milk"
+<body>
+  <main>
+    <input id="new" .value="milk">
+    <button id="click">"click"</button>
+    <ul></ul>
+    <p id="last">""</p>
+  </main>
+</body>
+-- key #new Enter
+(keydown's default prevented)
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul>
+      <li>"milk"</li>
+    </ul>
+    <p id="last">""</p>
+  </main>
+</body>
+-- key #new a ctrl code:KeyA
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul>
+      <li>"milk"</li>
+    </ul>
+    <p id="last">"ctrl key=\"a\" code=\"KeyA\""</p>
+  </main>
+</body>
+-- key #new Enter shift code:Enter
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul>
+      <li>"milk"</li>
+    </ul>
+    <p id="last">"shift key=\"Enter\" code=\"Enter\""</p>
+  </main>
+</body>
+-- key #new x alt meta code:KeyX
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul>
+      <li>"milk"</li>
+    </ul>
+    <p id="last">"alt meta key=\"x\" code=\"KeyX\""</p>
+  </main>
+</body>
+-- click #click
+<body>
+  <main>
+    <input id="new" .value="">
+    <button id="click">"click"</button>
+    <ul>
+      <li>"milk"</li>
+    </ul>
+    <p id="last">"key=\"\" code=\"\""</p>
+  </main>
+</body>
