@@ -5399,6 +5399,14 @@ functions, functions called once, scalar replacement, then the facts — repeat 
 while one finds something. A name a copied body adds to a module is a property name the session's
 pool already numbered (`Pts.propId` finds it in the module it came from).
 
+*Amended 2026-10-03.* Once the passes are done, **`x = x`** — a name read and written back, the
+model the render loop's `update` leaves as `d = d` — goes from every list (the printer wrote it
+as nothing, but it still counted as a use and an assignment, so the binding it named stayed); and
+a binding lowering kept for its initialiser, whose initialiser is a read through program objects
+(`safeChain`: no getter, no throw), is kept no more, as one the facts folded to an atom is. The
+empty page's model, `let e=a.init`, nothing reading it now, goes: 496 → **493**. Neither runs
+inside the passes, which would ask the facts again of a program that only lost an assignment.
+
 Measured (release, brotli, the whole bundle): the empty `browser` page and `Tea.sandbox` 550 →
 **503** — `first`, `last`, `patch`'s identity and `view`'s block written where they were called,
 the program's `update` (the identity of its model) gone from the render loop; `Tea.element`

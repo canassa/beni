@@ -185,7 +185,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
         try s.grow();
         try s.rounds();
     }
-    s.releaseKeeps();
+    s.list_mode = .self_assign;
+    _ = try s.eachFunctionList();
+    try s.releaseKeeps();
     try s.finish();
 }
 
@@ -390,7 +392,7 @@ const Spec = struct {
     /// each rewrite.
     name_in: std.AutoHashMapUnmanaged(SiteProp, u32) = .empty,
     /// What `srList` does to each statement list it reaches.
-    list_mode: enum { scalars, constructors } = .scalars,
+    list_mode: enum { scalars, constructors, self_assign } = .scalars,
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
 
@@ -2062,6 +2064,7 @@ const Spec = struct {
         const ir = m.ir;
         if (ir.tag(stmt) != .assign_stmt) return false;
         const target: Index = @enumFromInt(ir.data(stmt).lhs);
+        if (ir.tag(target) == .ident) return false;
         if (ir.tag(target) != .member) return false;
         const td = ir.data(target);
         const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(td.lhs)) orelse return false;
@@ -2195,9 +2198,34 @@ const Spec = struct {
     /// initialiser the facts folded to something that does nothing (a
     /// literal, a name): kept no more, so the optimiser drops it when
     /// nothing reads it.
-    fn releaseKeeps(s: *Spec) void {
+    fn releaseKeeps(s: *Spec) Allocator.Error!void {
         for (s.mods) |*m| {
             const t = m.tables orelse continue;
+            // Slice 8: a read through program objects does nothing either
+            // (`Pts.safeChain`, asked in the declaration that holds it):
+            // per kept binding, that declaration.
+            const nodes = m.ir.nodes.len;
+            var kept_set: std.DynamicBitSetUnmanaged = .{};
+            var top_of: []Index = &.{};
+            var found: std.DynamicBitSetUnmanaged = .{};
+            if (s.pts.ok and t.keep.items.len != 0) {
+                kept_set = try .initEmpty(s.arena, nodes);
+                for (t.keep.items) |node| if (node.int() < nodes) kept_set.set(node.int());
+                top_of = try s.arena.alloc(Index, nodes);
+                found = try .initEmpty(s.arena, nodes);
+                var stack: std.ArrayList(Index) = .empty;
+                for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+                    stack.clearRetainingCapacity();
+                    try stack.append(s.arena, top);
+                    while (JsIr.popOperand(&stack)) |node| {
+                        if (node.int() < nodes and kept_set.isSet(node.int())) {
+                            top_of[node.int()] = top;
+                            found.set(node.int());
+                        }
+                        try pushChildren(s.arena, m.ir, node, &stack);
+                    }
+                }
+            }
             var kept: usize = 0;
             for (t.keep.items) |node| {
                 const value: ?Index = switch (m.ir.tag(node)) {
@@ -2205,7 +2233,14 @@ const Spec = struct {
                     .let_decl => @as(Node.OptionalIndex, @enumFromInt(m.ir.data(node).rhs)).unwrap(),
                     else => null,
                 };
-                if (value) |v| if (inert(m.ir, v)) continue;
+                if (value) |v| {
+                    if (inert(m.ir, v)) continue;
+                    if (top_of.len != 0 and m.ir.tag(v) == .member and node.int() < nodes and v.int() < s.pts.vals[m.index].len) {
+                        // A binding no walk reached is in no top: kept.
+                        const top = top_of[node.int()];
+                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) continue;
+                    }
+                }
                 t.keep.items[kept] = node;
                 kept += 1;
             }
@@ -2607,6 +2642,19 @@ const Spec = struct {
                 try out.append(s.arena, raw);
             },
             .constructors => changed = try s.foldConstructors(m, top, items, &out),
+            // `x = x` does nothing: a name read and written back (an
+            // identity written in place, slice 8).
+            .self_assign => for (items) |raw| {
+                const st: Index = @enumFromInt(raw);
+                if (m.ir.tag(st) == .assign_stmt) {
+                    const target: Index = @enumFromInt(m.ir.data(st).lhs);
+                    if (m.ir.tag(target) == .ident and sameChain(m.ir, target, @enumFromInt(m.ir.data(st).rhs))) {
+                        changed = true;
+                        continue;
+                    }
+                }
+                try out.append(s.arena, raw);
+            },
         }
         if (!changed) return any;
         const start = try m.append(s.gpa, out.items);
