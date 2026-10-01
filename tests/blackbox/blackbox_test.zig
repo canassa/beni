@@ -2044,7 +2044,10 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
     // the column of its own; the first operand's keeps them, as do a lambda
     // followed on its line by an operator or `?`. A lambda whose body is
     // below hangs, its head line joining the `=`; `f a <| λx ->` is
-    // `f a λx ->`; a markup hole's `}` ends a bare lambda.
+    // `f a λx ->`; a markup hole's `}` ends a bare lambda. An application
+    // that hangs its lambda joins the breaks between its arguments, and is
+    // measured so, so a group around it closes on the same line and the
+    // output is a fixed point of `beni fmt`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -2081,6 +2084,14 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
         \\
         \\
         \\rows items = <ul>{List.map items (λi -> <li>{i}</li>)}</ul>
+        \\
+        \\
+        \\nested people =
+        \\    hash
+        \\        (List.map
+        \\            (List.sortBy people (λp -> p.age))
+        \\            (λp -> p.age * 1000)
+        \\        )
         \\
     );
 
@@ -2129,6 +2140,11 @@ test "fmt --migrate-trailing-lambda drops a last-argument lambda's parentheses o
         \\
         \\
         \\rows items = <ul>{List.map items λi -> <li>{i}</li>}</ul>
+        \\
+        \\
+        \\nested people =
+        \\    hash
+        \\        (List.map (List.sortBy people λp -> p.age) λp -> p.age * 1000)
         \\
     , try w.read("Main.beni"));
 }

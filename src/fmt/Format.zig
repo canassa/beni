@@ -234,28 +234,6 @@ pub fn formatWith(
     const widths = try scratch.alloc(u32, n);
     const firsts = try scratch.alloc(u32, n);
     const lasts = try scratch.alloc(u32, n);
-    var m: Measurer = .{
-        .tree = tree,
-        .tags = tokens.items(.tag),
-        .starts = tokens.items(.start),
-        .tok_lines = tokens.items(.line),
-        .comments = comments,
-        .source = source,
-        .widths = widths,
-        .firsts = firsts,
-        .lasts = lasts,
-        .scratch = scratch,
-    };
-    defer m.stack.deinit(scratch);
-    try m.measureRoot();
-
-    // The first token of every block (language.md §12.2), which has no
-    // keyword of its own for `hasBlockKeyword` to see.
-    const block_starts = try scratch.alloc(bool, tokens.len);
-    @memset(block_starts, false);
-    for (tree.nodes.items(.tag), tree.nodes.items(.main_token)) |tag, main| {
-        if (tag == .block) block_starts[main] = true;
-    }
 
     // For every application whose last argument is a lambda, the operator
     // or `?` that follows it, if any (`Printer.trailingPlan`): a lambda
@@ -281,6 +259,32 @@ pub fn formatWith(
             }
         }
     }
+
+    var m: Measurer = .{
+        .tail_op = tail_op,
+        .trailing_lambdas = options.trailing_lambdas,
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = widths,
+        .firsts = firsts,
+        .lasts = lasts,
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+
+    // The first token of every block (language.md §12.2), which has no
+    // keyword of its own for `hasBlockKeyword` to see.
+    const block_starts = try scratch.alloc(bool, tokens.len);
+    @memset(block_starts, false);
+    for (tree.nodes.items(.tag), tree.nodes.items(.main_token)) |tag, main| {
+        if (tag == .block) block_starts[main] = true;
+    }
+
     const op_place = try scratch.alloc(u32, n);
     @memset(op_place, place_unknown);
     const lambda_marks = try scratch.alloc(LambdaMark, n);
@@ -977,7 +981,45 @@ fn commentsBefore(comments: []const Token.Comment, t: TokenIndex) []const Token.
 // Pass 1: widths and token spans
 // ---------------------------------------------------------------------------
 
+/// The lambda inside `arg` when `arg` is a parenthesised lambda whose
+/// parentheses `--migrate-trailing-lambda` may drop: no comment sits on
+/// either of them (frontend.md §11.5).
+fn lambdaInParens(tree: *const Ast, comments: []const Token.Comment, lasts: []const u32, arg: Index) ?Index {
+    if (tree.nodeTag(arg) != .paren) return null;
+    const inner = tree.operand(arg);
+    if (tree.nodeTag(inner) != .lambda) return null;
+    const open = tree.nodeMainToken(arg);
+    if (commentsBefore(comments, open + 1).len != 0 or commentsBefore(comments, lasts[inner.int()] + 1).len != 0) return null;
+    return inner;
+}
+
+/// Whether the `pipe_left` `n`, `f a <| λx -> e`, may be written as the
+/// application `f a λx -> e` (language.md §12.5): its right side is a
+/// lambda, its left a call without a `_`, a name or an accessor, and no
+/// comment sits at the `<|`.
+fn pipeConvertible(tree: *const Ast, comments: []const Token.Comment, n: Index) bool {
+    const d = tree.nodeData(n);
+    if (tree.nodeTag(@enumFromInt(d.rhs)) != .lambda) return false;
+    const op = tree.nodeMainToken(n);
+    if (commentsBefore(comments, op).len != 0 or commentsBefore(comments, op + 1).len != 0) return false;
+    const lhs: Index = @enumFromInt(d.lhs);
+    return switch (tree.nodeTag(lhs)) {
+        .apply => for (tree.fullApply(lhs).args) |arg| {
+            if (tree.nodeTag(arg) == .placeholder) break false;
+        } else true,
+        .ident, .ctor, .field_access, .tuple_index => true,
+        else => false,
+    };
+}
+
 const Measurer = struct {
+    /// `Printer.tail_op`, which the measure of an application needs.
+    tail_op: []const u32 = &.{},
+    /// `Options.trailing_lambdas`: an application whose last-argument
+    /// lambda is printed without its parentheses wherever it ends up — one
+    /// nothing follows — and a `<|` printed as an application are measured
+    /// as printed, so the first run's choices are the second run's.
+    trailing_lambdas: bool = false,
     tree: *const Ast,
     tags: []const Token.Tag,
     starts: []const u32,
@@ -1389,7 +1431,18 @@ const Measurer = struct {
             .apply => {
                 const all = tree.children(n);
                 try m.measure(all[0]);
-                try m.headed(n, m.w(all[0]), m.first(all[0]), m.last(all[0]), all[1..], true);
+                try m.headed(n, m.w(all[0]), m.first(all[0]), m.last(all[0]), all[1..], false);
+                // A lambda printed bare hangs, and a hanging application's
+                // head ignores the source's breaks (language.md §12.5), so
+                // they do not pin the vertical form here either: the
+                // printer joins them whenever the whole fits.
+                const last_arg = all[all.len - 1];
+                const dropped = m.trailing_lambdas and m.tail_op[n.int()] == no_node and
+                    lambdaInParens(tree, m.comments, m.lasts, last_arg) != null;
+                if (dropped and m.w(n) != no_fit) m.widths[n.int()] -= 2;
+                if (!dropped and tree.nodeTag(last_arg) != .lambda and m.brokenBetween(m.last(all[0]), all[1..], null)) {
+                    m.widths[n.int()] = no_fit;
+                }
             },
             .lambda => {
                 const l = tree.fullLambda(n);
@@ -1719,6 +1772,16 @@ const Measurer = struct {
             const op_width = m.tokenWidth(op_tok) + 2;
             m.set(s, if (broken) no_fit else m.w(lhs) +| op_width +| m.w(rhs), m.first(lhs), m.last(rhs));
         }
+        // `f a <| λx -> e` printed as `f a λx -> e` (`Printer.pipePlan`).
+        if (tag == .pipe_left and m.trailing_lambdas and pipeConvertible(m.tree, m.comments, top)) {
+            const d = m.tree.nodeData(top);
+            const lhs: Index = @enumFromInt(d.lhs);
+            const lambda: Index = @enumFromInt(d.rhs);
+            m.widths[top.int()] = if (m.tok_lines[m.last(lhs)] != m.tok_lines[m.first(lambda)])
+                no_fit
+            else
+                m.w(lhs) +| 1 +| m.w(lambda);
+        }
     }
 
     /// A trailing `<|` lambda whose body the author put on its own line
@@ -1777,7 +1840,7 @@ const Printer = struct {
     block_starts: []const bool,
     /// Per `apply` whose last argument is a lambda: the binary operator or
     /// `?` node whose operator follows it, or `no_node`.
-    tail_op: []const u32,
+    tail_op: []const u32 = &.{},
     /// Per binary operator node: the indentation of the line its operator
     /// is printed at the start of, `place_same_line`, or `place_unknown`
     /// until its chain is laid out (`chain`, before any operand).
@@ -2853,17 +2916,15 @@ const Printer = struct {
             .lambda => {},
             .paren => {
                 if (!p.trailing_lambdas) return null;
-                const inner = tree.operand(last_arg);
-                if (tree.nodeTag(inner) != .lambda) return null;
-                const open = tree.nodeMainToken(last_arg);
-                if (commentsBefore(p.comments, open + 1).len != 0 or commentsBefore(p.comments, p.last(inner) + 1).len != 0) return null;
-                plan.lambda = inner;
+                plan.lambda = lambdaInParens(tree, p.comments, p.lasts, last_arg) orelse return null;
                 plan.paren = last_arg;
             },
             else => return null,
         }
+        // The measure already left the parentheses out where nothing
+        // follows the application (`Measurer.trailing_lambdas`).
         const base = p.widths[n.int()];
-        const width = if (plan.paren != null and base != no_fit) base - 2 else base;
+        const width = if (plan.paren != null and base != no_fit and p.tail_op[n.int()] != no_node) base - 2 else base;
         plan.layout = p.trailingLayout(&plan, width, col);
         const lambda_line = if (plan.layout == .vertical) indent + indent_step else line_indent;
         if (p.followSafe(n, lambda_line)) return plan;
@@ -2879,33 +2940,22 @@ const Printer = struct {
     /// Otherwise null, and it prints as the operator chain it is.
     fn pipePlan(p: *const Printer, n: Index, col: u32) Error!?TrailingPlan {
         const tree = p.tree;
+        if (!pipeConvertible(tree, p.comments, n)) return null;
         const d = tree.nodeData(n);
         const lhs: Index = @enumFromInt(d.lhs);
         const lambda: Index = @enumFromInt(d.rhs);
-        if (tree.nodeTag(lambda) != .lambda) return null;
-        const op = tree.nodeMainToken(n);
-        if (commentsBefore(p.comments, op).len != 0 or commentsBefore(p.comments, op + 1).len != 0) return null;
         var callee = lhs;
         var head_args: []const Index = &.{};
-        switch (tree.nodeTag(lhs)) {
-            .apply => {
-                const a = tree.fullApply(lhs);
-                for (a.args) |arg| if (tree.nodeTag(arg) == .placeholder) return null;
-                callee = a.function;
-                head_args = a.args;
-            },
-            .ident, .ctor, .field_access, .tuple_index => {},
-            else => return null,
+        if (tree.nodeTag(lhs) == .apply) {
+            const a = tree.fullApply(lhs);
+            callee = a.function;
+            head_args = a.args;
         }
         const all = try p.scratch.alloc(Index, head_args.len + 1);
         @memcpy(all[0..head_args.len], head_args);
         all[head_args.len] = lambda;
         var plan: TrailingPlan = .{ .node = n, .callee = callee, .args = all, .lambda = lambda, .pipe = true, .form = .bare, .layout = .one_line };
-        const width = if (p.tok_lines[p.last(lhs)] != p.tok_lines[op + 1])
-            no_fit
-        else
-            p.widths[lhs.int()] +| 1 +| p.widths[lambda.int()];
-        plan.layout = p.trailingLayout(&plan, width, col);
+        plan.layout = p.trailingLayout(&plan, p.widths[n.int()], col);
         return plan;
     }
 

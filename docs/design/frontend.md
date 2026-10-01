@@ -1582,7 +1582,11 @@ differently:
   head is not counted, as a pattern is never broken), `λparams ->` ending it and the body below
   when it does not fit after the `->`; else one argument per line. A definition or binding keeps
   that head line on its `=` line when the head and `λparams ->` fit there (`rhs`). The body joins
-  the `->` line whenever it fits, which is what makes a first run's output a fixed point.
+  the `->` line whenever it fits, which is what makes a first run's output a fixed point. The
+  measure (§3.7) agrees: an application whose last argument is printed as a bare lambda is not
+  pinned vertical by the source's breaks between its arguments, and one whose parentheses are
+  dropped wherever it lands — nothing follows it — is measured without them, so an enclosing
+  group decides on the width the second run will see.
 - **What is left as written.** A parenthesised lambda with a comment on either parenthesis, and
   `f a <| λx ->` when the left of `<|` is not a call without `_`, a name or an accessor, or a
   comment sits at the `<|`, or the `<|` is not the chain's only one (`g <| f a <| λx ->`): those
