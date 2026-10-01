@@ -1791,19 +1791,53 @@ const Case = struct {
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
         var verified: [2]?[]const u8 = .{ null, null };
         var first_error: ?anyerror = null;
-        for ([_]RunPass{ .dev, .release }, &verified) |pass, *line| {
+        // Both builds first, then every page that must run in one Node
+        // process (`browser.driveAll`), then each page's verdict.
+        // A failure is reported in the order a page at a time would meet
+        // it: a release build that fails waits for the development page.
+        var pages: [2]?PagePlan = .{ null, null };
+        var release_error: ?anyerror = null;
+        for ([_]RunPass{ .dev, .release }, &pages) |pass, *plan| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", platform_arg });
             if (pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, if (pass == .release) "--out=release" else "--out=out");
             try args.appendSlice(c.arena, sources);
-            line.* = c.pageOnce(pass, args.items, h, script, record) catch |err| blk: {
+            plan.* = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
+                if (!recording) {
+                    if (pass == .dev) return err;
+                    release_error = err;
+                    break :blk null;
+                }
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
+                break :blk null;
+            };
+        }
+        var entries: std.ArrayList([]const u8) = .empty;
+        for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, p.entry);
+        var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
+        if (entries.items.len != 0) {
+            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
+                detail("{s}: cannot run the pages ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+                return err;
+            };
+        }
+        var next: usize = 0;
+        for (pages, &verified) |plan, *line| {
+            const p = plan orelse continue;
+            if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
+            if (p.skip) continue;
+            const page = shown.pages[next];
+            next += 1;
+            line.* = c.pageVerdict(p, shown.run, page, h, script) catch |err| blk: {
                 if (!recording) return err;
                 RunCounts.add(&run_counts.refused);
                 if (first_error == null) first_error = err;
                 break :blk null;
             };
         }
+        if (release_error) |err| return err;
         if (recording) {
             for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
             try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
@@ -1815,12 +1849,26 @@ const Case = struct {
     /// when it has none, and its bytes (empty then).
     const Script = struct { name: ?[]const u8, bytes: []const u8 };
 
-    /// One build of a `browser/` fixture, and its page. The golden is
-    /// `.expected`, or the build's own `.release-expected`, or under Chrome
-    /// the fixture's `.chrome-expected` when it has one. The page is not
-    /// run when `record` lists this build; recording, the line of a page
-    /// that ran and matched is returned.
-    fn pageOnce(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !?[]const u8 {
+    /// One build of a `browser/` fixture, ready for its page: what the
+    /// page is checked against, and whether it need not run at all.
+    const PagePlan = struct {
+        pass: RunPass,
+        golden: []const u8,
+        bless: bool,
+        out: []const u8,
+        entry: []const u8,
+        /// `record` lists this build: the page is not run.
+        skip: bool,
+        /// Its run hash was looked for (counted `skipped` or `stale` when
+        /// the page's turn comes).
+        checked: bool = false,
+    };
+
+    /// One build of a `browser/` fixture. The golden is `.expected`, or the
+    /// build's own `.release-expected`, or under Chrome the fixture's
+    /// `.chrome-expected` when it has one. The page is skipped when
+    /// `record` lists this build.
+    fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
         const pass_name = @tagName(pass);
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
@@ -1845,27 +1893,44 @@ const Case = struct {
         const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = if (pass == .release) "release" else "out";
+        const plan: PagePlan = .{
+            .pass = pass,
+            .golden = golden,
+            .bless = bless,
+            .out = out,
+            .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out}),
+            .skip = false,
+        };
 
         // Skip the page when this output tree, golden, DOM, driver and
         // script were verified together before. Chrome always runs.
         if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless and !chrome) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const line = try run_hash.lineWith(c.arena, c.w, out, pass_name, golden, bytes, try browser.page(c.arena, h, script.bytes));
-                if (run_hash.listed(record, line)) {
-                    RunCounts.add(&run_counts.skipped);
-                    return null;
-                }
-                RunCounts.add(&run_counts.stale);
+                var checked = plan;
+                checked.skip = run_hash.listed(record, line);
+                checked.checked = true;
+                return checked;
             } else |_| {
                 // No golden: the comparison below reports it.
             }
         }
+        return plan;
+    }
 
-        const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out});
-        const shown = browser.drive(c.w, h, chrome_endpoint, entry, script.name, c.cfg.timeout_ms) catch |err| {
-            detail("{s} [{s}]: cannot run the page ({t}); is node on PATH?\n", .{ c.fixture.name, pass_name, err });
-            return err;
-        };
+    /// One build's page, as `browser.driveAll` ran it (`page`, null when
+    /// the driver's `run` stopped before it), against its golden.
+    /// Recording, the line of a page that ran and matched is returned.
+    fn pageVerdict(c: Case, plan: PagePlan, driver: world.Result, page: ?world.Result, h: browser.Harness, script: Script) !?[]const u8 {
+        const pass_name = @tagName(plan.pass);
+        const chrome = c.cfg.chrome != null;
+        const golden = plan.golden;
+        const bless = plan.bless;
+        const out = plan.out;
+        // No report: the driver stopped before the page ran — it refused its
+        // arguments or the steps, or ran out of time — and says why as it
+        // would have for this page alone.
+        const shown = page orelse driver;
         // Exit 1 is the page failing (an uncaught exception, a step that
         // could not run), with the page until then on stdout; anything else
         // is the driver refusing its arguments or the steps.

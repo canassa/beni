@@ -33,8 +33,10 @@
 //! templates are made of. So the gates pay about 60 ms of CPU more per
 //! page than linkedom would cost for a DOM that behaves like the browser,
 //! and the run hashes below keep them from paying it for a page already
-//! verified. A browser case, two builds and two pages, retires about 1 600
-//! million instructions of the 4 300 budget.
+//! verified. A case's two pages, its development and release builds', run
+//! in one Node process (`driveAll`): Node starting and compiling happy-dom
+//! is about 500 million instructions of a page's 550 to 600 on a TodoMVC-
+//! sized program, and the second page does not pay it again.
 //!
 //! **Run hashes.** A browser build's record line is
 //! `<pass> <node version> <dom> <sha-256>` (`run_hash.lineWith`): the
@@ -136,6 +138,66 @@ pub fn drive(
     try argv.append(arena, entry);
     if (steps) |s| try argv.append(arena, s);
     return world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .dir = w.tmp.dir }, timeout_ms);
+}
+
+/// What `driveAll` gives: the driver's own run, and per page what a run of
+/// that page alone would have given — null for a page the run stopped
+/// before (a timeout, a crash of the driver), which `run` explains.
+pub const Pages = struct {
+    run: world.Result,
+    pages: []?world.Result,
+};
+
+/// Every page of `entries`, one after another in ONE Node process, each in
+/// a fresh page (the driver's `--page`): Node starts and compiles the DOM
+/// once for all of them, and each page's exit code, stdout and stderr are
+/// what `drive` of it alone would give. Each page may take `timeout_ms`.
+pub fn driveAll(
+    w: *World,
+    h: Harness,
+    chrome: ?[]const u8,
+    entries: []const []const u8,
+    steps: ?[]const u8,
+    timeout_ms: i64,
+) !Pages {
+    const arena = w.arena.allocator();
+    const node = w.node_exe orelse return error.NodeNotOnPath;
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(arena, &.{ node, h.driver });
+    try argv.append(arena, if (chrome) |endpoint|
+        try std.fmt.allocPrint(arena, "--chrome={s}", .{endpoint})
+    else
+        try std.fmt.allocPrint(arena, "--dom={s}", .{h.dom}));
+    if (steps) |s| try argv.append(arena, try std.fmt.allocPrint(arena, "--steps={s}", .{s}));
+    const reports = try arena.alloc([]const u8, entries.len);
+    for (entries, reports, 0..) |entry, *report, i| {
+        report.* = try std.fmt.allocPrint(arena, "_page{d}.json", .{i});
+        w.tmp.dir.deleteFile(w.io, report.*) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        };
+        try argv.append(arena, try std.fmt.allocPrint(arena, "--page={s}@{s}", .{ entry, report.* }));
+    }
+    const run = try world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .dir = w.tmp.dir }, timeout_ms * @as(i64, @intCast(entries.len)));
+    const pages = try arena.alloc(?world.Result, entries.len);
+    for (reports, pages) |report, *slot| {
+        slot.* = null;
+        const bytes = w.tmp.dir.readFileAlloc(w.io, report, arena, .limited(world.max_stream_bytes)) catch |err| switch (err) {
+            error.FileNotFound => continue,
+            else => return err,
+        };
+        const Report = struct { code: u8, stdout: []const u8, stderr: []const u8 };
+        // A report cut short: the run stopped while writing it.
+        const r = std.json.parseFromSliceLeaky(Report, arena, bytes, .{}) catch continue;
+        slot.* = .{
+            .exit_code = r.code,
+            .term = .{ .exited = r.code },
+            .stdout = r.stdout,
+            .stderr = r.stderr,
+            .diagnostics = &.{},
+        };
+    }
+    return .{ .run = run, .pages = pages };
 }
 
 /// The Chrome `test-browser` runs pages in: `BENI_CHROME` when it is set

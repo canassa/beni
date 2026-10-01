@@ -16,6 +16,14 @@
 // exception, or a step could not run; the transcript so far is on stdout and
 // the reason on stderr. Exit 2: the driver was called wrongly.
 //
+//   node driver.mjs --dom=<happy-dom.mjs> [--steps=<steps>] --page=<entry.mjs>@<report.json>…
+//
+// runs each page in turn in this one process, each in a page of its own,
+// and writes what a run of it alone would have given — its exit code,
+// stdout and stderr — to its report, as `{"code":…,"stdout":…,"stderr":…}`.
+// The corpus walker runs a fixture's development and release builds so:
+// Node starts, and compiles the DOM, once for both.
+//
 // The steps file has one step per line; `#` starts a comment line:
 //
 //   click <selector>            a bubbling, cancelable `click` MouseEvent
@@ -76,7 +84,7 @@
 // `input`.
 
 import { Console } from "node:console";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -331,21 +339,36 @@ function serialise() {
 // ---------------------------------------------------------------------------
 
 const usage = (why) => {
-  process.stderr.write(`driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) <entry.mjs> [<steps>]\n`);
+  process.stderr.write(
+    `driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) <entry.mjs> [<steps>]\n` +
+      `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] --page=<entry.mjs>@<report.json>…\n`,
+  );
   process.exit(2);
 };
 
+// One page per run, its transcript on stdout and its exit code the run's;
+// or, with `--page`, several pages one after another in this one process,
+// each in a fresh window, each page's exit code, stdout and stderr written
+// as JSON to its report (`{"code":…,"stdout":…,"stderr":…}`) — the same
+// three a run of that page alone would give — and the run's exit code 0.
+// Several pages in one process skip Node's start and the DOM's load for
+// every page after the first.
 const options = {};
 const positional = [];
+const pages = [];
 for (const arg of process.argv.slice(2)) {
-  const m = arg.match(/^--(dom|chrome)=(.+)$/);
+  const m = arg.match(/^--(dom|chrome|steps)=(.+)$/);
+  const p = arg.match(/^--page=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
+  else if (p) pages.push({ entry: p[1], report: p[2] });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
 }
-if (positional.length < 1 || positional.length > 2) usage("expected an entry file and at most one steps file");
+if (pages.length === 0 && (positional.length < 1 || positional.length > 2)) usage("expected an entry file and at most one steps file");
+if (pages.length !== 0 && positional.length !== 0) usage("--page takes the place of the entry and steps files");
 if ((options.dom === undefined) === (options.chrome === undefined)) usage("give exactly one of --dom and --chrome");
-const [entry, stepsPath] = positional;
+if (pages.length === 0) pages.push({ entry: positional[0], report: null });
+const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // Parse the whole script before the page loads, so a malformed step is
 // reported without running anything.
@@ -424,9 +447,10 @@ if (stepsPath !== undefined) {
 // from a server the driver starts (`/fs/<absolute path>` serves a file);
 // happy-dom only names the address and imports the program from disk.
 // Only the port differs between the two, so no fixture shows it.
-const entryFile = resolve(entry);
-let pageUrl = "http://127.0.0.1:8000/_page.html";
-let entryUrl = pathToFileURL(entryFile).href;
+// Each page's, set before it is made (`runPage`).
+let entryFile = "";
+let pageUrl = "";
+let entryUrl = "";
 const blank = "<!DOCTYPE html><html><head></head><body></body></html>";
 
 async function serve() {
@@ -503,17 +527,33 @@ async function happyDomPage(domPath) {
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
   // same, and a browser reports it to the page's `error` listeners: so does
-  // this, which is also how the prelude records it.
-  const record = globalThis.__beniHarness;
-  process.on("uncaughtException", (error) =>
-    globalThis.dispatchEvent(new globalThis.ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) })),
-  );
-  process.on("unhandledRejection", (error) => record.errors.push(record.describe(error)));
+  // this, which is also how the prelude records it. Installed once, for
+  // whichever page is the current one.
+  if (!happyDomPage.handled) {
+    happyDomPage.handled = true;
+    process.on("uncaughtException", (error) =>
+      globalThis.dispatchEvent(new globalThis.ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) })),
+    );
+    process.on("unhandledRejection", (error) => {
+      const record = globalThis.__beniHarness;
+      record.errors.push(record.describe(error));
+    });
+  }
   return {
     run: async (fn, arg) => fn(arg),
-    close: async () => {},
+    // Nothing the page set going may run once the next page is up: its
+    // timers, frames and fetches are cancelled, and what the prelude
+    // replaced is Node's again.
+    close: async () => {
+      await window.happyDOM.abort();
+      globalThis.setTimeout = nodeTimers.setTimeout;
+      globalThis.clearTimeout = nodeTimers.clearTimeout;
+    },
   };
 }
+
+// Node's timers, which the prelude replaces with the page's virtual clock.
+const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
 
 async function chromePage(endpoint) {
   const server = await serve();
@@ -570,84 +610,109 @@ async function chromePage(endpoint) {
   };
 }
 
-const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
+// One page: load `entry` into a fresh page, run the steps, and resolve to
+// what a run of it alone would give — its exit code, its transcript (stdout)
+// and why it failed (stderr).
+async function runPage(entry) {
+  entryFile = resolve(entry);
+  pageUrl = "http://127.0.0.1:8000/_page.html";
+  entryUrl = pathToFileURL(entryFile).href;
+  const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
+  const script = [...steps];
 
-const transcript = [];
-let shown = null;
-const finish = async (code, why) => {
-  await page.close();
-  process.stdout.write(transcript.length === 0 ? "" : `${transcript.join("\n")}\n`, () => {
-    if (why !== undefined) process.stderr.write(`${why}\n`, () => process.exit(code));
-    else process.exit(code);
-  });
-};
+  const transcript = [];
+  let shown = null;
+  let result = null;
+  const finish = async (code, why) => {
+    await page.close();
+    result = {
+      code,
+      stdout: transcript.length === 0 ? "" : `${transcript.join("\n")}\n`,
+      stderr: why === undefined ? "" : `${why}\n`,
+    };
+  };
 
-// One phase: act, let the page settle, then record what it logged and what
-// it now shows.
-const phase = async (title, act, throws = false) => {
-  transcript.push(`-- ${title}`);
-  const fault = await act();
-  await page.run(settle);
-  const { log, errors } = await page.run(drain);
-  transcript.push(...log);
-  if (throws) {
-    if (errors.length === 0) {
-      await finish(1, `${title}: the step was to make the page throw, and it did not`);
+  // One phase: act, let the page settle, then record what it logged and
+  // what it now shows.
+  const phase = async (title, act, throws = false) => {
+    transcript.push(`-- ${title}`);
+    const fault = await act();
+    await page.run(settle);
+    const { log, errors } = await page.run(drain);
+    transcript.push(...log);
+    if (throws) {
+      if (errors.length === 0) {
+        await finish(1, `${title}: the step was to make the page throw, and it did not`);
+        return false;
+      }
+      transcript.push(...errors.map((e) => `(threw: ${e.split("\n")[0]})`));
+    } else if (errors.length !== 0) {
+      await finish(1, `${title}: the page threw an uncaught exception:\n${errors.join("\n")}`);
       return false;
     }
-    transcript.push(...errors.map((e) => `(threw: ${e.split("\n")[0]})`));
-  } else if (errors.length !== 0) {
-    await finish(1, `${title}: the page threw an uncaught exception:\n${errors.join("\n")}`);
-    return false;
-  }
-  if (fault !== null && fault !== undefined) {
-    await finish(1, fault);
-    return false;
-  }
-  const dom = await page.run(serialise);
-  transcript.push(dom === shown ? "(the DOM did not change)" : dom);
-  shown = dom;
-  return true;
-};
+    if (fault !== null && fault !== undefined) {
+      await finish(1, fault);
+      return false;
+    }
+    const dom = await page.run(serialise);
+    transcript.push(dom === shown ? "(the DOM did not change)" : dom);
+    shown = dom;
+    return true;
+  };
 
-// The program runtime, as the entry file names it: `import { run } from …`,
-// or under `--release`, when `start` comes from the same file,
-// `import{run,start}from…`. A `--release` application is one scope-hoisted
-// file that imports no runtime (backend.md §9): the runtime is inside it, and
-// the file itself exports the runtime's `flush`.
-const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?(?:, ?start ?)?\} ?from ?"([^"]+)";$/m);
-const runtime = runtimeImport === null ? `./${basename(entry)}` : runtimeImport[1];
+  // The program runtime, as the entry file names it: `import { run } from
+  // …`, or under `--release`, when `start` comes from the same file,
+  // `import{run,start}from…`. A `--release` application is one
+  // scope-hoisted file that imports no runtime (backend.md §9): the runtime
+  // is inside it, and the file itself exports the runtime's `flush`.
+  const runtimeImport = readFileSync(entryFile, "utf8").match(/^import ?\{ ?run ?(?:, ?start ?)?\} ?from ?"([^"]+)";$/m);
+  const runtime = runtimeImport === null ? `./${basename(entry)}` : runtimeImport[1];
 
-// The steps before the first that is not `url` or `store` set the page up:
-// they run before the program loads, each a heading with nothing under it.
-const setup = [];
-while (steps.length !== 0 && (steps[0].command === "url" || steps[0].command === "store") && !steps[0].throws) setup.push(steps.shift());
-let setupFault = null;
-for (const s of setup) {
-  transcript.push(`-- ${s.line}`);
-  const why = await page.run(step, s);
-  if (why !== null) {
-    setupFault = `${s.where}: ${s.line}: ${why}`;
-    break;
+  // The steps before the first that is not `url` or `store` set the page
+  // up: they run before the program loads, each a heading with nothing
+  // under it.
+  const setup = [];
+  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store") && !script[0].throws) setup.push(script.shift());
+  let setupFault = null;
+  for (const s of setup) {
+    transcript.push(`-- ${s.line}`);
+    const why = await page.run(step, s);
+    if (why !== null) {
+      setupFault = `${s.where}: ${s.line}: ${why}`;
+      break;
+    }
   }
+
+  if (setupFault !== null) await finish(1, setupFault);
+  else if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
+    let ok = true;
+    for (const s of script) {
+      ok = await phase(s.line, async () => {
+        // A `type` step is one task per character, the page settling after
+        // each but the last, which the phase settles.
+        const tasks = s.command === "type" ? [...s.text].map((ch) => ({ ...s, text: ch })) : [s];
+        for (const [i, t] of tasks.entries()) {
+          if (i !== 0) await page.run(settle);
+          const why = await page.run(step, t);
+          if (why !== null) return `${s.where}: ${s.line}: ${why}`;
+        }
+        return null;
+      }, s.throws);
+      if (!ok) break;
+    }
+    if (ok) await finish(0);
+  }
+  return result;
 }
 
-if (setupFault !== null) await finish(1, setupFault);
-else if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
-  let ok = true;
-  for (const s of steps) {
-    ok = await phase(s.line, async () => {
-      // A `type` step is one task per character, the page settling after
-      // each but the last, which the phase settles.
-      const tasks = s.command === "type" ? [...s.text].map((ch) => ({ ...s, text: ch })) : [s];
-      for (const [i, t] of tasks.entries()) {
-        if (i !== 0) await page.run(settle);
-        const why = await page.run(step, t);
-        if (why !== null) return `${s.where}: ${s.line}: ${why}`;
-      }
-      return null;
-    }, s.throws);
-    if (!ok) break;
-  }
-  if (ok) await finish(0);
+const written = (stream, text) => new Promise((done) => (text === "" ? done() : stream.write(text, done)));
+
+if (pages[0].report === null) {
+  const r = await runPage(pages[0].entry);
+  await written(process.stdout, r.stdout);
+  await written(process.stderr, r.stderr);
+  process.exit(r.code);
+} else {
+  for (const p of pages) writeFileSync(p.report, JSON.stringify(await runPage(p.entry)));
+  process.exit(0);
 }

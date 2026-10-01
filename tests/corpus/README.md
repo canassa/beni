@@ -90,9 +90,10 @@ build's run hash covers. `.crash` is never blessed: write it by hand.
 A `browser/` fixture is built like a `run/` one, twice, for the `page`
 test platform (`tests/platforms/page/`: a view written with `foreign`
 calls, a model, messages rendered on one microtask flush) — or, as a
-project, for its own `platform/`. Each build is then loaded into a page by
-`tests/browser/driver.mjs`, which runs `<name>.steps` (`_expected.steps`
-in a project) against it, one step per line, `#` for a comment:
+project, for its own `platform/`. Each build is then loaded into a page of
+its own by `tests/browser/driver.mjs` — both pages in one Node process, one
+after the other — which runs `<name>.steps` (`_expected.steps` in a
+project) against it, one step per line, `#` for a comment:
 
     click <selector>            a bubbling `click`
     click <selector> <n>        `n` clicks in one task, then `(the step's task ended)`
