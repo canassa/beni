@@ -1,0 +1,29 @@
+module JsCasts
+  decl make evidence=0 arity=1 convention=plain
+  decl read evidence=0 arity=1 convention=plain
+  decl generic evidence=0 arity=1 convention=plain
+  decl shape evidence=0 arity=1 convention=plain
+  decl callback evidence=0 arity=1 convention=plain
+  derived 0 compare JsCasts.Shape context=0
+    body 0 derived 2
+      primitive num_compare
+    body 1 primitive num_compare
+  derived 1 eq JsCasts.Shape context=0
+    body 0 derived 3
+      primitive strict_eq
+    body 1 primitive strict_eq
+  derived 2 compare r$radius context=1
+    context 0 param=0 method=compare
+  derived 3 eq r$radius context=1
+    context 0 param=0 method=eq
+  boundary make field count
+  boundary make field node
+  boundary make type Js.Value
+  boundary read field count
+  boundary read field node
+  boundary read type Basics.Int
+  boundary read type Js.Value
+  boundary shape type JsCasts.Shape
+  boundary shape type Maybe.Maybe
+  boundary callback field when
+  boundary callback type Basics.Int

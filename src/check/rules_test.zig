@@ -31,6 +31,7 @@ const testing = std.testing;
 const File = struct { path: []const u8, text: []const u8 };
 
 const files = [_]File{
+    .{ .path = "Boundary.zig", .text = @embedFile("Boundary.zig") },
     .{ .path = "Category.zig", .text = @embedFile("Category.zig") },
     .{ .path = "Check.zig", .text = @embedFile("Check.zig") },
     .{ .path = "ColumnIndex.zig", .text = @embedFile("ColumnIndex.zig") },

@@ -73,6 +73,7 @@ const Recursion = @import("Recursion.zig");
 const Marker = @import("Marker.zig");
 const Instantiate = @import("Instantiate.zig");
 const InternPool = @import("../InternPool.zig");
+const Graph = @import("../resolve/Graph.zig");
 const Evidence = @import("Evidence.zig");
 const Resolve = @import("Resolve.zig");
 const Contexts = @import("Contexts.zig");
@@ -96,6 +97,13 @@ const Frame = Generalize.Frame;
 /// A `++` and the variable of its result (`appends`).
 pub const Append = struct { inst: Bir.Inst.Index, result: Var };
 
+/// A use of core's `Js.from` or `Js.to`, the variable its copy was unified
+/// into, and the declaration being solved (`casts`, checker-v2.md §28).
+pub const Cast = struct { inst: Bir.Inst.Index, copy: Var, decl: u32, which: Which };
+
+/// `from`'s parameter or `to`'s result is what JavaScript holds.
+pub const Which = enum { from, to };
+
 cx: *const Context,
 report: *Report,
 /// The worker's lists, which this module borrows (`init`, `deinit`).
@@ -117,6 +125,10 @@ tries: std.ArrayList(Dispatch.Try) = .empty,
 /// of its result: P9 keeps the ones that solved to a `List` as the dispatch
 /// table's `appends`, once every type is final.
 appends: std.ArrayList(Append) = .empty,
+/// Every use of core's `Js.from` and `Js.to`: P6 walks the type each was
+/// instantiated at into the dispatch table's `boundary` rows, once every
+/// type is final (checker-v2.md §28).
+casts: std.ArrayList(Cast) = .empty,
 /// What each markup obligation was decided as (checker-v2.md §25.7), by the
 /// record it is about: P9 builds the table's markup section from it.
 markup_decisions: std.ArrayList(MarkupDecide.Decision) = .empty,
@@ -227,6 +239,7 @@ pub fn deinit(s: *Solve) void {
     s.marker.deinit();
     s.tries.deinit(gpa);
     s.appends.deinit(gpa);
+    s.casts.deinit(gpa);
     s.markup_decisions.deinit(gpa);
     s.carriers.deinit(gpa);
     for (s.queues.items) |*q| q.deinit(gpa);
@@ -383,6 +396,12 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                     const copy = try s.instantiate.copy(scheme);
                     try s.instantiated(node.region);
                     _ = try s.unify(target, copy, node.region, node.category);
+                    if (s.jsCast(node.region)) |which| try s.casts.append(s.cx.gpa, .{
+                        .inst = node.region,
+                        .copy = copy,
+                        .decl = s.instantiate.decl orelse std.math.maxInt(u32),
+                        .which = which,
+                    });
                 } else try s.poison(target);
             },
             // A `let` group's body is its tail: the loop continues with it.
@@ -646,6 +665,23 @@ fn isBasicsAppend(s: *Solve, inst: Bir.Inst.Index) bool {
     const iface = s.cx.iface(basics);
     if (d.rhs >= iface.values.len) return false;
     return iface.symbols[@intFromEnum(iface.values[d.rhs].name)] == InternPool.WellKnown.append.symbol();
+}
+
+/// Whether the reference at `inst` is core's `Js.from` or `Js.to`: the two
+/// casts through which a beni value's representation meets JavaScript at a
+/// type only the solver knows (checker-v2.md §28). Keyed on the core package,
+/// the module's name and the value's, as `js/JsIntrinsic.zig` is.
+fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
+    const bir = s.cx.bir;
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .ext_value) return null;
+    const d = bir.instData(inst);
+    const module: Graph.Index = @enumFromInt(d.lhs);
+    if (module.int() >= s.cx.graph.count()) return null;
+    if (s.cx.graph.module(module).package != .core) return null;
+    if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return null;
+    const iface = s.cx.iface(module);
+    if (d.rhs >= iface.values.len) return null;
+    return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
 }
 
 fn call(s: *Solve, node: Tree.Node) Error!void {

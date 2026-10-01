@@ -34,6 +34,7 @@ const Convention = @import("Convention.zig");
 const Cycles = @import("Cycles.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Dispatch = @import("Dispatch.zig");
+const Boundary = @import("Boundary.zig");
 const Exhaustive = @import("Exhaustive.zig");
 const Scc = @import("Scc.zig");
 const Schema = @import("Schema.zig");
@@ -731,7 +732,12 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         }
     }
     std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
+    // What JavaScript sees through each `Js.from` and `Js.to`, read here
+    // for the same reason (checker-v2.md §28).
+    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items);
+    errdefer gpa.free(boundary);
     in.dispatch.* = .{
+        .boundary = boundary,
         .decls = decls,
         .tries = sorted,
         .appends = try appends.toOwnedSlice(gpa),

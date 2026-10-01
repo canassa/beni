@@ -28,7 +28,9 @@
 //! markup node (checker-v2.md §25.7). Version 6 gives an escape row's byte 11
 //! a second bit, `url` (language.md §11.5).
 //! Version 7 adds the effect lowering columns, `effect_sites` and
-//! `effect_decls` (transparent-effects-proposal.md §16.2).
+//! `effect_decls` (transparent-effects-proposal.md §16.2). Version 9 adds
+//! `boundary` (checker-v2.md §28): 12 bytes a row, the declaration, the
+//! kind, and a string offset (a field) or a `type_refs` index (a type).
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -76,8 +78,9 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-/// 8 since the `appends` column (`Dispatch.appends`, a `++` on lists).
-pub const format_version: u32 = 8;
+/// 8 since the `appends` column (`Dispatch.appends`, a `++` on lists); 9
+/// since `boundary` (checker-v2.md §28).
+pub const format_version: u32 = 9;
 
 pub const Column = enum(u32) {
     terms,
@@ -93,6 +96,7 @@ pub const Column = enum(u32) {
     markup,
     effect_sites,
     effect_decls,
+    boundary,
     symbols,
     module_refs,
     type_refs,
@@ -117,6 +121,7 @@ pub const Column = enum(u32) {
             .markup => 20,
             .effect_sites => 8,
             .effect_decls => 4,
+            .boundary => 12,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -303,6 +308,19 @@ pub fn write(
         row[0] = @intFromEnum(e.own);
         row[1] = @intFromBool(e.twin);
     }
+    const boundary = try gpa.alloc(u8, d.boundary.len * Column.boundary.width());
+    defer gpa.free(boundary);
+    @memset(boundary, 0);
+    for (d.boundary, 0..) |b, i| {
+        const row = boundary[i * 12 ..][0..12];
+        std.mem.writeInt(u32, row[0..4], b.decl, .little);
+        row[4] = @intFromEnum(b.kind);
+        const value = switch (b.kind) {
+            .field => try w.string(@enumFromInt(b.value)),
+            .type => try w.typeRef(@enumFromInt(b.value)),
+        };
+        std.mem.writeInt(u32, row[8..12], value, .little);
+    }
 
     // The two reference tables are complete only now, because writing a
     // term or a shape is what appends to them.
@@ -338,6 +356,7 @@ pub fn write(
         markup,
         effect_sites,
         effect_decls,
+        boundary,
         symbols,
         module_refs,
         type_refs,
@@ -357,6 +376,7 @@ pub fn write(
         @intCast(d.markup.len),
         @intCast(d.effect_sites.len),
         @intCast(d.effect_decls.len),
+        @intCast(d.boundary.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -787,6 +807,25 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             };
         }
     }
+    {
+        // A type row's value is a `type_refs` index until `resolve`.
+        const in_bytes = col(bytes, offsets, .boundary);
+        const rows = try gpa.alloc(Dispatch.Boundary, lengths[@intFromEnum(Column.boundary)]);
+        out.table.boundary = rows;
+        for (rows, 0..) |*b, i| {
+            const row = in_bytes[i * 12 ..][0..12];
+            const kind = std.enums.fromInt(Dispatch.Boundary.Kind, row[4]) orelse return error.BadSidecar;
+            const raw = std.mem.readInt(u32, row[8..12], .little);
+            b.* = .{
+                .decl = std.mem.readInt(u32, row[0..4], .little),
+                .kind = kind,
+                .value = switch (kind) {
+                    .field => @intFromEnum(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
+                    .type => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
+                },
+            };
+        }
+    }
 
     if (!verify(&out)) return error.BadSidecar;
     return out;
@@ -941,6 +980,10 @@ pub fn verify(l: *const Loaded) bool {
     for (d.lets) |let| {
         if (!rangeOk(let.requirements, d.requirements.len)) return false;
     }
+    // A boundary row names a declaration (`decls` has one per `Bir.Decl`).
+    for (d.boundary) |b| {
+        if (b.decl >= d.decls.len) return false;
+    }
     return true;
 }
 
@@ -976,6 +1019,9 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
             .nominal => |at| row.shape = .{ .nominal = resolveType(l, graph, types, @intFromEnum(at), type_count) },
             else => {},
         }
+    }
+    for (@constCast(l.table.boundary)) |*b| {
+        if (b.kind == .type) b.value = resolveType(l, graph, types, b.value, type_count).int();
     }
 }
 

@@ -1,0 +1,43 @@
+-- dispatch (core): the `boundary` rows (checker-v2.md §28). A use of
+-- `Js.from` or `Js.to` names, per declaration, every field and named type
+-- of the type it was instantiated at — `from`'s parameter, `to`'s result —
+-- and stops at a type variable, which is opaque (boundary.md §4). A named
+-- type is named, not opened: `Shape`'s constructors are the backend's to
+-- read. A release build keeps these fields' names and these types' string
+-- tags (backend.md §9, *Item 4, taken up*).
+import Js
+
+
+type alias Cell =
+    node : Js.Value
+    count : Int
+
+
+type Shape
+    = Circle { radius : Float }
+    | Square Float
+
+
+make : Js.Value -> Js.Value
+make n =
+    Js.from { node = n, count = 0 }
+
+
+read : Js.Value -> Cell
+read v =
+    Js.to v
+
+
+generic : a -> Js.Value
+generic x =
+    Js.from x
+
+
+shape : Shape -> Js.Value
+shape s =
+    Js.from (Just s)
+
+
+callback : ({ when : Int } -> ()) -> Js.Value
+callback f =
+    Js.from f

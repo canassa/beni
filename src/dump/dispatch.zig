@@ -145,6 +145,17 @@ pub fn write(
     // instruction order, each tree depth first.
     for (dispatch.markup) |n| try cx.writeMarkup(w, n);
     try writeEffects(w, bir, dispatch, interner);
+    // What JavaScript sees through each `Js.from` and `Js.to`
+    // (checker-v2.md §28), in row order.
+    for (dispatch.boundary) |b| {
+        const decl = if (b.decl < bir.decls.len) interner.slice(bir.symbol(bir.decls[b.decl].name)) else "?";
+        switch (b.kind) {
+            .field => try w.print("  boundary {s} field {s}\n", .{ decl, interner.slice(@enumFromInt(b.value)) }),
+            .type => if (types.named(@enumFromInt(b.value))) |named| {
+                try w.print("  boundary {s} type {s}.{s}\n", .{ decl, interner.slice(named.module), interner.slice(named.name) });
+            } else try w.print("  boundary {s} type ?\n", .{decl}),
+        }
+    }
 }
 
 /// What the lowering reads of the effect bits

@@ -302,6 +302,22 @@ pub const EffectDecl = struct {
     twin: bool = false,
 };
 
+/// What of a type JavaScript sees through a use of core's `Js.from` or
+/// `Js.to` (checker-v2.md §28): a field NAME of a record node, or a named
+/// type, reachable from the type the use was instantiated at. The backend
+/// keeps every such field's source name and every such type's string tags
+/// under `--release` when `decl` survives elimination (`backend.md` §9,
+/// *Item 4, taken up*).
+pub const Boundary = struct {
+    /// The declaration whose instruction range holds the use.
+    decl: u32,
+    kind: Kind,
+    /// `field`: a `Symbol`. `type`: a `TypeId`.
+    value: u32,
+
+    pub const Kind = enum(u8) { field, type };
+};
+
 terms: []const Term = &.{},
 /// Term indices: every `args`, `Site.evidence` and `Derived.body` range
 /// points in here.
@@ -338,6 +354,9 @@ markup: []const Markup = &.{},
 effect_sites: []const EffectSite = &.{},
 /// One per `Bir.Decl`, or empty when no declaration has an answer.
 effect_decls: []const EffectDecl = &.{},
+/// Sorted by `decl`, then kind, then the field's text or the type's
+/// `(package, module, name)`; no row twice (checker-v2.md §28).
+boundary: []const Boundary = &.{},
 
 pub const empty: Dispatch = .{};
 
@@ -356,6 +375,7 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.markup);
     gpa.free(d.effect_sites);
     gpa.free(d.effect_decls);
+    gpa.free(d.boundary);
     d.* = .empty;
 }
 
@@ -404,7 +424,7 @@ pub fn effectsIn(d: *const Dispatch, start: u32, end: u32) []const EffectSite {
 /// Whether the table holds anything at all. A module with no dispatch prints
 /// its `module` line and nothing else.
 pub fn isEmpty(d: *const Dispatch) bool {
-    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0;
+    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0 and d.boundary.len == 0;
 }
 
 /// Whether the `++` at `inst` is on lists (`appends`). One binary search.
