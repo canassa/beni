@@ -1,0 +1,41 @@
+Ok 42
+Err decoding Type ConversionFailed / not a decimal integer: 4x
+Ok "7"
+Err encoding Encoded ConversionFailed / a count is never negative
+Err decoding Type ConversionFailed /2 not a decimal integer: three
+Ok { id = 5, label = a }
+Err decoding Type ConversionFailed /item-id not a decimal integer: x
+Ok { id = "5", label = a }
+Err encoding Encoded ConversionFailed /id a count is never negative
+Ok { id = 5, label = a }
+Ok {"item-id":"5","label":"a"}
+Ok { id = 9, label = b }
+Ok {"item-id":"9","label":"b"}
+Err encoding Encoded ConversionFailed /id a count is never negative
+-- flip
+Ok { id = "5", label = a }
+Err decoding Type ConversionFailed /id a count is never negative
+Ok { id = 6, label = a }
+Err encoding Encoded ConversionFailed /item-id not a decimal integer: x
+Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+Err encoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+-- flip twice
+Ok { id = 5, label = a }
+Err decoding Type ConversionFailed /item-id not a decimal integer: x
+Err encoding Encoded ConversionFailed /id a count is never negative
+Ok {"item-id":"5","label":"a"}
+-- projections
+Ok { id = -2, label = a }
+Ok { id = "x", label = a }
+Ok { id = "x", label = a }
+Ok {"item-id":"x","label":"a"}
+Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+Ok { x = 1 }
+Err decoding Encoded MissingKey /x-coord missing key "x-coord"
+Ok { x = 1 }
+Err decoding Encoded MissingKey /x missing key "x"
+Ok {"x":2}
+Ok {"x-coord":2}
+Ok { x = 3 }
+Ok {"x":3}
+Err encoding Type InvalidValue / expected a safe integer

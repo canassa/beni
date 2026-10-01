@@ -1,0 +1,24 @@
+Ok Text hi
+Ok Count 7
+Ok Ping
+Err decoding Type ConversionFailed /value not a decimal integer
+Err decoding Encoded WrongShape /value expected a string
+Err decoding Encoded MissingKey /value missing key "value"
+Err decoding Encoded UnknownTag /kind unknown tag; expected "text", "count", "ping"
+Err decoding Encoded UnknownTag /kind unknown tag; expected "text", "count", "ping"
+Err decoding Encoded MissingKey /kind missing key "kind"
+Err decoding Encoded WrongShape / expected an object
+Err decoding Encoded UnknownKey /extra unexpected key "extra"
+Err decoding Encoded UnknownKey /extra unexpected key "extra"
+Ok {"kind":"count","value":"7"}
+Ok {"kind":"text","value":"hi"}
+Ok {"kind":"ping"}
+Ok Count 12
+Err decoding Type ConversionFailed /value not a decimal integer
+Ok WireCount "12"
+Ok WirePing
+-- a recursive union
+Ok [1 [2 3]]
+Err decoding Encoded WrongShape /children/1/children/1/value expected a number
+Ok {"type":"branch","children":[{"type":"leaf","value":1},{"type":"branch","children":[]}]}
+Err encoding Type InvalidValue /children/1/value expected a safe integer

@@ -1,0 +1,143 @@
+-- Every missing / null / present combination of the four field forms
+-- (`schema.md` §4's table): a required field, a `nullable` one, an
+-- `optional` one and an `optional nullable` one, each read missing, `null`
+-- and present while the others hold a value, then written back from each
+-- typed state. `optional` tests the key, never truthiness: `0` and `false`
+-- are present. A renamed optional field is missing when only its declared
+-- name is there, and under `Reject` that name is an unknown key.
+import Node
+import Schema exposing (Missing, Nullable, NonNull, Null, Presence, Present, Reject, Schema)
+import Show
+
+
+type alias P =
+    required : Int
+    nullish : Nullable Int
+    maybe : Presence Int
+    both : Presence (Nullable Int)
+
+
+toP ( ( ( ( (), required ), nullish ), maybe ), both ) =
+    { required = required, nullish = nullish, maybe = maybe, both = both }
+
+
+fromP r = ( ( ( ( (), r.required ), r.nullish ), r.maybe ), r.both )
+
+
+p : Schema P P
+p =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "required" Schema.int
+            |> Schema.field "nullish" (Schema.nullable Schema.int)
+            |> Schema.optional "maybe" Schema.int
+            |> Schema.optional "both" (Schema.nullable Schema.int)
+        )
+        (Schema.mapping toP fromP)
+        (Schema.mapping toP fromP)
+
+
+type alias Flag =
+    on : Presence Bool
+
+
+toFlag ( (), on ) = { on = on }
+
+
+fromFlag f = ( (), f.on )
+
+
+flag : Schema Flag Flag
+flag =
+    Schema.record
+        (Schema.fields |> Schema.optional "on" Schema.bool |> Schema.key "is-on")
+        (Schema.mapping toFlag fromFlag)
+        (Schema.mapping toFlag fromFlag)
+
+
+nullable : Nullable Int -> String
+nullable n =
+    case n of
+        Null ->
+            "Null"
+
+        NonNull v ->
+            "NonNull " ++ String.fromInt v
+
+
+showP : P -> String
+showP v =
+    "{ required = "
+        ++ String.fromInt v.required
+        ++ ", nullish = "
+        ++ nullable v.nullish
+        ++ ", maybe = "
+        ++ (case v.maybe of
+               Missing ->
+                   "Missing"
+
+               Present n ->
+                   "Present " ++ String.fromInt n
+           )
+        ++ ", both = "
+        ++ (case v.both of
+               Missing ->
+                   "Missing"
+
+               Present n ->
+                   "Present (" ++ nullable n ++ ")"
+           )
+        ++ " }"
+
+
+showFlag : Flag -> String
+showFlag f =
+    case f.on of
+        Missing ->
+            "{ on = Missing }"
+
+        Present True ->
+            "{ on = Present True }"
+
+        Present False ->
+            "{ on = Present False }"
+
+
+parse : String -> String
+parse text = text ++ " => " ++ Show.result (Schema.parse p text) showP
+
+
+print : P -> String
+print v = showP v ++ " => " ++ Show.result (Schema.print p v) (\s -> s)
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ parse "{\"required\":1,\"nullish\":2,\"maybe\":3,\"both\":4}"
+        , parse "{\"nullish\":2,\"maybe\":3,\"both\":4}"
+        , parse "{\"required\":null,\"nullish\":2,\"maybe\":3,\"both\":4}"
+        , parse "{\"required\":1,\"maybe\":3,\"both\":4}"
+        , parse "{\"required\":1,\"nullish\":null,\"maybe\":3,\"both\":4}"
+        , parse "{\"required\":1,\"nullish\":2,\"both\":4}"
+        , parse "{\"required\":1,\"nullish\":2,\"maybe\":null,\"both\":4}"
+        , parse "{\"required\":1,\"nullish\":2,\"maybe\":0,\"both\":4}"
+        , parse "{\"required\":1,\"nullish\":2,\"maybe\":3}"
+        , parse "{\"required\":1,\"nullish\":2,\"maybe\":3,\"both\":null}"
+        , "-- written"
+        , print { required = 1, nullish = Null, maybe = Missing, both = Missing }
+        , print { required = 1, nullish = NonNull 2, maybe = Present 0, both = Present Null }
+        , print { required = 1, nullish = NonNull 2, maybe = Present 3, both = Present (NonNull 4) }
+        , "-- renamed"
+        , Show.result (Schema.parse flag "{\"is-on\":false}") showFlag
+        , Show.result (Schema.parse flag "{\"on\":true}") showFlag
+        , Show.result
+            (Schema.parseWith flag { defaultOptions | unknownKeys = Reject } "{\"on\":true}")
+            showFlag
+        , Show.result (Schema.print flag { on = Present False }) (\s -> s)
+        , Show.result (Schema.print flag { on = Missing }) (\s -> s)
+        ]
+
+
+defaultOptions : Schema.Options
+defaultOptions = Schema.defaultOptions

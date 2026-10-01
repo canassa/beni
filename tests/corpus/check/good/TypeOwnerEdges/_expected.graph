@@ -21,6 +21,7 @@ core:Result -> core:Maybe
 core:Schema -> core:Basics
 core:Schema -> core:List
 core:Schema -> core:Maybe
+core:Schema -> core:Result
 core:Schema -> core:String
 core:Set -> core:Basics
 core:Set -> core:Dict

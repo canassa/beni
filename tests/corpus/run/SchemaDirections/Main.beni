@@ -1,0 +1,172 @@
+-- One schema's two fallible directions, its flip twice, and its two
+-- projections, through the library engine (`schema.md` §5). `count` is
+-- `String via decimalInt`: Encoded `String`, Type `Int`, and each direction
+-- can fail. `item` renames `id` to `item-id` outside: a decode names the
+-- external key in a path and an encode the declared one. A flip swaps the
+-- directions — and the external form, so reading a flipped `item`, whose
+-- Encoded endpoint now holds the conversion's target, is refused before
+-- anything is read; a double flip is the original. `typeOnly` and
+-- `encodedOnly` drop the conversion and keep each endpoint's own external
+-- form: `point`'s Type endpoint is written with `x`, its Encoded with
+-- `x-coord`.
+import Node
+import Schema exposing (Conversion, Schema)
+import Show
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (\s ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue ("not a decimal integer: " ++ s) ]
+        )
+        (\n ->
+            if n < 0 then
+                Err [ Schema.issue "a count is never negative" ]
+            else
+                Ok (String.fromInt n)
+        )
+
+
+count : Schema String Int
+count = Schema.converted Schema.string decimalInt
+
+
+type alias Item a =
+    id : a
+    label : String
+
+
+toItem ( ( (), id ), label ) = { id = id, label = label }
+
+
+fromItem r = ( ( (), r.id ), r.label )
+
+
+item : Schema (Item String) (Item Int)
+item =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "id" count
+            |> Schema.key "item-id"
+            |> Schema.field "label" Schema.string
+        )
+        (Schema.mapping toItem fromItem)
+        (Schema.mapping toItem fromItem)
+
+
+type alias Point =
+    x : Int
+
+
+toPoint ( (), x ) = { x = x }
+
+
+fromPoint p = ( (), p.x )
+
+
+point : Schema Point Point
+point =
+    Schema.record
+        (Schema.fields |> Schema.field "x" Schema.int |> Schema.key "x-coord")
+        (Schema.mapping toPoint fromPoint)
+        (Schema.mapping toPoint fromPoint)
+
+
+showInt : Int -> String
+showInt n = String.fromInt n
+
+
+showString : String -> String
+showString s = "\"" ++ s ++ "\""
+
+
+showItemInt : Item Int -> String
+showItemInt i = "{ id = " ++ String.fromInt i.id ++ ", label = " ++ i.label ++ " }"
+
+
+showItemString : Item String -> String
+showItemString i = "{ id = " ++ showString i.id ++ ", label = " ++ i.label ++ " }"
+
+
+showPoint : Point -> String
+showPoint p = "{ x = " ++ String.fromInt p.x ++ " }"
+
+
+host : String -> Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v ->
+            v
+
+        Err _ ->
+            host "null"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result (Schema.decode count "42") showInt
+        , Show.result (Schema.decode count "4x") showInt
+        , Show.result (Schema.encode count 7) showString
+        , Show.result (Schema.encode count (-1)) showString
+        , Show.result
+            (Schema.decode (Schema.list count) [ "1", "2", "three" ])
+            (\ns -> String.join (List.map ns String.fromInt) ",")
+        , Show.result (Schema.decode item { id = "5", label = "a" }) showItemInt
+        , Show.result (Schema.decode item { id = "x", label = "a" }) showItemInt
+        , Show.result (Schema.encode item { id = 5, label = "a" }) showItemString
+        , Show.result (Schema.encode item { id = (-2), label = "a" }) showItemString
+        , Show.result (Schema.read item (host "{\"item-id\":\"5\",\"label\":\"a\"}")) showItemInt
+        , Show.value (Schema.write item { id = 5, label = "a" })
+        , Show.result (Schema.parse item "{\"label\":\"b\",\"item-id\":\"9\"}") showItemInt
+        , Show.result (Schema.print item { id = 9, label = "b" }) (\s -> s)
+        , Show.result (Schema.print item { id = (-9), label = "b" }) (\s -> s)
+        , "-- flip"
+        , Show.result (Schema.decode (Schema.flip item) { id = 5, label = "a" }) showItemString
+        , Show.result (Schema.decode (Schema.flip item) { id = (-2), label = "a" }) showItemString
+        , Show.result (Schema.encode (Schema.flip item) { id = "6", label = "a" }) showItemInt
+        , Show.result (Schema.encode (Schema.flip item) { id = "x", label = "a" }) showItemInt
+        , Show.value
+            (Schema.read (Schema.flip item) (host "{\"id\":5,\"label\":\"a\"}")
+                |> Result.map (\_ -> host "null")
+            )
+        , Show.value (Schema.write (Schema.flip item) { id = "5", label = "a" })
+        , "-- flip twice"
+        , Show.result
+            (Schema.decode (Schema.flip (Schema.flip item)) { id = "5", label = "a" })
+            showItemInt
+        , Show.result
+            (Schema.decode (Schema.flip (Schema.flip item)) { id = "x", label = "a" })
+            showItemInt
+        , Show.result
+            (Schema.encode (Schema.flip (Schema.flip item)) { id = (-2), label = "a" })
+            showItemString
+        , Show.value (Schema.write (Schema.flip (Schema.flip item)) { id = 5, label = "a" })
+        , "-- projections"
+        , Show.result (Schema.decode (Schema.typeOnly item) { id = (-2), label = "a" }) showItemInt
+        , Show.result
+            (Schema.decode (Schema.encodedOnly item) { id = "x", label = "a" })
+            showItemString
+        , Show.result
+            (Schema.read (Schema.encodedOnly item) (host "{\"item-id\":\"x\",\"label\":\"a\"}"))
+            showItemString
+        , Show.value (Schema.write (Schema.encodedOnly item) { id = "x", label = "a" })
+        , Show.result
+            (Schema.read (Schema.typeOnly item) (host "{\"id\":5,\"label\":\"a\"}"))
+            showItemInt
+        , Show.result (Schema.read point (host "{\"x-coord\":1}")) showPoint
+        , Show.result (Schema.read point (host "{\"x\":1}")) showPoint
+        , Show.result (Schema.read (Schema.typeOnly point) (host "{\"x\":1}")) showPoint
+        , Show.result (Schema.read (Schema.typeOnly point) (host "{\"x-coord\":1}")) showPoint
+        , Show.value (Schema.write (Schema.typeOnly point) { x = 2 })
+        , Show.value (Schema.write (Schema.encodedOnly point) { x = 2 })
+        , Show.result (Schema.read (Schema.flip point) (host "{\"x\":3}")) showPoint
+        , Show.value (Schema.write (Schema.flip point) { x = 3 })
+        , Show.result (Schema.encode (Schema.typeOnly Schema.int) 9007199254740992) showInt
+        ]

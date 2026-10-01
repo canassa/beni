@@ -1,0 +1,24 @@
+maxDepth 0, 0 links: Ok 0 / Ok 0 / Ok 11
+maxDepth 0, 1 links: decoding Encoded DepthExceeded / the depth limit is reached at depth 0 / encoding Type DepthExceeded / the depth limit is reached at depth 0 / encoding Type DepthExceeded / the depth limit is reached at depth 0
+maxDepth 1, 0 links: Ok 0 / Ok 0 / Ok 11
+maxDepth 1, 1 links: decoding Encoded DepthExceeded / the depth limit is reached at depth 1 / encoding Type DepthExceeded / the depth limit is reached at depth 1 / encoding Type DepthExceeded / the depth limit is reached at depth 1
+maxDepth 2, 1 links: Ok 1 / Ok 1 / Ok 31
+maxDepth 2, 2 links: decoding Encoded DepthExceeded / the depth limit is reached at depth 1 / encoding Type DepthExceeded / the depth limit is reached at depth 1 / encoding Type DepthExceeded / the depth limit is reached at depth 1
+maxDepth 512, 256 links: Ok 256 / Ok 256 / Ok 5131
+maxDepth 512, 257 links: decoding Encoded DepthExceeded / the depth limit is reached at depth 256 / encoding Type DepthExceeded / the depth limit is reached at depth 256 / encoding Type DepthExceeded / the depth limit is reached at depth 256
+maxDepth 1024, 512 links: Ok 512 / Ok 512 / Ok 10251
+maxDepth 1024, 513 links: decoding Encoded DepthExceeded / the depth limit is reached at depth 512 / encoding Type DepthExceeded / the depth limit is reached at depth 512 / encoding Type DepthExceeded / the depth limit is reached at depth 512
+-- the default is 512
+Ok 256
+decoding Encoded DepthExceeded / the depth limit is reached at depth 256
+-- options
+decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not 1025 at depth 0
+decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1 at depth 0
+Ok
+-- a Value
+Ok [[[]]]
+Ok [[[[]]]]
+encoding Encoded DepthExceeded / the value nests deeper than the depth limit at depth 0
+encoding Encoded DepthExceeded / the value nests deeper than the depth limit at depth 1
+Ok [[[[]]]]
+encoding Encoded DepthExceeded / the value nests deeper than the depth limit at depth 0

@@ -1,0 +1,26 @@
+Err decoding Encoded ParseFailed / invalid JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+Err decoding Encoded ParseFailed / invalid JSON: Unexpected end of JSON input
+Err decoding Encoded ParseFailed / invalid JSON: Unexpected token ']', "[1,]" is not valid JSON
+Err decoding Encoded ParseFailed / invalid JSON: Unexpected end of JSON input
+Ok {"a":[1,true,null,"x"],"b":{}}
+-- numbers
+9007199254740991 => Ok 9007199254740991
+9007199254740993 => Err decoding Encoded InvalidValue / expected a safe integer
+-9007199254740991 => Ok -9007199254740991
+1e3 => Ok 1000
+1.0 => Ok 1
+1.5 => Err decoding Encoded InvalidValue / expected a safe integer
+"1" => Err decoding Encoded WrongShape / expected a number
+Err decoding Encoded InvalidValue / expected a finite number
+Ok Infinity
+Err decoding Encoded WrongShape / expected a boolean
+-- printing
+Err encoding Encoded PrintFailed / JSON has no number for NaN or an infinity
+Err encoding Encoded PrintFailed /the value JSON has no number for NaN or an infinity
+Ok {"the value":0}
+Err encoding Encoded PrintFailed /1 JSON has no number for NaN or an infinity
+Err encoding Type InvalidValue / expected a finite number
+Ok NaN
+Ok <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+Ok "quote \" and\nline"
+Ok été

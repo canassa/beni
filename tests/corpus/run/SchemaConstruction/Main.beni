@@ -1,0 +1,258 @@
+-- A schema built wrong is a value that says so, never a corrupt executable
+-- schema or a crash (`schema.md` §5, *The builder API*): two fields with one
+-- name or one key, `key` twice or with no field, two variants with one tag
+-- or one name, a payload field on the discriminator, a payload that is not
+-- a record, a union with no variant, a recursive schema used while its body
+-- is built, and a read or write of an endpoint holding a conversion's
+-- target. Every operation on one reports a single `InvalidSchema` at the
+-- root and reads nothing — so even input that is not JSON is never parsed —
+-- and `describe` shows where. A reference entered again without reading
+-- anything is refused where it happens, and the rest of the value is fine.
+import Node
+import Schema exposing (Conversion, Schema)
+import Show
+
+
+one ( (), a ) = { a = a }
+
+
+unOne r = ( (), r.a )
+
+
+two ( ( (), a ), b ) = { a = a, b = b }
+
+
+unTwo r = ( ( (), r.a ), r.b )
+
+
+pair :
+    Schema Int Int
+    , Schema Int Int
+    , String
+    , String
+    -> Schema { a : Int, b : Int } { a : Int, b : Int }
+pair sa sb ka kb =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "a" sa
+            |> Schema.key ka
+            |> Schema.field "b" sb
+            |> Schema.key kb
+        )
+        (Schema.mapping two unTwo)
+        (Schema.mapping two unTwo)
+
+
+sameName : Schema { a : Int, b : Int } { a : Int, b : Int }
+sameName =
+    Schema.record
+        (Schema.fields |> Schema.field "a" Schema.int |> Schema.field "a" Schema.int)
+        (Schema.mapping two unTwo)
+        (Schema.mapping two unTwo)
+
+
+keyTwice : Schema { a : Int } { a : Int }
+keyTwice =
+    Schema.record
+        (Schema.fields |> Schema.field "a" Schema.int |> Schema.key "x" |> Schema.key "y")
+        (Schema.mapping one unOne)
+        (Schema.mapping one unOne)
+
+
+keyFirst : Schema { a : Int } { a : Int }
+keyFirst =
+    Schema.record
+        (Schema.fields |> Schema.key "x" |> Schema.field "a" Schema.int)
+        (Schema.mapping one unOne)
+        (Schema.mapping one unOne)
+
+
+type T
+    = A { a : Int }
+    | B
+
+
+injA : Schema.Injection { a : Int } T
+injA =
+    Schema.injection
+        A
+        (\t ->
+            case t of
+                A r ->
+                    Just r
+
+                B ->
+                    Nothing
+        )
+
+
+injB : Schema.Injection () T
+injB =
+    Schema.injection
+        (\() -> B)
+        (\t ->
+            case t of
+                B ->
+                    Just ()
+
+                A _ ->
+                    Nothing
+        )
+
+
+aRecord : Schema { a : Int } { a : Int }
+aRecord =
+    Schema.record
+        (Schema.fields |> Schema.field "a" Schema.int)
+        (Schema.mapping one unOne)
+        (Schema.mapping one unOne)
+
+
+sameTag : Schema T T
+sameTag =
+    Schema.tagged "k" [ Schema.variant "A" "x" aRecord injA injA, Schema.nullary "B" "x" injB injB ]
+
+
+sameVariant : Schema T T
+sameVariant =
+    Schema.tagged "k" [ Schema.variant "A" "a" aRecord injA injA, Schema.nullary "A" "b" injB injB ]
+
+
+onDiscriminator : Schema T T
+onDiscriminator =
+    Schema.tagged "a" [ Schema.variant "A" "a" aRecord injA injA, Schema.nullary "B" "b" injB injB ]
+
+
+notARecord : Schema T T
+notARecord =
+    Schema.tagged
+        "k"
+        [ Schema.variant
+            "A"
+            "a"
+            (Schema.converted Schema.int (Schema.conversion (\n -> Ok { a = n }) (\r -> Ok r.a)))
+            intA
+            injA
+        , Schema.nullary "B" "b" injB injB
+        ]
+
+
+empty : Schema T T
+empty = Schema.tagged "k" []
+
+
+-- The body runs the schema it is building, and keeps what that answered as
+-- its conversion's failure.
+early : Schema Int Int
+early =
+    Schema.recursive
+        "Early"
+        (\self ->
+            let
+                answer = Schema.decode self 1
+            in
+            Schema.converted
+                Schema.int
+                (Schema.conversion
+                    (\n ->
+                        case answer of
+                            Ok _ ->
+                                Ok n
+
+                            Err found ->
+                                Err found
+                    )
+                    Ok
+                )
+        )
+
+
+-- `Loop` converts itself: nothing is read on the way round.
+loop : Schema Int Int
+loop = Schema.recursive "Loop" (\self -> Schema.converted self (Schema.conversion Ok Ok))
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (\s ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        (\n -> Ok (String.fromInt n))
+
+
+counted : Schema String Int
+counted = Schema.converted Schema.string decimalInt
+
+
+issues : Result (List Schema.Issue) a -> String
+issues r = Show.result r (\_ -> "built")
+
+
+invalid : Schema e a -> String
+invalid s =
+    case (Schema.describe s).root of
+        Schema.Invalid message ->
+            "describe: " ++ message
+
+        _ ->
+            "describe: no Invalid at the root"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ issues (Schema.parse (pair Schema.int Schema.int "x" "x") "not json")
+        , issues (Schema.decode (pair Schema.int Schema.int "a" "a") { a = 1, b = 2 })
+        , issues (Schema.parse (pair Schema.int Schema.int "b" "a") "{\"b\":1,\"a\":2}")
+        , issues (Schema.encode sameName { a = 1, b = 2 })
+        , issues (Schema.print keyTwice { a = 1 })
+        , issues (Schema.print keyFirst { a = 1 })
+        , issues (Schema.parse sameTag "{\"k\":\"x\"}")
+        , issues (Schema.parse sameVariant "{\"k\":\"a\",\"a\":1}")
+        , issues (Schema.parse onDiscriminator "{\"a\":\"b\"}")
+        , issues (Schema.parse notARecord "{\"k\":\"b\"}")
+        , issues (Schema.parse empty "{}")
+        , issues (Schema.parse early "1")
+        , invalid (pair Schema.int Schema.int "x" "x")
+        , issues (Schema.parse (Schema.list (pair Schema.int Schema.int "x" "x")) "[]")
+        , "-- no external form"
+        , issues (Schema.read (Schema.typeOnly counted) (host "5"))
+        , issues (Schema.print (Schema.flip counted) "5")
+        , issues (Schema.parse (Schema.list (Schema.flip counted)) "[]")
+        , issues (Schema.decode (Schema.typeOnly counted) 5)
+        , issues (Schema.encode (Schema.flip counted) "12")
+        , "-- a reference entered again without reading anything"
+        , issues (Schema.parse loop "1")
+        , issues (Schema.parse (Schema.list loop) "[]")
+        , issues (Schema.parse (Schema.list loop) "[1]")
+        ]
+
+
+host : String -> Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v ->
+            v
+
+        Err _ ->
+            host "null"
+
+
+intA : Schema.Injection Int T
+intA =
+    Schema.injection
+        (\n -> A { a = n })
+        (\t ->
+            case t of
+                A r ->
+                    Just r.a
+
+                B ->
+                    Nothing
+        )

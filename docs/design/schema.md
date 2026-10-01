@@ -518,6 +518,15 @@ needed to preserve G1/G3 when callers have already consumed stack; record the
 result here before shipping. No explicit traversal-frame stack is required.
 The queue tracks this implementation proof.
 
+*Amended 2026-10-01 (S3; §16's* As built *note has the measurements).* The library's numbers:
+**the default is 512 and the ceiling 1 024**, `Schema.maxDepthCeiling`. A cold operation in a
+fresh Node process overflowed no sooner than 3 537 depth units, so the ceiling keeps a margin of
+3.4× for a caller's own frames and for engines with smaller stacks; JSON output at the ceiling
+nests well inside `JSON.stringify`'s own limit (about 4 145 levels). A caller that has already
+spent most of the stack can still overflow inside the bound: that is a `RangeError`, a defect that
+crashes (CLAUDE.md rule 9), never caught and turned into an issue. S4's emitted workers owe the
+same measurement.
+
 Decode/read paths use external keys; encode paths use declared Beni keys for
 program input, and an external-output failure uses its external key. Direction
 and failing endpoint must remain distinguishable in the final Issue design
@@ -741,7 +750,7 @@ privileged core foreign primitives over the same host value". It was first writt
 core's `Js`, and that version is measured in §16's *As built* note: **core is checked whole by every
 compilation**, the engine's 1 300 lines of beni added about 33 ms (a ReleaseSafe compiler) to every
 `beni` process whether or not the program imported `Schema`, and `zig build test-blackbox` went
-from 563 to 1 142 user-seconds. Declared as `foreign`s, the same surface costs 2.4 ms. The
+from 563 to 1 142 user-seconds. Declared as `foreign`s, the same surface costs 2.7 ms. The
 sibling builds and reads the beni values it shares with the program — `Ok` and `Err`, `Present` and
 `Missing`, `Null` and `NonNull`, `Just` and `Nothing`, an `Issue`, a `Shape`, a tuple, a list —
 by the representation of `backend.md` §4, and every such type is named in a `foreign` annotation
@@ -1981,7 +1990,7 @@ and lands with all three gates green.
 
 | # | Slice | Contract | Depends on | Size | Done means |
 |---|---|---|---|---|---|
-| S3 | Engine and library interpreter | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
+| S3 | Engine and library interpreter (**built**, 2026-10-01; *As built* below) | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
 | S4 | Specialisation, `build` unwalled, differential harness | §6, §10, Q9 | S3 | L | parse/print workers; the forced-library switch, test-only; every schema fixture runs both paths in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
 | S5 | Defaults and `make` | §11 | S4 | M | §11.10 |
 | S6 | Checks, annotations, check metadata | §14.1, §15 rows *filters*, *annotations* | S4 | M | the `check` and `annotate` modifiers; `KnownCheck`; opaque ids; messages |
@@ -2002,6 +2011,66 @@ and lands with all three gates green.
 - S13–S15 close the milestone.
 - The performance claim of §6 is re-measured after S8 and again at the end, with the many-schema
   code-size curve §6 says is still owed.
+
+**As built — S3** (2026-10-01). `core/Schema.beni` declares the builder API of §5 (*The builder
+API*) over `core/Schema.js`, the engine; `build` still refuses `schema` declarations (§8), and a
+program that only builds schemas with the library builds and runs, under `--release` too.
+
+- **The engine is the sibling.** It was written first in beni over core's `Js`, with a `typeof`
+  intrinsic added for it, and passed every fixture below in both builds. Then the gates measured
+  it: core is checked whole by every `beni` process, whether or not the program imports `Schema`,
+  and the module's check went from 0.34 ms to 34 ms (ReleaseSafe compiler, `--self-profile`,
+  best of 5; 1 300 lines of code, the solver alone 15 ms). Four tests already near their budget
+  went over it, and `zig build test-blackbox` went from 563 to 1 142 user-seconds in one A/B at
+  moderate load. As `foreign`s over a JavaScript engine the module checks in 2.7 ms, every test is
+  inside its budget, and the `typeof` intrinsic was withdrawn with the beni engine. **Core's
+  checking cost is per process** — the persistent cache does not help a test's fresh directory —
+  so every line of beni added to core is paid by every test; whatever else S5–S15 add to core
+  (`Json`, `Random`) meets the same wall, and checking only the core modules a program reaches is
+  the fix that would lift it. It is not built here.
+- **The ceiling** (§5's amendment): `maxDepthCeiling` 1 024, default 512. The deepest value one
+  cold operation survived in a fresh Node 24 process (default stack, 984 KB), by bisection over
+  processes, in depth units: a tree whose level is a payload, a field and an element (three
+  units) — parse 3 546, print 3 537, decode 3 537; a chain whose link is a payload and a field —
+  parse 4 688, encode 4 654. Warm, the same operations reach 4 350–5 700. One level of a value
+  costs two frames, `run`'s and its record's or list's loop, and each conversion or `nullable` on
+  the way one more. The first, beni engine needed seven frames a level and overflowed at 1 366
+  units; pulling a level's work into the loops' first turn and out of the recursion is what
+  bought the margin. Not measured: SpiderMonkey and JavaScriptCore, and a caller that has already
+  spent the stack.
+- **Release found a defect elsewhere**: whole-program specialisation gave the top-level bindings
+  a body written in place declares no whole-program name, and dropped the tag of every `Result` a
+  stored conversion returned; fixed in `Spec`, with `run/SpecializeFreshTopLevel`.
+- **Fixtures** (`run/`, each a project with a `Show` module, built and run in development and
+  under `--release`): `SchemaDirections` (both fallible directions, flip twice, projections with
+  different endpoint shapes, renamed keys, endpoints with no external form), `SchemaPresence`
+  (every missing/null/present combination of the four field forms, a renamed optional field
+  under `Reject`), `SchemaFailures` (AllErrors' order — unknown keys, a structural failure, a
+  conversion's, a refinement's; FirstError's laziness by `Debug.log`; a whole-record conversion
+  waiting for its fields; a conversion's issues moved, its empty `Err`; `reportInput`),
+  `SchemaTagged` (the discriminator, key order, unknown and non-string tags, two nominal
+  families, nullary variants, a recursive union's deep path), `SchemaDepth` (depth 0, 1, 2, 512
+  and the ceiling, each with one level more; invalid options; a printed `Value` within the bound,
+  and one 20 000 deep), `SchemaProtoKeys`, `SchemaDescribe` (both endpoints, nested recursive
+  definitions met once, two definitions with one name, no conversion run), `SchemaConstruction`
+  (every construction failure, a reference used while its body is built, a nonproductive cycle),
+  `SchemaJson` (`ParseFailed` with the host's message, `PrintFailed` at the key, `JSON.parse`'s
+  rounding, a `Value` holding NaN). Each was red against the library before it: no builder
+  existed. Not covered: a `.crash` scenario for the `JSON.parse` re-throw — it throws nothing but
+  a `SyntaxError` for a string, so no input forces another error.
+- **Size** (`bench/schema-library/run.mjs`, brotli 11 of the whole output): a program that parses
+  report 34's `flat` user and prints it back is **4 534** bytes under `--release` (12 786 raw),
+  against 133 for the empty program; development 16 741. Nearly all of it is the engine, which a
+  build that uses any runner ships whole; `describe` and what only it reaches are cut. No
+  hand-minifying pass was made beyond writing to the compactor's rules: S4's specialised code is
+  the size path, and the library ships to programs that compose schemas at run time.
+- **Speed** (the same harness, `--release --library`, Node 24, Ryzen 9 5950X, `taskset -c 8`,
+  load 37–39, median per call of 15 interleaved samples, the interquartile range within ±3 %):
+  `flat` — `JSON.parse` 728 ns, parse 1 537, `read` of the parsed object 568, parse failing on a
+  wrong type 1 427, on a missing key 1 204, on an unknown key under `Reject` and `AllErrors`
+  1 690, typed decode 473; `JSON.stringify` 791, print 2 124. `list` — `JSON.parse` 651 µs,
+  parse 1 122 µs; `JSON.stringify` 670 µs, print 1 558 µs. These are the library's numbers for
+  S4 to be measured against, not a comparison with any other library.
 
 ## Appendix A. Decisions log
 

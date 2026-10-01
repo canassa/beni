@@ -1,6 +1,40 @@
---! The public types shared by schema declarations, schema runners and the
---! schema library. The engine owns their JavaScript representation; the
---! ordinary builders and operations are not written yet.
+--! Schemas: a value that describes one piece of data at two typed endpoints,
+--! its **Encoded** form `e` and its program **Type** `a`, with a fallible
+--! conversion in each direction (`docs/design/schema.md` §1, §4, §5).
+--!
+--! The builders below make a `Schema`, and the runners at the end run one.
+--! A `schema` declaration is the same thing written as syntax (§2); until
+--! its specialised `parse` and `print` are generated (§6), a program builds
+--! what it needs here.
+--!
+--! **The engine owns the traversal.** A builder takes ordinary values and
+--! functions — a field's name, a child schema, a mapping from a product to a
+--! record, a conversion — and never a function that reads or writes the host
+--! value itself. So the path, the depth, the options and the unknown-key
+--! policy are threaded by the engine through every step, and no function a
+--! builder was given can drop them (§5, *Context contract*).
+--!
+--!     toUser ( ( (), userId ), nickname ) =
+--!         { userId = userId, nickname = nickname }
+--!
+--!     fromUser u =
+--!         ( ( (), u.userId ), u.nickname )
+--!
+--!     user =
+--!         Schema.record
+--!             (Schema.fields
+--!                 |> Schema.field "userId" Schema.int
+--!                 |> Schema.key "user-id"
+--!                 |> Schema.optional "nickname" Schema.string)
+--!             (Schema.mapping toUser fromUser)
+--!             (Schema.mapping toUser fromUser)
+--!
+--! **The engine is the sibling, `Schema.js`** (§5, *The builder API*):
+--! core is checked whole by every compilation, so the engine is JavaScript
+--! and this module declares its surface. Every function a builder keeps is
+--! `sync`, because a runner calls it during the run.
+
+-- ---- The public types ----------------------------------------------------
 
 --| A field which may be absent from an external value.
 pub type Presence a
@@ -93,3 +127,337 @@ pub foreign type Schema e a
 --| A fallible two-way conversion from schema endpoint `b` to program
 --| endpoint `a`. Its representation remains owned by the engine.
 pub foreign type Conversion b a
+
+
+--| The fields of a record schema being built, as two products: `pe` holds
+--| the fields' Encoded values and `pa` their Type values, each a tuple
+--| nested to the left, `( ( ( (), first ), second ), third )`.
+pub foreign type Fields pe pa
+
+
+--| A product turned into a record, and back.
+pub foreign type Mapping p r
+
+
+--| One variant of a tagged schema.
+pub foreign type Variant e a
+
+
+--| A variant's constructor, and the test that takes it apart: `inject`
+--| builds the union from the payload, `project` answers the payload when
+--| the value is this variant.
+pub foreign type Injection p a
+
+
+--| What `describe` answers: a schema's graph, as plain data. A recursive
+--| schema appears once in `definitions` and is named by `Reference` wherever
+--| it is used, its own body included.
+pub type alias Description =
+    root : Shape
+    definitions : List Definition
+
+
+--| A recursive schema's body. `id` is its identity in this description,
+--| numbered in the order `describe` first meets it; `name` is the name it
+--| was built with, which two different definitions may share.
+pub type alias Definition =
+    id : Int
+    name : String
+    shape : Shape
+
+
+--| One node of a description.
+pub type Shape
+    = Primitive PrimitiveKind
+    | ListOf Shape
+    | NullableOf Shape
+    | RecordOf (List FieldShape)
+    | TaggedOf String (List VariantShape)
+    | Converted Shape
+    | Flipped Shape
+    | TypeOnly Shape
+    | EncodedOnly Shape
+    | Reference Int
+    | Invalid String
+
+
+--| The primitive schemas.
+pub type PrimitiveKind
+    = StringKind
+    | BoolKind
+    | IntKind
+    | FloatKind
+    | FiniteFloatKind
+    | NullKind
+    | ValueKind
+
+
+--| A record field: its declared name, which the Type endpoint reads and
+--| writes, and its external key, which the Encoded endpoint does.
+pub type alias FieldShape =
+    name : String
+    key : String
+    optional : Bool
+    shape : Shape
+
+
+--| A variant: its constructor name, its literal tag, and its payload
+--| record, if it has one.
+pub type alias VariantShape =
+    name : String
+    tag : String
+    payload : Maybe Shape
+
+
+-- ---- Options -------------------------------------------------------------
+
+--| The largest `maxDepth` a root operation accepts. A larger one, or a
+--| negative one, is `InvalidOptions`: the engine recurses on the host's
+--| stack once per level, and this bound keeps a whole operation at the
+--| ceiling well inside the stack a browser or Node gives a program
+--| (`schema.md` §5, *Traversal and failure rules*; §16, S3's *As built*).
+pub foreign pure maxDepthCeiling : Int
+
+
+--| Effect's defaults: stop at the first failure, ignore unknown keys, and
+--| leave the failing input out of an issue. `maxDepth` is 512.
+pub defaultOptions : Options
+defaultOptions =
+    { errors = FirstError
+    , unknownKeys = Ignore
+    , maxDepth = 512
+    , reportInput = False
+    }
+
+
+-- ---- Primitives ----------------------------------------------------------
+
+--| A string, both ways.
+pub foreign pure string : Schema String String
+
+
+--| `true` or `false`.
+pub foreign pure bool : Schema Bool Bool
+
+
+--| A safe integer, both ways: a whole number from −(2⁵³−1) to 2⁵³−1. A
+--| well-typed `Int` outside that range fails to encode.
+pub foreign pure int : Schema Int Int
+
+
+--| Any number. Printing NaN or an infinity as JSON fails, because JSON has
+--| no number for it.
+pub foreign pure float : Schema Float Float
+
+
+--| A finite number, both ways.
+pub foreign pure finiteFloat : Schema Float Float
+
+
+--| JSON's `null`, whose one value is `Null`.
+pub foreign pure null : Schema (Nullable Never) (Nullable Never)
+
+
+--| Any host value, unread: the Encoded value is the Type value.
+pub foreign pure value : Schema Value Value
+
+
+-- ---- Lists and nullability -----------------------------------------------
+
+--| A list of the child's values: an array outside, a `List` inside.
+pub foreign pure list : Schema e a -> Schema (List e) (List a)
+
+
+--| The child's values, or `null`, told apart.
+pub foreign pure nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+
+
+-- ---- Records -------------------------------------------------------------
+
+--| No fields yet.
+pub foreign pure fields : Fields () ()
+
+
+--| A required field, read and written under its own name until `key`
+--| renames it outside.
+pub foreign pure field : Fields pe pa, String, Schema e a -> Fields ( pe, e ) ( pa, a )
+
+
+--| A field that may be missing: its key absent is `Missing`, and present it
+--| is `Present` of the child's value, whatever that is — `null` included
+--| when the child is `nullable`.
+pub foreign pure optional :
+    Fields pe pa
+    , String
+    , Schema e a
+    -> Fields ( pe, Presence e ) ( pa, Presence a )
+
+
+--| The external key of the field just added: the Encoded endpoint reads and
+--| writes the key, and the Type endpoint, and both typed records, the
+--| field's name. A declaration's `as "key"`.
+pub foreign pure key : Fields pe pa, String -> Fields pe pa
+
+
+--| How the products of `fields` become the records of each endpoint, and
+--| back: `to` builds the record from the product, `from` takes it apart.
+pub foreign pure mapping : sync (p -> r), sync (r -> p) -> Mapping p r
+
+
+--| A record schema: the fields, then how each endpoint's product becomes
+--| its record. The two mappings are often one polymorphic pair of functions,
+--| since both records have the same field names.
+pub foreign pure record : Fields pe pa, Mapping pe e, Mapping pa a -> Schema e a
+
+
+-- ---- Tagged unions -------------------------------------------------------
+
+--| A constructor and its test, for one variant at one endpoint.
+pub foreign pure injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
+
+
+--| A variant with a payload: its constructor name, its tag, its payload —
+--| a `record` schema, whose fields sit beside the discriminator — and its
+--| two constructors.
+pub foreign pure variant :
+    String
+    , String
+    , Schema pe pa
+    , Injection pe e
+    , Injection pa a
+    -> Variant e a
+
+
+--| A variant with no payload: only the discriminator is written.
+pub foreign pure nullary : String, String, Injection () e, Injection () a -> Variant e a
+
+
+--| A tagged union: the discriminator key, then the variants. A value is an
+--| object whose discriminator holds one variant's tag and whose other keys
+--| are that variant's payload.
+pub foreign pure tagged : String, List (Variant e a) -> Schema e a
+
+
+-- ---- Conversions ---------------------------------------------------------
+
+--| A fallible conversion: from the source endpoint `b` to the target `a`,
+--| and back. An `Err` holds issues whose paths are relative to the value
+--| converted; the engine puts them where the value is.
+pub foreign pure conversion :
+    sync (b -> Result (List Issue) a)
+    , sync (a -> Result (List Issue) b)
+    -> Conversion b a
+
+
+--| The schema's values, converted: decoding reads `e` to `b` and converts
+--| it to `a`; encoding converts `a` back to `b` and writes `e`. The Type
+--| endpoint is the conversion's target, which has no external form of its
+--| own.
+pub foreign pure converted : Schema e b, Conversion b a -> Schema e a
+
+
+--| A conversion's failure at the value it converted, `ConversionFailed`.
+--| The engine fills in the direction, the endpoint and the path.
+pub issue : String -> Issue
+issue message = issueAt [] message
+
+
+--| A conversion's failure below the value it converted, at a path relative
+--| to it.
+pub issueAt : List PathSegment, String -> Issue
+issueAt path message =
+    { path = path
+    , direction = Decoding
+    , endpoint = Type
+    , code = ConversionFailed
+    , message = message
+    , input = Nothing
+    }
+
+
+-- ---- Recursion -----------------------------------------------------------
+
+--| A schema that refers to itself: the function is given the schema it
+--| defines and builds its body, once, the first time it is needed. A
+--| reference to it is resolved by identity, never by name, so two schemas
+--| built with one name are still two.
+pub foreign pure recursive : String, sync (Schema e a -> Schema e a) -> Schema e a
+
+
+-- ---- Endpoints -----------------------------------------------------------
+
+--| The same schema facing the other way: its Encoded endpoint is `a` and its
+--| Type endpoint `e`, so decoding it encodes the original. Flipping twice is
+--| the original.
+pub foreign pure flip : Schema e a -> Schema a e
+
+
+--| The Type endpoint alone, at both ends: both directions validate a Type
+--| value and convert nothing. Outside, it is written with the declared
+--| field names. A conversion's target is identity here.
+pub foreign pure typeOnly : Schema e a -> Schema a a
+
+
+--| The Encoded endpoint alone, at both ends.
+pub foreign pure encodedOnly : Schema e a -> Schema e e
+
+
+-- ---- Running -------------------------------------------------------------
+
+--| An Encoded value converted to the Type.
+pub decode : Schema e a, e -> Result (List Issue) a
+decode schema input = decodeWith schema defaultOptions input
+
+
+--| `decode` with options.
+pub foreign impure decodeWith : Schema e a, Options, e -> Result (List Issue) a
+
+
+--| A Type value converted to the Encoded.
+pub encode : Schema e a, a -> Result (List Issue) e
+encode schema input = encodeWith schema defaultOptions input
+
+
+--| `encode` with options.
+pub foreign impure encodeWith : Schema e a, Options, a -> Result (List Issue) e
+
+
+--| A host value read as the Encoded endpoint's external form, to the Type.
+pub read : Schema e a, Value -> Result (List Issue) a
+read schema input = readWith schema defaultOptions input
+
+
+--| `read` with options.
+pub foreign impure readWith : Schema e a, Options, Value -> Result (List Issue) a
+
+
+--| A Type value written as the Encoded endpoint's external form.
+pub write : Schema e a, a -> Result (List Issue) Value
+write schema input = writeWith schema defaultOptions input
+
+
+--| `write` with options.
+pub foreign impure writeWith : Schema e a, Options, a -> Result (List Issue) Value
+
+
+--| JSON text read to the Type.
+pub parse : Schema e a, String -> Result (List Issue) a
+parse schema text = parseWith schema defaultOptions text
+
+
+--| `parse` with options.
+pub foreign impure parseWith : Schema e a, Options, String -> Result (List Issue) a
+
+
+--| A Type value printed as JSON text.
+pub print : Schema e a, a -> Result (List Issue) String
+print schema input = printWith schema defaultOptions input
+
+
+--| `print` with options.
+pub foreign impure printWith : Schema e a, Options, a -> Result (List Issue) String
+
+
+--| The schema's graph, both endpoints, as plain data. It runs no
+--| conversion; it builds a recursive schema's body if no run has yet.
+pub foreign impure describe : Schema e a -> Description

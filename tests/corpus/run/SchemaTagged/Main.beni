@@ -1,0 +1,292 @@
+-- Tagged unions through the library engine (`schema.md` §2's `Message`
+-- and `Tree`, built). The discriminator is read first, then only the
+-- selected payload, whose fields sit beside it, in any key order; a
+-- payload adds no path segment. The program and encoded endpoints are two
+-- nominal families, `Message` and `Wire`, whose `Count` payloads differ: a
+-- decimal string outside, an `Int` inside. Writing puts the discriminator
+-- first. `Tree` refers to itself, and a failure deep in it carries its
+-- whole path.
+import Node
+import Schema exposing (Conversion, Reject, Schema)
+import Show
+
+
+type Message
+    = Text { value : String }
+    | Count { value : Int }
+    | Ping
+
+
+type Wire
+    = WireText { value : String }
+    | WireCount { value : String }
+    | WirePing
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (\s ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        (\n -> Ok (String.fromInt n))
+
+
+toValue ( (), v ) = { value = v }
+
+
+fromValue r = ( (), r.value )
+
+
+payload : Schema e a -> Schema { value : e } { value : a }
+payload s =
+    Schema.record
+        (Schema.fields |> Schema.field "value" s)
+        (Schema.mapping toValue fromValue)
+        (Schema.mapping toValue fromValue)
+
+
+message : Schema Wire Message
+message =
+    Schema.tagged
+        "kind"
+        [ Schema.variant
+            "Text"
+            "text"
+            (payload Schema.string)
+            (Schema.injection
+                WireText
+                (\w ->
+                    case w of
+                        WireText p ->
+                            Just p
+
+                        _ ->
+                            Nothing
+                )
+            )
+            (Schema.injection
+                Text
+                (\m ->
+                    case m of
+                        Text p ->
+                            Just p
+
+                        _ ->
+                            Nothing
+                )
+            )
+        , Schema.variant
+            "Count"
+            "count"
+            (payload (Schema.converted Schema.string decimalInt))
+            (Schema.injection
+                WireCount
+                (\w ->
+                    case w of
+                        WireCount p ->
+                            Just p
+
+                        _ ->
+                            Nothing
+                )
+            )
+            (Schema.injection
+                Count
+                (\m ->
+                    case m of
+                        Count p ->
+                            Just p
+
+                        _ ->
+                            Nothing
+                )
+            )
+        , Schema.nullary
+            "Ping"
+            "ping"
+            (Schema.injection
+                (\() -> WirePing)
+                (\w ->
+                    case w of
+                        WirePing ->
+                            Just ()
+
+                        _ ->
+                            Nothing
+                )
+            )
+            (Schema.injection
+                (\() -> Ping)
+                (\m ->
+                    case m of
+                        Ping ->
+                            Just ()
+
+                        _ ->
+                            Nothing
+                )
+            )
+        ]
+
+
+showMessage : Message -> String
+showMessage m =
+    case m of
+        Text p ->
+            "Text " ++ p.value
+
+        Count p ->
+            "Count " ++ String.fromInt p.value
+
+        Ping ->
+            "Ping"
+
+
+showWire : Wire -> String
+showWire w =
+    case w of
+        WireText p ->
+            "WireText " ++ p.value
+
+        WireCount p ->
+            "WireCount \"" ++ p.value ++ "\""
+
+        WirePing ->
+            "WirePing"
+
+
+type Tree
+    = Leaf { value : Int }
+    | Branch { children : List Tree }
+
+
+toChildren ( (), c ) = { children = c }
+
+
+fromChildren r = ( (), r.children )
+
+
+tree : Schema Tree Tree
+tree =
+    Schema.recursive
+        "Tree"
+        (\self ->
+            let
+                leaf =
+                    Schema.injection
+                        Leaf
+                        (\t ->
+                            case t of
+                                Leaf p ->
+                                    Just p
+
+                                _ ->
+                                    Nothing
+                        )
+
+                branch =
+                    Schema.injection
+                        Branch
+                        (\t ->
+                            case t of
+                                Branch p ->
+                                    Just p
+
+                                _ ->
+                                    Nothing
+                        )
+
+                children =
+                    Schema.record
+                        (Schema.fields |> Schema.field "children" (Schema.list self))
+                        (Schema.mapping toChildren fromChildren)
+                        (Schema.mapping toChildren fromChildren)
+            in
+            Schema.tagged
+                "type"
+                [ Schema.variant "Leaf" "leaf" (payload Schema.int) leaf leaf
+                , Schema.variant "Branch" "branch" children branch branch
+                ]
+        )
+
+
+showTree : Tree -> String
+showTree t =
+    case t of
+        Leaf p ->
+            String.fromInt p.value
+
+        Branch p ->
+            "[" ++ String.join (List.map p.children showTree) " " ++ "]"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result (Schema.parse message "{\"kind\":\"text\",\"value\":\"hi\"}") showMessage
+        , Show.result (Schema.parse message "{\"value\":\"7\",\"kind\":\"count\"}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":\"ping\"}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":\"count\",\"value\":\"x\"}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":\"count\",\"value\":7}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":\"count\"}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":\"nope\"}") showMessage
+        , Show.result (Schema.parse message "{\"kind\":3}") showMessage
+        , Show.result (Schema.parse message "{\"value\":\"x\"}") showMessage
+        , Show.result (Schema.parse message "[]") showMessage
+        , Show.result
+            (Schema.parseWith
+                message
+                { defaultOptions | unknownKeys = Reject }
+                "{\"kind\":\"ping\",\"extra\":1}"
+            )
+            showMessage
+        , Show.result
+            (Schema.parseWith
+                message
+                { defaultOptions | unknownKeys = Reject }
+                "{\"extra\":1,\"kind\":\"text\",\"value\":\"a\"}"
+            )
+            showMessage
+        , Show.result (Schema.print message (Count { value = 7 })) (\s -> s)
+        , Show.result (Schema.print message (Text { value = "hi" })) (\s -> s)
+        , Show.result (Schema.print message Ping) (\s -> s)
+        , Show.result (Schema.decode message (WireCount { value = "12" })) showMessage
+        , Show.result (Schema.decode message (WireCount { value = "1 2" })) showMessage
+        , Show.result (Schema.encode message (Count { value = 12 })) showWire
+        , Show.result (Schema.encode message Ping) showWire
+        , "-- a recursive union"
+        , Show.result
+            (Schema.parse
+                tree
+                "{\"type\":\"branch\",\"children\":[{\"type\":\"leaf\",\"value\":1},{\"type\":\"branch\",\"children\":[{\"type\":\"leaf\",\"value\":2},{\"type\":\"leaf\",\"value\":3}]}]}"
+            )
+            showTree
+        , Show.result
+            (Schema.parse
+                tree
+                "{\"type\":\"branch\",\"children\":[{\"type\":\"leaf\",\"value\":1},{\"type\":\"branch\",\"children\":[{\"type\":\"leaf\",\"value\":2},{\"type\":\"leaf\",\"value\":true}]}]}"
+            )
+            showTree
+        , Show.result
+            (Schema.print
+                tree
+                (Branch { children = [ Leaf { value = 1 }, Branch { children = [] } ] })
+            )
+            (\s -> s)
+        , Show.result
+            (Schema.encode
+                tree
+                (Branch { children = [ Leaf { value = 1 }, Leaf { value = 9007199254740992 } ] })
+            )
+            showTree
+        ]
+
+
+defaultOptions : Schema.Options
+defaultOptions = Schema.defaultOptions

@@ -1,0 +1,16 @@
+{ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) }
+Flipped ({ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) })
+{ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) }
+TypeOnly ({ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) })
+EncodedOnly (List (Bool))
+Nullable (Null)
+Value
+tagged "shape" [ Dot as "dot" | Circle as "circle" { a : Float } ]
+#0
+  #0 Outer = tagged "t" [ Outer as "outer" { a : #1, b : List (#0) } ]
+  #1 Inner = tagged "t" [ Inner as "inner" { a : List (#1) } ]
+List (#0)
+  #0 Inner = tagged "t" [ Inner as "inner" { a : List (#0) } ]
+{ a : List (#0), b : List (#1) }
+  #0 Same = Int
+  #1 Same = Int

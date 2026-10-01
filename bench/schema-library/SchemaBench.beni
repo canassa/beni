@@ -1,0 +1,126 @@
+-- The workloads of `bench/schema-library/run.mjs`: report 34's `flat`
+-- user and a list of them, through `core/Schema`'s library engine (S3),
+-- to compare with the specialised `parse` and `print` S4 generates. Built
+-- with `--library`, so every `pub` is a root; JavaScript holds the beni
+-- values it is handed and passes them back without reading them.
+import Schema exposing (Missing, Presence, Schema)
+
+
+type alias User a =
+    userId : a
+    displayName : String
+    email : String
+    age : Int
+    active : Bool
+    score : Float
+    role : String
+    nickname : Presence String
+
+
+toUser ( ( ( ( ( ( ( ( (), userId ), displayName ), email ), age ), active ), score ), role ), nickname ) =
+    { userId = userId
+    , displayName = displayName
+    , email = email
+    , age = age
+    , active = active
+    , score = score
+    , role = role
+    , nickname = nickname
+    }
+
+
+fromUser u =
+    ( ( ( ( ( ( ( ( (), u.userId ), u.displayName ), u.email ), u.age ), u.active ), u.score )
+      , u.role
+      )
+    , u.nickname
+    )
+
+
+user : Schema (User Int) (User Int)
+user =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "userId" Schema.int
+            |> Schema.key "user-id"
+            |> Schema.field "displayName" Schema.string
+            |> Schema.key "display-name"
+            |> Schema.field "email" Schema.string
+            |> Schema.field "age" Schema.int
+            |> Schema.field "active" Schema.bool
+            |> Schema.field "score" Schema.finiteFloat
+            |> Schema.field "role" Schema.string
+            |> Schema.optional "nickname" Schema.string
+        )
+        (Schema.mapping toUser fromUser)
+        (Schema.mapping toUser fromUser)
+
+
+users : Schema (List (User Int)) (List (User Int))
+users = Schema.list user
+
+
+all : Schema.Options
+all =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+-- How many issues an operation found: 0 when it succeeded.
+count : Result (List Schema.Issue) a -> Int
+count r =
+    case r of
+        Ok _ ->
+            0
+
+        Err found ->
+            List.length found
+
+
+pub parseUser : String -> Int
+parseUser text = count (Schema.parse user text)
+
+
+pub parseUserAll : String -> Int
+parseUserAll text = count (Schema.parseWith user all text)
+
+
+pub parseUsers : String -> Int
+parseUsers text = count (Schema.parse users text)
+
+
+pub readUser : Schema.Value -> Int
+readUser v = count (Schema.read user v)
+
+
+pub printUser : User Int -> Int
+printUser u = count (Schema.print user u)
+
+
+pub printUsers : List (User Int) -> Int
+printUsers us = count (Schema.print users us)
+
+
+pub decodeUser : User Int -> Int
+decodeUser u = count (Schema.decode user u)
+
+
+-- A value to print: the user a text describes, or a fixed one.
+pub prepare : String -> User Int
+prepare text = Schema.parse user text |> Result.withDefault fallback
+
+
+pub prepareList : String -> List (User Int)
+prepareList text = Schema.parse users text |> Result.withDefault []
+
+
+fallback : User Int
+fallback =
+    { userId = 0
+    , displayName = ""
+    , email = ""
+    , age = 0
+    , active = False
+    , score = 0
+    , role = ""
+    , nickname = Missing
+    }

@@ -1,0 +1,20 @@
+{"required":1,"nullish":2,"maybe":3,"both":4} => Ok { required = 1, nullish = NonNull 2, maybe = Present 3, both = Present (NonNull 4) }
+{"nullish":2,"maybe":3,"both":4} => Err decoding Encoded MissingKey /required missing key "required"
+{"required":null,"nullish":2,"maybe":3,"both":4} => Err decoding Encoded WrongShape /required expected a number
+{"required":1,"maybe":3,"both":4} => Err decoding Encoded MissingKey /nullish missing key "nullish"
+{"required":1,"nullish":null,"maybe":3,"both":4} => Ok { required = 1, nullish = Null, maybe = Present 3, both = Present (NonNull 4) }
+{"required":1,"nullish":2,"both":4} => Ok { required = 1, nullish = NonNull 2, maybe = Missing, both = Present (NonNull 4) }
+{"required":1,"nullish":2,"maybe":null,"both":4} => Err decoding Encoded WrongShape /maybe expected a number
+{"required":1,"nullish":2,"maybe":0,"both":4} => Ok { required = 1, nullish = NonNull 2, maybe = Present 0, both = Present (NonNull 4) }
+{"required":1,"nullish":2,"maybe":3} => Ok { required = 1, nullish = NonNull 2, maybe = Present 3, both = Missing }
+{"required":1,"nullish":2,"maybe":3,"both":null} => Ok { required = 1, nullish = NonNull 2, maybe = Present 3, both = Present (Null) }
+-- written
+{ required = 1, nullish = Null, maybe = Missing, both = Missing } => Ok {"required":1,"nullish":null}
+{ required = 1, nullish = NonNull 2, maybe = Present 0, both = Present (Null) } => Ok {"required":1,"nullish":2,"maybe":0,"both":null}
+{ required = 1, nullish = NonNull 2, maybe = Present 3, both = Present (NonNull 4) } => Ok {"required":1,"nullish":2,"maybe":3,"both":4}
+-- renamed
+Ok { on = Present False }
+Ok { on = Missing }
+Err decoding Encoded UnknownKey /on unexpected key "on"
+Ok {"is-on":false}
+Ok {}

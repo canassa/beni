@@ -1,0 +1,114 @@
+-- Keys named after `Object.prototype`'s members are ordinary keys
+-- (`schema.md` §5): a field is read only from an own property, so an empty
+-- object is missing `__proto__`, `constructor` and `toString` rather than
+-- inheriting them, and written onto an object with no prototype, so
+-- writing `__proto__` makes a key and changes no object's prototype. Under
+-- `Reject` an own `__proto__` the schema does not claim is an unknown key;
+-- under `Ignore` it is left alone, and a `Value` keeps it as data.
+import Node
+import Schema exposing (AllErrors, Missing, Presence, Present, Reject, Schema)
+import Show
+
+
+type alias Odd =
+    proto : Int
+    ctor : Int
+    text : Presence String
+
+
+toOdd ( ( ( (), proto ), ctor ), text ) = { proto = proto, ctor = ctor, text = text }
+
+
+fromOdd o = ( ( ( (), o.proto ), o.ctor ), o.text )
+
+
+odd : Schema Odd Odd
+odd =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "proto" Schema.int
+            |> Schema.key "__proto__"
+            |> Schema.field "ctor" Schema.int
+            |> Schema.key "constructor"
+            |> Schema.optional "text" Schema.string
+            |> Schema.key "toString"
+        )
+        (Schema.mapping toOdd fromOdd)
+        (Schema.mapping toOdd fromOdd)
+
+
+type alias Plain =
+    a : Int
+
+
+toPlain ( (), a ) = { a = a }
+
+
+fromPlain p = ( (), p.a )
+
+
+plain : Schema Plain Plain
+plain =
+    Schema.record
+        (Schema.fields |> Schema.field "a" Schema.int)
+        (Schema.mapping toPlain fromPlain)
+        (Schema.mapping toPlain fromPlain)
+
+
+showOdd : Odd -> String
+showOdd o =
+    "{ proto = "
+        ++ String.fromInt o.proto
+        ++ ", ctor = "
+        ++ String.fromInt o.ctor
+        ++ ", text = "
+        ++ (case o.text of
+               Missing ->
+                   "Missing"
+
+               Present s ->
+                   "Present " ++ s
+           )
+        ++ " }"
+
+
+all : Schema.Options
+all = { defaultOptions | errors = AllErrors }
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result
+            (Schema.parse odd "{\"__proto__\":1,\"constructor\":2,\"toString\":\"three\"}")
+            showOdd
+        , Show.result (Schema.parse odd "{\"__proto__\":1,\"constructor\":2}") showOdd
+        , Show.result (Schema.parseWith odd all "{}") showOdd
+        , Show.result (Schema.print odd { proto = 1, ctor = 2, text = Present "three" }) (\s -> s)
+        , Show.result
+            (Schema.write odd { proto = 4, ctor = 5, text = Missing }
+                |> Result.andThen (Schema.read odd _)
+            )
+            showOdd
+        , Show.result
+            (Schema.parseWith
+                plain
+                { defaultOptions | unknownKeys = Reject }
+                "{\"a\":1,\"__proto__\":{\"polluted\":true}}"
+            )
+            (\p -> String.fromInt p.a)
+        , Show.result
+            (Schema.parse plain "{\"a\":1,\"__proto__\":{\"polluted\":true}}")
+            (\p -> String.fromInt p.a)
+        , Show.result
+            (Schema.parse Schema.value "{\"a\":1,\"__proto__\":{\"polluted\":true}}")
+            Show.json
+        , Show.result
+            (Schema.parse plain "{\"a\":1,\"__proto__\":{\"a\":\"inherited\"}}")
+            (\p -> String.fromInt p.a)
+        , Show.result (Schema.parse plain "{\"__proto__\":{\"a\":1}}") (\p -> String.fromInt p.a)
+        ]
+
+
+defaultOptions : Schema.Options
+defaultOptions = Schema.defaultOptions

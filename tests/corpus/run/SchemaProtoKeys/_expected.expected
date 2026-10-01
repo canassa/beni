@@ -1,0 +1,10 @@
+Ok { proto = 1, ctor = 2, text = Present three }
+Ok { proto = 1, ctor = 2, text = Missing }
+Err decoding Encoded MissingKey /__proto__ missing key "__proto__" | decoding Encoded MissingKey /constructor missing key "constructor"
+Ok {"__proto__":1,"constructor":2,"toString":"three"}
+Ok { proto = 4, ctor = 5, text = Missing }
+Err decoding Encoded UnknownKey /__proto__ unexpected key "__proto__"
+Ok 1
+Ok {"a":1,"__proto__":{"polluted":true}}
+Ok 1
+Err decoding Encoded MissingKey /a missing key "a"

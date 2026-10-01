@@ -1,0 +1,81 @@
+-- The JSON adapter's failures are values (`schema.md` §5, CLAUDE.md rule 9):
+-- malformed text is a `ParseFailed` at the root carrying the host's own
+-- message, and a number JSON cannot hold — NaN, an infinity — is a
+-- `PrintFailed` at the key it would have been written under, never the
+-- `null` `JSON.stringify` would write. Numbers follow `JSON.parse`, which
+-- rounds before the schema looks: 2⁵³+1 arrives as 2⁵³ and is not a safe
+-- integer. A typed `Float` may hold NaN and a host value may too; only JSON
+-- text refuses it, a `Value` holding one included. Negative zero prints as
+-- `JSON.stringify` prints it, and strings are escaped by it.
+import Node
+import Schema exposing (Schema)
+import Show
+
+
+type alias Reading =
+    value : Float
+
+
+toReading ( (), v ) = { value = v }
+
+
+fromReading r = ( (), r.value )
+
+
+reading : Schema Reading Reading
+reading =
+    Schema.record
+        (Schema.fields |> Schema.field "value" Schema.float |> Schema.key "the value")
+        (Schema.mapping toReading fromReading)
+        (Schema.mapping toReading fromReading)
+
+
+nan : Float
+nan = 0 / 0
+
+
+infinity : Float
+infinity = 1 / 0
+
+
+int : String -> String
+int text = text ++ " => " ++ Show.result (Schema.parse Schema.int text) String.fromInt
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result (Schema.parse Schema.value "{") Show.json
+        , Show.result (Schema.parse Schema.value "") Show.json
+        , Show.result (Schema.parse Schema.value "[1,]") Show.json
+        , Show.result (Schema.parse Schema.int "nul") String.fromInt
+        , Show.result (Schema.parse Schema.value "{\"a\":[1,true,null,\"x\"],\"b\":{}}") Show.json
+        , "-- numbers"
+        , int "9007199254740991"
+        , int "9007199254740993"
+        , int "-9007199254740991"
+        , int "1e3"
+        , int "1.0"
+        , int "1.5"
+        , int "\"1\""
+        , Show.result (Schema.parse Schema.finiteFloat "1e400") String.fromFloat
+        , Show.result (Schema.parse Schema.float "1e400") String.fromFloat
+        , Show.result
+            (Schema.parse Schema.bool "0")
+            (\b ->
+                if b then
+                    "True"
+                else
+                    "False"
+            )
+        , "-- printing"
+        , Show.result (Schema.print Schema.float nan) (\s -> s)
+        , Show.result (Schema.print reading { value = infinity }) (\s -> s)
+        , Show.result (Schema.print reading { value = -0.0 }) (\s -> s)
+        , Show.result (Schema.print (Schema.list Schema.float) [ 1.5, nan ]) (\s -> s)
+        , Show.result (Schema.encode Schema.finiteFloat nan) String.fromFloat
+        , Show.result (Schema.decode Schema.float nan) String.fromFloat
+        , Show.value (Schema.write Schema.float nan)
+        , Show.result (Schema.print Schema.string "quote \" and\nline") (\s -> s)
+        , Show.result (Schema.parse Schema.string "\"\\u00e9t\\u00e9\"") (\s -> s)
+        ]

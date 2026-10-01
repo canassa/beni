@@ -1,0 +1,221 @@
+-- Failures, in order, and what each one runs (`schema.md` §5, *Traversal
+-- and failure rules*). Under `AllErrors` a record reports its unknown keys
+-- first, then each declared field in order — a structural failure in one
+-- field, a conversion's failure in the next and a refinement in the third,
+-- none hiding another — and a list each failing index. Under `FirstError`
+-- traversal is lazy: `Debug.log` in each conversion shows that a sibling
+-- after the first failure is never started, while `AllErrors` starts every
+-- one, and a whole-record conversion waits for all its fields. A
+-- conversion's issues are moved to where its value is: the engine's path
+-- in front of theirs, its direction and endpoint over theirs, and an empty
+-- `Err` is a `ConversionFailed` of its own. `reportInput` puts the failing
+-- input in each issue.
+import Node
+import Schema exposing (AllErrors, Conversion, Field, Index, Issue, Reject, Schema)
+import Show
+
+
+logged : String -> Conversion String String
+logged name =
+    Schema.conversion
+        (\s ->
+            let
+                _ = Debug.log s name
+            in
+            if s == "bad" then
+                Err [ Schema.issue (name ++ " is bad") ]
+            else
+                Ok s
+        )
+        (\s -> Ok s)
+
+
+type alias Three =
+    x : String
+    y : String
+    z : String
+
+
+toThree ( ( ( (), x ), y ), z ) = { x = x, y = y, z = z }
+
+
+fromThree t = ( ( ( (), t.x ), t.y ), t.z )
+
+
+three : Schema Three Three
+three =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "x" (Schema.converted Schema.string (logged "x"))
+            |> Schema.field "y" (Schema.converted Schema.string (logged "y"))
+            |> Schema.field "z" (Schema.converted Schema.string (logged "z"))
+        )
+        (Schema.mapping toThree fromThree)
+        (Schema.mapping toThree fromThree)
+
+
+joined : Schema Three String
+joined =
+    Schema.converted
+        three
+        (Schema.conversion
+            (\t ->
+                let
+                    _ = Debug.log t.x "whole record"
+                in
+                Ok (t.x ++ t.y ++ t.z)
+            )
+            (\s -> Ok { x = s, y = "", z = "" })
+        )
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (\s ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        (\n -> Ok (String.fromInt n))
+
+
+type alias Mixed b =
+    a : String
+    b : b
+    c : Int
+
+
+toMixed ( ( ( (), a ), b ), c ) = { a = a, b = b, c = c }
+
+
+fromMixed m = ( ( ( (), m.a ), m.b ), m.c )
+
+
+mixed : Schema (Mixed String) (Mixed Int)
+mixed =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "a" Schema.string
+            |> Schema.field "b" (Schema.converted Schema.string decimalInt)
+            |> Schema.key "b-text"
+            |> Schema.field "c" Schema.int
+        )
+        (Schema.mapping toMixed fromMixed)
+        (Schema.mapping toMixed fromMixed)
+
+
+-- Issues a conversion makes with a relative path, a code of its own, and a
+-- direction and endpoint the engine replaces.
+picky : Conversion (List Int) Int
+picky =
+    Schema.conversion
+        (\xs ->
+            case xs of
+                [] ->
+                    Err []
+
+                [ x ] ->
+                    Ok x
+
+                _ ->
+                    Err
+                        [ Schema.issueAt [ Index 1 ] "one element only"
+                        , { path = [ Field "nowhere" ]
+                          , direction = Schema.Encoding
+                          , endpoint = Schema.Encoded
+                          , code = Schema.InvalidValue
+                          , message = "and a code of its own"
+                          , input = Nothing
+                          }
+                        ]
+        )
+        (\x -> Ok [ x ])
+
+
+type alias Box =
+    items : List Int
+
+
+toBox ( (), items ) = { items = items }
+
+
+fromBox b = ( (), b.items )
+
+
+box : Schema Box Box
+box =
+    Schema.record
+        (Schema.fields |> Schema.field "items" (Schema.list Schema.int))
+        (Schema.mapping toBox fromBox)
+        (Schema.mapping toBox fromBox)
+
+
+type alias Wrapper a =
+    inner : a
+
+
+toWrapper ( (), inner ) = { inner = inner }
+
+
+fromWrapper w = ( (), w.inner )
+
+
+wrapper : Schema (Wrapper (List Int)) (Wrapper Int)
+wrapper =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "inner" (Schema.converted (Schema.list Schema.int) picky)
+            |> Schema.key "in"
+        )
+        (Schema.mapping toWrapper fromWrapper)
+        (Schema.mapping toWrapper fromWrapper)
+
+
+all : Schema.Options
+all = { errors = AllErrors, unknownKeys = Reject, maxDepth = 512, reportInput = False }
+
+
+first : Schema.Options
+first = { errors = Schema.FirstError, unknownKeys = Reject, maxDepth = 512, reportInput = False }
+
+
+reported : Schema.Options
+reported = { all | reportInput = True }
+
+
+issues : Result (List Issue) a -> String
+issues r = Show.result r (\_ -> "")
+
+
+bad : String
+bad = "{\"a\":5,\"b-text\":\"x\",\"c\":1.5,\"d\":true,\"e\":null}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- AllErrors, then FirstError, on one input"
+        , issues (Schema.parseWith mixed all bad)
+        , issues (Schema.parseWith mixed first bad)
+        , issues (Schema.parseWith mixed { first | unknownKeys = Schema.Ignore } bad)
+        , issues (Schema.parseWith mixed reported bad)
+        , issues (Schema.parseWith box all "{\"items\":[1,\"two\",3.5,4]}")
+        , issues (Schema.parseWith box first "{\"items\":[1,\"two\",3.5,4]}")
+        , issues (Schema.encodeWith mixed all { a = "a", b = 1, c = 9007199254740993 })
+        , "-- laziness"
+        , issues (Schema.parseWith three first "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
+        , issues (Schema.parseWith three all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
+        , issues (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
+        , Show.result
+            (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}")
+            (\s -> s)
+        , "-- a conversion's issues"
+        , issues (Schema.parse wrapper "{\"in\":[1,2,3]}")
+        , issues (Schema.parse wrapper "{\"in\":[]}")
+        , Show.result (Schema.parse wrapper "{\"in\":[7]}") (\w -> String.fromInt w.inner)
+        , issues (Schema.decodeWith wrapper reported { inner = [ 1, 2 ] })
+        ]

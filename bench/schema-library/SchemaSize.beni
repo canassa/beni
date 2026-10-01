@@ -1,0 +1,71 @@
+-- The size of a program that uses a small schema: report 34's `flat` user,
+-- parsed from text and printed back, its issues formatted when it fails.
+-- `run.mjs` builds it under `--release` and prices the bundle in brotli,
+-- next to the empty program.
+import Node
+import Schema exposing (Presence, Schema)
+
+
+type alias User =
+    userId : Int
+    displayName : String
+    email : String
+    age : Int
+    active : Bool
+    score : Float
+    role : String
+    nickname : Presence String
+
+
+toUser ( ( ( ( ( ( ( ( (), userId ), displayName ), email ), age ), active ), score ), role ), nickname ) =
+    { userId = userId
+    , displayName = displayName
+    , email = email
+    , age = age
+    , active = active
+    , score = score
+    , role = role
+    , nickname = nickname
+    }
+
+
+fromUser u =
+    ( ( ( ( ( ( ( ( (), u.userId ), u.displayName ), u.email ), u.age ), u.active ), u.score )
+      , u.role
+      )
+    , u.nickname
+    )
+
+
+user : Schema User User
+user =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "userId" Schema.int
+            |> Schema.key "user-id"
+            |> Schema.field "displayName" Schema.string
+            |> Schema.key "display-name"
+            |> Schema.field "email" Schema.string
+            |> Schema.field "age" Schema.int
+            |> Schema.field "active" Schema.bool
+            |> Schema.field "score" Schema.finiteFloat
+            |> Schema.field "role" Schema.string
+            |> Schema.optional "nickname" Schema.string
+        )
+        (Schema.mapping toUser fromUser)
+        (Schema.mapping toUser fromUser)
+
+
+main : Node.Program
+main =
+    case
+        Schema.parse
+            user
+            "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
+            |> Result.andThen (Schema.print user _)
+    of
+        Ok text ->
+            Node.print text
+
+        Err issues ->
+            Node.exitWith (String.join (List.map issues (\i -> i.message)) "\n") 1
