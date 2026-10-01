@@ -1797,7 +1797,9 @@ const Spec = struct {
             // written; its value is still evaluated when it may do something.
             if (try s.deadWrite(m, stmt)) {
                 const value: Index = @enumFromInt(m.ir.data(stmt).rhs);
-                if (inert(m.ir, value)) continue;
+                // A read of a program object's property does nothing
+                // either: no getter, no throw (`Pts.safeChain`).
+                if (inert(m.ir, value) or try s.pts.safeChain(m.index, s.cur_top, value) != null) continue;
                 m.setNode(stmt, .expr_stmt, value.int(), 0);
                 try out.append(s.arena, raw);
                 continue;
@@ -3045,6 +3047,16 @@ const Pts = struct {
     /// `guard_base` belong to an enclosing function and are not in view.
     guards: std.ArrayList(Guard) = .empty,
     guard_base: usize = 0,
+    /// Definite initialisation (*Amended 2026-10-03*): per object literal
+    /// node, the keys it lacks that every call of the one function
+    /// returning it writes before anything can read them. Kept across the
+    /// runs of one `analyse`, which grow it.
+    extra_init: std.AutoHashMapUnmanaged(NodeKey, std.ArrayList(u32)) = .empty,
+    /// Per call node the initialiser of a `const` or `let`: the list it
+    /// stands in and where (`writesAfter`).
+    decl_call: std.AutoHashMapUnmanaged(NodeKey, DeclAt) = .empty,
+
+    const DeclAt = struct { range: JsIr.SubRange, index: u32 };
 
     const Guard = struct {
         module: u32,
@@ -3116,6 +3128,13 @@ const Pts = struct {
         /// A function's return and parameters.
         ret: VarId = none,
         params: []const VarId = &.{},
+        /// An object literal that is the value of a `return` of this
+        /// function site: its only way out (definite initialisation).
+        fresh_fn: u32 = none,
+        /// A function's: every call node that may call it, and whether
+        /// something else does (the entry file, `new`).
+        callers: std.ArrayList(NodeKey) = .empty,
+        odd_caller: bool = false,
     };
 
     fn init(s: *Spec) Pts {
@@ -3248,6 +3267,11 @@ const Pts = struct {
         const id: u32 = @intCast(p.sites.items.len);
         gop.value_ptr.* = id;
         try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .once = p.once_ctx, .any = try p.newVar() });
+        // Keys written before anything can read them exist from the moment
+        // the object does, as a literal's own do.
+        if (kind == .object) if (p.extra_init.get(.{ .module = mi, .node = node.int() })) |ids| {
+            for (ids.items) |pid| (try p.prop(id, pid)).init = true;
+        };
         return id;
     }
 
@@ -3364,14 +3388,33 @@ const Pts = struct {
 
     // ---- The analysis --------------------------------------------------------
 
-    /// Fact 3 to its fixpoint over the program as it stands this round.
+    /// How many times one `analyse` runs the fixpoint again for keys
+    /// definite initialisation found.
+    const max_init_runs = 3;
+
+    /// Fact 3 to its fixpoint over the program as it stands this round,
+    /// then again while definite initialisation finds keys every object of
+    /// a site has before it can be read: what a site may hold does not
+    /// depend on them (only whether a read may be `undefined` does), so
+    /// the next run's call graph is this one's.
     fn analyse(p: *Pts) Allocator.Error!void {
+        p.extra_init = .empty;
+        var attempt: u32 = 0;
+        while (true) : (attempt += 1) {
+            try p.fixpoint();
+            if (!p.ok or attempt == max_init_runs) return;
+            if (!try p.definiteInit()) return;
+        }
+    }
+
+    fn fixpoint(p: *Pts) Allocator.Error!void {
         const s = p.s;
         p.ok = false;
         p.vars = .empty;
         p.sites = .empty;
         p.site_at = .empty;
         p.locals = .empty;
+        p.decl_call = .empty;
         p.globals = try p.arena().alloc(VarId, s.in.globals);
         for (p.globals) |*g| g.* = try p.newVar();
         // What no module declares — an import of a hand-written file's
@@ -3460,8 +3503,14 @@ const Pts = struct {
                 }
             },
             .return_stmt => {
-                const val = if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| try p.expr(mi, value, func) else Val.undef_val;
+                const value: ?Index = @as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap();
+                const val = if (value) |v| try p.expr(mi, v, func) else Val.undef_val;
                 if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
+                // An object literal returned as it is made leaves its
+                // function by the call alone (definite initialisation).
+                if (func) |site| if (value) |v| if (ir.tag(v) == .object) {
+                    if (p.site_at.get(.{ .module = mi, .node = v.int() })) |o| p.sites.items[o].fresh_fn = site;
+                };
             },
             .if_stmt => {
                 _ = try p.expr(mi, @enumFromInt(d.lhs), func);
@@ -3520,7 +3569,115 @@ const Pts = struct {
 
     fn list(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32) Allocator.Error!void {
         const ir = p.s.mods[mi].ir;
-        for (ir.extraSlice(range, Index)) |node| try p.stmt(mi, node, func);
+        for (ir.extraSlice(range, Index), 0..) |node, k| {
+            // A call a `const` or `let` binds: where it stands, for the
+            // writes that follow it (`writesAfter`).
+            switch (ir.tag(node)) {
+                .const_decl, .let_decl => {
+                    const v: Node.OptionalIndex = @enumFromInt(ir.data(node).rhs);
+                    if (v.unwrap()) |value| if (ir.tag(value) == .call) {
+                        try p.decl_call.put(p.arena(), .{ .module = mi, .node = value.int() }, .{ .range = range, .index = @intCast(k) });
+                    };
+                },
+                else => {},
+            }
+            try p.stmt(mi, node, func);
+        }
+    }
+
+    /// Definite initialisation: of an object literal that is the value of
+    /// a `return`, so that the call is the only way it leaves its function,
+    /// each key that every call of that function — bound by a `const` or
+    /// `let` — writes in the statements right after it, before anything
+    /// runs that could read the new object, exists from the moment any code
+    /// can see the object. True when a key was found that the last run did
+    /// not have.
+    fn definiteInit(p: *Pts) Allocator.Error!bool {
+        var grew = false;
+        var found: std.ArrayList(u32) = .empty;
+        var here: std.ArrayList(u32) = .empty;
+        for (0..p.sites.items.len) |si| {
+            const st = p.sites.items[si];
+            if (st.kind != .object or st.escaped or st.fresh_fn == none) continue;
+            const f = &p.sites.items[st.fresh_fn];
+            if (f.escaped or f.odd_caller or f.callers.items.len == 0) continue;
+            found.clearRetainingCapacity();
+            for (f.callers.items, 0..) |c, ci| {
+                here.clearRetainingCapacity();
+                try p.writesAfter(c, &here);
+                if (ci == 0) {
+                    try found.appendSlice(p.arena(), here.items);
+                    continue;
+                }
+                var kept: usize = 0;
+                for (found.items) |id| if (std.mem.indexOfScalar(u32, here.items, id) != null) {
+                    found.items[kept] = id;
+                    kept += 1;
+                };
+                found.shrinkRetainingCapacity(kept);
+                if (found.items.len == 0) break;
+            }
+            for (found.items) |id| {
+                if (p.findProp(@intCast(si), id)) |pr| if (pr.init) continue;
+                const gop = try p.extra_init.getOrPut(p.arena(), .{ .module = st.module, .node = st.node.int() });
+                if (!gop.found_existing) gop.value_ptr.* = .empty;
+                if (std.mem.indexOfScalar(u32, gop.value_ptr.items, id) != null) continue;
+                try gop.value_ptr.append(p.arena(), id);
+                grew = true;
+            }
+        }
+        return grew;
+    }
+
+    /// The keys written to `x` right after `const x = call` (or `let`): the
+    /// run of `x.k = v` statements that follow it, each `v` evaluated
+    /// without running code or reading `x` (`harmless`).
+    fn writesAfter(p: *Pts, c: NodeKey, out: *std.ArrayList(u32)) Allocator.Error!void {
+        const at = p.decl_call.get(c) orelse return;
+        const mi = c.module;
+        const ir = p.s.mods[mi].ir;
+        const items = ir.extraSlice(at.range, Index);
+        if (at.index >= items.len) return;
+        const decl = items[at.index];
+        // Still this call's binding: the list may have been folded since.
+        if (ir.data(decl).rhs != c.node) return;
+        const x: NameIndex = @enumFromInt(ir.data(decl).lhs);
+        for (items[at.index + 1 ..]) |next| {
+            if (ir.tag(next) != .assign_stmt) return;
+            const target: Index = @enumFromInt(ir.data(next).lhs);
+            if (ir.tag(target) != .member) return;
+            const obj: Index = @enumFromInt(ir.data(target).lhs);
+            if (ir.tag(obj) != .ident or ir.data(obj).lhs != x.int()) return;
+            const id = p.propId(mi, @enumFromInt(ir.data(target).rhs));
+            if (id == none) return;
+            if (!p.harmless(mi, @enumFromInt(ir.data(next).rhs), x)) return;
+            if (std.mem.indexOfScalar(u32, out.items, id) == null) try out.append(p.arena(), id);
+        }
+    }
+
+    /// Whether evaluating `root` can neither run code nor throw nor read
+    /// `x`: a literal, a name other than `x`, or a property of such an
+    /// expression whose objects are all the program's own, none escaped
+    /// (no getter), none `null` or `undefined`.
+    fn harmless(p: *Pts, mi: u32, root: Index, x: NameIndex) bool {
+        const ir = p.s.mods[mi].ir;
+        var node = root;
+        var depth: u32 = 0;
+        while (depth < 64) : (depth += 1) {
+            switch (ir.tag(node)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return true,
+                .ident => return ir.data(node).lhs != x.int(),
+                .member => {
+                    const obj: Index = @enumFromInt(ir.data(node).lhs);
+                    const v = p.vals[mi][obj.int()];
+                    if (v.top or v.prim or v.nullish() or v.sites.len == 0) return false;
+                    for (v.sites) |site| if (p.sites.items[site].escaped) return false;
+                    node = obj;
+                },
+                else => return false,
+            }
+        }
+        return false;
     }
 
     /// A branch's statements, under `guard` when its test narrows a chain.
@@ -3708,6 +3865,7 @@ const Pts = struct {
             },
             .new_call => blk: {
                 p.kill();
+                for (vals[d.lhs].sites) |site| p.sites.items[site].odd_caller = true;
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try p.escape(vals[a.int()]);
                 break :blk Val.top_val;
             },
@@ -3733,6 +3891,7 @@ const Pts = struct {
                 unknown = true;
                 continue;
             }
+            p.sites.items[site].odd_caller = true;
             const params = p.sites.items[site].params;
             for (params, 0..) |v, i| try p.join(v, if (i < e.args.len) p.view(p.globals[e.args[i]]) else Val.undef_val);
         }
@@ -3756,6 +3915,12 @@ const Pts = struct {
             const params = p.sites.items[site].params;
             for (params, 0..) |v, i| try p.join(v, if (i < args.len) vals[args[i].int()] else Val.undef_val);
             out = try p.unionOf(out, p.view(p.sites.items[site].ret));
+            const key: NodeKey = .{ .module = mi, .node = node.int() };
+            const callers = &p.sites.items[site].callers;
+            const known_caller = for (callers.items) |k| {
+                if (k.module == key.module and k.node == key.node) break true;
+            } else false;
+            if (!known_caller) try callers.append(p.arena(), key);
         }
         if (unknown) {
             for (args) |a| try p.escape(vals[a.int()]);

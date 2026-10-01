@@ -5285,6 +5285,40 @@ module's one block with an instance's `b`, which `unit` writes right after the k
 instance — but a flow-insensitive analysis sees the instance before that write, where `b` is still
 `undefined`.
 
+**Amended 2026-10-03: definite initialisation** (`Pts.definiteInit`; the empty page's study,
+ledger step 13). Fact 3 learns, per object literal, the keys it lacks that no code can read before
+they are written — so a read of one is never the `undefined` of a key not yet there, exactly as
+for a key the literal has (*What fact 3 learns*, above). A key `k` is such a key of literal `O`
+when:
+
+- `O` is the value of a `return` of a function `F` as it is made (`return {…}`), so the call is
+  the only way `O` leaves `F`;
+- `F` does not escape and nothing but the program's calls calls it — not the entry file, not a
+  `new` — and it has at least one call;
+- **every** call that may call `F` (by fact 3's call graph) is the initialiser of a `const x` or
+  `let x`, and the statements right after that binding begin with a run of `x.p = v`, one of which
+  writes `k`, each `v` before it — and `v` itself — evaluated without running code, throwing or
+  reading `x`: a literal, a name other than `x`, or a property read through objects that are all
+  the program's own, none escaped (no getter) and none `null` or `undefined`.
+
+Between the call and the write no code runs and nothing but `x` holds the new object, so no read
+can see `k` missing. What a site may hold does not depend on these keys — only whether a read may
+be `undefined` does — so the call graph that found them is the one they leave: the analysis is run
+again with them, up to three times while it finds more. Nothing is rewritten that facts 3–6 did
+not already rewrite: they now fire where an object is finished by its caller. On the empty page
+`unit`'s `i.t = b.t; i.b = b` makes `t` and `b` keys of the instance the kind's `m` returns, so
+fact 6 decides `patch`'s `b === i.b` (`true`): `patch` is `(a)=>a`, its two other arms go, and
+with them the kind's `p`; `unit`'s two writes, read by nothing now, go too, the read `b.t` with
+them — **a write fact 3 drops keeps its value as a statement only when evaluating it may do
+something**, and a read through program objects (`Pts.safeChain`) does nothing. `swap` and `drop`
+stay: `place`'s `else` is reached only from a branch that tested `s.i` was `null`, which no fact
+sees through a call. Measured (release, brotli, the whole bundle): the empty `browser` page and
+`Tea.sandbox` **605 → 557**; `Tea.element`, effects, the `bench/ui` app and every `run/` program
+byte-identical. Fixtures: `emit/release/app/SpecInit` (a kind's instance finished by `unit`, and a
+literal one of whose two calls writes nothing), `run/SpecializeInit` (the same, and a write whose
+value reads the key it writes through a call — red when a call counts as harmless),
+`emit/release/split/EmptyPage`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

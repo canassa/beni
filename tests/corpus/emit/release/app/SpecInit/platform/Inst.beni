@@ -1,0 +1,85 @@
+--! Definite initialisation (`backend.md` §9, *Slice 4*, amended
+--! 2026-10-03): an object literal returned by a function, whose every call
+--! writes a key the literal lacks right after it.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- A kind: `m` makes an instance, a literal with its node and no `b`.
+kind : V
+kind =
+    Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+
+
+-- One block, made once; `view` always shows it.
+block : V
+block =
+    Js.from { t = kind }
+
+
+view : Int -> V
+view _ =
+    block
+
+
+-- A block mounted on its own: the instance remembers its kind and block.
+unit : V -> V
+unit b =
+    let
+        i =
+            Js.call (Js.get b "t") "m" [ Js.from 0 ]
+
+        _ =
+            Js.set i "t" (Js.get b "t")
+
+        _ =
+            Js.set i "b" b
+    in
+    i
+
+
+patch : V, V -> String
+patch i b =
+    if Js.same b (Js.get i "b") then
+        "same"
+
+    else
+        "other"
+
+
+-- Made fresh, but one of its two calls never writes `b`.
+bare : () -> V
+bare () =
+    Js.from { s = Js.from "node" }
+
+
+marked : () -> V
+marked () =
+    let
+        i =
+            bare ()
+
+        _ =
+            Js.set i "b" block
+    in
+    i
+
+
+shows : V, V -> String
+shows i b =
+    if Js.same b (Js.get i "b") then
+        "shows it"
+
+    else
+        "shows another"
+
+
+pub demo : () -> List String
+demo () =
+    [ patch (unit (view 1)) (view 2)
+    , shows (marked ()) (view 3)
+    , shows (bare ()) (view 4)
+    ]

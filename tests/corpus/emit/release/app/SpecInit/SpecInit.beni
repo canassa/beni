@@ -1,0 +1,21 @@
+-- emit: whole-program specialisation's definite initialisation
+-- (`backend.md` §9, *Slice 4*, amended 2026-10-03), in a platform module
+-- (`platform/Inst.beni`) written as the browser runtime writes `unit` and
+-- `patch`:
+--
+--   * a kind's `m` returns an instance as an object literal with no `b`,
+--     and the one call of `m` — `unit`'s — writes `t` and then `b` in the
+--     statements right after it, before anything can read them: `b` exists
+--     from the moment the instance does, so `patch`'s read of it is the one
+--     module-level block `unit` was shown, never `undefined`, and `patch`
+--     says "same" with no test (and, nothing else reading them, `unit`'s
+--     two writes go);
+--   * `bare`'s literal is returned by a function also called where nothing
+--     writes `b` after the call: `shows` keeps its comparison.
+import Inst
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines (Inst.demo ())

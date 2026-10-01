@@ -1,0 +1,16 @@
+-- Definite initialisation (`backend.md` §9, *Slice 4*, amended 2026-10-03)
+-- beside the cases that must defeat it, printing the same in both builds:
+--
+--   * an instance a kind's `m` returns, whose one call writes `b` right
+--     after it: `patch` compares the block with the one it was shown;
+--   * a literal returned by a function one of whose calls writes `b` and
+--     the other does not: a read of `b` may be `undefined`;
+--   * a write whose value reads, through a call, the key it is about to
+--     write: that read sees it missing ("unset").
+import Node
+import Probe
+
+
+main : Node.Program
+main =
+    Node.printLines (Probe.demo ())
