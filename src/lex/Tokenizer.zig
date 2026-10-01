@@ -340,6 +340,9 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             '*' => break :state t.take(1, .op_star),
             '^' => break :state t.take(1, .op_caret),
             0x80...0xff => {
+                // `λ` (U+03BB, `CE BB`) is the lambda token, the one
+                // non-ASCII character code may hold (language.md §12.1).
+                if (src[t.index] == 0xCE and src[t.index + 1] == 0xBB) break :state t.take(2, .lambda);
                 // Non-ASCII outside a string, char or comment (§2.4); a
                 // malformed sequence is the more specific error (§1).
                 const seq = utf8Sequence(src, t.index);
@@ -2187,6 +2190,27 @@ test "tab: as indentation, between tokens, inside a comment" {
             .{ .code = .tab_in_source, .start = 13, .end = 14 },
         },
         .line_starts = &.{ 0, 4 },
+    });
+}
+
+test "`λ` is the lambda token, never part of a name; `Λ` stays invalid_character" {
+    // language.md §12.1: `CE BB` is one two-byte token wherever code is
+    // lexed, so `λx` is two tokens and `fλ` is `f` then `λ`.
+    try expectLex("λx fλ Λ \"λ\"", .{
+        .tokens = &.{
+            .{ .tag = .lambda, .start = 0, .text = "λ" },
+            .{ .tag = .lower_ident, .start = 2, .text = "x" },
+            .{ .tag = .lower_ident, .start = 4, .text = "f" },
+            .{ .tag = .lambda, .start = 5, .text = "λ" },
+            .{ .tag = .invalid, .start = 8, .text = "Λ" },
+            .{ .tag = .str_start, .start = 11, .text = "\"" },
+            .{ .tag = .str_chunk, .start = 12, .text = "λ" },
+            .{ .tag = .str_end, .start = 14, .text = "\"" },
+            .{ .tag = .eof, .start = 15, .text = "" },
+        },
+        .diagnostics = &.{
+            .{ .code = .invalid_character, .start = 8, .end = 10 },
+        },
     });
 }
 

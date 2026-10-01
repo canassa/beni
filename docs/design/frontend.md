@@ -1441,6 +1441,13 @@ naming it — a file whose output does not parse cleanly.
   names every other use — a pipeline into `Debug.log`, a call with one argument — for a hand edit.
   Because `Debug.log` keeps its name, its core change and this rewrite land in one commit (§11.7).
 
+*As built, `--migrate-lambda` (2026-10-02):* `Format.migrateLambda` rewrites the head token of
+every `lambda` node that is a `backslash`, so a multiline string's `\\` and an escape, which are
+other tokens, cannot be reached. It lexes and parses its output again; when that fails, the file is
+written unchanged and reported with the re-parse's first diagnostic code at its line, under a
+message that names the flag and the column shift. Until `\` is refused, the formatter prints a
+lambda's head as it was written.
+
 ### 11.5 `--migrate-let` and `--migrate-trailing-lambda`: reformats
 
 These two cannot be edits: a block's layout is not `let`'s, and a parenthesis dropped from a lambda

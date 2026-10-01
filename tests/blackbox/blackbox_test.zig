@@ -1796,6 +1796,62 @@ test "fmt --migrate-let-blanks joins one-line let bindings in place and restyles
     try testing.expectEqualStrings("y   =   let\n  a = 1\n  b = 2\n in a + b\n", try w.read("Main.beni"));
 }
 
+test "fmt --migrate-lambda writes every lambda's head as λ in place and restyles nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.4: an edit — `y`'s spacing is not canonical and stays
+    // so; the multiline string's `\\` and the string's escape are not lambdas.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "y   =   \\a -> [ \\() -> a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-lambda", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("y   =   λa -> [ λ() -> a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
+}
+
+test "fmt --migrate-lambda names a file whose rewrite would not parse and leaves it alone" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // language.md §12.1, *columns*: `λ` is one byte wider than `\`, so the
+    // first branch on the `of` line moves off the column `Nothing` is at.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const source = "f m =\n    case g (\\x -> x) of Just y -> y\n                        Nothing -> 0\n";
+    try w.write("Main.beni", source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-lambda", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":3,\"col\":25}") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "left this file alone") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(source, try w.read("Main.beni"));
+}
+
 test "fmt --check on a canonical file exits 0 with nothing on either stream" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

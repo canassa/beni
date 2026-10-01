@@ -2055,7 +2055,7 @@ fn resetDepth(p: *Parse) void {
 
 fn isBlockStart(tag: Tag) bool {
     return switch (tag) {
-        .keyword_let, .keyword_if, .keyword_case, .backslash => true,
+        .keyword_let, .keyword_if, .keyword_case, .backslash, .lambda => true,
         else => false,
     };
 }
@@ -2069,7 +2069,7 @@ fn canStartAtom(tag: Tag) bool {
     };
 }
 
-/// Expr := 'let' … | 'if' … | 'case' … | '\' … | BinOp
+/// Expr := 'let' … | 'if' … | 'case' … | 'λ' … | BinOp
 fn parseExpr(p: *Parse) Allocator.Error!Index {
     if (try p.enter()) |placeholder| return placeholder;
     defer p.leave();
@@ -2077,7 +2077,7 @@ fn parseExpr(p: *Parse) Allocator.Error!Index {
         .keyword_let => p.parseLet(),
         .keyword_if => p.parseIf(),
         .keyword_case => p.parseCase(),
-        .backslash => p.parseLambda(),
+        .backslash, .lambda => p.parseLambda(),
         else => p.parseBinop(0, .invalid),
     };
 }
@@ -3219,11 +3219,14 @@ fn parseString(p: *Parse) Allocator.Error!Index {
     return p.rangeNode(.string, start, try p.listToRange(p.scratchSince(mark)));
 }
 
-/// '\' PatAtom+ '->' Expr
+/// 'λ' PatAtom+ '->' Expr
+///
+/// The head is `λ` or the old `\` (language.md §12.1); the node is the
+/// same either way, and its main token is the head.
 fn parseLambda(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.lambda);
     defer p.context = saved_context;
-    const backslash = p.next();
+    const head = p.next();
     const params = try p.parseParams();
     if (params.len() == 0) {
         @branchHint(.cold);
@@ -3234,7 +3237,7 @@ fn parseLambda(p: *Parse) Allocator.Error!Index {
     _ = try p.expectToken(.arrow);
     const body = try p.parseExpr();
     const extra = try p.addExtra(params);
-    return p.addNode(.{ .tag = .lambda, .main_token = backslash, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+    return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
 }
 
 /// 'if' Expr 'then' Expr 'else' Expr

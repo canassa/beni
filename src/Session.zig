@@ -187,6 +187,9 @@ pub const Options = struct {
     /// between one-line `let` bindings and touch nothing else
     /// (`Format.migrateLetBlanks`).
     migrate_let_blanks: bool = false,
+    /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
+    /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
+    migrate_lambda: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -1484,7 +1487,31 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     var out: Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     var skipped: u32 = 0;
-    (if (session.options.migrate_let_blanks) Format.migrateLetBlanks(
+    if (session.options.migrate_lambda) {
+        const problem = Format.migrateLambda(worker.arena.allocator(), tree, session.artifacts.tokens(file), text, &out.writer) catch |err| switch (err) {
+            error.SyntaxErrors => {
+                out.deinit();
+                return;
+            },
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
+        };
+        if (problem) |found| {
+            // The rewrite does not parse (frontend.md §11.4): the file is
+            // left alone and named, with where the re-parse stopped.
+            out.deinit();
+            const line_starts = session.store.lineStarts(file);
+            const at = diagnostic.position(line_starts, found.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            try message.writer.print(
+                "`beni fmt --migrate-lambda` left this file alone: with its lambdas written `λ` it does not parse ({t} here). `λ` is two bytes where `\\` was one, so the rest of a lambda's line moves one column right; a `case` whose first branch shares the `of` line after a lambda is the usual cause. Put that branch on a line of its own, or rewrite the lambda by hand.",
+                .{found.code},
+            );
+            try worker.report(session, file, found.code, at, at, message.written());
+            return;
+        }
+    } else (if (session.options.migrate_let_blanks) Format.migrateLetBlanks(
         worker.arena.allocator(),
         tree,
         session.artifacts.tokens(file),

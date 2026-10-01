@@ -149,7 +149,11 @@ pub const Tag = enum(u8) {
     /// not an operator: it may appear only between a `let` binding's pattern
     /// and its right-hand side.
     arrow_left,
+    /// `\`, the old spelling of a lambda's head (language.md §12.1).
     backslash,
+    /// `λ` (U+03BB, the two bytes `CE BB`), which begins a lambda
+    /// (language.md §12.1).
+    lambda,
     pipe,
     underscore,
     /// `..`, which no construct uses: it is lexed as one token only so
@@ -263,6 +267,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .arrow => "->",
         .arrow_left => "<-",
         .backslash => "\\",
+        .lambda => "λ",
         .pipe => "|",
         .underscore => "_",
         .question => "?",

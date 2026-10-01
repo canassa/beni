@@ -94,7 +94,9 @@ pub const magic = "BENIFE\x00\x00";
 /// parser has two new codes, `cons_removed` and `two_spreads_in_pattern`.
 /// 12 (2026-10-01): `::` left the language, and `Bir.Inst.Tag` lost
 /// `pat_cons`, which shifted every later pattern tag back.
-pub const format_version: u32 = 12;
+/// 13 (2026-10-02): `Token.Tag` gained `lambda`, the `λ` that begins a
+/// lambda (language.md §12.1), which shifted every later tag.
+pub const format_version: u32 = 13;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

@@ -896,7 +896,7 @@ pub const full = struct {
     };
 
     pub const Lambda = struct {
-        backslash: TokenIndex,
+        head: TokenIndex,
         params: []const Node.Index,
         body: Node.Index,
     };
@@ -1317,7 +1317,7 @@ pub fn fullLambda(tree: *const Ast, node: Node.Index) full.Lambda {
     std.debug.assert(tree.nodeTag(node) == .lambda);
     const data = tree.nodeData(node);
     return .{
-        .backslash = tree.nodeMainToken(node),
+        .head = tree.nodeMainToken(node),
         .params = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
         .body = @enumFromInt(data.rhs),
     };

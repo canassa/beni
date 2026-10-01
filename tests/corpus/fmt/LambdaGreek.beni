@@ -1,0 +1,9 @@
+-- Formatter: `λ` heads, with spaces after `λ` and none around `->`, a body on
+-- the next line, a thunk; expected: `λ` printed as read, with no space before
+-- the first parameter (language.md §12.1), and canonical body placement.
+f=λ x->x+1
+g = λ a b ->
+      a+b
+thunk = λ ( )->0
+k = List.map [ 1, 2 ] (λx->
+  x*2)

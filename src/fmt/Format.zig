@@ -140,6 +140,9 @@ const Io = std.Io;
 const Ast = @import("../parse/Ast.zig");
 const Token = @import("../lex/Token.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
+const Parse = @import("../parse/Parse.zig");
+const InternPool = @import("../InternPool.zig");
+const diagnostic = @import("diagnostic");
 const markup_text = @import("../markup/text.zig");
 const Node = Ast.Node;
 const Index = Node.Index;
@@ -364,6 +367,89 @@ pub fn migrateLetBlanks(
         at = c.end;
     }
     try w.writeAll(source[at..]);
+}
+
+/// Why `migrateLambda` left a file alone: its rewrite does not parse
+/// cleanly. `code` is the re-parse's first diagnostic and `start` its
+/// offset in the ORIGINAL source (the rewrite moves no line, so the line is
+/// the same).
+pub const LambdaProblem = struct {
+    code: diagnostic.Code,
+    start: u32,
+};
+
+/// `beni fmt --migrate-lambda` (frontend.md §11.4): `source` with the `\`
+/// that begins every lambda written `λ`, and nothing else touched — an
+/// edit, like `migrateCons`, not a formatting. Only the head token of a
+/// `lambda` node is rewritten, so a multiline string's `\\` and a string's
+/// or a character's escapes, which are not that token, are never touched.
+///
+/// `λ` is two bytes where `\` was one, so every later token on its line
+/// moves one column right. Layout compares the columns of tokens that begin
+/// a line, which the rewrite never moves, except for a `case` whose first
+/// branch shares the `of` line (language.md §12.1, *columns*): the output
+/// is therefore lexed and parsed again, and when it does not parse cleanly
+/// the file is written unchanged and the problem returned for the caller to
+/// name. A file with any syntax error is left alone. One run reaches the
+/// fixed point.
+pub fn migrateLambda(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    source: [:0]const u8,
+    w: *Io.Writer,
+) Error!?LambdaProblem {
+    if (tree.errors.len != 0) return error.SyntaxErrors;
+    const tags = tokens.items(.tag);
+    const starts = tokens.items(.start);
+    var heads: std.ArrayList(u32) = .empty;
+    for (0..tree.nodes.len) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        if (tree.nodeTag(node) != .lambda) continue;
+        const head = tree.nodeMainToken(node);
+        if (tags[head] == .backslash) try heads.append(scratch, starts[head]);
+    }
+    if (heads.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+    std.mem.sort(u32, heads.items, {}, std.sort.asc(u32));
+
+    var out: std.ArrayList(u8) = .empty;
+    try out.ensureTotalCapacity(scratch, source.len + heads.items.len + 1);
+    var at: u32 = 0;
+    for (heads.items) |start| {
+        out.appendSliceAssumeCapacity(source[at..start]);
+        out.appendSliceAssumeCapacity(Token.lexeme(.lambda).?);
+        at = start + 1;
+    }
+    out.appendSliceAssumeCapacity(source[at..]);
+    const text = out.items;
+
+    if (try reparseProblem(scratch, try scratch.dupeZ(u8, text))) |offset_and_code| {
+        // Map the offset back: each rewrite before it added one byte.
+        var shift: u32 = 0;
+        for (heads.items) |start| {
+            if (start + shift >= offset_and_code.start) break;
+            shift += 1;
+        }
+        try w.writeAll(source);
+        return .{ .code = offset_and_code.code, .start = offset_and_code.start - shift };
+    }
+    try w.writeAll(text);
+    return null;
+}
+
+/// The first lexical or syntax diagnostic of `text`, if any.
+fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?LambdaProblem {
+    var interner: InternPool.Local = .empty;
+    var lexed: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(scratch, text, &interner, &lexed);
+    const lex_items = lexed.diagnostics.items();
+    if (lex_items.len != 0) return .{ .code = lex_items[0].code, .start = lex_items[0].start };
+    const tree = try Parse.parse(scratch, scratch, text, lexed.tokens.slice(), lexed.comments.items, lexed.line_starts.items, lex_items);
+    if (tree.errors.len != 0) return .{ .code = tree.errors[0].code, .start = tree.errors[0].start };
+    return null;
 }
 
 /// Whether every syntax error of `tree` is a `::` (`migrateCons`' input).
@@ -2459,8 +2545,8 @@ const Printer = struct {
             .lambda => {
                 const l = tree.fullLambda(n);
                 const one_line = p.fits(n);
-                try p.tok(l.backslash);
-                var arrow = l.backslash + 1;
+                try p.tok(l.head);
+                var arrow = l.head + 1;
                 for (l.params, 0..) |param, i| {
                     if (i > 0) try p.space();
                     try p.pat(param, indent);
@@ -2840,8 +2926,8 @@ const Printer = struct {
     /// — the trailing-`<|` form of §9.
     fn lambdaFlat(p: *Printer, n: Index, indent: u32) Error!void {
         const l = p.tree.fullLambda(n);
-        try p.tok(l.backslash);
-        var arrow = l.backslash + 1;
+        try p.tok(l.head);
+        var arrow = l.head + 1;
         for (l.params, 0..) |param, i| {
             if (i > 0) try p.space();
             try p.pat(param, indent);
@@ -3259,8 +3345,6 @@ const Printer = struct {
 
 const testing = std.testing;
 const small_stack = @import("../small_stack.zig");
-const InternPool = @import("../InternPool.zig");
-const Parse = @import("../parse/Parse.zig");
 const dump_ast = @import("../dump/ast.zig");
 const corpus_parse_good = @import("corpus_parse_good");
 
@@ -4330,6 +4414,114 @@ test "migrating let blanks leaves a file with a syntax error alone" {
     const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
     var text: Io.Writer.Allocating = .init(a);
     try testing.expectError(error.SyntaxErrors, migrateLetBlanks(a, &tree, &out.tokens, out.comments.items, source, &text.writer));
+}
+
+/// `migrateLambda` over `source`: its output and the problem it reports.
+fn lambdaOnce(a: Allocator, source: [:0]const u8) !struct { text: []const u8, problem: ?LambdaProblem } {
+    var interner: InternPool.Local = .empty;
+    var out: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(a, source, &interner, &out);
+    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
+    var text: Io.Writer.Allocating = .init(a);
+    const problem = try migrateLambda(a, &tree, &out.tokens, source, &text.writer);
+    return .{ .text = text.written(), .problem = problem };
+}
+
+/// `migrateLambda` over `source` gives `expected`, which it then leaves
+/// alone (one run reaches the fixed point).
+fn expectLambdaMigrated(source: [:0]const u8, expected: [:0]const u8) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const first = try lambdaOnce(a, source);
+    try testing.expectEqual(@as(?LambdaProblem, null), first.problem);
+    try testing.expectEqualStrings(expected, first.text);
+    const again = try lambdaOnce(a, expected);
+    try testing.expectEqual(@as(?LambdaProblem, null), again.problem);
+    try testing.expectEqualStrings(expected, again.text);
+}
+
+test "migrating lambdas writes each head `λ` and touches nothing else" {
+    // An edit, not a formatting (frontend.md §11.4): the spacing, the
+    // layout and a `λ` already written are the author's.
+    try expectLambdaMigrated(
+        \\f=\x->x+1
+        \\g = List.map [ 1 ] (\ a ->
+        \\      a*2)  -- \x
+        \\h = λa -> \b -> \() -> a + b
+        \\
+    ,
+        \\f=λx->x+1
+        \\g = List.map [ 1 ] (λ a ->
+        \\      a*2)  -- \x
+        \\h = λa -> λb -> λ() -> a + b
+        \\
+    );
+}
+
+test "migrating lambdas never touches a multiline string's `\\\\`, an escape or a character" {
+    // The hazards §12.1 names: a `\\` line is a `multiline_line` and a
+    // backslash in a string or a character literal is an escape, never the
+    // token a lambda begins with — even when the text after it reads like
+    // one.
+    try expectLambdaMigrated(
+        \\a = \x ->
+        \\    \\raw \x -> x
+        \\    \\\y
+        \\b = "\\x -> \n" ++ "${ f (\y -> y) }"
+        \\c = '\\'
+        \\d = [ '\'', '\n' ]
+        \\
+    ,
+        \\a = λx ->
+        \\    \\raw \x -> x
+        \\    \\\y
+        \\b = "\\x -> \n" ++ "${ f (λy -> y) }"
+        \\c = '\\'
+        \\d = [ '\'', '\n' ]
+        \\
+    );
+}
+
+test "migrating lambdas reaches markup holes and attribute values" {
+    try expectLambdaMigrated(
+        \\v xs = <ul>{List.map xs (\i -> <li onClick={\_ -> i}>{i}</li>)}</ul>
+        \\
+    ,
+        \\v xs = <ul>{List.map xs (λi -> <li onClick={λ_ -> i}>{i}</li>)}</ul>
+        \\
+    );
+}
+
+test "migrating lambdas leaves a file alone when the rewrite moves a `case` branch off its column" {
+    // language.md §12.1, *columns*: `λ` is a byte wider than `\`, so a first
+    // branch on the `of` line after a lambda moves right of the branches
+    // aligned under it. The re-parse catches it, the file is written as it
+    // was, and the problem points at the misaligned branch's line.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const source =
+        \\f m =
+        \\    case g (\x -> x) of Just y -> y
+        \\                        Nothing -> 0
+        \\
+    ;
+    const result = try lambdaOnce(a, source);
+    try testing.expectEqualStrings(source, result.text);
+    const problem = result.problem orelse return error.TestExpectedProblem;
+    try testing.expectEqual(diagnostic.Code.unexpected_token, problem.code);
+    try testing.expectEqual(std.mem.indexOf(u8, source, "Nothing").?, problem.start);
+}
+
+test "migrating lambdas leaves a file with a syntax error alone" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x ->\n"));
+}
+
+test "a lambda prints the head it was written with" {
+    try check("f = λ x->x\ng = \\x->x\n", "f = λx -> x\n\n\ng = \\x -> x\n");
 }
 
 test "strings, chars, numbers, interpolations and multiline strings are printed byte for byte" {
