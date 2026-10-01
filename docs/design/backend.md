@@ -4493,6 +4493,17 @@ pays the `obj[dynamicString]` the section above recorded against report 12 §5.4
 `Hosted.Key` built from a value holding such a type orders differently in the two builds; only its
 equality is the program's (`boundary.md` §9.8.3), and that does not move.
 
+**As built, measured** (2026-10-01, brotli 11, against `master` at the commit before, same
+machine). The js-framework-benchmark app (`bench/ui`, `browser-tea --release`): **5 723 → 5 639**
+(−84, −1.5 %) — fields alone 5 690, the tags the other 51. `bench/size.mjs`: every program's
+release build, summed, 317 139 → **314 441** (−0.85 %); the `browser-tea element` page 1 261 →
+1 217, the `effects` page 5 412 → 5 253; the empty pages unchanged at 605, and every development
+figure unchanged to the byte. `bench/corpus` is a `--library` build and does not move, by the
+rule above. A Chrome batch (n = 5, then n = 10 on three operations, on a machine at load 6–23)
+put the app's script medians within noise of the build before: the two operations that read
+slower in the first batch (select, append) read level or faster in the second. Against Solid 1's
+script medians the release build was ahead on six of nine operations in that batch.
+
 **The self-check**, safety builds: a field-marked name that reaches the release printer has a
 spelling or keeps its text, and the table was made from every field the build names — a field the
 table never saw would print as its text beside renamed reads of it elsewhere.
