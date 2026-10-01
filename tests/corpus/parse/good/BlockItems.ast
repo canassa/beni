@@ -1,0 +1,94 @@
+(module
+  (annotation kinds
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition kinds
+    (pat_var n)
+    (block
+      (let_annotation double
+        (type_fn
+          (type_con Int)
+          (type_con Int)))
+      (let_def double
+        (pat_var x)
+        (mul
+          (ident x)
+          (int 2)))
+      (let_pattern
+        (pat_tuple
+          (pat_var a)
+          (pat_var b))
+        (tuple
+          (ident n)
+          (apply
+            (ident double)
+            (ident n))))
+      (let_bind
+        (pat_var r)
+        (apply
+          (ident apply)
+          (ident a)))
+      (stmt
+        (apply
+          (ident log)
+          (ident r)))
+      (add
+        (add
+          (ident a)
+          (ident b))
+        (ident r))))
+  (annotation one
+    (type_fn
+      (type_con Bool)
+      (type_con Int)))
+  (definition one
+    (pat_var c)
+    (if
+      (ident c)
+      (int 1)
+      (int 2)))
+  (annotation openers
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_con Bool)
+      (type_con Int)))
+  (definition openers
+    (pat_var m)
+    (pat_var c)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_var n))
+        (block
+          (let_def k
+            (add
+              (ident n)
+              (int 1)))
+          (ident k)))
+      (branch
+        (pat_ctor Nothing)
+        (block
+          (let_def f
+            (lambda
+              (pat_var x)
+              (block
+                (let_def y
+                  (ident x))
+                (ident y))))
+          (if
+            (ident c)
+            (block
+              (let_def t
+                (apply
+                  (ident f)
+                  (int 1)))
+              (ident t))
+            (block
+              (let_def e
+                (apply
+                  (ident f)
+                  (int 2)))
+              (ident e))))))))

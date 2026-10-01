@@ -65,6 +65,7 @@ pub const Context = enum {
     pattern,
     let_bindings,
     let_body,
+    block,
     case_head,
     case_branches,
     branch_body,
@@ -143,6 +144,11 @@ pub const Construct = enum {
     stray_spread,
     /// A pattern spread whose operand is not a name or `_`.
     spread_operand,
+    /// A block item that reads as an expression up to a `=` or `<-`: a
+    /// binding whose head was broken across lines (language.md §12.2).
+    binding_head,
+    /// A `,` after a parenthesised block's items (language.md §12.2, B6).
+    block_in_tuple,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -161,6 +167,7 @@ fn contextText(c: Context) []const u8 {
         .pattern => "a pattern",
         .let_bindings => "the bindings of this `let`",
         .let_body => "the body of this `let`",
+        .block => "this block",
         .case_head => "the expression of this `case`",
         .case_branches => "the branches of this `case`",
         .branch_body => "the body of this branch",
@@ -207,6 +214,7 @@ fn constructText(c: Construct) []const u8 {
         .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
         .stray_spread => "an expression",
         .spread_operand => "a name or `_`",
+        .binding_head, .block_in_tuple => "something else",
     };
 }
 
@@ -350,6 +358,24 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\A spread puts the elements of one list into another, so it belongs inside the
                     \\brackets of a list: `[ 0, ...xs ]` as an expression, `[ x, ...rest ]` as a
                     \\pattern. A component's attributes take one too, as `{...props}` first in its tag.
+                );
+            } else if (item.construct == .binding_head) {
+                try w.print(
+                    \\I was parsing this block and ran into `{s}`, after a line that does not look
+                    \\like the start of a binding.
+                    \\
+                    \\A binding's head — its pattern, or its name and parameters — goes on one line,
+                    \\with its `=` or `<-`, so that the line says what it is:
+                    \\
+                    \\    ( a, b ) = pair
+                , .{text});
+            } else if (item.construct == .block_in_tuple) {
+                try w.writeAll(
+                    \\I found a `,` after a block in parentheses. A block is not a tuple element:
+                    \\its last line is its value, and nothing follows it inside the parentheses.
+                    \\
+                    \\To put a block's value in a tuple, bind it first and write the tuple with the
+                    \\name.
                 );
             } else if (item.construct == .spread_operand) {
                 try w.print(
@@ -778,6 +804,16 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             );
         } else try w.writeAll(
             \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
+        ),
+        .block_ends_in_binding => try w.writeAll(
+            \\This block ends with a binding, but a block ends with the expression it
+            \\stands for: its last line is its value.
+            \\
+            \\Add the value as the last line, under the bindings, at their column:
+            \\
+            \\    total =
+            \\        tax = price * rate
+            \\        price + tax
         ),
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.

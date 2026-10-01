@@ -1,0 +1,12 @@
+-- A `case` inside a block has its branches right of the block's column
+-- (language.md §12.2, B5): §4's "branches may sit at the `case` keyword's
+-- own column" does not reach a `case` that begins an item, because a
+-- pattern at the block's column begins the next item. The `case` has no
+-- branches, case_without_branches at 10:5 — an error, never another program.
+-- The rest of the line reads as the next item, `Just n`, and its `->` as
+-- a token no item continues with, and each is reported as what it then is.
+f : Maybe Int -> Int
+f x =
+    case x of
+    Just n -> n
+    Nothing -> 0

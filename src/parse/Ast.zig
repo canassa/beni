@@ -418,6 +418,18 @@ pub const Node = struct {
         /// the last argument of `f a`. `main_token` is the pattern's first
         /// token; `lhs` is the pattern; `rhs` is the application.
         let_bind,
+        /// A block of two or more items, or of one binding (language.md
+        /// §12.2, frontend.md §11.3): its lines, the last one the value.
+        /// `main_token` is the first item's first token; `lhs` is the
+        /// `ExtraIndex` of a `SubRange` of the items before the value
+        /// (`let_def`, `let_annotation`, `let_pattern`, `let_bind`,
+        /// `stmt`); `rhs` is the value. Laid out as `let` is, so
+        /// `fullLet` reads both.
+        block,
+        /// A statement: an expression item of a block that is not its last
+        /// (language.md §12.2). `main_token` is its first token; `lhs` is
+        /// the expression.
+        stmt,
         /// `case e of branches`. `main_token` is `case`; `lhs` is the
         /// scrutinee; `rhs` is the `ExtraIndex` of a `SubRange` of `branch`
         /// nodes (at least one, an `error_branch` if none was written).
@@ -1335,8 +1347,10 @@ pub fn fullIf(tree: *const Ast, node: Node.Index) full.If {
     };
 }
 
+/// A `let` or a `block`: `let_token` is the `let`, or a block's first
+/// token; `bindings` are its items before the value.
 pub fn fullLet(tree: *const Ast, node: Node.Index) full.Let {
-    std.debug.assert(tree.nodeTag(node) == .let);
+    std.debug.assert(tree.nodeTag(node) == .let or tree.nodeTag(node) == .block);
     const data = tree.nodeData(node);
     return .{
         .let_token = tree.nodeMainToken(node),
@@ -1471,7 +1485,7 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
 /// the markup `{…}` forms.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
     return @enumFromInt(tree.nodeData(node).lhs);

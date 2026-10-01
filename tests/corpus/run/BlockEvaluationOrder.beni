@@ -1,0 +1,66 @@
+-- run: a block evaluates its value bindings once each, in the order they are
+-- written, and then its value (language.md §12.2, §6 *Evaluation order*) —
+-- the order a `let` gave them. A block in a branch or a lambda's body runs
+-- only when the branch is taken or the lambda called, each time it is; a
+-- parenthesised block on the right of `&&` runs only when the left side is
+-- `True`; and a nested block runs where it stands, between the bindings
+-- around it.
+import List
+import Node exposing (Program)
+import String
+
+
+note : String, Int -> Int
+note tag n = Debug.log tag n
+
+
+ordered : Int -> Int
+ordered n =
+    a = note "a" n
+    b =
+        inner = note "inner" (a + 1)
+        inner * 2
+    c = note "c" (b + 1)
+    note "value" (a + b + c)
+
+
+branch : Bool -> Int
+branch taken =
+    if taken then
+        t = note "then" 1
+        t
+    else
+        f = note "else" 2
+        f
+
+
+lazy : Bool, Int -> Bool
+lazy first n =
+    first
+        && (
+            r = note "right" n
+            r > 0
+        )
+
+
+main : Program
+main =
+    o = ordered 1
+    b1 = branch True
+    b2 = branch False
+    l1 = lazy False 1
+    l2 = lazy True 2
+    calls =
+        List.map
+            [ 1, 2 ]
+            (λx ->
+                y = note "lambda" x
+                y * 10
+            )
+    Node.printLines
+        [ String.fromInt o
+        , String.fromInt (b1 + b2)
+        , if l1 then "l1" else "not l1"
+        , if l2 then "l2" else "not l2"
+        , String.join (List.map calls String.fromInt) ","
+        ]

@@ -1,0 +1,32 @@
+-- A parenthesised block (language.md §12.2, B6): a `(` that ends its line
+-- opens a block wherever an expression may stand — the right operand of an
+-- operator, an argument, a list element — and its `)` ends the last item
+-- wherever it stands. It is a `paren` around a `block`, and how
+-- `--migrate-let` writes a `let` that no opener heads.
+ok : Bool, Int -> Bool
+ok first b =
+    first
+        && (
+            r = b + 1
+            r == 2
+        )
+
+
+argument : Int -> List Int
+argument n =
+    List.map
+        [ n ]
+        (
+            k = n * 2
+            λx -> x + k
+        )
+
+
+element : Int -> List Int
+element n =
+    [ 1
+    , (
+        m = n
+        m
+    )
+    ]

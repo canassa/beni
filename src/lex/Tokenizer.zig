@@ -504,9 +504,11 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             '-' => break :state t.take(2, .arrow_left),
             // Markup starts at an operand's start (frontend.md §9.3): a
             // letter or `>` next, and a previous token that cannot end an
-            // operand. Inside `${…}` a `<` is always the operator.
+            // operand — or a `<` that begins its line, whatever precedes it
+            // (§11.1: a block's markup value after a binding). Inside `${…}`
+            // a `<` is always the operator.
             'a'...'z', 'A'...'Z', '>' => {
-                if (t.mode != .interp and !endsOperand(t.prevTag())) {
+                if (t.mode != .interp and (!endsOperand(t.prevTag()) or t.beginsLine())) {
                     try t.pushMode(.tag, 0);
                     break :state t.take(1, .markup_open);
                 }
@@ -815,6 +817,13 @@ fn newline(t: *Tokenizer) Allocator.Error!void {
 fn prevTag(t: *const Tokenizer) Tag {
     const len = t.out.tokens.len;
     return if (len == 0) .eof else t.cols.tag[len - 1];
+}
+
+/// Whether the token about to be taken is the first significant token on
+/// its line: the previous one, if any, is on an earlier line.
+fn beginsLine(t: *const Tokenizer) bool {
+    const len = t.out.tokens.len;
+    return len == 0 or t.cols.line[len - 1] != t.line;
 }
 
 /// The tags that can end an operand (frontend.md §9.3): after one of them a

@@ -1,0 +1,30 @@
+-- BIR: a block lowers to the `let` instruction a `let … in` of the same
+-- bindings lowered to (language.md §12.2, frontend.md §11.3), so the two
+-- declarations below lower to the same instructions: a definition, a
+-- pattern binding and an annotated function as `let_def`/`let_pattern` in
+-- written order, then the body. A statement — an item that is not the
+-- last — is a `let_pattern` whose pattern is `()` (`statement`).
+withLet : Int -> Int
+withLet n =
+    let
+        a = n + 1
+        ( b, c ) = ( a, a )
+        f : Int -> Int
+        f x = x + b
+    in
+    f c
+
+
+withBlock : Int -> Int
+withBlock n =
+    a = n + 1
+    ( b, c ) = ( a, a )
+    f : Int -> Int
+    f x = x + b
+    f c
+
+
+statement : () -> Int
+statement u =
+    u
+    1

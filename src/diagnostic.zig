@@ -348,6 +348,13 @@ pub const Code = enum {
     /// whose literal subject comes first and whose last argument does not —
     /// the shape of a call written in Elm's order.
     suspicious_argument_order,
+    /// Appended with blocks (language.md §12.2): a `let` written with the
+    /// removed form, whose message is the block its bindings become; a
+    /// block whose last item is a binding rather than its value; and a
+    /// statement whose type is not `()` (checker-v2.md §29.1).
+    let_removed,
+    block_ends_in_binding,
+    statement_not_unit,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -512,6 +519,9 @@ pub fn title(code: Code) []const u8 {
         .backslash_lambda_removed => "REMOVED LAMBDA SYNTAX",
         .name_removed => "REMOVED NAME",
         .suspicious_argument_order => "SUSPICIOUS ARGUMENT ORDER",
+        .let_removed => "REMOVED LET SYNTAX",
+        .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
+        .statement_not_unit => "UNUSED VALUE",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

@@ -1,0 +1,41 @@
+(module
+  (import Html exposing
+    (exposed Html))
+  (annotation view
+    (type_fn
+      (type_con Int)
+      (type_con Html
+        (type_var msg))))
+  (definition view
+    (pat_var n)
+    (block
+      (let_def left
+        (add
+          (ident n)
+          (int 1)))
+      (markup_element section
+        (markup_hole
+          (ident left)))))
+  (annotation fragment
+    (type_fn
+      (type_con Int)
+      (type_con Int)
+      (type_con Html
+        (type_var msg))))
+  (definition fragment
+    (pat_var a)
+    (pat_var b)
+    (block
+      (let_def less
+        (lt
+          (ident a)
+          (ident b)))
+      (let_pattern
+        (pat_wild)
+        (ident less))
+      (markup_fragment
+        (markup_text "\n        ")
+        (markup_element p
+          (markup_hole
+            (ident a)))
+        (markup_text "\n    ")))))

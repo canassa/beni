@@ -100,7 +100,10 @@ pub const magic = "BENIFE\x00\x00";
 /// 15 (2026-10-01): lowering has a new code, `name_removed`, and
 /// `InternPool.WellKnown` lost `modBy`, `remainderBy` and `logBase`, which
 /// shifted every later well-known symbol (language.md §12.4).
-pub const format_version: u32 = 15;
+/// 16 (2026-10-02): blocks (language.md §12.2) — `Ast.Node.Tag` gained
+/// `block` and `stmt`, which shifted every later tag, and the parser has a
+/// new code, `block_ends_in_binding`.
+pub const format_version: u32 = 16;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

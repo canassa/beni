@@ -1,0 +1,45 @@
+-- A block (language.md §12.2): a body that begins a later line than its
+-- opener is a run of items at that line's column (B1), the last one its
+-- value. An item is a binding when its first line holds a `=` or `<-`
+-- outside brackets, or begins `name :`; otherwise it is an expression, and
+-- one that is not last is a `stmt`. Every opener heads one: `=` at the top
+-- level and in a block, a branch's and a lambda's `->`, `then` and `else`.
+-- A block of one expression is that expression: `one` and every branch
+-- body of one line parse as they did before blocks.
+kinds : Int -> Int
+kinds n =
+    double : Int -> Int
+    double x = x * 2
+
+    ( a, b ) = ( n, double n )
+    r <- apply a
+    log r
+    a + b + r
+
+
+one : Bool -> Int
+one c =
+    if c then
+        1
+    else
+        2
+
+
+openers : Maybe Int, Bool -> Int
+openers m c =
+    case m of
+        Just n ->
+            k = n + 1
+            k
+
+        Nothing ->
+            f =
+                λx ->
+                    y = x
+                    y
+            if c then
+                t = f 1
+                t
+            else
+                e = f 2
+                e

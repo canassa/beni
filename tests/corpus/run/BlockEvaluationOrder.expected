@@ -1,0 +1,14 @@
+a: 1
+inner: 2
+c: 5
+value: 10
+then: 1
+else: 2
+right: 2
+lambda: 1
+lambda: 2
+10
+3
+not l1
+l2
+10,20

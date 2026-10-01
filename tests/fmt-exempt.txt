@@ -10,8 +10,8 @@ tests/corpus/parse/bad/** -- files that must not parse
 -- Parser fixtures that pin a layout or a spelling the formatter rewrites.
 tests/corpus/check/bad/CallStyleTupleArguments.beni -- `add(1, 2)` written against the callee is the point; fmt spaces it
 tests/corpus/parse/good/BlankLines.beni -- runs of blank lines the formatter collapses
+tests/corpus/parse/good/BlockLayout.beni -- block items and continuations at columns the formatter never writes
 tests/corpus/parse/good/BraceRecordAlias.beni -- brace record bodies, which the formatter writes as layout
-tests/corpus/parse/good/CaseBranchAtCaseColumn.beni -- branches at the `case` keyword's own column
 tests/corpus/parse/good/CaseNested.beni -- inner branch lists at columns the formatter re-indents
 tests/corpus/parse/good/CaseSameLineAsOf.beni -- branches that start on the `of` line
 tests/corpus/parse/good/CommentsEverywhere.beni -- comment placements and `--|x` the formatter moves or respaces

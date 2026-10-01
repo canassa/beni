@@ -2277,7 +2277,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInstAt(main_token, .lambda, @intFromEnum(params_record), body.int());
         },
         .@"if" => return l.lowerIf(node),
-        .let => return l.lowerLet(node),
+        .let, .block => return l.lowerLet(node),
         .case => {
             const c = l.tree.fullCase(node);
             const scrutinee = try l.lowerExpr(c.scrutinee);
@@ -2750,6 +2750,17 @@ fn lowerBindings(
                     .hoisted = false,
                 });
             },
+            // A block's statement (language.md §12.2) is a value binding
+            // that binds nothing, matched against `()`.
+            .stmt => {
+                l.cur_token = l.tree.nodeMainToken(b);
+                try l.pushScratch(try l.addInst(.pat_unit, 0, 0));
+                try order.append(l.scratch_allocator, .{
+                    .local_start = local_start,
+                    .local_end = l.nextLocal(),
+                    .hoisted = false,
+                });
+            },
             else => {}, // annotations are read in phase 2; error bindings are skipped
         }
     }
@@ -2813,6 +2824,15 @@ fn lowerBindings(
                 const lp = l.tree.fullLetPattern(b);
                 const value = try l.lowerExpr(lp.value);
                 l.list_scratch.items[slot] = (try l.addInst(.let_pattern, pat.int(), value.int())).int();
+                row.inst_end = @intCast(l.insts.len);
+                slot += 1;
+            },
+            .stmt => {
+                const pat: Index = @enumFromInt(l.list_scratch.items[slot]);
+                const row = &order.items[slot - mark];
+                row.inst_start = @intCast(l.insts.len);
+                const value = try l.lowerExpr(l.tree.operand(b));
+                l.list_scratch.items[slot] = (try l.addInstAt(l.tree.nodeMainToken(b), .let_pattern, pat.int(), value.int())).int();
                 row.inst_end = @intCast(l.insts.len);
                 slot += 1;
             },

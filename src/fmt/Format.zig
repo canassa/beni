@@ -195,7 +195,16 @@ pub fn format(
     defer m.stack.deinit(scratch);
     try m.measureRoot();
 
+    // The first token of every block (language.md §12.2), which has no
+    // keyword of its own for `hasBlockKeyword` to see.
+    const block_starts = try scratch.alloc(bool, tokens.len);
+    @memset(block_starts, false);
+    for (tree.nodes.items(.tag), tree.nodes.items(.main_token)) |tag, main| {
+        if (tag == .block) block_starts[main] = true;
+    }
+
     var p: Printer = .{
+        .block_starts = block_starts,
         .w = w,
         .source = source,
         .tags = tokens.items(.tag),
@@ -1395,6 +1404,18 @@ const Measurer = struct {
                 try m.measure(l.body);
                 m.set(n, no_fit, main, m.last(l.body));
             },
+            // A block is always vertical (language.md §12.5, *blocks*).
+            .block => {
+                const l = tree.fullLet(n);
+                for (l.bindings) |b| try m.measure(b);
+                try m.measure(l.body);
+                m.set(n, no_fit, main, m.last(l.body));
+            },
+            .stmt => {
+                const e = tree.operand(n);
+                try m.measure(e);
+                m.set(n, m.w(e), m.first(e), m.last(e));
+            },
             .let_def => {
                 const l = tree.fullLetDef(n);
                 for (l.params) |p| try m.measure(p);
@@ -1733,6 +1754,8 @@ const Printer = struct {
     scratch: Allocator,
     /// Flattened operator chains and type arrows being printed.
     stack: std.ArrayList(u32) = .empty,
+    /// Per token: whether a block begins there.
+    block_starts: []const bool,
 
     /// Bytes written on the current line.
     col: u32 = 0,
@@ -1839,7 +1862,9 @@ const Printer = struct {
         const end = p.last(n);
         while (t <= end) : (t += 1) switch (p.tags[t]) {
             .keyword_if, .keyword_let, .keyword_case => return true,
-            else => {},
+            // A block has no keyword, but it is vertical whatever its
+            // width just the same (language.md §12.5).
+            else => if (p.block_starts[t]) return true,
         };
         return false;
     }
@@ -2815,6 +2840,16 @@ const Printer = struct {
     fn wrapped(p: *Printer, n: Index, comptime kind: Kind, indent: u32) Error!void {
         const inner = p.tree.operand(n);
         const open = p.tree.nodeMainToken(n);
+        if (kind == .expr and p.tree.nodeTag(inner) == .block) {
+            // A parenthesised block (language.md §12.5, *blocks*): `(` ends
+            // its line, the items sit 4 right of that line's indentation,
+            // and `)` is alone at it.
+            try p.tok(open);
+            p.newline(indent + indent_step);
+            try p.blockExpr(inner, indent + indent_step);
+            p.newline(indent);
+            return p.tok(p.last(inner) + 1);
+        }
         const one_line = kind == .pattern or p.fits(n);
         const col = p.curCol();
         try p.tok(open);
@@ -2907,6 +2942,7 @@ const Printer = struct {
             },
             .@"if" => try p.ifExpr(n, indent, null),
             .let => try p.letExpr(n, indent),
+            .block => try p.blockExpr(n, indent),
             .case => try p.caseExpr(n, indent),
             .markup_element, .markup_fragment, .markup_for, .markup_show => try p.markup(n),
             else => return error.SyntaxErrors, // fields, chunks and interps are printed by their parents
@@ -3278,8 +3314,12 @@ const Printer = struct {
         }
         try p.space();
         try p.tok(arrow);
-        p.newline(indent);
-        try p.expr(l.body, indent);
+        // A block body cannot continue at the line's own column, where its
+        // items would be read as the enclosing block's (language.md §12.2,
+        // B1): it is indented as any lambda's.
+        const body_indent = if (p.tree.nodeTag(l.body) == .block) indent + indent_step else indent;
+        p.newline(body_indent);
+        try p.expr(l.body, body_indent);
     }
 
     /// The base, then the glued `.field` / `.0` / `?` tokens.
@@ -3373,10 +3413,26 @@ const Printer = struct {
         try p.expr(l.body, kw);
     }
 
+    /// A block (language.md §12.5, *blocks*), the cursor already at the
+    /// start of a line at `indent`: one item per line there, at most one
+    /// blank line between two, kept if present, then the value.
+    fn blockExpr(p: *Printer, n: Index, indent: u32) Error!void {
+        const l = p.tree.fullLet(n);
+        var prev_last: ?TokenIndex = null;
+        for (l.bindings) |b| {
+            if (prev_last) |pl| p.blankLines(if (p.blankBetween(pl, p.first(b))) 1 else 0, indent);
+            try p.binding(b, indent);
+            prev_last = p.last(b);
+        }
+        if (prev_last) |pl| p.blankLines(if (p.blankBetween(pl, p.first(l.body))) 1 else 0, indent);
+        try p.expr(l.body, indent);
+    }
+
     fn binding(p: *Printer, n: Index, indent: u32) Error!void {
         const tree = p.tree;
         const main = tree.nodeMainToken(n);
         switch (tree.nodeTag(n)) {
+            .stmt => try p.expr(tree.operand(n), indent),
             .let_def => {
                 const l = tree.fullLetDef(n);
                 try p.tok(l.name);

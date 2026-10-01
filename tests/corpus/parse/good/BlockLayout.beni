@@ -1,0 +1,50 @@
+-- The layout of a block's items (language.md §12.2). B2: an item begins at
+-- a token at the block's column that can start an expression — a name, a
+-- literal, a bracket, `-` abutting its operand, a `.field` accessor, `λ`,
+-- `if`, `case`, a multiline string's first line. B3: any other token at
+-- that column continues the item — a `,` or closing bracket, an operator, a
+-- `-` followed by a space, `then`, `else`, `of`, and the next line of a
+-- multiline string. B4: a token left of the column ends the block, as the
+-- `in` of the `let` around `inner` does; that `let`'s body, at the item's own
+-- column, is still its body (`frontend.md` §11.2, as built).
+starts : Int -> List Int
+starts n =
+    -n
+    .field
+    λx -> x
+    if True then 1 else 2
+    case n of
+        _ -> 0
+    \\a multiline
+    \\string
+    [ n ]
+
+
+continues : Int -> List Int
+continues n =
+    m = n
+    + 1
+    - 2
+    |> identity
+    k =
+        if m > 0
+        then m
+        else 0
+    j =
+        case k
+        of
+            _ -> k
+    [ m
+    , k
+    , j
+    ]
+
+
+inner : Int
+inner =
+    let
+        x =
+            y = 1
+            y
+      in
+    x

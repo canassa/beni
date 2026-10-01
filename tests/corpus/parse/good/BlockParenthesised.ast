@@ -1,0 +1,56 @@
+(module
+  (annotation ok
+    (type_fn
+      (type_con Bool)
+      (type_con Int)
+      (type_con Bool)))
+  (definition ok
+    (pat_var first)
+    (pat_var b)
+    (bool_and
+      (ident first)
+      (paren
+        (block
+          (let_def r
+            (add
+              (ident b)
+              (int 1)))
+          (eq
+            (ident r)
+            (int 2))))))
+  (annotation argument
+    (type_fn
+      (type_con Int)
+      (type_con List
+        (type_con Int))))
+  (definition argument
+    (pat_var n)
+    (apply
+      (ident List.map)
+      (list
+        (ident n))
+      (paren
+        (block
+          (let_def k
+            (mul
+              (ident n)
+              (int 2)))
+          (lambda
+            (pat_var x)
+            (add
+              (ident x)
+              (ident k)))))))
+  (annotation element
+    (type_fn
+      (type_con Int)
+      (type_con List
+        (type_con Int))))
+  (definition element
+    (pat_var n)
+    (list
+      (int 1)
+      (paren
+        (block
+          (let_def m
+            (ident n))
+          (ident m))))))

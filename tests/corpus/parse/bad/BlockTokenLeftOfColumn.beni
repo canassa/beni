@@ -1,0 +1,17 @@
+-- A token at a column less than a block's ends the block (language.md §12.2,
+-- B4), brackets or not, and the construct around it says whether it is
+-- legal. An argument dedented below the call's head (11:3) is no longer the
+-- call's, and a `]` left of the block's column (17:2) leaves its list
+-- unclosed (15:5); both were continuations before blocks, when a body only
+-- had to be right of its declaration.
+call : List Int
+call =
+        List.map
+            [ 1 ]
+  (λx -> x)
+
+
+closing =
+    [ 1
+    , 2
+ ]

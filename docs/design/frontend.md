@@ -1405,6 +1405,31 @@ today's `parseLet`, whose node stays in the AST for exactly this. Neither recove
 the rest of the file parses and lowers as it did. Under the migration flags (§11.4, §11.5) the
 parser takes an option that accepts each form silently instead; nothing else sets it.
 
+*As built, blocks (2026-10-02).* `parseBody`, `parseBlock` and `itemIsBinding` in
+`src/parse/Parse.zig`; `inBlock` reads `block_col` as above, and `startBlock` clears it. Five
+choices the text above left open:
+
+- **A body at its item's own column.** Before blocks two bodies were written at the column of the
+  item they belong to: a `let`'s body under `let`, and the body of a `<| λx ->` lambda continued at
+  its line's indentation (`language.md` §9). Neither may open a block (B1) and neither may begin the
+  next item, so for those two openers — `in` and a lambda's `->` — `parseBody` reads such a body as
+  the one expression it was, its first token exempt from the column check as a block's head is.
+  Every other opener refuses it: the line begins the next item and the opener has no body
+  (`parse/bad/BlockShapes`). The formatter writes a `<| λx ->` body that is a block 4 further in.
+- **An operator before the `=`.** A binding's head is a pattern, or a name and parameters, and
+  neither holds an operator, so the item scan reads a line on which an operator comes before any
+  depth-0 `=` as an expression: `f <input value="x" />` — whose `<` follows an operand and is a
+  comparison — stays the markup argument `element_as_argument` names, not a binding.
+- **Markup.** Between an element's `<` and its closing `>`, outside its holes, no token begins an
+  item (`in_markup`): a child element or hole at the block's column is still the element's.
+- **Depth.** A block costs no nesting level of its own; an expression item is charged by
+  `parseExpr`, and a binding item by the block, since a binding's body may be a block whose first
+  item is a binding again with no `parseExpr` between them.
+- **Before statements.** Until `let_stmt` lands (§11.3), a statement lowers to a `let_pattern`
+  whose pattern is `()`, so a statement that is not `()` is already an error, `type_mismatch`;
+  the formatter prints blocks from the same slice, since every fixture that holds one is held to
+  `beni fmt --check` (§11.6).
+
 ### 11.3 AST, BIR and versions
 
 - AST (§3.5): **`block`** (`main_token` its first item's first token; `lhs` an extra `SubRange` of

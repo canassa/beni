@@ -86,6 +86,17 @@ indent: u32 = 0,
 /// The current block's head token, exempt from the column check (it sits
 /// exactly on the indent column).
 head: TokenIndex = std.math.maxInt(u32),
+/// The column of the block item being parsed (language.md §12.2, B3), or 0
+/// outside one: a token exactly there also belongs when it cannot start an
+/// expression — a closing bracket, a leading `,` or operator, `then`,
+/// `else`, a closing tag — or continues a multiline string. `startBlock`
+/// clears it, so a construct nested in an item sees only its own column.
+block_col: u32 = 0,
+/// True between an element's `<` and the `>` that ends it, outside its
+/// holes: no token there begins a block item, so a child element or a hole
+/// at the block's column is still the element's (frontend.md §11.2, as
+/// built).
+in_markup: bool = false,
 /// What the parser is in the middle of, for messages.
 context: Context = .module,
 /// Set by `recover`, cleared by the next consumed token; errors are not
@@ -263,7 +274,28 @@ inline fn col(p: *const Parse, i: TokenIndex) u32 {
 }
 
 inline fn inBlock(p: *const Parse, i: TokenIndex) bool {
-    return i == p.head or p.col(i) > p.indent;
+    if (i == p.head) return true;
+    const c = p.col(i);
+    return c > p.indent or (c == p.block_col and (p.in_markup or !p.startsItem(i)));
+}
+
+/// Whether token `i` can begin an item of a block (language.md §12.2, B2):
+/// a token that can start an expression, `let` and `\` included so that
+/// the removed forms are reported where they stand. A `-` begins one only
+/// when it abuts what follows (negation, §6.5); a `multiline_line` only
+/// when it does not continue the literal on the line above (§2.7).
+fn startsItem(p: *const Parse, i: TokenIndex) bool {
+    return switch (p.tags[i]) {
+        .lower_ident, .qualified_lower, .upper_ident, .qualified_upper, .dot_lower, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .lambda, .backslash, .keyword_if, .keyword_case, .keyword_let, .underscore, .markup_open, .invalid => true,
+        .op_minus => i + 1 < p.tags.len and p.starts[i + 1] == p.tokenEnd(i),
+        .multiline_line => i == 0 or p.tags[i - 1] != .multiline_line or p.lines[i - 1] + 1 != p.lines[i],
+        else => false,
+    };
+}
+
+/// True when token `i` is the first token on its line.
+fn firstOnLine(p: *const Parse, i: TokenIndex) bool {
+    return i == 0 or p.lines[i - 1] != p.lines[i];
 }
 
 /// The next token's tag if it belongs to the current block, else `eof`.
@@ -320,14 +352,15 @@ fn adjacent(p: *const Parse, i: TokenIndex) bool {
     return i > 0 and p.starts[i] == p.tokenEnd(i - 1);
 }
 
-const Saved = struct { indent: u32, head: TokenIndex, context: Context };
+const Saved = struct { indent: u32, head: TokenIndex, block_col: u32, context: Context };
 
 /// Enter a block whose head is the next token (§4): everything after the
 /// head must sit right of the head's column.
 fn startBlock(p: *Parse, context: Context) Saved {
-    const saved: Saved = .{ .indent = p.indent, .head = p.head, .context = p.context };
+    const saved: Saved = .{ .indent = p.indent, .head = p.head, .block_col = p.block_col, .context = p.context };
     p.indent = p.col(p.tok_i);
     p.head = p.tok_i;
+    p.block_col = 0;
     p.context = context;
     return saved;
 }
@@ -335,6 +368,7 @@ fn startBlock(p: *Parse, context: Context) Saved {
 fn endBlock(p: *Parse, saved: Saved) void {
     p.indent = saved.indent;
     p.head = saved.head;
+    p.block_col = saved.block_col;
     p.context = saved.context;
 }
 
@@ -1340,7 +1374,7 @@ fn parseDefinition(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     const name = p.next();
     const params = try p.parseParams();
     _ = try p.expectToken(.equal);
-    const body = try p.parseExpr();
+    const body = try p.parseBody(.opens);
     const extra = try p.addExtra(Ast.Definition{ .header = header, .params_start = params.start, .params_end = params.end });
     return p.addNode(.{ .tag = .definition, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
 }
@@ -2395,6 +2429,9 @@ fn parseMarkup(p: *Parse) Allocator.Error!Index {
     defer p.leave();
     const saved_context = p.setContext(.markup_tag);
     defer p.context = saved_context;
+    const saved_in_markup = p.in_markup;
+    p.in_markup = true;
+    defer p.in_markup = saved_in_markup;
     const open = p.next();
     // The lexer opens markup only before a letter or `>`, and a letter
     // right after the `<` is always the tag's name.
@@ -2577,7 +2614,10 @@ fn parseEscapeValue(p: *Parse, quoted: TokenIndex, name_node: Index) Allocator.E
 /// The expression of the markup `{…}` opened at `open`, and its `}`.
 fn parseHoleExpr(p: *Parse, open: TokenIndex) Allocator.Error!Index {
     p.markup_holes += 1;
+    const saved_in_markup = p.in_markup;
+    p.in_markup = false;
     const value = try p.parseExpr();
+    p.in_markup = saved_in_markup;
     p.markup_holes -= 1;
     try p.closeMarkupHole(open);
     return value;
@@ -3077,6 +3117,20 @@ fn parseParens(p: *Parse) Allocator.Error!Index {
     }
     try p.pushBracket(.r_paren);
     defer p.popBracket();
+    // A parenthesised block (language.md §12.2, B6): the `(` ends its line
+    // and the items follow, right of the enclosing block.
+    if (p.rawTag() != .eof and p.firstOnLine(p.tok_i) and p.startsItem(p.tok_i) and p.col(p.tok_i) > p.indent) {
+        const block = try p.parseBlock();
+        if (p.peek() == .comma) {
+            @branchHint(.cold);
+            var item = p.itemAt(.unexpected_token);
+            item.construct = .block_in_tuple;
+            _ = try p.report(item);
+            p.recover();
+        }
+        try p.expectCloser(.r_paren, open);
+        return p.unary(.paren, open, block);
+    }
     const first = try p.parseExpr();
     if (p.peek() != .comma) {
         try p.expectCloser(.r_paren, open);
@@ -3247,7 +3301,7 @@ fn parseLambda(p: *Parse) Allocator.Error!Index {
         item.head_end = if (p.tags[arrow] == .arrow) p.tokenEnd(arrow) else item.head_start;
         _ = try p.report(item);
     }
-    const body = try p.parseExpr();
+    const body = try p.parseBody(.continues);
     const extra = try p.addExtra(params);
     return p.addNode(.{ .tag = .lambda, .main_token = head, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
 }
@@ -3259,9 +3313,9 @@ fn parseIf(p: *Parse) Allocator.Error!Index {
     const if_token = p.next();
     const cond = try p.parseExpr();
     _ = try p.expectToken(.keyword_then);
-    const then_expr = try p.parseExpr();
+    const then_expr = try p.parseBody(.opens);
     _ = try p.expectToken(.keyword_else);
-    const else_expr = try p.parseExpr();
+    const else_expr = try p.parseBody(.opens);
     const extra = try p.addExtra(Ast.If{ .then_expr = then_expr, .else_expr = else_expr });
     return p.addNode(.{ .tag = .@"if", .main_token = if_token, .data = .{ .lhs = cond.int(), .rhs = @intFromEnum(extra) } });
 }
@@ -3326,7 +3380,7 @@ fn parseBranch(p: *Parse) Allocator.Error!Index {
     const pattern = try p.parsePattern();
     _ = try p.expectToken(.arrow);
     p.context = .branch_body;
-    const body = try p.parseExpr();
+    const body = try p.parseBody(.opens);
     return p.binary(.branch, head, pattern, body);
 }
 
@@ -3348,7 +3402,7 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
         const column = p.col(p.tok_i);
         while (true) {
             const before = p.tok_i;
-            try p.pushScratch(try p.parseLetBinding());
+            try p.pushScratch(try p.parseLetBinding(.let));
             p.nextSibling(&siblings);
             p.assertProgress(before);
             if (!canStartBinding(p.peek())) break;
@@ -3366,9 +3420,165 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
     const bindings = try p.listToRange(p.scratchSince(mark));
     _ = try p.expectToken(.keyword_in);
     p.context = .let_body;
-    const body = try p.parseExpr();
+    const body = try p.parseBody(.continues);
     const extra = try p.addExtra(bindings);
     return p.addNode(.{ .tag = .let, .main_token = let_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+}
+
+/// Body := Block | Expr   (language.md §12.2): what follows one of the
+/// five openers — `=`, `->`, `then`, `else`, and a `(` that ends its line.
+/// A body whose first token begins a later line opens a block there, at
+/// that token's column, when that column is right of the enclosing block
+/// (B1); any other body is an expression, read exactly as before.
+///
+/// `continues` is for the two bodies that were written, before blocks, at
+/// the column of the item they belong to: a `let`'s body under its `let`,
+/// and a `<| λx ->` lambda's body continued at its line's indentation. Such
+/// a body begins neither a block (B1) nor the next item: it is the one
+/// expression it always was, read with its first token exempt from the
+/// column check as a block's head is. Every other opener refuses a body
+/// there, which then begins the next item and leaves the opener without one.
+fn parseBody(p: *Parse, at_item_column: enum { opens, continues }) Allocator.Error!Index {
+    const t = p.tok_i;
+    if (p.rawTag() != .eof and p.firstOnLine(t) and p.startsItem(t)) {
+        const c = p.col(t);
+        if (c > p.indent) return p.parseBlock();
+        if (at_item_column == .continues and c == p.block_col) {
+            const saved_head = p.head;
+            p.head = t;
+            defer p.head = saved_head;
+            return p.parseExpr();
+        }
+    }
+    return p.parseExpr();
+}
+
+/// Block := Item+, aligned on the first item's first token (language.md
+/// §12.2, B1–B6; frontend.md §11.2). Each item is read with `indent` and
+/// `block_col` at the block's column, so a token there belongs to the item
+/// only when it cannot start an expression (B3), and the next one that can
+/// begins the next item (B2). A block of one expression is that
+/// expression's node, so every body written without `let` parses to the
+/// tree it parsed to before blocks; otherwise a `block` node holds the
+/// items before the value — a non-last expression wrapped as a `stmt` —
+/// and the value. A last item that is a binding is
+/// `block_ends_in_binding`, and the value is then an error node.
+fn parseBlock(p: *Parse) Allocator.Error!Index {
+    // No `enter` here: an expression item is charged by `parseExpr` and a
+    // binding by `parseLetBinding`, so a block of one expression costs the
+    // depth that expression always cost.
+    const column = p.col(p.tok_i);
+    const first = p.tok_i;
+    const saved: Saved = .{ .indent = p.indent, .head = p.head, .block_col = p.block_col, .context = p.context };
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    // The items are siblings (`Siblings`), as a `let`'s bindings are.
+    var siblings = p.beginSiblings();
+    defer p.endSiblings(siblings);
+    while (true) {
+        const before = p.tok_i;
+        p.indent = column;
+        p.head = p.tok_i;
+        p.block_col = column;
+        p.context = .block;
+        if (p.itemIsBinding()) {
+            // A binding's body can be a block whose first item is a binding
+            // again, with no `parseExpr` between them to charge the level.
+            if (try p.enter()) |placeholder| {
+                try p.pushScratch(placeholder);
+            } else {
+                defer p.leave();
+                try p.pushScratch(try p.parseLetBinding(.block));
+            }
+        } else {
+            try p.pushScratch(try p.parseExpr());
+            // A binding whose head was broken across lines reads as an
+            // expression up to its `=`; the head goes on one line.
+            if (p.peek() == .equal or p.peek() == .arrow_left) {
+                @branchHint(.cold);
+                var item = p.itemAt(.unexpected_token);
+                item.construct = .binding_head;
+                _ = try p.report(item);
+                p.recover();
+            }
+        }
+        // Each item is a pair, its node and its first token.
+        try p.pushScratch(before);
+        p.nextSibling(&siblings);
+        p.assertProgress(before);
+        const t = p.tok_i;
+        if (p.tags[t] == .eof or p.col(t) != column or !p.firstOnLine(t) or !p.startsItem(t)) break;
+    }
+    p.endBlock(saved);
+    const count = (p.scratch.items.len - mark) / 2;
+    const tags = p.nodes.items(.tag);
+    const last: Index = @enumFromInt(p.scratch.items[mark + 2 * (count - 1)]);
+    const last_token: TokenIndex = p.scratch.items[mark + 2 * (count - 1) + 1];
+    if (count == 1 and !isBindingItem(tags[last.int()])) return last;
+    // The items before the value, in order; every expression among them
+    // is a statement.
+    for (0..count - 1) |i| {
+        const n: Index = @enumFromInt(p.scratch.items[mark + 2 * i]);
+        const at: TokenIndex = p.scratch.items[mark + 2 * i + 1];
+        p.scratch.items[mark + i] = if (isBindingItem(p.nodes.items(.tag)[n.int()]))
+            n.int()
+        else
+            (try p.addNode(.{ .tag = .stmt, .main_token = at, .data = .{ .lhs = n.int(), .rhs = 0 } })).int();
+    }
+    var value = last;
+    var len = count - 1;
+    if (isBindingItem(p.nodes.items(.tag)[last.int()])) {
+        @branchHint(.cold);
+        p.scratch.items[mark + len] = last.int();
+        len += 1;
+        const index = try p.report(p.itemAtToken(.block_ends_in_binding, last_token));
+        value = try p.addNode(.{ .tag = .error_expr, .main_token = last_token, .data = .{ .lhs = @intFromEnum(diagnostic.Code.block_ends_in_binding), .rhs = index orelse std.math.maxInt(u32) } });
+    }
+    const range = try p.listToRange(p.scratch.items[mark .. mark + len]);
+    const extra = try p.addExtra(range);
+    return p.addNode(.{ .tag = .block, .main_token = first, .data = .{ .lhs = @intFromEnum(extra), .rhs = value.int() } });
+}
+
+/// The tags a block item has when it is a binding rather than an expression.
+fn isBindingItem(tag: Node.Tag) bool {
+    return switch (tag) {
+        .let_def, .let_annotation, .let_pattern, .let_bind, .error_binding => true,
+        else => false,
+    };
+}
+
+/// Whether the block item that begins at the next token is a binding,
+/// decided from its first line before it is parsed (language.md §12.2,
+/// *What an item is*): a `=` or `<-` on that line outside brackets,
+/// interpolation and markup tags, or a leading `name :`. An item that
+/// begins with a keyword, a lambda or markup is an expression whatever its
+/// line holds.
+fn itemIsBinding(p: *const Parse) bool {
+    const first = p.tok_i;
+    const line = p.lines[first];
+    switch (p.tags[first]) {
+        .keyword_let, .keyword_if, .keyword_case, .lambda, .backslash, .markup_open => return false,
+        .lower_ident => if (p.tags[first + 1] == .colon and p.lines[first + 1] == line) return true,
+        else => {},
+    }
+    var depth: u32 = 0;
+    var in_tag = false;
+    var i = first;
+    while (p.tags[i] != .eof and p.lines[i] == line) : (i += 1) {
+        switch (p.tags[i]) {
+            .l_paren, .l_bracket, .l_brace, .interp_start => depth += 1,
+            .r_paren, .r_bracket, .r_brace, .interp_end => depth -|= 1,
+            .markup_open, .markup_close_open => in_tag = true,
+            .markup_gt, .markup_self_close => in_tag = false,
+            .equal, .arrow_left => if (depth == 0 and !in_tag) return true,
+            // A binding's head is a pattern, or a name and parameters, and
+            // neither holds an operator: one before any `=` makes the line
+            // an expression — `f <input value="x" />`, whose `<` is a
+            // comparison, is markup passed as an argument and not a binding.
+            else => |tag| if (depth == 0 and tag.isOperator() and tag != .op_minus) return false,
+        }
+    }
+    return false;
 }
 
 /// Anything that can start a pattern: a refutable one is still parsed as a
@@ -3380,9 +3590,15 @@ fn canStartBinding(tag: Tag) bool {
 
 /// LetBinding := Annotation | Definition | LetPattern '=' Expr
 ///              | LetPattern '<-' App                            (§6.7)
-fn parseLetBinding(p: *Parse) Allocator.Error!Index {
+fn parseLetBinding(p: *Parse, in: enum { let, block }) Allocator.Error!Index {
     const saved = p.startBlock(.let_bindings);
     defer p.endBlock(saved);
+    if (in == .block) {
+        // A block item (language.md §12.2, B3): a token at the block's
+        // column that cannot start an expression still belongs to it.
+        p.block_col = p.indent;
+        p.context = .block;
+    }
     const head = p.tok_i;
     switch (p.peek()) {
         .lower_ident => {
@@ -3409,7 +3625,7 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
                 const name = p.next();
                 const params = try p.parseParams();
                 _ = try p.expectToken(.equal);
-                const body = try p.parseExpr();
+                const body = try p.parseBody(.opens);
                 const extra = try p.addExtra(params);
                 return p.addNode(.{ .tag = .let_def, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
             }
@@ -3434,7 +3650,7 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
         return p.binary(.let_bind, head, pattern, value);
     }
     _ = try p.expectToken(.equal);
-    const value = try p.parseExpr();
+    const value = try p.parseBody(.opens);
     return p.binary(.let_pattern, head, pattern, value);
 }
 
@@ -4025,7 +4241,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try testing.expect(r.base < token_count);
             try checkIndices(tree, r.fields);
         },
-        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
         .type_fn => {
             const f = tree.fullTypeFn(n);
             try testing.expect(f.params.len >= 1);
@@ -4058,7 +4274,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkIndex(tree, i.then_expr);
             try checkIndex(tree, i.else_expr);
         },
-        .let => {
+        .let, .block => {
             const l = tree.fullLet(n);
             try testing.expect(l.bindings.len >= 1);
             try checkIndices(tree, l.bindings);
@@ -5190,8 +5406,8 @@ test "layout: brackets do not suspend it, operators and keywords may lead a line
         \\ , 2
         \\ ]
         \\call =
-        \\        List.map
-        \\  (λx -> x)
+        \\    List.map
+        \\      (λx -> x)
         \\     [ 1 ]
         \\branch m =
         \\    case
@@ -5298,7 +5514,7 @@ test "layout errors: a continuation on column 1, misaligned let bindings and cas
     try expectErrorMessage("x =\n    case y of\n\nz = 1\n", 0,
         \\I was parsing the branches of this `case` and ran into `z`, which is indented to
         \\column 1. Branches must be indented more than the block the `case` is in, whose
-        \\column is 1.
+        \\column is 5.
         \\
         \\A `case` needs at least one branch:
         \\

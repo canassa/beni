@@ -1,0 +1,29 @@
+-- Three ways a block's shape goes wrong (language.md §12.2), each one
+-- unexpected_token whose message says what a block is. A `,` after a
+-- parenthesised block's items (14:9, B6): a block is not a tuple element. A
+-- binding whose head is broken across lines (22:7): its first line holds no
+-- `=`, so it reads as an expression up to the `=`, and a binding's head goes
+-- on one line. A body below `=` at the column of its own binding (29:5, B1):
+-- a block is right of the one it is in, so the line begins the next item and
+-- the `=` is left without a body.
+tuple : ( Int, Int )
+tuple =
+    (
+        a = 1
+        a
+        , 2
+    )
+
+
+broken : Int
+broken =
+    ( 1
+    , 2
+    ) = ( 1, 2 )
+    0
+
+
+flat : Int
+flat =
+    x =
+    1

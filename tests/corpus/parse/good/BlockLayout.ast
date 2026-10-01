@@ -1,0 +1,76 @@
+(module
+  (annotation starts
+    (type_fn
+      (type_con Int)
+      (type_con List
+        (type_con Int))))
+  (definition starts
+    (pat_var n)
+    (block
+      (stmt
+        (negate
+          (ident n)))
+      (stmt
+        (accessor .field))
+      (stmt
+        (lambda
+          (pat_var x)
+          (ident x)))
+      (stmt
+        (if
+          (ctor True)
+          (int 1)
+          (int 2)))
+      (stmt
+        (case
+          (ident n)
+          (branch
+            (pat_wild)
+            (int 0))))
+      (stmt
+        (multiline_string "a multiline" "string"))
+      (list
+        (ident n))))
+  (annotation continues
+    (type_fn
+      (type_con Int)
+      (type_con List
+        (type_con Int))))
+  (definition continues
+    (pat_var n)
+    (block
+      (let_def m
+        (pipe_right
+          (sub
+            (add
+              (ident n)
+              (int 1))
+            (int 2))
+          (ident identity)))
+      (let_def k
+        (if
+          (gt
+            (ident m)
+            (int 0))
+          (ident m)
+          (int 0)))
+      (let_def j
+        (case
+          (ident k)
+          (branch
+            (pat_wild)
+            (ident k))))
+      (list
+        (ident m)
+        (ident k)
+        (ident j))))
+  (annotation inner
+    (type_con Int))
+  (definition inner
+    (let
+      (let_def x
+        (block
+          (let_def y
+            (int 1))
+          (ident y)))
+      (ident x))))

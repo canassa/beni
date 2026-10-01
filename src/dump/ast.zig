@@ -292,7 +292,7 @@ const Dumper = struct {
                 try d.w.print(" {s}", .{d.text(main)});
                 try d.child(tree.operand(n), inner);
             },
-            .type_paren, .type_sync, .interp, .negate, .spread, .paren, .question, .pat_paren, .pat_spread => {
+            .type_paren, .type_sync, .interp, .negate, .spread, .paren, .question, .stmt, .pat_paren, .pat_spread => {
                 try d.openTag(tag, main);
                 try d.child(tree.operand(n), inner);
             },
@@ -357,7 +357,7 @@ const Dumper = struct {
                 try d.child(i.then_expr, inner);
                 try d.child(i.else_expr, inner);
             },
-            .let => {
+            .let, .block => {
                 const l = tree.fullLet(n);
                 try d.openTag(tag, main);
                 try d.children(l.bindings, inner);

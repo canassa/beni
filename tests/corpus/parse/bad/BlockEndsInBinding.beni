@@ -1,0 +1,28 @@
+-- A block ends with the expression it stands for (language.md §12.2): one
+-- whose last item is a definition (11:5), a pattern binding (17:5), an
+-- annotation (22:5) or a bind (28:5) is block_ends_in_binding at that item,
+-- once each, and not an implicit `()`. The bindings are still lowered, so a
+-- name a later binding uses is found and nothing else is reported.
+definition : Int
+definition =
+    a = 1
+    b =
+        a + 1
+    c = b
+
+
+pattern : Int
+pattern =
+    ( x, y ) = ( 1, 2 )
+    ( u, v ) = ( x, y )
+
+
+annotation : Int
+annotation =
+    n : Int
+
+
+bind : Int -> Result String Int
+bind r =
+    a = r
+    x <- Result.andThen (Ok a)

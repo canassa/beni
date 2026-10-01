@@ -11,7 +11,7 @@ a x y =
 
 
 b xs =
-       xs
+    xs
      |> List.map double
         -- a comment in the pipeline
      |> List.filter even

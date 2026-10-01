@@ -1,0 +1,34 @@
+-- run: a block keeps `let`'s scoping (language.md §12.2, §7): every name it
+-- binds is in scope in all of its items, so its functions are mutually
+-- recursive whatever their order, and a value may call a function written
+-- below it — the function is hoisted, and what it reads (`step`, above the
+-- value) already has its value. Only reading a VALUE written below is
+-- `let_forward_reference`, which the checker refuses.
+import Node exposing (Program)
+import String
+
+
+parity : Int -> String
+parity n =
+    step = 1
+    answer = describe n
+    isEven k =
+        if k == 0 then
+            True
+        else
+            isOdd (k - step)
+    isOdd k =
+        if k == 0 then
+            False
+        else
+            isEven (k - step)
+    describe k =
+        if isEven k then
+            "even"
+        else
+            "odd"
+    answer
+
+
+main : Program
+main = Node.printLines [ parity 10, parity 7 ]

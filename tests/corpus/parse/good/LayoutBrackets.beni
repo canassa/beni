@@ -1,8 +1,9 @@
--- Brackets do not suspend layout (§4 rule 6): inside `( [ {` a token only
--- needs column > the enclosing block's indent, so continuation lines of a
--- top-level list may sit at column 2, arguments may dedent below the head,
--- and inside `let` and `case` bodies the same rule applies against the
--- binding's or branch's column.
+-- Brackets do not suspend layout (§4 rule 6, §12.2 B3): inside `( [ {` a token
+-- needs a column right of the block it is in, or that column itself when it
+-- cannot start an expression, so a top-level list may sit at column 2 with its
+-- commas and closing bracket under the first, and inside `let` and `case`
+-- bodies the same rule applies against the binding's or branch's column. A
+-- token left of the block ends it: `parse/bad/BlockTokenLeftOfColumn`.
 list =
  [ 1
  , 2
@@ -15,12 +16,6 @@ record =
    , b = 2
     , c = 3
   }
-
-
-call =
-        List.map
-  (λx -> x)
-     [ 1 ]
 
 
 inLet =
@@ -42,9 +37,3 @@ inBranch n =
 
         _ ->
             ( 0, 0 )
-
-
-closingAtColumnTwo =
-    [ 1
-    , 2
- ]

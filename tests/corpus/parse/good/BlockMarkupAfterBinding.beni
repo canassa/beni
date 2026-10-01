@@ -1,0 +1,21 @@
+-- A `<` that begins its line, followed by a letter or `>`, opens markup
+-- whatever precedes it (language.md §12.2, frontend.md §11.1): a block's
+-- markup value follows a binding that ends in an operand, where `<section`
+-- would otherwise read as `left < section`. The `.tokens` golden pins the
+-- lexing: `markup_open` at 12:5 and 19:5, and `op_lt` at 17:14 in `a < b`.
+import Html exposing (Html)
+
+
+view : Int -> Html msg
+view n =
+    left = n + 1
+    <section>{left}</section>
+
+
+fragment : Int, Int -> Html msg
+fragment a b =
+    less = a < b
+    _ = less
+    <>
+        <p>{a}</p>
+    </>

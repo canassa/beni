@@ -12,15 +12,6 @@
         (int 2))
       (field c
         (int 3))))
-  (definition call
-    (apply
-      (ident List.map)
-      (paren
-        (lambda
-          (pat_var x)
-          (ident x)))
-      (list
-        (int 1))))
   (definition inLet
     (let
       (let_def xs
@@ -41,8 +32,4 @@
         (pat_wild)
         (tuple
           (int 0)
-          (int 0)))))
-  (definition closingAtColumnTwo
-    (list
-      (int 1)
-      (int 2))))
+          (int 0))))))

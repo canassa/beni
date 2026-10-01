@@ -1508,7 +1508,7 @@ test "check with two syntax errors in different declarations reports both, in or
             .message = "I was parsing a parenthesised expression and ran into `g` on column 1 before\n" ++
                 "finding the `)` that closes this `(`.\n" ++
                 "\n" ++
-                "Everything inside the brackets must be indented more than column 1, the column\n" ++
+                "Everything inside the brackets must be indented more than column 5, the column\n" ++
                 "of the block they are in. `g` is not, so the block ended there and the `)` is\n" ++
                 "missing.",
         },

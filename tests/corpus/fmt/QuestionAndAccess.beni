@@ -4,6 +4,6 @@
 -- application re-laid out canonically.
 f r t = Ok ( r.a.b + t.0.1 + List.length ( List.map .name [] ) )
 g s =
-      Ok
+  Ok
    ( parse s? + parse s? )
 parse s = String.toInt s |> Result.fromMaybe "nan"
