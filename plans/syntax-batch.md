@@ -13,6 +13,7 @@ and the choices the specification had to make that the owner should confirm.
 | `statement_not_unit`, `name_removed` at a qualified name, `Int`/`Float` modules, call-style hints, `suspicious_argument_order` | [`checker-v2.md`](../docs/design/checker-v2.md) §29 |
 | a statement is a discard; `Int.mod` stays a call | [`backend.md`](../docs/design/backend.md) §4 |
 | `Int` and `Float` modules beside `Basics`, which keeps both types (amended 2026-10-01) | [`static-dispatch-spike.md`](../docs/design/static-dispatch-spike.md) A.6, [`checker.md`](../docs/design/checker.md) Appendix B |
+| S8 Unicode notation: the symbols, `×` tuple types, lookalikes, removal codes, columns, formatter, editor input | `language.md` §12.7–§12.9, with dated pointers in §0, §2.1, §2.2, §2.4, §3, §6.5, §6.8, §9, §10, §12.1 and Appendix A; `frontend.md` §11.8 (pointers in §1, §3.1); `checker.md` §8.2 for the renderer |
 
 Precedent read for it: Roc's blocks and statements (`references/roc/docs/langref/statements.md`,
 `expressions.md`; `src/check/Check.zig:21835-21848` unifies a statement with `{}` and
@@ -58,6 +59,29 @@ mechanical commit writes, so they are cheapest to change before slice 7.
 | Y15 | A hanging application's head arguments ignore source breaks; the head line joins `=` only when the hung argument is a lambda | join for lists and records too, or honour source breaks | §12.5 |
 | Y16 | `let` and `in` stay reserved words | release them as identifiers | §12.2 |
 
+### 1.3 Unicode notation (S8) — made by the specification, for the owner to confirm
+
+Slice 17's open choices; the owner confirms them before slice 18. **Confirm first** marks the ones
+that change what slice 19's mechanical commit writes. Sections are `language.md`'s unless named.
+
+| # | Decision | Alternative | Where |
+|---|---|---|---|
+| Z1 | Each symbol is a token tag of its own; the ASCII spellings' tags are renamed `ascii_*` and, from slice 20, lexed only to be refused (as `\` is) | one tag per pair with the length stored elsewhere — the token SoA derives length from the tag, so that is a new column | §12.7, `frontend.md` §11.8 |
+| Z2 | **Confirm first.** `×` is n-ary and flat: `a × b × c` is a 3-tuple, `a × (b × c)` a pair holding a pair | Lean's right-nested `infixr`, which makes `a × b × c` a type no `( a, b, c )` value has | §12.8 |
+| Z3 | Precedence: application, then `×`, then the parameter comma, then `→` (Lean's order), so `Int × Int → Int` takes one pair and `Int, String × Bool → Order` two arguments | require parentheses around a product that is a function parameter | §12.8 |
+| Z4 | **Confirm first.** From slice 18 a column counts code points — diagnostics, excerpt carets, layout and the formatter's 100-column measure — so `→` is one column; this also removes §12.1's `λ` exception | keep byte columns, and every caret after a symbol on its line drifts right by one or two, on most lines of a program | §12.7, §12.9, `frontend.md` §3.1 |
+| Z5 | One removal code, `ascii_symbol_removed`, for all eight ASCII spellings (the message names the symbol), and `tuple_type_removed` for `( a, b )` in a type | one code per spelling (`arrow_removed`, `pipe_removed` …), as `cons_removed` and `let_removed` are each one | §12.7, §12.8, §10 |
+| Z6 | Removal is reported at every occurrence, each with its span | once per file with a count, which a CLI reader prefers but an editor cannot place | §12.7 |
+| Z7 | Lookalikes reuse `invalid_character` (and `expected_token`/`unexpected_token` for `=>` and `*` in a type) with the symbol named, and the parse goes on as the symbol through a `lookalike` token | a new code, `lookalike_character`, for tools to route on | §12.7, `frontend.md` §11.8 |
+| Z8 | The lookalike set: `−` `－` → `-`; `⇒ ⟶ ⟹ ➝ ➔ ↦` → `→`; `⟵ ⇐` → `←`; `≦ ⩽` → `≤`; `≧ ⩾` → `≥`; `▶ ▹ ▸ ▻ ⊳` → `▷`; `◀ ◃ ◂ ◅ ⊲` → `◁`; `⋯ ‥` → `…`; `⨯ ✕` → `×`; the fullwidth block named; `!=` → `≠`. `Λ` stays unexplained `invalid_character` | a shorter list, or `Λ` → `λ` too | §12.7 |
+| Z9 | **Confirm first.** `▷` U+25B7 and `◁` U+25C1, the white triangles (Lean's editor gives them for `\rhd`/`\lhd`) | `▹`/`◃` (what Lean gives for `\triangleright`), or `⊳`/`⊲`; Lean itself writes `\|>` and `<\|` in ASCII | §12.7 |
+| Z10 | `…` replaces `...` everywhere, a tag's attribute spread `{…attrs}` included, though JSX writes `{...props}` | keep `...` in markup only, which is two spellings of one token | §12.7, §6.8 |
+| Z11 | `×` is a type token only; `2 × 3` is `unexpected_token`, pointing at `*` | let `×` also multiply, a second spelling of `*` | §12.7 |
+| Z12 | The type renderer (`checker.md` §8.2) and every compiler message that quotes code switch to the symbols in slice 20, with the removal codes | switch in slice 18, while both spellings are accepted | §12.8, §12.9 |
+| Z13 | The editor and language server replace the ASCII as it is typed, in code only (`->` becomes `→`, `*` in a type `×`); no Lean-style backslash abbreviations, since `\` already becomes `λ` | Lean's `\to`, `\le`, `\x` … abbreviations | §12.9 |
+| Z14 | `--migrate-unicode` touches only tokens and tuple-type nodes, never a comment or string; slice 19 rewrites core's doc comments, Zig test programs, generators and the design docs' examples by a reviewed script in the same commit, joins multi-line tuple types onto one line, then runs plain `beni fmt` over the gate's scope | a comment mode in the flag, or doc comments left in ASCII until the docs test fails | §12.9, `frontend.md` §11.8 |
+| Z15 | The `ast` and `bir` dumps name an operator by its symbol whichever spelling was read, from slice 18, so the two spellings dump byte-identically and the teach slice can prove it | print the spelling read, and prove equivalence some other way | §12.7, `frontend.md` §11.8 |
+
 ---
 
 ## 2. Slices
@@ -88,9 +112,17 @@ to two days, **L** three to four.
 | 15 | **`Debug.log` label first** and its rewrite, one commit (the exception, `frontend.md` §11.7) | code + mechanical | S | the 24 `run/` fixtures that order by `Debug.log` print what they printed |
 | 16 | **Call-style diagnostics**: the three hints, the generalised Elm-order hint, `suspicious_argument_order` (§12.5; `checker-v2.md` §29.4) | code | M | a `check/bad/` fixture per hint; a `check/good/` fixture where the warning fires and one where the method form silences it |
 | 17 | **Unicode notation specified** (`browser-decisions.md` S8): `language.md` §12 gains the symbols, their tokens and precedence (each that of the ASCII operator it replaces), `×` in the type grammar beside the n-ary comma (`Int, Int → Int` is two arguments, `Int × Int → Int` one pair), the lookalikes the lexer refuses (`−`, `⇒`, `⟶`, `＜`, and `▶`, `▹`, `⊳` beside `▷` …) and the removal codes; `frontend.md` §11 the migration | spec | S | the owner confirms the open choices it lists before slice 18 |
-| 18 | **Unicode taught**: the lexer reads `→ ← ≠ ≤ ≥ ▷ ◁ …` as the tokens they replace and `×` in types, the formatter keeps the spelling it read, `beni fmt --migrate-unicode` | code | S | `parse/good/` and `fmt/` fixtures; a `tokens` golden; the migration on a fixture with `->` in strings, comments and multiline strings left alone |
+| 18 | **Unicode taught**: the lexer reads `→ ← ≠ ≤ ≥ ▷ ◁ …` as the tokens they replace and `×` in types, the formatter keeps the spelling it read, `beni fmt --migrate-unicode`; *added by slice 17:* the lookalikes refused, columns and the formatter's measure in code points (`frontend.md` §11.8) | code | S | `parse/good/` and `fmt/` fixtures; a `tokens` golden; the migration on a fixture with `->` in strings, comments and multiline strings left alone; *added:* AST and BIR dumps byte-identical for `Int × String` and `( Int, String )`; a `parse/bad/` fixture per lookalike group; a `.diag` golden whose caret follows a `→` on its line |
 | 19 | **Migrate Unicode** over every `.beni` file, normative doc examples, core doc comments, Zig test programs, generators and message examples, alone in its commit | mechanical | S | emitted JavaScript byte-identical |
-| 20 | **Unicode enforced**: removal diagnostics for `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` and a parenthesised tuple type | code | S | one `parse/bad/` fixture per removed form |
+| 20 | **Unicode enforced**: removal diagnostics for `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` and a parenthesised tuple type; *added by slice 17:* `ascii_symbol_removed` and `tuple_type_removed`, the type renderer and the compiler's messages in the symbols | code | S | one `parse/bad/` fixture per removed form |
+
+*Slice 17, as written (2026-10-01).* The contract is `language.md` §12.7–§12.9 and `frontend.md`
+§11.8; its open choices are §1.3's Z1–Z15. Lean 4's spellings and precedences were read from its
+`src/Init/Notation.lean` and `Init/Core.lean` (`×` `infixr:35`, `≤ ≥ ≠` `infix:50`, `|>` and `<|`
+ASCII at `min`) and its editor abbreviations from `vscode-lean4`'s `abbreviations.json`. Two
+findings: Lean has no symbol for the pipes or the spread, so `▷`, `◁` and `…` are beni's own
+(Z9, Z10); and the excerpt renderer pads its `^` by byte columns, so a caret after a `λ` is
+already one place off today — Z4 is what fixes it.
 
 *As built, slices 13–16 (2026-10-01).* Seven commits, each gates-green. Slice 13 split in two
 around 14, so that no commit is half-landed: the `Int` and `Float` modules with `--migrate-names`

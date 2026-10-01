@@ -1334,7 +1334,10 @@ function type, is a specific rule** and every diagnostic and dump golden depends
 function-typed *parameter* is always parenthesised (`List a, (a -> b) -> List b`), a function-typed
 *result* never is (`a, b -> c -> d`, right-associative), and a 1-ary function over a tuple prints
 `(Int, Int) -> Int` so that it is distinguishable from the 2-ary `Int, Int -> Int`. The rule mirrors
-`language.md` §3's grammar notes. The same renderer produces
+`language.md` §3's grammar notes. *Amended 2026-10-01 (`language.md` §12.8, specified, not built):*
+from the Unicode enforce step the renderer prints `→` and a tuple type as `Int × String`,
+parenthesising a product only as a type argument, a constructor payload or another product's
+operand — so the 1-ary function over a pair prints `Int × Int → Int`. The same renderer produces
 `dump --stage=types` and `--stage=interface`, so every diagnostic's type text is corpus-tested
 through the dumps. Disambiguation (`number`, `number2`, … `number65`) is amortised O(1) per name
 — a per-stem next-suffix counter over a set of the names already handed out, never a rescan from

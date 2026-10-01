@@ -74,6 +74,11 @@ run only on files the `beni fmt --check` gate holds canonical. §11.4–§11.5 a
 six flags are mutually exclusive. And `beni fmt --check` over the repository joins `zig build
 gates` (§11.6).
 
+*Added 2026-10-01 (specified, not built):* one more hidden flag, **`--migrate-unicode`**, an edit
+that writes the Unicode notation (`language.md` §12.7–§12.8) — every ASCII arrow, comparison,
+pipe and spread as its symbol, every parenthesised tuple type with `×`. §11.8 is its contract; it
+is mutually exclusive with the others.
+
 That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
 closing paragraph naming the flag **when, and only when, the module it could not find is a module of
 a platform that ships in the binary and no `--platform` was given**. The hint can be honest about
@@ -318,6 +323,9 @@ IR, offsets not slices, arena per phase per worker, no `HashMap` keyed by a dens
 `SourceStore` holds, per file index: the path (owned), the module name, the bytes as
 `[:0]const u8` (sentinel so the tokenizer needs no bounds check at EOF), and `line_starts:
 []u32` filled in by the tokenizer. Column of offset `o` on line `l` is `o - line_starts[l] + 1`.
+*Amended 2026-10-01 (§11.8, specified, not built):* from the Unicode teach step it is one plus
+the number of code points in `source[line_starts[l]..o]` — the bytes that are not UTF-8
+continuation bytes (`10xxxxxx`) — so a symbol is one column; `line_starts` does not change.
 
 `line_starts` is the only thing the lexer leaves in the store, and **it is a cached artifact**
 (`fast-compiler.md` §8): four reporters turn an offset into a `diagnostic.Position` through it, so a
@@ -1568,3 +1576,87 @@ gates` green at every commit: **teach** (the compiler accepts the new form, and 
 form is refused, or the formatter prints only the new one). The one exception is `Debug.log`, whose
 order changes under an unchanged name, so its core change and its `--migrate-names` rewrite are one
 commit, whose diff outside `core/Debug.beni` is mechanical.
+
+### 11.8 Unicode notation in the front end
+
+*Added 2026-10-01; specified, not built.* How the lexer, parser, formatter and `beni fmt
+--migrate-unicode` build [`language.md`](language.md) §12.7–§12.9, in the order
+[`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 18–20 give.
+
+**The lexer.**
+
+- **Tags.** Nine new tags — `arrow`, `arrow_left`, `op_ne`, `op_le`, `op_ge`, `op_pipe_right`,
+  `op_pipe_left`, `ellipsis` and `times` — for the symbols, and the ASCII spellings' tags renamed
+  `ascii_arrow`, `ascii_arrow_left`, `ascii_ne`, `ascii_le`, `ascii_ge`, `ascii_pipe_right`,
+  `ascii_pipe_left` and `ascii_ellipsis` (`language.md` §12.7 *tokens*). Two tags and not one,
+  because a token's length is re-derived from its tag (§3.2). Each `ascii_*` operator tag sits in
+  the binary-operator range beside its symbol, so the parser's binding-power table has one row per
+  pair. `dump --stage=tokens` prints the tag names; its goldens move in the teach slice.
+- **Recognition.** The ASCII-only check that already admits `CE BB` as `lambda` (§11.1) admits the
+  nine sequences of `language.md` §12.7's table — eight begin `E2`, `×` is `C3 97` — by a
+  switch on the lead byte and an exact match of the next one or two. Strings, characters, multiline
+  strings, comments and markup text are scanned by their own states and never reach that check,
+  which is what keeps the symbols out of them.
+- **Lookalikes.** A sequence in §12.7's lookalike table is reported as `invalid_character` with the
+  intended symbol in the message, and lexed as one token of a tenth new tag, **`lookalike`**,
+  whose payload is the intended symbol's tag and whose length is re-derived from the UTF-8 sequence
+  at `start`, as an identifier's is. The parser reads a `lookalike` as its payload's tag, so the
+  parse goes on as though the symbol had been written. `!=` is one `lookalike` (payload `op_ne`,
+  length 2); `−` and `－` carry `op_minus`. A fullwidth form is plain `invalid_character` with the
+  ASCII character named and no token, as today. `=>` and a `*` in a type are the parser's, as
+  messages of the codes they already raise.
+- **Columns.** A diagnostic's column, its excerpt's underline (`src/render/text.zig`) and the
+  parser's layout comparisons count code points (§3.1). A token that begins its line follows ASCII
+  indentation, so its column is still `o - line_starts[l] + 1` and costs nothing; only a column
+  taken mid-line — a diagnostic, and the `case` whose first branch shares the `of` line — counts
+  the non-continuation bytes before it.
+
+**The parser.** Every site that matches `arrow`, `arrow_left`, `ellipsis` or one of the six
+operators matches the pair, through one helper that maps an `ascii_*` tag to its symbol's, so
+until slice 20 the two spellings parse identically and build identical nodes. The type parser
+gains `Product` (`language.md` §12.8): after a `TypeApp`, a `times` continues a product whose
+operands are `TypeApp`s, flat, and a parenthesised type is an operand that is never flattened. A
+product is the existing node **`type_tuple`**, its `main_token` the first `times`; the
+parenthesised form keeps building `type_tuple` with its `(` as `main_token`, so the AST and BIR
+dumps of `Int × String` and `( Int, String )` are byte-identical (the teach slice's fixture says
+so) and the formatter can tell the two spellings apart by the tag of `main_token`. The dumps
+name an operator by its symbol whichever tag was read (`language.md` §12.7), so the `ast` and `bir`
+goldens that print `/=`, `<=`, `>=`, `|>` or `<|` move in slice 18, and only there. From slice 20
+the helper reports `ascii_symbol_removed` once per `ascii_*` token it consumes, and the tuple type
+`tuple_type_removed` at its `(`, its message the product built from the node's own children; both
+parse on. The frontend artifact's format version moves in slice 18 for the new tags and in slice
+20 for the two codes (`fast-compiler.md` §8), the cache entry's with it.
+
+**The formatter** prints each token from its tag, so it keeps the spelling it read for free until
+slice 20 removes the ASCII; a `type_tuple` whose `main_token` is `(` prints as it did, one whose
+`main_token` is `times` as a product (`language.md` §12.9). §3.7's measure counts a token's code
+points, not its bytes — one more pass over the token's bytes, which the measure already slices —
+and the printer's `curCol` with it.
+
+**`--migrate-unicode`** is an edit in the family of §11.4: it keeps the file's own layout, may run
+on every `.beni` file including the deliberately unformatted ones, reaches its fixed point in one
+run, accepts a file whose only syntax errors are `ascii_symbol_removed` and `tuple_type_removed`
+(an error filter, as `--migrate-lambda` has), re-parses its output and leaves untouched — naming
+it with the re-parse's first diagnostic — a file that no longer parses.
+
+- **Tokens.** Every `ascii_*` token is replaced by its symbol and nothing else on the line moves.
+  It reaches only tokens, so a string, character, multiline string, comment, doc comment, markup
+  text or quoted attribute value is never touched, and the code in an interpolation hole, a markup
+  hole and an attribute's `{…}` value is. A `<-` outside a bind (`x <-1`, meant as `x < -1`) is a
+  syntax error today, so a file holding one is left alone and named.
+- **Tuple types.** Every `type_tuple` whose `main_token` is `(` is written as its element types
+  joined by ` × `, each element's own text kept (rewritten recursively, innermost first), and
+  wrapped in parentheses exactly where a product must be an atom — a type-application argument,
+  a constructor's payload, an operand of an enclosing product — and nowhere else. A tuple type the
+  author wrote across lines is written on its first line, which is safe because a type holds no
+  layout; one that holds a comment is left and named for a hand edit.
+- **Columns** shift on a rewritten line (`->` is two columns, `→` one; a tuple type shrinks), and
+  layout compares only line-start columns but for the `case` of §12.1, which the re-parse catches.
+- The slice that runs it then runs plain `beni fmt` over the gate's scope, for a joined tuple type
+  that now passes 100 columns; it is the one way the flag's output can fail the gate.
+
+**What the flag does not rewrite**, and slice 19 rewrites by a reviewed script in the same
+commit: core's doc comments (`--|` examples, which the docs test compiles), code in Zig test
+sources and generators, and the normative examples of `docs/design/`. The compiler's own message
+texts and the type renderer switch in slice 20, with the removal codes (`language.md` §12.9). Prose that names the ASCII spelling on purpose — this section, the removal
+messages, `language.md` §12.7's tables — is not rewritten.
