@@ -1,0 +1,134 @@
+-- The workloads of `bench/primitives/run.mjs`: core's small primitives —
+-- `String`'s and `Int32`'s — each in a loop over prepared input, so what is
+-- timed is the primitive and not the list around it. Built with `--library`,
+-- so every one of them is a root.
+import Int32 exposing (Int32)
+import List
+import String
+
+
+--| `n` strings of 8 to 20 characters, most sharing a prefix with the
+--| previous one, so a comparison walks past the first character.
+pub strings : Int -> List String
+strings n = List.map (List.range 1 n) (\i -> "item-${String.fromInt (modBy (i * 7919) 1009)}-tail")
+
+
+--| The same strings, as text separated by spaces and new lines.
+pub text : Int -> String
+text n = String.join (strings n) " \n"
+
+
+--| `n` digit strings.
+pub numerals : Int -> List String
+numerals n = List.map (List.range 1 n) (\i -> String.fromInt (i * 31))
+
+
+pub ints : Int -> List Int
+ints n = List.range 1 n
+
+
+--| How many neighbours are in order: one `<` on two strings each.
+pub compare : List String -> Int
+compare xs = inOrder xs 1 0
+
+
+inOrder : List String, Int, Int -> Int
+inOrder xs i count =
+    case ( List.get xs (i - 1), List.get xs i ) of
+        ( Just a, Just b ) ->
+            inOrder
+                xs
+                (i + 1)
+                (if a < b then
+                    count + 1
+                 else
+                    count
+                )
+
+        _ ->
+            count
+
+
+pub sort : List String -> List String
+sort xs = List.sort xs
+
+
+pub length : List String -> Int
+length xs = List.foldl xs 0 (\s acc -> acc + String.length s)
+
+
+pub slice : List String -> List String
+slice xs = List.map xs (\s -> String.slice s 2 (-2))
+
+
+pub indexes : List String -> Int
+indexes xs = List.foldl xs 0 (\s acc -> acc + List.length (String.indexes s "t"))
+
+
+pub toInt : List String -> Int
+toInt xs =
+    List.foldl xs
+        0
+        (\s acc ->
+            case String.toInt s of
+                Just n ->
+                    acc + n
+
+                Nothing ->
+                    acc
+        )
+
+
+pub fromInt : List Int -> List String
+fromInt ns = List.map ns String.fromInt
+
+
+pub join : List String -> String
+join xs = String.join xs ","
+
+
+pub words : String -> Int
+words s = List.length (String.words s)
+
+
+pub split : String -> Int
+split s = List.length (String.split s "-")
+
+
+--| FNV-1a over every string's code points: `Int32.xor` and `Int32.mul`.
+pub fnv : List String -> Int
+fnv xs =
+    Int32.toUnsignedInt
+        (List.foldl xs
+            (Int32.fromInt 0x811C9DC5)
+            (\s h ->
+                List.foldl
+                    (String.toList s)
+                    h
+                    (\c acc ->
+                        Int32.mul
+                            (Int32.xor acc (Int32.fromInt (Char.toCode c)))
+                            (Int32.fromInt 0x01000193)
+                    )
+            )
+        )
+
+
+--| `Int32`'s guarded division, remainder and modulus.
+pub divisions : List Int -> Int
+divisions ns =
+    Int32.toInt
+        (List.foldl ns
+            (Int32.fromInt 1)
+            (\n acc ->
+                let
+                    x = Int32.fromInt (n * 2654435761)
+                in
+                Int32.add
+                    acc
+                    (Int32.add
+                        (Int32.div x (Int32.fromInt (n + 3)))
+                        (Int32.add (Int32.rem x (Int32.fromInt 7)) (Int32.mod x (Int32.fromInt 13)))
+                    )
+            )
+        )
