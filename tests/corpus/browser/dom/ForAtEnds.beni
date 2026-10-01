@@ -40,7 +40,7 @@ update msg model =
 leading : List String -> Html msg
 leading items =
     <>
-        <For each={items}>{\s -> <li>{s}</li>}</For>
+        <For each={items}>{λs -> <li>{s}</li>}</For>
         <li>leading's last</li>
     </>
 
@@ -49,14 +49,14 @@ trailing : List String -> Html msg
 trailing items =
     <>
         <li>trailing's first</li>
-        <For each={items}>{\s -> <li>{s}</li>}</For>
+        <For each={items}>{λs -> <li>{s}</li>}</For>
     </>
 
 
 only : List String -> Html msg
 only items =
     <>
-        <For each={items}>{\s -> <li>{s}</li>}</For>
+        <For each={items}>{λs -> <li>{s}</li>}</For>
     </>
 
 
@@ -75,9 +75,9 @@ shape model =
     else if model.shape == 3 then
         plain
     else if model.shape == 4 then
-        Html.map (trailing model.items) (\m -> m)
+        Html.map (trailing model.items) (λm -> m)
     else
-        Html.map (leading model.items) (\m -> m)
+        Html.map (leading model.items) (λm -> m)
 
 
 view : Model -> Html Msg

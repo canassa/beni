@@ -71,7 +71,7 @@ map sub tag =
             None
 
         Listen list ->
-            Listen (List.map list (\( k, t ) -> ( k, Hosted.mapTap t tag )))
+            Listen (List.map list (λ( k, t ) -> ( k, Hosted.mapTap t tag )))
 
 
 --| While `key` is in the set, one fiber runs `body`, and each value it

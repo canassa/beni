@@ -19,10 +19,10 @@ view : String, List Group -> Html msg
 view sep groups =
     <div>
         <For each={groups} keyed={.name}>
-            {\g i ->
+            {λg i ->
                 <section>
-                    <Show when={g.lead} keyed>{\l -> <b>{l}{sep}{i}</b>}</Show>
-                    <For each={g.items}>{\item j -> <i>{g.name}{sep}{item}{sep}{i}{j}</i>}</For>
+                    <Show when={g.lead} keyed>{λl -> <b>{l}{sep}{i}</b>}</Show>
+                    <For each={g.items}>{λitem j -> <i>{g.name}{sep}{item}{sep}{i}{j}</i>}</For>
                 </section>
             }
         </For>

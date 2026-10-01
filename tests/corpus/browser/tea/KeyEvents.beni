@@ -62,8 +62,8 @@ view : Model -> Html Msg
 view model =
     <main>
         <input id="new" value={model.draft} onInput={Typed} onKeyDown={pressed} />
-        <button id="click" onClick={\event -> Pressed (describe event)}>click</button>
-        <ul><For each={model.items} keyed={False}>{\item -> <li>{item}</li>}</For></ul>
+        <button id="click" onClick={λevent -> Pressed (describe event)}>click</button>
+        <ul><For each={model.items} keyed={False}>{λitem -> <li>{item}</li>}</For></ul>
         <p id="last">{model.last}</p>
     </main>
 

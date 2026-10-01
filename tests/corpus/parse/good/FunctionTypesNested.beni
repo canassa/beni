@@ -33,4 +33,4 @@ compose2 f g x = f (g x)
 
 
 table : Dict String (List (Int -> Int)) -> Dict.Dict String Int
-table d = Dict.map (\_ fs -> List.length fs) d
+table d = Dict.map (λ_ fs -> List.length fs) d

@@ -195,9 +195,9 @@ pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a
 bracket acquire release use =
     let
         resource = uninterruptible acquire
-        result = use (pushFinalizer resource (\() -> release resource Cancelled))
+        result = use (pushFinalizer resource (λ() -> release resource Cancelled))
     in
-    uninterruptible (\() -> after (release resource (Done (popFinalizer result))) result)
+    uninterruptible (λ() -> after (release resource (Done (popFinalizer result))) result)
 
 
 after : (), a -> a

@@ -38,7 +38,7 @@ fresh : Model, Int -> ( List Row, Int )
 fresh model count =
     ( List.map
         (List.range 0 (count - 1))
-        (\k -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" })
+        (λk -> { id = model.next + k, label = "r${String.fromInt (model.next + k)}" })
     , model.next + count
     )
 
@@ -91,11 +91,11 @@ view model =
         <button id="all" onClick={ReplaceAll}>all</button>
         <button id="keep" onClick={KeepMiddle}>keep</button>
         <ul id="only">
-            <For each={model.rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
         </ul>
         <ol id="framed">
             <li>first</li>
-            <For each={model.rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
             <li>last</li>
         </ol>
     </main>

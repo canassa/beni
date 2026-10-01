@@ -7,6 +7,6 @@ import Html exposing (Html)
 pub view : List String, Maybe String -> Html msg
 view names title =
     <div>
-        <For each={names}>{\a b c -> <p>{a}</p>}</For>
-        <Show when={title} keyed>{\a b -> <p>{a}</p>}</Show>
+        <For each={names}>{λa b c -> <p>{a}</p>}</For>
+        <Show when={title} keyed>{λa b -> <p>{a}</p>}</Show>
     </div>

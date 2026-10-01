@@ -25,7 +25,7 @@ direct f =
 
 
 pub quick : () -> String
-quick () = start (\() -> ())
+quick () = start (λ() -> ())
 
 
 pub fixed : () -> String

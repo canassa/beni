@@ -50,7 +50,7 @@ fibAll ns cache =
             ( [ value, ...acc ], c1 )
     in
     List.foldl ns ( [], cache ) step
-        |> (\( values, final ) -> ( List.reverse values, final ))
+        |> (λ( values, final ) -> ( List.reverse values, final ))
 
 
 pub hitRate : Cache -> Float

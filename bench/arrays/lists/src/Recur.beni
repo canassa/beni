@@ -81,7 +81,7 @@ sumHelp xs acc =
 
 --| The same sum through the library (added for research/38 §17).
 pub sumFold : List Int -> Int
-sumFold xs = List.foldl xs 0 (\x acc -> acc + x)
+sumFold xs = List.foldl xs 0 (λx acc -> acc + x)
 
 
 pub takeWhile : List a, (a -> Bool) -> List a

@@ -54,6 +54,6 @@ viewHole =
 
 pub viewRows : Html Msg
 viewRows =
-    case rows (\n -> <button onClick={Oops "x"} />) of
+    case rows (λn -> <button onClick={Oops "x"} />) of
         ( v, _ ) ->
             v

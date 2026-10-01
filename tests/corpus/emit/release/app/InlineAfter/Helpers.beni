@@ -11,7 +11,7 @@ clamp limit n =
 -- A function that returns a closure, called once at the top level of
 -- another module: the closure is what that module binds.
 pub adder : Int -> (Int -> Int)
-adder n = \x -> x + n
+adder n = λx -> x + n
 
 
 -- Called twice before specialisation: one call sits in a branch a

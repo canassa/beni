@@ -64,7 +64,7 @@ view : Model -> Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>
-        <ol><For each={model.log} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+        <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 
 

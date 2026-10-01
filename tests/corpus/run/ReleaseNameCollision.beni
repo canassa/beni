@@ -151,11 +151,11 @@ labelled labelledN acc =
 crowded : List Int -> String
 crowded xs =
     let
-        total = List.foldl xs 0 (\x sum -> sum + x)
+        total = List.foldl xs 0 (λx sum -> sum + x)
 
         count = List.length xs
 
-        biggest = List.foldl xs 0 (\x best -> if x > best then x else best)
+        biggest = List.foldl xs 0 (λx best -> if x > best then x else best)
 
         shown = String.join (List.map xs String.fromInt) ","
 

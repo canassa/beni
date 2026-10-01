@@ -64,14 +64,14 @@ set area key value =
         Err Unavailable
     else
         Js.catchIf
-            (\() ->
+            (λ() ->
                 let
                     _ = Js.call s "setItem" [ Js.from key, Js.from value ]
                 in
                 Ok ()
             )
-            (\error -> isDomError error "QuotaExceededError")
-            (\_ -> Err QuotaExceeded)
+            (λerror -> isDomError error "QuotaExceededError")
+            (λ_ -> Err QuotaExceeded)
 
 
 --| Forget the key.
@@ -113,7 +113,7 @@ keysFrom s i n found =
 storage : Area -> Js.Value
 storage area =
     Js.catchIf
-        (\() ->
+        (λ() ->
             case area of
                 Local ->
                     Js.global "localStorage"
@@ -121,8 +121,8 @@ storage area =
                 Session ->
                     Js.global "sessionStorage"
         )
-        (\error -> isDomError error "SecurityError")
-        (\_ -> Js.null)
+        (λerror -> isDomError error "SecurityError")
+        (λ_ -> Js.null)
 
 
 isDomError : Js.Value, String -> Bool

@@ -10,7 +10,7 @@
 -- 14:37, naming `total`, bound on line 16.
 compute left right =
     let
-        first = List.foldl [ left ] 0 (\total carry -> carry + total)
+        first = List.foldl [ left ] 0 (λtotal carry -> carry + total)
         total = right + 1
     in
     first + total

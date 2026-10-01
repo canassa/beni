@@ -10,7 +10,7 @@ run m flag =
                 in
                 doubled
             else
-                (\k ->
+                (λk ->
                     case k of
                         0 ->
                             1

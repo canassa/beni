@@ -265,11 +265,11 @@ reverseHelp xs i b =
 
 pub member : List a, a -> Bool
     where a.eq : a, a -> Bool
-member xs value = any xs (\x -> x == value)
+member xs value = any xs (λx -> x == value)
 
 
 pub all : List a, (a -> Bool) -> Bool
-all xs isOkay = not (any xs (\x -> not (isOkay x)))
+all xs isOkay = not (any xs (λx -> not (isOkay x)))
 
 
 pub any : List a, (a -> Bool) -> Bool
@@ -323,7 +323,7 @@ addAll b xs i n =
 
 
 pub concat : List (List a) -> List a
-concat lists = done (foldl lists (builder 0) (\xs b -> addAll b xs 0 (length xs)))
+concat lists = done (foldl lists (builder 0) (λxs b -> addAll b xs 0 (length xs)))
 
 
 pub concatMap : List a, (a -> List b) -> List b
@@ -331,7 +331,7 @@ concatMap xs func =
     done
         (foldl xs
             (builder 0)
-            (\x b ->
+            (λx b ->
                 let
                     ys = func x
                 in
@@ -347,7 +347,7 @@ intersperse xs sep =
             xs
 
         [ hd, ...tl ] ->
-            done (foldl tl (add (builder 0) hd) (\x b -> add (add b sep) x))
+            done (foldl tl (add (builder 0) hd) (λx b -> add (add b sep) x))
 
 
 pub map2 : List a, List b, (a, b -> result) -> List result
@@ -369,13 +369,13 @@ map2Help xs ys i n func b =
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
     initialize (min (length xs) (min (length ys) (length zs)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i))
+        (λi -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i))
 
 
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
     initialize (min (min (length xs) (length ys)) (min (length zs) (length ws)))
-        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i))
+        (λi -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i))
 
 
 pub map5 :
@@ -388,7 +388,7 @@ pub map5 :
     -> List result
 map5 xs ys zs ws vs func =
     initialize (min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs)))
-        (\i ->
+        (λi ->
             func
                 (unsafeGet xs i)
                 (unsafeGet ys i)
@@ -400,18 +400,18 @@ map5 xs ys zs ws vs func =
 
 pub sort : List a -> List a
     where a.compare : a, a -> Order
-sort xs = sortWith xs (\x y -> x.compare y)
+sort xs = sortWith xs (λx y -> x.compare y)
 
 
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
     let
-        decorated = map xs (\x -> ( toKey x, x ))
+        decorated = map xs (λx -> ( toKey x, x ))
 
-        sorted = sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
+        sorted = sortWith decorated (λ( left, _ ) ( right, _ ) -> left.compare right)
     in
-    map sorted (\( _, x ) -> x)
+    map sorted (λ( _, x ) -> x)
 
 
 --| A stable merge sort over slices.

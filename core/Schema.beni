@@ -572,7 +572,7 @@ withField fs name s isOptional =
         b = fieldsOf fs
     in
     Js.pure
-        (\() ->
+        (λ() ->
             fieldsBox
                 (appended b.fields (toHost (fieldNode name name False isOptional (nodeOf s))))
                 b.problem
@@ -616,7 +616,7 @@ key fs external =
         b = fieldsOf fs
     in
     Js.pure
-        (\() ->
+        (λ() ->
             let
                 n = lengthOf b.fields
             in
@@ -667,7 +667,7 @@ record fs encoded typed =
         typedMaps = cast typed
     in
     Js.pure
-        (\() ->
+        (λ() ->
             case b.problem of
                 Just problem ->
                     box (NBroken problem)
@@ -751,7 +751,7 @@ nullary name tag injectE injectA =
 pub tagged : String, List (Variant e a) -> Schema e a
 tagged discriminator variants =
     Js.pure
-        (\() ->
+        (λ() ->
             let
                 given = plain (toHost variants)
                 vs = Js.array []
@@ -2131,9 +2131,9 @@ parseWith s o text =
         Nothing ->
             case
                 Js.catchIf
-                    (\() -> Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
-                    (\thrown -> Js.instanceOf thrown (Js.global "SyntaxError"))
-                    (\thrown -> Err (stringOf (Js.get thrown "message")))
+                    (λ() -> Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                    (λthrown -> Js.instanceOf thrown (Js.global "SyntaxError"))
+                    (λthrown -> Err (stringOf (Js.get thrown "message")))
             of
                 Err message ->
                     rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"

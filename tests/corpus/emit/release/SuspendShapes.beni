@@ -60,7 +60,7 @@ twice f x = f (f x)
 
 
 pub both : Int -> Int
-both n = twice fetch n + twice (\k -> k + 1) n
+both n = twice fetch n + twice (λk -> k + 1) n
 
 
 pub plain : Int -> Int

@@ -9,6 +9,6 @@ import Ui.List as List
 view model =
     <div>
         <Card {...model.card} title="x" done />
-        <List>{\item -> <li>{item}</li>}</List>
+        <List>{λitem -> <li>{item}</li>}</List>
         <Card.header title="y"><h1>Hi</h1>text</Card.header>
     </div>

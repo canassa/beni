@@ -76,7 +76,7 @@ injA : Schema.Injection { a : Int } T
 injA =
     Schema.injection
         A
-        (\t ->
+        (λt ->
             case t of
                 A r ->
                     Just r
@@ -89,8 +89,8 @@ injA =
 injB : Schema.Injection () T
 injB =
     Schema.injection
-        (\() -> B)
-        (\t ->
+        (λ() -> B)
+        (λt ->
             case t of
                 B ->
                     Just ()
@@ -129,7 +129,7 @@ notARecord =
         [ Schema.variant
             "A"
             "a"
-            (Schema.converted Schema.int (Schema.conversion (\n -> Ok { a = n }) (\r -> Ok r.a)))
+            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) (λr -> Ok r.a)))
             intA
             injA
         , Schema.nullary "B" "b" injB injB
@@ -146,14 +146,14 @@ early : Schema Int Int
 early =
     Schema.recursive
         "Early"
-        (\self ->
+        (λself ->
             let
                 answer = Schema.decode self 1
             in
             Schema.converted
                 Schema.int
                 (Schema.conversion
-                    (\n ->
+                    (λn ->
                         case answer of
                             Ok _ ->
                                 Ok n
@@ -168,13 +168,13 @@ early =
 
 -- `Loop` converts itself: nothing is read on the way round.
 loop : Schema Int Int
-loop = Schema.recursive "Loop" (\self -> Schema.converted self (Schema.conversion Ok Ok))
+loop = Schema.recursive "Loop" (λself -> Schema.converted self (Schema.conversion Ok Ok))
 
 
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (\s ->
+        (λs ->
             case String.toInt s of
                 Just n ->
                     Ok n
@@ -182,7 +182,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (\n -> Ok (String.fromInt n))
+        (λn -> Ok (String.fromInt n))
 
 
 counted : Schema String Int
@@ -190,7 +190,7 @@ counted = Schema.converted Schema.string decimalInt
 
 
 issues : Result (List Schema.Issue) a -> String
-issues r = Show.result r (\_ -> "built")
+issues r = Show.result r (λ_ -> "built")
 
 
 invalid : Schema e a -> String
@@ -246,8 +246,8 @@ host text =
 intA : Schema.Injection Int T
 intA =
     Schema.injection
-        (\n -> A { a = n })
-        (\t ->
+        (λn -> A { a = n })
+        (λt ->
             case t of
                 A r ->
                     Just r.a

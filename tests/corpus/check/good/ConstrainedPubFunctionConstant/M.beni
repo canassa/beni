@@ -21,7 +21,7 @@ maxOf a b =
 pub equals = (==)
 
 
-pub eqs = \a b -> a == b
+pub eqs = λa b -> a == b
 
 
 pub bigger = maxOf

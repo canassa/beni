@@ -44,7 +44,7 @@ closures n acc =
     if n <= 0 then
         acc
     else
-        closures (n - 1) [ \x -> x + n, ...acc ]
+        closures (n - 1) [ λx -> x + n, ...acc ]
 
 
 main : Program

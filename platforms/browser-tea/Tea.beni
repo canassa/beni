@@ -58,10 +58,10 @@ pub element :
     -> Program
 element app =
     Browser.hosted
-        { init = \host -> start host app.init
-        , update = \host msg state -> step host (app.update msg state.model) state
-        , settle = \host state -> settle host (app.subscriptions state.model) state
-        , view = \state -> app.view state.model
+        { init = λhost -> start host app.init
+        , update = λhost msg state -> step host (app.update msg state.model) state
+        , settle = λhost state -> settle host (app.subscriptions state.model) state
+        , view = λstate -> app.view state.model
         }
 
 
@@ -109,7 +109,7 @@ step host ( model, cmd ) state = perform host cmd { state | model = model }
 
 
 perform : Host msg, Cmd msg, State model msg -> State model msg
-perform host cmd state = List.foldl (Cmd.items cmd) state (\it s -> item host it s)
+perform host cmd state = List.foldl (Cmd.items cmd) state (λit s -> item host it s)
 
 
 item : Host msg, Item msg, State model msg -> State model msg
@@ -138,7 +138,7 @@ item host it state =
 
         CancelAll prefix ->
             let
-                ( gone, kept ) = Dict.partition state.jobs (\path _ -> startsWith path prefix)
+                ( gone, kept ) = Dict.partition state.jobs (λpath _ -> startsWith path prefix)
             in
             { state | jobs = stopped state.scope (List.concat (Dict.values gone)) kept }
 
@@ -160,13 +160,13 @@ keyed host path policy job state =
             put state path [ spawn host state.scope job ]
 
         ( Restart, _ ) ->
-            closing old (put state path [ spawnAfter host state.scope (\() -> stop old) job ])
+            closing old (put state path [ spawnAfter host state.scope (λ() -> stop old) job ])
 
         ( Ignore, _ ) ->
             state
 
         ( Queue, _ ) ->
-            put state path [ spawnAfter host state.scope (\() -> waitFor old) job ]
+            put state path [ spawnAfter host state.scope (λ() -> waitFor old) job ]
 
         ( Concurrent, _ ) ->
             put state path [ spawn host state.scope job, ...old ]
@@ -205,8 +205,8 @@ starter : Policy, List (Run msg) -> (Host msg, Scope, Job msg -> Run msg)
 starter policy old =
     List.foldl
         old
-        (\host _ job -> queue host job)
-        (\r otherwise -> startAfter policy old r otherwise)
+        (λhost _ job -> queue host job)
+        (λr otherwise -> startAfter policy old r otherwise)
 
 
 startAfter :
@@ -218,7 +218,7 @@ startAfter :
 startAfter policy old r otherwise =
     case r of
         InFiber _ _ ->
-            \host scope job -> spawnAfter host scope (\() -> settleFirst policy old) job
+            λhost scope job -> spawnAfter host scope (λ() -> settleFirst policy old) job
 
         Queued _ _ ->
             otherwise
@@ -241,13 +241,13 @@ spawn host scope job =
     let
         o = Hosted.outlet host
     in
-    InFiber (Task.spawnIn scope (\() -> Hosted.runJob job (Hosted.emit o _))) o
+    InFiber (Task.spawnIn scope (λ() -> Hosted.runJob job (Hosted.emit o _))) o
 
 
 -- The same, once `first` has returned.
 spawnAfter : Host msg, Scope, (() -> ()), Job msg -> Run msg
 spawnAfter host scope first job =
-    spawn host scope (Hosted.job (\send -> after (first ()) (Hosted.runJob job send)))
+    spawn host scope (Hosted.job (λsend -> after (first ()) (Hosted.runJob job send)))
 
 
 -- Queue a body that never waits where a fiber spawned now would first
@@ -257,7 +257,7 @@ queue host job =
     let
         o = Hosted.outlet host
     in
-    Queued (Task.soon (\() -> Hosted.callJob job (Hosted.emit o _))) o
+    Queued (Task.soon (λ() -> Hosted.callJob job (Hosted.emit o _))) o
 
 
 running : Run msg -> Bool
@@ -293,16 +293,16 @@ stopped scope runs value =
 
 -- What cancels the fibers of `runs`: nothing when none is a fiber.
 cancelling : List (Run msg) -> (Scope -> ())
-cancelling runs = List.foldl runs (\_ -> ()) (\r k -> canceller runs r k)
+cancelling runs = List.foldl runs (λ_ -> ()) (λr k -> canceller runs r k)
 
 
 canceller : List (Run msg), Run msg, (Scope -> ()) -> (Scope -> ())
 canceller runs r k =
     case r of
         InFiber _ _ ->
-            \scope ->
+            λscope ->
                 let
-                    _ = Task.spawnIn scope (\() -> stop runs)
+                    _ = Task.spawnIn scope (λ() -> stop runs)
                 in
                 ()
 
@@ -311,7 +311,7 @@ canceller runs r k =
 
 
 closing : List (Run msg), a -> a
-closing runs value = List.foldl runs value (\r v -> after (close r) v)
+closing runs value = List.foldl runs value (λr v -> after (close r) v)
 
 
 close : Run msg -> ()
@@ -326,7 +326,7 @@ close r =
 
 -- Cancel each fiber and wait for its cleanup.
 stop : List (Run msg) -> ()
-stop runs = List.foldl runs () (\r _ -> stopOne r)
+stop runs = List.foldl runs () (λr _ -> stopOne r)
 
 
 stopOne : Run msg -> ()
@@ -342,7 +342,7 @@ stopOne r =
 -- Wait for each fiber to end. Work queued before the fiber that waits runs
 -- before it.
 waitFor : List (Run msg) -> ()
-waitFor runs = List.foldl runs () (\r _ -> waitOne r)
+waitFor runs = List.foldl runs () (λr _ -> waitOne r)
 
 
 waitOne : Run msg -> ()
@@ -415,12 +415,12 @@ diff host scope declared live =
             List.foldl
                 declared
                 Dict.empty
-                (\( k, t ) d ->
+                (λ( k, t ) d ->
                     Dict.insert d k (List.append (Maybe.withDefault (Dict.get d k) []) [ t ])
                 )
-        kept = Dict.foldl live Dict.empty (\k l d -> keep scope wanted k l d)
+        kept = Dict.foldl live Dict.empty (λk l d -> keep scope wanted k l d)
     in
-    Dict.foldl wanted kept (\k taps d -> arrive host scope k taps d)
+    Dict.foldl wanted kept (λk taps d -> arrive host scope k taps d)
 
 
 keep : Scope, Dict Key (List (Tap msg)), Key, Live msg, Dict Key (Live msg) -> Dict Key (Live msg)
@@ -435,7 +435,7 @@ keep scope wanted k l d =
         Nothing ->
             let
                 _ = Hosted.closeRelay l.relay
-                _ = Task.spawnIn scope (\() -> Task.cancel l.fiber)
+                _ = Task.spawnIn scope (λ() -> Task.cancel l.fiber)
             in
             d
 
@@ -448,7 +448,7 @@ arrive host scope k taps d =
                 r = Hosted.relay host first
                 _ = Hosted.retap r taps
             in
-            Dict.insert d k { fiber = Task.spawnIn scope (\() -> Hosted.run r), relay = r }
+            Dict.insert d k { fiber = Task.spawnIn scope (λ() -> Hosted.run r), relay = r }
 
         _ ->
             d

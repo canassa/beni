@@ -11,12 +11,12 @@ h x = x.eq x
 
 
 direct : Bool
-direct = (F (\y -> y)).eq (F (\y -> y))
+direct = (F (λy -> y)).eq (F (λy -> y))
 
 
 onFunction : Bool
-onFunction = (\y -> y + 1).eq (\y -> y)
+onFunction = (λy -> y + 1).eq (λy -> y)
 
 
 viaHelper : Bool
-viaHelper = h (F (\y -> y))
+viaHelper = h (F (λy -> y))

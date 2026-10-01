@@ -19,7 +19,7 @@ main =
     in
     Node.printLines
         [ "rolls in 1..6: "
-            ++ (if List.all rolls (\n -> n >= 1 && n <= 6) then
+            ++ (if List.all rolls (λn -> n >= 1 && n <= 6) then
                    "yes"
                 else
                    "no"

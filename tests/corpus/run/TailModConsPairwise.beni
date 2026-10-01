@@ -30,9 +30,9 @@ main =
     in
     Node.printLines
         [ String.join
-            (List.map small (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b))
+            (List.map small (λ( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b))
             ","
         , String.fromInt (List.length (pairwise [ 1 ]))
         , String.fromInt (List.length big)
-        , String.fromInt (List.foldl big 0 (\( a, b ) acc -> acc + b - a))
+        , String.fromInt (List.foldl big 0 (λ( a, b ) acc -> acc + b - a))
         ]

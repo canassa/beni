@@ -27,13 +27,13 @@ make forward backward = { forward = identity forward, backward = identity backwa
 positive : Check
 positive =
     make
-        (\n ->
+        (λn ->
             if n > 0 then
                 Ok n
             else
                 Err { message = "not positive", value = n }
         )
-        (\n -> Ok (n * 2))
+        (λn -> Ok (n * 2))
 
 
 run : Check, Int -> String

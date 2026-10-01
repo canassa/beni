@@ -31,7 +31,7 @@ role : Decoder Role
 role =
     Decode.string
         |> Decode.andThen
-            (\s ->
+            (λs ->
                 case s of
                     "admin" ->
                         Decode.succeed Admin

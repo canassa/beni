@@ -11,7 +11,7 @@ counter start =
     let
         n = Js.ref start
     in
-    \() ->
+    λ() ->
         let
             _ = Js.write n (Js.read n + 1)
         in

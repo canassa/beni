@@ -10,7 +10,7 @@ f a ( b, c ) m =
     in
     case m of
         Just n ->
-            (\k -> k + n + g + h) d
+            (λk -> k + n + g + h) d
 
         Nothing ->
             0

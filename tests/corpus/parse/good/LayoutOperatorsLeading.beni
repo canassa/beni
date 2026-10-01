@@ -10,8 +10,8 @@ type Msg
 
 total xs =
     xs
-        |> List.map (\x -> x * 2)
-        |> List.filter (\x -> x > 2)
+        |> List.map (λx -> x * 2)
+        |> List.filter (λx -> x > 2)
         |> List.sum
 
 

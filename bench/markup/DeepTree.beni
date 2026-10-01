@@ -188,7 +188,7 @@ breadcrumbs path =
     <nav class="breadcrumb" aria-label="breadcrumbs">
         <ul>
             <For each={path} keyed>
-                {\segment index ->
+                {λsegment index ->
                     <li class={if index == List.length path - 1 then "is-active" else ""}>
                         <a
                             href="#${segment}"

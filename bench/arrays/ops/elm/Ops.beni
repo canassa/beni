@@ -41,7 +41,7 @@ swap xs i j =
     case ( get xs i, get xs j ) of
         ( Just a, Just b ) ->
             List.indexedMap xs
-                (\k x ->
+                (λk x ->
                     if k == i then
                         b
                     else if k == j then

@@ -30,7 +30,7 @@ update msg model =
             { model | rows = List.reverse model.rows }
 
         Drop ->
-            { model | rows = List.filter model.rows (\n -> n /= 2 && n /= 3) }
+            { model | rows = List.filter model.rows (λn -> n /= 2 && n /= 3) }
 
 
 nothing : Html msg
@@ -54,8 +54,8 @@ view model =
         <p>before {maybeBold model.on} after</p>
         <p>a {nothing} b</p>
         <ul>
-            <For each={model.rows} keyed={\n -> n}>
-                {\n ->
+            <For each={model.rows} keyed={λn -> n}>
+                {λn ->
                     if modBy n 2 == 1 then
                         <></>
                     else

@@ -7,7 +7,7 @@
 -- values and equally refused; with it, the report still fires, and the
 -- message names `deferred` as the step in between.
 pub deferred : () -> Int
-deferred = \_ -> seed + 1
+deferred = λ_ -> seed + 1
 
 
 pub seed : Int

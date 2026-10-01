@@ -44,7 +44,7 @@ boxes u =
             let
                 g h = o.map2 h
             in
-            ( g (\x -> x + 1), g String.fromInt )
+            ( g (λx -> x + 1), g String.fromInt )
 
 
 pub size (Box _) u = 1

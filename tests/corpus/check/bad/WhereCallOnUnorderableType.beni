@@ -26,8 +26,8 @@ cmpGen x y = x.compare y
 
 
 pub bad1 : Bool
-bad1 = eqGen (Handler (\n -> n)) (Handler (\n -> n))
+bad1 = eqGen (Handler (λn -> n)) (Handler (λn -> n))
 
 
 pub bad2 : Order
-bad2 = cmpGen (Handler (\n -> n)) (Handler (\n -> n))
+bad2 = cmpGen (Handler (λn -> n)) (Handler (λn -> n))

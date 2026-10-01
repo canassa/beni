@@ -52,5 +52,5 @@ main =
         , show (( 1, "b" ).compare ( 1, "a" ))
         , yes (( Red, 2 ).eq ( Red, 2 ))
         , show ((3).compare 4)
-        , yes ({ eq = \n -> n > 2 }.eq 3)
+        , yes ({ eq = λn -> n > 2 }.eq 3)
         ]

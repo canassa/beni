@@ -40,23 +40,23 @@ rightSide = Dict.fromList [ ( 2, 22 ), ( 3, 33 ), ( 5, 55 ) ]
 main : Program
 main =
     let
-        mapped = Dict.map numbers (\k value -> note "Dict.map" k + value)
-        kept = Dict.filter numbers (\k _ -> note "Dict.filter" k /= 3)
-        ( splitKept, splitDropped ) = Dict.partition numbers (\k _ -> note "Dict.partition" k /= 3)
+        mapped = Dict.map numbers (λk value -> note "Dict.map" k + value)
+        kept = Dict.filter numbers (λk _ -> note "Dict.filter" k /= 3)
+        ( splitKept, splitDropped ) = Dict.partition numbers (λk _ -> note "Dict.partition" k /= 3)
 
         merged =
             Dict.merge leftSide
                 rightSide
                 0
-                (\k _ acc -> note "merge.left" k + acc)
-                (\k _ _ acc -> note "merge.both" k + acc)
-                (\k _ acc -> note "merge.right" k + acc)
+                (λk _ acc -> note "merge.left" k + acc)
+                (λk _ _ acc -> note "merge.both" k + acc)
+                (λk _ acc -> note "merge.right" k + acc)
 
-        setMapped = Set.map members (\v -> note "Set.map" v * 10)
-        setKept = Set.filter members (\v -> note "Set.filter" v /= 3)
+        setMapped = Set.map members (λv -> note "Set.map" v * 10)
+        setKept = Set.filter members (λv -> note "Set.filter" v /= 3)
 
         ( setSplitKept, setSplitDropped ) =
-            Set.partition members (\v -> note "Set.partition" v /= 3)
+            Set.partition members (λv -> note "Set.partition" v /= 3)
     in
     Node.printLines
         [ Debug.toString (Dict.toList mapped)

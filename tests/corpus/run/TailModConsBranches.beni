@@ -128,7 +128,7 @@ show xs = String.join (List.map xs String.fromInt) ","
 opsFor : Int -> List Op
 opsFor n =
     List.map (List.range 1 n)
-        (\i ->
+        (λi ->
             if modBy i 3 == 0 then
                 Skip
             else if modBy i 3 == 1 then
@@ -158,7 +158,7 @@ main =
         , String.join
             (List.map
                 (chunks [ 1, 2, 3, 4, 5 ] 2)
-                (\c -> String.join (List.map c String.fromInt) "+")
+                (λc -> String.join (List.map c String.fromInt) "+")
             )
             ","
         , String.fromInt (List.length (chunks big 3))

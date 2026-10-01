@@ -15,6 +15,6 @@ f z =
 
 g : Int -> Int
 g z =
-    case (\y -> ( y, y ) == y) of
+    case (λy -> ( y, y ) == y) of
         _ ->
             z

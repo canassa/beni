@@ -1,10 +1,10 @@
 -- Formatter: lambdas without spaces, a lambda body on the next line at an
 -- odd column, a lambda with destructuring parameters, a lambda argument
 -- broken mid-body; expected: `\x -> x` spacing and canonical body placement.
-f=\x->x+1
-g = \a b ->
+f=λx->x+1
+g = λa b ->
       a+b
-h = \(a,b) {c} _->
+h = λ(a,b) {c} _->
   a+b+c
-k = List.map [ 1, 2 ] (\x->
+k = List.map [ 1, 2 ] (λx->
   x*2)

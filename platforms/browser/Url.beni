@@ -187,6 +187,6 @@ percentDecode str =
     -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
     -- thrown on (CLAUDE.md rule 9).
     Js.catchIf
-        (\() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
-        (\error -> Js.instanceOf error (Js.global "URIError"))
-        (\_ -> Nothing)
+        (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+        (λerror -> Js.instanceOf error (Js.global "URIError"))
+        (λ_ -> Nothing)

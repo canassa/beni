@@ -29,12 +29,12 @@ chain : Schema Chain Chain
 chain =
     Schema.recursive
         "Chain"
-        (\self ->
+        (λself ->
             let
                 link =
                     Schema.injection
                         Link
-                        (\c ->
+                        (λc ->
                             case c of
                                 Link r ->
                                     Just r
@@ -45,8 +45,8 @@ chain =
 
                 end =
                     Schema.injection
-                        (\() -> End)
-                        (\c ->
+                        (λ() -> End)
+                        (λc ->
                             case c of
                                 End ->
                                     Just ()
@@ -111,7 +111,7 @@ issues r =
             String.join
                 (List.map
                     found
-                    (\i ->
+                    (λi ->
                         Show.issue { i | path = [] }
                             ++ " at depth "
                             ++ String.fromInt (List.length i.path)
@@ -127,15 +127,15 @@ at d n =
         ++ ", "
         ++ String.fromInt n
         ++ " links: "
-        ++ Show.result (Schema.parseWith chain (bound d) (text n)) (\c -> String.fromInt (links c))
+        ++ Show.result (Schema.parseWith chain (bound d) (text n)) (λc -> String.fromInt (links c))
         ++ " / "
         ++ Show.result
             (Schema.decodeWith chain (bound d) (typed n))
-            (\c -> String.fromInt (links c))
+            (λc -> String.fromInt (links c))
         ++ " / "
         ++ Show.result
             (Schema.printWith chain (bound d) (typed n))
-            (\s -> String.fromInt (String.length s))
+            (λs -> String.fromInt (String.length s))
 
 
 over : Int, Int -> String
@@ -182,20 +182,20 @@ main =
         , at Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2)
         , over Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2 + 1)
         , "-- the default is 512"
-        , Show.result (Schema.parse chain (text 256)) (\c -> String.fromInt (links c))
+        , Show.result (Schema.parse chain (text 256)) (λc -> String.fromInt (links c))
         , issues (Schema.parse chain (text 257))
         , "-- options"
         , issues (Schema.parseWith chain (bound (Schema.maxDepthCeiling + 1)) (text 0))
         , issues (Schema.parseWith chain (bound (-1)) (text 0))
         , issues (Schema.decodeWith Schema.int (bound 0) 5)
         , "-- a Value"
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) (\s -> s)
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) (\s -> s)
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) (λs -> s)
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) (λs -> s)
         , issues (Schema.printWith Schema.value (bound 3) (nested 5))
         , issues (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 4 ])
-        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) (\s -> s)
+        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) (λs -> s)
         , issues
-            (Schema.parse Schema.value deep |> Result.andThen (\v -> Schema.print Schema.value v))
+            (Schema.parse Schema.value deep |> Result.andThen (λv -> Schema.print Schema.value v))
         ]
 
 

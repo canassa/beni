@@ -43,7 +43,7 @@ main =
         a = next ()
         b = next ()
         c = next ()
-        later = \w -> shout w
+        later = λw -> shout w
     in
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"

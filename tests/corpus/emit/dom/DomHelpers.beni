@@ -20,7 +20,7 @@ page name n = <div>{label name n}{label "fixed" 1}</div>
 
 
 pub rows : List String -> Html msg
-rows names = <ul><For each={names}>{\name -> <li>{label name 0}</li>}</For></ul>
+rows names = <ul><For each={names}>{λname -> <li>{label name 0}</li>}</For></ul>
 
 
 same : a, a -> Html msg

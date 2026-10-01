@@ -18,8 +18,8 @@ build n acc =
         let
             _ = Io.sleep 0
         in
-        build (n - 1) [ (\x -> x + n), ...acc ]
+        build (n - 1) [ (λx -> x + n), ...acc ]
 
 
 main : Program
-main = Io.run (\() -> Node.printLines (List.map (build 3 []) (\f -> String.fromInt (f 0))))
+main = Io.run (λ() -> Node.printLines (List.map (build 3 []) (λf -> String.fromInt (f 0))))

@@ -672,7 +672,7 @@ is what makes the library the semantics of a declaration:
 | a record body | `record fs mapping mapping`; the two mappings are often one polymorphic pair, because both records have the declared field names |
 | `tagged "k" of A as "a" { … } \| B` | `tagged "k" [ variant "A" "a" payload injE injA, nullary "B" "B" injE injA ]`, where the payload is a `record` |
 | a parameter `a` | an ordinary function argument: `page : Schema e a -> Schema (Page e) (Page a)` |
-| a reference to a recursive schema | `recursive "Tree" (\tree -> …)` |
+| a reference to a recursive schema | `recursive "Tree" (λtree -> …)` |
 
 ```elm
 -- §2's `User`, built: Encoded and Type are both { userId : Int, nickname : Presence (Nullable String) }.

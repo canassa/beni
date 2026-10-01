@@ -35,7 +35,7 @@ call =
     List.foldl
         [ "some", "long", "list", "of", "strings", "here" ]
         0
-        (\item acc -> acc + String.length item * 2)
+        (λitem acc -> acc + String.length item * 2)
 
 
 signature :

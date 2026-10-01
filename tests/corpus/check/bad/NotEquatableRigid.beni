@@ -7,4 +7,4 @@
 -- `rigid_variable` reason, which would say the type could not be compared
 -- rather than what to write.
 pub contains : a, List a -> Bool
-contains needle xs = List.any xs (\x -> x == needle)
+contains needle xs = List.any xs (λx -> x == needle)

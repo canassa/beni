@@ -12,7 +12,7 @@ f u =
     let
         g k = k (u?)
     in
-    ( g (\v -> Ok v), g (\v -> Ok (String.fromInt v)) )
+    ( g (λv -> Ok v), g (λv -> Ok (String.fromInt v)) )
 
 
 main : Program

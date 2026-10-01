@@ -22,7 +22,7 @@ page name =
             <Card.badge label="new">hot &amp; fresh</Card.badge>
         </Card>
         <Card {...Card.defaults} title="Spread" />
-        <Card.listOf items={[ "a", "b" ]}>{\item -> <li>{item}</li>}</Card.listOf>
+        <Card.listOf items={[ "a", "b" ]}>{λitem -> <li>{item}</li>}</Card.listOf>
     </main>
 
 

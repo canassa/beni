@@ -22,7 +22,7 @@ same x = x == x
 
 pub sameL : Pred a
     where a.eq : a, a -> Bool
-sameL = \x -> x == x
+sameL = λx -> x == x
 
 
 pub sameP : Pred a

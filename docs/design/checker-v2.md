@@ -470,7 +470,7 @@ f u =
         g k =
             k (u?)
     in
-    ( g (\v -> Ok v), g (\v -> Ok (String.fromInt v)) )
+    ( g (λv -> Ok v), g (λv -> Ok (String.fromInt v)) )
 ```
 
 the subject `u` is `f`'s and the target is `g`'s own result. Sharing one rank lowered the target
@@ -649,7 +649,7 @@ case branch's constraints. The node runs the occurs check over that lambda's par
 branch's pattern variables at that point in the tree, before any enclosing constraint is solved.
 This is Elm's placement, where each lambda and branch is a `CLet` header.
 
-So `(\y -> y y) "s"` reports `infinite_type` at `y` before `"s"` is unified against the unrolled
+So `(λy -> y y) "s"` reports `infinite_type` at `y` before `"s"` is unified against the unrolled
 arrow. `y` is then poisoned, and the application adds no second diagnostic. *Added 2026-09-24.*
 
 ### 6.4 Operator sections
@@ -1232,7 +1232,7 @@ dispatch-free 131 000-line corpus, over §18's 3 % line, so the checker takes §
 4's `touched` half and §7.5's `touched_len` are retired; a merge that needs them re-opens the
 question).
 - `binders_end` follows a **lambda's** body and a **`case` branch's** body — the placement §6.3 needs
-  (`(\y -> y y) "s"` is `infinite_type` at `y`, before `"s"` meets it).
+  (`(λy -> y y) "s"` is `infinite_type` at `y`, before `"s"` meets it).
 - A declaration's and a `let` definition's parameters are checked at their group's boundary, which
   follows their body directly; a `binders_end` of their own walked the same types twice.
 - At the boundary, parameters and pattern variables are checked before headers, so a cycle a
@@ -2125,7 +2125,7 @@ a spurious escape. v1 refused the unannotated order with `method_needs_annotatio
 **Order-dependent refusal made strict: D11 is stricter than Roc.** Take a module with:
 - `type K = K Int` and `type Box a = Box a`;
 - an unannotated `pub show (K n) u` that compares `Box 1 == Box 2` and `Box "x" == Box "y"`;
-- an unannotated `pub eq (Box a) (Box b)` whose body mentions `\w -> (K 0).show ()`.
+- an unannotated `pub eq (Box a) (Box b)` whose body mentions `λw -> (K 0).show ()`.
 
 `show` and `eq` form a cycle through dispatch, so v2 merges them (§10.4). Inside the merged group
 `eq` is monomorphic, so its uses at `Box Int` and `Box String` are a `type_mismatch` in **every**
@@ -3357,7 +3357,7 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   counts:
   - `definition(convention, params, body_is_lambda)` → `constant` (plain, no parameters, not a
     lambda: `const f = value`), `params` (`($m…, p…) => body`), `lambda` (`($m…, x…) => e` for a body
-    `\x… -> e`, with or without evidence — §8's narrow rule of `backend.md`), `applied`, and `thunk`
+    `λx… -> e`, with or without evidence — §8's narrow rule of `backend.md`), `applied`, and `thunk`
     (`($m…) => value`). **`applied`** is the zero-parameter `function` whose body is not a lambda:
     `($m…, $p1…$pn) => body($p1…$pn)` over `value_arity` fresh parameters, the body evaluated at each
     call. When the body is a reference to a constrained function of that arity (`h = maxOf`) the call
@@ -3389,7 +3389,7 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   the stack at its first call, while its twin without the `where` is `cyclic_value` — which is also
   what its twin would throw at load. So `defers` is true for `params` and `lambda` only, and a
   point-free member of a recursive group (`biggest = go` with `go` calling `biggest`) is refused
-  exactly as without the `where`; written `biggest = \xs acc -> go xs acc` it defers. `Lower`
+  exactly as without the `where`; written `biggest = λxs acc -> go xs acc` it defers. `Lower`
   still DEFINES an `applied` value as an arrow: only the cycle reading changed. Fixtures:
   `check/bad/EvidenceFunctionConstantCycle*.beni` (direct, mutual, partial application, through a
   lambda-valued declaration) and the accepted controls `run/EvidenceFunctionRecursionAccepted.beni`.
@@ -3406,7 +3406,7 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   module-level `let`s (`static-dispatch-spike.md` A.85, as amended; `language.md` §6).
 - **`constrained_constant` is narrowed to NON-function types** (rule 7). The bullet
   above keeping its scope assumed only unannotated `pub` values were at risk; an unannotated `pub`
-  of function type (`pub equals = (==)`, `pub eqs = \a b -> a == b`, `pub bigger = maxOf`) is
+  of function type (`pub equals = (==)`, `pub eqs = λa b -> a == b`, `pub bigger = maxOf`) is
   defined, called and imported as the function it is, so the refusal bought no guarantee. It now
   refuses only a zero-parameter unannotated `pub` whose type is not a function (a thunk). Spike
   §10.10 and the message's hint are amended with it.
@@ -4240,7 +4240,7 @@ resolution's scans). It is re-measured after v1 is deleted.
   so the line is inside this machine's noise, and the walks that remain start at binders whose
   types are almost all leaves (a leaf costs a `find` and a tag test). The flat case is **accepted
   over the line** rather than reduced: what it measures is `binders_end` after every lambda and
-  `case` branch, the placement §6.3 needs (`(\y -> y y) "s"` is
+  `case` branch, the placement §6.3 needs (`(λy -> y y) "s"` is
   `infinite_type` at `y` before `"s"` meets it), on a program that is nothing but lambdas and
   branches; the only reduction left is to drop that placement.
 - **`Walk.owned` yields constraint method types, and attaching lowers them (I15).** A variable's
@@ -5100,7 +5100,7 @@ hold the programs, and `ordering_test.zig` the second with its two `let` binding
   the warning is reported at the `For`, naming `keyed={…}` and `keyed={True}`. *Amended 2026-09-29:* the
   `keyed={…}` it names is one the item has — `keyed={.id}`, else the first primitive-`eq` field of
   a record item by name text — and, for an item that is not a record or has no such field, a key
-  function, `keyed={\item -> …}`.
+  function, `keyed={λitem -> …}`.
 
 **`Show`**, likewise: `when : Maybe a`; `fallback : H m`; the body a row as `For`'s, arity 1 only;
 `keyed={f}` as `For`'s, with the same `key(k)` obligation. Bare `keyed` and `keyed={True}` are the

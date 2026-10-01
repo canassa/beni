@@ -10,8 +10,8 @@ check flag =
     let
         same =
             if flag then
-                \a b -> a == b
+                λa b -> a == b
             else
-                \a b -> a /= b
+                λa b -> a /= b
     in
     same "a" "a" && same 'b' 'b'

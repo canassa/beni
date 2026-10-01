@@ -50,7 +50,7 @@ swapAt : List Row, Int, Int -> List Row
 swapAt rows i j =
     case ( List.drop rows i |> List.head, List.drop rows j |> List.head ) of
         ( Just a, Just b ) ->
-            List.indexedMap rows (\k r -> if k == i then b else if k == j then a else r)
+            List.indexedMap rows (λk r -> if k == i then b else if k == j then a else r)
 
         _ ->
             rows
@@ -68,7 +68,7 @@ update : Msg, List Row -> List Row
 update msg rows =
     case msg of
         RemoveMiddle ->
-            List.filter rows (\r -> r.id /= 3)
+            List.filter rows (λr -> r.id /= 3)
 
         SwapInner ->
             swapAt rows 1 (List.length rows - 2)
@@ -80,12 +80,12 @@ update msg rows =
             insertAt rows 2 (row 7 "g")
 
         Replace ->
-            List.map rows (\r -> if r.id == 7 then row 8 "h" else r)
+            List.map rows (λr -> if r.id == 7 then row 8 "h" else r)
 
         EditEnd ->
             List.indexedMap
                 (List.drop rows 1)
-                (\k r ->
+                (λk r ->
                     if k == List.length rows - 2 then
                         { r | label = r.label ++ "!", done = True }
                     else
@@ -107,12 +107,12 @@ update msg rows =
             List.foldr
                 rows
                 []
-                (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else [ r, ...kept ])
+                (λr kept -> if List.any kept (λk -> k.id == r.id) then kept else [ r, ...kept ])
 
         Flip ->
             List.indexedMap
                 (swapAt rows 0 (List.length rows - 1))
-                (\k r -> if k == List.length rows - 1 then { r | done = not r.done } else r)
+                (λk r -> if k == List.length rows - 1 then { r | done = not r.done } else r)
 
         Twins ->
             insertAt (insertAt rows 1 (row 9 "i")) 3 (row 9 "j")
@@ -141,14 +141,14 @@ view rows =
         <button id="flip" onClick={Flip}>flip</button>
         <button id="twins" onClick={Twins}>twins</button>
         <ul id="at">
-            <For each={rows} keyed={.id}>{\r k -> <li><input />{r.label} at {k}</li>}</For>
+            <For each={rows} keyed={.id}>{λr k -> <li><input />{r.label} at {k}</li>}</For>
         </ul>
         <ul id="drawn">
             <For each={rows} keyed={.id}>{viewRow}</For>
         </ul>
         <ol id="framed">
             <li>first</li>
-            <For each={rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+            <For each={rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
             <li>last</li>
         </ol>
     </main>

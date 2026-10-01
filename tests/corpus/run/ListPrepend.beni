@@ -25,7 +25,7 @@ summary : List Int -> String
 summary xs =
     String.fromInt (List.length xs)
         ++ ":"
-        ++ String.fromInt (List.foldl (List.indexedMap xs (\i x -> (i + 1) * x)) 0 (+))
+        ++ String.fromInt (List.foldl (List.indexedMap xs (λi x -> (i + 1) * x)) 0 (+))
 
 
 tail : List Int -> List Int

@@ -126,5 +126,5 @@ main =
         , String.fromInt (total [] 100)
         , String.fromInt (total (List.map (List.range 1 90) tokenFor) 0)
         , String.fromInt
-            (List.foldl (List.map (List.range 1 9) tokenFor) 0 (\t acc -> acc + score t))
+            (List.foldl (List.map (List.range 1 9) tokenFor) 0 (λt acc -> acc + score t))
         ]

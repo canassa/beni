@@ -7,4 +7,4 @@ g r = Basics.eq r.f r.f
 
 
 use : Bool
-use = g { f = \n -> n + 1 }
+use = g { f = λn -> n + 1 }

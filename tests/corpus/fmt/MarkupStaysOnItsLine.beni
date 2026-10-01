@@ -5,11 +5,11 @@
 -- author broke, printed vertically the next time round, so formatting
 -- would not be a fixed point.
 form x =
-    <p><bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb /><For each={x.rows}>{\r -> <li>{r.name}</li>}</For></p>
+    <p><bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb /><For each={x.rows}>{λr -> <li>{r.name}</li>}</For></p>
 
 
 show model =
-    <li class={model.cls}> <b title={model.title} /><Show when={model.user} keyed>{\u -> <p>{u.name}</p>}</Show></li>
+    <li class={model.cls}> <b title={model.title} /><Show when={model.user} keyed>{λu -> <p>{u.name}</p>}</Show></li>
 
 
 row r =

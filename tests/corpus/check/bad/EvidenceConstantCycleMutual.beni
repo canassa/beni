@@ -7,7 +7,7 @@
 
 evens : List a
     where a.eq : a, a -> Bool
-evens = List.filter odds (\x -> x == x)
+evens = List.filter odds (λx -> x == x)
 
 
 odds : List a

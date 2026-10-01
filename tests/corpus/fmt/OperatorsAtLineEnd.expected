@@ -2,8 +2,8 @@
 -- expected: break before the operator, one per line, operands indented 4.
 process xs =
     xs
-        |> List.map (\x -> x * 2)
-        |> List.filter (\x -> x > 10)
+        |> List.map (λx -> x * 2)
+        |> List.filter (λx -> x > 10)
         |> List.sum
 
 

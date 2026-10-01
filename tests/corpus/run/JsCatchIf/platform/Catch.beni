@@ -44,7 +44,7 @@ message err = Js.to (Js.get err "message")
 pub tail : Bool -> String
 tail throws =
     Js.catchIf
-        (\() ->
+        (λ() ->
             let
                 _ = note "body"
             in
@@ -53,8 +53,8 @@ tail throws =
             else
                 "fine"
         )
-        (\err -> isType err)
-        (\err -> "caught ${message err}")
+        (λerr -> isType err)
+        (λerr -> "caught ${message err}")
 
 
 --| Bound, then used after the `try`.
@@ -63,14 +63,14 @@ valued throws =
     let
         v =
             Js.catchIf
-                (\() ->
+                (λ() ->
                     if throws then
                         fail "TypeError" "bound"
                     else
                         1
                 )
-                (\err -> isType err)
-                (\_ -> 2)
+                (λerr -> isType err)
+                (λ_ -> 2)
 
         _ = note "after"
     in
@@ -83,14 +83,14 @@ discarded throws =
     let
         _ =
             Js.catchIf
-                (\() ->
+                (λ() ->
                     if throws then
                         fail "TypeError" "dropped"
                     else
                         note "body"
                 )
-                (\err -> isType err)
-                (\err -> note "caught ${message err}")
+                (λerr -> isType err)
+                (λerr -> note "caught ${message err}")
 
         _ = note "after"
     in
@@ -102,19 +102,19 @@ discarded throws =
 pub rethrown : () -> String
 rethrown () =
     Js.catchIf
-        (\() ->
+        (λ() ->
             Js.catchIf
-                (\() ->
+                (λ() ->
                     let
                         _ = note "inner"
                     in
                     fail "RangeError" "far"
                 )
-                (\err -> isType err)
-                (\_ -> "inner took it")
+                (λerr -> isType err)
+                (λ_ -> "inner took it")
         )
-        (\err -> Js.instanceOf err (Js.global "RangeError"))
-        (\err -> "outer took ${message err}")
+        (λerr -> Js.instanceOf err (Js.global "RangeError"))
+        (λerr -> "outer took ${message err}")
 
 
 --| A test that reads what was thrown: a `DOMException` caught by its
@@ -123,19 +123,19 @@ rethrown () =
 pub named : String -> String
 named name =
     Js.catchIf
-        (\() ->
+        (λ() ->
             Js.catchIf
-                (\() ->
+                (λ() ->
                     Js.throw (Js.construct (Js.global "DOMException") [ Js.from "m", Js.from name ])
                 )
-                (\err ->
+                (λerr ->
                     Js.instanceOf err (Js.global "DOMException")
                         && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
                 )
-                (\_ -> "over the quota")
+                (λ_ -> "over the quota")
         )
-        (\err -> Js.instanceOf err (Js.global "DOMException"))
-        (\err -> "thrown on: ${nameOf err}")
+        (λerr -> Js.instanceOf err (Js.global "DOMException"))
+        (λerr -> "thrown on: ${nameOf err}")
 
 
 nameOf : Js.Value -> String
@@ -146,9 +146,9 @@ nameOf err = Js.to (Js.get err "name")
 pub renamed : () -> String
 renamed () =
     Js.catchIf
-        (\() -> fail "TypeError" "two names")
-        (\first -> isType first)
-        (\second -> message second)
+        (λ() -> fail "TypeError" "two names")
+        (λfirst -> isType first)
+        (λsecond -> message second)
 
 
 --| A function made by a call that records it.
@@ -157,7 +157,7 @@ make s v =
     let
         _ = note "make ${s}"
     in
-    \() ->
+    λ() ->
         let
             _ = note s
         in
@@ -169,7 +169,7 @@ testOf s =
     let
         _ = note "make ${s}"
     in
-    \err ->
+    λerr ->
         let
             _ = note s
         in
@@ -181,7 +181,7 @@ handlerOf s =
     let
         _ = note "make ${s}"
     in
-    \_ ->
+    λ_ ->
         let
             _ = note s
         in
@@ -194,7 +194,7 @@ pub ordered : Bool -> Int
 ordered throws =
     Js.catchIf
         (if throws then
-            \() -> fail "TypeError" "made"
+            λ() -> fail "TypeError" "made"
          else
             make "body" 7
         )
@@ -226,7 +226,7 @@ apply k f t h = k f t h
 pub sumTo : Int, Int -> Int
 sumTo n acc =
     if n == 0 then
-        Js.catchIf (\() -> acc) (\err -> isType err) (\_ -> 0)
+        Js.catchIf (λ() -> acc) (λerr -> isType err) (λ_ -> 0)
     else
         sumTo (n - 1) (acc + n)
 

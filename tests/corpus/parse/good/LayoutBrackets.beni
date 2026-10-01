@@ -19,7 +19,7 @@ record =
 
 call =
         List.map
-  (\x -> x)
+  (λx -> x)
      [ 1 ]
 
 

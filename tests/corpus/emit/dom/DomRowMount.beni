@@ -27,7 +27,7 @@ pub after : Model -> Html Msg
 after model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {\row ->
+            {λrow ->
                 <li
                     class={if model.picked == row.id then "on" else ""}
                     style={[ ( "order", String.fromInt row.id ) ]}
@@ -44,7 +44,7 @@ pub before : Model -> Html Msg
 before model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {\row -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}
+            {λrow -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}
         </For>
     </ul>
 
@@ -53,6 +53,6 @@ pub toggled : Model -> Html Msg
 toggled model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {\row -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}
+            {λrow -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}
         </For>
     </ul>

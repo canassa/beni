@@ -20,7 +20,7 @@ pub foreign impure spawn : (() -> String) -> Int
 
 
 pub onType : (Int -> String) -> Int
-onType f = onEvent (\n -> f n)
+onType f = onEvent (λn -> f n)
 
 
 pub relay : (Int -> String) -> Int
@@ -34,7 +34,7 @@ plain = onType String.fromInt
 pub logged : Int
 logged =
     onEvent
-        (\n ->
+        (λn ->
             let
                 () = log "event"
             in
@@ -45,16 +45,16 @@ logged =
 pub later : Int
 later =
     onEvent
-        (\n ->
+        (λn ->
             let
-                fetch = \() -> get n
+                fetch = λ() -> get n
             in
             "later"
         )
 
 
 pub spawned : Int
-spawned = spawn (\() -> get 1)
+spawned = spawn (λ() -> get 1)
 
 
 pub type Key

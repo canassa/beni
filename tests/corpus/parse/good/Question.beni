@@ -14,7 +14,7 @@ chained r = Ok (r??)
 
 
 piped : String -> Result String Int
-piped s = parseAge s? |> (\n -> n * 2) |> Ok
+piped s = parseAge s? |> (λn -> n * 2) |> Ok
 
 
 inLet : List String -> Result String Int

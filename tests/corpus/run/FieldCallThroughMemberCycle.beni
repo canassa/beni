@@ -33,7 +33,7 @@ pub mb (K n) y =
 
 pub mc (K n) y =
     let
-        _ = (K 1).ma { combine = \z -> z + 1 }
+        _ = (K 1).ma { combine = λz -> z + 1 }
     in
     y
 

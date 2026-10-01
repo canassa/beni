@@ -12,7 +12,7 @@ import Node exposing (Program)
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
                 _ = Fault.breakReads ()
                 _ = Debug.log () "before the read"

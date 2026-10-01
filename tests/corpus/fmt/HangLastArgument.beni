@@ -22,5 +22,5 @@ tall items = Html.ul [ class "list" ] [ viewItem "first", viewItem "second", vie
 middle = f [ 1
     , 2 ] [ 3 ]
 wide = someFunction aVeryLongArgumentNameNumberOne aVeryLongArgumentNameNumberTwo aVeryLongArgumentName3 [ 1 ]
-paren xs = List.map xs (\x -> x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789)
+paren xs = List.map xs (λx -> x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789)
 plain = someFunction aVeryLongArgumentNameNumberOne aVeryLongArgumentNameNumberTwo aVeryLongArgument3456789

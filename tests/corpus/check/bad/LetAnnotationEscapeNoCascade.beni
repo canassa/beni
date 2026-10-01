@@ -5,7 +5,7 @@
 --
 coerce : b -> String
 coerce x =
-    (\z ->
+    (λz ->
         let
             g : a -> a
             g y = z

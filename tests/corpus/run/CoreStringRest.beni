@@ -76,15 +76,15 @@ main =
         , String.padRight "abc" 2 '.'
         , String.map
             "a/b/c"
-            (\char ->
+            (λchar ->
                 if char == '/' then
                     '.'
                 else
                     char
             )
         , String.filter "R2-D2" Char.isDigit
-        , String.foldl "time" "" (\char acc -> String.cons acc char)
-        , String.foldr "time" "" (\char acc -> String.cons acc char)
+        , String.foldl "time" "" (λchar acc -> String.cons acc char)
+        , String.foldr "time" "" (λchar acc -> String.cons acc char)
         , flag (String.any "R2-D2" Char.isDigit)
         , flag (String.all "2D2" Char.isDigit)
         , flag (String.any "" Char.isDigit)

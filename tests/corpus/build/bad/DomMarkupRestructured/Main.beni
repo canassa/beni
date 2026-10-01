@@ -30,4 +30,4 @@ break = <br>x</br>
 main : Browser.Program
 main =
     Browser.program
-        { init = (), update = \_ m -> m, view = \_ -> <div>{[ para, table, style, break ]}</div> }
+        { init = (), update = λ_ m -> m, view = λ_ -> <div>{[ para, table, style, break ]}</div> }

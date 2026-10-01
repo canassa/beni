@@ -23,11 +23,11 @@ worker name ms =
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
-                a = Task.spawn (\() -> worker "a" 30)
-                b = Task.spawn (\() -> worker "b" 10)
-                c = Task.spawn (\() -> worker "c" 20)
+                a = Task.spawn (λ() -> worker "a" 30)
+                b = Task.spawn (λ() -> worker "b" 10)
+                c = Task.spawn (λ() -> worker "c" 20)
                 total = Task.join a + Task.join b + Task.join c
                 again = Task.join b
             in

@@ -18,7 +18,7 @@ h = minOf
 
 pub lam : a, a -> Bool
     where a.eq : a, a -> Bool
-lam = \x y -> x == y
+lam = λx y -> x == y
 
 
 pub blank : List a

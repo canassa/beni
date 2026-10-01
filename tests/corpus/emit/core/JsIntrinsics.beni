@@ -44,7 +44,7 @@ pair x = Js.array [ x, Js.null, Js.undefined ]
 
 
 pub callback : Js.Value -> Js.Value
-callback f = Js.apply f [ Js.from (\n -> n + 1) ]
+callback f = Js.apply f [ Js.from (λn -> n + 1) ]
 
 
 pub back : Js.Value -> Int

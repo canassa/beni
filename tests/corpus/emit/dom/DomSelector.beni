@@ -39,23 +39,23 @@ pub table : Model -> Html Msg
 table model =
     <div>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={rowClass model row} onClick={Select row.id}>{row.label}</p>}
+            {λrow -> <p class={rowClass model row} onClick={Select row.id}>{row.label}</p>}
         </For>
-        <For each={model.rows} keyed={\r -> r.id}>
-            {\{ id, label } -> <p class={if Just id == model.selected then "on" else ""}>{label}</p>
+        <For each={model.rows} keyed={λr -> r.id}>
+            {λ{ id, label } -> <p class={if Just id == model.selected then "on" else ""}>{label}</p>
             }
         </For>
         <For each={model.ids}>
-            {\n -> <p class={if n /= model.cursor then "" else "at"}>{n}</p>}
+            {λn -> <p class={if n /= model.cursor then "" else "at"}>{n}</p>}
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row ->
+            {λrow ->
                 <p class={model.theme}>
                     <b class={if model.cursor == row.id then "at" else ""}>{row.label}</b>
                 </p>
             }
         </For>
         <For each={model.rows} keyed={.id}>
-            {\row -> <p class={isOn model.selected row.id}>{row.label}</p>}
+            {λrow -> <p class={isOn model.selected row.id}>{row.label}</p>}
         </For>
     </div>

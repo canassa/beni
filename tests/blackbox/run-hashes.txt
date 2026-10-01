@@ -1,114 +1,114 @@
-abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 acce67c94afc6e2ac9b2b397ddb426da14e03842598bd512446db754a4047e9a
+abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 f1c31f903b49bbb937979613da96325cd4edbcd1974514d77709d856b4e268d6
 abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 c3725706967ad7b83762bc5b4b1ec7c7903986ea7fca211c9a0eba893007ea7c
 abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 d7b1c0f7dec702cefcb6503d301b201a32c8959eda4f4eac08abfa49b16d795e
 abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 e5d2f58954cc9f75325bb3864433c6a9c6cd15c19f86200eee24ffd00b350bee
-abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 c07b75356e2faf3f09ad7a5757ecf1611e0dc8fab5b215b3224294dce362af6a
+abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 4d5ebcd944346d1751c73493cf09d31a5cf5c4049d59134c4bac9e86d09ff660
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 2a00ad52fe4da4115caede29ee4214d4015c967e30edbe8ecb0a38792e91e705
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 81d3326af202b66b6f17f6b5f0248a8eec145b4a3de8da707df867dcef3fee51
 abuse_wide_test.test.== on a record builds and runs at the widest positional evidence #0 7462d99ee15efcbd907f474d5cb460453ab350dc8e61cbf84fb7de1e7bc6c78d
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 231bf6189ff43895017e691f770c5f86802e2664324ba07831e5c440175e1886
-abuse_wide_test.test.a 2 000-element list builds and runs #0 e983b1127c483b1bf624e76dad3515a4c9939b60345875d6bd9a0e4dbcdb6bfc
+abuse_wide_test.test.a 2 000-element list builds and runs #0 2202a52b3eb9cc837ab9e1a7365db33aeef818b048215a17b4197f9a7166bb44
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 24f42e1397d372ce723b510806bb40ada963eddf79d9dcdce2f784bc4d9deb0e
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 374c9519e6eef4d7c8586677ba535daf549a9acddf99b11ab10d4c8f1a16aa36
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 500e7360c506b5a5061bbee89ff1cbed21f54510630e32699ac6812625c9930a
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 588f1094cbe4c1c6bd68cace52469e901bb36192246608c020ab6da6c1b6c210
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 cfa93b25de5f50473099e4d01f295c6302009aadc37bc411b6c2d507d2d8113e
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 1105cc6ea49d3dd6549a36c3ac3d71f9691c8bf116bc0b1f6456f54ffeb07b88
-abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 e3fa1c2662bcaef00c2224aeb8f7b803a7abc3f17cb368810df6aa427ae3d3e4
+abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 78ef2b98ee176b403d89a0f35b94a50a77db0cd772c2d9f4b6914e37188e75a0
 abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 2b25b39357de28ca083b5bda0d587465f17ec796df60afcf1bf95a6e97606518
-abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 9f6b4ef312a0798933ad812fca06269241d3a2b8a533159c66eb0f3ff43a06dc
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 1478ccb5927c7f300bac291d2114fbcada489ad42a80a380b35d842482f01577
 abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 7b6e9bc398c513c3a0f3e409fea30af910b1fc1d7154476714521532276c6be7
 blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 e587b06c4515ef718887181bd9f21f0267f67fefb2a24885db1dce8ef0b5ccda
 blackbox_test.test.a constrained value in a part position is handed its own evidence #0 c86bcaffc6218d000a1ac3e3d266cd74ef45152f6bd51709f198fc8b8ac60aca
-blackbox_test.test.a derived compare compiles, and so does List's #0 5a429fba38d91eeb01807cdb752e99ca7277af104a4b118481c552108d04716c
+blackbox_test.test.a derived compare compiles, and so does List's #0 9c9956abe6688e7b893b4de1c19aeabf61c2f82d34041c615e38a85699f98848
 blackbox_test.test.a derived compare compiles, and so does List's #1 cfcd4210f8cb01419520e30e1dad5fe5f012517d01e637d9199d442c3947e214
 blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #0 67199fcd708cbf4026168dd91621f402816980242db6fb8daf1c294c1ff15cf6
 blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #1 8c35b229e967e211811cf283a9818812e4ba022b6c54543f99383afde8e1ca31
 blackbox_test.test.a derived method of a submodule's namesake type does not collide with its values #0 b875ae5c7e59867b0aa51aa97a0875ca62c031b185a8945329b1fdf9f8dcfa74
-blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #0 08dde162ed6bed9d52309486da5fb03826c64596257826fc264e7baba07482da
-blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #1 9393aa76fa43eeb888caccce1e68951311b386b95685d8b9fcfff32743df8470
+blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #0 e64889c683df8743b67ade90d970a55c34096c237ad0b87d558bbd8e4d014a14
+blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #1 9cb19c172c611887927fa87458488a2461b305fa0e5acbc96cadafcfd7c7dda7
 blackbox_test.test.a private eq wins inside its module and is private_method from every other #0 de46d7898d2cfc9bb0a83adf39973fb292887a3b0f05853cabbc25eaed57dd57
-blackbox_test.test.a pub foreign with a where clause takes its evidence in front of its own arguments #0 f0b1fb7c4e1043def423a596e49a8958a0bb445bc77ddad899251e65be96c5db
+blackbox_test.test.a pub foreign with a where clause takes its evidence in front of its own arguments #0 f13461c571cef6cba364cc830d63f0b869afaf87d4f57b91ab78b0bad85fdc2f
 blackbox_test.test.a type that is not pub still exports the method another module derives for it #0 0774e9c06c0e45f752fe974da80d69f31b2f1a605984472a81e923a5d251cce0
-blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 d5cd13139f8a83b8056b631aaf0506c0a1391f6024bf2f3730ce2de3f4ea421d
-blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 5c6c59fb09f061d0f615beec833d54971b10b47ae01b6460a1c46333667cf9d5
+blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 1712aeafc15ce01518742102caef6ea44991e027c3fee3dee9013d659d210bbf
+blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 ef5ac9b45878a734b0e9b15dc8520d41198932135cb5fd5c06f30dbfa3f42668
 build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 aec9dd418b685babb0a3050bd6ea12566d4a2b976cf41135c209127995f8cec3
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 9c518c64e9802d75a87c04014d40048e943e2d3962e8098545b7203b3455a416
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 956b8f7870b45a0d4c0dc36e47f11b6dbd47fdfd3d6a0f452e0f3a37434e412c
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 2b159d9a3c7f13469a9cc94dabeb5eea4056e1230ca8683908ab849cb0a84348
-build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 888ed63a5741572660eae2662f171bc5c524067f8958c4e2f909112a76f83747
+build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 61b511132c2585bdda30abd3312392c659d32f95eeff7ae23471141777884496
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 aec9dd418b685babb0a3050bd6ea12566d4a2b976cf41135c209127995f8cec3
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 cdac621bf482e279bb2519706d41f958d79771b335422b31736674deb40d9f76
-build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 6fbc8647ded4eb21ba4f3ba16325099989888bcb4d410a371a92f818abc5c476
-build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 85a09936a70149435dcbc41c315f24492ef9915c133f5c402cd945d96a5247ab
-build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 1ea528a242e91578b8f85c4acdd04cc3e9c04e65ec6776919b3285bccf00c5c5
+build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 983ef003869cb87428073c62271d02c192d624d8f09852da36f0298c970957ba
+build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 d837c822f924365b63d9bd540207aa6730c09dbcc518e67eecf6340eb4d9df27
+build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 fb19b5680b2c6cc14db7a0d9920445473cece1d21f167be3b607daea05c783cf
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 d21891b4411feeca3433c1dd6d0367a0f30236ba37185f39749b37c4c98f0129
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 dd4fa0d6c1e2336b7237c7e49c7a72e8de55214293f8c5c288a32c0f1709f70b
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 81220066031a8d08054771d0fa54b92944900da528a121eb207a8452b2beb2b2
-build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 7070b8d99d0997cd5a369ac69b2082c95b1520c7e0c6864a0a3d2dad604126cb
+build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 7cf8c164d6279e9591c0baa9ffd8d4264ba984bcdb22a3e03d708dcf8a5f3cce
 build_test.test.a non-zero exit code from the platform reaches the process #0 28d05da57481a4660b58f74e3d2cd73a99319811660dbfeb7ffe40d1ac3ec9bc
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 e76b3aec8766ee907335d02c60c8707507933f6984f9bfbc312becb72c064f02
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 a0e4b491d513fc2cbccad375b8a0d1a4569b0bb2954865c79db389fa82eb3404
-build_test.test.a program computes something and prints the right answer #0 9ce1ce17c0ef3cce7d49406b26629c9fad2a433df3e86ee781a184ecb74674db
+build_test.test.a program computes something and prints the right answer #0 f66304770f1a5054d017317448b64b34bf2734fba4c4ff69a78cc155d3ec458b
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 9672e1d2f0cc4f6451b5ea35449ad21b362ee5dbd10cd8b0e59f4bed1f358c90
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 3c9b51814a2a8843401e90a5c77899433d6246486635fa4ffc57c9eb7fbb43ec
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 d74b6b9439bed8f5667bdb504a4df6fa98cb8bd6639c3eeb766f3c4304b491dd
-build_test.test.a saturated n-ary call emits a direct JavaScript call #0 5c35d59c399abc67f2d11c41d83536a5e1ce684e30ea356dec1993d189e6b113
+build_test.test.a saturated n-ary call emits a direct JavaScript call #0 3d5ec6456f6deecdeb4f9da6f393131344921db7897784e10e17ba99f86f6f2d
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 6963e62bc11eb54b5e4df8222ff0700e2352b4ad8a51c7a8658d51b77f892da0
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 2022537c75006053bd08ad500c62267748b0c8d263748f9ac1a6ef1a6fb3ed4b
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 39f42c56ef7af3883ea99dd1bf93184d378a837dda9244ff95c6c35f1eefd5ee
 build_test.test.a sibling whose names cannot move keeps its own module in a release application #0 639b0e65944c51ea2093f0082625acf36a431b954dae18f45bc09aa63ba4dc81
-build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 ca0711904735bb653e39578079768f4ce4e7621dae0d651706c30786fc28ed74
+build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 3a7ee7b203319b6eb01a53a7d2a06c381ade5ad5f97b457440dbec9573a55579
 build_test.test.a view formatted renders the page the view rendered #0 a8717e460b1af8fa74b626a92c2544ac02b04e7694bccaa1201c0d0a2fc216cd
 build_test.test.a view formatted renders the page the view rendered #1 a2aeebce77014e0fb2126f808bcaa18ccf04ffa59aebf0432809dca49049a812
-build_test.test.an unannotated pub function constant with a constraint builds and runs #0 c73e94f55ae1dc26a8dca5bbc182717119c831a159cb5d2b069ef0febc7e57a4
-build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 20885def44b8fe05bc24f3735206f4ced05fff34e839cac202be923a95af0b7b
-build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 022f9870b24d026d95efc0818161e3ed8ec8b4f9533c44e0956cd8791bf1258f
-build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 ac2dee9a72a6d60d0a1bd263c8a9444382001da9af66da9b061fd98c5e8dffbe
-build_test.test.core List's loops read and write their arrays in place #0 7ee3749eba083b53e15f17c6cefbf0320dfb9ecdbfc76f912722c5c8a4c9bd1b
-build_test.test.every emitted file is .mjs, the hand-written ones included #0 14895448f2171df3adb5e2263701f8a60e0d5fca74250ba003768587367de00f
-build_test.test.modules import each other through ESM, and the program runs #0 d316a7fdf9ede4d326641707a72e36e53b1d86279ead4c54fb2aa60bc9bebeae
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 baaec176d236878b94fbedbaf010ff3e6db738eaaa429c91eeff8dd88b4e21d4
+build_test.test.an unannotated pub function constant with a constraint builds and runs #0 3bf99643db9d16ca514bfeab2444cf968486fc850698b6925c4e3cbe73f96e83
+build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 b61e608c37fad870e25e0615d04c8c7a846c22ae297439ca6a61d4b1b7494561
+build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 a2353413647ca6481b2a047130a2f7e18165ea4d4f3ed72e5321a699a43d14e9
+build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 cd2343c242f2c72ef88fa58d7e8237992e250515d97c928401a629f0c5664cb8
+build_test.test.core List's loops read and write their arrays in place #0 cc2c3185a1e1ef4de884cb6d426fd133cb87e62703f48efb1a2b372dd7e07ae8
+build_test.test.every emitted file is .mjs, the hand-written ones included #0 2d67c2ffbb8b13d51a45cee21504fbeff25ebe086a4a67712271ac8a77135d61
+build_test.test.modules import each other through ESM, and the program runs #0 a83e732778197c9e6a331ef91dc51f31145fbce24ad6b73f1191e6d97994bb3a
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 1c542b4714bc07e4a847e8077026556f5e932d1fd864633f3d06af33fa21e9e3
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 50794d008baba2abdd35768b68ee25013c522bb1e9f18589c30e87baf5b7f71d
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 a9231d1b3ad944f236e84f92975a487ad41094656412e15f4f05a1973775a195
-cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 d6e4cb1df44204f71bf14a446023e87738b157300c65ddbcffdc1aeb68844989
-cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 577afd0da3a6dd432daa01ba42670f85e1293d3dfff6d15c90941158acfb51b1
-cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 8737dfaee6dcd2c22e4463dd3710c366cda04fbb74091032757429667f1603df
+cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 c8331c278087bc03a70474956285800af8b6ae7caed93ed4439512eecb7b013f
+cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 0d201ce2c095ab3271931a5c1a406d3d15d95cf10b1869e39cb06a17fc35cc24
+cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 bc4ef9b85cf85bb7a274d286c05e88d3434a735aa5051affbc4400db6ad37dec
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 f679e10ed548efb6cc37fa2215f5d03601a7eab5375bafd04e0e18bed57a9bff
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 4023e81f1963ba924508ee47f0c628856f2922416a4856687621d868b5efff86
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 edd7a2406324b9e698f8f55b17e6ac3dad4453a592a72d017389cd0fd5647608
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 8dace0f767c871ebef0642bebe06147135969110fc693f3831a0e02f1361360d
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 d2d3384d9e9a6ac260381da242a1e87c43613191496e5ae18a02d377f794d622
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 ea9ee48723c526eba6bc81b4f6d09ca93d24b3c2b471b4fe5ee24c0af28e1f4d
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #1 4b5b242269775681947e1014582a0f65160a629cb09217d24e893910773f3d87
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 e9daab7e0e46de4733282c51fbc94f1ad85bd60f6ee38c447c79ac771bc8a3d8
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 b888aba03daa9171290c2f9a4c50fc7d262014cf189734f68d6f754eb24e1672
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 d7f51c04f6f2a61512b9dcd8f171093d8a7ea6add00b2c119f1e014da0ace584
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 2308194a0b5c3370d615f5526f4cfca9ffbe3e4cd8bf652b934a721bbd9ed6b9
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 f6b1e6fe78df5038ab1b41a9c199bf4295a4ae5f7b709aa2cfc559b762190379
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 30e88bb72f3e96ab180374b6bce28a32753d59bc678e808346fa97709393350e
-cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 455dd0b7986feb3799dc6cf04c7b684fce527799bf4a98e013e4cdd10e39e8d8
-cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #0 f1f71399b1321ccd7a61266e1e97aa4daa007432715699fa8403a09f7c2f6250
-cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #1 e2cde2c98fd2e32a9a10913dc2575dc9976a87a8e4e839fa51091e3b09c8efd0
-cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 b06f2fffe0effb24871fbfd70cf9682c7ce1f808e7035bb250d7d7a34d973785
-cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 ee693ed16dce0da2d7f66f4419034ce626775308a60530ab544be9652161bb08
-cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 ab1cc581f8083300318a87a763a7644c4799672653216fb71ab5613044463365
-cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #1 4ebf9c9a39fb866b5efb701dedd90c2d741390e5130ebda285d35b10e5ad0b06
+cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 551a542dd3f76c8a470483a93c78d98a493bc1b92e294cdbaef94b35bf409583
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #0 0b2fb53fbf65f4d127939d03dc45fbf165951f70294c9d35c2a40d31d21dff1a
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #1 65163b5f97654d67d5e3df3105c23473acd509f8a171adb4c7020ae780fe1c0a
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 80e22207dc875de8386ac46ceb30c2dc3cf7d5a2f5fdcfa00216f1215e61f1f6
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 2436785f9944a6a739161d8cbf4c562c4e67144a15c88f447124a9eb02af8b20
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 1b4e1361e360a79469e89dae603e4888cb66ee3c61329724789814d645d39c09
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #1 ce7468f606dcb87eaaff7d1eb802a32e44893abc0f429106603414587710ac60
 cache_test.test.a warm rebuild is a cold build: a field added to a record alias #0 0690c8d8272dd80a5397eb4be85eed8dafccaed7e582239e86632e084e6c4fd9
 cache_test.test.a warm rebuild is a cold build: a function payload makes the type non-equatable #0 3e5a08c118e26e2b9904ccd0b6321acde674f195e5aeedc3351640b136a742eb
 cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #0 292cd3867c180c7d41a3ad68457d25c25fa089642d4e5c23b02879852e347920
-cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #1 95390acdc58d1124483dca83d00aa9f17300083b0fb669e20c7664f9cb87a020
-cache_test.test.a warm rebuild is a cold build: an error in a dependency fixed #0 d03269a2bdf7b1bf3aee3a85d581b8ef4f06e16eeeef848990cc4c82e34cd75a
+cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #1 9e8a50f5816ad70b38227d01ce3c155d97a3681d489b71a7266d7f31f63c3a30
+cache_test.test.a warm rebuild is a cold build: an error in a dependency fixed #0 7709e3cef06a3adff015c9a80daa5f73fef64e5de8e6c43e85145c716482a870
 cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #0 7bad286b33720aa6c787f3df1479b72377a09ee1d48e419774376caba7d5d6d1
 cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #1 4cba10a55f72c476423d7057204bd40a3f3644d910f5b3c74d43629ce16385f0
-cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 55f389d4e45c2b6f7df63724e88025c0e308b6b5dbde60fed1a6c4e2860c77d8
-cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 2a18a0748937d064e21eb3c096beeaa08c0dfb64086c7e43dd764ca693a5595b
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 2a5b3c9ba86b8b2dbe7d5a16be64ba5c15b0c6383947ff6fe25b5a5ba396fd5f
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 0ad68bfe7e58799c2a1ee169b3c0fe2cc4609de48817354590224228f27821dc
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache #0 1e0236f04fe2f84bbe9c8e78232099e7ca221209286178d8c20648b52077a62a
 cache_test.test.an imported type of 4 097 parameters compares in the wide form with only the importer edited #0 a97d5cd582b694e352e84f4a74b53a1dc7b7acf4e610bb2e1b8532c4fc800ede
-cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 613ac425fb7088e4ee0bf76e3d281a7f12dae3e34fd7706c79d060fda36422e0
+cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 cf8972c377fc4e662f3105f8a250edc72ab06cc39f9421c967a6b169a75dada0
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 b31a1a1241af146481b0d86eb82e5fed50a0ef103fb5ad35167650612526acee
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 ea1bfc8d2a205bfe800b046d54138a9fbb9cebbfef9808b26f91544e70e9878a
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 e3bf5537750eb05cc779c9920d9613f49387c691fb86766521cf7748d8ae3983
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 4725a5a602dc941de3d6722b5071e13060e3faacafdce312dd8cb22bf8a024de
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 524251e675fd990301b69f467fd8a6e5046f86a676b17df06ce9665867ddec95
-iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 085df15ce241e8b0a931a398fc64741f6f7382623db038d5a72984a500ea29c9
-ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 2b02ddd8b68316b01ab4c2da17b80889df310662add0add4610d9716834719a9
-ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 7e473609a323e568efc45915b3401c6c50d96f1d891e96e58c676967a5f91f2a
-ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 cb4290ed251fcd419d7f1034b71f8d8a5432ff7a8082f1514512e91752941c4f
+iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 3f1bbcfb201438e2140087570ec69f27054c8ff938d0eacc4576bc02014fd047
+ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 02f67374422e0141e8255e495f1c63909734fa12a80d13132bcb6f2bae47bceb
+ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 e2b886f3d5d46afe10a81c23b0384e62186c4ba3abb05417d7cc5ad91bbf9715
+ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 07b5d6a5de133e03cfa119e755b8dc7aa17566ef951110353963e90118e784c1
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 0b7f5a6a7ac568ff6b1d8eb9af2832e94f2e9d62b15e5e5ad88b0d28d36d9097

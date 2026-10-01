@@ -15,8 +15,8 @@ import Task exposing (Cancelled, Done)
 held : String, (() -> a) -> a
 held name work =
     Task.bracket
-        (\() -> Debug.log name "acquired")
-        (\_ exit ->
+        (λ() -> Debug.log name "acquired")
+        (λ_ exit ->
             case exit of
                 Done _ ->
                     Debug.log () (name ++ " released: done")
@@ -24,32 +24,32 @@ held name work =
                 Cancelled ->
                     Debug.log () (name ++ " released: cancelled")
         )
-        (\_ -> work ())
+        (λ_ -> work ())
 
 
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
                 answer =
                     Task.scope
-                        (\s ->
+                        (λs ->
                             let
                                 _ =
                                     Task.spawnIn
                                         s
-                                        (\() -> held "slowChild" (\() -> Io.sleep 100000))
-                                quick = Task.spawnIn s (\() -> held "quickChild" (\() -> 42))
+                                        (λ() -> held "slowChild" (λ() -> Io.sleep 100000))
+                                quick = Task.spawnIn s (λ() -> held "quickChild" (λ() -> 42))
                             in
                             Task.join quick
                         )
                 _ = Debug.log answer "scope returned"
                 parent =
                     Task.spawn
-                        (\() ->
+                        (λ() ->
                             let
-                                _ = Task.spawn (\() -> held "orphan" (\() -> Io.sleep 100000))
+                                _ = Task.spawn (λ() -> held "orphan" (λ() -> Io.sleep 100000))
                                 _ = Io.sleep 1
                             in
                             "parent done"

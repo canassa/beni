@@ -3,4 +3,4 @@
 g x = Ok x
 
 
-f xs = List.map (\y -> g y?) xs
+f xs = List.map (λy -> g y?) xs

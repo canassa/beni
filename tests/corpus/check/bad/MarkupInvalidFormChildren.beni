@@ -5,8 +5,8 @@
 -- there is nothing at all (11:10). Whitespace and an empty hole do not count.
 view model =
     <div>
-        <For each={model.a}>{\x -> <p />} and</For>
-        <For each={model.a}>{\x -> <p />}<p /></For>
-        <For each={model.a}>{} {\x -> <p />} {\y -> <p />}</For>
+        <For each={model.a}>{λx -> <p />} and</For>
+        <For each={model.a}>{λx -> <p />}<p /></For>
+        <For each={model.a}>{} {λx -> <p />} {λy -> <p />}</For>
         <Show when={model.b} keyed />
     </div>

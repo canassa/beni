@@ -7,7 +7,7 @@ direct = Lib.onType Plat.get
 
 
 oneHop : Int
-oneHop = Lib.onType (\n -> label (Lib.load n))
+oneHop = Lib.onType (λn -> label (Lib.load n))
 
 
 label : String -> String

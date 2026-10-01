@@ -37,13 +37,13 @@ top : a, a -> a
 top = maxOf
 
 
-lam = \x y -> maxOf x y
+lam = λx y -> maxOf x y
 
 
 lamA : a, a -> a
     where a.compare : a, a -> Order
 lamA =
-    \x y ->
+    λx y ->
         if x < y then
             y
         else
@@ -76,7 +76,7 @@ viaLet =
 clampAll : List a, a -> List a
     where a.compare : a, a -> Order
 clampAll =
-    \xs cap ->
+    λxs cap ->
         case xs of
             [] ->
                 []
@@ -87,7 +87,7 @@ clampAll =
 
 biggest : List a, a -> a
     where a.compare : a, a -> Order
-biggest = \xs acc -> go xs acc
+biggest = λxs acc -> go xs acc
 
 
 go : List a, a -> a

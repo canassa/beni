@@ -19,14 +19,14 @@ import Task
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
                 ended =
                     Task.scope
-                        (\s ->
+                        (λs ->
                             let
-                                unread = Task.spawnIn s (\() -> Say.say "spawned child ran")
-                                inList = [ Task.spawnIn s (\() -> Say.say "child in a list ran") ]
+                                unread = Task.spawnIn s (λ() -> Say.say "spawned child ran")
+                                inList = [ Task.spawnIn s (λ() -> Say.say "child in a list ran") ]
                                 _ = Io.sleep 1
                             in
                             "scope ended"

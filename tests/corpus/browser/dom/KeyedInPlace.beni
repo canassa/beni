@@ -41,7 +41,7 @@ rows =
 
 
 edit : List Row, (Row -> Row) -> List Row
-edit list f = List.map list (\row -> if row.id == 2 then f row else row)
+edit list f = List.map list (λrow -> if row.id == 2 then f row else row)
 
 
 rotate : List a -> List a
@@ -58,13 +58,13 @@ update : Msg, Model -> Model
 update msg model =
     case msg of
         Relabel ->
-            { model | rows = edit model.rows (\row -> { row | label = "${row.label}!" }) }
+            { model | rows = edit model.rows (λrow -> { row | label = "${row.label}!" }) }
 
         Mark ->
             { model | mark = model.mark + 1 }
 
         Toggle ->
-            { model | rows = edit model.rows (\row -> { row | done = not row.done }) }
+            { model | rows = edit model.rows (λrow -> { row | done = not row.done }) }
 
         Duplicate ->
             { model | rows = model.rows ++ [ { id = 2, label = "again", done = False } ] }
@@ -91,7 +91,7 @@ view model =
         <button id="clear" onClick={Clear}>clear</button>
         <ul id="alone">
             <For each={model.rows} keyed={.id}>
-                {\row ->
+                {λrow ->
                     if row.done then
                         <li class="done">{row.label}</li>
                     else
@@ -101,7 +101,7 @@ view model =
         </ul>
         <ol id="framed">
             <li>first</li>
-            <For each={model.rows} keyed={.id}>{\row -> <li>{row.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>{λrow -> <li>{row.label}</li>}</For>
             <li>last</li>
         </ol>
     </main>

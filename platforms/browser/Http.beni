@@ -54,7 +54,7 @@ type Answer
 
 request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
-    case Task.callback (\resume -> start method url contentType body json resume) of
+    case Task.callback (λresume -> start method url contentType body json resume) of
         Answered result ->
             result
 
@@ -102,23 +102,23 @@ start method url contentType body json resume =
 
             _ =
                 Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
-                    [ Js.from (\response -> received response json abort resume)
-                    , Js.from (\error -> failed error abort resume)
+                    [ Js.from (λresponse -> received response json abort resume)
+                    , Js.from (λerror -> failed error abort resume)
                     ]
         in
-        \() -> Js.to (Js.call abort "abort" [])
+        λ() -> Js.to (Js.call abort "abort" [])
     else
         let
             _ = resumeWith resume (Answered (Err (BadUrl url)))
         in
-        \() -> ()
+        λ() -> ()
 
 
 -- Whether `new URL` takes the address, relative to the page's own.
 parses : String -> Bool
 parses url =
     Js.catchIf
-        (\() ->
+        (λ() ->
             let
                 _ =
                     Js.construct (Js.global "URL")
@@ -126,8 +126,8 @@ parses url =
             in
             True
         )
-        (\error -> Js.instanceOf error (Js.global "TypeError"))
-        (\_ -> False)
+        (λerror -> Js.instanceOf error (Js.global "TypeError"))
+        (λ_ -> False)
 
 
 -- The response came: read its body, then answer.
@@ -136,8 +136,8 @@ received response json abort resume =
     let
         _ =
             Js.call (Js.call response "text" []) "then"
-                [ Js.from (\text -> resumeWith resume (answered response json text))
-                , Js.from (\error -> failed error abort resume)
+                [ Js.from (λtext -> resumeWith resume (answered response json text))
+                , Js.from (λerror -> failed error abort resume)
                 ]
     in
     ()
@@ -152,14 +152,14 @@ answered response json text =
         -- `JSON.parse` documents is `BadBody`, and anything else is the
         -- defect it is, thrown in the waiting fiber.
         Js.catchIf
-            (\() ->
+            (λ() ->
                 let
                     _ = Js.call (Js.global "JSON") "parse" [ text ]
                 in
                 Answered (Ok (Js.to text))
             )
-            (\_ -> True)
-            (\error ->
+            (λ_ -> True)
+            (λerror ->
                 if Js.instanceOf error (Js.global "SyntaxError") then
                     Answered (Err (BadBody "not JSON"))
                 else

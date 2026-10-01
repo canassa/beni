@@ -35,7 +35,7 @@ f m =
 
 eq (Box a) (Box b) =
     let
-        _ = \u -> f u
+        _ = λu -> f u
     in
     a == b
 

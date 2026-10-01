@@ -52,5 +52,5 @@ main =
         { init = ( (), Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

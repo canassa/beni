@@ -15,7 +15,7 @@ bools : List Bool -> String
 bools xs =
     String.join
         (List.map xs
-            (\b ->
+            (λb ->
                 if b then
                     "yes"
                 else

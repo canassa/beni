@@ -6,7 +6,7 @@ names ids = List.length (Users.fetchAll ids)
 
 
 pub later : List Int -> (() -> List String)
-later ids = \() -> Users.fetchAll ids
+later ids = λ() -> Users.fetchAll ids
 
 
 pub now : List Int -> List String

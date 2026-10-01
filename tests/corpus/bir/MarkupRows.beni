@@ -21,7 +21,7 @@ view model =
     in
     <table>
         <For each={model.rows} keyed={.id}>
-            {\row ->
+            {λrow ->
                 let
                     cls = rowClass model row
                 in
@@ -30,5 +30,5 @@ view model =
         </For>
         <For each={model.rows}>{viewRow model _}</For>
         <For each={model.rows} keyed={False}>{viewRow}</For>
-        <Show when={model.user} keyed={.id}>{\user -> <p>{user.name}</p>}</Show>
+        <Show when={model.user} keyed={.id}>{λuser -> <p>{user.name}</p>}</Show>
     </table>

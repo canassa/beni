@@ -13,9 +13,9 @@ import Js
 pub decodes : String -> Maybe String
 decodes text =
     Js.catchIf
-        (\() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
-        (\err -> Js.instanceOf err (Js.global "URIError"))
-        (\_ -> Nothing)
+        (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
+        (λerr -> Js.instanceOf err (Js.global "URIError"))
+        (λ_ -> Nothing)
 
 
 pub stored : Js.Value, String, String -> Int
@@ -24,17 +24,17 @@ stored area key value =
         code : Int
         code =
             Js.catchIf
-                (\() ->
+                (λ() ->
                     let
                         _ = Js.call area "setItem" [ Js.from key, Js.from value ]
                     in
                     0
                 )
-                (\err ->
+                (λerr ->
                     Js.instanceOf err (Js.global "DOMException")
                         && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
                 )
-                (\_ -> 1)
+                (λ_ -> 1)
     in
     code + 1
 
@@ -42,9 +42,9 @@ stored area key value =
 pub drop : Js.Value -> ()
 drop f =
     Js.catchIf
-        (\() -> Js.to (Js.apply f []))
-        (\err -> Js.instanceOf err (Js.global "TypeError"))
-        (\_ -> ())
+        (λ() -> Js.to (Js.apply f []))
+        (λerr -> Js.instanceOf err (Js.global "TypeError"))
+        (λ_ -> ())
 
 
 pub passed : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int

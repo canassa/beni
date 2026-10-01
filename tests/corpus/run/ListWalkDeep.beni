@@ -47,11 +47,11 @@ walkPairs w =
 
 
 pushed : List Int
-pushed = List.foldl (List.range 1 size) [] (\n acc -> List.push acc n)
+pushed = List.foldl (List.range 1 size) [] (λn acc -> List.push acc n)
 
 
 prepended : List Int
-prepended = List.foldr (List.range 1 size) [] (\n acc -> [ n, ...acc ])
+prepended = List.foldr (List.range 1 size) [] (λn acc -> [ n, ...acc ])
 
 
 viewOf : List Int -> List Int

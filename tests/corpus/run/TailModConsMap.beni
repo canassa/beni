@@ -46,13 +46,13 @@ main : Program
 main =
     let
         big = List.range 1 100000
-        doubled = mapRec big (\x -> x * 2)
-        odd = filterRec big (\x -> modBy x 2 == 1)
+        doubled = mapRec big (λx -> x * 2)
+        odd = filterRec big (λx -> modBy x 2 == 1)
     in
     Node.printLines
-        [ show (mapRec [ 1, 2, 3 ] (\x -> x * 10))
-        , show (filterRec [ 1, 2, 3, 4, 5 ] (\x -> x /= 3))
-        , show (mapRec [] (\x -> x + 1))
+        [ show (mapRec [ 1, 2, 3 ] (λx -> x * 10))
+        , show (filterRec [ 1, 2, 3, 4, 5 ] (λx -> x /= 3))
+        , show (mapRec [] (λx -> x + 1))
         , String.fromInt (List.length doubled)
         , String.fromInt (List.sum doubled)
         , show (List.take doubled 3)

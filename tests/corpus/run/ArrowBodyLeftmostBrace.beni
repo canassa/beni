@@ -20,7 +20,7 @@ bump r n = { r | x = n }.x
 
 
 callField : Int -> Int
-callField n = { f = \k -> k * 2 }.f n
+callField n = { f = λk -> k * 2 }.f n
 
 
 inner : Int -> Int
@@ -47,5 +47,5 @@ main =
         , String.fromInt (inner 5)
         , if firstOf 3 then "T" else "F"
         , pick True
-        , String.join (List.map [ 1, 2 ] (\n -> String.fromInt { v = n }.v)) ","
+        , String.join (List.map [ 1, 2 ] (λn -> String.fromInt { v = n }.v)) ","
         ]

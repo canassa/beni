@@ -13,8 +13,8 @@ type alias Todo =
 pub view : List Todo, Maybe Todo -> Html msg
 view todos editing =
     <div>
-        <For each={todos} keyed={\t -> t}>{\t -> <p>{t.label}</p>}</For>
-        <Show when={editing} keyed={\t -> t}>{\t -> <p>{t.label}</p>}</Show>
+        <For each={todos} keyed={λt -> t}>{λt -> <p>{t.label}</p>}</For>
+        <Show when={editing} keyed={λt -> t}>{λt -> <p>{t.label}</p>}</Show>
     </div>
 
 

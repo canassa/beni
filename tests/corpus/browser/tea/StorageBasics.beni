@@ -70,7 +70,7 @@ view lines =
         <button id="save" onClick={Save}>save</button>
         <button id="forget" onClick={Forget}>forget</button>
         <button id="session" onClick={SaveSession}>session</button>
-        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 
 
@@ -80,5 +80,5 @@ main =
         { init = ( [ report Local "todos", report Local "draft" ], Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

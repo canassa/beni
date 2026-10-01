@@ -10,6 +10,6 @@ import Guard
 pub run : String -> String
 run what =
     let
-        _ = Guard.latched (\() -> Guard.note what)
+        _ = Guard.latched (λ() -> Guard.note what)
     in
     Guard.take ()

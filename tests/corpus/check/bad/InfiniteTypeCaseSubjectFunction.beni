@@ -1,8 +1,8 @@
 -- `InfiniteTypeCaseSubject`'s cycle through a function: an `infinite_type`,
 -- never `nesting_too_deep` at `[ r, s ]`.
 g r s =
-    case [ r, \x -> r ] of
+    case [ r, λx -> r ] of
         _ ->
-            case [ s, \y -> s ] of
+            case [ s, λy -> s ] of
                 _ ->
                     [ r, s ]

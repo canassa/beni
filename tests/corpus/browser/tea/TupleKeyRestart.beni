@@ -34,8 +34,8 @@ update msg n =
 work : String, Cmd.Send Msg -> ()
 work name _ =
     Task.bracket
-        (\() -> ())
-        (\_ exit ->
+        (λ() -> ())
+        (λ_ exit ->
             case exit of
                 Done _ ->
                     Debug.log () "${name} done"
@@ -43,7 +43,7 @@ work name _ =
                 Cancelled ->
                     Debug.log () "${name} cancelled"
         )
-        (\_ -> Time.sleep (Time.millis 100))
+        (λ_ -> Time.sleep (Time.millis 100))
 
 
 view : Int -> Html Msg
@@ -60,5 +60,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

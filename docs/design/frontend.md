@@ -912,7 +912,7 @@ Text is printed as written, before §9.7's trimming and decoding, since the AST 
 | an opening tag whose `>` never comes | `expected_token` | the tag ends at the first token that cannot continue it |
 | `>`, `}` or a `<` not starting a tag, in text | `unexpected_token` (from the lexer, §9.1), with the hole that writes it | skipped |
 | a hole left open by a comment, `{-- note}` | `unclosed_delimiter` at the `{`, whose message says the comment ran to the end of the line and shows `{-- note` with `}` on the next line | the hole is closed where the enclosing element's recovery closes it |
-| a hole whose expression stops before its `}`, `{\r, i -> …}` (*added 2026-09-29*) | the expression's own error, once | the rest of the hole is skipped to its `}`, which closes it; read as the markup around the hole, it ended every element open around it with an `unclosed_element` each |
+| a hole whose expression stops before its `}`, `{λr, i -> …}` (*added 2026-09-29*) | the expression's own error, once | the rest of the hole is skipped to its `}`, which closes it; read as the markup around the hole, it ended every element open around it with an `unclosed_element` each |
 | `f <div />` | `element_as_argument` — when a comparison's `<` abuts a following name and the parse of its right operand fails at `/>`, `>` or an `=` right after that name, the parser reports this instead of the generic error, saying to parenthesise | the comparison's placeholder, as today |
 | `<-div>` | `unexpected_token` whose message says a tag name cannot begin with `-`, since `<-` lexes as one token (research 28 §3.5) | as today |
 | an unknown fact in a vocabulary declaration | `unexpected_token` | the fact is skipped |
@@ -995,7 +995,7 @@ left a choice:
   had none when the element is printed vertically, since the page shows neither; a space the page
   shows before the closing tag stays on the line.
 - **An element written on one line stays on one line when it follows something on its line** — a
-  sibling it may not be parted from, `\x ->`, an attribute's `=` — whatever its width, since
+  sibling it may not be parted from, `λx ->`, an attribute's `=` — whatever its width, since
   breaking it there moves only its own edges. An element the author broke is printed vertically.
   *Amended 2026-09-29, after the formatter's review:* such an element is printed **whole** on the
   line, every hole, lambda and child in it included. A break inside it made it an element the

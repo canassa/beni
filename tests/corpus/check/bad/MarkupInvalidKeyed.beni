@@ -4,7 +4,7 @@
 -- `Show` (9:30), a non-keyed `Show`, whose message shows the `case`.
 view model =
     <div>
-        <For each={model.a} keyed="id">{\x -> <p />}</For>
-        <For each={model.a} keyed={1}>{\x -> <p />}</For>
-        <Show when={model.b} keyed={False}>{\x -> <p />}</Show>
+        <For each={model.a} keyed="id">{λx -> <p />}</For>
+        <For each={model.a} keyed={1}>{λx -> <p />}</For>
+        <Show when={model.b} keyed={False}>{λx -> <p />}</Show>
     </div>

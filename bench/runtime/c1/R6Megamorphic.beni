@@ -60,7 +60,7 @@ type alias Person =
 
 
 numbers : List Int
-numbers = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+numbers = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
 
 
 texts : List String
@@ -68,7 +68,7 @@ texts = List.map numbers String.fromInt
 
 
 people : List Person
-people = List.map numbers (\n -> { name = String.fromInt n, age = modBy n 97 })
+people = List.map numbers (λn -> { name = String.fromInt n, age = modBy n 97 })
 
 
 numberMark : Int
@@ -90,7 +90,7 @@ tally : List a, a -> Int
 tally xs mark =
     List.foldl xs
         0
-        (\x acc ->
+        (λx acc ->
             case x.compare mark of
                 LT ->
                     acc + 1
@@ -129,11 +129,11 @@ main =
             List.foldl
                 (List.range 1 outerReps)
                 0
-                (\_ acc ->
+                (λ_ acc ->
                     List.foldl
                         (List.range 1 innerReps)
                         acc
-                        (\_ n ->
+                        (λ_ n ->
                             n
                                 + tallyNumbers numbers numberMark
                                 + tallyTexts texts textMark

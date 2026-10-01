@@ -19,4 +19,4 @@ greet user = <p title={user.name}>Hi {user.name}, {user.count} new<br />{Html.te
 
 
 pub list : List String -> Html msg
-list items = <ul><For each={items}>{\item -> <li>{item}</li>}</For></ul>
+list items = <ul><For each={items}>{λitem -> <li>{item}</li>}</For></ul>

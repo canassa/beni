@@ -24,7 +24,7 @@ count xs =
         _ =
             Js.each
                 xs
-                (\x ->
+                (λx ->
                     let
                         _ = Js.write n (Js.read n + 1)
                     in

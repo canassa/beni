@@ -23,7 +23,7 @@ first () n = n
 
 
 pub lambda : () -> (() -> Int)
-lambda () = \() -> 7
+lambda () = λ() -> 7
 
 
 pub calls : Int -> Int

@@ -10,25 +10,25 @@ make n = List.range 1 n
 
 
 pub chunks : Int -> List (List Int)
-chunks n = List.map (List.range 1 (n // 10)) (\_ -> List.range 1 10)
+chunks n = List.map (List.range 1 (n // 10)) (λ_ -> List.range 1 10)
 
 
 pub pairs : Int -> List ( Int, Int )
-pairs n = List.map (List.range 1 n) (\x -> ( x, x ))
+pairs n = List.map (List.range 1 n) (λx -> ( x, x ))
 
 
 pub map : List Int -> List Int
-map xs = List.map xs (\x -> x + 1)
+map xs = List.map xs (λx -> x + 1)
 
 
 pub filter : List Int -> List Int
-filter xs = List.filter xs (\x -> modBy x 2 == 0)
+filter xs = List.filter xs (λx -> modBy x 2 == 0)
 
 
 pub filterMap : List Int -> List Int
 filterMap xs =
     List.filterMap xs
-        (\x ->
+        (λx ->
             if modBy x 2 == 0 then
                 Just x
             else
@@ -37,7 +37,7 @@ filterMap xs =
 
 
 pub indexedMap : List Int -> List Int
-indexedMap xs = List.indexedMap xs (\i x -> i + x)
+indexedMap xs = List.indexedMap xs (λi x -> i + x)
 
 
 pub take : List Int, Int -> List Int
@@ -53,23 +53,23 @@ concat lists = List.concat lists
 
 
 pub concatMap : List Int -> List Int
-concatMap xs = List.concatMap xs (\x -> [ x, x ])
+concatMap xs = List.concatMap xs (λx -> [ x, x ])
 
 
 pub map2 : List Int -> List Int
-map2 xs = List.map2 xs xs (\a b -> a + b)
+map2 xs = List.map2 xs xs (λa b -> a + b)
 
 
 pub map3 : List Int -> List Int
-map3 xs = List.map3 xs xs xs (\a b c -> a + b + c)
+map3 xs = List.map3 xs xs xs (λa b c -> a + b + c)
 
 
 pub map5 : List Int -> List Int
-map5 xs = List.map5 xs xs xs xs xs (\a b c d v -> a + b + c + d + v)
+map5 xs = List.map5 xs xs xs xs xs (λa b c d v -> a + b + c + d + v)
 
 
 pub partition : List Int -> ( List Int, List Int )
-partition xs = List.partition xs (\x -> modBy x 2 == 0)
+partition xs = List.partition xs (λx -> modBy x 2 == 0)
 
 
 pub unzip : List ( Int, Int ) -> ( List Int, List Int )
@@ -81,17 +81,17 @@ intersperse xs = List.intersperse xs 0
 
 
 pub sortWith : List Int -> List Int
-sortWith xs = List.sortWith xs (\a b -> Basics.compare b a)
+sortWith xs = List.sortWith xs (λa b -> Basics.compare b a)
 
 
 -- The functions that read or write a list without a callback that builds
 -- one: folds, searches, the indexed reads and writes, and the ends.
 pub foldl : List Int -> Int
-foldl xs = List.foldl xs 0 (\x acc -> acc + x)
+foldl xs = List.foldl xs 0 (λx acc -> acc + x)
 
 
 pub foldr : List Int -> Int
-foldr xs = List.foldr xs 0 (\x acc -> acc + x)
+foldr xs = List.foldr xs 0 (λx acc -> acc + x)
 
 
 pub reverse : List Int -> List Int

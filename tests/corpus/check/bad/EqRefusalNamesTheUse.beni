@@ -17,26 +17,26 @@ h x = x.eq x
 
 
 viaWhere : Bool
-viaWhere = h (F (\y -> y))
+viaWhere = h (F (λy -> y))
 
 
 viaBasics : Bool
-viaBasics = Basics.eq (F (\y -> y)) (F (\y -> y))
+viaBasics = Basics.eq (F (λy -> y)) (F (λy -> y))
 
 
 viaBasicsNeq : Bool
-viaBasicsNeq = Basics.neq (F (\y -> y)) (F (\y -> y))
+viaBasicsNeq = Basics.neq (F (λy -> y)) (F (λy -> y))
 
 
 both x = x.eq x && x == x
 
 
 viaBoth : Bool
-viaBoth = both (F (\y -> y))
+viaBoth = both (F (λy -> y))
 
 
 bothSwapped x = x == x && x.eq x
 
 
 viaBothSwapped : Bool
-viaBothSwapped = bothSwapped (F (\y -> y))
+viaBothSwapped = bothSwapped (F (λy -> y))

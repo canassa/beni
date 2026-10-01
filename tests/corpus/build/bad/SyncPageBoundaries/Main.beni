@@ -35,11 +35,11 @@ update msg model =
 view : Model -> Html Msg
 view model =
     <main>
-        <input onInput={\s -> Typed (Net.load s)} />
+        <input onInput={λs -> Typed (Net.load s)} />
         <ul>
-            <For each={model.keys} keyed={\k -> k}>{\k -> <li>{Net.load k}</li>}</For>
+            <For each={model.keys} keyed={λk -> k}>{λk -> <li>{Net.load k}</li>}</For>
         </ul>
-        {Html.map (<p>{model.draft}</p>) (\m -> Saved (Net.load "last"))}
+        {Html.map (<p>{model.draft}</p>) (λm -> Saved (Net.load "last"))}
     </main>
 
 

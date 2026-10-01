@@ -96,10 +96,10 @@ update msg model =
             select model Nothing
 
         SetTitle title ->
-            editSelected model (\note -> { note | title = title })
+            editSelected model (λnote -> { note | title = title })
 
         SetBody body ->
-            editSelected model (\note -> { note | body = body })
+            editSelected model (λnote -> { note | body = body })
 
         AddTag tag ->
             let
@@ -108,15 +108,15 @@ update msg model =
             if String.isEmpty clean then
                 model
             else
-                editSelected model (\note -> { note | tags = Set.insert note.tags clean })
+                editSelected model (λnote -> { note | tags = Set.insert note.tags clean })
 
         RemoveTag tag ->
-            editSelected model (\note -> { note | tags = Set.remove note.tags tag })
+            editSelected model (λnote -> { note | tags = Set.remove note.tags tag })
 
         TogglePin id ->
             model
                 |> pushHistory
-                |> editNote id (\note -> { note | pinned = not note.pinned })
+                |> editNote id (λnote -> { note | pinned = not note.pinned })
 
         Delete id ->
             let
@@ -258,7 +258,7 @@ pub allTags : Model -> List ( String, Int )
 allTags model =
     let
         count tag counts =
-            Dict.update counts tag (\existing -> Just (Maybe.withDefault existing 0 + 1))
+            Dict.update counts tag (λexisting -> Just (Maybe.withDefault existing 0 + 1))
 
         countNote note counts = Set.foldl note.tags counts count
 
@@ -301,7 +301,7 @@ viewTags model =
     ul [ class "tags" ]
         [ li [ onClick (FilterTag Nothing) ] [ text "all" ]
         , ...List.map (allTags model)
-            (\( tag, n ) ->
+            (λ( tag, n ) ->
                 li
                     [ classList [ ( "active", model.activeTag == Just tag ) ]
                     , onClick (FilterTag (Just tag))
@@ -348,14 +348,14 @@ preview body =
 
 viewEditor : Model -> Html Msg
 viewEditor model =
-    case model.selected |> Maybe.andThen (\id -> Dict.get model.notes id) of
+    case model.selected |> Maybe.andThen (λid -> Dict.get model.notes id) of
         Just note ->
             div [ class "editor" ]
                 [ input [ value note.title, onInput SetTitle ] []
                 , textarea [ value note.body, onInput SetBody ] []
                 , ul [ class "note-tags" ]
                     (List.map (Set.toList note.tags)
-                        (\tag -> li [ onClick (RemoveTag tag) ] [ text tag ])
+                        (λtag -> li [ onClick (RemoveTag tag) ] [ text tag ])
                     )
                 , input [ placeholder "Add tag", onInput AddTag ] []
                 , span [ class "meta" ] [ text "updated ${note.updatedAt}" ]

@@ -37,12 +37,12 @@ update : Msg, List String -> ( List String, Cmd Msg )
 update msg lines =
     case msg of
         Fetch ->
-            ( lines, Cmd.task (\() -> Http.get "data:text/plain,hello") Got )
+            ( lines, Cmd.task (λ() -> Http.get "data:text/plain,hello") Got )
 
         Break ->
             ( lines
             , Cmd.task
-                (\() ->
+                (λ() ->
                     let
                         _ = Fault.breakFetch ()
                     in
@@ -64,11 +64,11 @@ view lines =
         <button id="fetch" onClick={Fetch}>fetch</button>
         <button id="break" onClick={Break}>break</button>
         <button id="inc" onClick={Inc}>inc</button>
-        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

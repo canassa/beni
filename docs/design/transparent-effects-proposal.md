@@ -134,7 +134,7 @@ choice; this is not.
   at one root, and the compiler checks the entire call tree below it with nothing written anywhere
   in that tree. Nothing else in this proposal depends on it landing.
 
-- **Deferral is a thunk.** `\() -> fetchSummary id` is a value of type `() -> Summary` that runs
+- **Deferral is a thunk.** `λ() -> fetchSummary id` is a value of type `() -> Summary` that runs
   nothing until called. Retry, timeout, racing, parallel composition and cancellation scopes are
   ordinary higher-order functions over thunks. This is what replaces `Task e a`.
 
@@ -163,12 +163,12 @@ fetchSummary id =
 
 fetchAll : List UserId -> List User
 fetchAll ids =
-    List.map ids (\id -> getUser id)
+    List.map ids (λid -> getUser id)
 ```
 
 Both are ordinary beni. Note that `fetchAll` is the line P1 could not actually write: under P1's
 own rule the application is itself effectful and needs a second marker,
-`List.map ids (\id -> getUser id!)!`.
+`List.map ids (λid -> getUser id!)!`.
 
 ---
 
@@ -335,7 +335,7 @@ fetchActive ids =
         users = Result.combine (List.map ids getUser)?
         Log.info ("got " ++ String.fromInt (List.length users))
     in
-    List.filter users (\u -> u.isActive)
+    List.filter users (λu -> u.isActive)
 ```
 
 **Separable.** This is useful without any of the rest of this document — it is what `Debug.log`
@@ -422,14 +422,14 @@ which no longer exists. That removal is half the reason `<-` was generalised on 
 (`fast-compiler.md` §9.3, item 7): with `Task` gone and `?` already serving `Result` and `Maybe`,
 the `andThen` table was left dispatching for roughly one type, and it could not reach
 `Task.scope : (Scope -> a) -> a` or `Task.bracket` — the two constructs §6 leans on hardest.
-`let x <- f a b` is now `f a b (\x -> rest)` for any callee taking its callback last, so a scope
+`let x <- f a b` is now `f a b (λx -> rest)` for any callee taking its callback last, so a scope
 and a resource bracket sit flat at the top of a block instead of indenting everything below them:
 
 ```elm
 let
     scope <- Task.scope
-    conn  <- Task.bracket (\() -> Db.open url) Db.close
-    (user, prefs) = Task.par2 (\() -> getUser id) (\() -> getPrefs id)
+    conn  <- Task.bracket (λ() -> Db.open url) Db.close
+    (user, prefs) = Task.par2 (λ() -> getUser id) (λ() -> getPrefs id)
     Log.info "loaded"
 in
 Dashboard user prefs
@@ -1126,7 +1126,7 @@ is the work-up.
    be allowed to bind the rest of the block?
 
 5. **`?` in lambdas.** `language.md` §6.6 forbids it. Every realistic effect is fallible, so the
-   callback people want is `\id -> getUser id?`, and it is banned. The lambda's own result is
+   callback people want is `λid -> getUser id?`, and it is banned. The lambda's own result is
    `Result`, so early return from it is exactly Rust's rule. Should the ban be narrowed?
 6. **Two bits or one.** §2 splits `suspends` from `impure` because logging saturates a purity bit
    while a suspension bit stays sparse, and because a synchronous random generator breaks
@@ -1343,7 +1343,7 @@ of the type is precise. **This step takes the third**, report 43's recommendatio
   — a construction or a pattern — every function type and every nominal application written in its
   field types (through alias expansions, stopping at the declaration's type parameters) is joined
   with the application the constructor returns. So one class per use of the type, shared by all
-  its arrows: `Parser (\s -> …)` and `case p of Parser run -> run s` meet in the class of
+  its arrows: `Parser (λs -> …)` and `case p of Parser run -> run s` meet in the class of
   `Parser a` there, and a summary that runs a parser depends on its parser argument's class.
 - **Recursive types share it**: `type Stream = Stream (() -> ( Int, Stream ))` names `Stream` in
   its own field, and that application is joined too.
@@ -1513,11 +1513,11 @@ Six places, each a boundary where a beni function is called by something that ca
    delegation, reversible; it answers §15.6's open question): a top-level declaration with no
    parameters is evaluated once, when its module is loaded, outside any fiber — exactly as `main`
    is — so its evaluation class is `sync` too, in every package. A value whose body is a lambda
-   (`f = \x -> …`) builds a closure and performs nothing, so it is never refused; what its lambda
+   (`f = λx -> …`) builds a closure and performs nothing, so it is never refused; what its lambda
    calls is checked where the lambda is called. The error is `must_not_suspend` at the value's
    name. *Why:* the alternative, a top-level constant that may perform, needs either a lazy,
    fiber-run initialiser per value (and an order for them) or a program whose `main` is a thunk,
-   which decision 5a declined for `main`; neither has a use case today that `\() -> …` does not
+   which decision 5a declined for `main`; neither has a use case today that `λ() -> …` does not
    serve. *Reversal:* drop the demand and give such values a runtime initialiser; nothing that
    checks today stops checking.
 
@@ -1574,7 +1574,7 @@ But it may suspend: it calls `Net.get`, which suspends.
 Hint: a function called synchronously cannot wait for anything. Do the work that
 suspends before handing this function over, and pass it what that work produced.
 
-14|    Page.onInput (\s -> Net.get s)
+14|    Page.onInput (λs -> Net.get s)
                     ^
 ```
 
@@ -1819,7 +1819,7 @@ registers the host's callback and returns its canceller:
 ```elm
 pub sleep : Int -> ()
 sleep ms =
-    Task.callback (\resume -> startTimer ms resume)
+    Task.callback (λresume -> startTimer ms resume)
 
 foreign impure startTimer : Int, Resume () -> (() -> ())
 ```

@@ -40,7 +40,7 @@ type alias Model =
 fakeApi : Api
 fakeApi =
     { search =
-        \q ->
+        λq ->
             let
                 _ = Debug.log q "request"
                 _ = Time.sleep (Time.millis 100)
@@ -68,13 +68,13 @@ update api msg model =
 search : Api, String, Cmd.Send Msg -> ()
 search api q send =
     Task.bracket
-        (\() -> Debug.log () "start ${q}")
-        (\_ _ -> Debug.log () "release ${q}")
-        (\_ ->
+        (λ() -> Debug.log () "start ${q}")
+        (λ_ _ -> Debug.log () "release ${q}")
+        (λ_ ->
             let
                 _ = Time.sleep (Time.millis 250)
             in
-            Task.uninterruptible (\() -> send (Got q (api.search q)))
+            Task.uninterruptible (λ() -> send (Got q (api.search q)))
         )
 
 
@@ -82,7 +82,7 @@ view : Model -> Html Msg
 view model =
     <main>
         <input id="q" value={model.query} onInput={Typed} />
-        <ul><For each={model.results} keyed={False}>{\s -> <li>{s}</li>}</For></ul>
+        <ul><For each={model.results} keyed={False}>{λs -> <li>{s}</li>}</For></ul>
     </main>
 
 
@@ -90,7 +90,7 @@ main : Tea.Program
 main =
     Tea.element
         { init = ( { query = "", results = [] }, Cmd.none )
-        , update = \msg model -> update fakeApi msg model
+        , update = λmsg model -> update fakeApi msg model
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

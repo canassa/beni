@@ -82,11 +82,11 @@ view lines =
         <button id="blocked" onClick={Blocked}>blocked</button>
         <button id="broken" onClick={Broken}>broken</button>
         <button id="inc" onClick={Inc}>inc</button>
-        <ol><For each={lines} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

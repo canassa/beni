@@ -24,19 +24,19 @@ type Box a
     = Box a
 
 
-pub am (K n) u = Maybe.withDefault ((Box (Just n)).bm (\v -> Just v)) 0
+pub am (K n) u = Maybe.withDefault ((Box (Just n)).bm (λv -> Just v)) 0
 
 
 pub bm (Box m) fn =
     let
-        _ = \w -> (K 0).am ()
+        _ = λw -> (K 0).am ()
     in
     fn (m?)
 
 
 pub size (Box _) u =
     let
-        _ = \w -> (K 0).weight ()
+        _ = λw -> (K 0).weight ()
     in
     1
 

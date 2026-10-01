@@ -42,7 +42,7 @@ samples =
 
         chosen =
             (Random.step
-                (Random.andThen die (\n -> Random.map (Random.int 0 n) (\m -> m <= n)))
+                (Random.andThen die (λn -> Random.map (Random.int 0 n) (λm -> m <= n)))
                 seed
             ).0
 
@@ -90,7 +90,7 @@ update msg rolls =
 view : List Int -> Html Msg
 view rolls =
     <main>
-        <ul><For each={samples} keyed={False}>{\line -> <li>{line}</li>}</For></ul>
+        <ul><For each={samples} keyed={False}>{λline -> <li>{line}</li>}</For></ul>
         <button id="roll" onClick={Roll}>roll</button>
         <button id="draw" onClick={Draw}>draw</button>
         <p id="rolls">{nums rolls}</p>
@@ -100,7 +100,7 @@ view rolls =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
 
 
 nums : List Int -> String

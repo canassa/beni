@@ -19,16 +19,16 @@ apply f n = f n
 main : Program
 main =
     let
-        addOne = \b c -> add3 1 b c
+        addOne = λb c -> add3 1 b c
         addOneTwo = add3 1 2 _
-        counterFrom start = \step -> start + step
+        counterFrom start = λstep -> start + step
     in
     Node.printLines
         [ String.fromInt (add3 1 2 3)
         , String.fromInt (addOne 2 3)
         , String.fromInt (addOneTwo 3)
         , String.fromInt (apply (add3 1 2 _) 3)
-        , String.fromInt (apply (\n -> n * 2) 21)
+        , String.fromInt (apply (λn -> n * 2) 21)
         , String.fromInt ((counterFrom 10) 5)
         , String.join (List.map (List.map [ 1, 2, 3 ] (add3 1 1 _)) String.fromInt) ","
         ]

@@ -17,7 +17,7 @@ lookup =
     let
         table = Debug.log (List.range 1 3) "table (where)"
     in
-    \x ->
+    λx ->
         if List.length table == 3 && x == x then
             x
         else
@@ -29,7 +29,7 @@ lookupPlain =
     let
         table = Debug.log (List.range 1 3) "table (plain)"
     in
-    \x ->
+    λx ->
         if List.length table == 3 then
             x
         else

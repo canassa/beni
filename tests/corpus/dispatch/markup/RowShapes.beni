@@ -36,8 +36,8 @@ view model =
     <div>
         <For each={model.rows} keyed={.id}>{viewRow}</For>
         <For each={model.rows} keyed={False}>{viewCell model _}</For>
-        <For each={model.names}>{\name position -> <li>{name}{position}</li>}</For>
+        <For each={model.names}>{λname position -> <li>{name}{position}</li>}</For>
         <For each={model.names}>{viewAt}</For>
-        <Show when={model.title} keyed>{\title -> <h1>{title}</h1>}</Show>
+        <Show when={model.title} keyed>{λtitle -> <h1>{title}</h1>}</Show>
         <Show when={model.user} keyed={.id} fallback={<p>Nobody</p>}>{viewRow}</Show>
     </div>

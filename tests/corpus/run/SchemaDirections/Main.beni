@@ -17,7 +17,7 @@ import Show
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (\s ->
+        (λs ->
             case String.toInt s of
                 Just n ->
                     Ok n
@@ -25,7 +25,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue ("not a decimal integer: " ++ s) ]
         )
-        (\n ->
+        (λn ->
             if n < 0 then
                 Err [ Schema.issue "a count is never negative" ]
             else
@@ -117,7 +117,7 @@ main =
         , Show.result (Schema.encode count (-1)) showString
         , Show.result
             (Schema.decode (Schema.list count) [ "1", "2", "three" ])
-            (\ns -> String.join (List.map ns String.fromInt) ",")
+            (λns -> String.join (List.map ns String.fromInt) ",")
         , Show.result (Schema.decode item { id = "5", label = "a" }) showItemInt
         , Show.result (Schema.decode item { id = "x", label = "a" }) showItemInt
         , Show.result (Schema.encode item { id = 5, label = "a" }) showItemString
@@ -125,8 +125,8 @@ main =
         , Show.result (Schema.read item (host "{\"item-id\":\"5\",\"label\":\"a\"}")) showItemInt
         , Show.value (Schema.write item { id = 5, label = "a" })
         , Show.result (Schema.parse item "{\"label\":\"b\",\"item-id\":\"9\"}") showItemInt
-        , Show.result (Schema.print item { id = 9, label = "b" }) (\s -> s)
-        , Show.result (Schema.print item { id = (-9), label = "b" }) (\s -> s)
+        , Show.result (Schema.print item { id = 9, label = "b" }) (λs -> s)
+        , Show.result (Schema.print item { id = (-9), label = "b" }) (λs -> s)
         , "-- flip"
         , Show.result (Schema.decode (Schema.flip item) { id = 5, label = "a" }) showItemString
         , Show.result (Schema.decode (Schema.flip item) { id = (-2), label = "a" }) showItemString
@@ -134,7 +134,7 @@ main =
         , Show.result (Schema.encode (Schema.flip item) { id = "x", label = "a" }) showItemInt
         , Show.value
             (Schema.read (Schema.flip item) (host "{\"id\":5,\"label\":\"a\"}")
-                |> Result.map (\_ -> host "null")
+                |> Result.map (λ_ -> host "null")
             )
         , Show.value (Schema.write (Schema.flip item) { id = "5", label = "a" })
         , "-- flip twice"

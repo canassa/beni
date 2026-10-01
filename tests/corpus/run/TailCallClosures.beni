@@ -18,8 +18,8 @@ build n acc =
     if n <= 0 then
         acc
     else
-        build (n - 1) [ (\x -> x + n), ...acc ]
+        build (n - 1) [ (λx -> x + n), ...acc ]
 
 
 main : Program
-main = Node.printLines (List.map (build 3 []) (\f -> String.fromInt (f 0)))
+main = Node.printLines (List.map (build 3 []) (λf -> String.fromInt (f 0)))

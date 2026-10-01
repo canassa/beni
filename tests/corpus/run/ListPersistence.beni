@@ -239,14 +239,14 @@ step s n =
                     extra = List.range x (x + pick seed1 40)
                 in
                 { list = v.list ++ extra
-                , model = List.foldl extra v.model (\item m -> modelPush m item)
+                , model = List.foldl extra v.model (λitem m -> modelPush m item)
                 }
             else if op == 12 then
                 let
                     extra = List.range x (x + pick seed2 3)
                 in
                 { list = [ ...v.list, ...extra ]
-                , model = List.foldl extra v.model (\item m -> modelPush m item)
+                , model = List.foldl extra v.model (λitem m -> modelPush m item)
                 }
             else
                 { list = List.push (List.push v.list x) (x + 1)
@@ -322,9 +322,9 @@ main =
             , bad = []
             , checks = 0
             }
-                |> (\s -> keep s { list = [], model = empty })
-                |> (\s -> keep s base)
-                |> (\s -> keep s short)
+                |> (λs -> keep s { list = [], model = empty })
+                |> (λs -> keep s base)
+                |> (λs -> keep s short)
 
         -- The root grown left from a trie `push` made: its tree starts at
         -- radix 0, so the 33rd prepend finds no room left of it.
@@ -335,10 +335,10 @@ main =
 
         grown =
             start
-                |> (\s -> note s "33 prepends onto a pushed trie" left)
-                |> (\s -> note s "600 prepends onto a short list" wide)
-                |> (\s -> keep (keep s left) wide)
-                |> (\s -> walk s wide 700)
+                |> (λs -> note s "33 prepends onto a pushed trie" left)
+                |> (λs -> note s "600 prepends onto a short list" wide)
+                |> (λs -> keep (keep s left) wide)
+                |> (λs -> walk s wide 700)
 
         done = recheck (run grown 0 2500) 0 7
     in

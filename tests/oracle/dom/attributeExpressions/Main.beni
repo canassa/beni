@@ -65,8 +65,8 @@ template17 =
 pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } -> Html ()
 template20 r =
     <div>
-        <input value={r.s} min={r.min} max={r.max} onInput={\_ -> ()} readonly />
-        <input checked={r.s2} min={r.min} max={r.max} onInput={\_ -> ()} readonly={r.value} />
+        <input value={r.s} min={r.min} max={r.max} onInput={λ_ -> ()} readonly />
+        <input checked={r.s2} min={r.min} max={r.max} onInput={λ_ -> ()} readonly={r.value} />
     </div>
 
 

@@ -10,7 +10,7 @@ type alias V =
 
 
 kind : V
-kind = Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+kind = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
 
 
 block : V
@@ -66,7 +66,7 @@ shown i =
 -- method, as `unit`'s does, and `describe` is called twice, so that neither
 -- is written where it is called.
 other : V
-other = Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+other = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
 
 
 describe : V -> String

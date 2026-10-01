@@ -27,9 +27,9 @@ twice f x = f (f x)
 pick : Bool -> (Int -> Int)
 pick big =
     if big then
-        \n -> n * 100
+        λn -> n * 100
     else
-        \n -> n + 1
+        λn -> n + 1
 
 
 main : Program
@@ -38,12 +38,12 @@ main =
         bump = pick False
     in
     Node.printLines
-        [ String.fromInt (compose (\n -> n + 1) (\n -> n * 2) 5)
-        , String.fromInt (twice (\n -> n * 3) 2)
+        [ String.fromInt (compose (λn -> n + 1) (λn -> n * 2) 5)
+        , String.fromInt (twice (λn -> n * 3) 2)
         , String.fromInt ((pick True) 5)
         , String.fromInt ((pick False) 5)
         , String.join (List.map (List.map [ 1, 2 ] (pick True)) String.fromInt) ","
-        , String.fromInt ((identity (\n -> n - 1)) 10)
+        , String.fromInt ((identity (λn -> n - 1)) 10)
         , String.fromInt (16 |> bump)
-        , String.fromInt ((\n -> n + 1) ((\n -> n * 2) 5))
+        , String.fromInt ((λn -> n + 1) ((λn -> n * 2) 5))
         ]

@@ -58,7 +58,7 @@ viewStatus model =
 
         Loaded hits ->
             <ul class="results">
-                <For each={hits} keyed={.id}>{\hit -> viewHit model hit}</For>
+                <For each={hits} keyed={.id}>{λhit -> viewHit model hit}</For>
             </ul>
 
 

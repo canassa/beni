@@ -12,10 +12,10 @@ import Task
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
-                reader = Task.spawn (\() -> Io.readFile "this file does not exist.txt")
-                _ = Task.spawn (\() -> Debug.log () "another fiber ran")
+                reader = Task.spawn (λ() -> Io.readFile "this file does not exist.txt")
+                _ = Task.spawn (λ() -> Debug.log () "another fiber ran")
                 answer =
                     case Task.join reader of
                         Ok text ->

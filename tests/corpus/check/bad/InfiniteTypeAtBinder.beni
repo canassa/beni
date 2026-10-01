@@ -14,10 +14,10 @@
 g : Int -> Int
 g x =
     let
-        _ = (\y -> y y) (\y -> y y)
+        _ = (λy -> y y) (λy -> y y)
     in
     x
 
 
 f : Int -> Int
-f z = (\y -> y y) "s"
+f z = (λy -> y y) "s"

@@ -36,16 +36,16 @@ line label parts = label ++ ": " ++ String.join parts " | "
 main : Program
 main =
     let
-        built = List.initialize 4 (\i -> Debug.log (i * i) "initialize")
-        updated = List.update xs 1 (\x -> Debug.log (x + 1) "update in range")
-        missed = List.update xs 3 (\x -> Debug.log (x + 1) "update out of range")
+        built = List.initialize 4 (λi -> Debug.log (i * i) "initialize")
+        updated = List.update xs 1 (λx -> Debug.log (x + 1) "update in range")
+        missed = List.update xs 3 (λx -> Debug.log (x + 1) "update out of range")
     in
     Node.printLines
         [ line "initialize"
             [ show built
-            , show (List.initialize 0 (\i -> i))
-            , show (List.initialize (-1) (\i -> i))
-            , show (List.initialize 1 (\i -> i + 7))
+            , show (List.initialize 0 (λi -> i))
+            , show (List.initialize (-1) (λi -> i))
+            , show (List.initialize 1 (λi -> i + 7))
             ]
         , line "get"
             [ maybe (List.get xs 0)
@@ -70,10 +70,10 @@ main =
         , line "update"
             [ show updated
             , show missed
-            , show (List.update xs 0 (\x -> x * 2))
-            , show (List.update xs 2 (\x -> x * 2))
-            , show (List.update xs (-1) (\x -> x * 2))
-            , show (List.update [] 0 (\x -> x * 2))
+            , show (List.update xs 0 (λx -> x * 2))
+            , show (List.update xs 2 (λx -> x * 2))
+            , show (List.update xs (-1) (λx -> x * 2))
+            , show (List.update [] 0 (λx -> x * 2))
             ]
         , line "push"
             [ show (List.push xs 40)

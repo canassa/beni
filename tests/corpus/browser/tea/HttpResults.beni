@@ -40,10 +40,10 @@ update msg lines =
         Fetch ->
             ( lines
             , Cmd.batch
-                [ Cmd.task (\() -> Http.get "data:text/plain,hello") (Got "text" _)
-                , Cmd.task (\() -> Http.getJson "data:application/json,[1,2]") (Got "json" _)
-                , Cmd.task (\() -> Http.getJson "data:text/plain,hello") (Got "not json" _)
-                , Cmd.task (\() -> Http.get "http://[::1") (Got "bad url" _)
+                [ Cmd.task (λ() -> Http.get "data:text/plain,hello") (Got "text" _)
+                , Cmd.task (λ() -> Http.getJson "data:application/json,[1,2]") (Got "json" _)
+                , Cmd.task (λ() -> Http.getJson "data:text/plain,hello") (Got "not json" _)
+                , Cmd.task (λ() -> Http.get "http://[::1") (Got "bad url" _)
                 ]
             )
 
@@ -55,7 +55,7 @@ view : List String -> Html Msg
 view lines =
     <main>
         <button id="fetch" onClick={Fetch}>fetch</button>
-        <ul><For each={List.sort lines} keyed={False}>{\s -> <li>{s}</li>}</For></ul>
+        <ul><For each={List.sort lines} keyed={False}>{λs -> <li>{s}</li>}</For></ul>
     </main>
 
 
@@ -65,5 +65,5 @@ main =
         { init = ( [], Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

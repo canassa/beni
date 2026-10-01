@@ -16,11 +16,11 @@ noteChar tag ch = Debug.log ch tag
 main : Program
 main =
     let
-        mapped = String.map "abc" (\ch -> noteChar "String.map" ch)
-        kept = String.filter "abc" (\ch -> noteChar "String.filter" ch /= 'b')
-        folded = String.foldl "abc" 0 (\ch acc -> Char.toCode (noteChar "String.foldl" ch) + acc)
-        searched = String.any "abc" (\ch -> noteChar "String.any" ch == 'b')
-        every = String.all "abc" (\ch -> noteChar "String.all" ch /= 'c')
+        mapped = String.map "abc" (λch -> noteChar "String.map" ch)
+        kept = String.filter "abc" (λch -> noteChar "String.filter" ch /= 'b')
+        folded = String.foldl "abc" 0 (λch acc -> Char.toCode (noteChar "String.foldl" ch) + acc)
+        searched = String.any "abc" (λch -> noteChar "String.any" ch == 'b')
+        every = String.all "abc" (λch -> noteChar "String.all" ch /= 'c')
     in
     Node.printLines
         [ mapped

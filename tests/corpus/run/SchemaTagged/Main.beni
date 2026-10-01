@@ -26,7 +26,7 @@ type Wire
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (\s ->
+        (λs ->
             case String.toInt s of
                 Just n ->
                     Ok n
@@ -34,7 +34,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (\n -> Ok (String.fromInt n))
+        (λn -> Ok (String.fromInt n))
 
 
 toValue ( (), v ) = { value = v }
@@ -60,7 +60,7 @@ message =
             (payload Schema.string)
             (Schema.injection
                 WireText
-                (\w ->
+                (λw ->
                     case w of
                         WireText p ->
                             Just p
@@ -71,7 +71,7 @@ message =
             )
             (Schema.injection
                 Text
-                (\m ->
+                (λm ->
                     case m of
                         Text p ->
                             Just p
@@ -86,7 +86,7 @@ message =
             (payload (Schema.converted Schema.string decimalInt))
             (Schema.injection
                 WireCount
-                (\w ->
+                (λw ->
                     case w of
                         WireCount p ->
                             Just p
@@ -97,7 +97,7 @@ message =
             )
             (Schema.injection
                 Count
-                (\m ->
+                (λm ->
                     case m of
                         Count p ->
                             Just p
@@ -110,8 +110,8 @@ message =
             "Ping"
             "ping"
             (Schema.injection
-                (\() -> WirePing)
-                (\w ->
+                (λ() -> WirePing)
+                (λw ->
                     case w of
                         WirePing ->
                             Just ()
@@ -121,8 +121,8 @@ message =
                 )
             )
             (Schema.injection
-                (\() -> Ping)
-                (\m ->
+                (λ() -> Ping)
+                (λm ->
                     case m of
                         Ping ->
                             Just ()
@@ -175,12 +175,12 @@ tree : Schema Tree Tree
 tree =
     Schema.recursive
         "Tree"
-        (\self ->
+        (λself ->
             let
                 leaf =
                     Schema.injection
                         Leaf
-                        (\t ->
+                        (λt ->
                             case t of
                                 Leaf p ->
                                     Just p
@@ -192,7 +192,7 @@ tree =
                 branch =
                     Schema.injection
                         Branch
-                        (\t ->
+                        (λt ->
                             case t of
                                 Branch p ->
                                     Just p
@@ -251,9 +251,9 @@ main =
                 "{\"extra\":1,\"kind\":\"text\",\"value\":\"a\"}"
             )
             showMessage
-        , Show.result (Schema.print message (Count { value = 7 })) (\s -> s)
-        , Show.result (Schema.print message (Text { value = "hi" })) (\s -> s)
-        , Show.result (Schema.print message Ping) (\s -> s)
+        , Show.result (Schema.print message (Count { value = 7 })) (λs -> s)
+        , Show.result (Schema.print message (Text { value = "hi" })) (λs -> s)
+        , Show.result (Schema.print message Ping) (λs -> s)
         , Show.result (Schema.decode message (WireCount { value = "12" })) showMessage
         , Show.result (Schema.decode message (WireCount { value = "1 2" })) showMessage
         , Show.result (Schema.encode message (Count { value = 12 })) showWire
@@ -276,7 +276,7 @@ main =
                 tree
                 (Branch { children = [ Leaf { value = 1 }, Branch { children = [] } ] })
             )
-            (\s -> s)
+            (λs -> s)
         , Show.result
             (Schema.encode
                 tree

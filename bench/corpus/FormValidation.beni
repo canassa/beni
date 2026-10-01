@@ -65,7 +65,7 @@ required field value =
 
 pub minLength : Int -> Validator String
 minLength n =
-    \field value ->
+    λfield value ->
         if String.length value < n then
             fail field "must be at least ${n} characters"
         else
@@ -74,7 +74,7 @@ minLength n =
 
 pub maxLength : Int -> Validator String
 maxLength n =
-    \field value ->
+    λfield value ->
         if String.length value > n then
             fail field "must be at most ${n} characters"
         else
@@ -96,7 +96,7 @@ email field value =
 
 pub oneOfSet : Set String -> Validator String
 oneOfSet allowed =
-    \field value ->
+    λfield value ->
         if Set.member allowed value then
             Valid value
         else
@@ -108,7 +108,7 @@ oneOfSet allowed =
 
 pub intBetween : Int, Int -> Validator Int
 intBetween low high =
-    \field value ->
+    λfield value ->
         if value < low || value > high then
             fail field "must be between ${low} and ${high}"
         else
@@ -117,7 +117,7 @@ intBetween low high =
 
 pub matches : String, String -> Validator String
 matches otherName other =
-    \field value ->
+    λfield value ->
         if value == other then
             Valid value
         else
@@ -126,10 +126,10 @@ matches otherName other =
 
 pub all : List (Validator a) -> Validator a
 all validators =
-    \field value ->
+    λfield value ->
         List.foldl validators
             (Valid value)
-            (\validator acc ->
+            (λvalidator acc ->
                 case ( acc, validator field value ) of
                     ( Valid _, Valid v ) ->
                         Valid v
@@ -147,7 +147,7 @@ all validators =
 
 pub firstOf : List (Validator a) -> Validator a
 firstOf validators =
-    \field value ->
+    λfield value ->
         case validators of
             [] ->
                 Valid value
@@ -206,9 +206,9 @@ validateSignUp form =
     -- construction, which is the one place where saturated calls cost
     -- something in readability.
     Valid
-        (\user ->
-            \mail ->
-                \pass -> \years -> \country -> \news -> SignUp user mail pass years country news
+        (λuser ->
+            λmail ->
+                λpass -> λyears -> λcountry -> λnews -> SignUp user mail pass years country news
         )
         |> andMap
             ((firstOf [ required, minLength 3, maxLength 20, usernameChars ])
@@ -217,7 +217,7 @@ validateSignUp form =
             )
         |> andMap ((firstOf [ required, email ]) "email" form.email)
         |> andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
-        |> andMap (parseAge "age" form.age |> andThen (\v -> (intBetween 13 120) "age" v))
+        |> andMap (parseAge "age" form.age |> andThen (λv -> (intBetween 13 120) "age" v))
         |> andMap ((firstOf [ required, oneOfSet countries ]) "country" form.country)
         |> andMap (Valid form.newsletter)
         |> andThen (checkConfirm form _)
@@ -226,7 +226,7 @@ validateSignUp form =
 
 usernameChars : Validator String
 usernameChars field value =
-    if String.all value (\c -> Char.isAlphaNum c || c == '_') then
+    if String.all value (λc -> Char.isAlphaNum c || c == '_') then
         Valid value
     else
         fail field "may only contain letters, digits and underscores"
@@ -282,10 +282,10 @@ errorsByField validation =
         Invalid errors ->
             List.foldl errors
                 Dict.empty
-                (\( field, message ) acc ->
+                (λ( field, message ) acc ->
                     Dict.update acc
                         field
-                        (\existing -> Just (Maybe.withDefault existing [] ++ [ message ]))
+                        (λexisting -> Just (Maybe.withDefault existing [] ++ [ message ]))
                 )
 
 
@@ -297,7 +297,7 @@ errorSummary validation =
 
         Invalid errors ->
             errors
-                |> List.map (\( field, message ) -> "${field} ${message}")
+                |> List.map (λ( field, message ) -> "${field} ${message}")
                 |> String.join "; "
 
 

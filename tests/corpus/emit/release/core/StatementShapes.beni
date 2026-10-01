@@ -12,7 +12,7 @@ later : Js.Ref Bool -> ()
 later scheduled =
     Js.to
         (Js.apply (Js.global "queueMicrotask")
-            [ Js.from (\() -> if Js.read scheduled then tick () else ()) ]
+            [ Js.from (λ() -> if Js.read scheduled then tick () else ()) ]
         )
 
 

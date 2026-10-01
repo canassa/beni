@@ -29,4 +29,4 @@ keep (( a, b ) as pair) = ( pair, a, b )
 deep ( ( a, b ), { c } ) = a + b + c
 
 
-lambdaParams = \( a, b ) { c } (Box d) -> a + b + c + d
+lambdaParams = λ( a, b ) { c } (Box d) -> a + b + c + d

@@ -7,4 +7,4 @@ view _ = <></>
 
 
 main : Browser.Program
-main = Browser.program { init = {}, update = \_ m -> m, view = view }
+main = Browser.program { init = {}, update = λ_ m -> m, view = view }

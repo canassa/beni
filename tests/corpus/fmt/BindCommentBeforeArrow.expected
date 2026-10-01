@@ -11,7 +11,7 @@ f r =
             = 1
     in
     render x y
-        (\z
+        (λz
             -- why the lambda
             ->
             z

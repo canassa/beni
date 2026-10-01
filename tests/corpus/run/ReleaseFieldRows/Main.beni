@@ -231,7 +231,7 @@ main =
 
         pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
 
-        byPair = Dict.fromList (List.map pairs (\p -> ( p, p.zeta + p.alpha )))
+        byPair = Dict.fromList (List.map pairs (λp -> ( p, p.zeta + p.alpha )))
 
         letters : Letters
         letters = { a = 1, b = "b" }
@@ -239,7 +239,7 @@ main =
         tuple = ( letters.b, letters.a )
 
         counter : Counter
-        counter = { step = \n -> n + 10, name = "counter" }
+        counter = { step = λn -> n + 10, name = "counter" }
     in
     Node.printLines
         [ Shapes.nameOf rect

@@ -12,7 +12,7 @@ import Node exposing (Program)
 
 
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = \x -> f (g x)
+compose f g = λx -> f (g x)
 
 
 keep : a -> a
@@ -27,7 +27,7 @@ keep x =
 countDown : Int, a -> a
     where a.eq : a, a -> Bool
 countDown =
-    \n x ->
+    λn x ->
         if n == 0 then
             keep x
         else
@@ -46,7 +46,7 @@ countUp n x =
 ping : Int, a -> Int
     where a.eq : a, a -> Bool
 ping =
-    \n x ->
+    λn x ->
         if n <= 0 then
             0
         else

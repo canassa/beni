@@ -49,6 +49,6 @@ main =
         , show (Identity.refEq (Msgs.stop 1) (Msgs.stop 2))
         , show (Identity.refEq (none 1) Nothing)
         , show
-            (Identity.refEq (List.head [ 1 ] |> Maybe.andThen (\_ -> List.head [])) (List.head []))
+            (Identity.refEq (List.head [ 1 ] |> Maybe.andThen (λ_ -> List.head [])) (List.head []))
         , show (Identity.refEq (add 1) (add 1))
         ]

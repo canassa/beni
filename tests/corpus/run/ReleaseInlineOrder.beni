@@ -61,7 +61,7 @@ insideLambda p =
     let
         v = log "inline.lambda" p.x
 
-        f = \_ -> v + 1
+        f = λ_ -> v + 1
     in
     f () + f ()
 

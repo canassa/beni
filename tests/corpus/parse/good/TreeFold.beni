@@ -42,7 +42,7 @@ toList tree = fold List.cons [] tree |> List.reverse
 
 
 pub size : Tree a -> Int
-size = fold (\_ n -> n + 1) 0
+size = fold (λ_ n -> n + 1) 0
 
 
 pub depth : Tree a -> Int

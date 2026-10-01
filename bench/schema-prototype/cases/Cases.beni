@@ -50,14 +50,14 @@ conversionIssue context message = [ Schema.issue context (Invalid "decimal_text"
 numericText : Schema.Schema String Int
 numericText =
     Schema.transform Schema.string Schema.int.decoded
-        (\context text ->
+        (λcontext text ->
             case String.toInt text of
                 Nothing ->
                     Err (conversionIssue context "expected decimal integer text")
                 Just value ->
                     Ok value
         )
-        (\context value ->
+        (λcontext value ->
             if value < 0 then
                 Err (conversionIssue context "negative integers cannot be encoded")
             else
@@ -70,7 +70,7 @@ pairEndpoint =
     Schema.object2Endpoint "pair"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" Schema.boolEndpoint)
-        (\name active -> { name = name, active = active })
+        (λname active -> { name = name, active = active })
         .name
         .active
 
@@ -83,7 +83,7 @@ optionalTextEndpoint : Schema.Endpoint OptionalText
 optionalTextEndpoint =
     Schema.object1Endpoint "optional text"
         (Schema.optionalField "middle" (Schema.nullableEndpoint Schema.stringEndpoint))
-        (\middle -> { middle = middle })
+        (λmiddle -> { middle = middle })
         .middle
 
 
@@ -95,7 +95,7 @@ userIdEndpoint : Schema.Endpoint UserId
 userIdEndpoint =
     Schema.object1Endpoint "user id"
         (Schema.requiredField "user-id" Schema.stringEndpoint)
-        (\userId -> { userId = userId })
+        (λuserId -> { userId = userId })
         .userId
 
 
@@ -117,7 +117,7 @@ messageEncodedEndpoint =
         }
         readEncodedMessage
         writeEncodedMessage
-        (\_ _ -> Ok ())
+        (λ_ _ -> Ok ())
 
 
 messageProgramEndpoint : Schema.Endpoint MessageProgram.Message
@@ -134,14 +134,14 @@ messageProgramEndpoint =
         }
         readProgramMessage
         writeProgramMessage
-        (\_ _ -> Ok ())
+        (λ_ _ -> Ok ())
 
 
 messageSchema : Schema.Schema MessageEncoded.Message MessageProgram.Message
 messageSchema =
     Schema.make messageEncodedEndpoint messageProgramEndpoint
-        (\_ encoded -> Ok (encodedToProgram encoded))
-        (\_ program ->
+        (λ_ encoded -> Ok (encodedToProgram encoded))
+        (λ_ program ->
             case program of
                 MessageProgram.Text payload ->
                     Ok (MessageEncoded.Text payload)
@@ -158,7 +158,7 @@ readEncodedMessage context value =
         Object [ ( "kind", Text "count" ), ( "value", Number number ) ] ->
             Result.map
                 (Schema.decode Schema.int number)
-                (\count -> MessageEncoded.Count { value = count })
+                (λcount -> MessageEncoded.Count { value = count })
         _ ->
             Err [ Schema.issue context (Expected "tagged message") "expected tagged message" ]
 
@@ -207,16 +207,16 @@ wireNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "WireNode") )
             ]
         )
-        (\() ->
+        (λ() ->
             Schema.object2Endpoint "wire node"
                 (Schema.requiredField "value" Schema.stringEndpoint)
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "WireNode" wireNodeEndpoint))
                 )
-                (\value children -> WireNode { value = value, children = children })
-                (\(WireNode node) -> node.value)
-                (\(WireNode node) -> node.children)
+                (λvalue children -> WireNode { value = value, children = children })
+                (λ(WireNode node) -> node.value)
+                (λ(WireNode node) -> node.children)
         )
 
 
@@ -228,16 +228,16 @@ programNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "ProgramNode") )
             ]
         )
-        (\() ->
+        (λ() ->
             Schema.object2Endpoint "program node"
                 (Schema.requiredField "value" Schema.int.decoded)
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "ProgramNode" programNodeEndpoint))
                 )
-                (\value children -> ProgramNode { value = value, children = children })
-                (\(ProgramNode node) -> node.value)
-                (\(ProgramNode node) -> node.children)
+                (λvalue children -> ProgramNode { value = value, children = children })
+                (λ(ProgramNode node) -> node.value)
+                (λ(ProgramNode node) -> node.children)
         )
 
 
@@ -255,16 +255,16 @@ nestedNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "NestedNode") )
             ]
         )
-        (\() ->
+        (λ() ->
             Schema.object2Endpoint "nested node"
                 (Schema.requiredField "inner" (wireNodeEndpoint ()))
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "NestedNode" nestedNodeEndpoint))
                 )
-                (\inner children -> NestedNode { inner = inner, children = children })
-                (\(NestedNode node) -> node.inner)
-                (\(NestedNode node) -> node.children)
+                (λinner children -> NestedNode { inner = inner, children = children })
+                (λ(NestedNode node) -> node.inner)
+                (λ(NestedNode node) -> node.children)
         )
 
 
@@ -316,15 +316,15 @@ badConversionEndpoint : Schema.Endpoint String
 badConversionEndpoint =
     Schema.endpoint
         { root = Schema.StringShape, definitions = [] }
-        (\context value ->
+        (λcontext value ->
             case value of
                 Text _ ->
                     Err [ Schema.issue context (Invalid "conversion") "conversion rejected value" ]
                 _ ->
                     Err [ Schema.issue context (Expected "string") "expected string" ]
         )
-        (\_ text -> Ok (Text text))
-        (\_ _ -> Ok ())
+        (λ_ text -> Ok (Text text))
+        (λ_ _ -> Ok ())
 
 
 adverseEndpoint : Schema.Endpoint Pair
@@ -332,9 +332,9 @@ adverseEndpoint =
     Schema.object2Endpoint "adverse"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" badConversionEndpoint)
-        (\name active -> { name = name, active = active == "yes" })
+        (λname active -> { name = name, active = active == "yes" })
         .name
-        (\pair ->
+        (λpair ->
             if pair.active then
                 "yes"
             else
@@ -343,14 +343,14 @@ adverseEndpoint =
 
 
 positiveEndpoint : Schema.Endpoint Int
-positiveEndpoint = Schema.refine Schema.int.decoded "must be positive" (\value -> value > 0)
+positiveEndpoint = Schema.refine Schema.int.decoded "must be positive" (λvalue -> value > 0)
 
 
 prevalidatedSchema : Schema.Schema String Int
 prevalidatedSchema =
     Schema.transform Schema.string positiveEndpoint
-        (\context _ -> Err [ Schema.issue context (Invalid "decode") "unused decode" ])
-        (\context _ ->
+        (λcontext _ -> Err [ Schema.issue context (Invalid "decode") "unused decode" ])
+        (λcontext _ ->
             Err
                 [ Schema.issue
                     context
@@ -365,7 +365,7 @@ positiveBoxSchema =
     Schema.fromEndpoint
         (Schema.object1Endpoint "positive box"
             (Schema.requiredField "count" positiveEndpoint)
-            (\count -> { count = count })
+            (λcount -> { count = count })
             .count
         )
 
@@ -375,7 +375,7 @@ stageWireEndpoint =
     Schema.object2Endpoint "staged"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" Schema.stringEndpoint)
-        (\name active -> { name = name, active = active })
+        (λname active -> { name = name, active = active })
         .name
         .active
 
@@ -383,7 +383,7 @@ stageWireEndpoint =
 stagedSchema : Schema.Schema StageWire Pair
 stagedSchema =
     Schema.make stageWireEndpoint pairEndpoint
-        (\context wire ->
+        (λcontext wire ->
             if wire.active == "yes" then
                 Ok { name = wire.name, active = True }
             else
@@ -391,7 +391,7 @@ stagedSchema =
                     [ Schema.issue context (Invalid "conversion") "active conversion rejected value"
                     ]
         )
-        (\_ pair ->
+        (λ_ pair ->
             Ok
                 { name = pair.name
                 , active =

@@ -15,7 +15,7 @@ template html =
     let
         node = Js.ref Js.null
     in
-    \() ->
+    λ() ->
         let
             _ =
                 if Js.isNull (Js.read node) then
@@ -49,7 +49,7 @@ schedule () =
             _ =
                 Js.apply (Js.global "queueMicrotask")
                     [ Js.from
-                        (\() ->
+                        (λ() ->
                             if Js.read scheduled then
                                 flush ()
                             else

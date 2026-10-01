@@ -30,5 +30,5 @@ main =
         -- A parenthesised lambda is looked through the same way, so it is
         -- the CALLEE and the operand is its argument. `pipe_rhs_not_application`
         -- says so: parenthesising does not pass the block along as a value.
-        , String.fromInt (5 |> (\y -> y + 1))
+        , String.fromInt (5 |> (λy -> y + 1))
         ]

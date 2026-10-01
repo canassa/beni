@@ -72,4 +72,4 @@ pub foreign impure viewport : () -> Viewport
 --|     in
 --|     Dom.focus "edit-${id}"
 pub rendered : () -> ()
-rendered () = Task.callback (\resume -> Browser.onRendered resume)
+rendered () = Task.callback (λresume -> Browser.onRendered resume)

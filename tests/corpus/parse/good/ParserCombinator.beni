@@ -21,17 +21,17 @@ run (Parser p) input =
 
 
 pub succeed : a -> Parser a
-succeed value = Parser (\input -> Ok ( value, input ))
+succeed value = Parser (λinput -> Ok ( value, input ))
 
 
 pub fail : String -> Parser a
-fail message = Parser (\_ -> Err message)
+fail message = Parser (λ_ -> Err message)
 
 
 pub char : Char -> Parser Char
 char expected =
     Parser
-        (\input ->
+        (λinput ->
             case String.uncons input of
                 Just ( c, rest ) ->
                     if c == expected then
@@ -47,7 +47,7 @@ char expected =
 pub map : Parser a, (a -> b) -> Parser b
 map (Parser p) f =
     Parser
-        (\input ->
+        (λinput ->
             case p input of
                 Ok ( value, rest ) ->
                     Ok ( f value, rest )
@@ -60,7 +60,7 @@ map (Parser p) f =
 pub andThen : Parser a, (a -> Parser b) -> Parser b
 andThen (Parser p) f =
     Parser
-        (\input ->
+        (λinput ->
             let
                 step ( value, rest ) =
                     case f value of
@@ -88,7 +88,7 @@ many (Parser p) =
 pub oneOf : List (Parser a) -> Parser a
 oneOf parsers =
     Parser
-        (\input ->
+        (λinput ->
             let
                 try remaining =
                     case remaining of
@@ -111,7 +111,7 @@ pub digits : Parser Int
 digits =
     many (oneOf (List.map [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ] char))
         |> andThen
-            (\cs ->
+            (λcs ->
                 case String.toInt (String.fromList cs) of
                     Just n ->
                         succeed n

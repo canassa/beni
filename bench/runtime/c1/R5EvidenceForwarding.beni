@@ -55,7 +55,7 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+values = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
 
 
 -- Level 3: the work. Everything it knows about `a` arrives as evidence.
@@ -64,7 +64,7 @@ tally : List a, a -> Int
 tally xs mark =
     List.foldl xs
         0
-        (\x acc ->
+        (λx acc ->
             case x.compare mark of
                 LT ->
                     acc + 1
@@ -100,8 +100,8 @@ main =
             List.foldl
                 (List.range 1 outerReps)
                 0
-                (\_ acc ->
-                    List.foldl (List.range 1 innerReps) acc (\_ n -> n + tallyBy values pivot)
+                (λ_ acc ->
+                    List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot)
                 )
     in
     Node.print (String.fromInt total)

@@ -13,6 +13,6 @@ type Msg
 pub view : Html Msg
 view =
     <div>
-        <input onInput={\n -> Typed (String.fromInt (n + 1))} />
+        <input onInput={λn -> Typed (String.fromInt (n + 1))} />
         <button onClick={"clicked"} />
     </div>

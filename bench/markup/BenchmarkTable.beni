@@ -142,7 +142,7 @@ view model =
         <table class="table table-hover table-striped test-data">
             <tbody>
                 <For each={model.rows} keyed={.id}>
-                    {\row ->
+                    {λrow ->
                         <tr class={rowClass model row}>
                             <td class="col-md-1">{row.id}</td>
                             <td class="col-md-4">
@@ -182,7 +182,7 @@ summary model =
         <p>
             Showing {count} rows, {if count > 0 then "some" else "none"} selected
             <Show when={model.selected} keyed fallback={<em>nothing picked</em>}>
-                {\id -> <strong>row #{id}</strong>}
+                {λid -> <strong>row #{id}</strong>}
             </Show>
         </p>
         <ul class="stats">
@@ -205,7 +205,7 @@ update msg model =
             model
 
         Update ->
-            { model | rows = List.map (\r -> { r | label = r.label ++ " !!!" }) model.rows }
+            { model | rows = List.map (λr -> { r | label = r.label ++ " !!!" }) model.rows }
 
         Clear ->
             { model | rows = [], selected = Nothing }
@@ -217,4 +217,4 @@ update msg model =
             { model | selected = Just id }
 
         Remove id ->
-            { model | rows = List.filter (\r -> r.id /= id) model.rows }
+            { model | rows = List.filter (λr -> r.id /= id) model.rows }

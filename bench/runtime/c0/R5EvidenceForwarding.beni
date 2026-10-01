@@ -48,7 +48,7 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+values = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
 
 
 -- Level 3: the work. Everything it knows about `a` arrives in `cmp`.
@@ -56,7 +56,7 @@ tally : List a, a, (a, a -> Order) -> Int
 tally xs mark cmp =
     List.foldl xs
         0
-        (\x acc ->
+        (λx acc ->
             case cmp x mark of
                 LT ->
                     acc + 1
@@ -82,9 +82,9 @@ level1 xs mark cmp = level2 xs mark cmp
 tallyBy : List Int, Int, Int -> Int
 tallyBy xs mark scale =
     let
-        key = \x -> x * scale
+        key = λx -> x * scale
     in
-    level1 xs mark (\a b -> compare (key a) (key b))
+    level1 xs mark (λa b -> compare (key a) (key b))
 
 
 main : Program
@@ -94,8 +94,8 @@ main =
             List.foldl
                 (List.range 1 outerReps)
                 0
-                (\_ acc ->
-                    List.foldl (List.range 1 innerReps) acc (\_ n -> n + tallyBy values pivot 1)
+                (λ_ acc ->
+                    List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot 1)
                 )
     in
     Node.print (String.fromInt total)

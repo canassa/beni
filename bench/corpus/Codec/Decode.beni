@@ -100,7 +100,7 @@ indent text = String.join (String.split text "\n") "\n    "
 pub string : Decoder String
 string =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Text s ->
                     Ok s
@@ -113,7 +113,7 @@ string =
 pub int : Decoder Int
 int =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Number n ->
                     if toFloat (round n) == n then
@@ -129,7 +129,7 @@ int =
 pub float : Decoder Float
 float =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Number n ->
                     Ok n
@@ -142,7 +142,7 @@ float =
 pub bool : Decoder Bool
 bool =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Boolean b ->
                     Ok b
@@ -155,7 +155,7 @@ bool =
 pub null : a -> Decoder a
 null result =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Null ->
                     Ok result
@@ -173,7 +173,7 @@ raw = Decoder Ok
 pub field : String, Decoder a -> Decoder a
 field name decoder =
     Decoder
-        (\value ->
+        (λvalue ->
             case Value.get value name of
                 Just inner ->
                     decodeValue decoder inner
@@ -191,7 +191,7 @@ at names decoder = List.foldr names decoder field
 pub index : Int, Decoder a -> Decoder a
 index i decoder =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Array items ->
                     case List.head (List.drop items i) of
@@ -210,7 +210,7 @@ index i decoder =
 pub list : Decoder a -> Decoder (List a)
 list decoder =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Array items ->
                     listHelp decoder 0 items []
@@ -238,7 +238,7 @@ listHelp decoder i items acc =
 pub keyValuePairs : Decoder a -> Decoder (List ( String, a ))
 keyValuePairs decoder =
     Decoder
-        (\value ->
+        (λvalue ->
             case value of
                 Object fields ->
                     pairsHelp decoder fields []
@@ -281,7 +281,7 @@ nullable decoder = oneOf [ null Nothing, map decoder Just ]
 
 
 pub oneOf : List (Decoder a) -> Decoder a
-oneOf decoders = Decoder (\value -> oneOfHelp decoders value [])
+oneOf decoders = Decoder (λvalue -> oneOfHelp decoders value [])
 
 
 oneOfHelp : List (Decoder a), Value, List Error -> Result Error a
@@ -301,34 +301,34 @@ oneOfHelp decoders value errors =
 
 -- Combinators
 pub succeed : a -> Decoder a
-succeed result = Decoder (\_ -> Ok result)
+succeed result = Decoder (λ_ -> Ok result)
 
 
 pub fail : String -> Decoder a
-fail message = Decoder (\value -> Err (Failure message value))
+fail message = Decoder (λvalue -> Err (Failure message value))
 
 
 pub andThen : Decoder a, (a -> Decoder b) -> Decoder b
 andThen decoder next =
     Decoder
-        (\value ->
+        (λvalue ->
             decodeValue decoder value
-                |> Result.andThen (\a -> decodeValue (next a) value)
+                |> Result.andThen (λa -> decodeValue (next a) value)
         )
 
 
 pub map : Decoder a, (a -> value) -> Decoder value
-map decoder f = Decoder (\value -> Result.map (decodeValue decoder value) f)
+map decoder f = Decoder (λvalue -> Result.map (decodeValue decoder value) f)
 
 
 pub map2 : Decoder a, Decoder b, (a, b -> value) -> Decoder value
-map2 da db f = Decoder (\value -> Result.map2 (decodeValue da value) (decodeValue db value) f)
+map2 da db f = Decoder (λvalue -> Result.map2 (decodeValue da value) (decodeValue db value) f)
 
 
 pub map3 : Decoder a, Decoder b, Decoder c, (a, b, c -> value) -> Decoder value
 map3 da db dc f =
     Decoder
-        (\value ->
+        (λvalue ->
             Result.map3 (decodeValue da value) (decodeValue db value) (decodeValue dc value) f
         )
 
@@ -336,7 +336,7 @@ map3 da db dc f =
 pub map4 : Decoder a, Decoder b, Decoder c, Decoder d, (a, b, c, d -> value) -> Decoder value
 map4 da db dc dd f =
     Decoder
-        (\value ->
+        (λvalue ->
             Result.map4
                 (decodeValue da value)
                 (decodeValue db value)
@@ -356,7 +356,7 @@ pub map5 :
     -> Decoder value
 map5 da db dc dd de f =
     Decoder
-        (\value ->
+        (λvalue ->
             Result.map5
                 (decodeValue da value)
                 (decodeValue db value)
@@ -378,6 +378,6 @@ pub map6 :
     -> Decoder value
 map6 da db dc dd de df f =
     map2
-        (map5 da db dc dd de (\a b c d five -> f a b c d five _))
+        (map5 da db dc dd de (λa b c d five -> f a b c d five _))
         df
-        (\partial last -> partial last)
+        (λpartial last -> partial last)

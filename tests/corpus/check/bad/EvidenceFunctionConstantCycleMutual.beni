@@ -3,7 +3,7 @@
 -- defined through the other: one `cyclic_value` for the circle, at `h`.
 -- A clean check here would build a program that overflows the stack when run.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = \x -> f (g x)
+compose f g = λx -> f (g x)
 
 
 keep : a -> a
@@ -16,7 +16,7 @@ keep x =
 
 
 twice : (a -> a) -> (a -> a)
-twice f = \x -> f (f x)
+twice f = λx -> f (f x)
 
 
 h : a -> a

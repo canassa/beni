@@ -1247,7 +1247,7 @@ compress very well.
 
 **Known gaps.** A `case` of more than 65 046 literal branches was one `switch` SpiderMonkey refuses;
 *closed 2026-09-27:* a fan of more than 16 384 labels is consecutive `switch`es
-(§7, *The emitted shape*). Mobile engines are unmeasured. A lambda applied on the spot, `(\x -> …) a`, costs a
+(§7, *The emitted shape*). Mobile engines are unmeasured. A lambda applied on the spot, `(λx -> …) a`, costs a
 function scope where a `let` would cost none; lowering it as the `let` it means would lift the
 120-function edge. Evidence nested inside a deep expression is counted by the
 exact measure and not by the cheap one, so it can be refused where binding more of it would have
@@ -1793,7 +1793,7 @@ statement **`try { body } finally { cleanup }`**, JsIr's `try_stmt` — the one 
 platform's beni restore its state when what it calls throws (a stack overflow, a host error,
 `Debug.todo` in a development build), which is what the hand-written host's latches do.
 
-**The shape.** An argument that is a lambda of one parameter binding nothing (`\() ->`, `\_ ->`)
+**The shape.** An argument that is a lambda of one parameter binding nothing (`λ() ->`, `λ_ ->`)
 and that cannot suspend is written in place: its body is the block, and no function is made. Any
 other argument is evaluated before the `try`, in written order, bound to a `const` unless it is a
 name or a literal, and called inside its block — so a call that makes the cleanup runs before the
@@ -1880,7 +1880,7 @@ of a loop; both builds), `check/bad/core/CatchIfSuspends`. Red first: with the c
 
 ### `Js.pure` is its body
 
-*Added 2026-10-01 (`plans/core-in-beni.md`, step 1).* `Js.pure (\() -> body)` (`boundary.md`
+*Added 2026-10-01 (`plans/core-in-beni.md`, step 1).* `Js.pure (λ() -> body)` (`boundary.md`
 §4.2) is written as `body` — wherever the call stands, a value, a tail or a discarded position, the
 body stands there instead and is lowered as it would be (`Lower.pureBody`); with any other
 argument it is a call of it. What it changes is the checker's answer, not a byte: `Js.pure` is
@@ -2093,7 +2093,7 @@ harder — it was the one helper this section had ever needed.
 
 *Added 2026-10-02 (research 47 §6 item 7).* `f () = …` compiled to `($p) => …`: a parameter that
 binds nothing, whose argument is always `null`. **A trailing run of parameters whose pattern is
-`()` is not written in the JavaScript parameter list** — `f () = …` is `() => …`, `\() -> …` is
+`()` is not written in the JavaScript parameter list** — `f () = …` is `() => …`, `λ() -> …` is
 `() => …`, `g x () = …` is `(x) => …` — for a declaration, a `let` function and a lambda alike,
 and for a function that loops (§8), whose jump still evaluates such an argument and stores it
 nowhere. A `()` before a written parameter stays, because positions do not move.
@@ -2708,7 +2708,7 @@ The cases, decided:
 |---|---|---|
 | `f x acc = … f x' acc'` | yes | the case this exists for |
 | `let go i acc = … go i' acc'` | **yes** | a `let_def` with parameters is already its own hoisted `function` (`src/js/Lower.zig:3135`), so the loop is contained; excluding it would leave the language's most natural loop idiom overflowing |
-| `f = \x -> … f x'` | **yes** | `f x = e` and `f = \x -> e` emit byte-identical JavaScript today, and two spellings of one program must not differ in stack behaviour. The rule is narrow: a `lambda` that is the **entire** body of a parameterless declaration or `let_def` inherits that name; a lambda anywhere else never does |
+| `f = λx -> … f x'` | **yes** | `f x = e` and `f = λx -> e` emit byte-identical JavaScript today, and two spellings of one program must not differ in stack behaviour. The rule is narrow: a `lambda` that is the **entire** body of a parameterless declaration or `let_def` inherits that name; a lambda anywhere else never does |
 | a self-call inside a nested lambda | no | a different function |
 | a self-call through an alias, or `f` passed as a value | no | the callee must be the name itself, in callee position |
 | the function's name shadowed | can't happen | shadowing is an error (`language.md` §7); `tests/corpus/parse/bad/ShadowingParam.beni` pins exactly a parameter named like a top-level value. The backend needs no scope test |
@@ -2786,7 +2786,7 @@ This is the defect the design above exists to make impossible, and it exits 0.
 
 ```elm
 build n acc =
-    if n <= 0 then acc else build (n - 1) ((\x -> x + n) :: acc)
+    if n <= 0 then acc else build (n - 1) ((λx -> x + n) :: acc)
 ```
 
 Each iteration conses a closure over `n`. Reassign `n` in place and every closure reads the last
@@ -2799,7 +2799,7 @@ lambdas, `f a _` placeholders, `<-` continuations and §6's eta-expanded evidenc
 capture analysis that is wrong once is wrong silently.
 
 `<-` is both at once. `let x <- f a in rest` is
-`f a (\x -> rest)` (`language.md` §6.7), so when `f` is the enclosing function the **call** is a
+`f a (λx -> rest)` (`language.md` §6.7), so when `f` is the enclosing function the **call** is a
 tail self-call and loops, while the continuation is a different function and its body is **not** a
 tail position of the outer one. The continuation closes over this iteration's parameters, including
 over the callback parameter it is replacing — in-place reassignment there does not merely read a
@@ -3368,13 +3368,13 @@ proved by running still holds, and the shape claim gets exactly one golden.
 |---|---|---|
 | `TailCallDeep` | **the fail-first one.** A two-parameter accumulator counting to 1 000 000 | `500000500000`; overflows the stack before the fix |
 | `TailCallSwap` | argument order: `swap a b n = … swap b a (n - 1)` | `2,1` then `1,2` for odd and even *n*; naive in-place assignment prints `2,2` |
-| `TailCallClosures` | the capture hazard: cons a `\x -> x + n` each iteration, then apply each to `0` | `1`, `2`, `3`; in-place reassignment prints `0`, `0`, `0` |
+| `TailCallClosures` | the capture hazard: cons a `λx -> x + n` each iteration, then apply each to `0` | `1`, `2`, `3`; in-place reassignment prints `0`, `0`, `0` |
 | `TailCallNesting` | a tail call reached through `case` inside `let` inside `if`, and a nested `case` | any deep result, run at a depth that overflows without the loop |
 | `TailCallNotTail` | `f n = if n <= 0 then 0 else 1 + f (n - 1)` must NOT loop, and a function with one tail and one non-tail self-call must still be right | small depths, exact answers |
-| `TailCallBind` | `let m <- f (n - 1)`: the call loops, the continuation does not | `sumTo 3 (\x -> x)` is `1` |
+| `TailCallBind` | `let m <- f (n - 1)`: the call loops, the continuation does not | `sumTo 3 (λx -> x)` is `1` |
 | `TailCallEvidence` | a `where`-constrained function looping deep with evidence forwarded, **and** a tail self-call at a different instantiation whose evidence therefore changes | exact counts; the second half is the polymorphic-recursion case above |
 | `TailCallLetFunction` | a `let`-bound helper counting to 1 000 000 | as `TailCallDeep` |
-| `TailCallLambdaBody` | `f = \n acc -> … f …` counting to 1 000 000 | as `TailCallDeep` |
+| `TailCallLambdaBody` | `f = λn acc -> … f …` counting to 1 000 000 | as `TailCallDeep` |
 | `ListFoldDeep` | `List.foldl` over `List.range 1 1000000` and `List.foldr` over a list of 200 000 | the sums; proves the beni folds and `range` all survive |
 | `emit/TailCallLoop` | the shape: label, `$in$<i>` slots, the prologue `const`, `continue`, and one loop-invariant parameter keeping its own name | the golden of §12 |
 | `TailModConsMap` | *added 2026-09-30, like the rows below it.* **The fail-first one of *Tail calls modulo cons*:** `f x :: mapRec rest f`, and `filterRec` mixing a cons step with a plain tail call, over 100 000 elements | lengths, sums and small results in order; overflowed before |
@@ -5547,7 +5547,7 @@ sees its turn's value, which a substitution of the reassigned variable would los
 **Slice 8 — a small function, wherever it is called** (*added 2026-10-03*; ledger steps 12 and 17,
 `plans/runtime-in-beni.md`'s *Append against Solid 1*). *A function called once* takes a body in
 at one call; a function called from many places paid a call at each, an identity included
-(`patch` once definite initialisation decides it, `update = \_ m -> m`, `Html.map`'s tagger
+(`patch` once definite initialisation decides it, `update = λ_ m -> m`, `Html.map`'s tagger
 `identity`). Under `--release`, after the facts:
 
 - **Which functions.** A function whose body is one `return e`, where `e` holds no function and no

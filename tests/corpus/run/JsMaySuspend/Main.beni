@@ -10,14 +10,14 @@ import Probe
 main : Node.Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             Node.printLines
-                [ Probe.start (\() -> ())
-                , Probe.start (\() -> Io.sleep 1)
-                , Probe.forward (\() -> ())
-                , Probe.forward (\() -> Io.sleep 1)
+                [ Probe.start (λ() -> ())
+                , Probe.start (λ() -> Io.sleep 1)
+                , Probe.forward (λ() -> ())
+                , Probe.forward (λ() -> Io.sleep 1)
                 , Probe.fixed ()
-                , String.fromInt (Probe.count (\() -> ()))
-                , String.fromInt (Probe.count (\() -> Io.sleep 1))
+                , String.fromInt (Probe.count (λ() -> ()))
+                , String.fromInt (Probe.count (λ() -> Io.sleep 1))
                 ]
         )

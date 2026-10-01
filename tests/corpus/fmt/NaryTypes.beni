@@ -12,7 +12,7 @@ apply f x = f x
 
 
 pub pairOver : ( Int, Int ) -> ( (Int -> Int), Int )
-pairOver p = ( \n -> n, p.0 )
+pairOver p = ( λn -> n, p.0 )
 
 
 pub type alias Handlers msg =

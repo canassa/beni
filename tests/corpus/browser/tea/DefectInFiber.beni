@@ -25,13 +25,13 @@ update msg count =
             ( count + 10
             , Cmd.batch
                 [ Cmd.perform
-                    (\send ->
+                    (λsend ->
                         let
                             _ = Time.sleep (Time.millis 50)
                         in
                         send Late
                     )
-                , Cmd.perform (\_ -> Debug.todo "body threw")
+                , Cmd.perform (λ_ -> Debug.todo "body threw")
                 ]
             )
 
@@ -54,4 +54,4 @@ view count =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

@@ -12,6 +12,6 @@ f x =
             if True then
                 x
             else
-                { combine = \n -> n + 100 }
+                { combine = λn -> n + 100 }
     in
     p + q

@@ -4,7 +4,7 @@
 -- the callback's PARAMETER and which is therefore named as one, by the parser
 -- and by the checker alike.
 pub lambda : Int
-lambda = (\(Just n) -> n) (Just 1)
+lambda = (λ(Just n) -> n) (Just 1)
 
 
 pub letBound : Int

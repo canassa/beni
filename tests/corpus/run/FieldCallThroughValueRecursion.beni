@@ -28,7 +28,7 @@ fb n y =
         y
     else
         let
-            _ = fa 1 { combine = \z -> z + 1 }
+            _ = fa 1 { combine = λz -> z + 1 }
         in
         y
 

@@ -22,4 +22,4 @@ total = twice 1 + 2
 
 
 later : () -> Int
-later = \() -> fetch 1
+later = λ() -> fetch 1

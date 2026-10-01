@@ -43,7 +43,7 @@ pub inner b =
 
 
 pub pair n =
-    case (\y -> y.h ()) (K n) of
+    case (λy -> y.h ()) (K n) of
         r ->
             let
                 q z = r.combine z

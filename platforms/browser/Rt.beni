@@ -128,7 +128,7 @@ template html flags =
     let
         node = Js.ref Js.null
     in
-    \() ->
+    λ() ->
         let
             _ =
                 if Js.isNull (Js.read node) then
@@ -328,7 +328,7 @@ crashScreen () =
         _ = Js.call (Js.get document "body") "appendChild" [ screen ]
 
         report =
-            \event ->
+            λevent ->
                 let
                     error = Js.get event "error"
                     message : String
@@ -360,12 +360,12 @@ flush () =
             ok = Js.ref False
         in
         Js.finally
-            (\() ->
+            (λ() ->
                 let
                     _ = Js.write scheduled False
                     renders = Js.read queued
                     _ = Js.write queued (Js.array [])
-                    _ = Js.each renders (\render -> Js.to (Js.apply render []))
+                    _ = Js.each renders (λrender -> Js.to (Js.apply render []))
 
                     _ =
                         if Js.isNullish (Js.read phase) then
@@ -375,7 +375,7 @@ flush () =
                 in
                 Js.write ok True
             )
-            (\() -> if Js.read ok then () else stop ())
+            (λ() -> if Js.read ok then () else stop ())
 
 
 -- `(program)`: start every program the array holds, in order.
@@ -385,13 +385,13 @@ run program =
         ok = Js.ref False
     in
     Js.finally
-        (\() ->
+        (λ() ->
             let
-                _ = Js.each program (\m -> startOne m)
+                _ = Js.each program (λm -> startOne m)
             in
             Js.write ok True
         )
-        (\() -> if Js.read ok then () else stop ())
+        (λ() -> if Js.read ok then () else stop ())
 
 
 startOne : V -> ()
@@ -433,7 +433,7 @@ startOne m =
     else
         mount
             (Js.apply (Js.get m "h")
-                [ root, Js.from flush, Js.from (\f -> setPhase f), Js.from stop ]
+                [ root, Js.from flush, Js.from (λf -> setPhase f), Js.from stop ]
             )
             root
 
@@ -456,7 +456,7 @@ mount program root =
         waiting = Js.ref False
 
         render =
-            \() ->
+            λ() ->
                 let
                     _ = Js.write waiting False
                 in
@@ -467,7 +467,7 @@ mount program root =
                 root
                 "$$root"
                 (Js.from
-                    (\msg ->
+                    (λmsg ->
                         -- A stopped page applies no message, from a
                         -- handler, a fiber or after-render work alike.
                         if Js.read dead then
@@ -490,7 +490,7 @@ mount program root =
                                             in
                                             Js.to
                                                 (Js.apply (Js.global "queueMicrotask")
-                                                    [ Js.from (\() -> microtask ()) ]
+                                                    [ Js.from (λ() -> microtask ()) ]
                                                 )
                             in
                             Js.write model (Js.call program "update" [ msg, Js.read model ])
@@ -989,7 +989,7 @@ trimmed s items keyOf row same was now =
                 -- The key the item at `b` has, asked for once: `ks` holds
                 -- the keys of the items from `p`.
                 keyAt =
-                    \b ->
+                    λb ->
                         let
                             k = Js.at ks (b - p)
                         in
@@ -1012,7 +1012,7 @@ trimmed s items keyOf row same was now =
                 -- Row `i` shows item `b`: the same item, or failing that the
                 -- same key.
                 hit =
-                    \i b ->
+                    λi b ->
                         Js.same (Js.get i "x") (Js.at xs (b - p))
                             || Js.same (Js.get i "k") (keyAt b)
 
@@ -1065,7 +1065,7 @@ trimmed s items keyOf row same was now =
                             let
                                 _ = Js.set parent "textContent" (Js.from "")
                             in
-                            Js.each next (\i -> put parent i Js.null)
+                            Js.each next (λi -> put parent i Js.null)
                         else if aStart /= p || aStart < aEnd || aStart < bEnd then
                             let
                                 _ =
@@ -1444,7 +1444,7 @@ keyedPass s items keyOf row same was now =
         _ =
             Js.each
                 old
-                (\o ->
+                (λo ->
                     if
                         Js.to (Js.get o "kv") /= stamp
                             && Js.same (Js.call byKey "get" [ Js.get o "k" ]) o
@@ -1471,7 +1471,7 @@ keyedPass s items keyOf row same was now =
                                     else
                                         first (Js.get s "i")
                             in
-                            Js.each next (\i -> put parent i before)
+                            Js.each next (λi -> put parent i before)
                         else if
                             Js.to (Js.get next "length")
                                 == 0
@@ -1798,7 +1798,7 @@ classes el list previous =
             else
                 Js.each
                     old
-                    (\name ->
+                    (λname ->
                         if Js.to (Js.call next "has" [ name ]) then
                             ()
                         else
@@ -1807,7 +1807,7 @@ classes el list previous =
     in
     Js.each
         next
-        (\name ->
+        (λname ->
             if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
                 Js.to (Js.call (Js.get el "classList") "add" [ name ])
             else
@@ -1824,11 +1824,11 @@ classSet list =
         _ =
             Js.each
                 (elements list)
-                (\entry ->
+                (λentry ->
                     if Js.to (Js.get entry "b") then
                         Js.each
                             (Js.call (Js.get entry "a") "split" [ spaces ])
-                            (\name ->
+                            (λname ->
                                 if Js.same name (Js.from "") then
                                     ()
                                 else
@@ -1868,7 +1868,7 @@ styles el list previous =
             else
                 Js.each
                     (Js.call old "keys" [])
-                    (\name ->
+                    (λname ->
                         if Js.to (Js.call next "has" [ name ]) then
                             ()
                         else
@@ -1877,7 +1877,7 @@ styles el list previous =
     in
     Js.each
         next
-        (\entry ->
+        (λentry ->
             if
                 Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1))
             then
@@ -1896,7 +1896,7 @@ styleMap list =
         _ =
             Js.each
                 (elements list)
-                (\entry -> Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]))
+                (λentry -> Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]))
     in
     values
 
@@ -1908,13 +1908,13 @@ textKind : V
 textKind =
     Js.from
         { m =
-            \v ->
+            λv ->
                 let
                     n = Js.call (Js.global "document") "createTextNode" [ v ]
                 in
                 Js.from { s = n, q = Js.null, e = n, d = v }
         , p =
-            \i v ->
+            λi v ->
                 if Js.same v (Js.get i "d") then
                     ()
                 else
@@ -1937,7 +1937,7 @@ mapKind : V
 mapKind =
     Js.from
         { m =
-            \v cx ->
+            λv cx ->
                 let
                     c = Js.from { f = Js.at v 1, up = cx }
                     h = slot Js.null Js.null c
@@ -1945,7 +1945,7 @@ mapKind =
                 in
                 Js.from { s = Js.null, q = h, e = Js.null, c = c }
         , p =
-            \i v ->
+            λi v ->
                 let
                     _ = Js.set (Js.get i "c") "f" (Js.at v 1)
                 in
@@ -1997,7 +1997,7 @@ fire node event key flags =
 
             _ =
                 Js.finally
-                    (\() ->
+                    (λ() ->
                         let
                             x = Js.get node "${key}X"
 
@@ -2020,7 +2020,7 @@ fire node event key flags =
                         in
                         Js.write ok True
                     )
-                    (\() -> if Js.read ok then () else stop ())
+                    (λ() -> if Js.read ok then () else stop ())
         in
         if Js.bitAnd flags 2 /= 0 then
             Js.to (Js.call event "stopPropagation" [])
@@ -2088,7 +2088,7 @@ pub delegate : V -> ()
 delegate names =
     Js.each
         names
-        (\name ->
+        (λname ->
             if Js.to (Js.call registered "has" [ name ]) then
                 ()
             else
@@ -2121,7 +2121,7 @@ listen el name flags =
         (Js.call el "addEventListener"
             [ Js.from name
             , Js.from
-                (\event ->
+                (λevent ->
                     if Js.isUndefined (Js.get el key) then
                         ()
                     else

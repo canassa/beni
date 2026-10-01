@@ -63,10 +63,10 @@ view model =
         <Card title="Card" footer={if model.on then Just (badge "footer") else Nothing}>
             {Html.text "text"} and <b>markup</b>
         </Card>
-        <ol>{List.map model.items (\item -> <li>{item}</li>)}</ol>
+        <ol>{List.map model.items (λitem -> <li>{item}</li>)}</ol>
         <ul>
             <For each={model.items} keyed={False} fallback={<li>empty</li>}>
-                {\item -> <li>{item}</li>}
+                {λitem -> <li>{item}</li>}
             </For>
         </ul>
     </main>

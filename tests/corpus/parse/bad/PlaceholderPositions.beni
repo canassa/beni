@@ -37,7 +37,7 @@ inLet =
 
 
 inLambda =
-    \y -> _
+    λy -> _
 
 
 inPipe f =

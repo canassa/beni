@@ -18,7 +18,7 @@ import String
 -- is one level down and `List.foldl`'s is two, and `$m$0` is read there.
 countEach : List a -> List Int
     where a.same : a, a -> Bool
-countEach xs = List.map xs (\x -> List.foldl xs 0 (\y n -> if x.same y then n + 1 else n))
+countEach xs = List.map xs (λx -> List.foldl xs 0 (λy n -> if x.same y then n + 1 else n))
 
 
 pub type Colour

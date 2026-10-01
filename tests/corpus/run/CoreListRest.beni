@@ -42,11 +42,11 @@ main =
         , ints numbers
         , String.join (List.map flags flag) ","
         , ints (List.unzip []).0
-        , ints (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] (\a b c -> a + b + c))
-        , ints (List.map3 [ 1, 2, 3 ] [ 10 ] [ 100, 200 ] (\a b c -> a + b + c))
-        , ints (List.map4 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] (\a b c d -> a + b + c + d))
-        , ints (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [] (\a b c d -> a + b + c + d))
-        , ints (List.map5 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] [ 10000 ] (\a b c d f -> a + b + c + d + f))
+        , ints (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] (λa b c -> a + b + c))
+        , ints (List.map3 [ 1, 2, 3 ] [ 10 ] [ 100, 200 ] (λa b c -> a + b + c))
+        , ints (List.map4 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] (λa b c d -> a + b + c + d))
+        , ints (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [] (λa b c d -> a + b + c + d))
+        , ints (List.map5 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] [ 10000 ] (λa b c d f -> a + b + c + d + f))
         , ints
             (List.map5
                 [ 1, 2 ]
@@ -54,6 +54,6 @@ main =
                 [ 100, 200 ]
                 [ 1000, 2000 ]
                 [ 10000 ]
-                (\a b c d f -> a + b + c + d + f)
+                (λa b c d f -> a + b + c + d + f)
             )
         ]

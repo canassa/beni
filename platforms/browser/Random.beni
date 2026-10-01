@@ -56,7 +56,7 @@ value generator =
 --| `Random.generate`, the generator first. It is `Cmd.task` over `value`,
 --| and never waits, so it runs with no fiber.
 pub generate : Generator a, (a -> msg) -> Cmd msg
-generate generator tag = Cmd.task (\() -> value generator) tag
+generate generator tag = Cmd.task (λ() -> value generator) tag
 
 
 -- The page's seed, once something has drawn from it.

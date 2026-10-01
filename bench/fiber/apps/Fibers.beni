@@ -17,15 +17,15 @@ worker n =
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
                 answer =
                     Task.scope
-                        (\s ->
+                        (λs ->
                             Task.bracket
-                                (\() -> 21)
-                                (\_ _ -> ())
-                                (\r -> Task.join (Task.spawnIn s (\() -> worker r)))
+                                (λ() -> 21)
+                                (λ_ _ -> ())
+                                (λr -> Task.join (Task.spawnIn s (λ() -> worker r)))
                         )
             in
             Node.print (String.fromInt answer)

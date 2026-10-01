@@ -34,7 +34,7 @@ f k =
 main : Program
 main =
     let
-        ( first, second ) = f (\n -> Just (n + 1))
+        ( first, second ) = f (λn -> Just (n + 1))
     in
     Node.printLines
         [ Debug.toString (h (Just 1))

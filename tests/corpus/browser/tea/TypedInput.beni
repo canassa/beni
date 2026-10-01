@@ -31,7 +31,7 @@ view : Model -> Html Msg
 view model =
     <main>
         <input id="name" value={model.text} onInput={Typed} />
-        <ol><For each={model.seen} keyed={False}>{\s -> <li>{s}</li>}</For></ol>
+        <ol><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ol>
     </main>
 
 

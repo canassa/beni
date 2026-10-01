@@ -28,7 +28,7 @@ pub page : Int
 page =
     sandbox
         0
-        (\n ->
+        (λn ->
             let
                 () = log "view"
             in

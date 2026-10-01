@@ -26,6 +26,6 @@ pub mb (K n) y =
         y
     else
         let
-            _ = (K 1).ma { f = \z -> z }
+            _ = (K 1).ma { f = λz -> z }
         in
         y

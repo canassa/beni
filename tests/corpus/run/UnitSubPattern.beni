@@ -118,7 +118,7 @@ lambdaAndLet =
     let
         (Wrap ()) = Wrap ()
     in
-    (\(Wrap ()) -> 9) (Wrap ())
+    (λ(Wrap ()) -> 9) (Wrap ())
 
 
 main : Program

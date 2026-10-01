@@ -24,7 +24,7 @@ sameLoud a b = a == b
 
 pub count : List a, a -> Int
     where a.eq : a, a -> Bool
-count xs x = List.length (List.filter xs (\y -> y == x))
+count xs x = List.length (List.filter xs (λy -> y == x))
 
 
 pub countLoud : List Loud -> Int

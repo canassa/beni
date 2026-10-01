@@ -53,14 +53,14 @@ points : List Point
 points =
     List.concatMap
         (List.range 0 (blocks - 1))
-        (\block -> List.map (List.range 1 perBlock) (\i -> { x = block, y = i }))
+        (λblock -> List.map (List.range 1 perBlock) (λi -> { x = block, y = i }))
 
 
 main : Program
 main =
     let
-        dict = List.foldl points Dict.empty (\p d -> Dict.insert d p (weight p))
+        dict = List.foldl points Dict.empty (λp d -> Dict.insert d p (weight p))
 
-        total = List.foldl points 0 (\p acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
+        total = List.foldl points 0 (λp acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
     in
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

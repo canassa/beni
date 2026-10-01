@@ -18,8 +18,8 @@ guard queue =
 
         _ =
             Js.finally
-                (\() -> Js.each queue (\f -> Js.to (Js.apply f [])))
-                (\() -> Js.write busy False)
+                (λ() -> Js.each queue (λf -> Js.to (Js.apply f [])))
+                (λ() -> Js.write busy False)
     in
     Js.set queue "length" (Js.from 0)
 
@@ -32,14 +32,14 @@ render view =
         let
             _ = Js.write busy True
         in
-        Js.finally (\() -> Js.apply view []) (\() -> Js.write busy False)
+        Js.finally (λ() -> Js.apply view []) (λ() -> Js.write busy False)
 
 
 pub measured : Js.Value -> String
 measured node =
     let
         width : Int
-        width = Js.finally (\() -> Js.to (Js.get node "offsetWidth")) (\() -> Js.write busy False)
+        width = Js.finally (λ() -> Js.to (Js.get node "offsetWidth")) (λ() -> Js.write busy False)
     in
     "${String.fromInt width}px"
 

@@ -120,10 +120,10 @@ mapHandler handler f =
             Always (f msg)
 
         WithValue toMsg ->
-            WithValue (\value -> f (toMsg value))
+            WithValue (λvalue -> f (toMsg value))
 
         WithChecked toMsg ->
-            WithChecked (\checked -> f (toMsg checked))
+            WithChecked (λchecked -> f (toMsg checked))
 
 
 --| The view as HTML text. Handlers are not markup and are left out.
@@ -146,7 +146,7 @@ renderAttributes : List (Attribute msg) -> String
 renderAttributes attributes =
     attributes
         |> List.filterMap renderAttribute
-        |> List.map (\written -> " " ++ written)
+        |> List.map (λwritten -> " " ++ written)
         |> String.concat
 
 

@@ -12,7 +12,7 @@ import String
 
 count : Int, Int -> Int
 count =
-    \n acc ->
+    λn acc ->
         if n <= 0 then
             acc
         else
@@ -21,7 +21,7 @@ count =
 
 outer : Int -> (Int -> Int)
 outer n =
-    \m ->
+    λm ->
         if m <= 0 then
             n
         else

@@ -18,7 +18,7 @@ import Show
 logged : String -> Conversion String String
 logged name =
     Schema.conversion
-        (\s ->
+        (λs ->
             let
                 _ = Debug.log s name
             in
@@ -27,7 +27,7 @@ logged name =
             else
                 Ok s
         )
-        (\s -> Ok s)
+        (λs -> Ok s)
 
 
 type alias Three =
@@ -59,20 +59,20 @@ joined =
     Schema.converted
         three
         (Schema.conversion
-            (\t ->
+            (λt ->
                 let
                     _ = Debug.log t.x "whole record"
                 in
                 Ok (t.x ++ t.y ++ t.z)
             )
-            (\s -> Ok { x = s, y = "", z = "" })
+            (λs -> Ok { x = s, y = "", z = "" })
         )
 
 
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (\s ->
+        (λs ->
             case String.toInt s of
                 Just n ->
                     Ok n
@@ -80,7 +80,7 @@ decimalInt =
                 Nothing ->
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        (\n -> Ok (String.fromInt n))
+        (λn -> Ok (String.fromInt n))
 
 
 type alias Mixed b =
@@ -113,7 +113,7 @@ mixed =
 picky : Conversion (List Int) Int
 picky =
     Schema.conversion
-        (\xs ->
+        (λxs ->
             case xs of
                 [] ->
                     Err []
@@ -133,7 +133,7 @@ picky =
                           }
                         ]
         )
-        (\x -> Ok [ x ])
+        (λx -> Ok [ x ])
 
 
 type alias Box =
@@ -188,7 +188,7 @@ reported = { all | reportInput = True }
 
 
 issues : Result (List Issue) a -> String
-issues r = Show.result r (\_ -> "")
+issues r = Show.result r (λ_ -> "")
 
 
 bad : String
@@ -212,10 +212,10 @@ main =
         , issues (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
         , Show.result
             (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}")
-            (\s -> s)
+            (λs -> s)
         , "-- a conversion's issues"
         , issues (Schema.parse wrapper "{\"in\":[1,2,3]}")
         , issues (Schema.parse wrapper "{\"in\":[]}")
-        , Show.result (Schema.parse wrapper "{\"in\":[7]}") (\w -> String.fromInt w.inner)
+        , Show.result (Schema.parse wrapper "{\"in\":[7]}") (λw -> String.fromInt w.inner)
         , issues (Schema.decodeWith wrapper reported { inner = [ 1, 2 ] })
         ]

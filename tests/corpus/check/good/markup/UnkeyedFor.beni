@@ -15,8 +15,8 @@ type alias Todo =
 pub view : List Todo, List String -> Html msg
 view todos tags =
     <div>
-        <For each={todos}>{\t -> <p>{t.label}</p>}</For>
-        <For each={tags}>{\t -> <p>{t}</p>}</For>
-        <For each={todos} keyed>{\t -> <p>{t.label}</p>}</For>
-        <For each={todos} keyed={.id}>{\t -> <p>{t.label}</p>}</For>
+        <For each={todos}>{λt -> <p>{t.label}</p>}</For>
+        <For each={tags}>{λt -> <p>{t}</p>}</For>
+        <For each={todos} keyed>{λt -> <p>{t.label}</p>}</For>
+        <For each={todos} keyed={.id}>{λt -> <p>{t.label}</p>}</For>
     </div>

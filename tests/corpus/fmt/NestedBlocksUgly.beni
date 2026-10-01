@@ -9,7 +9,7 @@ run m flag =
              doubled = n * 2
            in
                doubled
-       else (\k ->
+       else (λk ->
               case k of
                    0 -> 1
                    _ -> k

@@ -15,13 +15,13 @@ import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, Varia
 loud : Conversion String Int
 loud =
     Schema.conversion
-        (\s ->
+        (λs ->
             let
                 _ = Debug.log s "a conversion ran"
             in
             Ok 0
         )
-        (\n -> Ok (String.fromInt n))
+        (λn -> Ok (String.fromInt n))
 
 
 one ( (), a ) = { a = a }
@@ -71,8 +71,8 @@ shape2 =
     let
         dot =
             Schema.injection
-                (\() -> Dot)
-                (\s ->
+                (λ() -> Dot)
+                (λs ->
                     case s of
                         Dot ->
                             Just ()
@@ -84,7 +84,7 @@ shape2 =
         circle =
             Schema.injection
                 Circle
-                (\s ->
+                (λs ->
                     case s of
                         Circle r ->
                             Just r
@@ -122,9 +122,9 @@ inner : Schema Inner Inner
 inner =
     Schema.recursive
         "Inner"
-        (\self ->
+        (λself ->
             let
-                i = Schema.injection Inner (\(Inner r) -> Just r)
+                i = Schema.injection Inner (λ(Inner r) -> Just r)
             in
             Schema.tagged "t"
                 [ Schema.variant
@@ -145,9 +145,9 @@ outer : Schema Outer Outer
 outer =
     Schema.recursive
         "Outer"
-        (\self ->
+        (λself ->
             let
-                o = Schema.injection Outer (\(Outer r) -> Just r)
+                o = Schema.injection Outer (λ(Outer r) -> Just r)
             in
             Schema.tagged "t"
                 [ Schema.variant
@@ -169,7 +169,7 @@ outer =
 
 -- Two schemas, one name.
 twice : Schema (List Int) (List Int)
-twice = Schema.list (Schema.recursive "Same" (\_ -> Schema.int))
+twice = Schema.list (Schema.recursive "Same" (λ_ -> Schema.int))
 
 
 twins : Schema { a : List Int, b : List Int } { a : List Int, b : List Int }
@@ -177,7 +177,7 @@ twins =
     Schema.record
         (Schema.fields
             |> Schema.field "a" twice
-            |> Schema.field "b" (Schema.list (Schema.recursive "Same" (\_ -> Schema.int)))
+            |> Schema.field "b" (Schema.list (Schema.recursive "Same" (λ_ -> Schema.int)))
         )
         (Schema.mapping two unTwo)
         (Schema.mapping two unTwo)

@@ -46,7 +46,7 @@ watch node s =
         node
         "$$send"
         (Js.from
-            (\msg ->
+            (λmsg ->
                 let
                     _ = tick (Js.read seen)
                 in

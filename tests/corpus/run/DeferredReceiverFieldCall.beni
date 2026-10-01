@@ -12,14 +12,14 @@
 import Node exposing (Program)
 
 
-g u = (\r -> r.f 1) { f = \x -> x + 1 }
+g u = (λr -> r.f 1) { f = λx -> x + 1 }
 
 
 apply u =
     let
         call s = s.f 10
     in
-    call { f = \x -> x + 1 }
+    call { f = λx -> x + 1 }
 
 
 main : Program

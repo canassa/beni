@@ -4,15 +4,15 @@
 -- list's `, ` or inside parentheses must not print its body left of itself.
 inList a =
     [ someName
-    , Task.attempt (Http.get someVeryLongUrlName) <| \response -> renderTheDecodedValue response a someExtra
+    , Task.attempt (Http.get someVeryLongUrlName) <| λresponse -> renderTheDecodedValue response a someExtra
     ]
 
 
 inApp a =
-    wrapTheResultOfEverything someLongArgumentName (Task.attempt (Http.get a) <| \response -> renderTheDecodedValue response a someExtraContextValue) anotherArgument
+    wrapTheResultOfEverything someLongArgumentName (Task.attempt (Http.get a) <| λresponse -> renderTheDecodedValue response a someExtraContextValue) anotherArgument
 
 
 -- Nested chains keep the column they started at instead of stepping right.
 nestedInList a =
-    [ Task.attempt (Http.get a) <| \r -> Task.attempt (Json.decode r) <| \v -> renderTheDecodedValue v a someExtra
+    [ Task.attempt (Http.get a) <| λr -> Task.attempt (Json.decode r) <| λv -> renderTheDecodedValue v a someExtra
     ]

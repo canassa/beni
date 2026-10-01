@@ -31,7 +31,7 @@ update : Msg, Model -> Model
 update msg model =
     case msg of
         Rename ->
-            { model | user = Maybe.map model.user (\u -> { u | name = u.name ++ "!" }) }
+            { model | user = Maybe.map model.user (λu -> { u | name = u.name ++ "!" }) }
 
         Next ->
             { model | user = Just { id = 2, name = "Grace" } }
@@ -55,10 +55,10 @@ view model =
         <button id="next" onClick={Next}>next</button>
         <button id="flip" onClick={Flip}>flip</button>
         <Show when={model.user} keyed={.id} fallback={<p>nobody</p>}>
-            {\u -> <label>{u.name}<input id="by-key" /></label>}
+            {λu -> <label>{u.name}<input id="by-key" /></label>}
         </Show>
         <Show when={model.user} keyed>
-            {\u -> <label>{u.name}<input id="by-identity" /></label>}
+            {λu -> <label>{u.name}<input id="by-identity" /></label>}
         </Show>
         <div>{side model.left}</div>
     </main>

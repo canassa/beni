@@ -42,7 +42,7 @@ adders xs =
             []
 
         [ x, ...rest ] ->
-            [ (\y -> y + x), ...adders rest ]
+            [ (λy -> y + x), ...adders rest ]
 
 
 main : Program
@@ -52,5 +52,5 @@ main =
     in
     Node.printLines
         [ String.join (List.map out String.fromInt) ","
-        , String.join (List.map (adders [ 10, 20, 30 ]) (\f -> String.fromInt (f 0))) ","
+        , String.join (List.map (adders [ 10, 20, 30 ]) (λf -> String.fromInt (f 0))) ","
         ]

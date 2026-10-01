@@ -13,7 +13,7 @@ pub schema User =
     settings :
         theme : String
     score : Int via (Conversions.between 0 100)
-    normalized : String via (\value -> Conversions.trim value)
+    normalized : String via (λvalue -> Conversions.trim value)
 
 
 schema Page item =

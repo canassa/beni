@@ -53,7 +53,7 @@ now () = Posix (Js.to (Js.call (Js.global "Date") "now" []))
 
 --| Wait for `duration`. Only the calling fiber waits.
 pub sleep : Duration -> ()
-sleep (Duration ms) = Task.callback (\resume -> startTimer ms resume)
+sleep (Duration ms) = Task.callback (λresume -> startTimer ms resume)
 
 
 -- One timer, which resumes the waiting fiber, and what clears it.
@@ -62,9 +62,9 @@ startTimer ms resume =
     let
         timer =
             Js.apply (Js.global "setTimeout")
-                [ Js.from (\() -> Js.to (Js.apply (Js.from resume) [ Js.null ])), Js.from ms ]
+                [ Js.from (λ() -> Js.to (Js.apply (Js.from resume) [ Js.null ])), Js.from ms ]
     in
-    \() -> Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
+    λ() -> Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
 
 
 type Key

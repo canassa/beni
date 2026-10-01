@@ -40,7 +40,7 @@ type alias Person =
 
 
 numbers : List Int
-numbers = List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+numbers = List.map (List.range 1 500) (λn -> modBy (n * 7919) 499)
 
 
 texts : List String
@@ -48,7 +48,7 @@ texts = List.map numbers String.fromInt
 
 
 people : List Person
-people = List.map numbers (\n -> { name = String.fromInt n, age = modBy n 97 })
+people = List.map numbers (λn -> { name = String.fromInt n, age = modBy n 97 })
 
 
 numberMark : Int
@@ -88,7 +88,7 @@ tally : List a, a, (a, a -> Order) -> Int
 tally xs mark cmp =
     List.foldl xs
         0
-        (\x acc ->
+        (λx acc ->
             case cmp x mark of
                 LT ->
                     acc + 1
@@ -107,18 +107,18 @@ level1 xs mark cmp = level2 xs mark cmp
 
 
 tallyNumbers : List Int, Int, Int -> Int
-tallyNumbers xs mark scale = level1 xs mark (\a b -> flipOrder (compare a b) scale)
+tallyNumbers xs mark scale = level1 xs mark (λa b -> flipOrder (compare a b) scale)
 
 
 tallyTexts : List String, String, Int -> Int
-tallyTexts xs mark scale = level1 xs mark (\a b -> flipOrder (String.compare a b) scale)
+tallyTexts xs mark scale = level1 xs mark (λa b -> flipOrder (String.compare a b) scale)
 
 
 tallyPeople : List Person, Person, Int -> Int
 tallyPeople xs mark scale =
     level1 xs
         mark
-        (\a b ->
+        (λa b ->
             flipOrder
                 (case compare a.age b.age of
                     EQ ->
@@ -138,11 +138,11 @@ main =
             List.foldl
                 (List.range 1 outerReps)
                 0
-                (\_ acc ->
+                (λ_ acc ->
                     List.foldl
                         (List.range 1 innerReps)
                         acc
-                        (\_ n ->
+                        (λ_ n ->
                             n
                                 + tallyNumbers numbers numberMark 1
                                 + tallyTexts texts textMark 1

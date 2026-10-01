@@ -44,9 +44,9 @@ pair a b = a * 100 + b
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             let
-                done = Task.spawn (\() -> 7)
+                done = Task.spawn (λ() -> 7)
                 _ = Io.sleep 1
                 a = pair (Debug.log 1 "first argument") (slow "second argument")
                 b = fast done "joined"

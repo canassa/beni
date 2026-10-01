@@ -32,7 +32,7 @@ table model =
     <table>
         <tbody>
             <For each={model.rows} keyed={.id}>
-                {\row ->
+                {λrow ->
                     <tr class={[ ( "danger", row.id == model.selected ) ]}><td>{row.label}</td></tr>
                 }
             </For>
@@ -43,11 +43,11 @@ table model =
 pub lists : Model -> Html msg
 lists model =
     <div>
-        <ol><For each={model.names} keyed={False}>{\name i -> <li>{i}. {name}</li>}</For></ol>
+        <ol><For each={model.names} keyed={False}>{λname i -> <li>{i}. {name}</li>}</For></ol>
         <ul><For each={model.names} fallback={<li>none</li>}>{viewName}</For></ul>
         <ul>
             <For each={model.names}>
-                {\name -> if name == "" then <li>blank</li> else <li>{name}</li>}
+                {λname -> if name == "" then <li>blank</li> else <li>{name}</li>}
             </For>
         </ul>
     </div>
@@ -56,5 +56,5 @@ lists model =
 pub first : Model -> Html msg
 first model =
     <Show when={List.head model.rows} keyed={.id} fallback={<p>none</p>}>
-        {\row -> <p>{row.label} of {model.selected}</p>}
+        {λrow -> <p>{row.label} of {model.selected}</p>}
     </Show>

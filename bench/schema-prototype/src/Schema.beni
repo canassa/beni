@@ -150,8 +150,8 @@ make encoded decoded decodeValue encodeValue =
 pub fromEndpoint : Endpoint a -> Schema a a
 fromEndpoint item =
     make item item
-        (\_ value -> Ok value)
-        (\_ value -> Ok value)
+        (λ_ value -> Ok value)
+        (λ_ value -> Ok value)
 
 
 pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
@@ -263,14 +263,14 @@ pub transform :
     -> Schema e b
 transform schema target decodeTransform encodeTransform =
     make schema.encoded target
-        (\context encoded ->
+        (λcontext encoded ->
             let
                 value <- Result.andThen (schema.decodeValue context encoded)
                 _ <- Result.andThen (schema.decoded.validate context value)
             in
             decodeTransform context value
         )
-        (\context value ->
+        (λcontext value ->
             let
                 original <- Result.andThen (encodeTransform context value)
                 _ <- Result.andThen (schema.decoded.validate context original)
@@ -287,7 +287,7 @@ refine base message predicate =
         }
         base.readValue
         base.writeValue
-        (\context value ->
+        (λcontext value ->
             let
                 _ <- Result.andThen (base.validate context value)
             in
@@ -305,15 +305,15 @@ describe schema = { encoded = schema.encoded.description, decoded = schema.decod
 pub stringEndpoint : Endpoint String
 stringEndpoint =
     endpoint (plain StringShape)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Text text ->
                     Ok text
                 _ ->
                     expected context "string"
         )
-        (\_ text -> Ok (Wire.Text text))
-        (\_ _ -> Ok ())
+        (λ_ text -> Ok (Wire.Text text))
+        (λ_ _ -> Ok ())
 
 
 pub string : Schema String String
@@ -323,15 +323,15 @@ string = fromEndpoint stringEndpoint
 pub boolEndpoint : Endpoint Bool
 boolEndpoint =
     endpoint (plain BoolShape)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Flag flag ->
                     Ok flag
                 _ ->
                     expected context "boolean"
         )
-        (\_ flag -> Ok (Wire.Flag flag))
-        (\_ _ -> Ok ())
+        (λ_ flag -> Ok (Wire.Flag flag))
+        (λ_ _ -> Ok ())
 
 
 pub bool : Schema Bool Bool
@@ -341,15 +341,15 @@ bool = fromEndpoint boolEndpoint
 pub nullEndpoint : Endpoint ()
 nullEndpoint =
     endpoint (plain NullShape)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Null ->
                     Ok ()
                 _ ->
                     expected context "null"
         )
-        (\_ _ -> Ok Wire.Null)
-        (\_ _ -> Ok ())
+        (λ_ _ -> Ok Wire.Null)
+        (λ_ _ -> Ok ())
 
 
 pub null : Schema () ()
@@ -359,13 +359,13 @@ null = fromEndpoint nullEndpoint
 pub int : Schema Float Int
 int =
     make numberEndpoint intEndpoint
-        (\context value ->
+        (λcontext value ->
             if isSafeWhole value then
                 Ok (round value)
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        (\context value ->
+        (λcontext value ->
             let
                 asFloat = toFloat value
             in
@@ -379,26 +379,26 @@ int =
 numberEndpoint : Endpoint Float
 numberEndpoint =
     endpoint (plain NumberShape)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Number number ->
                     Ok number
                 _ ->
                     expected context "number"
         )
-        (\context number ->
+        (λcontext number ->
             if isNaN number || isInfinite number then
                 Err [ issue context (Invalid "finite_number") "JSON numbers must be finite" ]
             else
                 Ok (Wire.Number number)
         )
-        (\_ _ -> Ok ())
+        (λ_ _ -> Ok ())
 
 
 intEndpoint : Endpoint Int
 intEndpoint =
     endpoint (plain NumberShape)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Number number ->
                     if isSafeWhole number then
@@ -408,7 +408,7 @@ intEndpoint =
                 _ ->
                     expected context "integer"
         )
-        (\context value ->
+        (λcontext value ->
             let
                 number = toFloat value
             in
@@ -417,7 +417,7 @@ intEndpoint =
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        (\context value ->
+        (λcontext value ->
             if isSafeWhole (toFloat value) then
                 Ok ()
             else
@@ -437,15 +437,15 @@ isSafeWhole value =
 pub list : Schema e a -> Schema (List e) (List a)
 list item =
     make (listEndpoint item.encoded) (listEndpoint item.decoded)
-        (\context values -> traverse context values item.decodeValue)
-        (\context values -> traverse context values item.encodeValue)
+        (λcontext values -> traverse context values item.decodeValue)
+        (λcontext values -> traverse context values item.encodeValue)
 
 
 pub listEndpoint : Endpoint a -> Endpoint (List a)
 listEndpoint item =
     endpoint
         { root = ListShape item.description.root, definitions = item.description.definitions }
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Array values ->
                     let
@@ -455,31 +455,31 @@ listEndpoint item =
                 _ ->
                     expected context "array"
         )
-        (\context values ->
+        (λcontext values ->
             let
                 nested <- Result.andThen (enter context)
             in
             Result.map (traverse nested values item.writeValue) Wire.Array
         )
-        (\context values ->
+        (λcontext values ->
             let
                 nested <- Result.andThen (enter context)
             in
-            Result.map (traverse nested values item.validate) (\_ -> ())
+            Result.map (traverse nested values item.validate) (λ_ -> ())
         )
 
 
 pub nullable : Schema e a -> Schema (Nullable e) (Nullable a)
 nullable schema =
     make (nullableEndpoint schema.encoded) (nullableEndpoint schema.decoded)
-        (\context value ->
+        (λcontext value ->
             case value of
                 Null ->
                     Ok Null
                 NonNull inner ->
                     Result.map (schema.decodeValue context inner) NonNull
         )
-        (\context value ->
+        (λcontext value ->
             case value of
                 Null ->
                     Ok Null
@@ -494,21 +494,21 @@ nullableEndpoint item =
         { root = UnionShape [ NullShape, item.description.root ]
         , definitions = item.description.definitions
         }
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Null ->
                     Ok Null
                 _ ->
                     Result.map (item.readValue context value) NonNull
         )
-        (\context value ->
+        (λcontext value ->
             case value of
                 Null ->
                     Ok Wire.Null
                 NonNull inner ->
                     item.writeValue context inner
         )
-        (\context value ->
+        (λcontext value ->
             case value of
                 Null ->
                     Ok ()
@@ -523,7 +523,7 @@ requiredField key item =
     , shape = item.description.root
     , definitions = item.description.definitions
     , readField =
-        \context fields ->
+        λcontext fields ->
             case lookup key fields of
                 Nothing ->
                     Err [ issue (atKey context key) MissingField "required field is missing" ]
@@ -534,12 +534,12 @@ requiredField key item =
                     in
                     Ok decodedValue
     , writeField =
-        \context value ->
+        λcontext value ->
             let
                 _ <- Result.andThen (item.validate (atKey context key) value)
             in
-            Result.map (item.writeValue (atKey context key) value) (\wire -> [ ( key, wire ) ])
-    , validateField = \context value -> item.validate (atKey context key) value
+            Result.map (item.writeValue (atKey context key) value) (λwire -> [ ( key, wire ) ])
+    , validateField = λcontext value -> item.validate (atKey context key) value
     }
 
 
@@ -549,7 +549,7 @@ optionalField key item =
     , shape = OptionalShape item.description.root
     , definitions = item.description.definitions
     , readField =
-        \context fields ->
+        λcontext fields ->
             case lookup key fields of
                 Nothing ->
                     Ok Missing
@@ -560,7 +560,7 @@ optionalField key item =
                     in
                     Ok (Present decodedValue)
     , writeField =
-        \context value ->
+        λcontext value ->
             case value of
                 Missing ->
                     Ok []
@@ -570,9 +570,9 @@ optionalField key item =
                     in
                     Result.map
                         (item.writeValue (atKey context key) inner)
-                        (\wire -> [ ( key, wire ) ])
+                        (λwire -> [ ( key, wire ) ])
     , validateField =
-        \context value ->
+        λcontext value ->
             case value of
                 Missing ->
                     Ok ()
@@ -590,7 +590,7 @@ pub object1Endpoint :
 object1Endpoint name field build get =
     endpoint
         { root = ObjectShape [ ( field.key, field.shape ) ], definitions = field.definitions }
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Object fields ->
                     let
@@ -602,13 +602,13 @@ object1Endpoint name field build get =
                 _ ->
                     expected context name
         )
-        (\context value ->
+        (λcontext value ->
             let
                 nested <- Result.andThen (enter context)
             in
             Result.map (field.writeField nested (get value)) Wire.Object
         )
-        (\context value ->
+        (λcontext value ->
             let
                 nested <- Result.andThen (enter context)
             in
@@ -629,7 +629,7 @@ object2Endpoint name first second build getFirst getSecond =
         { root = ObjectShape [ ( first.key, first.shape ), ( second.key, second.shape ) ]
         , definitions = List.append first.definitions second.definitions
         }
-        (\context value ->
+        (λcontext value ->
             case value of
                 Wire.Object fields ->
                     let
@@ -647,7 +647,7 @@ object2Endpoint name first second build getFirst getSecond =
                 _ ->
                     expected context name
         )
-        (\context value ->
+        (λcontext value ->
             let
                 nested <- Result.andThen (enter context)
                 firstResult = first.writeField nested (getFirst value)
@@ -655,7 +655,7 @@ object2Endpoint name first second build getFirst getSecond =
             in
             combineFields nested.options.errors firstResult secondResult
         )
-        (\context value ->
+        (λcontext value ->
             let
                 nested <- Result.andThen (enter context)
                 firstResult = first.validateField nested (getFirst value)
@@ -668,19 +668,19 @@ object2Endpoint name first second build getFirst getSecond =
 pub deferEndpoint : String, (() -> Endpoint a) -> Endpoint a
 deferEndpoint name get =
     endpoint (plain (ReferenceShape name))
-        (\context value ->
+        (λcontext value ->
             let
                 target = get ()
             in
             target.readValue context value
         )
-        (\context value ->
+        (λcontext value ->
             let
                 target = get ()
             in
             target.writeValue context value
         )
-        (\context value ->
+        (λcontext value ->
             let
                 target = get ()
             in
@@ -758,7 +758,7 @@ unknown context known fields =
                     List.foldl
                         fields
                         []
-                        (\( key, _ ) found ->
+                        (λ( key, _ ) found ->
                             if List.member known key then
                                 found
                             else

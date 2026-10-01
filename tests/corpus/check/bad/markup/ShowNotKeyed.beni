@@ -7,5 +7,5 @@ import Html exposing (Html)
 pub view : Maybe String -> Html msg
 view title =
     <div>
-        <Show when={title}>{\t -> <p>{t}</p>}</Show>
+        <Show when={title}>{λt -> <p>{t}</p>}</Show>
     </div>

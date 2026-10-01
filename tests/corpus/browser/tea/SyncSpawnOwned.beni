@@ -24,12 +24,12 @@ update msg model =
     case msg of
         Run fibers ->
             if fibers then
-                ( model, Cmd.do (\() -> spawning (\() -> pause False)) )
+                ( model, Cmd.do (λ() -> spawning (λ() -> pause False)) )
             else
-                ( model, Cmd.do (\() -> spawning (\() -> ())) )
+                ( model, Cmd.do (λ() -> spawning (λ() -> ())) )
 
         Joined ->
-            ( model, Cmd.do (\() -> Task.join (Task.spawn (\() -> Log.info "joined child runs"))) )
+            ( model, Cmd.do (λ() -> Task.join (Task.spawn (λ() -> Log.info "joined child runs"))) )
 
 
 -- Waits only when asked to, which no run does.
@@ -45,7 +45,7 @@ spawning : (() -> ()) -> ()
 spawning hold =
     let
         _ = hold ()
-        _ = Task.spawn (\() -> Log.info "child runs")
+        _ = Task.spawn (λ() -> Log.info "child runs")
     in
     Log.info "body returns"
 
@@ -62,4 +62,4 @@ view _ =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( (), Cmd.none ), update = update, view = view, subscriptions = \_ -> Sub.none }
+        { init = ( (), Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

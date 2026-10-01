@@ -19,7 +19,7 @@ pointFree : a, a -> a
 pointFree = maxOf
 
 
-viaLambda = \x y -> x == y
+viaLambda = λx y -> x == y
 
 
 blank : List a

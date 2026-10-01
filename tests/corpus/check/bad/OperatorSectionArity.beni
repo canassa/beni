@@ -23,4 +23,4 @@ wrongType = (<) "a" 1
 
 
 pub handWritten : Int -> Bool
-handWritten n = (\a b -> a == b) n
+handWritten n = (λa b -> a == b) n

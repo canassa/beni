@@ -34,7 +34,7 @@ third = 10
 
 
 deferred : () -> Int
-deferred = \_ -> scale * 3
+deferred = λ_ -> scale * 3
 
 
 scale : Int

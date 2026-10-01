@@ -36,21 +36,21 @@ main =
         passed =
             String.fromInt
                 (Catch.passed
-                    (\() -> Catch.fail "TypeError" "p")
-                    (\err -> Catch.isTypeError err)
-                    (\_ -> 3)
+                    (λ() -> Catch.fail "TypeError" "p")
+                    (λerr -> Catch.isTypeError err)
+                    (λ_ -> 3)
                 )
 
         asValue =
             String.fromInt
                 (Catch.asValue
-                    (\() -> Catch.fail "TypeError" "v")
-                    (\err -> Catch.isTypeError err)
-                    (\_ -> 5)
+                    (λ() -> Catch.fail "TypeError" "v")
+                    (λerr -> Catch.isTypeError err)
+                    (λ_ -> 5)
                 )
 
         asValueOk =
-            String.fromInt (Catch.asValue (\() -> 6) (\err -> Catch.isTypeError err) (\_ -> 5))
+            String.fromInt (Catch.asValue (λ() -> 6) (λerr -> Catch.isTypeError err) (λ_ -> 5))
 
         summed = String.fromInt (Catch.sumTo 4 0)
     in

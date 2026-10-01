@@ -49,7 +49,7 @@ update msg model =
 
         Rename ->
             { model
-                | rows = List.map model.rows (\r -> if r.id == 1 then { r | label = "A" } else r)
+                | rows = List.map model.rows (λr -> if r.id == 1 then { r | label = "A" } else r)
             }
 
 
@@ -61,17 +61,17 @@ view model =
         <button id="rename" onClick={Rename}>rename</button>
         <ul id="after">
             <For each={model.rows} keyed={.id}>
-                {\r -> <li class={marked model r}>{named "after" r}</li>}
+                {λr -> <li class={marked model r}>{named "after" r}</li>}
             </For>
         </ul>
         <ul id="before">
             <For each={model.rows} keyed={.id}>
-                {\r -> <li title={named "before" r} class={marked model r} />}
+                {λr -> <li title={named "before" r} class={marked model r} />}
             </For>
         </ul>
         <ul id="toggled">
             <For each={model.rows} keyed={.id}>
-                {\r ->
+                {λr ->
                     <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>
                         {named "toggled" r}
                     </li>

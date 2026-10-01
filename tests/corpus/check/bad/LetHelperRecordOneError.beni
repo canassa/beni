@@ -16,4 +16,4 @@ f u =
     let
         h s = s.name 0 ++ text (s == s)
     in
-    h { name = \n -> "x" }
+    h { name = λn -> "x" }

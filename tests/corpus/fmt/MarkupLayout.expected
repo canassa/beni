@@ -46,7 +46,7 @@ noted =
 rows items =
     <ul>
         <For each={items} keyed={.id}>
-            {\item ->
+            {λitem ->
                 <li class={item.cls} title={item.title}>
                     {item.label} and a longer tail than fits
                 </li>

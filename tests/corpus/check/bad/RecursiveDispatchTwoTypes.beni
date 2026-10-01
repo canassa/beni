@@ -25,6 +25,6 @@ pub show (K n) u =
 
 pub eq (Box a) (Box b) =
     let
-        _ = \w -> (K 0).show ()
+        _ = λw -> (K 0).show ()
     in
     True

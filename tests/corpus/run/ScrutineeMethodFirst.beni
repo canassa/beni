@@ -24,7 +24,7 @@ pub combine (Box a) z = a
 
 
 f n =
-    case ( (\y -> y.h ()) (K n), (Box 1).g () ) of
+    case ( (λy -> y.h ()) (K n), (Box 1).g () ) of
         ( r, _ ) ->
             let
                 q z = r.combine z

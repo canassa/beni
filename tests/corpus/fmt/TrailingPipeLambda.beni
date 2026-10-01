@@ -2,11 +2,11 @@
 -- body continues at the indentation of the line the `<|` is on, so a chain
 -- of them stays flat instead of stepping right once per bind. A `<|`
 -- followed by any other block form still indents.
-chain url = Task.attempt (Http.get url) <| \response -> Task.attempt (Json.decode response) <| \value -> renderTheDecodedValue value withSomeExtraContext
+chain url = Task.attempt (Http.get url) <| λresponse -> Task.attempt (Json.decode response) <| λvalue -> renderTheDecodedValue value withSomeExtraContext
 
 
 authorBroke f = f <|
-    \x -> x + 1
+    λx -> x + 1
 
 
 otherBlocks a b c = text <| if a then b

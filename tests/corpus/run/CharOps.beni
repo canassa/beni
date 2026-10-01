@@ -24,5 +24,5 @@ main =
         , show (Char.isDigit 'x')
         , show (Char.isAlpha 'x')
         , show (Char.isHexDigit 'f')
-        , String.join (List.map (String.toList "abc") (\c -> String.fromInt (Char.toCode c))) ","
+        , String.join (List.map (String.toList "abc") (λc -> String.fromInt (Char.toCode c))) ","
         ]

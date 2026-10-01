@@ -144,12 +144,12 @@ foreign impure onEvent : Listener, Resume () -> (() -> ())
 
 -- Wait for at least one event since the last wait.
 next : Listener -> ()
-next l = Task.callback (\resume -> onEvent l resume)
+next l = Task.callback (λresume -> onEvent l resume)
 
 
 watch : String, String, (() -> a), Browser.Send a -> ()
 watch target name read emit =
-    Task.bracket (\() -> listen target name) (\l _ -> unlisten l) (\l -> forward l read emit)
+    Task.bracket (λ() -> listen target name) (λl _ -> unlisten l) (λl -> forward l read emit)
 
 
 forward : Listener, (() -> a), Browser.Send a -> ()

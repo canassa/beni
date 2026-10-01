@@ -58,7 +58,7 @@ pub equatable foreign type String
 pub length : String -> Int
 length s =
     Js.pure
-        (\() -> Js.to (Js.get (Js.call (Js.global "Array") "from" [ Js.from s ]) "length"))
+        (λ() -> Js.to (Js.get (Js.call (Js.global "Array") "from" [ Js.from s ]) "length"))
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
@@ -69,7 +69,7 @@ length s =
 pub slice : String, Int, Int -> String
 slice s start end =
     Js.pure
-        (\() ->
+        (λ() ->
             let
                 points = Js.call (Js.global "Array") "from" [ Js.from s ]
                 n : Int
@@ -115,7 +115,7 @@ append a b =
 pub compare : String, String -> Order
 compare a b =
     Js.pure
-        (\() ->
+        (λ() ->
             -- Code units are compared until the first that differ. Code unit
             -- order is not code point order — an astral character is a pair
             -- of units in 0xD800…0xDFFF and sorts above U+FFFF, which `<` on
@@ -186,7 +186,7 @@ pointAt s i = Js.to (Js.call s "codePointAt" [ Js.from i ])
 pub toUpper : String -> String
 toUpper s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "toUpperCase" []))
+        (λ() -> Js.to (Js.call (Js.from s) "toUpperCase" []))
 
 
 --| Convert a string to all lower case.
@@ -195,7 +195,7 @@ toUpper s =
 pub toLower : String -> String
 toLower s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "toLowerCase" []))
+        (λ() -> Js.to (Js.call (Js.from s) "toLowerCase" []))
 
 
 --| Get rid of whitespace on both sides of a string.
@@ -204,7 +204,7 @@ toLower s =
 pub trim : String -> String
 trim s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "trim" []))
+        (λ() -> Js.to (Js.call (Js.from s) "trim" []))
 
 
 --| Get rid of whitespace on the left of a string.
@@ -213,7 +213,7 @@ trim s =
 pub trimLeft : String -> String
 trimLeft s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "trimStart" []))
+        (λ() -> Js.to (Js.call (Js.from s) "trimStart" []))
 
 
 --| Get rid of whitespace on the right of a string.
@@ -222,7 +222,7 @@ trimLeft s =
 pub trimRight : String -> String
 trimRight s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "trimEnd" []))
+        (λ() -> Js.to (Js.call (Js.from s) "trimEnd" []))
 
 
 --| Break a string into words, splitting on chunks of whitespace.
@@ -231,7 +231,7 @@ trimRight s =
 pub words : String -> List String
 words s =
     Js.pure
-        (\() ->
+        (λ() ->
             Js.to
                 (Js.call (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ]) "filter"
                     [ Js.from isWord ]
@@ -249,7 +249,7 @@ isWord w = Js.to (Js.get w "length") /= 0
 pub lines : String -> List String
 lines s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ]))
+        (λ() -> Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ]))
 
 
 --| Split a string using a given separator. The string being split comes
@@ -268,7 +268,7 @@ lines s =
 pub split : String, String -> List String
 split s separator =
     Js.pure
-        (\() ->
+        (λ() ->
             if separator == "" then
                 Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
             else
@@ -297,7 +297,7 @@ split s separator =
 pub indexes : String, String -> List Int
 indexes haystack needle =
     Js.pure
-        (\() ->
+        (λ() ->
             -- `indexOf` answers in UTF-16 code units, so each match is translated
             -- by one forward walk that carries its position between matches —
             -- `scanned` a code unit offset and `point` the code points before it,
@@ -365,7 +365,7 @@ indexOf h needle from = Js.to (Js.call h "indexOf" [ Js.from needle, Js.from fro
 pub toInt : String -> Maybe Int
 toInt s =
     Js.pure
-        (\() ->
+        (λ() ->
             -- Every specification-defined failure is a constructor (`boundary.md`
             -- §4.1): text that is not a number is `Nothing`, never a NaN pretending
             -- to be an `Int`, and neither is one past 2^53.
@@ -388,7 +388,7 @@ toInt s =
 pub fromInt : Int -> String
 fromInt n =
     Js.pure
-        (\() -> Js.to (Js.apply (Js.global "String") [ Js.from n ]))
+        (λ() -> Js.to (Js.apply (Js.global "String") [ Js.from n ]))
 
 
 --| Try to convert a string into a float, failing on improperly formatted
@@ -399,7 +399,7 @@ fromInt n =
 pub toFloat : String -> Maybe Float
 toFloat s =
     Js.pure
-        (\() ->
+        (λ() ->
             if
                 Js.to
                     (Js.call (Js.regExp "^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$" "") "test"
@@ -424,7 +424,7 @@ toFloat s =
 pub fromFloat : Float -> String
 fromFloat n =
     Js.pure
-        (\() ->
+        (λ() ->
             -- `String(1.0)` is "1" in JavaScript and `1` is not a float literal in
             -- beni's own syntax, so a whole float prints with its point.
             if Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ]) then
@@ -447,7 +447,7 @@ fromChar c = Js.to (Js.from c)
 pub toList : String -> List Char
 toList s =
     Js.pure
-        (\() -> Js.to (Js.call (Js.global "Array") "from" [ Js.from s ]))
+        (λ() -> Js.to (Js.call (Js.global "Array") "from" [ Js.from s ]))
 
 
 --| Convert a list of characters into a string.
@@ -456,7 +456,7 @@ toList s =
 pub fromList : List Char -> String
 fromList list =
     Js.pure
-        (\() ->
+        (λ() ->
             let
                 xs = Js.from list
 
@@ -529,7 +529,7 @@ join chunks sep =
             ""
 
         [ first, ...rest ] ->
-            List.foldl rest first (\chunk acc -> append (append acc sep) chunk)
+            List.foldl rest first (λchunk acc -> append (append acc sep) chunk)
 
 
 --| Take `n` characters from the left side of a string.

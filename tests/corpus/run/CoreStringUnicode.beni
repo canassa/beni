@@ -49,13 +49,13 @@ main =
         , String.pad "\u{1F600}" 3 '.'
         , String.map
             emoji
-            (\c ->
+            (λc ->
                 if c == '\u{1F600}' then
                     '!'
                 else
                     c
             )
-        , String.foldl emoji "" (\c acc -> String.cons acc c)
+        , String.foldl emoji "" (λc acc -> String.cons acc c)
         , String.fromInt (Char.toCode '\u{1F600}')
         , String.fromChar (Char.fromCode 128512)
         , String.fromChar (Char.fromCode 55296)

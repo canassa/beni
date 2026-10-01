@@ -17,7 +17,7 @@ ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
 labels : List { key : Int, tag : String } -> String
-labels rows = String.join (List.map rows (\r -> String.fromInt r.key ++ r.tag)) ","
+labels rows = String.join (List.map rows (λr -> String.fromInt r.key ++ r.tag)) ","
 
 
 tied : List { key : Int, tag : String }
@@ -56,9 +56,9 @@ main =
         , ints (List.sort [ 1, 2, 3, 4, 5 ])
         , ints (List.sort [ 5, 4, 3, 2, 1 ])
         , ints (List.sort [ 2, 2, 1, 1, 2 ])
-        , ints (List.sortWith [ 1, 2, 3 ] (\x y -> compare y x))
+        , ints (List.sortWith [ 1, 2, 3 ] (λx y -> compare y x))
         , labels (List.sortBy tied .key)
-        , labels (List.sortWith tied (\x y -> compare x.key y.key))
+        , labels (List.sortWith tied (λx y -> compare x.key y.key))
         , String.fromInt (List.sum [])
         , String.fromInt (List.product [])
         , ints (List.concat [])

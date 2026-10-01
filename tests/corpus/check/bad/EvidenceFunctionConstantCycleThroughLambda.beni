@@ -4,7 +4,7 @@
 -- `h`, the first VALUE on the circle, as without the `where` — never a
 -- clean check whose built program prints a wrong answer.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = \x -> f (g x)
+compose f g = λx -> f (g x)
 
 
 keep : a -> a
@@ -18,7 +18,7 @@ keep x =
 
 k : a -> a
     where a.eq : a, a -> Bool
-k = \x -> h x
+k = λx -> h x
 
 
 h : a -> a

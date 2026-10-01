@@ -32,7 +32,7 @@ note tag n = Debug.log n tag
 
 
 tags : List Row -> String
-tags rs = String.join (List.map rs (\r -> r.tag)) ""
+tags rs = String.join (List.map rs (λr -> r.tag)) ""
 
 
 ints : List Int -> String
@@ -60,19 +60,19 @@ rows =
 main : Program
 main =
     let
-        none = List.sortBy [] (\x -> note "zero" x)
+        none = List.sortBy [] (λx -> note "zero" x)
 
-        one = List.sortBy [ 5 ] (\x -> note "one" x)
+        one = List.sortBy [ 5 ] (λx -> note "one" x)
 
-        few = List.sortBy three (\x -> note "three" x)
+        few = List.sortBy three (λx -> note "three" x)
 
-        many = List.sortBy eight (\x -> note "eight" x)
+        many = List.sortBy eight (λx -> note "eight" x)
 
-        stable = List.sortBy rows (\r -> r.rank)
+        stable = List.sortBy rows (λr -> r.rank)
 
-        spelled = List.sortWith rows (\x y -> compare x.rank y.rank)
+        spelled = List.sortWith rows (λx y -> compare x.rank y.rank)
 
-        huge = List.sortBy (List.range 1 20000) (\n -> 0 - n)
+        huge = List.sortBy (List.range 1 20000) (λn -> 0 - n)
     in
     Node.printLines
         [ ints none
@@ -81,8 +81,8 @@ main =
         , ints many
         , tags stable
         , tags spelled
-        , ints (List.sortBy eight (\x -> 0 - x))
-        , ints (List.sortWith eight (\x y -> compare y x))
+        , ints (List.sortBy eight (λx -> 0 - x))
+        , ints (List.sortWith eight (λx y -> compare y x))
         , String.fromInt (List.length huge)
         , ints (List.take huge 3)
         ]

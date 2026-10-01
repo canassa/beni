@@ -87,9 +87,9 @@ loopYielding n acc =
 pub fanOut : Int -> Int
 fanOut n =
     let
-        fibers = List.map (List.range 1 n) (\i -> Task.spawn (\() -> worker i))
+        fibers = List.map (List.range 1 n) (λi -> Task.spawn (λ() -> worker i))
     in
-    List.foldl fibers 0 (\f acc -> acc + Task.join f)
+    List.foldl fibers 0 (λf acc -> acc + Task.join f)
 
 
 worker : Int -> Int
@@ -105,13 +105,13 @@ worker i =
 pub together : Int -> Int
 together n =
     Task.scope
-        (\s ->
+        (λs ->
             Task.bracket
-                (\() -> n)
-                (\_ _ -> ())
-                (\r ->
+                (λ() -> n)
+                (λ_ _ -> ())
+                (λr ->
                     let
-                        f = Task.spawnIn s (\() -> worker r)
+                        f = Task.spawnIn s (λ() -> worker r)
                     in
                     Task.join f
                 )

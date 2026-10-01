@@ -5,5 +5,5 @@
 view model =
     <div>
         <p class="a" id="x" class={model.b} "id"="y" />
-        <For each={model.a} each={model.b}>{\x -> <p />}</For>
+        <For each={model.a} each={model.b}>{λx -> <p />}</For>
     </div>

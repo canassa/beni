@@ -70,7 +70,7 @@ independentSeed =
         (int 0 4294967295)
         (int 0 4294967295)
         (int 0 4294967295)
-        (\state b c ->
+        (λstate b c ->
             next
                 (Seed
                     (Int32.fromInt state)
@@ -94,7 +94,7 @@ int a b =
         -- 2³² mod range: the outputs below it would favour the low values.
         threshold = modBy (4294967296 - range) range
     in
-    Generator (\seed -> unbiased seed lo range threshold)
+    Generator (λseed -> unbiased seed lo range threshold)
 
 
 unbiased : Seed, Int, Int, Int -> ( Int, Seed )
@@ -122,7 +122,7 @@ maxInt = 2147483647
 pub float : Float, Float -> Generator Float
 float a b =
     Generator
-        (\seed0 ->
+        (λseed0 ->
             let
                 seed1 = next seed0
                 lo = toFloat (Js.bitAnd (peel seed1) 67108863)
@@ -135,19 +135,19 @@ float a b =
 
 --| Always this value.
 pub constant : a -> Generator a
-constant value = Generator (\seed -> ( value, seed ))
+constant value = Generator (λseed -> ( value, seed ))
 
 
 --| Two values, one from each generator.
 pub pair : Generator a, Generator b -> Generator ( a, b )
-pair first second = map2 first second (\x y -> ( x, y ))
+pair first second = map2 first second (λx y -> ( x, y ))
 
 
 --| `n` values from the generator.
 --|
 --|     Random.list (Random.int 1 6) 3
 pub list : Generator a, Int -> Generator (List a)
-list (Generator generator) n = Generator (\seed -> listHelp [] n generator seed)
+list (Generator generator) n = Generator (λseed -> listHelp [] n generator seed)
 
 
 listHelp : List a, Int, (Seed -> ( a, Seed )), Seed -> ( List a, Seed )
@@ -164,7 +164,7 @@ listHelp done n generator seed =
 --|
 --|     Random.uniform "heads" [ "tails" ]
 pub uniform : a, List a -> Generator a
-uniform value values = weighted ( 1, value ) (List.map values (\v -> ( 1, v )))
+uniform value values = weighted ( 1, value ) (List.map values (λv -> ( 1, v )))
 
 
 --| One of the values, each as likely as its weight against the rest.
@@ -173,9 +173,9 @@ uniform value values = weighted ( 1, value ) (List.map values (\v -> ( 1, v )))
 pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
 weighted first others =
     let
-        total = abs first.0 + List.sum (List.map others (\o -> abs o.0))
+        total = abs first.0 + List.sum (List.map others (λo -> abs o.0))
     in
-    map (float 0 total) (\countdown -> byWeight first others countdown)
+    map (float 0 total) (λcountdown -> byWeight first others countdown)
 
 
 byWeight : ( Float, a ), List ( Float, a ), Float -> a
@@ -197,7 +197,7 @@ byWeight ( weight, value ) others countdown =
 pub map : Generator a, (a -> b) -> Generator b
 map (Generator generator) f =
     Generator
-        (\seed ->
+        (λseed ->
             case generator seed of
                 ( value, after ) ->
                     ( f value, after )
@@ -208,7 +208,7 @@ map (Generator generator) f =
 pub map2 : Generator a, Generator b, (a, b -> c) -> Generator c
 map2 (Generator ga) (Generator gb) f =
     Generator
-        (\seed0 ->
+        (λseed0 ->
             case ga seed0 of
                 ( a, seed1 ) ->
                     case gb seed1 of
@@ -221,7 +221,7 @@ map2 (Generator ga) (Generator gb) f =
 pub map3 : Generator a, Generator b, Generator c, (a, b, c -> d) -> Generator d
 map3 (Generator ga) (Generator gb) (Generator gc) f =
     Generator
-        (\seed0 ->
+        (λseed0 ->
             case ga seed0 of
                 ( a, seed1 ) ->
                     case gb seed1 of
@@ -236,7 +236,7 @@ map3 (Generator ga) (Generator gb) (Generator gc) f =
 pub andThen : Generator a, (a -> Generator b) -> Generator b
 andThen (Generator generator) f =
     Generator
-        (\seed ->
+        (λseed ->
             case generator seed of
                 ( value, after ) ->
                     step (f value) after
@@ -245,4 +245,4 @@ andThen (Generator generator) f =
 
 --| A generator made only when it is run: for one that refers to itself.
 pub lazy : (() -> Generator a) -> Generator a
-lazy make = Generator (\seed -> step (make ()) seed)
+lazy make = Generator (λseed -> step (make ()) seed)

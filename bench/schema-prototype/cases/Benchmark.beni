@@ -13,14 +13,14 @@ conversionIssue context message = [ Schema.issue context (Schema.Invalid "decima
 numericText : Schema.Schema String Int
 numericText =
     Schema.transform Schema.string Schema.int.decoded
-        (\context text ->
+        (λcontext text ->
             case String.toInt text of
                 Nothing ->
                     Err (conversionIssue context "expected decimal integer text")
                 Just value ->
                     Ok value
         )
-        (\_ value -> Ok (String.fromInt value))
+        (λ_ value -> Ok (String.fromInt value))
 
 
 pub run : Int -> Int

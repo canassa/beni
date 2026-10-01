@@ -21,6 +21,6 @@ pub mb (K n) y =
         y
     else
         let
-            _ = (K 1).ma (\q -> q)
+            _ = (K 1).ma (λq -> q)
         in
         y

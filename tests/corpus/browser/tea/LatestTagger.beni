@@ -36,9 +36,9 @@ pulses tag = Sub.listen Pulse (beat 1 _) tag
 beat : Int, Cmd.Send Int -> ()
 beat n send =
     Task.bracket
-        (\() -> Debug.log () "acquire")
-        (\_ _ -> Debug.log () "release")
-        (\_ -> loop n send)
+        (λ() -> Debug.log () "acquire")
+        (λ_ _ -> Debug.log () "release")
+        (λ_ -> loop n send)
 
 
 loop : Int, Cmd.Send Int -> ()
@@ -71,7 +71,7 @@ view : Model -> Html Msg
 view model =
     <main>
         <button id="rename" onClick={Rename}>rename</button>
-        <ol><For each={model.seen} keyed={False}>{\s -> <li>{s}</li>}</For></ol>
+        <ol><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ol>
     </main>
 
 

@@ -29,7 +29,7 @@ process m flag =
 
 handler : Maybe Int, Int -> Int
 handler m x =
-    (\y ->
+    (λy ->
         let
             z =
                 case m of

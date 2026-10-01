@@ -89,7 +89,7 @@ hosted p =
     Js.to
         (Js.array
             [ Js.from
-                { h = \root flushing phase stop -> host p root flushing phase stop, n = Js.null }
+                { h = λroot flushing phase stop -> host p root flushing phase stop, n = Js.null }
             ]
         )
 
@@ -126,7 +126,7 @@ onRendered resume =
             _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
             _ = Js.apply (Js.read nudge) []
         in
-        \() ->
+        λ() ->
             let
                 i : Int
                 i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
@@ -210,13 +210,13 @@ afterRender () =
         _ = Js.write busy True
     in
     Js.finally
-        (\() ->
+        (λ() ->
             let
-                _ = Js.each resumes (\resume -> Js.to (Js.apply resume [ Js.null ]))
+                _ = Js.each resumes (λresume -> Js.to (Js.apply resume [ Js.null ]))
             in
-            Js.each work (\f -> Js.to (Js.apply f []))
+            Js.each work (λf -> Js.to (Js.apply f []))
         )
-        (\() -> Js.write busy False)
+        (λ() -> Js.write busy False)
 
 
 -- Apply every message the inbox holds from `i` on, in the order they were
@@ -255,18 +255,18 @@ host p root flushing phase stop =
         _ = Js.write loop flushing
 
         -- A fiber that throws stops the page, as a handler that throws does.
-        _ = Task.onDefect (\() -> Js.to (Js.apply stop []))
+        _ = Task.onDefect (λ() -> Js.to (Js.apply stop []))
         _ = Js.write setPhase phase
         _ = Js.apply phase [ Js.from afterRender ]
 
         send =
-            \msg ->
+            λmsg ->
                 let
                     _ = Js.call root "$$root" [ msg ]
                 in
                 ()
 
-        _ = Js.write nudge (Js.from (\() -> send skip))
+        _ = Js.write nudge (Js.from (λ() -> send skip))
         model = Js.ref (Js.to Js.null)
         started = Js.ref False
         dirty = Js.ref False
@@ -276,7 +276,7 @@ host p root flushing phase stop =
             Js.to
                 (Js.from
                     { after =
-                        \f ->
+                        λf ->
                             let
                                 _ = Js.call (Js.read later) "push" [ f ]
                             in
@@ -286,7 +286,7 @@ host p root flushing phase stop =
                 )
 
         apply =
-            \msg ->
+            λmsg ->
                 let
                     _ = Js.write dirty True
                 in
@@ -295,7 +295,7 @@ host p root flushing phase stop =
     Js.from
         { init = Js.null
         , update =
-            \msg ->
+            λmsg ->
                 if Js.same msg skip then
                     ()
                 else if Js.read dispatching then
@@ -308,21 +308,21 @@ host p root flushing phase stop =
                         _ = Js.write dispatching True
                     in
                     Js.finally
-                        (\() ->
+                        (λ() ->
                             let
                                 _ = apply msg
                                 _ = drain 0
                             in
                             ()
                         )
-                        (\() ->
+                        (λ() ->
                             let
                                 _ = Js.write inbox (Js.array [])
                             in
                             Js.write dispatching False
                         )
         , view =
-            \() ->
+            λ() ->
                 if not (Js.read started) then
                     let
                         _ = Js.write started True
@@ -338,12 +338,12 @@ host p root flushing phase stop =
                         _ = Js.write busy True
                     in
                     Js.finally
-                        (\() ->
+                        (λ() ->
                             let
                                 _ = Js.write model (p.settle self (Js.read model))
                                 _ = Js.write shown (p.view (Js.read model))
                             in
                             Js.read shown
                         )
-                        (\() -> Js.write busy False)
+                        (λ() -> Js.write busy False)
         }

@@ -11,7 +11,7 @@ type alias V =
 
 -- A kind: `m` makes an instance, a literal with its node and no `b`.
 kind : V
-kind = Js.from { m = \_ -> Js.from { s = Js.from "node" } }
+kind = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
 
 
 -- One block, made once; `view` always shows it.

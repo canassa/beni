@@ -55,7 +55,7 @@ pub tierDecoder : Decoder Tier
 tierDecoder =
     Decode.string
         |> Decode.andThen
-            (\s ->
+            (λs ->
                 case String.toLower s of
                     "free" ->
                         Decode.succeed Free
@@ -126,7 +126,7 @@ pub statusDecoder : Decoder Status
 statusDecoder =
     Decode.field "kind" Decode.string
         |> Decode.andThen
-            (\kind ->
+            (λkind ->
                 case kind of
                     "pending" ->
                         Decode.succeed Pending
@@ -240,7 +240,7 @@ encodeOrder order =
 pub orderTotal : Order -> Float
 orderTotal order =
     order.items
-        |> List.map (\item -> toFloat item.quantity * item.unitPrice)
+        |> List.map (λitem -> toFloat item.quantity * item.unitPrice)
         |> List.sum
 
 
@@ -286,7 +286,7 @@ summarize json =
         orders = parseOrders json?
 
         bump counts key =
-            Dict.update counts key (\existing -> Just (Maybe.withDefault existing 0 + 1))
+            Dict.update counts key (λexisting -> Just (Maybe.withDefault existing 0 + 1))
 
         statusKey order =
             case order.status of
@@ -302,4 +302,4 @@ summarize json =
                 Cancelled _ ->
                     "cancelled"
     in
-    Ok (List.foldl orders Dict.empty (\order counts -> bump counts (statusKey order)))
+    Ok (List.foldl orders Dict.empty (λorder counts -> bump counts (statusKey order)))

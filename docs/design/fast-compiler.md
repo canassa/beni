@@ -357,7 +357,7 @@ is real but rare in Elm, the formatter is the binding constraint where it is hit
 where the residual pain sits (14/elm §0, §7). The author holds it worth fixing regardless.
 
 **Adopted: a rest-of-block bind, `let x <- e`,** the general sequencing form for **any function
-taking its callback last** — `let x <- f a b` is `f a b (\x -> rest)`, Gleam's `use`, purely
+taking its callback last** — `let x <- f a b` is `f a b (λx -> rest)`, Gleam's `use`, purely
 syntactic (normative in [`language.md`](language.md) §6.7), on 44 lines of precedent in Roc's
 measurement of the same block-shaped rewrite (research 15). The original form dispatched on an
 `andThen` table resolved per type after inference, and **that is withdrawn**: typed effects remove
@@ -1348,7 +1348,7 @@ specialiser, so that cost is neither paid nor planned around.
 **This reverses an earlier decision to keep currying**, which rested on one condition — that a curried
 checker could match Roc's `TOO FEW ARGS` diagnostic — discharged by a 37/38 fixture score. That score
 holds for the *direct* case and `too_many_args` but not the *displaced* case: a one-argument lambda
-passed to `List.foldl` is not an error at the lambda, because `\x -> x` unifies with `a -> b -> b`
+passed to `List.foldl` is not an error at the lambda, because `λx -> x` unifies with `a -> b -> b`
 by making the accumulator a function, so the failure surfaces two arguments later
 (`tests/corpus/check/args/FoldlLambdaTooFewParams`); the one admitted failure (`ComposeMissingArg`)
 is the same class. Uncurried the class does not exist — a 1-ary and a 2-ary type do not unify. That,

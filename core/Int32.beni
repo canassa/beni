@@ -155,7 +155,7 @@ sub a b = fromInt (toInt a - toInt b)
 pub mul : Int32, Int32 -> Int32
 mul a b =
     Js.pure
-        (\() -> Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ]))
+        (λ() -> Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ]))
 
 
 --| Integer division, truncated towards zero. **Division by zero is `zero`**,

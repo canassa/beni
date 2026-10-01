@@ -51,7 +51,7 @@ object fields = Object fields
 --| A dictionary as an object, its keys turned into field names.
 pub dict : Dict k v, (k -> String), (v -> Value) -> Value
 dict entries toKey encoder =
-    Dict.foldr entries [] (\key item fields -> [ ( toKey key, encoder item ), ...fields ])
+    Dict.foldr entries [] (λkey item fields -> [ ( toKey key, encoder item ), ...fields ])
         |> Object
 
 
@@ -71,5 +71,5 @@ maybe item encoder =
 pub optionalFields : List ( String, Maybe Value ) -> Value
 optionalFields fields =
     fields
-        |> List.filterMap (\( name, item ) -> Maybe.map item (\present -> ( name, present )))
+        |> List.filterMap (λ( name, item ) -> Maybe.map item (λpresent -> ( name, present )))
         |> Object

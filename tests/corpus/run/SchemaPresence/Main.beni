@@ -108,7 +108,7 @@ parse text = text ++ " => " ++ Show.result (Schema.parse p text) showP
 
 
 print : P -> String
-print v = showP v ++ " => " ++ Show.result (Schema.print p v) (\s -> s)
+print v = showP v ++ " => " ++ Show.result (Schema.print p v) (λs -> s)
 
 
 main : Node.Program
@@ -134,8 +134,8 @@ main =
         , Show.result
             (Schema.parseWith flag { defaultOptions | unknownKeys = Reject } "{\"on\":true}")
             showFlag
-        , Show.result (Schema.print flag { on = Present False }) (\s -> s)
-        , Show.result (Schema.print flag { on = Missing }) (\s -> s)
+        , Show.result (Schema.print flag { on = Present False }) (λs -> s)
+        , Show.result (Schema.print flag { on = Missing }) (λs -> s)
         ]
 
 

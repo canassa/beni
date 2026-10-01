@@ -277,8 +277,8 @@ update msg model =
             case result of
                 Ok cards ->
                     { model
-                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList
-                        , nextId = 1 + List.foldl cards 0 (\c acc -> max acc c.id)
+                        | cards = cards |> List.map (λc -> ( c.id, c )) |> Dict.fromList
+                        , nextId = 1 + List.foldl cards 0 (λc acc -> max acc c.id)
                     }
 
                 Err error ->
@@ -305,7 +305,7 @@ updateCard id f model =
 toggleLabel : String, Card -> Card
 toggleLabel label card =
     if List.member card.labels label then
-        { card | labels = List.filter card.labels (\l -> l /= label) }
+        { card | labels = List.filter card.labels (λl -> l /= label) }
     else
         { card | labels = [ label, ...card.labels ] }
 
@@ -323,10 +323,10 @@ commitEdit model =
             if String.isEmpty (String.trim title) then
                 addError "Title cannot be empty." finished
             else
-                updateCard id (\card -> { card | title = String.trim title }) finished
+                updateCard id (λcard -> { card | title = String.trim title }) finished
 
         EditingDescription id description ->
-            updateCard id (\card -> { card | description = description }) finished
+            updateCard id (λcard -> { card | description = description }) finished
 
 
 moveCard : Int, Column, Model -> Model
@@ -355,8 +355,8 @@ renumber model =
     let
         renumberColumn column cards =
             cardsIn column model
-                |> List.indexedMap (\index card -> { card | order = index })
-                |> List.foldl cards (\card acc -> Dict.insert acc card.id card)
+                |> List.indexedMap (λindex card -> { card | order = index })
+                |> List.foldl cards (λcard acc -> Dict.insert acc card.id card)
     in
     { model | cards = List.foldl columns model.cards renumberColumn }
 
@@ -365,7 +365,7 @@ cardsIn : Column, Model -> List Card
 cardsIn column model =
     model.cards
         |> Dict.values
-        |> List.filter (\card -> card.column == column)
+        |> List.filter (λcard -> card.column == column)
         |> List.sortBy .order
 
 
@@ -380,7 +380,7 @@ matchesFilter filter card =
     String.isEmpty filter
         || String.contains (String.toLower card.title) filter
         || String.contains (String.toLower card.description) filter
-        || List.any card.labels (\label -> String.contains (String.toLower label) filter)
+        || List.any card.labels (λlabel -> String.contains (String.toLower label) filter)
 
 
 handleKey : String, Model -> Model
@@ -483,7 +483,7 @@ viewErrors errors =
             text ""
 
         _ ->
-            ul [ class "errors" ] (List.map errors (\err -> li [] [ text err ]))
+            ul [ class "errors" ] (List.map errors (λerr -> li [] [ text err ]))
 
 
 viewColumn : Model, Column -> Html Msg
@@ -629,7 +629,7 @@ viewLabels card =
     ul [ class "labels" ]
         (List.map
             (List.sortBy card.labels identity)
-            (\label ->
+            (λlabel ->
                 li
                     [ class "label label-${label}"
                     , onClick (ToggleLabel card.id label)
@@ -698,7 +698,7 @@ columnDecoder : Decoder Column
 columnDecoder =
     Decode.string
         |> Decode.andThen
-            (\key ->
+            (λkey ->
                 case columnFromKey key of
                     Just column ->
                         Decode.succeed column
@@ -720,7 +720,7 @@ load json =
 
 pub summary : Model -> List ( String, Int )
 summary model =
-    List.map columns (\column -> ( columnName column, List.length (cardsIn column model) ))
+    List.map columns (λcolumn -> ( columnName column, List.length (cardsIn column model) ))
 
 
 pub labelsInUse : Model -> List String

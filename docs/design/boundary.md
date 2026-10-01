@@ -737,7 +737,7 @@ later. Cancelling runs the fiber's finalisers, so a cancelled command releases w
 ```elm
 update msg model =
     case msg of
-        Typed q       -> ( { model | q = q }, Cmd.keyed "search" Restart (\() -> search q) GotHits )
+        Typed q       -> ( { model | q = q }, Cmd.keyed "search" Restart (λ() -> search q) GotHits )
         NavigatedAway -> ( model, Cmd.cancel "search" )
 ```
 
@@ -1785,8 +1785,8 @@ pub cancel : k -> Cmd msg                                         where k.compar
 pub cancelAll : Cmd msg                                           -- every keyed body at this path and below
 pub map : Cmd a, k, (a -> msg) -> Cmd msg                         where k.compare : k, k -> Order
 pub afterRender : (Send msg -> ()) -> Cmd msg                     -- §9.8.6
-pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform (\send -> send (tag (work ())))
-pub do : (() -> ()) -> Cmd msg                                    -- perform (\_ -> work ())
+pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform (λsend -> send (tag (work ())))
+pub do : (() -> ()) -> Cmd msg                                    -- perform (λ_ -> work ())
 ```
 
 A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,
@@ -2068,7 +2068,7 @@ the owner's and was taken here it says so; each is reversible.
 Each reads the property of its name, and is total: an event without it (a click's `key`) reads
 `""` or `False`, never `undefined`. **`preventDefault` takes effect because a handler runs while
 its event is dispatched** (`backend.md` §15.11: the delegated listener calls it), so "Enter adds,
-and the key does nothing else" is `onKeyDown={\event -> if Html.key event == "Enter" then let _ =
+and the key does nothing else" is `onKeyDown={λevent -> if Html.key event == "Enter" then let _ =
 Html.preventDefault event in Add else Ignored}`; a subscription's value arrives a fiber turn later
 (§9.8.5) and cannot. Elm decides a message and the default together in a decoder that may fail;
 here a handler always makes a message, and a key the program ignores is a message `update`
@@ -2084,7 +2084,7 @@ function `Event -> msg`. Elm's `preventDefaultOn` returns the decision with the 
 handler may call an impure function, so it calls `preventDefault` instead.
 
 `Browser.Events` gains **`onKeyDown`, `onKeyUp`, `onKeyPress : (Html.Event -> msg) -> Sub msg`**,
-Elm's three, each taking the function a handler would be (`onKeyDown (\event -> Pressed
+Elm's three, each taking the function a handler would be (`onKeyDown (λevent -> Pressed
 (Html.key event))`, Elm's `onKeyDown (Decode.map Pressed (Decode.field "key" Decode.string))`).
 Unlike a resize, **no key is coalesced**: each event is queued as it is dispatched until the body's
 fiber takes it, in order, and the function reads it there — the properties it reads do not change
@@ -2264,7 +2264,7 @@ generator needs). **Core's `Random.Pcg`** is the pure half: `Seed`, `Generator`,
 `Random`** is that module by Elm's names — a `type alias` and a one-line definition per name —
 plus the impure seed source: `value` steps one page-wide (`browser`) or process-wide (`node`)
 seed, which its first draw starts from `crypto.getRandomValues` (Web Crypto, a global in Node 19
-and later); `browser`'s adds `generate generator tag = Cmd.task (\() -> value generator) tag`.
+and later); `browser`'s adds `generate generator tag = Cmd.task (λ() -> value generator) tag`.
 *Why two modules and not one:* module names are unique per package, and a platform module
 shadows the core module of its name for the program and for the platform itself (§9.1), so a
 platform `Random` cannot import a core `Random`; the core half takes elm-random-pcg's name,

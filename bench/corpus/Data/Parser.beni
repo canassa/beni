@@ -17,17 +17,17 @@ pub type Json
 
 
 pub succeed : a -> Parser a
-succeed value = { run = \input -> Ok ( value, input ) }
+succeed value = { run = λinput -> Ok ( value, input ) }
 
 
 pub fail : String -> Parser a
-fail reason = { run = \_ -> Err reason }
+fail reason = { run = λ_ -> Err reason }
 
 
 pub map : (a -> b), Parser a -> Parser b
 map f parser =
     { run =
-        \input ->
+        λinput ->
             case parser.run input of
                 Ok ( value, rest ) ->
                     Ok ( f value, rest )
@@ -40,7 +40,7 @@ map f parser =
 pub andThen : (a -> Parser b), Parser a -> Parser b
 andThen next parser =
     { run =
-        \input ->
+        λinput ->
             case parser.run input of
                 Ok ( value, rest ) ->
                     (next value).run rest
@@ -53,7 +53,7 @@ andThen next parser =
 pub keyword : String -> Parser ()
 keyword word =
     { run =
-        \input ->
+        λinput ->
             if String.startsWith input word then
                 Ok ( (), String.dropLeft input (String.length word) )
             else
@@ -64,7 +64,7 @@ keyword word =
 pub oneOf : List (Parser a) -> Parser a
 oneOf parsers =
     { run =
-        \input ->
+        λinput ->
             case parsers of
                 [] ->
                     Err "no alternative matched"
@@ -82,9 +82,9 @@ oneOf parsers =
 pub literal : Parser Json
 literal =
     oneOf
-        [ map (\_ -> JNull) (keyword "null")
-        , map (\_ -> JBool True) (keyword "true")
-        , map (\_ -> JBool False) (keyword "false")
+        [ map (λ_ -> JNull) (keyword "null")
+        , map (λ_ -> JBool True) (keyword "true")
+        , map (λ_ -> JBool False) (keyword "false")
         ]
 
 

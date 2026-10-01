@@ -38,13 +38,13 @@ keys : List String
 keys =
     List.concatMap
         (List.range 0 (blocks - 1))
-        (\block -> List.map (List.range 1 perBlock) (\i -> String.fromInt (block * perBlock + i)))
+        (λblock -> List.map (List.range 1 perBlock) (λi -> String.fromInt (block * perBlock + i)))
 
 
 main : Program
 main =
     let
-        dict = List.foldl keys Dict.empty (\k d -> Dict.insert d k (String.length k))
-        total = List.foldl keys 0 (\k acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
+        dict = List.foldl keys Dict.empty (λk d -> Dict.insert d k (String.length k))
+        total = List.foldl keys 0 (λk acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
     in
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

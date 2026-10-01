@@ -3,13 +3,13 @@
 -- of them stays flat instead of stepping right once per bind. A `<|`
 -- followed by any other block form still indents.
 chain url =
-    Task.attempt (Http.get url) <| \response ->
-    Task.attempt (Json.decode response) <| \value ->
+    Task.attempt (Http.get url) <| λresponse ->
+    Task.attempt (Json.decode response) <| λvalue ->
     renderTheDecodedValue value withSomeExtraContext
 
 
 authorBroke f =
-    f <| \x ->
+    f <| λx ->
     x + 1
 
 

@@ -94,7 +94,7 @@ for an application is `call` (`src/bir/Bir.zig:263`).
 | `e \|> x.m a` | `x.m e a` — the pipe inserts at the **first argument**, which is the first argument *after* the receiver | `method_call { x, m, [e, a] }` |
 | `x.a.m b` | receiver is `x.a`, a field access; method `m` | `method_call { field_access(x, a), m, [b] }` |
 | `.m` | accessor lambda, unchanged (`language.md` §3 `Atom := dot_lower`) | `lambda` |
-| `x.m _ b` | placeholder over the method call: `\y -> x.m y b` (`language.md` §6.7) | `lambda` over `method_call` |
+| `x.m _ b` | placeholder over the method call: `λy -> x.m y b` (`language.md` §6.7) | `lambda` over `method_call` |
 | `x.0.m a` | receiver is the tuple element `x.0` | `method_call { tuple_index(x, 0), m, [a] }` |
 | `M.f x` | qualified value call, **not** a method call: the head is a qualified name — a `qualified_lower` token, lowered to `import_value` or to the BIR tag `qualified` (`src/bir/Bir.zig:164`) — and not a field access | `call(import_value(M, f), [x])` |
 | `M.v.m a` | receiver is the qualified value `M.v`; method `m`. The head of the application is a field access on a qualified name, so this is a method call, unlike `M.f x` above | `method_call { import_value(M, v), m, [a] }` |
@@ -403,10 +403,10 @@ gets the same dispatch as the operator, because it lowers to a lambda over it:
 
 | Written | Lowers to |
 |---|---|
-| `(==)` | `\a b -> method_call { a, eq, [b], origin = eq }` |
-| `(/=)` | `\a b -> method_call { a, eq, [b], origin = neq }` |
-| `(<)` `(<=)` `(>)` `(>=)` | `\a b -> method_call { a, compare, [b], origin = lt \| le \| gt \| ge }` |
-| `(+)` `(::)` and the rest | unchanged: still `\a b -> call(import_value(Basics, add), [a, b])` and friends |
+| `(==)` | `λa b -> method_call { a, eq, [b], origin = eq }` |
+| `(/=)` | `λa b -> method_call { a, eq, [b], origin = neq }` |
+| `(<)` `(<=)` `(>)` `(>=)` | `λa b -> method_call { a, compare, [b], origin = lt \| le \| gt \| ge }` |
+| `(+)` `(::)` and the rest | unchanged: still `λa b -> call(import_value(Basics, add), [a, b])` and friends |
 
 So `(==)` is a closure of arity two whose *body* carries the constraint, and the constraint lands on
 the enclosing declaration's scheme like any other. It is not a reference to `Basics.eq`, which would
@@ -723,7 +723,7 @@ generic makes `List.sortBy people .name` fail for no reason a reader could state
 
 Everything stays declared and exported. `eq`, `neq`, `lt`, `gt`, `le`, `ge` and `compare` are no
 longer what `language.md` §6.5's operators mean (§3.1) but remain ordinary callable functions, so
-`compare a b` in a `case` and `List.sortWith xs (\a b -> compare b a)` keep working unchanged.
+`compare a b` in a `case` and `List.sortWith xs (λa b -> compare b a)` keep working unchanged.
 
 ### 5.7 Two deletions
 
@@ -835,7 +835,7 @@ Roc does this and says why (`references/roc/src/check/Check.zig:20045-20054`):
 > call's arguments are. A closure argument then has its parameters seeded before its body is
 > checked."*
 
-Without it, `xs.map (\x -> x.field)` checks the lambda against a fresh variable, the lambda's
+Without it, `xs.map (λx -> x.field)` checks the lambda against a fresh variable, the lambda's
 parameter type is unknown while its body is checked, and `x.field` becomes a second deferred
 constraint that fails somewhere else — report 20 §9 row S3-9.
 
@@ -1672,7 +1672,7 @@ import Dict exposing (Dict)
 
 pub tally : List String -> Dict String Int
 tally names =
-    List.foldl names Dict.empty (\n d -> Dict.insert d n 1)
+    List.foldl names Dict.empty (λn d -> Dict.insert d n 1)
 ```
 
 ```
@@ -2901,7 +2901,7 @@ bought no guarantee and cost `Dict.empty`, which is the shape of the value anyon
 
 **A value whose TYPE is a function is not a constant, and this code does not apply to it either**
 (2026-09-24, [`checker-v2.md`](checker-v2.md) §12.5). Unannotated
-`pub equals = (==)` and `pub eqs = \a b -> a == b` used to be refused here: before then the
+`pub equals = (==)` and `pub eqs = λa b -> a == b` used to be refused here: before then the
 emitter would have made them a function of their evidence RETURNING the function, a shape their type
 did not say. Now one `Convention` defines, calls and imports them as the function they are,
 `($m$0, $p$1, $p$2) => …` — nothing is silent and nothing changes type — so under CLAUDE.md rule
@@ -3174,7 +3174,7 @@ test, not a retry (`references/roc/src/check/Check.zig:20054`) — and the spike
 pass.
 
 **Deferred receiver** (the owner approved this rule on 2026-09-26). `x.m a` with `x`'s type still unknown is a method constraint, never a field
-call, so `\r -> r.f 1` where `r` turns out to be a record is `no_methods_on_shape` with a hint to
+call, so `λr -> r.f 1` where `r` turns out to be a record is `no_methods_on_shape` with a hint to
 write `(r.f) 1`. This is the ambiguity report 18 §2.1 names and the one Roc's `->` operator lives
 with; M6 shows the message.
 
@@ -3194,7 +3194,7 @@ the program was accepted in one order and refused in the other (`checker-v2.md` 
 changes the result). Every member's facts arrive before the group is generalised, in every
 order, so a decision taken when the receiver becomes known is the same in every order. Within a
 single non-recursive declaration the solving order is fixed by its own text, so the only programs
-whose meaning changes are ones the old rule refused: `(\r -> r.f 1) { f = g }` is now `g 1`.
+whose meaning changes are ones the old rule refused: `(λr -> r.f 1) { f = g }` is now `g 1`.
 *Added the same day:* a dot-call whose requirement was joined (§6.1
 invariant 3, one constraint per variable and name) with a scheme's requirement — an instantiated
 `where a.f`, or a sub-requirement — is not a field call: that requirement has no field accessor to
@@ -3340,7 +3340,7 @@ what answers and it answers exactly once (A.57). Pinned by
 **A `where` constraint that meets a record only after a field access is refused.** §6.2's Rule U0
 resolves a method against a receiver that is already concrete and never retries one that was still
 a variable; §6.3 refuses an OPEN record, and reading a field off a lambda parameter is what opens
-one. So `List.foldl points Dict.empty (\p d -> Dict.insert d p (p.x + p.y))` is
+one. So `List.foldl points Dict.empty (λp d -> Dict.insert d p (p.x + p.y))` is
 `no_methods_on_shape` on a record the author wrote closed, while the same fold with the value
 behind an annotated helper compiles. This is A.28 and §6.2's "what it does not buy" meeting in a
 program a user would plausibly write, and `bench/runtime/c1/R2DictRecord.beni` is the first

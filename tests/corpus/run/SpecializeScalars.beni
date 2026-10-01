@@ -17,7 +17,7 @@ area w h =
     let
         r = { w = w * 2, h = h + 1 }
     in
-    List.map [ 1, 2 ] (\k -> k * r.w + r.h)
+    List.map [ 1, 2 ] (λk -> k * r.w + r.h)
 
 
 turns : Int, List (() -> Int) -> List (() -> Int)
@@ -28,7 +28,7 @@ turns n acc =
     if n == 0 then
         acc
     else
-        turns (n - 1) [ \_ -> r.v * 10, ...acc ]
+        turns (n - 1) [ λ_ -> r.v * 10, ...acc ]
 
 
 type alias Op =
@@ -56,7 +56,7 @@ main : Node.Program
 main =
     Node.printLines
         (List.map (area 3 4 ++ area 5 6) String.fromInt
-            ++ List.map (turns 3 []) (\f -> String.fromInt (f ()))
+            ++ List.map (turns 3 []) (λf -> String.fromInt (f ()))
             ++ [ String.fromInt (useOne { name = "one", apply = double })
                , String.fromInt (useOne { name = "two", apply = double })
                , String.fromInt (useEither { name = "d", apply = double })

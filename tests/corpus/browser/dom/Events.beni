@@ -53,13 +53,13 @@ view model =
     <main>
         <ul>
             <For each={[ 1, 2, 3 ]}>
-                {\n -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}
+                {λn -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}
             </For>
         </ul>
         <p>picked {model.picked}</p>
         <input id="draft" value={model.draft} onInput={Typed} onFocus={Focused} />
-        {Html.map (Html.map leaf (\s -> s ++ " inner")) (\s -> Wrapped (s ++ " outer"))}
-        <ol><For each={model.log} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+        {Html.map (Html.map leaf (λs -> s ++ " inner")) (λs -> Wrapped (s ++ " outer"))}
+        <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
     </main>
 
 

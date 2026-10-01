@@ -4,7 +4,7 @@
 -- Each is missing_form_attribute at the tag.
 view model =
     <div>
-        <For keyed={.id}>{\x -> <p />}</For>
-        <Show when={model.user}>{\u -> <p />}</Show>
-        <Show keyed>{\u -> <p />}</Show>
+        <For keyed={.id}>{λx -> <p />}</For>
+        <Show when={model.user}>{λu -> <p />}</Show>
+        <Show keyed>{λu -> <p />}</Show>
     </div>

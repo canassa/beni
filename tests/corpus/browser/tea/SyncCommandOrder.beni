@@ -36,9 +36,9 @@ update msg n =
             in
             ( n
             , if fibers then
-                bodies True (\() -> pause False)
+                bodies True (λ() -> pause False)
               else
-                bodies False (\() -> ())
+                bodies False (λ() -> ())
             )
 
         Sent fibers what ->
@@ -66,18 +66,18 @@ pause yes =
 bodies : Bool, (() -> ()) -> Cmd Msg
 bodies fibers hold =
     Cmd.batch
-        [ Cmd.perform (\send -> say send fibers hold "first")
-        , Cmd.perform (\send -> waiting send fibers)
-        , Cmd.perform (\send -> say send fibers hold "third")
+        [ Cmd.perform (λsend -> say send fibers hold "first")
+        , Cmd.perform (λsend -> waiting send fibers)
+        , Cmd.perform (λsend -> say send fibers hold "third")
         ]
 
 
 more : Bool -> Cmd Msg
 more fibers =
     if fibers then
-        Cmd.perform (\send -> say send fibers (\() -> pause False) "more")
+        Cmd.perform (λsend -> say send fibers (λ() -> pause False) "more")
     else
-        Cmd.perform (\send -> say send fibers (\() -> ()) "more")
+        Cmd.perform (λsend -> say send fibers (λ() -> ()) "more")
 
 
 say : Cmd.Send Msg, Bool, (() -> ()), String -> ()
@@ -117,5 +117,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = λ_ -> Sub.none
         }

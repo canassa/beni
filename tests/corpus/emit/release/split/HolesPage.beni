@@ -36,6 +36,6 @@ main : Browser.Program
 main =
     Browser.program
         { init = { on = False, count = 0 }
-        , update = \on m -> { on = on, count = m.count + 1 }
+        , update = λon m -> { on = on, count = m.count + 1 }
         , view = view
         }

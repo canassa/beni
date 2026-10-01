@@ -4,5 +4,5 @@
 -- reference in silence.
 view model =
     <ul>
-        <For each={model.rows} key={.id}>{\row -> <li />}</For>
+        <For each={model.rows} key={.id}>{λrow -> <li />}</For>
     </ul>

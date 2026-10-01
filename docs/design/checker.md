@@ -1378,7 +1378,7 @@ the generic `type_mismatch` and suppress it:
 
 **Why this is better than what currying could do, and it is the whole reason for the change.**
 Under currying a one-parameter lambda in a two-parameter callback position is not an error at the
-lambda: `\x -> x` unifies with `a -> b -> b` by making the accumulator a function, and the failure
+lambda: `λx -> x` unifies with `a -> b -> b` by making the accumulator a function, and the failure
 surfaces two arguments later on the list. That displaced class is what re-opened the decision
 (`fast-compiler.md` §9.3), and with arity in the type it does not exist — the lambda is wrong where
 it is written.

@@ -37,7 +37,7 @@ chainTo n k =
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (sumTo 3 (\x -> x))
-        , String.fromInt (chainTo 3 (\x -> x))
-        , String.fromInt (chainTo 100 (\x -> x))
+        [ String.fromInt (sumTo 3 (λx -> x))
+        , String.fromInt (chainTo 3 (λx -> x))
+        , String.fromInt (chainTo 100 (λx -> x))
         ]

@@ -59,7 +59,7 @@ main =
 
         mapped =
             List.concatMap [ 1, 2, 3 ]
-                (\n ->
+                (λn ->
                     if n == 2 then
                         b
                     else
@@ -68,7 +68,7 @@ main =
 
         mappedTwo =
             List.concatMap [ 1, 2, 3 ]
-                (\n ->
+                (λn ->
                     if n == 3 then
                         []
                     else if n == 1 then
@@ -77,10 +77,10 @@ main =
                         b
                 )
 
-        ( kept, _ ) = List.partition rows (\r -> r.id < 2)
+        ( kept, _ ) = List.partition rows (λr -> r.id < 2)
     in
     Node.printLines
-        [ show "filter element" (firstOf (List.filter rows (\r -> r.id == 1)))
+        [ show "filter element" (firstOf (List.filter rows (λr -> r.id == 1)))
         , show "take element" (firstOf (List.take rows 2))
         , show "partition element" (firstOf kept)
         , show "append element" (firstOf (List.append rows [ { id = 9 } ]))

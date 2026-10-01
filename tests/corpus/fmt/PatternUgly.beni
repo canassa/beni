@@ -8,4 +8,4 @@ f v = case v of
   [ Just(Just(z)) ] -> z
   _ -> 0
 g p = let (a,b)=p in a
-h = \(a,b)->a
+h = λ(a,b)->a

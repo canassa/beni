@@ -3,9 +3,9 @@
 rows model =
     <ul>
         <For each={model.rows} keyed={.id} fallback={<li>None</li>}>
-            {\row -> <li>{row.label}</li>}
+            {λrow -> <li>{row.label}</li>}
         </For>
     </ul>
 
 
-editor model = <Show when={model.user} keyed>{\user -> <p>{user.name}</p>}</Show>
+editor model = <Show when={model.user} keyed>{λuser -> <p>{user.name}</p>}</Show>

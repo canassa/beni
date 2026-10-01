@@ -13,7 +13,7 @@ type alias Grid =
 
 pub make : Int, Int -> Grid
 make w h =
-    { w = w, h = h, cells = Array.initialize (w * h) (\i -> if modBy (i * 7) 5 == 0 then 1 else 0) }
+    { w = w, h = h, cells = Array.initialize (w * h) (λi -> if modBy (i * 7) 5 == 0 then 1 else 0) }
 
 
 cell : Grid, Int, Int -> Int
@@ -63,4 +63,4 @@ tickHelp g j k seed =
 
 
 pub population : Grid -> Int
-population g = Array.foldl g.cells 0 (\v s -> s + v)
+population g = Array.foldl g.cells 0 (λv s -> s + v)

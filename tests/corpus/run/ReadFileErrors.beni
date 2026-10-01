@@ -52,7 +52,7 @@ attempt label path =
 main : Program
 main =
     Io.run
-        (\() ->
+        (λ() ->
             Node.printLines
                 [ attempt "missing" "no such file.txt"
                 , attempt "directory" "."

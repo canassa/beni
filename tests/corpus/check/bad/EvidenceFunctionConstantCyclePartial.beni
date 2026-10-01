@@ -4,7 +4,7 @@
 -- `cyclic_value`, as without the `where` — never a clean check whose
 -- program overflows the stack when run.
 compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = \x -> f (g x)
+compose f g = λx -> f (g x)
 
 
 keep : a -> a

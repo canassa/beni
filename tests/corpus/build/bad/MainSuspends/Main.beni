@@ -12,7 +12,7 @@ import Remote
 main : Program
 main =
     let
-        later = \() -> Remote.lookup "later"
+        later = λ() -> Remote.lookup "later"
     in
     Prog.say (greeting "world")
 

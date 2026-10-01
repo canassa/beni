@@ -8,11 +8,11 @@ import List
 
 --| The order-keeping build that Elm writes with `foldr` and `::`.
 pub foldrBuild : List Int -> List Int
-foldrBuild xs = List.foldl xs [] (\x acc -> List.push acc (x * 2))
+foldrBuild xs = List.foldl xs [] (λx acc -> List.push acc (x * 2))
 
 
 pub foldrSum : List Int -> Int
-foldrSum xs = List.foldr xs 0 (\x acc -> x + acc)
+foldrSum xs = List.foldr xs 0 (λx acc -> x + acc)
 
 
 pub rangeSum : Int -> Int
@@ -20,16 +20,16 @@ rangeSum n = List.sum (List.range 1 n)
 
 
 pub zip : List a, List b -> List ( a, b )
-zip xs ys = List.map2 xs ys (\a b -> ( a, b ))
+zip xs ys = List.map2 xs ys (λa b -> ( a, b ))
 
 
 pub concatMapPairs : List Int -> List Int
-concatMapPairs xs = List.concatMap xs (\x -> [ x, x + 1 ])
+concatMapPairs xs = List.concatMap xs (λx -> [ x, x + 1 ])
 
 
 --| What `acc ++ [ x ]` in a loop becomes.
 pub appendLoop : List Int -> List Int
-appendLoop xs = List.foldl xs [] (\x acc -> List.push acc x)
+appendLoop xs = List.foldl xs [] (λx acc -> List.push acc x)
 
 
 pub appendTwo : List a, List a -> List a
@@ -41,18 +41,18 @@ reverse xs = List.reverse xs
 
 
 pub libMap : List Int -> List Int
-libMap xs = List.map xs (\x -> x * 3 + 1)
+libMap xs = List.map xs (λx -> x * 3 + 1)
 
 
 pub libFilter : List Int -> List Int
-libFilter xs = List.filter xs (\x -> modBy x 3 /= 0)
+libFilter xs = List.filter xs (λx -> modBy x 3 /= 0)
 
 
 -- 4. building in a fold -----------------------------------------------------------
 
 --| The accumulator is the fold's own state.
 pub prependFold : List Int -> List Int
-prependFold xs = List.foldl xs [] (\x acc -> List.push acc (x * 2))
+prependFold xs = List.foldl xs [] (λx acc -> List.push acc (x * 2))
 
 
 type alias Scan =
@@ -68,7 +68,7 @@ recordFold xs =
             List.foldl
                 xs
                 { seen = [], count = 0 }
-                (\x st -> { st | seen = List.push st.seen (x * 2), count = st.count + 1 })
+                (λx st -> { st | seen = List.push st.seen (x * 2), count = st.count + 1 })
     in
     final.seen
 
@@ -78,7 +78,7 @@ pub partitionFold : List Int -> ( List Int, List Int )
 partitionFold xs =
     List.foldl xs
         ( [], [] )
-        (\x pair ->
+        (λx pair ->
             case pair of
                 ( evens, odds ) ->
                     if modBy x 2 == 0 then

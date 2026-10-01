@@ -46,13 +46,13 @@ update msg rows =
             swap rows
 
         DropB ->
-            List.filter rows (\row -> row.label /= "b")
+            List.filter rows (λrow -> row.label /= "b")
 
         AddE ->
             rows ++ [ { id = 2, label = "e" } ]
 
         DropTwos ->
-            List.filter rows (\row -> row.id /= 2)
+            List.filter rows (λrow -> row.id /= 2)
 
         AddF ->
             [ { id = 2, label = "f" }, ...rows ]
@@ -68,7 +68,7 @@ view rows =
         <button id="addf" onClick={AddF}>add f</button>
         <ul>
             <For each={rows} keyed={.id}>
-                {\row -> <li><input />{row.label}</li>}
+                {λrow -> <li><input />{row.label}</li>}
             </For>
         </ul>
     </main>

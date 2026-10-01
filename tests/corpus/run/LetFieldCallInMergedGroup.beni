@@ -23,7 +23,7 @@ pub combine (T a) b =
     if b > 100 then
         f b
     else
-        a + b + go { run = \k -> k - k }
+        a + b + go { run = λk -> k - k }
 
 
 f n =
@@ -33,7 +33,7 @@ f n =
     if n > 50 then
         0
     else
-        (T n).combine 1 + call { run = \k -> k * 2 }
+        (T n).combine 1 + call { run = λk -> k * 2 }
 
 
 main : Program

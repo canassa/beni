@@ -34,7 +34,7 @@ update msg model =
                 | rows =
                     List.map
                         model.rows
-                        (\row -> if row.id == 2 then { row | label = "${row.label}!" } else row)
+                        (λrow -> if row.id == 2 then { row | label = "${row.label}!" } else row)
             }
 
 
@@ -44,7 +44,7 @@ view model =
         <button id="relabel" onClick={Relabel}>relabel</button>
         <ul>
             <For each={model.rows} keyed={.id}>
-                {\row ->
+                {λrow ->
                     <li class={if model.selected == Just row.id then "on" else ""}>
                         <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>
                             {Debug.log row.label "label"}

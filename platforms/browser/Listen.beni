@@ -21,7 +21,7 @@ import Task
 --| listener is added when the body starts and removed however it ends.
 pub each : String, String, sync (Js.Value -> a), Browser.Send a -> ()
 each target name read emit =
-    Task.bracket (\() -> open target name read) (\l _ -> close l) (\l -> pump l emit)
+    Task.bracket (λ() -> open target name read) (λl _ -> close l) (λl -> pump l emit)
 
 
 open : String, String, sync (Js.Value -> a) -> Js.Value
@@ -31,7 +31,7 @@ open target name read =
         l = Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
 
         handler =
-            \event ->
+            λevent ->
                 let
                     v = Js.from (read event)
                     waiting = Js.at l 1
@@ -64,7 +64,7 @@ pump l emit =
 
 -- The oldest value not yet taken, waiting for one when there is none.
 next : Js.Value -> a
-next l = Task.callback (\resume -> take l resume)
+next l = Task.callback (λresume -> take l resume)
 
 
 take : Js.Value, Task.Resume a -> (() -> ())
@@ -81,4 +81,4 @@ take l resume =
         let
             _ = Js.setAt l 1 (Js.from resume)
         in
-        \() -> Js.setAt l 1 Js.null
+        λ() -> Js.setAt l 1 Js.null

@@ -452,8 +452,8 @@ is a sibling only at the field column; an indented `street : String` after
 
 | Construct | Rule |
 |---|---|
-| `case`, lambda, leading operator | `case` needs at least one branch (`case_without_branches`); a lambda is `\x y -> e`, one or more pattern atoms; an expression may not begin with an operator, except `-` for negation (§6.5) |
-| a `let`, `if`, `case` or lambda | **may be the *last* operand of an operator chain** (`f <\| \x -> x + 1`, `text <\| if a then b else c`), as in Elm; it extends as far as the layout allows, so nothing can follow it in the chain. It may not be a bare application argument: `f \x -> x` is an error, write `f (\x -> x)`. `\|>` is the exception and takes no block (§6.7). *Amended 2026-10-02:* `let` is gone and the lambda is `λ` (§12); a lambda **may** now be an application's last argument without parentheses (§12.3), and an `if` or `case` still may not. |
+| `case`, lambda, leading operator | `case` needs at least one branch (`case_without_branches`); a lambda is `λx y -> e`, one or more pattern atoms; an expression may not begin with an operator, except `-` for negation (§6.5) |
+| a `let`, `if`, `case` or lambda | **may be the *last* operand of an operator chain** (`f <\| λx -> x + 1`, `text <\| if a then b else c`), as in Elm; it extends as far as the layout allows, so nothing can follow it in the chain. It may not be a bare application argument: `f λx -> x` is an error, write `f (λx -> x)`. `\|>` is the exception and takes no block (§6.7). *Amended 2026-10-02:* `let` is gone and the lambda is `λ` (§12); a lambda **may** now be an application's last argument without parentheses (§12.3), and an `if` or `case` still may not. |
 | access chains | **must abut their atom**: `(f x).name`, `r.a.b`, `t.0.1`, `xs.0` — the `dot_lower` / `dot_index` token must start at the byte right after the atom's last byte. With whitespace, `.field` is an accessor-function atom and application applies: `f .name` is `f` applied to `.name`. |
 | trailing commas | not allowed anywhere. Empty `( )`, `[ ]`, `{ }` may contain whitespace. |
 
@@ -696,7 +696,7 @@ non-associative operators reject a second operator of the same precedence withou
 | mixing `<\|` and `\|>` | at precedence 0 without parentheses it is `non_associative_chain`: they associate in opposite directions, so a mixed chain has no predictable reading, and Elm rejects the same pair. `<<` and `>>` are removed, and with them the precedence-9 case of this rule and the composition idiom, which is replaced by naming the argument. |
 | **negation** | `-` directly followed (no whitespace) by an atom, where the parser expects the *start* of an operand: `-x`, `-(a + b)`, `-1`, `[ -1, -2 ]`. The operand is one atom with its access chain, so `-r.value` is `-(r.value)` and `-f x` is `(-f) x`, as in Elm. Negation of an integer literal in a *pattern* is a literal pattern (`-1 ->`). `- x` with a space in prefix position is `negation_with_space`; `a - -b` is allowed. |
 | `f -1` | **not** negation: in argument position the parser has parsed `f` and sees `-` where either an argument or an operator may follow, and **it is the binary operator**, as in Elm, so `f -1` is `f - 1`. Write `f (-1)`. |
-| **operators as functions** | `(+)`, `(++)`, `(==)` and so on (`(::)` went with `::` on 2026-10-01 and is `cons_removed`, whose message names `List.cons`): any operator from the table that lowers to a call or to a method call, each being the 2-ary function it lowers to. The six comparison operators lower to a lambda over a marked method call, not to a reference to `Basics.eq` — so `(==)` is `\a b -> a.eq b` with the operator's own pinning rule, not structural equality (spec §3.1). Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
+| **operators as functions** | `(+)`, `(++)`, `(==)` and so on (`(::)` went with `::` on 2026-10-01 and is `cons_removed`, whose message names `List.cons`): any operator from the table that lowers to a call or to a method call, each being the 2-ary function it lowers to. The six comparison operators lower to a lambda over a marked method call, not to a reference to `Basics.eq` — so `(==)` is `λa b -> a.eq b` with the operator's own pinning rule, not structural equality (spec §3.1). Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
 
 **The six comparison operators are method calls, not `Basics` calls** (§0). `a == b` and `a /= b`
 lower to a call of `eq` on `a`'s type; `a < b`, `a <= b`, `a > b`, `a >= b` to a call of `compare`,
@@ -732,14 +732,14 @@ arity mistake is reported where it is written, including inside a lambda passed 
 function — the reason currying went.
 
 **`_` is the placeholder.** In argument position of an application, `_` stands for the argument the
-call does not supply: `f a _ c` is `\x -> f a x c` for a fresh `x`.
+call does not supply: `f a _ c` is `λx -> f a x c` for a fresh `x`.
 
 | Rule | Detail |
 |---|---|
 | `placeholder_outside_argument`, `multiple_placeholders` | `_` is an argument, never an expression of its own: `let y = _`, `_ + 1` and `f (_)` are `placeholder_outside_argument`, which takes precedence over the generic `unexpected_token` that §10 would otherwise give. At most one `_` per application (`multiple_placeholders`), as in Gleam; two omitted arguments are written as a lambda. |
-| position, and what the lambda wraps | a placeholder may fill any position, the first included. The lambda wraps the **innermost enclosing application**: in `f (g _) b` the placeholder belongs to `g`, and what `f` receives is `\x -> g x`. |
-| order against pipes | **pipes rewrite before placeholders lift** (§8): `e \|> f a _` is `f e a _` and then `\x -> f e a x`. Lifting first would leave a lambda as the pipe's right operand and reject the program. |
-| `f _.name` | applies `f` to the placeholder **and** to the accessor `.name`, because a `dot_lower` must abut an `Atom` and `_` is not one. Write `f (\r -> r.name)` for the other reading. |
+| position, and what the lambda wraps | a placeholder may fill any position, the first included. The lambda wraps the **innermost enclosing application**: in `f (g _) b` the placeholder belongs to `g`, and what `f` receives is `λx -> g x`. |
+| order against pipes | **pipes rewrite before placeholders lift** (§8): `e \|> f a _` is `f e a _` and then `λx -> f e a x`. Lifting first would leave a lambda as the pipe's right operand and reject the program. |
+| `f _.name` | applies `f` to the placeholder **and** to the accessor `.name`, because a `dot_lower` must abut an `Atom` and `_` is not one. Write `f (λr -> r.name)` for the other reading. |
 | in patterns, and against §6.6 | `_` keeps its pattern meaning (§3, `PatAtom`) everywhere a pattern is expected, and the two positions never overlap. **A placeholder is a lambda** for §6.6, so a `?` inside the application it lifts is `question_in_lambda`: `f a? _` is rejected. |
 
 **`|>` is pipe-first syntax.** `e |> f a b` rewrites to `f e a b` and `e |> f` to `f e`: the left
@@ -752,7 +752,7 @@ operand becomes the callee's **first** argument. `<|` keeps Elm's meaning: `f <|
 | library convention | because the pipeline inserts at the first argument, **the standard library is subject first and function last**: `List.map xs f`, `String.split s sep`, `Dict.insert d k v`, `Result.andThen r f` — the convention that makes a pipeline read and lets `<-` reach every callback-taking function |
 
 **`let x <- e` binds the rest of the block.** `let x <- f a b in rest` desugars to
-`f a b (\x -> rest)`: the remaining bindings and the body become the callee's last argument. It is
+`f a b (λx -> rest)`: the remaining bindings and the body become the callee's last argument. It is
 purely syntactic — no type-constructor table, no dispatch, nothing that depends on inference.
 *Amended 2026-10-02 (§12.2):* with `let` gone a bind is a block item, `x <- f a b`, and `rest` is
 every item after it; a bind is never the last item (`block_ends_in_binding`). The table below holds
@@ -761,7 +761,7 @@ with "the remaining bindings and the body" read as "the remaining items".
 ```elm
 let
     scope <- Task.scope
-    conn <- Task.bracket (\() -> Db.open url) Db.close
+    conn <- Task.bracket (λ() -> Db.open url) Db.close
     h <- Result.andThen (readHeader s)
 in
 render scope conn h
@@ -769,9 +769,9 @@ render scope conn h
 
 | Rule | Detail |
 |---|---|
-| right-hand side | **the callee applied to all but its final argument.** For a callee of arity one that is the bare name: `scope <- Task.scope` is `Task.scope (\scope -> rest)`, the shape the form was generalised for (`fast-compiler.md` §9.3 item 7). A qualified name, a field access, a parenthesised operator and a parenthesised application are legal heads for the same reason. |
+| right-hand side | **the callee applied to all but its final argument.** For a callee of arity one that is the bare name: `scope <- Task.scope` is `Task.scope (λscope -> rest)`, the shape the form was generalised for (`fast-compiler.md` §9.3 item 7). A qualified name, a field access, a parenthesised operator and a parenthesised application are legal heads for the same reason. |
 | `bind_rhs_not_application` | anything that is not a call once the rest of the block is appended — a `case`, an `if`, a lambda, a `let`, a `?`, an arithmetic expression |
-| pipes | a `\|>`/`<\|` chain is legal in principle, because pipes rewrite before the bind does (the order rule above), so `let x <- File.read path \|> Task.mapError f` means `Task.mapError (File.read path) f (\x -> rest)`. The chain's head application is what receives the callback, so the bind attaches to `Task.mapError`, not to the pipe. |
+| pipes | a `\|>`/`<\|` chain is legal in principle, because pipes rewrite before the bind does (the order rule above), so `let x <- File.read path \|> Task.mapError f` means `Task.mapError (File.read path) f (λx -> rest)`. The chain's head application is what receives the callback, so the bind attaches to `Task.mapError`, not to the pipe. |
 | no `_`, no annotation | a bind is a call missing exactly its final argument, not a partial application, so a `_` among the bind's own arguments is `placeholder_outside_argument`; a `_` in a nested application inside one of those arguments lifts over that application as usual. `let x : T` may only precede a `Definition`, so an annotation above a bind is `annotation_without_definition`. Whether the callee's last parameter is in fact a function is a type question, reported in M2 as `bind_not_callback`. |
 | what `rest` is, and the bound pattern | `rest` is every binding after this one together with the `in` body. A `<-` may appear anywhere in the binding list, last included, where `rest` is the body alone. A bind inside a `case` arm or an `if` branch opens its own `let` and cannot reach past the branch it sits in. The bound pattern is a `LetPattern`, so irrefutable, and is in scope only in `rest` (§7). Because the desugaring makes it the callback's **parameter**, that is what it is called when it breaks the rule: `refutable_parameter_pattern`, from the parser and from the checker alike — the checker only ever sees it as a `lambda` parameter, and one position may not have two names. A `_` placeholder's lambda needs no rule at all: its parameter is a name lowering invents, never a written pattern. |
 | against §6.6 | **the callback is a lambda**, so a `?` anywhere in `rest` is `question_in_lambda`. The restriction is conservative and reversible: letting `?` return from the callback is correct only when the callee passes its result through unchanged, which the front end cannot know. Same question as `transparent-effects-proposal.md` §11 Q5, to be settled there. |
@@ -798,8 +798,8 @@ observable today; effects will make them observable in what a program *does*.
 | binary operator `a ⊕ b` | **the left operand, then the right**, whatever the operator desugars to — a `Basics` call (`+`), a method call (`==`, `<`, §6.5) or `Basics.append` (`++`). The desugaring is an application, so this is the row above and not a separate rule |
 | `&&`, `\|\|` | the left operand, then the right **only when the left does not decide it**. This is why `Basics.and` and `Basics.or` are `foreign`: a call would evaluate both (`backend.md` §4, correction 3). A right operand that needs statements of its own gets them inside the branch |
 | `\|>`, `<\|` | **pipes rewrite before anything runs** (§6.7, §8), and the rewritten form's order is what holds. For `\|>` the two agree: `e \|> f a` is `f e a`, so `e` — written first — is evaluated first. For `<\|`, `f a <\| e` is `f a e` and `a` precedes `e`, which is again source order |
-| `_` placeholder | **the lambda evaluates nothing when it is built.** `f (g x) _` is `\p -> f (g x) p` (§6.7), so `g x` runs on *every* call of that lambda, and after that call's own argument. Bind `g x` to a name first if it should run once |
-| `let x <- e` | `let x <- f a in rest` is `f a (\x -> rest)`: `f`, then `a`, then the call; `rest` runs if and when and as often as `f` calls the callback |
+| `_` placeholder | **the lambda evaluates nothing when it is built.** `f (g x) _` is `λp -> f (g x) p` (§6.7), so `g x` runs on *every* call of that lambda, and after that call's own argument. Bind `g x` to a name first if it should run once |
+| `let x <- e` | `let x <- f a in rest` is `f a (λx -> rest)`: `f`, then `a`, then the call; `rest` runs if and when and as often as `f` calls the callback |
 | tuple literal, list literal | element by element, left to right. *Amended 2026-10-01:* a spread's operand is an element for this row — `[ a, ...f x, b ]` evaluates `a`, then `f x`, then `b` — and every element and operand is evaluated before the list is built (§6.8) |
 | constructor | argument by argument, left to right |
 | **record literal** | **field by field, in the order the fields are written** — `{ z = p, a = q }` evaluates `p` then `q`. `backend.md` §4 sorts the emitted object's *keys* so that one record type has one hidden class; that is a representation decision, and it does not move an evaluation |
@@ -1145,9 +1145,9 @@ function is `foreign`.
 | what binds, and where | every binding introduces a name into a lexical scope: function parameters, lambda parameters, `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression — mutual recursion is allowed), pattern variables in `case` branches and destructuring. Top-level names are all in scope in every body; order does not matter. **Being in scope is not being initialised**, which is the next row. |
 | **initialisation**, and what being in scope does not buy | A `let` **value** binding is evaluated where it is written (§6, *Evaluation order*), so its right-hand side may not read a value binding of the same `let` that is written **below** it, nor itself. Nor may it read one **through a `let` function** of that block: naming a function may call it — passing it to `List.map` calls it — so whatever that function's body reads is read here too (`a = f 1` above `f x = x + b` above `b = 2` is the same mistake one hop away, and a function written before `b` but only *called* after it is fine). All three are **`let_forward_reference`**, whose region is the reference that runs too soon and whose message names the binding it reaches and the line it is on. The name still **resolves** — that is what the row above means — so the error is never `unbound_variable`. A `let` **function** is untouched in the other direction: `backend.md` §4 emits it as a hoisted `function` declaration, so naming one above its own line is legal and mutual recursion between `let` functions is unrestricted. A TOP-LEVEL declaration has no written-order rule, because the backend emits constants in dependency order rather than in written order — the next row is what it has instead. |
 | **initialisation at the top level** | A top-level **value** is computed once, when the module is loaded, so it **may not be reachable from its own initialiser** (a value with a `where` clause is computed at each use instead, §6 *Evaluation order*, and the rule applies to it unchanged: a `where` is a type annotation and never makes a value a function — only parameters or a `lambda` body do) — directly (`x = x + 1`), through other values (`x = y + 1` with `y = x`), or through the functions those initialisers name (`a = f 1`, `f n = n + b`, `b = a`). That is **`cyclic_value`**, and it is the same mistake as the row above with dependency order in place of written order: `backend.md` §5 emits a constant after everything it depends on, which orders every shape except a circle, and a circle falls back to source order and throws a JavaScript `ReferenceError` at load (§6, *Evaluation order*). There is nothing to reorder and nothing written-order could rescue, so the program is refused. **Order alone is never wrong at the top level**: `first = second * 2` above `second = 3` is fine and must run, which is what makes this rule about cycles and not about position. A **function** is untouched, so mutual recursion between top-level functions is unrestricted; what a function may not be is a step on a circle that a *value*'s initialisation closes. One diagnostic per circle, at the first VALUE on it in source order, naming the whole circle in the order it runs and the first function in between — `import_cycle`'s shape one scope down. Enforced by the **checker** and not by lowering (`checker.md` §6.7), because a `method_call` adds no `refs` edge (§8) and only the checker's dispatch table has that half of the graph. |
-| how far the analysis reaches, and where it stops | **conservative, and deliberately so.** Mentioning a `let` function counts as calling it, whether or not it is called. A value whose right-hand side **is a lambda** (`g = \_ -> later`, and `g = f a _`, whose placeholder wraps the whole application in one) is the single exception: nothing runs when it is bound, so it may name a later value, and calling it is what reads that value — so mentioning `g` counts as calling `g`, exactly as for a function, and `h = g ()` above `later` is refused. A lambda anywhere else inside a value's right-hand side is **not** deferred, because whatever it was passed to may call it at once (`List.map xs (\_ -> later)` does), and a nested `let` inside a value's right-hand side is not deferred either. Those two refuse programs that would have run; the alternative is a call graph that has to be right about every higher-order function, and a wrong answer there is a `ReferenceError` a user cannot see coming. **The top-level rule reaches exactly as far, and stops in the same places**: mentioning a top-level function counts as running it, a declaration whose right-hand side is a lambda defers (so it may name a value that is written anywhere, and calling it is what reads that value — `seed = deferred ()` with `deferred = \_ -> seed + 1` is refused), a lambda anywhere else does not defer, and a reference that leaves the module is not an edge at all, because the module graph is a DAG and an import circle is already `import_cycle`. |
+| how far the analysis reaches, and where it stops | **conservative, and deliberately so.** Mentioning a `let` function counts as calling it, whether or not it is called. A value whose right-hand side **is a lambda** (`g = λ_ -> later`, and `g = f a _`, whose placeholder wraps the whole application in one) is the single exception: nothing runs when it is bound, so it may name a later value, and calling it is what reads that value — so mentioning `g` counts as calling `g`, exactly as for a function, and `h = g ()` above `later` is refused. A lambda anywhere else inside a value's right-hand side is **not** deferred, because whatever it was passed to may call it at once (`List.map xs (λ_ -> later)` does), and a nested `let` inside a value's right-hand side is not deferred either. Those two refuse programs that would have run; the alternative is a call graph that has to be right about every higher-order function, and a wrong answer there is a `ReferenceError` a user cannot see coming. **The top-level rule reaches exactly as far, and stops in the same places**: mentioning a top-level function counts as running it, a declaration whose right-hand side is a lambda defers (so it may name a value that is written anywhere, and calling it is what reads that value — `seed = deferred ()` with `deferred = λ_ -> seed + 1` is refused), a lambda anywhere else does not defer, and a reference that leaves the module is not an edge at all, because the module graph is a DAG and an import circle is already `import_cycle`. |
 | provenance of the initialisation rule | Decided 2026-09-18, owner offline; reversible. The alternative considered and rejected was to **re-sort** a `let`'s bindings into dependency order, the way the backend already sorts top-level constants. It was rejected because §6's table is normative and says `let` bindings evaluate in written order: sorting would make the order of two `Debug.log`s — and, when effects land, the order of two effects — depend on which names one initialiser happens to mention. `core/Dict.beni`'s `mapTree` already depends on the written order it has. The TOP-LEVEL half was decided the same day, on the same terms; there the rejected alternative was to leave it to the backend — emit a circle's members as `let` bindings, or wrap each in a thunk — which buys a program nobody can read a run it cannot explain, and costs every constant an indirection to rescue the shapes that are mistakes. |
-| `shadowing`, `duplicate_pattern_variable` | **shadowing is an error**: a binding may not reuse a name already bound in an enclosing scope, including top-level names of this file and names in `exposing` lists. Two sibling scopes may reuse a name (`\x -> …` twice). A pattern may not bind the same name twice: `duplicate_pattern_variable`. |
+| `shadowing`, `duplicate_pattern_variable` | **shadowing is an error**: a binding may not reuse a name already bound in an enclosing scope, including top-level names of this file and names in `exposing` lists. Two sibling scopes may reuse a name (`λx -> …` twice). A pattern may not bind the same name twice: `duplicate_pattern_variable`. |
 | order | `let` bindings are in scope throughout their `let`, **except that a `<-` splits the block** (§6.7): a name bound at or before a `<-` is in scope in the whole block, the `<-`-bound name itself only in `rest` because the desugaring puts it inside a lambda, and a `<-` right-hand side may not reference a binding that appears after it (`bind_rhs_forward_reference`). Mutual recursion through a `<-` is therefore not available — what the desugaring means, not a restriction on top of it. |
 | blocks | *Added 2026-10-02 (§12.2).* Every row above that says `let` holds for a block, item for item; a statement is a value binding that binds nothing, for the initialisation row; a parenthesised block is a block |
 | type variables | scoped to their annotation; annotations may mention free variables, which are implicitly quantified. A type declaration's parameters must be distinct (`duplicate_type_parameter`); a declared parameter unused in the body is fine; an unbound type variable in a `type` or `type alias` body is `unbound_type_variable`. |
@@ -1418,7 +1418,7 @@ it is an ASCII letter or `>`.** Otherwise it is the operator `<`, or the longest
 | Before the `<` | Reading | Example |
 |---|---|---|
 | a token that can end an operand: a name, a literal, `_`, `)`, `]`, `}`, a string's closing `"`, a multiline string's line, `?`, a `dot_lower`/`dot_index`, and the end of a markup expression (`/>`, or the `>` of a closing tag) | the operator | `a <b`, `f a <b`, `(x) <y` — comparisons, exactly as today |
-| anything else: `=`, `(`, `[`, `{`, `,`, `->`, `<-`, `if`, `then`, `else`, `in`, `of`, `case`, any binary operator, `<|`, `|>`, the start of a markup hole or attribute | markup | `x = <b />`, `f (<b />)`, `[ <li />, <li /> ]`, `\r -> <tr />`, `f <| <b />` |
+| anything else: `=`, `(`, `[`, `{`, `,`, `->`, `<-`, `if`, `then`, `else`, `in`, `of`, `case`, any binary operator, `<|`, `|>`, the start of a markup hole or attribute | markup | `x = <b />`, `f (<b />)`, `[ <li />, <li /> ]`, `λr -> <tr />`, `f <| <b />` |
 
 Between the tags of an element, `<` always begins a child or the closing tag, and must be followed by
 a letter, `/` or `>` (§11.4); inside an opening tag it is an error.
@@ -1669,7 +1669,7 @@ markup; `payload` is the type the declaration names — a `String` for an `onInp
 extracts the input's value, the platform's raw event type otherwise (§11.14). **Which form a handler
 is, is decided by its type**: a function type is the second form and anything else the first; a
 handler whose type is still a variable when its declaration is generalised is the first. So a
-message that is itself a function is written as a lambda returning it, `onClick={\_ -> f}` — the one
+message that is itself a function is written as a lambda returning it, `onClick={λ_ -> f}` — the one
 corner the rule leaves, and it is loud, never silent (`checker-v2.md` §25.4).
 
 A handler returns a message and does nothing else. **Once effects land, a handler is `sync`** (W8)
@@ -1723,7 +1723,7 @@ tags:
 | exactly one hole `{e}` | `e` itself, at whatever type `e` has — a render function included |
 | anything else | one `Html msg`: the children as a fragment |
 
-So `<List>{\item -> <li>{item}</li>}</List>` passes a function, and `<Card><h1>Hi</h1>text</Card>`
+So `<List>{λitem -> <li>{item}</li>}</List>` passes a function, and `<Card><h1>Hi</h1>text</Card>`
 passes one markup value. Writing `children` as an attribute as well as between the tags is
 `duplicate_attribute`.
 
@@ -1732,7 +1732,7 @@ passes one markup value. Writing `children` as an attribute as well as between t
 no counterpart for. Nothing a program computes can tell the difference, because evaluation is pure;
 what it costs is work a component that does not show its children still pays. A component that wants
 its children evaluated only when it shows them takes a function and is written with one hole:
-`<Lazy>{\() -> <Expensive />}</Lazy>`.
+`<Lazy>{λ() -> <Expensive />}</Lazy>`.
 
 **A component call may be skipped.** When every prop is identical (`===`, not `==`) to the previous
 render's, the platform may reuse the previous result instead of calling the component again, because
@@ -1748,7 +1748,7 @@ not done (research 36 question 7, accepted: identity first, measured before anyt
 ```elm
 <table>
     <For each={model.rows} keyed={.id}>
-        {\row -> <tr class={rowClass model row}><td>{row.label}</td></tr>}
+        {λrow -> <tr class={rowClass model row}><td>{row.label}</td></tr>}
     </For>
 </table>
 ```
@@ -1763,12 +1763,12 @@ holding the **row function**, of type `a -> Html msg` or `a, Int -> Html msg`, w
 is the row's current position. Anything else between the tags is `invalid_form_children`.
 
 **The row function is any expression of a function type**, as any argument is: a lambda
-(`{\row -> <tr>…</tr>}`), a function (`{viewRow}`), a placeholder application (`{viewRow model _}`,
+(`{λrow -> <tr>…</tr>}`), a function (`{viewRow}`), a placeholder application (`{viewRow model _}`,
 which is a lambda, §6.7) or any other expression. Which of the two types it has is decided by its
 type — by the lambda's parameter count when it is one — and a function of another arity is the
 ordinary `type_mismatch`. What the shape changes is only what a lowering can compile away
 (`backend.md` §15.5): a lambda whose body is markup — after any `let` bindings it opens, so
-`\r -> let label = … in <tr>…</tr>` counts — becomes a row compiled in place, and anything else is
+`λr -> let label = … in <tr>…</tr>` counts — becomes a row compiled in place, and anything else is
 called per row and its result placed like any markup value (§11.6).
 
 **The keying mode says which DOM rows survive a change**, and it is Solid 2's three modes on one
@@ -1785,7 +1785,7 @@ called per row and its result placed like any markup value (§11.6).
 `Char`, `Bool`, `Order` — the types whose `eq` is `strict_eq` in `static-dispatch-spike.md` §3.2's
 table (an `Int32` key is written `Int32.toInt k`).
 Anything else is `key_not_primitive`, because a record key compared by identity would treat two
-equal keys as two rows, which is a silent wrong answer; `keyed={\r -> r.id}` or a `String` built from
+equal keys as two rows, which is a silent wrong answer; `keyed={λr -> r.id}` or a `String` built from
 the record is the way through. `keyed` given as anything other than a key function or a literal
 `True` or `False` is `invalid_keyed`. **Two items with the same key are both rendered**: rows are
 matched by the key and the item's rank among the items sharing it, so a duplicate is never dropped
@@ -1800,7 +1800,7 @@ type is not a primitive-`eq` type and that does not say how it is keyed is the w
 the two ways to silence it. An explicit `keyed={True}` is a statement and is never warned about.
 **Over a primitive-`eq` item type the absent mode is not a silent default**: identity on a `String`
 or an `Int` *is* equality, so by reference is by value there — the same rows survive as under
-`keyed={\x -> x}` — and there is no second mode for the silence to hide.
+`keyed={λx -> x}` — and there is no second mode for the silence to hide.
 
 **A row may be skipped**: when its item, its position (if the function reads it) and its **inputs**
 are all identical (`===`) to the previous render's, the platform keeps the row as it is without
@@ -1827,12 +1827,12 @@ recognised by the compiler instead of written by the programmer; there is no syn
 row that is not recognised is exactly as correct, and runs as the table above says. An input is a
 selector when all of this holds:
 
-- the `For` is keyed by a key function that is a field path — `keyed={.id}`, `keyed={\r -> r.id}`,
-  `keyed={\r -> r.a.b}` — or by reference, whose key is the item;
+- the `For` is keyed by a key function that is a field path — `keyed={.id}`, `keyed={λr -> r.id}`,
+  `keyed={λr -> r.a.b}` — or by reference, whose key is the item;
 - every read of the input in the row — directly, or through a same-module function it is passed
   to, as the table above follows reads — is one operand of an `==` or a `/=`, in either order;
 - the other operand of every such comparison is the row's key written as the same field path
-  through the row's item (`row.id`, or `id` bound by `\{ id } -> …`), or a constructor of one field
+  through the row's item (`row.id`, or `id` bound by `λ{ id } -> …`), or a constructor of one field
   applied to it (`Just row.id`);
 - and the comparison's `eq` is `===` on the two operands (`static-dispatch-spike.md` §3.2's
   primitive `strict_eq`: the key types of this section), or, against the constructor, the derived
@@ -2084,7 +2084,7 @@ codes for the markup runtime.
 
 ```elm
 <Show when={model.editing} keyed fallback={<p>Pick a user</p>}>
-    {\user -> <UserEditor user={user} />}
+    {λuser -> <UserEditor user={user} />}
 </Show>
 ```
 
