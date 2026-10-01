@@ -13,5 +13,4 @@ type Wrapped
     = Wrapped { item : Int }
 
 
-point =
-    { x = 1, y = 2 }
+point = { x = 1, y = 2 }

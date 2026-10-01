@@ -1,0 +1,60 @@
+-- Formatter: where a definition's body goes (language.md §9, amended
+-- 2026-10-02). A body with a one-line form that fits on the `=` line goes
+-- there, for top-level definitions, `let` definitions and `let` patterns
+-- alike: the break after `=` is not an author break, so the old vertical
+-- spelling is joined. Everything else stays on the next line indented 4: a
+-- body that would pass column 100 (`exact` ends at 100, `over` at 101), a
+-- body the author broke inside, an `if`/`case`/`let`, a multiline string,
+-- and a body with a comment between `=` and it. Blank lines between `let`
+-- bindings are kept when present, never added.
+inc x =
+    x + 1
+
+
+pair =
+    ( 1, 2 )
+
+
+exact =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+over =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+broken =
+    [ 1
+    , 2
+    ]
+
+
+mapHelp xs a o i n func b same =
+    if i < n then
+        let
+            x =
+                at a (o + i)
+            y =
+                func x
+
+            ( p, q ) =
+                ( x, y )
+            go k = k + p + q
+        in
+        go 0
+    else
+        b
+
+
+commented =
+    -- why one
+    1
+
+
+trailing = -- why two
+    2
+
+
+text =
+    \\one
+    \\two

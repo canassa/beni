@@ -25,13 +25,10 @@ nestedCall =
         )
 
 
-f a =
-    a
+f a = a
 
 
-g a b =
-    a
+g a b = a
 
 
-h a b =
-    a
+h a b = a

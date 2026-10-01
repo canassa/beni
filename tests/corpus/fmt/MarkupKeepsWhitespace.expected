@@ -10,17 +10,13 @@ long =
     </p>
 
 
-spaced =
-    <p><b>a</b> <i>b</i></p>
+spaced = <p><b>a</b> <i>b</i></p>
 
 
-words =
-    <p>two  spaces</p>
+words = <p>two  spaces</p>
 
 
-noBreak =
-    <p>a b</p>
+noBreak = <p>a b</p>
 
 
-together =
-    <p><b>a</b><i>b</i>{x}</p>
+together = <p><b>a</b><i>b</i>{x}</p>

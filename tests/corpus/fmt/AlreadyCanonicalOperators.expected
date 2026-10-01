@@ -1,8 +1,7 @@
 -- Already canonical (§9): short operator expressions on one line; chains
 -- that do not fit broken before the operator, one per line, operands
 -- indented 4; a pipeline; negation glued to its operand.
-area w h =
-    w * h
+area w h = w * h
 
 
 valid r =
@@ -20,9 +19,7 @@ process xs =
         |> List.sum
 
 
-negated x y =
-    -x - -y
+negated x y = -x - -y
 
 
-cleaned s =
-    String.reverse (String.toUpper (String.trim s))
+cleaned s = String.reverse (String.toUpper (String.trim s))

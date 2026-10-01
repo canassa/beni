@@ -36,5 +36,4 @@ pub update :
     Msg
     , { host : String, port : Int, retries : Int, onError : String -> Msg }
     -> ( { host : String, port : Int, retries : Int, onError : String -> Msg }, List String )
-update msg config =
-    ( config, [] )
+update msg config = ( config, [] )

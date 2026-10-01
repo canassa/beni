@@ -8,13 +8,11 @@
 -- and the formatter must not add any; a tuple element does, and the
 -- formatter must not take them away.
 pub apply : (a -> b), a -> b
-apply f x =
-    f x
+apply f x = f x
 
 
 pub pairOver : ( Int, Int ) -> ( (Int -> Int), Int )
-pairOver p =
-    ( \n -> n, p.0 )
+pairOver p = ( \n -> n, p.0 )
 
 
 pub type alias Handlers msg =
@@ -28,10 +26,8 @@ pub reduce :
     , accumulator
     , List element
     -> accumulator
-reduce step initial items =
-    List.foldl step initial items
+reduce step initial items = List.foldl step initial items
 
 
 pub wide : SomethingRatherLongIndeed, AnotherNameThatIsAlsoQuiteLong, AndAThirdOneHere -> Int
-wide a b c =
-    0
+wide a b c = 0

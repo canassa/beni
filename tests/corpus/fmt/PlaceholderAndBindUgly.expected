@@ -2,16 +2,14 @@
 -- ordinary application spacing; a `<-` binding prints on one line with
 -- single spaces around the operator, is never broken, and is never aligned
 -- with its neighbours, `=` bindings included.
-partial xs =
-    List.map xs (add 1 _)
+partial xs = List.map xs (add 1 _)
 
 
 pipeline r =
     let
         scope <- Task.scope
         conn <- Task.bracket (\() -> Db.open r.url) Db.close
-        count =
-            1
+        count = 1
         h <- Result.andThen (readHeader r)
     in
     render scope conn count h

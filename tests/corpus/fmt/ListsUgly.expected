@@ -1,8 +1,7 @@
 -- Formatter: lists with no spaces, trailing-comma-style line breaks, a long
 -- list of records, an empty list with inner spaces; expected: `[ a, b ]`
 -- when it fits, vertical leading-delimiter form otherwise, `[]`.
-xs =
-    [ 1, 2, 3 ]
+xs = [ 1, 2, 3 ]
 
 
 ys =
@@ -12,8 +11,7 @@ ys =
     ]
 
 
-zs =
-    []
+zs = []
 
 
 rows =

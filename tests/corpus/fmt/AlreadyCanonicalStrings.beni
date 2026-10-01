@@ -1,24 +1,19 @@
 -- Already canonical (§9): strings, chars and numbers printed as written;
 -- interpolations; a multiline string; and one-line definitions whose body
 -- is a single literal, name or application (the one-line rule of §9).
-greeting name =
-    "hello ${name}, you have ${String.length name} letters"
+greeting name = "hello ${name}, you have ${String.length name} letters"
 
 
-escapes =
-    "tab\t quote\" dollar\$ unicode\u{1F600}"
+escapes = "tab\t quote\" dollar\$ unicode\u{1F600}"
 
 
-letter =
-    'a'
+letter = 'a'
 
 
-hex =
-    0xFF
+hex = 0xFF
 
 
-exponent =
-    1.5e-3
+exponent = 1.5e-3
 
 
 sql =

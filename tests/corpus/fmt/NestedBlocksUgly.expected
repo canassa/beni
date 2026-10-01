@@ -6,8 +6,7 @@ run m flag =
         Just n ->
             if flag then
                 let
-                    doubled =
-                        n * 2
+                    doubled = n * 2
                 in
                 doubled
             else

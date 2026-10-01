@@ -14,15 +14,12 @@ type alias Model =
 
 
 pub init : Model
-init =
-    { items = Dict.empty, selected = Set.empty }
+init = { items = Dict.empty, selected = Set.empty }
 
 
 pub view : Model -> Html msg
-view model =
-    div [] [ text (String.fromInt (Dict.size model.items)) ]
+view model = div [] [ text (String.fromInt (Dict.size model.items)) ]
 
 
 decoder : Decode.Decoder Int
-decoder =
-    Decode.int
+decoder = Decode.int

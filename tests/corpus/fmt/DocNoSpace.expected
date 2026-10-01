@@ -3,15 +3,12 @@
 --! Module doc without space.
 
 --| Doc for x without space.
-x =
-    1
+x = 1
 
 
 --|   a doc line that already has spaces is left alone
-y =
-    2
+y = 2
 
 
 --comment without a space is an ordinary comment and stays as written
-z =
-    3
+z = 3

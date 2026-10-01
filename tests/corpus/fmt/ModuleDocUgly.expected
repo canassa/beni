@@ -7,5 +7,4 @@
 --! A second block after a blank line.
 
 --| Doc on the first declaration, directly after the module doc.
-x =
-    1
+x = 1

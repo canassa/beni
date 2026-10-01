@@ -312,8 +312,8 @@ test "`.` is a usable path for check, build and fmt, however it is spelled" {
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain =\n    Node.printLines [ Sub.Hello.hello \"x\" ]\n");
-    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s =\n    s\n");
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain = Node.printLines [ Sub.Hello.hello \"x\" ]\n");
+    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s = s\n");
     const absolute = try w.projectPath();
 
     // ┌─────────────────────────────────────────┐
@@ -390,8 +390,8 @@ test "`.` and the absolute path of the same directory emit byte-identical output
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain =\n    Node.printLines [ Sub.Hello.hello \"x\" ]\n");
-    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s =\n    s\n");
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain = Node.printLines [ Sub.Hello.hello \"x\" ]\n");
+    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s = s\n");
     const absolute = try w.projectPath();
 
     // ┌─────────────────────────────────────────┐
@@ -481,9 +481,9 @@ test "fmt formats a file whose path names no module; check still refuses it" {
     try testing.expectEqual(@as(u8, 1), listed.exit_code); // it WOULD change
     try testing.expectEqualStrings("not-a-module.beni\n", listed.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), listed.diagnostics);
-    try testing.expectEqualStrings("x =\n    1\n", printed.stdout);
+    try testing.expectEqualStrings("x = 1\n", printed.stdout);
     try testing.expectEqual(@as(u8, 0), written.exit_code);
-    try testing.expectEqualStrings("x =\n    1\n", try w.read("not-a-module.beni"));
+    try testing.expectEqualStrings("x = 1\n", try w.read("not-a-module.beni"));
     try testing.expectEqual(@as(u8, 1), checked.exit_code);
     try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.invalid_module_path, checked.diagnostics[0].code);
@@ -1695,8 +1695,7 @@ const canonical_module =
     "import Set\n" ++
     "\n" ++
     "\n" ++
-    "x =\n" ++
-    "    [ 1, 2 ]\n" ++
+    "x = [ 1, 2 ]\n" ++
     "\n" ++
     "\n" ++
     "y =\n" ++

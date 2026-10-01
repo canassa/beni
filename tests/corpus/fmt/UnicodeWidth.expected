@@ -4,12 +4,10 @@
 -- vertical. A comment and a string may hold any UTF-8, including combining
 -- marks and a ZWJ sequence — 😀 👨‍👩‍👧 café — and a string literal longer
 -- than the limit is printed on one line, never broken.
-emoji =
-    "😀 👨‍👩‍👧 café"
+emoji = "😀 👨‍👩‍👧 café"
 
 
-narrow =
-    [ "😀", "😁", "😂", "😃", "😄", "😅" ]
+narrow = [ "😀", "😁", "😂", "😃", "😄", "😅" ]
 
 
 wide =

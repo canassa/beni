@@ -4,8 +4,7 @@
 -- second pass unchanged.
 pub insert : Dict k v, k, v -> Dict k v
     where k.compare : k, k -> Order
-insert d k v =
-    d
+insert d k v = d
 
 
 pub pairUp : List a, List b -> Bool
@@ -13,10 +12,8 @@ pub pairUp : List a, List b -> Bool
         -- equality on the left, order on the right
         a.eq : a, a -> Bool
         , b.compare : b, b -> Order -- and the keys are sorted
-pairUp xs ys =
-    True
+pairUp xs ys = True
 
 
 where : Int
-where =
-    1
+where = 1

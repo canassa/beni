@@ -2,25 +2,19 @@
 -- parenthesised expressions, `a - -b`, and grouping parentheses that must
 -- be preserved because removing them changes the AST; expected: spaces
 -- normalised, parentheses kept.
-a x =
-    (x)
+a x = (x)
 
 
-b x y =
-    -(x + y)
+b x y = -(x + y)
 
 
-c x y =
-    x - -y
+c x y = x - -y
 
 
-d x =
-    (x + 1) * 2
+d x = (x + 1) * 2
 
 
-e2 fn x =
-    fn (-x)
+e2 fn x = fn (-x)
 
 
-g x =
-    [ (x) ]
+g x = [ (x) ]

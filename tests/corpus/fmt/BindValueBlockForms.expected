@@ -19,8 +19,7 @@ withLet a =
     let
         x <- Result.andThen
             (let
-                y =
-                    someLongFunctionName a
+                y = someLongFunctionName a
              in
              y
             )

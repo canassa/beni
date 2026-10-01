@@ -11,12 +11,10 @@ total : List Int -> Int
 total xs =
     let
         -- before the first binding
-        a =
-            List.sum xs
+        a = List.sum xs
 
         -- between bindings
-        b =
-            List.length xs -- trailing on a body
+        b = List.length xs -- trailing on a body
 
         -- before `in`
     in

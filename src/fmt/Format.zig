@@ -85,6 +85,12 @@
 //!   has its body on the next line, whatever its width; `foreign` values
 //!   follow annotations. A constructor's arguments follow the application
 //!   rule above, the vertical ones indented 4 under the `|`.
+//! - A definition's body — top-level, `let`, `let` pattern — sits on the
+//!   `=` line when it has a one-line form that fits there and no comment
+//!   comes between `=` and it; otherwise on the next line indented 4
+//!   (language.md §9, amended 2026-10-02). The break after `=` is not a
+//!   break between elements, so a source that wrote the body below does
+//!   not keep it there (`Printer.rhs`).
 //! - Own-line comments are indented like the token they precede, except
 //!   before a keyword that closes a block — `in`, `else`, `then`, `of` on
 //!   their own line — where they are indented with the block they close
@@ -2086,8 +2092,7 @@ const Printer = struct {
         }
     }
 
-    /// ` params =` and the body on the next line, for top-level and `let`
-    /// definitions alike.
+    /// ` params =` and the body, for top-level and `let` definitions alike.
     fn defBody(p: *Printer, name: TokenIndex, params: []const Index, body: Index, indent: u32) Error!void {
         var eq = name + 1;
         for (params) |param| {
@@ -2097,8 +2102,25 @@ const Printer = struct {
         }
         try p.space();
         try p.tok(eq);
-        p.newline(indent + indent_step);
-        try p.expr(body, indent + indent_step);
+        try p.rhs(body, indent);
+    }
+
+    /// A definition's body after its `=` (language.md §9, amended
+    /// 2026-10-02): on the `=` line when it has a one-line form that fits
+    /// there and no comment sits between `=` and it, otherwise on the next
+    /// line indented 4. A break directly after `=` is not a break between
+    /// elements, so it never pins the vertical form: the body's own width,
+    /// which already records every break the author wrote inside it (and
+    /// is `no_fit` for `if`, `case`, `let`, a multiline string and a
+    /// comment inside), is the whole test.
+    fn rhs(p: *Printer, body: Index, indent: u32) Error!void {
+        if (p.fitsAt(body, p.curCol() + 1) and commentsBefore(p.comments, p.first(body)).len == 0) {
+            try p.space();
+            try p.expr(body, indent);
+        } else {
+            p.newline(indent + indent_step);
+            try p.expr(body, indent + indent_step);
+        }
     }
 
     fn constructor(p: *Printer, n: Index, indent: u32) Error!void {
@@ -2763,8 +2785,7 @@ const Printer = struct {
                 try p.pat(l.pattern, indent);
                 try p.space();
                 try p.tok(p.last(l.pattern) + 1); // `=`
-                p.newline(indent + indent_step);
-                try p.expr(l.value, indent + indent_step);
+                try p.rhs(l.value, indent);
             },
             // `x <- f a b`: single spaces around `<-`, the call on the head
             // line, no alignment with a neighbouring `=` (§9).
@@ -3195,7 +3216,7 @@ fn checkRoundTrip(arena: Allocator, input: [:0]const u8) !void {
 
 test "empty file formats to nothing; a file without a trailing newline gets one" {
     try check("", "");
-    try check("x = 1", "x =\n    1\n");
+    try check("x = 1", "x = 1\n");
 }
 
 test "module doc, blank line, imports sorted by path, two blank lines, declarations two blank lines apart" {
@@ -3220,12 +3241,10 @@ test "module doc, blank line, imports sorted by path, two blank lines, declarati
         \\import Set
         \\
         \\
-        \\x =
-        \\    1
+        \\x = 1
         \\
         \\
-        \\y =
-        \\    2
+        \\y = 2
         \\
     );
 }
@@ -3249,8 +3268,7 @@ test "two module-doc blocks merge, the space after the marker is inserted, plain
         \\
         \\-- trivia after the doc
         \\--| Doc on x.
-        \\x =
-        \\    1
+        \\x = 1
         \\
     );
     // Only a module doc, nothing else: no blank line is added after it.
@@ -3270,13 +3288,11 @@ test "annotation directly above its definition with pub on the annotation line" 
     ,
         \\pub f : Int -> Int
         \\-- between
-        \\f x =
-        \\    x
+        \\f x = x
         \\
         \\
         \\g : Int
-        \\g =
-        \\    2
+        \\g = 2
         \\
     );
 }
@@ -3346,15 +3362,12 @@ test "let: bindings indented 4, in aligned with let, body aligned with let, blan
         \\total xs =
         \\    let
         \\        count : Int
-        \\        count =
-        \\            List.length xs
-        \\        ( low, high ) =
-        \\            ( 1, 2 )
+        \\        count = List.length xs
+        \\        ( low, high ) = ( 1, 2 )
         \\
         \\        spread =
         \\            let
-        \\                factor =
-        \\                    2
+        \\                factor = 2
         \\            in
         \\            high * factor
         \\    in
@@ -3436,8 +3449,7 @@ test "if is always vertical; else-if chains continue on the else line; a mid-lin
         \\      else
         \\        0
         \\    , let
-        \\        one =
-        \\            1
+        \\        one = 1
         \\      in
         \\      one
         \\    , case flag of
@@ -3503,20 +3515,16 @@ test "lists, records and tuples: one line when they fit and were written so, emp
         \\update m = { m | aVeryLongFieldName = m.aVeryLongFieldName + 1, anotherVeryLongFieldName = m.anotherVeryLongFieldName }
         \\
     ,
-        \\xs =
-        \\    [ 1, 2, 3 ]
+        \\xs = [ 1, 2, 3 ]
         \\
         \\
-        \\r =
-        \\    { a = 1, b = 2 }
+        \\r = { a = 1, b = 2 }
         \\
         \\
-        \\p =
-        \\    ( 1, ( 2, 3 ) )
+        \\p = ( 1, ( 2, 3 ) )
         \\
         \\
-        \\e =
-        \\    ( [], {}, () )
+        \\e = ( [], {}, () )
         \\
         \\
         \\u m =
@@ -3597,8 +3605,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\negated x y = -x - -y
         \\
     ,
-        \\area w h =
-        \\    w * h
+        \\area w h = w * h
         \\
         \\
         \\valid r =
@@ -3621,8 +3628,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\        |> List.sum
         \\
         \\
-        \\negated x y =
-        \\    -x - -y
+        \\negated x y = -x - -y
         \\
     );
 }
@@ -3652,8 +3658,7 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\h =
         \\    foo <|
         \\        let
-        \\            a =
-        \\                1
+        \\            a = 1
         \\        in
         \\        a
         \\
@@ -3672,16 +3677,14 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
         \\  render scope conn a h
         \\
     ,
-        \\partial xs =
-        \\    List.map (add 1 _) xs
+        \\partial xs = List.map (add 1 _) xs
         \\
         \\
         \\pipeline r =
         \\    let
         \\        scope <- Task.scope
         \\        conn <- Task.bracket (\() -> Db.open r.url) Db.close
-        \\        a =
-        \\            1
+        \\        a = 1
         \\        h <- Result.andThen (readHeader r)
         \\    in
         \\    render scope conn a h
@@ -3712,12 +3715,10 @@ test "lambdas: `\\x y ->` with the body inline when it fits, else on the next li
         \\  _ -> "other"
         \\
     ,
-        \\f =
-        \\    \x -> x + 1
+        \\f = \x -> x + 1
         \\
         \\
-        \\h =
-        \\    \( a, b ) { c } _ -> a + b + c
+        \\h = \( a, b ) { c } _ -> a + b + c
         \\
         \\
         \\describe =
@@ -3780,24 +3781,19 @@ test "grouping parentheses are kept as written, without inner spaces, and close 
         \\     _ -> k2) k
         \\
     ,
-        \\a x =
-        \\    (x)
+        \\a x = (x)
         \\
         \\
-        \\b x y =
-        \\    -(x + y)
+        \\b x y = -(x + y)
         \\
         \\
-        \\d x =
-        \\    (x + 1) * 2
+        \\d x = (x + 1) * 2
         \\
         \\
-        \\e2 fn x =
-        \\    fn (-x)
+        \\e2 fn x = fn (-x)
         \\
         \\
-        \\g x =
-        \\    [ (x) ]
+        \\g x = [ (x) ]
         \\
         \\
         \\run k =
@@ -3821,20 +3817,16 @@ test "access chains, question marks, accessor functions and operator functions" 
         \\append = (++)
         \\
     ,
-        \\f r t =
-        \\    Ok (r.a.b + t.0.1 + List.length (List.map .name []))
+        \\f r t = Ok (r.a.b + t.0.1 + List.length (List.map .name []))
         \\
         \\
-        \\g s =
-        \\    Ok (parse s? + parse s?.field?)
+        \\g s = Ok (parse s? + parse s?.field?)
         \\
         \\
-        \\plus =
-        \\    (+)
+        \\plus = (+)
         \\
         \\
-        \\append =
-        \\    (++)
+        \\append = (++)
         \\
     );
 }
@@ -3895,20 +3887,15 @@ test "strings, chars, numbers, interpolations and multiline strings are printed 
         "  \\\\raw \\n ${x}   \n" ++
         "  \\\\second\n" ++
         "g = [ \\\\one\n" ++
-        "    , 2 ]\n", "a =\n" ++
-        "    \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\"\n" ++
+        "    , 2 ]\n", "a = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\"\n" ++
         "\n\n" ++
-        "b =\n" ++
-        "    '\\u{00041}'\n" ++
+        "b = '\\u{00041}'\n" ++
         "\n\n" ++
-        "c =\n" ++
-        "    0xDeadBEEF\n" ++
+        "c = 0xDeadBEEF\n" ++
         "\n\n" ++
-        "d =\n" ++
-        "    1.50e+03\n" ++
+        "d = 1.50e+03\n" ++
         "\n\n" ++
-        "e2 =\n" ++
-        "    \"${ a }${b} and ${ f (g x) }\"\n" ++
+        "e2 = \"${ a }${b} and ${ f (g x) }\"\n" ++
         "\n\n" ++
         "f =\n" ++
         "    \\\\raw \\n ${x}   \n" ++
@@ -3961,18 +3948,15 @@ test "every pattern form with canonical spacing" {
         \\
         \\g p =
         \\    let
-        \\        ( a, b ) =
-        \\            p
+        \\        ( a, b ) = p
         \\    in
         \\    a
         \\
         \\
-        \\h =
-        \\    \( a, b ) -> a
+        \\h = \( a, b ) -> a
         \\
         \\
-        \\k (Just x) { a } ( b, c ) =
-        \\    -x
+        \\k (Just x) { a } ( b, c ) = -x
         \\
     );
 }
@@ -4059,21 +4043,18 @@ test "every type form; annotations broken at every arrow when they do not fit; r
         \\
     ,
         \\h : (Int -> Int) -> List Int -> List Int
-        \\h fn xs =
-        \\    List.map fn xs
+        \\h fn xs = List.map fn xs
         \\
         \\
         \\ext : { r | x : Int, y : Int } -> () -> ( a, Maybe.Maybe b ) -> {}
-        \\ext _ _ _ =
-        \\    {}
+        \\ext _ _ _ = {}
         \\
         \\
         \\pub update :
         \\    Msg
         \\    -> { host : String, port : Int, retries : Int, onError : String -> Msg }
         \\    -> ( Model, List String )
-        \\update msg config =
-        \\    ( config, [] )
+        \\update msg config = ( config, [] )
         \\
         \\
         \\type alias Config =
@@ -4154,8 +4135,7 @@ test "comments in every position stay attached, own-line at their block's indent
         \\f x = -- after equals
         \\    let
         \\        -- before binding
-        \\        y =
-        \\            1 -- after body
+        \\        y = 1 -- after body
         \\
         \\        -- before in
         \\    in
@@ -4231,19 +4211,16 @@ test "doc comments: the space is inserted, existing spacing is kept, `---` and `
         \\
     ,
         \\--| Doc for x.
-        \\x =
-        \\    1
+        \\x = 1
         \\
         \\
         \\--|   spaced doc
-        \\y =
-        \\    2
+        \\y = 2
         \\
         \\
         \\--comment without a space
         \\--- dashes
-        \\z =
-        \\    3
+        \\z = 3
         \\
     );
 }
@@ -4261,8 +4238,7 @@ test "a comment moves with the import it precedes when imports are sorted" {
         \\import Set -- trailing on Set
         \\
         \\
-        \\x =
-        \\    1
+        \\x = 1
         \\
     );
 }
@@ -4270,19 +4246,24 @@ test "a comment moves with the import it precedes when imports are sorted" {
 // ---- Whitespace ----------------------------------------------------------------
 
 test "CRLF, trailing whitespace, missing trailing newline and extra blank lines are normalised" {
-    try check("x =   \r\n    1  \r\n\r\n\r\ny = 2", "x =\n    1\n\n\ny =\n    2\n");
+    try check("x =   \r\n    1  \r\n\r\n\r\ny = 2", "x = 1\n\n\ny = 2\n");
 }
 
 test "the 100-column boundary: a line of exactly 100 fits, 101 does not" {
-    // `    [ ` + 92 + ` ]` = 100 columns.
+    // `xs = [ ` + 91 + ` ]` = 100 columns: the body stays on the `=` line.
+    const item_91 = "\"" ++ "a" ** 89 ++ "\"";
+    try check("xs =\n    [ " ++ item_91 ++ " ]\n", "xs = [ " ++ item_91 ++ " ]\n");
+    // One more is 101 there, so the body goes below, where
+    // `    [ ` + 92 + ` ]` = 100 columns still fits on one line.
     const item_92 = "\"" ++ "a" ** 90 ++ "\"";
     try check("xs = [ " ++ item_92 ++ " ]\n", "xs =\n    [ " ++ item_92 ++ " ]\n");
     const item_93 = "\"" ++ "a" ** 91 ++ "\"";
     try check("xs = [ " ++ item_93 ++ " ]\n", "xs =\n    [ " ++ item_93 ++ "\n    ]\n");
-    // The same width measured at the deeper indentation of a binding body
-    // (12): `[ ` + 84 + ` ]` is exactly 100 there, one more is not.
+    // The same width measured at the deeper indentation of a binding:
+    // `        x = [ ` + 84 + ` ]` is exactly 100, and one more breaks the
+    // list, as `            [ ` + 85 + ` ]` is 101 on the line below.
     const wide_84 = "\"" ++ "b" ** 82 ++ "\"";
-    try check("f =\n  let\n   x = [ " ++ wide_84 ++ " ]\n  in x\n", "f =\n    let\n        x =\n            [ " ++ wide_84 ++ " ]\n    in\n    x\n");
+    try check("f =\n  let\n   x = [ " ++ wide_84 ++ " ]\n  in x\n", "f =\n    let\n        x = [ " ++ wide_84 ++ " ]\n    in\n    x\n");
     const wide_85 = "\"" ++ "b" ** 83 ++ "\"";
     try check("f =\n  let\n   x = [ " ++ wide_85 ++ " ]\n  in x\n", "f =\n    let\n        x =\n            [ " ++ wide_85 ++ "\n            ]\n    in\n    x\n");
 }

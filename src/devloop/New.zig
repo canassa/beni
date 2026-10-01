@@ -44,8 +44,7 @@ pub const browser_tea_main =
     \\
     \\
     \\main : Tea.Program
-    \\main =
-    \\    Tea.sandbox { init = 0, update = update, view = view }
+    \\main = Tea.sandbox { init = 0, update = update, view = view }
     \\
 ;
 
@@ -55,13 +54,11 @@ pub const node_main =
     \\
     \\
     \\greeting : String -> String
-    \\greeting name =
-    \\    "Hello, ${name}!"
+    \\greeting name = "Hello, ${name}!"
     \\
     \\
     \\main : Node.Program
-    \\main =
-    \\    Node.print (greeting "beni")
+    \\main = Node.print (greeting "beni")
     \\
 ;
 

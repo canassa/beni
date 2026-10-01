@@ -2,9 +2,7 @@
 -- body on the head line; expected: canonical 4-space let/in layout.
 total xs =
     let
-        a =
-            List.sum xs
-        b =
-            a * 2
+        a = List.sum xs
+        b = a * 2
     in
     a + b

@@ -2,25 +2,19 @@
 -- (language.md §6.5) and the formatter must never print one as the other.
 -- `f (-1)` is a call on a negated literal; `f - 1` subtracts from `f`;
 -- `f (-1) (-2) -3` is a two-argument call minus three.
-a f =
-    f (-1)
+a f = f (-1)
 
 
-b f =
-    f - 1
+b f = f - 1
 
 
-c f x =
-    f x - 1
+c f x = f x - 1
 
 
-d x y =
-    x - -y
+d x y = x - -y
 
 
-e2 x =
-    -x - -1
+e2 x = -x - -1
 
 
-g f =
-    f (-1) (-2) - 3
+g f = f (-1) (-2) - 3

@@ -25,18 +25,15 @@ type Wrapped
 
 
 inline : { a : Int } -> { r | x : Int } -> Int
-inline value =
-    value.a
+inline value = value.a
 
 
-point =
-    { x = 1, y = 2 }
+point = { x = 1, y = 2 }
 
 
 pick value =
     let
-        x =
-            value
+        x = value
     in
     case x of
         Wrapped row ->

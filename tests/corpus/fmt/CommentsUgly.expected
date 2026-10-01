@@ -19,8 +19,7 @@ type T
 f x = -- after equals
     let
         -- before binding
-        y =
-            1 -- after body
+        y = 1 -- after body
         -- before in
     in
     -- before in-expression

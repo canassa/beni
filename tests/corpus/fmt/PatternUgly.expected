@@ -17,11 +17,9 @@ f v =
 
 g p =
     let
-        ( a, b ) =
-            p
+        ( a, b ) = p
     in
     a
 
 
-h =
-    \( a, b ) -> a
+h = \( a, b ) -> a

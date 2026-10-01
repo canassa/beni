@@ -8,8 +8,7 @@ f r =
             <- readHeader r
         y
             -- why the definition
-            =
-            1
+            = 1
     in
     render x y
         (\z

@@ -5,12 +5,10 @@
 -- column and blank lines kept to one; a hole holding only a comment closes
 -- under its `{`; a row lambda too long for its line continues 4 in from
 -- its `{`, the `}` under the `{`.
-empty =
-    <div />
+empty = <div />
 
 
-selfClosed =
-    <br />
+selfClosed = <br />
 
 
 long =

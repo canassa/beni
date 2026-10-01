@@ -2,12 +2,10 @@
 -- body is a block, an application that fits on one line, one that does not
 -- with each argument on its own line indented 4, and nested parenthesised
 -- arguments.
-inc =
-    \n -> n + 1
+inc = \n -> n + 1
 
 
-swap =
-    \( a, b ) -> ( b, a )
+swap = \( a, b ) -> ( b, a )
 
 
 describe =
@@ -20,8 +18,7 @@ describe =
                 "other"
 
 
-short f x =
-    f x 1
+short f x = f x 1
 
 
 long =
@@ -31,5 +28,4 @@ long =
         [ "some", "long", "list", "of", "strings", "here", "and", "more", "and", "more" ]
 
 
-nested f g x =
-    f (g (x + 1)) (g x)
+nested f g x = f (g (x + 1)) (g x)

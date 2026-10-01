@@ -12,7 +12,6 @@ describe x =
 
         _ ->
             let
-                y =
-                    x
+                y = x
             in
             "many ${y}"

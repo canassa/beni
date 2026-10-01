@@ -6,11 +6,9 @@ total : List Int -> Int
 total xs =
     let
         count : Int
-        count =
-            List.length xs
+        count = List.length xs
 
-        ( low, high ) =
-            ( List.minimum xs, List.maximum xs )
+        ( low, high ) = ( List.minimum xs, List.maximum xs )
 
         spread =
             case ( low, high ) of
@@ -22,8 +20,7 @@ total xs =
 
         scaled =
             let
-                factor =
-                    2
+                factor = 2
             in
             spread * factor
     in

@@ -2,8 +2,7 @@
 -- functions with odd surrounding spacing and line breaks; expected: the
 -- chains untouched (they are single tokens glued to the atom) and the
 -- application re-laid out canonically.
-f r t =
-    Ok (r.a.b + t.0.1 + List.length (List.map .name []))
+f r t = Ok (r.a.b + t.0.1 + List.length (List.map .name []))
 
 
 g s =
@@ -11,5 +10,4 @@ g s =
         (parse s? + parse s?)
 
 
-parse s =
-    String.toInt s |> Result.fromMaybe "nan"
+parse s = String.toInt s |> Result.fromMaybe "nan"

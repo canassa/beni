@@ -2,8 +2,7 @@
 -- record update with odd alignment, an empty record with inner spaces;
 -- expected: `{ a = 1, b = 2 }` spacing, leading-delimiter vertical form
 -- when too long, `{}`.
-r =
-    { a = 1, b = 2 }
+r = { a = 1, b = 2 }
 
 
 s =
@@ -20,5 +19,4 @@ u m =
     }
 
 
-emptyRecord =
-    {}
+emptyRecord = {}

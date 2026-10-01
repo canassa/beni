@@ -1,12 +1,10 @@
 -- Formatter: multiple spaces between tokens, spaces before commas and
 -- colons, trailing whitespace on several lines; expected: single spaces
 -- and no trailing whitespace anywhere.
-x =
-    1
+x = 1
 
 
-xs =
-    [ 1, 2, 3 ]
+xs = [ 1, 2, 3 ]
 
 
 type alias P =
@@ -14,5 +12,4 @@ type alias P =
     b : Int
 
 
-f a b =
-    a + b
+f a b = a + b

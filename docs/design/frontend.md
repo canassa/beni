@@ -477,6 +477,16 @@ never-join-lines rule: it is **always** on continuation lines, however short, be
 one-line form. `language.md` §9 states the shape and
 [`static-dispatch-spike.md`](static-dispatch-spike.md) §2.5 the reasoning.
 
+*Amended 2026-10-02* (`language.md` §9, the row "annotation, `=`"): a definition's body — top-level,
+`let` definition or `let` pattern — goes on the `=` line when its recorded width fits there and no
+comment comes between `=` and its first token; otherwise on the next line indented 4. No new
+measure is needed: a body's width already covers only the body's own tokens, is "does not fit" for
+`if`, `case`, `let`, a multiline string, a comment inside, and every break the author wrote between
+the elements of a construct inside it — so the break directly after `=`, which lies outside the
+body, is never one the width records, and never keeps the body below. The decision depends only on
+the width and the column of `=`, both the same when the output is formatted again, which keeps the
+formatter idempotent.
+
 Declaration record bodies and tagged schema variants use the layout sugar in
 `language.md` §3–§4/§9 and `schema.md` §2/A.5: both input spellings must have
 byte-identical AST/BIR dumps; formatting always selects layout where available.
