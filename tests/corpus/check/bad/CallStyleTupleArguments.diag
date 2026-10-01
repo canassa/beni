@@ -1,0 +1,1 @@
+[{"code":"too_few_args","severity":"error","span":{"file":"tests/corpus/check/bad/CallStyleTupleArguments.beni","start":{"line":9,"col":9},"end":{"line":9,"col":12}},"title":"TOO FEW ARGS","message":"The `add` function expects 2 arguments, but it got only 1.\n\nThe missing argument is:\n\n    Int\n\nHint: beni separates arguments with spaces: `add 1 2`.\n"}]

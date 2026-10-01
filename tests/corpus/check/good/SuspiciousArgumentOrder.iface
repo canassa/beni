@@ -1,0 +1,5 @@
+module SuspiciousArgumentOrder
+  value dashes : String -> String
+  value fields : String -> List String
+  value isUrl : String -> Bool
+  value percent : Int -> Int

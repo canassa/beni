@@ -1,0 +1,9 @@
+-- check/bad: `add(1, 2)` passes one tuple to a function of two
+-- parameters (language.md §12.5). It is `too_few_args`, whose hint is the
+-- call with its arguments separated by spaces, `add 1 2`.
+add : Int, Int -> Int
+add a b = a + b
+
+
+three : Int
+three = add(1, 2)

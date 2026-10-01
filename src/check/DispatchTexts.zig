@@ -13,6 +13,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const prelude = @import("../bir/prelude.zig");
+const CallStyle = @import("CallStyle.zig");
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Diagnostics = @import("Diagnostics.zig");
@@ -236,6 +237,8 @@ pub fn methodSignatureMismatch(
     w.writeAll("\n\nbut the call wants:\n\n    ") catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
     try signatureExplanation(r, w, module, type_name, method, found, "the type the call wants");
+    // `xs.length ()` (language.md §12.5).
+    try CallStyle.unitMethodHint(r, w, region, module, method, found);
     try r.emit(.type_mismatch, region, &out);
 }
 

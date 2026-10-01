@@ -1,0 +1,21 @@
+-- check/good: `suspicious_argument_order` (language.md §12.5) is a
+-- `warning`, so the module still checks: a call of `clamp` or of one of
+-- seven `String` functions whose first argument — the subject — is a
+-- literal and whose last is not, the shape of a call written in Elm's
+-- order. Each message prints the call in beni's order (`replace`'s three
+-- arguments rotate, the subject moving to the front) and, for a string
+-- subject, the method form that says the literal is meant.
+pub fields : String -> List String
+fields line = String.split "," line
+
+
+pub isUrl : String -> Bool
+isUrl s = String.startsWith "http" s
+
+
+pub dashes : String -> String
+dashes s = String.replace " " "-" s
+
+
+pub percent : Int -> Int
+percent n = clamp 0 100 n

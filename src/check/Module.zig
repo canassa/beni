@@ -66,6 +66,7 @@ const Markup = @import("Markup.zig");
 const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
 const Sync = @import("Sync.zig");
+const CallStyle = @import("CallStyle.zig");
 const EffectPlan = @import("EffectPlan.zig");
 
 pub const Error = Allocator.Error;
@@ -295,6 +296,12 @@ pub fn check(in: Input) Error!Check.Counters {
     // The `sync` check (transparent-effects-proposal.md §15.4), in a module
     // with no error so far: a poisoned type says nothing about a bit.
     if (!quiet and report.errors == 0) try Sync.check(&effects, .{ .cx = &cx, .report = &report, .decl_scheme = decl_scheme });
+    // `suspicious_argument_order` (language.md §12.5), a warning for the
+    // root package's modules, decided on a module that checked clean.
+    if (!quiet and report.errors == 0 and in.informational and in.graph.modulePackage(in.module) == .app) {
+        try CallStyle.suspiciousOrder(report.staging(), &report);
+        try report.flush();
+    }
     if (in.profile) |p| p.end(in.tid, effects_token.?, .effects, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);

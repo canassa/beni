@@ -8,6 +8,7 @@ tests/corpus/fmt/** -- formatter inputs, unformatted on purpose; their .expected
 tests/corpus/parse/bad/** -- files that must not parse
 
 -- Parser fixtures that pin a layout or a spelling the formatter rewrites.
+tests/corpus/check/bad/CallStyleTupleArguments.beni -- `add(1, 2)` written against the callee is the point; fmt spaces it
 tests/corpus/parse/good/BlankLines.beni -- runs of blank lines the formatter collapses
 tests/corpus/parse/good/BraceRecordAlias.beni -- brace record bodies, which the formatter writes as layout
 tests/corpus/parse/good/CaseBranchAtCaseColumn.beni -- branches at the `case` keyword's own column

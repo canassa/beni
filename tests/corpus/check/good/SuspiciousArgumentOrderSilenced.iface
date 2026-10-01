@@ -1,0 +1,4 @@
+module SuspiciousArgumentOrderSilenced
+  value fields : String -> List String
+  value isPrefix : String -> Bool
+  value percent : Int -> Int

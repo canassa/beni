@@ -34,6 +34,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const DispatchTexts = @import("DispatchTexts.zig");
+const CallStyle = @import("CallStyle.zig");
 const PatternTexts = @import("PatternTexts.zig");
 
 const Diagnostics = @This();
@@ -198,6 +199,11 @@ pub const Reporter = struct {
         // check their arithmetic. This one names the binding and the
         // constraint instead, and says what to do.
         if (try r.monomorphicLetHint(w, category)) {
+            try r.emit(.type_mismatch, region, &out);
+            return;
+        }
+        // `xs.length` and `f(a, b)` (language.md §12.5).
+        if (try CallStyle.mismatchHint(r, w, region, category, actual)) {
             try r.emit(.type_mismatch, region, &out);
             return;
         }
@@ -565,6 +571,10 @@ pub const Reporter = struct {
                 return;
             }
         }
+        // An Elm-ordered call (§12.5); a misplaced function keeps the hint below.
+        if (!(r.isFunction(actual) and !r.isFunction(expected))) {
+            if (try CallStyle.elmOrderHint(r, w, category, actual)) return;
+        }
         // A function where a value was wanted is nearly always a missing
         // argument; §8.3 catches it at a call, and this is the rest.
         if (r.isFunction(actual) and !r.isFunction(expected) and !r.isFlex(expected)) {
@@ -762,7 +772,8 @@ pub const Reporter = struct {
             Render.writeVar(w, r.cx(), &namer, m, .top) catch return error.OutOfMemory;
             w.writeByte('\n') catch return error.OutOfMemory;
         }
-        w.writeAll(
+        // `f(a, b)`: one tuple where the arguments go (language.md §12.5).
+        if (!try CallStyle.tupleCallHint(r, w, region, arity)) w.writeAll(
             \\
             \\Hint: every call supplies every argument. To make a function out of this one,
             \\write the missing argument as `_`: `f a _` is `λx -> f a x`.
@@ -909,7 +920,10 @@ pub const Reporter = struct {
                 // operand; elsewhere Elm's conversion, in the direction the
                 // value has to go (checker.md §8.7).
                 const wk = r.env.types.well_known;
-                if (r.arithmeticOperand(category)) {
+                // A number literal where Elm's order puts it (§12.5).
+                if (try CallStyle.elmOrderHint(r, w, category, actual)) {
+                    // said
+                } else if (r.arithmeticOperand(category)) {
                     w.writeAll(
                         \\
                         \\Hint: `+`, `-`, `*` and `/` work on numbers only. To join text use `++`.

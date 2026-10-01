@@ -1,0 +1,10 @@
+-- check/bad: `xs.length` on a `List` (language.md §12.5) is the record
+-- field mismatch it always was, with a hint: `length` is a function of
+-- `List` that takes the list alone, so it is written `List.length xs`.
+-- `xs.take` reaches a function that needs more, and the hint says so.
+count : List Int -> Int
+count xs = xs.length
+
+
+firstTwo : List Int -> List Int
+firstTwo xs = xs.take

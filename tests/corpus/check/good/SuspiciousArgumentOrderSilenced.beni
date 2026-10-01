@@ -1,0 +1,18 @@
+-- check/good: the calls `SuspiciousArgumentOrder` warns about, written so
+-- that no warning is due (language.md §12.5): in beni's order, the literal
+-- last; as a method on the literal, which says the literal is the subject;
+-- and with the literal subject given a name. Nothing is reported.
+pub fields : String -> List String
+fields line = String.split line ","
+
+
+pub isPrefix : String -> Bool
+isPrefix s = "http".startsWith s
+
+
+low : Int
+low = 0
+
+
+pub percent : Int -> Int
+percent n = clamp low 100 n

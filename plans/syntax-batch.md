@@ -92,6 +92,18 @@ to two days, **L** three to four.
 | 19 | **Migrate Unicode** over every `.beni` file, normative doc examples, core doc comments, Zig test programs, generators and message examples, alone in its commit | mechanical | S | emitted JavaScript byte-identical |
 | 20 | **Unicode enforced**: removal diagnostics for `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` and a parenthesised tuple type | code | S | one `parse/bad/` fixture per removed form |
 
+*As built, slices 13–16 (2026-10-01).* Seven commits, each gates-green. Slice 13 split in two
+around 14, so that no commit is half-landed: the `Int` and `Float` modules with `--migrate-names`
+(the old names still working), then 14's rewrite, then `name_removed` with the three names gone
+from `Basics` — a commit refusing `modBy` before the repository stopped writing it would have been
+red. Slice 15 likewise: the flag's `Debug.log` half first, then `Debug.log`'s new order with the
+rewrite (the exception), the 49 calls the flag named — a label held in a variable, two literals —
+turned round by hand in that commit. `check/good/TypeOwnerEdges` did not move (Y10 as amended).
+The `NameRemoved*` fixtures are written in the old names on purpose: **re-running
+`--migrate-names` over `tests/` rewrites them, so restore those four files after a re-run.**
+Slice 16's Elm-order hint is a read-only fit test, not §7.5 speculation (`checker-v2.md` §29.4,
+*As built*).
+
 **Dependencies.** 1 → 2 → 3 first, because every reformatting migration (8, 11) relies on the gate
 holding its files canonical, and the blocks' safety argument (`language.md` §12.2) relies on
 canonical layout. 4–6 next, because `λ` is the smallest piece and every later fixture is written in

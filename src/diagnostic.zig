@@ -343,6 +343,11 @@ pub const Code = enum {
     /// `Float.log`; also what `beni fmt --migrate-names` reports a use it
     /// left alone under.
     name_removed,
+    /// Appended with the call-style diagnostics (language.md §12.5): a
+    /// `warning`, a call of `clamp` or one of seven `String` functions
+    /// whose literal subject comes first and whose last argument does not —
+    /// the shape of a call written in Elm's order.
+    suspicious_argument_order,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -506,6 +511,7 @@ pub fn title(code: Code) []const u8 {
         .invalid_html_shell => "INVALID PAGE SHELL",
         .backslash_lambda_removed => "REMOVED LAMBDA SYNTAX",
         .name_removed => "REMOVED NAME",
+        .suspicious_argument_order => "SUSPICIOUS ARGUMENT ORDER",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

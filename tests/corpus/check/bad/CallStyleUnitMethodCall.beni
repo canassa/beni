@@ -1,0 +1,5 @@
+-- check/bad: `xs.length ()`, JavaScript's call of a method of no
+-- arguments (language.md §12.5), meets `List.length`'s signature; the
+-- message adds that `length` is written `List.length xs`.
+count : List Int -> Int
+count xs = xs.length ()

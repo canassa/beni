@@ -5524,6 +5524,24 @@ subject — is not: a decision on BIR alone, made after the call checked, so it 
 prints the call with the two arguments exchanged and names the method form as the escape when the
 literal is meant.
 
+*As built (2026-10-01), `src/check/CallStyle.zig`:*
+- **The Elm-order hint does not speculate in the store**, because §7.5's snapshot is not built. It
+  asks, read-only, whether each argument could be the declared parameter it would meet in another
+  order — the failing argument by its type, a literal by its own, a local by its variable, anything
+  else fitting anywhere — over every order of up to five arguments, and prints the order that fits
+  and moves the fewest pairs (Elm puts the subject last and beni first, and the arguments between
+  keep their order: `String.slice 1 3 s` is `String.slice s 1 3`); a tie prints nothing, and so does
+  a call with an argument it cannot spell. It runs for a callee of the core or a platform package,
+  not an operator, on `type_mismatch` and on `kind_mismatch` (a number literal where Elm's order
+  puts it), and a misplaced *function* keeps the existing hint, which names the slot.
+- **`xs.length ()`** meets the method's signature mismatch, not `too_many_args`: a dot-call checks
+  the method's type against the call's. The hint is appended there.
+- **`f(a, b)`**: "written against the callee" is the tuple's `(` being the token after the
+  callee's, since the checker has no bytes, so `f (a, b)` gets the hint too — the same mistake.
+- **The warning** prints the call in beni's order by moving the last argument to the front, which
+  is the exchange for two arguments and the right order for `replace` and `clamp`, whose subject
+  Elm puts after two others; the method form is named for a string subject, and a name for any.
+
 ## 30. Amendment of 2026-10-02: a literal a `Js` call writes in place
 
 *The owner's S7 (`plans/browser-decisions.md`); `boundary.md` §4.2 and `static-dispatch-spike.md`

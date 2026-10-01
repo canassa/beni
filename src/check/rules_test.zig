@@ -88,6 +88,7 @@ const files = [_]File{
     .{ .path = "Schemes.zig", .text = @embedFile("Schemes.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
     .{ .path = "Sync.zig", .text = @embedFile("Sync.zig") },
+    .{ .path = "CallStyle.zig", .text = @embedFile("CallStyle.zig") },
     .{ .path = "TypeFacts.zig", .text = @embedFile("TypeFacts.zig") },
     .{ .path = "TypeStore.zig", .text = @embedFile("TypeStore.zig") },
     .{ .path = "Types.zig", .text = @embedFile("Types.zig") },
