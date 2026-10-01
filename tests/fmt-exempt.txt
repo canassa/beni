@@ -22,7 +22,6 @@ tests/corpus/parse/good/IfChains.beni -- an `if` nested in `else` that the forma
 tests/corpus/parse/good/LayoutBrackets.beni -- bracket continuation lines at columns the formatter re-indents
 tests/corpus/parse/good/LayoutOperatorsLeading.beni -- operators and keywords beginning lines where the formatter would not put them
 tests/corpus/parse/good/LayoutSchemaDeclarations.beni -- the layout twin of SchemaDeclarations, compared with it dump for dump
-tests/corpus/parse/good/LetLayout.beni -- `let` layouts the formatter never writes
 tests/corpus/parse/good/LongList.beni -- generated: one list vertical and one on a 300-element line
 tests/corpus/parse/good/MarkupCommentAtColumnOne.beni -- a column-1 comment inside markup; its .tokens golden pins the lexing
 tests/corpus/parse/good/MarkupComparisonsStay.beni -- `a <b` with no space after `<`; its .tokens golden pins the lexing

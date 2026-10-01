@@ -1766,34 +1766,6 @@ test "fmt --migrate-cons rewrites a file's `::` in brackets, keeps its layout an
     );
 }
 
-test "fmt --migrate-let-blanks joins one-line let bindings in place and restyles nothing" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // frontend.md §1: the hidden flag deletes the blank lines between
-    // one-line `let` bindings and touches nothing else — the file is not
-    // canonical (`y`'s spacing, `in` and the body on one line) and stays so.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("Main.beni", "y   =   let\n  a = 1\n\n  b = 2\n in a + b\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "fmt", "--migrate-let-blanks", "Main.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("y   =   let\n  a = 1\n  b = 2\n in a + b\n", try w.read("Main.beni"));
-}
-
 test "fmt --migrate-lambda writes every lambda's head as λ in place and restyles nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

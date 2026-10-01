@@ -197,7 +197,7 @@ fn constructText(c: Construct) []const u8 {
         .type_expr => "a type",
         .expression => "an expression",
         .pattern => "a pattern",
-        .binding => "a `let` binding",
+        .binding => "a binding",
         .field_name => "a field name",
         .branch => "a branch",
         .constraint => "a `where` constraint like `k.compare : k, k -> Order`",
@@ -302,7 +302,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             } else if (item.construct == .dash_tag) {
                 try w.writeAll(
                     \\I ran into `<-` where an expression should start. `<-` is one token, the arrow
-                    \\of a `let` bind (`x <- f a`), so this is no tag: a tag's name cannot begin with
+                    \\of a bind (`x <- f a`), so this is no tag: a tag's name cannot begin with
                     \\`-`.
                     \\
                     \\A tag's name starts with a letter: `<div>`, `<my-widget>`, `<Card>`.
@@ -434,7 +434,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 try w.print(
                     \\I was parsing {s} and ran into `{s}`, which cannot be an argument on its own.
                     \\
-                    \\A `let`, `if`, `case` or lambda may end an expression, but as an argument it must
+                    \\An `if`, `case` or lambda may end an expression, but as an argument it must
                     \\be wrapped in parentheses: `f (λx -> x)`.
                 , .{ contextText(item.context), text });
             } else {
@@ -445,12 +445,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\This markup is nested more than {d} levels deep, counting its elements and
             \\holes, which is more than I can follow.
             \\
-            \\Split the markup into smaller pieces, bound by `let` or written as functions.
+            \\Split the markup into smaller pieces, bound in a block or written as functions.
         , .{max_depth}) else try w.print(
             \\This expression is nested more than {d} levels deep, which is more than I can
             \\handle.
             \\
-            \\Split it into smaller pieces with `let`, or remove some of the nesting.
+            \\Split it into smaller pieces bound in a block, or remove some of the nesting.
         , .{max_depth}),
         .unclosed_delimiter => if (item.construct == .comment_swallowed_brace) {
             try w.print(
@@ -620,7 +620,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\`x |> f a` is `f x a`: the value on the left becomes the FIRST argument of the call
             \\on the right, so the right of `|>` must be that call — a function, or a call it is
-            \\one argument short of. A `let`, `if`, `case` or lambda has no argument list to
+            \\one argument short of. An `if`, `case` or lambda has no argument list to
             \\insert into. Parentheses do not hand it over as a value either — they are looked
             \\through, so `5 |> (λy -> y + 1)` CALLS the lambda on `5` and is `6`. Write that if
             \\it is what you meant. When the block is the argument rather than the function, it
@@ -649,11 +649,11 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\    (((Int, Int) -> Int), String)
         ),
         .refutable_let_pattern => try w.print(
-            \\I found `{s}` in a `let` pattern, but a `let` pattern must always match.
+            \\I found `{s}` in a pattern binding, but a block's pattern binding must always match.
             \\
             \\A literal and a list, with a spread or without, each match some values of their
             \\type and not others, whatever that type turns out to be, so neither can be bound
-            \\in a `let`. A
+            \\in a block. A
             \\CONSTRUCTOR can, when its type has only that one — `(Box n) = b` is fine and
             \\`(Just n) = m` is not, and I say which after I have checked the types. To
             \\match on more than one shape, use `case`.
@@ -685,7 +685,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\A `--|` block documents the declaration that starts on the next non-blank line
             \\(`pub` included). It cannot come before an import, an ordinary `--` comment, a
-            \\`let` binding, or the end of the file. For a comment that is not documentation,
+            \\binding of a block, or the end of the file. For a comment that is not documentation,
             \\use `--`.
         ),
         .module_doc_not_at_top => try w.writeAll(
@@ -805,6 +805,25 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         } else try w.writeAll(
             \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
         ),
+        .let_removed => if (item.required_col > item.head_start and item.required_col < item.head_end) {
+            try w.writeAll(
+                \\`let … in` is gone: a body is a block now, its bindings one per line and its
+                \\value on the last. Write this one as:
+                \\
+                \\
+            );
+            // The bindings, then the body after `in`, each moved to the
+            // column of the block's first line and indented 4.
+            try writeBlockLines(w, source, line_starts, item.head_start, item.required_col);
+            try writeBlockLines(w, source, line_starts, item.required_col + 2, item.head_end);
+            try w.writeAll(
+                \\
+                \\`beni fmt --migrate-let <file>` writes every `let` of a file this way.
+            );
+        } else try w.writeAll(
+            \\`let … in` is gone: a body is a block now, its bindings one per line and its
+            \\value on the last, with no `let` and no `in`.
+        ),
         .block_ends_in_binding => try w.writeAll(
             \\This block ends with a binding, but a block ends with the expression it
             \\stands for: its last line is its value.
@@ -818,6 +837,32 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
+    }
+}
+
+/// `let_removed`'s fix-it: the lines of `source[from..to]`, its leading and
+/// trailing blank space dropped, each moved left by the column its first
+/// text sits at (less where a line has fewer spaces) and indented 4: the
+/// bindings, or the body, as lines of the block a `let` becomes.
+fn writeBlockLines(w: *std.Io.Writer, source: []const u8, line_starts: []const u32, from: u32, to: u32) std.Io.Writer.Error!void {
+    if (from >= to or to > source.len) return;
+    const text = std.mem.trim(u8, source[from..to], " \t\r\n");
+    if (text.len == 0) return;
+    const start: u32 = @intCast(@intFromPtr(text.ptr) - @intFromPtr(source.ptr));
+    const shift = diagnostic.position(line_starts, start).col - 1;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var first = true;
+    while (lines.next()) |raw| {
+        var line = std.mem.trimEnd(u8, raw, " \t\r");
+        if (!first) {
+            var n: usize = 0;
+            while (n < shift and n < line.len and line[n] == ' ') n += 1;
+            line = line[n..];
+        }
+        first = false;
+        if (line.len != 0) try w.writeAll("    ");
+        try w.writeAll(line);
+        try w.writeByte('\n');
     }
 }
 

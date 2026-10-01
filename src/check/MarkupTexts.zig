@@ -243,7 +243,7 @@ pub fn tooDeep(r: *Report, region: Bir.Inst.Index, limit: u32) Error!void {
         \\holes and the expressions inside them, it goes more than {d} levels down.
         \\
         \\I gave up part way down, so I cannot check this declaration. Split the markup
-        \\into smaller pieces, bound by `let` or written as functions.
+        \\into smaller pieces, bound in a block or written as functions.
         \\
     , .{limit}) catch return error.OutOfMemory;
     try emit(r, .nesting_too_deep, .@"error", region, null, &out);

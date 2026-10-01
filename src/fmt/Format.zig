@@ -324,83 +324,6 @@ pub fn migrateCons(
     try w.writeAll(source[at..]);
 }
 
-/// `beni fmt --migrate-let-blanks`: `source` with the blank lines between
-/// consecutive one-line `let` bindings deleted, and nothing else touched —
-/// an edit, like `migrateCons`, not a formatting. It is a one-time cleanup
-/// of the old style's blank line between every binding, which reads oddly
-/// once a short body sits on its `=` line (language.md §9); the
-/// formatter's own rule, "at most one, kept if present", is unchanged.
-///
-/// A binding is one line when its source span holds no line break (a
-/// trailing comment on its last line does not count). The gap between two
-/// such neighbours loses its blank lines only when it holds nothing else:
-/// a comment line anywhere in it keeps the whole gap as written. A blank
-/// line next to a multi-line binding separates a block and stays. Every
-/// `let` is visited, nested ones included; the edits are disjoint, so one
-/// run reaches the fixed point. A file with any syntax error is left alone.
-pub fn migrateLetBlanks(
-    scratch: Allocator,
-    tree: *const Ast,
-    tokens: *const Token.TokenList,
-    comments: []const Token.Comment,
-    source: [:0]const u8,
-    w: *Io.Writer,
-) Error!void {
-    if (tree.errors.len != 0) return error.SyntaxErrors;
-    const n = tree.nodes.len;
-    var m: Measurer = .{
-        .tree = tree,
-        .tags = tokens.items(.tag),
-        .starts = tokens.items(.start),
-        .tok_lines = tokens.items(.line),
-        .comments = comments,
-        .source = source,
-        .widths = try scratch.alloc(u32, n),
-        .firsts = try scratch.alloc(u32, n),
-        .lasts = try scratch.alloc(u32, n),
-        .scratch = scratch,
-    };
-    defer m.stack.deinit(scratch);
-    try m.measureRoot();
-
-    // Byte ranges to delete; disjoint, because each lies between two
-    // sibling bindings and holds no token.
-    const Cut = struct { start: u32, end: u32 };
-    var cuts: std.ArrayList(Cut) = .empty;
-    for (0..n) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
-        if (tree.nodeTag(node) != .let) continue;
-        const bindings = tree.fullLet(node).bindings;
-        if (bindings.len < 2) continue;
-        for (bindings[0 .. bindings.len - 1], bindings[1..]) |a, b| {
-            const a_end = m.endOf(m.last(a));
-            const b_start = m.starts[m.first(b)];
-            if (std.mem.indexOfScalar(u8, source[m.starts[m.first(a)]..a_end], '\n') != null) continue;
-            if (std.mem.indexOfScalar(u8, source[b_start..m.endOf(m.last(b))], '\n') != null) continue;
-            // From the line after `a` (past any trailing comment) to the
-            // start of `b`'s line: blank lines only, or it stays.
-            const a_eol = std.mem.indexOfScalarPos(u8, source, a_end, '\n') orelse continue;
-            const b_line = (std.mem.lastIndexOfScalar(u8, source[0..b_start], '\n') orelse continue) + 1;
-            if (b_line <= a_eol + 1) continue;
-            const gap = source[a_eol + 1 .. b_line];
-            if (std.mem.indexOfNone(u8, gap, " \t\r\n") != null) continue;
-            try cuts.append(scratch, .{ .start = @intCast(a_eol + 1), .end = @intCast(b_line) });
-        }
-    }
-    std.mem.sort(Cut, cuts.items, {}, struct {
-        fn lessThan(_: void, x: Cut, y: Cut) bool {
-            return x.start < y.start;
-        }
-    }.lessThan);
-
-    var at: u32 = 0;
-    for (cuts.items) |c| {
-        try w.writeAll(source[at..c.start]);
-        at = c.end;
-    }
-    try w.writeAll(source[at..]);
-}
-
 /// Why `migrateLambda` left a file alone: its rewrite does not parse
 /// cleanly. `code` is the re-parse's first diagnostic and `start` its
 /// offset in the ORIGINAL source (the rewrite moves no line, so the line is
@@ -2976,7 +2899,9 @@ const Printer = struct {
                 }
             },
             .@"if" => try p.ifExpr(n, indent, null),
-            .let => if (p.migrate_let) try p.letParenthesised(n, indent, null) else try p.letExpr(n, indent),
+            // A `let` is `let_removed`, and only `--migrate-let` prints a
+            // file that has one.
+            .let => if (p.migrate_let) try p.letParenthesised(n, indent, null) else return error.SyntaxErrors,
             .block => try p.blockExpr(n, indent),
             .case => try p.caseExpr(n, indent),
             .markup_element, .markup_fragment, .markup_for, .markup_show => try p.markup(n),
@@ -3425,31 +3350,6 @@ const Printer = struct {
             p.newline(indent + indent_step);
             try p.bodyExpr(i.else_expr, indent + indent_step);
         }
-    }
-
-    /// `let` / bindings at the line's indentation plus 4 / `in` and the
-    /// body under `let` (a `, let` list element keeps `in` under `let`).
-    fn letExpr(p: *Printer, n: Index, indent: u32) Error!void {
-        const l = p.tree.fullLet(n);
-        const kw = p.curCol();
-        const inner = indent + indent_step;
-        try p.tok(l.let_token);
-        var prev_last: ?TokenIndex = null;
-        for (l.bindings) |b| {
-            if (prev_last) |pl| {
-                p.blankLines(if (p.blankBetween(pl, p.first(b))) 1 else 0, inner);
-            } else {
-                p.newline(inner);
-            }
-            try p.binding(b, inner);
-            prev_last = p.last(b);
-        }
-        const in_tok = if (prev_last) |pl| pl + 1 else l.let_token + 1;
-        try p.leading(in_tok, inner);
-        p.newline(kw);
-        try p.tokRaw(in_tok);
-        p.newline(kw);
-        try p.expr(l.body, kw);
     }
 
     /// A block (language.md §12.5, *blocks*), the cursor already at the
@@ -4189,7 +4089,7 @@ test "an if written across lines is vertical; else-if chains continue on the els
         \\nested a b = if a then if b then 2
         \\  else 1 else 0
         \\inList flag = [ if flag then 1
-        \\  else 0, let one = 1 in one, case flag of
+        \\  else 0, case flag of
         \\    True -> 1
         \\    False -> 0 ]
         \\
@@ -4225,10 +4125,6 @@ test "an if written across lines is vertical; else-if chains continue on the els
         \\        1
         \\      else
         \\        0
-        \\    , let
-        \\        one = 1
-        \\      in
-        \\      one
         \\    , case flag of
         \\        True ->
         \\            1
@@ -4734,192 +4630,6 @@ test "migrating `::` writes each chain in brackets and touches nothing else" {
     , 1);
 }
 
-/// `migrateLetBlanks` over `source`, then again over its own output, which
-/// must not move (one run reaches the fixed point).
-fn expectLetBlanks(source: [:0]const u8, expected: [:0]const u8) !void {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    try testing.expectEqualStrings(expected, try letBlanksOnce(a, source));
-    try testing.expectEqualStrings(expected, try letBlanksOnce(a, expected));
-}
-
-fn letBlanksOnce(a: Allocator, source: [:0]const u8) ![]const u8 {
-    var interner: InternPool.Local = .empty;
-    var out: Tokenizer.Output = .empty;
-    try Tokenizer.tokenize(a, source, &interner, &out);
-    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
-    var text: Io.Writer.Allocating = .init(a);
-    try migrateLetBlanks(a, &tree, &out.tokens, out.comments.items, source, &text.writer);
-    return text.written();
-}
-
-test "migrating let blanks joins one-line bindings and touches nothing else" {
-    // Odd spacing, the one blank line between top-level declarations and
-    // a trailing comment on a binding's line are the author's.
-    try expectLetBlanks(
-        \\f x =
-        \\    let
-        \\        a  =  1
-        \\
-        \\        b = 2 -- two
-        \\
-        \\
-        \\        ( c, d ) = ( a, b )
-        \\
-        \\        e : Int
-        \\
-        \\        e = c
-        \\
-        \\        y <- Task.andThen x
-        \\    in
-        \\    a + b
-        \\
-        \\g = 1
-        \\
-    ,
-        \\f x =
-        \\    let
-        \\        a  =  1
-        \\        b = 2 -- two
-        \\        ( c, d ) = ( a, b )
-        \\        e : Int
-        \\        e = c
-        \\        y <- Task.andThen x
-        \\    in
-        \\    a + b
-        \\
-        \\g = 1
-        \\
-    );
-}
-
-test "migrating let blanks keeps a blank line next to a multi-line binding" {
-    try expectLetBlanks(
-        \\f =
-        \\    let
-        \\        a = 1
-        \\
-        \\        b =
-        \\            2
-        \\
-        \\        c = 3
-        \\
-        \\        d = 4
-        \\
-        \\        s =
-        \\            \\one
-        \\            \\two
-        \\
-        \\        t = 5
-        \\    in
-        \\    a
-        \\
-    ,
-        \\f =
-        \\    let
-        \\        a = 1
-        \\
-        \\        b =
-        \\            2
-        \\
-        \\        c = 3
-        \\        d = 4
-        \\
-        \\        s =
-        \\            \\one
-        \\            \\two
-        \\
-        \\        t = 5
-        \\    in
-        \\    a
-        \\
-    );
-}
-
-test "migrating let blanks keeps a gap that holds a comment line" {
-    const source =
-        \\f =
-        \\    let
-        \\        a = 1
-        \\
-        \\        -- why b
-        \\        b = 2
-        \\        -- why c
-        \\
-        \\        c = 3
-        \\        -- why d
-        \\        d = 4
-        \\    in
-        \\    a
-        \\
-    ;
-    try expectLetBlanks(source, source);
-}
-
-test "migrating let blanks reaches nested lets" {
-    try expectLetBlanks(
-        \\f =
-        \\    let
-        \\        a = 1
-        \\
-        \\        b =
-        \\            let
-        \\                c = 2
-        \\
-        \\                d = 3
-        \\            in
-        \\            c
-        \\    in
-        \\    let
-        \\        e = 1
-        \\
-        \\        g = 2
-        \\    in
-        \\    e
-        \\
-    ,
-        \\f =
-        \\    let
-        \\        a = 1
-        \\
-        \\        b =
-        \\            let
-        \\                c = 2
-        \\                d = 3
-        \\            in
-        \\            c
-        \\    in
-        \\    let
-        \\        e = 1
-        \\        g = 2
-        \\    in
-        \\    e
-        \\
-    );
-}
-
-test "migrating let blanks keeps CRLF line ends" {
-    try expectLetBlanks(
-        "f =\r\n    let\r\n        a = 1\r\n\r\n        b = 2\r\n    in\r\n    a\r\n",
-        "f =\r\n    let\r\n        a = 1\r\n        b = 2\r\n    in\r\n    a\r\n",
-    );
-}
-
-test "migrating let blanks leaves a file with a syntax error alone" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    const source = "f =\n    let\n        a = 1\n\n        b =\n    in\n    a\n";
-    var interner: InternPool.Local = .empty;
-    var out: Tokenizer.Output = .empty;
-    try Tokenizer.tokenize(a, source, &interner, &out);
-    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
-    var text: Io.Writer.Allocating = .init(a);
-    try testing.expectError(error.SyntaxErrors, migrateLetBlanks(a, &tree, &out.tokens, out.comments.items, source, &text.writer));
-}
-
-/// `migrateLambda` over `source`: its output and the problem it reports.
 fn lambdaOnce(a: Allocator, source: [:0]const u8) !struct { text: []const u8, problem: ?LambdaProblem } {
     var interner: InternPool.Local = .empty;
     var out: Tokenizer.Output = .empty;

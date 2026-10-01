@@ -258,16 +258,16 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         , .{ text, text }),
         .let_forward_reference => switch (item.forward) {
             .direct => try w.print(
-                \\`{s}` is bound further down this `let`, on line {d}.
+                \\`{s}` is bound further down this block, on line {d}.
                 \\
-                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
-                \\value yet where it is used here. Move the binding of `{s}` above this one. A `let`
+                \\A block evaluates its value bindings in the order they are written, so `{s}` has no
+                \\value yet where it is used here. Move the binding of `{s}` above this one. A block's
                 \\FUNCTION is different — it is hoisted, so it can be used before it is written.
             , .{ text, other_line, text, text }),
             .self => try w.print(
                 \\`{s}` is defined in terms of itself.
                 \\
-                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
+                \\A block evaluates its value bindings in the order they are written, so `{s}` has no
                 \\value yet inside its own right-hand side. Only a FUNCTION can be recursive: give
                 \\`{s}` a parameter, or compute it from a different binding.
             , .{ text, text, text }),
@@ -275,14 +275,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`{s}` is defined in terms of itself, through `{s}`: naming `{s}` here may call
                 \\`{s}`, and `{s}` reads `{s}`.
                 \\
-                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
+                \\A block evaluates its value bindings in the order they are written, so `{s}` has no
                 \\value yet inside its own right-hand side. Only a FUNCTION can be recursive: give
                 \\`{s}` a parameter, or compute it without `{s}`.
             , .{ other, text, text, text, text, other, other, other, text }),
             .through => try w.print(
-                \\Naming `{s}` here reads `{s}`, which is bound further down this `let`, on line {d}.
+                \\Naming `{s}` here reads `{s}`, which is bound further down this block, on line {d}.
                 \\
-                \\A `let` evaluates its value bindings in the order they are written, so this binding
+                \\A block evaluates its value bindings in the order they are written, so this binding
                 \\runs before `{s}` has a value — and naming `{s}` may call it, which reads `{s}`.
                 \\Move the binding of `{s}` above this one.
             , .{ text, other, other_line, other, text, other, other }),
@@ -292,7 +292,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\`?` returns early from the nearest enclosing definition that has parameters, and
             \\a lambda in between would have to return instead. Move the `?` out of the lambda,
-            \\or turn the lambda into a named `let` function.
+            \\or turn the lambda into a named function in a block.
         ),
         .question_outside_function => try w.writeAll(
             \\This `?` is not inside a function.
@@ -662,7 +662,7 @@ test "message: unknown module alias splits the alias from the name" {
 
 test "message: the payload-free codes" {
     try expectMessage(
-        "This `?` is inside a lambda.\n\n`?` returns early from the nearest enclosing definition that has parameters, and\na lambda in between would have to return instead. Move the `?` out of the lambda,\nor turn the lambda into a named `let` function.",
+        "This `?` is inside a lambda.\n\n`?` returns early from the nearest enclosing definition that has parameters, and\na lambda in between would have to return instead. Move the `?` out of the lambda,\nor turn the lambda into a named function in a block.",
         .{ .code = .question_in_lambda, .start = 0, .end = 1 },
         "?",
     );

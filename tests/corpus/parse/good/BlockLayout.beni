@@ -5,8 +5,7 @@
 -- that column continues the item — a `,` or closing bracket, an operator, a
 -- `-` followed by a space, `then`, `else`, `of`, and the next line of a
 -- multiline string. B4: a token left of the column ends the block, as the
--- `in` of the `let` around `inner` does; that `let`'s body, at the item's own
--- column, is still its body (`frontend.md` §11.2, as built).
+-- `else` in `inner` ends the block of its `then`.
 starts : Int -> List Int
 starts n =
     -n
@@ -40,11 +39,10 @@ continues n =
     ]
 
 
-inner : Int
-inner =
-    let
-        x =
-            y = 1
-            y
-      in
-    x
+inner : Bool -> Int
+inner c =
+    if c then
+        y = 1
+        y
+    else
+        0

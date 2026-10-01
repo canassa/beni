@@ -467,7 +467,7 @@ pub fn missingWhereConstraint(
         const binding = r.env.interner.slice(b);
         w.print(
             \\
-            \\Hint: a `let` annotation cannot have a `where` clause. Move `{s}` to the top
+            \\Hint: an annotation in a block cannot have a `where` clause. Move `{s}` to the top
             \\level and annotate it there with:
             \\
             \\    where {s}.{s} :

@@ -11141,13 +11141,11 @@ test "let bindings become const, and a let binding with parameters becomes a hoi
     ,
         \\pub f : Int -> Int
         \\f n =
-        \\    let
-        \\        doubled =
-        \\            n * 2
+        \\    doubled =
+        \\        n * 2
         \\
-        \\        step x =
-        \\            x + doubled
-        \\    in
+        \\    step x =
+        \\        x + doubled
         \\    step 1
         \\
     );
@@ -11242,14 +11240,12 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\        acc
         \\
         \\    else
-        \\        let
-        \\            inner i total =
-        \\                if i < 1 then
-        \\                    total
+        \\        inner i total =
+        \\            if i < 1 then
+        \\                total
         \\
-        \\                else
-        \\                    inner (i - 1) ((λx -> x + i) total)
-        \\        in
+        \\            else
+        \\                inner (i - 1) ((λx -> x + i) total)
         \\        outer (n - 1) (inner 3 acc)
         \\
     );

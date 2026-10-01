@@ -123,7 +123,7 @@ pub fn refutablePattern(
     code: diagnostic.Code,
     examples: []const []const u8,
 ) Error!void {
-    const what: []const u8 = if (code == .refutable_let_pattern) "A `let` pattern" else "A parameter";
+    const what: []const u8 = if (code == .refutable_let_pattern) "A pattern binding" else "A parameter";
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;

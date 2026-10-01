@@ -85,7 +85,6 @@ pub fn main(init: std.process.Init) u8 {
         .fmt => |fmt| {
             var options = sessionOptions(fmt.common);
             options.migrate_cons = fmt.migrate_cons;
-            options.migrate_let_blanks = fmt.migrate_let_blanks;
             options.migrate_lambda = fmt.migrate_lambda;
             options.migrate_names = fmt.migrate_names;
             options.migrate_let = fmt.migrate_let;

@@ -352,10 +352,6 @@ pub const Fmt = struct {
     /// `--migrate-cons`, hidden: rewrite `::` in the list syntax
     /// (`Format.migrateCons`) instead of formatting.
     migrate_cons: bool = false,
-    /// `--migrate-let-blanks`, hidden: delete the blank lines between
-    /// one-line `let` bindings (`Format.migrateLetBlanks`) instead of
-    /// formatting.
-    migrate_let_blanks: bool = false,
     /// `--migrate-lambda`, hidden: write the `\` that begins every lambda
     /// as `λ` (`Format.migrateLambda`) instead of formatting.
     migrate_lambda: bool = false,
@@ -905,7 +901,6 @@ const FmtSpecific = struct {
     check: bool = false,
     stdout: bool = false,
     migrate_cons: bool = false,
-    migrate_let_blanks: bool = false,
     migrate_lambda: bool = false,
     migrate_names: bool = false,
     migrate_let: bool = false,
@@ -922,10 +917,6 @@ const FmtSpecific = struct {
         } else if (std.mem.eql(u8, name, "--migrate-lambda")) {
             if (value != null) return noValue(name);
             self.migrate_lambda = true;
-            self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--migrate-let-blanks")) {
-            if (value != null) return noValue(name);
-            self.migrate_let_blanks = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-cons")) {
             if (value != null) return noValue(name);
@@ -960,7 +951,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
     }
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
-        @intFromBool(s.specific.migrate_let_blanks) + @intFromBool(s.specific.migrate_lambda) +
+        @intFromBool(s.specific.migrate_lambda) +
         @intFromBool(s.specific.migrate_names) +
         @intFromBool(s.specific.migrate_let);
     if (migrations > 1) {
@@ -972,7 +963,6 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .check = s.specific.check,
         .stdout = s.specific.stdout,
         .migrate_cons = s.specific.migrate_cons,
-        .migrate_let_blanks = s.specific.migrate_let_blanks,
         .migrate_lambda = s.specific.migrate_lambda,
         .migrate_names = s.specific.migrate_names,
         .migrate_let = s.specific.migrate_let,

@@ -64,7 +64,8 @@ gap that holds a comment line is kept whole, and a blank line next to a multi-li
 because it separates a block. Nested `let`s are reached, one run is the fixed point, and a file
 with a syntax error is left alone. It is `Format.migrateLetBlanks`, a one-time cleanup: the
 formatter's rule — at most one blank line between bindings, kept if present — is unchanged. The
-two flags are mutually exclusive.
+two flags are mutually exclusive. *Retired 2026-10-02* with `let` itself (§11.2): a file that holds
+a `let` has a syntax error now, so the flag had nothing left to read, and it is gone.
 
 *Added 2026-10-02 (specified, not built):* four more hidden flags carry the syntax batch
 (`language.md` §12) — **`--migrate-lambda`** and **`--migrate-names`**, edits like `--migrate-cons`,
@@ -1439,6 +1440,15 @@ value of a block; a `let` anywhere else is a parenthesised block (`letParenthesi
 `( let … )`'s parentheses, and is an ordinary operand of the operator chain it is in. Comments
 before `let` and `in` stay where they were, and one on the `in` line goes above the value. Its
 output is a fixed point of plain `beni fmt` (the black-box test runs both).
+
+*As built, `let` refused (2026-10-02).* `parseLet` reports `let_removed` at the `let` before it
+parses anything inside, so no damper can swallow it, and parses on. The message is the block the
+`let` becomes, read from the source when it is rendered: the item's `head` spans the bindings and
+the body, and its `required_col` — which no layout rule uses for this code — holds the offset of
+the `in` between them; each part is moved to one column and indented 4 (`writeBlockLines`). The
+formatter prints a `let` only under `--migrate-let`, which accepts a file whose only syntax errors
+are `let_removed` and does not report them, as `--migrate-lambda` does for `\`. The parser's
+`.continues` body (above) is kept for the `let`'s body, so a refused `let` still parses as it did.
 
 ### 11.3 AST, BIR and versions
 

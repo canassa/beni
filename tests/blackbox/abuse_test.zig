@@ -675,7 +675,7 @@ fn nestingTooDeep(file: []const u8, line: u32, col: u32, width: u32) diagnostic.
         .severity = .@"error",
         .span = .{ .file = file, .start = .{ .line = line, .col = col }, .end = .{ .line = line, .col = col + width } },
         .title = "NESTING TOO DEEP",
-        .message = "This expression is nested more than 4096 levels deep, which is more than I can\nhandle.\n\nSplit it into smaller pieces with `let`, or remove some of the nesting.",
+        .message = "This expression is nested more than 4096 levels deep, which is more than I can\nhandle.\n\nSplit it into smaller pieces bound in a block, or remove some of the nesting.",
     };
 }
 

@@ -3388,6 +3388,10 @@ fn parseBranch(p: *Parse) Allocator.Error!Index {
 fn parseLet(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.let_bindings);
     defer p.context = saved_context;
+    // `let` left the language (language.md §12.2): reported once per `let`,
+    // at it, before anything inside can set the recovery damper, and parsed
+    // as before so the rest of the file still parses and checks.
+    const removed = try p.report(p.itemAtToken(.let_removed, p.tok_i));
     const let_token = p.next();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
@@ -3418,9 +3422,19 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
         }
     }
     const bindings = try p.listToRange(p.scratchSince(mark));
-    _ = try p.expectToken(.keyword_in);
+    const in_token = try p.expectToken(.keyword_in);
     p.context = .let_body;
     const body = try p.parseBody(.continues);
+    // The block the bindings become, for `let_removed`'s message (above):
+    // `head` spans the bindings and the body, and `required_col`, which no
+    // layout rule uses for this code, holds the offset of the `in` between
+    // them (0 when there was none).
+    if (removed) |index| {
+        const item = &p.errors.items[index];
+        item.head_start = p.tokenEnd(let_token);
+        item.head_end = p.tokenEnd(p.tok_i - 1);
+        item.required_col = if (in_token) |t| p.starts[t] else 0;
+    }
     const extra = try p.addExtra(bindings);
     return p.addNode(.{ .tag = .let, .main_token = let_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
 }
@@ -5118,7 +5132,6 @@ test "block expressions as the last operand of a chain, and as a bare argument (
         \\b1 f = f <| λx -> x + 1
         \\b2 xs = xs |> List.map (λx -> x)
         \\b3 t a b c = text <| if a then b else c
-        \\b4 x = x + let y = 1 in y
         \\b5 x = x + case x of
         \\  1 -> 2
         \\  _ -> 3
@@ -5156,14 +5169,6 @@ test "block expressions as the last operand of a chain, and as a bare argument (
         \\        (ident a)
         \\        (ident b)
         \\        (ident c))))
-        \\  (definition b4
-        \\    (pat_var x)
-        \\    (add
-        \\      (ident x)
-        \\      (let
-        \\        (let_def y
-        \\          (int 1))
-        \\        (ident y))))
         \\  (definition b5
         \\    (pat_var x)
         \\    (add
@@ -5184,7 +5189,7 @@ test "block expressions as the last operand of a chain, and as a bare argument (
         \\        (pat_var x)
         \\        (ident x)))))
         \\
-    , &.{.{ .code = .unexpected_token, .line = 8, .col = 10 }});
+    , &.{.{ .code = .unexpected_token, .line = 7, .col = 10 }});
 }
 
 test "strings: chunks and interpolations in every arrangement" {
@@ -5324,74 +5329,6 @@ test "layout: a branch list ends at a token its body cannot consume, and nested 
     );
 }
 
-test "layout: `in` at various columns, bindings on the head line, nested lets" {
-    try expectClean(
-        \\a =
-        \\    let
-        \\        x =
-        \\            1
-        \\    in
-        \\    x
-        \\b =
-        \\    let x = 1
-        \\        y = 2 in x + y
-        \\c = let
-        \\      x = 1
-        \\    in
-        \\      x
-        \\d =
-        \\  let
-        \\    x = 1
-        \\            in x
-        \\e =
-        \\    let
-        \\        outer =
-        \\            let
-        \\                inner =
-        \\                    3
-        \\            in
-        \\            inner
-        \\    in
-        \\    outer
-        \\
-    ,
-        \\(module
-        \\  (definition a
-        \\    (let
-        \\      (let_def x
-        \\        (int 1))
-        \\      (ident x)))
-        \\  (definition b
-        \\    (let
-        \\      (let_def x
-        \\        (int 1))
-        \\      (let_def y
-        \\        (int 2))
-        \\      (add
-        \\        (ident x)
-        \\        (ident y))))
-        \\  (definition c
-        \\    (let
-        \\      (let_def x
-        \\        (int 1))
-        \\      (ident x)))
-        \\  (definition d
-        \\    (let
-        \\      (let_def x
-        \\        (int 1))
-        \\      (ident x)))
-        \\  (definition e
-        \\    (let
-        \\      (let_def outer
-        \\        (let
-        \\          (let_def inner
-        \\            (int 3))
-        \\          (ident inner)))
-        \\      (ident outer))))
-        \\
-    );
-}
-
 test "layout: brackets do not suspend it, operators and keywords may lead a line" {
     try expectClean(
         \\list =
@@ -5454,32 +5391,13 @@ test "layout: brackets do not suspend it, operators and keywords may lead a line
     );
 }
 
-test "layout errors: a continuation on column 1, misaligned let bindings and case branches" {
+test "layout errors: a continuation on column 1, misaligned case branches" {
     try expectTree("x =\n    1\n+ 1\n",
         \\(module
         \\  (definition x
         \\    (int 1)))
         \\
     , &.{.{ .code = .expected_declaration, .line = 3, .col = 1 }});
-    try expectTree("x =\n    let\n        a = 1\n      b = 2\n    in\n    a + b\n",
-        \\(module
-        \\  (definition x
-        \\    (let
-        \\      (let_def a
-        \\        (int 1))
-        \\      (let_def b
-        \\        (int 2))
-        \\      (add
-        \\        (ident a)
-        \\        (ident b)))))
-        \\
-    , &.{.{ .code = .unexpected_token, .line = 4, .col = 7 }});
-    try expectErrorMessage("x =\n    let\n        a = 1\n      b = 2\n    in\n    a + b\n", 0,
-        \\I was parsing the bindings of this `let` and ran into `b` on column 7.
-        \\
-        \\Every binding must start on the same column as the first one, `a` on column 9,
-        \\and `in` ends the list.
-    );
     try expectTree("x =\n    case y of\n        A -> 1\n      B -> 2\n",
         \\(module
         \\  (definition x

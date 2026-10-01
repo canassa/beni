@@ -240,7 +240,7 @@ pub const Reporter = struct {
         switch (found.why) {
             .dot_call => w.print(
                 \\
-                \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method only
+                \\Hint: `{s}` is a binding of a block whose type needs {s} `{s}` method only
                 \\through a dot-call, which could still turn out to call a record's field,
                 \\so the binding has ONE type inside the definition that holds it
                 \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
@@ -252,7 +252,7 @@ pub const Reporter = struct {
             , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
             .value => w.print(
                 \\
-                \\Hint: `{s}` is a `let` value, with no parameters, whose type needs {s}
+                \\Hint: `{s}` is a value of a block, with no parameters, whose type needs {s}
                 \\`{s}` method. A value is computed once, where it is written, so it has ONE
                 \\type inside the definition that holds it (`docs/design/checker-v2.md`
                 \\§8.4). The first use fixed the type; this is the second.
@@ -263,8 +263,8 @@ pub const Reporter = struct {
             , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
             .cap => w.print(
                 \\
-                \\Hint: `{s}` is a `let` binding whose type needs more than {d} methods, one
-                \\of them {s} `{s}` method, and past that many a `let` binding is not
+                \\Hint: `{s}` is a binding of a block whose type needs more than {d} methods, one
+                \\of them {s} `{s}` method, and past that many a binding of a block is not
                 \\generalised: it has ONE type inside the definition that holds it
                 \\(`docs/design/static-dispatch-spike.md` §10.11). The first use fixed the
                 \\type; this is the second.
@@ -275,7 +275,7 @@ pub const Reporter = struct {
             , .{ name, Resolve.max_inferred_constraints, article(method), method, name }) catch return error.OutOfMemory,
             .unreached => w.print(
                 \\
-                \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method, and such a
+                \\Hint: `{s}` is a binding of a block whose type needs {s} `{s}` method, and such a
                 \\binding is used at ONE type inside the definition that holds it
                 \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
                 \\the second.
@@ -352,7 +352,7 @@ pub const Reporter = struct {
                 .wanted = "But the type annotation says it should be:",
             },
             .let_annotation => return .{
-                .intro = "Something is off with the body of this `let` definition:",
+                .intro = "Something is off with the body of this definition in a block:",
                 .found = "The body is:",
                 .wanted = "But its type annotation says it should be:",
             },

@@ -65,12 +65,15 @@
         (ident k)
         (ident j))))
   (annotation inner
-    (type_con Int))
+    (type_fn
+      (type_con Bool)
+      (type_con Int)))
   (definition inner
-    (let
-      (let_def x
-        (block
-          (let_def y
-            (int 1))
-          (ident y)))
-      (ident x))))
+    (pat_var c)
+    (if
+      (ident c)
+      (block
+        (let_def y
+          (int 1))
+        (ident y))
+      (int 0))))

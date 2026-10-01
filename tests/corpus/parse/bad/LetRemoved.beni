@@ -1,0 +1,29 @@
+-- `let … in` left the language (language.md §12.2): let_removed at each
+-- `let` (13:5, 20:9, 29:12), once per `let`, whose message is the block its
+-- bindings become — the bindings, then the body, moved to one column — and
+-- nothing else: the `let` is parsed on, so a nested one is reported too and
+-- the rest of the file still parses and checks.
+count : List Int -> Int
+count xs =
+    List.length xs
+
+
+total : List Int -> Int
+total xs =
+    let
+        n = count xs
+
+        doubled =
+            n * 2
+    in
+    if n > 0 then
+        let
+            half = doubled // 2
+        in
+        half + n
+    else
+        0
+
+
+inline : Int -> Int
+inline n = let m = n + 1 in m * m

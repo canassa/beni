@@ -185,10 +185,6 @@ pub const Options = struct {
     /// `beni fmt --migrate-cons` (hidden): write each file's `::` chains in
     /// the list syntax and touch nothing else (`Format.migrateCons`).
     migrate_cons: bool = false,
-    /// `beni fmt --migrate-let-blanks` (hidden): delete the blank lines
-    /// between one-line `let` bindings and touch nothing else
-    /// (`Format.migrateLetBlanks`).
-    migrate_let_blanks: bool = false,
     /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
     /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
     migrate_lambda: bool = false,
@@ -1609,14 +1605,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             try worker.report(session, file, found.code, at, at, message.written());
             return;
         }
-    } else (if (session.options.migrate_let_blanks) Format.migrateLetBlanks(
-        worker.arena.allocator(),
-        tree,
-        session.artifacts.tokens(file),
-        session.artifacts.comments(file),
-        text,
-        &out.writer,
-    ) else if (session.options.migrate_cons) Format.migrateCons(
+    } else (if (session.options.migrate_cons) Format.migrateCons(
         worker.arena.allocator(),
         tree,
         session.artifacts.tokens(file),
