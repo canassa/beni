@@ -1,5 +1,5 @@
 -- Formatter: `case` branches on the `of` line, `->` on its own line, bodies
--- on the `->` line, uneven blank lines (0 and 2) between branches, a `let`
+-- on the `->` line, uneven blank lines (0 and 2) between branches, a block
 -- inside a branch at a strange column; expected: `case x of` alone,
 -- branches indented 4, `->` at line end, body indented 4 more, at most one
 -- blank line between branches.
@@ -11,7 +11,5 @@ describe x =
             "one"
 
         _ ->
-            let
-                y = x
-            in
+            y = x
             "many ${y}"

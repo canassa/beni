@@ -167,9 +167,7 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                 \\An interpolation cannot contain another string. Bind the inner string to a
                 \\name first, then interpolate the name:
                 \\
-                \\    let
-                \\        inner = "…"
-                \\    in
+                \\    inner = "…"
                 \\    "${{inner}}"
             , .{what});
         },
@@ -450,14 +448,14 @@ test "message: strings and interpolation" {
         8,
     );
     try expectMessage(
-        "I found a string literal inside a `${…}` interpolation.\n\nAn interpolation cannot contain another string. Bind the inner string to a\nname first, then interpolate the name:\n\n    let\n        inner = \"…\"\n    in\n    \"${inner}\"",
+        "I found a string literal inside a `${…}` interpolation.\n\nAn interpolation cannot contain another string. Bind the inner string to a\nname first, then interpolate the name:\n\n    inner = \"…\"\n    \"${inner}\"",
         .nested_string_in_interpolation,
         "\"${ f \"a\" }\"",
         6,
         9,
     );
     try expectMessage(
-        "I found a multiline string marker `\\\\` inside a `${…}` interpolation.\n\nAn interpolation cannot contain another string. Bind the inner string to a\nname first, then interpolate the name:\n\n    let\n        inner = \"…\"\n    in\n    \"${inner}\"",
+        "I found a multiline string marker `\\\\` inside a `${…}` interpolation.\n\nAn interpolation cannot contain another string. Bind the inner string to a\nname first, then interpolate the name:\n\n    inner = \"…\"\n    \"${inner}\"",
         .nested_string_in_interpolation,
         "\"${ \\\\raw }\"",
         4,

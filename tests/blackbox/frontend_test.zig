@@ -86,16 +86,14 @@ const every_section =
     \\-- A plain comment between declarations.
     \\label : Point, String -> String
     \\label p name =
-    \\    let
-    \\        ( a, b ) =
-    \\            ( p.x, p.y )
+    \\    ( a, b ) =
+    \\        ( p.x, p.y )
     \\
-    \\        moved =
-    \\            { p | x = a + 1 }
+    \\    moved =
+    \\        { p | x = a + 1 }
     \\
-    \\        twice =
-    \\            λn -> n * 2
-    \\    in
+    \\    twice =
+    \\        λn -> n * 2
     \\    "${name}: ${twice moved.x} \t ${b}"
     \\
     \\

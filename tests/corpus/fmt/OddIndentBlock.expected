@@ -1,0 +1,7 @@
+-- Formatter: a block at a 6-space indent, and a binding body below its `=`
+-- at 13; expected: the canonical 4-space block, the short body joined to
+-- its `=` line.
+total xs =
+    a = List.sum xs
+    b = a * 2
+    a + b

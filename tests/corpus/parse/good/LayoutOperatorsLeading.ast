@@ -67,11 +67,6 @@
       (branch
         (pat_ctor Nothing)
         (int 0))))
-  (definition lets
-    (let
-      (let_def a
-        (int 1))
-      (ident a)))
   (definition args
     (apply
       (ident max)

@@ -527,11 +527,9 @@ Worked example, columns shown:
 view model =
     case model.page of
         Home ->
-            let
-                title = "Hi"
-                body =
-                    text title
-            in
+            title = "Hi"
+            body =
+                text title
             div [] [ body ]
 
         About ->
@@ -539,9 +537,10 @@ view model =
 ```
 
 `case` body indent is 1 (the declaration). Branches at column 9; `Home` body is anything at column >
-9. `let` bindings at column 17; `body`'s body continues at column > 17; `in` at column 13 is left of
-17 (ends the bindings) and right of 9 (still inside the branch). `About` at column 9 starts the next
-branch; the blank line is trivia. The rules are lexically decidable: the only inputs are each
+9, and since it begins a later line it is a block (§12.2) whose items sit at column 13; `body`'s
+body continues at column > 13; `div` at column 13 begins the block's last item, its value. `About`
+at column 9 is left of 13 (ends the block) and starts the next branch; the blank line is trivia.
+*Amended 2026-10-02:* the example was a `let … in` until blocks replaced it. The rules are lexically decidable: the only inputs are each
 token's column (from its offset and the line-start table) and one integer of parser state, and no
 token's meaning depends on a later line.
 
@@ -759,11 +758,9 @@ every item after it; a bind is never the last item (`block_ends_in_binding`). Th
 with "the remaining bindings and the body" read as "the remaining items".
 
 ```elm
-let
-    scope <- Task.scope
-    conn <- Task.bracket (λ() -> Db.open url) Db.close
-    h <- Result.andThen (readHeader s)
-in
+scope <- Task.scope
+conn <- Task.bracket (λ() -> Db.open url) Db.close
+h <- Result.andThen (readHeader s)
 render scope conn h
 ```
 

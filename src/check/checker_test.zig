@@ -245,10 +245,8 @@ test "generalisation: a let-bound name is used at two types in one body" {
         \\
     ,
         \\both =
-        \\    let
-        \\        dup y =
-        \\            ( y, y )
-        \\    in
+        \\    dup y =
+        \\        ( y, y )
         \\    ( dup 1, dup "s" )
         \\
     );
@@ -279,10 +277,8 @@ test "sharing: instantiating a scheme with an internal repeat keeps it one varia
         \\
     ,
         \\first =
-        \\    let
-        \\        pair y =
-        \\            ( y, y )
-        \\    in
+        \\    pair y =
+        \\        ( y, y )
         \\    pair 1
         \\
     );
@@ -392,13 +388,11 @@ test "records: the four-way field partition" {
         \\
     ,
         \\merge r =
-        \\    let
-        \\        left =
-        \\            r.a
+        \\    left =
+        \\        r.a
         \\
-        \\        right =
-        \\            r.c
-        \\    in
+        \\    right =
+        \\        r.c
         \\    left
         \\
     );
@@ -541,10 +535,8 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
     ,
         \\pub step : Result String Int -> Result String Int
         \\step r =
-        \\    let
-        \\        v =
-        \\            r?
-        \\    in
+        \\    v =
+        \\        r?
         \\    Ok (v + 1)
         \\
     );
@@ -557,10 +549,8 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
     ,
         \\pub step : Maybe Int -> Maybe Int
         \\step m =
-        \\    let
-        \\        v =
-        \\            m?
-        \\    in
+        \\    v =
+        \\        m?
         \\    Just (v + 1)
         \\
     );
@@ -700,13 +690,11 @@ test "binding groups are solved dependencies first, so a call to an inferred hel
         \\
     ,
         \\useAfter =
-        \\    let
-        \\        both =
-        \\            ( idf 1, idf "s" )
+        \\    both =
+        \\        ( idf 1, idf "s" )
         \\
-        \\        idf x =
-        \\            x
-        \\    in
+        \\    idf x =
+        \\        x
         \\    both
         \\
     );
@@ -720,16 +708,14 @@ test "unifying two cyclic types merges a pair that is already one root" {
     // on ordinary source.
     try expectCodes(&.{.infinite_type},
         \\pub two x y =
-        \\    let
-        \\        r =
-        \\            [ x, y ]
+        \\    r =
+        \\        [ x, y ]
         \\
-        \\        p =
-        \\            x x
+        \\    p =
+        \\        x x
         \\
-        \\        q =
-        \\            y y
-        \\    in
+        \\    q =
+        \\        y y
         \\    p
         \\
     );
@@ -748,10 +734,8 @@ test "a local index is relative to its declaration, in every consumer" {
         \\
         \\pub second : { name : Int, other : Int } -> Int
         \\second rec =
-        \\    let
-        \\        { name } =
-        \\            rec
-        \\    in
+        \\    { name } =
+        \\        rec
         \\    name
         \\
     );

@@ -666,13 +666,11 @@ test "names several emit workers invent for one type agree, and the build is byt
         \\
         \\main : Program
         \\main =
-        \\    let
-        \\        p =
-        \\            Dot (Point 1 2)
+        \\    p =
+        \\        Dot (Point 1 2)
         \\
-        \\        q =
-        \\            Line (Point 1 2) (Point 3 4)
-        \\    in
+        \\    q =
+        \\        Line (Point 1 2) (Point 3 4)
         \\    Node.print (flag (A.same p p) ++ flag (B.same p q) ++ flag (C.before p q) ++ flag (A.before q p))
         \\
     );
@@ -4336,16 +4334,14 @@ test "core List's loops read and write their arrays in place" {
         \\
         \\main : Program
         \\main =
-        \\    let
-        \\        xs =
-        \\            List.range 1 10
+        \\    xs =
+        \\        List.range 1 10
         \\
-        \\        kept =
-        \\            List.map xs (λx -> x)
+        \\    kept =
+        \\        List.map xs (λx -> x)
         \\
-        \\        sorted =
-        \\            List.sortWith (List.filter xs (λx -> x > 2)) (λa b -> Basics.compare b a)
-        \\    in
+        \\    sorted =
+        \\        List.sortWith (List.filter xs (λx -> x > 2)) (λa b -> Basics.compare b a)
         \\    Node.print (String.join (List.map (List.map2 kept sorted (+)) String.fromInt) "," ++ " " ++ String.fromInt (List.length xs))
         \\
     );

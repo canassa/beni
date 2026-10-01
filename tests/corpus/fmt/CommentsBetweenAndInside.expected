@@ -31,8 +31,6 @@ rec =
 
 
 g x =
-    let
-        h <- Task.wrap x -- after a bind
-        y = 1
-    in
+    h <- Task.wrap x -- after a bind
+    y = 1
     y

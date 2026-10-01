@@ -6,10 +6,8 @@
 -- `later` is the legal shape: it calls the same `f` from BELOW `b`, where
 -- `b` is initialised.
 g =
-    let
-        a = f 1
-        f x = x + b
-        b = 2
-        later = f 10
-    in
+    a = f 1
+    f x = x + b
+    b = 2
+    later = f 10
     a + later

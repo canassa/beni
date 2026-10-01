@@ -1,11 +1,13 @@
--- bind_rhs_forward_reference at 8:27: a `<-` nested in an outer bind's
+-- bind_rhs_forward_reference at 9:24: a `<-` nested in an outer bind's
 -- right-hand side is lowered before the outer block's later bindings come
 -- into scope, so `later` is still a forward reference there (§7) and not an
 -- unknown name. The outer bind's forward set has to survive the inner one.
 f g h =
-    let
-        a <-
-            g (let b <- h later in b)
-        later = 1
-    in
+    a <-
+        g
+            (
+                b <- h later
+                b
+            )
+    later = 1
     a + later

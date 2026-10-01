@@ -141,12 +141,12 @@ test "the `?` default step is linear in the open `?`s and the boundaries" {
     try s.finish("the ? default step", verdict);
 }
 
-/// `pub f u = let a1 = u? … an = u? in Ok [ a1, …, an ]`.
+/// `pub f u =` a block of `a1 = u?` … `an = u?`, then `Ok [ a1, …, an ]`.
 fn openTries(arena: std.mem.Allocator, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub f u =\n    let\n");
-    for (1..n + 1) |i| try out.print(arena, "        a{d} =\n            u?\n\n", .{i});
-    try out.appendSlice(arena, "    in\n    Ok [ a1");
+    try out.appendSlice(arena, "pub f u =\n");
+    for (1..n + 1) |i| try out.print(arena, "    a{d} =\n        u?\n\n", .{i});
+    try out.appendSlice(arena, "    Ok [ a1");
     for (2..n + 1) |i| try out.print(arena, ", a{d}", .{i});
     try out.appendSlice(arena, " ]\n");
     return out.items;
@@ -163,10 +163,8 @@ test "a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     try s.w.write("Cyclic.beni",
         \\f : Int -> Int
         \\f z =
-        \\    let
-        \\        k y =
-        \\            ( y, y ) == y
-        \\    in
+        \\    k y =
+        \\        ( y, y ) == y
         \\    z
         \\
     );
@@ -410,11 +408,11 @@ const alternating_b =
 /// and `w == w`.
 fn alternatingDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "import Pa exposing (A)\nimport Pb exposing (B)\n\n\nf x =\n    ( A (B x), [ A (B x) ] )\n\n\nv =\n    let\n        w =\n            ");
+    try out.appendSlice(arena, "import Pa exposing (A)\nimport Pb exposing (B)\n\n\nf x =\n    ( A (B x), [ A (B x) ] )\n\n\nv =\n    w =\n        ");
     for (0..depth) |_| try out.appendSlice(arena, "f (");
     try out.append(arena, '1');
     for (0..depth) |_| try out.append(arena, ')');
-    try out.appendSlice(arena, "\n    in\n    w == w\n");
+    try out.appendSlice(arena, "\n    w == w\n");
     return out.items;
 }
 /// `count` copies of `template`,
@@ -438,11 +436,11 @@ fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u
 /// `w == w`.
 fn nestedPair(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "f x =\n    ( x, [ x ] )\n\n\nv =\n    let\n        w =\n            ");
+    try out.appendSlice(arena, "f x =\n    ( x, [ x ] )\n\n\nv =\n    w =\n        ");
     for (0..depth) |_| try out.appendSlice(arena, "f (");
     try out.append(arena, '1');
     for (0..depth) |_| try out.append(arena, ')');
-    try out.appendSlice(arena, "\n    in\n    w == w\n");
+    try out.appendSlice(arena, "\n    w == w\n");
     return out.items;
 }
 // ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1049,9 +1047,9 @@ fn justChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
 
 fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "foo x0 =\n    let\n");
-    for (1..n + 1) |i| try out.print(arena, "        x{d} =\n            [ x{d} ]\n\n", .{ i, i - 1 });
-    try out.print(arena, "    in\n    List.length x{d}\n", .{n});
+    try out.appendSlice(arena, "foo x0 =\n");
+    for (1..n + 1) |i| try out.print(arena, "    x{d} =\n        [ x{d} ]\n\n", .{ i, i - 1 });
+    try out.print(arena, "    List.length x{d}\n", .{n});
     return out.items;
 }
 

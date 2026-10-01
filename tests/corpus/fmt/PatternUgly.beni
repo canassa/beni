@@ -1,5 +1,5 @@
 -- Formatter: patterns without spaces — tuple, cons, list, record, `as`,
--- constructor with parenthesised argument — in `case`, `let` and lambda
+-- constructor with parenthesised argument — in `case`, a block and lambda
 -- parameters; expected: canonical spacing, structure unchanged.
 f v = case v of
   [ (a,b), ...rest ] -> a
@@ -7,5 +7,7 @@ f v = case v of
   [ ({c} as r), ..._ ] -> c
   [ Just(Just(z)) ] -> z
   _ -> 0
-g p = let (a,b)=p in a
+g p =
+    (a,b)=p
+    a
 h = λ(a,b)->a

@@ -4,7 +4,7 @@
   (definition first
     (int 1))
   (definition second
-    (let
+    (block
       (let_def a
         (int 1))
       (let_def b

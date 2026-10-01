@@ -466,10 +466,7 @@ obligation share one rank") over-constrains a `?`. In
 
 ```elm
 f u =
-    let
-        g k =
-            k (u?)
-    in
+    g k = k (u?)
     ( g (λv -> Ok v), g (λv -> Ok (String.fromInt v)) )
 ```
 

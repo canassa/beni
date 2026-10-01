@@ -43,7 +43,7 @@
       (branch
         (pat_ctor Just
           (pat_var x))
-        (let
+        (block
           (let_def y
             (case
               (ident b)

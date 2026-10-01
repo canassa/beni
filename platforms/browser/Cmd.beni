@@ -9,7 +9,7 @@
 --! that never waits runs where that fiber would have started, with no
 --! fiber at all, so a program whose commands never wait ships no fiber
 --! runtime (§9.8.11). Nothing here sequences work: a body sequences with
---! `let`, like any other function.
+--! a block, like any other function.
 --!
 --!     update msg model =
 --!         case msg of
@@ -19,9 +19,7 @@
 --!                 ( { model | hits = hits }, Cmd.none )
 --!
 --!     search q send =
---!         let
---!             _ = Time.sleep (Time.millis 250)
---!         in
+--!         Time.sleep (Time.millis 250)
 --!         send (Got (api.search q))
 --!
 --! A **key** names the work so a later message can replace, skip, queue or
@@ -138,9 +136,7 @@ cancelAll = Cmd [ CancelAll [] ]
 --| a singleton child passes `()`.
 --|
 --|     RowMsg id m ->
---|         let
---|             ( row, cmd ) = Row.update m (rowOf model id)
---|         in
+--|         ( row, cmd ) = Row.update m (rowOf model id)
 --|         ( setRow model id row, Cmd.map cmd id (RowMsg id _) )
 pub map : Cmd a, k, (a -> msg) -> Cmd msg
     where k.compare : k, k -> Order

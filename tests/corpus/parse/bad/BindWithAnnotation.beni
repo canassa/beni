@@ -1,8 +1,6 @@
--- annotation_without_definition at 5:9: `let x : T` may only precede a
+-- annotation_without_definition at 4:5: `let x : T` may only precede a
 -- definition, and a `<-` binding is not one (§6.7).
 f g =
-    let
-        x : Int
-        x <- g 1
-    in
+    x : Int
+    x <- g 1
     x

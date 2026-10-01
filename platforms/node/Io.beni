@@ -9,9 +9,7 @@
 --!     main : Program
 --!     main =
 --!         Io.run (λ() ->
---!             let
---!                 _ = Io.sleep 10
---!             in
+--!             Io.sleep 10
 --!             Node.print "later")
 --!
 --! A primitive here is written in beni over `Task.callback` and one `impure`

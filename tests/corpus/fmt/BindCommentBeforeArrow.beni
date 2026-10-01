@@ -1,16 +1,9 @@
--- §9 forbids trailing whitespace: a comment that pushes the `<-`, the `=`
--- or a lambda's `->` onto its own line must not leave the space that was
--- going to separate it at the end of the line above.
+-- §9 forbids trailing whitespace: a comment that pushes a lambda's `->` onto
+-- its own line must not leave the space that was going to separate it at the
+-- end of the line above. (A binding's `=` or `<-` cannot be pushed so: in a
+-- block its head is on one line, language.md §12.2.)
 f r =
-    let
-        x
-            -- why the bind
-            <- readHeader r
-        y
-            -- why the definition
-            = 1
-    in
-    render x y
+    render r
         (λz
         -- why the lambda
         -> z

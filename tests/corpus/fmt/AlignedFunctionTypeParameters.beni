@@ -26,9 +26,7 @@ type alias Handlers =
 
 
 local x =
-    let
-        go : Int,
-            Int -> Int
-        go a b = a + b
-    in
+    go : Int,
+        Int -> Int
+    go a b = a + b
     go x x

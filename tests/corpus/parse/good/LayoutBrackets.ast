@@ -12,8 +12,8 @@
         (int 2))
       (field c
         (int 3))))
-  (definition inLet
-    (let
+  (definition inBinding
+    (block
       (let_def xs
         (list
           (int 1)

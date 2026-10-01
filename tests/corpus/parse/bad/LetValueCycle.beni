@@ -5,8 +5,6 @@
 -- report per binding that runs too soon is what keeps a chain of them from
 -- printing the same mistake n times.
 c =
-    let
-        a = b + 1
-        b = a
-    in
+    a = b + 1
+    b = a
     a + b

@@ -5,7 +5,7 @@
 --! Every function here takes the `Result` as its first argument and the
 --! function it applies, if any, as its last. That is what lets `|>` feed a
 --! `Result` in at the front — `result |> map toString` is
---! `map result toString` — and lets `let x <- andThen result` bind the rest of
+--! `map result toString` — and lets `x <- andThen result` bind the rest of
 --! the block as the callback. `fromMaybe` follows the same rule with the
 --! `Maybe` as its subject.
 --!
@@ -178,7 +178,7 @@ map5 ra rb rc rd re func =
 --|     andThen (Ok 1) (λx -> Ok (x + 1)) == Ok 2
 --|     andThen (Err "no") (λx -> Ok (x + 1)) == Err "no"
 --|
---| The callback comes last, so `let x <- andThen result` binds the rest of the
+--| The callback comes last, so `x <- andThen result` binds the rest of the
 --| block as the callback. The `?` operator does the same thing with less
 --| punctuation: `toInt s?` is the number, or an early return of the `Err` from
 --| the enclosing function.

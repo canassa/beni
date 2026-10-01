@@ -39,7 +39,7 @@ build_test.test.a Debug call that reachability drops does not refuse the release
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 28de5e2993ef98950c050250eac107eaadfa88a944c575f1b3fa9ea2a0e154fb
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 2b0cb078f53b796034a80e8c819d67eb508a46df29f6d1334f20b720236b5ac2
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 fd2995a8df29f3259eb1956644bc90b585460e2fa7eb90658fc867bd9e304310
-build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 56be1791ed023661f04a7e38c5e2465ead5bab7b541d26dfe5095e5467e2f4a3
+build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 764f5e2cee329fee8ad89d6b3bafc0d605cd6d4da1a7afd29df6775c11ba96b3
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 d21891b4411feeca3433c1dd6d0367a0f30236ba37185f39749b37c4c98f0129
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 8d1309072f1bc7920791bfd0fb06c05f9ec8385ed76cc231431ddbf64a80f5c2
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 03751c60832edf9c0dabf0c0c625080e50aad6a2f5a1ba18232e9a6f42b91741
@@ -61,17 +61,17 @@ build_test.test.a user module may be called `Core.List` or `Platform.Node`, beca
 build_test.test.a view formatted renders the page the view rendered #0 a8717e460b1af8fa74b626a92c2544ac02b04e7694bccaa1201c0d0a2fc216cd
 build_test.test.a view formatted renders the page the view rendered #1 a2aeebce77014e0fb2126f808bcaa18ccf04ffa59aebf0432809dca49049a812
 build_test.test.an unannotated pub function constant with a constraint builds and runs #0 b8c2ffe64db859ad949bad68a31de60b2d7723fad1b913452056f2f39b5b161f
-build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 136675961fa92bdada710f1b9d55058bdd58f98c499ffaeda8e0b1bb942558fe
+build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 200946bf2b82163fd09c936aa386f2dc6fc4f19f18d73cd0546c5c440afe7f21
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 5722f21113845c2a040bb4840f7755059504dfef2b1701d7188e5e7b6225e591
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 b3af38da192076b8260762476515b965fdd42f25234731e20433831744f7d4ef
-build_test.test.core List's loops read and write their arrays in place #0 9ff6b02fd6b45c93467804e5be0747f068426192f91af9d76ea674279454990a
+build_test.test.core List's loops read and write their arrays in place #0 1becd4c76e8fa21f92e745c3ead442c3c8d063887775b7f7507e7609aad94800
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 8696ad4f43cc3b35d7b58d871fa5c5fc4d90001894309f81cfe759340b672e10
 build_test.test.modules import each other through ESM, and the program runs #0 b4a6cd4858ed70d46df5f806b884bb61c179a7bfa8d0f5b302e8660a28241c09
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 6e17135dbc986b00fa3d9fdfdf595eaf24284fab757665d3d7464e1358b4fea3
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 a9faac514297eed4317a83be6b4220466db1106c9bc5609dee219ad849bf9c8c
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 e8e9cb32c8d0db73d39a2f109196ff689451bf659cac1bc5231149482eb09d7f
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 a9231d1b3ad944f236e84f92975a487ad41094656412e15f4f05a1973775a195
+cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 62f24e215582dd983b690d136415e2217abd82b44b20625c9b772ed0100f43fc
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 8c54fde0fe05086e657a02a03ab08c44fc882f28e3306e33bc3616c0241de069
-cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 0c962776157e4b73a548ccf2a8fcb29c2c6f3b6bb7e0a42bc4e27d1c323ceafe
 cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 c5e08ebabe063bc77328ff0413abdf1b6c22ad66d5180d8eba6fe09d1f399067
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 f679e10ed548efb6cc37fa2215f5d03601a7eab5375bafd04e0e18bed57a9bff
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 a17129b3ceaa1be25db8f90c8a155038d990050b712296c0bce382198c1a7664
@@ -101,11 +101,11 @@ cache_test.test.a warm rebuild is a cold build: the custom eq and compare remove
 cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 6cd57b8fa8d43328045174e57a0b4235b9f2434a8fdf0186e23fbcbfe4d0c32c
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache #0 1e0236f04fe2f84bbe9c8e78232099e7ca221209286178d8c20648b52077a62a
 cache_test.test.an imported type of 4 097 parameters compares in the wide form with only the importer edited #0 a97d5cd582b694e352e84f4a74b53a1dc7b7acf4e610bb2e1b8532c4fc800ede
-cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 f9d1aee17afdf1bd588099311a23ae25d703a7677858118477f179613815ddb4
+cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 fe530a0820e3623f5809d006afcb2c3a3c545b68b2ea28ac664a30c4d7c1f833
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 f8d5fbf06d3cc841450e819b6e1208f88270c2be2c40d350409cd96128e94006
 devloop_test.test.beni new --platform=node writes a program that runs #0 fa4c2a1b71285cd863f27b939fa6be3c2f526db705bcc6da1455172215673cfa
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 b31a1a1241af146481b0d86eb82e5fed50a0ef103fb5ad35167650612526acee
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 9a1f325fe2d0f2d1da18a53f96135113cbc3d16476af6aa7440c1f6bfb7886fe
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 ef06f575fde284e5d117447ff766f7c2d9fecc19d13d020ad49924a38f546ebd
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 524251e675fd990301b69f467fd8a6e5046f86a676b17df06ce9665867ddec95
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 bb242c6107fc00d5cfbe1d11d6a2c839eddf8943ebdb4bde081f839d92ddbc81

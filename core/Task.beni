@@ -167,10 +167,8 @@ foreign impure popFinalizer : a -> a
 --|
 --|     both a b =
 --|         Task.scope (λs ->
---|             let
---|                 x = Task.spawnIn s a
---|                 y = Task.spawnIn s b
---|             in
+--|             x = Task.spawnIn s a
+--|             y = Task.spawnIn s b
 --|             ( Task.join x, Task.join y ))
 pub scope : (Scope -> a) -> a
 scope body =

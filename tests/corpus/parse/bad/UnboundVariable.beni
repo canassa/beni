@@ -4,7 +4,5 @@ x = undefinedThing
 
 
 y =
-    let
-        a = missing
-    in
+    a = missing
     a

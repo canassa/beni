@@ -1,6 +1,6 @@
--- Operators, `then`, `else`, `of`, `->`, `in`, `=`, `:`, `|` and arguments
+-- Operators, `then`, `else`, `of`, `->`, `=`, `:`, `|` and arguments
 -- may all begin a line (§4 rule 5) as long as they sit right of the enclosing
--- block's indent.
+-- block's indent; a binding's own `=` stays on its head's line in a block (§12.2).
 type Msg
   = Inc
   | Dec
@@ -45,14 +45,6 @@ branch m =
         Nothing
             -> 0
 
-
-lets =
-    let
-        a
-            =
-                1
-    in
-    a
 
 
 args =

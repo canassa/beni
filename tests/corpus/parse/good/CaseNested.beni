@@ -22,15 +22,13 @@ combineLet : Maybe Int, Maybe Int -> Int
 combineLet a b =
     case a of
         Just x ->
-            let
-                y =
-                    case b of
-                        Just z ->
-                            z
+            y =
+                case b of
+                    Just z ->
+                        z
 
-                        Nothing ->
-                            0
-            in
+                    Nothing ->
+                        0
             x + y
 
         Nothing ->

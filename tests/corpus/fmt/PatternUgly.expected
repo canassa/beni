@@ -1,5 +1,5 @@
 -- Formatter: patterns without spaces — tuple, cons, list, record, `as`,
--- constructor with parenthesised argument — in `case`, `let` and lambda
+-- constructor with parenthesised argument — in `case`, a block and lambda
 -- parameters; expected: canonical spacing, structure unchanged.
 f v =
     case v of
@@ -16,9 +16,7 @@ f v =
 
 
 g p =
-    let
-        ( a, b ) = p
-    in
+    ( a, b ) = p
     a
 
 

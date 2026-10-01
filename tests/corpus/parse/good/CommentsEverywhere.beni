@@ -1,7 +1,7 @@
 -- Comments of all three kinds (§2.3) in every allowed position: module doc
 -- (two blocks merged across a blank line), doc on a pub declaration, on a
 -- private one, on a type, trailing comments after imports / `=` / `of` /
--- constructors / bodies, between let bindings, before `in`, inside `then`,
+-- constructors / bodies, between a block's bindings, before its value, inside `then`,
 -- before `else`, between case branches, inside a list, between an annotation
 -- and its definition, `---` dashes, and `--|x` without a space.
 --! Module doc line one.
@@ -34,17 +34,15 @@ palette =
 --| Doc blocks may span lines.
 count : Int
 count = -- trailing after `=`
-    let
-        -- before the first binding
-        a =
-            1 -- trailing on a body
+    -- before the first binding
+    a =
+        1 -- trailing on a body
 
-        -- between bindings
-        b =
-            2
-        -- before `in`
-    in
-    a + b -- trailing on the in-expression
+    -- between bindings
+    b =
+        2
+    -- before the value
+    a + b -- trailing on the value
 
 
 pick : Bool -> Int

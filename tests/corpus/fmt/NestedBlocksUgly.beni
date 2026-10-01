@@ -1,14 +1,12 @@
--- Formatter: nested let/case/if/lambda at inconsistent indentation levels
--- (2, 3, 5, 7 spaces); expected: every level re-indented to multiples of 4
--- with the structure unchanged.
+-- Formatter: nested blocks, `case`, `if` and lambdas at inconsistent
+-- indentation levels (2, 3, 5, 7 spaces); expected: every level re-indented
+-- to multiples of 4 with the structure unchanged.
 run m flag =
   case m of
      Just n ->
        if flag then
-           let
              doubled = n * 2
-           in
-               doubled
+             doubled
        else (λk ->
               case k of
                    0 -> 1

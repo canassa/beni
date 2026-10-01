@@ -4,13 +4,11 @@
 -- zone. Only a FUNCTION can be recursive, which is why `countDown` — written
 -- the same way one line down — is legal.
 h =
-    let
-        x = x + 1
+    x = x + 1
 
-        countDown k =
-            if k == 0 then
-                0
-            else
-                countDown (k - 1)
-    in
+    countDown k =
+        if k == 0 then
+            0
+        else
+            countDown (k - 1)
     x + countDown 3

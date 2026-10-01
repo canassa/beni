@@ -28,13 +28,11 @@ broken =
 
 mapHelp xs a o i n func b same =
     if i < n then
-        let
-            x = at a (o + i)
-            y = func x
+        x = at a (o + i)
+        y = func x
 
-            ( p, q ) = ( x, y )
-            go k = k + p + q
-        in
+        ( p, q ) = ( x, y )
+        go k = k + p + q
         go 0
     else
         b

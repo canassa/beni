@@ -1,5 +1,5 @@
 -- pipe_rhs_not_application at 8:11 (the `λ`), 12:10 (the `if`), 16:10
--- (the `case`), 26:12 (the `let`), 34:14 (the `+`) and 38:13 (the `?`):
+-- (the `case`), 25:14 (the `+`) and 29:13 (the `?`):
 -- the right operand of `|>` must be an application (§6.7), because the
 -- left operand becomes its FIRST argument and a block form, an operator
 -- chain and a `?` have no argument list to insert into. §3's rule letting
@@ -19,15 +19,6 @@ caseRhs f m =
 
         Nothing ->
             f
-
-
-letRhs f x =
-    x
-        |> let
-               y =
-                   f x
-           in
-           y
 
 
 chainRhs x f =

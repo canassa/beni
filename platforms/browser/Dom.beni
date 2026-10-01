@@ -66,10 +66,8 @@ pub foreign impure viewport : () -> Viewport
 --| Wait until what has been sent is on the page: at once when no render is
 --| queued, otherwise until the after-render phase of the flush that is.
 --|
---|     let
---|         _ = send (Opened id)
---|         _ = Dom.rendered ()
---|     in
+--|     _ = send (Opened id)
+--|     Dom.rendered ()
 --|     Dom.focus "edit-${id}"
 pub rendered : () -> ()
 rendered () = Task.callback (λresume -> Browser.onRendered resume)

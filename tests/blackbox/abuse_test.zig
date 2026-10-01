@@ -412,9 +412,7 @@ test "a pattern with `as` and no name is a syntax error, not a panic" {
     defer w.deinit();
     try w.write("As.beni",
         \\f =
-        \\    let
-        \\        (x as) = 1
-        \\    in
+        \\    (x as) = 1
         \\    x
         \\
     );
@@ -431,7 +429,7 @@ test "a pattern with `as` and no name is a syntax error, not a panic" {
     try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
         .code = .expected_token,
         .severity = .@"error",
-        .span = .{ .file = "As.beni", .start = .{ .line = 3, .col = 14 }, .end = .{ .line = 3, .col = 15 } },
+        .span = .{ .file = "As.beni", .start = .{ .line = 2, .col = 10 }, .end = .{ .line = 2, .col = 11 } },
         .title = "EXPECTED TOKEN",
         .message = "I was parsing a pattern and ran into `)`, but I was expecting `a name` here.",
     }}, r.diagnostics);
@@ -1144,13 +1142,13 @@ test "a flat let past what a summed budget allows is accepted: its bindings are 
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
-    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n");
+    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n");
     for (1..66) |i| {
-        try src.print(gpa, "        x{d} =\n            x{d}", .{ i, i - 1 });
+        try src.print(gpa, "    x{d} =\n        x{d}", .{ i, i - 1 });
         for (0..64) |_| try src.appendSlice(gpa, " + 1");
         try src.appendSlice(gpa, "\n\n");
     }
-    try src.appendSlice(gpa, "    in\n    x65\n");
+    try src.appendSlice(gpa, "    x65\n");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -1177,9 +1175,9 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
-    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n        a =\n            1\n\n        b =\n            x0");
+    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    a =\n        1\n\n    b =\n        x0");
     for (0..4_097) |_| try src.appendSlice(gpa, " + 1");
-    try src.appendSlice(gpa, "\n    in\n    b\n");
+    try src.appendSlice(gpa, "\n    b\n");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐

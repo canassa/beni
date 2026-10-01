@@ -1530,11 +1530,9 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
     defer w.deinit();
     try w.write("Main.beni",
         \\x =
-        \\    let
-        \\        a = 1
-        \\      b = 2
-        \\    in
-        \\    a + b
+        \\    case 1 of
+        \\        1 -> 1
+        \\      _ -> 2
         \\
     );
 
@@ -1553,21 +1551,21 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 7 }, .end = .{ .line = 4, .col = 8 } },
         .title = "UNEXPECTED TOKEN",
-        .message = "I was parsing the bindings of this `let` and ran into `b` on column 7.\n" ++
+        .message = "I was parsing the branches of this `case` and ran into `_` on column 7.\n" ++
             "\n" ++
-            "Every binding must start on the same column as the first one, `a` on column 9,\n" ++
-            "and `in` ends the list.",
+            "Every branch must start on the same column as the first one, `1` on column 9,\n" ++
+            "and the branches end at the first token left of that column.",
     }}), json.diagnostics);
     try testing.expectEqual(@as(u8, 1), text.exit_code);
     try testing.expectEqualStrings(
         "-- UNEXPECTED TOKEN ---------------------------------------------- Main.beni:4:7\n" ++
             "\n" ++
-            "I was parsing the bindings of this `let` and ran into `b` on column 7.\n" ++
+            "I was parsing the branches of this `case` and ran into `_` on column 7.\n" ++
             "\n" ++
-            "Every binding must start on the same column as the first one, `a` on column 9,\n" ++
-            "and `in` ends the list.\n" ++
+            "Every branch must start on the same column as the first one, `1` on column 9,\n" ++
+            "and the branches end at the first token left of that column.\n" ++
             "\n" ++
-            "4|      b = 2\n" ++
+            "4|      _ -> 2\n" ++
             "        ^\n",
         text.stderr,
     );
@@ -1991,16 +1989,10 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
     defer w.deinit();
     try w.write("Main.beni",
         \\top n =
-        \\    let
-        \\        a = n + 1
-        \\    in
-        \\    let
-        \\        b =
-        \\            let
-        \\                c = a
-        \\            in
-        \\            c
-        \\    in
+        \\    a = n + 1
+        \\    b =
+        \\        c = a
+        \\        c
         \\    -- the value
         \\    a + b
         \\
@@ -2010,9 +2002,7 @@ test "fmt --migrate-let writes a let in each position as the block it becomes" {
         \\        Just x ->
         \\            List.map [ x ]
         \\                (λy ->
-        \\                    let
-        \\                        z = y
-        \\                    in
+        \\                    z = y
         \\                    z
         \\                )
         \\
@@ -2527,10 +2517,8 @@ test "check reports a let binding that shadows a parameter" {
     defer w.deinit();
     try w.write("Main.beni",
         \\f x =
-        \\    let
-        \\        x =
-        \\            1
-        \\    in
+        \\    x =
+        \\        1
         \\    x
         \\
     );
@@ -2547,7 +2535,7 @@ test "check reports a let binding that shadows a parameter" {
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
         .code = .shadowing,
         .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 9 }, .end = .{ .line = 3, .col = 10 } },
+        .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 6 } },
         .title = "SHADOWING",
         .message = "The name `x` is already bound on line 1.\n" ++
             "\n" ++
@@ -3098,17 +3086,13 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\
         \\pub same : Bool
         \\same =
-        \\    let
-        \\        n = None
-        \\    in
+        \\    n = None
         \\    n == n
         \\
         \\
         \\pub differ : Bool
         \\differ =
-        \\    let
-        \\        n = None
-        \\    in
+        \\    n = None
         \\    n /= n
         \\
         \\
@@ -3432,10 +3416,8 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
         \\
         \\
         \\total xs =
-        \\    let
-        \\        step a b =
-        \\            a + b
-        \\    in
+        \\    step a b =
+        \\        a + b
         \\    List.foldl xs 0 step
         \\
     );
@@ -3495,10 +3477,8 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\each f xs =
-        \\    let
-        \\        visit x =
-        \\            f x
-        \\    in
+        \\    visit x =
+        \\        f x
         \\    List.map xs visit
         \\
         \\
@@ -6303,11 +6283,9 @@ test "the checker writes the annotation escape and the infinite type as checker.
     defer w.deinit();
     try w.write("Texts.beni",
         \\f x =
-        \\    let
-        \\        g : a -> a
-        \\        g y =
-        \\            x
-        \\    in
+        \\    g : a -> a
+        \\    g y =
+        \\        x
         \\    g "hello"
         \\
         \\
@@ -6319,14 +6297,14 @@ test "the checker writes the annotation escape and the infinite type as checker.
         .{
             .code = .rigid_mismatch,
             .severity = .@"error",
-            .span = .{ .file = "Texts.beni", .start = .{ .line = 5, .col = 13 }, .end = .{ .line = 5, .col = 14 } },
+            .span = .{ .file = "Texts.beni", .start = .{ .line = 4, .col = 9 }, .end = .{ .line = 4, .col = 10 } },
             .title = "TYPE MISMATCH",
             .message = "The type annotation of `g` promises more than its body keeps:\n\n    g : a -> a\n\nThe annotation says `a` can be ANY type, but the body ties `a` to a type that\ncomes from `f`, the definition `g` is written inside. That type is fixed for\neach call of `f`, so `g` does not work for every `a`.\n\nHint: write the enclosing definition's type in the annotation instead of `a`,\nor remove the annotation and let the type be inferred.\n",
         },
         .{
             .code = .infinite_type,
             .severity = .@"error",
-            .span = .{ .file = "Texts.beni", .start = .{ .line = 10, .col = 3 }, .end = .{ .line = 10, .col = 4 } },
+            .span = .{ .file = "Texts.beni", .start = .{ .line = 8, .col = 3 }, .end = .{ .line = 8, .col = 4 } },
             .title = "INFINITE TYPE",
             .message = "I am inferring a weird self-referential type for `r`:\n\nHere is my best effort at writing it down, with `a` standing for the whole\ntype wherever it repeats inside itself:\n\n    a = { r | x : a }\n\nHint: the type would go on forever, so I gave up. This usually means a\ndefinition is missing an argument, or is being used with one argument too\nmany, somewhere inside itself.\n",
         },
@@ -6388,16 +6366,14 @@ test "a merge that gives an `err` class structure voids the acyclicity proofs" {
     defer w.deinit();
     try w.write("Main.beni",
         \\f w =
-        \\    let
-        \\        y4 =
-        \\            { w | a = [ w ] }
+        \\    y4 =
+        \\        { w | a = [ w ] }
         \\
-        \\        y7 =
-        \\            ( y4, w )
+        \\    y7 =
+        \\        ( y4, w )
         \\
-        \\        y8 =
-        \\            ( y7, w )
-        \\    in
+        \\    y8 =
+        \\        ( y7, w )
         \\    [ y8, y7 ]
         \\
     );
@@ -6415,7 +6391,7 @@ test "a merge that gives an `err` class structure voids the acyclicity proofs" {
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
         infiniteType("Main.beni", 1, 3, 1, "for `w`", "a = ( a, a )"),
-        infiniteType("Main.beni", 2, 5, 3, "for `y4`", "a = { r | a : List a }"),
+        infiniteType("Main.beni", 2, 5, 2, "for `y4`", "a = { r | a : List a }"),
     }), r.diagnostics);
     // Both cycles poisoned: nothing cyclic reaches the scheme.
     try testing.expectEqualStrings("module Main\n  f : ? -> List ?\n    w : ?\n    y4 : ?\n    y7 : ?\n    y8 : ?\n", types.stdout);
@@ -6442,16 +6418,14 @@ test "an infinite type through a schema alias's `err` is still refused" {
         \\
         \\h : Models.PrivRecW -> Int
         \\h w =
-        \\    let
-        \\        y7 =
-        \\            ( w, w )
+        \\    y7 =
+        \\        ( w, w )
         \\
-        \\        y8 =
-        \\            ( y7, w )
+        \\    y8 =
+        \\        ( y7, w )
         \\
-        \\        z =
-        \\            [ y8, y7 ]
-        \\    in
+        \\    z =
+        \\        [ y8, y7 ]
         \\    0
         \\
     );
@@ -6469,7 +6443,7 @@ test "an infinite type through a schema alias's `err` is still refused" {
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
         // `w` took the name `PrivRecW` and met a tuple, so it shows its
         // expansion, which is the cycle itself (checker-v2.md §7.1).
-        infiniteType("p/Main.beni", 6, 5, 3, "for `z`", "a = ( a, a )"),
+        infiniteType("p/Main.beni", 6, 5, 2, "for `z`", "a = ( a, a )"),
         unknownNope(),
     }), r.diagnostics);
 }
@@ -6508,16 +6482,14 @@ test "a cycle closed between a receiver's test and its positions' is found" {
         \\
         \\
         \\f x y =
-        \\    let
-        \\        k =
-        \\            ( [ ( x, y ) ], P (Q y [ x ]) )
+        \\    k =
+        \\        ( [ ( x, y ) ], P (Q y [ x ]) )
         \\
-        \\        _ =
-        \\            x.eq y
+        \\    _ =
+        \\        x.eq y
         \\
-        \\        t =
-        \\            k == x
-        \\    in
+        \\    t =
+        \\        k == x
         \\    t
         \\
     );
@@ -6533,7 +6505,7 @@ test "a cycle closed between a receiver's test and its positions' is found" {
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
-        infiniteType("Main.beni", 28, 15, 2, "here", "a = List a"),
+        infiniteType("Main.beni", 27, 11, 2, "here", "a = List a"),
     }), r.diagnostics);
 }
 
@@ -6566,16 +6538,14 @@ test "a record merge past a proved `err` row end voids the proofs" {
         \\
         \\h : R Models.PrivRecW -> Int
         \\h w0 =
-        \\    let
-        \\        q =
-        \\            { w0 | a = 1 }
+        \\    q =
+        \\        { w0 | a = 1 }
         \\
-        \\        ee =
-        \\            []
+        \\    ee =
+        \\        []
         \\
-        \\        p =
-        \\            [ q, { a = 1, b = ee } ]
-        \\    in
+        \\    p =
+        \\        [ q, { a = 1, b = ee } ]
         \\    case p of
         \\        [ r, ..._ ] ->
         \\            List.length [ r.b, [ r.b ] ]
@@ -6596,7 +6566,7 @@ test "a record merge past a proved `err` row end voids the proofs" {
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
-        infiniteType("p/Main.beni", 21, 11, 1, "for `r`", "a = List a"),
+        infiniteType("p/Main.beni", 19, 11, 1, "for `r`", "a = List a"),
         unknownNope(),
     }), r.diagnostics);
 }
@@ -6621,16 +6591,14 @@ test "an interior node that became `err` and then structure voids the proofs" {
         \\
         \\
         \\f v =
-        \\    let
-        \\        q =
-        \\            ( ( [ v ], "s" ), "t" )
+        \\    q =
+        \\        ( ( [ v ], "s" ), "t" )
         \\
-        \\        z =
-        \\            List.length [ fst (fst q), bogus ]
+        \\    z =
+        \\        List.length [ fst (fst q), bogus ]
         \\
-        \\        y =
-        \\            List.length [ ( fst q, "s" ), fst q ]
-        \\    in
+        \\    y =
+        \\        List.length [ ( fst q, "s" ), fst q ]
         \\    q
         \\
     );
@@ -6649,7 +6617,7 @@ test "an interior node that became `err` and then structure voids the proofs" {
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
         .code = .unbound_variable,
         .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 12, .col = 40 }, .end = .{ .line = 12, .col = 45 } },
+        .span = .{ .file = "Main.beni", .start = .{ .line = 11, .col = 36 }, .end = .{ .line = 11, .col = 41 } },
         .title = "NAMING ERROR",
         .message = "I cannot find a `bogus` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
     }}), r.diagnostics);

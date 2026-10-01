@@ -1,8 +1,8 @@
 -- Brackets do not suspend layout (§4 rule 6, §12.2 B3): inside `( [ {` a token
 -- needs a column right of the block it is in, or that column itself when it
 -- cannot start an expression, so a top-level list may sit at column 2 with its
--- commas and closing bracket under the first, and inside `let` and `case`
--- bodies the same rule applies against the binding's or branch's column. A
+-- commas and closing bracket under the first, and inside a binding's and a
+-- branch's bodies the same rule applies against their own column. A
 -- token left of the block ends it: `parse/bad/BlockTokenLeftOfColumn`.
 list =
  [ 1
@@ -18,13 +18,11 @@ record =
   }
 
 
-inLet =
-    let
-        xs =
-            [ 1
-             , 2
-             ]
-    in
+inBinding =
+    xs =
+        [ 1
+         , 2
+         ]
     xs
 
 

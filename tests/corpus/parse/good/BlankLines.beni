@@ -14,16 +14,14 @@ first =
 
 
 second =
-    let
 
-        a =
-            1
+    a =
+        1
 
 
-        b =
-            2
+    b =
+        2
 
-    in
 
     a + b
 

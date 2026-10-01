@@ -1,17 +1,13 @@
--- shadowing at 6:9: a `let` binding reusing a parameter name. Second at
+-- shadowing at 5:5: a `let` binding reusing a parameter name. Second at
 -- 18:14: a `case` pattern variable reusing a `let` binding's name. Sibling
 -- scopes reusing `k` (lines 26 and 27) are fine.
 f x =
-    let
-        x = 1
-    in
+    x = 1
     x
 
 
 g m =
-    let
-        n = 2
-    in
+    n = 2
     case m of
         Just n ->
             n

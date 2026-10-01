@@ -5076,12 +5076,10 @@ test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
 test "`<-` binds the rest of the block as the call's last argument (§6.7)" {
     try expectDecls(
         \\f s =
-        \\    let
-        \\        n = 1
+        \\    n = 1
         \\
-        \\        h <- Result.andThen s
-        \\        t = h
-        \\    in
+        \\    h <- Result.andThen s
+        \\    t = h
         \\    max t n
         \\
     ,
@@ -5119,13 +5117,11 @@ test "`<-` binds the rest of the block as the call's last argument (§6.7)" {
 test "`?` becomes a try that returns from the innermost definition with parameters" {
     try expectDecls(
         \\f x =
-        \\    let
-        \\        g y =
-        \\            y?
+        \\    g y =
+        \\        y?
         \\
-        \\        c =
-        \\            x?
-        \\    in
+        \\    c =
+        \\        x?
         \\    g c?
         \\
     ,
@@ -5157,15 +5153,13 @@ test "`?` becomes a try that returns from the innermost definition with paramete
 test "`?` in a top-level constant, even under let constants, is question_outside_function" {
     try expectErrors(
         \\x =
-        \\    let
-        \\        y =
-        \\            x?
-        \\    in
+        \\    y =
+        \\        x?
         \\    y?
         \\
     , .{}, &.{
-        .{ .code = .question_outside_function, .line = 4, .col = 14 },
-        .{ .code = .question_outside_function, .line = 6, .col = 6 },
+        .{ .code = .question_outside_function, .line = 3, .col = 10 },
+        .{ .code = .question_outside_function, .line = 4, .col = 6 },
     });
 }
 
@@ -5372,14 +5366,12 @@ test "every pattern kind lowers, binding its variables as locals of the right ki
 test "let patterns and annotated let definitions" {
     try expectDecls(
         \\f p =
-        \\    let
-        \\        ( a, b ) =
-        \\            p
+        \\    ( a, b ) =
+        \\        p
         \\
-        \\        n : Int
-        \\        n =
-        \\            a
-        \\    in
+        \\    n : Int
+        \\    n =
+        \\        a
         \\    ( b, n )
         \\
     ,
@@ -5622,34 +5614,32 @@ test "sibling scopes may reuse a name; nested ones may not" {
 test "let bindings are in scope in every body, but a value that names a later value is reported" {
     try expectErrors(
         \\f x =
-        \\    let
-        \\        a =
-        \\            b
+        \\    a =
+        \\        b
         \\
-        \\        b =
-        \\            a
+        \\    b =
+        \\        a
         \\
-        \\        x =
-        \\            1
+        \\    x =
+        \\        1
         \\
-        \\        a =
-        \\            2
-        \\    in
+        \\    a =
+        \\        2
         \\    a
         \\
     , .{}, &.{
-        // `b` RESOLVES — every binding of a `let` is in scope in every body
+        // `b` RESOLVES — every binding of a block is in scope in every body
         // (§7), which is why this is not `unbound_variable` — but reading it
         // where `a` is initialised reads a `const` that has no value yet, so
         // it is `let_forward_reference`.
-        .{ .code = .let_forward_reference, .line = 4, .col = 13 },
+        .{ .code = .let_forward_reference, .line = 3, .col = 9 },
         // `b = a` reads the SECOND `a`, because the shadowing one is bound
         // too and is the one in scope, so it is a forward reference as well.
         // The program is broken twice over; the point here is that neither
         // report is `unbound_variable`.
-        .{ .code = .let_forward_reference, .line = 7, .col = 13 },
-        .{ .code = .shadowing, .line = 9, .col = 9 },
-        .{ .code = .shadowing, .line = 12, .col = 9 },
+        .{ .code = .let_forward_reference, .line = 6, .col = 9 },
+        .{ .code = .shadowing, .line = 8, .col = 5 },
+        .{ .code = .shadowing, .line = 11, .col = 5 },
     });
 }
 

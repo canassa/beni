@@ -4123,32 +4123,28 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
 
 // ---- Expressions -------------------------------------------------------------
 
-test "let: bindings indented 4, in aligned with let, body aligned with let, blank lines kept or dropped" {
+test "a block: items at 4, the value last, a nested block indented 4 more, runs of blank lines one" {
     try check(
         \\total xs =
-        \\  let
         \\      count : Int
         \\      count = List.length xs
         \\      ( low, high ) = ( 1, 2 )
         \\
         \\
-        \\      spread = let factor = 2 in high * factor
-        \\    in
-        \\     count + spread
+        \\      spread =
+        \\         factor = 2
+        \\         high * factor
+        \\      count + spread
         \\
     ,
         \\total xs =
-        \\    let
-        \\        count : Int
-        \\        count = List.length xs
-        \\        ( low, high ) = ( 1, 2 )
+        \\    count : Int
+        \\    count = List.length xs
+        \\    ( low, high ) = ( 1, 2 )
         \\
-        \\        spread =
-        \\            let
-        \\                factor = 2
-        \\            in
-        \\            high * factor
-        \\    in
+        \\    spread =
+        \\        factor = 2
+        \\        high * factor
         \\    count + spread
         \\
     );
@@ -4462,8 +4458,8 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\    else c
         \\g = decode <|
         \\      λx -> x + 1
-        \\h = foo <| let
-        \\     a = 1 in a
+        \\h = foo <| case x of
+        \\     A -> 1
         \\
     ,
         \\f =
@@ -4481,10 +4477,9 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\
         \\h =
         \\    foo <|
-        \\        let
-        \\            a = 1
-        \\        in
-        \\        a
+        \\        case x of
+        \\            A ->
+        \\                1
         \\
     );
 }
@@ -4492,12 +4487,11 @@ test "a chain of two operands ending in a block keeps the operator at the end of
 test "`_` is an ordinary argument, and `<-` bindings print on one line and are never aligned (§9)" {
     try check(
         \\partial xs = List.map (add    1    _) xs
-        \\pipeline r = let
-        \\    scope <- Task.scope
-        \\    conn   <-   Task.bracket (λ() -> Db.open r.url) Db.close
-        \\    a = 1
-        \\    h <- Result.andThen (readHeader r)
-        \\  in
+        \\pipeline r =
+        \\  scope <- Task.scope
+        \\  conn   <-   Task.bracket (λ() -> Db.open r.url) Db.close
+        \\  a = 1
+        \\  h <- Result.andThen (readHeader r)
         \\  render scope conn a h
         \\
     ,
@@ -4505,12 +4499,10 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
         \\
         \\
         \\pipeline r =
-        \\    let
-        \\        scope <- Task.scope
-        \\        conn <- Task.bracket (λ() -> Db.open r.url) Db.close
-        \\        a = 1
-        \\        h <- Result.andThen (readHeader r)
-        \\    in
+        \\    scope <- Task.scope
+        \\    conn <- Task.bracket (λ() -> Db.open r.url) Db.close
+        \\    a = 1
+        \\    h <- Result.andThen (readHeader r)
         \\    render scope conn a h
         \\
     );
@@ -5073,7 +5065,9 @@ test "every pattern form with canonical spacing" {
         \\  "s" -> 3
         \\  () -> 4
         \\  _ -> 0
-        \\g p = let (a,b)=p in a
+        \\g p =
+        \\  (a,b)=p
+        \\  a
         \\h = λ(a,b)->a
         \\k (Just x) { a } ( b, c ) = -x
         \\
@@ -5101,9 +5095,7 @@ test "every pattern form with canonical spacing" {
         \\
         \\
         \\g p =
-        \\    let
-        \\        ( a, b ) = p
-        \\    in
+        \\    ( a, b ) = p
         \\    a
         \\
         \\
@@ -5244,31 +5236,29 @@ test "comments in every position stay attached, own-line at their block's indent
         \\  | B
         \\-- before f
         \\f x = -- after equals
-        \\  let
-        \\        -- before binding
+        \\    -- before binding
         \\     y = 1 -- after body
         \\
-        \\        -- before in
-        \\  in
-        \\        -- before in-expression
-        \\  if x then -- after then
-        \\      y
-        \\         -- before else
-        \\  else
-        \\      -- in else
-        \\      case x of -- after of
-        \\             -- before branch
-        \\          True -> 1 -- after branch
-        \\                -- between branches
-        \\          False -> { a = [ 1 -- in list
-        \\                   , 2
+        \\    -- before the value
+        \\        -- before the value expression
+        \\     if x then -- after then
+        \\         y
+        \\            -- before else
+        \\     else
+        \\         -- in else
+        \\         case x of -- after of
+        \\                -- before branch
+        \\             True -> 1 -- after branch
+        \\                   -- between branches
+        \\             False -> { a = [ 1 -- in list
+        \\                      , 2
         \\
-        \\                   -- before an element
-        \\                   , 3
-        \\                   -- before close
-        \\                   ] -- after the list
-        \\                   -- before a field
-        \\                   , b = 2 }
+        \\                      -- before an element
+        \\                      , 3
+        \\                      -- before close
+        \\                      ] -- after the list
+        \\                      -- before a field
+        \\                      , b = 2 }
         \\-- at the end of the file
         \\
         \\-- and one more
@@ -5287,13 +5277,11 @@ test "comments in every position stay attached, own-line at their block's indent
         \\
         \\-- before f
         \\f x = -- after equals
-        \\    let
-        \\        -- before binding
-        \\        y = 1 -- after body
+        \\    -- before binding
+        \\    y = 1 -- after body
         \\
-        \\        -- before in
-        \\    in
-        \\    -- before in-expression
+        \\    -- before the value
+        \\    -- before the value expression
         \\    if x then -- after then
         \\        y
         \\        -- before else
@@ -5415,11 +5403,12 @@ test "the 100-column boundary: a line of exactly 100 fits, 101 does not" {
     try check("xs = [ " ++ item_93 ++ " ]\n", "xs =\n    [ " ++ item_93 ++ "\n    ]\n");
     // The same width measured at the deeper indentation of a binding:
     // `        x = [ ` + 84 + ` ]` is exactly 100, and one more breaks the
-    // list, as `            [ ` + 85 + ` ]` is 101 on the line below.
+    // list, as `            [ ` + 85 + ` ]` is 101 on the line below. The
+    // binding is in a block nested in a block, at column 9.
     const wide_84 = "\"" ++ "b" ** 82 ++ "\"";
-    try check("f =\n  let\n   x = [ " ++ wide_84 ++ " ]\n  in x\n", "f =\n    let\n        x = [ " ++ wide_84 ++ " ]\n    in\n    x\n");
+    try check("f =\n  g =\n   x = [ " ++ wide_84 ++ " ]\n   x\n  g\n", "f =\n    g =\n        x = [ " ++ wide_84 ++ " ]\n        x\n    g\n");
     const wide_85 = "\"" ++ "b" ** 83 ++ "\"";
-    try check("f =\n  let\n   x = [ " ++ wide_85 ++ " ]\n  in x\n", "f =\n    let\n        x =\n            [ " ++ wide_85 ++ "\n            ]\n    in\n    x\n");
+    try check("f =\n  g =\n   x = [ " ++ wide_85 ++ " ]\n   x\n  g\n", "f =\n    g =\n        x =\n            [ " ++ wide_85 ++ "\n            ]\n        x\n    g\n");
 }
 
 // ---- Robustness ----------------------------------------------------------------
@@ -5501,7 +5490,7 @@ const stress_decls = [_][]const u8{
     "foreign type Ft{d} a b\n",
     "c{d} m =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
     "c2{d} m = case m of\n  Just n -> n\n  Nothing -> 0\n",
-    "l{d} =\n    let\n        a = 1\n\n        b : Int\n        b = 2\n        ( p, q ) = ( a, b )\n    in\n    a + b + p + q\n",
+    "l{d} =\n    a = 1\n\n    b : Int\n    b = 2\n    ( p, q ) = ( a, b )\n    a + b + p + q\n",
     "i{d} x = if x then 1 else if not x then 2 else 3\n",
     "i2{d} x = if aVeryLongConditionNameNumberOne x && aVeryLongConditionNameNumberTwo x then aVeryLongThenBranch x else 0\n",
     "col{d} = ( [ 1, 2, 3 ], { a = 1, b = \"${x} and ${ y }\" }, ( 1, 2 ), [], {}, () )\n",
@@ -5520,11 +5509,11 @@ const stress_decls = [_][]const u8{
     "app{d} = List.foldl (λitem acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
     "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
     "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)\n",
-    "cmt{d} x = -- after equals\n    let\n        -- before binding\n        y = 1 -- after body\n        -- before in\n    in\n    -- before body\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True -> 1 -- after branch\n            -- between branches\n            False -> [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
+    "cmt{d} x = -- after equals\n    -- before binding\n    y = 1 -- after body\n    -- before the value\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True -> 1 -- after branch\n            -- between branches\n            False -> [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
     "str{d} = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\" ++ \"${a}\"\n",
     "num{d} = ( 0xDeadBEEF, 1.50e+03, '\\u{00041}', -1 )\n",
     "par{d} = ( ( x ) )\n",
-    "nest{d} m flag =\n  case m of\n     Just n ->\n       if flag then\n           let\n             doubled = n * 2\n           in\n               doubled\n       else (λk ->\n              case k of\n                   0 -> 1\n                   _ -> k\n             ) n\n     Nothing ->\n              0\n",
+    "nest{d} m flag =\n  case m of\n     Just n ->\n       if flag then\n             doubled = n * 2\n             doubled\n       else (λk ->\n              case k of\n                   0 -> 1\n                   _ -> k\n             ) n\n     Nothing ->\n              0\n",
 };
 
 const stress_imports = [_][]const u8{

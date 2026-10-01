@@ -1788,8 +1788,8 @@ test "a constrained function constant rewritten as a lambda keeps its importer's
     try expectConventionEdit("h =\n    λa b -> maxOf a b\n");
 }
 
-test "a constrained function constant rewritten as a let keeps its importer's cached calling convention" {
-    try expectConventionEdit("h =\n    let\n        f =\n            maxOf\n    in\n    f\n");
+test "a constrained function constant rewritten as a block keeps its importer's cached calling convention" {
+    try expectConventionEdit("h =\n    f = maxOf\n    f\n");
 }
 
 test "a truncated or foreign .bef is a miss and is then overwritten" {
@@ -1868,13 +1868,11 @@ test "the interner-order fixture: a cache written over P is read over P plus a m
     try w.write("src/Zeta.beni",
         \\pub zeta : Int
         \\zeta =
-        \\    let
-        \\        alpha =
-        \\            1
+        \\    alpha =
+        \\        1
         \\
-        \\        beta =
-        \\            2
-        \\    in
+        \\    beta =
+        \\        2
         \\    alpha + beta
         \\
     );
@@ -1889,19 +1887,17 @@ test "the interner-order fixture: a cache written over P is read over P plus a m
     try w.write("src/Aardvark.beni",
         \\pub aardvark : Int
         \\aardvark =
-        \\    let
-        \\        gamma =
-        \\            1
+        \\    gamma =
+        \\        1
         \\
-        \\        delta =
-        \\            2
+        \\    delta =
+        \\        2
         \\
-        \\        epsilon =
-        \\            3
+        \\    epsilon =
+        \\        3
         \\
-        \\        zeta2 =
-        \\            4
-        \\    in
+        \\    zeta2 =
+        \\        4
         \\    gamma + delta + epsilon + zeta2
         \\
     );
@@ -2399,10 +2395,8 @@ test "an importer re-checked against cached records reads their aliases as a col
         \\
         \\pub main : Node.Program
         \\main =
-        \\    let
-        \\        b =
-        \\            Wrap.twice 5
-        \\    in
+        \\    b =
+        \\        Wrap.twice 5
         \\    Node.printLines
         \\        [ String.fromInt b.inner.v.inner.v
         \\        , b.inner.v.tag

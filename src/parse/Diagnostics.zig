@@ -629,7 +629,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .bind_rhs_not_application => try w.print(
             \\I was expecting a call after this `<-`, but I ran into `{s}`.
             \\
-            \\`let x <- f a` passes the rest of the block to `f a` as its last argument, so the
+            \\`x <- f a` passes the rest of the block to `f a` as its last argument, so the
             \\right of `<-` must be the call that receives it — a function, or a call missing
             \\exactly its final argument. Wrap what you meant in parentheses, or use `=`.
         , .{text}),
@@ -654,8 +654,8 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\A literal and a list, with a spread or without, each match some values of their
             \\type and not others, whatever that type turns out to be, so neither can be bound
             \\in a `let`. A
-            \\CONSTRUCTOR can, when its type has only that one — `let (Box n) = b` is fine and
-            \\`let (Just n) = m` is not, and I say which after I have checked the types. To
+            \\CONSTRUCTOR can, when its type has only that one — `(Box n) = b` is fine and
+            \\`(Just n) = m` is not, and I say which after I have checked the types. To
             \\match on more than one shape, use `case`.
         , .{text}),
         .refutable_parameter_pattern => try w.print(
@@ -1054,7 +1054,7 @@ test "message: the placeholder and the bind (language.md §6.7)" {
         "y = f _ b _",
     );
     try expectMessage(
-        "I was expecting a call after this `<-`, but I ran into `+`.\n\n`let x <- f a` passes the rest of the block to `f a` as its last argument, so the\nright of `<-` must be the call that receives it — a function, or a call missing\nexactly its final argument. Wrap what you meant in parentheses, or use `=`.",
+        "I was expecting a call after this `<-`, but I ran into `+`.\n\n`x <- f a` passes the rest of the block to `f a` as its last argument, so the\nright of `<-` must be the call that receives it — a function, or a call missing\nexactly its final argument. Wrap what you meant in parentheses, or use `=`.",
         .{ .code = .bind_rhs_not_application, .start = 7, .end = 8, .context = .let_bindings },
         "x <- a + b",
     );

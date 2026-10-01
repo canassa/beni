@@ -92,7 +92,12 @@ metaKey event = boolProp event "metaKey"
 --| while its event is dispatched, so calling this in one takes effect; a
 --| subscription's value arrives later, when it is too late.
 --|
---|     onKeyDown={λevent -> if Html.key event == "Tab" then let _ = Html.preventDefault event in Indent else Ignored}
+--|     onKeyDown={λevent ->
+--|         if Html.key event == "Tab" then
+--|             Html.preventDefault event
+--|             Indent
+--|         else
+--|             Ignored}
 pub preventDefault : Event -> ()
 preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 

@@ -8,7 +8,5 @@ ok = 1
 
 
 f =
-    let
-        ok = 2
-    in
+    ok = 2
     ok

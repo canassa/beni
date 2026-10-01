@@ -4,7 +4,5 @@
 -- variable named `main` (a keyword's payload is 0, and symbol 0 is `main`).
 -- Five lines, no phase is slow: it is here because it crashed us.
 f =
-    let
-        (x as) = 1
-    in
+    (x as) = 1
     x

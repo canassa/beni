@@ -1158,10 +1158,7 @@ at different types are `method_constraint_mismatch` (§10.5), not two instantiat
 -- tests/corpus/check/bad/LetConstrainedTwice.beni
 pub report : Int, String -> String
 report n s =
-    let
-        show x =
-            "${x.render}"
-    in
+    show x = "${x.render}"
     show n ++ show s
 ```
 

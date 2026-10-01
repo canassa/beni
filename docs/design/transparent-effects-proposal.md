@@ -152,10 +152,8 @@ What P1's example becomes:
 ```elm
 fetchSummary : UserId -> Summary
 fetchSummary id =
-    let
-        user = getUser id
-        perms = getPermissions user
-    in
+    user = getUser id
+    perms = getPermissions user
     if perms.isAdmin then
         Summary user perms (Just (getAuditLog user))
     else

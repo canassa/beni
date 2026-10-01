@@ -4952,25 +4952,19 @@ test "`_` is an argument and only an argument (§6.7)" {
 test "`<-` binds the rest of the block; its right-hand side must be a call (§6.7)" {
     try expectTree(
         \\b1 f rest =
-        \\    let
-        \\        x <- f rest
-        \\    in
+        \\    x <- f rest
         \\    x
         \\
         \\
         \\b2 f g =
-        \\    let
-        \\        a = 1
-        \\        ( x, y ) <- f a
-        \\        b = 2
-        \\    in
+        \\    a = 1
+        \\    ( x, y ) <- f a
+        \\    b = 2
         \\    g x y b
         \\
         \\
         \\b3 f =
-        \\    let
-        \\        x <- f 1 + 2
-        \\    in
+        \\    x <- f 1 + 2
         \\    x
         \\
     ,
@@ -4978,7 +4972,7 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\  (definition b1
         \\    (pat_var f)
         \\    (pat_var rest)
-        \\    (let
+        \\    (block
         \\      (let_bind
         \\        (pat_var x)
         \\        (apply
@@ -4988,7 +4982,7 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\  (definition b2
         \\    (pat_var f)
         \\    (pat_var g)
-        \\    (let
+        \\    (block
         \\      (let_def a
         \\        (int 1))
         \\      (let_bind
@@ -5007,7 +5001,7 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\        (ident b))))
         \\  (definition b3
         \\    (pat_var f)
-        \\    (let
+        \\    (block
         \\      (let_bind
         \\        (pat_var x)
         \\        (add
@@ -5017,7 +5011,7 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\          (int 2)))
         \\      (ident x))))
         \\
-    , &.{.{ .code = .bind_rhs_not_application, .line = 19, .col = 18 }});
+    , &.{.{ .code = .bind_rhs_not_application, .line = 14, .col = 14 }});
 }
 
 test "`|>` takes only an application, and neither pipe has a parenthesised form (§6.5, §6.7)" {
@@ -5235,11 +5229,9 @@ test "layout: the worked example of §4, verbatim" {
         \\view model =
         \\    case model.page of
         \\        Home ->
-        \\            let
-        \\                title = "Hi"
-        \\                body =
-        \\                    text title
-        \\            in
+        \\            title = "Hi"
+        \\            body =
+        \\                text title
         \\            div [] [ body ]
         \\
         \\        About ->
@@ -5254,7 +5246,7 @@ test "layout: the worked example of §4, verbatim" {
         \\        (ident model))
         \\      (branch
         \\        (pat_ctor Home)
-        \\        (let
+        \\        (block
         \\          (let_def title
         \\            (string
         \\              (chunk "Hi")))
@@ -5657,23 +5649,21 @@ test "every pattern form, `as` binding loosest, a spread before, between and aft
 test "let bindings: definitions, annotations, irrefutable patterns, and refutable ones (error)" {
     try expectTree(
         \\x =
-        \\    let
-        \\        f a = a
-        \\        t : Int
-        \\        ( n, ( s, flag ) ) = input
-        \\        { name, age } = person
-        \\        (( a, b ) as pair) = t
-        \\        _ = flag
-        \\        Just y = m
-        \\        1 = n
-        \\        [ h, ...r ] = l
-        \\    in
+        \\    f a = a
+        \\    t : Int
+        \\    ( n, ( s, flag ) ) = input
+        \\    { name, age } = person
+        \\    (( a, b ) as pair) = t
+        \\    _ = flag
+        \\    Just y = m
+        \\    1 = n
+        \\    [ h, ...r ] = l
         \\    y
         \\
     ,
         \\(module
         \\  (definition x
-        \\    (let
+        \\    (block
         \\      (let_def f
         \\        (pat_var a)
         \\        (ident a))
@@ -5719,7 +5709,7 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         // parser does not know, so §7 leaves it to the checker. The
         // literal and the list can never match everything whatever the
         // types are, so those two stay parse errors.
-    , &.{ .{ .code = .refutable_let_pattern, .line = 10, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 11, .col = 9 } });
+    , &.{ .{ .code = .refutable_let_pattern, .line = 9, .col = 5 }, .{ .code = .refutable_let_pattern, .line = 10, .col = 5 } });
 }
 
 // ---- Doc comments ----------------------------------------------------------
@@ -5758,16 +5748,16 @@ test "doc comments: attached, before an import, split by a comment, at EOF, blan
         .{ .code = .doc_comment_unattached, .line = 5, .col = 1 },
         .{ .code = .doc_comment_unattached, .line = 12, .col = 1 },
     });
-    // A doc comment inside a `let` documents nothing.
-    try expectTree("x =\n    let\n        --| no\n        y = 1\n    in\n    y\n",
+    // A doc comment inside a block documents nothing.
+    try expectTree("x =\n    --| no\n    y = 1\n    y\n",
         \\(module
         \\  (definition x
-        \\    (let
+        \\    (block
         \\      (let_def y
         \\        (int 1))
         \\      (ident y))))
         \\
-    , &.{.{ .code = .doc_comment_unattached, .line = 3, .col = 9 }});
+    , &.{.{ .code = .doc_comment_unattached, .line = 2, .col = 5 }});
 }
 
 test "module docs: merged across blanks and plain comments, misplaced after an import or a declaration" {
@@ -6162,7 +6152,7 @@ const fragment_pieces = [_][]const u8{
     "foreign pure h : Int\n",
     "--| doc\n",
     "v =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
-    "w =\n    let\n        a = 1\n        b = 2\n    in\n    a + b\n",
+    "w =\n    a = 1\n    b = 2\n    a + b\n",
     "u x = if x then 1 else 2\n",
     "l = [ 1, 2, 3 ]\n",
     "r = { a = 1, b = \"${x}\" }\n",
@@ -6182,7 +6172,7 @@ const fragment_pieces = [_][]const u8{
     "pub element \"input\" void\n",
     "pub event \"onInput\" on \"input\" via value : String\n",
     "schema LayoutMessage tagged \"kind\" of\n    Count as \"count\"\n        value : Int\n    Reset\n",
-    "o f =\n    let\n        x <- f 1\n        y = 2\n    in\n    x + y\n",
+    "o f =\n    x <- f 1\n    y = 2\n    x + y\n",
 };
 
 // PRNG-driven stand-in for the fuzzer (the toolchain's fuzz mode does not

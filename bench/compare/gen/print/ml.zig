@@ -38,6 +38,8 @@ pub const P = struct {
     annotations: u64 = 0,
     /// Every local printed so far is named `v<n>`; unused parameters `_`.
     col: usize = 0,
+    /// The indentation the current line began with.
+    line_ind: usize = 0,
     /// The `foldl` lambda whose parameters print swapped (§2.3).
     swaps: std.ArrayList(u32) = .empty,
     /// Roc only: literals to write with a type suffix (`validate.rocDefaulted`).
@@ -60,6 +62,7 @@ pub const P = struct {
         try p.w.writeByte('\n');
         try p.w.splatByteAll(' ', ind);
         p.col = ind;
+        p.line_ind = ind;
     }
 
     fn store(p: *P) *const TypeStore {
@@ -583,7 +586,35 @@ pub const P = struct {
         const x = t.expr(e);
         const xs = t.extraPairs(x.a);
         switch (p.lang) {
-            .beni, .elm, .purescript => {
+            // beni has no `let`: a block (language.md §12.2) where the
+            // `let` begins its line after an opener, and a parenthesised
+            // block anywhere else.
+            .beni => {
+                const at_line_start = p.col == p.line_ind;
+                const outer = p.line_ind;
+                const inner = if (at_line_start) outer else outer + 4;
+                if (!at_line_start) {
+                    try p.out("(");
+                    try p.nl(inner);
+                }
+                var k: usize = 0;
+                while (k < xs.len) : (k += 2) {
+                    if (k != 0) try p.nl(inner);
+                    try p.local(xs[k]);
+                    try p.out(" =");
+                    if (p.multi(xs[k + 1])) {
+                        try p.nl(inner + 4);
+                    } else try p.out(" ");
+                    try p.expr(xs[k + 1], inner + 4);
+                }
+                try p.nl(inner);
+                try p.expr(x.b, inner);
+                if (!at_line_start) {
+                    try p.nl(outer);
+                    try p.out(")");
+                }
+            },
+            .elm, .purescript => {
                 try p.out("let");
                 var k: usize = 0;
                 while (k < xs.len) : (k += 2) {

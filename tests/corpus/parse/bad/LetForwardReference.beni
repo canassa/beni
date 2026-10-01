@@ -7,9 +7,7 @@
 -- `ReferenceError` under Node. `shown` is legal:
 -- `later` is written above it.
 f =
-    let
-        usesLater = later + 100
-        later = 5
-        shown = later + 1
-    in
+    usesLater = later + 100
+    later = 5
+    shown = later + 1
     usesLater + shown

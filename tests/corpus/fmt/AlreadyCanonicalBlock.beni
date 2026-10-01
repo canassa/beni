@@ -1,0 +1,23 @@
+-- Already canonical (§9, language.md §12.5): a block's items at its column,
+-- 4 right of the line its opener is on, the value last, one blank line
+-- between bindings kept, an annotated binding, a pattern binding, and a
+-- nested block.
+total : List Int -> Int
+total xs =
+    count : Int
+    count = List.length xs
+
+    ( low, high ) = ( List.minimum xs, List.maximum xs )
+
+    spread =
+        case ( low, high ) of
+            ( Just l, Just h ) ->
+                h - l
+
+            _ ->
+                0
+
+    scaled =
+        factor = 2
+        spread * factor
+    count + scaled

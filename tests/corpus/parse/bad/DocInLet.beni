@@ -1,9 +1,7 @@
--- doc_comment_unattached at 5:9: a doc comment inside a `let`, which is not a
+-- doc_comment_unattached at 4:5: a doc comment inside a `let`, which is not a
 -- declaration position.
 x =
-    let
-        --| Documents a let binding, which is not allowed.
-        y =
-            1
-    in
+    --| Documents a let binding, which is not allowed.
+    y =
+        1
     y

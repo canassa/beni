@@ -5,30 +5,24 @@
 -- `let` without waiting for the checker. A CONSTRUCTOR there is admitted and
 -- decided by the checker instead (`check/bad/RefutableLetCtor`).
 --
--- refutable_let_pattern at 13:9, 21:9 and 29:9; refutable_parameter_pattern
--- at 42:9, because §6.7 desugars `p <- e` into a callback whose parameter is
+-- refutable_let_pattern at 12:5, 18:5 and 24:5; refutable_parameter_pattern
+-- at 35:5, because §6.7 desugars `p <- e` into a callback whose parameter is
 -- `p`, so that position is named as a parameter wherever it is caught.
 literal m =
-    let
-        1 =
-            m
-    in
+    1 =
+        m
     m
 
 
 listLiteral m =
-    let
-        [ x, y ] =
-            m
-    in
+    [ x, y ] =
+        m
     x
 
 
 spread l =
-    let
-        [ h, ...r ] =
-            l
-    in
+    [ h, ...r ] =
+        l
     h
 
 
@@ -38,7 +32,5 @@ withCallback m body =
 
 
 bound =
-    let
-        [ v ] <- withCallback (Just 1)
-    in
+    [ v ] <- withCallback (Just 1)
     v

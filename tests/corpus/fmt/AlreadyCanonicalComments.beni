@@ -9,15 +9,13 @@ import Dict
 --| Documents `total`.
 total : List Int -> Int
 total xs =
-    let
-        -- before the first binding
-        a = List.sum xs
+    -- before the first binding
+    a = List.sum xs
 
-        -- between bindings
-        b = List.length xs -- trailing on a body
+    -- between bindings
+    b = List.length xs -- trailing on a body
 
-        -- before `in`
-    in
+    -- before `in`
     a + b
 
 

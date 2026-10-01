@@ -1203,10 +1203,8 @@ const Module = struct {
         if (g.usesDict()) {
             try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
             try g.line(0, "sum{d} xs =", .{g.index});
-            try g.line(4, "let", .{});
-            try g.line(8, "counts = List.foldl xs Dict.empty (λx acc -> acc.insert x 1)", .{});
-            try g.line(8, "unique = List.foldl xs Set.empty (λx acc -> acc.insert x)", .{});
-            try g.line(4, "in", .{});
+            try g.line(4, "counts = List.foldl xs Dict.empty (λx acc -> acc.insert x 1)", .{});
+            try g.line(4, "unique = List.foldl xs Set.empty (λx acc -> acc.insert x)", .{});
             try g.line(4, "Maybe.withDefault (counts.get 3) 0 + Set.size unique", .{});
             return;
         }
@@ -1326,11 +1324,10 @@ const Module = struct {
         try g.line(0, "{s} left right =", .{name});
         _ = g.push("left");
         _ = g.push("right");
-        try g.line(4, "let", .{});
         const bindings = 1 + g.rng.uintLessThan(u32, 3);
         const with_twice = g.chance(30);
 
-        // A `let` group's bindings are mutually recursive (language.md §6.2):
+        // A block's bindings are mutually recursive (language.md §6.2):
         // EVERY name it binds is in scope in EVERY value, including values
         // written earlier in the block. So all the names are chosen and
         // pushed here, before the first value is written — otherwise a
@@ -1349,12 +1346,12 @@ const Module = struct {
 
         for (names[0..bindings], 0..) |local, i| {
             if (i != 0 and g.chance(50)) try g.blank();
-            if (g.chance(30)) try g.line(8, "{s} : Int", .{local});
+            if (g.chance(30)) try g.line(4, "{s} : Int", .{local});
             if (g.chance(50)) {
-                try g.line(8, "{s} =", .{local});
-                try g.w.splatByteAll(' ', 12);
-            } else {
+                try g.line(4, "{s} =", .{local});
                 try g.w.splatByteAll(' ', 8);
+            } else {
+                try g.w.splatByteAll(' ', 4);
                 try g.w.print("{s} = ", .{local});
             }
             try g.expr(2);
@@ -1364,15 +1361,14 @@ const Module = struct {
             g.setValue(local, true);
         }
         if (with_twice) {
-            // A let-bound function with its own parameter: fresh against
+            // A block-bound function with its own parameter: fresh against
             // every sibling binding, which is already in scope.
             const mark = g.scopeMark();
             const param = g.bind();
-            try g.line(8, "twice {s} =", .{param});
-            try g.line(12, "{s} * 2", .{param});
+            try g.line(4, "twice {s} =", .{param});
+            try g.line(8, "{s} * 2", .{param});
             g.scopeReset(mark);
         }
-        try g.line(4, "in", .{});
         try g.w.splatByteAll(' ', 4);
         const wrap = if (g.dispatch()) g.takeUncalledWhere() else null;
         if (wrap) |helper| try g.w.print("{s} {s} (", .{ helper, receiver });
@@ -1564,12 +1560,10 @@ const Module = struct {
             }
             if (g.chance(15)) {
                 // A nested construct inside the branch: layout rule 2.
-                try g.line(12, "let", .{});
                 const mark = g.scopeMark();
                 const local = g.bind();
-                try g.line(16, "{s} =", .{local});
-                try g.line(20, "code * {d}", .{i + 1});
-                try g.line(12, "in", .{});
+                try g.line(12, "{s} =", .{local});
+                try g.line(16, "code * {d}", .{i + 1});
                 try g.line(12, "\"{s} ${{{s}}}\"", .{ g.pick([]const u8, &words), local });
                 g.scopeReset(mark);
             } else {
@@ -1793,15 +1787,15 @@ test "no parameter inside a let block shadows one of the block's bindings" {
         _ = try writeModule(&out.writer, default_seed, @intCast(i));
         blocks += try checkLetBlocks(out.written());
     }
-    // `let` is one of ten random declaration kinds, so assert the scan
+    // `letFn`'s block is one of ten random declaration kinds, so assert the scan
     // actually found blocks: a test that passes by finding nothing is not
     // a test.
     try testing.expect(blocks > 40);
 }
 
-/// Scan every top-level `let` block in `text` (the ones `letFn` writes, at
-/// indent 4 with bindings at indent 8) and fail if any name bound inside it
-/// — a lambda parameter, a let-bound function's parameter — repeats one of
+/// Scan every block `letFn` writes in `text` (the body of a `compute…
+/// left right =`, its items at indent 4) and fail if any name bound inside it
+/// — a lambda parameter, a block-bound function's parameter — repeats one of
 /// the block's binding names, or if two bindings share a name. Returns the
 /// number of blocks scanned.
 fn checkLetBlocks(text: []const u8) !usize {
@@ -1818,7 +1812,7 @@ fn checkLetBlocks(text: []const u8) !usize {
             try expectNoShadowing(bindings, params);
             in_block = false;
         }
-        if (std.mem.eql(u8, line, "    let")) {
+        if (std.mem.startsWith(u8, line, "compute") and std.mem.endsWith(u8, line, " left right =")) {
             in_block = true;
             blocks += 1;
             bindings = binding_buf[0..0];
@@ -1827,8 +1821,8 @@ fn checkLetBlocks(text: []const u8) !usize {
         }
         if (!in_block) continue;
 
-        if (std.mem.startsWith(u8, line, "        ") and line.len > 8 and line[8] != ' ') {
-            const body = line[8..];
+        if (std.mem.startsWith(u8, line, "    ") and line.len > 4 and line[4] != ' ') {
+            const body = line[4..];
             if (std.mem.startsWith(u8, body, "twice ")) {
                 bindings = try append(&binding_buf, bindings, "twice");
                 params = try append(&param_buf, params, identAt(body["twice ".len..]));
@@ -1837,14 +1831,14 @@ fn checkLetBlocks(text: []const u8) !usize {
                 const after = body[bound.len..];
                 // ` = ` only: `name : Int` is the annotation of the
                 // binding on the next line, not a second binding.
-                if (bound.len != 0 and std.mem.startsWith(u8, after, " =")) {
+                if (bound.len != 0 and (std.mem.eql(u8, after, " =") or std.mem.startsWith(u8, after, " = "))) {
                     bindings = try append(&binding_buf, bindings, bound);
                 }
             }
         }
         var rest = line;
-        while (std.mem.indexOf(u8, rest, "(\\")) |at| {
-            rest = rest[at + 2 ..];
+        while (std.mem.indexOf(u8, rest, "(λ")) |at| {
+            rest = rest[at + "(λ".len ..];
             params = try append(&param_buf, params, identAt(rest));
         }
     }
@@ -1864,11 +1858,11 @@ fn append(buf: [][]const u8, list: []const []const u8, name: []const u8) ![]cons
 fn expectNoShadowing(bindings: []const []const u8, params: []const []const u8) !void {
     for (bindings, 0..) |b, i| {
         for (bindings[i + 1 ..]) |other| if (std.mem.eql(u8, b, other)) {
-            std.debug.print("let block binds `{s}` twice\n", .{b});
+            std.debug.print("block binds `{s}` twice\n", .{b});
             return error.DuplicateBinding;
         };
         for (params) |p| if (std.mem.eql(u8, b, p)) {
-            std.debug.print("parameter `{s}` shadows a sibling let binding\n", .{p});
+            std.debug.print("parameter `{s}` shadows a sibling binding\n", .{p});
             return error.ParameterShadowsBinding;
         };
     }

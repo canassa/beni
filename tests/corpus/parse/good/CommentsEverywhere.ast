@@ -22,7 +22,7 @@
     (doc "Doc blocks may span lines.")
     (type_con Int))
   (definition count
-    (let
+    (block
       (let_def a
         (int 1))
       (let_def b

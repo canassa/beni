@@ -252,7 +252,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .bind_rhs_forward_reference => try w.print(
             \\`{s}` is bound after this `<-`, so the call cannot see it.
             \\
-            \\`let x <- f a` passes everything after it to `f a` as a callback, which means
+            \\`x <- f a` passes everything after it to `f a` as a callback, which means
             \\the bindings below the `<-` do not exist yet where the call is made. Move the
             \\binding of `{s}` above the `<-`.
         , .{ text, text }),

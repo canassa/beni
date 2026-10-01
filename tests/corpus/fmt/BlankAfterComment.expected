@@ -3,7 +3,8 @@
 -- is not glued to its first line (language.md §12.5, §9 comments). More
 -- than one blank line becomes one; none stays none. A doc comment is
 -- unchanged and sits directly on its declaration, and so does a definition
--- on its annotation. No blank line goes before `then`, `else` or `in`.
+-- on its annotation. No blank line goes before `then` or `else`; one before
+-- a block's value is kept, as before any of its items.
 
 -- Section: arithmetic
 
@@ -24,16 +25,15 @@ div a b = a // b
 
 
 steps n =
-    let
-        -- inputs
+    -- inputs
 
-        a = n + 1
-        b = a * 2
-        -- the answer
-        c = b - 1
+    a = n + 1
+    b = a * 2
+    -- the answer
+    c = b - 1
 
-        -- before in
-    in
+    -- before the value
+
     if c > 0 then
         c
         -- before else
