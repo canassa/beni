@@ -1,0 +1,17 @@
+# GitHub Linguist (https://github.com/github-linguist/linguist/blob/main/docs/overrides.md).
+# beni is not a Linguist language yet; Elm is the closest grammar, so .beni files are
+# highlighted and counted as Elm until beni can be added upstream.
+*.beni linguist-language=Elm
+
+# Test goldens and recorded results are generated: out of the language stats and
+# collapsed in diffs.
+tests/corpus/**/*.js linguist-generated
+tests/corpus/**/*.mjs linguist-generated
+tests/corpus/**/*.expected linguist-generated
+tests/corpus/**/*.run-hash linguist-generated
+tests/blackbox/run-hashes.txt linguist-generated
+bench/**/results/** linguist-generated
+
+# Design documents and research are documentation, not code.
+docs/** linguist-documentation
+plans/** linguist-documentation
