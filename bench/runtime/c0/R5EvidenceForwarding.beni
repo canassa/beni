@@ -91,5 +91,7 @@ main =
         List.foldl
             (List.range 1 outerReps)
             0
-            (λ_ acc -> List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot 1))
+            (λ_ acc ->
+                List.foldl (List.range 1 innerReps) acc (λ_ n -> n + tallyBy values pivot 1)
+            )
     Node.print (String.fromInt total)

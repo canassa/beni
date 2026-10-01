@@ -28,7 +28,8 @@ listen =
         [ Cmd.keyed
             Keys
             Cmd.Restart
-            (λsend -> Browser.Events.eachKeyDown (λevent -> send (Saw ("down ${Html.key event}"))))
+            (λsend -> Browser.Events.eachKeyDown (λevent -> send (Saw ("down ${Html.key event}")))
+            )
         , Cmd.keyed
             Keys
             Cmd.Concurrent

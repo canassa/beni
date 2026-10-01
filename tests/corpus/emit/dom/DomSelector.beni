@@ -42,7 +42,8 @@ table model =
             {λrow -> <p class={rowClass model row} onClick={Select row.id}>{row.label}</p>}
         </For>
         <For each={model.rows} keyed={λr -> r.id}>
-            {λ{ id, label } -> <p class={if Just id == model.selected then "on" else ""}>{label}</p>
+            {λ{ id, label } ->
+                <p class={if Just id == model.selected then "on" else ""}>{label}</p>
             }
         </For>
         <For each={model.ids}>

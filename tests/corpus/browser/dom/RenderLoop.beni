@@ -40,7 +40,8 @@ view model =
         <p>{Debug.log "view" model.ticks}</p>
         <ul>
             <For each={model.rows}>
-                {λrow -> <li class={[ ( "sel", Debug.log "row" row == model.selected ) ]}>{row}</li>
+                {λrow ->
+                    <li class={[ ( "sel", Debug.log "row" row == model.selected ) ]}>{row}</li>
                 }
             </For>
         </ul>

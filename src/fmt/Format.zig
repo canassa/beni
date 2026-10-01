@@ -1393,7 +1393,7 @@ const Measurer = struct {
             },
             .lambda => {
                 const l = tree.fullLambda(n);
-                var width: u32 = 1;
+                var width: u32 = m.tokenWidth(main); // `λ` is two bytes (language.md §12.1)
                 for (l.params, 0..) |p, i| {
                     try m.measure(p);
                     width +|= m.w(p) +| @as(u32, if (i == 0) 0 else 1);

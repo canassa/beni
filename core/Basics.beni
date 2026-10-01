@@ -318,7 +318,8 @@ isNaN x = Js.pure (λ() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from
 pub isInfinite : Float -> Bool
 isInfinite x =
     -- NaN's absolute value is NaN, which is not `Infinity`.
-    Js.pure (λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity"))
+    Js.pure
+        (λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity"))
 
 
 --| Negate a number.

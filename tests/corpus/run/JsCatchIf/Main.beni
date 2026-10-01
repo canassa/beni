@@ -48,7 +48,8 @@ main =
                 (λ_ -> 5)
             )
 
-    asValueOk = String.fromInt (Catch.asValue (λ() -> 6) (λerr -> Catch.isTypeError err) (λ_ -> 5))
+    asValueOk =
+        String.fromInt (Catch.asValue (λ() -> 6) (λerr -> Catch.isTypeError err) (λ_ -> 5))
 
     summed = String.fromInt (Catch.sumTo 4 0)
     Node.printLines

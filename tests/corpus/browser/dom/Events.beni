@@ -53,7 +53,8 @@ view model =
     <main>
         <ul>
             <For each={[ 1, 2, 3 ]}>
-                {λn -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}
+                {λn -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>
+                }
             </For>
         </ul>
         <p>picked {model.picked}</p>

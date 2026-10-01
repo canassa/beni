@@ -29,7 +29,9 @@ update msg model =
                 ( model, Cmd.do (λ() -> spawning (λ() -> ())) )
 
         Joined ->
-            ( model, Cmd.do (λ() -> Task.join (Task.spawn (λ() -> Log.info "joined child runs"))) )
+            ( model
+            , Cmd.do (λ() -> Task.join (Task.spawn (λ() -> Log.info "joined child runs")))
+            )
 
 
 -- Waits only when asked to, which no run does.

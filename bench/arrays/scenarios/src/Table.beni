@@ -72,7 +72,8 @@ update msg model =
             { model
                 | rows =
                     Array.indexedMap model.rows
-                        (λi r -> if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r)
+                        (λi r -> if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r
+                        )
             }
 
         Swap i j ->
@@ -93,7 +94,8 @@ update msg model =
 
         Append n ->
             { model
-                | rows = Array.append model.rows (Array.initialize n (λi -> row (model.nextId + i)))
+                | rows =
+                    Array.append model.rows (Array.initialize n (λi -> row (model.nextId + i)))
                 , nextId = model.nextId + n
             }
 

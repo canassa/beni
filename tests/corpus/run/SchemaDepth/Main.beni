@@ -191,7 +191,9 @@ main =
         , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) (λs -> s)
         , issues (Schema.printWith Schema.value (bound 3) (nested 5))
         , issues (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 4 ])
-        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) (λs -> s)
+        , Show.result
+            (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ])
+            (λs -> s)
         , issues
             (Schema.parse Schema.value deep |> Result.andThen (λv -> Schema.print Schema.value v))
         ]

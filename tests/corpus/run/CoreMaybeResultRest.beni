@@ -21,7 +21,8 @@ main =
         , Debug.toString (Maybe.map3 (Just 1) Nothing (Just 3) (λa b c -> a + b + c))
         , Debug.toString
             (Maybe.map4 (Just 1) (Just 2) (Just 3) (Just 4) (λa b c d -> a + b + c + d))
-        , Debug.toString (Maybe.map4 (Just 1) (Just 2) (Just 3) Nothing (λa b c d -> a + b + c + d))
+        , Debug.toString
+            (Maybe.map4 (Just 1) (Just 2) (Just 3) Nothing (λa b c d -> a + b + c + d))
         , Debug.toString
             (Maybe.map5
                 (Just 1)
@@ -52,11 +53,13 @@ main =
         , Debug.toString (Result.map3 (Ok 1) (Ok 2) (Ok 3) (λa b c -> a + b + c))
         , Debug.toString (Result.map3 (Ok 1) (Err "no") (Ok 3) (λa b c -> a + b + c))
         , Debug.toString (Result.map4 (Ok 1) (Ok 2) (Ok 3) (Ok 4) (λa b c d -> a + b + c + d))
-        , Debug.toString (Result.map4 (Err "a") (Ok 2) (Ok 3) (Err "d") (λa b c d -> a + b + c + d))
+        , Debug.toString
+            (Result.map4 (Err "a") (Ok 2) (Ok 3) (Err "d") (λa b c d -> a + b + c + d))
         , Debug.toString
             (Result.map5 (Ok 1) (Ok 2) (Ok 3) (Ok 4) (Ok 5) (λa b c d f -> a + b + c + d + f))
         , Debug.toString
-            (Result.map5 (Ok 1) (Ok 2) (Err "c") (Ok 4) (Err "e") (λa b c d f -> a + b + c + d + f))
+            (Result.map5 (Ok 1) (Ok 2) (Err "c") (Ok 4) (Err "e") (λa b c d f -> a + b + c + d + f)
+            )
         , Debug.toString (Result.andThen (Ok 1) (λx -> Ok (x + 1)))
         , Debug.toString (Result.andThen (Err "no") (λx -> Ok (x + 1)))
         , Debug.toString (Result.andThen (Ok 1) (λ_ -> Err "later"))

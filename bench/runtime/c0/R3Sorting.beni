@@ -53,7 +53,8 @@ values : List Int
 values =
     List.concatMap
         (List.range 0 (blocks - 1))
-        (λb -> List.map (List.range 1 perBlock) (λi -> Int.mod ((b * perBlock + i) * 7919) 104729))
+        (λb -> List.map (List.range 1 perBlock) (λi -> Int.mod ((b * perBlock + i) * 7919) 104729)
+        )
 
 
 strings : List String
