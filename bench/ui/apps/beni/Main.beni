@@ -55,16 +55,24 @@ nouns =
     ]
 
 
--- The Park-Miller generator: every product stays below 2^53, so an `Int`
--- holds it exactly.
+-- A Park-Miller generator: every product stays below 2^53, so an `Int`
+-- holds it exactly. Its modulus is the largest prime below 2^30, not
+-- 2^31 - 1, so that every seed is one of V8's small integers: a seed past
+-- 2^30 is a heap number, and on the first append the optimised loop that
+-- builds the rows, specialised to small integers by the runs before it,
+-- was thrown away ("not a Smi") and 1 000 rows built unoptimised, which
+-- Solid's `Math.random` never meets (`plans/runtime-in-beni.md`, *Append
+-- against Solid 1*).
 next : Int -> Int
 next seed =
-    modBy (seed * 16807) 2147483647
+    modBy (seed * 16807) 1073741789
 
 
+-- A word by its index: `List.get`, not `List.drop` then `List.head`, which
+-- makes a view of the list to read one element.
 pick : List String, Int, Int -> String
 pick words count seed =
-    List.drop words (modBy seed count) |> List.head |> Maybe.withDefault ""
+    List.get words (modBy seed count) |> Maybe.withDefault ""
 
 
 -- `count` rows with ids from `id` up, and the seed after them.
@@ -106,7 +114,7 @@ replace model count =
 
 at : List Row, Int -> Maybe Row
 at rows index =
-    List.drop rows index |> List.head
+    List.get rows index
 
 
 swapRows : List Row -> List Row

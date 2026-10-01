@@ -631,3 +631,60 @@ braces the hand-written code drops.
 **What stayed.** `safeUrl`, for step 2's reason: its pattern written as a `RegExp` string would
 spell each of its 28 backslashes twice. A `Js` intrinsic for a regular expression literal would
 move it and leave `runtime.js` empty.
+
+## Append against Solid 1 (2026-10-02)
+
+Steps 1–4 left `append1k` the one table operation where beni trailed Solid 1, by about 3 % in both
+the hand-written and the beni builds (step 4: 5.45 against 5.25 ms). **The runtime was not the
+gap.** Split at the click (`bench/ui/halves.mjs`, n = 30): beni's listener half — the app's
+`update`, building 1 000 rows and appending them — 0.74 ms, its render 4.55; Solid 1 does both in
+the click, 5.12, of which its `buildData` is 0.29 (a timing stamp in a copy of its bundle). So
+beni's render of the 1 000 new rows and the check of the 1 000 kept ones is *faster* than Solid's,
+and its update slower: the rows took 0.61 ms to build (a stamp in a copy of the release file),
+`model.rows ++ rows` 0.05.
+
+**Why the build was slow, cold.** Hot, the same build is 0.18 ms (the V8 sampling profile of 300
+appends in one page). On the benchmark's one append after its warm-up, V8's log (`--trace-deopt`)
+shows the optimised `buildFrom` loop thrown away at its first iteration — *"not a Smi"* — and the
+1 000 rows built in the baseline tier: the app's Park–Miller generator has modulus 2^31 − 1, so a
+seed is past 2^30 about half the time, a heap number where the runs before had specialised the
+loop to small integers. In the baseline tier every allocation costs: `pick` made a view
+(`List.drop`) and a `Just` (`List.head`) per word, 6 000 per append. Solid's generator is
+`Math.random` over arrays.
+
+**What changed** — the app, not the compiler, runtime or core: the generator's modulus is the
+largest prime below 2^30 (every seed a small integer; no deoptimisation in the click, by the same
+log), and a word is read with `List.get`, which core has had since lists became arrays, instead
+of `List.drop` then `List.head`. Each alone, on `append1k`'s script (n = 24–30): the modulus 5.41 →
+5.33 ms, `List.get` without it −0.07 in the listener half only; together 5.01. The release bundle
+is 5 850 → 5 723 brotli bytes (`List.drop`'s view is no longer reached).
+
+**The table** (`bench/ui`, Chromium 153, Ryzen 9 5950X, `--taskset=8-15`, n = 16, load 0.6–1.3,
+release builds of the app before and after with this compiler, and Solid 1; script median ms
+[IQR]):
+
+| | before | after | Solid 1 |
+|---|--:|--:|--:|
+| run1k | 4.84 [4.78–4.91] | **4.63** [4.58–4.68] | 4.94 |
+| replace1k | 10.4 [10.3–10.4] | **10.2** [10.2–10.2] | 11.8 |
+| update10th | 1.46 [1.38–1.90] | 1.50 [1.33–1.71] | 1.65 |
+| select | 1.28 [1.06–1.46] | 1.06 [0.84–1.31] | 1.69 |
+| swap | 1.08 [0.90–1.21] | 1.08 [1.01–1.35] | 1.56 |
+| remove | 0.50 [0.49–0.50] | 0.51 [0.49–0.52] | 0.57 |
+| create10k | 51.9 [51.4–52.5] | **50.0** [49.5–50.4] | 55.8 |
+| append1k | 5.42 [5.40–5.44] | **5.00** [4.98–5.03] | 5.27 [5.22–5.32] |
+| clear | 22.2 [22.0–22.4] | 22.3 [21.9–22.7] | 23.2 |
+
+`append1k` again at n = 24: before 5.39, after 5.01, Solid 1 5.23, every range apart. Halves (n =
+20): the listener half 0.71 → 0.40 ms, the render unchanged (4.54, 4.47). beni is now ahead of
+Solid 1 on all nine operations' medians; `run1k`, `replace1k` and `create10k`, which build rows
+too, moved with `append1k`.
+
+**What stayed.** The view and the `Just` are still made by any page that reads a list as
+`List.drop` then `List.head`, or `List.get` then `Maybe.withDefault`: in a loop V8 has optimised
+they cost nothing (escape analysis), in one it has not they are most of the loop (removing both,
+by hand in a copy of the release file, took the cold build from 0.61 to 0.40 ms while the
+deoptimisation still happened). Writing them away is a whole-program optimiser's job — inlining a
+small function at several call sites, then a tag test on a known constructor folded — which
+`Spec` does not do yet. Nothing in `core/List.js`'s `append` or in `forKeyed`'s append path was
+the gap, and neither changed.
