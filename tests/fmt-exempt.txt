@@ -47,9 +47,11 @@ tests/corpus/check/bad/WhereAnnotationRepeated.beni -- an annotation without a d
 tests/corpus/check/depth/ParserDeep.beni -- nesting one level past the parser's limit
 tests/corpus/check/depth/TypeParensDeep.beni -- a type nested one level past the parser's limit
 
+-- Fixtures that the formatter would make unreadable.
+tests/corpus/check/bad/DerivedRowTemplateTooDeep/C.beni -- a 509-deep tuple type on one line; formatted, it is a thousand lines of one element each
+
 -- Benchmark inputs that do not parse.
 bench/pathological/AccessChain8000.beni -- nesting past the parser's limit, on purpose
 bench/pathological/AsWithoutName.beni -- a parse error, on purpose
 bench/pathological/PlusChain8000.beni -- nesting past the parser's limit, on purpose
 bench/pathological/QuestionChain8000.beni -- nesting past the parser's limit, on purpose
-bench/markup/DeepTree.beni -- a lexer benchmark input whose `\segment, index ->` no longer parses
