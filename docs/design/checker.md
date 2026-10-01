@@ -1856,7 +1856,13 @@ that is a contract too, not an accident, because a record-keyed `sortBy` depends
   (spec §3.1); all seven stay declared, exported and callable by name. *Amended 2026-10-02
   (`language.md` §12.4; specified, not built):* `Int` and `Float` move to `core/Int.beni` and
   `core/Float.beni`, `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, `logBase` becomes
-  `Float.log`, and `Debug.log` is `String, a -> a`.
+  `Float.log`, and `Debug.log` is `String, a -> a`. *Amended 2026-10-01 (the owner):* the types do
+  not move — `Int` and `Float` stay here, and `core/Int.beni` (`mod`, `rem`) and `core/Float.beni`
+  (`log`) are ordinary modules over `Js` importing `Basics`, declaring no type (`checker-v2.md`
+  §29.3).
+- `Int` (*2026-10-01*): `mod : Int, Int -> Int` (the sign of the modulus, `0` for a zero modulus)
+  and `rem : Int, Int -> Int` (the sign of the dividend, `0` for a zero divisor), beni over `Js`.
+- `Float` (*2026-10-01*): `log : Float, Float -> Float`, the number then the base, beni over `Js`.
 - `List`: `equatable foreign type List a`; `foreign` for `cons` — `foldl` and `foldr` moved into
   beni with the tail-call loop (`backend.md` §8), which is what
   `research/17-platform-primitives.md` §3 says matters beyond tidiness — and for the two

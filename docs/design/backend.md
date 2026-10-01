@@ -1610,8 +1610,10 @@ around the operator is a conditional no smaller than the call; `Int32.mul` is `M
 global the renamer does not know (research 47 §2.3's `global_this` is how one would be written).
 The rule is **exact equivalence or nothing**: no call is replaced by an operator that answers
 differently for any input the type admits. *Amended 2026-10-02 (`language.md` §12.4; specified,
-not built):* `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, the same siblings under
-`core/Int.js`, and stay calls for the same reason. *(Amended 2026-10-01: `Int32`'s declarations are
+not built):* `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, and stay calls for the same reason.
+*Amended 2026-10-01:* they are beni over `Js` in `core/Int.beni`, with no sibling — the bodies
+`modBy` and `remainderBy` had — so a call emits what the old one did, under the new module's
+import. *(Amended 2026-10-01: `Int32`'s declarations are
 beni over `Js` now, `plans/core-in-beni.md`; the table still writes a saturated call, and the beni
 body, the same operator, is what a function passed as a value is.)*
 

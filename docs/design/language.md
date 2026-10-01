@@ -2418,9 +2418,9 @@ beni's order. The audit below covers every `pub` value of
 
 | Elm | beni today | Verdict | beni after |
 |---|---|---|---|
-| `modBy : Int -> Int -> Int` (modulus, then the number) | `modBy : Int, Int -> Int` (number, modulus) | **renamed** | **`Int.mod : Int, Int -> Int`** — `Int.mod n 2`, `n.mod 2`; the sign of the modulus, as `Int32.mod` |
-| `remainderBy` (divisor, then the number) | `remainderBy : Int, Int -> Int` (number, divisor) | **renamed** | **`Int.rem : Int, Int -> Int`** — `n.rem 3`; the sign of the dividend, as `Int32.rem` |
-| `logBase : Float -> Float -> Float` (base, then the number) | `logBase : Float, Float -> Float` (number, base) | **renamed** | **`Float.log : Float, Float -> Float`** — `Float.log 100 10 == 2`, `x.log 2` |
+| `modBy : Int -> Int -> Int` (modulus, then the number) | `modBy : Int, Int -> Int` (number, modulus) | **renamed** | **`Int.mod : Int, Int -> Int`** — `Int.mod n 2`; the sign of the modulus, as `Int32.mod` |
+| `remainderBy` (divisor, then the number) | `remainderBy : Int, Int -> Int` (number, divisor) | **renamed** | **`Int.rem : Int, Int -> Int`** — `Int.rem n 3`; the sign of the dividend, as `Int32.rem` |
+| `logBase : Float -> Float -> Float` (base, then the number) | `logBase : Float, Float -> Float` (number, base) | **renamed** | **`Float.log : Float, Float -> Float`** — `Float.log 100 10 == 2` |
 | `Debug.log : String -> a -> a` | `Debug.log : a, String -> a` | **reordered** | **`Debug.log : String, a -> a`**, Elm's order: `Debug.log "total" (List.sum xs)`. The label is not the subject — the value passes through — but the label is short and the value long, so label first keeps the label beside the word `log` when the call wraps an expression, which is why Elm chose it; the pipeline spelling it was flipped for (`xs \|> Debug.log "xs"`) occurs once in the repository. As a statement, `Debug.log "done" ()` |
 | `clamp : number -> number -> number -> number` (low, high, n) | `clamp : number, number, number -> number` (n, low, high) | kept | `clamp n low high` reads right, and it is the order Rust, C++ and JavaScript's `Math.clamp` give the same name. Elm's order type-checks: §12.5's warning |
 | `String.split`, `contains`, `startsWith`, `endsWith`, `indexes`, `indices` (the needle first) | the string first | kept | `s.startsWith "http"`, `String.split line ","` read right, and they are JavaScript's, Go's, Rust's and Python's order under the same names. Elm's order type-checks: §12.5's warning |
@@ -2434,28 +2434,32 @@ beni's order. The audit below covers every `pub` value of
 `List.append`, `String.append`, `always`, `compare`, `atan2`, `Random.int`, `Random.float`,
 `Random.step` and `Random.uniform` already take Elm's order.
 
-**`Int` and `Float` get modules of their own.** `Int.mod` and `n.mod 2` both need `mod` to be a
-`pub` value of the module that **declares** `Int`, under the module rule (static-dispatch-spike.md
-§1.2). So `Int` moves from `core/Basics.beni` to a new `core/Int.beni`, and `Float` to
-`core/Float.beni`, exactly as `String` and `Char` moved on 2026-09-17 (§5.4,
-static-dispatch-spike.md §5.1); this reverses that document's A.6 for these two types, which
-recorded the move as the alternative and declined it only because the spike had no use for it.
-Both stay prelude **types**, and `Int` and `Float` join the prelude's **module aliases**, so no
-module gains an import. What moves with each type is its methods: `core/Int.beni` declares the type,
-`mod`, `rem`, and the `eq` and `compare` that `Basics`'s number-generic functions served it before
-(the well-known table of static-dispatch-spike.md §3.2 keeps serving the operators); `core/Float.beni`
-declares the type, `log`, `eq` and `compare`. The `number`-generic functions — `abs`, `negate`,
-`max`, `min`, `clamp`, `toFloat`, `round` and the rest — stay in `Basics` and in the prelude, as
-functions and not as methods of either type. `Bool`, `Order` and `Never` stay in `Basics`. *If the
-owner prefers no move:* `mod`, `rem` and `log` go into `Basics`, unexposed, and are written
-`n.mod 2` or `Basics.mod n 2` — the methods work because `Basics` declares both types today — at the
-cost of `Int.mod`, which then does not exist.
+**`Int` and `Float` get modules of their own; the types stay in `Basics`.** *Amended 2026-10-01
+(the owner), replacing the move this paragraph specified on 2026-10-02.* `core/Int.beni` and
+`core/Float.beni` are ordinary core modules: `core/Int.beni` holds `mod` and `rem`, and
+`core/Float.beni` holds `log`, each written in beni over `Js` as `modBy`, `remainderBy` and
+`logBase` were, with no `foreign`, and each importing `Basics` like any other module. The `Int` and
+`Float` **types** stay declared in `core/Basics.beni`, beside `Bool`, `Order` and `Never`, and the
+well-known table of static-dispatch-spike.md §3.2 serves them as before (that document's A.6
+stands). `Int` and `Float` join the prelude's **module aliases** (Appendix A), so `Int.mod n 2`,
+`Int.rem n 3` and `Float.log x 10` need no import, as the prelude names they replace needed none.
+**The method forms `n.mod 2` and `x.log 10` are not offered**: under the module rule
+(static-dispatch-spike.md §1.2) a type's methods are the `pub` values of the module that declares
+it, which stays `Basics`, and `Basics` declares no `mod`, `rem` or `log`. *Why the types did not
+move:* moving them out of `Basics`, as `String` and `Char` moved on 2026-09-17 (§5.4,
+static-dispatch-spike.md §5.1), makes an import cycle. `Basics` keeps every function typed with
+`Int` or `Float` — `round`, `idiv`, `toFloat`, `sqrt`, the trigonometry — and writes numeric
+literals, so it would need `Int` and `Float`; and `Int` and `Float` need `Bool`, `Order` and the
+operator functions of `Basics`. `String` and `Char` escaped the cycle because `Basics` names
+neither. Breaking it would move `Bool`, `Order` and the operators as well, the churn A.6 declined;
+the owner's `Int.mod i 10` does not need it.
 
 **The removed names.** `modBy`, `remainderBy` and `logBase` leave `Basics` and the prelude (Appendix
 A); nothing unqualified replaces them, so `mod` and `rem` stay free as local names. A use of one —
 unqualified, as `Basics.modBy`, in an `exposing` list, or as a method `n.modBy 2` — is
 **`name_removed`**, at the name, whose message names the replacement with the call rewritten:
-*`modBy` was removed: beni's `modBy n 2` read as Elm's `modBy 2 n`. Write `Int.mod n 2`.* The
+*`modBy` was removed: beni's `modBy n 2` read as Elm's `modBy 2 n`. Write `Int.mod n 2`.* A method
+`n.modBy 2` gets the same qualified call, there being no method to offer (*amended 2026-10-01*). The
 removed names are a table in the compiler beside the prelude, consulted by lowering for an
 unqualified name and by resolution for a qualified one, before either says `unbound_variable` or
 that the module does not expose the name.
@@ -2609,7 +2613,7 @@ view model =
         <ul class="todo-list">
             <For each={model.todos} keyed={.id}>
                 {λt i ->
-                    stripe = if i.mod 2 == 0 then "even" else "odd"
+                    stripe = if Int.mod i 2 == 0 then "even" else "odd"
                     <li class={stripe} onClick={Toggle t.id}>{t.title}</li>}
             </For>
         </ul>
@@ -2624,13 +2628,12 @@ hash s = String.foldl s 5381 λc h -> Int.mod (h * 33 + Char.toCode c) 429496729
 What each change is: the `let`s are blocks (§12.2), and `Log.info "clearing"`, a `()`, is a
 statement while `Debug.log`'s value is discarded with `_ =`; every lambda is `λ` (§12.1) and every
 last-argument lambda sheds its parentheses (§12.3), the `Toggle` body hanging below its head line
-(§12.5); `Debug.log` takes its label first and `modBy` is `Int.mod`, here also as the method
-`i.mod 2` (§12.4); the `if`s written on one line stay there (§12.5). `<section` and `<li` begin
+(§12.5); `Debug.log` takes its label first and `modBy` is `Int.mod` (§12.4); the `if`s written on one line stay there (§12.5). `<section` and `<li` begin
 their lines after an operand, which is the markup row of §12.2's layout. The migrations
 (`frontend.md` §11.4–§11.5) write the same program less the choices a person makes: they keep
 `_ = Log.info "clearing"` as it was (seeing that its value is `()` needs types), keep the `if`s that
 were vertical vertical (the never-join rule), leave the `Toggle` record update nested rather than
-naming `todos`, and write `modBy i 2` as `Int.mod i 2`, not as a method.
+naming `todos`.
 
 ## Appendix A. The prelude
 
@@ -2652,9 +2655,13 @@ fromPolar isNaN isInfinite identity always never
 
 *Amended 2026-10-02 (§12.4; specified, not built).* `modBy`, `remainderBy` and `logBase` leave the
 exposed values, and a use of one is `name_removed`; nothing unqualified replaces them. `Int` and
-`Float` join the module aliases, as the modules that now declare those two types (`core/Int.beni`,
-`core/Float.beni`), so `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` need no import. The exposed
-types do not change.
+`Float` join the module aliases, so `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` need no
+import. The exposed types do not change. *Amended 2026-10-01:* the modules `Int` and `Float` do not
+declare those two types, which stay in `Basics` (§12.4); they are ordinary core modules holding
+`mod` and `rem`, and `log`. Unlike `Int32` below, they are not an escape hatch beside the language
+everyone writes but the home of three prelude values, which is why they keep a prelude row: an
+edge to either exists only in a module that writes `Int.` or `Float.` (the conditional prelude edge,
+static-dispatch-spike.md §5.1).
 
 Lowering resolves each to `import_value(Basics, name)` / `import_ctor(Maybe, Just)` etc., the same
 form an explicit `import Basics exposing (max)` would produce, so nothing downstream knows the

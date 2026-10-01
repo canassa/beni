@@ -5479,17 +5479,26 @@ unread binding.
 A qualified `Basics.modBy`, `Basics.remainderBy` or `Basics.logBase`, and a method call `n.modBy`
 on an `Int`, is resolved against the removed-names table (`language.md` §12.4) before resolution
 says the module does not expose the name or §9 says the type has no such method, and is reported as
-`name_removed` with the replacement call. The unqualified and `exposing` forms are lowering's.
+`name_removed` with the replacement call — for a method too the qualified `Int.mod n 2`, there
+being no `mod` method (§29.3). The unqualified and `exposing` forms are lowering's.
 
 ### 29.3 `Int` and `Float` in their own modules
 
-The well-known table (static-dispatch-spike.md §3.2) keeps serving `==` and `<` on `Int` and
-`Float`; its entries' declaring module becomes `core:Int` and `core:Float`, as `String`'s and
-`Char`'s became `core:String` and `core:Char`. A literal mints its type from the new module, which
-moves the minted edge (static-dispatch-spike.md §6.8) from `core:Basics` to `core:Int` or
-`core:Float` for every module that writes a number — visible in `check/good/TypeOwnerEdges` and the
-graph goldens, and nowhere in emitted JavaScript. A `where a.compare` answered at `Int` is answered
-by `core/Int.beni`'s `compare`.
+*Amended 2026-10-01 (the owner; `language.md` §12.4): the types do not move.* `Int` and `Float`
+stay declared in `core/Basics.beni`; the well-known table (static-dispatch-spike.md §3.2) keeps
+serving `==` and `<` on both from there, a literal mints its type from `core:Basics` as before, and
+a `where a.compare` answered at `Int` is still answered by `Basics`. `core/Int.beni` (`mod`, `rem`)
+and `core/Float.beni` (`log`) are ordinary modules over `Js` that import `Basics`; the checker
+knows nothing special about them. Their names join the prelude's module aliases, so `Int.mod` and
+`Float.log` resolve as `List.map` does, through a conditional prelude row that becomes a graph edge
+only in a module that writes the qualified name. Nothing moves in `check/good/TypeOwnerEdges` or
+the graph goldens of a program that does not write one.
+
+The move this section specified on 2026-10-02 — the table's entries declared by `core:Int` and
+`core:Float`, the minted edge moving with them — is withdrawn: it made an import cycle, `Basics`
+needing the two types for its own `Int`- and `Float`-typed functions and literals, and the two
+modules needing `Bool`, `Order` and the operator functions of `Basics`. Without the move a method
+call `n.mod 2` finds no `mod` among `Basics`'s values and is the ordinary no-such-method error.
 
 ### 29.4 Call-style hints and `suspicious_argument_order`
 

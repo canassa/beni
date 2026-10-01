@@ -3435,6 +3435,12 @@ delete the table, at the cost of five more moves and five more prelude rows. **S
 2026-10-02** (`language.md` §12.4; specified, not built): `Int` and `Float` move to `core/Int.beni`
 and `core/Float.beni`, so that `Int.mod`, `Int.rem` and `Float.log` are their methods; the table
 stays and serves both from there (`checker-v2.md` §29.3). `Bool`, `Order` and `Never` stay.
+**That supersession is withdrawn 2026-10-01** (the owner; `language.md` §12.4, `checker-v2.md`
+§29.3): A.6 stands whole. Moving `Int` and `Float` out of `Basics` makes an import cycle — `Basics`
+keeps its `Int`- and `Float`-typed functions and literals, and the new modules need `Bool`, `Order`
+and the operator functions of `Basics` — so both types stay here. `core/Int.beni` (`mod`, `rem`)
+and `core/Float.beni` (`log`) are ordinary modules importing `Basics`, reached as `Int.mod n 2`;
+they declare no type, so `mod`, `rem` and `log` are not methods and `n.mod 2` does not exist.
 
 **A.7 — a `pub foreign` may carry a `where` clause** (§5.2), and its sibling export's arity is
 evidence count + declared arity. **Amended 2026-09-17:** this does *not* extend a build-time check,

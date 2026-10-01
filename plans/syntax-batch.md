@@ -12,7 +12,7 @@ and the choices the specification had to make that the owner should confirm.
 | lexer, parser, AST, BIR, migrations, the `fmt --check` gate, the formatter's measure | [`frontend.md`](../docs/design/frontend.md) §11 (pointers in §1, §3.5–§3.7, §9.3) |
 | `statement_not_unit`, `name_removed` at a qualified name, `Int`/`Float` modules, call-style hints, `suspicious_argument_order` | [`checker-v2.md`](../docs/design/checker-v2.md) §29 |
 | a statement is a discard; `Int.mod` stays a call | [`backend.md`](../docs/design/backend.md) §4 |
-| `Int` and `Float` leave `Basics` | [`static-dispatch-spike.md`](../docs/design/static-dispatch-spike.md) A.6, [`checker.md`](../docs/design/checker.md) Appendix B |
+| `Int` and `Float` modules beside `Basics`, which keeps both types (amended 2026-10-01) | [`static-dispatch-spike.md`](../docs/design/static-dispatch-spike.md) A.6, [`checker.md`](../docs/design/checker.md) Appendix B |
 
 Precedent read for it: Roc's blocks and statements (`references/roc/docs/langref/statements.md`,
 `expressions.md`; `src/check/Check.zig:21835-21848` unifies a statement with `{}` and
@@ -50,7 +50,7 @@ mechanical commit writes, so they are cheapest to change before slice 7.
 | Y7 | A block keeps `let`'s scoping: functions mutually recursive in any order, values in written order with `let_forward_reference` | Roc's strictly sequential local scope, which would refuse programs that check today | §12.2 |
 | Y8 | A `<` that begins a line opens markup whatever precedes it (a lexer rule), so a block's markup value can follow a binding | require parentheses around markup after a binding | §12.2, `frontend.md` §11.1 |
 | Y9 | A trailing lambda whose body starts on the `->` line ends at the first later line not indented past the line the `λ` is on — so a `\|>` pipeline of trailing lambdas reads stage by stage | greedy to the end of the expression, as `<\|` is, which reads `xs \|> List.filter λt -> t.done` / `\|> List.length` as one lambda | §12.3 |
-| Y10 | **Confirm first.** `Int` and `Float` move to `core/Int.beni` and `core/Float.beni`, so `Int.mod n 2`, `Int.rem n 3`, `Float.log x 10` and the methods `n.mod 2`, `x.log 10` exist (the owner's `Int.mod i 10`) | keep both types in `Basics`, add unexposed `mod`, `rem`, `log` there: `n.mod 2` and `Basics.mod n 2` work, `Int.mod` does not | §12.4 |
+| Y10 | **Decided by the owner, 2026-10-01**, replacing the move S6 confirmed: `Int` and `Float` stay in `Basics`; `core/Int.beni` and `core/Float.beni` are ordinary modules holding only `mod`, `rem` and `log`, beni over `Js`, importing `Basics`, in the prelude's module aliases. `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` work; the methods `n.mod 2` and `x.log 10` are not offered. *Why:* moving the types makes an import cycle — `Basics` keeps `Int`- and `Float`-typed functions and literals, and the new modules need `Bool`, `Order` and the operators of `Basics` (`browser-decisions.md` S9) | the move as first specified, which needs `Bool`, `Order` and the operators moved too; or `mod` in `Basics`, giving `n.mod 2` and no `Int.mod` | §12.4 |
 | Y11 | **Confirm first.** `Debug.log` goes back to Elm's `String, a -> a`, keeping its name | rename it (`Debug.logAs value "label"`), which keeps pipelines and lets a removal diagnostic catch every stale call | §12.4 |
 | Y12 | Renamed: only names that name an argument by role (`modBy`, `remainderBy`, `logBase`). Kept: `clamp`, `String.split`/`contains`/`startsWith`/`endsWith`/`indexes`/`indices`/`replace` (JavaScript's, Go's, Rust's order), `List.repeat`, and every function whose Elm-ordered call is a type error | rename every function whose Elm-ordered call still type-checks | §12.4 |
 | Y13 | `suspicious_argument_order`, a warning, for the kept functions above when the call has the shape an Elm-ordered one has (a literal subject) | no warning, documentation only | §12.5 |
@@ -83,7 +83,7 @@ to two days, **L** three to four.
 | 10 | **Trailing lambdas taught**: `parseApp` and the body-end rule (§12.3); `--migrate-trailing-lambda` | code | M | `parse/good/` for the pipeline case, markup holes, `<-`, `_`; `parse/bad/` for a lambda followed by an argument |
 | 11 | **Migrate trailing lambdas** over the gate's scope | mechanical | S | emitted JavaScript byte-identical |
 | 12 | **Trailing lambdas enforced**: the formatter's own rule; `<\| λ` printed as a trailing lambda | code | S | `fmt/` fixtures |
-| 13 | **`Int` and `Float` modules**: `core/Int.beni`, `core/Float.beni`, `mod`, `rem`, `log`, the prelude rows, the well-known table entries, `name_removed` (§12.4; `checker-v2.md` §29.2–§29.3); `--migrate-names` without its `Debug.log` half | code | M | `check/good/TypeOwnerEdges` re-blessed; `check/bad/NameRemoved` for each of the four forms; `run/` that `Int.mod` and `Int.rem` give `modBy`'s and `remainderBy`'s answers, zero divisor included |
+| 13 | **`Int` and `Float` modules**: `core/Int.beni`, `core/Float.beni`, `mod`, `rem`, `log`, the prelude rows, `name_removed` (§12.4; `checker-v2.md` §29.2–§29.3, both amended 2026-10-01); `--migrate-names` without its `Debug.log` half | code | M | `check/good/TypeOwnerEdges` unchanged (the types do not move); `check/bad/NameRemoved` for each of the four forms; `run/` that `Int.mod` and `Int.rem` give `modBy`'s and `remainderBy`'s answers, zero divisor included, and `Float.log` `logBase`'s |
 | 14 | **Migrate names** over the whole repository (an edit) | mechanical | S | run hashes re-recorded (the emitted names change) |
 | 15 | **`Debug.log` label first** and its rewrite, one commit (the exception, `frontend.md` §11.7) | code + mechanical | S | the 24 `run/` fixtures that order by `Debug.log` print what they printed |
 | 16 | **Call-style diagnostics**: the three hints, the generalised Elm-order hint, `suspicious_argument_order` (§12.5; `checker-v2.md` §29.4) | code | M | a `check/bad/` fixture per hint; a `check/good/` fixture where the warning fires and one where the method form silences it |
@@ -130,4 +130,4 @@ The mechanical commits touch most of the repository's 1 750 `.beni` files — `c
 - **An editor input method for `λ`.** M5's language server is where `\` → `λ` belongs; until then
   the README of the editor support (when there is one) says which key sequence to use.
 - **`Float`'s other functions.** `Float.log` is the one this batch needs; whether `round`, `floor`
-  and the rest also become `Float` methods is a library question, not a syntax one.
+  and the rest also move to the `Float` module is a library question, not a syntax one.

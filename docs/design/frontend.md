@@ -1435,7 +1435,8 @@ naming it — a file whose output does not parse cleanly.
 - **`--migrate-names`** runs lowering's per-file name resolution (a pure function of the file,
   `language.md` §6.2) to find every reference to `Basics.modBy`, `Basics.remainderBy` and
   `Basics.logBase` — unqualified, qualified, exposed, or as a method — and rewrites it to `Int.mod`,
-  `Int.rem` or `Float.log` (a method call `n.modBy 2` to `n.mod 2`; an `exposing` entry is
+  `Int.rem` or `Float.log` (a method call `n.modBy 2` to `Int.mod n 2`, there being no method
+  form since the types stay in `Basics`, `language.md` §12.4 as amended 2026-10-01; an `exposing` entry is
   dropped, and an emptied `exposing` list with it). It swaps the two arguments of every call of
   `Debug.log` written with two argument atoms (a parenthesised expression and `_` are atoms), and
   names every other use — a pipeline into `Debug.log`, a call with one argument — for a hand edit.
