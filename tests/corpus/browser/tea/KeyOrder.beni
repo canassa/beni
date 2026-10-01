@@ -1,0 +1,76 @@
+-- Subscriptions start in their keys' order (boundary.md §9.8.5), and that
+-- order is the same in a development and a release build (backend.md §9,
+-- *Item 4, taken up*). `Hosted` orders keys by what their values hold —
+-- field names and constructor tags — so a release build that respelled
+-- `Lane`'s tags as their declaration indices, or `Spot`'s fields by how
+-- often they are named, would start `Zeta` before `Alpha`, or the spot
+-- whose `second` is smaller first. Each body sends its name once, the
+-- moment it starts, and the page lists the names in arrival order.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Lane
+    = Zeta
+    | Alpha
+
+
+type alias Spot =
+    first : Int
+    second : Int
+
+
+type alias Model =
+    seen : List String
+
+
+-- `second` is named more often than `first`.
+spotName : Spot -> String
+spotName s =
+    "spot ${String.fromInt s.first}${String.fromInt s.second}${String.fromInt (s.second - s.second)}"
+
+
+hello : String, Cmd.Send String -> ()
+hello name send =
+    send name
+
+
+update : String, Model -> ( Model, Cmd String )
+update name model =
+    ( { model | seen = model.seen ++ [ name ] }, Cmd.none )
+
+
+subscriptions : Model -> Sub String
+subscriptions _ =
+    let
+        a =
+            { first = 1, second = 2 }
+
+        b =
+            { first = 2, second = 1 }
+    in
+    Sub.batch
+        [ Sub.listen Zeta (hello "zeta" _) identity
+        , Sub.listen Alpha (hello "alpha" _) identity
+        , Sub.listen b (hello (spotName b) _) identity
+        , Sub.listen a (hello (spotName a) _) identity
+        ]
+
+
+view : Model -> Html String
+view model =
+    <main>
+        <p>{String.join model.seen ", "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { seen = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

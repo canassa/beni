@@ -4489,15 +4489,28 @@ every place `Lower` writes a tag — a constructor's object, a nullary constant,
 case, a markup probe, `isJust` — writes the bit's answer, so no two spellings of one type can meet.
 **`compare` on an integer-tagged type needs no `<T>$$order` table**: the tag IS the declaration
 index the table maps to, so the lookup is the tag itself and the table is not written — which also
-pays the `obj[dynamicString]` the section above recorded against report 12 §5.4. A
-`Hosted.Key` built from a value holding such a type orders differently in the two builds; only its
-equality is the program's (`boundary.md` §9.8.3), and that does not move.
+pays the `obj[dynamicString]` the section above recorded against report 12 §5.4.
+
+**A reflective order is a third door** (amended 2026-10-01, before merge). `Hosted.key : k -> Key
+where k.compare` hands its sibling a comparable value of a type it cannot know, and `Hosted` orders
+keys by what they hold — field names, then tags (`boundary.md` §9.8.3). That order decides which
+subscription or command starts first, so it is observable, and respelling a key's fields or
+numbering its tags changed it: `browser/tea/KeyOrder` started `Zeta` before `Alpha` under
+`--release` and after it in development. So when a live `foreign` takes a bare type variable that
+carries `compare`, **every type the build compares is in the boundary**: the type or record fields
+of every live derived `compare`, and the parameter types of every live `pub compare`, with their
+bodies, as any boundary type. A key's type has `compare` by its `where` clause, so every key type
+is among them; a type the build never orders is renamed as before. One case cannot be found that
+way — a `pub compare` of a type with parameters and no `where` clause, which compares what its
+parameters hold by nothing the build ships — and a build with one renames nothing and numbers no
+tag. `List.compare` is not such a `foreign`: its variable is under a `List`, and each element goes
+to the evidence. The bench app reaches no key and does not move.
 
 **As built, measured** (2026-10-01, brotli 11, against `master` at the commit before, same
 machine). The js-framework-benchmark app (`bench/ui`, `browser-tea --release`): **5 723 → 5 639**
 (−84, −1.5 %) — fields alone 5 690, the tags the other 51. `bench/size.mjs`: every program's
 release build, summed, 317 139 → **314 441** (−0.85 %); the `browser-tea element` page 1 261 →
-1 217, the `effects` page 5 412 → 5 253; the empty pages unchanged at 605, and every development
+1 217, the `effects` page 5 412 → 5 258 (5 253 before keys were ordered alike); the empty pages unchanged at 605, and every development
 figure unchanged to the byte. `bench/corpus` is a `--library` build and does not move, by the
 rule above. A Chrome batch (n = 5, then n = 10 on three operations, on a machine at load 6–23)
 put the app's script medians within noise of the build before: the two operations that read

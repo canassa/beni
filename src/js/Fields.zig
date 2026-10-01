@@ -78,12 +78,17 @@ pub const Input = struct {
     interner: *const InternPool.Global,
 };
 
-/// Close the boundary (see the header).
-pub fn close(in: Input) Allocator.Error!Boundary {
+/// Close the boundary (see the header). Null when nothing may be renamed
+/// at all: a reflective order over a type whose `compare` takes no
+/// evidence for its parameters (`orderedReflectively`).
+pub fn close(in: Input) Allocator.Error!?Boundary {
     var b: Boundary = .{};
     const n = in.types.entries.len;
     var observed = try std.DynamicBitSetUnmanaged.initEmpty(in.arena, n);
     var walk: Walk = .{ .in = in, .boundary = &b, .observed = &observed };
+    if (orderedReflectively(in)) {
+        if (!try walk.comparedTypes()) return null;
+    }
     // The seeds: what a live declaration says or was solved to say.
     for (in.birs, 0..) |bir, mi| {
         const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
@@ -128,12 +133,76 @@ pub fn close(in: Input) Allocator.Error!Boundary {
     return b;
 }
 
+/// Whether a live `foreign` takes a value of a type variable that carries
+/// `compare`: its sibling holds a value of a type it cannot know and may
+/// order it by what the value holds — field names and tags. `Hosted.key`
+/// is the one today (`boundary.md` §4, §9.8.3): a key is any comparable
+/// value, and the order of keys decides which subscription or command
+/// starts first. `List.compare`, whose variable is under a `List`, hands
+/// every element to the evidence and is not one.
+fn orderedReflectively(in: Input) bool {
+    for (in.birs, 0..) |bir, mi| {
+        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .foreign_value or !in.live.decl(m, i)) continue;
+            const annotation = d.annotation.unwrap() orelse continue;
+            if (bir.instTag(annotation) != .type_fn) continue;
+            const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+            var at: u32 = @intFromEnum(d.where_start);
+            while (at < @intFromEnum(d.where_end)) : (at += Bir.extraLen(Bir.WhereConstraint)) {
+                const w = bir.extraData(@enumFromInt(at), Bir.WhereConstraint);
+                if (!std.mem.eql(u8, in.interner.slice(bir.symbol(w.method)), "compare")) continue;
+                for (params) |param| {
+                    if (bir.instTag(param) != .type_var) continue;
+                    if (bir.symbol(@enumFromInt(bir.instData(param).lhs)) == bir.symbol(w.variable)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 const Walk = struct {
     in: Input,
     boundary: *Boundary,
     observed: *std.DynamicBitSetUnmanaged,
     queue: std.ArrayList(TypeId) = .empty,
     stack: std.ArrayList(Bir.Inst.Index) = .empty,
+
+    /// Every type the build orders, into the boundary: a key's type is any
+    /// type with `compare`, so a build in which keys are ordered by what
+    /// they hold keeps every comparable type's names and tags. A live
+    /// derived `compare` names its type or its record's fields, and a live
+    /// `pub compare` its parameter types. False when a `pub compare` of a
+    /// type with parameters takes no evidence for them: what the
+    /// parameters hold is then compared by nothing the build ships, and
+    /// cannot be found — the caller keeps every name.
+    fn comparedTypes(w: *Walk) Allocator.Error!bool {
+        const in = w.in;
+        for (in.birs, in.dispatch, 0..) |bir, table, mi| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(mi)));
+            for (table.derived, 0..) |row, i| {
+                if (row.kind != .compare or !in.live.derivedRow(m, i)) continue;
+                switch (row.shape) {
+                    .nominal => |id| try w.observe(id),
+                    .record => |r| for (table.shapeNames(r)) |field| try w.pin(in.interner.slice(field)),
+                    .tuple, .unit => {},
+                }
+            }
+            for (bir.decls, 0..) |d, i| {
+                if (!d.kind.isValue() or !d.is_pub or !in.live.decl(m, i)) continue;
+                if (!std.mem.eql(u8, in.interner.slice(bir.symbol(d.name)), "compare")) continue;
+                const annotation = d.annotation.unwrap() orelse continue;
+                try w.typeAt(m, bir, annotation);
+                if (d.where_start != d.where_end) continue;
+                if (bir.instTag(annotation) != .type_fn) continue;
+                const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+                if (params.len == 0 or bir.instTag(params[0]) != .type_app) continue;
+                return false;
+            }
+        }
+        return true;
+    }
 
     /// Copied: the session's pool may grow before the text is read again
     /// (whole-program specialisation interns names), moving its bytes.

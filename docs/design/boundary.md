@@ -333,10 +333,12 @@ Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `m
 store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s
 `Object.keys` walk, `Hosted`'s key order — but never read a field or a tag by name: which type
 it holds was never its to know, and a release build may spell that type's fields and tags
-differently. A reflective walk sees the same values equal in both builds; an ORDER it imposes on
-unequal values of different shapes may differ, and nothing may make that order observable
-except as a set's order. This is parametricity, and it is what keeps a platform's generic
-plumbing from pinning every program's records.
+differently. A reflective walk sees the same values equal in both builds. An ORDER it imposes is
+another matter, and is the one exception: a `foreign` that takes a bare type variable carrying
+`compare` (`Hosted.key`) may order its values by what they hold, and a build that reaches one
+keeps the names and tags of every type it compares (`backend.md` §9, *Item 4, taken up*), so the
+order of keys is the same in both builds. This is parametricity, and it is what keeps a platform's
+generic plumbing from pinning every program's records.
 
 **What to do about it** is nothing new: a platform that needs to read a record by name names its
 type — in a `foreign` annotation, or at the `Js.from` / `Js.to` it goes through.
