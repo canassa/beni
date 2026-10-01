@@ -817,3 +817,13 @@ work as before.
 
 Every interquartile range overlaps (`update10th` was 1.06 / 1.23 at n = 16 and flipped at n = 24;
 `replace1k` was 7.72 / 7.85 at n = 10 and tied at n = 16); beni is ahead of both Solids on all nine.
+
+**`stop` written where it is called** (`backend.md` §9, slice 8, *a function that assigns*). In a
+release build `stop` is `()=>{dead=true}`; slice 8 wrote only functions that return a value. It now
+writes a one-assignment function at its calls made as statements — at all of them or none, and
+only when that is smaller than the calls and the declaration. The empty page **485 → 480** (raw
+−9), the `bench/ui` app 5 644 → 5 643 (raw −8); of the 56 pages measured 24 smaller, one level, 27
+byte-identical (their hosted loop calls `stop` from eight places, where the calls are smaller), and
+4 larger by 1–23 with fewer raw bytes (`dom/Selector` +23: removing a declaration renames every
+one after it). The assignment runs only when a guard sees its body fail, so no page's success path
+changed and `bench/ui` was not re-timed.

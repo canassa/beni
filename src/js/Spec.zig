@@ -3208,10 +3208,235 @@ const Spec = struct {
         while (pass < 4) : (pass += 1) {
             // Fact 3 answers for the program as the last facts saw it: the
             // first pass only, before any body is written in.
-            if (!try s.inlineSmallPass(pass == 0 and s.pts.ok)) break;
+            const expressions = try s.inlineSmallPass(pass == 0 and s.pts.ok);
+            const statements = try s.inlineStatementsPass();
+            if (!expressions and !statements) break;
             any = true;
         }
         return any;
+    }
+
+    /// `backend.md` §9, *Slice 8*, amended (*a statement*): a top-level
+    /// function whose body is one assignment, `x = e` or `o.p = e`, called
+    /// as a statement — its value read by nothing — is that assignment,
+    /// its parameters the arguments, where that is no larger than the call.
+    /// Every argument is an atom, so each is evaluated once, and before the
+    /// assignment runs, as in the call. True when any was.
+    fn inlineStatementsPass(s: *Spec) Allocator.Error!bool {
+        const smalls = try s.arena.alloc(?Small, s.globals);
+        @memset(smalls, null);
+        var found = false;
+        for (s.decl, 0..) |maybe, gi| {
+            const decl = maybe orelse continue;
+            const g: u32 = @intCast(gi);
+            if (s.assigned[g]) continue;
+            const fm = &s.mods[decl.module];
+            if (fm.ir.tag(decl.stmt) != .const_decl) continue;
+            if (std.mem.indexOfScalar(Index, fm.ir.extraSlice(fm.ir.body, Index), decl.stmt) == null) continue;
+            smalls[g] = try s.statementOf(decl.module, @enumFromInt(fm.ir.data(decl.stmt).rhs), g);
+            found = found or smalls[g] != null;
+        }
+        if (!found) return false;
+        // Every mention of each candidate, and every call of one made as a
+        // statement. It is written in at every call or at none: only when
+        // the calls are all its mentions does its declaration go, and only
+        // then is the whole smaller — `stop` called in eight places is
+        // eight assignments where it was eight calls and one function.
+        const Site = struct { module: u32, top: Index, stmt: Index, g: u32 };
+        var sites: std.ArrayList(Site) = .empty;
+        const mentions = try s.arena.alloc(u32, s.globals);
+        @memset(mentions, 0);
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                stack.clearRetainingCapacity();
+                try stack.append(s.arena, top);
+                while (stack.pop()) |node| {
+                    switch (ir.tag(node)) {
+                        .ident => if (m.globalOf(@enumFromInt(ir.data(node).lhs))) |g| if (smalls[g] != null) {
+                            mentions[g] += 1;
+                        },
+                        .expr_stmt => {
+                            const call: Index = @enumFromInt(ir.data(node).lhs);
+                            if (ir.tag(call) == .call) {
+                                const callee: Index = @enumFromInt(ir.data(call).lhs);
+                                if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| if (smalls[g] != null) {
+                                    try sites.append(s.arena, .{ .module = @intCast(mi), .top = top, .stmt = node, .g = g });
+                                };
+                            }
+                        },
+                        else => {},
+                    }
+                    try pushChildren(s.arena, ir, node, &stack);
+                }
+            }
+        }
+        // Per candidate: its calls, whether each may be written in, and
+        // the bytes that would save.
+        const calls = try s.arena.alloc(u32, s.globals);
+        @memset(calls, 0);
+        const ok = try s.arena.alloc(bool, s.globals);
+        @memset(ok, true);
+        const saved = try s.arena.alloc(i64, s.globals);
+        @memset(saved, 0);
+        for (sites.items) |site| {
+            calls[site.g] += 1;
+            const delta = try s.statementSite(&s.mods[site.module], site.module, site.top, site.stmt, smalls[site.g].?);
+            if (delta) |d| saved[site.g] += d else ok[site.g] = false;
+        }
+        var any = false;
+        for (sites.items) |site| {
+            const g = site.g;
+            const small = smalls[g].?;
+            if (!ok[g] or calls[g] != mentions[g] or s.escaped[g]) continue;
+            // The declaration that goes: `g=(…)=>{…},`.
+            const declaration: i64 = @as(i64, small.cost) + 2 * @as(i64, @intCast(small.params.len)) + 8;
+            if (saved[g] + declaration <= 0) continue;
+            try s.inlineStatementAt(&s.mods[site.module], site.module, site.stmt, small);
+            any = true;
+        }
+        return any;
+    }
+
+    /// Arrow `value` of module `module` as a statement `inlineStatementsPass`
+    /// may write in, or null: one assignment to a name or a property,
+    /// holding no function and no `yield`, naming nothing but its
+    /// parameters and whole-program names, and not `self`. `ret` is the
+    /// assignment.
+    fn statementOf(s: *Spec, module: u32, value: Index, self: u32) Allocator.Error!?Small {
+        const fm = &s.mods[module];
+        if (fm.ir.tag(value) != .arrow or fm.ir.data(value).rhs != Node.arrow_plain) return null;
+        const f = fm.ir.extraData(@enumFromInt(fm.ir.data(value).lhs), JsIr.Func);
+        const body = fm.ir.extraSlice(f.body(), Index);
+        if (body.len == 0 or body.len > 2 or fm.ir.tag(body[0]) != .assign_stmt) return null;
+        // A unit function's `return null` after it: its value is read by
+        // nothing where this is written.
+        if (body.len == 2) {
+            if (fm.ir.tag(body[1]) != .return_stmt) return null;
+            if ((@as(Node.OptionalIndex, @enumFromInt(fm.ir.data(body[1]).lhs))).unwrap()) |v| switch (fm.ir.tag(v)) {
+                .null_lit, .undefined_lit => {},
+                else => return null,
+            };
+        }
+        const assign = body[0];
+        const params = try s.arena.dupe(NameIndex, fm.ir.extraSlice(f.params(), NameIndex));
+        for (params, 0..) |p, i| if (std.mem.indexOfScalar(NameIndex, params[0..i], p) != null) return null;
+        const reads = try s.arena.alloc(u32, params.len);
+        @memset(reads, 0);
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        const d = fm.ir.data(assign);
+        const target: Index = @enumFromInt(d.lhs);
+        switch (fm.ir.tag(target)) {
+            .ident, .member => {},
+            else => return null,
+        }
+        try stack.appendSlice(s.arena, &.{ target, @enumFromInt(d.rhs) });
+        var nodes: u32 = 0;
+        // `nodeCount` prices `true`, `false` and `null` short; written
+        // in, each is its text.
+        var literals: u32 = 0;
+        while (JsIr.popOperand(&stack)) |node| {
+            nodes += 1;
+            if (nodes > 24) return null;
+            switch (fm.ir.tag(node)) {
+                .true_lit, .null_lit, .false_lit => literals += 3,
+                .arrow => return null,
+                .ident => {
+                    const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, params, x)) |i| {
+                        reads[i] += 1;
+                    } else if (fm.globalOf(x)) |h| {
+                        if (h == self) return null;
+                    } else return null;
+                },
+                .unary => if (@as(JsIr.UnaryOp, @enumFromInt(fm.ir.data(node).rhs)) == .yield) return null,
+                else => {},
+            }
+            try fm.ir.pushOperands(s.arena, &stack, node);
+        }
+        // An assignment to a parameter would assign the argument's binding.
+        if (fm.ir.tag(target) == .ident and std.mem.indexOfScalar(NameIndex, params, @enumFromInt(fm.ir.data(target).lhs)) != null) return null;
+        return .{
+            .module = module,
+            .params = params,
+            .ret = assign,
+            .cost = nodeCount(fm.ir, target, &s.pts, module) + nodeCount(fm.ir, @enumFromInt(d.rhs), &s.pts, module) + 1 + literals,
+            .reads = reads,
+            .first = &.{},
+            .inspects = &.{},
+        };
+    }
+
+    /// Whether call statement `stmt` of module `mi` may be `small`'s
+    /// assignment, and if so the bytes that saves (negative: costs): every
+    /// argument an atom, and not a statement a release build drops when it
+    /// is pure.
+    fn statementSite(s: *Spec, m: *Mod, mi: u32, top: Index, stmt: Index, small: Small) Allocator.Error!?i64 {
+        if (m.tables) |t| if (std.mem.indexOfScalar(Index, t.discards.items, stmt) != null) return null;
+        // An assignment to another module's binding is one only a single
+        // scope can write.
+        if (small.module != mi and !s.in.one_scope) return null;
+        const call: Index = @enumFromInt(m.ir.data(stmt).lhs);
+        const args = m.ir.extraSlice(m.ir.subRange(@enumFromInt(m.ir.data(call).rhs)), Index);
+        if (args.len != small.params.len) return null;
+        var call_cost: i64 = 3 + @as(i64, @intCast(if (args.len > 0) args.len - 1 else 0));
+        var inlined: i64 = small.cost;
+        for (args, 0..) |a, i| {
+            const c = nodeCount(m.ir, a, &s.pts, mi);
+            call_cost += c;
+            inlined += @as(i64, small.reads[i]) * (@as(i64, c) - 1);
+            const atom = switch (m.ir.tag(a)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => literalLen(m.ir, a) <= 5 or small.reads[i] <= 1,
+                .ident => try s.atomArgument(m, a, top, s.assigned),
+                else => false,
+            };
+            if (!atom) return null;
+        }
+        return call_cost - inlined;
+    }
+
+    /// Call statement `stmt` of module `mi` written as `small`'s assignment,
+    /// once `statementSite` has allowed it.
+    fn inlineStatementAt(s: *Spec, m: *Mod, mi: u32, stmt: Index, small: Small) Allocator.Error!void {
+        const call: Index = @enumFromInt(m.ir.data(stmt).lhs);
+        const args = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@enumFromInt(m.ir.data(call).rhs)), Index));
+        const fm = &s.mods[small.module];
+        const cross = small.module != mi;
+        var c: Copy = .{
+            .s = s,
+            .src = fm,
+            .dst = m,
+            .cross = cross,
+            .renamed = try s.arena.alloc(u32, fm.ir.names.len),
+            .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
+        };
+        @memset(c.renamed, none);
+        @memset(c.subst, .none);
+        if (cross) {
+            var stack = try s.takeStack();
+            defer s.giveStack(&stack);
+            const d = fm.ir.data(small.ret);
+            try stack.appendSlice(s.arena, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) });
+            while (JsIr.popOperand(&stack)) |node| {
+                if (fm.ir.tag(node) == .ident) {
+                    const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, small.params, x) == null) {
+                        const h = fm.globalOf(x).?;
+                        const to = try s.nameIn(m, h) orelse return;
+                        c.renamed[x.int()] = to.int();
+                    }
+                }
+                try fm.ir.pushOperands(s.arena, &stack, node);
+            }
+        }
+        for (small.params, args) |p, a| if (p.unwrap()) |pi| {
+            c.subst[pi] = a.toOptional();
+        };
+        const copied = try c.stmt(small.ret, 0);
+        m.copyNode(stmt, copied);
     }
 
     /// Arrow `value` of module `module` as slice 8 sees it, or null: one

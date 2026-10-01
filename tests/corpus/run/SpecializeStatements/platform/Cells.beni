@@ -1,0 +1,68 @@
+--! Functions whose body is one assignment, called as statements (`backend.md`
+--! §9, *Slice 8*, *a function that assigns*): the shape of the browser
+--! runtime's `stop`, in the code only a platform may write.
+
+import Js
+
+
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+count : Js.Ref Int
+count = Js.ref 0
+
+
+noise : Js.Ref Bool
+noise = Js.ref False
+
+
+flag : Js.Ref Bool
+flag = Js.ref False
+
+
+-- Called twice, as statements: written where it is called, and gone.
+stop : () -> ()
+stop () = Js.write dead True
+
+
+-- With a parameter, called with literals: each call is the assignment of
+-- its argument.
+set : Int -> ()
+set n = Js.write count n
+
+
+-- Called nine times: nine `noise = true` would be larger than nine calls
+-- and the function, so every call stays.
+bump : () -> ()
+bump () = Js.write noise True
+
+
+-- Called as a statement once and also stored where the host can call it:
+-- the function must stay, so its call does too.
+raise : () -> ()
+raise () = Js.write flag True
+
+
+pub demo : () -> List String
+demo () =
+    _ = stop ()
+    _ = set 3
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = bump ()
+    _ = Js.set (Js.global "globalThis") "raise" (Js.from raise)
+    _ = raise ()
+    _ = set 4
+    _ = stop ()
+    [ if Js.read dead then "dead" else "alive"
+    , String.fromInt (Js.read count)
+    , if Js.read noise then "noisy" else "quiet"
+    , if Js.read flag then "raised" else "low"
+    ]

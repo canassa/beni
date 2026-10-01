@@ -1,0 +1,15 @@
+-- emit: a function whose body is one assignment is written where it is
+-- called as a statement (`backend.md` §9, *Slice 8*, *a function that
+-- assigns*) — at every call or at none (`platform/Cells.beni`):
+--
+--   * `stop`, called twice, is `dead = true` twice, and is not written;
+--   * `set 3` and `set 4` are the two assignments of their literals;
+--   * `bump`, called nine times, stays a function and nine calls: the
+--     assignments would be larger;
+--   * `raise`, also handed on as a value, stays, and so does its call.
+import Cells
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Cells.demo ())

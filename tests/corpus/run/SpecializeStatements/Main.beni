@@ -1,0 +1,11 @@
+-- A function whose body is one assignment, written where it is called as a
+-- statement in a release build (`backend.md` §9, *Slice 8*, *a function
+-- that assigns*), does what the call did, in the same order: both builds
+-- print the same four lines (`platform/Cells.beni`; the shapes are
+-- `emit/release/app/SpecStatements`).
+import Cells
+import Node
+
+
+main : Node.Program
+main = Node.printLines (Cells.demo ())

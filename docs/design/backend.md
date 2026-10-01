@@ -5600,6 +5600,24 @@ through the field), `run/SpecializeSmall` (the same with `Debug.log` on each arg
 is the development build's), `emit/release/app/SpecConstants`, `SpecFacts`, `SpecNodes`,
 `SpecInit`, `InlineAfter`, `emit/release/split/EmptyPage`.
 
+*Amended: a function that assigns* (`plans/runtime-in-beni.md`, *The empty page's last items*). A
+top-level function whose body is one assignment — `x = e` or `o.p = e`, optionally followed by a
+unit function's `return null` — holding no function and no `yield`, naming nothing but its
+parameters and whole-program names, and not assigning a parameter, is written as that assignment
+at a call **made as a statement** (`f(…);`, its value read by nothing), its parameters the
+arguments. Every argument must be an atom (as above), so each is evaluated once and before the
+assignment, as in the call; a statement the lowering lists as a pure discard is left alone; and
+another module's binding is assigned only in a one-scope build. **It is done at every call or at
+none**: only when every mention of the function is such a call does its declaration go, and only
+when the calls' growth is smaller than the declaration — the size model's, with `true`, `false`
+and `null` priced as their text — is the whole smaller. The browser runtime's `stop` in a release
+build is `dead = true`, called from each entry point's guard: on a page with two or three guards
+it is written in (the empty page 485 → **480**, 24 of the 56 pages smaller and 4 larger
+by 1–23 brotli bytes with fewer raw bytes, −207 in all), on a hosted page with eight it stays.
+Fixtures: `emit/release/app/SpecStatements` (`stop` twice and gone, `set n` with a literal,
+`bump` called nine times and kept, `raise` stored for the host and kept), `run/SpecializeStatements`
+(the same; both builds print the same lines).
+
 **Slice 9 — constructor folding** (*added 2026-10-03*; `plans/runtime-in-beni.md`'s *Append
 against Solid 1*: a page that reads a list with `List.get` then `Maybe.withDefault` made a `Just`
 per read, most of the cold loop's cost). A value a small function makes, that another small
