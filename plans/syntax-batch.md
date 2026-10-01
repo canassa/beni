@@ -87,13 +87,18 @@ to two days, **L** three to four.
 | 14 | **Migrate names** over the whole repository (an edit) | mechanical | S | run hashes re-recorded (the emitted names change) |
 | 15 | **`Debug.log` label first** and its rewrite, one commit (the exception, `frontend.md` §11.7) | code + mechanical | S | the 24 `run/` fixtures that order by `Debug.log` print what they printed |
 | 16 | **Call-style diagnostics**: the three hints, the generalised Elm-order hint, `suspicious_argument_order` (§12.5; `checker-v2.md` §29.4) | code | M | a `check/bad/` fixture per hint; a `check/good/` fixture where the warning fires and one where the method form silences it |
+| 17 | **Unicode notation specified** (`browser-decisions.md` S8): `language.md` §12 gains the symbols, their tokens and precedence (each that of the ASCII operator it replaces), `×` in the type grammar beside the n-ary comma (`Int, Int → Int` is two arguments, `Int × Int → Int` one pair), the lookalikes the lexer refuses (`−`, `⇒`, `⟶`, `＜` …) and the removal codes; `frontend.md` §11 the migration | spec | S | the owner confirms the open choices it lists before slice 18 |
+| 18 | **Unicode taught**: the lexer reads `→ ← ≠ ≤ ≥` as the tokens they replace and `×` in types, the formatter keeps the spelling it read, `beni fmt --migrate-unicode` | code | S | `parse/good/` and `fmt/` fixtures; a `tokens` golden; the migration on a fixture with `->` in strings, comments and multiline strings left alone |
+| 19 | **Migrate Unicode** over every `.beni` file, normative doc examples, core doc comments, Zig test programs, generators and message examples, alone in its commit | mechanical | S | emitted JavaScript byte-identical |
+| 20 | **Unicode enforced**: removal diagnostics for `->`, `<-`, `/=`, `<=`, `>=` and a parenthesised tuple type | code | S | one `parse/bad/` fixture per removed form |
 
 **Dependencies.** 1 → 2 → 3 first, because every reformatting migration (8, 11) relies on the gate
 holding its files canonical, and the blocks' safety argument (`language.md` §12.2) relies on
 canonical layout. 4–6 next, because `λ` is the smallest piece and every later fixture is written in
 it. 7a → 7b → 8 → 9, then 10 → 11 → 12 (a trailing lambda's body is a block, so 10 needs 7a). 13–15
 and 16 depend only on 3 and may run beside 7–12; 16's warning table is §12.4's, so after 13.
-Total: about three weeks of slices, of which the mechanical commits are minutes each to produce and
+17–20 (S8) come after 12 and 14, so their mechanical commit lands on a tree no other migration
+is rewriting. Total: about three weeks of slices, of which the mechanical commits are minutes each to produce and
 most of the review.
 
 ## 3. Coordinating with work that edits `.beni` files
