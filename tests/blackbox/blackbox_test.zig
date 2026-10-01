@@ -3807,7 +3807,10 @@ test "core/Basics carries the derived rows §3.2's table asks it for" {
     // answers `primitive` and a primitive is not a function anyone emits
     // (A.18, §3.2).
     try testing.expect(std.mem.indexOf(u8, r.stdout, "eq Basics.Order") == null);
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "Basics.Bool") == null);
+    // (`Bool` may be named elsewhere in the dump: `isNaN`'s `Js.to` is read
+    // back at `Bool`, a boundary row, checker-v2.md §28.)
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "eq Basics.Bool") == null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "compare Basics.Bool") == null);
 
     // And the rows are EMITTED, which is the half a table alone cannot
     // show: a target naming a function no module writes is exit 0 and a

@@ -30,10 +30,6 @@ export const sub = (a, b) => a - b;
 export const mul = (a, b) => a * b;
 export const fdiv = (a, b) => a / b;
 
-// Truncated towards zero, and 0 for a zero divisor rather than Infinity:
-// `Int` has no infinity, so returning one would put a value in the type
-// that the type does not contain.
-export const idiv = (a, b) => (b === 0 ? 0 : Math.trunc(a / b));
 export const pow = (a, b) => a ** b;
 
 export const lt = (a, b) => a < b;
@@ -62,31 +58,6 @@ export const append = (a, b) => {
   if (a.length === 0) return b;
   return (Array.isArray(a) ? a : a.$plain()).concat(Array.isArray(b) ? b : b.$plain());
 };
-
-export const toFloat = (a) => a;
-export const round = (a) => Math.round(a);
-export const floor = (a) => Math.floor(a);
-export const ceiling = (a) => Math.ceil(a);
-export const truncate = (a) => Math.trunc(a);
-
-// Subject first, then the modulus. The result takes the sign of the MODULUS
-// (Basics.beni: `modBy (-1) 4 == 3`), which JavaScript's `%` does not do.
-export const modBy = (n, k) => (k === 0 ? 0 : ((n % k) + k) % k);
-export const remainderBy = (n, k) => (k === 0 ? 0 : n % k);
-
-export const sqrt = (a) => Math.sqrt(a);
-export const logBase = (a, base) => Math.log(a) / Math.log(base);
-export const e = Math.E;
-export const pi = Math.PI;
-export const cos = (a) => Math.cos(a);
-export const sin = (a) => Math.sin(a);
-export const tan = (a) => Math.tan(a);
-export const acos = (a) => Math.acos(a);
-export const asin = (a) => Math.asin(a);
-export const atan = (a) => Math.atan(a);
-export const atan2 = (y, x) => Math.atan2(y, x);
-export const isNaN = (a) => Number.isNaN(a);
-export const isInfinite = (a) => a === Infinity || a === -Infinity;
 
 // Structural equality, iterative so a long list cannot exhaust the stack.
 // The checker has already proved both sides equatable (checker.md

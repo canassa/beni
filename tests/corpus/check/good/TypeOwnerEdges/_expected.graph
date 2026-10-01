@@ -6,7 +6,9 @@ app:Middle -> app:Owner
 app:Middle -> core:Basics
 app:Owner -> core:Basics
 app:User -> app:Middle
+core:Basics -> core:Js
 core:Char -> core:Basics
+core:Char -> core:Js
 core:Debug -> core:String
 core:List -> core:Basics
 core:List -> core:Maybe

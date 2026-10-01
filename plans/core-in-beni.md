@@ -17,7 +17,7 @@ spelling — it is kept minimal, and the step says why.
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | to come |
 | 3 | **`core/List.js`**: the array-backed list and its views | to come; needs `Js`'s list positions loosened as step 1 loosened its names (*What step 1 leaves*) |
-| 4 | **The rest**: `Char.js`, `Basics.js`, `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js`, `Dom.js`, `runtime.js`'s `safeUrl`, `html`'s `Html.js`, and the `node` platform | to come |
+| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js`, `Dom.js`, `runtime.js`'s `safeUrl`, `html`'s `Html.js`, and the `node` platform | to come |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
 
@@ -343,3 +343,53 @@ compiler before (`IMPORT CYCLE: Basics → List → Basics`) and checks clean af
 property-name literal and is still `js_outside_platform`: the exemption lets no user package
 import `Js`. Its cost was not measured: the second pass runs only in a module that imports core's
 `Js`, about a dozen of core's and the platforms'.
+
+## `Char` and `Basics` (2026-10-02)
+
+With `Js` exempt, **`core/Char.js` is gone** and **`core/Basics.js` lost everything but the
+operators, `append` and `eq`/`neq`**. `Char`'s `toCode`, `fromCode`, `toUpper` and `toLower` and
+`Basics`' `toFloat`, `round`, `floor`, `ceiling`, `truncate`, `idiv`, `modBy`, `remainderBy`,
+`sqrt`, `logBase`, `e`, `pi`, the six trigonometric functions, `isNaN` and `isInfinite` are beni
+over `Js`, each the sibling's own body (`isInfinite` is `Math.abs(x) === Infinity`, one test where
+the sibling made two; `NaN`'s absolute value is `NaN`).
+
+**What stayed, and why.**
+
+- **`add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge`**: every saturated call is already the
+  operator, written in place (`backend.md` §4, *Arithmetic is an operator*), so the sibling ships
+  only for one passed as a value — and a beni body would be that same call of itself, a
+  definition that only the in-place rule keeps from recursing. **`and` `or`**: a beni body
+  evaluates both sides.
+- **`append`** and **`eq`/`neq`** ask a value's JavaScript `typeof` — `"string"`, `"object"` —
+  and compare it with a string: a `String` value, which `Basics`, below `String`, may not write;
+  the exemption covers only literals a `Js` call writes in place. `Object(x) === x` would answer
+  `eq`'s question without a string and `x.$plain === undefined && !Array.isArray(x)` `append`'s,
+  each longer than `typeof`'s test; what would move them as they are is a `Js` test of a value's
+  type that names no string (`Js.isString`, say) — a new intrinsic, not taken here.
+
+**A wall met and fixed in the compiler.** `Basics` and `Char` with bodies put
+`abuse_wide_test`'s 65 535-entry check at **4 300 million instructions**, on the budget. The test
+was not the cause: `check/Effects.applyImported` and `applyPlain` asked an imported declaration's
+effect block for each class and each class's first site by walking the block from its start —
+quadratic in a declaration of many `where` methods, and 27 % of that check. The block is now read
+once per use into reused arrays (`Effects.decode`): **4 294 → 3 195 million** for the same check,
+the core move included, and no output changed.
+
+**Sizes**, `bench/size.mjs`, the compiler before this step against this one: release brotli over
+the 344 programs **372 018 → 371 385 (−0.17 %)**, release raw 1 050 071 → 1 048 276, **no program
+larger raw**; 47 smaller, 292 equal, 5 larger by 1 to 14 bytes with the same or fewer raw bytes
+(`run/PhantomParameterAcrossModules` +14 at the same 796 raw: a different order of short names).
+`run/OperatorsInPlace` −58, `run/Arithmetic` −47, `run/CharOps` −29, `bench/corpus` −65; development
+brotli 2 018 578 → 1 948 959 (−3.4 %). The pages: equal, but `browser-tea random` −4.
+`emit/release/app/SpecSmall` re-blessed: whole-program specialisation now sees `idiv`'s body, so
+`n // 2` became `Math.trunc(a/2)` with no zero test.
+
+**Speed**, `bench/primitives` (new workloads `chars` — `Char`'s four over every character — and
+`math` — `floor`, `round`, `sqrt`, `ceiling`, `logBase`, `truncate`, `sin`, `modBy`,
+`remainderBy`, `//`), one compiler and two cores, `taskset -c 22`, load 1.2–1.3, 12 rounds of 15
+samples of 30 ms: `chars` 1 883 → **1 852 µs (0.98×)**, `math` 72.1 → **71.8 (1.00×)**, `fnv` (`Char.toCode`)
+1.00×. With the harness's default 10 ms samples `chars` read 1.06×; each of the four timed alone
+is the sibling's to the tenth of a microsecond (`toUpper` 150 against 151 µs per 4 000), and the
+gap is gone once V8 has optimised both, so it is warm-up and not the code. A first version shared
+the case mappings' one-scalar test as a helper; it measured 1.02× with 30 ms samples, and each
+mapping writes its test out now, as the sibling did.

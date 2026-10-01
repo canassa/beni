@@ -1,15 +1,16 @@
 --! Functions for working with characters. Character literals are enclosed in
 --! `'a'` pairs of single quotes, and hold exactly one Unicode scalar value.
 --!
---! Four declarations are `foreign`, and everything else is written over
---! `toCode`:
---!
---!   - `toCode` `fromCode` — the character/number boundary, which is the
---!     platform's representation.
---!   - `toUpper` `toLower` — Unicode case mapping, which is a table nobody
---!     wants to carry in beni source.
+--! Nothing here is `foreign` but the type. `toCode`, `fromCode`, `toUpper`
+--! and `toLower` reach into the platform's own strings, written over `Js`
+--! (`boundary.md` §4.2, `plans/core-in-beni.md`), and everything else is
+--! written over `toCode`. A `Char` is a one-scalar JavaScript string
+--! (`backend.md` §4).
 --!
 --! The classification functions are ASCII, exactly as Elm's are.
+
+import Js
+
 
 --| A single Unicode scalar value, written between single quotes.
 --|
@@ -24,25 +25,65 @@ pub equatable foreign type Char
 --|
 --|     toCode 'A' == 0x41
 --|     toCode 'π' == 0x03C0
-pub foreign pure toCode : Char -> Int
+pub toCode : Char -> Int
+toCode char =
+    -- `codePointAt` and not `charCodeAt`: the second halves an astral
+    -- character and answers a surrogate, which is not a scalar value.
+    Js.pure (\() -> Js.to (Js.call (Js.from char) "codePointAt" [ Js.from 0 ]))
 
 
 --| Convert a Unicode code point to a character.
 --|
 --|     fromCode 0x41 == 'A'
-pub foreign pure fromCode : Int -> Char
+pub fromCode : Int -> Char
+fromCode code =
+    -- Out of range, a fraction or a surrogate half is replaced rather than
+    -- thrown: U+FFFD is the Unicode replacement character, the
+    -- specification's own answer to "this is not a scalar value".
+    Js.pure
+        (\() ->
+            if
+                Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from code ])
+                    && 0 <= code
+                    && code <= 0x10FFFF
+                    && (code < 0xD800 || 0xDFFF < code)
+            then
+                Js.to (Js.call (Js.global "String") "fromCodePoint" [ Js.from code ])
+            else
+                '\u{FFFD}'
+        )
 
 
 --| Convert to upper case.
 --|
 --|     toUpper 'a' == 'A'
-pub foreign pure toUpper : Char -> Char
+pub toUpper : Char -> Char
+toUpper char =
+    Js.pure
+        (\() ->
+            let
+                mapped = Js.call (Js.from char) "toUpperCase" []
+                points : Int
+                points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
+            in
+            if points == 1 then Js.to mapped else char
+        )
 
 
 --| Convert to lower case.
 --|
 --|     toLower 'A' == 'a'
-pub foreign pure toLower : Char -> Char
+pub toLower : Char -> Char
+toLower char =
+    Js.pure
+        (\() ->
+            let
+                mapped = Js.call (Js.from char) "toLowerCase" []
+                points : Int
+                points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
+            in
+            if points == 1 then Js.to mapped else char
+        )
 
 
 --| Detect upper case ASCII characters.

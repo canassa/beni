@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Core's small primitives — `String`'s and `Int32`'s — built by two
+// Core's small primitives — `String`'s, `Int32`'s, `Char`'s, `Basics`' — built by two
 // compilers and timed against each other, in Node.
 //
 //     node bench/primitives/run.mjs --before-beni=<beni> [--after-beni=./zig-out/bin/beni]
@@ -75,6 +75,8 @@ const workloads = [
   ["split", "text"],
   ["fnv", "strings"],
   ["divisions", "ints"],
+  ["chars", "strings"],
+  ["math", "ints"],
 ].filter(([name]) => !options.only || options.only.split(",").includes(name));
 
 const median = (xs) => {

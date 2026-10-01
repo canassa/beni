@@ -18,23 +18,30 @@
 --! order a `String`, a record or a list as readily as a number, and `==`
 --! calls that type's `eq` the same way.
 --!
---! The `foreign` declarations here, and why each one cannot be beni. The
+--! The `foreign` declarations here, and why each one is not beni. The
 --! operators no longer route through `eq`, `neq`, `lt`, `gt`, `le` or `ge`
 --! — they dispatch on the receiver's type instead — but all seven, `compare`
 --! included, stay declared, exported and callable by name:
 --!
---!   - `add` `sub` `mul` `fdiv` `idiv` `pow` — machine arithmetic.
---!   - `lt` `gt` `le` `ge` — machine comparison.
---!   - `eq` `neq` — structural equality, decided by the emitted JavaScript.
+--!   - `add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge` — the operators.
+--!     A saturated call of each is written in place as its JavaScript
+--!     operator (`backend.md` §4, *Arithmetic is an operator*), and a beni
+--!     body would be that same call of itself; the sibling is what a
+--!     function passed as a value is.
 --!   - `and` `or` — short-circuiting: a beni definition takes both sides as
 --!     arguments, so both would be evaluated.
---!   - `append` — concatenation, one definition over two representations.
---!   - `toFloat` `round` `floor` `ceiling` `truncate` `modBy` `remainderBy`
---!     — conversion between the two numeric representations.
---!   - `sqrt` `logBase` `e` `pi` `cos` `sin` `tan` `acos` `asin` `atan`
---!     `atan2` `isNaN` `isInfinite` — the platform's floating-point library.
+--!   - `eq` `neq` — structural equality over any representation, and
+--!     `append` — concatenation over two: each asks a value's JavaScript
+--!     `typeof`, whose answer is a string this module cannot write, being
+--!     below `String` (`plans/core-in-beni.md`).
 --!
---! Everything else is ordinary beni.
+--! The conversions and the floating-point library — `toFloat` `round`
+--! `floor` `ceiling` `truncate` `idiv` `modBy` `remainderBy` `sqrt`
+--! `logBase` `e` `pi` and the trigonometry, `isNaN` `isInfinite` — are beni
+--! over `Js` (`boundary.md` §4.2). Everything else is ordinary beni.
+
+import Js
+
 
 --| An integer.
 --|
@@ -111,7 +118,21 @@ pub foreign pure fdiv : Float, Float -> Float
 --|
 --|     idiv 3 2 == 1
 --|     idiv (-3) 2 == -1
-pub foreign pure idiv : Int, Int -> Int
+pub idiv : Int, Int -> Int
+idiv a b =
+    -- Truncated towards zero, and 0 for a zero divisor rather than
+    -- Infinity: `Int` has no infinity, so answering one would put a value
+    -- in the type that the type does not contain.
+    if b == 0 then
+        0
+    else
+        Js.pure
+            (\() ->
+                Js.to
+                    (Js.call (Js.global "Math") "trunc"
+                        [ Js.from (Js.to (Js.from a) / Js.to (Js.from b)) ]
+                    )
+            )
 
 
 --| Exponentiation. What `^` desugars to.
@@ -191,33 +212,38 @@ pub foreign pure append : appendable, appendable -> appendable
 --| Convert an integer into a float.
 --|
 --|     toFloat 5 == 5.0
-pub foreign pure toFloat : Int -> Float
+pub toFloat : Int -> Float
+toFloat n = Js.to (Js.from n)
 
 
 --| Round a number to the nearest integer.
 --|
 --|     round 1.5 == 2
 --|     round (-1.5) == -1
-pub foreign pure round : Float -> Int
+pub round : Float -> Int
+round x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "round" [ Js.from x ]))
 
 
 --| Floor a number, rounding down.
 --|
 --|     floor 1.9 == 1
-pub foreign pure floor : Float -> Int
+pub floor : Float -> Int
+floor x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ]))
 
 
 --| Ceiling a number, rounding up.
 --|
 --|     ceiling 1.1 == 2
-pub foreign pure ceiling : Float -> Int
+pub ceiling : Float -> Int
+ceiling x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "ceil" [ Js.from x ]))
 
 
 --| Truncate a number, dropping the decimal part.
 --|
 --|     truncate 1.9 == 1
 --|     truncate (-1.9) == -1
-pub foreign pure truncate : Float -> Int
+pub truncate : Float -> Int
+truncate x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ]))
 
 
 --| Perform modular arithmetic: the number first, then the modulus. The
@@ -227,7 +253,10 @@ pub foreign pure truncate : Float -> Int
 --|     modBy 11 4 == 3
 --|
 --| The number comes first so a pipeline reads: `n |> modBy 2` is `modBy n 2`.
-pub foreign pure modBy : Int, Int -> Int
+pub modBy : Int, Int -> Int
+modBy n k =
+    -- `%` takes the sign of the dividend; this answer takes the modulus's.
+    if k == 0 then 0 else Js.rem (Js.rem n k + k) k
 
 
 --| Get the remainder after dividing the first number by the second. The
@@ -235,71 +264,92 @@ pub foreign pure modBy : Int, Int -> Int
 --|
 --|     remainderBy (-1) 4 == -1
 --|     remainderBy 11 4 == 3
-pub foreign pure remainderBy : Int, Int -> Int
+pub remainderBy : Int, Int -> Int
+remainderBy n k = if k == 0 then 0 else Js.rem n k
 
 
 --| Take the square root of a number.
 --|
 --|     sqrt 9 == 3
-pub foreign pure sqrt : Float -> Float
+pub sqrt : Float -> Float
+sqrt x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ]))
 
 
 --| Calculate the logarithm of a number in a given base: the number first,
 --| then the base.
 --|
 --|     logBase 100 10 == 2
-pub foreign pure logBase : Float, Float -> Float
+pub logBase : Float, Float -> Float
+logBase x base =
+    Js.pure
+        (\() ->
+            Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
+                / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])
+        )
 
 
 --| An approximation of Euler's constant.
-pub foreign pure e : Float
+pub e : Float
+e = Js.pure (\() -> Js.to (Js.get (Js.global "Math") "E"))
 
 
 --| An approximation of pi.
-pub foreign pure pi : Float
+pub pi : Float
+pi = Js.pure (\() -> Js.to (Js.get (Js.global "Math") "PI"))
 
 
 --| Figure out the cosine of an angle in radians.
-pub foreign pure cos : Float -> Float
+pub cos : Float -> Float
+cos x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "cos" [ Js.from x ]))
 
 
 --| Figure out the sine of an angle in radians.
-pub foreign pure sin : Float -> Float
+pub sin : Float -> Float
+sin x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "sin" [ Js.from x ]))
 
 
 --| Figure out the tangent of an angle in radians.
-pub foreign pure tan : Float -> Float
+pub tan : Float -> Float
+tan x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "tan" [ Js.from x ]))
 
 
 --| Figure out the arccosine of a number, in radians.
-pub foreign pure acos : Float -> Float
+pub acos : Float -> Float
+acos x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "acos" [ Js.from x ]))
 
 
 --| Figure out the arcsine of a number, in radians.
-pub foreign pure asin : Float -> Float
+pub asin : Float -> Float
+asin x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "asin" [ Js.from x ]))
 
 
 --| Figure out the arctangent of a number, in radians. Prefer `atan2` when you
 --| have both sides of the triangle: it can tell the quadrants apart.
-pub foreign pure atan : Float -> Float
+pub atan : Float -> Float
+atan x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "atan" [ Js.from x ]))
 
 
 --| Figure out the arctangent of `y / x` in radians, keeping the signs of both
 --| arguments so the answer lands in the right quadrant.
-pub foreign pure atan2 : Float, Float -> Float
+pub atan2 : Float, Float -> Float
+atan2 y x = Js.pure (\() -> Js.to (Js.call (Js.global "Math") "atan2" [ Js.from y, Js.from x ]))
 
 
 --| Determine whether a float is an undefined or unrepresentable number.
 --|
 --|     isNaN (0 / 0) == True
 --|     isNaN (sqrt (-1)) == True
-pub foreign pure isNaN : Float -> Bool
+pub isNaN : Float -> Bool
+isNaN x = Js.pure (\() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from x ]))
 
 
 --| Determine whether a float is positive or negative infinity.
 --|
 --|     isInfinite (1 / 0) == True
-pub foreign pure isInfinite : Float -> Bool
+pub isInfinite : Float -> Bool
+isInfinite x =
+    -- NaN's absolute value is NaN, which is not `Infinity`.
+    Js.pure (\() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity"))
 
 
 --| Negate a number.

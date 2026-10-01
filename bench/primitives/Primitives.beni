@@ -1,5 +1,5 @@
 -- The workloads of `bench/primitives/run.mjs`: core's small primitives —
--- `String`'s and `Int32`'s — each in a loop over prepared input, so what is
+-- `String`'s, `Int32`'s, `Char`'s, `Basics`' — each in a loop over prepared input, so what is
 -- timed is the primitive and not the list around it. Built with `--library`,
 -- so every one of them is a root.
 import Int32 exposing (Int32)
@@ -131,4 +131,43 @@ divisions ns =
                         (Int32.add (Int32.rem x (Int32.fromInt 7)) (Int32.mod x (Int32.fromInt 13)))
                     )
             )
+        )
+
+
+--| `Char`'s four over every character: its code point, the next one, and
+--| both case mappings.
+pub chars : List String -> Int
+chars xs =
+    List.foldl xs
+        0
+        (\s acc ->
+            List.foldl
+                (String.toList s)
+                acc
+                (\c n ->
+                    n
+                        + Char.toCode (Char.fromCode (Char.toCode c + 1))
+                        + Char.toCode (Char.toUpper c)
+                        + Char.toCode (Char.toLower c)
+                )
+        )
+
+
+--| `Basics`' conversions and arithmetic over every number.
+pub math : List Int -> Int
+math ns =
+    List.foldl ns
+        0
+        (\n acc ->
+            let
+                x = toFloat n / 7
+            in
+            acc
+                + floor x
+                + round (sqrt x)
+                + ceiling (logBase x 2)
+                + truncate (sin x * 100)
+                + modBy n 13
+                + remainderBy n 11
+                + n // 3
         )
