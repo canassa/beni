@@ -328,6 +328,43 @@ by more than case), and a harness invariant that folds the written-file list aft
 black-box suite makes. The second is the one that would have caught this defect on Linux, where the
 file system hides it, and it costs nothing per case (§12).
 
+### The page shell, `index.html`
+
+*Added 2026-10-01* (Milestone 1's developer loop, `frontend.md` §10). A browser program is a module
+graph, and a module graph does nothing until a page loads its entry with `<script type="module">`.
+Until now the developer wrote that page by hand; **the platform now declares it**, as it declares
+the entry file's name (`boundary.md` §5.2), because which page loads a program is part of the
+artifact's shape and differs by platform — `node` has none.
+
+- **The key.** A platform manifest's `"html"` names a template file relative to its package root;
+  like every output key it is inherited field by field down the chain (`boundary.md` §9.1), so
+  `browser` declares it and `browser-tea` gets it. The **app's** `beni.json` may name its own, relative
+  to the manifest's directory (`frontend.md` §10.1), and then it replaces the chain's: that is how a
+  project adds a stylesheet, a title or a mount element without a compiler change.
+- **The placeholder.** The template is copied byte for byte except that every `{{entry}}` becomes
+  `./` and the entry file's name — `./_main.mjs`, or what the platform's `"entry"` says. **It must
+  occur at least once**: a page that never loads the program is a build that succeeded and does
+  nothing, the silent wrong answer this project refuses, so a template without it is
+  `invalid_html_shell`, reported against the template at `1:1` with no excerpt. A template that
+  cannot be read is the same code, reported against the manifest that named it. More than one
+  occurrence is allowed — it is the author's page.
+- **The output.** It is written as `index.html` at the root of `--out`, through `pending` like every
+  other output, so rule 2's folding check, the `_manifest.txt` record and stale-file removal all
+  apply to it unchanged. **`index.html` needs no `_`**: rule 1 is about names a MODULE can take, and
+  every module's output ends in `.mjs`, so no module can reach a `.html` name under any folding.
+- **When.** Only for a program build: a `--library` build writes no entry file, so it has nothing
+  to load and writes no page. A chain and an app that name no `"html"` write none, so a `node` build's
+  tree does not move by a file.
+- **Development and `--release` write the same page.** The release entry is still one file with the
+  same name, so the page is identical; nothing is inlined. No live-reload script is ever in it — that
+  is `beni serve`'s, injected into the HTTP response and never written (`frontend.md` §10.4).
+- **Deterministic**: the bytes are a function of the template and the entry name alone.
+- **Relative, on purpose.** `./_main.mjs` resolves against the page's own URL, so the output works
+  hosted at a domain's root or under a sub-path (a project site on a static host) alike. The price:
+  a single-page app whose routes nest (`/todos/3`) and whose server answers every route with this
+  page resolves `./_main.mjs` under the route. Such an app writes its own shell with `<base
+  href="/">`, which states the one assumption — hosted at the root — that the default cannot make.
+
 ## 3. `JsIr` — the second IR
 
 §9.2 settles that there are two IRs and not one: lowering the typed IR straight to a byte buffer was

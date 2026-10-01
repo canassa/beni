@@ -552,6 +552,14 @@ module `Main`'s `Main.mjs` are one file. Moving the name into this manifest with
 have been a worse outcome than leaving it hardcoded: it would let a platform author reintroduce, in
 data, a defect the compiler had just been taught to make impossible.
 
+**The page that loads the program is part of that shape, and it is `"html"`** (added 2026-10-01).
+It is optional and names a template file of the package — `browser` declares `"html": "index.html"`
+— in which `{{entry}}` stands for the entry file; a program build writes it as `index.html` at the
+root of the output. An app's own `beni.json` may name a template of its own instead. The rules — the
+placeholder must occur, inheritance down the chain, what `--library` and `--release` do — are
+`backend.md` §2's *The page shell*; a template that cannot be read or never names the entry is
+`invalid_html_shell`.
+
 **A `"runtime"` naming a file that is not there is `foreign_sibling_missing`, reported against the
 MANIFEST.** Every other manifest failure is an exit-2 line naming the path (§5.3, `src/platform.zig`),
 because a manifest is JSON and has no beni tokens; this one is a diagnostic because it is found

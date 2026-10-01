@@ -20,6 +20,10 @@ beni version
 beni help
 ```
 
+*Amended 2026-10-01:* three commands for the developer loop — `beni new <dir>`, `beni build
+--watch` and `beni serve` — and a project file whose `"build"` key supplies `build`'s `--platform`,
+paths and `--out` when the command line does not. They are §10's.
+
 Later milestones add stages to `dump` without changing its shape: `interface`, `raw`, `types`,
 `graph` and `dispatch` ([`checker.md`](checker.md) §2). They also add one common flag, `--explain`,
 for informational `warning`-severity diagnostics that are otherwise suppressed. **It governs nothing
@@ -1145,3 +1149,149 @@ itself, where this section left a choice:
   edge that exists because of markup is named in a cycle's message.
 - A cycle through the edge is reported, like every cycle, on its lexically first module, at the
   import of the next module or, when that step is the markup edge, at the module's first markup root.
+
+## 10. The developer loop: `new`, `build --watch`, `serve`
+
+*Added 2026-10-01* — Milestone 1's *developer loop v0* (`plans/status-2026-10.md` §6). Four pieces,
+each small, and none of them the daemon: `fast-compiler.md` §4's resident process, its socket, its
+`inotify`/`FSEvents` watching and its cancellation are still M4's, and the daemon's open decisions
+(`plans/queue.md`, the M4 rows) are untouched by this section. What is here is the loop a person
+needs on the first day — make a project, build it on every save, open it in a browser — built from
+pieces that already exist: the one-shot build, the on-disk cache that makes a rebuild warm
+(`fast-compiler.md` §8), and the page shell the platform declares (`backend.md` §2, *The page
+shell*).
+
+```
+beni new    [--platform=browser-tea|node] <dir>
+beni build  [options] [--watch [--poll-interval=<ms>]] [--platform=<name>] [<path>...]
+beni serve  [build options] [--port=<n>] [--host=<address>] [--no-reload] [--poll-interval=<ms>] [<path>...]
+```
+
+### 10.1 The project file
+
+A project's `beni.json` — the app package's manifest, read from `--root` or the working directory,
+the one `Session` already reads for `"platform": true` (`boundary.md` §2) — may carry the build's
+defaults, so that inside a project `beni build` and `beni serve` need no arguments at all:
+
+```json
+{
+  "name": "counter",
+  "build": { "platform": "browser-tea", "paths": ["src"], "out": "out" }
+}
+```
+
+| Key | Is | Default when absent |
+|---|---|---|
+| `"build"."platform"` | what `--platform` would say | none: `build needs --platform=<name>`, exit 2, as before |
+| `"build"."paths"` | the `<path>...` arguments, as written | none: `build needs at least one path`, exit 2, as before |
+| `"build"."out"` | what `--out` would say | `out` |
+| `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
+
+**The command line wins, field by field**: a `--platform`, a positional path or an `--out` replaces
+the manifest's value and nothing else. A manifest with no `"build"` — every manifest before this
+section — changes nothing, and with no manifest at all every message and exit code is what it was.
+The defaults are `build`'s and `serve`'s; `check` keeps requiring its paths, because what `check` is
+handed is not always one program (§1). For `build` and `serve`, a `beni.json` that is not JSON, or
+whose known keys have the wrong JSON type — a `"build"` that is not an object, a `"paths"` that is
+not a list of strings — is the platform manifest's failure, `beni: cannot read '<root>/beni.json':
+it is not a JSON object`, exit 2, before any source is read (a key `"build"` does not know is
+ignored, as every manifest ignores one). Until now `build` silently ignored a malformed app manifest,
+which would now mean silently ignoring the platform the project names. *Why a key and not a convention*: a
+build is a pair of entry point and platform (`boundary.md` §5.3), so the platform is information the
+compiler cannot guess, and `"build"` is the one place a project states it once.
+
+### 10.2 `beni new <dir>`
+
+Writes a project that builds and runs, and nothing else: `<dir>/beni.json` (§10.1, `"build"` filled
+in), `<dir>/src/Main.beni` and `<dir>/.gitignore` (`out/` and `.beni-cache/`, the two directories a
+build makes). `--platform=browser-tea`, the default, writes a `Tea.sandbox` counter; `--platform=node`
+writes a program that prints a line. Any other value is `beni: new has templates for browser-tea and
+node, not '<name>'`, exit 2 — the template list is the compiler's, and a platform package does not
+contribute one yet. The project's name in `beni.json` is the last segment of `<dir>`.
+
+It **refuses a directory that exists and is not empty** (`beni: '<dir>' is not empty; beni new
+writes only into a new or empty directory`, exit 2, nothing written), creates missing parents, and
+on success prints the next two commands on stdout. The templates are formatted (`beni fmt --check`
+passes on them) and check clean; a black-box test builds both, runs the node one, and asserts it.
+
+### 10.3 `beni build --watch`
+
+Build, then keep building: after the first build, the inputs are polled every `--poll-interval`
+milliseconds (default 200, at least 1), and a change is followed by one more poll that must see the
+same state — the debounce, so an editor's save-then-touch or a `git checkout` of many files is one
+rebuild and not several — and then a rebuild. Polling and not `inotify`, on purpose: it is portable,
+needs no dependency, costs a `stat` per input file per interval, and is the daemon's to replace.
+
+**What is watched**: every file ending in `.beni`, `.js`, `.json`, `.html` or `.css` under the
+build's `<path>`s and, for a platform read from a directory, under every package of its chain; and
+the files with those endings directly in the project root (`--root`, else the working directory),
+which is where `beni.json` and an app's page shell usually sit. A hidden entry (a `.` prefix) is skipped as enumeration skips it,
+and **the `--out` directory is never watched**, or a build's own output would trigger the next build.
+The state is each file's path, size and modification time; a file added or
+removed is a change. (*As built*: one 64-bit digest, the wrapping sum of a hash per file plus the
+count, so the walk's order does not matter and nothing is kept between polls.) `beni.json`'s
+`"build"` is read once, when the command starts — it decides what is watched — while its `"html"` is
+read by every build, so an edit to the page shell is picked up and an edit to the defaults needs a
+restart.
+
+**What it prints.** Every build prints exactly what a one-shot build prints — diagnostics on stderr
+in the chosen `--diagnostics` form, one render per build — followed by **one status line on stdout**:
+`beni: built in <n> ms` or `beni: build failed; waiting for changes`. The one-shot build's "a
+successful build prints nothing" (`backend.md` §2) is about a command whose exit code is its answer;
+a watch never exits on its own, so the line is the answer, and it goes to stdout because stdout is
+the product's stream and stderr stays diagnostics only. A failed build writes nothing, as always, so
+the output directory keeps the last good build — which is what a browser pointed at it should see.
+
+**How it ends.** On SIGINT (Ctrl-C) or SIGTERM: a build in progress finishes, nothing new starts, and
+the process exits `0` — the user asked it to stop, and nothing failed. A second signal is not caught,
+so a hung build can still be killed. A usage error (exit 2) is refused before the first build, and
+an exit-2 failure **of the first build** — an unknown platform, an unwritable `--out` — ends the watch
+with that exit code, because a loop that can only ever print the same failure is not watching
+anything. After a first build that got as far as diagnostics, every failure is a status line and the
+watch goes on.
+
+`--poll-interval` is accepted only with `--watch` (and by `serve`), for the `--source-maps` rule: a
+flag that does nothing is refused, `beni: --poll-interval needs --watch`.
+
+### 10.4 `beni serve`
+
+`build --watch` and a static HTTP server for the output directory in one process: the server answers
+from `--out` while the watch rebuilds it. It takes every `build` flag, `--watch` implied, and:
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--port=<n>` | TCP port; `0` asks the system for a free one | `8000` |
+| `--host=<address>` | the IPv4 or IPv6 address to listen on | `127.0.0.1` — a development server is not exposed to the network unless asked |
+| `--no-reload` | do not inject the live-reload script | reload on |
+| `--poll-interval=<ms>` | as `build --watch`'s | `200` |
+
+Once listening it prints `beni: serving <out>/ at http://<host>:<port>/` on stdout, the actual port
+when `0` was asked for, before the first build's status line. A port it cannot take is
+`beni: cannot listen on <host>:<port>: <error>`, exit 2, before anything is built.
+
+**What it serves.** `GET` and `HEAD`; any other method is `405`. The request target's query string is
+dropped and `%XX` escapes decoded; a target that is not absolute, or that holds a `..`, `.` or empty
+segment after decoding, a NUL or a backslash, is `400` — the server never answers from outside
+`--out`. `/` and a directory are their `index.html`. A file that exists is served with its MIME type
+and `cache-control: no-store`: `.html` `text/html`, `.mjs` and `.js` `text/javascript`, `.css`
+`text/css`, `.json` and `.map` `application/json`, `.txt` `text/plain` (those five with `charset=utf-8`),
+`.svg` `image/svg+xml`, `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.ico`, `.wasm`, `.woff2`, and
+`application/octet-stream` otherwise. **A path that names no file and whose last segment has no `.`
+is answered with `index.html`, status 200** — the single-page-application fallback, so a client-side
+route survives a reload (a route that nests needs the page's `<base href="/">`, `backend.md` §2's
+*The page shell*); a missing path with an extension is `404`, because a missing `.mjs` answered
+with HTML is a confusing failure in the browser's console instead of a plain one.
+
+**Live reload is the server's, never the build's.** Every `text/html` response gets one inline
+`<script type="module">` inserted before its last `</body>` (appended when there is none) that polls
+`/_beni/build` and reloads the page when the number there changes; `/_beni/build` answers the count
+of successful builds since the server started. The script exists only in the HTTP response: **no
+file `beni build` or `beni serve` writes carries it**, development or `--release`, which is what
+keeps the release output and every `emit/` golden free of it by construction. `/_beni/` is the
+server's own namespace, and no file the build writes can be there — no emitted path begins with
+`_beni` (`backend.md` §2, rule 1's reserved names are `_main.mjs`, `_core/`, `_platform/`,
+`_manifest.txt` and the platform's entry). A failed build does not move the count, so a page keeps
+showing the last good build while the errors are on the terminal.
+
+It ends as `--watch` does; open connections are dropped. It is a development server: one thread per
+connection, no TLS, no compression, no range requests, and it is not meant to face a network.
