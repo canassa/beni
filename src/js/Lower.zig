@@ -2823,6 +2823,9 @@ const Lowerer = struct {
                     l.markCarried(inst, loop);
                     return true;
                 }
+                // `a || b` and `a && b`: `b` is in tail position, the
+                // `if` a short-circuit is (§8, amended 2026-10-02).
+                if (l.logicalRight(inst)) |right| return l.markTails(right, loop);
                 // A cons step: the tail of a `::` in tail position is a tail
                 // position again, and one that reaches a self-call makes the
                 // function build (§8, *Tail calls modulo cons*).
@@ -2833,6 +2836,19 @@ const Lowerer = struct {
             },
             else => return false,
         }
+    }
+
+    /// The right operand of `a || b` or `a && b` — a saturated call of
+    /// core's `Basics.or` or `and` — or null for any other instruction.
+    /// In tail position it is a tail position too: `a || go x` is `if a
+    /// then True else go x` (§8, amended 2026-10-02).
+    fn logicalRight(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        _ = l.logicalOp(@enumFromInt(d.lhs)) orelse return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 2) return null;
+        return args[1];
     }
 
     /// The tail argument of a call of core's `List.cons` — what `::`
@@ -2891,7 +2907,7 @@ const Lowerer = struct {
                 },
                 .call => {
                     if (l.isSelfCall(at, loop)) return true;
-                    at = l.consTail(at) orelse return false;
+                    at = l.logicalRight(at) orelse l.consTail(at) orelse return false;
                 },
                 else => return false,
             }
@@ -2989,6 +3005,21 @@ const Lowerer = struct {
                 if (loop) |lp| {
                     if (l.isSelfCall(inst, lp)) return l.tailJump(out, inst, lp);
                     if (l.isConsStep(inst, lp)) return l.consStep(out, inst, lp);
+                    // `a || go x` that reaches the loop: `if (a) return
+                    // true;`, then `go x` in tail position — a jump, not a
+                    // call (§8, amended 2026-10-02). `&&` is `if (!a)
+                    // return false;`.
+                    if (l.logicalRight(inst)) |right| if (l.reachesSelf(right, lp)) {
+                        const p = l.pos(inst);
+                        const op = l.logicalOp(@enumFromInt(d.lhs)).?;
+                        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                        const left = try l.expr(out, args[0]);
+                        var exit: StmtList = .empty;
+                        const answer = try l.add(if (op == .logical_or) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+                        try l.tailReturn(&exit, answer, loop, p);
+                        try l.ifStatement(out, if (op == .logical_or) left else try l.negate(left, p), exit.items, p);
+                        return l.tailStmts(out, right, loop);
+                    };
                 }
                 if (try l.tailInline(inst, loop)) |index| {
                     if (!l.inline_loops[index]) return l.inlineTail(out, inst, index, loop);

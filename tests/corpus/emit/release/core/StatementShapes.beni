@@ -18,11 +18,14 @@ tick () =
     Js.set (Js.global "document") "title" (Js.from "tick")
 
 
-pub start : () -> ()
-start () =
+-- The flag is the caller's: with `Js.ref True` here, whole-program
+-- specialisation, which a `--library` build runs too (`backend.md` §9,
+-- amended 2026-10-02), would see the cell nothing writes and fold the test.
+pub start : Bool -> ()
+start flag =
     let
         scheduled =
-            Js.ref True
+            Js.ref flag
     in
     later scheduled
 

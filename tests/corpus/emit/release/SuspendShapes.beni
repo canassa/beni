@@ -16,7 +16,10 @@
 --     function with its slots.
 --   - `twice`: two bodies. `both` calls it with a function that suspends and
 --     with one that does not, so both are reached: `Main$twice`, exactly as
---     before, and `Main$twice$s`.
+--     before, and `Main$twice$s` — which `both` calls once, so
+--     whole-program specialisation, which a `--library` build runs too
+--     (`backend.md` §9, amended 2026-10-02), writes it into `both` with
+--     `fetch` in place of `f`.
 --   - `plain`: nothing suspends, and nothing about it changes.
 import Io
 import Task

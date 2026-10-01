@@ -1,0 +1,41 @@
+-- run: a self-call on the right of `||` or `&&` in tail position is a
+-- tail call (`docs/design/backend.md` §8, amended 2026-10-02): `a || go x`
+-- is `if a then True else go x`, so the loop jumps where it used to call.
+-- Before, each of these was a million nested frames and the program died
+-- with `RangeError: Maximum call stack size exceeded`.
+--
+-- `reaches` puts the call on the right of `||`; `stays` on the right of
+-- `&&` on the right of `||`; `either` likewise, its `&&`'s left side an
+-- ordinary test. The left side is evaluated first and only once, and a
+-- short circuit answers without the call: `reaches 9 7` is True at once,
+-- and `stays` stops at 999 995, the first number past 999 990 that is 3
+-- modulo 7.
+import Node exposing (Program)
+
+
+show : Bool -> String
+show b = if b then "True" else "False"
+
+
+reaches : Int, Int -> Bool
+reaches n target = n >= target || reaches (n + 1) target
+
+
+stays : Int, Int -> Bool
+stays n stop = n >= stop || (modBy n 7 /= 3 || n < 999990) && stays (n + 1) stop
+
+
+either : Int, Int -> Bool
+either n stop = n == stop || n < stop && either (n + 1) stop
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (reaches 0 1000000)
+        , show (reaches 9 7)
+        , show (stays 0 1000000)
+        , show (stays 0 5)
+        , show (either 0 1000000)
+        , show (either 3 1)
+        ]

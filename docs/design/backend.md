@@ -2685,6 +2685,16 @@ sees it, §6), not the operand of `?`, and not a `?` itself — it is its own in
 is an ordinary expression that may or may not be a tail call of its own. Parentheses do not exist
 in `Bir`, so looking through them is free.
 
+*Amended 2026-10-02:* **the right operand of `a || b` or `a && b` in tail position is a tail
+position**, since the pair is the `if` a short-circuit is — `if a then True else b`, `if a then b
+else False` — keyed, as `Lower.logicalOp` is, on core's `Basics.or` and `and`. When a tail
+self-call is reachable through one, the pair is written as the statements `if (a) return true;` (or
+`if (!a) return false;`, each through the loop's exit) and then `b` in tail position, a jump where
+it reaches the self-call; anywhere else it stays the expression `a || b`. Before, `anyKey k fs i =
+… == k || anyKey k fs (i + 1)` was a frame per element and a `RangeError` past some thousands —
+the shape `core/Schema.beni` writes its searches in. `run/TailCallLogical` runs three of them a
+million deep.
+
 A **tail self-call** is a `call` instruction in tail position whose callee is, syntactically, the
 reference that names the function being lowered — a `top` for a declaration, a `local` for a
 `let`-bound one — with argument count and evidence count equal to that function's own. Both
@@ -5178,7 +5188,18 @@ once …*, above); `emit/release/split/EmptyPage` is the golden the slices below
 **Where.** `--release` application builds, after every module is lowered and before any is printed,
 over the whole program's `JsIr` at once — the one scope-hoisted file's pieces, or the multi-file
 layout's modules, whose top-level names are whole-program names already (§9 item 2). A `--library`
-build does not specialise: its exports' callers are outside it. A new pass, `src/js/Spec.zig`, run
+build does not specialise: its exports' callers are outside it. *(Amended 2026-10-02: a `--library`
+build specialises too, over its whole output, with every name a root-package module exports in
+`Input.escaping` — §2's surface, `Reach`'s roots for a library — so each is called by code the pass
+cannot see: its parameters are ⊤, it is never dropped, and what it returns escapes. Core and the
+platform behind the library are specialised to what the library's own code makes of them, as an
+application's are. Without it a library build of core written in beni ran as written, where the
+hand-written siblings it replaced had been specialised by hand: `bench/schema-library/run.mjs`'s
+`--library` build of the schema engine was 5–38 % slower than the JavaScript engine
+(`plans/core-in-beni.md`). The `emit/release/` corpus is built `--library`; four of its fixtures
+were given inputs a library's caller supplies, so that what each pins — a call binding not folded, a
+chain of `if`s, a conditional that is an `if`, a function not written in — is not folded first.)*
+A new pass, `src/js/Spec.zig`, run
 on the calling thread (the facts are whole-program; the per-module walks that feed them run on the
 workers and are merged in module order), producing a plan the printer spends as it spends `Opt`'s —
 node replacements, dropped statements, dropped parameters and arguments, dropped properties —

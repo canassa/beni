@@ -11,8 +11,14 @@
 --     arms return for `shout`;
 --   * `grade` calls `describe` with an argument that is not a name: binding
 --     it would cost what the call saves, so the call stays;
---   * `twice` is called from two places and `answer` is a top-level constant,
---     and `exported` is `pub`: none is taken in.
+--   * `twice` is called from two places, `answer` is a top-level constant,
+--     and `exported` is `pub`: none is taken in, and each is still written.
+--     `twice`'s body is larger than its call, so whole-program
+--     specialisation, which a `--library` build runs too (`backend.md` §9,
+--     amended 2026-10-02), does not write it in either; `exported`'s body,
+--     `n + 1`, is no larger than its call, so specialisation writes it into
+--     `answer` — `answer` reads a host global, so nothing folds — and keeps
+--     `exported` itself, a library's surface.
 import Js
 
 
@@ -65,7 +71,7 @@ grade n = describe (n - 1)
 
 
 twice : Int -> Int
-twice n = n * 2
+twice n = n * 3 + 1
 
 
 pub both : Int -> Int
@@ -77,4 +83,4 @@ exported n = n + 1
 
 
 pub answer : Int
-answer = exported 41
+answer = exported (Js.to (Js.global "seed"))

@@ -2333,6 +2333,13 @@ const Emitter = struct {
                 one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime) != null;
                 try e.specialise(slots, todo.items, at, one_scope);
             };
+            // A library is a whole program too, but for its surface: what
+            // the root package's modules export is called by code the
+            // build does not see, so each such name escapes, and core and
+            // the platform behind it are specialised to what the library's
+            // own code makes of them (§9, *Whole-program specialisation*,
+            // amended 2026-10-02).
+            if (e.options.library and lowered_clean) try e.specialise(slots, todo.items, null, false);
             try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
@@ -2601,7 +2608,7 @@ const Emitter = struct {
     /// it (`Spec`). On the calling thread, in module order: the facts are
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
-    fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: Entry, one_scope: bool) !void {
+    fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry_or_library: ?Entry, one_scope: bool) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -2684,14 +2691,33 @@ const Emitter = struct {
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
         var main_id: ?u32 = null;
-        const b = e.bir(entry.module);
-        if (entry.decl.int() < b.decls.len) {
-            const main: JsIr.Name = .{
-                .module = e.graph().moduleName(entry.module).toOptional(),
-                .base = b.symbol(b.decls[entry.decl.int()].name),
-                .tag = JsIr.Name.no_tag,
-            };
-            main_id = ids.get(Rename.Globals.key(main));
+        if (entry_or_library) |entry| {
+            const b = e.bir(entry.module);
+            if (entry.decl.int() < b.decls.len) {
+                const main: JsIr.Name = .{
+                    .module = e.graph().moduleName(entry.module).toOptional(),
+                    .base = b.symbol(b.decls[entry.decl.int()].name),
+                    .tag = JsIr.Name.no_tag,
+                };
+                main_id = ids.get(Rename.Globals.key(main));
+            }
+        } else {
+            // A library: every name a root-package module exports is its
+            // surface (`Reach`'s roots), called by code outside the build.
+            for (todo) |i| {
+                const module: Graph.Index = @enumFromInt(i);
+                if (e.session.store.package(e.graph().moduleFile(module)) != .app) continue;
+                const lowered = &(slots[i].lowered orelse continue);
+                if (lowered.diagnostics.len != 0) continue;
+                const ir = &lowered.ir;
+                for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                    if (ir.tag(stmt) != .export_stmt) continue;
+                    for (ir.extraSlice(JsIr.inlineRange(ir.data(stmt)), JsIr.NameIndex)) |n| {
+                        const name = try e.poolName(&slots[i], n);
+                        if (ids.get(Rename.Globals.key(name))) |g| try escaping.append(e.scratch, g);
+                    }
+                }
+            }
         }
         var entry_call: ?Spec.Entry = null;
         if (run_id != null and main_id != null) {

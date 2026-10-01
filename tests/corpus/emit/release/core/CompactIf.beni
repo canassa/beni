@@ -12,10 +12,8 @@ pub indexOf : Js.Value, Js.Value, Int -> Int
 indexOf xs x k =
     if k == Js.to (Js.get xs "length") then
         -1
-
     else if Js.same (Js.at xs k) x then
         k
-
     else
         indexOf xs x (k + 1)
 
@@ -24,20 +22,16 @@ pub classify : Int -> String
 classify n =
     if n < 0 then
         let
-            m =
-                0 - n
+            m = String.fromInt (0 - n)
         in
-        "minus " ++ String.fromInt m
-
+        "minus " ++ m ++ "/" ++ m
     else if n == 0 then
         "zero"
-
     else
         let
-            s =
-                String.fromInt n
+            s = String.fromInt n
         in
-        "plus " ++ s
+        "plus " ++ s ++ "/" ++ s
 
 
 pub settle : Js.Value -> ()
@@ -46,11 +40,9 @@ settle o =
         _ =
             if Js.isNull (Js.get o "v") then
                 let
-                    _ =
-                        Js.set o "v" (Js.from 1)
+                    _ = Js.set o "v" (Js.from 1)
                 in
                 Js.set o "n" (Js.from 0)
-
             else
                 Js.throw (Js.from "set twice")
     in
@@ -61,9 +53,7 @@ pub describe : Js.Value -> ()
 describe o =
     if Js.isNull o then
         ()
-
     else if Js.isUndefined (Js.get o "a") then
         Js.set o "a" (Js.from 1)
-
     else
         Js.set o "b" (Js.from 2)

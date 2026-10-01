@@ -14,7 +14,11 @@
 -- `held` is the third row and the one that is about correctness rather than
 -- bytes — a binding whose initialiser is a CALL is never folded, whatever
 -- its use count, because repeating or moving a call is work and evaluation
--- order is a promise (`language.md` §6).
+-- order is a promise (`language.md` §6). `measure` is called again before
+-- `once` is read, so writing `once` in would run the two calls the other
+-- way round; and `measure` is a parameter of a `pub` function, so even
+-- whole-program specialisation, which a `--library` build runs too
+-- (`backend.md` §9, amended 2026-10-02), cannot see what it does.
 import Node exposing (Program)
 
 
@@ -43,12 +47,12 @@ square p =
             a * a
 
 
-pub held : Pair -> Int
-held p =
+pub held : (Pair -> Int), Pair -> Int
+held measure p =
     let
-        once = sum p
+        once = measure p
     in
-    once + 1
+    measure p + once
 
 
 main : Program
