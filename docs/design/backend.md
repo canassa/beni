@@ -5668,13 +5668,30 @@ lines (38 smaller, 17 larger, the largest `run/SchemaDeclModules` +22 with fewer
 argument is no longer written in by slice 8's per-call size model); the 52 `browser/` pages −243
 (22 smaller, 5 larger by 1–6); the `bench/ui` app byte-identical. Dropping the parameter only in a
 last round, after the inlining passes, avoided those two and was measured smaller on fewer programs
-(−304 and −67), so it was not taken. **Cost**: the specialised program is cheaper to make smaller
-still — `run/SchemaDeclRecords`, whose four builds include a release build of the whole schema
-engine, takes 3 670 → 4 059 million instructions (the budget is 4 300), nearly all of it in the
-passes after the drops (asking `effectFree` and walking for dead reads cost 45 million). Fixtures:
+(−304 and −67), so it was not taken. **Cost**: `run/SchemaDeclRecords`'s four builds, one a release
+build of the whole schema engine, 0.71 → 0.72 s of user time (the least of five; asking `effectFree`
+and walking for dead reads is about 45 million instructions of them). Fixtures:
 `emit/release/app/SpecUnreadParams` (a parameter passed names and literals goes; one passed a call
 stays), `run/SpecializeUnreadParams` (one passed `Debug.log`'s result stays, and the line is logged
 where it was), `emit/release/app/OneLine`, `SpecScalars`, `emit/release/split/EmptyPage`.
+
+*Amended 2026-10-02: unused trailing arguments* (`Spec.trimArguments`). A call whose callee is not a
+function fact 1 tracks — a call through a property, `kind.m(…)`, or of a function passed as a value
+— keeps every parameter of every function it may reach, since a call the pass cannot see may pass
+them. But when fact 3 says the callee may be **only functions of the program**, none of them reads
+a parameter past position *k* (a name mentioned anywhere in the body counts as a read, so a
+shadowing name only keeps an argument), and every argument past *k* does nothing (`effectFree`),
+those arguments go: a missing argument is `undefined`, and nothing reads it. It runs once, after
+every round and the passes: slice 8 writes a call through a property in only when it passes every
+argument, and trimming one first made `emit/release/app/SpecInit`'s kind call stay a call. On the
+empty page the kind's `c.m(null, null)` is `c.m()`. Measured against the compiler before it
+(release, brotli): the empty `browser` page and `Tea.sandbox` 450 → 450 (raw −9), `Tea.element`
+1 223 → 1 222, with effects 5 311 → 5 306, `random` 1 962 → 1 955; `bench/size.mjs` −41 over its
+367 lines (23 smaller, 12 larger, none by more than 16); the `browser/` pages −29 (17 smaller, 8
+larger by 1–8); the `bench/ui` app byte-identical. Fixtures: `emit/release/app/SpecTrailingArguments`
+(a field holding two functions that read one parameter loses the call's second argument; one that
+may hold a function reading two keeps both), `run/SpecializeTrailingArguments` (an argument that
+logs is kept, and logged where it was), `emit/release/split/EmptyPage`.
 
 **Slice 9 — constructor folding** (*added 2026-10-03*; `plans/runtime-in-beni.md`'s *Append
 against Solid 1*: a page that reads a list with `List.get` then `Maybe.withDefault` made a `Just`

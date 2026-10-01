@@ -1,0 +1,45 @@
+-- Whole-program specialisation drops a trailing argument of a call through
+-- a field only when no function the field may hold reads it and evaluating
+-- it does nothing (`backend.md` §9, *Whole-program specialisation*, amended
+-- 2026-10-02), so both builds print the same lines in the same order:
+-- `op.apply x 0` loses its `0`; `op.apply x (Debug.log "second" x)` keeps
+-- its argument, logged before the call; `op.merge` holds a function that
+-- reads both of its parameters, so its calls keep both.
+import Node exposing (Program)
+
+
+type alias Op =
+    name : String
+    apply : Int, Int -> Int
+    merge : Int, Int -> Int
+
+
+double : Int, Int -> Int
+double n _ = n * 2
+
+
+triple : Int, Int -> Int
+triple n _ = n * 3
+
+
+add : Int, Int -> Int
+add a b = a + b
+
+
+left : Int, Int -> Int
+left a _ = a
+
+
+total : Op, List Int -> String
+total op xs =
+    sum = List.foldl xs 0 λx acc -> op.merge acc (op.apply x 0)
+    logged = List.foldl xs 0 λx acc -> op.merge acc (op.apply x (Debug.log "second" x))
+    "${op.name}: ${String.fromInt sum} ${String.fromInt logged}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ total { name = "double", apply = double, merge = add } [ 1, 2 ]
+        , total { name = "triple", apply = triple, merge = left } [ 4, 5 ]
+        ]

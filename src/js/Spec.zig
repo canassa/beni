@@ -219,6 +219,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
         try s.grow();
         try s.rounds();
     }
+    // Last, so that slice 8, which writes a call through a property in
+    // only with every argument, has seen them all.
+    try s.trimArguments();
     try s.finish();
 }
 
@@ -1981,6 +1984,93 @@ const Spec = struct {
         // one that is reached.
         for (s.mods) |*m| try s.rewriteCalls(m, drop);
         return any;
+    }
+
+    /// Unused trailing arguments: a call whose callee fact 3 says may be
+    /// only functions of the program passes nothing any of them reads past
+    /// the last parameter one of them reads, so a trailing run of arguments
+    /// that do nothing (`effectFree`) goes. The functions keep their
+    /// parameters: a call this cannot see may still pass them. Run once,
+    /// after every round, on the facts of the last.
+    fn trimArguments(s: *Spec) Allocator.Error!void {
+        if (!s.pts.ok) return;
+        // Per site: how many leading parameters its function may read, or
+        // `none` before it is asked.
+        const needs = try s.arena.alloc(u32, s.pts.sites.items.len);
+        @memset(needs, none);
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        for (s.mods) |*m| {
+            const ir = m.ir;
+            const vals = s.pts.vals[m.index];
+            // A copy: a trimmed call appends to `extra`, which moves.
+            const body = try s.arena.dupe(Index, ir.extraSlice(ir.body, Index));
+            for (body) |top| {
+                s.cur_top = top;
+                stack.clearRetainingCapacity();
+                try stack.append(s.arena, top);
+                while (stack.pop()) |node| {
+                    if (ir.tag(node) == .call) try s.trimCall(m, vals, node, needs);
+                    try pushChildren(s.arena, ir, node, &stack);
+                }
+            }
+        }
+    }
+
+    fn trimCall(s: *Spec, m: *Mod, vals: []const Pts.Val, node: Index, needs: []u32) Allocator.Error!void {
+        const ir = m.ir;
+        const d = ir.data(node);
+        const callee: Index = @enumFromInt(d.lhs);
+        // A function fact 1 tracks is called with its arity, or every
+        // parameter of it is ⊤; its unread parameters go by `rewrite`.
+        if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| if (s.decl[g]) |decl| if (decl.func != null) return;
+        if (callee.int() >= vals.len) return;
+        const vc = vals[callee.int()];
+        if (vc.top or vc.prim or vc.sites.len == 0) return;
+        const args = ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), u32);
+        var need: u32 = 0;
+        for (vc.sites) |site| {
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .func) return;
+            if (needs[site] == none) needs[site] = try s.paramsRead(st.module, st.node);
+            need = @max(need, needs[site]);
+        }
+        if (args.len <= need) return;
+        var keep = args.len;
+        while (keep > need and try s.effectFree(m, @enumFromInt(args[keep - 1]))) keep -= 1;
+        if (keep == args.len) return;
+        const kept = try s.arena.dupe(u32, args[0..keep]);
+        const start = try m.append(s.gpa, kept);
+        const record = try m.append(s.gpa, &.{ start, start + @as(u32, @intCast(keep)) });
+        m.setData(node, d.lhs, record);
+    }
+
+    /// One more than the position of the last parameter function `node`
+    /// (an arrow or a declaration) mentions anywhere in its body, or 0:
+    /// an over-count — a shadowing name read as the parameter — only keeps
+    /// an argument.
+    fn paramsRead(s: *Spec, module: u32, node: Index) Allocator.Error!u32 {
+        const ir = s.mods[module].ir;
+        const record: ExtraIndex = switch (ir.tag(node)) {
+            .arrow => @enumFromInt(ir.data(node).lhs),
+            .func_decl, .gen_decl => @enumFromInt(ir.data(node).rhs),
+            else => return std.math.maxInt(u32),
+        };
+        const f = ir.extraData(record, JsIr.Func);
+        const params = ir.extraSlice(f.params(), NameIndex);
+        var need: u32 = 0;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try stack.appendSlice(s.arena, ir.extraSlice(f.body(), Index));
+        while (stack.pop()) |n| {
+            if (ir.tag(n) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(ir.data(n).lhs))) |p| {
+                need = @max(need, @as(u32, @intCast(p)) + 1);
+            };
+            try pushChildren(s.arena, ir, n, &stack);
+        }
+        return need;
     }
 
     const DeadInit = struct { module: u32, init: Index, param: u32 };
