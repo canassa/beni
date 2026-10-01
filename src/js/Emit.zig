@@ -2656,10 +2656,15 @@ const Emitter = struct {
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
         var makers: std.ArrayList(u32) = .empty;
         for (Spec.node_makers) |n| if (props.get(n)) |id| try makers.append(e.scratch, id);
+        // Each property name's length, for the size of a read (slice 8).
+        const prop_len = try e.scratch.alloc(u8, props.count());
+        var props_it = props.iterator();
+        while (props_it.next()) |kv| prop_len[kv.value_ptr.*] = @intCast(@min(kv.key_ptr.len, 255));
         try Spec.run(e.gpa, e.scratch, .{
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
+            .prop_len = prop_len,
             .builtin_props = builtin.items,
             .node_makers = makers.items,
             .escaping = escaping.items,

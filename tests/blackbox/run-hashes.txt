@@ -49,7 +49,7 @@ build_test.test.a platform anyone may publish: a package that declares itself on
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 6a7a1a5a87874ca14c9a717a93a35760bffe4d0b47d71705df7ee7fe790eebaa
 build_test.test.a program computes something and prints the right answer #0 c88668db274abecbd84f1591d5fa63909cf906299b3a88fb774f1ddeaa2ad0b5
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 107f3f3ca9b08e3d0c56de7c91af23680be8f60b7116a72e353b3eb1023081de
-build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 50b2eeb6e28859898f7bfbff27477221aa282e64d32cb7f0dc2bb47d10d1dee4
+build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 bff76cb28b5aa5fe0b8a27ebdcec86d7ce43fc927cd053b62678720a2f0fda9a
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 d74b6b9439bed8f5667bdb504a4df6fa98cb8bd6639c3eeb766f3c4304b491dd
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 f05ad05c130816f7dcdc55631d4f64aff839c60265f62f15f5b612894829db6c
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 6963e62bc11eb54b5e4df8222ff0700e2352b4ad8a51c7a8658d51b77f892da0
@@ -67,7 +67,7 @@ build_test.test.core List's loops read and write their arrays in place #0 e0560b
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 e47a05477c2d244be3420cf4ec8414f4b9acb2746f3247f15210209b5edd8f7a
 build_test.test.modules import each other through ESM, and the program runs #0 83b75e4cf7f2c1cbdf4b9d0bc41837bbb2f1d525cc221c9006b4bf82434648fb
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 3f18fedb3b13ae3e6eae9c181d9560309b4c53546bd98af4ffc698b5ba3b4ce0
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 5ca589de05030344f42a65fecd97f50dc986f69b71ef2730fbdf87619634175a
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 6b0ebe30a45ee91a7d6bffaf9756dd0951b4a70526cf53a3405ff1896356b182
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 d5f87e182e9b894df1440e7474fca7e97822fde9461d0d8d7a532ad3e3afdac5
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 b8c34cb84a5a5c6ac52b3d83eb6e86336e549b52d8cf98dd35db9f2611feddff
 cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 5a7ba75e47def0189b7db8a9e2b3e34a38cfa713c1e7b33f44d95e2bdcd3cf63

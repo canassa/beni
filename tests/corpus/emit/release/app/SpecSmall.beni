@@ -1,0 +1,72 @@
+-- emit: a small function is written wherever it is called (`backend.md`
+-- §9, *Whole-program specialisation*, slice 8), when that is no larger
+-- than the call:
+--
+--   * `identity` is its argument at both its calls, and is not written;
+--   * `addThen a b` is `a + twice b` at both its calls, each first
+--     argument a call read first — so evaluated where it was, before
+--     `twice`;
+--   * `thenAdd`'s second call, of two literals, is its body; its first
+--     passes a call it reads after its own: it stays a call — the only one
+--     left, so its first argument, `4`, is a constant the facts then drop;
+--   * `apply op n` calls `op.apply`, which every `Op` gives `quarter`: each
+--     call of `apply` is a call of `quarter` by its name;
+--   * `twice` and `quarter` are larger than their calls: they stay
+--     functions.
+import Node
+
+
+identity : a -> a
+identity x =
+    x
+
+
+twice : Int -> Int
+twice n =
+    String.length (String.repeat "ab" n) * 2
+
+
+addThen : Int, Int -> Int
+addThen a b =
+    a + twice b
+
+
+thenAdd : Int, Int -> Int
+thenAdd a b =
+    twice a + b
+
+
+half : Int -> Int
+half n =
+    n // 2
+
+
+quarter : Int -> Int
+quarter n =
+    half (half n)
+
+
+type alias Op =
+    { name : String, apply : Int -> Int }
+
+
+apply : Op, Int -> Int
+apply op n =
+    op.apply n
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map
+            [ identity (twice 2)
+            , identity (twice 3)
+            , addThen (twice 1) 3
+            , addThen (twice 4) 5
+            , thenAdd 4 (twice 5)
+            , thenAdd 6 7
+            , apply { name = "q", apply = quarter } 4
+            , apply { name = "r", apply = quarter } 8
+            ]
+            String.fromInt
+        )

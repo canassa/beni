@@ -2,7 +2,8 @@
 -- *Whole-program specialisation*). Facts 1 and 2: every call of `pad`
 -- passes `6`, so `width` is substituted and dropped, from `pad` and from
 -- both calls, and the loop tests `>=6`; every call of `scale` passes `1`,
--- so `factor == 1` folds and `scale` is the identity; `clamp` is called
+-- so `factor == 1` folds and `scale` is the identity, which is its
+-- argument wherever it is called (slice 8); `clamp` is called
 -- with `9` only, and `limit` is a constant nothing assigns, so its whole
 -- `if` folds to `6`. Slice 2: nothing reads `limit` after that, so it is
 -- not written; and `shout` is only ever called with `False`, so the arm

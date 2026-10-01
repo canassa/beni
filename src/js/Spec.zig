@@ -121,6 +121,8 @@ pub const Input = struct {
     /// The build is one scope-hoisted file, so any module may name any
     /// top-level declaration of another (slice 6, `nameIn`).
     one_scope: bool = false,
+    /// Per property-name id: its length, for slice 8's size model.
+    prop_len: []const u8 = &.{},
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -162,25 +164,29 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     var s: Spec = try .init(gpa, arena, in);
     s.pts = .init(&s);
     defer s.pts.deinit();
-    var round: u32 = 0;
-    while (round < max_rounds) : (round += 1) {
-        if (!try s.analyse()) break;
-        const rewrote = try s.rewrite();
-        // Slice 2: what no longer has a reference goes, and with it the
-        // calls and assignments it made, which the next round's facts no
-        // longer see.
-        const pruned = try s.prune();
-        if (!rewrote and !pruned) break;
+    try s.rounds();
+    // Slices 5, 7 and 8, once the facts are spent: what is called from one
+    // place, and a small function wherever it is called, is written there;
+    // an object nothing but its own reads and writes can see is its keys;
+    // reachability drops what went; and the facts are asked again of what
+    // that exposed — a literal now passed, a field of a literal now read.
+    var pass: u32 = 0;
+    while (pass < max_passes) : (pass += 1) {
+        var changed = false;
+        if (try s.inlineSmall()) changed = true;
+        if (try s.inlineOnce()) changed = true;
+        if (try s.scalarReplace()) changed = true;
+        if (!changed) break;
+        _ = try s.prune();
+        try s.grow();
+        try s.rounds();
     }
-    // Slice 5, once the facts are spent: what is called from one place is
-    // written there, and reachability drops what it was.
-    if (try s.inlineOnce()) _ = try s.prune();
-    // Slice 7: an object nothing but its own reads and writes can see is
-    // its keys.
-    _ = try s.scalarReplace();
     s.releaseKeeps();
     try s.finish();
 }
+
+/// How many times the inlining passes and the facts after them repeat.
+const max_passes = 3;
 
 // ---------------------------------------------------------------------------
 // Values
@@ -242,6 +248,8 @@ const Mod = struct {
     global: []const u32,
     /// `global`, grown when a name of another module is written here.
     global_list: std.ArrayList(u32) = .empty,
+    /// `prop` of the names added after it (`Pts.propId`).
+    prop_more: std.ArrayList(u32) = .empty,
     /// `Module.prop`, and where this module is in `Spec.mods`.
     prop: []const u32,
     index: u32,
@@ -479,6 +487,42 @@ const Spec = struct {
             .reads = try arena.alloc(u32, in.globals),
         };
         return s;
+    }
+
+    /// Facts-then-rewrite to their fixpoint (at most `max_rounds`).
+    fn rounds(s: *Spec) Allocator.Error!void {
+        var round: u32 = 0;
+        while (round < max_rounds) : (round += 1) {
+            if (!try s.analyse()) break;
+            const rewrote = try s.rewrite();
+            // Slice 2: what no longer has a reference goes, and with it the
+            // calls and assignments it made, which the next round's facts no
+            // longer see.
+            const pruned = try s.prune();
+            if (!rewrote and !pruned) break;
+        }
+    }
+
+    /// Size every per-node and per-name table to the module as it now is:
+    /// a body written where it is called added both.
+    fn grow(s: *Spec) Allocator.Error!void {
+        for (s.mods) |*m| {
+            const nodes = m.ir.nodes.len;
+            if (m.memo.len < nodes) {
+                m.memo = try growSlice(s.arena, Lat, m.memo, nodes, .top);
+                m.lit_of = try growSlice(s.arena, u32, m.lit_of, nodes, none);
+                try m.objects.resize(s.arena, nodes, false);
+            }
+            const names = m.names.items.len;
+            if (m.stamp.len < names) {
+                m.stamp = try growSlice(s.arena, u32, m.stamp, names, 0);
+                m.decls = try growSlice(s.arena, u32, m.decls, names, 0);
+                m.uses = try growSlice(s.arena, u32, m.uses, names, 0);
+                m.assigned = try growSlice(s.arena, bool, m.assigned, names, false);
+                m.value = try growSlice(s.arena, Lat, m.value, names, .top);
+                m.param = try growSlice(s.arena, u32, m.param, names, none);
+            }
+        }
     }
 
     /// Hand every module its columns back, owned and exactly sized.
@@ -1002,7 +1046,9 @@ const Spec = struct {
         const d = ir.data(node);
         const id = s.pts.propId(m.index, @enumFromInt(d.rhs));
         const chain = try s.pts.chain(m.index, s.cur_top, @enumFromInt(d.lhs));
-        if (chain) |obj| if (s.pts.neverWritten(obj, id)) return .of(try s.intern(.{ .kind = .undefined_lit }));
+        if (chain) |obj| if (s.pts.neverWritten(obj, id)) {
+            return .of(try s.intern(.{ .kind = .undefined_lit }));
+        };
         if (!s.pts.ok) return .top;
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
         const v = s.propValue(obj, id);
@@ -1979,7 +2025,10 @@ const Spec = struct {
         if (ir.tag(target) != .member) return false;
         const td = ir.data(target);
         const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(td.lhs)) orelse return false;
-        return s.pts.neverRead(obj, s.pts.propId(m.index, @enumFromInt(td.rhs)));
+        if (s.pts.neverRead(obj, s.pts.propId(m.index, @enumFromInt(td.rhs)))) return true;
+        // Slice 8: `x.p = x.p` on program objects — no getter, no setter,
+        // no throw — changes nothing (an identity written in place).
+        return sameChain(ir, target, @enumFromInt(ir.data(stmt).rhs)) and try s.pts.safeChain(m.index, s.cur_top, target) != null;
     }
 
     /// The arm an `if` with a literal test takes, or null.
@@ -2362,6 +2411,221 @@ const Spec = struct {
         const tag = m.next_tag;
         m.next_tag += 1;
         return m.addName(s.gpa, .{ .module = .none, .base = s.in.fresh.unwrap().?, .tag = tag });
+    }
+
+    // ---- Slice 8: a small function, wherever it is called ------------------
+
+    /// A top-level function whose body is one `return e`, as slice 8 sees it.
+    const Small = struct {
+        module: u32,
+        params: []const NameIndex,
+        ret: Index,
+        /// Nodes of `e`, the size model's unit.
+        cost: u32,
+        /// Per parameter: reads in `e`.
+        reads: []u32,
+        /// Per parameter read once: the read is the first thing `e`
+        /// evaluates that could do anything, and it is evaluated whenever
+        /// `e` is (`firstUse`).
+        first: []bool,
+    };
+
+    /// `backend.md` §9, *Slice 8*: a call of a top-level function whose
+    /// body is one `return e` is `e`, its parameters the arguments, wherever
+    /// that is no larger than the call — an identity, a function that
+    /// returns a name, a wrapper of another call. Every argument is an atom,
+    /// or one non-atom read exactly once, first, and unconditionally, so
+    /// that each is evaluated once and in its order. True when any was.
+    fn inlineSmall(s: *Spec) Allocator.Error!bool {
+        if (s.in.fresh == .none) return false;
+        var any = false;
+        var pass: u32 = 0;
+        while (pass < 4) : (pass += 1) {
+            // Fact 3 answers for the program as the last facts saw it: the
+            // first pass only, before any body is written in.
+            if (!try s.inlineSmallPass(pass == 0 and s.pts.ok)) break;
+            any = true;
+        }
+        return any;
+    }
+
+    /// Arrow `value` of module `module` as slice 8 sees it, or null: one
+    /// `return e`, `e` small, holding no function and no `yield`, naming
+    /// nothing but its parameters and whole-program names — and not `self`,
+    /// the name it is declared by, when it has one.
+    fn smallOf(s: *Spec, module: u32, value: Index, self: ?u32) Allocator.Error!?Small {
+        const fm = &s.mods[module];
+        if (fm.ir.tag(value) != .arrow or fm.ir.data(value).rhs != Node.arrow_plain) return null;
+        const f = fm.ir.extraData(@enumFromInt(fm.ir.data(value).lhs), JsIr.Func);
+        const body = fm.ir.extraSlice(f.body(), Index);
+        if (body.len != 1 or fm.ir.tag(body[0]) != .return_stmt) return null;
+        const ret = (@as(Node.OptionalIndex, @enumFromInt(fm.ir.data(body[0]).lhs))).unwrap() orelse return null;
+        // Copied: writing a body in appends to `extra`, which may move it.
+        const params = try s.arena.dupe(NameIndex, fm.ir.extraSlice(f.params(), NameIndex));
+        for (params, 0..) |p, i| if (std.mem.indexOfScalar(NameIndex, params[0..i], p) != null) return null;
+        const reads = try s.arena.alloc(u32, params.len);
+        @memset(reads, 0);
+        var cost: u32 = 0;
+        var stack: std.ArrayList(Index) = .empty;
+        try stack.append(s.arena, ret);
+        while (JsIr.popOperand(&stack)) |node| {
+            cost += 1;
+            if (cost > 24) return null;
+            switch (fm.ir.tag(node)) {
+                // A function in it is made on each call: kept out, with its
+                // declarations and captures.
+                .arrow => return null,
+                .ident => {
+                    const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, params, x)) |i| {
+                        reads[i] += 1;
+                    } else if (fm.globalOf(x)) |h| {
+                        // Itself: a recursion is no expression.
+                        if (self != null and h == self.?) return null;
+                    } else return null;
+                },
+                .unary => if (@as(JsIr.UnaryOp, @enumFromInt(fm.ir.data(node).rhs)) == .yield) return null,
+                else => {},
+            }
+            try fm.ir.pushOperands(s.arena, &stack, node);
+        }
+        const first = try s.arena.alloc(bool, params.len);
+        for (params, first, reads) |p, *fi, r| fi.* = r == 1 and firstUse(fm.ir, ret, p, 0) == .found;
+        return .{ .module = module, .params = params, .ret = ret, .cost = nodeCount(fm.ir, ret, &s.pts, module), .reads = reads, .first = first };
+    }
+
+    fn inlineSmallPass(s: *Spec, resolve: bool) Allocator.Error!bool {
+        const n = s.in.globals;
+        const smalls = try s.arena.alloc(?Small, n);
+        @memset(smalls, null);
+        for (s.decl, 0..) |maybe, gi| {
+            const decl = maybe orelse continue;
+            const g: u32 = @intCast(gi);
+            if (s.assigned[g]) continue;
+            const fm = &s.mods[decl.module];
+            if (fm.ir.tag(decl.stmt) != .const_decl) continue;
+            if (std.mem.indexOfScalar(Index, fm.ir.extraSlice(fm.ir.body, Index), decl.stmt) == null) continue;
+            smalls[g] = try s.smallOf(decl.module, @enumFromInt(fm.ir.data(decl.stmt).rhs), g);
+        }
+        // A function a call reaches through a property — `kind.m(…)` — when
+        // fact 3 says the callee is that one function, reading it does
+        // nothing, and the facts are of the program as it stands.
+        // Per site: unasked, not small, or its `Small`.
+        const by_site = try s.arena.alloc(?Small, if (resolve) s.pts.sites.items.len else 0);
+        const asked = try s.arena.alloc(bool, by_site.len);
+        @memset(asked, false);
+        // Every call of one, in module order.
+        var any = false;
+        var stack: std.ArrayList(Index) = .empty;
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            var calls: std.ArrayList(struct { top: Index, call: Index, small: Small }) = .empty;
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                stack.clearRetainingCapacity();
+                try stack.append(s.arena, top);
+                while (JsIr.popOperand(&stack)) |node| {
+                    if (ir.tag(node) == .call) {
+                        const callee: Index = @enumFromInt(ir.data(node).lhs);
+                        if (ir.tag(callee) == .ident) {
+                            if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| if (smalls[g]) |small| {
+                                try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
+                            };
+                        } else if (resolve and ir.tag(callee) == .member and callee.int() < s.pts.vals[mi].len) {
+                            const v = s.pts.vals[mi][callee.int()];
+                            if (!v.top and !v.prim and !v.nullish() and v.sites.len == 1) {
+                                const site = v.sites[0];
+                                const st = s.pts.sites.items[site];
+                                if (st.kind == .func and !st.escaped and try s.pts.safeChain(@intCast(mi), top, callee) != null) {
+                                    if (!asked[site]) by_site[site] = try s.smallOf(st.module, st.node, null);
+                                    asked[site] = true;
+                                    if (by_site[site]) |small| try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
+                                }
+                            }
+                        }
+                    }
+                    try pushChildren(s.arena, ir, node, &stack);
+                }
+            }
+            for (calls.items) |c| {
+                if (m.ir.tag(c.call) != .call) continue;
+                if (try s.inlineSmallAt(m, @intCast(mi), c.top, c.call, c.small)) any = true;
+            }
+        }
+        return any;
+    }
+
+    fn inlineSmallAt(s: *Spec, m: *Mod, mi: u32, top: Index, call: Index, small: Small) Allocator.Error!bool {
+        const fm = &s.mods[small.module];
+        const args = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@enumFromInt(m.ir.data(call).rhs)), Index));
+        if (args.len != small.params.len) return false;
+        // Arguments: atoms, or one non-atom read once and first.
+        // The callee, the brackets and the commas.
+        var call_cost: u32 = 3 + @as(u32, @intCast(if (args.len > 0) args.len - 1 else 0));
+        var inlined: u32 = small.cost;
+        var non_atoms: u32 = 0;
+        for (args, 0..) |a, i| {
+            const c = nodeCount(m.ir, a, &s.pts, mi);
+            call_cost += c;
+            inlined = inlined - small.reads[i] + small.reads[i] * c;
+            // A name nothing assigns is the same value wherever the body
+            // reads it; the call's place is the body's, so it names the
+            // same binding.
+            const atom = switch (m.ir.tag(a)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => literalLen(m.ir, a) <= 5 or small.reads[i] <= 1,
+                .ident => try s.atomArgument(m, a, top, s.assigned),
+                else => false,
+            };
+            if (atom) continue;
+            if (small.reads[i] == 0 and inert(m.ir, a)) continue;
+            if (!small.first[i]) return false;
+            non_atoms += 1;
+        }
+        if (non_atoms > 1) return false;
+        if (non_atoms == 1) for (args, 0..) |a, i| {
+            // The others are evaluated before it in the call: they must be
+            // names or literals, which evaluating later cannot tell.
+            if (small.first[i] and small.reads[i] == 1) continue;
+            switch (m.ir.tag(a)) {
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .ident => {},
+                else => return false,
+            }
+        };
+        if (inlined > call_cost) return false;
+
+        // Names the body mentions of the whole program, as the caller
+        // module spells them.
+        const cross = small.module != mi;
+        var c: Copy = .{
+            .s = s,
+            .src = fm,
+            .dst = m,
+            .cross = cross,
+            .renamed = try s.arena.alloc(u32, fm.ir.names.len),
+            .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
+        };
+        @memset(c.renamed, none);
+        @memset(c.subst, .none);
+        if (cross) {
+            var stack: std.ArrayList(Index) = .empty;
+            try stack.append(s.arena, small.ret);
+            while (JsIr.popOperand(&stack)) |node| {
+                if (fm.ir.tag(node) == .ident) {
+                    const x: NameIndex = @enumFromInt(fm.ir.data(node).lhs);
+                    if (std.mem.indexOfScalar(NameIndex, small.params, x) == null) {
+                        const h = fm.globalOf(x).?;
+                        const to = try s.nameIn(m, h) orelse return false;
+                        c.renamed[x.int()] = to.int();
+                    }
+                }
+                try fm.ir.pushOperands(s.arena, &stack, node);
+            }
+        }
+        for (small.params, args) |p, a| if (p.unwrap()) |pi| {
+            c.subst[pi] = a.toOptional();
+        };
+        const e = try c.expr(small.ret, 0);
+        m.copyNode(call, e);
+        return true;
     }
 
     // ---- Slice 5: a function called once, once the whole program is seen ----
@@ -3284,6 +3548,182 @@ const max_inlines = 256;
 const max_inline_nodes = 4096;
 const max_inline_depth = 150;
 
+/// Where the read of `p` stands in `node`'s evaluation (slice 8): `found`
+/// when it is evaluated unconditionally and nothing evaluated before it
+/// could do anything — run code, throw, or depend on when it runs (a name,
+/// a literal and `===` cannot); `clean` when `node` evaluates no read of
+/// `p` and does nothing; `dirty` when it reads no `p` but may do something;
+/// `fail` when the read is conditional, deferred, or after such a thing.
+const Use = enum { found, clean, dirty, fail };
+
+fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
+    if (depth > 64) return .fail;
+    const d = ir.data(node);
+    switch (ir.tag(node)) {
+        .ident => return if (d.lhs == p.int()) .found else .clean,
+        .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this => return .clean,
+        .member => return seq(&.{firstUse(ir, @enumFromInt(d.lhs), p, depth + 1)}, true),
+        .index_get => return seq(&.{ firstUse(ir, @enumFromInt(d.lhs), p, depth + 1), firstUse(ir, @enumFromInt(d.rhs), p, depth + 1) }, true),
+        .unary => {
+            const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
+            return seq(&.{firstUse(ir, @enumFromInt(d.lhs), p, depth + 1)}, op != .not and op != .type_of);
+        },
+        .binary => {
+            const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+            const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+            const l = firstUse(ir, b.left, p, depth + 1);
+            const r = firstUse(ir, b.right, p, depth + 1);
+            switch (op) {
+                // The right side is evaluated only sometimes.
+                .logical_and, .logical_or => {
+                    if (r == .found or r == .fail) return if (l == .clean or l == .dirty) .fail else l;
+                    return seq(&.{ l, r }, false);
+                },
+                .strict_eq, .strict_ne => return seq(&.{ l, r }, false),
+                else => return seq(&.{ l, r }, true),
+            }
+        },
+        .cond => {
+            const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+            const t = firstUse(ir, @enumFromInt(d.lhs), p, depth + 1);
+            const a = firstUse(ir, c.consequent, p, depth + 1);
+            const e = firstUse(ir, c.alternate, p, depth + 1);
+            if (a == .found or a == .fail or e == .found or e == .fail) return if (t == .found) .found else .fail;
+            return seq(&.{ t, a, e }, false);
+        },
+        .call, .new_call => {
+            var parts: [17]Use = undefined;
+            const args = ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index);
+            if (args.len > 16) return .fail;
+            parts[0] = firstUse(ir, @enumFromInt(d.lhs), p, depth + 1);
+            for (args, 1..) |a, i| parts[i] = firstUse(ir, a, p, depth + 1);
+            return seq(parts[0 .. args.len + 1], true);
+        },
+        .object, .array, .template => {
+            var parts: [16]Use = undefined;
+            const items = ir.extraSlice(JsIr.inlineRange(d), Index);
+            if (items.len > 16) return .fail;
+            for (items, 0..) |item, i| parts[i] = firstUse(ir, item, p, depth + 1);
+            // A template converts what it holds to a string.
+            return seq(parts[0..items.len], ir.tag(node) == .template);
+        },
+        .property => return firstUse(ir, @enumFromInt(d.rhs), p, depth + 1),
+        .spread_property => return seq(&.{firstUse(ir, @enumFromInt(d.lhs), p, depth + 1)}, true),
+        else => return .fail,
+    }
+}
+
+/// Parts evaluated in order, then something that `acts` (may do anything)
+/// when it is true.
+fn seq(parts: []const Use, acts: bool) Use {
+    var dirty = false;
+    for (parts) |u| switch (u) {
+        .found => return if (dirty) .fail else .found,
+        .fail => return .fail,
+        .dirty => dirty = true,
+        .clean => {},
+    };
+    return if (dirty or acts) .dirty else .clean;
+}
+
+/// About how many bytes expression `root` prints in, short names one byte
+/// each (slice 8's size model), capped.
+fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
+    var stack: [64]Index = undefined;
+    var len: usize = 1;
+    stack[0] = root;
+    var count: u32 = 0;
+    while (len > 0) {
+        len -= 1;
+        const node = stack[len];
+        const d = ir.data(node);
+        count += switch (ir.tag(node)) {
+            .ident, .true_lit, .null_lit => 1,
+            .number, .string => @intCast(literalLen(ir, node)),
+            .false_lit => 2,
+            .undefined_lit => 9,
+            // `.name`: a property name is its text.
+            .member => blk: {
+                const id = pts.propId(mi, @enumFromInt(d.rhs));
+                break :blk 1 + if (id < pts.s.in.prop_len.len) @as(u32, pts.s.in.prop_len[id]) else 5;
+            },
+            .index_get, .call, .new_call, .object, .array, .template => blk: {
+                const items: usize = switch (ir.tag(node)) {
+                    .call, .new_call => ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index).len,
+                    .index_get => 1,
+                    else => ir.extraSlice(JsIr.inlineRange(d), Index).len,
+                };
+                break :blk 2 + @as(u32, @intCast(if (items > 0) items - 1 else 0));
+            },
+            .binary => @intCast(JsIr.BinaryOp.text(@enumFromInt(d.rhs)).len),
+            .unary => 1,
+            .cond => 2,
+            .property => 6,
+            else => 4,
+        };
+        if (count > 4096) return count;
+        var children: [16]Index = undefined;
+        var n: usize = 0;
+        switch (ir.tag(node)) {
+            .member, .unary, .spread_property => {
+                children[0] = @enumFromInt(d.lhs);
+                n = 1;
+            },
+            .property => {
+                children[0] = @enumFromInt(d.rhs);
+                n = 1;
+            },
+            .index_get => {
+                children[0] = @enumFromInt(d.lhs);
+                children[1] = @enumFromInt(d.rhs);
+                n = 2;
+            },
+            .binary => {
+                const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                children[0] = b.left;
+                children[1] = b.right;
+                n = 2;
+            },
+            .cond => {
+                const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+                children[0] = @enumFromInt(d.lhs);
+                children[1] = c.consequent;
+                children[2] = c.alternate;
+                n = 3;
+            },
+            .call, .new_call => {
+                const args = ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index);
+                if (args.len > 15) return 4096;
+                children[0] = @enumFromInt(d.lhs);
+                for (args, 1..) |a, i| children[i] = a;
+                n = args.len + 1;
+            },
+            .object, .array, .template => {
+                const items = ir.extraSlice(JsIr.inlineRange(d), Index);
+                if (items.len > 16) return 4096;
+                for (items, 0..) |a, i| children[i] = a;
+                n = items.len;
+            },
+            // A function counts as big.
+            .arrow => return 4096,
+            else => {},
+        }
+        if (len + n > stack.len) return 4096;
+        for (children[0..n]) |c| {
+            stack[len] = c;
+            len += 1;
+        }
+    }
+    return count;
+}
+
+fn growSlice(arena: Allocator, comptime T: type, old: []T, len: usize, fill: T) Allocator.Error![]T {
+    const out = try arena.alloc(T, len);
+    @memcpy(out[0..old.len], old);
+    @memset(out[old.len..], fill);
+    return out;
+}
+
 /// The printed length of a literal node, for slice 5's substitution rule.
 fn literalLen(ir: *const JsIr, node: Index) usize {
     return switch (ir.tag(node)) {
@@ -3570,8 +4010,24 @@ const Pts = struct {
     fn propId(p: *Pts, mi: u32, n: NameIndex) u32 {
         const m = &p.s.mods[mi];
         const i = n.unwrap() orelse return none;
-        if (i >= m.prop.len) return none;
-        return m.prop[i];
+        if (i < m.prop.len) return m.prop[i];
+        // A name a body copied here added: plain names are the session's
+        // symbols, so the same name in the module it was copied from is
+        // numbered. Found once, then kept in the module's column.
+        const at = i - @as(u32, @intCast(m.prop.len));
+        const unknown = none - 1;
+        while (m.prop_more.items.len <= at) m.prop_more.append(p.arena(), unknown) catch return none;
+        if (m.prop_more.items[at] != unknown) return m.prop_more.items[at];
+        const name = m.names.items[i];
+        var found: u32 = none;
+        if (name.module == .none and (name.tag == JsIr.Name.no_tag or name.tag == JsIr.Name.field)) search: for (p.s.mods) |*other| {
+            for (other.prop, 0..) |id, j| if (id != none and other.names.items[j].eql(name)) {
+                found = id;
+                break :search;
+            };
+        };
+        m.prop_more.items[at] = found;
+        return found;
     }
 
     fn siteOf(p: *Pts, mi: u32, node: Index, kind: SiteKind) Allocator.Error!u32 {
@@ -3734,7 +4190,11 @@ const Pts = struct {
         // export — is anything at all.
         for (s.decl, p.globals) |d, g| if (d == null) try p.makeTop(g);
         p.vals = try p.arena().alloc([]Val, s.mods.len);
-        for (p.vals, s.mods) |*v, *m| v.* = try p.arena().alloc(Val, m.ir.nodes.len);
+        // A node no sweep reached (in code nothing runs) is anything.
+        for (p.vals, s.mods) |*v, *m| {
+            v.* = try p.arena().alloc(Val, m.ir.nodes.len);
+            @memset(v.*, Val.top_val);
+        }
         var sweep: u32 = 0;
         while (sweep < max_pts_sweeps) : (sweep += 1) {
             p.changed = false;

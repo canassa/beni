@@ -1,0 +1,29 @@
+identity: 2
+twice: 3
+wrap: 4
+twice: 4
+a: 5
+twice: 6
+b: 8
+twice: 8
+after: 10
+twice: 9
+twice: 11
+both: 13
+ignored: 15
+twice: 17
+twice: 18
+1
+2
+7
+9
+17
+23
+28
+34
+169
+196
+0
+0
+35
+37

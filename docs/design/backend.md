@@ -5365,6 +5365,51 @@ in a loop, a record whose field is the loop's variable, read by closures after t
 sees its turn's value, which a substitution of the reassigned variable would lose),
 `emit/release/app/InlineAfter`, `emit/release/app/SpecFields`.
 
+**Slice 8 — a small function, wherever it is called** (*added 2026-10-03*; ledger steps 12 and 17,
+`plans/runtime-in-beni.md`'s *Append against Solid 1*). *A function called once* takes a body in
+at one call; a function called from many places paid a call at each, an identity included
+(`patch` once definite initialisation decides it, `update = \_ m -> m`, `Html.map`'s tagger
+`identity`). Under `--release`, after the facts:
+
+- **Which functions.** A function whose body is one `return e`, where `e` holds no function and no
+  `yield`, names nothing but its parameters and whole-program names (not itself), and declares no
+  parameter twice: a top-level `const f = (…) => e` nothing assigns, or **the one function a call
+  reaches through a property** — `kind.m(…)`, `program.update(m, s)` — when fact 3 says the callee
+  may be that one function only, and reading it does nothing (`Pts.safeChain`: no getter, no
+  throw). Program functions read no `this`, so the receiver is not missed.
+- **Which calls.** Each argument is an *atom* — a literal (of at most 5 bytes, or read once) or a
+  name nothing assigns (`atomArgument`: such a name is the same value wherever the body reads it,
+  and the body is written where the call was, in the same scope) — or an argument nothing reads
+  that does nothing, or **one** argument read exactly once by `e` whose read is the first thing
+  `e` evaluates that could do anything, and is evaluated whenever `e` is (`firstUse`: before it
+  only names, literals and `===`; never in a branch of `?:`, `&&` or `||`, nor in a function); then
+  every other argument must be a name or a literal. So each argument is evaluated once, and in the
+  order it was: what an atom's evaluation could not tell moved, and the one argument that does
+  something stays first.
+- **The size model.** The call is replaced only when `e`, its parameters replaced, prints in no
+  more bytes than the call by an estimate (short names one byte, a property its name's length,
+  operators their text, brackets and commas) — an identity, a function returning a name, a wrapper
+  of another call. A function every call of which is replaced is then unreferenced and goes.
+
+The facts are then asked again (`Spec.grow` sizes their tables to the copied nodes): a constant
+now passed, a field of a literal now read, folds — `scale 1 n` written in is `n`, `measure 3` is
+`10`. With them, **`x.p = x.p`** on program objects — an identity written in place, `a.i =
+patch(a.i, b)` — goes (no getter, no setter, no throw: `safeChain`). The passes — small
+functions, functions called once, scalar replacement, then the facts — repeat at most three times
+while one finds something. A name a copied body adds to a module is a property name the session's
+pool already numbered (`Pts.propId` finds it in the module it came from).
+
+Measured (release, brotli, the whole bundle): the empty `browser` page and `Tea.sandbox` 550 →
+**503** — `first`, `last`, `patch`'s identity and `view`'s block written where they were called,
+the program's `update` (the identity of its model) gone from the render loop; `Tea.element`
+1 253 → 1 226, with effects 5 405 → 5 384; the `bench/ui` app 5 700 → 5 701 (raw −18); `run/`
+programs −1 981 in all (`AliasChainThroughLet`, a chain of 129 aliases, 1 278 → 194). Fixtures:
+`emit/release/app/SpecSmall` (an identity, a wrapper whose first argument is a call, one whose
+argument is read after its own call and stays, and a function every record's field holds, called
+through the field), `run/SpecializeSmall` (the same with `Debug.log` on each argument: the order
+is the development build's), `emit/release/app/SpecConstants`, `SpecFacts`, `SpecNodes`,
+`SpecInit`, `InlineAfter`, `emit/release/split/EmptyPage`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print
