@@ -1,0 +1,240 @@
+-- store local "todos-beni" "0buy milk\n1walk the dog"
+-- url "#/active"
+-- load
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="selected">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- input #new-todo "write tests"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="write tests">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="selected">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- key #new-todo Enter code:Enter
+(keydown's default prevented)
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+          </div>
+        </li>
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"write tests"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"2"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="selected">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click .todo-list>li:nth-child(1)>div>input
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"write tests"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="selected">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- hash "#/"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"buy milk"</label>
+          </div>
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"walk the dog"</label>
+          </div>
+        </li>
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"write tests"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click #clear-completed
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <input id="new-todo" class="new-todo" .value="">
+    </header>
+    <section class="main">
+      <ul class="todo-list">
+        <li class="">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"write tests"</label>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active" class="">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed" hidden="">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- storage local
+(localStorage: {"todos-beni":"0write tests"})
+(the DOM did not change)

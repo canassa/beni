@@ -1,0 +1,11 @@
+store local "todos-beni" "0buy milk\n1walk the dog"
+url "#/active"
+# Enter adds the draft and stops the key's default.
+input #new-todo "write tests"
+key #new-todo Enter code:Enter
+# Complete "buy milk": it leaves the active list, and the list is saved.
+click .todo-list>li:nth-child(1)>div>input
+# The filter follows the address.
+hash "#/"
+click #clear-completed
+storage local
