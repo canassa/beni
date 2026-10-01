@@ -11,6 +11,12 @@ Q12's scheduling is A.3/A.4: the frontend and the numeric-alias checker fix may 
 Question identifiers and section numbers stay stable. Append later decisions
 to Appendix A.
 
+*Amended 2026-10-02 (A.9, A.10).* No schema question is open any more. The rest of the milestone is
+specified in §11 (defaults), §12 (schemas derived from a type), §13 (suspending conversions), §14
+(what is derived from a schema), §15 (the Effect v4 parity ledger) and §16 (the slices, which
+replace §10's S3–S5). The sentences above that call Q3, Q6, Q9 and Q11 open are superseded by
+those sections.
+
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
 | Q3 | Does v1 have defaults? **Answered 2026-10-02 (A.7): yes, Effect-class defaults in the declaration.** | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
@@ -147,7 +153,8 @@ block at a smaller column; column 1 still ends everything. Malformed brace
 fields recover at the next sibling comma, closing brace or next top-level
 declaration. `unexpected_token` and `expected_token` carry field context; no
 new diagnostic code is needed. There is no bodyless schema, default modifier
-or opaque schema form adopted here.
+or opaque schema form adopted here. *(Amended 2026-10-02: §11 adds the `default` and `initial`
+field modifiers.)*
 
 ```elm
 -- NEW SYNTAX; schema operands and distinct presence/null wrappers.
@@ -262,7 +269,10 @@ Schema namespace lookup is not static dispatch. A nominal member Type is
 owned by the declaring module, so its methods still follow
 `static-dispatch-spike.md` §1.2. This feature adds no well-known `a.schema`
 method and never selects a wire format from a Type. Users can pass schema
-values through ordinary functions.
+values through ordinary functions. *(Amended 2026-10-02, A.8: §12 adds the well-known method
+`codec`, which selects a derived wire form from a Type for `Json.decode` and its relatives. Namespace
+lookup itself is unchanged, and a structural endpoint is never silently read with a declared
+schema's renames, §12.2 step 0.)*
 
 ## 4. Elaboration
 
@@ -794,6 +804,12 @@ its §3 and §7 cover related inference risks. The concrete H4 obligation is
 [the prototype's EFFECTS.md](../../bench/schema-prototype/EFFECTS.md), and the
 missing plan anchor is recorded in the queue.
 
+*Amended 2026-10-02 (A.9, A.10).* Q11 is decided and the runtime spike has landed. §13 specifies
+the abstraction this paragraph left open: two directional classes per `Schema`, a compiler-known
+join table for `core/Schema`, and a suspendable twin of the library engine. It also authorises that
+work. The other refusals above still stand: no blanket suspending fallback, and no duplicated
+sync/async public API. The seven cases below are §13's acceptance.
+
 The effects work, after P2, owes all seven acceptance cases there through **both** paths:
 
 1. A suspending decoder and pure encoder exported from A through the intended
@@ -868,7 +884,8 @@ measurement before replacement. Schema parse/print do not change main or grant
 ordinary packages foreign privilege.
 
 The following exclusions are settled except defaults (Q3) and tooling (Q6),
-which remain recommendations:
+which remain recommendations. *(Amended 2026-10-02: defaults are §11 and tooling is §14. Dict,
+tuples and rest fields are scheduled by §15–§16, and §15 gives each row's milestone status.)*
 
 | Capability | Why wait | Where it would go |
 |---|---|---|
@@ -890,6 +907,10 @@ that stronger invariant is wanted. There is no ban on checks simply because
 an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
+
+*Amended 2026-10-02: §16 re-cuts the slices after S2 for the whole milestone. The rules of this
+section (red first, both paths, independent expected answers, and differential execution inside
+`test-blackbox`, which Q9 settled) apply to every one of them.*
 
 The frontend, including §2/A.5’s brace-equivalent layout spelling, has landed,
 and so has the independent checker fix for numeric literals through primitive aliases
@@ -932,6 +953,896 @@ second; it is **not wired by this spec commit**. Chrome semantic checks and
 report 34 performance measurements are specialisation evidence, not timing thresholds in
 an otherwise deterministic correctness gate. A failing test is investigated,
 not fixed by blessing all goldens. No new measurements are run for this document.
+
+## 11. Defaults
+
+*Added 2026-10-02; specified, not built* (A.7, A.10). The owner put defaults in the declaration and
+set Effect v4 as the bar. Effect separates three questions, and so does this section: **what
+triggers** a default, **which direction** it serves, and **what encoding does** with a value equal
+to it. Effect's semantics are taken from its documentation
+([`SCHEMA.md`](../../references/effect/packages/effect/SCHEMA.md) *Decoding Defaults* L623–L763,
+*Default Values in Constructors* L3030–L3147, *Omitting a Key During Encoding* L3549–L3603,
+*Fallbacks* L6696–L6766); its implementation was not read.
+
+### 11.1 The surface
+
+Two new field modifiers extend §2's `FieldModifier`:
+
+```text
+FieldModifier   := … | DefaultModifier | 'initial' Atom
+DefaultModifier := 'default' 'encoded'? Atom ('when' Trigger ('or' Trigger)*)? 'omitted'?
+Trigger         := 'missing' | 'null' | 'invalid'
+```
+
+- **`default`** is a *decoding* default (Effect's `withDecodingDefault*` and `catchDecoding`).
+- **`initial`** is a *constructor* default (Effect's `withConstructorDefault`), used by §11.6's
+  `make`.
+- **`encoded`** says the default is written as an Encoded value and decoded like a value that was
+  read (Effect's encoded-side variants). Without it, the default is a Type value (Effect's
+  `…Type` variants).
+- **`when`** lists the triggers. With no `when`, the trigger is `missing` alone, which is
+  Effect's `…Key` behaviour and Roc's (§12.1).
+- **`omitted`** is an encoding policy (§11.4).
+
+Every new word is contextual inside this production only, as §2's modifier words are, so no
+existing name is reserved. `Atom` is §2's expression atom: a call needs parentheses. After
+`default`, the word `encoded` is always the side word, so a value named `encoded` is written
+`(encoded)`. A trigger word is read as a trigger only after `when` or `or`. Each of `default`
+and `initial` may appear once per field; a second one is `duplicate_schema_modifier`.
+
+```elm
+-- NEW SYNTAX (§11). Missing → 20; present null → an Issue, as for any Int.
+pub schema Settings =
+    pageSize : Int default 20
+    theme : String default "light" when missing or null
+    retries : String via decimalInt default encoded "3"
+    locale : String as "lang" default "en" when missing or invalid omitted
+    createdAt : Int initial (Clock.now ())
+```
+
+The formatter keeps the written order of words inside one modifier. It never adds a `when` that
+was left out, and it never drops one.
+
+### 11.2 Types
+
+A trigger never changes the field's **Type**. It widens the **Encoded** field by the layer the
+trigger absorbs: `missing` adds `Presence`, and `null` adds `Nullable`. A Type default `d` has
+the Type field's type. An `encoded` default has the Encoded field's type *before* the trigger
+layers are added, which is the type a value read at that key has.
+
+| Field | Type field | Encoded field | `d` (Type side) | `d` (`encoded`) |
+|---|---|---|---|---|
+| `f : S default d` | A | Presence E | A | E |
+| `… when null` | A | Nullable E | A | E |
+| `… when missing or null` | A | Presence (Nullable E) | A | E |
+| `… when invalid` | A | E | A | E |
+| `f : S nullable default d` (missing) | Nullable A | Presence (Nullable E) | Nullable A | Nullable E |
+| `f : S optional default d when null` | Presence A | Presence (Nullable E) | Presence A | E |
+| `f : S via c default d` | a (from c) | per the rows above, over S's E | a | E of S |
+| `f : S initial d` | unchanged | unchanged | — (`d` : the Type field) | — |
+
+**Two combinations claim one state twice**, and each is `conflicting_schema_modifiers` (§11.8):
+`optional` with the trigger `missing`, and `nullable` with the trigger `null`. Both would give one
+external state two meanings, which G5 forbids. Every other combination is accepted. The last two
+data rows are what Effect's examples do with `transformOptional`: "missing means null" is
+`nullable default Null`, and "null means missing" is `optional default Missing when null`.
+
+### 11.3 Decoding
+
+The effective order is §2's: rename at the boundary, then presence and the null test, then the
+inner schema or conversion. A default enters at the layer of its trigger:
+
+1. **`missing`**: the external key, after `as`, is not an own property. Its default fires, and
+   the field is not read. The other spelling of a renamed key is still an unknown key, as §6's
+   *renamed key* row says.
+2. **`null`**: the key is present and its value is JSON `null`. Its default fires.
+3. **`invalid`**: the present value fails the field's own operand, whether by shape, conversion
+   or check, at the field path or below it. The default replaces the field's result, and **the
+   issues that failure produced are discarded**, under FirstError and AllErrors alike. This is
+   Effect's `catchDecoding`. It never fires on its own: only an author who wrote `invalid` gets
+   it. It never applies to the enclosing record's structural checks, to unknown keys under
+   Reject, or to the encoding direction.
+
+**What a fired default produces.**
+- A Type default is evaluated, then the Type endpoint's checks on that field run on it, exactly as
+  they would on a decoded value. A default that fails a check is a `CheckFailed` issue at the field
+  path, whose message names the default. A well-typed default is not exempt from the checks: §5's
+  rule that "typed encode still validates refinements" applies here too.
+- An `encoded` default is decoded through the field's whole operand (conversions, checks, nested
+  defaults) as if it had been read at that key, and its failures are ordinary issues at that path.
+
+**Evaluation.** A default expression is evaluated **each time its default fires**, at the field's
+place in declaration-order traversal, and never when the key supplies the value. This is Effect's
+"executed each time a default value is needed" (L3050). A pure default may be evaluated once by
+the backend, since that is unobservable. An impure default, such as `Debug.log`, is ordered among
+its siblings' conversions. A suspending default makes the decoding direction suspend (§13). A
+FirstError traversal that stopped earlier does not evaluate it.
+
+### 11.4 Encoding
+
+The Type field always holds a value, so encoding has one decision: whether to write the key
+when the value equals its default.
+
+- **Written** (the default, and Effect's: `withDecodingDefault`'s encode is a passthrough). The
+  value is encoded and the key is always written. The program value round-trips:
+  `decode (encode v) == v`. The external document can gain a key it did not have.
+- **`omitted`** (opt-in, Effect's `SchemaGetter.omit`). For a Type default, the key is left out
+  when the value `==` the evaluated default. For an `encoded` default, it is left out when the
+  encoded output `==` it. `==` is the type's `eq` (`static-dispatch-spike.md` §3), derived when the
+  module declares none. The program value still round-trips, because decoding the omission fires
+  the same default. The external document can lose a key that equalled the default.
+
+`omitted` requires the trigger `missing`. Without it, the omitted key could not be read back, so
+any other set of triggers is `omitted_default_needs_missing`. `omitted` also requires a **pure**
+default: re-evaluating an impure or suspending default could produce a different value, so the
+round trip would silently change the data. That case is `omitted_default_not_pure`. A field type
+without `eq` reports the existing `not_equatable` or `unknown_method`. `null` and `invalid` defaults
+are decoding-only: encoding never writes `null` because a default exists.
+
+### 11.5 Projections and flip
+
+- **`flip`** swaps the directions (§5), so a flipped schema's *encoding* fills defaults, and a
+  double flip restores them.
+- **`typeOnly`** validates the Type endpoint, whose field is always present, so its defaults
+  vanish.
+- **`encodedOnly`** validates the Encoded endpoint, whose `Presence`/`Nullable` layers already
+  admit the triggering states, so its defaults vanish too.
+- **`describe`** carries them (§11.7).
+
+### 11.6 Constructor defaults: `Init` and `make`
+
+Every schema's namespace gains two members, appended to A.6's fixed member order:
+
+- `Init`, a type: the Type endpoint with every field that has an `initial` removed. This applies
+  recursively through inline nested field blocks, but not through a referenced schema, whose own
+  `make` the author calls in the `initial` expression.
+- `make : Init -> Result (List Issue) Type`. Generic schemas take their explicit schema arguments
+  first, as the factory does.
+
+`make` fills each `initial` in declaration order, evaluating it on every call, and then validates
+the result against the Type endpoint (`typeOnly`'s decoding). That is Effect's "a constructor
+creates a value of the schema's type, running all validations" (L2923), with `Result` in place of
+the throw, which makes it Effect's `makeOption` with its issues kept. A schema with no `initial` has
+`Init` equal to `Type`, and its `make` is validation alone. An impure `initial` makes `make` impure,
+and a suspending one makes it suspend (§13).
+
+```elm
+-- NEW SYNTAX (§11.6).
+case Settings.make { pageSize = 50, theme = "dark", retries = 3, locale = "pt" } of
+    Ok settings -> settings.createdAt   -- filled by `initial`
+    Err issues -> …
+```
+
+In this slice `initial` is accepted only in a record-bodied schema, including its nested inline
+blocks. In a tagged variant's payload it is `misplaced_initial`. That is a capability not yet
+specified, not a rule: §15 row *tagged `make`* proposes `Message.Init` as a third constructor
+family, for S8 (§16).
+
+### 11.7 The description, the plan and the interface
+
+- **The description.** A field carries `default : Maybe { side, triggers, encoding, value }` and
+  `initial : Maybe { value }`. `value` is an opaque thunk reference, because a default is a Beni
+  value and describing never runs it (§5). §14's derived artefacts read it by encoding it, which
+  can fail. The JSON Schema `default` keyword is computed this way.
+- **The plan.** The resolved plan (A.6) moves to its next format version. The field row's `flags`
+  gains bit 1 `missing`, bit 2 `null`, bit 3 `invalid`, bit 4 `encoded`, bit 5 `omitted`, bit 6
+  has-default and bit 7 has-initial. A new `defaults` column follows `fields`, with one 16-byte row
+  per defaulted field: `{ field: FieldIndex, default_expr: Bir.Inst.OptionalIndex, initial_expr:
+  Bir.Inst.OptionalIndex, token: u32 }`. Both expressions are resolved BIR subtrees, like a `via`
+  root, and their references are real value dependencies.
+- **The interface.** `schema_members` gains the kinds `Init` and `make`, after `printWith`. Their
+  schemes are complete (A.6), so the next interface format version follows.
+- **The frontend artifact.** It changes version for the new modifier rows.
+
+### 11.8 Diagnostics
+
+Appended to §8's list:
+
+| Code | Title | Primary region and message shape |
+|---|---|---|
+| `conflicting_schema_modifiers` | CONFLICTING SCHEMA MODIFIERS | The trigger: "`optional` already gives a missing key a meaning here; `default … when missing` would give it a second." The other pair (`nullable` with `null`) is the same. The hint names the combination the author probably wants. |
+| `omitted_default_needs_missing` | OMITTED DEFAULT CANNOT BE READ BACK | `omitted`: "An omitted key is read back as missing, but this default does not fire on `missing`." |
+| `omitted_default_not_pure` | OMITTED DEFAULT MUST BE PURE | `omitted`: "This default can produce a different value each time, so leaving the key out could change the data on a round trip." The message shows the chain, as `sync_boundary` does. |
+| `misplaced_initial` | `initial` IS ONLY FOR RECORD SCHEMAS | The word: "A variant payload has no `make` yet." The message points to the field. |
+
+A default whose type does not match is the ordinary `type_mismatch`, with the field as context.
+
+### 11.9 How both paths implement defaults
+
+- **The specialised worker** inlines each trigger as a branch. In the decode worker,
+  `hasOwn(raw, k) ? … : <default>`. The `null` test comes before the operand. An `invalid` field
+  runs its operand into a temporary Result and selects the default on `Err`, without appending
+  that Err's issues. In the print worker, `omitted` compiles to one `eq` call before the key is
+  written. A pure literal default is a constant.
+- **The library engine** interprets the same three triggers from the field node, with the same
+  order, the same evaluation counts and the same issues.
+- The differential rule (§10, Q9) covers every fixture below.
+
+### 11.10 Fixtures the defaults slice owes
+
+Each fixture is red first. Behaviour belongs in `run/`, through both paths, with an independent
+expected answer.
+
+- **Triggers:**
+  - missing fires, present wins, and present `null` is an Issue unless `null` is a trigger;
+  - `missing or null`;
+  - `invalid` over a wrong shape, a failed conversion, a failed check and a failure two levels
+    below the field;
+  - under AllErrors, a recovered `invalid` adds no issue, and a later sibling's failure is still
+    reported.
+- **Sides:**
+  - `String via decimalInt default encoded "3"` decodes to 3;
+  - an encoded default that fails its conversion is an Issue at the field;
+  - a Type default that fails a target check is `CheckFailed` at the field.
+- **Encoding:**
+  - a value equal to the default is written without `omitted`;
+  - it is absent with `omitted`;
+  - an unequal value is written either way;
+  - every case round-trips the program value.
+- **Interactions:**
+  - with `as "k"`, the default fires on `k` missing, and the Beni-name spelling is an unknown key
+    that Reject reports;
+  - `nullable default Null`;
+  - `optional default Missing when null`;
+  - a default inside a tagged payload;
+  - a default inside a recursive schema at depth;
+  - `flip` and a double flip;
+  - `typeOnly`/`encodedOnly` without defaults.
+- **Evaluation:** `Debug.log` defaults (the corpus's evaluation-order instrument) fire only when
+  triggered, once each, in declaration order, and not after a FirstError stop.
+- **`make`:**
+  - `initial` fills its field;
+  - `Init` omits the field;
+  - `make` returns `CheckFailed` for an invalid result;
+  - a nested inline `initial`;
+  - `make` on a schema without `initial` validates.
+- **`check/bad`:** every §11.8 code; `duplicate_schema_modifier` for two `default`s; a wrong-typed
+  default; `omitted` on a function-typed field.
+- **`parse/good`, `fmt`, `bir`:**
+  - every word and order;
+  - `default (encoded)`;
+  - `when` lists;
+  - values named `default`, `initial`, `missing`, `when` and `or` stay values;
+  - layout and brace spellings give identical dumps.
+- **`emit/` and `emit/app/`:** an inline default branch; `omitted`'s one `eq` call; a program
+  using only `parse` ships no `make` and no `initial` expression.
+- **Interface and cache:** `Init`/`make` in `dump --stage=interface`; cache miss and hit agree; a
+  private default edit does not move the interface hash, and a changed `Init` does.
+
+## 12. Schemas derived from a type
+
+*Added 2026-10-02; specified, not built* (A.8, A.10). This is the zero-ceremony end of the
+feature: `Json.decode text` returns a value of whatever type the program uses it at, and the
+compiler derives the schema from that type. It is checked by the same engine, with the same issues,
+the same specialisation, the same differential tests and the same `--release` behaviour as a
+declared schema. When the JSON does not look like the type, a declared schema (§2, §11) remains
+the tool.
+
+### 12.1 What Roc does, from primary sources
+
+Report 31 read no Roc source. This section does, at the vendored `references/roc`
+(`f083385b`, the Zig compiler), with the pre-rewrite compiler at tag `0.0.0-alpha2-rolling` and
+Zulip as context.
+
+**The old design (abilities, the Rust compiler).**
+- `Decoding` and `DecoderFormatting` worked over `List U8`.
+- `DecodeError : [TooShort]` was the only error, with no path, field or message
+  (`crates/compiler/builtins/roc/Decode.roc` L53, L68–L77, L141–L164).
+- Derivation covered strings, lists, numbers, Bool, tuples and *closed* records. Tag unions were
+  `Underivable // yet`, and optional record fields and type variables were refused
+  (`crates/compiler/derive_key/src/decoding.rs` L40–L131).
+- A missing field was decoded from empty bytes, and roc-json's `Option` used that trick to mean
+  absent (`crates/compiler/derive/src/decoding/record.rs` L22–L71).
+- Opaque types had to opt in with `implements [Decoding]`.
+
+**The complaints on Zulip.**
+- Errors carried no information. The answer was that custom error types "would need associated
+  types on abilities, which we don't intend to add" (Ayaz Hafiz, #ideas › Decode Errors,
+  345114039).
+- The design was "not powerful enough to represent many of the patterns that serde can"
+  (Brendan Hansknecht, *Revamped Encode and Decode*, 447120962).
+
+**The current design (static dispatch, the Zig compiler).**
+- A type has `parser_for` and `encoder_for` methods. A format is any type with the container
+  protocol's methods (`src/build/roc/Builtin.roc` L1–L59; `docs/langref/static-dispatch.md`
+  L65–L95, L353–L389).
+- Structural types derive automatically. A nominal type opts in by writing `parser_for : _`.
+- The derivable shapes are:
+  - records, tag unions and tuples;
+  - Bool, Str and the number types;
+  - `List` and `Box`;
+  - `Set` and `Dict` whose key has `is_eq` and `to_hash`.
+- Functions, the empty union and rigid variables are not derivable
+  (`src/check/Check.zig` ~L33380–L33661).
+- **The target comes from the return type.** `Json.parse : Str -> Try(a, [InvalidJson(Str),
+  ..errs]) where [a.Parseable(...)]` (`Builtin.roc` L270).
+- **Inference works without an annotation.** `test/cli/JsonParseInferredArticle.roc` parses an
+  article whose fields are known only from `article.title`, `article.author`, `article.views`
+  and `article.tags`.
+- **An inferred record is closed at the fields the program reads.** `closeRecordRowForDerivedParse`
+  (`Check.zig` L33507–L33531) says: "once the dispatch has been deferred as far as it can go and
+  nothing further is coming, take the fields the row has as the fields it gets and close it".
+  When a field's own type never resolved, the result is the generic missing-method report
+  (`src/check/report.zig` L2403–L2441).
+- **Extra fields are skipped**, and a skipped value must still be valid JSON
+  (`test/cli/JsonScalarParseEdgeCases.roc` L14–L27).
+- **Missing, null and defaults** (`test/cli/JsonOptionalFieldKinds.roc`):
+  - a missing required field is `MissingRequiredField("name")`, the bare name with no path;
+  - `Try(a, [Missing])` reads absence and omits the key on encode;
+  - `Try(a, [Null])` reads `null`;
+  - nesting the two distinguishes all three states;
+  - a defaulted record field fills absence, but "an explicit null is NOT absence: it stays a parse
+    error";
+  - "Encode always emits a defaulted field" (L90–L112).
+- **Renaming is format-wide only**: `JsonEncoding` has `Default`, `CamelCase` and a `rename_field`
+  (`Builtin.roc` L1482–L1497). Richard Feldman is "really resistant" to per-field annotations
+  because of the combinatoric explosion across formats (#ideas › CBOR serialization, 627140731 to
+  627142176).
+- **Tags** encode as `"A"` with no payload, `{"B": v}` with one, and `{"C": [v1, v2]}` with more
+  (`Builtin.roc` L1068–L1139, L1727–L1753). A discriminated union such as `{"type": "error", …}`
+  needs a hand-written parser (#beginners, 622298071).
+- **The error type**: `InvalidJson` carries the constant text "Invalid JSON" (`Builtin.roc`
+  L324–L325).
+- **The intent**: "the ergonomics of JavaScript's `JSON.parse()` but with eager validation"
+  (Richard Feldman, #ideas › static dispatch - decoding, 481594968).
+
+**Not verified.** Nested-path reporting (no test covers it). `TryFieldCaseless`. The roc-lang.org
+builtins pages, which are generated from the cited source.
+
+**What beni takes:**
+- return-type dispatch;
+- inference with Roc's closing rule;
+- structural derivation with nominal types derived under the module rule;
+- skipped extra fields;
+- absence and `null` as distinct states;
+- Roc's tag wire form.
+
+**What beni does better:**
+- full paths and structured issues (§5), where Roc's error is a bare field name or a constant
+  string;
+- one engine with declared schemas, so the step from "the JSON looks like my type" to "it does
+  not" is a declaration with renames, defaults and conversions, not a hand-written parser.
+
+### 12.2 The well-known method `codec`
+
+**This amends §3's last paragraph** ("adds no well-known `a.schema` method and never selects a wire
+format from a Type"). A.8 is the owner's reversal of it.
+
+- `core/Schema` declares `pub type alias Codec a = Schema Value a`. This is a schema whose Encoded
+  endpoint is the untyped host value: the Type endpoint and the wire, with no typed Encoded
+  endpoint to name. `Schema.erased : Schema e a -> Codec a` forgets a declared schema's Encoded
+  type and keeps its behaviour.
+- The well-known method is **`codec : () -> Codec a`**. Its type mentions only `a`, so a `where`
+  clause naming it satisfies the closure rule (`static-dispatch-spike.md` §2.4). `a.schema : () ->
+  Schema e a` would not, because `e` occurs only in the constraint.
+
+`core/Json` is a new core module, not in the prelude, so a program writes `import Json`:
+
+```elm
+decode      : String -> Result (List Issue) a                 where a.codec : () -> Codec a
+encode      : a -> Result (List Issue) String                 where a.codec : () -> Codec a
+decodeWith  : Options, String -> Result (List Issue) a        where a.codec : () -> Codec a
+encodeWith  : Options, a -> Result (List Issue) String        where a.codec : () -> Codec a
+decodeValue : Value -> Result (List Issue) a                  where a.codec : () -> Codec a
+encodeValue : a -> Result (List Issue) Value                  where a.codec : () -> Codec a
+```
+
+`Schema.derived : () -> Codec a where a.codec : () -> Codec a` hands the derived schema to ordinary
+composition, for example `Page.schema (Schema.derived ())`.
+
+**Resolution of `(T, codec)`** extends `static-dispatch-spike.md` §3.3, in this order:
+
+0. **A schema endpoint answers with its declaration.** A tagged schema's nominal `Message.Type`
+   answers with `Schema.erased (Message.schema ())`. A *structural* endpoint, a record alias,
+   is just a record type, so it is derived by step 3 with its Beni field names. To read
+   `"user-id"`, call `User.parse` or pass `User.schema ()`. The two spellings never silently
+   merge.
+1. **The table** answers `Int` (§5's safe integer, both ways), `Float` (a JSON number; encoding a
+   non-finite value is an Issue, §5), `Bool`, `String`, `Char` (a string of exactly one scalar
+   value), `()` (the empty array, as the zero-tuple) and `Value` (identity).
+2. **The module rule.** The declaring module's `pub codec` wins, as a `pub eq` does. Core uses it
+   for its containers:
+   - `List a` and `Array a` are arrays;
+   - `Set a` is an array: encode writes it in set order, and decode reports a duplicate element as
+     `InvalidValue` at its index;
+   - `Dict k v` is an object when `k`'s codec describes a JSON string at its encoded end (`String`,
+     or an opaque over `String`) and an array of `[k, v]` pairs otherwise. Two keys that write one
+     property, or a repeated pair key, are an `InvalidValue` issue at the later position;
+   - `Maybe a` is under §12.4;
+   - `Int32` is a safe integer within 32-bit range.
+
+   A user module's `pub codec` is how a validated newtype reads JSON. It is typically
+   `Schema.erased (Schema.converted Schema.string userIdConversion)`, which runs the smart
+   constructor (report 31 §4.2, "peel or reject": **peel, through the checked constructor**).
+3. **Derivation by shape**, structural and recursive like `eq` (§12.3), for records, tuples and
+   every `type` whose constructors are visible at the derivation site.
+4. Otherwise `no_derived_codec` (§12.7).
+
+**An opaque type is derived only inside its own module.** From any other module its constructors
+are not visible, so a derived decoder would build values that skip the invariant the type exists
+for. That is a guarantee, not taste. The error's hint is to declare `pub codec` in the type's
+module, and that module may derive it there by writing `pub codec () = Schema.derived ()`.
+
+For its own type, the module can write `pub codec () = Schema.structural ()`. `Schema.structural` is
+compiler-known: at that site, resolution of the outermost type skips step 2, so the method does not
+call itself. Every other position resolves normally. It is accepted only in the module that declares
+the type; anywhere else it would bypass the module's invariant, so it is `no_derived_codec`.
+
+Functions, foreign types other than `Value`, and extensible records with a rigid row are not
+derivable. `Never` derives a schema that always fails with `WrongShape`, which is total: no value
+has that type, so no guarantee is at stake.
+
+### 12.3 The derived wire form
+
+- **A record** is a JSON object keyed by its Beni field names. Every field is required except
+  under §12.4. Encode writes keys in field-name order, which is beni's record order. Unknown keys
+  follow `Options.unknownKeys`: **Ignore by default**, as in §5 and Roc.
+- **A tuple**, and `()`, is an array of exactly its arity. A wrong length is `WrongShape`.
+- **A custom type** uses Roc's form:
+  - a nullary constructor is its name as a string (`"Red"`);
+  - one argument is `{"Circle": v}`;
+  - two or more are `{"Rect": [w, h]}`.
+
+  An object that does not have exactly one own key is `WrongShape`. An unknown name is
+  `UnknownTag`. The path goes through the constructor name and then the index, for example
+  `[Field "Rect", Index 1]`.
+- **Type parameters** become evidence, as for `eq`. `Tree a` derives once, with `a`'s codec
+  passed in.
+- **Recursion** goes through the type's own nominal identity under the §5 depth bound. A recursive
+  structural alias is already refused by the language.
+- **A derived description** has the same vocabulary as a declared one. Custom types add one node
+  kind, `external_tagged` (the plan's next format version, beside §11.7's), whose rows are a
+  variant's name and its argument references. Tuples, sets and dicts reuse `list` with a tuple,
+  set or dict marker.
+
+### 12.4 `Maybe`, presence and null
+
+- **In a record field, absence means `Nothing`.** A `null` also means `Nothing` unless the inner
+  type itself accepts `null`. Encoding `Nothing` omits the key.
+- So `x : Maybe Int` accepts missing, `null` and `3`. And `x : Maybe (Maybe Int)` is exact: missing
+  is `Nothing`, `null` is `Just Nothing`, and `3` is `Just (Just 3)`. That is Roc's nested
+  `Try(Try(a, [Null]), [Missing])` (§12.1), with no new type.
+- **Anywhere else** (list element, tuple element, root, constructor argument), `Maybe a` is
+  `null` or `a`. If `a` itself accepts `null`, as with `Maybe (Maybe b)` or `Maybe Value`, the two
+  `Nothing`s cannot be told apart. That is `no_derived_codec` with the reason, because a codec
+  that cannot round-trip would be a silent wrong answer.
+- `Schema.Presence a` and `Schema.Nullable a` derive their exact meanings: a field-only presence,
+  and a `null`/value pair. They are the precise spelling when the lenient `Maybe` field is not
+  wanted. `Presence` outside a field is `no_derived_codec`.
+
+### 12.5 How the target type is found
+
+The constraint `a.codec` arrives on a fresh variable at each `Json.decode` call
+(`static-dispatch-spike.md` §4.2). That variable is resolved by the first of three routes that
+applies:
+
+1. **An annotation**, on the binding or the enclosing declaration: `config : Result (List Issue)
+   Config`.
+2. **Inference from later use.** The constraint is deferred to the end of the enclosing top-level
+   declaration, as §4.2's later-use route allows, and is resolved there. Then **Roc's closing rule
+   applies**: a record type under the constraint whose row variable is still open and does *not*
+   occur in the declaration's generalised scheme is closed to the fields it has. A field whose own
+   type never resolved is `derived_codec_needs_type`, which names the field and asks for an
+   annotation.
+3. **Forwarding.** When the variable does occur in the scheme, the constraint is the
+   declaration's. It is written in an annotation's `where` clause, or, unannotated, promoted into
+   the inferred suffix (§6.4) and chosen by the caller. A row that escapes into the scheme is
+   never closed.
+
+```elm
+-- NEW (§12). `article` is inferred as { author : String, tags : List String, title : String, views : Int }.
+summarize : String -> String
+summarize text =
+    case Json.decode text of
+        Ok article -> article.title ++ " by " ++ article.author ++ ", " ++ String.fromInt article.views
+                        ++ " views: " ++ String.join ", " article.tags
+        Err issues -> Schema.formatIssues issues
+```
+
+Closing happens after unification has seen every use in the declaration, so a record passed to
+`f : { r | name : String, age : Int } -> …` has gained `age` first. `dump --stage=types` prints the
+closed shape. Every rule above is deterministic, with no dependence on worker order (CLAUDE.md
+rule 5).
+
+### 12.6 Closed records, extra fields, and a refactor that stops reading a field
+
+- **The decoded record is always closed.** A record type cannot be built with fields nobody named.
+  An inferred decode is closed at the read set, and an annotated one at its declaration.
+- **Extra JSON fields** are unknown keys. They are ignored under the default Ignore and reported at
+  their own paths under `Json.decodeWith { … | unknownKeys = Reject }`. With an inferred shape,
+  Reject is legitimate but strict: every key the program does not read is reported.
+- **A refactor that stops reading a field narrows the check.** This is the defined meaning, and
+  Roc's: an inferred decode validates exactly what the program reads. The key that is no longer
+  read becomes an unknown key, ignored by default, so a malformed value there no longer fails the
+  decode. No guarantee is lost: a value the program never reads cannot make it misbehave, and every
+  read stays checked before any field is touched. A contract that must hold independently of the
+  reads, such as validating a document that is forwarded or stored, or conforming to an API, is
+  written as a type annotation or a declared schema, and then a removed read changes nothing. No
+  warning is specified: the narrowing is visible in `dump --stage=types` and in the description,
+  and a lint would be a warning, never an error (CLAUDE.md rule 7).
+
+### 12.7 Diagnostics
+
+| Code | Title | Primary region and message shape |
+|---|---|---|
+| `no_derived_codec` | CANNOT DERIVE A CODEC | The `Json.decode`/`encode` (or `Schema.derived`) use: "`Model` cannot be read from JSON: its field `onClick` is a function (`msg -> Html msg`)." The message names the path to the first underivable position, as `eq`'s nested reason does, and gives one reason: a function; a foreign type; an opaque type outside its module ("declare `pub codec` in `UserId`'s module"); `Schema.structural` outside the type's module; an extensible record; a `Maybe` that accepts `null` outside a field; a `Presence` outside a field. |
+| `derived_codec_needs_type` | DECODED TYPE IS NOT KNOWN | The field access or the `Json.decode` call: "I can see this decoded record has a field `meta`, but nothing says what type it is." The hint is an annotation. |
+
+A use whose variable reaches a rigid annotation variable with no `where` is the existing
+`missing_where_constraint`.
+
+### 12.8 One engine: issues, specialisation, differential testing, release
+
+- **A derived codec is a schema.** The checker synthesises a resolved schema plan (A.6's
+  vocabulary plus `external_tagged`) from the type. The engine runs it with §5's context, options,
+  depth bound, traversal order and issues.
+- **Specialisation.** At a call whose target type is concrete, the derived plan is specialised
+  exactly as a declaration is: straight-line workers, loops, and failure branches that build their
+  own issue. Through evidence, the schema value passed is the callee's specialised worker, so a
+  generic decode is not demoted to interpretation.
+- **Where it is emitted.** A nominal type's derived codec is emitted in its declaring module,
+  eagerly, like derived `eq`/`compare`, and removed by reachability when unused (`backend.md`
+  §9). A structural shape (record, tuple) is emitted once per using module, keyed by its canonical
+  shape: sorted field names, with one evidence parameter per position, as for derived `eq`
+  (`static-dispatch-spike.md` §9.2).
+- **The interface.** Derivability from outside the declaring module is a settled property of each
+  named type, published beside `eq`/`compare`'s derived contexts (`checker-v2.md` §11) and covered
+  by the interface hash.
+- **Differential testing (Q9).** Every derived fixture runs through the compiled path and the
+  forced library path, against an independently written expected answer.
+- **`--release`** changes nothing observable.
+- **Effects.** A derived codec has no conversions, so it is pure, unless a module-provided `codec`
+  in its tree suspends. That class arrives through the evidence (§13).
+
+### 12.9 Fixtures the derived-schema slice owes
+
+- **`run/`, both paths:**
+  - every table type;
+  - records, nested records and tuples;
+  - each custom-type wire form, with a payload record;
+  - `Maybe` and nested `Maybe` in fields, elements and the root;
+  - `Presence` and `Nullable`;
+  - `Dict String v` and a `Dict` with non-string keys;
+  - a `Set` duplicate;
+  - a recursive `Tree a` at the depth bound and one past it;
+  - a safe integer one past 2⁵³;
+  - an opaque type through its module's `pub codec`;
+  - Ignore and Reject;
+  - FirstError and AllErrors paths through a constructor;
+  - `encode` of NaN;
+  - `Json.decode` inferred from use, matching Roc's article test;
+  - a forwarding generic decoder across a module;
+  - `Schema.derived` inside a declared schema.
+- **`check/bad`:** every §12.7 reason; an opaque type decoded outside its module; an unresolved
+  field type; a structural alias decoded where a declared schema with renames exists, which is
+  accepted, and a `run/` twin shows it reads Beni names.
+- **`dispatch/`:** the dispatch site and its evidence; a closed inferred row in
+  `dump --stage=types`.
+- **`emit/`:** a derived record worker without interpretation; DCE of an unused derived codec.
+
+## 13. Suspending conversions
+
+*Added 2026-10-02; specified, not built* (A.9 Q11, A.10). This supersedes §7's "synchronous until
+P2" and its refusal to authorise an effects implementation, now that the owner has decided and the
+runtime spike has landed (`transparent-effects-proposal.md` §14–§16).
+
+### 13.1 Two classes per schema
+
+- `transparent-effects-proposal.md` §14.5 gives every application of a nominal type one hidden
+  class. **`Schema e a` and `Conversion b a` carry two: a decoding class and an encoding class.**
+  `Codec a` is `Schema Value a`, so it carries both too. A `Check a` carries one.
+- One class could not let `flip` move suspension from decoding to encoding, which is H4 case 2
+  (§7).
+- The interface block (§14.6 there) gains the step kind `7`, *directional class `i`* (`0` decoding,
+  `1` encoding), after an application's argument steps. That bumps the interface format.
+
+### 13.2 Where the classes are joined
+
+`core/Schema`'s builders are `foreign`, and §14.3 rule 6 makes a callback handed to a `foreign`
+independent of the call. So the joins are a **compiler-known table for `core/Schema`**, the way
+`eq`/`compare` have a table. It is normative and closed: a new builder adds a row here in the same
+commit (rule 1).
+
+| Builder | Joins |
+|---|---|
+| `conversion dec enc` | `dec`'s arrow ⊑ result.decoding; `enc`'s arrow ⊑ result.encoding |
+| `converted s c` | s.decoding, c.decoding ⊑ result.decoding; s.encoding, c.encoding ⊑ result.encoding |
+| `flip s` | s.decoding ⊑ result.encoding; s.encoding ⊑ result.decoding |
+| `typeOnly s`, `encodedOnly s` | the projected endpoint's checks ⊑ both result classes |
+| a check builder over `f` | `f`'s arrow ⊑ the check's class |
+| `checked s k` | k ⊑ s's two classes (checks run both ways, §5) |
+| record, list, tagged, reference, `erased` and the rest | every child's decoding ⊑ result.decoding; every child's encoding ⊑ result.encoding |
+| `decode`, `read`, `parse` (and `…With`) | s.decoding ⊑ the call's ambient (§14.3 rule 1) |
+| `encode`, `write`, `print` (and `…With`) | s.encoding ⊑ the call's ambient |
+| `describe` | nothing: it runs no callback |
+
+**Generated members join directly**, because they are ordinary top-level functions (§7):
+- `parse`/`parseWith`'s arrow gains every reachable `via` decoding callback, every check, every
+  `default` expression and every referenced schema's decoding class;
+- `print`/`printWith` gains the encoding side;
+- `make` gains its `initial` expressions and the Type checks;
+- `schema ()`'s result carries the two joins;
+- a generic factory's result depends on its argument schemas' classes, which are summary
+  dependencies (§14.4 there).
+
+So `List.map`-style polymorphism holds: one `Page` serves pure and suspending element schemas.
+
+### 13.3 What a program sees
+
+- **A schema whose classes stay pure is emitted exactly as today, at no cost.**
+- When a decoding class may suspend, `User.parse` is a suspending function. Its callers suspend,
+  and the `sync` rule (`transparent-effects-proposal.md` §15) refuses it wherever suspension is forbidden, such as a page's
+  `view` and `update`, or `main`. The chain names the field: "`update` calls `User.parse`, which
+  suspends: field `avatar` converts with `Image.load`, which suspends."
+- Decoding and encoding are independent. A schema that suspends only when decoding has a pure
+  `print`.
+
+### 13.4 The two paths
+
+- **The specialised worker** uses the backend's suspendable form (`transparent-effects-proposal.md`
+  §16.3) only in the workers whose class may suspend, along the path from the root to the
+  suspending call. Other workers are untouched.
+- **The library engine** is a privileged `core` sibling. It gets a suspendable **twin**,
+  `<name>$$steps`, written against §16.1's protocol: one sentinel, one pending suspension. The
+  lowering selects it at a call whose class may suspend, as `backend.md` §4's derived comparisons
+  select their `$$steps` twin.
+- In both, the traversal state survives the park and is resumed without re-traversal: path, depth,
+  accumulated issues, finished sibling results and the position in the key walk. There is still one
+  public API: no duplicated sync/async runner exists (§7).
+
+### 13.5 Ordering, errors and cancellation
+
+- **Sequential traversal stays the contract** (§5): FirstError starts no later sibling, and
+  AllErrors runs siblings in declaration order, one at a time, so effect order equals traversal
+  order. Concurrency is a separate option (§15 row *concurrency*).
+- **A failure after a suspension is an ordinary directional failure** (H4 case 6).
+- **Interrupting the fiber** stops the traversal at its suspension point. No later conversion runs,
+  and the finalisers registered by conversions run (`transparent-effects-proposal.md` §16).
+
+### 13.6 Fixtures
+
+The seven cases in §7 are this slice's acceptance, through **both** paths, each with
+`dump --stage=interface` showing the directional classes. They are joined by:
+- a pure schema whose emitted bytes are identical to the pre-slice golden;
+- a `sync_boundary` from `update`, and from `main` calling `parse`, with the field-naming chain;
+- a suspending `default` and `initial`;
+- a derived codec whose module-provided element `codec` suspends.
+
+## 14. What is derived from a schema
+
+*Added 2026-10-02; specified, not built* (A.9 Q6, A.10). The owner's answer is everything in the
+milestone, and **a check written as a beni function is carried as an explicit opaque check in every
+artefact, never dropped or weakened**. Each artefact reads the description (§5). Each returns a
+`Result` when it can fail, and each states where it is weaker than the schema.
+
+### 14.1 Check metadata
+
+`Check a` is the library's check value. Its description entry is `Known KnownCheck` or
+`Opaque { id : String, message : String }`.
+- `KnownCheck` is a closed core type covering minimum and maximum length, `nonEmpty`, `pattern`
+  (an ECMAScript regex source), `between`, `greaterThan`/`lessThan` with inclusive or exclusive
+  bounds, `multipleOf`, `int32`, `finite`, unique items, `minEntries` and `maxEntries`, and a
+  string format (`uuid`, `email`, `uri`, `date`, `dateTime`).
+- A check built from a beni predicate is `Opaque`. Its `id` is the check's stable identity: the
+  declaration path plus its ordinal in the plan. It never changes with worker order.
+
+This closes Q6's "check identifiers/parameters … explicit opaque-check marker".
+
+### 14.2 JSON Schema
+
+```elm
+toJsonSchema : Schema e a, JsonSchemaOptions -> Result (List Issue) JsonSchema
+type alias JsonSchema = { document : Value, opaque : List OpaqueSite }
+type alias JsonSchemaOptions = { dialect : Dialect, unknownKeys : UnknownKeys, endpoint : Endpoint }
+```
+
+- `Dialect` is `Draft2020_12` (the default) or `Draft07`. `endpoint` is normally `Encoded`, the
+  wire.
+- **Records** become `properties`. `required` lists every field without `optional` and without a
+  `missing` default. Reject becomes `additionalProperties: false`.
+- **Primitives:** `nullable` is `{"anyOf": [X, {"type": "null"}]}`. `Int` is `{"type": "integer"}`
+  with the safe bounds.
+- **Tagged unions** become `oneOf` with a `const` discriminator. Derived custom types use
+  single-key objects.
+- **Recursion** uses `$defs`/`$ref` by stable definition identity.
+- **Defaults:** a default's `default` keyword is the encoded default, computed by encoding it, and
+  a failure is an Err.
+- **Known checks** become their keywords.
+- **Opaque material:** every opaque check, and every `via` (a fallible conversion can reject a
+  well-formed encoded value), adds `"x-beni-opaque": {"id", "message"}` at its position and an
+  `OpaqueSite { path, id, message }` to `opaque`. **The document is therefore exactly as strong as
+  the schema where `opaque` is empty, and the list names every place where it is weaker.**
+- **Annotations** map `title`, `description` (from doc comments), `examples` and `deprecated` to
+  their keywords.
+
+### 14.3 Generators
+
+```elm
+sample  : Schema e a, Seed -> Result (List Issue) ( a, Seed )
+samples : Schema e a, Int, Seed -> Result (List Issue) ( List a, Seed )
+shrink  : Schema e a, a -> List a
+```
+
+- `Seed` comes from a core `Random` module. The pure half of `platforms/browser/Random.beni`
+  (`Seed`, `Generator`, `step`; PCG, as Elm's is) moves to core, and the platform re-exports it and
+  keeps `generate`, the command. A schema library in core cannot import a platform.
+- **What is generated.** Generation builds an Encoded value that satisfies the known checks, then
+  *decodes* it. Conversions, defaults and opaque checks therefore run, and every sample is a value
+  the schema accepts. A decode that fails is retried, up to `maxAttempts` (100 by default, in
+  `SampleOptions`). After that the result is `Err` with the new issue code `SampleFailed`, naming
+  the opaque checks that rejected. A sample is never promised for an unsatisfiable check.
+- **Recursion** chooses a non-recursive variant past `maxDepth`.
+- **Shrinking** shrinks the Encoded value towards the empty or zero value and keeps the candidates
+  that decode.
+- The annotation `Schema.generateWith gen` overrides one node, as Effect's arbitrary override does.
+
+### 14.4 Pretty printing, equivalence, issue formatting
+
+- **`pretty : Schema e a, a -> String`** renders a Type value with declared names and nominal
+  constructors, in Beni literal syntax. An opaque conversion target is rendered through its
+  encoding, and as `<TypeName>` when that encoding fails. It is total.
+- **`equivalence : Schema e a -> (a, a -> Bool) where a.eq : a, a -> Bool`** is `==`.
+  - beni already derives structural equality from the type (`static-dispatch-spike.md` §9), so the
+    schema adds no second notion of it.
+  - A module's `pub eq` overrides it, as Effect's `overrideToEquivalence` does.
+  - `encodedEquivalence : Schema e a -> (a, a -> Result (List Issue) Bool) where e.eq : e, e ->
+    Bool` compares wire forms.
+- **Formatting.**
+  - `formatIssues : List Issue -> String` is the default English rendering, one line per issue with
+    the path in JSON-pointer-like form.
+  - `Schema.issueCodec : () -> Codec Issue` sends issues over the wire (Effect's
+    `StandardSchemaV1FailureResult`).
+  - Per-node messages are the annotations `message`, `missingKeyMessage` and `unknownKeyMessage`
+    (§15).
+  - Issues stay a flat ordered list with full paths (A.2 Q4), not Effect's issue tree. The path
+    carries what the tree's nesting does, and a `case` on `IssueCode` is the formatter hook.
+
+### 14.5 Representation, import and code generation
+
+- `Schema.descriptionCodec : () -> Codec Description` persists and transmits a description, which
+  is Effect's `toJson`/`fromJson`.
+- `fromDescription : Description, (String -> Maybe (Check Value)) -> Result (List Issue) (Schema
+  Value Value)` rebuilds an **untyped** validator. Typed rebuilding would compute a type from a
+  value (§9). Opaque checks are resolved by id through the supplied function. An unresolved one is
+  an `Err` naming it, never a silently weaker validator.
+- `fromJsonSchema : Value -> Result (List Issue) (Schema Value Value)` imports a JSON Schema the
+  same way, at runtime. **Typed** import is tooling: a `beni schema import` command that writes
+  `schema` declarations. It is a generator of source, not a language feature (report 32 row 146).
+- `toSource : Description -> String` prints the `schema` declaration a description came from, or
+  the nearest one when the description is derived.
+
+### 14.6 Diff and patch, and optics
+
+- `diff : Schema e a, a, a -> Result (List Issue) (List PatchOp)` produces RFC 6902 operations
+  over the two encoded forms. `applyPatch : Schema e a, a, List PatchOp -> Result (List Issue) a`
+  applies them and re-decodes the result, so a patch cannot produce an invalid value.
+- **Optics** (Effect's `toIso`, `OPTIC.md`) need a checked field reference (report 32 H5), which
+  the language does not have. They are specified separately as the milestone's last slice (§16).
+  The proposed shape is generated lens members, `User.at.name : Lens User.Type String`. Until then
+  this row is *missing*.
+
+## 15. Effect v4 parity, feature by feature
+
+*Added 2026-10-02* (A.10). This walks [`SCHEMA.md`](../../references/effect/packages/effect/SCHEMA.md)'s
+feature list and `ARBITRARY.md`.
+
+**Status** is:
+- **spec'd**, with its section, if this document specified it before this slice;
+- **now** if this slice specifies it (§11–§14);
+- **proposed** if it is missing, with a proposed beni shape that must be specified before it is
+  built (rule 1);
+- **n/a** where the feature exists only for TypeScript or JavaScript, with the reason.
+
+Report 32's 164 rows are the finer inventory. This table is the parity ledger, and its *proposed*
+rows are scheduled in §16.
+
+| Effect feature (SCHEMA.md) | Status | beni shape |
+|---|---|---|
+| Primitives, `Null`, `Unknown` (L204) | spec'd §4 | String, Bool, safe Int, Float, finite Float, `Null`, `Value` |
+| Literals, union of literals (L243, L2068) | proposed | `schema Color = enum of Red as "red" \| Green as "green"`: a nominal all-nullary Type, a bare string on the wire |
+| String checks and formats (L296, L324) | now §14.1 | `KnownCheck` with `check` (row *filters*) |
+| Numbers, integers (L336, L358) | spec'd §4–§5 / now §14.1 | safe `Int`, finite `Float`; `between`, `multipleOf`, `int32` checks |
+| BigInt (L369) | proposed | needs a core `BigInt` type first (§9); then a `String` and number conversion |
+| Dates (L405) | proposed | the platform's time module declares `pub codec` and a `Conversion String Time` (ISO 8601) |
+| Template literals and their parser (L410, L452) | proposed | `Schema.template : Template a -> Schema String a`, built from `Template.literal` and `Template.capture schema` with `map2`-style combination; no template literal *types* (a computed type, §9) |
+| Struct (L492) | spec'd §2 | record schema |
+| `optionalKey` (L496) | spec'd §4 | `optional`, typed `Presence` |
+| `mutableKey` (L496) | n/a | beni values are immutable |
+| `optional` (absent or `undefined`) and `NullOr` (L525) | spec'd §4 | beni has no `undefined`; `optional`, `nullable` and both, distinct |
+| Omitting a value when transforming optional fields (L564) | now §11 / proposed | `default … when null`; the presence-level conversion below |
+| `optionalKey(Never)` (L597) | n/a | a TypeScript type trick |
+| Decoding defaults, encoded or type side, key or `undefined` (L623–L763) | now §11 | `default`, `default encoded`, `when missing \| null \| invalid` |
+| Manual decoding defaults (L765) | now §11 | `default … when missing or null`, `when invalid` |
+| Optional fields as `Option` (L855) | spec'd §4 / now §12.4 | `Presence`, `Nullable`; derived `Maybe` fields |
+| Key annotations, `messageMissingKey` (L993, L1018) | proposed | `annotate` modifier (row *annotations*) with `missingKeyMessage` and `unknownKeyMessage` |
+| Unexpected keys (L1039) | spec'd §5 | `Options.unknownKeys = Ignore \| Reject` |
+| Index signatures, number keys (L1046, L1823) | now §12.2 / proposed | derived `Dict`; in declarations a `Dict k v` operand with key conversions, where colliding keys are an Issue and never "last wins" (report 32 row 55) |
+| `StructWithRest` | proposed | a `rest` field modifier: `extra : Dict String Value rest` collects unclaimed keys and writes them back |
+| Renaming encoded keys (L1108) | spec'd §2 | `as "k"` |
+| Reusing fields, `pick`/`omit`/`merge`/`partial`/`required`, mapping fields and keys (L1140–L1459) | proposed | **declaration derivation**: `schema Patch = partial User`, `schema Summary = pick User (id, name)`, `schema Admin = extend User` plus fields, `schema Wire = derive Model.User keys snake_case`. The compiler writes a new declaration with its own Type from the old one's syntax and plan. This is a computed *declaration*, not a computed type, so §9's objection does not apply. It also gives derived codecs Roc's format-wide renaming without per-field annotations. |
+| Opaque structs (L1460, L3687) | spec'd §4 / §12.2 | a tagged schema's nominal Type; `pub opaque type` with `pub codec` |
+| Tagged structs (L1487) | spec'd §2 | `tagged "kind" of`, where the tag is the constructor |
+| Tuples, rest elements, element annotations (L1518–L1752) | now §12.3 / proposed | derived tuples; in declarations a `( A, B )` operand, and a rest element as a trailing `List` operand |
+| Arrays, unique arrays (L1753, L1765) | spec'd §4 / proposed | `List a`; a `unique` known check using the element type's `eq` |
+| Records, key transformations (L1780–L1930) | proposed | as for index signatures |
+| Unions, first match, exclusive unions (L1931–L1996) | proposed | `schema Id = untagged of IntId Int \| TextId String` tries variants in order and builds the declared constructor; `exclusive` makes two matches an Issue |
+| Deriving unions (`mapMembers`) (L1997) | proposed | declaration derivation (above): `schema B = extend A` with variants |
+| Tagged unions and their helpers (`cases`, `guards`, `match`) (L2108–L2233) | spec'd §2 / n/a | `case` is the matcher and the compiler proves it exhaustive |
+| Recursive schemas (L2235) | spec'd §2 / proposed | explicit nominal recursion is spec'd. A self-referencing *record* schema is proposed: its Type elaborates to a nominal single-constructor record type, since a structural alias cannot recurse (§8) |
+| `declare`, `declareConstructor` (L2315–L2521) | spec'd §4 | `Value` plus `via` a `Conversion`; generic schemas take explicit schema arguments |
+| Filters, return shapes, groups, abort (L2523–L2793) | proposed | a `check Atom` value modifier taking `Check a`. Checks are built with `Schema.predicate : String, (a -> Bool) -> Check a` and `Schema.judge : (a -> List Issue) -> Check a`, which gives relative paths and several issues. `Schema.allOf` groups checks and `Schema.aborting` stops after a failure. The plan's `check` node (A.6) already exists. |
+| Structural filters' ordering (L2824) | spec'd §5 | composite checks wait for their children |
+| Effectful filters (L2855) | now §13 | a check may suspend; its class joins both directions |
+| Refinements narrowing the type (L2794) | n/a | a computed type; an opaque type with a `via` conversion is the stronger nominal form |
+| Brands (L2810) | spec'd §4 / §12.2 | `pub opaque type`, a real nominal type rather than a phantom brand |
+| Constructors, `make`, `makeOption` (L2921–L3029) | now §11.6 | `make : Init -> Result (List Issue) Type`, which validates |
+| Constructor defaults, nested, effectful (L3030–L3147) | now §11.6, §13 | `initial`, evaluated per call; impure or suspending through the inferred classes |
+| Tagged `make` | proposed | `Message.Init` as a third constructor family; `initial` in payloads |
+| Transformations as values, the type, composition (L3149–L3372) | spec'd §4–§5 | `Conversion b a`, `via`, `converted`; composition decodes forward and encodes backward |
+| Effectful transformations | now §13 | inferred per direction |
+| Passthrough helpers, strict mode (L3405–L3486) | n/a | TypeScript subtyping negotiation; beni unifies or reports |
+| Managing optional keys (`transformOptional`) (L3487) | proposed | `presence via c` with `c : Conversion (Presence b) (Presence a)`: a conversion that sees and can produce absence |
+| Omitting a key during encoding, `tagDefaultOmit` (L3549) | now §11.4 / proposed | `default … omitted`; `presence via`, whose encoder returns `Missing` |
+| Flipping (L3605) | spec'd §5 | `flip`, involutive |
+| Classes, `TaggedClass`, `Error`, `TaggedError` (L3683–L4630) | n/a / spec'd | a module with a nominal type is beni's class; error types are ordinary custom types with a schema |
+| JSON support, `fromJsonString` (L4635) | spec'd §4 / now §12 | `parse`/`print`; `Json.decode`/`encode` |
+| Base64, Base64Url, hex, URI component (L4674) | proposed | `Conversion String String` values in `core/Schema`; the byte-array variants follow a core bytes type |
+| FormData, URLSearchParams (L4756, L4834) | proposed | browser platform adapters `Form.toValue`, `Url.queryToValue` producing `Value`, plus a schema-level string-leaf option for form fields |
+| Canonical codecs: JSON, StringTree, ISO (L4906–L5191) | spec'd §1 / proposed | `Value` is the JSON one; StringTree is the adapter option above; ISO is n/a with no optics |
+| XML encoder (L5192) | proposed | an adapter outside core over `write`'s `Value` |
+| JSON Schema output, metadata, encoded-side annotations, optional fields, custom types, constraints (L5251–L5726) | now §14.2 | `toJsonSchema` with the opaque list |
+| Equivalence (L5727) | now §14.4 | `==` (derived `eq`); `encodedEquivalence` |
+| Optics (L5779) | proposed §14.6 | generated `User.at.field` lenses, after a checked field reference |
+| Differ / JSON Patch (L5839) | now §14.6 | `diff`, `applyPatch` |
+| Representation, persistence, rebuild (L5920–L6217) | spec'd §5 / now §14.5 | `describe`, `descriptionCodec`, untyped `fromDescription` |
+| JSON Schema import (L6259) | now §14.5 | an untyped runtime validator; typed import as a source generator |
+| Code generation (L6324) | now §14.5 | `toSource` |
+| Concurrent product parsing (L6342) | proposed | `Options.concurrency = Sequential \| Bounded Int \| Unbounded` over the fiber runtime's `spawn`. Completion-order effects and the first-error interruption follow Effect, while issues stay in traversal order. Sequential stays the default. |
+| `reportInput` (L6384) | spec'd A.6 | `Options.reportInput`, off by default |
+| Formatters, hooks, inline messages, failure over the wire (L6409–L6691) | now §14.4 / proposed | `formatIssues`, `issueCodec`; message annotations (row *annotations*) |
+| Fallbacks, `catchDecoding`, with a service (L6696–L6766) | now §11 | `default … when invalid`; a service is an ordinary argument |
+| Middlewares (L6692) | proposed | `Schema.mapDecoded : Schema e a, (Result (List Issue) a -> Result (List Issue) a) -> Schema e a`, and its encode twin. The callback sees relative issues only and cannot reset context (§5). |
+| Annotations, typed and key-level (L6926, L6983) | proposed | an `annotate Atom` value modifier taking `Annotation`, with `Schema.title`, `examples`, `deprecated`, `message`, `missingKeyMessage`, `unknownKeyMessage` and `generateWith`. Doc comments are `description`, and the plan's `annotation` node (A.6) already exists. |
+| Separate requirement parameters `RD`/`RE` (L7004) | now §13 | two inferred directional classes, with nothing written |
+| `is`/`asserts` guards | n/a | there is no `unknown`; `decode` on `typeOnly` validates a typed value |
+| Experimental JIT/AOT compilers (L68) | spec'd §6 | every declaration is specialised ahead of time, with no `new Function` |
+| Arbitrary (`ARBITRARY.md`) | now §14.3 | `sample`, `samples`, `shrink`, `generateWith` |
+| Standard Schema V1 (L6411) | n/a | a JavaScript interop contract; a platform package may adapt it |
+
+## 16. The schema milestone's slices
+
+*Added 2026-10-02* (A.10). This plans the whole milestone from where §10 stands. S1 (frontend) and
+S2 (checker) have landed, and §10's S3–S5 are re-cut below. Sizes are relative:
+- **S**: one implementer and reviewer pass;
+- **M**: about two;
+- **L**: three or more, or a slice that may need splitting when its spec is read against the code.
+
+Every slice is red-first under §10's rules, through both paths where it has runtime behaviour,
+and lands with all three gates green.
+
+| # | Slice | Contract | Depends on | Size | Done means |
+|---|---|---|---|---|---|
+| S3 | Engine and library interpreter | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
+| S4 | Specialisation, `build` unwalled, differential harness | §6, §10, Q9 | S3 | L | parse/print workers; the forced-library switch, test-only; every schema fixture runs both paths in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
+| S5 | Defaults and `make` | §11 | S4 | M | §11.10 |
+| S6 | Checks, annotations, check metadata | §14.1, §15 rows *filters*, *annotations* | S4 | M | the `check` and `annotate` modifiers; `KnownCheck`; opaque ids; messages |
+| S7 | Derived codecs and `core/Json` | §12 | S4 (S5 is not needed) | L | §12.9; `Codec`, `erased`, `derived`; the closing rule; the interface property |
+| S8 | Declaration surface completion | §15 rows *enum*, *untagged*, *tuples*, *Dict*, *rest*, *presence via*, *recursive records*, *tagged `make`* | S5, S6 | L | each row specified as a dated §2/§4 amendment first, then built |
+| S9 | Suspending schemas | §13 | S4, effects runtime (landed) | L | §13.6 and §7's seven cases through both paths |
+| S10 | JSON Schema output | §14.2 | S6 | M | both dialects; the opaque list; defaults; recursion; a validator cross-check of samples (S11) once S11 lands |
+| S11 | Generators | §14.3 | S6 | M | core `Random`, re-exported by the browser platform; `sample`/`samples`/`shrink`; `SampleFailed`; depth; overrides; every sample decodes |
+| S12 | Pretty, equivalence, formatting, representation, diff | §14.4–§14.6 | S6, S7 | M | `pretty`, `encodedEquivalence`, `formatIssues`, `issueCodec`, `descriptionCodec`, `fromDescription`, `fromJsonSchema`, `toSource`, `diff`/`applyPatch` |
+| S13 | Declaration derivation | §15 row *pick/omit/partial* | S8 | M | `partial`, `pick`, `omit`, `extend`, `derive … keys …`, specified first |
+| S14 | Adapters and conversions | §15 rows *Base64*, *FormData*, *Dates*, *template*, *concurrency* | S8, S9 | M | the core conversions; the browser adapters; the template builder; the concurrency option over `spawn` |
+| S15 | Optics | §14.6 | S13; a checked field-reference spec | M | specified, then built; until then §15 marks it *proposed* |
+
+**Order.** S3 → S4 is the trunk.
+- S5, S6, S7 and S9 can then run in parallel worktrees: they touch different sections of the plan
+  and the engine, and S9 touches the checker's effect classes, which the others do not.
+- S8 builds on S5 and S6. S10–S12 need S6's metadata.
+- S13–S15 close the milestone.
+- The performance claim of §6 is re-measured after S8 and again at the end, with the many-schema
+  code-size curve §6 says is still owed.
 
 ## Appendix A. Decisions log
 
@@ -1273,3 +2184,58 @@ The owner answered the remaining open questions:
   suspension is not allowed (`view`, `update`).
 
 The open-decisions table at the top is superseded by A.7–A.9; no schema question is open.
+
+### A.10 — The rest of the milestone, specified (2026-10-02)
+
+This slice turns A.7–A.9 into contract. Each new section's text is normative; this entry records
+the choices that were not forced by the owner's words, so they can be reversed.
+
+- **Defaults (§11).**
+  - The triggers are spelled after `when`. `missing` alone is the default trigger, as in Effect's
+    `…Key` APIs and in Roc.
+  - `invalid` is opt-in and discards the recovered issues.
+  - Encoding writes the value by default (Effect's passthrough, Roc's "always emits"), and
+    `omitted` is the declared alternative. Two refusals protect the round trip:
+    `omitted_default_needs_missing` and `omitted_default_not_pure`.
+  - A Type default still runs the Type endpoint's checks.
+  - Constructor defaults use a separate word, `initial`, because Effect separates the two
+    directions. `make` validates and returns `Result`, as Effect's `makeOption` does with issues
+    kept.
+  - *Reversal:* make `default` imply `initial`, or let `make` skip validation. No other section
+    depends on either choice.
+- **Derived schemas (§12).** Roc's actual behaviour was read from source (§12.1) and its four
+  load-bearing choices are taken:
+  - return-type dispatch;
+  - inferred records closed at the fields read;
+  - extra fields skipped;
+  - its tag wire form.
+
+  The method is `codec : () -> Codec a`, with `Codec a = Schema Value a`, because a `where`
+  clause cannot mention a typed Encoded variable that is not in the annotation
+  (`static-dispatch-spike.md` §2.4). An opaque type derives only inside its module, where
+  `Schema.structural` asks for its shape. A structural schema endpoint is derived with its Beni
+  names, never read with a declaration's renames. *Reversal of the closing rule:* demand an
+  annotation (Roc's old compiler). That costs the inferred `Json.decode` and nothing else.
+- **Suspension (§13).**
+  - `Schema` and `Conversion` carry two directional classes, not §14.5's one, so `flip` can move
+    suspension (H4 case 2).
+  - `core/Schema`'s builders get a compiler-known join table, because rule 6 there would otherwise
+    lose every callback's bits.
+  - The library engine gets a suspendable twin. This follows the derived comparisons' `$$steps`
+    precedent rather than adding a public async API.
+- **Artefacts (§14).**
+  - Every artefact names where it is weaker than the schema (the JSON Schema `opaque` list,
+    `SampleFailed`, the resolver argument of `fromDescription`), so an opaque check is never
+    silently dropped.
+  - Generation decodes what it generates, so every sample is accepted by the schema.
+  - `equivalence` is `==`, because the language already derives it.
+  - The pure half of the browser platform's `Random` moves to core, because a core library cannot
+    import a platform.
+- **Parity (§15).**
+  - The type-computation rows that report 32 marked *cannot* (`pick`, `omit`, `partial`, `extend`,
+    `mapMembers`) are proposed as **declaration derivation**, which computes a new declaration at
+    compile time and not a type from a value. This is the one place where this slice disagrees with
+    report 32, which recommended against it.
+  - Optics remain *proposed* until a checked field reference is specified.
+- **Slices (§16).** S3 and S4 are the trunk. S5, S6, S7 and S9 can run in parallel worktrees once
+  S4 lands, and S15 closes the milestone.

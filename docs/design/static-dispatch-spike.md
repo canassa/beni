@@ -587,6 +587,11 @@ Report 18 §3 records the three costs Roc accepted with this feature — it requ
 is the only place a type is named in an expression, and it is weaker than the abilities it replaced
 (decode-then-transform cannot be written). The spike inherits all three unchanged.
 
+*Amended 2026-10-02:* [`schema.md`](schema.md) §12 adds a third well-known method, `codec : () ->
+Codec a`, answered by a table, the module rule and structural derivation, the way §3.3 answers
+`eq`. `Json.decode` is its return-type dispatch. An inferred record target is closed at the fields
+the declaration reads (§12.5 there).
+
 ---
 
 ## 5. Core package changes

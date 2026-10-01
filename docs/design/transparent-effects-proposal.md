@@ -1412,6 +1412,9 @@ diagnostics never do, so no message's text moves:
 - **Library traversal order** (§5, decision 8) waits for the sequence decision.
 - **A schema's generated parse and print** will join their `via` conversions' classes when they are
   generated; today `build` refuses a schema, and a published schema member has no block.
+  *Amended 2026-10-02:* [`schema.md`](schema.md) §13 specifies this. `Schema` and `Conversion`
+  applications carry two directional classes instead of §14.5's one, and `core/Schema`'s builders
+  join through a compiler-known table.
 - **Markup's host-called functions** — a handler, a `For` row, a `Show` body, an `Html.map`
   function — are the host's to call and independent of the element, as rule 6's parameters are;
   checker-v2.md §25.6 makes each one `sync` in the next slice. *Done 2026-09-30: §15.2.*
