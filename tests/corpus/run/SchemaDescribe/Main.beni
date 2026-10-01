@@ -6,20 +6,16 @@
 -- A recursive schema is one definition, named by a reference wherever it
 -- is used, its own body included; one nested in another is a definition of
 -- its own, met once, so every reference resolves exactly once; and two
--- schemas built with one name are two definitions. Describing runs no
--- conversion: the one here would log if it ran.
+-- schemas built with one name are two definitions. That describing runs no
+-- conversion is `SchemaLaziness`'s, whose instrument is `Debug.log`: this
+-- program reaches no `Debug`, so `bench/size.mjs` measures it as a release
+-- build ships.
 import Node
 import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, VariantShape)
 
 
 loud : Conversion String Int
-loud =
-    Schema.conversion
-        (λs ->
-            _ = Debug.log "a conversion ran" s
-            Ok 0
-        )
-        λn -> Ok (String.fromInt n)
+loud = Schema.conversion (λ_ -> Ok 0) λn -> Ok (String.fromInt n)
 
 
 one ( (), a ) = { a = a }

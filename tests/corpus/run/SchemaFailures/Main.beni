@@ -1,68 +1,18 @@
--- Failures, in order, and what each one runs (`schema.md` §5, *Traversal
--- and failure rules*). Under `AllErrors` a record reports its unknown keys
--- first, then each declared field in order — a structural failure in one
--- field, a conversion's failure in the next and a refinement in the third,
--- none hiding another — and a list each failing index. Under `FirstError`
--- traversal is lazy: `Debug.log` in each conversion shows that a sibling
--- after the first failure is never started, while `AllErrors` starts every
--- one, and a whole-record conversion waits for all its fields. A
--- conversion's issues are moved to where its value is: the engine's path
--- in front of theirs, its direction and endpoint over theirs, and an empty
--- `Err` is a `ConversionFailed` of its own. `reportInput` puts the failing
--- input in each issue.
+-- Failures, in order (`schema.md` §5, *Traversal and failure rules*).
+-- Under `AllErrors` a record reports its unknown keys first, then each
+-- declared field in order — a structural failure in one field, a
+-- conversion's failure in the next and a refinement in the third, none
+-- hiding another — and a list each failing index; under `FirstError` the
+-- first of them alone. A conversion's issues are moved to where its value
+-- is: the engine's path in front of theirs, its direction and endpoint over
+-- theirs, and an empty `Err` is a `ConversionFailed` of its own.
+-- `reportInput` puts the failing input in each issue. What each failure
+-- leaves unrun is `SchemaLaziness`'s, whose instrument is `Debug.log`: this
+-- program reaches no `Debug`, so `bench/size.mjs` measures it as a release
+-- build ships.
 import Node
 import Schema exposing (AllErrors, Conversion, Field, Index, Issue, Reject, Schema)
 import Show
-
-
-logged : String -> Conversion String String
-logged name =
-    Schema.conversion
-        (λs ->
-            _ = Debug.log name s
-            if s == "bad" then
-                Err [ Schema.issue (name ++ " is bad") ]
-            else
-                Ok s
-        )
-        λs -> Ok s
-
-
-type alias Three =
-    x : String
-    y : String
-    z : String
-
-
-toThree ( ( ( (), x ), y ), z ) = { x = x, y = y, z = z }
-
-
-fromThree t = ( ( ( (), t.x ), t.y ), t.z )
-
-
-three : Schema Three Three
-three =
-    Schema.record
-        (Schema.fields
-            |> Schema.field "x" (Schema.converted Schema.string (logged "x"))
-            |> Schema.field "y" (Schema.converted Schema.string (logged "y"))
-            |> Schema.field "z" (Schema.converted Schema.string (logged "z"))
-        )
-        (Schema.mapping toThree fromThree)
-        (Schema.mapping toThree fromThree)
-
-
-joined : Schema Three String
-joined =
-    Schema.converted
-        three
-        (Schema.conversion
-            (λt ->
-                _ = Debug.log "whole record" t.x
-                Ok (t.x ++ t.y ++ t.z)
-            )
-            λs -> Ok { x = s, y = "", z = "" }
-        )
 
 
 decimalInt : Conversion String Int
@@ -202,11 +152,6 @@ main =
         , issues (Schema.parseWith box all "{\"items\":[1,\"two\",3.5,4]}")
         , issues (Schema.parseWith box first "{\"items\":[1,\"two\",3.5,4]}")
         , issues (Schema.encodeWith mixed all { a = "a", b = 1, c = 9007199254740993 })
-        , "-- laziness"
-        , issues (Schema.parseWith three first "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
-        , issues (Schema.parseWith three all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
-        , issues (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
-        , Show.result (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}") λs -> s
         , "-- a conversion's issues"
         , issues (Schema.parse wrapper "{\"in\":[1,2,3]}")
         , issues (Schema.parse wrapper "{\"in\":[]}")

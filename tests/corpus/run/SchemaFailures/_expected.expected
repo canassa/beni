@@ -1,15 +1,3 @@
-x: "1"
-y: "bad"
-x: "1"
-y: "bad"
-z: "3"
-x: "1"
-y: "bad"
-z: "3"
-x: "1"
-y: "2"
-z: "3"
-whole record: "1"
 -- AllErrors, then FirstError, on one input
 Err decoding Encoded UnknownKey /d unexpected key "d" | decoding Encoded UnknownKey /e unexpected key "e" | decoding Encoded WrongShape /a expected a string | decoding Type ConversionFailed /b-text not a decimal integer | decoding Encoded InvalidValue /c expected a safe integer
 Err decoding Encoded UnknownKey /d unexpected key "d"
@@ -18,11 +6,6 @@ Err decoding Encoded UnknownKey /d unexpected key "d" <- true | decoding Encoded
 Err decoding Encoded WrongShape /items/1 expected a number | decoding Encoded InvalidValue /items/2 expected a safe integer
 Err decoding Encoded WrongShape /items/1 expected a number
 Err encoding Type InvalidValue /c expected a safe integer
--- laziness
-Err decoding Type ConversionFailed /y y is bad
-Err decoding Type ConversionFailed /y y is bad
-Err decoding Type ConversionFailed /y y is bad
-Ok 123
 -- a conversion's issues
 Err decoding Type ConversionFailed /in/1 one element only | decoding Type InvalidValue /in/nowhere and a code of its own
 Err decoding Type ConversionFailed /in the conversion failed without an issue

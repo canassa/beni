@@ -1,0 +1,19 @@
+x: "1"
+y: "bad"
+x: "1"
+y: "bad"
+z: "3"
+x: "1"
+y: "bad"
+z: "3"
+x: "1"
+y: "2"
+z: "3"
+whole record: "1"
+a conversion ran: "once"
+Err decoding Type ConversionFailed /y y is bad
+Err decoding Type ConversionFailed /y y is bad
+Err decoding Type ConversionFailed /y y is bad
+Ok 123
+a conversion, described
+Ok once

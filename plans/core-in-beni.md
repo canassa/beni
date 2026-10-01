@@ -600,3 +600,10 @@ propagation of `let d=a` −20, folding a test of a known constant −18 — noi
 for rewrites that do not remove distinct text. What would remove it is the engine's cold paths
 written with fewer walks, which is a change to `core/Schema.beni`'s shape and so the owner's call
 (`CLAUDE.md` rule 10), not something this step did.
+
+*2026-10-02.* `SchemaFailures` and `SchemaDescribe` reach no `Debug` any more: what their
+`Debug.log` showed — a lazy traversal, a whole-record conversion waiting, describing running no
+conversion — is `run/SchemaLaziness`'s, so `bench/size.mjs` measures the two as a release build
+ships them, field renaming and integer tags on. Release brotli, the same compiler before and
+after: `SchemaFailures` 6 219 → **5 282** (the laziness cases left with the instrument),
+`SchemaDescribe` 4 036 → **3 441**.
