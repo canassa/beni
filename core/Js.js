@@ -46,3 +46,11 @@ export const write = (r, v) => {
   r.v = v;
   return null;
 };
+const finally_ = (body, cleanup) => {
+  try {
+    return body();
+  } finally {
+    cleanup();
+  }
+};
+export { finally_ as finally };

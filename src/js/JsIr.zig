@@ -175,6 +175,11 @@ pub const Node = struct {
         expr_stmt,
         /// `throw expr;`.
         throw_stmt,
+        /// `try { … } finally { … }`, which only the `Js.finally` intrinsic
+        /// writes (`backend.md` §4, *`Js.finally` is `try … finally`*).
+        /// `lhs` unused, `rhs` extra `Try`. Last of the statements, so
+        /// `isStatement` stays a range test.
+        try_stmt,
 
         // ---- Expressions -----------------------------------------------
 
@@ -239,7 +244,7 @@ pub const Node = struct {
 
         /// Whether the tag is a statement (the leading run of this enum).
         pub fn isStatement(t: Tag) bool {
-            return @intFromEnum(t) <= @intFromEnum(Tag.throw_stmt);
+            return @intFromEnum(t) <= @intFromEnum(Tag.try_stmt);
         }
     };
 };
@@ -483,6 +488,24 @@ pub const ForOf = struct {
     }
 };
 
+/// Payload of `try_stmt`: the guarded statements, and the statements that
+/// run after them however they end. The layout of `If`, so a pass that
+/// rewrites a list in place finds the second range two words in.
+pub const Try = struct {
+    body_start: ExtraIndex,
+    body_end: ExtraIndex,
+    final_start: ExtraIndex,
+    final_end: ExtraIndex,
+
+    pub fn body(t: Try) SubRange {
+        return .{ .start = t.body_start, .end = t.body_end };
+    }
+
+    pub fn finalBody(t: Try) SubRange {
+        return .{ .start = t.final_start, .end = t.final_end };
+    }
+};
+
 /// Payload of `cond`.
 pub const Cond = struct {
     consequent: Node.Index,
@@ -650,7 +673,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
         .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
-        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
+        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
 
@@ -833,6 +856,11 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
         },
         .expr_stmt, .throw_stmt => try ir.verifyChild(@enumFromInt(d.lhs), .expression),
+        .try_stmt => {
+            const t = try ir.verifyExtra(@enumFromInt(d.rhs), Try);
+            try ir.verifyRange(t.body(), .statement);
+            try ir.verifyRange(t.finalBody(), .statement);
+        },
 
         .ident => try ir.verifyName(@enumFromInt(d.lhs), false),
         .number, .string, .template_chunk => try ir.verifyBytes(d),
@@ -1261,6 +1289,11 @@ pub const Builder = struct {
                     try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), 0, 0);
                 },
                 .block_stmt => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), w.block, 0),
+                .try_stmt => {
+                    const t = b.record(d.rhs, Try);
+                    try b.pushBlock(&stack, gpa, at, t.body(), w.block, 0);
+                    try b.pushBlock(&stack, gpa, at, t.finalBody(), w.block, 0);
+                },
                 .template => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.member, 0),
                 .call, .new_call => {
                     try Push.one(&stack, gpa, at, d.lhs, w.call, 0);
@@ -1370,6 +1403,11 @@ pub const Builder = struct {
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
                 },
                 .block_stmt => try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange))),
+                .try_stmt => {
+                    const t = b.record(d.rhs, Try);
+                    try stack.appendSlice(gpa, b.rangeWords(t.body()));
+                    try stack.appendSlice(gpa, b.rangeWords(t.finalBody()));
+                },
                 .template, .object, .array => try stack.appendSlice(gpa, b.rangeWords(inlineRange(d))),
                 .call, .new_call => {
                     out.call = true;

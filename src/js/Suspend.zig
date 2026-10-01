@@ -44,7 +44,11 @@ const JsIr = @import("JsIr.zig");
 const Node = JsIr.Node;
 const NameIndex = JsIr.NameIndex;
 
-pub const Error = error{ OutOfMemory, FallsThrough };
+/// `InsideTry`: a marker inside a `try … finally` (`Js.finally`), whose
+/// cleanup would run when the call parks rather than when the guarded code
+/// ends. Its arguments are `sync`, so the checker refuses a suspending one
+/// before this pass could see it; lowering reports it as a compiler fault.
+pub const Error = error{ OutOfMemory, FallsThrough, InsideTry };
 
 /// The names the pass recognises and writes.
 pub const Names = struct {
@@ -214,6 +218,8 @@ pub const Pass = struct {
                 return try p.listHolds(try p.nodesOf(i.thenBody()), continues) or try p.listHolds(try p.nodesOf(i.elseBody()), continues);
             },
             .switch_stmt, .switch_case, .block_stmt => return p.listHolds(try p.nodesOf(p.rangeAt(d.rhs)), continues),
+            .try_stmt => return try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs)), continues) or
+                try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs + 2)), continues),
             else => return false,
         }
     }
@@ -240,6 +246,10 @@ pub const Pass = struct {
                 return try p.terminates(try p.nodesOf(i.thenBody())) and try p.terminates(try p.nodesOf(i.elseBody()));
             },
             .block_stmt => return p.terminates(try p.nodesOf(p.rangeAt(d.rhs))),
+            // The cleanup ends normally or leaves; either way, a body that
+            // always leaves takes the `try` with it.
+            .try_stmt => return try p.terminates(try p.nodesOf(p.rangeAt(d.rhs))) or
+                try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 2))),
             .switch_stmt => {
                 var has_default = false;
                 for (try p.nodesOf(p.rangeAt(d.rhs))) |c| {
@@ -392,6 +402,9 @@ pub const Pass = struct {
                 const body = try p.rewrite(try p.nodesOf(p.rangeAt(d.rhs)), mode);
                 return p.block(p.tag(n), at, d.lhs, body);
             },
+            // A continuation cannot stay inside the guard: the cleanup would
+            // run when the call parks, before the rest it guards.
+            .try_stmt => return error.InsideTry,
             else => return n,
         }
     }
@@ -526,6 +539,10 @@ pub const Pass = struct {
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
                 .block_stmt, .while_true => try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs))),
+                .try_stmt => {
+                    try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
+                    try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 2)));
+                },
                 .for_of => {
                     try stack.append(p.scratch, @enumFromInt(p.word(d.rhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 1)));
@@ -632,6 +649,17 @@ pub const Pass = struct {
             .block_stmt, .while_true => {
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
                 return p.add(t, at, d.lhs, @intFromEnum(try p.b.addRecord(body)));
+            },
+            .try_stmt => {
+                const body = try p.cloneRange(p.rangeAt(d.rhs));
+                const final = try p.cloneRange(p.rangeAt(d.rhs + 2));
+                const record = try p.b.addRecord(JsIr.Try{
+                    .body_start = body.start,
+                    .body_end = body.end,
+                    .final_start = final.start,
+                    .final_end = final.end,
+                });
+                return p.add(t, at, d.lhs, @intFromEnum(record));
             },
             .for_of => {
                 const iterable = try p.clone(@enumFromInt(p.word(d.rhs)));

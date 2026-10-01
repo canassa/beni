@@ -690,6 +690,11 @@ const Printer = struct {
                     try stack.append(p.spelled, f.iterable);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(f.body(), Index));
                 },
+                .try_stmt => {
+                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
@@ -738,6 +743,11 @@ const Printer = struct {
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(b.elseBody(), Index));
                 },
                 .block_stmt, .switch_case => try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)),
+                .try_stmt => {
+                    const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index));
@@ -1155,6 +1165,19 @@ const Printer = struct {
                 try p.terminate();
                 try p.endLine(level);
             },
+            // Both blocks are always braced: JavaScript requires it.
+            .try_stmt => {
+                const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try p.tok("try {\n", "try{");
+                try p.statements(t.body(), level + 1);
+                try p.indent(level);
+                try p.closeBlock();
+                try p.tok(" finally {\n", "finally{");
+                try p.statements(t.finalBody(), level + 1);
+                try p.indent(level);
+                try p.closeBlock();
+                try p.endLine(level);
+            },
             // An expression where a statement belongs is a builder bug, not
             // a possible consequence of user input (`JsIr.verify` is the
             // instrument that proves it). Printing it as an expression
@@ -1390,6 +1413,12 @@ const Printer = struct {
                 for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 break :blk false;
             },
+            .try_stmt => blk: {
+                const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                for (p.ir.extraSlice(t.body(), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                for (p.ir.extraSlice(t.finalBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                break :blk false;
+            },
             else => false,
         };
     }
@@ -1571,6 +1600,11 @@ const Printer = struct {
                     const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
                     try stack.append(p.spelled, loop.iterable);
                     try stack.appendSlice(p.spelled, ir.extraSlice(loop.body(), Index));
+                },
+                .try_stmt => {
+                    const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    try stack.appendSlice(p.spelled, ir.extraSlice(t.body(), Index));
+                    try stack.appendSlice(p.spelled, ir.extraSlice(t.finalBody(), Index));
                 },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
@@ -1987,7 +2021,7 @@ const Printer = struct {
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
             // three handle it.
-            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
+            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => try p.push("undefined"),
         }
     }
 
@@ -2136,7 +2170,7 @@ const Printer = struct {
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
             // three handle it.
-            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
+            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => try p.push("undefined"),
         }
         return null;
     }

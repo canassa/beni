@@ -1,0 +1,226 @@
+--! `Js.finally` in a platform module (`backend.md` §4, *`Js.finally` is
+--! `try … finally`*): the cleanup runs after the body returns and after it
+--! throws, in every position a call can stand in, and the effects happen in
+--! the order the call names them. `trail` records them.
+
+import Js
+
+
+log : Js.Ref String
+log =
+    Js.ref ""
+
+
+--| Record one effect.
+pub note : String -> ()
+note s =
+    Js.write log "${Js.read log}${s}; "
+
+
+--| What was recorded since the last `take`, and a fresh record.
+pub take : () -> String
+take () =
+    let
+        seen =
+            Js.read log
+
+        _ =
+            Js.write log ""
+    in
+    seen
+
+
+--| `f ()`, or what it threw: a test's only way to watch a throw go past.
+pub foreign impure attempt : (() -> String) -> String
+
+
+fail : String -> a
+fail m =
+    Js.throw (Js.construct (Js.global "Error") [ Js.from m ])
+
+
+--| In tail position: the body's value is returned from inside the guard.
+pub tail : Int -> Int
+tail x =
+    Js.finally
+        (\() ->
+            let
+                _ =
+                    note "body"
+            in
+            x + 1
+        )
+        (\() -> note "cleanup")
+
+
+--| As a value: bound, then used after the cleanup ran.
+pub valued : Int -> String
+valued x =
+    let
+        v =
+            Js.finally
+                (\() ->
+                    let
+                        _ =
+                            note "body"
+                    in
+                    x * 2
+                )
+                (\() -> note "cleanup")
+
+        _ =
+            note "after"
+    in
+    String.fromInt v
+
+
+--| Discarded: the body's statements, then the cleanup's.
+pub discarded : () -> String
+discarded () =
+    let
+        _ =
+            Js.finally (\() -> note "body") (\() -> note "cleanup")
+
+        _ =
+            note "after"
+    in
+    "done"
+
+
+--| The body throws in tail position: the cleanup runs, the throw goes on.
+pub throwsTail : () -> String
+throwsTail () =
+    Js.finally
+        (\() ->
+            let
+                _ =
+                    note "body"
+            in
+            fail "boom"
+        )
+        (\() -> note "cleanup")
+
+
+--| The body throws where its value is bound: nothing after it runs.
+pub throwsValued : () -> String
+throwsValued () =
+    let
+        v : String
+        v =
+            Js.finally
+                (\() ->
+                    let
+                        _ =
+                            note "body"
+                    in
+                    fail "bang"
+                )
+                (\() -> note "cleanup")
+
+        _ =
+            note "unreached"
+    in
+    v
+
+
+--| The body throws where its value is discarded.
+pub throwsDiscarded : () -> String
+throwsDiscarded () =
+    let
+        _ =
+            Js.finally (\() -> fail "crash") (\() -> note "cleanup")
+
+        _ =
+            note "unreached"
+    in
+    "unreached"
+
+
+--| Nested guards unwind innermost first.
+pub nested : () -> String
+nested () =
+    Js.finally
+        (\() ->
+            Js.finally
+                (\() ->
+                    let
+                        _ =
+                            note "inner"
+                    in
+                    fail "deep"
+                )
+                (\() -> note "inner cleanup")
+        )
+        (\() -> note "outer cleanup")
+
+
+--| A function made by a call that records it.
+make : String, Int -> (() -> Int)
+make s v =
+    let
+        _ =
+            note "make ${s}"
+    in
+    \() ->
+        let
+            _ =
+                note s
+        in
+        v
+
+
+cleanupOf : String -> (() -> ())
+cleanupOf s =
+    let
+        _ =
+            note "make ${s}"
+    in
+    \() -> note s
+
+
+--| Arguments that are not lambdas are evaluated first, in order, and
+--| called in their blocks.
+pub ordered : () -> Int
+ordered () =
+    Js.finally (make "body" 7) (cleanupOf "cleanup")
+
+
+--| Functions passed in.
+pub passed : (() -> Int), (() -> ()) -> Int
+passed f g =
+    Js.finally f g
+
+
+--| `Js.finally` itself passed as a value: the sibling's function.
+pub asValue : (() -> Int), (() -> ()) -> Int
+asValue f g =
+    apply Js.finally f g
+
+
+apply : ((() -> Int), (() -> ()) -> Int), (() -> Int), (() -> ()) -> Int
+apply h f g =
+    h f g
+
+
+--| `f` under a latch, called from one place in another module: a release
+--| build writes its body, `try` and all, where that call is.
+pub latched : (() -> ()) -> ()
+latched f =
+    let
+        _ =
+            note "lock"
+
+        _ =
+            Js.finally f (\() -> note "unlock")
+    in
+    note "unlocked"
+
+
+--| In tail position of a function that loops: the guard does not take the
+--| loop's jump inside it.
+pub sumTo : Int, Int -> Int
+sumTo n acc =
+    if n == 0 then
+        Js.finally (\() -> acc) (\() -> note "summed")
+    else
+        sumTo (n - 1) (acc + n)

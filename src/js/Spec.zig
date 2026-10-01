@@ -693,6 +693,11 @@ const Spec = struct {
                 try s.countList(m, ir.subRange(@enumFromInt(d.rhs)));
             },
             .expr_stmt, .throw_stmt => try s.countExpr(m, @enumFromInt(d.lhs)),
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try s.countList(m, t.body());
+                try s.countList(m, t.finalBody());
+            },
             else => {},
         }
     }
@@ -800,6 +805,14 @@ const Spec = struct {
                 try s.evalList(m, mi, ir.subRange(@enumFromInt(d.rhs)));
             },
             .expr_stmt, .throw_stmt => _ = try s.eval(m, mi, @enumFromInt(d.lhs)),
+            // Both blocks are walked; facts 1 and 2 are flow-insensitive, so
+            // a cleanup that runs after a throw part-way through the body
+            // sees nothing they could have assumed.
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try s.evalList(m, mi, t.body());
+                try s.evalList(m, mi, t.finalBody());
+            },
             else => {},
         }
     }
@@ -1711,6 +1724,11 @@ const Spec = struct {
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try stack.append(s.arena, c);
             },
             .expr_stmt, .throw_stmt => try stack.append(s.arena, @enumFromInt(d.lhs)),
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                for (ir.extraSlice(t.body(), Index)) |b| try stack.append(s.arena, b);
+                for (ir.extraSlice(t.finalBody(), Index)) |b| try stack.append(s.arena, b);
+            },
             else => {},
         }
     }
@@ -1975,6 +1993,13 @@ const Spec = struct {
                 for (cases) |c| {
                     if (try s.foldBelow(m, c, depth + 1)) any = true;
                 }
+            },
+            // The two ranges are the record's words 0–1 and 2–3, as an
+            // `if`'s are.
+            .try_stmt => {
+                const at = d.rhs;
+                if (try s.foldList(m, at, ir.extraData(@enumFromInt(at), JsIr.Try).body(), depth + 1)) any = true;
+                if (try s.foldList(m, at + 2, m.ir.extraData(@enumFromInt(at), JsIr.Try).finalBody(), depth + 1)) any = true;
             },
             else => {},
         }
@@ -2277,6 +2302,16 @@ const Spec = struct {
             },
             .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
             .expr_stmt, .throw_stmt => try s.scanNode(fm, @enumFromInt(d.lhs), params, out, depth + 1, own),
+            // A `return` in either block is the callee's own: written where
+            // the call stood, it leaves the caller from inside the same
+            // `try`, and the cleanup still runs first. The body's last
+            // statement is the `try`, never a `return`, so a call whose value
+            // is wanted is written there only in `return` position.
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try s.scanList(fm, t.body(), params, out, depth, own);
+                try s.scanList(fm, t.finalBody(), params, out, depth, own);
+            },
             .import_stmt, .export_stmt => out.ok = false,
             else => {
                 var children: std.ArrayList(Index) = .empty;
@@ -2478,6 +2513,15 @@ const Spec = struct {
                 return s.placeExpr(m, @enumFromInt(d.rhs), call, depth);
             },
             .expr_stmt, .throw_stmt => return s.placeExpr(m, @enumFromInt(d.lhs), call, depth),
+            // A call in either block is written into that block, which is
+            // where its statements then run: inside the guard, or as part
+            // of the cleanup. Neither block is a function's body, so a call
+            // that ends one is never taken for a tail.
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                if (try s.placeAmong(m, d.rhs, ir.extraSlice(t.body(), Index), false, false, call, depth)) |p| return p;
+                return s.placeAmong(m, d.rhs + 2, ir.extraSlice(t.finalBody(), Index), false, false, call, depth);
+            },
             else => return null,
         }
     }
@@ -2900,6 +2944,13 @@ const Spec = struct {
                     return to;
                 },
                 .throw_stmt => return c.node(from, .throw_stmt, (try c.expr(@enumFromInt(d.lhs), depth + 1)).int(), 0),
+                .try_stmt => {
+                    const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                    const body = try c.list(t.body(), depth);
+                    const final = try c.list(t.finalBody(), depth);
+                    const rec = try c.dst.append(c.gpa(), &.{ @intFromEnum(body.start), @intFromEnum(body.end), @intFromEnum(final.start), @intFromEnum(final.end) });
+                    return c.node(from, .try_stmt, 0, rec);
+                },
                 // `scanBody` refused a body holding one.
                 .import_stmt, .export_stmt => unreachable,
                 else => return c.expr(from, depth),
@@ -3446,6 +3497,20 @@ const Pts = struct {
             },
             .expr_stmt => _ = try p.expr(mi, @enumFromInt(d.lhs), func),
             .throw_stmt => try p.escape(try p.expr(mi, @enumFromInt(d.lhs), func)),
+            // The body, then the cleanup, which may begin after any
+            // statement of the body: a guard dies at the first statement
+            // that kills it and never comes back, so walking the body
+            // whole first leaves in view only the guards no statement of it
+            // could have broken. Anything the body throws is a value that
+            // escapes, as at a `throw`, and no guard the cleanup is under
+            // is one a `throw` could skip.
+            .try_stmt => {
+                const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try p.list(mi, t.body(), func);
+                p.kill();
+                try p.list(mi, t.finalBody(), func);
+                p.kill();
+            },
             else => _ = try p.expr(mi, node, func),
         }
     }
@@ -3911,6 +3976,11 @@ fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayL
             try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
         },
         .expr_stmt, .throw_stmt => try stack.append(gpa, @enumFromInt(d.lhs)),
+        .try_stmt => {
+            const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+            try stack.appendSlice(gpa, ir.extraSlice(t.body(), Index));
+            try stack.appendSlice(gpa, ir.extraSlice(t.finalBody(), Index));
+        },
         else => try ir.pushOperands(gpa, stack, node),
     }
 }
@@ -3924,7 +3994,7 @@ fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(
         .return_stmt, .switch_case => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try out.append(gpa, v),
         .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => try out.append(gpa, @enumFromInt(d.lhs)),
         .for_of => try out.append(gpa, ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).iterable),
-        .import_stmt, .export_stmt, .func_decl, .gen_decl, .while_true, .break_stmt, .continue_stmt, .block_stmt => {},
+        .import_stmt, .export_stmt, .func_decl, .gen_decl, .while_true, .break_stmt, .continue_stmt, .block_stmt, .try_stmt => {},
         else => try ir.pushOperands(gpa, out, node),
     }
 }

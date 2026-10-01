@@ -1,0 +1,16 @@
+--! The one caller of `Guard.latched`, in a module of its own, so that a
+--! release build's whole-program pass is what writes the guarded body here
+--! (`backend.md` §9, *A function called once is written where it is
+--! called*, *Once the whole program is in view*).
+
+import Guard
+
+
+--| Work under the latch, then what was recorded.
+pub run : String -> String
+run what =
+    let
+        _ =
+            Guard.latched (\() -> Guard.note what)
+    in
+    Guard.take ()

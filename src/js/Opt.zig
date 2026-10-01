@@ -329,6 +329,11 @@ const Opt = struct {
                 try o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
             },
             .expr_stmt, .throw_stmt => try o.countExpr(@enumFromInt(d.lhs)),
+            .try_stmt => {
+                const t = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try o.countStmts(t.body());
+                try o.countStmts(t.finalBody());
+            },
             else => {},
         }
     }
@@ -427,6 +432,16 @@ const Opt = struct {
             },
             .switch_case => try o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
             .expr_stmt, .throw_stmt => try o.planExpr(@enumFromInt(d.lhs)),
+            // Each block is a list of its own, planned as one: `findUse`
+            // never leaves a list and stops at the `try` itself, which
+            // evaluates nothing of its own, so no binding moves across
+            // the boundary in either direction — into the guarded block,
+            // where a throw would now run the cleanup, or out of it.
+            .try_stmt => {
+                const t = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                try o.planList(t.body());
+                try o.planList(t.finalBody());
+            },
             else => {},
         }
     }

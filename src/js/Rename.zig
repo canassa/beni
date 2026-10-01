@@ -684,6 +684,18 @@ pub const Module = struct {
                 try m.collectList(m.ir.subRange(@enumFromInt(d.rhs)), mentioned);
             },
             .expr_stmt, .throw_stmt => try m.collectExpr(@enumFromInt(d.lhs), mentioned),
+            // Each block is always braced, so each is a scope of its own.
+            .try_stmt => {
+                const t = m.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                {
+                    const saved = try m.push();
+                    defer m.leave(saved);
+                    try m.collectList(t.body(), mentioned);
+                }
+                const saved = try m.push();
+                defer m.leave(saved);
+                try m.collectList(t.finalBody(), mentioned);
+            },
             else => {},
         }
     }

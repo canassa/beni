@@ -1839,6 +1839,15 @@ const Lowerer = struct {
                 );
                 return stmts;
             },
+            error.InsideTry => {
+                try l.report(
+                    .internal,
+                    l.region,
+                    "A call that may suspend was lowered inside `Js.finally`, whose arguments are `sync` (`backend.md` §4, *`Js.finally` is `try … finally`*).",
+                    .{},
+                );
+                return stmts;
+            },
         };
     }
 
@@ -2876,6 +2885,14 @@ const Lowerer = struct {
                     if (!l.inline_loops[index]) return l.inlineTail(out, inst, index, loop);
                     if (try l.inlineLoop(out, inst, index, .@"return", &.{})) return;
                 }
+                // A `Js.finally` in tail position returns from inside the
+                // guard: `try { …; return v; } finally { … }`. Not in a loop,
+                // whose jump would run the cleanup before the next turn,
+                // nor where a leaf calls a join.
+                if (loop == null and l.join == .none) if (l.finallyArgs(inst)) |fa| {
+                    _ = try l.finallyTry(out, fa[0], fa[1], .tail, l.pos(inst));
+                    return;
+                };
             },
             else => {},
         }
@@ -6922,6 +6939,113 @@ const Lowerer = struct {
         return l.forOf(out, n, v[0], &.{stmt}, p);
     }
 
+    /// Where a `Js.finally`'s value goes (`backend.md` §4, *`Js.finally` is
+    /// `try … finally`*): a temporary the body assigns, nowhere, or out of
+    /// the function by the body's own `return`s.
+    const FinallyUse = enum { value, discard, tail };
+
+    /// The two arguments of `inst` when it is a saturated `Js.finally`.
+    fn finallyArgs(l: *Lowerer, inst: Inst.Index) ?[2]Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .finally) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 2) return null;
+        return .{ args[0], args[1] };
+    }
+
+    /// The body of `f` when it is a lambda written in place: one parameter
+    /// that binds nothing (`\() ->`, `\_ ->`) and a body that cannot
+    /// suspend. A lambda holds no `?` of its own (`question_in_lambda`), so
+    /// nothing in the body can leave it but a throw.
+    fn thunkBody(l: *Lowerer, f: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(f) != .lambda or l.functionSuspends(f)) return null;
+        const d = l.bir.instData(f);
+        const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
+        if (params.len != 1) return null;
+        switch (l.bir.instTag(params[0])) {
+            .pat_unit, .pat_wild => {},
+            else => return null,
+        }
+        return @enumFromInt(d.rhs);
+    }
+
+    /// `Js.finally body cleanup` (`backend.md` §4, *`Js.finally` is `try …
+    /// finally`*): `try { body } finally { cleanup }`, the statement. A
+    /// lambda argument written in place (`thunkBody`) is its body, with no
+    /// closure made; any other argument is evaluated first, in written
+    /// order as the call would, and called inside its block. `use` says
+    /// where the body's value goes: `value` assigns a temporary declared
+    /// before the `try` and returns it, `discard` drops it, `tail` lowers
+    /// the body in tail position — its `return`s leave the function from
+    /// inside the guard, and the caller has checked that nothing is to be
+    /// done after them (no loop to jump in, no join to call). The cleanup's
+    /// value is always discarded.
+    fn finallyTry(l: *Lowerer, out: *StmtList, body_fn: Inst.Index, cleanup_fn: Inst.Index, use: FinallyUse, p: u32) !?Node.Index {
+        const body = l.thunkBody(body_fn);
+        const cleanup = l.thunkBody(cleanup_fn);
+        // The arguments that are values, evaluated before the guard; a
+        // lambda written in place makes nothing, so evaluating the others
+        // around it keeps their order.
+        var values: [2]Inst.Index = undefined;
+        var n: usize = 0;
+        if (body == null) {
+            values[n] = body_fn;
+            n += 1;
+        }
+        if (cleanup == null) {
+            values[n] = cleanup_fn;
+            n += 1;
+        }
+        const v = try l.orderedExprs(out, values[0..n], false);
+        // Each is bound where it stands, in order, unless it is a name or a
+        // literal: a call written in its block would run after the guard
+        // began, and the body's own effects before the cleanup's maker.
+        for (v) |*value| value.* = try l.bindSubject(out, value.*, p);
+        const body_value: ?Node.Index = if (body == null) v[0] else null;
+        const cleanup_value: ?Node.Index = if (cleanup == null) v[n - 1] else null;
+
+        var guarded: StmtList = .empty;
+        var result: JsIr.NameIndex = .none;
+        switch (use) {
+            .value => {
+                result = try l.fresh(l.well.temp);
+                try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(result), @intFromEnum(Node.OptionalIndex.none)));
+                const value = if (body) |b| try l.expr(&guarded, b) else try l.call(body_value.?, &.{}, p);
+                // A body that ends in `Js.throw` has no value to assign.
+                const ended = guarded.items.len != 0 and l.b.nodes.items(.tag)[guarded.items[guarded.items.len - 1].int()] == .throw_stmt and
+                    l.b.nodes.items(.tag)[value.int()] == .undefined_lit;
+                if (!ended) try guarded.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(result, p)).int(), value.int()));
+            },
+            .discard => if (body) |b|
+                try l.discard(&guarded, b, p)
+            else
+                try guarded.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(body_value.?, &.{}, p)).int(), Node.Data.unused)),
+            .tail => if (body) |b|
+                try l.tailStmts(&guarded, b, null)
+            else
+                try l.tailReturn(&guarded, try l.call(body_value.?, &.{}, p), null, p),
+        }
+        var final: StmtList = .empty;
+        if (cleanup) |c|
+            try l.discard(&final, c, p)
+        else
+            try final.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(cleanup_value.?, &.{}, p)).int(), Node.Data.unused));
+        const body_range = try l.b.addRange(guarded.items);
+        const final_range = try l.b.addRange(final.items);
+        const record = try l.b.addRecord(JsIr.Try{
+            .body_start = body_range.start,
+            .body_end = body_range.end,
+            .final_start = final_range.start,
+            .final_end = final_range.end,
+        });
+        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @intFromEnum(record)));
+        return switch (use) {
+            .value => try l.ident(result, p),
+            .discard, .tail => null,
+        };
+    }
+
     fn forOf(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, iterable: Node.Index, body: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(body);
         const record = try l.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = range.start, .body_end = range.end });
@@ -6949,6 +7073,7 @@ const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
+        if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -7017,8 +7142,9 @@ const Lowerer = struct {
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
-            // A saturated `each` is `eachLoop`, above.
-            W.each => l.nullNode(p),
+            // A saturated `each` is `eachLoop`, a saturated `finally`
+            // `finallyTry`, above.
+            W.each, W.finally => l.nullNode(p),
             W.construct => blk: {
                 const range = try l.b.addRange(rest);
                 const record = try l.b.addRecord(range);
@@ -8250,6 +8376,12 @@ const Lowerer = struct {
         // its body, discarded in turn (`backend.md` §9, *A function called
         // once is written where it is called*) — statements or not, since
         // no value has to come out of them.
+        // A `Js.finally` whose value nothing reads: the `try` with the body
+        // discarded in it, no temporary.
+        if (l.finallyArgs(at)) |fa| {
+            _ = try l.finallyTry(out, fa[0], fa[1], .discard, l.pos(at));
+            return;
+        }
         if (l.bir.instTag(at) == .call) if (l.inlineTarget(at)) |index| {
             if (l.inline_loops[index] and try l.boundLoop(out, at, .discard, &.{})) return;
             if (!l.inline_loops[index] and l.atomArguments(at)) {

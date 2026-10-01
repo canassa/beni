@@ -1,0 +1,24 @@
+-- check/bad (core): `Js.finally`'s two arguments are `sync`
+-- (`backend.md` §4, *`Js.finally` is `try … finally`*). A body that
+-- suspended would leave the guard with its rest still to run, and the
+-- cleanup would run first; so a body (16:10) or a cleanup (24:10) that may
+-- suspend is `sync_boundary`, at the argument.
+import Js
+import Task
+
+
+pub foreign suspends get : Int -> Int
+
+
+body : Int -> Int
+body n =
+    Js.finally
+        (\() -> get n)
+        (\() -> ())
+
+
+cleanup : Int -> Int
+cleanup n =
+    Js.finally
+        (\() -> n)
+        (\() -> Task.yieldNow ())

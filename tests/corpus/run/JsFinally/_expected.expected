@@ -1,0 +1,12 @@
+tail 2: body; cleanup; 
+valued 8: body; cleanup; after; 
+discarded done: body; cleanup; after; 
+throws in tail, threw boom: body; cleanup; 
+throws bound, threw bang: body; cleanup; 
+throws discarded, threw crash: cleanup; 
+nested, threw deep: inner; inner cleanup; outer cleanup; 
+ordered 7: make body; make cleanup; body; cleanup; 
+passed 3: passed cleanup; 
+as a value 5: value cleanup; 
+summed 10: summed; 
+latched: lock; work; unlock; unlocked; 

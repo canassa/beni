@@ -387,6 +387,14 @@ statements*, item 4). Written with a lambda, the lambda's body is the loop's bod
 list literal as `apply`'s are: what a constructor that must be called with `new` needs (`Map`,
 `URL`), and the shape hand-written JavaScript gives an error, `throw new Error(m)`.
 
+**`finally : sync (() -> a), sync (() -> ()) -> a`** (impure, 2026-10-02) is `try { body() }
+finally { cleanup() }`: the body's value, with the cleanup run after it however it ends — on a
+return, and on a throw before the throw goes on. Written with lambdas, each lambda's body is its
+block and no function is made (`backend.md` §4, *`Js.finally` is `try … finally`*). Both are
+`sync`, so neither may suspend: a body that parked would leave the guard before its rest ran.
+There is no `catch`: a platform restores its state on the way out and lets the throw go on, which
+is all the effects host needs (`plans/runtime-in-beni.md`).
+
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
 function a platform receives through `Js.from` — an event handler, a render callback — returns

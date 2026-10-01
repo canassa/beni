@@ -127,3 +127,13 @@ pub foreign impure read : Ref a -> a
 
 --| Make the cell hold `v`, a statement.
 pub foreign impure write : Ref a, a -> ()
+
+
+--| `try { body() } finally { cleanup() }`: the body's value, and the
+--| cleanup run after the body however it ends — when it returns, and when
+--| it throws, before the throw goes on. Written with lambdas,
+--| `Js.finally (\() -> …) (\() -> …)`, each lambda's body is its block and
+--| no function is made. Both are `sync`: a body that suspended would leave
+--| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
+--| finally`*).
+pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a

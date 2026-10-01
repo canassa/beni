@@ -37,6 +37,7 @@ pub const Which = enum {
     at,
     setAt,
     throw,
+    finally,
     ref,
     read,
     write,

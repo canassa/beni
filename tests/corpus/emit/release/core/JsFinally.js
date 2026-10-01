@@ -1,0 +1,1 @@
+import{a}from"./_core/String.mjs";let b=false,c=(a)=>{b=true;try{for(let d of a)d()}finally{b=false}a.length=0},d=(a)=>{if(b)return null;b=true;try{return a()}finally{b=false}},e=(c)=>{let d;try{d=c.offsetWidth}finally{b=false}return`${a(d)}px`},f=(a,b)=>{try{return a()}finally{b()}};export{c,d,e,f};

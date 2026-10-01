@@ -1723,6 +1723,53 @@ model and waiting flag, `send` and `queue` moved into the closures that hold the
 (the hand-written runtime: 980). The port still passes every `browser/dom/` page under happy-dom,
 built both ways.
 
+### `Js.finally` is `try … finally`
+
+*Added 2026-10-02 (`plans/runtime-in-beni.md`, step 3's remainder: the effects host's three guards).*
+`Js.finally body cleanup : sync (() -> a), sync (() -> ()) -> a` (`boundary.md` §4.2) is the
+statement **`try { body } finally { cleanup }`**, JsIr's `try_stmt` — the one construct that lets a
+platform's beni restore its state when what it calls throws (a stack overflow, a host error,
+`Debug.todo` in a development build), which is what the hand-written host's latches do.
+
+**The shape.** An argument that is a lambda of one parameter binding nothing (`\() ->`, `\_ ->`)
+and that cannot suspend is written in place: its body is the block, and no function is made. Any
+other argument is evaluated before the `try`, in written order, bound to a `const` unless it is a
+name or a literal, and called inside its block — so a call that makes the cleanup runs before the
+body, as it would for the sibling's function. Where the value goes decides the rest (`Lower.
+finallyTry`):
+
+- **discarded** (`let _ =`, a discarded position): `try { body; } finally { cleanup; }`, the body
+  discarded by *A discarded value is a statement*'s rules;
+- **in tail position**, in a function that does not loop and outside a join: the body lowered in
+  tail position inside the block, so `try { …; return v; } finally { … }` — a `return` inside
+  `try` runs the cleanup before it leaves. A function that loops writes the value form and
+  returns it: a loop's jump from inside the guard would run the cleanup before the next turn;
+- **anywhere else**: `let t; try { …; t = v; } finally { … }` and the value is `t`. A body that
+  ends in `Js.throw` assigns nothing.
+
+The cleanup's value is always discarded. `Js.finally` passed as a value is the sibling's function
+(`core/Js.js`), which does the same with two calls.
+
+**Neither argument may suspend.** Both parameters are `sync` (`checker-v2.md` §27): a body that
+parked would leave the `try` at the park, the cleanup would run then, and the rest of the body
+would run later outside the guard — a silent change of meaning, so it is refused at the argument
+with `sync_boundary`, as for any `sync` parameter. `Suspend` holds the same line as a fault of the
+compiler: a suspension marker inside a `try` is `InsideTry`, reported as `internal`, never split.
+
+**What the passes may not do with it.** The `try` is a wall for code motion: `Opt`'s single-use
+fold stops at it (`findUse` walks past nothing but a pure-read `const`, and a `try` evaluates
+nothing of its own), so no binding moves into the guard — where a throw would now run the cleanup —
+or out of it; each block is a statement list of its own, and a `let`'s temporary is declared before
+the `try` and assigned in it. `Spec` walks both blocks: facts 1 and 2 are flow-insensitive, fact 3's
+null guards die at the `try` (the cleanup may start after any statement of the body), a function
+whose body ends in one is taken as one that may fall through, and `inlineOnce` copies a body
+holding one and writes a call found in either block into that block (a callee whose `return` stands
+in its guard is written only in `return` position, where its `return`s are the caller's). `Rename`
+gives each block a scope of its own; `Print` always braces both. Fixtures:
+`emit/release/core/JsFinally`, `run/JsFinally` (the cleanup on a return and on a throw, bound,
+discarded, in tail position, nested, at the end of a loop, with arguments that are not lambdas, and
+as a value — in both builds), `check/bad/core/FinallySuspends`.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

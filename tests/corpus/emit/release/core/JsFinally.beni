@@ -1,0 +1,53 @@
+-- emit: `Js.finally` is `try { … } finally { … }` (`boundary.md` §4.2;
+-- `backend.md` §4, *`Js.finally` is `try … finally`*). Called with lambdas,
+-- each lambda's body is its block and no function is made: `guard` is the
+-- effects host's latch, the body discarded; `render` returns its value from
+-- inside the guard, in tail position; `measured` binds it to a `let` the
+-- body assigns. With functions passed in, the blocks call them.
+import Js
+
+
+busy : Js.Ref Bool
+busy =
+    Js.ref False
+
+
+pub guard : Js.Value -> ()
+guard queue =
+    let
+        _ =
+            Js.write busy True
+
+        _ =
+            Js.finally
+                (\() -> Js.each queue (\f -> Js.to (Js.apply f [])))
+                (\() -> Js.write busy False)
+    in
+    Js.set queue "length" (Js.from 0)
+
+
+pub render : Js.Value -> Js.Value
+render view =
+    if Js.read busy then
+        Js.null
+    else
+        let
+            _ =
+                Js.write busy True
+        in
+        Js.finally (\() -> Js.apply view []) (\() -> Js.write busy False)
+
+
+pub measured : Js.Value -> String
+measured node =
+    let
+        width : Int
+        width =
+            Js.finally (\() -> Js.to (Js.get node "offsetWidth")) (\() -> Js.write busy False)
+    in
+    "${String.fromInt width}px"
+
+
+pub passed : (() -> Int), (() -> ()) -> Int
+passed f g =
+    Js.finally f g
