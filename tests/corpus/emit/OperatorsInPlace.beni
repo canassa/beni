@@ -8,8 +8,8 @@
 -- (`power`'s `a ** b ** c` has none, `powerLeft`'s `(a ** b) ** c` has one),
 -- and `negate` is `0 - n`, never `-n`, which is another number at zero.
 --
--- `divide`, `modulo` and `remainder` stay calls: `//`, `modBy` and
--- `remainderBy` answer 0 for a zero divisor, which no operator does. So does
+-- `divide`, `modulo` and `remainder` stay calls: `//`, `Int.mod` and
+-- `Int.rem` answer 0 for a zero divisor, which no operator does. So does
 -- `Int32.mul`, which is `Math.imul`.
 import Int32 exposing (Int32)
 import Node exposing (Program)

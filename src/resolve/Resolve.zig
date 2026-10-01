@@ -835,6 +835,12 @@ const Pass = struct {
                 if (d.kind == .schema and bir.symbol(d.name) == name) return .private_name;
             },
         }
+        // A value core's `Basics` had and lost (language.md §12.4), asked
+        // for qualified or in an `exposing` list: the message says what
+        // replaced it (checker-v2.md §29.2).
+        if (namespace == .value and p.graph.modulePackage(target) == .core and
+            std.mem.eql(u8, p.interner.slice(p.graph.moduleName(target)), "Basics") and
+            prelude.removedName(p.interner.slice(name)) != null) return .name_removed;
         return .unknown_import_name;
     }
 

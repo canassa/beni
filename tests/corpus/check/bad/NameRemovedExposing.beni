@@ -1,0 +1,8 @@
+-- check/bad: `logBase` in an `exposing` list of `Basics` is `name_removed`
+-- at the entry (checker-v2.md §29.2), naming `Float.log`, while the
+-- list's other entry still resolves.
+import Basics exposing (logBase, max)
+
+
+bigger : Int -> Int
+bigger n = max n 3

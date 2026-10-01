@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
+const prelude = @import("prelude.zig");
 
 /// One lowering error. `[start, end)` is the name or token reported;
 /// `[other_start, other_end)` is the earlier declaration, binding or
@@ -196,6 +197,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\stands in front of: `eq : equatable a -> a -> Bool` is a function of two
             \\arguments whose type is one marked `a`. Write the marker once.
         ),
+        // language.md §12.4: an unqualified `modBy`, `remainderBy` or
+        // `logBase`.
+        .name_removed => try prelude.writeRemoved(w, prelude.removedName(text) orelse unreachable),
         .unbound_variable => try w.print(
             \\I cannot find a `{s}` variable.
             \\

@@ -5480,7 +5480,11 @@ A qualified `Basics.modBy`, `Basics.remainderBy` or `Basics.logBase`, and a meth
 on an `Int`, is resolved against the removed-names table (`language.md` §12.4) before resolution
 says the module does not expose the name or §9 says the type has no such method, and is reported as
 `name_removed` with the replacement call — for a method too the qualified `Int.mod n 2`, there
-being no `mod` method (§29.3). The unqualified and `exposing` forms are lowering's.
+being no `mod` method (§29.3). The unqualified form is lowering's. *As built (2026-10-01):* the
+`exposing` form is resolution's too, not lowering's: `whyMissing` answers `name_removed` for a
+removed name asked of core's `Basics`, which covers both the qualified name and the `exposing`
+entry, and only resolution knows that the module is core's and not a root-package `Basics`. The
+method form is `unknownMethod`'s, for a method asked of core's `Basics`.
 
 ### 29.3 `Int` and `Float` in their own modules
 

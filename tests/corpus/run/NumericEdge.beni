@@ -1,6 +1,6 @@
 -- The arithmetic that JavaScript does NOT do the way beni says it does:
--- integer division truncates towards zero, `modBy` takes the sign of the
--- modulus and `remainderBy` the sign of the dividend, and a zero divisor
+-- integer division truncates towards zero, `Int.mod` takes the sign of the
+-- modulus and `Int.rem` the sign of the dividend, and a zero divisor
 -- produces an `Int` rather than an infinity.
 import Node exposing (Program)
 import String

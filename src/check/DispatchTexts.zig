@@ -12,6 +12,7 @@ const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
+const prelude = @import("../bir/prelude.zig");
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Diagnostics = @import("Diagnostics.zig");
@@ -40,6 +41,15 @@ pub fn unknownMethod(
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
+    // `n.modBy 2`: a value `Basics` had and lost (language.md §12.4), and
+    // what replaced it is a function of another module, not a method
+    // (checker-v2.md §29.2).
+    if (r.env.graph.modulePackage(module) == .core and std.mem.eql(u8, module_text, "Basics")) {
+        if (prelude.removedName(method_text)) |removed| {
+            prelude.writeRemoved(w, removed) catch return error.OutOfMemory;
+            return r.emit(.name_removed, origin, &out);
+        }
+    }
     w.print(
         \\`{s}` has no method called `{s}`.
         \\

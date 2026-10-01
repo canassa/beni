@@ -83,13 +83,10 @@ pub fn valueModule(w: WellKnown) ?WellKnown {
         .compare,
         .not,
         .xor,
-        .modBy,
-        .remainderBy,
         .negate,
         .abs,
         .clamp,
         .sqrt,
-        .logBase,
         .e,
         .pi,
         .cos,
@@ -121,15 +118,34 @@ pub const Removed = struct {
     old: []const u8,
     module: []const u8,
     name: []const u8,
+    /// The two arguments of the message's example call, in beni's order.
+    subject: []const u8,
+    other: []const u8,
 };
 
 /// The removed-names table (language.md §12.4): `--migrate-names` rewrites
-/// each `old` to its replacement.
+/// each `old` to its replacement, and a use of one is `name_removed` —
+/// lowering's for an unqualified name, resolution's for a qualified one or
+/// an `exposing` entry, the checker's for a method.
 pub const removed = [_]Removed{
-    .{ .old = "modBy", .module = "Int", .name = "mod" },
-    .{ .old = "remainderBy", .module = "Int", .name = "rem" },
-    .{ .old = "logBase", .module = "Float", .name = "log" },
+    .{ .old = "modBy", .module = "Int", .name = "mod", .subject = "n", .other = "2" },
+    .{ .old = "remainderBy", .module = "Int", .name = "rem", .subject = "n", .other = "3" },
+    .{ .old = "logBase", .module = "Float", .name = "log", .subject = "x", .other = "10" },
 };
+
+/// `name_removed`'s message, the same from every phase that reports it.
+pub fn writeRemoved(w: *std.Io.Writer, r: Removed) std.Io.Writer.Error!void {
+    try w.print(
+        \\`{s}` was removed: beni's `{s} {s} {s}` read as Elm's `{s} {s} {s}`. Write
+        \\`{s}.{s} {s} {s}`, the arguments in the order they had. `{s}` is a prelude
+        \\module, so it needs no import.
+        \\
+        \\`beni fmt --migrate-names <file>` rewrites every use in a file.
+    , .{
+        r.old,    r.old,  r.subject, r.other, r.old,    r.other, r.subject,
+        r.module, r.name, r.subject, r.other, r.module,
+    });
+}
 
 /// The table's row for `old`, or null.
 pub fn removedName(old: []const u8) ?Removed {
@@ -144,7 +160,7 @@ pub fn removedName(old: []const u8) ?Removed {
 pub const modules = [_]WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float };
 
 test "every prelude name has exactly the namespaces Appendix A gives it" {
-    // Counts from Appendix A: 9 modules, 10 types, 9 constructors, 36 values.
+    // Counts from Appendix A: 9 modules, 10 types, 9 constructors, 33 values.
     var n_modules: u32 = 0;
     var n_types: u32 = 0;
     var n_ctors: u32 = 0;
@@ -162,7 +178,7 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
     try std.testing.expectEqual(@as(u32, 9), n_modules);
     try std.testing.expectEqual(@as(u32, 10), n_types);
     try std.testing.expectEqual(@as(u32, 9), n_ctors);
-    try std.testing.expectEqual(@as(u32, 36), n_values);
+    try std.testing.expectEqual(@as(u32, 33), n_values);
     try std.testing.expectEqual(@as(?WellKnown, null), valueModule(.add));
     try std.testing.expectEqual(@as(?WellKnown, null), ctorModule(.main));
     try std.testing.expectEqual(@as(?WellKnown, .Maybe), ctorModule(.Just));

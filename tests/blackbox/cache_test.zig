@@ -4039,7 +4039,7 @@ const k_cases = [_]EditCase{
                 \\pub eq : T, T -> Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) -> modBy x 10 == modBy y 10
+                \\        ( T x, T y ) -> Int.mod x 10 == Int.mod y 10
                 \\
                 \\pub compare : T, T -> Order
                 \\compare a b = EQ
@@ -4082,7 +4082,7 @@ const k_cases = [_]EditCase{
                 \\pub eq : T, T -> Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) -> modBy x 10 == modBy y 10
+                \\        ( T x, T y ) -> Int.mod x 10 == Int.mod y 10
                 \\
                 \\pub compare : T, T -> Order
                 \\compare a b = EQ
@@ -4512,7 +4512,7 @@ const evidence_cases = [_]EditCase{
                 \\eq a b =
                 \\    case ( a, b ) of
                 \\        ( T x, T y ) ->
-                \\            modBy 10 x == modBy 10 y
+                \\            Int.mod 10 x == Int.mod 10 y
                 \\
                 ,
                 .expect = .{ .prints = "F\nT\n" },
@@ -4527,7 +4527,7 @@ const evidence_cases = [_]EditCase{
                 \\eq a b =
                 \\    case ( a, b ) of
                 \\        ( T x, T y ) ->
-                \\            modBy 10 x == modBy 10 y
+                \\            Int.mod 10 x == Int.mod 10 y
                 \\
                 ,
                 .expect = .{ .codes = &.{"private_method"} },

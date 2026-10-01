@@ -36,9 +36,13 @@
 --!     below `String` (`plans/core-in-beni.md`).
 --!
 --! The conversions and the floating-point library — `toFloat` `round`
---! `floor` `ceiling` `truncate` `idiv` `modBy` `remainderBy` `sqrt`
---! `logBase` `e` `pi` and the trigonometry, `isNaN` `isInfinite` — are beni
---! over `Js` (`boundary.md` §4.2). Everything else is ordinary beni.
+--! `floor` `ceiling` `truncate` `idiv` `sqrt` `e` `pi` and the
+--! trigonometry, `isNaN` `isInfinite` — are beni over `Js` (`boundary.md`
+--! §4.2). Everything else is ordinary beni.
+--!
+--! Elm's `modBy`, `remainderBy` and `logBase` are `Int.mod`, `Int.rem`
+--! and `Float.log` (`language.md` §12.4): their names read backwards with
+--! the number first.
 
 import Js
 
@@ -246,46 +250,11 @@ pub truncate : Float -> Int
 truncate x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ]))
 
 
---| Perform modular arithmetic: the number first, then the modulus. The
---| result has the sign of the modulus.
---|
---|     modBy (-1) 4 == 3
---|     modBy 11 4 == 3
---|
---| The number comes first so a pipeline reads: `n |> modBy 2` is `modBy n 2`.
-pub modBy : Int, Int -> Int
-modBy n k =
-    -- `%` takes the sign of the dividend; this answer takes the modulus's.
-    if k == 0 then 0 else Js.rem (Js.rem n k + k) k
-
-
---| Get the remainder after dividing the first number by the second. The
---| result has the sign of the dividend, the number being divided.
---|
---|     remainderBy (-1) 4 == -1
---|     remainderBy 11 4 == 3
-pub remainderBy : Int, Int -> Int
-remainderBy n k = if k == 0 then 0 else Js.rem n k
-
-
 --| Take the square root of a number.
 --|
 --|     sqrt 9 == 3
 pub sqrt : Float -> Float
 sqrt x = Js.pure (λ() -> Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ]))
-
-
---| Calculate the logarithm of a number in a given base: the number first,
---| then the base.
---|
---|     logBase 100 10 == 2
-pub logBase : Float, Float -> Float
-logBase x base =
-    Js.pure
-        (λ() ->
-            Js.to (Js.call (Js.global "Math") "log" [ Js.from x ])
-                / Js.to (Js.call (Js.global "Math") "log" [ Js.from base ])
-        )
 
 
 --| An approximation of Euler's constant.

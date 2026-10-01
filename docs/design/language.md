@@ -2462,7 +2462,11 @@ unqualified, as `Basics.modBy`, in an `exposing` list, or as a method `n.modBy 2
 `n.modBy 2` gets the same qualified call, there being no method to offer (*amended 2026-10-01*). The
 removed names are a table in the compiler beside the prelude, consulted by lowering for an
 unqualified name and by resolution for a qualified one, before either says `unbound_variable` or
-that the module does not expose the name.
+that the module does not expose the name. *As built (2026-10-01):* the table is
+`src/bir/prelude.zig`'s `removed`, read by lowering (unqualified), resolution (qualified, and an
+`exposing` entry, where only resolution knows the module is core's `Basics`), the checker (a
+method on a type `Basics` declares) and `beni fmt --migrate-names`; the message is one text
+for all four, its example call the table's.
 
 ### 12.5 The formatter, its gate, and call-style diagnostics
 

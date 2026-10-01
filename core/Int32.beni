@@ -14,7 +14,7 @@
 --! it. Every function here is TOTAL: every result is a two's-complement
 --! 32-bit value, nothing overflows into inexactness, nothing throws, and
 --! division by zero is `zero` rather than an exception or an infinity —
---! the same answer `Basics.idiv`, `modBy` and `remainderBy` give.
+--! the same answer `Basics.idiv`, `Int.mod` and `Int.rem` give.
 --!
 --! **`Int32` is not in the prelude** (`language.md` Appendix A). Write
 --! `import Int32` and either qualify the names or call them as methods:
@@ -179,7 +179,7 @@ div a b =
         fromInt (Js.to (Js.from (Js.to (Js.from a) / Js.to (Js.from b))))
 
 
---| Remainder, taking the sign of the DIVIDEND, like `Basics.remainderBy`
+--| Remainder, taking the sign of the DIVIDEND, like `Int.rem`
 --| and like `%` in JavaScript. Zero for a zero divisor.
 --|
 --|     toInt (rem (fromInt 7) (fromInt 3)) == 1
@@ -194,7 +194,7 @@ rem a b =
         fromInt (Js.rem (toInt a) (toInt b))
 
 
---| Modulus, taking the sign of the DIVISOR, like `Basics.modBy`. Zero for a
+--| Modulus, taking the sign of the DIVISOR, like `Int.mod`. Zero for a
 --| zero divisor. This is the one you want for wrapping an index into a
 --| table.
 --|

@@ -10,7 +10,7 @@
 --   `-2 ** 3` is a JavaScript syntax error)
 --   `Int32.add` still wraps, `Int32.shiftRightZero` still answers signed,
 --   and `toUnsignedInt` is `>>> 0`
---   `//`, `modBy` and `remainderBy` still answer 0 for a zero divisor
+--   `//`, `Int.mod` and `Int.rem` still answer 0 for a zero divisor
 import Int32
 import Node exposing (Program)
 

@@ -14,7 +14,7 @@
 -- down.
 --
 -- Division by zero is `zero` for all three of `div`, `rem` and `mod`,
--- which is what `Basics.idiv`, `remainderBy` and `modBy` do
+-- which is what `Basics.idiv`, `Int.rem` and `Int.mod` do
 -- (`run/CoreNumericExtremes`, `core/Basics.js`). `minValue / -1` is the
 -- one true overflow of 32-bit division and wraps back to `minValue`.
 import Int32 exposing (Int32)

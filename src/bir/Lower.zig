@@ -1748,6 +1748,12 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
         const name = try l.addSymbol(symbol);
         return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
     }
+    // A name the prelude had and lost (language.md §12.4): the message
+    // says what replaced it.
+    if (prelude.removedName(l.tokenText(token)) != null) {
+        try l.reportToken(.name_removed, token);
+        return l.errorInst(.name_removed);
+    }
     try l.reportToken(.unbound_variable, token);
     return l.errorInst(.unbound_variable);
 }
@@ -5003,7 +5009,7 @@ test "`|>` inserts at the FIRST argument, `<|` at the last, through grouping par
 test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
     try expectDecls(
         \\f a b =
-        \\    ( max a _, clamp _ (modBy _ b) 3 )
+        \\    ( max a _, clamp _ (Int.mod _ b) 3 )
         \\
     ,
         \\decl 0: value f
@@ -5019,7 +5025,7 @@ test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
         \\  %9 = import_value Basics.clamp
         \\  %10 = local 3
         \\  %11 = pat_var local 4
-        \\  %12 = import_value Basics.modBy
+        \\  %12 = qualified Int.mod
         \\  %13 = local 4
         \\  %14 = local 1 (b)
         \\  %15 = call %12 [%13, %14]
@@ -5039,7 +5045,7 @@ test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
         \\  refs
         \\    import_value Basics.max
         \\    import_value Basics.clamp
-        \\    import_value Basics.modBy
+        \\    import_value Int.mod
         \\
     , &.{});
 }

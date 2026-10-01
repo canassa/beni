@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
+const prelude = @import("../bir/prelude.zig");
 
 /// What a message needs beyond its code: the name that failed to resolve
 /// and the module it was looked up in, as TEXT — the renderer runs after
@@ -142,6 +143,9 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
                 \\Move what they share into a module of its own and have both import that.
             , .{});
         },
+        // language.md §12.4: `Basics.modBy`, or `modBy` in an `exposing`
+        // list of `Basics`.
+        .name_removed => try prelude.writeRemoved(w, prelude.removedName(cx.name) orelse unreachable),
         .unknown_import_name => try w.print(
             \\`{s}` does not expose `{s}`.
             \\

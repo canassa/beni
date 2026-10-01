@@ -97,7 +97,10 @@ pub const magic = "BENIFE\x00\x00";
 /// 13 (2026-10-02): `Token.Tag` gained `lambda`, the `λ` that begins a
 /// lambda (language.md §12.1), which shifted every later tag.
 /// 14 (2026-10-02): the parser has a new code, `backslash_lambda_removed`.
-pub const format_version: u32 = 14;
+/// 15 (2026-10-01): lowering has a new code, `name_removed`, and
+/// `InternPool.WellKnown` lost `modBy`, `remainderBy` and `logBase`, which
+/// shifted every later well-known symbol (language.md §12.4).
+pub const format_version: u32 = 15;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

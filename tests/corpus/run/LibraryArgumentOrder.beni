@@ -3,8 +3,8 @@
 -- be caught by the checker, because both arguments have the same type and
 -- the mis-ordered call typechecks silently — `List.repeat` against its
 -- sibling `String.repeat` is the pair that found the bug (`0 |> repeat 3`
--- used to give `[]` where `repeat 3 0` gave three zeros), and `modBy`,
--- `remainderBy`, `clamp` and `replace` are the rest of that class.
+-- used to give `[]` where `repeat 3 0` gave three zeros), and `Int.mod`,
+-- `Int.rem`, `clamp` and `replace` are the rest of that class.
 import Basics
 import Dict
 import List
