@@ -1835,6 +1835,37 @@ three `impure` operations for it: `running : Fiber a -> Bool`, and `openRoot : (
 fiber spawned into a closed root scope is cancelled before it runs. `Time.sleep`, `Http.get` and
 `Dom.rendered` are the browser's first suspending primitives, each beni over `callback`.
 
+*Amended 2026-10-01: `Io.readFile`'s error is typed* (`CLAUDE.md` rule 9, `boundary.md` §4.1).
+It is `Io.readFile : String -> Result FileError String`, and each failure Node documents for
+`fs.promises.readFile` is one constructor of
+
+```elm
+pub type FileError
+    = NotFound          -- ENOENT: no such file, or a directory on the path is missing
+    | PermissionDenied  -- EACCES, EPERM
+    | IsADirectory      -- EISDIR
+    | NotADirectory     -- ENOTDIR: a component of the path is a file
+    | TooManyOpenFiles  -- EMFILE, ENFILE
+    | SymlinkLoop       -- ELOOP
+    | NameTooLong       -- ENAMETOOLONG
+    | InvalidPath       -- ERR_INVALID_ARG_VALUE: the path holds a NUL character
+    | TooLarge          -- ERR_FS_FILE_TOO_LARGE, ERR_STRING_TOO_LONG: no string can hold it
+```
+
+The names are what a reader of the program would say, not the errno (Rust's `io::ErrorKind` names
+the same set the same way). The `AbortError` of the primitive's own `AbortSignal` is not an answer:
+the fiber was cancelled and the rejection is dropped. **Any other rejection is re-thrown** from the
+handler, so it is a defect, below.
+
+**A defect on Node.** Nothing in `core/Task.js` or a Node primitive catches: a `foreign` that
+throws inside a fiber throws out of the scheduler's drain, a microtask, and a primitive's handler that
+re-throws rejects a promise no one handles. Node treats both alike under its default
+`--unhandled-rejections=throw`: it prints the error and its stack to standard error and exits **1**,
+so the program's own output so far stands and nothing after the defect runs. That is the whole crash
+path on Node, and the smallest one: a fiber's defect is not delivered to its parent, no scope is
+closed and no finaliser runs (W2's teardown, `boundary.md` §9.8.9, is still not built). `run/`
+fixtures assert it with a `.crash` golden (`tests/corpus/README.md`).
+
 **`let _ = e` is kept.** `backend.md` §9 item 1 drops a binding nothing reads, initialiser and
 all; `let _ = Task.spawn work` is written for the spawn. A `let` whose pattern binds nothing (`_`,
 `()`) over a call whose callee is `impure` or worse is kept by the release optimiser (the

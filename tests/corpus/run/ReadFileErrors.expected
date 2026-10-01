@@ -1,0 +1,6 @@
+missing: not found
+directory: is a directory
+through a file: not a directory
+long name: name too long
+nul: invalid path
+itself: read, -- run:

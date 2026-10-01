@@ -1,0 +1,26 @@
+-- run: an error `Io.readFile` does not name is a defect, and a defect ends
+-- the program (boundary.md §4.1, transparent-effects-proposal.md §16.5,
+-- CLAUDE.md rule 9). The test platform makes the read fail with `EIO`; the
+-- program must exit 1 with Node's report of that error, never see it as an
+-- `Err`, and print nothing after it. What it logged before stands.
+import Debug
+import Fault
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                _ = Fault.breakReads ()
+                _ = Debug.log () "before the read"
+            in
+            case Io.readFile "anything.txt" of
+                Ok _ ->
+                    Node.print "read it"
+
+                Err _ ->
+                    Node.print "an error value"
+        )

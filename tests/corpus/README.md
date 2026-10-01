@@ -73,6 +73,18 @@ them, take either side and regenerate. The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
 show a recorded build skipped, a changed one run, and a mismatch refused.
 
+### A program that must crash
+
+A `run/` fixture with a `<name>.crash` golden (`_expected.crash` in a
+project) asserts a defect (`boundary.md` §4.1, `CLAUDE.md` rule 9): the
+program must exit **1**, its standard output must still be `.expected`
+(what it printed before the defect), and its standard error must contain
+the `.crash` file's text, its final newline left out — one line of Node's
+report, such as `Error: disk on fire`, since the rest of the report is
+stack frames whose paths are the test's own. Without a `.crash` file a
+`run/` program must exit 0, as before. The `.crash` text is part of what a
+build's run hash covers. `.crash` is never blessed: write it by hand.
+
 ### `browser/`: a program in a page
 
 A `browser/` fixture is built like a `run/` one, twice, for the `page`

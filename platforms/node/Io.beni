@@ -47,11 +47,39 @@ sleep ms =
 foreign impure startTimer : Int, Resume () -> (() -> ())
 
 
+--| Why a file could not be read: one constructor for each failure Node
+--| documents. Any other failure is a defect and ends the program.
+pub type FileError
+    = NotFound
+    | PermissionDenied
+    | IsADirectory
+    | NotADirectory
+    | TooManyOpenFiles
+    | SymlinkLoop
+    | NameTooLong
+    | InvalidPath
+    | TooLarge
+
+
 --| Read a UTF-8 text file without blocking other fibers: `Ok` with its
---| text, or `Err` with the reason it could not be read.
-pub readFile : String -> Result String String
+--| text, or `Err` with why it could not be read.
+--|
+--| - `NotFound`: there is no such file, or a directory on its path is
+--|   missing.
+--| - `PermissionDenied`: the program may not read it.
+--| - `IsADirectory`: it is a directory.
+--| - `NotADirectory`: something on its path that should be a directory
+--|   is a file.
+--| - `TooManyOpenFiles`: the process, or the system, has no file
+--|   descriptor to spare.
+--| - `SymlinkLoop`: its path has too many symbolic links to follow.
+--| - `NameTooLong`: its path, or a name on it, is too long.
+--| - `InvalidPath`: the path holds a NUL character, which no file name
+--|   can.
+--| - `TooLarge`: it is larger than any string can hold.
+pub readFile : String -> Result FileError String
 readFile path =
     Task.callback (\resume -> startRead path resume)
 
 
-foreign impure startRead : String, Resume (Result String String) -> (() -> ())
+foreign impure startRead : String, Resume (Result FileError String) -> (() -> ())

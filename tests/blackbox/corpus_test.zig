@@ -23,7 +23,9 @@
 //!                                   Built and run TWICE — once as today and once
 //!                                   with `--release` — against the same golden,
 //!                                   unless X.release-expected exists (backend.md
-//!                                   §9's *Testing*, §12)
+//!                                   §9's *Testing*, §12). With X.crash, the
+//!                                   program must instead exit 1 with that text
+//!                                   on stderr: a defect (boundary.md §4.1)
 //!   browser/X.beni    + X.expected  built like `run/` for the `page` test
 //!                                   platform, then loaded into a page and
 //!                                   driven by X.steps (when it exists); the
@@ -1903,12 +1905,22 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
 
+        // A defect the program must die of (`tests/corpus/README.md`, *A
+        // program that must crash*): exit 1 and this text on stderr. Never
+        // blessed: a crash is written down by hand, never recorded.
+        const crash: ?[]const u8 = if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("crash"), c.arena, .limited(world.max_stream_bytes))) |bytes|
+            std.mem.trimEnd(u8, bytes, "\n")
+        else |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+
         // Skip Node when this exact output tree, golden and Node were
         // verified together before. Pending mode has no records, and a
         // blessing run exists to look at the output.
         if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, bytes);
+                const line = try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash));
                 if (run_hash.listed(record, line)) {
                     RunCounts.add(&run_counts.skipped);
                     return null;
@@ -1924,7 +1936,17 @@ const Case = struct {
             detail("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
             return err;
         };
-        if (program.exit_code != 0) {
+        if (crash) |text| {
+            if (program.term != .exited or program.exit_code != 1 or std.mem.indexOf(u8, program.stderr, text) == null) {
+                detail(
+                    "{s} [{s}]: the emitted program must crash, exit 1 with `{s}` on stderr; it exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, out_dir, text, program.exit_code, program.stdout, program.stderr },
+                );
+                because("[{s}] expected a crash with `{s}`, got exit {d}: {s}", .{ out_dir, text, program.exit_code, oneLine(c.arena, program.stderr) });
+                classify("{s}: exit=0 program-exit={d}", .{ passName(out_dir), program.exit_code });
+                return error.ProgramFailed;
+            }
+        } else if (program.exit_code != 0) {
             detail(
                 "{s} [{s}]: the emitted program exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
                 .{ c.fixture.name, out_dir, program.exit_code, program.stdout, program.stderr },
@@ -1939,7 +1961,15 @@ const Case = struct {
         };
         // Verified: the golden now holds exactly what the program printed.
         if (c.cfg.run_hashes != .record) return null;
-        return try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout);
+        return try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash));
+    }
+
+    /// What a `run/` build's record covers of its goldens: the stdout, and
+    /// after it the crash text when the fixture has one. A fixture without
+    /// one is digested exactly as before `.crash` existed.
+    fn withCrash(arena: std.mem.Allocator, stdout: []const u8, crash: ?[]const u8) ![]const u8 {
+        const text = crash orelse return stdout;
+        return std.mem.concat(arena, u8, &.{ stdout, "\x00crash\x00", text });
     }
 
     /// Compile the fixture for the Node platform and golden the module it

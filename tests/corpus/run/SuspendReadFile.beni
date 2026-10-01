@@ -1,7 +1,7 @@
 -- run: a promise-backed primitive (docs/design/transparent-effects-proposal.md
 -- §16.5). `Io.readFile` starts a `fs.promises.readFile`, parks the fiber,
 -- and is resumed once with a `Result` when the promise settles — here with
--- `Err`, the code Node gives a file that does not exist. A second fiber
+-- `Err Io.NotFound`, for a file that does not exist. A second fiber
 -- ticks while the first waits, so the wait is a real one: other fibers run.
 import Debug
 import Io
@@ -21,8 +21,11 @@ main =
                         Ok text ->
                             "read " ++ String.fromInt (String.length text)
 
-                        Err reason ->
-                            "could not read: " ++ reason
+                        Err Io.NotFound ->
+                            "could not read: not found"
+
+                        Err _ ->
+                            "could not read, for another reason"
             in
             Node.print answer
         )

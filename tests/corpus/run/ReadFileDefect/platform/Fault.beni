@@ -1,0 +1,7 @@
+--! A test platform's one capability: make every later file read fail with
+--! an error `Io.readFile` does not name (`boundary.md` §4.1) — `EIO`, the
+--! disk's own failure, which no program can arrange by itself.
+
+
+--| From now on, every `fs.promises.readFile` rejects with `EIO`.
+pub foreign impure breakReads : () -> ()

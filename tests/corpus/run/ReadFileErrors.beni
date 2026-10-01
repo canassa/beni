@@ -1,0 +1,64 @@
+-- run: `Io.readFile` answers each failure Node documents with its own
+-- constructor of `Io.FileError` (transparent-effects-proposal.md §16.5,
+-- boundary.md §4.1, CLAUDE.md rule 9), never with one string for all of
+-- them. The program runs in its project directory, which holds this file:
+-- a missing file, the directory itself, a path through a file, a name
+-- longer than any file system's, and a NUL character, then the file itself.
+import Io exposing (FileError)
+import Node exposing (Program)
+
+
+describe : FileError -> String
+describe error =
+    case error of
+        Io.NotFound ->
+            "not found"
+
+        Io.PermissionDenied ->
+            "permission denied"
+
+        Io.IsADirectory ->
+            "is a directory"
+
+        Io.NotADirectory ->
+            "not a directory"
+
+        Io.TooManyOpenFiles ->
+            "too many open files"
+
+        Io.SymlinkLoop ->
+            "symlink loop"
+
+        Io.NameTooLong ->
+            "name too long"
+
+        Io.InvalidPath ->
+            "invalid path"
+
+        Io.TooLarge ->
+            "too large"
+
+
+attempt : String, String -> String
+attempt label path =
+    case Io.readFile path of
+        Ok text ->
+            label ++ ": read, " ++ String.left text 7
+
+        Err error ->
+            label ++ ": " ++ describe error
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            Node.printLines
+                [ attempt "missing" "no such file.txt"
+                , attempt "directory" "."
+                , attempt "through a file" "ReadFileErrors.beni/inside.txt"
+                , attempt "long name" (String.repeat "a" 4096)
+                , attempt "nul" "a\u{0}b"
+                , attempt "itself" "ReadFileErrors.beni"
+                ]
+        )

@@ -365,6 +365,21 @@ The last one is not optional and the reason is typed: an uncaught foreign throw 
 a way its type forbids, which is unsoundness rather than a crash. Gleam's core package documents
 exactly this when declining to make its promise type generic over its error.
 
+*Amended 2026-10-01 (`CLAUDE.md` rule 9, the owner's): the last bullet is replaced, and it now
+reads* **every failure the host documents is caught individually, and everything else is
+re-thrown.** A `catch`, or a promise's rejection handler, names what it expects — an error `code`
+(`ENOENT`), a `name` (`"AbortError"`), `instanceof TypeError`, a `DOMException` — and maps each to
+its constructor; anything it did not name is thrown again, unchanged. A catch-all that turns every
+reason into one value (`String(error)`, `NetworkError`) is a defect: it disguises a bug in beni or in
+the host as an answer the program then acts on. **An unknown error is a defect, and a defect
+crashes** (`transparent-effects-proposal.md` §16.4's `Exit`, the owner's A1): on Node the error
+reaches the top of the process — an uncaught exception, or a rejection nothing handles — and Node
+prints it with its stack to standard error and exits 1 (§16.5, *A defect on Node*). The cancellation
+a primitive asked for itself (an `AbortSignal` it aborted) is neither: the fiber was cancelled, no one
+is waiting, and the answer is dropped. The testable form gains a second half: a capability whose
+wrapper re-throws has a `run/` scenario that forces an error it does not name and asserts the crash
+(`tests/corpus/README.md`, *A program that must crash*).
+
 **Testable form: one corpus scenario per capability that forces the failure path and asserts a value
 comes back.** A capability without that scenario is not finished. This is the discipline whose
 absence produced the bug above, in the codebase that invented the wall.
