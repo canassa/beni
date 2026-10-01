@@ -123,12 +123,14 @@ fn buildOnce(
     const code = BuildCommand.run(gpa, io, stdout, stderr, options, build);
     const ms = started.durationTo(Io.Timestamp.now(io, .awake)).toMilliseconds();
     stderr.flush() catch {};
+    // Before the status line: whoever reads the line may ask the server
+    // straight away, and must find the build already counted.
+    if (hook) |h| h.built(h.context, code == 0);
     if (code == 0)
         stdout.print("beni: built in {d} ms\n", .{ms}) catch {}
     else
         stdout.writeAll("beni: build failed; waiting for changes\n") catch {};
     stdout.flush() catch {};
-    if (hook) |h| h.built(h.context, code == 0);
     return code;
 }
 
