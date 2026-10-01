@@ -18,7 +18,7 @@ spelling — it is kept minimal, and the step says why.
 | 2 | **`core/Task.js`**: the fiber runtime | to come |
 | 3 | **`core/List.js`**: the array-backed list and its views | to come; needs `Js`'s list positions loosened as step 1 loosened its names (*What step 1 leaves*) |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js`, `Dom.js`, `runtime.js`'s `safeUrl`, `html`'s `Html.js`, and the `node` platform | to come |
-| 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger |
+| 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
 
@@ -514,3 +514,89 @@ with `hand-minify`'s method.
 
 `bench/size.mjs` over all 349 programs, before this step and after: release brotli 381 023 →
 382 038 (+0.27 %), all of it the schema programs above; `bench/corpus` −194, the pages unchanged.
+
+### The two gaps, taken to the compiler (2026-10-03)
+
+**The failure paths: a top-level `let` was the cost.** Profiled in V8 against the JavaScript engine
+(CPU profiles, `--trace-turbo-inlining`, `--trace-deopt`, and instructions per operation counted
+with `perf_event_open` — `(I(N) − I(0)) / N` per workload, every workload warmed first as the bench
+does, five processes each — because wall time on this machine moved ±5 % with other agents' load
+and instructions did not), the two engines allocate alike (beni 10 % less) and deoptimise alike; what
+differed was the release printer's `const` → `let`. V8 folds a module-level `const` into the code
+that reads it and loads and checks a `let` on every read, and the engine's top-level functions are
+read at every call: a loop over a two-line top-level function ran 2.5× slower with it written `let`.
+Split by kind, only function-valued bindings mattered. The fix is the compiler's
+(`backend.md` §9, *Compact statements*, amended 2026-10-03; `emit/release/app/TopLevelConst`): a
+top-level `const` stays `const`, emitted and hand-written alike. Instructions per operation against
+the JavaScript engine, `--library --release`, before and after:
+
+| workload | before | after |
+|---|--:|--:|
+| parse flat valid | 1.004 | 0.983 |
+| read flat valid | 1.012 | 0.964 |
+| parse flat wrong_type | 1.037 | 1.021 |
+| parse flat missing_key | 1.012 | 0.999 |
+| parse flat unknown_key | 1.046 | 1.014 |
+| read flat wrong_type (not in the bench) | 1.073 | 1.017 |
+| read flat missing_key (not in the bench) | 1.053 | 1.016 |
+| parse list valid | 1.023 | 1.000 |
+| decode flat | 0.989 | 0.939 |
+| print flat valid | 1.008 | 0.986 |
+| print list valid | 1.008 | 0.996 |
+
+Repeated runs of the same build move these by ±1.5 %. Wall time, the bench's own workloads sampled
+in alternating processes on one pinned core (`taskset -c 11`, load 4–5, ten processes each, medians):
+parse `wrong_type` 1.039 → 1.022, `missing_key` 1.052 → 1.027, `unknown_key` 1.036 → 1.002, the
+valid paths 0.94–1.01; a second run at load 13–30 gave 1.011, 1.047 and 1.029. The two reads of a
+failing value, which the bench does not time, stay 4–5 % slower in wall time at 1.6 % more
+instructions; nothing measured here explains the difference. Not kept, each measured: writing
+`parseWith`'s `Ok` wrapper out (no change), splitting `prim` back out of `run` (slower), and
+writing the record loop in place in `recordOf` (−1.6 % instructions on valid reads, nothing on
+failures; the compiler's *A function called once* does not yet take a loop tested by an `if`).
+
+**The bytes: the engine pinned `Issue`.** Taken apart per top-level unit (leave-one-out brotli), most
+of the schema programs' growth was not the engine's code but its names: every schema program kept
+`Issue`'s field names and the string tags of `Direction`, `Endpoint`, `IssueCode`, `PathSegment`,
+`Maybe` and `Result`. The boundary (`backend.md` §9, *Item 4, taken up*) was right to keep them:
+`conversion`, `mapping`, `injection` and `recursive` handed their functions to the host with
+`Js.from` at the functions' own types — `b -> Result (List Issue) a` — which says JavaScript may
+call them. Nothing does; the engine parks them and calls them from beni, so they now cross at a type
+variable like every other value the engine parks (`toHost`), which is the engine's own rule for its
+records (above). Red before: `build_test`'s *a schema program's issues get short fields and integer
+tags under --release*. `bench/size.mjs`, release brotli, master before these two changes → after,
+and the JavaScript engine for reference:
+
+| program | JavaScript engine | before | after |
+|---|--:|--:|--:|
+| `run/SchemaFailures` | 5 712 | 6 198 | 6 207 |
+| `run/SchemaDescribe` | 3 650 | 4 039 | 4 024 |
+| `run/SchemaTagged` | 5 449 | 5 697 | **5 520** |
+| `run/SchemaConstruction` | 5 902 | 6 149 | **5 957** |
+| `run/SchemaDepth` | 5 338 | 5 470 | 5 438 |
+| `run/SchemaDirections` | 5 402 | 5 529 | **5 353** |
+| `run/SchemaJson` | 4 975 | 4 958 | 4 936 |
+| `run/SchemaPresence` | 5 156 | 5 167 | 5 134 |
+| `run/SchemaProtoKeys` | 5 019 | 5 032 | 5 033 |
+| `SchemaSize` (`bench/schema-library`) | 4 531 | 4 489 | 4 487 |
+| the release total, 351 programs | | 372 717 | 372 759 |
+
+The total is +620 from the `const`s and −578 from the schema programs; `bench/ui`'s app 5 675 →
+5 669, the empty pages +3, `browser-tea` random +31.
+
+**What is left, the wall.** `SchemaFailures` and `SchemaDescribe` reach `Debug.log`, so
+`bench/size.mjs` builds them with the harness-only `--allow-debug`, which turns field renaming and
+integer tags off for the whole build; a shipping release build refuses them. With the `Debug.log`
+calls taken out they are 5 414 → **5 433** and 3 328 → **3 441** against the JavaScript engine. A
+`Debug` use instantiated at a type could be a door of the boundary like `Js.from`, so that only the
+types `Debug` prints keep their names; that is a checker artifact, for the harness only. The rest,
+`SchemaDescribe` +113, `SchemaDepth` +100, `SchemaTagged` +71, `SchemaConstruction` +55, is the
+engine's cold code: the hand-written engine walked a schema with `some`, `find`, `map` and `for … of`
+inline, and the beni engine has a loop helper for each (`problemInFields`, `opaqueVariant`,
+`collectVariants`, `tagList`, …) and `kindOf`, a seven-arm `switch` from an `Int` to the integer
+tag it already is — about 1 000 raw bytes of `analyse` and the builders. Compiler rewrites priced
+on the six programs with `hand-minify`'s method, each alone: a helper loop written in place in its
+looping caller +7 brotli, merged identical `case` arms +15, `case` bodies without braces −30, copy
+propagation of `let d=a` −20, folding a test of a known constant −18 — noise, as the skill predicts
+for rewrites that do not remove distinct text. What would remove it is the engine's cold paths
+written with fewer walks, which is a change to `core/Schema.beni`'s shape and so the owner's call
+(`CLAUDE.md` rule 10), not something this step did.

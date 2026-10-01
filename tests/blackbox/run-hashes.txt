@@ -52,6 +52,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 0daaa5f9c31657eff59f8fc600bb633cd582f0707f3e3d80143c908800d52715
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 8924d5d5f5ef0550bdfc7b2e7eb143375628b51147c7a62eb96f7943505ae636
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 2022537c75006053bd08ad500c62267748b0c8d263748f9ac1a6ef1a6fb3ed4b
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675

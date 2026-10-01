@@ -4377,3 +4377,58 @@ test "core List's loops read and write their arrays in place" {
         }
     }
 }
+
+test "a schema program's issues get short fields and integer tags under --release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `core/Schema` keeps a conversion's two functions in a host pair. Handed
+    // over with `Js.from` at their own type, `b -> Result (List Issue) a`,
+    // they made `Issue` — and `Direction`, `Endpoint`, `IssueCode` and
+    // `PathSegment` with it — types JavaScript can see (`backend.md` §9,
+    // *Item 4, taken up*), so every schema program kept their field names
+    // and string tags. No JavaScript calls them: the engine reads them back
+    // and calls them from beni, so they cross at a type variable, as every
+    // other value the engine parks in the host does.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import Schema
+        \\
+        \\
+        \\positive : Schema.Schema Int Int
+        \\positive =
+        \\    Schema.converted
+        \\        Schema.int
+        \\        (Schema.conversion (λn -> if n > 0 then Ok n else Err []) (λn -> Ok n))
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    case Schema.parse positive "0" of
+        \\        Ok n ->
+        \\            Node.print (String.fromInt n)
+        \\
+        \\        Err issues ->
+        \\            Node.print (String.join (List.map issues (λi -> i.message)) ",")
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "--release", "Main.beni" }, .{ .stdout = "the conversion failed without an issue\n" });
+    try expectBuilt(r);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const out = try w.read(world.entry_file);
+    for ([_][]const u8{ "direction:", "endpoint:", "\"ConversionFailed\"", "\"Decoding\"", "\"Field\"" }) |needle| {
+        if (std.mem.indexOf(u8, out, needle) != null) {
+            std.debug.print("expected no `{s}` in the release build, found one in:\n{s}\n", .{ needle, out });
+            return error.KeptForJavaScript;
+        }
+    }
+}

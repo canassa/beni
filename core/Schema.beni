@@ -333,7 +333,11 @@ cast x = fromHost (toHost x)
 -- `Js.from` or `Js.to` at a named type would keep that type's field names
 -- and string tags in a release build (`boundary.md` §4, *What JavaScript
 -- may read of a beni value*), and the host only stores these, compares
--- them with `===` and hands them back.
+-- them with `===` and hands them back. A function is one of them: the
+-- builders park a mapping's, an injection's and a conversion's functions in
+-- the host and the engine calls them from beni, so they cross here too — a
+-- `Js.from` at `b -> Result (List Issue) a` kept `Issue`'s field names and
+-- the string tags of every type it names in every schema program.
 toHost : a -> Js.Value
 toHost x = Js.from x
 
@@ -651,7 +655,7 @@ key fs external =
 --| How the products of `fields` become the records of each endpoint, and
 --| back: `to` builds the record from the product, `from` takes it apart.
 pub mapping : sync (p -> r), sync (r -> p) -> Mapping p r
-mapping to from = cast (pair (Js.from to) (Js.from from))
+mapping to from = cast (pair (toHost to) (toHost from))
 
 
 --| A record schema: the fields, then how each endpoint's product becomes
@@ -706,7 +710,7 @@ fieldKey f = f.key
 
 --| A constructor and its test, for one variant at one endpoint.
 pub injection : sync (p -> a), sync (a -> Maybe p) -> Injection p a
-injection inject project = cast (pair (Js.from inject) (Js.from project))
+injection inject project = cast (pair (toHost inject) (toHost project))
 
 
 variantNode : String, String, Maybe Node, Pair, Pair -> VariantNode
@@ -856,7 +860,7 @@ pub conversion :
       sync (b -> Result (List Issue) a)
     , sync (a -> Result (List Issue) b)
     -> Conversion b a
-conversion forward backward = cast (pair (Js.from forward) (Js.from backward))
+conversion forward backward = cast (pair (toHost forward) (toHost backward))
 
 
 --| The schema's values, converted: decoding reads `e` to `b` and converts
@@ -899,7 +903,7 @@ issueAt path message =
 --| built with one name are still two.
 pub recursive : String, sync (Schema e a -> Schema e a) -> Schema e a
 recursive name body =
-    box (NRef { name = name, build = Js.from body, state = Js.ref 0, body = Js.ref Nothing })
+    box (NRef { name = name, build = toHost body, state = Js.ref 0, body = Js.ref Nothing })
 
 
 -- A reference's body, built the first time it is needed; `Nothing` while it
