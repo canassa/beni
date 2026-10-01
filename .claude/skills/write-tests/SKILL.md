@@ -118,6 +118,12 @@ builds a binary on tagged releases. Three failure modes to design against:
 - Verify side effects *and their absence*: on a failed compile, assert that no
   output file was written and no cache entry was created.
 - Put a new parser behind a fuzz harness in the hermetic suite.
+- Run `beni fmt` on every new or edited `.beni` fixture under `core/`, `platforms/`,
+  `bench/`, `tests/corpus/` or `tests/platforms/`: the gates run `beni fmt --check`
+  over them. A fixture whose layout or syntax error is the point (a parser shape the
+  formatter rewrites, a file that must not parse) goes in `tests/fmt-exempt.txt`
+  with its reason, in the same commit; `fmt/` inputs and `parse/bad/` are exempt
+  already. After formatting, re-check any `line:col` the intent comment quotes.
 - Run `zig build gates` green before reporting (see *Running the tests*).
 
 ## CRITICAL: assertions must be broad
@@ -403,5 +409,7 @@ assertion checked what it did — that is still the test's job.
 - [ ] Happy path first and complete; errors last and verifying no side effects.
 - [ ] Banners present; one `test` per scenario; no fixed sleeps, only bounded waits.
 - [ ] Every new parser has a fuzz test in the hermetic suite.
+- [ ] Every new `.beni` fixture is `beni fmt`-clean, or exempted with a reason in
+      `tests/fmt-exempt.txt`.
 - [ ] `zig build gates` green before the commit (plus `-Dllvm` when it
       applies); no leaked process or temp dir.

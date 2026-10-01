@@ -274,11 +274,12 @@ the shape `foldl` was — covered, since a well-known `eq` or `compare` is `sync
 ## Building
 
 ```sh
-zig build gates           # the gate: test + test-blackbox + fmt-check (rule 4)
+zig build gates           # the gate: test + test-blackbox + fmt-check + beni-fmt-check (rule 4)
 zig build                 # install ./zig-out/bin/beni (-Doptimize, Debug by default)
 zig build test            # unit tests
 zig build test-blackbox   # black-box suites and the corpus
 zig build fmt-check       # zig fmt --check
+zig build beni-fmt-check  # .beni formatting is gated: beni fmt --check, exemptions in tests/fmt-exempt.txt
 zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
@@ -398,7 +399,7 @@ floor, not the evidence.
 ### 4. Three gates, and they pass on `master`
 
 ```sh
-zig build gates    # test, test-blackbox and fmt-check in one build graph
+zig build gates    # test, test-blackbox, fmt-check and beni-fmt-check in one build graph
 ```
 
 All three pass on `master`, so a failure is yours. Never commit red or

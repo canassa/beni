@@ -1,0 +1,55 @@
+-- The .beni files `zig build beni-fmt-check` does not hold to `beni fmt`'s
+-- output (language.md §12.5, frontend.md §11.6). One glob per line, then
+-- ` -- ` and the reason. `**` matches any run of characters, `*` any run
+-- without a `/`. An entry naming one file must name a file that exists and
+-- that `beni fmt --check` refuses, or the step fails: delete it then.
+
+tests/corpus/fmt/** -- formatter inputs, unformatted on purpose; their .expected files are held to be fixed points
+tests/corpus/parse/bad/** -- files that must not parse
+
+-- Parser fixtures that pin a layout or a spelling the formatter rewrites.
+tests/corpus/parse/good/BlankLines.beni -- runs of blank lines the formatter collapses
+tests/corpus/parse/good/BraceRecordAlias.beni -- brace record bodies, which the formatter writes as layout
+tests/corpus/parse/good/CaseBranchAtCaseColumn.beni -- branches at the `case` keyword's own column
+tests/corpus/parse/good/CaseNested.beni -- inner branch lists at columns the formatter re-indents
+tests/corpus/parse/good/CaseSameLineAsOf.beni -- branches that start on the `of` line
+tests/corpus/parse/good/CommentsEverywhere.beni -- comment placements and `--|x` the formatter moves or respaces
+tests/corpus/parse/good/CustomTypes.beni -- one-line and leading-`|` type declarations
+tests/corpus/parse/good/DeepParens.beni -- generated nesting 200 deep; formatted, it is 200 lines of `)`
+tests/corpus/parse/good/DocComments.beni -- `--|x` with no space, and a doc block apart from its declaration
+tests/corpus/parse/good/IfChains.beni -- an `if` nested in `else` that the formatter writes as `else if`
+tests/corpus/parse/good/LayoutBrackets.beni -- bracket continuation lines at columns the formatter re-indents
+tests/corpus/parse/good/LayoutOperatorsLeading.beni -- operators and keywords beginning lines where the formatter would not put them
+tests/corpus/parse/good/LayoutSchemaDeclarations.beni -- the layout twin of SchemaDeclarations, compared with it dump for dump
+tests/corpus/parse/good/LetLayout.beni -- `let` layouts the formatter never writes
+tests/corpus/parse/good/LongList.beni -- generated: one list vertical and one on a 300-element line
+tests/corpus/parse/good/MarkupCommentAtColumnOne.beni -- a column-1 comment inside markup; its .tokens golden pins the lexing
+tests/corpus/parse/good/MarkupComparisonsStay.beni -- `a <b` with no space after `<`; its .tokens golden pins the lexing
+tests/corpus/parse/good/MarkupElements.beni -- `<hr></hr>` and `{--`, which the formatter respells
+tests/corpus/parse/good/MarkupSpread.beni -- `{ ...a }` spacing; its .tokens golden pins the lexing
+tests/corpus/parse/good/Negation.beni -- `f -1`, which the formatter writes `f - 1`
+tests/corpus/parse/good/OneLineNoNewline.beni -- a file with no trailing newline
+tests/corpus/parse/good/RecordTypeCommaRule.beni -- brace record-type bodies, which the formatter writes as layout
+tests/corpus/parse/good/Records.beni -- `{   }`, an empty record with spaces
+tests/corpus/parse/good/SchemaDeclarations.beni -- brace schema bodies, the twin of LayoutSchemaDeclarations
+tests/corpus/parse/good/SchemaRecordNullable.beni -- a one-line brace schema body with a modifier
+tests/corpus/parse/good/SchemaTaggedBraceNextLine.beni -- a tagged variant's brace body on the next line
+tests/corpus/parse/good/TuplesUnit.beni -- `(  )`, unit with spaces
+tests/corpus/parse/good/TypeAliasParams.beni -- a one-line type alias
+tests/corpus/parse/good/WhereClause.beni -- `where` clauses on one line
+tests/corpus/parse/good/WhereContextualWord.beni -- a `where` clause on the annotation's line
+
+-- Fixtures whose syntax error is the point.
+tests/corpus/check/bad/ExposingSameNameConstructor/Main.beni -- its expected_token is part of the golden
+tests/corpus/check/bad/SchemaParseErrorRecovered/Sch.beni -- a schema parse error the checker must not report twice
+tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni -- an annotation without a definition, which the formatter refuses
+tests/corpus/check/bad/WhereAnnotationRepeated.beni -- an annotation without a definition, which the formatter refuses
+tests/corpus/check/depth/ParserDeep.beni -- nesting one level past the parser's limit
+tests/corpus/check/depth/TypeParensDeep.beni -- a type nested one level past the parser's limit
+
+-- Benchmark inputs that do not parse.
+bench/pathological/AccessChain8000.beni -- nesting past the parser's limit, on purpose
+bench/pathological/AsWithoutName.beni -- a parse error, on purpose
+bench/pathological/PlusChain8000.beni -- nesting past the parser's limit, on purpose
+bench/pathological/QuestionChain8000.beni -- nesting past the parser's limit, on purpose
+bench/markup/DeepTree.beni -- a lexer benchmark input whose `\segment, index ->` no longer parses

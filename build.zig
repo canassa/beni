@@ -6,7 +6,8 @@
 //!   zig build test-blackbox   spawns a ReleaseSafe `beni`; never folded into `test`
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
-//!   zig build gates           the three gates above, in one build graph
+//!   zig build beni-fmt-check  `beni fmt --check` over the .beni files, minus tests/fmt-exempt.txt
+//!   zig build gates           the gates above, in one build graph
 //!
 //! The black-box suites spawn a ReleaseSafe `beni` built by Zig's
 //! self-hosted backend, compiled in seconds. One option switches them to the
@@ -818,6 +819,38 @@ pub fn build(b: *std.Build) void {
         .check = true,
     }).step);
 
+    // `beni fmt --check` over the repository's `.beni` files, except what
+    // `tests/fmt-exempt.txt` names (`docs/design/frontend.md` §11.6), on
+    // the gates' own ReleaseSafe beni; `tests/fmt_check.zig` is the tool,
+    // and `fmt_check_test.zig` drives it on a world of its own.
+    const beni_fmt_step = b.step("beni-fmt-check", "Check that every .beni file in the gate's scope is what `beni fmt` writes");
+    const fmt_check_exe = b.addExecutable(.{
+        .name = "beni-fmt-check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fmt_check.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const beni_safe_path = b.getInstallPath(.prefix, b.fmt("{s}/beni", .{safe_dir}));
+    {
+        const run = b.addRunArtifact(fmt_check_exe);
+        run.addArg(beni_safe_path);
+        run.setCwd(b.path("."));
+        run.has_side_effects = true;
+        run.step.dependOn(&safe_install.step);
+        beni_fmt_step.dependOn(&run.step);
+    }
+    {
+        const file = "tests/blackbox/fmt_check_test.zig";
+        const step = bb.fileStep(file);
+        const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
+        run.setEnvironmentVariable("BENI_FMT_CHECK_EXE", b.getInstallPath(.prefix, "tools/beni-fmt-check"));
+        run.step.dependOn(&b.addInstallArtifact(fmt_check_exe, tools).step);
+        step.dependOn(&run.step);
+        blackbox_step.dependOn(step);
+    }
+
     // ---- The three gates as one step. ----
     // One build graph instead of three chained invocations: the unit tests
     // and the formatting check run while the black-box suites do, and the
@@ -825,7 +858,7 @@ pub fn build(b: *std.Build) void {
     //
     // A filter would make a green gate say nothing about the tests it left
     // out, so a filtered `gates` fails before it runs anything.
-    const gates_step = b.step("gates", "Run test, test-blackbox and fmt-check concurrently");
+    const gates_step = b.step("gates", "Run test, test-blackbox, fmt-check and beni-fmt-check concurrently");
     if (test_filters.len != 0 or corpus_only.len != 0) {
         gates_step.dependOn(&b.addFail("`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step").step);
         return;
@@ -833,6 +866,7 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(test_step);
     gates_step.dependOn(blackbox_step);
     gates_step.dependOn(fmt_step);
+    gates_step.dependOn(beni_fmt_step);
 }
 
 /// `run-hash-summary <dir> <args>` in the repo root, printing to the
