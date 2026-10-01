@@ -428,7 +428,7 @@ mapping.
 | list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below). *Amended 2026-10-01, the owner's decision (W35):* **a list is array-backed** — a plain JavaScript array, a view, or a 32-way trie with a claimable tail; *Lists are arrays*, below, is the contract, and it replaces this row when `plans/list-arrays.md`'s second slice lands. *Amended 2026-10-01 again (W35, E1tp):* the trie has a claimable **head** as well, so prepending is as cheap as appending (*The claimable head: E1tp*, below) |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
 | `Int` | a number |
-| `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B) |
+| `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B). *(Amended 2026-10-01: `core/Int32.beni` is, written over `Js` — `plans/core-in-beni.md` — and has no sibling.)* |
 | `case` | a decision tree (§7) |
 | `if` | conditional expression when both arms are expressions, else `if`/`else` |
 | `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |
@@ -1611,7 +1611,9 @@ global the renamer does not know (research 47 §2.3's `global_this` is how one w
 The rule is **exact equivalence or nothing**: no call is replaced by an operator that answers
 differently for any input the type admits. *Amended 2026-10-02 (`language.md` §12.4; specified,
 not built):* `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, the same siblings under
-`core/Int.js`, and stay calls for the same reason.
+`core/Int.js`, and stay calls for the same reason. *(Amended 2026-10-01: `Int32`'s declarations are
+beni over `Js` now, `plans/core-in-beni.md`; the table still writes a saturated call, and the beni
+body, the same operator, is what a function passed as a value is.)*
 
 **Evaluation order is the call's**: the operands are evaluated once each, left to right, with the
 same pinning a call's arguments get (`orderedExprs`), which is `language.md` §6's *binary
@@ -1833,6 +1835,73 @@ gives each block a scope of its own; `Print` always braces both. Fixtures:
 `emit/release/core/JsFinally`, `run/JsFinally` (the cleanup on a return and on a throw, bound,
 discarded, in tail position, nested, at the end of a loop, with arguments that are not lambdas, and
 as a value — in both builds), `check/bad/core/FinallySuspends`.
+
+### `Js.catchIf` is `try … catch`
+
+*Added 2026-10-01 (`plans/core-in-beni.md`, step 1: the browser wrappers' catches).*
+`Js.catchIf body test handler : sync (() -> a), sync (Value -> Bool), sync (Value -> a) -> a`
+(`boundary.md` §4.2) is the statement **`try { body } catch (e) { if (!test) throw e; handler }`**
+— JsIr's `try_stmt` with a `catch` clause: `Try` gains a third range and the binding's name, `.none`
+when there is no `catch`, and a `try` whose cleanup range is empty and that catches prints no
+`finally`. What is thrown is caught only when the test holds of it, and thrown on unchanged
+otherwise: `CLAUDE.md` rule 9 is the shape, so no `catch` this compiler writes can swallow what it
+did not name.
+
+**The shape** is `Js.finally`'s (`Lower.catchTry`). A body that is a lambda of one parameter binding
+nothing is the `try` block; a test or handler that is a lambda of one parameter that cannot suspend
+is written in the `catch` block, its parameter the `catch` binding — the test's name when it binds
+one, else the handler's, else a fresh one; when both bind a name, the handler's is the test's, and
+a parameter that is a pattern binds from it. Any other argument is evaluated before the `try`, in
+written order, and called in its block. The value goes where the call's does — discarded, both
+blocks discarded; in tail position, both blocks `return`; anywhere else, a `let` both assign — and
+an arm that ends in `Js.throw` assigns nothing:
+
+```js
+// Url.percentDecode, release
+a=>{try{return{$:"Just",a:decodeURIComponent(a)}}catch(b){if(!(b instanceof URIError))throw b;return c}}
+```
+
+**The passes**: as for `Js.finally`, the `try` is a wall for code motion and every pass walks the
+third block — `Opt` plans it as a list of its own; `Spec` counts and scans its binding as a
+declaration (an inlined copy gets a fresh one), walks the block for facts 1–2, kills fact 3's
+guards before it and after it (it may begin after any statement of the body) and writes a call
+found in it there; `Rename` gives the binding and the block one scope (a `let` of the binding's
+spelling in it is an early error); `Print` follows a function's end into the `catch` block as into
+the guarded one; `Suspend` refuses a marker in it, and takes a `try` for one that leaves only when
+both its body and its `catch` block do (or its cleanup does). `Js.instanceOf` is the
+`instance_of` operator, at the relational operators' precedence. Release builds write `URIError`,
+`SyntaxError` and `DOMException` bare (`Rename.bare_globals`). Passed as a value, `Js.catchIf` is
+the sibling's function, which does the same with three calls. Fixtures: `emit/release/core/JsCatchIf`,
+`run/JsCatchIf` (tail, bound, discarded, a throw the test does not hold of passing through an inner
+`catchIf` to an outer one that names it, a `DOMException` caught by `name`, two names for the
+caught value, arguments that are not lambdas — made first, in order — passed as a value, at the end
+of a loop; both builds), `check/bad/core/CatchIfSuspends`. Red first: with the compiler before,
+`Js does not expose catchIf`.
+
+### `Js.pure` is its body
+
+*Added 2026-10-01 (`plans/core-in-beni.md`, step 1).* `Js.pure (\() -> body)` (`boundary.md`
+§4.2) is written as `body` — wherever the call stands, a value, a tail or a discarded position, the
+body stands there instead and is lowered as it would be (`Lower.pureBody`); with any other
+argument it is a call of it. What it changes is the checker's answer, not a byte: `Js.pure` is
+`foreign pure` and its argument a function handed to it, so a declaration whose body is one is
+`pure` however many `Js.get`s it makes. `core/String.beni`'s functions are written so; without it
+`String.length` would publish `!impure`, and every function that measured a string with it.
+
+### `Js.regExp` is a literal
+
+*Added 2026-10-01.* `Js.regExp pattern flags`, both string literals (`boundary.md` §4.2), is a
+regular expression literal, JsIr's `regex` node: its whole text, escaped, printed verbatim
+(`Lower.regExpLiteral`). The pattern is copied as written but for what a literal cannot hold —
+an unescaped `/` is `\/`, a line terminator its escape, an empty pattern `(?:)`, and a backslash
+before a line terminator is the terminator's escape — none of which changes what it matches; a
+pattern ending in a lone backslash, a non-literal argument or flags beyond `d i m s u v` (each once)
+is refused (`internal`). The node is not a constant: each evaluation is a new object, so no pass
+folds, compares or copies it as one (`Spec` takes it for an unknown value; `firstUse` for one that
+reads nothing). Passed as a value, `Js.regExp` is the sibling's `new RegExp(pattern, flags)`.
+Fixture: `run/JsOperators` (a literal made once, one made in place, a `/` and a line feed in the
+pattern, a flag, an empty pattern, one built by the sibling), with the operators of `boundary.md`
+§4.2's list — each the `JsIr` operator of its name, `typeOf` the `type_of` unary.
 
 ### `Js.development` is the build's mode
 
@@ -4605,7 +4674,10 @@ constructors are all nullary is the bare integer. A type keeps its string tags w
 
 - it is in the closed boundary above — a sibling builds `{$: "Just", a}` and reads `.$ === "Done"`
   (`core/String.js`, `core/Task.js`, `platforms/browser/Http.js`) for exactly the types its
-  annotations name;
+  annotations name; *(amended 2026-10-01: `String` and `Http` are beni over `Js` now
+  (`plans/core-in-beni.md`), so a `Maybe` `String.toInt` makes and a `Result` `Http` resumes with
+  are built by beni code, and neither is in the boundary on their account — `Http` hands its fiber
+  the answer through a type variable, which is opaque at the door)*
 - it is core's `Order` or `Bool` — `Order`'s `"LT"`/`"EQ"`/`"GT"` are written by siblings
   (`List.compare`, `String.compare`, `Hosted.compareKeys`) and by every derived `compare`, and `Bool`
   is `true`/`false`;
@@ -5796,6 +5868,15 @@ loops of *A function called once is written where it is called* produce:
 
 Fixtures: `emit/release/core/BoundLoops`, `emit/release/core/WhileLoops`, every `emit/release/`
 golden with a counter, and the `run/` and `browser/` release passes.
+
+**Amended 2026-10-01: an arrow of one parameter is `a=>…`** (`Print.arrowParams`;
+`plans/core-in-beni.md`, step 1). An arrow whose written parameter list (after *Compact
+statements*' trailing-parameter cut) is one name prints it without brackets, as a hand minifier
+does — `b=>String(b)`, where it was `(b)=>String(b)`. A `function` declaration, an arrow of no
+parameter or of several, and a derived comparison's `$d=0` keep theirs. It came with core's
+`String` moving to beni: the hand-written siblings had the short form from `Minify`, so the same
+function compiled from beni was two bytes longer. Every `emit/release/` golden with such an arrow
+moved; development output does not.
 
 ## 10. Chunking
 

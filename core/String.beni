@@ -12,8 +12,9 @@
 --! It stays callable by name as well, which is what you want when you are
 --! ordering by something other than the string itself.
 --!
---! The `foreign` declarations here are the ones that reach into the
---! platform's own string type, and nothing more:
+--! Nothing here is `foreign` but the type. What reaches into the platform's
+--! own string type is written over `Js` (`boundary.md` §4.2,
+--! `plans/core-in-beni.md`):
 --!
 --!   - `length` `slice` `append` — indexing and concatenation.
 --!   - `compare` — lexicographic order.
@@ -25,7 +26,18 @@
 --!   - `fromChar` `toList` `fromList` — the character/string boundary.
 --!
 --! Everything else is written over those.
+--!
+--! A `String` is a native JavaScript string and a `Char` a one-scalar one
+--! (`backend.md` §4). Where the UTF-16 mismatch would show — `length`,
+--! `slice`, `toList`, `indexes`, `compare`, and `split` on an empty
+--! separator — these work in CODE POINTS, because the API is defined over
+--! characters and a surrogate half is not one. `Array.from` of a string is
+--! its code points. A `List` crosses as a plain array (`boundary.md` §4,
+--! *How a sibling sees a `List`*): a list made here is the fresh array its
+--! function made, and a list argument is read by the protocol,
+--! `Array.isArray` or `$plain()`.
 
+import Js
 import List
 
 
@@ -43,7 +55,10 @@ pub equatable foreign type String
 --|
 --|     length "innumerable" == 11
 --|     length "" == 0
-pub foreign pure length : String -> Int
+pub length : String -> Int
+length s =
+    Js.pure
+        (\() -> Js.to (Js.get (Js.call (Js.global "Array") "from" [ Js.from s ]) "length"))
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
@@ -51,13 +66,46 @@ pub foreign pure length : String -> Int
 --|
 --|     slice "snakes on a plane!" 7 9 == "on"
 --|     slice "snakes on a plane!" 0 (-7) == "snakes on a"
-pub foreign pure slice : String, Int, Int -> String
+pub slice : String, Int, Int -> String
+slice s start end =
+    Js.pure
+        (\() ->
+            let
+                points = Js.call (Js.global "Array") "from" [ Js.from s ]
+                n : Int
+                n = Js.to (Js.get points "length")
+                from = clamp start n
+                to = clamp end n
+            in
+            if to <= from then
+                ""
+            else
+                Js.to
+                    (Js.call
+                        (Js.call points "slice" [ Js.from from, Js.from to ])
+                        "join"
+                        [ Js.from "" ]
+                    )
+        )
+
+
+-- An index into `n` code points: a negative one counts from the end, and
+-- either is kept within 0…n.
+clamp : Int, Int -> Int
+clamp i n =
+    if i < 0 then
+        Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
+    else
+        Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
 
 
 --| Append two strings. `++` does the same thing.
 --|
 --|     append "butter" "fly" == "butterfly"
-pub foreign pure append : String, String -> String
+pub append : String, String -> String
+append a b =
+    -- JavaScript's `+` on two strings, the casts compiled to nothing.
+    Js.to (Js.from (Js.to (Js.from a) + Js.to (Js.from b)))
 
 
 --| Compare two strings lexicographically, by Unicode scalar value.
@@ -67,50 +115,129 @@ pub foreign pure append : String, String -> String
 --|
 --| This is the replacement for Elm's `"a" < "b"`, which does not compile in
 --| beni: comparison operators are numbers only.
-pub foreign pure compare : String, String -> Order
+pub compare : String, String -> Order
+compare a b =
+    Js.pure
+        (\() ->
+            -- By code points, which is what `<` on two JavaScript strings is
+            -- NOT: it compares UTF-16 code units, so an astral character would
+            -- sort below U+E000. `Array.from` of a string is its code points.
+            let
+                x = Js.call (Js.global "Array") "from" [ Js.from a ]
+                y = Js.call (Js.global "Array") "from" [ Js.from b ]
+                la : Int
+                la = Js.to (Js.get x "length")
+                lb : Int
+                lb = Js.to (Js.get y "length")
+
+                i =
+                    firstDifference
+                        x
+                        y
+                        0
+                        (Js.to (Js.call (Js.global "Math") "min" [ Js.from la, Js.from lb ]))
+            in
+            if i < la && i < lb then
+                if pointAt (Js.at x i) < pointAt (Js.at y i) then
+                    LT
+                else
+                    GT
+            else if la < lb then
+                LT
+            else if la > lb then
+                GT
+            else
+                EQ
+        )
+
+
+-- The first index below `n` where the two lists of code points differ, or
+-- `n`.
+firstDifference : Js.Value, Js.Value, Int, Int -> Int
+firstDifference x y i n =
+    if i < n && Js.same (Js.at x i) (Js.at y i) then
+        firstDifference x y (i + 1) n
+    else
+        i
+
+
+pointAt : Js.Value -> Int
+pointAt c = Js.to (Js.call c "codePointAt" [ Js.from 0 ])
 
 
 --| Convert a string to all upper case. Useful for case-insensitive
 --| comparisons and VIRTUAL YELLING.
 --|
 --|     toUpper "skinner" == "SKINNER"
-pub foreign pure toUpper : String -> String
+pub toUpper : String -> String
+toUpper s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "toUpperCase" []))
 
 
 --| Convert a string to all lower case.
 --|
 --|     toLower "X" == "x"
-pub foreign pure toLower : String -> String
+pub toLower : String -> String
+toLower s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "toLowerCase" []))
 
 
 --| Get rid of whitespace on both sides of a string.
 --|
 --|     trim "  hats \n" == "hats"
-pub foreign pure trim : String -> String
+pub trim : String -> String
+trim s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "trim" []))
 
 
 --| Get rid of whitespace on the left of a string.
 --|
 --|     trimLeft "  hats \n" == "hats \n"
-pub foreign pure trimLeft : String -> String
+pub trimLeft : String -> String
+trimLeft s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "trimStart" []))
 
 
 --| Get rid of whitespace on the right of a string.
 --|
 --|     trimRight "  hats \n" == "  hats"
-pub foreign pure trimRight : String -> String
+pub trimRight : String -> String
+trimRight s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "trimEnd" []))
 
 
 --| Break a string into words, splitting on chunks of whitespace.
 --|
 --|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
-pub foreign pure words : String -> List String
+pub words : String -> List String
+words s =
+    Js.pure
+        (\() ->
+            Js.to
+                (Js.call
+                    (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ])
+                    "filter"
+                    [ Js.from isWord ]
+                )
+        )
+
+
+isWord : Js.Value -> Bool
+isWord w = Js.to (Js.get w "length") /= 0
 
 
 --| Break a string into lines, splitting on newlines.
 --|
 --|     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
-pub foreign pure lines : String -> List String
+pub lines : String -> List String
+lines s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ]))
 
 
 --| Split a string using a given separator. The string being split comes
@@ -126,7 +253,15 @@ pub foreign pure lines : String -> List String
 --|
 --|     split "" "" == []
 --|     split "" "," == [ "" ]
-pub foreign pure split : String, String -> List String
+pub split : String, String -> List String
+split s separator =
+    Js.pure
+        (\() ->
+            if separator == "" then
+                Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
+            else
+                Js.to (Js.call (Js.from s) "split" [ Js.from separator ])
+        )
 
 
 --| Get all of the indexes for a substring in a string. The string being
@@ -147,7 +282,67 @@ pub foreign pure split : String, String -> List String
 --|     indexes "aaaa" "aa" == [ 0, 2 ]
 --|     indexes "abc" "" == []
 --|     indexes "" "" == []
-pub foreign pure indexes : String, String -> List Int
+pub indexes : String, String -> List Int
+indexes haystack needle =
+    Js.pure
+        (\() ->
+            -- `indexOf` answers in UTF-16 code units, so each match is translated
+            -- by one forward walk that carries its position between matches —
+            -- `scanned` a code unit offset and `point` the code points before it,
+            -- both only ever moving forward — so the whole call stays linear in the
+            -- haystack. A match that begins on the second half of a surrogate pair
+            -- (`scanned` past it) is at no character, and is not an answer.
+            if needle == "" then
+                []
+            else
+                let
+                    h = Js.from haystack
+                    found = Js.array []
+                    _ = search h needle found (indexOf h needle 0) 0 0
+                in
+                Js.to found
+        )
+
+
+search : Js.Value, String, Js.Value, Int, Int, Int -> ()
+search h needle found at scanned point =
+    if at < 0 then
+        ()
+    else
+        let
+            ( s, p ) = advance h at scanned point
+
+            _ =
+                if s == at then
+                    Js.call found "push" [ Js.from p ]
+                else
+                    Js.null
+        in
+        search h needle found (indexOf h needle (at + Js.to (Js.get (Js.from needle) "length"))) s p
+
+
+-- `scanned` moved up to `at`, a code point at a time, and the code points
+-- it passed counted onto `point`.
+advance : Js.Value, Int, Int, Int -> ( Int, Int )
+advance h at scanned point =
+    if scanned < at then
+        advance
+            h
+            at
+            (scanned
+                + (if Js.to (Js.call h "codePointAt" [ Js.from scanned ]) > 65535 then
+                      2
+                   else
+                      1
+                  )
+            )
+            (point + 1)
+    else
+        ( scanned, point )
+
+
+indexOf : Js.Value, String, Int -> Int
+indexOf h needle from = Js.to (Js.call h "indexOf" [ Js.from needle, Js.from from ])
 
 
 --| Try to convert a string into an int, failing on improperly formatted
@@ -155,13 +350,33 @@ pub foreign pure indexes : String, String -> List Int
 --|
 --|     toInt "123" == Just 123
 --|     toInt "1.3" == Nothing
-pub foreign pure toInt : String -> Maybe Int
+pub toInt : String -> Maybe Int
+toInt s =
+    Js.pure
+        (\() ->
+            -- Every specification-defined failure is a constructor (`boundary.md`
+            -- §4.1): text that is not a number is `Nothing`, never a NaN pretending
+            -- to be an `Int`, and neither is one past 2^53.
+            if Js.to (Js.call (Js.regExp "^[+-]?\\d+$" "") "test" [ Js.from s ]) then
+                let
+                    n = Js.apply (Js.global "Number") [ Js.from s ]
+                in
+                if Js.to (Js.call (Js.global "Number") "isSafeInteger" [ n ]) then
+                    Just (Js.to n)
+                else
+                    Nothing
+            else
+                Nothing
+        )
 
 
 --| Convert an `Int` to a `String`.
 --|
 --|     fromInt 123 == "123"
-pub foreign pure fromInt : Int -> String
+pub fromInt : Int -> String
+fromInt n =
+    Js.pure
+        (\() -> Js.to (Js.apply (Js.global "String") [ Js.from n ]))
 
 
 --| Try to convert a string into a float, failing on improperly formatted
@@ -169,31 +384,80 @@ pub foreign pure fromInt : Int -> String
 --|
 --|     toFloat "123" == Just 123.0
 --|     toFloat "abc" == Nothing
-pub foreign pure toFloat : String -> Maybe Float
+pub toFloat : String -> Maybe Float
+toFloat s =
+    Js.pure
+        (\() ->
+            if
+                Js.to
+                    (Js.call
+                        (Js.regExp "^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$" "")
+                        "test"
+                        [ Js.from s ]
+                    )
+            then
+                let
+                    n = Js.apply (Js.global "Number") [ Js.from s ]
+                in
+                if Js.to (Js.call (Js.global "Number") "isNaN" [ n ]) then
+                    Nothing
+                else
+                    Just (Js.to n)
+            else
+                Nothing
+        )
 
 
 --| Convert a `Float` to a `String`.
 --|
 --|     fromFloat 1.5 == "1.5"
-pub foreign pure fromFloat : Float -> String
+pub fromFloat : Float -> String
+fromFloat n =
+    Js.pure
+        (\() ->
+            -- `String(1.0)` is "1" in JavaScript and `1` is not a float literal in
+            -- beni's own syntax, so a whole float prints with its point.
+            if Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ]) then
+                "${n}.0"
+            else
+                Js.to (Js.apply (Js.global "String") [ Js.from n ])
+        )
 
 
 --| Create a string from a given character.
 --|
 --|     fromChar 'a' == "a"
-pub foreign pure fromChar : Char -> String
+pub fromChar : Char -> String
+fromChar c = Js.to (Js.from c)
 
 
 --| Convert a string to a list of characters.
 --|
 --|     toList "abc" == [ 'a', 'b', 'c' ]
-pub foreign pure toList : String -> List Char
+pub toList : String -> List Char
+toList s =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.global "Array") "from" [ Js.from s ]))
 
 
 --| Convert a list of characters into a string.
 --|
 --|     fromList [ 'a', 'b', 'c' ] == "abc"
-pub foreign pure fromList : List Char -> String
+pub fromList : List Char -> String
+fromList list =
+    Js.pure
+        (\() ->
+            let
+                xs = Js.from list
+
+                plain =
+                    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+                        xs
+                    else
+                        Js.call xs "$plain" []
+            in
+            Js.to (Js.call plain "join" [ Js.from "" ])
+        )
 
 
 --| Determine if a string is empty.

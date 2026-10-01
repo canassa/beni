@@ -333,6 +333,7 @@ const Opt = struct {
                 const t = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                 try o.countStmts(t.body());
                 try o.countStmts(t.finalBody());
+                try o.countStmts(t.catchBody());
             },
             else => {},
         }
@@ -441,6 +442,7 @@ const Opt = struct {
                 const t = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                 try o.planList(t.body());
                 try o.planList(t.finalBody());
+                try o.planList(t.catchBody());
             },
             else => {},
         }

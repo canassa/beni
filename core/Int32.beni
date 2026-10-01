@@ -39,20 +39,32 @@
 --! Argument order is subject first, so `x.shiftLeft 5` and
 --! `x |> Int32.shiftLeft 5` both read as "shift x left by 5".
 --!
---! The `foreign` declarations here are the machine operations and the two
---! boundaries, and nothing else:
+--! The machine operations and the two boundaries are written over `Js`
+--! (`boundary.md` §4.2, `plans/core-in-beni.md`), and nothing here is
+--! `foreign` but the type:
 --!
 --!   - `fromInt` `toInt` `toUnsignedInt` — the number/`Int32` boundary,
---!     which is a truncation in one direction and a reinterpretation in the
---!     other.
+--!     which is a truncation (`n | 0`) in one direction and a
+--!     reinterpretation in the other.
 --!   - `add` `sub` `mul` `div` `rem` `mod` — wrapping arithmetic. `mul` is
 --!     `Math.imul`, which is the whole reason this module exists.
 --!   - `and` `or` `xor` `shiftLeft` `shiftRight` `shiftRightZero` — the
 --!     native bit operators, which are already exactly 32-bit.
 --!
+--! An `Int32` IS a JavaScript number in range, so `toInt` reads one as an
+--! `Int` for nothing, and `Js.to (Js.from n)` reads an `Int` already in
+--! range as an `Int32` for nothing; `fromInt` is the `| 0` that brings one
+--! into range. A saturated call of `fromInt`, `toInt`, `toUnsignedInt`,
+--! `add`, `sub` or a bit operation is written in place as the operator it
+--! is (`backend.md` §4, *Arithmetic is an operator*); the declarations below
+--! are what a call passing one as a value reaches.
+--!
 --! Everything else — `neg`, `complement`, `rotateLeft`, `rotateRight`, the
---! four constants, `eq` and `compare` — is written in beni over those, so
---! it is type-checked, eliminable and documented by the examples below.
+--! four constants, `eq` and `compare` — is written over those, so it is
+--! type-checked, eliminable and documented by the examples below.
+
+import Js
+
 
 --| A signed 32-bit integer, in two's-complement. Its arithmetic wraps
 --| rather than losing precision, which is the difference between it and
@@ -79,7 +91,8 @@ pub equatable foreign type Int32
 --| is truncated towards zero, and a NaN or an infinity is `zero`.
 --|
 --|     toInt (fromInt (truncate 3.7)) == 3
-pub foreign pure fromInt : Int -> Int32
+pub fromInt : Int -> Int32
+fromInt n = Js.to (Js.from (Js.bitOr n 0))
 
 
 --| Read an `Int32` back as an `Int`, SIGNED — so a value with the top bit
@@ -90,7 +103,8 @@ pub foreign pure fromInt : Int -> Int32
 --|     toInt (fromInt 0xffffffff) == -1
 --|
 --| This never loses anything: every 32-bit value fits an `Int` exactly.
-pub foreign pure toInt : Int32 -> Int
+pub toInt : Int32 -> Int
+toInt x = Js.to (Js.from x)
 
 
 --| Read an `Int32` back as an `Int`, UNSIGNED — always in 0 to 4294967295.
@@ -103,7 +117,8 @@ pub foreign pure toInt : Int32 -> Int
 --| Hash functions, checksums and binary formats are published in unsigned
 --| terms, so this is what you print a result with when you want to compare
 --| it against someone else's test vectors.
-pub foreign pure toUnsignedInt : Int32 -> Int
+pub toUnsignedInt : Int32 -> Int
+toUnsignedInt x = Js.shiftRightZero (toInt x) 0
 
 
 --| Add, wrapping at 32 bits.
@@ -111,7 +126,8 @@ pub foreign pure toUnsignedInt : Int32 -> Int
 --|     toInt (add (fromInt 1) (fromInt 2)) == 3
 --|     add maxValue one == minValue
 --|     add minValue (fromInt (-1)) == maxValue
-pub foreign pure add : Int32, Int32 -> Int32
+pub add : Int32, Int32 -> Int32
+add a b = fromInt (toInt a + toInt b)
 
 
 --| Subtract, wrapping at 32 bits.
@@ -119,7 +135,8 @@ pub foreign pure add : Int32, Int32 -> Int32
 --|     toInt (sub (fromInt 3) (fromInt 1)) == 2
 --|     sub minValue one == maxValue
 --|     sub maxValue (fromInt (-1)) == minValue
-pub foreign pure sub : Int32, Int32 -> Int32
+pub sub : Int32, Int32 -> Int32
+sub a b = fromInt (toInt a - toInt b)
 
 
 --| Multiply, wrapping at 32 bits — the operation `Int` cannot fake.
@@ -135,7 +152,10 @@ pub foreign pure sub : Int32, Int32 -> Int32
 --|     toInt (mul maxValue maxValue) == 1
 --|     toInt (mul (fromInt 123456789) (fromInt 987654321)) == -67153019
 --|     mul minValue (fromInt (-1)) == minValue
-pub foreign pure mul : Int32, Int32 -> Int32
+pub mul : Int32, Int32 -> Int32
+mul a b =
+    Js.pure
+        (\() -> Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ]))
 
 
 --| Integer division, truncated towards zero. **Division by zero is `zero`**,
@@ -151,7 +171,12 @@ pub foreign pure mul : Int32, Int32 -> Int32
 --| else here.
 --|
 --|     div minValue (fromInt (-1)) == minValue
-pub foreign pure div : Int32, Int32 -> Int32
+pub div : Int32, Int32 -> Int32
+div a b =
+    if toInt b == 0 then
+        Js.to (Js.from 0)
+    else
+        fromInt (Js.to (Js.from (Js.to (Js.from a) / Js.to (Js.from b))))
 
 
 --| Remainder, taking the sign of the DIVIDEND, like `Basics.remainderBy`
@@ -161,7 +186,12 @@ pub foreign pure div : Int32, Int32 -> Int32
 --|     toInt (rem (fromInt (-7)) (fromInt 3)) == -1
 --|     rem (fromInt 7) zero == zero
 --|     rem minValue (fromInt (-1)) == zero
-pub foreign pure rem : Int32, Int32 -> Int32
+pub rem : Int32, Int32 -> Int32
+rem a b =
+    if toInt b == 0 then
+        Js.to (Js.from 0)
+    else
+        fromInt (Js.rem (toInt a) (toInt b))
 
 
 --| Modulus, taking the sign of the DIVISOR, like `Basics.modBy`. Zero for a
@@ -171,28 +201,36 @@ pub foreign pure rem : Int32, Int32 -> Int32
 --|     toInt (mod (fromInt 7) (fromInt 3)) == 1
 --|     toInt (mod (fromInt (-7)) (fromInt 3)) == 2
 --|     mod (fromInt 7) zero == zero
-pub foreign pure mod : Int32, Int32 -> Int32
+pub mod : Int32, Int32 -> Int32
+mod a b =
+    if toInt b == 0 then
+        Js.to (Js.from 0)
+    else
+        fromInt (Js.rem (Js.rem (toInt a) (toInt b) + toInt b) (toInt b))
 
 
 --| Bitwise and.
 --|
 --|     toInt (and (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0x0f000f00
 --|     and (fromInt 0xdeadbeef) zero == zero
-pub foreign pure and : Int32, Int32 -> Int32
+pub and : Int32, Int32 -> Int32
+and a b = Js.to (Js.from (Js.bitAnd (toInt a) (toInt b)))
 
 
 --| Bitwise or.
 --|
 --|     toUnsignedInt (or (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xff0fff0f
 --|     or (fromInt 0xdeadbeef) zero == fromInt 0xdeadbeef
-pub foreign pure or : Int32, Int32 -> Int32
+pub or : Int32, Int32 -> Int32
+or a b = Js.to (Js.from (Js.bitOr (toInt a) (toInt b)))
 
 
 --| Bitwise exclusive or.
 --|
 --|     toUnsignedInt (xor (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xf00ff00f
 --|     xor (fromInt 0xdeadbeef) (fromInt 0xdeadbeef) == zero
-pub foreign pure xor : Int32, Int32 -> Int32
+pub xor : Int32, Int32 -> Int32
+xor a b = Js.to (Js.from (Js.bitXor (toInt a) (toInt b)))
 
 
 --| Shift left, filling with zeros. **The count is taken modulo 32**, which
@@ -203,7 +241,8 @@ pub foreign pure xor : Int32, Int32 -> Int32
 --|     shiftLeft one 31 == minValue
 --|     shiftLeft one 32 == one
 --|     shiftLeft one 33 == fromInt 2
-pub foreign pure shiftLeft : Int32, Int -> Int32
+pub shiftLeft : Int32, Int -> Int32
+shiftLeft x count = Js.to (Js.from (Js.shiftLeft (toInt x) count))
 
 
 --| Shift right, ARITHMETIC: the sign bit is copied into the top, so a
@@ -212,7 +251,8 @@ pub foreign pure shiftLeft : Int32, Int -> Int32
 --|     toInt (shiftRight (fromInt 16) 4) == 1
 --|     toInt (shiftRight (fromInt (-16)) 4) == -1
 --|     shiftRight (fromInt (-1)) 31 == fromInt (-1)
-pub foreign pure shiftRight : Int32, Int -> Int32
+pub shiftRight : Int32, Int -> Int32
+shiftRight x count = Js.to (Js.from (Js.shiftRight (toInt x) count))
 
 
 --| Shift right, LOGICAL: zeros are shifted into the top, so the result of a
@@ -228,7 +268,8 @@ pub foreign pure shiftRight : Int32, Int -> Int32
 --| of 0 is therefore the identity rather than a conversion.
 --|
 --|     shiftRightZero (fromInt (-1)) 0 == fromInt (-1)
-pub foreign pure shiftRightZero : Int32, Int -> Int32
+pub shiftRightZero : Int32, Int -> Int32
+shiftRightZero x count = fromInt (Js.shiftRightZero (toInt x) count)
 
 
 --| Zero.

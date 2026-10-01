@@ -111,21 +111,21 @@ fn reserved(ordinal: u32) bool {
 /// scope-hoisted build writes one bare only when no hand-written file binds
 /// it as written (`Emit.bareBlocked`).
 pub const bare_globals = [_][]const u8{
-    "AbortController", "Array",              "Boolean",              "CustomEvent",
-    "Date",            "DocumentFragment",   "Element",              "Error",
-    "Event",           "HTMLElement",        "Intl",                 "JSON",
-    "Map",             "Math",               "Node",                 "Number",
-    "Object",          "Promise",            "RangeError",           "Reflect",
-    "RegExp",          "Set",                "String",               "Symbol",
-    "Text",            "TypeError",          "URL",                  "URLSearchParams",
-    "WeakMap",         "WeakSet",            "cancelAnimationFrame", "clearInterval",
-    "clearTimeout",    "console",            "crypto",               "decodeURIComponent",
-    "document",        "encodeURIComponent", "fetch",                "getComputedStyle",
-    "history",         "isFinite",           "isNaN",                "localStorage",
-    "location",        "matchMedia",         "navigator",            "parseFloat",
-    "parseInt",        "performance",        "queueMicrotask",       "requestAnimationFrame",
-    "sessionStorage",  "setInterval",        "setTimeout",           "structuredClone",
-    "window",
+    "AbortController",    "Array",                "Boolean",               "CustomEvent",
+    "DOMException",       "Date",                 "DocumentFragment",      "Element",
+    "Error",              "Event",                "HTMLElement",           "Intl",
+    "JSON",               "Map",                  "Math",                  "Node",
+    "Number",             "Object",               "Promise",               "RangeError",
+    "Reflect",            "RegExp",               "Set",                   "String",
+    "Symbol",             "SyntaxError",          "Text",                  "TypeError",
+    "URIError",           "URL",                  "URLSearchParams",       "WeakMap",
+    "WeakSet",            "cancelAnimationFrame", "clearInterval",         "clearTimeout",
+    "console",            "crypto",               "decodeURIComponent",    "document",
+    "encodeURIComponent", "fetch",                "getComputedStyle",      "history",
+    "isFinite",           "isNaN",                "localStorage",          "location",
+    "matchMedia",         "navigator",            "parseFloat",            "parseInt",
+    "performance",        "queueMicrotask",       "requestAnimationFrame", "sessionStorage",
+    "setInterval",        "setTimeout",           "structuredClone",       "window",
 };
 
 pub fn isBareGlobal(text: []const u8) bool {
@@ -692,6 +692,14 @@ pub const Module = struct {
                     const saved = try m.push();
                     defer m.leave(saved);
                     try m.collectList(t.body(), mentioned);
+                }
+                if (t.catches()) {
+                    // The binding and the block are one scope: a `let` of
+                    // the binding's spelling in the block is an early error.
+                    const saved = try m.push();
+                    defer m.leave(saved);
+                    try m.see(t.catch_name, mentioned);
+                    try m.collectList(t.catchBody(), mentioned);
                 }
                 const saved = try m.push();
                 defer m.leave(saved);

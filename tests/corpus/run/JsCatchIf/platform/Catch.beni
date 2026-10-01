@@ -1,0 +1,237 @@
+--! `Js.catchIf` in a platform module (`backend.md` §4, *`Js.catchIf` is
+--! `try … catch`*): the handler's value when the body throws something the
+--! test holds of, the body's when it does not throw, and anything else
+--! thrown on unchanged (`CLAUDE.md` rule 9) — in every position a call can
+--! stand in, with the effects in the order the call names them. `trail`
+--! records them.
+
+import Js
+
+
+log : Js.Ref String
+log = Js.ref ""
+
+
+--| Record one effect.
+pub note : String -> ()
+note s = Js.write log "${Js.read log}${s}; "
+
+
+--| What was recorded since the last `take`, and a fresh record.
+pub take : () -> String
+take () =
+    let
+        seen = Js.read log
+        _ = Js.write log ""
+    in
+    seen
+
+
+--| Throw a new `kind` (a global error constructor) with message `m`.
+pub fail : String, String -> a
+fail kind m = Js.throw (Js.construct (Js.global kind) [ Js.from m ])
+
+
+isType : Js.Value -> Bool
+isType err = Js.instanceOf err (Js.global "TypeError")
+
+
+message : Js.Value -> String
+message err = Js.to (Js.get err "message")
+
+
+--| In tail position: the body's value, or the handler's for a `TypeError`.
+pub tail : Bool -> String
+tail throws =
+    Js.catchIf
+        (\() ->
+            let
+                _ = note "body"
+            in
+            if throws then
+                fail "TypeError" "bad"
+            else
+                "fine"
+        )
+        (\err -> isType err)
+        (\err -> "caught ${message err}")
+
+
+--| Bound, then used after the `try`.
+pub valued : Bool -> String
+valued throws =
+    let
+        v =
+            Js.catchIf
+                (\() ->
+                    if throws then
+                        fail "TypeError" "bound"
+                    else
+                        1
+                )
+                (\err -> isType err)
+                (\_ -> 2)
+
+        _ = note "after"
+    in
+    String.fromInt v
+
+
+--| Discarded: the body's statements, or the handler's.
+pub discarded : Bool -> String
+discarded throws =
+    let
+        _ =
+            Js.catchIf
+                (\() ->
+                    if throws then
+                        fail "TypeError" "dropped"
+                    else
+                        note "body"
+                )
+                (\err -> isType err)
+                (\err -> note "caught ${message err}")
+
+        _ = note "after"
+    in
+    "done"
+
+
+--| Thrown on: the inner test does not hold of a `RangeError`, which leaves
+--| the inner `try` unchanged and is taken by the outer one, which names it.
+pub rethrown : () -> String
+rethrown () =
+    Js.catchIf
+        (\() ->
+            Js.catchIf
+                (\() ->
+                    let
+                        _ = note "inner"
+                    in
+                    fail "RangeError" "far"
+                )
+                (\err -> isType err)
+                (\_ -> "inner took it")
+        )
+        (\err -> Js.instanceOf err (Js.global "RangeError"))
+        (\err -> "outer took ${message err}")
+
+
+--| A test that reads what was thrown: a `DOMException` caught by its
+--| `name`, as `Storage` catches a full quota, and one of another name thrown
+--| on to the caller's own `catchIf`.
+pub named : String -> String
+named name =
+    Js.catchIf
+        (\() ->
+            Js.catchIf
+                (\() ->
+                    Js.throw (Js.construct (Js.global "DOMException") [ Js.from "m", Js.from name ])
+                )
+                (\err ->
+                    Js.instanceOf err (Js.global "DOMException")
+                        && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
+                )
+                (\_ -> "over the quota")
+        )
+        (\err -> Js.instanceOf err (Js.global "DOMException"))
+        (\err -> "thrown on: ${nameOf err}")
+
+
+nameOf : Js.Value -> String
+nameOf err = Js.to (Js.get err "name")
+
+
+--| The test and the handler name the caught value differently.
+pub renamed : () -> String
+renamed () =
+    Js.catchIf
+        (\() -> fail "TypeError" "two names")
+        (\first -> isType first)
+        (\second -> message second)
+
+
+--| A function made by a call that records it.
+make : String, a -> (() -> a)
+make s v =
+    let
+        _ = note "make ${s}"
+    in
+    \() ->
+        let
+            _ = note s
+        in
+        v
+
+
+testOf : String -> (Js.Value -> Bool)
+testOf s =
+    let
+        _ = note "make ${s}"
+    in
+    \err ->
+        let
+            _ = note s
+        in
+        isType err
+
+
+handlerOf : String -> (Js.Value -> Int)
+handlerOf s =
+    let
+        _ = note "make ${s}"
+    in
+    \_ ->
+        let
+            _ = note s
+        in
+        9
+
+
+--| Arguments that are not lambdas are evaluated first, in order, and
+--| called in their blocks.
+pub ordered : Bool -> Int
+ordered throws =
+    Js.catchIf
+        (if throws then
+            \() -> fail "TypeError" "made"
+         else
+            make "body" 7
+        )
+        (testOf "test")
+        (handlerOf "handler")
+
+
+--| Functions passed in.
+pub passed : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+passed f t h = Js.catchIf f t h
+
+
+--| `Js.catchIf` itself passed as a value: the sibling's function.
+pub asValue : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+asValue f t h = apply Js.catchIf f t h
+
+
+apply :
+      ((() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int)
+    , (() -> Int)
+    , (Js.Value -> Bool)
+    , (Js.Value -> Int)
+    -> Int
+apply k f t h = k f t h
+
+
+--| In tail position of a function that loops: the `try` does not take the
+--| loop's jump inside it.
+pub sumTo : Int, Int -> Int
+sumTo n acc =
+    if n == 0 then
+        Js.catchIf (\() -> acc) (\err -> isType err) (\_ -> 0)
+    else
+        sumTo (n - 1) (acc + n)
+
+
+--| Whether `TypeError` is what was thrown: a test written once, for a
+--| caller's lambda.
+pub isTypeError : Js.Value -> Bool
+isTypeError err = isType err

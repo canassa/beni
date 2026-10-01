@@ -758,6 +758,7 @@ const Printer = struct {
                     const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
                 },
                 else => {},
             }
@@ -822,6 +823,7 @@ const Printer = struct {
                     const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
@@ -875,6 +877,7 @@ const Printer = struct {
                     const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, p.ir.extraSlice(t.finalBody(), Index));
+                    try stack.appendSlice(p.spelled, p.ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
@@ -1307,10 +1310,20 @@ const Printer = struct {
                 try p.statements(t.body(), level + 1);
                 try p.indent(level);
                 try p.closeBlock();
-                try p.tok(" finally {\n", "finally{");
-                try p.statements(t.finalBody(), level + 1);
-                try p.indent(level);
-                try p.closeBlock();
+                if (t.catches()) {
+                    try p.tok(" catch (", "catch(");
+                    try p.name(t.catch_name, .binding);
+                    try p.tok(") {\n", "){");
+                    try p.statements(t.catchBody(), level + 1);
+                    try p.indent(level);
+                    try p.closeBlock();
+                }
+                if (t.hasFinally()) {
+                    try p.tok(" finally {\n", "finally{");
+                    try p.statements(t.finalBody(), level + 1);
+                    try p.indent(level);
+                    try p.closeBlock();
+                }
                 try p.endLine(level);
             },
             // An expression where a statement belongs is a builder bug, not
@@ -1552,6 +1565,7 @@ const Printer = struct {
                 const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                 for (p.ir.extraSlice(t.body(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 for (p.ir.extraSlice(t.finalBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
+                for (p.ir.extraSlice(t.catchBody(), Index)) |s| if (p.breaksOut(s)) break :blk true;
                 break :blk false;
             },
             else => false,
@@ -1740,6 +1754,7 @@ const Printer = struct {
                     const t = ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
                     try stack.appendSlice(p.spelled, ir.extraSlice(t.body(), Index));
                     try stack.appendSlice(p.spelled, ir.extraSlice(t.finalBody(), Index));
+                    try stack.appendSlice(p.spelled, ir.extraSlice(t.catchBody(), Index));
                 },
                 .switch_stmt => {
                     try stack.append(p.spelled, @enumFromInt(d.lhs));
@@ -1756,9 +1771,22 @@ const Printer = struct {
     /// The parameter list; with `depth`, the last parameter defaults to `0`
     /// (`Node.arrow_depth`).
     fn paramsOf(p: *Printer, f: JsIr.Func, depth: bool) Allocator.Error!void {
-        try p.push("(");
+        try p.paramList(f, depth, false);
+    }
+
+    /// An arrow's parameter list: as `paramsOf`, but under `--release` one
+    /// written parameter is its name alone, `a=>…`, as a hand minifier
+    /// writes it (`backend.md` §9, *Compact statements*, amended
+    /// 2026-10-01).
+    fn arrowParams(p: *Printer, f: JsIr.Func, depth: bool) Allocator.Error!void {
+        try p.paramList(f, depth, true);
+    }
+
+    fn paramList(p: *Printer, f: JsIr.Func, depth: bool, arrow: bool) Allocator.Error!void {
         const all = p.ir.extraSlice(f.params(), JsIr.NameIndex);
         const names = if (p.compact and !depth) all[0..try p.namedParams(f)] else all;
+        if (arrow and p.compact and !depth and names.len == 1) return p.name(names[0], .binding);
+        try p.push("(");
         for (names, 0..) |n, i| {
             if (i != 0) try p.tok(", ", ",");
             try p.name(n, .binding);
@@ -2030,7 +2058,7 @@ const Printer = struct {
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
             .ident => try p.name(@enumFromInt(d.lhs), .binding),
-            .number => try p.push(p.ir.bytes(node)),
+            .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
                 // Everything between the backticks is inside the literal, so
@@ -2118,7 +2146,7 @@ const Printer = struct {
             },
             .arrow => {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.paramsOf(f, d.rhs == Node.arrow_depth);
+                try p.arrowParams(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
                 try p.arrowBody(node, f, level);
             },
@@ -2169,7 +2197,7 @@ const Printer = struct {
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
             .ident => try p.name(@enumFromInt(d.lhs), .binding),
-            .number => try p.push(p.ir.bytes(node)),
+            .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
                 // `` ` `` part… `` ` ``. Everything between the backticks is
@@ -2274,7 +2302,7 @@ const Printer = struct {
                 // `run` through `statements`; that is the one recursion
                 // left, one frame per function the source nests.
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.paramsOf(f, d.rhs == Node.arrow_depth);
+                try p.arrowParams(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
                 try p.arrowBody(node, f, level);
             },
@@ -2576,8 +2604,13 @@ const Printer = struct {
                     // A `try`'s guarded block, whose end runs the cleanup
                     // and then reaches the end of the run anyway; never the
                     // cleanup, where a jump would replace how the body
-                    // ended (a throw's among them).
-                    .try_stmt => try pending.append(p.spelled, p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try).body()),
+                    // ended (a throw's among them). A `catch` block's end
+                    // reaches it the same way.
+                    .try_stmt => {
+                        const t = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Try);
+                        try pending.append(p.spelled, t.body());
+                        if (t.catches()) try pending.append(p.spelled, t.catchBody());
+                    },
                     else => {},
                 }
             }
@@ -3311,7 +3344,7 @@ test "compact: every keyword keeps exactly the space that separates it from what
     // `continue L` — all of them identifier-character adjacencies, all of
     // them handled by one guard rather than by seven call sites.
     try expectCompact(
-        \\let f=(a)=>{switch(a){case 1:{throw a}default:{break L}}},g=(a)=>typeof a;
+        \\let f=a=>{switch(a){case 1:{throw a}default:{break L}}},g=a=>typeof a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3363,7 +3396,7 @@ test "compact: a run of declarations joins, a const is a let, and the module is 
     // no newline was ever standing in for one. `f`'s parameter nothing
     // mentions is not written (its `length` is the only difference).
     try expectCompact(
-        \\let f=()=>{let b=1,c=2,d;return b},g=2,h=(a)=>a;
+        \\let f=()=>{let b=1,c=2,d;return b},g=2,h=a=>a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -3382,7 +3415,7 @@ test "compact: a run of declarations joins, a const is a let, and the module is 
 test "compact: a labelled loop, an if/else chain and an assignment" {
     // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\let f=(a)=>{L:for(;;){if(!a)return a;a=1}};
+        \\let f=a=>{L:for(;;){if(!a)return a;a=1}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {

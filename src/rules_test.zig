@@ -165,14 +165,20 @@ fn lineEnd(text: []const u8, at: usize) usize {
 }
 
 /// The starts of the lines of `text` that mention a map spelling, in
-/// order: the only lines `denseMaps` can find anything on. One pass per
-/// spelling over the whole text, rather than every spelling per line, keeps
-/// the test inside its budget in a Debug build.
+/// order: the only lines `denseMaps` can find anything on. Every spelling
+/// holds `Map` but `U32Set`, so one scan per first byte finds them: a
+/// scalar search is vectorised even in a Debug build, where `indexOfPos`
+/// for a short needle compares at every byte and was nearly all of the
+/// test's budget.
 fn candidateLines(gpa: std.mem.Allocator, text: []const u8, out: *std.ArrayList(usize)) !void {
     out.clearRetainingCapacity();
-    for ([_][]const u8{ "HashMap", "Map(", "U32Set" }) |spelling| {
+    for ([_][]const u8{ "Map", "U32Set" }) |spelling| {
         var from: usize = 0;
-        while (std.mem.indexOfPos(u8, text, from, spelling)) |at| {
+        while (std.mem.indexOfScalarPos(u8, text, from, spelling[0])) |at| {
+            if (!std.mem.startsWith(u8, text[at..], spelling)) {
+                from = at + 1;
+                continue;
+            }
             const start = lineStart(text, at);
             from = lineEnd(text, at);
             if (std.mem.indexOfScalar(usize, out.items, start) == null) try out.append(gpa, start);
@@ -244,7 +250,6 @@ test "no hash map is keyed by a dense id outside the allowlist" {
         try candidateLines(gpa, s.text, &starts);
         for (starts.items) |start| {
             const line = s.text[start..lineEnd(s.text, start)];
-            const n = std.mem.count(u8, s.text[0..start], "\n") + 1;
             var keys: [8][]const u8 = undefined;
             const found = denseMaps(line, &dense, &keys);
             for (keys[0..found]) |key| {
@@ -255,6 +260,10 @@ test "no hash map is keyed by a dense id outside the allowlist" {
                     used[i] = true;
                 }
                 if (allowed) continue;
+                // Counted only for a line reported: a count from the start
+                // of the file for every candidate was 225 million
+                // instructions in a Debug build.
+                const n = std.mem.count(u8, s.text[0..start], "\n") + 1;
                 std.debug.print("src/{s}:{d}: a hash map keyed by `{s}`, a dense id: index a column instead (fast-compiler.md §5 rule 5), or list it in src/rules_test.zig with why a column does not serve\n", .{ s.path, n, key });
                 bad += 1;
             }

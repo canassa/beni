@@ -1,9 +1,12 @@
 --! Time in a page: what the clock says, waiting, and a subscription that
 --! ticks (`docs/design/boundary.md` §9.8). `sleep` waits in the calling
 --! fiber only; every other fiber, and the page, go on. Cancelling a fiber
---! that sleeps clears its timer.
+--! that sleeps clears its timer. The clock and the timer are the page's,
+--! read when called, so a test harness that replaces them before the
+--! program runs is the clock the program sees.
 
 import Browser
+import Js
 import Sub exposing (Sub)
 import Task exposing (Resume)
 
@@ -45,10 +48,7 @@ fromMillis n = Posix n
 
 --| What the clock says now.
 pub now : () -> Posix
-now () = Posix (clock ())
-
-
-foreign impure clock : () -> Int
+now () = Posix (Js.to (Js.call (Js.global "Date") "now" []))
 
 
 --| Wait for `duration`. Only the calling fiber waits.
@@ -56,7 +56,15 @@ pub sleep : Duration -> ()
 sleep (Duration ms) = Task.callback (\resume -> startTimer ms resume)
 
 
-foreign impure startTimer : Int, Resume () -> (() -> ())
+-- One timer, which resumes the waiting fiber, and what clears it.
+startTimer : Int, Resume () -> (() -> ())
+startTimer ms resume =
+    let
+        timer =
+            Js.apply (Js.global "setTimeout")
+                [ Js.from (\() -> Js.to (Js.apply (Js.from resume) [ Js.null ])), Js.from ms ]
+    in
+    \() -> Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
 
 
 type Key

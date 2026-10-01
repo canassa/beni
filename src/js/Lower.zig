@@ -3002,6 +3002,13 @@ const Lowerer = struct {
                     _ = try l.finallyTry(out, fa[0], fa[1], .tail, l.pos(inst));
                     return;
                 };
+                // A `Js.catchIf` likewise: both blocks return.
+                if (loop == null and l.join == .none) if (l.catchArgs(inst)) |ca| {
+                    _ = try l.catchTry(out, ca[0], ca[1], ca[2], .tail, l.pos(inst));
+                    return;
+                };
+                // `Js.pure`'s body is in tail position itself.
+                if (l.pureBody(inst)) |body| return l.tailStmts(out, body, loop);
             },
             else => {},
         }
@@ -7182,17 +7189,244 @@ const Lowerer = struct {
             try final.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(cleanup_value.?, &.{}, p)).int(), Node.Data.unused));
         const body_range = try l.b.addRange(guarded.items);
         const final_range = try l.b.addRange(final.items);
+        const none_range = try l.b.addRange(&[_]Node.Index{});
         const record = try l.b.addRecord(JsIr.Try{
             .body_start = body_range.start,
             .body_end = body_range.end,
             .final_start = final_range.start,
             .final_end = final_range.end,
+            .catch_start = none_range.start,
+            .catch_end = none_range.end,
+            .catch_name = .none,
         });
         try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @intFromEnum(record)));
         return switch (use) {
             .value => try l.ident(result, p),
             .discard, .tail => null,
         };
+    }
+
+    /// `Js.regExp pattern flags` (`backend.md` §4, *`Js.regExp` is a
+    /// literal*): `/pattern/flags`, from two string literals. The pattern is
+    /// written as it is, but for what a literal cannot hold — a `/` not
+    /// already escaped is `\/`, a line terminator its escape, and an empty
+    /// pattern `(?:)` (`//` would begin a comment) — none of which changes
+    /// what it matches. The flags are any of `d i m s u v`, each once: `g`
+    /// and `y` make a literal stateful (`lastIndex`), and a value written
+    /// once and read by every caller must not be.
+    fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
+        if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
+            try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const pattern = l.bir.bytes(args[0]);
+        const flags = l.bir.bytes(args[1]);
+        for (flags, 0..) |f, i| {
+            if (std.mem.indexOfScalar(u8, "dimsuv", f) == null or std.mem.indexOfScalar(u8, flags[0..i], f) != null) {
+                try l.report(.internal, args[1], "`Js.regExp`'s flags are any of `d i m s u v`, each once: `{s}` is not.", .{flags});
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            }
+        }
+        var lit: std.ArrayList(u8) = .empty;
+        try lit.append(l.scratch, '/');
+        if (pattern.len == 0) try lit.appendSlice(l.scratch, "(?:)");
+        var i: usize = 0;
+        while (i < pattern.len) : (i += 1) {
+            const c = pattern[i];
+            // An escape is copied whole, so the `/` or the backslash after a
+            // backslash is never escaped twice; an escaped line terminator
+            // is that terminator, written as its escape.
+            if (c == '\\' and i + 1 < pattern.len) {
+                const next = pattern[i + 1];
+                if (next == '\n' or next == '\r') {
+                    try lit.appendSlice(l.scratch, if (next == '\n') "\\n" else "\\r");
+                } else {
+                    try lit.appendSlice(l.scratch, pattern[i .. i + 2]);
+                }
+                i += 1;
+                continue;
+            }
+            // A lone backslash at the end would escape the closing `/`.
+            if (c == '\\') {
+                try l.report(.internal, args[0], "`Js.regExp`'s pattern ends in a backslash that escapes nothing.", .{});
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            }
+            switch (c) {
+                '/' => try lit.appendSlice(l.scratch, "\\/"),
+                '\n' => try lit.appendSlice(l.scratch, "\\n"),
+                '\r' => try lit.appendSlice(l.scratch, "\\r"),
+                else => if (c == 0xE2 and i + 2 < pattern.len and pattern[i + 1] == 0x80 and (pattern[i + 2] == 0xA8 or pattern[i + 2] == 0xA9)) {
+                    try lit.appendSlice(l.scratch, if (pattern[i + 2] == 0xA8) "\\u2028" else "\\u2029");
+                    i += 2;
+                } else try lit.append(l.scratch, c),
+            }
+        }
+        try lit.append(l.scratch, '/');
+        try lit.appendSlice(l.scratch, flags);
+        const offset, const len = try l.b.addString(lit.items);
+        return l.add(.regex, p, offset, len);
+    }
+
+    /// The body of `Js.pure (\() -> body)` (`backend.md` §4, *`Js.pure` is
+    /// its body*): `inst` a saturated call of `Js.pure` whose argument is a
+    /// lambda written in place (`thunkBody`), or null. Wherever the call
+    /// stands — a value, a tail, a discarded position — the body stands
+    /// there instead, lowered as it would be.
+    fn pureBody(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .pure) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 1) return null;
+        return l.thunkBody(args[0]);
+    }
+
+    /// The three arguments of `inst` when it is a saturated `Js.catchIf`.
+    fn catchArgs(l: *Lowerer, inst: Inst.Index) ?[3]Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .catchIf) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 3) return null;
+        return .{ args[0], args[1], args[2] };
+    }
+
+    /// `f` when it is a lambda of one parameter that cannot suspend: a
+    /// `Js.catchIf` test or handler written in place, its parameter the
+    /// `catch` binding and its body in the `catch` block.
+    fn caughtLambda(l: *Lowerer, f: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(f) != .lambda or l.functionSuspends(f)) return null;
+        const d = l.bir.instData(f);
+        if (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index).len != 1) return null;
+        return f;
+    }
+
+    /// `Js.catchIf body test handler` (`backend.md` §4, *`Js.catchIf` is
+    /// `try … catch`*): `try { body } catch (e) { if (!test) throw e;
+    /// handler }`, the statement. What is thrown is caught only when `test`
+    /// holds of it, and thrown on unchanged otherwise (`CLAUDE.md` rule 9).
+    /// Written in place, as `finallyTry` writes `Js.finally`: a body lambda
+    /// is its block (`thunkBody`), a test or handler lambda of one parameter
+    /// is its body in the `catch` block with the parameter the `catch`
+    /// binding (`caughtLambda`), and any other argument is evaluated first,
+    /// in written order, and called there. `use` is `finallyTry`'s; the
+    /// handler's value goes where the body's does.
+    fn catchTry(l: *Lowerer, out: *StmtList, body_fn: Inst.Index, test_fn: Inst.Index, handler_fn: Inst.Index, use: FinallyUse, p: u32) !?Node.Index {
+        const body = l.thunkBody(body_fn);
+        const test_l = l.caughtLambda(test_fn);
+        const handler_l = l.caughtLambda(handler_fn);
+        var values: [3]Inst.Index = undefined;
+        var n: usize = 0;
+        if (body == null) {
+            values[n] = body_fn;
+            n += 1;
+        }
+        if (test_l == null) {
+            values[n] = test_fn;
+            n += 1;
+        }
+        if (handler_l == null) {
+            values[n] = handler_fn;
+            n += 1;
+        }
+        const v = try l.orderedExprs(out, values[0..n], false);
+        for (v) |*value| value.* = try l.bindSubject(out, value.*, p);
+        var next: usize = 0;
+        const body_value: ?Node.Index = if (body == null) blk: {
+            next += 1;
+            break :blk v[next - 1];
+        } else null;
+        const test_value: ?Node.Index = if (test_l == null) blk: {
+            next += 1;
+            break :blk v[next - 1];
+        } else null;
+        const handler_value: ?Node.Index = if (handler_l == null) v[next] else null;
+
+        // The `catch` binding: the name a lambda's parameter already has,
+        // the test's first, so neither block renames what it reads.
+        var caught: JsIr.NameIndex = .none;
+        for ([_]?Inst.Index{ test_l, handler_l }) |maybe| {
+            const f = maybe orelse continue;
+            const param = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(f).lhs)), Inst.Index)[0];
+            if (l.bir.instTag(param) != .pat_var) continue;
+            const local = l.bir.instData(param).lhs;
+            if (caught == .none) {
+                caught = try l.localName(local);
+            } else if (local < l.local_names.len and l.local_names[local] == .none) {
+                l.local_names[local] = caught;
+            }
+        }
+        if (caught == .none) caught = try l.fresh(l.well.param);
+
+        var guarded: StmtList = .empty;
+        var result: JsIr.NameIndex = .none;
+        if (use == .value) {
+            result = try l.fresh(l.well.temp);
+            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(result), @intFromEnum(Node.OptionalIndex.none)));
+        }
+        try l.catchArm(&guarded, if (body) |b| b else null, body_value, &.{}, use, result, p);
+
+        var handler: StmtList = .empty;
+        // A parameter that is a pattern binds from the caught value.
+        for ([_]?Inst.Index{ test_l, handler_l }) |maybe| {
+            const f = maybe orelse continue;
+            const param = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(f).lhs)), Inst.Index)[0];
+            switch (l.bir.instTag(param)) {
+                .pat_var => {
+                    const named = try l.localName(l.bir.instData(param).lhs);
+                    if (named != caught) try l.constDecl(&handler, named, try l.ident(caught, p), p);
+                },
+                .pat_wild, .pat_unit => {},
+                else => try l.bindings(&handler, param, try l.ident(caught, p)),
+            }
+        }
+        const holds = if (test_l) |f| try l.expr(&handler, @enumFromInt(l.bir.instData(f).rhs)) else try l.call(test_value.?, &.{try l.ident(caught, p)}, p);
+        const rethrow = try l.add(.throw_stmt, p, (try l.ident(caught, p)).int(), Node.Data.unused);
+        try l.ifStatement(&handler, try l.negate(holds, p), &.{rethrow}, p);
+        const caught_arg = [_]Node.Index{try l.ident(caught, p)};
+        try l.catchArm(&handler, if (handler_l) |f| @as(Inst.Index, @enumFromInt(l.bir.instData(f).rhs)) else null, handler_value, &caught_arg, use, result, p);
+
+        const body_range = try l.b.addRange(guarded.items);
+        const final_range = try l.b.addRange(&[_]Node.Index{});
+        const catch_range = try l.b.addRange(handler.items);
+        const record = try l.b.addRecord(JsIr.Try{
+            .body_start = body_range.start,
+            .body_end = body_range.end,
+            .final_start = final_range.start,
+            .final_end = final_range.end,
+            .catch_start = catch_range.start,
+            .catch_end = catch_range.end,
+            .catch_name = caught,
+        });
+        try out.append(l.scratch, try l.add(.try_stmt, p, Node.Data.unused, @intFromEnum(record)));
+        return switch (use) {
+            .value => try l.ident(result, p),
+            .discard, .tail => null,
+        };
+    }
+
+    /// One arm of a `Js.catchIf`, the body or the handler, into `block`:
+    /// the lambda's body `inline_body` lowered in place, or the function
+    /// value `called` called with `args`, its value assigned to `result`,
+    /// dropped, or returned, as `use` says.
+    fn catchArm(l: *Lowerer, block: *StmtList, inline_body: ?Inst.Index, called: ?Node.Index, args: []const Node.Index, use: FinallyUse, result: JsIr.NameIndex, p: u32) !void {
+        switch (use) {
+            .value => {
+                const value = if (inline_body) |b| try l.expr(block, b) else try l.call(called.?, args, p);
+                // An arm that ends in `Js.throw` has no value to assign.
+                const ended = block.items.len != 0 and l.b.nodes.items(.tag)[block.items[block.items.len - 1].int()] == .throw_stmt and
+                    l.b.nodes.items(.tag)[value.int()] == .undefined_lit;
+                if (!ended) try block.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(result, p)).int(), value.int()));
+            },
+            .discard => if (inline_body) |b|
+                try l.discard(block, b, p)
+            else
+                try block.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(called.?, args, p)).int(), Node.Data.unused)),
+            .tail => if (inline_body) |b|
+                try l.tailStmts(block, b, null)
+            else
+                try l.tailReturn(block, try l.call(called.?, args, p), null, p),
+        }
     }
 
     fn forOf(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, iterable: Node.Index, body: []const Node.Index, p: u32) !Node.Index {
@@ -7223,6 +7457,9 @@ const Lowerer = struct {
         }
         if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
+        if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
+        if (which == .regExp) return l.regExpLiteral(args, p);
+        if (which == .pure and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -7279,6 +7516,14 @@ const Lowerer = struct {
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
             W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),
             W.bitAnd => l.binary(.bit_and, v[0], v[1], p),
+            W.bitOr => l.binary(.bit_or, v[0], v[1], p),
+            W.bitXor => l.binary(.bit_xor, v[0], v[1], p),
+            W.shiftLeft => l.binary(.shl, v[0], v[1], p),
+            W.shiftRight => l.binary(.sar, v[0], v[1], p),
+            W.shiftRightZero => l.binary(.shr, v[0], v[1], p),
+            W.rem => l.binary(.rem, v[0], v[1], p),
+            W.typeOf => l.unary(.type_of, v[0], p),
+            W.instanceOf => l.binary(.instance_of, v[0], v[1], p),
             W.global => blk: {
                 const this = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
                 break :blk Prop.of(l, this, literal_name, if (named) this else v[0], p);
@@ -7292,8 +7537,12 @@ const Lowerer = struct {
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
-            // `finallyTry`, above.
-            W.each, W.finally => l.nullNode(p),
+            // `finallyTry`, a `catchIf` `catchTry` and a `regExp`
+            // `regExpLiteral`, above.
+            W.each, W.finally, W.catchIf, W.regExp => l.nullNode(p),
+            // `Js.pure` with a function that is not a lambda written in
+            // place calls it.
+            W.pure => l.call(v[0], &.{}, p),
             W.construct => blk: {
                 const range = try l.b.addRange(rest);
                 const record = try l.b.addRecord(range);
@@ -8548,6 +8797,11 @@ const Lowerer = struct {
             _ = try l.finallyTry(out, fa[0], fa[1], .discard, l.pos(at));
             return;
         }
+        if (l.catchArgs(at)) |ca| {
+            _ = try l.catchTry(out, ca[0], ca[1], ca[2], .discard, l.pos(at));
+            return;
+        }
+        if (l.pureBody(at)) |body| return l.discard(out, body, p);
         if (l.bir.instTag(at) == .call) if (l.inlineTarget(at)) |index| {
             if (l.inline_loops[index] and try l.boundLoop(out, at, .discard, &.{})) return;
             if (!l.inline_loops[index] and l.atomArguments(at)) {
@@ -9530,6 +9784,11 @@ const Lowerer = struct {
                     .tail => |loop| {
                         if (loop) |lp| if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
                         if (try l.tailInline(body, loop) != null) return false;
+                        // A `try` in tail position returns from its blocks
+                        // (`tailStmts`), and `Js.pure`'s body is in tail
+                        // position itself.
+                        if (loop == null and l.join == .none and (l.finallyArgs(body) != null or l.catchArgs(body) != null)) return false;
+                        if (l.pureBody(body) != null) return false;
                     },
                     // A loop written where its value is discarded.
                     .discard => if (l.inlineTarget(body)) |index| {

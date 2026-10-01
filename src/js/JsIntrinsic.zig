@@ -26,6 +26,19 @@ pub const Which = enum {
     isUndefined,
     isNullish,
     bitAnd,
+    /// `|`, `^`, `<<`, `>>`, `>>>` and `%` (`boundary.md` §4.2, the
+    /// operators core's arithmetic is written over).
+    bitOr,
+    bitXor,
+    shiftLeft,
+    shiftRight,
+    shiftRightZero,
+    rem,
+    /// `typeof v` and `v instanceof C`.
+    typeOf,
+    instanceOf,
+    /// `/pattern/flags`, from two string literals.
+    regExp,
     global,
     get,
     set,
@@ -38,6 +51,12 @@ pub const Which = enum {
     setAt,
     throw,
     finally,
+    /// `try { … } catch (e) { if (!test) throw e; … }` (`backend.md` §4,
+    /// *`Js.catchIf` is `try … catch`*).
+    catchIf,
+    /// The body of `Js.pure (\() -> body)`, declared pure (`backend.md` §4,
+    /// *`Js.pure` is its body*).
+    pure,
     ref,
     read,
     write,

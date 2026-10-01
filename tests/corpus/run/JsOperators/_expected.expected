@@ -1,0 +1,14 @@
+rem 1 -1 1
+or 7 1
+xor 5 -2
+shifts -2147483648 -4 4294967295 15
+values -1 -5 -5 -28 -2 1073741822
+typeof string number object function
+instanceof yes no
+strings yes no
+integral yes no no
+fields a,b,c
+slashes a,b,c
+caseless yes no
+empty x,y,z
+built yes no

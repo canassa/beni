@@ -1,0 +1,59 @@
+-- emit: `Js.catchIf` is `try { … } catch (e) { if (!test) throw e; … }`
+-- (`boundary.md` §4.2; `backend.md` §4, *`Js.catchIf` is `try … catch`*).
+-- Called with lambdas, the body is the `try` block, the test and the
+-- handler the `catch` block, the parameter the `catch` binding, and no
+-- function is made: `decodes` returns from inside both blocks, in tail
+-- position; `stored` binds the value to a `let` both blocks assign; `drop`
+-- discards it. With functions passed in, the blocks call them. And the
+-- operators the wrappers are written over: `instanceof`, a regular
+-- expression literal, `%` and `|`.
+import Js
+
+
+pub decodes : String -> Maybe String
+decodes text =
+    Js.catchIf
+        (\() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
+        (\err -> Js.instanceOf err (Js.global "URIError"))
+        (\_ -> Nothing)
+
+
+pub stored : Js.Value, String, String -> Int
+stored area key value =
+    let
+        code : Int
+        code =
+            Js.catchIf
+                (\() ->
+                    let
+                        _ = Js.call area "setItem" [ Js.from key, Js.from value ]
+                    in
+                    0
+                )
+                (\err ->
+                    Js.instanceOf err (Js.global "DOMException")
+                        && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
+                )
+                (\_ -> 1)
+    in
+    code + 1
+
+
+pub drop : Js.Value -> ()
+drop f =
+    Js.catchIf
+        (\() -> Js.to (Js.apply f []))
+        (\err -> Js.instanceOf err (Js.global "TypeError"))
+        (\_ -> ())
+
+
+pub passed : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+passed f t h = Js.catchIf f t h
+
+
+pub digits : String -> Bool
+digits s = Js.to (Js.call (Js.regExp "^\\d+$" "") "test" [ Js.from s ])
+
+
+pub wrap : Int, Int -> Int
+wrap a b = Js.bitOr (Js.rem a b) 0

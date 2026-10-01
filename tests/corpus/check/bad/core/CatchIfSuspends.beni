@@ -1,0 +1,34 @@
+-- check/bad (core): `Js.catchIf`'s three arguments are `sync` (`backend.md`
+-- §4, *`Js.catchIf` is `try … catch`*). A body that suspended would leave
+-- the `try` before its rest ran, and a throw from that rest would reach no
+-- `catch`; so a body (16:10), a test (25:10) or a handler (34:10) that may
+-- suspend is `sync_boundary`, at the argument.
+import Js
+import Task
+
+
+pub foreign suspends get : Int -> Int
+
+
+body : Int -> Int
+body n =
+    Js.catchIf
+        (\() -> get n)
+        (\_ -> True)
+        (\_ -> 0)
+
+
+test : Int -> Int
+test n =
+    Js.catchIf
+        (\() -> n)
+        (\_ -> get n == 0)
+        (\_ -> 0)
+
+
+handler : Int -> Int
+handler n =
+    Js.catchIf
+        (\() -> n)
+        (\_ -> True)
+        (\_ -> get n)

@@ -1,1 +1,1 @@
-import{a,b}from"./Shapes.mjs";import{c}from"./_core/String.mjs";import{d}from"./_platform/Node.mjs";let e=(d)=>{let f=a(d),g=b(f);return{label:c(f),size:g}},f=(b,c)=>{let d=a(b),e=a(c);return d>e?d:e},g=d([]);export{g,e,f};
+import{a,b}from"./Shapes.mjs";import{c}from"./_core/String.mjs";import{d}from"./_platform/Node.mjs";let e=d=>{let f=a(d),g=b(f);return{label:c(f),size:g}},f=(b,c)=>{let d=a(b),e=a(c);return d>e?d:e},g=d([]);export{g,e,f};

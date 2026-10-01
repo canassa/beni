@@ -43,16 +43,148 @@ pub postJson : String, String -> Result Error String
 postJson url body = request "POST" url "application/json" body True
 
 
--- A failure the sibling did not expect arrives as `{ d: error }` and is
--- thrown here, in the fiber that asked: a defect, which stops the page
+-- What the waiting fiber is resumed with: the request's `Result`, or a
+-- failure no standard documents, thrown here, in the fiber that asked — a
+-- defect, which stops the page with the request's stack
 -- (`docs/design/boundary.md` §9.8.10 (c); CLAUDE.md rule 9).
+type Answer
+    = Answered (Result Error String)
+    | Defect Js.Value
+
+
 request : String, String, String, String, Bool -> Result Error String
 request method url contentType body json =
+    case Task.callback (\resume -> start method url contentType body json resume) of
+        Answered result ->
+            result
+
+        Defect error ->
+            Js.throw error
+
+
+-- Begin one `fetch`, resume the waiting fiber once with its `Answer`, and
+-- return what aborts it (transparent-effects-proposal.md §16.5). Each
+-- failure the Fetch and URL standards document is one constructor of
+-- `Error`, caught by its kind and nothing broader: `new URL` throws a
+-- `TypeError` for a URL it cannot parse (`BadUrl`); `fetch` and reading the
+-- body reject with a `TypeError` when no answer came (`NetworkError`) and
+-- with an `AbortError` after this request's own abort, when the fiber is
+-- gone and nothing waits; `JSON.parse` throws a `SyntaxError` (`BadBody`).
+start : String, String, String, String, Bool, Resume Answer -> (() -> ())
+start method url contentType body json resume =
+    if parses url then
+        let
+            abort = Js.construct (Js.global "AbortController") []
+            headers = Js.construct (Js.global "Object") []
+
+            _ =
+                if contentType == "" then
+                    ()
+                else
+                    Js.set headers "Content-Type" (Js.from contentType)
+
+            _ =
+                if json then
+                    Js.set headers "Accept" (Js.from "application/json")
+                else
+                    ()
+
+            init =
+                { body =
+                    if method == "GET" then
+                        Js.undefined
+                    else
+                        Js.from body
+                , headers = headers
+                , method = method
+                , signal = Js.get abort "signal"
+                }
+
+            _ =
+                Js.call (Js.apply (Js.global "fetch") [ Js.from url, Js.from init ]) "then"
+                    [ Js.from (\response -> received response json abort resume)
+                    , Js.from (\error -> failed error abort resume)
+                    ]
+        in
+        \() -> Js.to (Js.call abort "abort" [])
+    else
+        let
+            _ = resumeWith resume (Answered (Err (BadUrl url)))
+        in
+        \() -> ()
+
+
+-- Whether `new URL` takes the address, relative to the page's own.
+parses : String -> Bool
+parses url =
+    Js.catchIf
+        (\() ->
+            let
+                _ =
+                    Js.construct (Js.global "URL")
+                        [ Js.from url, Js.get (Js.global "location") "href" ]
+            in
+            True
+        )
+        (\error -> Js.instanceOf error (Js.global "TypeError"))
+        (\_ -> False)
+
+
+-- The response came: read its body, then answer.
+received : Js.Value, Bool, Js.Value, Resume Answer -> ()
+received response json abort resume =
     let
-        answer = Task.callback (\resume -> start method url contentType body json resume)
-        defect = Js.get (Js.from answer) "d"
+        _ =
+            Js.call (Js.call response "text" []) "then"
+                [ Js.from (\text -> resumeWith resume (answered response json text))
+                , Js.from (\error -> failed error abort resume)
+                ]
     in
-    if Js.isUndefined defect then answer else Js.throw defect
+    ()
 
 
-foreign impure start : String, String, String, String, Bool, Resume (Result Error String) -> (() -> ())
+answered : Js.Value, Bool, Js.Value -> Answer
+answered response json text =
+    if not (Js.to (Js.get response "ok")) then
+        Answered (Err (BadStatus (Js.to (Js.get response "status"))))
+    else if json then
+        -- Every throw is answered, and none is swallowed: the `SyntaxError`
+        -- `JSON.parse` documents is `BadBody`, and anything else is the
+        -- defect it is, thrown in the waiting fiber.
+        Js.catchIf
+            (\() ->
+                let
+                    _ = Js.call (Js.global "JSON") "parse" [ text ]
+                in
+                Answered (Ok (Js.to text))
+            )
+            (\_ -> True)
+            (\error ->
+                if Js.instanceOf error (Js.global "SyntaxError") then
+                    Answered (Err (BadBody "not JSON"))
+                else
+                    Defect error
+            )
+    else
+        Answered (Ok (Js.to text))
+
+
+-- A rejection: this request's own abort answers nothing, since the fiber
+-- that waited is gone; a `TypeError` is `NetworkError`; anything else is a
+-- defect.
+failed : Js.Value, Js.Value, Resume Answer -> ()
+failed error abort resume =
+    if
+        Js.instanceOf error (Js.global "Error")
+            && Js.same (Js.get error "name") (Js.from "AbortError")
+            && Js.to (Js.get (Js.get abort "signal") "aborted")
+    then
+        ()
+    else if Js.instanceOf error (Js.global "TypeError") then
+        resumeWith resume (Answered (Err NetworkError))
+    else
+        resumeWith resume (Defect error)
+
+
+resumeWith : Resume a, a -> ()
+resumeWith resume value = Js.to (Js.apply (Js.from resume) [ Js.from value ])

@@ -46,7 +46,8 @@ const NameIndex = JsIr.NameIndex;
 
 /// `InsideTry`: a marker inside a `try … finally` (`Js.finally`), whose
 /// cleanup would run when the call parks rather than when the guarded code
-/// ends. Its arguments are `sync`, so the checker refuses a suspending one
+/// ends, or inside a `try … catch` (`Js.catchIf`), which would not see what
+/// the code after the park throws. Its arguments are `sync`, so the checker refuses a suspending one
 /// before this pass could see it; lowering reports it as a compiler fault.
 pub const Error = error{ OutOfMemory, FallsThrough, InsideTry };
 
@@ -219,7 +220,8 @@ pub const Pass = struct {
             },
             .switch_stmt, .switch_case, .block_stmt => return p.listHolds(try p.nodesOf(p.rangeAt(d.rhs)), continues),
             .try_stmt => return try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs)), continues) or
-                try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs + 2)), continues),
+                try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs + 2)), continues) or
+                try p.listHolds(try p.nodesOf(p.rangeAt(d.rhs + 4)), continues),
             else => return false,
         }
     }
@@ -247,9 +249,14 @@ pub const Pass = struct {
             },
             .block_stmt => return p.terminates(try p.nodesOf(p.rangeAt(d.rhs))),
             // The cleanup ends normally or leaves; either way, a body that
-            // always leaves takes the `try` with it.
-            .try_stmt => return try p.terminates(try p.nodesOf(p.rangeAt(d.rhs))) or
-                try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 2))),
+            // always leaves takes the `try` with it — when nothing catches
+            // what it throws, or when the `catch` block always leaves too.
+            .try_stmt => {
+                const catches: JsIr.NameIndex = @enumFromInt(p.word(d.rhs + 6));
+                const body = try p.terminates(try p.nodesOf(p.rangeAt(d.rhs)));
+                const caught = catches == .none or try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 4)));
+                return (body and caught) or try p.terminates(try p.nodesOf(p.rangeAt(d.rhs + 2)));
+            },
             .switch_stmt => {
                 var has_default = false;
                 for (try p.nodesOf(p.rangeAt(d.rhs))) |c| {
@@ -542,6 +549,7 @@ pub const Pass = struct {
                 .try_stmt => {
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 2)));
+                    try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 4)));
                 },
                 .for_of => {
                     try stack.append(p.scratch, @enumFromInt(p.word(d.rhs)));
@@ -605,7 +613,7 @@ pub const Pass = struct {
         const t = p.tag(n);
         const at = p.posOf(n);
         switch (t) {
-            .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
+            .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
             .const_decl => {
                 const copy = try p.add(t, at, d.lhs, (try p.clone(@enumFromInt(d.rhs))).int());
                 if (p.keep) |keep| if (std.mem.indexOfScalar(Node.Index, keep.items, n) != null) try keep.append(p.scratch, copy);
@@ -653,11 +661,15 @@ pub const Pass = struct {
             .try_stmt => {
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
                 const final = try p.cloneRange(p.rangeAt(d.rhs + 2));
+                const caught = try p.cloneRange(p.rangeAt(d.rhs + 4));
                 const record = try p.b.addRecord(JsIr.Try{
                     .body_start = body.start,
                     .body_end = body.end,
                     .final_start = final.start,
                     .final_end = final.end,
+                    .catch_start = caught.start,
+                    .catch_end = caught.end,
+                    .catch_name = @enumFromInt(p.word(d.rhs + 6)),
                 });
                 return p.add(t, at, d.lhs, @intFromEnum(record));
             },

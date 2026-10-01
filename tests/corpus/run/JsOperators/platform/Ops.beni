@@ -1,0 +1,100 @@
+--! The `Js` operators core's arithmetic is written over (`boundary.md`
+--! §4.2): `%`, `|`, `^`, `<<`, `>>`, `>>>`, `typeof`, `instanceof` and a
+--! regular expression literal, each called in place and passed as a value.
+
+import Js
+
+
+pub rem : Int, Int -> Int
+rem a b = Js.rem a b
+
+
+pub bitOr : Int, Int -> Int
+bitOr a b = Js.bitOr a b
+
+
+pub bitXor : Int, Int -> Int
+bitXor a b = Js.bitXor a b
+
+
+pub shiftLeft : Int, Int -> Int
+shiftLeft a n = Js.shiftLeft a n
+
+
+pub shiftRight : Int, Int -> Int
+shiftRight a n = Js.shiftRight a n
+
+
+pub shiftRightZero : Int, Int -> Int
+shiftRightZero a n = Js.shiftRightZero a n
+
+
+--| The operators passed as values: the sibling's functions.
+pub viaValues : Int, Int -> List Int
+viaValues a b =
+    List.map
+        [ Js.rem, Js.bitOr, Js.bitXor, Js.shiftLeft, Js.shiftRight, Js.shiftRightZero ]
+        (\f -> f a b)
+
+
+--| `typeof` of a string, a number, a list (an array, so `"object"`) and a
+--| function.
+pub kinds : () -> List String
+kinds () =
+    [ Js.to (Js.typeOf (Js.from "s"))
+    , Js.to (Js.typeOf (Js.from 1))
+    , Js.to (Js.typeOf (Js.from [ 1 ]))
+    , Js.to (Js.typeOf (Js.from (\() -> ())))
+    ]
+
+
+--| Whether a value is a string: `typeof` compared with `same`.
+pub isString : a -> Bool
+isString v = Js.same (Js.typeOf (Js.from v)) (Js.from "string")
+
+
+--| A list is an `Array`, a string is not.
+pub arrays : () -> List Bool
+arrays () =
+    [ Js.instanceOf (Js.from [ 1 ]) (Js.global "Array")
+    , Js.instanceOf (Js.from "s") (Js.global "Array")
+    ]
+
+
+digits : Js.Value
+digits = Js.regExp "^[+-]?\\d+$" ""
+
+
+--| Whether the whole string is an integer, by a literal made once.
+pub integral : String -> Bool
+integral s = Js.to (Js.call digits "test" [ Js.from s ])
+
+
+--| The string split on runs of white space, by a literal made in place.
+pub fields : String -> List String
+fields s = Js.to (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ])
+
+
+--| A pattern that holds a `/`, a line feed and a class, with flags: the
+--| literal escapes what it must and matches what the pattern says.
+pub slashes : String -> List String
+slashes s = Js.to (Js.call (Js.from s) "split" [ Js.regExp "/|\n|[/]" "" ])
+
+
+--| Case-insensitive, by a flag.
+pub caseless : String -> Bool
+caseless s = Js.to (Js.call (Js.regExp "^abc$" "i") "test" [ Js.from s ])
+
+
+--| An empty pattern matches the empty string everywhere.
+pub empty : String -> List String
+empty s = Js.to (Js.call (Js.from s) "split" [ Js.regExp "" "" ])
+
+
+--| `Js.regExp` passed as a value: the sibling's `RegExp`.
+pub built : String, String -> Bool
+built pattern s = Js.to (Js.call (make Js.regExp pattern) "test" [ Js.from s ])
+
+
+make : (String, String -> Js.Value), String -> Js.Value
+make k pattern = k pattern ""

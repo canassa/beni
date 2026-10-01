@@ -72,7 +72,11 @@ beforeFragment protocol fragment str =
                 beforeQuery protocol Nothing fragment str
 
             [ i, ..._ ] ->
-                beforeQuery protocol (Just (String.dropLeft str (i + 1))) fragment (String.left str i)
+                beforeQuery
+                    protocol
+                    (Just (String.dropLeft str (i + 1)))
+                    fragment
+                    (String.left str i)
 
 
 beforeQuery : Protocol, Maybe String, Maybe String, String -> Maybe Url
@@ -95,7 +99,14 @@ beforePath protocol path query fragment str =
     else
         case String.indexes str ":" of
             [] ->
-                Just { protocol = protocol, host = str, port_ = Nothing, path = path, query = query, fragment = fragment }
+                Just
+                    { protocol = protocol
+                    , host = str
+                    , port_ = Nothing
+                    , path = path
+                    , query = query
+                    , fragment = fragment
+                    }
 
             [ i ] ->
                 case String.toInt (String.dropLeft str (i + 1)) of
@@ -103,7 +114,14 @@ beforePath protocol path query fragment str =
                         Nothing
 
                     port_ ->
-                        Just { protocol = protocol, host = String.left str i, port_ = port_, path = path, query = query, fragment = fragment }
+                        Just
+                            { protocol = protocol
+                            , host = String.left str i
+                            , port_ = port_
+                            , path = path
+                            , query = query
+                            , fragment = fragment
+                            }
 
             _ ->
                 Nothing
@@ -165,13 +183,10 @@ percentEncode str =
 --|     Url.percentDecode "%C2" == Nothing
 pub percentDecode : String -> Maybe String
 percentDecode str =
-    if decodes str then
-        Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ]))
-    else
-        Nothing
-
-
--- Whether `decodeURIComponent` takes the string: the one failure it
--- documents, `URIError`, is caught in the sibling, since `Js` writes no
--- `catch`.
-foreign pure decodes : String -> Bool
+    -- `decodeURIComponent` documents one failure, a `URIError` for text that
+    -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
+    -- thrown on (CLAUDE.md rule 9).
+    Js.catchIf
+        (\() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+        (\error -> Js.instanceOf error (Js.global "URIError"))
+        (\_ -> Nothing)

@@ -8,11 +8,14 @@ app:Owner -> core:Basics
 app:User -> app:Middle
 core:Char -> core:Basics
 core:Debug -> core:String
+core:Js -> core:Basics
+core:Js -> core:List
 core:List -> core:Basics
 core:List -> core:Maybe
 core:Result -> core:Maybe
 core:String -> core:Basics
 core:String -> core:Char
+core:String -> core:Js
 core:String -> core:List
 core:String -> core:Maybe
 core:Task -> core:Basics

@@ -1,0 +1,70 @@
+-- `Js.catchIf` catches what its test holds of and nothing else: the
+-- handler's value for a throw it names, the body's when nothing is thrown,
+-- and any other throw passed on unchanged, to an outer `catchIf` that names
+-- it. In tail position, bound, discarded, nested, with a test that reads
+-- the error's name, with two names for the caught value, with arguments that
+-- are not lambdas (evaluated first, in order), passed as a value, and at the
+-- end of a loop; each line is a result and the effects that made it.
+import Catch
+import Node
+
+
+main : Node.Program
+main =
+    let
+        tailOk = Catch.tail False
+        tailOkTrail = Catch.take ()
+        tailCaught = Catch.tail True
+        tailCaughtTrail = Catch.take ()
+        valuedOk = Catch.valued False
+        valuedCaught = Catch.valued True
+        valuedTrail = Catch.take ()
+        discardedOk = Catch.discarded False
+        discardedOkTrail = Catch.take ()
+        discardedCaught = Catch.discarded True
+        discardedCaughtTrail = Catch.take ()
+        rethrown = Catch.rethrown ()
+        rethrownTrail = Catch.take ()
+        quota = Catch.named "QuotaExceededError"
+        security = Catch.named "SecurityError"
+        renamed = Catch.renamed ()
+        orderedOk = String.fromInt (Catch.ordered False)
+        orderedOkTrail = Catch.take ()
+        orderedCaught = String.fromInt (Catch.ordered True)
+        orderedCaughtTrail = Catch.take ()
+
+        passed =
+            String.fromInt
+                (Catch.passed
+                    (\() -> Catch.fail "TypeError" "p")
+                    (\err -> Catch.isTypeError err)
+                    (\_ -> 3)
+                )
+
+        asValue =
+            String.fromInt
+                (Catch.asValue
+                    (\() -> Catch.fail "TypeError" "v")
+                    (\err -> Catch.isTypeError err)
+                    (\_ -> 5)
+                )
+
+        asValueOk =
+            String.fromInt (Catch.asValue (\() -> 6) (\err -> Catch.isTypeError err) (\_ -> 5))
+
+        summed = String.fromInt (Catch.sumTo 4 0)
+    in
+    Node.printLines
+        [ "tail ${tailOk}: ${tailOkTrail}"
+        , "tail ${tailCaught}: ${tailCaughtTrail}"
+        , "valued ${valuedOk} then ${valuedCaught}: ${valuedTrail}"
+        , "discarded ${discardedOk}: ${discardedOkTrail}"
+        , "discarded ${discardedCaught}: ${discardedCaughtTrail}"
+        , "rethrown, ${rethrown}: ${rethrownTrail}"
+        , "named: ${quota}; ${security}"
+        , "renamed: ${renamed}"
+        , "ordered ${orderedOk}: ${orderedOkTrail}"
+        , "ordered ${orderedCaught}: ${orderedCaughtTrail}"
+        , "passed ${passed}, as a value ${asValue} and ${asValueOk}"
+        , "summed ${summed}"
+        ]

@@ -12,6 +12,13 @@
 --!             Ok () -> Saved
 --!             Err Storage.QuotaExceeded -> TooMuch
 --!             Err Storage.Unavailable -> NotSaved
+--!
+--! The standard documents two failures, and each is caught by its name and
+--! nothing broader (CLAUDE.md rule 9): reading `localStorage` or
+--! `sessionStorage` may throw a `SecurityError` — the area is then
+--! unavailable, as it is when the host gives `null` — and `setItem` may
+--! throw a `QuotaExceededError`. Every other exception is thrown on: a
+--! defect. `getItem`, `removeItem`, `key` and `length` document none.
 
 import Js
 
@@ -33,46 +40,91 @@ pub type Error
 pub get : Area, String -> Maybe String
 get area key =
     let
-        v = getItem (isLocal area) key
+        s = storage area
     in
-    if Js.isNull v then Nothing else Just (Js.to v)
+    if Js.isNullish s then
+        Nothing
+    else
+        let
+            v = Js.call s "getItem" [ Js.from key ]
+        in
+        if Js.isNull v then
+            Nothing
+        else
+            Just (Js.to v)
 
 
 --| Store the text under the key, replacing what was there.
 pub set : Area, String, String -> Result Error ()
 set area key value =
-    case setItem (isLocal area) key value of
-        0 ->
-            Ok ()
-
-        1 ->
-            Err QuotaExceeded
-
-        _ ->
-            Err Unavailable
+    let
+        s = storage area
+    in
+    if Js.isNullish s then
+        Err Unavailable
+    else
+        Js.catchIf
+            (\() ->
+                let
+                    _ = Js.call s "setItem" [ Js.from key, Js.from value ]
+                in
+                Ok ()
+            )
+            (\error -> isDomError error "QuotaExceededError")
+            (\_ -> Err QuotaExceeded)
 
 
 --| Forget the key.
 pub remove : Area, String -> ()
-remove area key = removeItem (isLocal area) key
+remove area key =
+    let
+        s = storage area
+    in
+    if Js.isNullish s then
+        ()
+    else
+        Js.to (Js.call s "removeItem" [ Js.from key ])
 
 
 --| Every key stored, in the browser's order.
 pub keys : Area -> List String
-keys area = allKeys (isLocal area)
+keys area =
+    let
+        s = storage area
+    in
+    if Js.isNullish s then
+        []
+    else
+        keysFrom s 0 (Js.to (Js.get s "length")) (Js.array [])
 
 
-isLocal : Area -> Bool
-isLocal area = area == Local
+keysFrom : Js.Value, Int, Int, Js.Value -> List String
+keysFrom s i n found =
+    if i < n then
+        let
+            _ = Js.call found "push" [ Js.call s "key" [ Js.from i ] ]
+        in
+        keysFrom s (i + 1) n found
+    else
+        Js.to found
 
 
-foreign impure getItem : Bool, String -> Js.Value
+-- The area, or `null`: reading it may throw a `SecurityError`.
+storage : Area -> Js.Value
+storage area =
+    Js.catchIf
+        (\() ->
+            case area of
+                Local ->
+                    Js.global "localStorage"
+
+                Session ->
+                    Js.global "sessionStorage"
+        )
+        (\error -> isDomError error "SecurityError")
+        (\_ -> Js.null)
 
 
-foreign impure setItem : Bool, String, String -> Int
-
-
-foreign impure removeItem : Bool, String -> ()
-
-
-foreign impure allKeys : Bool -> List String
+isDomError : Js.Value, String -> Bool
+isDomError error name =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

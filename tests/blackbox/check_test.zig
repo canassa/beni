@@ -580,8 +580,8 @@ test "the core modules a build reaches are the same at every --jobs, and nothing
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The embedded core. `Set` imports `Dict`, so this program's front end
-    // runs in three waves; `Schema`, `Int32` and `Js` are imported by
-    // nothing it reaches and are not modules of the build at all.
+    // runs in three waves; `Schema`, `Int32` and `Random.Pcg` are imported
+    // by nothing it reaches and are not modules of the build at all.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -611,7 +611,7 @@ test "the core modules a build reaches are the same at every --jobs, and nothing
             return error.MissingEdge;
         }
     }
-    for ([_][]const u8{ "core:Schema", "core:Int32", "core:Js" }) |module| {
+    for ([_][]const u8{ "core:Schema", "core:Int32", "core:Random.Pcg" }) |module| {
         if (std.mem.indexOf(u8, one.stdout, module) != null) {
             std.debug.print("{s} is in the graph:\n{s}", .{ module, one.stdout });
             return error.UnreachedModuleInGraph;

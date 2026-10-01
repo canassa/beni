@@ -15,6 +15,13 @@
 --! passed as a value — and for check 2, which counts them.
 --!
 --! A property name is never renamed, and neither is a global.
+--!
+--! **This module names no core type but `Basics`'s and `List`'s**
+--! (2026-10-01, `plans/core-in-beni.md`): a property or global name, and a
+--! pattern, is a type variable where a string literal stands, and `typeOf`
+--! answers a `Value`. A module may import only what does not import it
+--! back, and `String` — which `Char`, `Maybe` and the rest are below — is
+--! written over this one.
 
 --| Any JavaScript value, opaque to beni: `from` makes one of any beni
 --| value and `to` reads one back, and neither checks anything.
@@ -58,21 +65,64 @@ pub foreign pure isNullish : Value -> Bool
 pub foreign pure bitAnd : Int, Int -> Int
 
 
+--| `a | b`.
+pub foreign pure bitOr : Int, Int -> Int
+
+
+--| `a ^ b`.
+pub foreign pure bitXor : Int, Int -> Int
+
+
+--| `a << n`.
+pub foreign pure shiftLeft : Int, Int -> Int
+
+
+--| `a >> n`.
+pub foreign pure shiftRight : Int, Int -> Int
+
+
+--| `a >>> n`: unsigned, so its answer is 0…4294967295.
+pub foreign pure shiftRightZero : Int, Int -> Int
+
+
+--| `a % b`: the remainder, with the sign of `a`; `NaN` when `b` is `0`.
+pub foreign pure rem : Int, Int -> Int
+
+
+--| `typeof v`: `"string"`, `"number"`, `"object"` and the rest, as a
+--| `Value` to compare with `same`.
+pub foreign pure typeOf : Value -> Value
+
+
+--| `v instanceof C`: what a `catchIf` test asks of what was thrown,
+--| `Js.instanceOf e (Js.global "TypeError")`.
+pub foreign impure instanceOf : Value, Value -> Bool
+
+
+--| `/pattern/flags`, a regular expression literal. Both arguments are
+--| string literals; the flags are any of `d i m s u v`, each once (`g` and
+--| `y` would make the value stateful). The pattern is not checked: one
+--| JavaScript refuses stops the file loading, as a `RegExp` that throws
+--| would stop the code that makes it. `Js.regExp "^\\d+$" ""` is
+--| `/^\d+$/` (`backend.md` §4, *`Js.regExp` is a literal*).
+pub foreign pure regExp : pattern, flags -> Value
+
+
 --| `globalThis.name`.
-pub foreign impure global : String -> Value
+pub foreign impure global : name -> Value
 
 
 --| `o.name`, or `o[name]` when the name is not a literal identifier.
-pub foreign impure get : Value, String -> Value
+pub foreign impure get : Value, name -> Value
 
 
 --| `o.name = v`, a statement.
-pub foreign impure set : Value, String, Value -> ()
+pub foreign impure set : Value, name, Value -> ()
 
 
 --| `o.name(a, b)`: the arguments are written as a list literal, one
 --| JavaScript argument per element.
-pub foreign impure call : Value, String, List Value -> Value
+pub foreign impure call : Value, name, List Value -> Value
 
 
 --| `f(a, b)`: the arguments are written as a list literal.
@@ -137,6 +187,30 @@ pub foreign impure write : Ref a, a -> ()
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
 pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
+
+
+--| `try { return body() } catch (e) { if (!test(e)) throw e; return
+--| handler(e) }`: the body's value, or — when it throws something `test`
+--| holds of — the handler's. Anything `test` does not hold of is thrown on
+--| unchanged, so a wrapper catches exactly the failures its host API
+--| documents and nothing else (`CLAUDE.md` rule 9): `Js.catchIf (\() ->
+--| …) (\e -> Js.instanceOf e (Js.global "URIError")) (\_ -> Nothing)`.
+--| Written with lambdas, the body is the `try` block, the test and the
+--| handler are the `catch` block, and no function is made. All three are
+--| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
+--| is `try … catch`*).
+pub foreign impure catchIf : sync (() -> a), sync (Value -> Bool), sync (Value -> a) -> a
+
+
+--| The body's value, and a promise: that computing it is total, throws
+--| nothing and changes nothing an observer can see — what `foreign pure`
+--| promises of a sibling's function, made of beni written over `Js`, whose
+--| reads and calls the checker otherwise takes for `impure` (`String.length`
+--| is `Js.get` of `Array.from`'s `length`, and pure). Unchecked, like every
+--| `Js` declaration: the caller answers for it. Written with a lambda,
+--| `Js.pure (\() -> …)` is the lambda's body and no function is made
+--| (`backend.md` §4, *`Js.pure` is its body*).
+pub foreign pure pure : sync (() -> a) -> a
 
 
 --| `True` in a development build and `False` under `--release`. An `if`

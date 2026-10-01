@@ -434,7 +434,55 @@ block and no function is made (`backend.md` §4, *`Js.finally` is `try … final
 There is no `catch`: a platform restores its state on the way out and lets the throw go on, which
 is all the effects host needs (`plans/runtime-in-beni.md`). *(2026-10-01: so is it all the defect
 rule needs, §9.8.10 (c) — a cleanup that finds its body did not complete stops the page — and what
-must `catch`, `Storage`, is a sibling.)*
+must `catch`, `Storage`, is a sibling.)* *(Amended 2026-10-01: there is one now, `catchIf` below,
+and `Storage`, `Url` and `Http` are written over it.)*
+
+**`catchIf : sync (() -> a), sync (Value -> Bool), sync (Value -> a) -> a`** (impure, 2026-10-01,
+`plans/core-in-beni.md`) is `try { return body() } catch (e) { if (!test(e)) throw e; return
+handler(e) }`: the body's value, or — when it throws something `test` holds of — the handler's.
+It is rule 9 (`CLAUDE.md`) as an intrinsic: **a catch names what it expects and re-throws
+everything else, unchanged**, so a wrapper's test is the precise one the host API documents —
+`Js.instanceOf e (Js.global "URIError")`, a `DOMException` and its `name` — and an unknown error
+crashes as it would have with no `catch` at all. Written with lambdas, the body is the `try`
+block, the test and the handler are the `catch` block with the lambda's parameter its binding, and
+no function is made (`backend.md` §4, *`Js.catchIf` is `try … catch`*). All three are `sync`, as
+`finally`'s are: a body that parked would leave the `try` with its rest outside it, where a throw
+reaches no `catch`.
+
+**`pure : sync (() -> a) -> a`** (pure, 2026-10-01) is the body's value, and the promise `foreign
+pure` makes of a sibling's function — that computing it is total, throws nothing and changes
+nothing an observer can see — made of beni written over `Js`, whose reads and calls the checker
+otherwise infers `impure`. `String.length` is `Js.get` of `Array.from`'s `length`, and pure; written
+without `Js.pure`, every function that measured a string would be `impure` in its interface and
+kept by the release optimiser where it is unused (`language.md` §6, *What an optimiser may
+assume*). The argument is a function handed to the intrinsic, so it joins nothing
+(`transparent-effects-proposal.md` §14.3, rule 6); unchecked, like every `Js` declaration — the
+caller answers for the promise. Written with a lambda, it is the lambda's body (`backend.md` §4,
+*`Js.pure` is its body*).
+
+**The operators core's arithmetic is written over** (2026-10-01): `bitOr`, `bitXor`, `shiftLeft`,
+`shiftRight`, `shiftRightZero` and `rem` — `|`, `^`, `<<`, `>>`, `>>>` and `%` on two `Int`s, as
+`bitAnd` is `&` — and `typeOf : Value -> Value` and `instanceOf : Value, Value -> Bool`, `typeof v`
+and `v instanceof C`. Each is written in place as its operator. `rem` answers `NaN` for a zero
+divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
+guards, as `Int32.rem` does.
+
+**`regExp : pattern, flags -> Value`** (pure, 2026-10-01) is a regular expression literal,
+`/pattern/flags`, both arguments string literals: `Js.regExp "^\\d+$" ""` is `/^\d+$/`. A `/` and a
+line terminator in the pattern are written as their escapes, and an empty pattern as `(?:)`; the
+flags are any of `d i m s u v`, each once — `g` and `y` give the object a `lastIndex` that every
+reader of one literal would share. The pattern is not checked: one JavaScript refuses stops the
+file loading, as a `new RegExp` that throws stops the code that makes it (`backend.md` §4,
+*`Js.regExp` is a literal*).
+
+**`Js` names no core type but `Basics`'s and `List`'s** (2026-10-01). A property or global name and
+a pattern are a type variable where the caller writes a string literal (`get : Value, name ->
+Value`), and `typeOf` answers a `Value`. A module may import only a module that does not import it
+back (`checker.md` §4.3), and `String` imports `Js` now; with `String` in `Js`'s signatures the two
+were a cycle. What stays out of reach is below `String`: `Char`, which `String`'s signatures name,
+and `Basics`, which every module's do — and a string literal written in either is a `String` the
+module would depend on (`resolve/Graph.zig`, `mintedModules`), so neither can name a property.
+`plans/core-in-beni.md` has what would let them.
 
 **`development : Bool`** (pure, 2026-10-01) is `True` in a development build and `False` under
 `--release`; an `if` on it keeps only the branch the build takes, so a development-only
@@ -2060,7 +2108,8 @@ nothing; a beni function always makes a message, which `update` may ignore.
   Unavailable` — and **`setItem` may throw `QuotaExceededError`**, `Err QuotaExceeded`. An area
   the host leaves `null` is unavailable too. Any other exception is not caught: it is a defect
   (c). The catches are a sibling's (`Storage.js`), because `Js` writes no `catch` (§4.2).
-  `onChange` (another tab wrote) is still owed.
+  *(Amended 2026-10-01: they are `Js.catchIf`'s, each naming its `DOMException` by `name`, and
+  `Storage.js` is gone.)* `onChange` (another tab wrote) is still owed.
 
 **(c) A defect stops the program** (the owner's W2, *as recommended*; A1). A throw that escapes a
 program's own code — `init`, `update`, `view`, `subscriptions`, a markup handler, a render's patch
@@ -2122,7 +2171,8 @@ three. Being `impure`, a call is never dropped by `--release`, and an unused `Lo
 `Storage.beni`/`.js`, `Log.beni`, `Rt.beni`, `Browser.beni`, `Http.beni`/`.js`; `core/Task.js`,
 `core/Js.beni`), as specified above, every module but `Listen` re-exported by `browser-tea`.
 Written in beni over `Js` except three siblings' worth of `catch`: `Storage.js`, `Url.js`'s
-`decodes` and `Http.js`. The pages are `tests/corpus/browser/tea/`: `KeyEvents`,
+`decodes` and `Http.js`. *(Amended 2026-10-01: all three are beni over `Js.catchIf`, and so is
+`Time.js`'s clock and timer; `plans/core-in-beni.md`, step 1.)* The pages are `tests/corpus/browser/tea/`: `KeyEvents`,
 `KeySubscription`, `RandomValues`, `UrlAddress`, `StorageBasics`, `StorageFaults`, `LogLevels`,
 `DefectInUpdate`, `DefectInRender`, `DefectAfterRender`, `DefectInFiber`, `HttpDefect`,
 `browser/dom/DefectInHandler`, and **`TodoMVC`**, the acceptance test: Enter adds a todo and

@@ -1,0 +1,51 @@
+-- The `Js` operators answer as JavaScript does: `%` takes the dividend's
+-- sign, `|` `^` `<<` `>>` wrap to 32 bits, `>>>` answers unsigned, the same
+-- through the sibling's functions; `typeof` and `instanceof`; and a regular
+-- expression literal — made once or in place, with a `/` and a line feed in
+-- its pattern, with a flag, empty, and built from a string by the sibling.
+import Node
+import Ops
+
+
+ints : List Int -> String
+ints xs = String.join (List.map xs String.fromInt) " "
+
+
+bools : List Bool -> String
+bools xs =
+    String.join
+        (List.map xs
+            (\b ->
+                if b then
+                    "yes"
+                else
+                    "no"
+            )
+        )
+        " "
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "rem " ++ ints [ Ops.rem 7 3, Ops.rem (0 - 7) 3, Ops.rem 7 (0 - 3) ]
+        , "or " ++ ints [ Ops.bitOr 5 2, Ops.bitOr 4294967296 1 ]
+        , "xor " ++ ints [ Ops.bitXor 6 3, Ops.bitXor (0 - 1) 1 ]
+        , "shifts "
+            ++ ints
+                [ Ops.shiftLeft 1 31
+                , Ops.shiftRight (0 - 16) 2
+                , Ops.shiftRightZero (0 - 1) 0
+                , Ops.shiftRightZero (0 - 16) 28
+                ]
+        , "values " ++ ints (Ops.viaValues (0 - 7) 2)
+        , "typeof " ++ String.join (Ops.kinds ()) " "
+        , "instanceof " ++ bools (Ops.arrays ())
+        , "strings " ++ bools [ Ops.isString "x", Ops.isString 1 ]
+        , "integral " ++ bools [ Ops.integral "-12", Ops.integral "1.5", Ops.integral "" ]
+        , "fields " ++ String.join (Ops.fields "a  b\tc") ","
+        , "slashes " ++ String.join (Ops.slashes "a/b\nc") ","
+        , "caseless " ++ bools [ Ops.caseless "ABC", Ops.caseless "abd" ]
+        , "empty " ++ String.join (Ops.empty "xyz") ","
+        , "built " ++ bools [ Ops.built "^a/b$" "a/b", Ops.built "^a/b$" "ab" ]
+        ]

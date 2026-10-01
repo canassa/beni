@@ -1,0 +1,12 @@
+tail fine: body; 
+tail caught bad: body; 
+valued 1 then 2: after; after; 
+discarded done: body; after; 
+discarded done: caught dropped; after; 
+rethrown, outer took far: inner; 
+named: over the quota; thrown on: SecurityError
+renamed: two names
+ordered 7: make body; make test; make handler; body; 
+ordered 9: make test; make handler; test; handler; 
+passed 3, as a value 5 and 6
+summed 10

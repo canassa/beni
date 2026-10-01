@@ -200,6 +200,13 @@ pub const Node = struct {
         template,
         /// A literal run inside a `template`; payload like `string`.
         template_chunk,
+        /// `/pattern/flags`, which only the `Js.regExp` intrinsic writes
+        /// (`backend.md` §4, *`Js.regExp` is a literal*): the literal's
+        /// whole text, already escaped for a regular expression literal
+        /// (`lhs` offset, `rhs` length into `string_bytes`), printed
+        /// verbatim. Not a constant: each evaluation is a new object, so no
+        /// pass folds, compares or copies it as one.
+        regex,
         true_lit,
         false_lit,
         null_lit,
@@ -288,6 +295,10 @@ pub const BinaryOp = enum(u8) {
     shl,
     sar,
     shr,
+    /// `instanceof`, which only the `Js.instanceOf` intrinsic writes: the
+    /// precise test a `Js.catchIf` predicate makes of what was thrown
+    /// (`CLAUDE.md` rule 9).
+    instance_of,
 
     /// JavaScript's precedence, higher binds tighter. The printer
     /// parenthesises on it rather than carrying `paren` nodes, so the IR
@@ -298,7 +309,7 @@ pub const BinaryOp = enum(u8) {
             .mul, .div, .rem => 13,
             .add, .sub => 12,
             .shl, .sar, .shr => 11,
-            .lt, .le, .gt, .ge => 10,
+            .lt, .le, .gt, .ge, .instance_of => 10,
             .strict_eq, .strict_ne, .loose_eq => 9,
             .bit_and => 8,
             .bit_xor => 7,
@@ -349,6 +360,7 @@ pub const BinaryOp = enum(u8) {
             .shl => "<<",
             .sar => ">>",
             .shr => ">>>",
+            .instance_of => "instanceof",
         };
     }
 };
@@ -498,14 +510,23 @@ pub const ForOf = struct {
     }
 };
 
-/// Payload of `try_stmt`: the guarded statements, and the statements that
-/// run after them however they end. The layout of `If`, so a pass that
-/// rewrites a list in place finds the second range two words in.
+/// Payload of `try_stmt`: the guarded statements, the statements that
+/// run after them however they end, and the `catch` clause. The layout of
+/// `If` for the first two ranges, so a pass that rewrites a list in place
+/// finds the second range two words in and the third four words in.
+///
+/// `Js.finally` writes a `try` with no `catch` (`catch_name` is `.none` and
+/// the range empty); `Js.catchIf` one with an empty `finally` range, which
+/// prints no `finally` (`backend.md` §4, *`Js.catchIf` is `try … catch`*).
 pub const Try = struct {
     body_start: ExtraIndex,
     body_end: ExtraIndex,
     final_start: ExtraIndex,
     final_end: ExtraIndex,
+    catch_start: ExtraIndex,
+    catch_end: ExtraIndex,
+    /// The `catch` binding, or `.none` when there is no `catch` clause.
+    catch_name: NameIndex,
 
     pub fn body(t: Try) SubRange {
         return .{ .start = t.body_start, .end = t.body_end };
@@ -513,6 +534,21 @@ pub const Try = struct {
 
     pub fn finalBody(t: Try) SubRange {
         return .{ .start = t.final_start, .end = t.final_end };
+    }
+
+    pub fn catchBody(t: Try) SubRange {
+        return .{ .start = t.catch_start, .end = t.catch_end };
+    }
+
+    /// Whether the statement has a `catch` clause.
+    pub fn catches(t: Try) bool {
+        return t.catch_name != .none;
+    }
+
+    /// Whether the statement has a `finally` clause: a `try` with a `catch`
+    /// and an empty cleanup writes none.
+    pub fn hasFinally(t: Try) bool {
+        return !t.catches() or t.final_start != t.final_end;
     }
 };
 
@@ -682,7 +718,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
+        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
@@ -870,10 +906,11 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             const t = try ir.verifyExtra(@enumFromInt(d.rhs), Try);
             try ir.verifyRange(t.body(), .statement);
             try ir.verifyRange(t.finalBody(), .statement);
+            try ir.verifyRange(t.catchBody(), .statement);
         },
 
         .ident => try ir.verifyName(@enumFromInt(d.lhs), false),
-        .number, .string, .template_chunk => try ir.verifyBytes(d),
+        .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
             if (@intFromEnum(parts.start) > @intFromEnum(parts.end) or @intFromEnum(parts.end) > ir.extra.len) {
@@ -1266,7 +1303,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+                .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {
@@ -1303,6 +1340,7 @@ pub const Builder = struct {
                     const t = b.record(d.rhs, Try);
                     try b.pushBlock(&stack, gpa, at, t.body(), w.block, 0);
                     try b.pushBlock(&stack, gpa, at, t.finalBody(), w.block, 0);
+                    try b.pushBlock(&stack, gpa, at, t.catchBody(), w.block, 0);
                 },
                 .template => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.member, 0),
                 .call, .new_call => {
@@ -1373,7 +1411,7 @@ pub const Builder = struct {
                 .ident => if (read != .none and d.lhs == read.int()) {
                     out.reads = true;
                 },
-                .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+                .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
@@ -1417,6 +1455,7 @@ pub const Builder = struct {
                     const t = b.record(d.rhs, Try);
                     try stack.appendSlice(gpa, b.rangeWords(t.body()));
                     try stack.appendSlice(gpa, b.rangeWords(t.finalBody()));
+                    try stack.appendSlice(gpa, b.rangeWords(t.catchBody()));
                 },
                 .template, .object, .array => try stack.appendSlice(gpa, b.rangeWords(inlineRange(d))),
                 .call, .new_call => {

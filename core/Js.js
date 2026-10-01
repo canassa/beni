@@ -17,6 +17,17 @@ export const isNull = (v) => v === null;
 export const isUndefined = (v) => v === undefined;
 export const isNullish = (v) => v == null;
 export const bitAnd = (a, b) => a & b;
+export const bitOr = (a, b) => a | b;
+export const bitXor = (a, b) => a ^ b;
+export const shiftLeft = (a, n) => a << n;
+export const shiftRight = (a, n) => a >> n;
+export const shiftRightZero = (a, n) => a >>> n;
+export const rem = (a, b) => a % b;
+export const typeOf = (v) => typeof v;
+export const instanceOf = (v, c) => v instanceof c;
+// A call is always written as the literal (backend.md §4, *`Js.regExp` is a
+// literal*); passed as a value, the two strings make the same expression.
+export const regExp = (pattern, flags) => new RegExp(pattern, flags);
 export const global = (name) => globalThis[name];
 export const get = (o, name) => o[name];
 export const set = (o, name, v) => {
@@ -54,6 +65,21 @@ const finally_ = (body, cleanup) => {
   }
 };
 export { finally_ as finally };
+// Catches what `test` holds of and nothing else: anything else is thrown on
+// unchanged (CLAUDE.md rule 9).
+export const catchIf = (body, test, handler) => {
+  try {
+    return body();
+  } catch (e) {
+    if (!test(e)) throw e;
+    return handler(e);
+  }
+};
+
+// A call with a lambda is written as the lambda's body (backend.md §4,
+// *`Js.pure` is its body*); passed as a value, it calls what it is given.
+const pure_ = (body) => body();
+export { pure_ as pure };
 
 // What a build never reads from here: `Js.development` is written in place
 // as `true` or `false` for the build (backend.md §4, *`Js.development` is
