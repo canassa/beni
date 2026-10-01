@@ -13,7 +13,7 @@ to Appendix A.
 
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
-| Q3 | Does v1 have defaults? | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
+| Q3 | Does v1 have defaults? **Answered 2026-10-02 (A.7): yes, Effect-class defaults in the declaration.** | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
 | Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
 | Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost with specialisation. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
 | Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | The library is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
@@ -1225,3 +1225,18 @@ schema program and all resolution-requiring dumps see these interface members.
 with `not_implemented` on the schema name: “This schema is checked, but its
 parse and print are not generated yet.” A schema program cannot
 build successfully without its runners.
+
+### A.7 — Defaults in the declaration; Effect's power is the bar (2026-10-02)
+
+The owner answered **Q3: defaults belong in the schema definition**, and set the bar for
+the whole feature: **"The schema definition must be as powerful as Effect."** v1 therefore
+has Effect v4–class field defaults declared in the schema, with the distinctions Effect
+draws: what triggers a default (a missing key, an explicit `null`, and — never silently —
+an invalid value only where the author asks), which direction it applies to (a decoding
+default when reading, a constructor default when a value is built in code), and how
+encoding treats a value equal to its default (written or omitted, declared, so a round trip
+never changes data). Both execution paths — specialised code and the library interpreter —
+implement them with identical results and identical issues. The Q3 row in the open table
+above is superseded by this entry; the exact surface syntax is the next schema slice's to
+specify against `references/effect` (`Schema.optionalWith`, `withDecodingDefault`,
+`withConstructorDefault`, `optionalToRequired`, and their v4 equivalents).
