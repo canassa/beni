@@ -713,6 +713,11 @@ emitter and B1 has a real platform**, and not before.
   asymmetry: `load` and `reload` take no capability, because a full page load cannot desynchronise a
   router that is about to be destroyed. The link-click guard copies across unchanged: no modifier
   keys, primary button, no `target`, no `download`, then `preventDefault`.
+  *Superseded 2026-10-01 by `boundary.md` §9.8.13*: the owner's later rule is Elm's API, so the
+  module keeps Elm's opaque `Key` (`pushUrl key url`), and the testability the record bought is
+  kept inside the key, which a TEA test driver replaces; `key ()` is public because every push is
+  announced to every follower. The guard gains `altKey`, `target="_self"` and an
+  already-prevented default (`plans/http-and-routing.md`, H6).
 - **The defect screen** is W2's (b)+(c): a `dead` flag the scheduler and every listener test, a single
   `AbortController` that removes every listener the platform installed, the root scope closed so
   finalisers run and requests abort, and — **in development builds only** — a report written into the

@@ -1338,6 +1338,13 @@ When the project's `"base"` is an absolute path other than `/`, a request path u
 taken off first, so `/app/_main.mjs` is `<out>/_main.mjs` and the page behaves as it will when
 deployed under `/app/`; a path outside it is served as it is.
 
+*Amended 2026-10-01* (`boundary.md` §9.8.13 (e), `plans/http-and-routing.md` H9; not built): a
+`GET` for a path that names no file is also answered with `index.html`, status 200, when the
+request's `Accept` header lists `text/html` — what a browser sends when it navigates — whatever
+its last segment, so a client-side route such as `/users/jane.doe` survives a reload. A request
+whose `Accept` does not list it keeps the rule above: no `.` in the last segment, `index.html`;
+otherwise `404`.
+
 **Live reload is the server's, never the build's.** Every `text/html` response gets one inline
 `<script type="module">` inserted before its last `</body>` (appended when there is none) that polls
 `/_beni/build` and reloads the page when the number there changes; `/_beni/build` answers the count

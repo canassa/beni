@@ -1984,7 +1984,8 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
 `Browser.nextFrame` and `onAnimationFrame`/`onKeyDown`/`onWindow`, `Random`, `Storage`, `Nav` and
 `Tea.application`, `Ws`, and core's `Queue` (W52 settles its handle rule, below).
 *(Amended 2026-10-01: `onKeyDown`, `Random` and `Storage` are §9.8.10's, with `Url` read-only and
-`Log`.)*
+`Log`.)* *(Amended again 2026-10-01: `Http`'s row, `getJson`/`postJson` and the request record are
+superseded by §9.8.12, HTTP version 2; `Nav` and `Tea.application` are §9.8.13's.)*
 
 #### 9.8.9 The rest of the answers
 
@@ -2345,6 +2346,569 @@ the `Run` arms and the scheduler's step column). A message whose command's body 
 back costs **196 ns** with no fiber against **383 ns** in a fiber (happy-dom in Node, the update,
 the dispatcher and the body, sent straight to the mount, settled every thousand); a body that
 may wait costs what it did (368 → 383 ns, within noise), and a message with no command 40 ns.
+
+#### 9.8.12 HTTP, version 2
+
+*Added 2026-10-01* (`plans/status-2026-10.md` §4 Tier 1 item 2, §6 Milestone 2 item 2). This
+section is normative for `browser`'s `Http` and **replaces §9.8.8's `Http` row**: `get`, `post`,
+`getJson`, `postJson` and the four-constructor `Error` are withdrawn, and the fixtures that use
+them are migrated by the slice that lands this (`plans/http-and-routing.md`). The choices it takes
+for the owner are H1–H5 of that plan; each is written here as recommended and is reversible until
+its slice lands.
+
+**The model is elm/http 2.0** (the owner, 2026-10-01: mirror Elm's packages, read their code;
+`Http.elm` and `Elm/Kernel/Http.js` at `2.0.0`). Its pieces keep their names — `request`, `get`,
+`post`, `riskyRequest`, `Header`/`header`, `Body` and its constructors, `Expect` and its
+constructors, `Error`, `Response`, `Metadata`, `Progress`, `fractionSent`, `fractionReceived` —
+and beni changes what its language or its rules force, each listed at the end of this section with
+the reason.
+
+**(a) The direct form is the API; a command is `Cmd.task` over it** (§9.8.11). A request is a
+function that **suspends** the calling fiber until it has an answer and returns it as a `Result`:
+Elm's `Task`-returning `Http.task` with its `Resolver x a`, which a beni call that waits simply
+*is*. So the direct form takes the names of Elm's command form, and `Expect` carries the error type
+Elm's `Resolver` carries and no message, because there is no tagger to carry:
+
+```elm
+-- module Http (browser), re-exported by browser-tea
+pub type Error
+    = BadUrl String          -- the URL does not parse, relative to the page, or holds user information
+    | BadRequest Problem     -- beni: a request the host would refuse, found before anything is sent
+    | Timeout                -- the request's own timeout ran out before the body was read
+    | NetworkError           -- no answer: the network, DNS, a refused connection, CORS, a body cut off
+    | BadStatus Int          -- an answer whose status is not 2xx
+    | BadBody (List Schema.Issue)   -- `expectJson`: a 2xx body the schema does not parse
+
+pub type Problem
+    = InvalidMethod String   -- not an HTTP token
+    | ForbiddenMethod String -- CONNECT, TRACE or TRACK, in any case
+    | InvalidHeader String   -- a name that is not a token, or a value holding NUL, CR or LF
+    | ForbiddenHeader String -- a forbidden request-header name (the Fetch standard's list, below)
+    | BodyNotAllowed String  -- a body on GET or HEAD; the method is the payload
+    | MultipartContentType   -- a `Content-Type` header on a multipart body, whose boundary is the host's
+    | UnprintableBody (List Schema.Issue)   -- `jsonBody`'s value the schema does not print
+
+pub type Header                -- opaque
+pub header : String, String -> Header
+
+pub type Body                  -- opaque
+pub emptyBody : Body
+pub stringBody : String, String -> Body          -- the MIME type, then the text
+pub jsonBody : Schema e a, a -> Body              -- `Schema.print`, sent as application/json
+pub multipartBody : List Part -> Body
+pub type Part                  -- opaque
+pub stringPart : String, String -> Part           -- the field's name, then its value
+
+pub type Expect x a            -- opaque: how the answer is read
+pub expectString : Expect Error String
+pub expectJson : Schema e a -> Expect Error a
+pub expectWhatever : Expect Error ()
+pub expectStringResponse : (Response String -> Result x a) -> Expect x a
+
+pub type Response body
+    = BadUrl_ String
+    | BadRequest_ Problem
+    | Timeout_
+    | NetworkError_
+    | BadStatus_ Metadata body
+    | GoodStatus_ Metadata body
+
+pub type alias Metadata =
+    url : String                    -- the address that answered, after redirects
+    statusCode : Int
+    statusText : String             -- "" over HTTP/2 and HTTP/3, which carry none
+    headers : Dict String String    -- names lower-cased, repeated headers joined with ", "
+
+pub type Progress
+    = Sending { sent : Int, size : Int }
+    | Receiving { received : Int, size : Maybe Int }
+pub fractionSent : { sent : Int, size : Int } -> Float
+pub fractionReceived : { received : Int, size : Maybe Int } -> Float
+
+pub request :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration          -- `Time.Duration`
+      , tracker : Maybe (Progress -> ())
+      }
+    -> Result x a                                                       -- suspends
+pub riskyRequest : <the same record> -> Result x a                      -- suspends
+pub get : { url : String, expect : Expect x a } -> Result x a           -- suspends
+pub post : { url : String, body : Body, expect : Expect x a } -> Result x a   -- suspends
+```
+
+`get` is `request` with `"GET"`, no headers, `emptyBody`, no timeout and no tracker; `post` the
+same with `"POST"` and its body — Elm's two, and there is no `put` or `delete`, as Elm has none:
+those are `request` with their method. **The command form** is `Cmd.task`, `Cmd.keyed` and
+`Cmd.cancel` over these (§9.8.2), and Elm's `tracker`-and-`cancel` pair is a key:
+
+```elm
+update msg model =
+    case msg of
+        Search q ->
+            ( model
+            , Cmd.keyed SearchKey Cmd.Restart λsend ->
+                send (Found (Http.get { url = Url.Builder.absolute [ "api", "search" ] [ Url.Builder.string "q" q ], expect = Http.expectJson results }))
+            )
+        Leave ->
+            ( model, Cmd.cancel SearchKey )   -- aborts the request: Elm's `Http.cancel "search"`
+```
+
+A body that wants progress passes a tracker that sends: `tracker = Just λp -> send (Progressed p)`
+— the progress messages and the answer leave one body in order, so there is no `track`
+subscription and no tracker string to match.
+
+**(b) What a request does, in order.** Steps 1–5 run in the calling fiber before anything is sent,
+and each failure is decided by a test of the value, not by catching what the host throws, so every
+one is named precisely and nothing is caught to find it (rule 9):
+
+1. **The URL** is parsed by `new URL(url, document.baseURI)` inside `Js.catchIf` that takes only a
+   `TypeError` (the URL standard's one failure): `Err (BadUrl url)`. A parsed URL with a username or
+   password is also `BadUrl url` — `fetch` rejects it with a `TypeError` that is otherwise the
+   network's, so it must be found first. Every scheme `fetch` takes is allowed (`data:` and `blob:`
+   included); one it does not (`file:`, `ftp:`) is the network error `fetch` gives.
+2. **The method** must be an HTTP token (RFC 9110's `tchar`), else `BadRequest (InvalidMethod m)`;
+   `CONNECT`, `TRACE` and `TRACK` in any case are `BadRequest (ForbiddenMethod m)`. The method is
+   sent as written; `fetch` upper-cases `delete`, `get`, `head`, `options`, `post` and `put` and no
+   other, so `"patch"` is sent lower-case, as the standard says.
+3. **Each header**: a name that is not a token, or a value that after trimming HTTP whitespace holds
+   NUL, CR or LF, is `BadRequest (InvalidHeader name)`; a forbidden request-header name is
+   `BadRequest (ForbiddenHeader name)` — `Accept-Charset`, `Accept-Encoding`,
+   `Access-Control-Request-Headers`, `Access-Control-Request-Method`, `Connection`,
+   `Content-Length`, `Cookie`, `Cookie2`, `Date`, `DNT`, `Expect`, `Host`, `Keep-Alive`, `Origin`,
+   `Referer`, `Set-Cookie`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Via`, any name
+   beginning `Proxy-` or `Sec-`, and `X-HTTP-Method`, `X-HTTP-Method-Override` or
+   `X-Method-Override` naming a forbidden method (the Fetch standard, *forbidden request-header*),
+   compared without case. *Why refuse what the host silently drops:* a header the program set and
+   the host removed is a silent wrong answer, the kind rule 7 keeps an error (H3). Headers are appended
+   in order, so a name given twice is sent once with both values joined, as `Headers` does.
+4. **The body**: any body but `emptyBody` on `GET` or `HEAD` is `BadRequest (BodyNotAllowed m)`;
+   a `Content-Type` header with a `multipartBody` is `BadRequest MultipartContentType`. A
+   `jsonBody` whose value the schema does not print is `BadRequest (UnprintableBody issues)` — it
+   is printed when the body is built, which is pure, and the request reports it.
+5. **The defaults**: a `stringBody` sends its MIME type and a `jsonBody` `application/json` as
+   `Content-Type` unless a header names one (the program's header wins, unlike Elm's XHR, which sent
+   both joined); `expectJson` sends `Accept: application/json` unless a header names one. A
+   multipart body's `Content-Type` and boundary are the host's.
+6. **Sent**: `fetch` with the method, headers, body, `credentials: "same-origin"`
+   (`riskyRequest`: `"include"`), `mode: "cors"`, `redirect: "follow"` and the signal of an
+   `AbortController` of the request's own. The timeout, when there is one, starts now, on the
+   page's `setTimeout` (so the test driver's virtual clock is the one it reads), and runs until the
+   body has been read, as Elm's did; a duration of zero or less times out at once. Anything
+   `fetch` or `new Request` throws *synchronously* is a defect: steps 1–4 found every failure the
+   standard documents for the inputs this module gives it.
+7. **The answer.** A status in 200–299 (`response.ok`) is `GoodStatus_`, any other `BadStatus_`;
+   both carry the `Metadata` and the body, read as text — UTF-8 with replacement and a leading BOM
+   dropped, `response.text()`'s decoding. With a tracker, the body is read through
+   `response.body.getReader()` and the same decoding (a `TextDecoder` in streaming mode), so the
+   tracker sees each chunk; a `null` body (`HEAD`, a 204) is the empty text. The `Expect` turns the
+   `Response` into the result: `expectString` gives the text, `expectWhatever` `()`, and both give
+   each failure constructor its `Error`; `expectJson` runs `Schema.parse schema text` on a
+   `GoodStatus_` body, an `Err issues` being `Err (BadBody issues)` (a `JSON.parse` failure is its
+   `ParseFailed` issue); `expectStringResponse f` hands the `Response` to `f`.
+
+**(c) Every way the host can fail, and how each is told apart.** A promise from `fetch`, from
+reading the body or from the reader rejects; the reason is tested in this order, by identity or
+by class, never by message, and nothing broader is caught:
+
+| The rejection | Is | Detected by |
+|---|---|---|
+| the request's own timeout ran out | `Timeout` | `error === reason`, where `reason` is a fresh `DOMException` named `"TimeoutError"` that this request passed to `abort(reason)` when its timer fired |
+| the fiber was cancelled (`Restart`, `Cmd.cancel`, a scope's end) | nothing: no fiber waits | `signal.aborted && error === signal.reason` for the canceller's own `abort()`; the rejection is dropped, the timer cleared |
+| no answer, or a body cut off | `NetworkError` | `error instanceof TypeError` — the Fetch standard's *network error* for DNS, a refused or reset connection, a CORS failure, mixed content, a CSP block, a redirect loop, and a stream that errors while the body is read. CORS failures are deliberately indistinguishable from the network's to a page, so beni cannot name them apart either |
+| anything else | a defect (§9.8.10 (c)) | thrown in the fiber that waited, as today: the page stops with the request's stack |
+
+Before the fetch: `new URL`'s `TypeError` is `BadUrl` (step 1), every `BadRequest` is a test of a
+value (steps 2–4). After it: a non-2xx status is `BadStatus` (`expectString`, `expectJson`,
+`expectWhatever`) or `BadStatus_` with its body (`expectStringResponse`), and a body the schema
+rejects is `BadBody` — so **each failure the standards document is one constructor**, and a
+failure none documents still stops the page.
+
+**(d) Cancellation is the fiber's** (§9.8.8, built): cancelling the fiber that waits aborts the
+request — its connection, its body read and its timer — and nothing answers. A `Restart` therefore
+releases the old request at once, which is what lets a search box's keyed body replace Elm's
+`tracker`/`cancel` pair with no string to keep unique.
+
+**(e) Progress.** With `tracker = Just f`, `f` is called in the requesting fiber, in order:
+`Sending { sent = 0, size }` before `fetch` is called and `Sending { sent = size, size }` once the
+response's headers arrive — `size` the request body's length in UTF-8 bytes (0 for `emptyBody`,
+the text's length for a multipart body made only of string parts) — then `Receiving { received = 0,
+size }` with `size` the `Content-Length` header's value when there is one, and `Receiving` again
+after each chunk with the bytes received so far. **`fetch` reports no upload progress**, so the two
+`Sending` calls say only "not sent" and "sent"; a page uploading a large file needs `XMLHttpRequest`
+(H4). The bytes counted are those the reader hands over — after the host has undone any
+`Content-Encoding` — while `Content-Length` counts the encoded bytes, so `received` may pass `size`;
+`fractionReceived` clamps to 1, as Elm's does. A tracker that suspends holds the next chunk back,
+and a tracker that throws is a defect.
+
+**(f) What the page sees of the answer.** `Metadata.headers` holds what `response.headers`
+iterates: names lower-cased, a header sent twice once with its values joined by `", "`, and — for a
+cross-origin answer — only the CORS-safelisted response headers plus those the server lists in
+`Access-Control-Expose-Headers`; `Set-Cookie` never. That is the host's rule and is documented on
+`Metadata`, not worked around.
+
+**(g) Rungs and cost.** `request`, `riskyRequest`, `get` and `post` suspend; every builder is pure.
+A page that imports `Http` and calls nothing ships nothing of it; one that calls `get` with
+`expectString` ships the request and its classification but no `Schema`, multipart, tracker or
+timeout code, each of which is reached only from a constructor or a branch the program builds
+(`backend.md` §9, *A `case` arm on a constructor nothing builds*). The slices measure each against
+the `Http` + `Time` page of §9.8.9.
+
+**Where this departs from elm/http, and why.**
+
+- **The direct form takes Elm's command names, and `Expect` has the error type, not a message.**
+  beni's direct form is the API (§9.8.11) and a call that waits is Elm's `Task`, so Elm's
+  `task`/`Resolver`/`stringResolver` and its `request`/`Expect`/`expectStringResponse` are one pair
+  here: `Expect x a` is Elm's `Resolver x a` under `Expect`'s names (H1). The command form is
+  `Cmd.task` over it, and Elm's `tracker` string with `cancel` and `track` is a `Cmd.keyed` key, a
+  `Cmd.cancel`, and a tracker function that sends.
+- **`expectJson` and `jsonBody` take a schema** (`schema.md`), not a `Json.Decode.Decoder` or a
+  `Json.Encode.Value`: schemas are beni's JSON story, and one schema reads the answer and writes the
+  request.
+- **`BadBody` carries the schema's issues, not a string** (H2): each issue has its path and code,
+  `Schema.formatIssues` (`schema.md` §14.4, slice S12) makes the text, and a typed failure is what rule 9 asks.
+- **`BadRequest` is new**, for the requests Elm let crash (`setRequestHeader` throwing) or reported
+  as `BadUrl` (`xhr.open` throwing on a bad method), and for what `fetch` would silently drop. A
+  `jsonBody` that does not print — a non-finite `Float`, a refinement a value breaks — is the one
+  failure Elm's total `Json.Encode` never had.
+- **`timeout` is a `Time.Duration`, and zero means at once.** Elm's `Maybe Float` of milliseconds
+  treated `Just 0` as "no timeout" (XHR's convention), a value that says the opposite of what it
+  does.
+- **The tracker is a function, and `Sending` is coarse.** `fetch` has no upload progress; beni says
+  so in the two `Sending` calls rather than inventing a curve (H4).
+- **No `bytesBody`, `fileBody`, `filePart`, `bytesPart`, `expectBytes`, `expectBytesResponse`**:
+  beni has no `Bytes` or `File` type yet. Each arrives with the type, under Elm's name.
+- **The program's `Content-Type` wins over the body's**, where Elm's XHR sent both joined.
+- **Requests use `fetch`, not `XMLHttpRequest`**: `fetch` is what cancellation (`AbortController`)
+  and streaming are built on, and the only HTTP API a Worker has.
+
+*Not in this version, each additive later:* `cache`, `redirect`, `referrerPolicy`, `keepalive`,
+`priority` and `integrity` options; `credentials: "omit"`; a streaming request body; response
+streaming as a `Sub`; `Http` on the `node` platform (Node 24 has the same `fetch`, so the module
+could be shared once Node is an application platform).
+
+#### 9.8.13 Routing: `Url.Parser`, `Url.Builder`, navigation and `Tea.application`
+
+*Added 2026-10-01* (`plans/status-2026-10.md` §4 Tier 1 item 3, §6 Milestone 2 item 3). Normative
+for `Url.Parser`, `Url.Parser.Query`, `Url.Builder`, `Browser.Navigation`, `Browser.UrlRequest`,
+`Tea.application` and `Tea.document`, and for how `beni serve` answers a deep link. It completes
+§9.8.10 (b)'s two stand-ins, which stay. `plans/browser-platform.md` §2.7's "a capability record,
+not Elm's opaque `Key`" is **superseded** by (c) below: the owner's later instruction is Elm's API,
+and the `Key` keeps what the record bought (H6). The choices taken for the owner are H6–H10 of
+`plans/http-and-routing.md`.
+
+**(a) Where `Url` lives** (H7). `Url`, `Url.Parser`, `Url.Parser.Query` and `Url.Builder` are
+pure and use nothing of a page, so they are **core modules**: a library, the `node` platform and a
+test can parse and build addresses. `browser`'s `Url` (§9.8.10 (b)) moves to `core/Url.beni`
+unchanged, and `browser-tea` stops re-exporting it (every program reaches core). Its
+`percentEncode` and `percentDecode` are `Js` over `encodeURIComponent`/`decodeURIComponent`, which
+every host has.
+
+**(b) The parser: elm/url 1.0's, with no currying.** Elm's `Url.Parser` threads a continuation
+through its type — `Parser (Int -> a) a` is "a parser that will hand an `Int` on" — and that shape
+needs nothing beni lacks: a function type returning a function is ordinary (`language.md` §3,
+`a, b -> c -> d`), and `slash` composes two continuations as Elm's does. What beni lacks is
+*currying*, so a constructor of two fields is `Int, String -> Route`, not `Int -> String -> Route`;
+and user-defined operators, so `</>` and `<?>` are written as the functions Elm's own source names
+them, `slash` and `questionMark`.
+
+```elm
+-- module Url.Parser (core)
+pub type Parser a b                                           -- opaque
+pub string : Parser (String -> a) a
+pub int : Parser (Int -> a) a
+pub s : String -> Parser a a
+pub custom : String, (String -> Maybe a) -> Parser (a -> b) b
+pub top : Parser a a
+pub slash : Parser a b, Parser b c -> Parser a c              -- Elm's </>
+pub map : Parser a b, a -> Parser (b -> c) c
+pub map2 : Parser (a -> b -> r) r, (a, b -> r) -> Parser (r -> c) c
+pub map3 : Parser (a -> b -> d -> r) r, (a, b, d -> r) -> Parser (r -> c) c
+-- … map4 to map8, the same pattern
+pub oneOf : List (Parser a b) -> Parser a b
+pub questionMark : Parser a (query -> b), Query.Parser query -> Parser a b   -- Elm's <?>
+pub query : Query.Parser query -> Parser (query -> a) a
+pub fragment : (Maybe String -> fragment) -> Parser (fragment -> a) a
+pub parse : Parser (a -> a) a, Url -> Maybe a
+```
+
+`map` is Elm's, subject first: its second argument is a value for a parser that captures nothing
+(`map top Home`) and a one-parameter function for one capture (`map (s "blog" |> slash int)
+Blog`). **`map2`…`map8` are beni's**: each takes the n-parameter function a constructor of n
+fields is, and is `map` over the curried function it makes (`map2 p f = map p λx -> λy -> f x y`).
+Elm's `Url.Parser.Query` already has `map2`…`map8`, so the names are Elm's.
+
+```elm
+type Route
+    = Home
+    | Blog Int
+    | Comment String Int
+    | Search (Maybe String)
+    | NotFound
+
+route : Parser (Route -> a) a
+route =
+    Parser.oneOf
+        [ Parser.map Parser.top Home
+        , Parser.s "blog" |> Parser.slash Parser.int |> Parser.map Blog
+        , Parser.s "user" |> Parser.slash Parser.string |> Parser.slash (Parser.s "comment") |> Parser.slash Parser.int |> Parser.map2 Comment
+        , Parser.s "search" |> Parser.questionMark (Query.string "q") |> Parser.map Search
+        ]
+
+toRoute : Url -> Route
+toRoute url = Maybe.withDefault (Parser.parse route url) NotFound
+```
+
+Its behaviour is elm/url 1.0's, read from `Url/Parser.elm`: the path split on `/`, a leading empty
+segment and one trailing empty segment dropped; `oneOf` tries in order and the first parser that
+consumes the whole path wins (a trailing `/` left over still matches); `s` matches a segment
+exactly; `query` and `questionMark` never fail, a missing parameter being the query parser's
+`Nothing`; `fragment` hands on `url.fragment` as it is. **Two decoding changes** (H8), both
+because Elm's answer is a silent wrong one:
+
+- **A path segment is percent-decoded before `string`, `int`, `custom` and `s` see it**, and a
+  segment that does not decode (`Url.percentDecode` is `Nothing`) matches nothing. Elm hands
+  `/user/J%C3%BCrgen` to `string` as `"J%C3%BCrgen"` (elm/url issue 16).
+- **A `+` in a query key or value is a space**, decoded before the percent escapes, as
+  `application/x-www-form-urlencoded` — what a browser writes for a form's `GET` — says. Elm keeps
+  the `+`. A pair without `=` and a pair whose key or value does not decode are skipped, as Elm's
+  `addParam` skips them, and values keep their order of appearance.
+
+```elm
+-- module Url.Parser.Query (core)
+pub type Parser a                                              -- opaque
+pub string : String -> Parser (Maybe String)
+pub int : String -> Parser (Maybe Int)
+pub enum : String, Dict String a -> Parser (Maybe a)
+pub custom : String, (List String -> a) -> Parser a
+pub map : Parser a, (a -> b) -> Parser b
+pub map2 : Parser a, Parser b, (a, b -> r) -> Parser r
+-- … map3 to map8, the same pattern, the function last
+```
+
+As Elm's: `string`, `int` and `enum` are `Nothing` unless the key appears exactly once with a
+value that converts; `custom` gets every value of the key, in order.
+
+```elm
+-- module Url.Builder (core)
+pub type Root = Absolute | Relative | CrossOrigin String
+pub type QueryParameter                                        -- opaque
+pub absolute : List String, List QueryParameter -> String
+pub relative : List String, List QueryParameter -> String
+pub crossOrigin : String, List String, List QueryParameter -> String
+pub custom : Root, List String, List QueryParameter, Maybe String -> String
+pub string : String, String -> QueryParameter
+pub int : String, Int -> QueryParameter
+pub toQuery : List QueryParameter -> String
+```
+
+Elm's, with one change (H8): **each path segment is percent-encoded** (`Url.percentEncode`), as
+query keys and values already are — `absolute [ "tags", "c/c++" ] []` is `/tags/c%2Fc%2B%2B`, where
+Elm's is `/tags/c/c++`, a different path. With the parser's decoding, `parse` of a built URL gives
+back the segments it was built from. `custom`'s fragment is written as given.
+
+**(c) `Browser.Navigation`: the page's address, changed on purpose.**
+
+```elm
+-- module Browser.Navigation (browser), re-exported by browser-tea
+pub type Key                                                    -- opaque, equatable: a model may hold it
+pub key : () -> Key                                             -- impure: the page's key
+pub type Error = BadUrl String | CrossOrigin String | Throttled
+
+pub pushUrl : Key, String -> Result Error ()                    -- impure
+pub replaceUrl : Key, String -> Result Error ()                 -- impure
+pub back : Key, Int -> Result Error ()                          -- impure
+pub forward : Key, Int -> Result Error ()                       -- impure
+pub load : String -> Result Error ()                            -- impure
+pub reload : () -> ()                                           -- impure
+
+-- §9.8.10 (b), kept
+pub currentUrl : () -> Maybe Url
+pub eachUrlChange : (Url -> ()) -> ()                           -- suspends
+pub onUrlChange : (Url -> msg) -> Sub msg
+-- new
+pub eachUrlRequest : (Browser.UrlRequest -> ()) -> ()           -- suspends
+pub onUrlRequest : (Browser.UrlRequest -> msg) -> Sub msg
+
+-- module Browser (browser)
+pub type UrlRequest
+    = Internal Url
+    | External String
+```
+
+**The `Key`.** Elm hands a `Key` only to `application`, so that a program that changes the address
+is one that hears every change ("navigation in elements", `references/elm-browser/notes/`): a bare
+`history.pushState` fires no `popstate`, and a program that pushed would never learn of it. beni
+closes that hole where it is instead of by who holds the key: **every change `pushUrl`,
+`replaceUrl`, `back` and `forward` make is announced to every follower** (`eachUrlChange`,
+`onUrlChange`), so no program on the page can fall out of step with the address, whoever pushed.
+The key is therefore not a permission, and `key ()` hands the page's one key to any code, which is
+what makes the direct form complete — The Elm Architecture is a framework on top of beni (§9.8.11),
+and `Tea.application` gets its key from `key ()` like anyone. It is kept, as Elm's API, because it
+is the one value a test driver for TEA programs will replace to fake navigation (§9.8.9, W55;
+`plans/browser-platform.md` §2.7's capability record, inside the key) — so a program's navigation
+goes through a value it was given (H6).
+
+**Each function, and its failures** (rule 9: each found by a test of the value where it can be,
+each `DOMException` named where it cannot, nothing else caught):
+
+- **`pushUrl key url`** resolves `url` against the page (`new URL(url, location.href)`, a
+  `TypeError` being `Err (BadUrl url)`); an origin other than the page's is `Err (CrossOrigin
+  url)` — `pushState` would throw `SecurityError` for it; then `history.pushState(null, "", url)`.
+  A `SecurityError` from that call is `Err Throttled`: with the URL checked, the documented reason
+  left is the rate limit Safari and Firefox enforce by throwing (Elm's note: about 100 calls in 30
+  s). Chrome enforces its own by dropping the call with a console warning, so after the call
+  `location.href` is compared with the resolved URL and a mismatch is `Err Throttled` too — the one
+  way to see a silent drop. On `Ok ()`, every follower is sent the new `Url` once (below).
+- **`replaceUrl`** is the same with `replaceState`.
+- **`back key n`** and **`forward key n`** call `history.go(-n)` and `history.go(n)`; `n = 0` does
+  nothing (Elm's `n && history.go(n)`). A `SecurityError` is `Err Throttled`. The address changes
+  later, when the host traverses: the `popstate` it fires is what followers hear. *Unlike Elm*, no
+  message is sent at the call — Elm's `go` sent `onUrlChange` with the address *before* the
+  traversal, then the `popstate` sent the new one.
+- **`load url`** leaves the page: `location.assign(url)`. An address that does not resolve is `Err
+  (BadUrl url)`, and so is a `javascript:` one, which would run text as script (the same rule as
+  markup's URL attributes). A `SyntaxError` from `assign` is `Err (BadUrl url)` and a
+  `SecurityError` `Err Throttled`. Elm caught every exception and reloaded instead. A `load` of the
+  page's own address with only a different fragment does not leave the page — the host scrolls and
+  fires `popstate` — so followers hear it, and `load`'s "always a page load" is Elm's prose, not
+  the host's.
+- **`reload ()`** is `location.reload()`, which documents no failure for a page's own document.
+  Elm's `reloadAndSkipCache` passed `forceGet`, a Firefox-only argument every other engine ignores,
+  so it is **not provided**: it would do what `reload` does while saying otherwise.
+
+**Followers.** `eachUrlChange f` calls `f` with the new `Url` after each `popstate` and after each
+successful `pushUrl`/`replaceUrl` anywhere on the page, in order, for as long as the calling fiber
+runs (§9.8.11); an address that is not a `Url` is skipped. The announcement of a push is made
+during the push: each follower's listener reads `currentUrl ()` then and queues it, as a `popstate`
+is queued (§9.8.10 (a)), so it reaches `f` at its fiber's next turn and two pushes in one `update`'s
+command are two values, in order. The announcement is an event of the platform's own on the window
+(`"beni:navigate"`), not a `popstate`: other code on the page sees `popstate` only for the host's
+traversals, as it should.
+
+**Link requests: Elm's guard, made precise.** `eachUrlRequest f`, for as long as the calling fiber
+runs, holds one `click` listener on the **window**, in the bubbling phase — after every handler on
+the page, the program's delegated ones included, have run. For each click it decides, **while the
+event is dispatched**, in this order:
+
+1. the event's default was not already prevented — a handler that prevented it has handled it
+   (*beni's*: Elm checks nothing here);
+2. `event.button === 0` (Elm's `button < 1`) and none of `ctrlKey`, `metaKey`, `shiftKey`,
+   `altKey` is held (*beni adds `altKey`*: an Alt-click downloads the link in Chrome and Firefox on
+   Windows and Linux, which the user asked for);
+3. the nearest `HTMLAnchorElement` at or above `event.target` in the composed path has an `href`;
+4. it has no `download` attribute, and its `target` is empty or `_self` (*beni adds `_self`*, the
+   same browsing context; Elm intercepts only an empty `target`).
+
+When all hold, it calls `preventDefault()` and queues `Internal url` when `Url.fromString a.href`
+is a `Url` with the page's protocol, host and port (Elm's comparison), else `External a.href`. A
+click that fails a test is left to the host, which follows the link. **The listener covers the
+whole document**, not only a program's mount: a link in markup the server wrote around a
+`Browser.mountAt` program becomes a request too, which is what Elm's "navigation in elements" note
+asks ports for. A page should have one follower of requests; two each get every request.
+`onUrlRequest tag` is `Sub.listen` over it, keyed by a type of this module (§9.8.3).
+
+A link whose only difference from the page is its fragment (`href="#top"`) is `Internal`, as in
+Elm, and a program that pushes it gets no scroll; scrolling to a fragment is the program's
+(`Dom.scrollIntoView`).
+
+**(d) `Tea.application` and `Tea.document`.**
+
+```elm
+-- module Tea (browser-tea)
+pub type alias Document msg =
+    title : String
+    body : Html msg
+
+pub document :
+      { init : ( model, Cmd msg )
+      , update : msg, model -> ( model, Cmd msg )
+      , view : model -> Document msg
+      , subscriptions : model -> Sub msg
+      }
+    -> Program
+
+pub application :
+      { init : Url, Key -> ( model, Cmd msg )
+      , update : msg, model -> ( model, Cmd msg )
+      , view : model -> Document msg
+      , subscriptions : model -> Sub msg
+      , onUrlRequest : UrlRequest -> msg
+      , onUrlChange : Url -> msg
+      }
+    -> Program
+```
+
+Elm's three programs, minus flags (beni has none). `document` is `element` whose render also sets
+`document.title` to the view's `title` whenever it differs from the page's — read and written in
+the render that renders the body, so the title and the body never disagree after a flush.
+`application` is `document` plus:
+
+- `init` gets `currentUrl ()` and `key ()`. **A page whose address is not a `Url`** (opened from a
+  `file:` address) **stops at start, as a defect**, with the development crash screen saying an
+  application needs an `http` or `https` address — the answer W9 gave a missing mount element, and
+  Elm's (`__Debug_crash(1)`), since no route can be computed. A page that must run there uses
+  `document` and `currentUrl ()`'s `Maybe`.
+- its subscriptions are the program's batched with `Navigation.onUrlRequest onUrlRequest` and
+  `Navigation.onUrlChange onUrlChange`, so link requests and address changes arrive as messages
+  through `update`, and a program's own `onUrlChange` shares their fiber (§9.8.5).
+
+`application` reaches no fiber beyond what `element` with two subscriptions does. Mounted with
+`Browser.mountAt` it still follows the whole document's links, as (c) says.
+
+```elm
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) ->
+            ( model, Cmd.task (λ() -> Navigation.pushUrl model.key (Url.toString url)) Pushed )
+
+        ClickedLink (Browser.External href) ->
+            ( model, Cmd.task (λ() -> Navigation.load href) Pushed )
+
+        UrlChanged url ->
+            ( { model | route = toRoute url }, Cmd.none )
+
+        Pushed _ ->
+            ( model, Cmd.none )
+```
+
+**(e) Deep links on `beni serve`.** `frontend.md` §10.4 already answers a path that names no file
+and whose last segment has no `.` with `index.html`, and the page shell names its entry by an
+absolute path, so `/blog/42` reloads into the application. **Amended here** (H9): a `GET` for a
+path that names no file is also answered with `index.html` when its `Accept` header lists
+`text/html` — what a browser sends when it navigates — whatever its last segment, so a route such
+as `/users/jane.doe` survives a reload; a request without it (a module, a fetch of a missing
+`.json`) is still `404`. A program served under `"base": "/app/"` sees `/app/` at the front of
+`url.path` and routes with `Parser.s "app"`, as it will when deployed there; nothing hides the base
+from it. A static host in production needs the same fallback configured; the user guide says how.
+
+**Where this departs from elm/url and elm/browser, and why.**
+
+- **`</>` and `<?>` are `slash` and `questionMark`**, Elm's own internal names: beni has no
+  user-defined operators (`language.md` §0).
+- **`map` is subject first, and `map2`…`map8` exist** because a beni constructor of n fields takes
+  n parameters, not one at a time; Elm's `Url.Parser.Query.map2`…`map8` are moved to subject first
+  the same way.
+- **Path segments are decoded and `+` is a space in a query; built path segments are encoded**
+  (H8) — each a silent wrong answer in Elm.
+- **`Url` and its parser and builder are core**, not a package of the browser (H7).
+- **`key ()` is public, and every push is announced** (H6): the hole Elm's `Key` fenced is closed
+  at the announcement, so the direct form can do what `Tea.application` does.
+- **`pushUrl`, `replaceUrl`, `back`, `forward` and `load` return `Result Error ()`** where Elm's
+  were `Cmd msg` that crashed on a throttled or cross-origin push. The command form is
+  `Cmd.task`/`Cmd.do` over them (H10 asks whether to add command-returning helpers).
+- **`back` and `forward` send nothing at the call** (Elm's sent the old address), **`reloadAndSkipCache`
+  is not provided**, **`load` refuses `javascript:`**, and **the link guard adds `altKey`, `_self` and
+  an already-prevented default**.
+- **`onUrlRequest` and `eachUrlRequest` are new**: Elm offered link requests only to
+  `application`; here any program can follow them.
+- **`Document.body` is one `Html msg`** (a fragment for several roots), not a `List (Html msg)`:
+  a beni view is one markup tree.
+- **An application opened at a non-`http(s)` address stops as a defect**, as Elm's did, with the
+  crash screen saying why instead of `Debug.crash`'s code 1.
 
 ## Appendix — what is deliberately not done
 
