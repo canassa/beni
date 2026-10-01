@@ -1909,7 +1909,10 @@ pattern, a flag, an empty pattern, one built by the sibling), with the operators
 `Js.development : Bool` (pure) is **`true` in a development build and `false` under `--release`**,
 written in place as the literal — the one fact about the build a platform's beni may read, so that
 what only a developer needs ships in no release build. A use not in an `if` is the literal; `Js.js`
-exports `true` only for check 2.
+exports `true` only for check 2. *(Amended 2026-10-02: `Js.development : () -> bool`, called as
+`Js.development ()` — `Js` names no core type (`boundary.md` §4.2) and check 1 refuses a
+polymorphic `foreign` value — and a `case` on that call drops an arm as one on the value did;
+`Js.js` exports a function of one parameter.)*
 
 **An `if` on it keeps one branch, in both passes.** A `case` whose scrutinee is `Js.development`
 and one of whose arms has the pattern `True` or `False` — every `if Js.development then … else …`,

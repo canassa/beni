@@ -5510,3 +5510,26 @@ checked, whose first argument is a literal and whose last argument — where Elm
 subject — is not: a decision on BIR alone, made after the call checked, so it cannot change a type. Its message
 prints the call with the two arguments exchanged and names the method form as the escape when the
 literal is meant.
+
+## 30. Amendment of 2026-10-02: a literal a `Js` call writes in place
+
+*The owner's S7 (`plans/browser-decisions.md`); `boundary.md` §4.2 and `static-dispatch-spike.md`
+§6.8, both amended the same day.* A string or list literal that a call of core's `Js` writes in
+place — the name argument of `global`, `get`, `set` or `call`, either argument of `regExp`, the
+argument list of `call`, `apply`, `construct` or `array` — mints no module edge, and the checker
+must therefore give it no type a dependency would declare.
+
+**Generation** (§6, `constrain/Expr.zig`'s `call`). When the callee is an `ext_value` of core's
+`Js` — keyed on the core package and the module and value names, as §28's casts are, never on a
+spelling a user can write — an argument at one of those positions that is a `string` instruction
+gets its fresh argument variable and no constraint; one that is a `list` instruction has each
+element generated against one fresh element variable, exactly as a list literal's are, and is
+otherwise left a fresh variable — never `String`, never `List a`. Every such position is a type
+variable in `Js`'s signature, so the call checks exactly as before; what changes is that no
+well-known type is read for the literal, which is what lets `Basics` and `Char` write one before
+`String` and `List` are checked. A literal anywhere else — bound to a name first, handed to
+`Js.from` — is generated as §6 always has, and mints its edge.
+
+Nothing reaches the record: the backend writes the literal from `Bir`, not from a type
+(`backend.md` §4's `Js` intrinsics), and no evidence, dispatch row or boundary row (§28) can
+mention a fresh variable no other constraint touches.

@@ -484,10 +484,39 @@ and `Basics`, which every module's do — and a string literal written in either
 module would depend on (`resolve/Graph.zig`, `mintedModules`), so neither can name a property.
 `plans/core-in-beni.md` has what would let them.
 
+**`Js` is exempt from the module graph** (*amended 2026-10-02*, the owner's S7 in
+`plans/browser-decisions.md`), which is what lets them. Two rules together make `Js` a module every
+core and platform module may import — `Basics` and `Char` included — with no import of it able to
+close a cycle:
+
+1. **`Js`'s signatures name no core type**, not `Basics`'s nor `List`'s: every position the
+   paragraph above left at `Int`, `Bool` or `List Value` is a type variable — `same : a, a -> bool`,
+   `bitAnd : int, int -> int`, `at : Value, index -> Value`, `call : Value, name, args -> Value`,
+   `development : bool`. `Js` then names, imports and mints nothing, so it depends on no module and
+   is the bottom of the core graph: an edge to it can close no cycle. The variables are unchecked, as
+   everything about `Js` is; where the backend needs a list literal it still refuses anything else
+   (`internal`, as before).
+2. **A literal a `Js` call writes in place mints nothing** (`static-dispatch-spike.md` §6.8,
+   amended): a string literal that is the name argument of `global`, `get`, `set` or `call`, either
+   argument of `regExp`, and a list literal that is the argument list of `call`, `apply`,
+   `construct` or `array`. The backend writes each as JavaScript syntax — a property name, a
+   regular expression literal, an argument list — so no `String` or `List` value exists at run time,
+   and the checker types each as a fresh type variable rather than `String` or `List a`
+   (`checker-v2.md` §30), so none is visible in the module either. Only those positions, written
+   there: the same literal bound to a name first, or a string handed to `Js.from`, is an ordinary
+   `String` with the ordinary edge.
+
+Both are keyed on the core package's `Js`, as `js/JsIntrinsic.zig` is: a root-package module named
+`Js` is an ordinary module whose literals mint as any do. `import Js` is still written, and is still
+`js_outside_platform` outside core and a platform package.
+
 **`development : Bool`** (pure, 2026-10-01) is `True` in a development build and `False` under
 `--release`; an `if` on it keeps only the branch the build takes, so a development-only
 declaration — `browser`'s crash screen — is in no release build (`backend.md` §4, *`Js.development`
-is the build's mode*).
+is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, written
+`Js.development ()` — `Bool` is a core type `Js` may not name, and a `foreign` value that is not a
+function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
+value was.)*
 
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a

@@ -1384,6 +1384,18 @@ that names it back today — `core:Basics` has no outgoing edge at all in
 `tests/corpus/check/good/TypeOwnerEdges/_expected.graph`. §5's rewrite has to keep it that way, or
 §6.8 needs a stated exemption **first**. §11 carries the constraint.
 
+**The stated exemption** (*amended 2026-10-02*, the owner's S7; `boundary.md` §4.2). A literal that a
+call of core's `Js` writes in place mints no edge: a string literal that is the name argument of
+`Js.global`, `get`, `set` or `call`, either argument of `regExp`, and a list literal that is the
+argument list of `call`, `apply`, `construct` or `array`. Such a literal is not a value of the type
+it would mint — the backend writes it as JavaScript syntax — and the checker types it as a fresh
+variable (`checker-v2.md` §30), so **the invariant above holds unchanged**: no `String` or `List`
+becomes visible through it. `Graph.mintedModules` counts a module's string and list literals and
+the exempt ones among them and drops the bit only when every one is exempt; the count runs only
+for a module that imports core's `Js` and has the bit set, so no other module pays for it. With
+`Js`'s own signatures naming no core type, `Js` depends on nothing, and `Basics` and `Char` may
+write `Js` calls: `core:Basics`'s one outgoing edge is then `core:Js`.
+
 **Observable surface.** `dump --stage=graph` (`src/dump/graph.zig`) prints the graph's edges, one
 per line as `package:Module -> package:Module`, sorted by the printed line. A module's identity is
 `(package, name)` and not the name alone, because the user's package and `core` may each have a

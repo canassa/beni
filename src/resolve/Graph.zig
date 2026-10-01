@@ -68,6 +68,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const prelude = @import("../bir/prelude.zig");
+const JsIntrinsic = @import("../js/JsIntrinsic.zig");
 
 const Graph = @This();
 
@@ -487,6 +488,10 @@ pub fn build(
         const file = g.modules.items(.file)[i];
         const bir = artifacts.bir(file);
         g.markReferencedModules(bir, used_stamp, stamp);
+        // The name core's `Js` has in this file's references, when the
+        // file imports it: its literals in a `Js` call's in-place positions
+        // mint nothing (`mintedModules`).
+        var js_module: ?Symbol = null;
         for (bir.imports) |imp| {
             const module_name = bir.symbol(imp.module);
             // An unused prelude row adds no edge. One whose name no module
@@ -515,6 +520,11 @@ pub fn build(
             {
                 try diagnostics.append(gpa, .{ .code = .js_outside_platform, .file = file, .token = imp.name_token });
             }
+            if (!imp.prelude and g.modules.items(.package)[target.int()] == .core and
+                std.mem.eql(u8, interner.slice(g.modules.items(.name)[target.int()]), "Js"))
+            {
+                js_module = module_name;
+            }
             // A module's references to ITSELF add no edge and are never a
             // cycle (checker.md §4.3): every operator inside `Basics`
             // produces one.
@@ -541,7 +551,7 @@ pub fn build(
         // `List` shadows the NAME for its dependents, and does not move
         // the type a list literal has out from under the checker — so the
         // two must not disagree about which module the edge is to.
-        const minted = mintedModules(bir);
+        const minted = mintedModules(bir, js_module, interner);
         for (minted_modules, 0..) |w, bit| {
             if (minted & (@as(u8, 1) << @intCast(bit)) == 0) continue;
             const target = g.lookup(.core, w.symbol()) orelse continue;
@@ -735,7 +745,16 @@ fn rowIndex(g: *const Graph, name: Symbol) ?u32 {
 /// commit) — the scan does not show. The one accumulator the first draft
 /// used, with an early exit per instruction, cost a consistent 0.4 ms:
 /// every instruction waited on the previous one's OR.
-fn mintedModules(bir: *const Bir) u8 {
+///
+/// **A literal a `Js` call writes in place mints nothing** (§6.8, amended
+/// 2026-10-02; `boundary.md` §4.2): `js` is the name core's `Js` has in
+/// this file's references, null when the file does not import it. Only
+/// then, and only when the string or list bit is set, a second pass
+/// counts the file's `string` and `list` instructions and those a `Js`
+/// call holds at an in-place position (`JsIntrinsic.inPlaceLiterals`), and
+/// clears the bit when they are all of them — any other instruction of
+/// the bit (`chunk`, `interp`, `pat_string`, `pat_list`) keeps it.
+fn mintedModules(bir: *const Bir, js: ?Symbol, interner: *const InternPool.Global) u8 {
     const tags = bir.insts.items(.tag);
     var acc: [4]u8 = @splat(0);
     var i: usize = 0;
@@ -744,7 +763,52 @@ fn mintedModules(bir: *const Bir) u8 {
     }
     var seen = acc[0] | acc[1] | acc[2] | acc[3];
     while (i < tags.len) : (i += 1) seen |= minted_bits[@intFromEnum(tags[i])];
-    return seen;
+    const literal_bits = minted_bits[@intFromEnum(Bir.Inst.Tag.string)] | minted_bits[@intFromEnum(Bir.Inst.Tag.list)];
+    if (js == null or seen & literal_bits == 0) return seen;
+    return seen & ~exemptBits(bir, js.?, interner);
+}
+
+/// The string and list bits every instruction of which is a literal a
+/// `Js` call writes in place (`mintedModules`), as a mask to clear.
+fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u8 {
+    const tags = bir.insts.items(.tag);
+    var strings: usize = 0;
+    var lists: usize = 0;
+    var other_string = false;
+    var other_list = false;
+    for (tags) |tag| switch (tag) {
+        .string => strings += 1,
+        .list => lists += 1,
+        .chunk, .interp, .pat_string => other_string = true,
+        .pat_list => other_list = true,
+        else => {},
+    };
+    for (tags, 0..) |tag, at| {
+        if (tag != .call) continue;
+        const data = bir.instData(@enumFromInt(at));
+        const callee: Bir.Inst.Index = @enumFromInt(data.lhs);
+        switch (bir.instTag(callee)) {
+            .qualified, .import_value => {},
+            else => continue,
+        }
+        const name = bir.instData(callee);
+        if (bir.symbol(@enumFromInt(name.lhs)) != js) continue;
+        const which = std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(@enumFromInt(name.rhs)))) orelse continue;
+        const positions = JsIntrinsic.inPlaceLiterals(which);
+        const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+        for (args, 0..) |arg, k| {
+            if (k >= 8 or positions & (@as(u8, 1) << @intCast(k)) == 0) continue;
+            switch (bir.instTag(arg)) {
+                .string => strings -= 1,
+                .list => lists -= 1,
+                else => {},
+            }
+        }
+    }
+    var mask: u8 = 0;
+    if (strings == 0 and !other_string) mask |= minted_bits[@intFromEnum(Bir.Inst.Tag.string)];
+    if (lists == 0 and !other_list) mask |= minted_bits[@intFromEnum(Bir.Inst.Tag.list)];
+    return mask;
 }
 
 /// The modules that declare a well-known type, one bit each in the order
@@ -756,7 +820,7 @@ const minted_modules = [_]InternPool.WellKnown{ .Basics, .List, .String, .Char, 
 /// phase's waves can lower a minted module that no import names
 /// (`Session.nextWave` — a `schema` declaration mints `Schema`).
 pub fn mintedNames(bir: *const Bir, buffer: *[minted_modules.len]InternPool.WellKnown) []const InternPool.WellKnown {
-    const minted = mintedModules(bir);
+    const minted = mintedModules(bir, null, undefined);
     var n: usize = 0;
     for (minted_modules, 0..) |w, bit| {
         if (minted & (@as(u8, 1) << @intCast(bit)) == 0) continue;

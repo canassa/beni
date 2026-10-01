@@ -619,6 +619,157 @@ test "the core modules a build reaches are the same at every --jobs, and nothing
     }
 }
 
+// ---------------------------------------------------------------------------
+// `Js` is exempt from the module graph (boundary.md §4.2 and
+// static-dispatch-spike.md §6.8, amended 2026-10-02)
+// ---------------------------------------------------------------------------
+
+/// A core of five modules under `--core-root`, shaped like the real one
+/// where it bites: `List` names `Basics`'s `Int` and `String` imports
+/// `Lower`, so `Basics` writing a list literal and `Lower` writing a string
+/// literal would each close a cycle. `Js` is a few of the real one's
+/// declarations, naming no core type. `Lower`'s second argument is the body
+/// of its `name` declaration.
+fn writeJsCore(w: *World, lower_name: []const u8) !void {
+    try w.write("jscore/Js.beni",
+        \\pub foreign type Value
+        \\
+        \\
+        \\pub foreign pure from : a -> Value
+        \\
+        \\
+        \\pub foreign pure to : Value -> a
+        \\
+        \\
+        \\pub foreign impure global : name -> Value
+        \\
+        \\
+        \\pub foreign impure get : Value, name -> Value
+        \\
+        \\
+        \\pub foreign impure call : Value, name, args -> Value
+        \\
+    );
+    try w.write("jscore/Basics.beni",
+        \\import Js
+        \\
+        \\
+        \\pub foreign type Int
+        \\
+        \\
+        \\pub foreign type Float
+        \\
+        \\
+        \\pub floor : Float -> Int
+        \\floor x = Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ])
+        \\
+    );
+    try w.write("jscore/List.beni",
+        \\pub foreign type List a
+        \\
+        \\
+        \\pub foreign pure length : List a -> Int
+        \\
+    );
+    try w.write("jscore/String.beni",
+        \\import Lower
+        \\
+        \\
+        \\pub foreign type String
+        \\
+        \\
+        \\pub upper : Lower.Text -> Lower.Text
+        \\upper t = Lower.upper t
+        \\
+    );
+    var lower: std.ArrayList(u8) = .empty;
+    defer lower.deinit(testing.allocator);
+    try lower.appendSlice(testing.allocator,
+        \\import Js
+        \\
+        \\
+        \\pub type alias Text =
+        \\    Js.Value
+        \\
+        \\
+        \\pub upper : Text -> Text
+        \\upper t = Js.call t "toUpperCase" []
+        \\
+        \\
+        \\pub size : Text -> Int
+        \\size t = Js.to (Js.get t "length")
+        \\
+        \\
+        \\pub name : Text
+        \\name =
+        \\
+    );
+    try lower.appendSlice(testing.allocator, lower_name);
+    try w.write("jscore/Lower.beni", lower.items);
+}
+
+test "a Js call's property names and argument list mint no edge, so a core module below String and List writes one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Lower` is below `String` and writes `"toUpperCase"` and `"length"`;
+    // `Basics` is below `List` and writes `[ Js.from x ]`. Each is a
+    // literal the backend writes in place, so neither mints its type's
+    // module, and neither module may then depend on it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeJsCore(&w, "    Js.global \"name\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--core-root=jscore", "jscore" });
+    const graph = try w.run(&.{ "dump", "--stage=graph", "--core-root=jscore", "jscore/String.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(u8, 0), graph.exit_code);
+    // `Basics` reaches `Js` and nothing else, and `Lower` reaches `String`
+    // not at all; `Js` reaches nothing.
+    try testing.expectEqualStrings(
+        \\core:Basics -> core:Js
+        \\core:List -> core:Basics
+        \\core:Lower -> core:Basics
+        \\core:Lower -> core:Js
+        \\core:String -> core:Lower
+        \\
+    , graph.stdout);
+}
+
+test "a string a Js call hands to Js.from is a String, and its edge is a cycle below String" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The exemption is the literal the backend writes in place, nothing
+    // else: `"name"` handed to `Js.from` is a `String` value the program
+    // holds, so `Lower` depends on `String`, which imports it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeJsCore(&w, "    Js.from \"name\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--core-root=jscore", "jscore" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // One cycle, `Lower`'s: `Basics`'s list literal is still exempt.
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.import_cycle, r.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "Lower → String → Lower") != null);
+}
+
 test "a platform the binary carries is checked as far as the program reaches it, and a directory platform whole" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

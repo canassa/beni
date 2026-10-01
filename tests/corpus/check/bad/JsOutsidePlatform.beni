@@ -1,9 +1,15 @@
--- check/bad: `js_outside_platform` at 5:8. Core's `Js` writes JavaScript
+-- check/bad: `js_outside_platform` at 7:8. Core's `Js` writes JavaScript
 -- with the checks off (research 47), so a module of an ordinary package may
 -- not import it, as it may not write `foreign`; the import is refused where
--- it is written, whatever the module goes on to use.
+-- it is written, whatever the module goes on to use. The property name a
+-- `Js` call writes in place mints no edge (boundary.md §4.2, amended
+-- 2026-10-02), and that changes nothing here.
 import Js
 
 
 pub same : Js.Value, Js.Value -> Bool
 same a b = Js.same a b
+
+
+pub size : Js.Value -> Int
+size v = Js.to (Js.get v "length")

@@ -16,12 +16,14 @@
 --!
 --! A property name is never renamed, and neither is a global.
 --!
---! **This module names no core type but `Basics`'s and `List`'s**
---! (2026-10-01, `plans/core-in-beni.md`): a property or global name, and a
---! pattern, is a type variable where a string literal stands, and `typeOf`
---! answers a `Value`. A module may import only what does not import it
---! back, and `String` — which `Char`, `Maybe` and the rest are below — is
---! written over this one.
+--! **This module names no core type** (2026-10-02, `boundary.md` §4.2):
+--! a property or global name, a pattern, an argument list, a `Bool` and an
+--! `Int` are each a type variable, and `typeOf` answers a `Value`. So it
+--! imports nothing and depends on nothing, and every core module may
+--! import it, `Basics` and `Char` included, with no cycle possible. A
+--! string or list literal a call writes in place — a property name, an
+--! argument list — mints no edge to `String` or `List`
+--! (`static-dispatch-spike.md` §6.8).
 
 --| Any JavaScript value, opaque to beni: `from` makes one of any beni
 --| value and `to` reads one back, and neither checks anything.
@@ -46,47 +48,47 @@ pub foreign pure to : Value -> a
 
 
 --| `a === b`.
-pub foreign pure same : a, a -> Bool
+pub foreign pure same : a, a -> bool
 
 
 --| `v === null`.
-pub foreign pure isNull : Value -> Bool
+pub foreign pure isNull : Value -> bool
 
 
 --| `v === undefined`.
-pub foreign pure isUndefined : Value -> Bool
+pub foreign pure isUndefined : Value -> bool
 
 
 --| `v == null`: null or undefined.
-pub foreign pure isNullish : Value -> Bool
+pub foreign pure isNullish : Value -> bool
 
 
 --| `a & b`.
-pub foreign pure bitAnd : Int, Int -> Int
+pub foreign pure bitAnd : int, int -> int
 
 
 --| `a | b`.
-pub foreign pure bitOr : Int, Int -> Int
+pub foreign pure bitOr : int, int -> int
 
 
 --| `a ^ b`.
-pub foreign pure bitXor : Int, Int -> Int
+pub foreign pure bitXor : int, int -> int
 
 
 --| `a << n`.
-pub foreign pure shiftLeft : Int, Int -> Int
+pub foreign pure shiftLeft : int, int -> int
 
 
 --| `a >> n`.
-pub foreign pure shiftRight : Int, Int -> Int
+pub foreign pure shiftRight : int, int -> int
 
 
 --| `a >>> n`: unsigned, so its answer is 0…4294967295.
-pub foreign pure shiftRightZero : Int, Int -> Int
+pub foreign pure shiftRightZero : int, int -> int
 
 
 --| `a % b`: the remainder, with the sign of `a`; `NaN` when `b` is `0`.
-pub foreign pure rem : Int, Int -> Int
+pub foreign pure rem : int, int -> int
 
 
 --| `typeof v`: `"string"`, `"number"`, `"object"` and the rest, as a
@@ -96,7 +98,7 @@ pub foreign pure typeOf : Value -> Value
 
 --| `v instanceof C`: what a `catchIf` test asks of what was thrown,
 --| `Js.instanceOf e (Js.global "TypeError")`.
-pub foreign impure instanceOf : Value, Value -> Bool
+pub foreign impure instanceOf : Value, Value -> bool
 
 
 --| `/pattern/flags`, a regular expression literal. Both arguments are
@@ -122,22 +124,22 @@ pub foreign impure set : Value, name, Value -> ()
 
 --| `o.name(a, b)`: the arguments are written as a list literal, one
 --| JavaScript argument per element.
-pub foreign impure call : Value, name, List Value -> Value
+pub foreign impure call : Value, name, args -> Value
 
 
 --| `f(a, b)`: the arguments are written as a list literal.
-pub foreign impure apply : Value, List Value -> Value
+pub foreign impure apply : Value, args -> Value
 
 
 --| `new C(a, b)`: an object made by a constructor, the arguments written
 --| as a list literal. `Js.construct (Js.global "Error") [ Js.from m ]` is
 --| `new Error(m)`.
-pub foreign impure construct : Value, List Value -> Value
+pub foreign impure construct : Value, args -> Value
 
 
 --| `[a, b]`: a new JavaScript array, its elements written as a list
 --| literal.
-pub foreign impure array : List Value -> Value
+pub foreign impure array : elements -> Value
 
 
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
@@ -147,11 +149,11 @@ pub foreign impure each : Value, (Value -> ()) -> ()
 
 
 --| `o[k]`: an element of an array, or of anything indexed by number.
-pub foreign impure at : Value, Int -> Value
+pub foreign impure at : Value, index -> Value
 
 
 --| `o[k] = v`, a statement: an element of an array written.
-pub foreign impure setAt : Value, Int, Value -> ()
+pub foreign impure setAt : Value, index, Value -> ()
 
 
 --| `throw v`, a statement. Nothing after it runs.
@@ -199,7 +201,7 @@ pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
 --| handler are the `catch` block, and no function is made. All three are
 --| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
 --| is `try … catch`*).
-pub foreign impure catchIf : sync (() -> a), sync (Value -> Bool), sync (Value -> a) -> a
+pub foreign impure catchIf : sync (() -> a), sync (Value -> bool), sync (Value -> a) -> a
 
 
 --| The body's value, and a promise: that computing it is total, throws
@@ -217,8 +219,10 @@ pub foreign pure pure : sync (() -> a) -> a
 --| on it keeps only the branch the build takes: the other is neither
 --| written nor reached, so a declaration only it names costs the other
 --| build nothing — a development crash screen ships in no release build
---| (`backend.md` §4, *`Js.development` is the build's mode*).
-pub foreign pure development : Bool
+--| (`backend.md` §4, *`Js.development` is the build's mode*). A function
+--| of `()` because a `foreign` value that is not one may not be
+--| polymorphic, and this module names no `Bool`.
+pub foreign pure development : () -> bool
 
 
 --| Whether `f`, a function, may suspend: the answer the checker infers for
@@ -229,4 +233,4 @@ pub foreign pure development : Bool
 --| keeps only the branch each body takes — so what only the other branch
 --| needs costs a program that never takes it nothing (`backend.md` §4,
 --| *`Js.maySuspend` is the body's answer*).
-pub foreign pure maySuspend : f -> Bool
+pub foreign pure maySuspend : f -> bool

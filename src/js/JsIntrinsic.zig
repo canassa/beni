@@ -81,7 +81,11 @@ pub const Which = enum {
 pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool) ?Inst.Index {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
     const d = bir.instData(inst);
-    const scrutinee: Inst.Index = @enumFromInt(d.lhs);
+    var scrutinee: Inst.Index = @enumFromInt(d.lhs);
+    if (scrutinee.int() >= bir.insts.len) return null;
+    // `Js.development ()`, a call since `Js` names no core type
+    // (`boundary.md` §4.2, amended 2026-10-02): its callee is the intrinsic.
+    if (bir.instTag(scrutinee) == .call) scrutinee = @enumFromInt(bir.instData(scrutinee).lhs);
     if (scrutinee.int() >= bir.insts.len) return null;
     if ((of(graph, interfaces, bir, scrutinee, interner) orelse return null) != .development) return null;
     return armOf(graph, interfaces, bir, inst, interner, release);
@@ -124,6 +128,25 @@ pub fn armOf(graph: *const Graph, interfaces: []const Interface, bir: *const Bir
 
 /// The intrinsic `inst` names, or null: an `ext_value` of core's `Js`.
 /// `interner` is anything with `slice(Symbol) []const u8`.
+/// The argument positions, one bit each, where a call of `which` writes a
+/// literal in place: a property or global name, a regular expression's
+/// pattern and flags, a JavaScript argument list. A string or list literal
+/// there mints no module edge (`resolve/Graph.zig`'s `mintedModules`) and
+/// is typed as a fresh variable (`check/constrain/Expr.zig`'s `call`):
+/// `boundary.md` §4.2, `static-dispatch-spike.md` §6.8 and `checker-v2.md`
+/// §30, amended 2026-10-02.
+pub fn inPlaceLiterals(which: Which) u8 {
+    return switch (which) {
+        .global => 0b001,
+        .get, .set => 0b010,
+        .call => 0b110,
+        .apply, .construct => 0b010,
+        .array => 0b001,
+        .regExp => 0b011,
+        else => 0,
+    };
+}
+
 pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype) ?Which {
     if (bir.instTag(inst) != .ext_value) return null;
     const d = bir.instData(inst);

@@ -36,6 +36,8 @@ const Markup = @import("Markup.zig");
 const Walk = @import("../Walk.zig");
 const Evidence = @import("../Evidence.zig");
 const InternPool = @import("../../InternPool.zig");
+const Graph = @import("../../resolve/Graph.zig");
+const JsIntrinsic = @import("../../js/JsIntrinsic.zig");
 
 const Generator = Tree.Generator;
 const Constraint = Tree.Constraint;
@@ -395,7 +397,14 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     // the arguments, against a callee that is already concrete.
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), callee, .{ .tag = .general }));
     try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
+    const in_place = jsInPlaceLiterals(g, @enumFromInt(data.lhs));
     for (args, arg_vars, 0..) |arg, v, i| {
+        if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
+            if (try inPlaceLiteral(g, arg)) |c| {
+                try parts.append(g.cx.scratch, c);
+                continue;
+            }
+        }
         try parts.append(g.cx.scratch, try expr(g, arg, v, .{
             .tag = .call_arg,
             .index = @intCast(i + 1),
@@ -403,6 +412,46 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
         }));
     }
     return g.conj(parts.items);
+}
+
+/// The argument positions where a call of `callee` writes a literal in
+/// place, when `callee` is one of core's `Js` declarations
+/// (`JsIntrinsic.inPlaceLiterals`; checker-v2.md §30). Keyed on the core
+/// package and the module and value names, as §28's casts are.
+fn jsInPlaceLiterals(g: *Generator, callee: Bir.Inst.Index) u8 {
+    const bir = g.cx.bir;
+    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return 0;
+    const d = bir.instData(callee);
+    const module: Graph.Index = @enumFromInt(d.lhs);
+    if (module.int() >= g.cx.graph.count()) return 0;
+    if (g.cx.graph.module(module).package != .core) return 0;
+    if (!std.mem.eql(u8, g.cx.interner.slice(g.cx.graph.moduleName(module)), "Js")) return 0;
+    const iface = g.cx.iface(module);
+    if (d.rhs >= iface.values.len) return 0;
+    const which = std.meta.stringToEnum(JsIntrinsic.Which, g.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)])) orelse return 0;
+    return JsIntrinsic.inPlaceLiterals(which);
+}
+
+/// A literal a `Js` call writes in place (checker-v2.md §30): a string is
+/// left its fresh argument variable, and a list's elements are generated
+/// against one fresh element variable while the list itself names no type.
+/// Null for any other argument, which is generated as usual.
+fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
+    const bir = g.cx.bir;
+    switch (bir.instTag(arg)) {
+        .string => return try g.true_(),
+        .list => {
+            const elements = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
+            const element = try g.freshFlex();
+            var parts: std.ArrayList(Constraint) = .empty;
+            defer parts.deinit(g.cx.scratch);
+            for (elements, 0..) |el, i| {
+                try parts.append(g.cx.scratch, try expr(g, el, element, .{ .tag = .list_entry, .index = @intCast(i + 1) }));
+            }
+            return try g.conj(parts.items);
+        },
+        else => return null,
+    }
 }
 
 fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {

@@ -309,3 +309,37 @@ million instructions with Node running, 3 237 million on a recorded hash.
 (`call`'s, `apply`'s, `construct`'s and `array`'s arguments) name `List`, so `List` cannot import
 `Js` as it stands; they become a type variable the way names did here, or `List` keeps its
 sibling. `Http`'s `{d: error}` protocol is gone with `Http.js`; `core/Task.js` still has its own.
+
+## The `Js` exemption (2026-10-02)
+
+The owner's S7 (`browser-decisions.md`): **`Js` is exempt from the module graph**, so `Char` and
+`Basics` can move. Specified first — `boundary.md` §4.2, `static-dispatch-spike.md` §6.8 (the stated
+exemption that section asked for), `checker-v2.md` §30 and a row of `language.md` §5.4, all dated
+2026-10-02 — then built, red first:
+
+- **`Js`'s signatures name no core type.** `Bool`, `Int` and `List Value` became type variables
+  (`same : a, a -> bool`, `bitAnd : int, int -> int`, `at : Value, index -> Value`,
+  `call : Value, name, args -> Value`), so `Js` imports and mints nothing and is the bottom of the
+  core graph: `core:Js -> core:Basics` and `core:Js -> core:List` left `TypeOwnerEdges`'s golden,
+  and no edge to `Js` can close a cycle. `development` became **`() -> bool`**, called as
+  `Js.development ()`: a `foreign` value that is not a function may not be polymorphic
+  (`boundary.md` §4, check 1 — a guarantee, kept), and `JsIntrinsic.droppedArm` reads a `case` on
+  the call as it read one on the value. Three fixtures and `browser`'s `Rt` changed spelling; no
+  emitted byte changed (`emit/core/JsDevelopment` and its release twin are unchanged).
+- **A literal a `Js` call writes in place mints nothing**: a string as `global`'s, `get`'s,
+  `set`'s or `call`'s name or as `regExp`'s arguments, a list as `call`'s, `apply`'s,
+  `construct`'s or `array`'s arguments (`JsIntrinsic.inPlaceLiterals`). `Graph.mintedModules`
+  counts the file's string and list literals against the exempt ones — only for a file that
+  imports core's `Js` and has the bit set — and the checker gives each a fresh variable instead of
+  `String` or `List a` (`constrain/Expr.zig`'s `call`), so §6.8's invariant holds as it stood.
+  A string handed to `Js.from` is still a `String` with its edge.
+
+Tests: `check_test`'s *a Js call's property names and argument list mint no edge, so a core module
+below String and List writes one* — a five-module core under `--core-root` where `Basics` writes
+`[ Js.from x ]` below `List` and `Lower` writes `"toUpperCase"` below `String` — was red with the
+compiler before (`IMPORT CYCLE: Basics → List → Basics`) and checks clean after, its graph pinned;
+*a string a Js call hands to Js.from is a String…* holds the line: the same core with `Js.from
+"name"` is one `import_cycle`, `Lower → String → Lower`. `check/bad/JsOutsidePlatform` gained a
+property-name literal and is still `js_outside_platform`: the exemption lets no user package
+import `Js`. Its cost was not measured: the second pass runs only in a module that imports core's
+`Js`, about a dozen of core's and the platforms'.
