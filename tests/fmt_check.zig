@@ -28,7 +28,18 @@ const roots = [_][]const u8{ "core", "platforms", "bench", "tests/corpus", "test
 /// Trees under the roots that are not the repository's own sources: what
 /// `.gitignore` keeps out (generated projects, fetched dependencies, build
 /// output). A directory whose name begins with `.` is skipped too.
-const skipped_dirs = [_][]const u8{ "bench/compare/work", "bench/fiber/node_modules", "bench/fiber/out" };
+const skipped_dirs = [_][]const u8{
+    "bench/arrays/dist",
+    "bench/arrays/node_modules",
+    "bench/compare/work",
+    "bench/fiber/node_modules",
+    "bench/fiber/out",
+    "bench/schema-libraries/bundles",
+    "bench/schema-libraries/node_modules",
+    "bench/ui/apps/solid1/node_modules",
+    "bench/ui/apps/solid2/node_modules",
+    "bench/ui/out",
+};
 
 const exempt_path = "tests/fmt-exempt.txt";
 
