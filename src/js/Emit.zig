@@ -90,6 +90,7 @@ const Fields = @import("Fields.zig");
 const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
+const SchemaGraph = @import("SchemaGraph.zig");
 const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
 const Minify = @import("Minify.zig");
@@ -254,6 +255,11 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
+    /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
+    /// schema declaration's `parse` and `print` run its description through
+    /// the library interpreter, and no worker is written — the forced
+    /// library path of `schema.md` §10, which changes no answer.
+    schema_library: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
     /// development build; `Cli` never sets it with `release`, which has no
@@ -315,11 +321,6 @@ pub fn run(
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
-    // The checker checks a schema's endpoint types and records the resolved
-    // plan, but its parse and print runners are not generated yet.
-    // Refuse here, before entry discovery and before a pending output tree
-    // exists, so a schema can never build while silently omitting them.
-    if (try e.refuseSchemas()) return e.nothingWritten(gpa);
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -485,6 +486,9 @@ const Emitter = struct {
     /// The threads of every parallel step from reachability on, made by
     /// `run` before the first of them.
     pool: *Workers = undefined,
+    /// The build's schema plans, read by reachability and by every
+    /// module's lowering (`schema.md` §6). Set by `eliminate`.
+    schema_graph: ?SchemaGraph = null,
     files_written: u32 = 0,
     bytes_written: u64 = 0,
 
@@ -621,26 +625,6 @@ const Emitter = struct {
             if (tag == .markup) return true;
         }
         return false;
-    }
-
-    fn refuseSchemas(e: *Emitter) !bool {
-        var found = false;
-        for (0..e.graph().count()) |i| {
-            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
-            const file = e.graph().moduleFile(module);
-            for (e.bir(module).decls) |decl| {
-                if (decl.kind != .schema) continue;
-                found = true;
-                try e.report(
-                    .not_implemented,
-                    file,
-                    decl.name_token,
-                    "This schema is checked, but its parse and print are not generated yet.",
-                    .{},
-                );
-            }
-        }
-        return found;
     }
 
     /// The 1-based line and column of `token` in `file`.
@@ -1997,6 +1981,16 @@ const Emitter = struct {
             .release = e.options.release,
             .vocabulary = e.graph().markup.vocabulary,
             .extra_roots = e.extra_roots,
+            .plans = e.session.checked.plans,
+            .schema_library = e.options.schema_library,
+        };
+        e.schema_graph = .{
+            .graph = e.graph(),
+            .plans = e.session.checked.plans,
+            .birs = birs,
+            .interfaces = e.session.resolution.interfaces,
+            .provenance = e.session.resolution.provenance,
+            .interner = &e.session.interner,
         };
         // Every module's edges on the workers, each into its own slot and
         // its worker's `kept` arena, then the walk here.
@@ -2494,6 +2488,8 @@ const Emitter = struct {
                 .unit_results = e.options.release,
                 .development = !e.options.release,
                 .boundary = if (e.boundary) |*b| b else null,
+                .schemas = if (e.schema_graph) |*g| g else null,
+                .schema_library = e.options.schema_library,
             });
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;
@@ -3432,7 +3428,7 @@ const Emitter = struct {
     /// so the module has nothing to write and nothing imports it.
     fn onlyPrimitivesLive(e: *Emitter, m: Graph.Index) bool {
         const live = e.live.of(m);
-        if (live.derived.count() != 0) return false;
+        if (live.derived.count() != 0 or live.schemas.count() != 0) return false;
         for (e.bir(m).decls, 0..) |d, index| {
             if (live.decl(index) and d.kind != .vocab_markup) return false;
         }

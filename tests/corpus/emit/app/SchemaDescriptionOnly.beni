@@ -1,0 +1,29 @@
+-- emit/app: a program that only describes ships no worker
+-- (`docs/design/schema.md` §6, *DCE*).
+--
+-- `Tree.schema ()` reaches the description alone: `core/Schema`'s builders
+-- composed as §5's table composes them, under `Schema.recursive "Tree"`
+-- because `Tree` refers to itself, the injections written as arrows over
+-- §4's representation. No `$$read`, no `$$write`, and none of the
+-- specialised path's core-private values.
+import Node exposing (Program)
+import Schema
+
+
+schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+main : Program
+main =
+    Node.printLines
+        [ case (Schema.describe (Tree.schema ())).root of
+            Schema.Reference _ ->
+                "a reference"
+
+            _ ->
+                "something else"
+        ]

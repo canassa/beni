@@ -1,0 +1,48 @@
+-- emit/app: a program that only parses ships one direction
+-- (`docs/design/schema.md` §6, *DCE*, and *The specialised path, as
+-- specified for S4*).
+--
+-- `User.parse` reaches the decoding worker, its two root wrappers, the
+-- `via` it converts with and the core-private values the worker calls —
+-- and nothing else: no `$$write`, no `$$print`, no description, and none of
+-- `core/Schema`'s builders. The worker is the declaration's own code: each
+-- key read once and its presence a test against `undefined` — the own-key
+-- test for `JSON.parse`'s objects, no key here being one `Object.prototype`
+-- has — the `typeof` tests and the depth test in place, a failure one call
+-- of `compiledFail` with its message as a literal, the `List` of `Int` a
+-- loop that hands back the parsed array, and the typed record built in
+-- canonical key order.
+import Node exposing (Program)
+import Schema exposing (Conversion)
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        λn -> Ok (String.fromInt n)
+
+
+schema User =
+    name : String as "user-name"
+    age : String via decimalInt
+    scores : List Int
+
+
+main : Program
+main =
+    Node.printLines
+        [ case User.parse "{\"user-name\":\"a\",\"age\":\"3\",\"scores\":[1]}" of
+            Ok u ->
+                u.name
+
+            Err _ ->
+                "failed"
+        ]

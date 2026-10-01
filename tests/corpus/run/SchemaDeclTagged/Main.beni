@@ -1,0 +1,158 @@
+-- A tagged declaration's `parse` and `print` (`schema.md` §6): the
+-- discriminator read first — missing, not a string, an unknown tag — then
+-- only the selected payload, which adds no path segment of its own; nullary
+-- variants, whose only key is the discriminator, and under `Reject` any
+-- other key fails the whole value; a recursive union read and written
+-- several levels down, its renamed keys named as the input names them; the
+-- discriminator written first. Both constructor families match and compare:
+-- `Shape.Circle` and `Shape.Encoded.Circle` are the same value. The corpus
+-- also builds this with every root through the library (§10).
+import Node
+import Schema
+import Show
+
+
+pub schema Shape tagged "type" of
+    Circle as "circle"
+        radius : Float as "r"
+    Square as "square"
+        side : Int
+    Dot as "dot"
+
+
+pub schema Tree tagged "node" of
+    Leaf as "leaf"
+        label : String as "text"
+    Branch as "branch"
+        children : List Tree as "kids"
+
+
+pub schema Light tagged "is" of
+    Red as "red"
+    Green as "green"
+
+
+reject : Schema.Options
+reject =
+    { errors = Schema.FirstError, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+all : Schema.Options
+all =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+showShape : Shape.Type -> String
+showShape s =
+    case s of
+        Shape.Circle c ->
+            "Circle " ++ String.fromFloat c.radius
+
+        Shape.Square q ->
+            "Square " ++ String.fromInt q.side
+
+        Shape.Dot ->
+            "Dot"
+
+
+showEncoded : Shape.Encoded -> String
+showEncoded s =
+    case s of
+        Shape.Encoded.Circle c ->
+            "encoded Circle " ++ String.fromFloat c.radius
+
+        Shape.Encoded.Square q ->
+            "encoded Square " ++ String.fromInt q.side
+
+        Shape.Encoded.Dot ->
+            "encoded Dot"
+
+
+showTree : Tree.Type -> String
+showTree t =
+    case t of
+        Tree.Leaf l ->
+            l.label
+
+        Tree.Branch b ->
+            "(" ++ String.join (List.map b.children showTree) " " ++ ")"
+
+
+showLight : Light.Type -> String
+showLight l =
+    case l of
+        Light.Red ->
+            "Red"
+
+        Light.Green ->
+            "Green"
+
+
+shape : String -> String
+shape text = Show.result (Shape.parse text) showShape
+
+
+tree : String -> String
+tree text = Show.result (Tree.parse text) showTree
+
+
+printed : Result (List Schema.Issue) String -> String
+printed r = Show.result r λs -> s
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- parse"
+        , shape "{\"type\":\"circle\",\"r\":1.5}"
+        , shape "{\"type\":\"square\",\"side\":2}"
+        , shape "{\"type\":\"dot\"}"
+        , shape "{\"type\":\"dot\",\"extra\":1}"
+        , shape "{\"r\":1}"
+        , shape "{\"type\":1}"
+        , shape "{\"type\":\"triangle\"}"
+        , shape "{\"type\":\"square\",\"side\":\"2\"}"
+        , shape "[\"circle\"]"
+        , Show.result (Shape.parseWith reject "{\"type\":\"dot\",\"extra\":1}") showShape
+        , Show.result (Shape.parseWith all "{\"type\":\"dot\",\"a\":1,\"b\":2}") showShape
+        , Show.result
+            (Shape.parseWith all "{\"x\":0,\"type\":\"circle\",\"r\":\"no\",\"y\":0}")
+            showShape
+        , Show.result (Light.parse "{\"is\":\"green\"}") showLight
+        , Show.result (Light.parse "{\"is\":\"blue\"}") showLight
+        , "-- recursion"
+        , tree
+            "{\"node\":\"branch\",\"kids\":[{\"node\":\"leaf\",\"text\":\"a\"},{\"node\":\"branch\",\"kids\":[{\"node\":\"leaf\",\"text\":\"b\"}]}]}"
+        , tree
+            "{\"node\":\"branch\",\"kids\":[{\"node\":\"leaf\",\"text\":\"a\"},{\"node\":\"branch\",\"kids\":[{\"node\":\"leaf\",\"label\":\"b\"}]}]}"
+        , tree
+            "{\"node\":\"branch\",\"kids\":[{\"node\":\"branch\",\"kids\":[{\"node\":\"twig\"}]}]}"
+        , "-- print"
+        , printed (Shape.print (Shape.Circle { radius = 0.5 }))
+        , printed (Shape.print (Shape.Square { side = 3 }))
+        , printed (Shape.print Shape.Dot)
+        , printed (Shape.print (Shape.Square { side = 9007199254740992 }))
+        , printed (Shape.printWith all (Shape.Circle { radius = 0 / 0 }))
+        , printed (Light.print Light.Red)
+        , printed
+            (Tree.print
+                (Tree.Branch
+                    { children = [ Tree.Leaf { label = "a" }, Tree.Branch { children = [] } ] }
+                )
+            )
+        , "-- both families"
+        , Show.result
+            (Schema.decode (Shape.schema ()) (Shape.Encoded.Circle { radius = 2 }))
+            showShape
+        , Show.result (Schema.encode (Shape.schema ()) Shape.Dot) showEncoded
+        , if Shape.Circle { radius = 1 } == Shape.Circle { radius = 1 } then
+            "equal"
+          else
+            "different"
+        , if Shape.Circle { radius = 1 } == Shape.Square { side = 1 } then "equal" else "different"
+        , if Shape.Dot == Shape.Dot then "equal" else "different"
+        , if Shape.Circle { radius = 5 } < Shape.Square { side = 1 } then
+            "Circle before Square"
+          else
+            "Square before Circle"
+        ]

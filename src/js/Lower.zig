@@ -63,6 +63,10 @@ const MarkupTree = @import("MarkupTree.zig");
 const Suspend = @import("Suspend.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
 const Operator = @import("Operator.zig");
+const SchemaCtor = @import("SchemaCtor.zig");
+const SchemaLower = @import("SchemaLower.zig");
+const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -216,6 +220,12 @@ pub const Input = struct {
     /// What `Js.development` is: `false` under `--release` (`backend.md`
     /// §4, *`Js.development` is the build's mode*).
     development: bool = true,
+    /// The build's schema plans and what reads them (`schema.md` §6), when
+    /// a module declares or uses a schema. Null: the module emits none.
+    schemas: ?*const SchemaGraph = null,
+    /// `--schema-library`: every schema root runs through the library
+    /// interpreter (`schema.md` §10, the forced library path).
+    schema_library: bool = false,
 };
 
 pub const Markup = struct {
@@ -518,7 +528,7 @@ const evidence_spill = 20;
 /// closure evaluates nothing, so the binding moves nothing (`onlyClosures`).
 const lambda_spill = 128;
 
-const Lowerer = struct {
+pub const Lowerer = struct {
     gpa: Allocator,
     scratch: Allocator,
     b: *JsIr.Builder,
@@ -738,7 +748,7 @@ const Lowerer = struct {
 
     /// A constructor, this module's (`ext` false: a `Bir.ctors` index) or
     /// another's (an interface constructor row of `module`).
-    const NullaryKey = struct { ext: bool, module: u32, ctor: u32 };
+    const NullaryKey = struct { ext: bool, module: u32, ctor: u32, schema: u32 = std.math.maxInt(u32) };
 
     /// One nullary constructor's constant: its name, and the object it holds.
     const Nullary = struct {
@@ -752,7 +762,7 @@ const Lowerer = struct {
     /// module's interface; `base` is set instead for a SYNTHESISED name —
     /// a derived function (§8.5) is not an interface value, but it is
     /// exported from its module and imported through this same list.
-    const Needed = struct {
+    pub const Needed = struct {
         module: Graph.Index,
         value: u32 = no_value,
         base: Symbol.Optional = .none,
@@ -811,76 +821,76 @@ const Lowerer = struct {
 
     // ---- Small helpers ----------------------------------------------------
 
-    fn pos(l: *Lowerer, inst: Inst.Index) u32 {
+    pub fn pos(l: *Lowerer, inst: Inst.Index) u32 {
         if (inst.int() >= l.bir.insts.len) return Node.no_pos;
         const token = l.bir.insts.items(.main_token)[inst.int()];
         if (token >= l.in.token_starts.len) return Node.no_pos;
         return l.in.token_starts[token];
     }
 
-    fn text(l: *Lowerer, symbol: Symbol) []const u8 {
+    pub fn text(l: *Lowerer, symbol: Symbol) []const u8 {
         return l.interner.slice(symbol);
     }
 
-    fn add(l: *Lowerer, tag: Node.Tag, p: u32, lhs: u32, rhs: u32) !Node.Index {
+    pub fn add(l: *Lowerer, tag: Node.Tag, p: u32, lhs: u32, rhs: u32) !Node.Index {
         return l.b.addParts(tag, p, lhs, rhs);
     }
 
-    fn name(l: *Lowerer, n: JsIr.Name) !JsIr.NameIndex {
+    pub fn name(l: *Lowerer, n: JsIr.Name) !JsIr.NameIndex {
         return l.b.intern(n);
     }
 
     /// A fresh compiler-made name from `base`, unique in this module.
-    fn fresh(l: *Lowerer, base: Symbol) !JsIr.NameIndex {
+    pub fn fresh(l: *Lowerer, base: Symbol) !JsIr.NameIndex {
         const tag = l.next_tag;
         l.next_tag += 1;
         return l.name(.{ .module = .none, .base = base, .tag = tag });
     }
 
-    fn ident(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {
+    pub fn ident(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {
         return l.add(.ident, p, @intFromEnum(n), Node.Data.unused);
     }
 
-    fn stringNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
+    pub fn stringNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
         const offset, const len = try l.b.addString(bytes);
         return l.add(.string, p, offset, len);
     }
 
-    fn numberNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
+    pub fn numberNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
         const offset, const len = try l.b.addString(bytes);
         return l.add(.number, p, offset, len);
     }
 
-    fn nullNode(l: *Lowerer, p: u32) !Node.Index {
+    pub fn nullNode(l: *Lowerer, p: u32) !Node.Index {
         return l.add(.null_lit, p, Node.Data.unused, Node.Data.unused);
     }
 
-    fn call(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
+    pub fn call(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(args);
         const record = try l.b.addRecord(range);
         return l.add(.call, p, callee.int(), @intFromEnum(record));
     }
 
-    fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
+    pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
         return l.add(.member, p, target.int(), @intFromEnum(n));
     }
 
-    fn binary(l: *Lowerer, op: JsIr.BinaryOp, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
+    pub fn binary(l: *Lowerer, op: JsIr.BinaryOp, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
         const record = try l.b.addRecord(JsIr.Binary{ .left = left, .right = right });
         return l.add(.binary, p, @intFromEnum(record), @intFromEnum(op));
     }
 
-    fn unary(l: *Lowerer, op: JsIr.UnaryOp, operand: Node.Index, p: u32) !Node.Index {
+    pub fn unary(l: *Lowerer, op: JsIr.UnaryOp, operand: Node.Index, p: u32) !Node.Index {
         return l.add(.unary, p, operand.int(), @intFromEnum(op));
     }
 
-    fn object(l: *Lowerer, properties: []const Node.Index, p: u32) !Node.Index {
+    pub fn object(l: *Lowerer, properties: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(properties);
         return l.add(.object, p, @intFromEnum(range.start), @intFromEnum(range.end));
     }
 
-    fn property(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
+    pub fn property(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = key, .tag = JsIr.Name.no_tag });
         return l.add(.property, p, @intFromEnum(n), value.int());
     }
@@ -893,26 +903,26 @@ const Lowerer = struct {
         return l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.field });
     }
 
-    fn fieldMember(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
+    pub fn fieldMember(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         return l.add(.member, p, target.int(), @intFromEnum(try l.fieldName(field)));
     }
 
-    fn fieldProperty(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
+    pub fn fieldProperty(l: *Lowerer, key: Symbol, value: Node.Index, p: u32) !Node.Index {
         return l.add(.property, p, @intFromEnum(try l.fieldName(key)), value.int());
     }
 
-    fn constDecl(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
+    pub fn constDecl(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
         try out.append(l.scratch, try l.add(.const_decl, p, @intFromEnum(n), value.int()));
     }
 
-    fn returnStmt(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
+    pub fn returnStmt(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
         return l.add(.return_stmt, p, @intFromEnum(value.toOptional()), Node.Data.unused);
     }
 
     /// The `a`, `b`, `c`… slot names constructors, tuples and cons cells
     /// use. Positional and not the field's own name, because a constructor
     /// argument has no name and a tuple element has no name either.
-    fn slotName(l: *Lowerer, index: u32) !Symbol {
+    pub fn slotName(l: *Lowerer, index: u32) !Symbol {
         if (index < l.slot_names.items.len) {
             if (l.slot_names.items[index].unwrap()) |known| return known;
         } else try l.slot_names.appendNTimes(l.scratch, .none, index + 1 - l.slot_names.items.len);
@@ -978,7 +988,7 @@ const Lowerer = struct {
     /// `<Module>$<base>` for a value this module SYNTHESISES rather than
     /// declares (§8.5): the primitive comparators of §9.1 and the
     /// derived functions of §9.
-    fn synthesisedName(l: *Lowerer, base: []const u8) !JsIr.NameIndex {
+    pub fn synthesisedName(l: *Lowerer, base: []const u8) !JsIr.NameIndex {
         const symbol = try l.interner.getOrPut(l.gpa, base);
         return l.name(.{ .module = l.module_name.toOptional(), .base = symbol, .tag = JsIr.Name.no_tag });
     }
@@ -1002,9 +1012,124 @@ const Lowerer = struct {
     // is a `ReferenceError` at load or a wrong answer at a call, where
     // under-elimination is only bytes.
 
-    fn liveDecl(l: *Lowerer, index: u32) bool {
+    pub fn liveDecl(l: *Lowerer, index: u32) bool {
         const r = l.in.live orelse return true;
         return r.decl(l.in.module, index);
+    }
+
+    // ---- Schemas (`schema.md` §6; `SchemaLower` writes the declarations) --
+
+    /// Whether member `member` of schema declaration `ref` survived.
+    pub fn liveSchema(l: *const Lowerer, ref: SchemaGraph.Ref, which: SchemaGraph.Member) bool {
+        const r = l.in.live orelse return true;
+        return r.schema(ref.module, ref.decl, which);
+    }
+
+    /// Whether anything of schema declaration `decl` of this module
+    /// survived: its `via`s or one of its members.
+    fn liveSchemaAny(l: *Lowerer, decl: u32) bool {
+        const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
+        return l.liveDecl(decl) or l.liveSchema(ref, .description) or l.liveSchema(ref, .read) or l.liveSchema(ref, .write);
+    }
+
+    /// One of `core/Schema`'s values by name: a `pub` builder or runner
+    /// through its interface, or a core-private value of the specialised
+    /// path by its printed name, as `corePrivate` names `List`'s.
+    pub fn coreSchemaValue(l: *Lowerer, text_of: []const u8, p: u32) !Node.Index {
+        const module = l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse
+            return l.missingCoreValue(p, "Schema", text_of, "there is no such module in the core package");
+        const symbol = l.interner.global.find(text_of) orelse
+            return l.missingCoreValue(p, "Schema", text_of, "that module does not declare it");
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (l.bir.symbol(d.name) == symbol) return l.ident(try l.topName(@intCast(i)), p);
+            }
+            return l.missingCoreValue(p, "Schema", text_of, "this module IS that module, and it does not declare it");
+        }
+        if (module.int() < l.in.interfaces.len) {
+            if (l.in.interfaces[module.int()].findValue(l.interner.global, symbol)) |index| {
+                try l.need(module, @intFromEnum(index));
+                return l.ident(try l.externalName(module, @intFromEnum(index)), p);
+            }
+        }
+        if (l.in.schemas) |sg| {
+            const bir = sg.birOf(module);
+            for (bir.decls, 0..) |d, i| {
+                if (d.is_pub or bir.symbol(d.name) != symbol) continue;
+                if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.decl(module, i), text_of);
+            }
+        }
+        const entry: Needed = .{ .module = module, .base = symbol.toOptional() };
+        try l.needName(entry);
+        return l.ident(try l.neededName(entry), p);
+    }
+
+    /// The representation and tag of core constructor `ctor` of module
+    /// `owner`, by name.
+    fn coreCtorByText(l: *Lowerer, owner: []const u8, ctor: []const u8, p: u32) !?struct { CtorRep, Symbol, Graph.Index, u32 } {
+        const owner_symbol = l.interner.global.find(owner) orelse return null;
+        const symbol = l.interner.global.find(ctor) orelse return null;
+        const module = l.in.graph.lookup(.core, owner_symbol) orelse {
+            _ = try l.missingCoreValue(p, owner, ctor, "there is no such module in the core package");
+            return null;
+        };
+        if (module.int() >= l.in.interfaces.len) return null;
+        const iface = &l.in.interfaces[module.int()];
+        const index = iface.findCtor(l.interner.global, symbol) orelse {
+            _ = try l.missingCoreValue(p, owner, ctor, "that module declares no such constructor");
+            return null;
+        };
+        return .{ l.ctorRepExternal(module, @intFromEnum(index)), symbol, module, @intFromEnum(index) };
+    }
+
+    /// Core constructor `ctor` of `owner` applied to `args`: a padded
+    /// nullary one is the module constant every use of it shares.
+    pub fn coreCtorApplied(l: *Lowerer, owner: []const u8, ctor: []const u8, args: []const Node.Index, p: u32) !Node.Index {
+        const rep, const tag, const module, const index = (try l.coreCtorByText(owner, ctor, p)) orelse return l.nullNode(p);
+        if (args.len == 0 and rep == .tagged) {
+            const key: NullaryKey = .{ .ext = true, .module = module.int(), .ctor = index };
+            const slot = try l.nullary.getOrPut(l.scratch, key);
+            if (!slot.found_existing) {
+                const path = l.text(l.in.graph.moduleName(module));
+                const base = try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ path, l.text(tag) });
+                for (base[0..path.len]) |*c| {
+                    if (c.* == '.') c.* = '$';
+                }
+                slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = rep, .tag = tag };
+            }
+            return l.ident(slot.value_ptr.name, p);
+        }
+        return l.ctorValue(rep, tag, args, p);
+    }
+
+    /// Whether `x` is core constructor `ctor` of `owner`.
+    pub fn coreCtorTest(l: *Lowerer, owner: []const u8, ctor: []const u8, x: Node.Index, p: u32) !Node.Index {
+        const rep, const tag, _, _ = (try l.coreCtorByText(owner, ctor, p)) orelse return l.add(.false_lit, p, Node.Data.unused, Node.Data.unused);
+        const subject = switch (rep) {
+            .tagged => try l.member(x, l.well.tag, p),
+            else => x,
+        };
+        return l.binary(.strict_eq, subject, try l.tagLiteral(rep, tag, p), p);
+    }
+
+    /// A schema declaration's `via` expression, lowered as the body of
+    /// that declaration: its lambdas' locals are the declaration's.
+    pub fn schemaViaExpr(l: *Lowerer, decl: u32, inst: Inst.Index) !Node.Index {
+        const d = l.bir.decls[decl];
+        l.locals = l.bir.declLocals(d);
+        l.decl_index = decl;
+        l.read_locals = null;
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.local_tag_base = 0;
+        l.local_tag_next = @intCast(l.locals.len);
+        l.variant = .direct;
+        var stmts: StmtList = .empty;
+        const value = try l.expr(&stmts, inst);
+        if (stmts.items.len == 0) return value;
+        const p = l.pos(inst);
+        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        return l.call(try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p), &.{}, p);
     }
 
     /// Every `case` arm of the module whose pattern names a constructor
@@ -1192,7 +1317,7 @@ const Lowerer = struct {
     /// cheapest place to turn "the graph missed an edge" from a Node
     /// `ReferenceError` in somebody's program into a stopped build with the
     /// name in it.
-    fn requireLive(l: *Lowerer, alive: bool, what: []const u8) !void {
+    pub fn requireLive(l: *Lowerer, alive: bool, what: []const u8) !void {
         if (!std.debug.runtime_safety) return;
         if (l.in.live == null or alive) return;
         try l.report(
@@ -1325,7 +1450,7 @@ const Lowerer = struct {
             // a §9 reachability edge, so the survivors come out in the same
             // relative order they have today and the temporal dead zone
             // stays closed. `requireLive` is the proof, not this loop.
-            if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root))) continue;
+            if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
@@ -1376,16 +1501,41 @@ const Lowerer = struct {
             if (site.callee.unwrap()) |callee| try roots.append(l.scratch, callee);
             try roots.appendSlice(l.scratch, l.in.dispatch.argsAt(site.evidence));
         }
-        if (roots.items.len == 0) return &.{};
+        var out: std.ArrayList(u32) = .empty;
+        // A schema of this module a declaration uses, or another schema's
+        // description names (`schema.md` §6): its bindings first. A cycle
+        // of schemas falls back to source order, which is safe: a schema in
+        // one builds its body under `Schema.recursive`, after initialisation.
+        try l.schemaTops(decl, &out);
+        if (roots.items.len == 0) return out.items;
         var edges: std.ArrayList(Edges.Edge) = .empty;
         defer edges.deinit(l.scratch);
         try Edges.termsEdges(&edges, l.scratch, l.in.dispatch, roots.items, true);
-        var out: std.ArrayList(u32) = .empty;
         for (edges.items) |edge| switch (edge) {
             .top => |t| try out.append(l.scratch, t),
             else => {},
         };
         return out.items;
+    }
+
+    fn schemaTops(l: *Lowerer, decl: u32, out: *std.ArrayList(u32)) !void {
+        const d = l.bir.decls[decl];
+        const start = d.inst_start.int();
+        const end = @min(d.inst_end.int(), l.bir.insts.len);
+        for (l.bir.insts.items(.tag)[start..end], l.bir.insts.items(.data)[start..end]) |tag, data| {
+            if (tag == .schema_member_top) try out.append(l.scratch, data.lhs);
+        }
+        if (d.kind != .schema) return;
+        const sg = l.in.schemas orelse return;
+        const def = sg.definition(l.in.module, decl) orelse return;
+        const plan = sg.planOf(l.in.module);
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try SchemaGraph.subtree(plan, l.scratch, def.root, &nodes);
+        for (nodes.items) |n| {
+            if (SchemaGraph.tag(plan, n) != .reference) continue;
+            const t = sg.target(l.in.module, @enumFromInt(SchemaGraph.lhs(plan, n))) orelse continue;
+            if (t.module == l.in.module and t.decl != decl) try out.append(l.scratch, t.decl);
+        }
     }
 
     fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
@@ -1395,7 +1545,10 @@ const Lowerer = struct {
             // A type, an alias and a foreign type emit nothing: a
             // constructor is an object literal at its use site and a type
             // has no runtime existence at all.
-            .type, .type_alias, .foreign_type, .schema => return,
+            .type, .type_alias, .foreign_type => return,
+            // Its `via`s, description and directions, each as it survived
+            // (`schema.md` §6).
+            .schema => return SchemaLower.declaration(l, out, index),
             // A vocabulary declaration is data for the checker and the
             // markup lowering, and has no value of its own to emit.
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
@@ -1635,6 +1788,11 @@ const Lowerer = struct {
         }
         for (l.bir.interface) |decl_index| {
             const d = l.bir.decl(decl_index);
+            // A `pub schema`'s members, those that survived (`schema.md` §6).
+            if (d.kind == .schema) {
+                try SchemaLower.exports(l, decl_index.int(), &names);
+                continue;
+            }
             if (!d.kind.isValue()) continue;
             if (d.kind == .annotation_only) continue;
             // A markup primitive is the markup runtime's, not this module's.
@@ -1661,6 +1819,15 @@ const Lowerer = struct {
                 if (symbol != InternPool.WellKnown.unsafeGet.symbol() and symbol != InternPool.WellKnown.view.symbol() and
                     symbol != InternPool.WellKnown.close.symbol() and symbol != InternPool.WellKnown.base.symbol() and
                     symbol != InternPool.WellKnown.offset.symbol()) continue;
+                if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
+            }
+        }
+        // `core/Schema`'s core-private values the specialised path calls
+        // (`schema.md` §6), on the same terms.
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (d.is_pub or !d.kind.isValue()) continue;
+                if (!SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) continue;
                 if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
             }
         }
@@ -1771,7 +1938,7 @@ const Lowerer = struct {
         try l.needName(.{ .module = module, .base = base.toOptional() });
     }
 
-    fn needName(l: *Lowerer, entry: Needed) !void {
+    pub fn needName(l: *Lowerer, entry: Needed) !void {
         for (l.needed.items) |existing| {
             if (existing.module == entry.module and existing.value == entry.value and existing.base == entry.base) return;
         }
@@ -1779,7 +1946,7 @@ const Lowerer = struct {
     }
 
     /// The local (and imported) spelling of one needed name.
-    fn neededName(l: *Lowerer, entry: Needed) !JsIr.NameIndex {
+    pub fn neededName(l: *Lowerer, entry: Needed) !JsIr.NameIndex {
         if (entry.base.unwrap()) |base| {
             return l.name(.{
                 .module = l.in.graph.moduleName(entry.module).toOptional(),
@@ -2160,7 +2327,7 @@ const Lowerer = struct {
         });
     }
 
-    fn arrowOf(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
+    pub fn arrowOf(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
         const record = try l.funcRecord(params, body);
         return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
     }
@@ -3354,6 +3521,10 @@ const Lowerer = struct {
                 if (d.rhs >= iface.ctors.len) return 0;
                 return iface.ctors[d.rhs].arity;
             },
+            .schema_ctor_top, .ext_schema_ctor => {
+                const info = SchemaCtor.of(l.bir, l.in.module, l.in.interfaces, inst) orelse return 0;
+                return info.arity;
+            },
             else => return 0,
         }
     }
@@ -3388,7 +3559,7 @@ const Lowerer = struct {
 
     /// A constructor's tag as a literal: its declaration index when its
     /// type has integer tags, else its name.
-    fn tagLiteral(l: *Lowerer, rep: CtorRep, tag: Symbol, p: u32) !Node.Index {
+    pub fn tagLiteral(l: *Lowerer, rep: CtorRep, tag: Symbol, p: u32) !Node.Index {
         if (rep.int()) |i| return l.intNode(i, p);
         return l.stringNode(l.text(tag), p);
     }
@@ -3427,7 +3598,7 @@ const Lowerer = struct {
 
     /// The canonical key order of a record whose fields are `names`: a
     /// permutation of their indices, sorted by NAME TEXT (`recordNode`).
-    fn fieldOrder(l: *Lowerer, names: []const Symbol) ![]u32 {
+    pub fn fieldOrder(l: *Lowerer, names: []const Symbol) ![]u32 {
         const order = try l.scratch.alloc(u32, names.len);
         for (order, 0..) |*slot, i| slot.* = @intCast(i);
         const Sorter = struct {
@@ -3508,13 +3679,23 @@ const Lowerer = struct {
                 if (d.rhs >= iface.ctors.len) return null;
                 return .{ l.ctorRepExternal(module, d.rhs), iface.symbols[@intFromEnum(iface.ctors[d.rhs].name)] };
             },
+            // A tagged schema endpoint's (`schema.md` §6): its variant name
+            // is its tag in both families, never an integer.
+            .schema_ctor_top, .ext_schema_ctor => {
+                const info = SchemaCtor.of(l.bir, l.in.module, l.in.interfaces, inst) orelse return null;
+                return .{ schemaCtorRep(info), info.name };
+            },
             else => return null,
         }
     }
 
+    pub fn schemaCtorRep(info: SchemaCtor.Info) CtorRep {
+        return if (info.padded) .{ .tagged = .{ .fields = 1 } } else .{ .bare_tag = null };
+    }
+
     /// The value of a constructor applied to `args` (which must be exactly
     /// its arity).
-    fn ctorValue(l: *Lowerer, rep: CtorRep, tag: Symbol, args: []const Node.Index, p: u32) !Node.Index {
+    pub fn ctorValue(l: *Lowerer, rep: CtorRep, tag: Symbol, args: []const Node.Index, p: u32) !Node.Index {
         switch (rep) {
             .boolean => |value| return l.add(if (value) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
             .bare_tag => return l.tagLiteral(rep, tag, p),
@@ -3551,6 +3732,7 @@ const Lowerer = struct {
     /// `nullaryDecls`.
     fn nullaryConstant(l: *Lowerer, inst: Inst.Index, rep: CtorRep, tag: Symbol) !JsIr.NameIndex {
         const d = l.bir.instData(inst);
+        if (SchemaCtor.of(l.bir, l.in.module, l.in.interfaces, inst)) |info| return l.schemaNullary(info, rep);
         const key: NullaryKey = switch (l.bir.instTag(inst)) {
             .ctor => .{ .ext = false, .module = 0, .ctor = d.lhs },
             else => .{ .ext = true, .module = d.lhs, .ctor = d.rhs },
@@ -3566,6 +3748,26 @@ const Lowerer = struct {
             break :blk out;
         } else l.text(tag);
         slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = rep, .tag = tag };
+        return slot.value_ptr.name;
+    }
+
+    /// A tagged schema endpoint's nullary constructor, one constant for both
+    /// families: `<Module>$<Schema>$<Variant>`, the declaring module's path
+    /// in front for an imported one, so that two schemas' variants of one
+    /// name, or a schema's and a `type`'s, are two constants.
+    pub fn schemaNullary(l: *Lowerer, info: SchemaCtor.Info, rep: CtorRep) !JsIr.NameIndex {
+        const key: NullaryKey = .{ .ext = info.ext, .module = info.module.int(), .ctor = info.order, .schema = info.owner };
+        const slot = try l.nullary.getOrPut(l.scratch, key);
+        if (slot.found_existing) return slot.value_ptr.name;
+        const base = if (info.ext) blk: {
+            const path = l.text(l.in.graph.moduleName(info.module));
+            const out = try std.fmt.allocPrint(l.scratch, "{s}${s}${s}", .{ path, l.text(info.schema), l.text(info.name) });
+            for (out[0..path.len]) |*c| {
+                if (c.* == '.') c.* = '$';
+            }
+            break :blk out;
+        } else try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ l.text(info.schema), l.text(info.name) });
+        slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = rep, .tag = info.name };
         return slot.value_ptr.name;
     }
 
@@ -3601,7 +3803,7 @@ const Lowerer = struct {
 
     /// An array literal of `elements`, evaluated left to right. It nests at
     /// no length (§4's list row), so a written list of any size is flat.
-    fn arrayNode(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
+    pub fn arrayNode(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
         const range = try l.b.addRange(elements);
         return l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
     }
@@ -3991,7 +4193,10 @@ const Lowerer = struct {
                 return l.expr(out, @enumFromInt(d.rhs));
             },
             .case => return l.caseExpr(out, inst),
-            .local, .top, .ctor, .ext_value, .ext_ctor => return l.reference(inst),
+            .local, .top, .ctor, .ext_value, .ext_ctor, .schema_ctor_top, .ext_schema_ctor => return l.reference(inst),
+            // A schema's `schema`, `parse`, `print`, `parseWith` or
+            // `printWith` (`schema.md` §6): the member's binding.
+            .schema_member_top, .ext_schema_member => return SchemaLower.memberReference(l, inst),
             .@"try" => return l.tryExpr(out, inst),
             .type_dispatch => return l.typeDispatchExpr(out, inst),
             // A poisoned instruction: the name did not resolve or the
@@ -4059,10 +4264,6 @@ const Lowerer = struct {
             .schema_type_ref,
             .schema_value_ref,
             .schema_ctor_ref,
-            .schema_member_top,
-            .ext_schema_member,
-            .schema_ctor_top,
-            .ext_schema_ctor,
             .schema_type_top,
             .ext_schema_type,
             .schema_parameter,
@@ -4910,7 +5111,7 @@ const Lowerer = struct {
         };
         const entry = l.in.types.entry(id);
         if (entry.module != l.in.module or entry.decl.int() >= l.bir.decls.len) return null;
-        const ctors = l.bir.declCtors(l.bir.decls[entry.decl.int()]);
+        const ctors = try l.typeCtors(l.bir.decls[entry.decl.int()]);
         if (ctors.len < 2) return null;
         // An integer tag IS the declaration index the table would map it
         // to (`orderLookup`), so there is no table.
@@ -4919,7 +5120,7 @@ const Lowerer = struct {
         var properties: std.ArrayList(Node.Index) = .empty;
         for (ctors, 0..) |ctor, i| {
             const index = try std.fmt.allocPrint(l.scratch, "{d}", .{i});
-            try properties.append(l.scratch, try l.property(l.bir.symbol(ctor.name), try l.numberNode(index, p), p));
+            try properties.append(l.scratch, try l.property(ctor.name, try l.numberNode(index, p), p));
         }
         const base = try l.orderBase(id);
         const bound = try l.synthesisedName(base);
@@ -4930,10 +5131,48 @@ const Lowerer = struct {
         };
     }
 
+    /// A constructor as a derived function walks it: its name, which is its
+    /// tag, and how many arguments it takes.
+    const CtorLite = struct { name: Symbol, arity: u32 };
+
+    /// The constructors of a `type` declaration, or of a tagged schema's
+    /// endpoint families, which share one list (`schema.md` §6): in
+    /// declaration order.
+    fn typeCtors(l: *Lowerer, d: Bir.Decl) ![]const CtorLite {
+        if (d.kind == .schema) {
+            const variants = SchemaCtor.taggedVariants(l.bir, d) orelse return &.{};
+            const out = try l.scratch.alloc(CtorLite, variants.len);
+            for (variants, out) |vi, *slot| slot.* = .{
+                .name = l.bir.symbol(@enumFromInt(l.bir.instData(vi).lhs)),
+                .arity = @intFromBool(SchemaCtor.variantPayload(l.bir, vi)),
+            };
+            return out;
+        }
+        const ctors = l.bir.declCtors(d);
+        const out = try l.scratch.alloc(CtorLite, ctors.len);
+        for (ctors, out) |c, *slot| slot.* = .{
+            .name = l.bir.symbol(c.name),
+            .arity = Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end }),
+        };
+        return out;
+    }
+
+    /// A type's name as a base of a printed name: a schema endpoint's
+    /// `Message.Type` with `$` for the dot, which no identifier can hold.
+    fn typeBaseText(l: *Lowerer, id: Dispatch.TypeId) ![]const u8 {
+        const text_of = l.text(l.in.types.entry(id).name);
+        if (std.mem.indexOfScalar(u8, text_of, '.') == null) return text_of;
+        const out = try l.scratch.dupe(u8, text_of);
+        for (out) |*c| {
+            if (c.* == '.') c.* = '$';
+        }
+        return out;
+    }
+
     /// `<T>$$order`, the same double separator §8.5 gives `<T>$$compare`
     /// and for the same reason (A.61).
     fn orderBase(l: *Lowerer, id: Dispatch.TypeId) ![]const u8 {
-        return std.fmt.allocPrint(l.scratch, "{s}$$order", .{l.text(l.in.types.entry(id).name)});
+        return std.fmt.allocPrint(l.scratch, "{s}$$order", .{try l.typeBaseText(id)});
     }
 
     /// `<T>$$order[subject]` — the tag's rank.
@@ -4963,7 +5202,7 @@ const Lowerer = struct {
     fn derivedBase(l: *Lowerer, kind: Dispatch.Derived.Kind, shape: Dispatch.Shape) ![]const u8 {
         switch (shape) {
             .nominal => |id| return std.fmt.allocPrint(l.scratch, "{s}$${s}", .{
-                l.text(l.in.types.entry(id).name),
+                try l.typeBaseText(id),
                 @tagName(kind),
             }),
             .record => |names| {
@@ -5553,10 +5792,10 @@ const Lowerer = struct {
         };
         const entry = l.in.types.entry(id);
         if (entry.module != l.in.module or entry.decl.int() >= l.bir.decls.len) return out;
-        const ctors = l.bir.declCtors(l.bir.decls[entry.decl.int()]);
+        const ctors = try l.typeCtors(l.bir.decls[entry.decl.int()]);
         var cursor: usize = 0;
         for (ctors) |ctor| {
-            const arity = Bir.SubRange.len(.{ .start = ctor.args_start, .end = ctor.args_end });
+            const arity = ctor.arity;
             cursor += arity;
             if (arity == 0 or cursor > parts.len) continue;
             const t = d.term(parts[cursor - 1]);
@@ -5584,7 +5823,7 @@ const Lowerer = struct {
         return l.binary(.logical_and, first, right, p);
     }
 
-    fn condOf(l: *Lowerer, test_expr: Node.Index, consequent: Node.Index, alternate: Node.Index, p: u32) !Node.Index {
+    pub fn condOf(l: *Lowerer, test_expr: Node.Index, consequent: Node.Index, alternate: Node.Index, p: u32) !Node.Index {
         const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
         return l.add(.cond, p, test_expr.int(), @intFromEnum(record));
     }
@@ -5617,11 +5856,11 @@ const Lowerer = struct {
         const d = l.bir.decls[entry.decl.int()];
         const region = d.inst_start;
         l.region = region;
-        const ctors = l.bir.declCtors(d);
+        const ctors = try l.typeCtors(d);
         const parts = l.in.dispatch.argsAt(row.body);
 
         var widest: u32 = 0;
-        for (ctors) |c| widest = @max(widest, Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end }));
+        for (ctors) |c| widest = @max(widest, c.arity);
         // An all-nullary type is a BARE TAG STRING (`backend.md` §4), so
         // `eq` is `===` and there is nothing to walk (§9.4, A.18). The
         // checker gives a use `primitive strict_eq` directly; the row is
@@ -5692,7 +5931,7 @@ const Lowerer = struct {
         const loops = try l.selfLoopParts(l.derived_row orelse std.math.maxInt(u32), row);
         var looped = false;
         for (ctors, 0..) |ctor, i| {
-            const arity = Bir.SubRange.len(.{ .start = ctor.args_start, .end = ctor.args_end });
+            const arity = ctor.arity;
             var body: StmtList = .empty;
             var value: Conjunction = .{};
             var arm_loops = false;
@@ -5750,7 +5989,7 @@ const Lowerer = struct {
             else if (l.integerTags(id))
                 (try l.intNode(@intCast(i), p)).toOptional()
             else
-                (try l.stringNode(l.text(l.bir.symbol(ctor.name)), p)).toOptional();
+                (try l.stringNode(l.text(ctor.name), p)).toOptional();
             try arms.append(l.scratch, try l.add(.switch_case, p, @intFromEnum(test_expr), @intFromEnum(record)));
         }
         const arm_range = try l.b.addRange(arms.items);
@@ -6084,7 +6323,7 @@ const Lowerer = struct {
                 // The same double separator `derivedBase` writes: the
                 // importer and the emitter must spell one name.
                 const base = try l.interner.getOrPut(l.gpa, try std.fmt.allocPrint(l.scratch, "{s}$${s}", .{
-                    l.text(entry.name),
+                    try l.typeBaseText(use.type),
                     @tagName(use.kind),
                 }));
                 if (std.debug.runtime_safety) {
@@ -8048,6 +8287,13 @@ const Lowerer = struct {
         if (l.in.entry_decl) |index| if (index < decls.len) {
             dispatched[index] = true;
         };
+        // And `core/Schema`'s core-private values, which the specialised
+        // path calls from other modules (`schema.md` §6).
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
+            for (decls, 0..) |d, i| {
+                if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) dispatched[i] = true;
+            }
+        }
         for (decls, 0..) |d, i| {
             const index: u32 = @intCast(i);
             l.unobserved[i] = d.kind == .value and !d.is_pub and !dispatched[i] and
@@ -10440,7 +10686,7 @@ const markup_vtable: beni_markup.VTable = struct {
         return @enumFromInt(@intFromEnum(n));
     }
 
-    fn pos(l: *Lowerer) u32 {
+    pub fn pos(l: *Lowerer) u32 {
         return l.mk.?.pos;
     }
 

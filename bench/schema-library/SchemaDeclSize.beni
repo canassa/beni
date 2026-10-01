@@ -1,0 +1,31 @@
+-- `SchemaSize.beni`'s program written with a `schema` declaration
+-- (`schema.md` §6): report 34's `flat` user parsed from text and printed
+-- back by the specialised `parse` and `print`, its issues formatted when it
+-- fails. `run.mjs` builds it under `--release` beside the library's.
+import Node
+import Schema
+
+
+schema User =
+    userId : Int as "user-id"
+    displayName : String as "display-name"
+    email : String
+    age : Int
+    active : Bool
+    score : FiniteFloat
+    role : String
+    nickname : String optional
+
+
+main : Node.Program
+main =
+    case
+        User.parse
+            "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
+            |> Result.andThen User.print
+    of
+        Ok text ->
+            Node.print text
+
+        Err issues ->
+            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1

@@ -1,0 +1,82 @@
+-- External keys through a declaration's specialised code (`schema.md` §5,
+-- *Host values*; §6, *Print writes JSON text*). `__proto__`, `constructor`
+-- and `toString` are ordinary keys both ways: read only when the object owns
+-- them, written as keys of the text, and under `Reject` reported like any
+-- other unknown key. `print` writes a record's keys in the order
+-- `JSON.stringify` writes the engine's object — array-index keys first,
+-- ascending, then the rest in insertion order, the discriminator first among
+-- them — and spells each as `JSON.stringify` does, quotes and control
+-- characters escaped. `JSON.parse` decides the numbers: `1.0` and `1e2` are
+-- the integers 1 and 100, and of two equal keys the last wins. The corpus
+-- also builds this with every root through the library (§10).
+import Node
+import Schema
+import Show
+
+
+pub schema Proto =
+    proto : Int as "__proto__"
+    ctor : Int as "constructor"
+    str : String as "toString"
+
+
+pub schema Ordered =
+    zeta : Int as "z"
+    ten : Int as "10"
+    alpha : Int as "a"
+    two : Int as "2"
+    weird : String as "a \"quoted\"\\key\n"
+    big : Int as "4294967295"
+
+
+pub schema Indexed tagged "0" of
+    One as "one"
+        first : Int as "1"
+        name : String
+
+
+reject : Schema.Options
+reject =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+showProto : Proto.Type -> String
+showProto p = String.fromInt p.proto ++ " " ++ String.fromInt p.ctor ++ " " ++ p.str
+
+
+showOrdered : Ordered.Type -> String
+showOrdered o =
+    String.join (List.map [ o.zeta, o.ten, o.alpha, o.two, o.big ] String.fromInt) ","
+        ++ " "
+        ++ o.weird
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result
+            (Proto.parse "{\"__proto__\":1,\"constructor\":2,\"toString\":\"s\"}")
+            showProto
+        , Show.result (Proto.parse "{\"constructor\":2,\"toString\":\"s\"}") showProto
+        , Show.result (Proto.parse "{}") showProto
+        , Show.result
+            (Proto.parseWith
+                reject
+                "{\"__proto__\":1,\"constructor\":2,\"toString\":\"s\",\"valueOf\":3,\"hasOwnProperty\":4}"
+            )
+            showProto
+        , Show.result (Proto.print { proto = 1, ctor = 2, str = "s" }) λs -> s
+        , Show.result
+            (Ordered.parse
+                "{\"z\":1,\"10\":1.0,\"a\":1e2,\"2\":2,\"a \\\"quoted\\\"\\\\key\\n\":\"w\",\"4294967295\":5,\"z\":6}"
+            )
+            showOrdered
+        , Show.result
+            (Ordered.print { zeta = 1, ten = 10, alpha = 3, two = 2, weird = "w", big = 5 })
+            λs -> s
+        , Show.result (Indexed.print (Indexed.One { first = 1, name = "n" })) λs -> s
+        , Show.result (Indexed.parse "{\"name\":\"n\",\"1\":1,\"0\":\"one\"}") λi ->
+            case i of
+                Indexed.One r ->
+                    String.fromInt r.first ++ r.name
+        ]

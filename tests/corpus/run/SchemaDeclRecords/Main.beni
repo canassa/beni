@@ -1,0 +1,162 @@
+-- A record declaration's `parse` and `print` (`schema.md` §6): every
+-- primitive operand, the four field forms of §4's table read missing, `null`
+-- and present, a renamed key, an inline nested record, a list of a primitive
+-- and a list of a record, both directions. The corpus builds this program a
+-- second time with every root forced through the library interpreter
+-- (`--schema-library`, §10), against this one golden: the specialised code
+-- and the library answer alike, success and failure, issue for issue.
+--
+-- Under `FirstError` the first failing field ends the record; under
+-- `AllErrors` every independent field is visited, unknown keys first, in the
+-- object's own key order. `optional` tests the key, never truthiness: `0`,
+-- `false` and `""` are present. A well-typed `Int` that is not safe fails to
+-- print, and a `Float` that JSON cannot hold fails at the key it is written
+-- at, under its external name.
+import Node
+import Schema exposing (Missing, NonNull, Null, Present)
+import Show
+
+
+pub schema Person =
+    name : String
+    age : Int as "the-age"
+    height : Float as "h"
+    weight : FiniteFloat
+    alive : Bool
+    nickname : String optional
+    middle : String nullable
+    title : String optional nullable
+    tags : List String
+    friends : List Friend
+    address :
+        street : String
+        number : Int
+    extra : Value
+    nothing : Null
+
+
+pub schema Friend =
+    name : String
+    best : Bool
+
+
+all : Schema.Options
+all = { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = True }
+
+
+presence : Schema.Presence a, (a -> String) -> String
+presence p show =
+    case p of
+        Missing ->
+            "Missing"
+
+        Present a ->
+            "Present " ++ show a
+
+
+nullable : Schema.Nullable a, (a -> String) -> String
+nullable n show =
+    case n of
+        Null ->
+            "Null"
+
+        NonNull a ->
+            "NonNull " ++ show a
+
+
+quoted : String -> String
+quoted s = "\"" ++ s ++ "\""
+
+
+showPerson : Person.Type -> String
+showPerson p =
+    String.join
+        [ p.name
+        , String.fromInt p.age
+        , String.fromFloat p.height
+        , String.fromFloat p.weight
+        , if p.alive then "alive" else "dead"
+        , presence p.nickname quoted
+        , nullable p.middle quoted
+        , presence p.title λt -> nullable t quoted
+        , "[" ++ String.join (List.map p.tags quoted) "," ++ "]"
+        , "["
+            ++ String.join (List.map p.friends λf -> f.name ++ (if f.best then "!" else "")) ","
+            ++ "]"
+        , p.address.street ++ " " ++ String.fromInt p.address.number
+        , Show.json p.extra
+        ]
+        "; "
+
+
+base : String
+base =
+    "\"name\":\"Ana\",\"the-age\":30,\"h\":1.5,\"weight\":60,\"alive\":true,\"middle\":null,\"tags\":[\"a\",\"b\"],\"friends\":[{\"name\":\"Bo\",\"best\":true}],\"address\":{\"street\":\"Main\",\"number\":1},\"extra\":{\"k\":[1,null]},\"nothing\":null"
+
+
+parsed : String -> String
+parsed text = Show.result (Person.parse text) showPerson
+
+
+parsedAll : String -> String
+parsedAll text = Show.result (Person.parseWith all text) showPerson
+
+
+person : Person.Type
+person =
+    { name = "Ana"
+    , age = 30
+    , height = 1.5
+    , weight = 60
+    , alive = False
+    , nickname = Missing
+    , middle = Null
+    , title = Present (NonNull "Dr")
+    , tags = [ "x" ]
+    , friends = [ { name = "Bo", best = False }, { name = "Cy", best = True } ]
+    , address = { street = "Main", number = 1 }
+    , extra = (Show.host "[{\"deep\":true}]")
+    , nothing = Null
+    }
+
+
+printed : Person.Type -> String
+printed p = Show.result (Person.print p) λs -> s
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- parse"
+        , parsed ("{" ++ base ++ "}")
+        , parsed ("{" ++ base ++ ",\"nickname\":\"\",\"title\":null}")
+        , parsed ("{" ++ base ++ ",\"nickname\":\"Nana\",\"title\":\"Dr\"}")
+        , parsed ("{" ++ base ++ ",\"nickname\":null}")
+        , parsed "{\"name\":\"Ana\"}"
+        , parsed ("{" ++ base ++ ",\"zzz\":1}")
+        , parsed "[]"
+        , parsed "{\"name\":1"
+        , "-- parse, every error"
+        , parsedAll ("{\"zzz\":1," ++ base ++ ",\"age\":31}")
+        , parsedAll
+            "{\"name\":1,\"the-age\":9007199254740992,\"h\":\"x\",\"weight\":1e999,\"alive\":0,\"nickname\":false,\"middle\":1,\"title\":2,\"tags\":[\"a\",3,null],\"friends\":[{\"name\":\"Bo\"},{\"best\":1}],\"address\":{\"street\":null},\"extra\":1,\"nothing\":0}"
+        , parsedAll "{}"
+        , "-- print"
+        , printed person
+        , printed
+            { person | nickname = Present "", middle = NonNull "M", title = Missing, tags = [] }
+        , printed { person | age = 9007199254740992 }
+        , printed { person | height = 0 / 0 }
+        , printed { person | weight = 1 / 0 }
+        , Show.result
+            (Person.printWith all
+                { person | age = 9007199254740992, height = 1 / 0, weight = 0 / 0 }
+            )
+            λs -> s
+        , "-- the description, through the library"
+        , Show.result (Schema.decode (Friend.schema ()) { name = "Di", best = True }) λf -> f.name
+        , Show.value (Schema.write (Friend.schema ()) { name = "Di", best = True })
+        , Show.result
+            (Schema.read (Friend.schema ()) (Show.host "{\"name\":\"Ed\",\"best\":false}"))
+            λf -> f.name
+        ]

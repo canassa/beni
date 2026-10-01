@@ -1,0 +1,143 @@
+--! How the schema fixtures print what they get back: an issue as its
+--! direction, endpoint, code, path and message, and a host value as JSON.
+
+import Schema exposing (Issue, IssueCode, PathSegment, Field, Index)
+
+
+pub issue : Issue -> String
+issue i =
+    direction i.direction
+        ++ " "
+        ++ endpoint i.endpoint
+        ++ " "
+        ++ code i.code
+        ++ " "
+        ++ path i.path
+        ++ " "
+        ++ i.message
+        ++ (case i.input of
+               Just v ->
+                   " <- " ++ json v
+
+               Nothing ->
+                   ""
+           )
+
+
+pub issues : List Issue -> String
+issues found = String.join (List.map found issue) " | "
+
+
+pub result : Result (List Issue) a, (a -> String) -> String
+result r show =
+    case r of
+        Ok v ->
+            "Ok " ++ show v
+
+        Err found ->
+            "Err " ++ issues found
+
+
+pub json : Schema.Value -> String
+json v =
+    case Schema.print Schema.value v of
+        Ok text ->
+            text
+
+        Err found ->
+            "<" ++ issues found ++ ">"
+
+
+pub value : Result (List Issue) Schema.Value -> String
+value r = result r json
+
+
+path : List PathSegment -> String
+path segments =
+    case segments of
+        [] ->
+            "/"
+
+        _ ->
+            String.concat (List.map segments segment)
+
+
+segment : PathSegment -> String
+segment s =
+    case s of
+        Field k ->
+            "/" ++ k
+
+        Index i ->
+            "/" ++ String.fromInt i
+
+
+direction : Schema.Direction -> String
+direction d =
+    case d of
+        Schema.Decoding ->
+            "decoding"
+
+        Schema.Encoding ->
+            "encoding"
+
+
+endpoint : Schema.Endpoint -> String
+endpoint which =
+    case which of
+        Schema.Encoded ->
+            "Encoded"
+
+        Schema.Type ->
+            "Type"
+
+
+code : IssueCode -> String
+code c =
+    case c of
+        Schema.WrongShape ->
+            "WrongShape"
+
+        Schema.MissingKey ->
+            "MissingKey"
+
+        Schema.UnknownKey ->
+            "UnknownKey"
+
+        Schema.UnknownTag ->
+            "UnknownTag"
+
+        Schema.InvalidValue ->
+            "InvalidValue"
+
+        Schema.DepthExceeded ->
+            "DepthExceeded"
+
+        Schema.InvalidOptions ->
+            "InvalidOptions"
+
+        Schema.ConversionFailed ->
+            "ConversionFailed"
+
+        Schema.CheckFailed ->
+            "CheckFailed"
+
+        Schema.ParseFailed ->
+            "ParseFailed"
+
+        Schema.PrintFailed ->
+            "PrintFailed"
+
+        Schema.InvalidSchema ->
+            "InvalidSchema"
+
+
+--| A host value, parsed from JSON text.
+pub host : String -> Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v ->
+            v
+
+        Err _ ->
+            host "null"

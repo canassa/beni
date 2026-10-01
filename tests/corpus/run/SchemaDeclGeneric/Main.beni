@@ -1,0 +1,148 @@
+-- A generic declaration's `parse` and `print` (`schema.md` §6, *Generic
+-- parameters*). A schema the program passes at run time is read by the
+-- library engine on the context the specialised parent made, so its issues
+-- carry the parent's whole path and obey its options: under `AllErrors` a
+-- failure in the parent's own field and one inside the library child are
+-- both reported, in traversal order. An argument written in a declaration
+-- (`Page Pair` in a field) is compiled like any reference. Before anything is
+-- read, each argument the value reaches is checked as `rootProblem` checks a
+-- whole schema: a construction failure, then an argument whose Encoded end
+-- has no external form — and an argument the declaration never reaches is
+-- not looked at, as the library never looks at it. The corpus also builds
+-- this with every root through the library (§10).
+import Node
+import Schema exposing (Conversion, Schema)
+import Show
+
+
+pub schema Page a =
+    items : List a
+    total : Int
+
+
+pub schema Pair =
+    left : Int
+    right : Int
+
+
+pub schema Pages =
+    pairs : Page Pair
+    names : Page String
+
+
+pub schema Tagged a b =
+    first : a
+
+
+pub schema Boxed a tagged "box" of
+    Full as "full"
+        content : a
+        rest : Boxed a
+    Empty as "empty"
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue ("not a decimal integer: " ++ s) ]
+        )
+        λn -> Ok (String.fromInt n)
+
+
+counted : Schema String Int
+counted = Schema.converted Schema.string decimalInt
+
+
+all : Schema.Options
+all =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+ints : Page.Type Int -> String
+ints p = String.fromInt p.total ++ ": " ++ String.join (List.map p.items String.fromInt) ","
+
+
+showPages : Pages.Type -> String
+showPages p =
+    String.join
+        (List.map p.pairs.items λx -> String.fromInt x.left ++ "-" ++ String.fromInt x.right)
+        ","
+        ++ " / "
+        ++ String.join p.names.items ","
+
+
+boxed : Boxed.Type Int -> String
+boxed b =
+    case b of
+        Boxed.Full f ->
+            String.fromInt f.content ++ " " ++ boxed f.rest
+
+        Boxed.Empty ->
+            "."
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- a schema passed at run time"
+        , Show.result (Page.parse Schema.int "{\"items\":[1,2],\"total\":2}") ints
+        , Show.result (Page.parse counted "{\"items\":[\"3\",\"4\"],\"total\":2}") ints
+        , Show.result (Page.parse counted "{\"items\":[\"3\",\"x\"],\"total\":2}") ints
+        , Show.result
+            (Page.parseWith counted all "{\"items\":[\"3\",\"x\",5],\"total\":\"2\",\"more\":1}")
+            ints
+        , Show.result (Page.print counted { items = [ 5, 6 ], total = 2 }) λs -> s
+        , Show.result (Page.print Schema.int { items = [ 9007199254740992 ], total = 2 }) λs -> s
+        , "-- arguments checked first"
+        , Show.result (Page.parse (Schema.tagged "k" []) "{\"items\":[],\"total\":0}") ints
+        , Show.result (Page.parse (Schema.flip counted) "{\"items\":[],\"total\":0}") λp ->
+            String.join p.items ","
+        , Show.result (Page.parse (Schema.flip counted) "not even JSON") λp ->
+            String.join p.items ","
+        , Show.result
+            (Page.parseWith Schema.int { all | maxDepth = -1 } "{\"items\":[],\"total\":0}")
+            ints
+        , Show.result (Page.print (Schema.flip counted) { items = [], total = 0 }) λs -> s
+        , Show.result (Tagged.parse Schema.int (Schema.tagged "unused" []) "{\"first\":1}") λt ->
+            String.fromInt t.first
+        , "-- arguments written in a declaration"
+        , Show.result
+            (Pages.parse
+                "{\"pairs\":{\"items\":[{\"left\":1,\"right\":2}],\"total\":1},\"names\":{\"items\":[\"a\"],\"total\":1}}"
+            )
+            showPages
+        , Show.result
+            (Pages.parseWith
+                all
+                "{\"pairs\":{\"items\":[{\"left\":1}],\"total\":1},\"names\":{\"items\":[2],\"total\":1}}"
+            )
+            showPages
+        , Show.result
+            (Pages.print
+                { pairs = { items = [ { left = 1, right = 2 } ], total = 1 }
+                , names = { items = [], total = 0 }
+                }
+            )
+            λs -> s
+        , "-- a generic recursive union"
+        , Show.result
+            (Boxed.parse
+                Schema.int
+                "{\"box\":\"full\",\"content\":1,\"rest\":{\"box\":\"full\",\"content\":2,\"rest\":{\"box\":\"empty\"}}}"
+            )
+            boxed
+        , Show.result
+            (Boxed.parse
+                Schema.int
+                "{\"box\":\"full\",\"content\":1,\"rest\":{\"box\":\"full\",\"content\":\"2\",\"rest\":{\"box\":\"empty\"}}}"
+            )
+            boxed
+        , Show.result (Boxed.print Schema.int (Boxed.Full { content = 7, rest = Boxed.Empty })) λs ->
+            s
+        ]

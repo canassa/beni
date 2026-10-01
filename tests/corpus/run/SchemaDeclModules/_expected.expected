@@ -1,0 +1,10 @@
+Ok users 1 a:3
+Err decoding Type ConversionFailed /page/items/0/age/0 not a decimal integer: x
+Err decoding Type ConversionFailed /page/items/0/age/0 not a decimal integer: x | decoding Encoded UnknownKey /page/items/1/z unexpected key "z" | decoding Encoded WrongShape /page/items/1/name expected a string | decoding Type ConversionFailed /page/items/1/age/0 not a decimal integer: y | decoding Encoded InvalidValue /page/total expected a safe integer | decoding Encoded MissingKey /owner/name missing key "name" | decoding Encoded MissingKey /owner/age missing key "age"
+Ok {"page":{"items":[{"name":"a","age":"3"}],"total":1},"owner":null}
+Err encoding Encoded ConversionFailed /page/items/0/age the conversion failed without an issue | encoding Encoded ConversionFailed /page/items/1/age the conversion failed without an issue | encoding Encoded ConversionFailed /owner/age the conversion failed without an issue
+Err decoding Encoded WrongShape /children/1/children/0/value expected a number
+Ok {"kind":"branch","children":[{"kind":"leaf","value":1},{"kind":"branch","children":[]}]}
+Err decoding Type ConversionFailed /items/0/age/0 not a decimal integer: z
+equal
+different

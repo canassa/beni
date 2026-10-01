@@ -1,0 +1,30 @@
+-- Report 34's flat decode entry as a beni program (`schema.md` §6, *DCE*):
+-- the `flat` user parsed from text by a declaration's specialised `parse`,
+-- and nothing printed back, so the build ships the decoding direction alone
+-- — the cell report 34 measured Ajv standalone, Typia, Zod and Effect in.
+import Node
+import Schema
+
+
+schema User =
+    userId : Int as "user-id"
+    displayName : String as "display-name"
+    email : String
+    age : Int
+    active : Bool
+    score : FiniteFloat
+    role : String
+    nickname : String optional
+
+
+main : Node.Program
+main =
+    case
+        User.parse
+            "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
+    of
+        Ok user ->
+            Node.print user.displayName
+
+        Err issues ->
+            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1

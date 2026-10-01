@@ -290,6 +290,13 @@ pub const Build = struct {
     /// a test-only entry point — would move the assertion off the thing
     /// that ships.
     allow_debug: bool = false,
+    /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
+    /// schema declaration's `parse` and `print` run through the library
+    /// interpreter rather than its specialised code, which is the forced
+    /// library path the differential corpus builds every schema program with
+    /// (`schema.md` §10). It changes no answer — that is what the corpus
+    /// asserts — and no user has a reason to reach for it.
+    schema_library: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
     watch: bool = false,
@@ -700,6 +707,7 @@ const BuildSpecific = struct {
     release: bool = false,
     library: bool = false,
     allow_debug: bool = false,
+    schema_library: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
@@ -733,6 +741,11 @@ const BuildSpecific = struct {
             // `--library`, absent from `usage`.
             if (value != null) return noValue(name);
             self.allow_debug = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--schema-library")) {
+            // The fourth hidden flag (see `Build.schema_library`).
+            if (value != null) return noValue(name);
+            self.schema_library = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--watch")) {
             if (value != null) return noValue(name);
@@ -797,6 +810,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .library = s.specific.library,
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
+        .schema_library = s.specific.schema_library,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,

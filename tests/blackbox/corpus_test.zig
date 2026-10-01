@@ -196,8 +196,8 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
-                .dev => .run_dev,
-                .release => .run_release,
+                .dev, .dev_library => .run_dev,
+                .release, .release_library => .run_release,
             },
             .browser => .browser,
         };
@@ -206,7 +206,11 @@ const Kind = enum {
 
 /// `run/`'s two builds of one fixture. Every other kind has one pass,
 /// which `partOf` is asked about as `.dev`.
-const RunPass = enum { dev, release };
+/// A fixture that declares a `schema` gets two more: each build again with
+/// `--schema-library`, every schema root forced through the library
+/// interpreter, against the same golden (`schema.md` §10's differential
+/// corpus).
+const RunPass = enum { dev, release, dev_library, release_library };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -1670,10 +1674,14 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [2]?[]const u8 = .{ null, null };
+        var verified: [4]?[]const u8 = .{ null, null, null, null };
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
+        // A fixture that declares a schema is built again with every schema
+        // root forced through the library (`schema.md` §10): the two paths
+        // must print the one golden, which is written by hand.
+        const differential = try declaresSchema(c, sources);
 
         // Each pass runs in the process of its part (`corpus_parts.zig`):
         // the two build to different `--out` directories and compare with
@@ -1683,6 +1691,18 @@ const Case = struct {
                 if (!recording) return err;
                 RunCounts.add(&run_counts.refused);
                 first_error = err;
+                break :blk null;
+            };
+        }
+        if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
+            var forced: std.ArrayList([]const u8) = .empty;
+            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--schema-library", "--out=out-library" });
+            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
+            try forced.appendSlice(c.arena, sources);
+            verified[2] = c.runOnce("out-library", .dev_library, forced.items, "expected", false, record) catch |err| blk: {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
                 break :blk null;
             };
         }
@@ -1710,11 +1730,44 @@ const Case = struct {
                 break :release;
             };
         }
+        if (differential and c.cfg.runs(Kind.run.partOf(.release_library))) {
+            const separate = c.goldenExists("release-expected");
+            var forced: std.ArrayList([]const u8) = .empty;
+            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--schema-library", "--out=release-library" });
+            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
+            try forced.appendSlice(c.arena, sources);
+            verified[3] = c.runOnce(
+                "release-library",
+                .release_library,
+                forced.items,
+                if (separate) "release-expected" else "expected",
+                false,
+                record,
+            ) catch |err| blk: {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
+                break :blk null;
+            };
+        }
         if (recording) {
             for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
             try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
         }
         if (first_error) |err| return err;
+    }
+
+    /// Whether a fixture's sources declare a `schema`: a line that begins
+    /// one, at column 1 where every top-level declaration begins.
+    fn declaresSchema(c: Case, sources: []const []const u8) !bool {
+        for (sources) |name| {
+            const text = try c.w.read(name);
+            var lines = std.mem.splitScalar(u8, text, '\n');
+            while (lines.next()) |line| {
+                if (std.mem.startsWith(u8, line, "schema ") or std.mem.startsWith(u8, line, "pub schema ")) return true;
+            }
+        }
+        return false;
     }
 
     fn hasPlatformDir(dir_path: []const u8) bool {
@@ -2576,5 +2629,7 @@ fn expectExit(expected: u8, r: world.Result) !void {
 /// The pass a `run/` fixture's build belongs to, by its `--out`: `dev` or
 /// `release`.
 fn passName(out_dir: []const u8) []const u8 {
+    if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
+    if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";
 }

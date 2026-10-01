@@ -1,0 +1,9 @@
+Ok 1 2 s
+Err decoding Encoded MissingKey /__proto__ missing key "__proto__"
+Err decoding Encoded MissingKey /__proto__ missing key "__proto__"
+Err decoding Encoded UnknownKey /valueOf unexpected key "valueOf" | decoding Encoded UnknownKey /hasOwnProperty unexpected key "hasOwnProperty"
+Ok {"__proto__":1,"constructor":2,"toString":"s"}
+Ok 6,1,100,2,5 w
+Ok {"2":2,"10":10,"z":1,"a":3,"a \"quoted\"\\key\n":"w","4294967295":5}
+Ok {"0":"one","1":1,"name":"n"}
+Ok 1n

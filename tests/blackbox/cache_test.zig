@@ -1637,6 +1637,73 @@ fn methodEdit(w: *World, arena: std.mem.Allocator, edited: []const u8) !Run {
     return warm;
 }
 
+/// `Models` declares `Age`, whose `via` is a private conversion that adds
+/// `bump`; `Main`'s own schema `Person` names `Age`, so `Person`'s
+/// specialised worker calls `Models`'s (`schema.md` §6).
+fn schemaBump(comptime bump: []const u8) []const u8 {
+    return
+    \\import Schema exposing (Conversion)
+    \\
+    \\
+    \\bumped : Conversion Int Int
+    \\bumped =
+    \\    Schema.conversion (λn -> Ok (n +
+    ++ " " ++ bump ++
+        \\)) λn -> Ok n
+        \\
+        \\
+        \\pub schema Age =
+        \\    Int via bumped
+        \\
+    ;
+}
+
+const schema_person =
+    \\import Models exposing (Age)
+    \\import Node
+    \\
+    \\
+    \\schema Person =
+    \\    age : Age
+    \\
+    \\
+    \\main : Node.Program
+    \\main =
+    \\    Node.printLines
+    \\        [ case Person.parse "{\"age\":1}" of
+    \\            Ok p ->
+    \\                String.fromInt p.age
+    \\
+    \\            Err _ ->
+    \\                "failed"
+    \\        ]
+    \\
+;
+
+test "a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Models.beni", schemaBump("1"));
+    try w.write("src/Main.beni", schema_person);
+    const cold = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=cold", "--jobs=1", "--cache-dir=cache", "src" }, "bump-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try w.expectProgram("cold/_main.mjs", .{ .stdout = "2\n" });
+
+    try w.write("src/Models.beni", schemaBump("10"));
+    const warm = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=warm", "--jobs=1", "--cache-dir=cache", "src" }, "bump-warm.json");
+    const oracle = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=oracle", "--jobs=1", "--no-cache", "src" }, "bump-oracle.json");
+
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    // Only `Models` is re-checked: the body is in no record (A.6).
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try expectSameTree(&w, arena, "oracle", "warm");
+    try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "11\n" });
+}
+
 test "a custom eq's private body edit stops at the firewall, and the cached importer uses the new body" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();

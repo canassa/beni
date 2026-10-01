@@ -1,0 +1,40 @@
+--! Schemas another module reads and writes through (`schema.md` §6): their
+--! workers are called by the importer's workers, their descriptions built
+--! into the importer's, and their `via` is this module's own value.
+
+import Schema exposing (Conversion)
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issueAt [ Schema.Index 0 ] ("not a decimal integer: " ++ s) ]
+        )
+        λn ->
+            if n < 0 then
+                Err []
+            else
+                Ok (String.fromInt n)
+
+
+pub schema Page a =
+    items : List a
+    total : Int
+
+
+pub schema User =
+    name : String
+    age : String via decimalInt
+
+
+pub schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree

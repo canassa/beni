@@ -124,3 +124,40 @@ fallback =
     , role = ""
     , nickname = Missing
     }
+
+
+-- The same user as a declaration (`schema.md` §6): its `parse` and `print`
+-- are the specialised code S4 generates, measured beside the library's.
+pub schema UserDecl =
+    userId : Int as "user-id"
+    displayName : String as "display-name"
+    email : String
+    age : Int
+    active : Bool
+    score : FiniteFloat
+    role : String
+    nickname : String optional
+
+
+pub schema UsersDecl =
+    List UserDecl
+
+
+pub parseUserDecl : String -> Int
+parseUserDecl text = count (UserDecl.parse text)
+
+
+pub parseUserDeclAll : String -> Int
+parseUserDeclAll text = count (UserDecl.parseWith all text)
+
+
+pub parseUsersDecl : String -> Int
+parseUsersDecl text = count (UsersDecl.parse text)
+
+
+pub printUserDecl : User Int -> Int
+printUserDecl u = count (UserDecl.print u)
+
+
+pub printUsersDecl : List (User Int) -> Int
+printUsersDecl us = count (UsersDecl.print us)

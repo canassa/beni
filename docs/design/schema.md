@@ -17,6 +17,9 @@ specified in §11 (defaults), §12 (schemas derived from a type), §13 (suspendi
 replace §10's S3–S5). The sentences above that call Q3, Q6, Q9 and Q11 open are superseded by
 those sections.
 
+*Amended 2026-10-02.* The library interpreter (S3) and specialised execution (S4) are built: a
+`schema` declaration builds and runs, through both paths (§6, §16).
+
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
 | Q3 | Does v1 have defaults? **Answered 2026-10-02 (A.7): yes, Effect-class defaults in the declaration.** | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
@@ -1122,6 +1125,8 @@ before entry discovery or any output: “This schema is checked, but its parse
 and print are not generated yet.” This replaces the frontend's
 refusal; a successful check does not claim executable runners. A frontend or
 checker error keeps its own diagnostic without adding this refusal.
+*(Amended 2026-10-02: S4 generates them, and `build` no longer refuses a schema — §16, *As built —
+S4*.)*
 
 ## 9. What v1 leaves out
 
@@ -2076,7 +2081,7 @@ and lands with all three gates green.
 | # | Slice | Contract | Depends on | Size | Done means |
 |---|---|---|---|---|---|
 | S3 | Engine and library interpreter (**built**, 2026-10-01; *As built* below) | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
-| S4 | Specialisation, `build` unwalled, differential harness | §6, §10, Q9 | S3 | L | parse/print workers; the forced-library switch, test-only; every schema fixture runs both paths in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
+| S4 | Specialisation, `build` unwalled, differential harness (**built**, 2026-10-02; *As built* below) | §6, §10, Q9 | S3 | L | parse/print workers; the forced-library switch, test-only; every schema fixture runs both paths in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
 | S5 | Defaults and `make` | §11 | S4 | M | §11.10 |
 | S6 | Checks, annotations, check metadata | §14.1, §15 rows *filters*, *annotations* | S4 | M | the `check` and `annotate` modifiers; `KnownCheck`; opaque ids; messages |
 | S7 | Derived codecs and `core/Json` | §12 | S4 (S5 is not needed) | L | §12.9; `Codec`, `erased`, `derived`; the closing rule; the interface property |
@@ -2178,6 +2183,104 @@ program that only builds schemas with the library builds and runs, under `--rele
   1 690, typed decode 473; `JSON.stringify` 791, print 2 124. `list` — `JSON.parse` 651 µs,
   parse 1 122 µs; `JSON.stringify` 670 µs, print 1 558 µs. These are the library's numbers for
   S4 to be measured against, not a comparison with any other library.
+
+**As built — S4** (2026-10-02). `build` accepts `schema` declarations: §6's *The specialised path,
+as specified for S4* is what it emits (`src/js/SchemaLower.zig` writes it, `src/js/SchemaGraph.zig`
+reads the plans for it and for reachability, `src/js/SchemaCtor.zig` gives the two endpoint families
+their constructors), over core-private values of `core/Schema.beni` (`compiledParse`,
+`compiledPrint`, `compiledFail`, `compiledForward`, `compiledBackward`, `belowBackward`, `readSlot`,
+`writeSlot`, `pathAt`, `printableWithin`). §8's refusal and A.6's wall are gone.
+
+- **Reachability.** `Reach` has a fourth node kind, a schema member — description, decoding,
+  encoding — with edges to the `via`s, to the same member of every definition its value names, and
+  to the `core/Schema` values its code calls (`SchemaGraph.coreNeeds`, which the lowering writes
+  calls of and nothing else). `emit/app/SchemaParseOnly`, `SchemaPrintOnly` and
+  `SchemaDescriptionOnly` pin that each ships its own direction alone; a library build roots every
+  member of a `pub schema`.
+- **Two findings on the way, kept.** A tagged endpoint's type name is `Message.Type`, which a
+  derived function's printed name took whole (`Models$Tree.Type$$eq`, a syntax error at the import
+  that names it); a type's name is now spelled with `$` for the dot in derived and `$order` names.
+  And `core/Schema`'s core-private values were "results nothing reads" to their own module, which
+  printed them without their `return`s; they are observed, as an interface value is.
+- **Print writes the engine's host value**, with one `JSON.stringify` at the root. Writing JSON text
+  piece by piece was built first: as fast on numbers, and slower on strings — the typeahead encode
+  below was 5.8 µs against the floor's 2.4 (now 2.8), a `JSON.stringify` per string costing more
+  than one over the whole tree. A parse reads a key no object inherits once and tests it against
+  `undefined` — for `JSON.parse`'s objects that is the own-key test — and a key `Object.prototype`
+  has (`__proto__`, `constructor`, `toString`, …) with `Object.hasOwn`: about 50 ns of 750 on the
+  flat parse.
+- **The differential corpus** (Q9, §10): `run/` fixtures that declare a `schema` are built four
+  times, development and `--release`, each with and without `--schema-library`, against one
+  `.expected` written and read by hand: `SchemaDeclRecords` (every primitive and field form, both
+  directions, `AllErrors` order), `SchemaDeclTagged` (discriminator, nullary variants under
+  `Reject`, a recursive union, both families matched and compared), `SchemaDeclGeneric` (a schema
+  passed at run time read by the library on the parent's context, arguments checked first, an
+  argument never reached not checked, static arguments, a generic recursive union),
+  `SchemaDeclDepth` (0, 1, 2, 512 and the ceiling, each with one level more), `SchemaDeclConversions`
+  (field and value-position `via`, `FirstError` laziness by `Debug.log`, the encoding side's
+  endpoint), `SchemaDeclKeys` (prototype keys both ways, `JSON.stringify`'s key order, escaped
+  keys) and `SchemaDeclModules` (workers and descriptions across modules, an imported union's
+  constructors and derived equality). Every one printed the same in all four builds before its
+  golden was written. `cache_test` adds a private `via` body edited behind an imported schema:
+  one module re-checked, and the importer's cached worker runs the new body.
+- **The ceiling holds for the workers.** The deepest value one cold operation survived in a fresh
+  Node 24 process (default stack), by bisection over processes with the bound lifted, a development
+  build: a chain whose link is a payload and a field — parse 2 852 links (5 704 depth units), print
+  4 184 (8 368); a tree whose level is a payload, a field and an element — parse 1 651 levels
+  (4 953 units), print 1 992 (5 976). That is deeper than the library (3 537–4 688 units), a record,
+  list or union node being one frame where the engine spends two, so §5's ceiling of 1 024 keeps a
+  margin of 4.8× or more. Not measured: a release build's frames, SpiderMonkey and JavaScriptCore.
+- **Size** (`bench/schema-library/run.mjs`, brotli 11 of the whole release output): report 34's
+  `flat` user parsed and printed back is **2 805** bytes as a declaration against 4 491 through the
+  library builders (`SchemaSize`), and parsed alone **2 575** (`SchemaDeclParse`) — report 34's
+  flat decode cell, where it measured Ajv standalone 1 275, Typia 1 758, Effect 22 536 and Zod
+  23 650 (their bundles, not this machine). The empty program is 133. Nearly all of the 2.4 kB is
+  `core/Schema`'s root and issue code the workers call, written to the compactor's rules and not
+  minified by hand.
+- **Speed against the library** (`bench/schema-library/run.mjs`, `--library --release`, Node 24,
+  Ryzen 9 5950X, `taskset -c 8`, load 4.7, median of 15 interleaved samples): `flat` parse 1 063 ns
+  against 1 254 (`JSON.parse` 590), failing on a wrong type 1 047 against 1 099, on a missing key
+  932 against 970, on an unknown key under `Reject` and `AllErrors` 1 226 against 1 345; print
+  921 against 1 625 (`JSON.stringify` 586); `list` parse 641 µs against 849 (`JSON.parse` 517),
+  print 576 µs against 1 293 (`JSON.stringify` 538). The specialised path is at least as fast on
+  every workload; on failures it is within 5 %, both building the same issue through `failAt`.
+- **Against other libraries** (`bench/schema-libraries/quick.mjs`, added here: this harness's
+  adapters and payloads, each row in a fresh process, every cell checked for correctness first,
+  strict options — the first error, unknown keys rejected — 2 rounds of 9 samples, 29 s; registry
+  installs, which `run.mjs` refuses; load 4.5). Medians, `flat` and `typeahead` in ns, the rest in
+  µs:
+
+  | case | JSON floor | handwritten | typia | valibot | zod | effect | beni library | beni |
+  |---|--:|--:|--:|--:|--:|--:|--:|--:|
+  | flat decode valid | 800 | 808 | 794 | 1 496 | 1 264 | 2 170 | 1 220 | 813 |
+  | flat decode wrong_type | 666 | 703 | 1 982 | 1 287 | 3 884 | 2 614 | 1 144 | 880 |
+  | flat decode missing_key | 584 | 621 | 1 766 | 1 094 | 4 995 | 2 194 | 1 009 | 880 |
+  | flat decode unknown_key | 646 | 730 | 2 294 | 1 667 | 3 545 | 1 996 | 936 | 930 |
+  | flat encode valid | 626 | 807 | 1 619 | 1 501 | 1 282 | 1 983 | 1 585 | 740 |
+  | list decode valid | 520 | 599 | 628 | 1 214 | 1 516 | 1 694 | 983 | 616 |
+  | list decode wrong_type | 526 | 567 | 951 | 1 025 | 787 | 1 408 | 864 | 589 |
+  | list encode valid | 549 | 1 068 | 1 518 | 1 248 | 1 293 | 1 749 | 1 324 | 631 |
+  | union decode valid | 368 | 416 | 457 | 1 090 | 685 | 1 428 | 662 | 437 |
+  | union decode missing_key | 365 | 382 | 775 | 714 | 637 | 883 | 511 | 397 |
+  | union encode valid | 294 | 409 | 1 166 | 1 025 | 629 | 1 310 | 777 | 348 |
+  | typeahead decode valid | 4 260 | 4 876 | 7 088 | 7 742 | 5 970 | 14 781 | 7 305 | 4 984 |
+  | typeahead decode unknown_key | 4 248 | 4 402 | 7 781 | 4 924 | 8 375 | 6 802 | 4 612 | 4 413 |
+  | typeahead encode valid | 2 621 | 6 488 | 9 816 | 6 204 | 4 359 | 13 489 | 7 883 | 2 910 |
+
+  The orderings: beni is ahead of Valibot, Zod, Effect and its own library path on every measured
+  cell (`flat`'s unknown key against the library, 930 to 936, is a tie), and of Typia on every cell
+  but the valid `flat` decode, where the two are level (794 against 813); the hand-written
+  validator is ahead of all on most decodes, and beni is closest to it. A co-tenant's load moves a
+  cell by tens of percent on this machine — an earlier run at load 1.4, before the `undefined` key
+  test, had beni's `flat`, `list` and `union` valid decodes at 868 ns, 638 µs and 484 µs against
+  Typia's 718, 580 and 415 — so the orderings, not the ratios, are the claim. Not measured: `tree`
+  (a recursive record, which a v1 declaration cannot write), the encode faults for beni (an
+  ill-typed program value cannot reach a `print`), startup, browsers, and many schemas in one
+  program.
+- **Not done here, and owed:** the full `run.mjs` capture with a beni row (it refuses registry
+  installs and takes about 15 minutes, past the five a bench may take, so it is opt-in), a browser
+  bundle row through `bundle.mjs`, startup, and the many-schema code-size curve §6 asks for before
+  any parity claim.
 
 ## Appendix A. Decisions log
 
@@ -2470,7 +2573,8 @@ schema program and all resolution-requiring dumps see these interface members.
 `build` stops in `Emit.run`, before `findEntry` and before writing any path,
 with `not_implemented` on the schema name: “This schema is checked, but its
 parse and print are not generated yet.” A schema program cannot
-build successfully without its runners.
+build successfully without its runners. *(Amended 2026-10-02: the wall is gone; S4 generates the
+runners, §6 and §16.)*
 
 ### A.7 — Defaults in the declaration; Effect's power is the bar (2026-10-02)
 

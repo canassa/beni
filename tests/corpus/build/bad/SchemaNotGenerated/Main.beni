@@ -1,6 +1,0 @@
--- `check` accepts this declaration, but build stops before writing any output.
-pub schema User =
-    id : Int
-
-
-pub main = User.parse "{\"id\":1}"

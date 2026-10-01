@@ -1,0 +1,112 @@
+-- `via` through a declaration's specialised code (`schema.md` §4, §6): on a
+-- field, at a declaration's value position (`Count`), under `nullable` and
+-- in a list of a declaration that converts. Decoding reads the source and
+-- then converts; encoding converts back and then writes the source, so a
+-- failure of what the backward step made is in what is written — the
+-- Encoded endpoint. A conversion's issues are moved under the value's path
+-- (an `issueAt` path follows it), and an `Err []` is one `ConversionFailed`.
+-- Under `FirstError` a failed field ends the record and no later conversion
+-- runs; under `AllErrors` every field's conversion runs, in declaration
+-- order — `Debug.log` shows which ran. The corpus also builds this with
+-- every root through the library (§10).
+import Node
+import Schema exposing (Conversion)
+import Show
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            _ = Debug.log "forward" s
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err
+                        [ Schema.issueAt [ Schema.Field "digits" ] ("not a decimal integer: " ++ s)
+                        ]
+        )
+        λn ->
+            _ = Debug.log "backward" n
+            if n < 0 then
+                Err []
+            else
+                Ok (String.fromInt n)
+
+
+-- Backward makes an `Int` the source then refuses: it is not safe.
+widened : Conversion Int Int
+widened = Schema.conversion (λn -> Ok (n * 2)) λn -> Ok (n * 9007199254740991)
+
+
+pub schema Count =
+    String via decimalInt
+
+
+pub schema Order =
+    first : String via decimalInt
+    second : String via decimalInt
+    maybe : String via decimalInt nullable
+    counts : List Count
+    wide : Int via widened
+
+
+all : Schema.Options
+all =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Ignore, maxDepth = 512, reportInput = False }
+
+
+showOrder : Order.Type -> String
+showOrder o =
+    String.join
+        [ String.fromInt o.first
+        , String.fromInt o.second
+        , case o.maybe of
+            Schema.Null ->
+                "null"
+
+            Schema.NonNull n ->
+                String.fromInt n
+        , String.join (List.map o.counts String.fromInt) ","
+        , String.fromInt o.wide
+        ]
+        " "
+
+
+order : Order.Type
+order = { first = 1, second = 2, maybe = Schema.NonNull 3, counts = [ 4, 5 ], wide = 0 }
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Show.result (Count.parse "\"42\"") String.fromInt
+        , Show.result (Count.parse "\"4x\"") String.fromInt
+        , Show.result (Count.print 7) λs -> s
+        , Show.result (Count.print (-7)) λs -> s
+        , Show.result
+            (Order.parse
+                "{\"first\":\"1\",\"second\":\"2\",\"maybe\":null,\"counts\":[\"3\"],\"wide\":4}"
+            )
+            showOrder
+        , Show.result
+            (Order.parse
+                "{\"first\":\"x\",\"second\":\"y\",\"maybe\":\"z\",\"counts\":[],\"wide\":0}"
+            )
+            showOrder
+        , Show.result
+            (Order.parseWith
+                all
+                "{\"first\":\"x\",\"second\":2,\"maybe\":\"z\",\"counts\":[\"1\",\"q\"],\"wide\":0.5}"
+            )
+            showOrder
+        , Show.result (Order.print order) λs -> s
+        , Show.result (Order.print { order | second = -1, counts = [ -2 ] }) λs -> s
+        , Show.result
+            (Order.printWith all
+                { order | second = -1, maybe = Schema.NonNull (-3), counts = [ 1, -2 ], wide = 2 }
+            )
+            λs -> s
+        ]

@@ -3,9 +3,9 @@
 --! conversion in each direction (`docs/design/schema.md` §1, §4, §5).
 --!
 --! The builders below make a `Schema`, and the runners at the end run one.
---! A `schema` declaration is the same thing written as syntax (§2); until
---! its specialised `parse` and `print` are generated (§6), a program builds
---! what it needs here.
+--! A `schema` declaration is the same thing written as syntax (§2): its
+--! `schema ()` is built of these builders, and its `parse` and `print` are
+--! specialised code that calls the core-private values near the end (§6).
 --!
 --! **The engine owns the traversal.** A builder takes ordinary values and
 --! functions — a field's name, a child schema, a mapping from a product to a
@@ -1223,6 +1223,28 @@ rootIssue dir endpoint code message =
 -- outside.
 rootProblem : Schema e a, Options, Direction, Int, Bool, Int, Bool -> Maybe (List Issue)
 rootProblem s o dir src sh dst dh =
+    case optionsProblem o dir src of
+        Just issues ->
+            Just issues
+
+        Nothing ->
+            z = analyse (boxOf s)
+            case z.problem of
+                Just problem ->
+                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+
+                Nothing ->
+                    if sh && opaqueAt z src then
+                        Just (opaqueIssue dir src)
+                    else if dh && opaqueAt z dst then
+                        Just (opaqueIssue dir dst)
+                    else
+                        Nothing
+
+
+-- A `maxDepth` the engine does not take: the first thing a root looks at.
+optionsProblem : Options, Direction, Int -> Maybe (List Issue)
+optionsProblem o dir src =
     if
         not
             (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from o.maxDepth ])
@@ -1238,18 +1260,7 @@ rootProblem s o dir src sh dst dh =
                 "maxDepth must be from 0 to ${String.fromInt maxDepthCeiling}, not ${String.fromInt o.maxDepth}"
             )
     else
-        z = analyse (boxOf s)
-        case z.problem of
-            Just problem ->
-                Just (rootIssue dir (endpointOf src) InvalidSchema problem)
-
-            Nothing ->
-                if sh && opaqueAt z src then
-                    Just (opaqueIssue dir src)
-                else if dh && opaqueAt z dst then
-                    Just (opaqueIssue dir dst)
-                else
-                    Nothing
+        Nothing
 
 
 opaqueIssue : Direction, Int -> List Issue
@@ -2053,6 +2064,245 @@ printWith s o v =
                 Err (fromHost c.issues)
             else
                 Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
+
+
+-- ---- The specialised path ------------------------------------------------
+-- What the code a `schema` declaration compiles to calls (`schema.md` §6,
+-- *The specialised path, as specified for S4*). None of it is `pub`, so no
+-- program can name it; the code generator names each by its symbol in this
+-- module, as it names `List`'s core-private values (`backend.md` §4).
+--
+-- A worker takes the engine's own context, the depth of its value, where
+-- the value is — its parent's path and the key or index the parent read it
+-- at as the input and as the output name it, both `null` at the root — and
+-- the value, and answers what `run` answers: its result, or the context's
+-- failure mark. The path itself is made only when something needs it, so a
+-- value that fails nothing and holds no record makes none.
+
+-- The path of a value its parent read at `input` (as the output names it,
+-- `output`); the parent's own at the root, where both are `null`.
+pathAt : Path, Js.Value, Js.Value -> Path
+pathAt parent input output =
+    if Js.isNull input then
+        parent
+    else
+        step parent input output
+
+
+-- A specialised `parseWith`: the root's checks, `JSON.parse`, the context,
+-- then `worker` on what was parsed. `args` are a generic declaration's
+-- schema arguments its value reaches, a host array in the order it first
+-- meets them.
+compiledParse : Options, Js.Value, Js.Value, String -> Result (List Issue) a
+compiledParse o args worker text =
+    case compiledProblem o Decoding encodedSide args of
+        Just issues ->
+            Err issues
+
+        Nothing ->
+            case
+                Js.catchIf
+                    (λ() -> Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                    (λthrown -> Js.instanceOf thrown (Js.global "SyntaxError"))
+                    λthrown -> Err (stringOf (Js.get thrown "message"))
+            of
+                Err message ->
+                    rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+
+                Ok v ->
+                    c = context o Decoding encodedSide True typeSide False True
+                    finish c (Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, v ])
+
+
+-- A specialised `printWith`: the root's checks, the context, then `worker`,
+-- which answers the host value the engine would write, and one `JSON.stringify`
+-- of it, as `printWith` makes.
+compiledPrint : Options, Js.Value, Js.Value, a -> Result (List Issue) String
+compiledPrint o args worker v =
+    case compiledProblem o Encoding typeSide args of
+        Just issues ->
+            Err issues
+
+        Nothing ->
+            c = context o Encoding typeSide False encodedSide True True
+            x = Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, toHost v ]
+            if Js.same x c.fail then
+                Err (fromHost c.issues)
+            else
+                Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
+
+
+-- `rootProblem`, for a declaration whose own nodes cannot fail to be built
+-- or hide an external form: the options, then each schema argument's
+-- construction failure, then an argument whose host end has no external
+-- form. `parse` reads a host value and `print` writes one, and either way
+-- the host end is the Encoded endpoint.
+compiledProblem : Options, Direction, Int, Js.Value -> Maybe (List Issue)
+compiledProblem o dir src args =
+    case optionsProblem o dir src of
+        Just issues ->
+            Just issues
+
+        Nothing ->
+            n = lengthOf args
+            case argumentProblem args 0 n of
+                Just problem ->
+                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+
+                Nothing ->
+                    if argumentOpaque args 0 n then
+                        Just (opaqueIssue dir encodedSide)
+                    else
+                        Nothing
+
+
+argumentProblem : Js.Value, Int, Int -> Maybe String
+argumentProblem args i n =
+    if i >= n then
+        Nothing
+    else
+        s : Schema Js.Value Js.Value
+        s = fromHost (Js.at args i)
+        case (analyse (boxOf s)).problem of
+            Nothing ->
+                argumentProblem args (i + 1) n
+
+            found ->
+                found
+
+
+argumentOpaque : Js.Value, Int, Int -> Bool
+argumentOpaque args i n =
+    if i >= n then
+        False
+    else
+        s : Schema Js.Value Js.Value
+        s = fromHost (Js.at args i)
+        opaqueAt (analyse (boxOf s)) encodedSide || argumentOpaque args (i + 1) n
+
+
+-- A schema argument as a decoding worker: the library engine, on the
+-- context the specialised parent made.
+readSlot : Schema e a -> Js.Value
+readSlot s =
+    n = nodeOf s
+    slot : Context, Int, Path, Js.Value, Js.Value, Js.Value -> Js.Value
+    slot c depth parent input output v = run c n depth (pathAt parent input output) NoneActive v
+    toHost slot
+
+
+-- A schema argument as an encoding worker: the library engine writes the
+-- host value, as an encoding worker does.
+writeSlot : Schema e a -> Js.Value
+writeSlot s =
+    n = nodeOf s
+    slot : Context, Int, Path, Js.Value, Js.Value, Js.Value -> Js.Value
+    slot c depth parent input output v = run c n depth (pathAt parent input output) NoneActive v
+    toHost slot
+
+
+-- An issue with code `code`, its number in `IssueCode`'s declaration order,
+-- at the value its parent read at `input`: a specialised failure branch's
+-- one call.
+compiledFail : Context, Path, Js.Value, Js.Value, Int, String, Js.Value, Bool -> Js.Value
+compiledFail c parent input output code message v written =
+    failAt c (pathAt parent input output) (codeOf code) message v written
+
+
+codeOf : Int -> IssueCode
+codeOf code =
+    case code of
+        0 ->
+            WrongShape
+
+        1 ->
+            MissingKey
+
+        2 ->
+            UnknownKey
+
+        3 ->
+            UnknownTag
+
+        4 ->
+            InvalidValue
+
+        5 ->
+            DepthExceeded
+
+        6 ->
+            InvalidOptions
+
+        7 ->
+            ConversionFailed
+
+        8 ->
+            CheckFailed
+
+        9 ->
+            ParseFailed
+
+        10 ->
+            PrintFailed
+
+        _ ->
+            InvalidSchema
+
+
+-- A `via`'s decoding direction on the value its parent read at `input`:
+-- `call`, with the path made only when the conversion fails.
+compiledForward : Context, Path, Js.Value, Js.Value, Conversion b a, Js.Value -> Js.Value
+compiledForward c parent input output conv v =
+    p : Pair
+    p = cast conv
+    conversionAnswer (Js.apply p.there [ v ]) c parent input output v
+
+
+-- A `via`'s encoding direction.
+compiledBackward : Context, Path, Js.Value, Js.Value, Conversion b a, Js.Value -> Js.Value
+compiledBackward c parent input output conv v =
+    p : Pair
+    p = cast conv
+    conversionAnswer (Js.apply p.back [ v ]) c parent input output v
+
+
+conversionAnswer : Js.Value, Context, Path, Js.Value, Js.Value, Js.Value -> Js.Value
+conversionAnswer answer c parent input output v =
+    case resultOf answer of
+        Ok a ->
+            a
+
+        Err given ->
+            issues = plain given
+            prefix = pathArray (pathAt parent input output) False
+            _ =
+                if lengthOf issues == 0 then
+                    moved
+                        c
+                        prefix
+                        v
+                        (toHost [ issue "the conversion failed without an issue" ])
+                        0
+                        1
+                else
+                    moved c prefix v issues 0 (lengthOf issues)
+            c.fail
+
+
+-- The context below an encoding conversion, where a failure is in what the
+-- operation writes (`run`'s `NConverted`).
+belowBackward : Context -> Context
+belowBackward c =
+    if c.cv then
+        c
+    else
+        { c | cv = True }
+
+
+-- Whether a `Value` prints as JSON within the depth left: `printable`'s
+-- answer, for an encoding worker's `Value`.
+printableWithin : Context, Int, Js.Value -> Int
+printableWithin c depth v = printable v (c.max - depth)
 
 
 -- ---- Descriptions --------------------------------------------------------

@@ -48,6 +48,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const Interface = @import("../resolve/Interface.zig");
+const SchemaCtor = @import("SchemaCtor.zig");
 
 const Inst = Bir.Inst;
 
@@ -454,6 +455,11 @@ const Builder = struct {
                     .count = t.ctors_end - t.ctors_start,
                     .arity = arity,
                 };
+            },
+            // A tagged schema endpoint's constructor (`schema.md` §6).
+            .schema_ctor_top, .ext_schema_ctor => {
+                const info = SchemaCtor.of(bir, @enumFromInt(0), b.cx.interfaces, ref) orelse return null;
+                return .{ .ref = ref, .order = info.order, .count = info.count, .arity = arity };
             },
             else => return null,
         }

@@ -103,6 +103,8 @@ const Types = @import("../check/Types.zig");
 const CtorEq = @import("CtorEq.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
 const Operator = @import("Operator.zig");
+const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
 
 const Reach = @This();
 
@@ -113,7 +115,10 @@ const Reach = @This();
 /// reached when a surviving body builds one, and what a guarded edge waits
 /// on (`backend.md` §9, *A `case` arm on a constructor nothing builds*). It
 /// emits nothing and has no edges of its own.
-pub const Kind = enum(u8) { decl, derived, twin, ctor };
+/// `schema` is one of a schema declaration's three members (`SchemaGraph.Member`),
+/// by `decl * Member.count + member`: its description, its decoding worker
+/// and its encoding worker, each reached by its own uses (`schema.md` §6).
+pub const Kind = enum(u8) { decl, derived, twin, ctor, schema };
 
 /// One node of the graph: a declaration of a module, or one of its derived
 /// rows. Flat and comparable; nothing here is a pointer.
@@ -131,8 +136,16 @@ pub const Live = struct {
     /// The constructors something that survived builds, and the exempt
     /// ones (`exempt`). `Lower` lowers an arm on any other as `undefined`.
     ctors: std.DynamicBitSetUnmanaged = .{},
+    /// The schema members that survived, `decl * Member.count + member`.
+    schemas: std.DynamicBitSetUnmanaged = .{},
 
     pub const empty: Live = .{ .decls = .{}, .derived = .{} };
+
+    /// Whether member `member` of schema declaration `decl` survived.
+    pub fn schema(l: *const Live, at: usize, member: SchemaGraph.Member) bool {
+        const index = at * SchemaGraph.Member.count + @intFromEnum(member);
+        return index < l.schemas.bit_length and l.schemas.isSet(index);
+    }
 
     /// Whether constructor `index` of the module was reached. The one
     /// predicate both halves of the rule use: the walk follows a guarded
@@ -158,7 +171,7 @@ pub const Live = struct {
     /// Whether the module has anything left to write (§5, "a module with
     /// nothing reachable is not written at all").
     pub fn any(l: *const Live) bool {
-        return l.decls.count() != 0 or l.derived.count() != 0 or l.twins.count() != 0;
+        return l.decls.count() != 0 or l.derived.count() != 0 or l.twins.count() != 0 or l.schemas.count() != 0;
     }
 };
 
@@ -185,6 +198,11 @@ pub const Result = struct {
 
     pub fn derivedRow(r: *const Result, m: Graph.Index, index: usize) bool {
         return r.of(m).derivedRow(index);
+    }
+
+    /// Whether member `member` of schema declaration `decl` of `m` survived.
+    pub fn schema(r: *const Result, m: Graph.Index, at: usize, member: SchemaGraph.Member) bool {
+        return r.of(m).schema(at, member);
     }
 
     pub fn twin(r: *const Result, m: Graph.Index, index: usize) bool {
@@ -273,6 +291,12 @@ pub const Input = struct {
     /// hand-written runtime or the entry file reads, or that a lowering
     /// imports (`backend.md` §15.1, *The runtime module*).
     extra_roots: []const Node = &.{},
+    /// The schema plans, one per module: what a schema member's edges are
+    /// read from (`schema.md` §6).
+    plans: []const SchemaPlan = &.{},
+    /// `--schema-library`: a schema's directions run its description
+    /// through the library and call no worker.
+    schema_library: bool = false,
 
     fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -336,6 +360,13 @@ pub const Input = struct {
             const bir = in.birOf(m);
             for (bir.interface) |index| {
                 const d = bir.decl(index);
+                // A `pub schema` exports all three of its members.
+                if (d.kind == .schema) {
+                    inline for (0..SchemaGraph.Member.count) |k| {
+                        try out.append(scratch, schemaNode(.{ .module = m, .decl = index.int() }, @enumFromInt(k)));
+                    }
+                    continue;
+                }
                 if (!d.kind.isValue()) continue;
                 if (d.kind == .annotation_only) continue;
                 if (d.kind == .vocab_markup) continue;
@@ -353,6 +384,11 @@ pub const Input = struct {
 
 /// Another module's constructor, from its interface index to its index in
 /// that module's `Bir.ctors`.
+/// The node of member `member` of schema declaration `ref`.
+pub fn schemaNode(ref: SchemaGraph.Ref, member: SchemaGraph.Member) Node {
+    return .{ .module = ref.module, .kind = .schema, .index = ref.decl * SchemaGraph.Member.count + @intFromEnum(member) };
+}
+
 fn ctorOfExt(provenance: []const Interface.Provenance, m: Graph.Index, iface_ctor: u32) ?u32 {
     if (m.int() >= provenance.len) return null;
     return provenance[m.int()].ctorIndex(iface_ctor);
@@ -393,6 +429,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
             .twins = try .initEmpty(scratch, in.birOf(m).decls.len),
+            .schemas = try .initEmpty(scratch, in.birOf(m).decls.len * SchemaGraph.Member.count),
             .ctors = try .initEmpty(scratch, in.birOf(m).ctors.len),
         };
     }
@@ -530,6 +567,7 @@ fn mark(modules: []Live, node: Node) bool {
         .decl => &live.decls,
         .derived => &live.derived,
         .twin => &live.twins,
+        .schema => &live.schemas,
         .ctor => &live.ctors,
     };
     if (node.index >= set.bit_length) return false;
@@ -567,6 +605,9 @@ pub const ModuleEdges = struct {
     derived_targets: []const Target = &.{},
     twin_at: []const u32 = &.{},
     twin_targets: []const Target = &.{},
+    /// Per schema member, `decl * Member.count + member`.
+    schema_at: []const u32 = &.{},
+    schema_targets: []const Target = &.{},
     /// Index 0 is no chain.
     chains: []const Chain = &.{},
     chain_ctors: []const Node = &.{},
@@ -576,6 +617,7 @@ pub const ModuleEdges = struct {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },
             .twin => .{ e.twin_at, e.twin_targets },
+            .schema => .{ e.schema_at, e.schema_targets },
             .ctor => return &.{},
         };
         if (node.index + 1 >= at.len) return &.{};
@@ -598,6 +640,7 @@ pub const ModuleEdges = struct {
                     .ctor => live.ctor(guard.index),
                     .decl => live.decl(guard.index),
                     .twin => live.twin(guard.index),
+                    .schema => guard.index < live.schemas.bit_length and live.schemas.isSet(guard.index),
                     .derived => live.derivedRow(guard.index),
                 };
                 if (!reached) return guard;
@@ -696,8 +739,10 @@ pub const Builder = struct {
             switch (d.kind) {
                 // A foreign binding's body is in a sibling file; a type, an
                 // alias and a foreign type emit nothing at all.
-                .value => {},
-                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
+                // A schema's own node is its `via`s, whose expressions are its
+                // instructions like a value's body (`schema.md` §6).
+                .value, .schema => {},
+                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
             }
             try guards.declaration(@intCast(i), d);
             b.stream.clearRetainingCapacity();
@@ -735,8 +780,20 @@ pub const Builder = struct {
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
+            try b.memberUses(m, bir, d, &guards, &decl_targets);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
+
+        // A schema declaration's three members (`schema.md` §6).
+        const schema_at = try b.scratch.alloc(u32, bir.decls.len * SchemaGraph.Member.count + 1);
+        var schema_targets: std.ArrayList(Target) = .empty;
+        for (bir.decls, 0..) |d, i| {
+            inline for (0..SchemaGraph.Member.count) |k| {
+                schema_at[i * SchemaGraph.Member.count + k] = @intCast(schema_targets.items.len);
+                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @enumFromInt(k), &schema_targets);
+            }
+        }
+        schema_at[bir.decls.len * SchemaGraph.Member.count] = @intCast(schema_targets.items.len);
 
         // A declaration's suspendable body (§16.2) reaches what its direct
         // one does, and the suspendable bodies its `poly` answers choose.
@@ -771,6 +828,8 @@ pub const Builder = struct {
             .derived_targets = derived_targets.items,
             .twin_at = twin_at,
             .twin_targets = twin_targets.items,
+            .schema_at = schema_at,
+            .schema_targets = schema_targets.items,
             .chains = guards.chains.items,
             .chain_ctors = guards.chain_ctors.items,
         };
@@ -888,6 +947,78 @@ pub const Builder = struct {
             .call, .let, .case => true,
             else => false,
         };
+    }
+
+    /// The build's schema plans, read as `SchemaLower` reads them; null
+    /// without an interner, when no member has an edge.
+    fn schemaGraph(b: *const Builder) ?SchemaGraph {
+        const interner = b.in.interner orelse return null;
+        return .{
+            .graph = b.in.graph,
+            .plans = b.in.plans,
+            .birs = b.in.birs,
+            .interfaces = b.in.interfaces,
+            .provenance = b.in.provenance,
+            .interner = interner,
+        };
+    }
+
+    /// The schema members declaration `d` names: `S.schema` the
+    /// description, `S.parse` and `S.parseWith` the decoding worker,
+    /// `S.print` and `S.printWith` the encoding one — guarded where they
+    /// stand, like any reference.
+    fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
+        const start = @min(d.inst_start.int(), bir.insts.len);
+        const end = @min(d.inst_end.int(), bir.insts.len);
+        for (bir.insts.items(.tag)[start..end], bir.insts.items(.data)[start..end], start..) |tag, data, p| {
+            const ref: SchemaGraph.Ref, const kind: Interface.SchemaMember.Kind = switch (tag) {
+                .schema_member_top => .{ .{ .module = m, .decl = data.lhs }, std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse continue },
+                .ext_schema_member => blk: {
+                    const owner: Graph.Index = @enumFromInt(data.lhs);
+                    if (owner.int() >= b.in.interfaces.len or owner.int() >= b.in.provenance.len) continue;
+                    const iface = &b.in.interfaces[owner.int()];
+                    if (data.rhs >= iface.schema_members.len) continue;
+                    const member = iface.schema_members[data.rhs];
+                    const decl = b.in.provenance[owner.int()].schemaDecl(@intFromEnum(member.schema)) orelse continue;
+                    break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
+                },
+                else => continue,
+            };
+            const member: SchemaGraph.Member = switch (kind) {
+                .schema => .description,
+                .parse, .parse_with => .read,
+                .print, .print_with => .write,
+                .type, .encoded => continue,
+            };
+            try out.append(b.scratch, .{ .node = schemaNode(ref, member), .chain = guards.at(@intCast(p)) });
+        }
+    }
+
+    /// Every edge out of member `member` of schema declaration `decl`: the
+    /// declaration's own node when it holds a `via`, the same member of each
+    /// definition it references, and the `core/Schema` values its code calls
+    /// (`SchemaGraph.coreNeeds`).
+    fn memberEdges(b: *Builder, m: Graph.Index, decl: u32, member: SchemaGraph.Member, out: *std.ArrayList(Target)) Allocator.Error!void {
+        const sg = b.schemaGraph() orelse return;
+        const ref: SchemaGraph.Ref = .{ .module = m, .decl = decl };
+        if ((member == .description or !b.in.schema_library) and try sg.hasVia(b.scratch, ref)) {
+            try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = decl } });
+        }
+        var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;
+        try sg.memberTargets(b.scratch, ref, member, b.in.schema_library, &targets);
+        for (targets.items) |t| try out.append(b.scratch, .{ .node = schemaNode(t[0], t[1]) });
+        var names: std.ArrayList([]const u8) = .empty;
+        try sg.coreNeeds(b.scratch, ref, member, b.in.schema_library, &names);
+        const core = b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
+        const core_bir = b.in.birOf(core);
+        for (names.items) |name| {
+            const symbol = sg.interner.find(name) orelse continue;
+            for (core_bir.decls, 0..) |cd, ci| {
+                if (!cd.kind.isValue() or core_bir.symbol(cd.name) != symbol) continue;
+                try out.append(b.scratch, .{ .node = .{ .module = core, .kind = .decl, .index = @intCast(ci) } });
+                break;
+            }
+        }
     }
 
     /// An edge only a declaration's suspendable body has.

@@ -1,0 +1,34 @@
+-- parse
+Ok Circle 1.5
+Ok Square 2
+Ok Dot
+Ok Dot
+Err decoding Encoded MissingKey /type missing key "type"
+Err decoding Encoded UnknownTag /type unknown tag; expected "circle", "square", "dot"
+Err decoding Encoded UnknownTag /type unknown tag; expected "circle", "square", "dot"
+Err decoding Encoded WrongShape /side expected a number
+Err decoding Encoded WrongShape / expected an object
+Err decoding Encoded UnknownKey /extra unexpected key "extra"
+Err decoding Encoded UnknownKey /a unexpected key "a" | decoding Encoded UnknownKey /b unexpected key "b"
+Err decoding Encoded UnknownKey /x unexpected key "x" | decoding Encoded UnknownKey /y unexpected key "y" | decoding Encoded WrongShape /r expected a number
+Ok Green
+Err decoding Encoded UnknownTag /is unknown tag; expected "red", "green"
+-- recursion
+Ok (a (b))
+Err decoding Encoded MissingKey /kids/1/kids/0/text missing key "text"
+Err decoding Encoded UnknownTag /kids/0/kids/0/node unknown tag; expected "leaf", "branch"
+-- print
+Ok {"type":"circle","r":0.5}
+Ok {"type":"square","side":3}
+Ok {"type":"dot"}
+Err encoding Type InvalidValue /side expected a safe integer
+Err encoding Encoded PrintFailed /r JSON has no number for NaN or an infinity
+Ok {"is":"red"}
+Ok {"node":"branch","kids":[{"node":"leaf","text":"a"},{"node":"branch","kids":[]}]}
+-- both families
+Ok Circle 2.0
+Ok encoded Dot
+equal
+different
+equal
+Circle before Square

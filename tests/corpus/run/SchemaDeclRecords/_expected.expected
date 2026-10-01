@@ -1,0 +1,24 @@
+-- parse
+Ok Ana; 30; 1.5; 60.0; alive; Missing; Null; Missing; ["a","b"]; [Bo!]; Main 1; {"k":[1,null]}
+Ok Ana; 30; 1.5; 60.0; alive; Present ""; Null; Present Null; ["a","b"]; [Bo!]; Main 1; {"k":[1,null]}
+Ok Ana; 30; 1.5; 60.0; alive; Present "Nana"; Null; Present NonNull "Dr"; ["a","b"]; [Bo!]; Main 1; {"k":[1,null]}
+Err decoding Encoded WrongShape /nickname expected a string
+Err decoding Encoded MissingKey /the-age missing key "the-age"
+Ok Ana; 30; 1.5; 60.0; alive; Missing; Null; Missing; ["a","b"]; [Bo!]; Main 1; {"k":[1,null]}
+Err decoding Encoded WrongShape / expected an object
+Err decoding Encoded ParseFailed / invalid JSON: Expected ',' or '}' after property value in JSON at position 9 (line 1 column 10)
+-- parse, every error
+Err decoding Encoded UnknownKey /zzz unexpected key "zzz" <- 1 | decoding Encoded UnknownKey /age unexpected key "age" <- 31
+Err decoding Encoded WrongShape /name expected a string <- 1 | decoding Encoded InvalidValue /the-age expected a safe integer <- 9007199254740992 | decoding Encoded WrongShape /h expected a number <- "x" | decoding Encoded InvalidValue /weight expected a finite number <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for> | decoding Encoded WrongShape /alive expected a boolean <- 0 | decoding Encoded WrongShape /nickname expected a string <- false | decoding Encoded WrongShape /middle expected a string <- 1 | decoding Encoded WrongShape /title expected a string <- 2 | decoding Encoded WrongShape /tags/1 expected a string <- 3 | decoding Encoded WrongShape /tags/2 expected a string <- null | decoding Encoded MissingKey /friends/0/best missing key "best" <- {"name":"Bo"} | decoding Encoded MissingKey /friends/1/name missing key "name" <- {"best":1} | decoding Encoded WrongShape /friends/1/best expected a boolean <- 1 | decoding Encoded WrongShape /address/street expected a string <- null | decoding Encoded MissingKey /address/number missing key "number" <- {"street":null} | decoding Encoded WrongShape /nothing expected null <- 0
+Err decoding Encoded MissingKey /name missing key "name" <- {} | decoding Encoded MissingKey /the-age missing key "the-age" <- {} | decoding Encoded MissingKey /h missing key "h" <- {} | decoding Encoded MissingKey /weight missing key "weight" <- {} | decoding Encoded MissingKey /alive missing key "alive" <- {} | decoding Encoded MissingKey /middle missing key "middle" <- {} | decoding Encoded MissingKey /tags missing key "tags" <- {} | decoding Encoded MissingKey /friends missing key "friends" <- {} | decoding Encoded MissingKey /address missing key "address" <- {} | decoding Encoded MissingKey /extra missing key "extra" <- {} | decoding Encoded MissingKey /nothing missing key "nothing" <- {}
+-- print
+Ok {"name":"Ana","the-age":30,"h":1.5,"weight":60,"alive":false,"middle":null,"title":"Dr","tags":["x"],"friends":[{"name":"Bo","best":false},{"name":"Cy","best":true}],"address":{"street":"Main","number":1},"extra":[{"deep":true}],"nothing":null}
+Ok {"name":"Ana","the-age":30,"h":1.5,"weight":60,"alive":false,"nickname":"","middle":"M","tags":[],"friends":[{"name":"Bo","best":false},{"name":"Cy","best":true}],"address":{"street":"Main","number":1},"extra":[{"deep":true}],"nothing":null}
+Err encoding Type InvalidValue /age expected a safe integer
+Err encoding Encoded PrintFailed /h JSON has no number for NaN or an infinity
+Err encoding Type InvalidValue /weight expected a finite number
+Err encoding Type InvalidValue /age expected a safe integer <- 9007199254740992 | encoding Encoded PrintFailed /h JSON has no number for NaN or an infinity <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for> | encoding Type InvalidValue /weight expected a finite number <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+-- the description, through the library
+Ok Di
+Ok {"name":"Di","best":true}
+Ok Ed

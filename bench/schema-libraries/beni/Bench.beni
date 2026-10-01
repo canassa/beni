@@ -1,0 +1,88 @@
+-- The schema-libraries workloads as beni `schema` declarations
+-- (`docs/design/schema.md` §6, S4). `build.mjs` builds this module twice
+-- with `--library --release`: as written, where `parse` and `print` are
+-- the specialised code, and with `--schema-library`, where they run the
+-- same declarations through `core/Schema`'s library interpreter. The
+-- options are strict and have no defaults, as every other row's are: the
+-- first error, unknown keys rejected. `tree` is a recursive record, which a
+-- v1 declaration cannot write (recursion goes through a tagged union,
+-- §2), so it has no row.
+import Schema
+
+
+pub schema User =
+    userId : Int as "user-id"
+    displayName : String as "display-name"
+    email : String
+    age : Int
+    active : Bool
+    score : Float
+    role : String
+    nickname : String optional
+
+
+pub schema Users =
+    List User
+
+
+pub schema Item tagged "kind" of
+    UserItem as "user"
+        user : User
+    CountItem as "count"
+        count : Int
+    TextItem as "text"
+        text : String
+    PointItem as "point"
+        x : Float
+        y : Float
+
+
+pub schema Items =
+    List Item
+
+
+pub schema Hit =
+    id : String as "hit_id"
+    title : String
+
+
+pub schema Typeahead =
+    hits : List Hit
+    total : Int
+
+
+strict : Schema.Options
+strict =
+    { errors = Schema.FirstError, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+pub parseFlat : String -> Result (List Schema.Issue) User.Type
+parseFlat text = User.parseWith strict text
+
+
+pub printFlat : User.Type -> Result (List Schema.Issue) String
+printFlat value = User.printWith strict value
+
+
+pub parseList : String -> Result (List Schema.Issue) Users.Type
+parseList text = Users.parseWith strict text
+
+
+pub printList : Users.Type -> Result (List Schema.Issue) String
+printList value = Users.printWith strict value
+
+
+pub parseUnion : String -> Result (List Schema.Issue) Items.Type
+parseUnion text = Items.parseWith strict text
+
+
+pub printUnion : Items.Type -> Result (List Schema.Issue) String
+printUnion value = Items.printWith strict value
+
+
+pub parseTypeahead : String -> Result (List Schema.Issue) Typeahead.Type
+parseTypeahead text = Typeahead.parseWith strict text
+
+
+pub printTypeahead : Typeahead.Type -> Result (List Schema.Issue) String
+printTypeahead value = Typeahead.printWith strict value

@@ -1,0 +1,43 @@
+-- emit/release: a library's schema declarations under `--release`
+-- (`docs/design/schema.md` §6: "`--release` applies the existing renaming,
+-- local-binding and printing rules … it does not drop validation, change
+-- integer acceptance or external key/tag strings").
+--
+-- The workers' names are short and so are the engine context's fields they
+-- read (`fail`, `max`, `all`, `reject`, `issues`), with the spelling the
+-- engine's own code is given; every external key, every tag and every
+-- message stays the string it was, and every test is still written.
+import Node exposing (Program)
+import Schema exposing (Conversion)
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        λn -> Ok (String.fromInt n)
+
+
+pub schema Page a =
+    items : List a
+    note : String nullable
+
+
+pub schema Box =
+    count : String via decimalInt
+    raw : Value
+
+
+pub schema Pages =
+    boxes : Page Box
+
+
+main : Program
+main = Node.printLines []

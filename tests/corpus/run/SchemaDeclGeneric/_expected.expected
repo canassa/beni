@@ -1,0 +1,22 @@
+-- a schema passed at run time
+Ok 2: 1,2
+Ok 2: 3,4
+Err decoding Type ConversionFailed /items/1 not a decimal integer: x
+Err decoding Encoded UnknownKey /more unexpected key "more" | decoding Type ConversionFailed /items/1 not a decimal integer: x | decoding Encoded WrongShape /items/2 expected a string | decoding Encoded WrongShape /total expected a number
+Ok {"items":["5","6"],"total":2}
+Err encoding Type InvalidValue /items/0 expected a safe integer
+-- arguments checked first
+Err decoding Encoded InvalidSchema / a tagged schema needs a variant
+Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+Err decoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+Err decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1
+Err encoding Encoded InvalidSchema / the Encoded endpoint holds a conversion's target, which has no external form to read or write
+Ok 1
+-- arguments written in a declaration
+Ok 1-2 / a
+Err decoding Encoded MissingKey /pairs/items/0/right missing key "right" | decoding Encoded WrongShape /names/items/0 expected a string
+Ok {"pairs":{"items":[{"left":1,"right":2}],"total":1},"names":{"items":[],"total":0}}
+-- a generic recursive union
+Ok 1 2 .
+Err decoding Encoded WrongShape /rest/content expected a number
+Ok {"box":"full","content":7,"rest":{"box":"empty"}}

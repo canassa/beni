@@ -1,0 +1,45 @@
+-- emit: a library's schema declarations, every member written
+-- (`docs/design/schema.md` §6, *The specialised path, as specified for S4*).
+--
+-- `Page a` is generic: its workers take one slot per parameter after the
+-- value, its root wrappers check the arguments the value reaches and turn
+-- each into a library slot (`readSlot`, `writeSlot`), and `Pages` passes
+-- `Box`'s own workers for the arguments it writes. Encoding a `via` calls
+-- `compiledBackward` and runs the source under `belowBackward`'s context; a
+-- `Value` is printed within the bound left at its depth (`printableWithin`).
+-- A nullable field reads `null` first, and a list of a primitive hands back
+-- the parsed array itself.
+import Node exposing (Program)
+import Schema exposing (Conversion)
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs ->
+            case String.toInt s of
+                Just n ->
+                    Ok n
+
+                Nothing ->
+                    Err [ Schema.issue "not a decimal integer" ]
+        )
+        λn -> Ok (String.fromInt n)
+
+
+pub schema Page a =
+    items : List a
+    note : String nullable
+
+
+pub schema Box =
+    count : String via decimalInt
+    raw : Value
+
+
+pub schema Pages =
+    boxes : Page Box
+
+
+main : Program
+main = Node.printLines []

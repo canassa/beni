@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// `core/Schema`'s library engine (`schema.md` §16, S3), measured: the size
+// `core/Schema`'s library engine (`schema.md` §16, S3) and a declaration's
+// specialised `parse` and `print` (S4), measured: the size
 // of a program that uses a small schema, and decode and encode timings of
-// report 34's `flat` and `list` workloads — the numbers S4's specialised
-// `parse` and `print` are to be compared with.
+// report 34's `flat` and `list` workloads, each through both paths.
 //
 //     node bench/schema-library/run.mjs [--beni=./zig-out/bin/beni]
 //         [--samples=15] [--sample-ms=20] [--json]
 //
-// **Size.** `SchemaSize.beni` is built with `--release` and the empty
+// **Size.** `SchemaSize.beni` (the library), `SchemaDeclSize.beni` (the same
+// program as a declaration, S4) and `SchemaDeclParse.beni` (its parse alone)
+// are built with `--release` and the empty
 // program beside it; each line is the whole output tree's raw, gzip-9 and
 // brotli-11 bytes (`backend.md` §13: brotli primary).
 //
@@ -83,7 +85,9 @@ function sizes(name, out) {
 const lines = [];
 const sizeSource = readFileSync(join(here, "SchemaSize.beni"), "utf8");
 const emptySource = 'import Node\n\n\nmain : Node.Program\nmain =\n    Node.print "{}"\n';
-for (const [name, source] of [["empty", emptySource], ["SchemaSize", sizeSource]]) {
+const declSizeSource = readFileSync(join(here, "SchemaDeclSize.beni"), "utf8");
+const declParseSource = readFileSync(join(here, "SchemaDeclParse.beni"), "utf8");
+for (const [name, source] of [["empty", emptySource], ["SchemaSize", sizeSource], ["SchemaDeclSize", declSizeSource], ["SchemaDeclParse", declParseSource]]) {
   for (const release of [false, true]) {
     const out = build(`${name}-${release ? "release" : "dev"}`, source, release ? ["--release", "--no-source-maps"] : ["--no-source-maps"]);
     lines.push({ size: true, release, ...sizes(name, out) });
@@ -121,6 +125,15 @@ const workloads = [
   ["print flat valid", () => fn("printUser")(user), 0],
   ["JSON.stringify list (floor)", () => JSON.stringify(list.valid), null],
   ["print list valid", () => fn("printUsers")(users), 0],
+  // The same workloads through a `schema` declaration's specialised `parse`
+  // and `print` (S4).
+  ["specialised parse flat valid", () => fn("parseUserDecl")(T.flat), 0],
+  ["specialised parse flat wrong_type", () => fn("parseUserDecl")(T.wrong), 1],
+  ["specialised parse flat missing_key", () => fn("parseUserDecl")(T.missing), 1],
+  ["specialised parse flat unknown_key (Reject, AllErrors)", () => fn("parseUserDeclAll")(T.unknown), 1],
+  ["specialised parse list valid", () => fn("parseUsersDecl")(T.list), 0],
+  ["specialised print flat valid", () => fn("printUserDecl")(user), 0],
+  ["specialised print list valid", () => fn("printUsersDecl")(users), 0],
 ];
 
 // Each workload's answer is checked before it is timed: issues counted.
@@ -168,6 +181,6 @@ if (options.json) {
     console.log(`${(l.program + (l.release ? " --release" : "")).padEnd(24)} ${String(l.files).padStart(3)} files ${String(l.raw_bytes).padStart(7)} raw ${String(l.gzip_bytes).padStart(6)} gzip ${String(l.brotli_bytes).padStart(6)} brotli`);
   }
   for (const l of lines.filter((l) => l.workload)) {
-    console.log(`${l.workload.padEnd(44)} ${String(l.median_ns).padStart(7)} ns  [${l.q1_ns}–${l.q3_ns}]`);
+    console.log(`${l.workload.padEnd(56)} ${String(l.median_ns).padStart(7)} ns  [${l.q1_ns}–${l.q3_ns}]`);
   }
 }

@@ -3,3 +3,6 @@ node_modules/
 bundles/
 results.local.json
 typia/out/
+beni/out-*/
+beni/names-*/
+beni/project-*/

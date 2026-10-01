@@ -1,0 +1,34 @@
+forward: "42"
+forward: "4x"
+backward: 7
+backward: -7
+forward: "1"
+forward: "2"
+forward: "3"
+forward: "x"
+forward: "x"
+forward: "z"
+forward: "1"
+forward: "q"
+backward: 1
+backward: 2
+backward: 3
+backward: 4
+backward: 5
+backward: 1
+backward: -1
+backward: 1
+backward: -1
+backward: -3
+backward: 1
+backward: -2
+Ok 42
+Err decoding Type ConversionFailed /digits not a decimal integer: 4x
+Ok "7"
+Err encoding Encoded ConversionFailed / the conversion failed without an issue
+Ok 1 2 null 3 8
+Err decoding Type ConversionFailed /first/digits not a decimal integer: x
+Err decoding Type ConversionFailed /first/digits not a decimal integer: x | decoding Encoded WrongShape /second expected a string | decoding Type ConversionFailed /maybe/digits not a decimal integer: z | decoding Type ConversionFailed /counts/1/digits not a decimal integer: q | decoding Encoded InvalidValue /wide expected a safe integer
+Ok {"first":"1","second":"2","maybe":"3","counts":["4","5"],"wide":0}
+Err encoding Encoded ConversionFailed /second the conversion failed without an issue
+Err encoding Encoded ConversionFailed /second the conversion failed without an issue | encoding Encoded ConversionFailed /maybe the conversion failed without an issue | encoding Encoded ConversionFailed /counts/1 the conversion failed without an issue | encoding Encoded InvalidValue /wide expected a safe integer

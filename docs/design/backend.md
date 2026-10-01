@@ -1259,6 +1259,8 @@ failure paths compiled. [`schema.md`](schema.md) §6 owns their emitted shapes,
 static/dynamic boundary, resolved-plan input and independent §9 reachability;
 §5 owns the context contract shared with the library interpreter. This is a
 specified fork, not implemented code or an effects-runtime decision.
+*(Amended 2026-10-02: built — `schema.md` §6, *The specialised path, as specified for S4*, and §16,
+*As built — S4*: `src/js/SchemaLower.zig` writes it, and §9's walk has a schema member node.)*
 
 ### Derived comparisons do not grow the native stack
 

@@ -6244,16 +6244,6 @@ const schema_main_source =
     \\
 ;
 
-/// What `build` says about `schema_main_source`: the schema is checked, and
-/// its parse and print are not generated yet.
-const schema_main_refused = @as([]const diagnostic.Diagnostic, &.{.{
-    .code = .not_implemented,
-    .severity = .@"error",
-    .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 12 }, .end = .{ .line = 4, .col = 16 } },
-    .title = "NOT IMPLEMENTED YET",
-    .message = "This schema is checked, but its parse and print are not generated yet.",
-}});
-
 test "schemas check and dump at every stage that resolves imports" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -6283,7 +6273,7 @@ test "schemas check and dump at every stage that resolves imports" {
     try testing.expect(std.mem.indexOf(u8, checked[2].stdout, "schema User") != null);
 }
 
-test "emit refuses a schema beside main before entry discovery, cold and warm, and writes nothing" {
+test "a schema beside main builds one output tree cold and warm, at one job and eight" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -6294,6 +6284,9 @@ test "emit refuses a schema beside main before entry discovery, cold and warm, a
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
+    // The same build four ways: the plan a warm build reads is the cache
+    // sidecar's, not the checker's (`schema.md` A.6), and a round trip
+    // through the frontend artifact and the interface must change nothing.
     var builds: [4]world.Result = undefined;
     builds[0] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
     builds[1] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "--roundtrip-interfaces", "Main.beni" });
@@ -6304,55 +6297,60 @@ test "emit refuses a schema beside main before entry discovery, cold and warm, a
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     for (builds) |r| {
-        try testing.expectEqual(@as(u8, 1), r.exit_code);
-        try testing.expectEqualStrings("", r.stdout);
-        try testing.expectEqualDeep(schema_main_refused, r.diagnostics);
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
     }
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expect(w.exists("cache"));
-    inline for (.{ "out1", "out2", "out3", "out4" }) |path| try testing.expect(!w.exists(path));
+    const files = try w.listFiles("out1");
+    try testing.expect(files.len != 0);
+    inline for (.{ "out2", "out3", "out4" }) |other| {
+        try testing.expectEqualDeep(files, try w.listFiles(other));
+        for (files) |file| {
+            const a = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out1/{s}", .{file}));
+            const b = try w.read(try std.fmt.allocPrint(w.arena.allocator(), other ++ "/{s}", .{file}));
+            // The source maps name their output directory.
+            if (std.mem.endsWith(u8, file, ".map")) continue;
+            try testing.expectEqualStrings(a, b);
+        }
+    }
 }
 
-test "emit refuses a schema in a module with no main, as an application and as a library" {
+test "a library build of a module with no main exports a public schema's members" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("NoMain.beni",
-        \\schema Spare =
+        \\pub schema Spare =
         \\    value : Int
         \\
     );
-    const expected = @as([]const diagnostic.Diagnostic, &.{.{
-        .code = .not_implemented,
-        .severity = .@"error",
-        .span = .{ .file = "NoMain.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 13 } },
-        .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is checked, but its parse and print are not generated yet.",
-    }});
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const application = try w.run(&.{ "build", "--platform=node", "--out=out5", "--jobs=1", "--no-cache", "NoMain.beni" });
-    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=out6", "--jobs=8", "--no-cache", "NoMain.beni" });
+    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=out", "--jobs=8", "--no-cache", "NoMain.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), application.exit_code);
-    try testing.expectEqualDeep(expected, application.diagnostics);
-    try testing.expectEqual(@as(u8, 1), library.exit_code);
-    try testing.expectEqualDeep(expected, library.diagnostics);
+    try testing.expectEqual(@as(u8, 0), library.exit_code);
+    try testing.expectEqual(@as(usize, 0), library.diagnostics.len);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    inline for (.{ "out5", "out6" }) |path| try testing.expect(!w.exists(path));
+    // A library's surface is every member of its public schemas
+    // (`backend.md` §9's roots, `schema.md` §6).
+    const module = try w.read("out/NoMain.mjs");
+    inline for (.{ "NoMain$Spare$$schema", "NoMain$Spare$$parse", "NoMain$Spare$$parseWith", "NoMain$Spare$$print", "NoMain$Spare$$printWith" }) |name| {
+        try testing.expect(std.mem.indexOf(u8, module, "export {") != null);
+        try testing.expect(std.mem.indexOf(u8, module, name) != null);
+    }
 }
 
 test "the checker writes the annotation escape and the infinite type as checker.md §8.5 specifies" {

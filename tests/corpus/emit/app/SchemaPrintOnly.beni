@@ -1,0 +1,31 @@
+-- emit/app: a program that only prints ships the other direction
+-- (`docs/design/schema.md` §6, *DCE*; *Print writes the engine's host
+-- value*).
+--
+-- `Shape.print` reaches the encoding worker and its two wrappers and not
+-- `$$read`, `$$parse` or the description. The worker answers the host
+-- object the engine writes, which `compiledPrint` stringifies once: a
+-- `switch` over the constructor's tag, a refinement (a safe integer, a
+-- number JSON can hold) tested in place, and the object's keys assigned
+-- after its fields were visited, the discriminator first.
+import Node exposing (Program)
+
+
+schema Shape tagged "type" of
+    Circle as "circle"
+        radius : Float
+    Square as "square"
+        side : Int
+    Dot as "dot"
+
+
+main : Program
+main =
+    Node.printLines
+        [ case Shape.print (Shape.Square { side = 2 }) of
+            Ok text ->
+                text
+
+            Err _ ->
+                "failed"
+        ]
