@@ -1,0 +1,81 @@
+-- A class list and a style list that are not written in place, in a page
+-- (backend.md §15.3): each goes through the runtime's `classes` or
+-- `styles`, handed the list it wrote last. A class name holding
+-- whitespace is several, a `False` entry names nothing, and a class only
+-- the previous list named is taken away while one both name stays; a
+-- style property takes its last value in the list, an empty value removes
+-- it, and a property only the previous list set is removed. One list is a
+-- pattern's `rest`, a view of its list rather than an array, read by the
+-- list protocol (backend.md §4).
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Next
+    | Back
+
+
+type alias Model =
+    { step : Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Next ->
+            { model | step = model.step + 1 }
+
+        Back ->
+            { model | step = model.step - 1 }
+
+
+classesAt : Int -> List ( String, Bool )
+classesAt step =
+    if step == 0 then
+        [ ( "row", True ), ( "gone", False ), ( "a  b", True ), ( "row", True ) ]
+
+    else if step == 1 then
+        [ ( "row", True ), ( "a", False ), ( "b\tc\nd", True ), ( "", True ) ]
+
+    else
+        []
+
+
+stylesAt : Int -> List ( String, String )
+stylesAt step =
+    if step == 0 then
+        [ ( "color", "red" ), ( "margin", "0px" ), ( "color", "blue" ), ( "gap", "1px" ), ( "gap", "" ) ]
+
+    else if step == 1 then
+        [ ( "color", "blue" ), ( "padding", "2px" ) ]
+
+    else
+        [ ( "order", "1" ) ]
+
+
+-- Everything but the first entry: a view of the list.
+rest : List a -> List a
+rest list =
+    case list of
+        [ _, ...others ] ->
+            others
+
+        [] ->
+            []
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="next" onClick={Next}>next</button>
+        <button id="back" onClick={Back}>back</button>
+        <p id="c" class={classesAt model.step}>classes</p>
+        <p id="s" style={stylesAt model.step}>styles</p>
+        <p id="v" class={rest [ ( "skip", True ), ...classesAt model.step ]} style={rest [ ( "skip", "1px" ), ...stylesAt model.step ]}>views</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { step = 0 }, update = update, view = view }

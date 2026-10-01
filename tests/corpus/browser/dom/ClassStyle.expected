@@ -1,0 +1,50 @@
+-- load
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="back">"back"</button>
+    <p id="c" class="row a b">"classes"</p>
+    <p id="s" style="color: blue; margin: 0px;">"styles"</p>
+    <p id="v" class="row a b" style="color: blue; margin: 0px;">"views"</p>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="back">"back"</button>
+    <p id="c" class="row b c d">"classes"</p>
+    <p id="s" style="color: blue; padding: 2px;">"styles"</p>
+    <p id="v" class="row b c d" style="color: blue; padding: 2px;">"views"</p>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="back">"back"</button>
+    <p id="c" class="">"classes"</p>
+    <p id="s" style="order: 1;">"styles"</p>
+    <p id="v" class="" style="order: 1;">"views"</p>
+  </main>
+</body>
+-- click #back
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="back">"back"</button>
+    <p id="c" class="row b c d">"classes"</p>
+    <p id="s" style="color: blue; padding: 2px;">"styles"</p>
+    <p id="v" class="row b c d" style="color: blue; padding: 2px;">"views"</p>
+  </main>
+</body>
+-- click #back
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <button id="back">"back"</button>
+    <p id="c" class="row b a">"classes"</p>
+    <p id="s" style="color: blue; margin: 0px;">"styles"</p>
+    <p id="v" class="row b a" style="color: blue; margin: 0px;">"views"</p>
+  </main>
+</body>

@@ -1,5 +1,5 @@
-import { classes as $markup$classes, styles as $markup$styles, safeUrl as $markup$safeUrl } from "./_platform/runtime.foreign.mjs";
-import { Rt$template } from "./_platform/Rt.mjs";
+import { safeUrl as $markup$safeUrl } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$classes, Rt$styles } from "./_platform/Rt.mjs";
 const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x", 0);
 const DomAttributes$k27 = { m: (v$3, cx$4) => {
   const r$5 = DomAttributes$t27();
@@ -21,16 +21,16 @@ const DomAttributes$k27 = { m: (v$3, cx$4) => {
 const DomAttributes$t48 = Rt$template("<p>x", 0);
 const DomAttributes$k48 = { m: (v$10, cx$11) => {
   const r$12 = DomAttributes$t48();
-  $markup$classes(r$12, v$10[0], null);
-  $markup$styles(r$12, v$10[1], null);
+  Rt$classes(r$12, v$10[0], null);
+  Rt$styles(r$12, v$10[1], null);
   return { s: r$12, q: null, e: r$12, w0: r$12, a0: v$10[0], a1: v$10[1] };
 }, p: (i$13, v$14) => {
   if (v$14[0] !== i$13.a0) {
-    $markup$classes(i$13.w0, v$14[0], i$13.a0);
+    Rt$classes(i$13.w0, v$14[0], i$13.a0);
     i$13.a0 = v$14[0];
   }
   if (v$14[1] !== i$13.a1) {
-    $markup$styles(i$13.w0, v$14[1], i$13.a1);
+    Rt$styles(i$13.w0, v$14[1], i$13.a1);
     i$13.a1 = v$14[1];
   }
 } };

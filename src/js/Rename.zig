@@ -111,20 +111,21 @@ fn reserved(ordinal: u32) bool {
 /// scope-hoisted build writes one bare only when no hand-written file binds
 /// it as written (`Emit.bareBlocked`).
 pub const bare_globals = [_][]const u8{
-    "AbortController",    "Array",                "Boolean",               "CustomEvent",
-    "Date",               "DocumentFragment",     "Element",               "Error",
-    "Event",              "HTMLElement",          "Intl",                  "JSON",
-    "Map",                "Math",                 "Node",                  "Number",
-    "Object",             "Promise",              "RangeError",            "Reflect",
-    "Set",                "String",               "Symbol",                "Text",
-    "TypeError",          "URL",                  "URLSearchParams",       "WeakMap",
-    "WeakSet",            "cancelAnimationFrame", "clearInterval",         "clearTimeout",
-    "console",            "crypto",               "decodeURIComponent",    "document",
-    "encodeURIComponent", "fetch",                "getComputedStyle",      "history",
-    "isFinite",           "isNaN",                "localStorage",          "location",
-    "matchMedia",         "navigator",            "parseFloat",            "parseInt",
-    "performance",        "queueMicrotask",       "requestAnimationFrame", "sessionStorage",
-    "setInterval",        "setTimeout",           "structuredClone",       "window",
+    "AbortController", "Array",              "Boolean",              "CustomEvent",
+    "Date",            "DocumentFragment",   "Element",              "Error",
+    "Event",           "HTMLElement",        "Intl",                 "JSON",
+    "Map",             "Math",               "Node",                 "Number",
+    "Object",          "Promise",            "RangeError",           "Reflect",
+    "RegExp",          "Set",                "String",               "Symbol",
+    "Text",            "TypeError",          "URL",                  "URLSearchParams",
+    "WeakMap",         "WeakSet",            "cancelAnimationFrame", "clearInterval",
+    "clearTimeout",    "console",            "crypto",               "decodeURIComponent",
+    "document",        "encodeURIComponent", "fetch",                "getComputedStyle",
+    "history",         "isFinite",           "isNaN",                "localStorage",
+    "location",        "matchMedia",         "navigator",            "parseFloat",
+    "parseInt",        "performance",        "queueMicrotask",       "requestAnimationFrame",
+    "sessionStorage",  "setInterval",        "setTimeout",           "structuredClone",
+    "window",
 };
 
 pub fn isBareGlobal(text: []const u8) bool {

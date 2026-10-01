@@ -20,7 +20,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 2 | **Templates and holes**: `childMaybe`, `childList`, `insertText`, `attr`, `attrNS`, `rawHtml`, `safeUrl`, the text and map kinds (`text`, `map`) | **landed 2026-10-02**, below; `childList` moves with step 4, `safeUrl` stays |
 | 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop with `Js.finally`, below |
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
-| 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | open |
+| 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -567,3 +567,67 @@ where the hand-written wrote `return(p=…)`, since beni writes no assignment ex
 **What is left of the hand-written browser runtime**: `mountAt` and `programs` (`Browser.js`),
 `Hosted.js`'s keys, outlets, after-render work, taps and relays, and `runtime.js`'s class and
 style lists (step 5) and `safeUrl`.
+
+## Step 5 — class and style lists (2026-10-02)
+
+**What moved.** `Rt.beni` now holds `classes`, `styles`, `classSet` and `styleMap`, the runtime's
+diff of a class or style list that is not written in place (`backend.md` §15.3); `elements` is no
+longer `pub`. `runtime.js` is `safeUrl` alone and imports nothing. The lowering is unchanged.
+
+**What it needed besides.** No compiler feature. Two printer details the port made visible, each
+a rule for every file: `RegExp` is one of the host globals a release build writes bare
+(`Rename.bare_globals`; it was `new globalThis.RegExp(…)`), and a string literal writes a form
+feed, backspace and vertical tab as `\f`, `\b`, `\v` instead of `\u000c` (`Print.quoted`, its unit
+test). The class splitter is `new RegExp("[\t\n\f\r ]+")`, a top-level value made once, against
+the hand-written literal `/[\t\n\f\r ]+/`: `Js` writes no regular expression literal.
+
+**The page.** No `browser/` page reached the two functions: every class or style list on them is
+written in place (a toggle or a `setProperty` per entry) or is a `String`, and so is `bench/ui`'s
+row class. New: `browser/dom/ClassStyle` — a class list and a style list from the model, and the
+same two as a pattern's `rest` (a view, read by the list protocol): a name holding whitespace
+(tab and newline too) is several, a `False` entry and an empty name name nothing, a class both
+lists name stays while one only the previous named goes, a property takes its last value, an
+empty value removes it, and one only the previous list set is removed. It passes under
+happy-dom and headless Chrome with the hand-written functions and with these.
+
+**Sizes** (release, brotli, the whole bundle; master at `4c02d096` against this step):
+
+| page | master | step 5 | |
+|---|--:|--:|--:|
+| `dom/ClassStyle` (new) | 2 471 | **2 454** | −17 (raw −113) |
+| empty `browser`, `Tea.sandbox`, `Tea.element`, `bench/ui` app | | | byte-identical |
+| `dom/Blocks`, `dom/Holes` | | | +2, +1 (raw =) |
+| every other `browser/` page | | | names only, 0 |
+
+`dom/Blocks` and `dom/Holes` reach `safeUrl` and nothing that moved: with no import left,
+`runtime.js`'s two statements are written before the beni module instead of after it, the same
+text in another place.
+
+**Speed.** The `bench/ui` app's release file is byte-identical to master's, so its timings
+cannot move. The two functions alone, hand-written against beni as the release files write them,
+in Node 24 on mock elements (2 000 elements, a mount and 20 alternating patches of both lists
+each; 41 runs, `taskset 8-15`, load 0.5): 33.18 ms [33.10–33.36] against 33.12 [32.96–33.34], a
+tie.
+
+**Shape**, from `dom/ClassStyle`'s release file:
+
+```js
+// classSet, classes
+J=c=>{let h=new Set();let d=n(c);for(let a=0;a<d.length;a++){if(!d[a].b)continue;for(let name of d[a].a.split(/[\t\n\f\r ]+/))if(name!=="")h.add(name)}return h}
+p=(a)=>{let b=new Set();for(let c of n(a))if(c.b){for(let a of c.a.split(o))if(a!=="")b.add(a)}return b}
+z=(g,c,e)=>{let f=J(c);let b=e===null?null:J(e);if(b!==null)for(let name of b)if(!f.has(name))g.classList.remove(name);for(let name of f)if(b===null||!b.has(name))g.classList.add(name)}
+q=(a,b,c)=>{let d=p(b),e=c===null?null:p(c);if(e!==null){for(let b of e)if(!d.has(b))a.classList.remove(b)}for(let b of d)if(e===null||!e.has(b))a.classList.add(b)}
+// styleMap, styles
+K=c=>{let i=new Map();let d=n(c);for(let a=0;a<d.length;a++)i.set(d[a].a,d[a].b);return i}
+r=(a)=>{let b=new Map();for(let c of n(a))b.set(c.a,c.b);return b}
+A=(g,c,e)=>{let f=K(c);let b=e===null?null:K(e);let j=g.style;if(b!==null)for(let name of b.keys())if(!f.has(name))j.removeProperty(name);for(let[name,value]of f)if(b===null||b.get(name)!==value)j.setProperty(name,value)}
+s=(a,b,c)=>{let d=r(b),e=c===null?null:r(c),f=a.style;if(e!==null){for(let a of e.keys())if(!d.has(a))f.removeProperty(a)}for(let a of d)if(e===null||e.get(a[0])!==a[1])f.setProperty(a[0],a[1])}
+```
+
+The loops over the list are `for…of` where the JavaScript counted (`Js.each`), and a `Map`'s
+entries are read as `a[0]`/`a[1]` where the JavaScript destructured them; `if(e!==null){…}` keeps
+braces the hand-written code drops.
+
+**What stayed.** `safeUrl`, for step 2's reason: its pattern written as a `RegExp` string would
+spell each of its 28 backslashes twice. A `Js` intrinsic for a regular expression literal would
+move it and leave `runtime.js` empty.

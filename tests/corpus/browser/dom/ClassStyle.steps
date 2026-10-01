@@ -1,0 +1,7 @@
+# `row` stays, `a` goes, `b c d` and `padding` come, `margin` goes.
+click #next
+# Every class and style the previous lists named goes; `order` comes.
+click #next
+# From no class to the second lists, then back to the first.
+click #back
+click #back

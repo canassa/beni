@@ -1,12 +1,12 @@
 --! The slot and mount half of the browser platform's runtime, the holes,
 --! attribute writes and markup primitives of a template, its events, and its
---! keyed and positional lists, written in beni over core's `Js` (research 47;
---! `plans/runtime-in-beni.md`, steps 1–4).
+--! keyed and positional lists and its class and style lists, written in beni
+--! over core's `Js` (research 47; `plans/runtime-in-beni.md`, steps 1–5).
 --! Each declaration is the hand-written JavaScript function of the same
 --! name it replaced, statement for statement where beni allows it. It is
 --! this platform's runtime module (`boundary.md` §9.2, *A runtime module*):
 --! its `pub` values stand in for the markup runtime's exports of their
---! names, `runtime.js` holds the rest and imports what it calls from here,
+--! names, `runtime.js` holds the rest (`safeUrl` alone, since step 5),
 --! and both are compiled with the program — so a release build specialises
 --! these functions to the page (`backend.md` §9), which copied JavaScript
 --! never allowed.
@@ -2003,6 +2003,140 @@ attrNS el namespace name value =
 pub rawHtml : V, V -> ()
 rawHtml el markup =
     Js.set el "innerHTML" markup
+
+
+-- `(el, list, previous)`: the element has exactly the classes the list
+-- names; what only the previous list (null at the mount) held is removed.
+pub classes : V, V, V -> ()
+classes el list previous =
+    let
+        next =
+            classSet list
+
+        old =
+            if Js.isNull previous then
+                Js.null
+
+            else
+                classSet previous
+
+        _ =
+            if Js.isNull old then
+                ()
+
+            else
+                Js.each
+                    old
+                    (\name ->
+                        if Js.to (Js.call next "has" [ name ]) then
+                            ()
+
+                        else
+                            Js.to (Js.call (Js.get el "classList") "remove" [ name ])
+                    )
+    in
+    Js.each
+        next
+        (\name ->
+            if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
+                Js.to (Js.call (Js.get el "classList") "add" [ name ])
+
+            else
+                ()
+        )
+
+
+-- The names whose flag is `True`, a name holding whitespace being several.
+classSet : V -> V
+classSet list =
+    let
+        names =
+            Js.construct (Js.global "Set") []
+
+        _ =
+            Js.each
+                (elements list)
+                (\entry ->
+                    if Js.to (Js.get entry "b") then
+                        Js.each
+                            (Js.call (Js.get entry "a") "split" [ spaces ])
+                            (\name ->
+                                if Js.same name (Js.from "") then
+                                    ()
+
+                                else
+                                    Js.to (Js.call names "add" [ name ])
+                            )
+
+                    else
+                        ()
+                )
+    in
+    names
+
+
+-- HTML's whitespace, which separates class names.
+spaces : V
+spaces =
+    Js.construct (Js.global "RegExp") [ Js.from "[\t\n\u{000C}\r ]+" ]
+
+
+-- `(el, list, previous)`: each property set to its last value in the list,
+-- an empty value removing it; a property only the previous list (null at
+-- the mount) set is removed.
+pub styles : V, V, V -> ()
+styles el list previous =
+    let
+        next =
+            styleMap list
+
+        old =
+            if Js.isNull previous then
+                Js.null
+
+            else
+                styleMap previous
+
+        style =
+            Js.get el "style"
+
+        _ =
+            if Js.isNull old then
+                ()
+
+            else
+                Js.each
+                    (Js.call old "keys" [])
+                    (\name ->
+                        if Js.to (Js.call next "has" [ name ]) then
+                            ()
+
+                        else
+                            Js.to (Js.call style "removeProperty" [ name ])
+                    )
+    in
+    Js.each
+        next
+        (\entry ->
+            if Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1)) then
+                Js.to (Js.call style "setProperty" [ Js.at entry 0, Js.at entry 1 ])
+
+            else
+                ()
+        )
+
+
+-- Each property's last value.
+styleMap : V -> V
+styleMap list =
+    let
+        values =
+            Js.construct (Js.global "Map") []
+
+        _ =
+            Js.each (elements list) (\entry -> Js.to (Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]))
+    in
+    values
 
 
 -- ---- The markup primitives (language.md §11.13) --------------------------

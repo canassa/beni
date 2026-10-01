@@ -2547,12 +2547,15 @@ const Printer = struct {
                 '\n' => "\\n",
                 '\r' => "\\r",
                 '\t' => "\\t",
+                8 => "\\b",
+                11 => "\\v",
+                12 => "\\f",
                 // U+2028 and U+2029 are line terminators in JavaScript but
                 // not in JSON; they arrive here as UTF-8 bytes and are
                 // handled by the 0x00..0x1f rule not applying, so they are
                 // left alone — a double-quoted string literal admits them
                 // since ES2019.
-                0...8, 11, 12, 14...31, 127 => blk: {
+                0...7, 14...31, 127 => blk: {
                     var buf: [6]u8 = undefined;
                     break :blk std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch unreachable;
                 },
@@ -3090,10 +3093,10 @@ test "conditionals, the four literals, and the disambiguator suffix" {
 
 test "a string literal is escaped where it must be and left alone where it need not be" {
     try expectPrinted(
-        "const s = \"a \\\"b\\\" c\\\\d\\ne\\tf\\u0000g \u{e9}\";\n",
+        "const s = \"a \\\"b\\\" c\\\\d\\ne\\tf\\u0000g \\b\\v\\f\\u000e \u{e9}\";\n",
         struct {
             fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
-                const value = try f.string("a \"b\" c\\d\ne\tf\x00g \u{e9}");
+                const value = try f.string("a \"b\" c\\d\ne\tf\x00g \x08\x0b\x0c\x0e \u{e9}");
                 try f.constDecl(out, "s", value);
             }
         }.go,
