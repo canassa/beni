@@ -351,6 +351,10 @@ pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Er
     for (fixed) |text| _ = try global.getOrPut(gpa, text);
     inline for (@typeInfo(Lowerer.Runtime).@"enum".fields) |field| _ = try global.getOrPut(gpa, field.name);
     for (0..26) |i| _ = try global.getOrPut(gpa, &.{@as(u8, 'a') + @as(u8, @intCast(i))});
+    // Whether the names above grew the pool depends on the program; a
+    // safety build always moves it, so a slice of it the emitter kept from
+    // before fails in every test rather than in the rare one that fills it.
+    try global.moveBytesForSafety(gpa);
 }
 
 /// The compiler's own identifiers, interned once per module. They all start

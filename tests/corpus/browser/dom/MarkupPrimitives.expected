@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <p>"none"</p>
+    <button id="leaf">"press"</button>
+  </main>
+</body>
+-- click #leaf
+<body>
+  <main>
+    <p>"leaf"</p>
+    <button id="leaf">"press"</button>
+  </main>
+</body>

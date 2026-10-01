@@ -1,0 +1,40 @@
+-- The markup primitives `Html.text` and `Html.map`, called by name, in a
+-- page (boundary.md §9.4.5): the `browser` platform's runtime module `Rt`
+-- supplies both, and the emitter decides that from their names. It once
+-- kept those names as slices of the session's intern pool, which grows
+-- before lowering reads them, so when a build happened to fill the pool
+-- to its edge they matched nothing and the page imported `text` and `map`
+-- from a runtime file that has neither: a SyntaxError at load. A safety
+-- build moves the pool's bytes at that point every time, so this page
+-- fails on such a slice whatever the platform imports.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Clicked String
+
+
+leaf : Html String
+leaf =
+    <button id="leaf" onClick={"leaf"}>{Html.text "press"}</button>
+
+
+view : String -> Html Msg
+view last =
+    <main>
+        <p>{Html.text last}</p>
+        {Html.map leaf Clicked}
+    </main>
+
+
+update : Msg, String -> String
+update msg _ =
+    case msg of
+        Clicked s ->
+            s
+
+
+main : Browser.Program
+main =
+    Browser.program { init = "none", update = update, view = view }

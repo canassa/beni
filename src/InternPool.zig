@@ -517,6 +517,25 @@ pub const Global = struct {
         return global.pool.getOrPut(gpa, bytes);
     }
 
+    /// In a safety build, move every symbol's bytes to fresh storage and
+    /// overwrite the old, as a growth of the pool may; elsewhere, nothing.
+    /// A `slice` is valid only until the pool next grows, and whether an
+    /// insertion grows it depends on how full it happens to be — so a slice
+    /// held across one fails only when some unrelated input fills the pool
+    /// to its edge. Called where a phase grows the pool after others have
+    /// read it, this makes every such slice fail in every test, whatever
+    /// the input: a markup primitive's name, kept past
+    /// `Lower.internFixedNames`, once resolved to no export at all.
+    pub fn moveBytesForSafety(global: *Global, gpa: Allocator) Allocator.Error!void {
+        if (!std.debug.runtime_safety) return;
+        var old = global.pool.bytes;
+        var moved: std.ArrayList(u8) = try .initCapacity(gpa, old.capacity);
+        moved.appendSliceAssumeCapacity(old.items);
+        @memset(old.allocatedSlice(), 0xaa);
+        old.deinit(gpa);
+        global.pool.bytes = moved;
+    }
+
     /// The symbol for `bytes` if this pool already has it, and null
     /// otherwise — a LOOKUP, never an insertion.
     ///
