@@ -1,0 +1,59 @@
+--! `Js.object` in a platform module (`backend.md` §4, *`Js.object` is an
+--! object literal*): the keys read back by name, in the order written, the
+--! values made in the order written, and a value of any type.
+
+import Js
+
+
+counter : Js.Ref Int
+counter = Js.ref 0
+
+
+next : String → String
+next tag =
+    _ = Js.write counter (Js.read counter + 1)
+    "${tag}${String.fromInt (Js.read counter)}"
+
+
+--| The keys of an object, as `Object.keys` lists them.
+keys : Js.Value → List String
+keys o = Js.to (Js.call (Js.global "Object") "keys" [ o ])
+
+
+--| An object whose values are made in written order: `z` before `a`.
+pub ordered : () → String
+ordered () =
+    o = Js.object [ ( "z", next "z" ), ( "a", next "a" ), ( "$plain", next "p" ) ]
+    z : String
+    z = Js.to (Js.get o "z")
+    a : String
+    a = Js.to (Js.get o "a")
+    p : String
+    p = Js.to (Js.get o "$plain")
+    "${listed o} ${z} ${a} ${p}"
+
+
+listed : Js.Value → String
+listed o = String.join (keys o) ","
+
+
+--| A field holding a function, called by name as a reader of a list calls
+--| `$plain`.
+pub called : Int → Int
+called n =
+    o = Js.object [ ( "length", n ), ( "twice", Js.from λk → k * 2 ) ]
+    Js.to (Js.call o "twice" [ Js.get o "length" ])
+
+
+--| Values of several types in one object, and the empty object.
+pub mixed : () → String
+mixed () =
+    o =
+        Js.object
+            [ ( "n", Js.from 1 )
+            , ( "s", Js.from "two" )
+            , ( "b", Js.from True )
+            , ( "l", Js.from [ 4 ] )
+            ]
+    none = Js.object []
+    "${listed o} ${String.fromInt (List.length (keys none))}"

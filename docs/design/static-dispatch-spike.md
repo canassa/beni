@@ -1502,6 +1502,10 @@ for a module that imports core's `Js` and has the bit set, so no other module pa
 `Js`'s own signatures naming no core type, `Js` depends on nothing, and `Basics` and `Char` may
 write `Js` calls: `core:Basics`'s one outgoing edge is then `core:Js`.
 
+*(Amended 2026-10-02: `Js.object`'s field list is one more such literal — the list, its pair
+literals and their key strings, `boundary.md` §4.2 — and `Graph.exemptBits` counts each key as
+exempt with the list.)*
+
 **Observable surface.** `dump --stage=graph` (`src/dump/graph.zig`) prints the graph's edges, one
 per line as `package:Module -> package:Module`, sorted by the printed line. A module's identity is
 `(package, name)` and not the name alone, because the user's package and `core` may each have a

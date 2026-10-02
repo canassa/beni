@@ -807,6 +807,14 @@ fn exemptBits(bir: *const Bir, js: Symbol, interner: *const InternPool.Global) u
                 .list => lists -= 1,
                 else => {},
             }
+            // `Js.object`'s keys, the first element of each pair, are
+            // property names written in place too (`boundary.md` §4.2).
+            if (which == .object and bir.instTag(arg) == .list) {
+                for (bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index)) |field| {
+                    const key = JsIntrinsic.objectKey(bir, field) orelse continue;
+                    if (bir.instTag(key) == .string) strings -= 1;
+                }
+            }
         }
     }
     var mask: u8 = 0;

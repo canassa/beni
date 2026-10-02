@@ -649,6 +649,9 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\
         \\pub foreign impure call : Value, name, args → Value
         \\
+        \\
+        \\pub foreign pure object : fields → Value
+        \\
     );
     try w.write("jscore/Basics.beni",
         \\import Js
@@ -734,6 +737,42 @@ test "a Js call's property names and argument list mint no edge, so a core modul
     try testing.expectEqual(@as(u8, 0), graph.exit_code);
     // `Basics` reaches `Js` and nothing else, and `Lower` reaches `String`
     // not at all; `Js` reaches nothing.
+    try testing.expectEqualStrings(
+        \\core:Basics -> core:Js
+        \\core:List -> core:Basics
+        \\core:Lower -> core:Basics
+        \\core:Lower -> core:Js
+        \\core:String -> core:Lower
+        \\
+    , graph.stdout);
+}
+
+test "Js.object's list, pairs and keys mint no edge, so a core module below String writes one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Lower` is below `String` and writes `Js.object` with two string keys
+    // in a list of pairs: syntax the backend writes as an object literal
+    // (boundary.md §4.2), so it mints no `String` — which would close the
+    // cycle `String → Lower → String` — and no `List`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeJsCore(&w, "    Js.object [ ( \"length\", Js.global \"name\" ), ( \"$plain\", Js.global \"name\" ) ]\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--core-root=jscore", "jscore" });
+    const graph = try w.run(&.{ "dump", "--stage=graph", "--core-root=jscore", "jscore/String.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(u8, 0), graph.exit_code);
+    // The same edges as a module with no object: none to `List` or
+    // `String` from `Lower`.
     try testing.expectEqualStrings(
         \\core:Basics -> core:Js
         \\core:List -> core:Basics

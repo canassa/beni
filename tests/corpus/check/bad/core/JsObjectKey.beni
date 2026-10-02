@@ -1,0 +1,36 @@
+-- check/bad (core): `Js.object`'s fields are a list literal of pairs, each
+-- key a string literal that is a JavaScript identifier, `__proto__` not
+-- among them, no key twice (`boundary.md` §4.2). Each malformed call is
+-- `invalid_js_object` at the fault: a key that is a name (16:25), a key that
+-- is no identifier (20:27), `__proto__` (24:26), the second of a key twice
+-- (28:50), a field that is not a pair (32:25) and fields not written as a
+-- list (36:23).
+import Js
+
+
+fields : List (String × Int)
+fields = [ ( "a", 1 ) ]
+
+
+named : String → Js.Value
+named k = Js.object [ ( k, 1 ) ]
+
+
+dashed : () → Js.Value
+dashed () = Js.object [ ( "a-b", 1 ) ]
+
+
+proto : () → Js.Value
+proto () = Js.object [ ( "__proto__", Js.null ) ]
+
+
+twice : () → Js.Value
+twice () = Js.object [ ( "a", 1 ), ( "b", 2 ), ( "a", 3 ) ]
+
+
+triple : () → Js.Value
+triple () = Js.object [ ( "a", 1, 2 ) ]
+
+
+passed : () → Js.Value
+passed () = Js.object fields

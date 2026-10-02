@@ -1,0 +1,35 @@
+-- `Js.object` is an object literal (`backend.md` §4, *`Js.object` is an
+-- object literal*): one property per pair, its key the string as a property
+-- name, in the order written — never sorted — and never renamed, so one call
+-- site makes one shape. A value that must be made first is made first, in
+-- written order; a key that is a beni record's field name elsewhere in the
+-- module is still the key as written. The list, the pairs and the strings
+-- are syntax: no array, no tuple, no string is made.
+-- Built with `--core`, which is what lets a root-package module import `Js`.
+import Js
+
+
+type alias Point =
+    length : Int
+    h : Int
+
+
+pub header : Int, Js.Value, Js.Value → Js.Value
+header n h plain =
+    Js.object [ ( "length", n ), ( "h", h ), ( "hc", 0 ), ( "p", Js.null ), ( "$plain", plain ) ]
+
+
+pub tree : Js.Value, Int → Js.Value
+tree r s = Js.object [ ( "r", r ), ( "s", s ), ( "off", s * 2 ), ( "tc", 0 ) ]
+
+
+pub ordered : Js.Value, Js.Value → Js.Value
+ordered f g = Js.object [ ( "z", Js.apply f [] ), ( "a", Js.apply g [] ) ]
+
+
+pub empty : () → Js.Value
+empty () = Js.object []
+
+
+pub point : Int → Point
+point n = { length = n, h = n + 1 }

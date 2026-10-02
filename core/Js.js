@@ -39,6 +39,10 @@ export const call = (o, name, xs) => o[name](...args(xs));
 export const apply = (f, xs) => f(...args(xs));
 export const construct = (c, xs) => new c(...args(xs));
 export const array = (xs) => args(xs);
+// A call is always written as the object literal (backend.md §4, *`Js.object`
+// is an object literal*); passed as a value, the same object from the pairs,
+// each read reflectively (boundary.md §4: a type variable is opaque).
+export const object = (fields) => Object.fromEntries(args(fields).map(Object.values));
 export const each = (xs, f) => {
   for (const x of xs) f(x);
   return null;

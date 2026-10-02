@@ -7616,6 +7616,27 @@ pub const Lowerer = struct {
         return l.binary(.strict_eq, try l.unary(.type_of, value, p), try l.stringNode(l.bir.bytes(args[1]), p), p);
     }
 
+    /// `Js.object [ ( "k", v ), … ]`: the object literal `{k: v, …}`, its
+    /// keys in written order and never renamed, its values made in written
+    /// order (`backend.md` §4, *`Js.object` is an object literal*). The
+    /// checker refused a malformed field list (`invalid_js_object`).
+    fn objectLiteral(l: *Lowerer, out: *StmtList, list: Inst.Index, p: u32) !Node.Index {
+        if (JsIntrinsic.objectFault(l.bir, list) != null) {
+            try l.report(.internal, list, "`Js.object` takes its fields as a list literal of `( \"key\", value )` pairs with distinct identifier keys.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const fields = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(list)), Inst.Index);
+        const values = try l.scratch.alloc(Inst.Index, fields.len);
+        for (values, fields) |*value, field| value.* = JsIntrinsic.objectValue(l.bir, field);
+        const v = try l.orderedExprs(out, values, false);
+        const props = try l.scratch.alloc(Node.Index, v.len);
+        for (props, fields, v) |*prop, field, value| {
+            const key = l.bir.bytes(JsIntrinsic.objectKey(l.bir, field).?);
+            prop.* = try l.property(try l.interner.getOrPut(l.gpa, key), value, p);
+        }
+        return l.object(props, p);
+    }
+
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
             try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
@@ -7875,6 +7896,7 @@ pub const Lowerer = struct {
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
         if (which == .typeIs) return l.typeIsTest(out, args, p);
+        if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
         if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
@@ -7954,8 +7976,9 @@ pub const Lowerer = struct {
             W.apply => l.call(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
-            // `regExpLiteral` and a `typeIs` `typeIsTest`, above.
-            W.each, W.finally, W.catchIf, W.regExp, W.typeIs => l.nullNode(p),
+            // `regExpLiteral`, a `typeIs` `typeIsTest` and an `object`
+            // `objectLiteral`, above.
+            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure, W.suspending => l.call(v[0], &.{}, p),

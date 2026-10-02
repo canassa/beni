@@ -526,7 +526,8 @@ close a cycle:
 2. **A literal a `Js` call writes in place mints nothing** (`static-dispatch-spike.md` §6.8,
    amended): a string literal that is the name argument of `global`, `get`, `set` or `call`, either
    argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), and a list literal that
-   is the argument list of `call`, `apply`, `construct` or `array`. The backend writes each as JavaScript syntax — a property name, a
+   is the argument list of `call`, `apply`, `construct` or `array` — *amended 2026-10-02:* or the
+   field list of `object`, with its pairs and their key strings (below). The backend writes each as JavaScript syntax — a property name, a
    regular expression literal, an argument list — so no `String` or `List` value exists at run time,
    and the checker types each as a fresh type variable rather than `String` or `List a`
    (`checker-v2.md` §30), so none is visible in the module either. Only those positions, written
@@ -544,6 +545,22 @@ is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, w
 `Js.development ()` — `Bool` is a core type `Js` may not name, and a `foreign` value that is not a
 function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
 value was.)*
+
+**`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
+object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
+list literal of pair literals written in place, each key a string literal that is a JavaScript
+identifier (`$` and `_` allowed, `__proto__` not — in a literal it sets the prototype rather than
+making a field), no key twice; anything else is **`invalid_js_object`**, at the call, from the
+checker. The keys are written in the order given and are **never sorted and never renamed in any
+build** — they are property names, which §9's passes never touch — so every object one call makes
+has one shape, which is what a hand-written header literal gave V8 (`backend.md` §4, *`Js.object`
+is an object literal*). The values are evaluated in written order, each of any type of its own (a
+fresh variable, as `Js.from`'s argument is). The list, its pairs and its keys are in-place literals
+(rule 2 below): they mint no `List`, `String` or tuple edge, so a module below `String` may write
+one. `pure`: making an object changes nothing an observer can see. Passed as a value, `Js.js`'s
+`object` builds the same object from a list of pairs. Its first use is `core/List`'s view and trie
+headers, whose `$plain` and `length` a reader of a list relies on by name (`backend.md` §4, *What a
+reader of a list may rely on*).
 
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a

@@ -371,6 +371,11 @@ pub const Code = enum {
     /// the build would otherwise import a name the core does not export
     /// and the program would fail to load.
     core_contract_violation,
+    /// Appended on 2026-10-02 with `Js.object` (`boundary.md` §4.2): a call
+    /// whose fields are not a list literal of `( "key", value )` pairs, each
+    /// key a string literal that is a JavaScript identifier other than
+    /// `__proto__`, no key twice. The checker's, at the call.
+    invalid_js_object,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -538,6 +543,7 @@ pub fn title(code: Code) []const u8 {
         .ascii_symbol_removed => "REMOVED ASCII SYMBOL",
         .tuple_type_removed => "REMOVED TUPLE TYPE",
         .core_contract_violation => "CORE CONTRACT VIOLATION",
+        .invalid_js_object => "INVALID OBJECT FIELDS",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

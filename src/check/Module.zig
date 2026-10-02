@@ -27,6 +27,7 @@ const Arena = @import("../Arena.zig");
 const Artifacts = @import("../Artifacts.zig");
 const Profile = @import("../Profile.zig");
 const Bir = @import("../bir/Bir.zig");
+const JsIntrinsic = @import("../js/JsIntrinsic.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
@@ -177,6 +178,7 @@ pub fn check(in: Input) Error!Check.Counters {
     }
     for (schemas.errors.items) |e| try report.emitText(e.code, e.region, null, e.message);
     try reportMarkup(&report, bir, in.graph);
+    try reportJsObjects(&report, &cx);
 
     // P2: every annotated value's scheme, before any body is checked.
     var syncs: std.ArrayList(Types.Builder.SyncMark) = .empty;
@@ -496,6 +498,37 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
             \\of one parameter in a module of the platform or the platforms it depends on,
             \\and it names none (`docs/design/boundary.md` §9.2).
         ),
+    }
+}
+
+/// Every call of core's `Js.object` whose fields are not a list literal of
+/// `( "key", value )` pairs with distinct identifier keys
+/// (`boundary.md` §4.2): `invalid_js_object`, at the fault. The backend
+/// writes the fields as an object literal's syntax, so nothing else of the
+/// argument could be written.
+fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
+    const bir = cx.bir;
+    const tags = bir.insts.items(.tag);
+    for (tags, 0..) |tag, i| {
+        if (tag != .call) continue;
+        const d = bir.instData(@enumFromInt(i));
+        const callee: Bir.Inst.Index = @enumFromInt(d.lhs);
+        if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
+        if (JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner) != .object) continue;
+        const args = bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index);
+        if (args.len != 1) continue;
+        const fault = JsIntrinsic.objectFault(bir, args[0]) orelse continue;
+        const lead = "`Js.object` writes its fields as an object literal's, so they must be a list\nliteral of pairs, `Js.object [ ( \"key\", value ), … ]`.\n\n";
+        const text: []const u8 = switch (fault.kind) {
+            .not_a_list => lead ++ "This argument is not written as a list literal.",
+            .not_a_pair => lead ++ "This field is not written as a pair `( \"key\", value )`.",
+            .key_not_a_string => lead ++ "This key is not a string literal: a key is a property name, written as it\nwill appear in the JavaScript.",
+            .key_not_an_identifier => lead ++ "This key is not a JavaScript identifier: letters, digits, `_` and `$`, not\nbeginning with a digit.",
+            .proto_key => lead ++ "This key is `__proto__`, which in an object literal sets the object's\nprototype rather than making a field.",
+            .duplicate_key => lead ++ "This key is written twice: an object has one field of each name.",
+        };
+        report.at(null);
+        try report.emitText(.invalid_js_object, fault.at, null, text);
     }
 }
 

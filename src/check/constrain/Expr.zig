@@ -397,9 +397,14 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     // the arguments, against a callee that is already concrete.
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), callee, .{ .tag = .general }));
     try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
-    const in_place = jsInPlaceLiterals(g, @enumFromInt(data.lhs));
+    const which = jsIntrinsic(g, @enumFromInt(data.lhs));
+    const in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0;
     for (args, arg_vars, 0..) |arg, v, i| {
         if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
+            if (which == .object) if (try objectFields(g, arg)) |c| {
+                try parts.append(g.cx.scratch, c);
+                continue;
+            };
             if (try inPlaceLiteral(g, arg)) |c| {
                 try parts.append(g.cx.scratch, c);
                 continue;
@@ -414,22 +419,38 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     return g.conj(parts.items);
 }
 
-/// The argument positions where a call of `callee` writes a literal in
-/// place, when `callee` is one of core's `Js` declarations
+/// Which of core's `Js` declarations `callee` is, if any: what tells the
+/// argument positions where a call writes a literal in place
 /// (`JsIntrinsic.inPlaceLiterals`; checker-v2.md §30). Keyed on the core
 /// package and the module and value names, as §28's casts are.
-fn jsInPlaceLiterals(g: *Generator, callee: Bir.Inst.Index) u8 {
+fn jsIntrinsic(g: *Generator, callee: Bir.Inst.Index) ?JsIntrinsic.Which {
     const bir = g.cx.bir;
-    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return 0;
+    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return null;
     const d = bir.instData(callee);
     const module: Graph.Index = @enumFromInt(d.lhs);
-    if (module.int() >= g.cx.graph.count()) return 0;
-    if (g.cx.graph.modulePackage(module) != .core) return 0;
-    if (!std.mem.eql(u8, g.cx.interner.slice(g.cx.graph.moduleName(module)), "Js")) return 0;
+    if (module.int() >= g.cx.graph.count()) return null;
+    if (g.cx.graph.modulePackage(module) != .core) return null;
+    if (!std.mem.eql(u8, g.cx.interner.slice(g.cx.graph.moduleName(module)), "Js")) return null;
     const iface = g.cx.iface(module);
-    if (d.rhs >= iface.values.len) return 0;
-    const which = std.meta.stringToEnum(JsIntrinsic.Which, g.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)])) orelse return 0;
-    return JsIntrinsic.inPlaceLiterals(which);
+    if (d.rhs >= iface.values.len) return null;
+    return std.meta.stringToEnum(JsIntrinsic.Which, g.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+}
+
+/// `Js.object`'s fields, written in place (checker-v2.md §30, amended
+/// 2026-10-02): the list, its pairs and their keys name no type, and each
+/// value is generated against a fresh variable of its own. Null when the
+/// argument is malformed (`JsIntrinsic.objectFault`), which `Module`
+/// reports as `invalid_js_object`; it is then generated as usual.
+fn objectFields(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
+    const bir = g.cx.bir;
+    if (JsIntrinsic.objectFault(bir, arg) != null) return null;
+    const fields = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
+    var parts: std.ArrayList(Constraint) = .empty;
+    defer parts.deinit(g.cx.scratch);
+    for (fields, 0..) |field, i| {
+        try parts.append(g.cx.scratch, try expr(g, JsIntrinsic.objectValue(bir, field), try g.freshFlex(), .{ .tag = .list_entry, .index = @intCast(i + 1) }));
+    }
+    return try g.conj(parts.items);
 }
 
 /// A literal a `Js` call writes in place (checker-v2.md §30): a string is

@@ -148,6 +148,14 @@ pub foreign impure construct : Value, args → Value
 pub foreign impure array : elements → Value
 
 
+--| `{k1: v1, k2: v2}`: a new JavaScript object, its fields written as a
+--| list literal of pairs, each key a string literal that is an identifier.
+--| The keys are written in the order given and never renamed, so every
+--| object one call makes has one shape; the values are made in the order
+--| given, each of any type.
+pub foreign pure object : fields → Value
+
+
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
 --| order. Written with a lambda, `Js.each xs λx → …`, the lambda's body
 --| is the loop's body.

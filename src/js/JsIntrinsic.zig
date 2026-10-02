@@ -50,6 +50,10 @@ pub const Which = enum {
     construct,
     each,
     array,
+    /// `{ k: v, … }`: an object literal, its keys written as written — a
+    /// list literal of `( "key", value )` pairs (`backend.md` §4, *`Js.object`
+    /// is an object literal*).
+    object,
     at,
     setAt,
     throw,
@@ -148,11 +152,65 @@ pub fn inPlaceLiterals(which: Which) u8 {
         .get, .set => 0b010,
         .call => 0b110,
         .apply, .construct => 0b010,
-        .array => 0b001,
+        .array, .object => 0b001,
         .regExp => 0b011,
         .typeIs => 0b010,
         else => 0,
     };
+}
+
+/// What is wrong with `Js.object`'s argument (`boundary.md` §4.2), and the
+/// instruction to report it at.
+pub const ObjectFault = struct {
+    kind: Kind,
+    at: Inst.Index,
+
+    pub const Kind = enum { not_a_list, not_a_pair, key_not_a_string, key_not_an_identifier, proto_key, duplicate_key };
+};
+
+/// Null when `arg` is a list literal of `( "key", value )` pairs, each key a
+/// string literal that is an ASCII JavaScript identifier other than
+/// `__proto__` — which in a literal sets the prototype rather than making
+/// a field — and no key twice; otherwise the first fault. The checker
+/// reports it (`invalid_js_object`); `Lower` relies on there being none.
+pub fn objectFault(bir: *const Bir, arg: Inst.Index) ?ObjectFault {
+    if (bir.instTag(arg) != .list) return .{ .kind = .not_a_list, .at = arg };
+    const elements = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Inst.Index);
+    for (elements, 0..) |el, i| {
+        const key = objectKey(bir, el) orelse return .{ .kind = .not_a_pair, .at = el };
+        if (bir.instTag(key) != .string) return .{ .kind = .key_not_a_string, .at = key };
+        const bytes = bir.bytes(key);
+        if (!isIdentifier(bytes)) return .{ .kind = .key_not_an_identifier, .at = key };
+        if (std.mem.eql(u8, bytes, "__proto__")) return .{ .kind = .proto_key, .at = key };
+        for (elements[0..i]) |before| {
+            if (std.mem.eql(u8, bir.bytes(objectKey(bir, before).?), bytes)) return .{ .kind = .duplicate_key, .at = key };
+        }
+    }
+    return null;
+}
+
+/// The key instruction of a field of `Js.object`, a pair literal, or null
+/// when the field is not a pair.
+pub fn objectKey(bir: *const Bir, field: Inst.Index) ?Inst.Index {
+    if (bir.instTag(field) != .tuple) return null;
+    const pair = bir.extraSlice(Bir.inlineRange(bir.instData(field)), Inst.Index);
+    if (pair.len != 2) return null;
+    return pair[0];
+}
+
+/// The value instruction of a well-formed field of `Js.object`.
+pub fn objectValue(bir: *const Bir, field: Inst.Index) Inst.Index {
+    return bir.extraSlice(Bir.inlineRange(bir.instData(field)), Inst.Index)[1];
+}
+
+/// An ASCII JavaScript identifier, `$` and `_` allowed.
+pub fn isIdentifier(bytes: []const u8) bool {
+    if (bytes.len == 0) return false;
+    for (bytes, 0..) |c, i| {
+        const ok = std.ascii.isAlphabetic(c) or c == '_' or c == '$' or (i != 0 and std.ascii.isDigit(c));
+        if (!ok) return false;
+    }
+    return true;
 }
 
 pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype) ?Which {

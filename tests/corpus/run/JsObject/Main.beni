@@ -1,0 +1,14 @@
+-- `Js.object`, written by a platform module and read back by name: keys in
+-- the order written, values made in that order, a function field called as
+-- a method is, and values of several types.
+import Node
+import Objects
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Objects.ordered ()
+        , String.fromInt (Objects.called 21)
+        , Objects.mixed ()
+        ]

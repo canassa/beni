@@ -5602,6 +5602,13 @@ mention a fresh variable no other constraint touches.
 `boundary.md` §4.2's `typeIs`, which `Basics` needs to ask whether a value is a string with no
 `String` of its own. Generation treats it exactly as the name argument of `get`.)*
 
+*(Amended 2026-10-02 again: `Js.object`'s argument, `boundary.md` §4.2, is one more — a list
+literal of pair literals whose keys are string literals. Generation types none of the list, the
+pairs or the keys, and generates each pair's value against a fresh variable of its own, as a
+`Js.from` argument is, so the values of one object may each have a type of their own. A malformed
+field list is generated as usual and reported once, `invalid_js_object`, by `Module` before any
+group is checked.)*
+
 ## 31. Amendment of 2026-10-02: `Basics.eq` dispatches
 
 *The owner's decision; `static-dispatch-spike.md` §3.1 and §3.4, `language.md` §6.5, amended the

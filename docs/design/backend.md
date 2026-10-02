@@ -2075,6 +2075,27 @@ recursive, aliased and opaque types, and a `foreign type`), `dispatch/DebugShape
 `emit/BlockStatement` and `emit/DiscardedStatements`, whose `Debug.log` calls became
 `Debug$logAs`.
 
+### `Js.object` is an object literal
+
+*Added 2026-10-02, the owner's decision on research 50 §7* (`boundary.md` §4.2). `Js.object [ (
+"k1", v1 ), … ]` is JsIr's `object` node: one `property` per pair, its key the string's bytes as
+a property name, in written order (`Lower.objectLiteral`). The values are lowered as a call's
+arguments are (`orderedExprs`), so they run in written order and one that must be made first is;
+the list, the pairs and the keys exist only as syntax — no array, no tuple and no string is made.
+**A key is never renamed**: §9's short names rename bindings, never a property name, and *Item 4,
+taken up*'s field renaming renames a beni record's fields by the record's type, which an object
+from `Js.object` does not have; so `{length:a,h:b,…,$plain:f}` is what every build writes, and the
+one call site of one header form is one hidden class, as the hand-written literal was. The checker
+refuses a malformed field list first (`invalid_js_object`); `Lower` still answers `internal` to
+one, which no checked module reaches. Passed as a value, it is the sibling's
+`Object.fromEntries`-shaped function over the pairs. Fixtures: `emit/core/JsObject` and
+`emit/release/core/JsObject` (keys in written order, never renamed, a value that must be made
+first, a key that is a record's field name elsewhere in the program), `run/JsObject` (the values'
+order, `$plain` read back by name), `check/bad/core/JsObjectKey` (a key that is not a string
+literal, one that is no identifier, `__proto__`, a key twice, an argument that is not a list
+literal) and `check_test`'s *Js.object's list, pairs and keys mint no edge* (a module `String`
+imports writes one, and `dump --stage=graph` shows no edge for its literals).
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
