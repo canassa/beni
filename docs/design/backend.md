@@ -853,6 +853,11 @@ The lowering records each use as it records a derived comparator's (§9, *Reacha
 elimination*), so a program with no list pattern imports none of them and the one hoisted file
 (§9) holds none of them.
 
+*Amended 2026-10-02:* the five — `unsafeGet`, `view`, `base`, `offset` and `close` (§8's building
+loop's exit) — are exported when they survive **whether `core/List` writes them `foreign` or with a
+beni body**: the importing module cannot tell the two apart, and an export kept to `foreign` ones
+made a beni body a program that fails to load.
+
 #### Identity: what an operation returns unchanged
 
 `language.md` §11.12 promises that a value a program does not rebuild keeps its identity, and the

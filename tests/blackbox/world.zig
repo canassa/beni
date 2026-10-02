@@ -234,6 +234,13 @@ pub const World = struct {
     /// scenario expects would let a new one slip through, so the whole tree
     /// is copied and the fixture directory IS the project.
     pub fn copyTree(world: *World, src_path: []const u8, skip_prefix: []const u8) !void {
+        return world.copyTreeInto(src_path, "", skip_prefix);
+    }
+
+    /// `copyTree` into the project's directory `dest_path` rather than its
+    /// root: a scenario that builds against a copy of `core/` under
+    /// `--core-root`, edited where the scenario needs it.
+    pub fn copyTreeInto(world: *World, src_path: []const u8, dest_path: []const u8, skip_prefix: []const u8) !void {
         const arena = world.arena.allocator();
         var dir = try Io.Dir.cwd().openDir(world.io, src_path, .{ .iterate = true });
         defer dir.close(world.io);
@@ -244,7 +251,7 @@ pub const World = struct {
             if (std.mem.startsWith(u8, entry.basename, skip_prefix)) continue;
             const from = try std.fs.path.join(arena, &.{ src_path, entry.path });
             const bytes = try Io.Dir.cwd().readFileAlloc(world.io, from, arena, .limited(max_stream_bytes));
-            try world.write(entry.path, bytes);
+            try world.write(try std.fs.path.join(arena, &.{ dest_path, entry.path }), bytes);
         }
     }
 

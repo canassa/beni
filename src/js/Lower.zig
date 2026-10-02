@@ -1811,16 +1811,12 @@ pub const Lowerer = struct {
         // `core/List`'s core-private values the emitter calls from other
         // modules (`corePrivate`, `backend.md` §4): in no interface, so no
         // program names them, and exported when they survive — which is
-        // exactly when some module's code calls one.
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) == l.in.module) {
-            for (l.bir.decls, 0..) |d, i| {
-                if (d.is_pub or d.kind != .foreign_value) continue;
-                const symbol = l.bir.symbol(d.name);
-                if (symbol != InternPool.WellKnown.unsafeGet.symbol() and symbol != InternPool.WellKnown.view.symbol() and
-                    symbol != InternPool.WellKnown.close.symbol() and symbol != InternPool.WellKnown.base.symbol() and
-                    symbol != InternPool.WellKnown.offset.symbol()) continue;
-                if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
-            }
+        // exactly when some module's code calls one. A `foreign` one and
+        // one with a beni body alike: which of the two a value is is
+        // `core/List`'s business, and the importing module cannot tell.
+        for (l.bir.decls, 0..) |d, i| {
+            if (d.is_pub or !l.emitterCalled(@intCast(i))) continue;
+            if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
         }
         // `core/Schema`'s core-private values the specialised path calls
         // (`schema.md` §6), on the same terms.
@@ -1834,6 +1830,22 @@ pub const Lowerer = struct {
         if (names.items.len == 0) return;
         const range = try l.b.addNames(names.items);
         try out.append(l.scratch, try l.add(.export_stmt, Node.no_pos, @intFromEnum(range.start), @intFromEnum(range.end)));
+    }
+
+    /// Whether declaration `index` is one of `core/List`'s core-private
+    /// values the emitter calls from other modules — `unsafeGet`, `view`,
+    /// `base`, `offset` and `close` (`corePrivate`, `backend.md` §4, *The
+    /// emitter's imports of the core-private exports*) — whatever its body.
+    /// The calls are written by the emitter in OTHER modules, so no BIR of
+    /// this one shows them: such a value is exported and its result read.
+    fn emitterCalled(l: *Lowerer, index: u32) bool {
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
+        const d = l.bir.decls[index];
+        if (!d.kind.isValue()) return false;
+        const symbol = l.bir.symbol(d.name);
+        return symbol == InternPool.WellKnown.unsafeGet.symbol() or symbol == InternPool.WellKnown.view.symbol() or
+            symbol == InternPool.WellKnown.close.symbol() or symbol == InternPool.WellKnown.base.symbol() or
+            symbol == InternPool.WellKnown.offset.symbol();
     }
 
     /// The `import` statements, built once the reference list is complete

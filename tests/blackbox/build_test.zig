@@ -4430,3 +4430,82 @@ test "a schema program's issues get short fields and integer tags under --releas
         }
     }
 }
+
+/// The shipped core copied to `mycore/`, with `List`'s core-private `close`
+/// given a beni body over a renamed `foreign`. `close` is one of the values
+/// the emitter calls from other modules (`backend.md` §4, *The emitter's
+/// imports of the core-private exports*); in the shipped core all five are
+/// `foreign`, which hid that `Lower` treated a beni-bodied one as a value
+/// nobody calls. The body is an `if` so that `--release` keeps it a
+/// function of its own rather than writing it into its one caller.
+fn writeCoreWithBeniClose(w: *World) !void {
+    try w.copyTreeInto("core", "mycore", "_");
+    const arena = w.arena.allocator();
+    const beni = try w.read("mycore/List.beni");
+    const foreign_close = "foreign pure close : List a, List a → List a\n";
+    if (std.mem.count(u8, beni, foreign_close) != 1) return error.CoreChanged;
+    try w.write("mycore/List.beni", try std.mem.replaceOwned(u8, arena, beni, foreign_close,
+        \\foreign pure closeJs : List a, List a → List a
+        \\
+        \\
+        \\close : List a, List a → List a
+        \\close b v =
+        \\    if length b == 0 then
+        \\        v
+        \\
+        \\    else
+        \\        closeJs b v
+        \\
+    ));
+    const js = try w.read("mycore/List.js");
+    const export_close = "export const close = ";
+    if (std.mem.count(u8, js, export_close) != 1) return error.CoreChanged;
+    try w.write("mycore/List.js", try std.mem.replaceOwned(u8, arena, js, export_close, "export const closeJs = "));
+    // A building loop whose exit hands `close` a non-empty rest.
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\above : List Int → List Int
+        \\above xs =
+        \\    case xs of
+        \\        [ x, …rest ] →
+        \\            if x > 2 then
+        \\                [ x, …above rest ]
+        \\
+        \\            else
+        \\                above rest
+        \\
+        \\        [] →
+        \\            [ 99, 100 ]
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.join (List.map (above [ 1, 2, 3, 4 ]) String.fromInt) ",")
+        \\
+    );
+}
+
+test "a core-private List value the emitter calls is exported when it has a beni body" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Main`'s loop calls `List$close`, which `core/List` exported only
+    // when it was `foreign`: with a beni body the program failed to load,
+    // `… does not provide an export named 'List$close'`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeCoreWithBeniClose(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "--core-root=mycore", "Main.beni" }, .{ .stdout = "3,4,99,100\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+}

@@ -40,6 +40,7 @@ build_test.test.a build with cross-module evidence is byte-identical at every --
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 08fb441e1c728c219b8743a0cf575f13ab62d21d55135f232054a8d916d004ab
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 3cf40a3afdb0d0bd092882a7c7435318685b39d703233e50d50b1b463614179d
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 0bdf98c7979594b8a4d20d24dfe73a36abebd01ac7a9316ee21e8d87afb3d75f
+build_test.test.a core-private List value the emitter calls is exported when it has a beni body #0 e53e5369df6c16048b5509ec4ad7cc99dd16e387db34e39051df8f9da6924b87
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 3514abd3d42607a978ece9e63fcbdcf353e6582f851ee0f42b23b26d1c585b4e
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 ea6f7c4764a8aec010932085eff921294fc1ea1b79c454b2efbaab2fd85e53b2
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 2cbf4bc0fbf3d4f096fa4e4ffcc0f9171d7efe75500e3b0795cab8f37dcb539b
