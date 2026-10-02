@@ -17,7 +17,7 @@ spelling — it is kept minimal, and the step says why.
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
 | 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below |
-| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
+| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change**, below), the browser platform's `Hosted.js`, `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
@@ -394,6 +394,60 @@ is the sibling's to the tenth of a microsecond (`toUpper` 150 against 151 µs pe
 gap is gone once V8 has optimised both, so it is warm-up and not the code. A first version shared
 the case mappings' one-scalar test as a helper; it measured 1.02× with 30 ms samples, and each
 mapping writes its test out now, as the sibling did.
+
+## The rest of `Basics`, and `Debug` (2026-10-02)
+
+**`core/Basics.js` and `core/Debug.js` are gone**; `Basics` keeps no `foreign` but `Int` and
+`Float`, `Debug` none. Three commits, each through the gates.
+
+- **The operators** (`add` … `ge`, `and`, `or`) are beni whose body is the operator,
+  `add a b = a + b`, emitted as the sibling's arrow. *A wall met and fixed in the compiler*: inside
+  `Basics` the body's `+` is `add` calling itself by name in tail position, and §8's tail-call
+  loop took it for a self-call — `add`'s body came out as `for (;;) {}` and any program passing
+  `Basics.add` as a value hung. A call `Operator` writes in place is now no self-call, tail callee
+  or inlining site (`Lower.callsOperator`; `run/BasicsOperatorsAsValues`, red before).
+- **`eq`, `neq`, `append`** ask `typeof` through a new intrinsic, **`Js.typeIs v "name"`**
+  (`boundary.md` §4.2, amended; its name is an in-place literal, so `Basics` writes no `String`).
+  Equality is the same loop over a stack of pairs. **Two defects fixed** on the way, both silent
+  wrong answers of `Basics.eq` called by name (`==` was right): a list compared key by key never
+  equalled the same elements in another form (a view, a trie), and a `()` a function returned as
+  `undefined` under `--release` never equalled `()` — `run/BasicsEqStructural`, red before in both
+  builds. The list half now walks the plain arrays by index.
+- **`Debug`**: `toString`'s printer, `log` and `todo` over `Js`, printing exactly what the
+  sibling printed (every `run/` golden unchanged). `todo`'s throw is now a mapped frame in core's
+  `Debug.beni`; `Debug` depends on `Basics` and `Js` (`check/good/TypeOwnerEdges`).
+
+**Sizes**, `bench/size.mjs`, master against the three commits, 383 programs: development brotli
+**2 281 441 → 2 130 141 (−6.6 %)**, 189 smaller and 1 larger (+9); release brotli **460 402 →
+458 106 (−0.50 %)**, 114 smaller, 240 equal, 29 larger. The pages: development 1 053–1 238 smaller
+each, release equal (`navigation` −28). Of the larger release programs, the ten that call
+`Basics.eq` grew 57–88 bytes — the two fixes' code, not the code generator's: against a
+hand-written sibling with the same fixes, the beni output is smaller raw on every one of eight and
+−15 brotli in total (one +13, two +3/+5, five smaller). The rest are +1 to +23 from a different
+order of short names at equal or fewer raw bytes.
+
+**Speed**, `bench/primitives` (new workloads `eqRecords`, `eqNested`, `eqLong` — `Basics.eq` on
+2 000 pairs of records, two lists of 200 ten-element lists, two lists of 40 000 — and `appends`, a
+`++` the checker does not resolve), master's compiler against this one, `taskset -c 22`, load
+6–9, 12 rounds of 15 samples of 30 ms, release: `eqRecords` 1 160 → **794 µs (0.68×)**,
+`eqNested` 119 → **16.2 (0.14×)**, `eqLong` 5 217 → **1 383 (0.27×)**, `appends` 297 → 297
+(1.00×); development the same within 0.02×. `Debug.toString` of 2 000 records: 26.9–31.2 ms
+before, 26.6–28.9 after, three alternating runs.
+
+**What is left in `core/Js.js`, and why.** Every export is the value form of an intrinsic whose
+saturated call is written in place; a program reaches the file only by passing an intrinsic as a
+value (in the corpus, `run/JsOperators` and `run/JsIntrinsics`, which do it on purpose). None can
+be a beni body as the language stands: a body that is the intrinsic's own call (`same a b = same
+a b`, as `Basics`' operators are) needs the backend to recognise `Js`'s intrinsics inside `Js`
+itself, the module graph and the checker to exempt `Js`'s own literals, and — the wall — it would
+**lose the declared rung**: a body's effect is inferred from the body, a self-call infers `pure`,
+and `global`, `get`, `call` and the other impure intrinsics would become `pure` in the interface,
+which the release optimiser may drop or merge. `call`, `apply`, `construct` and `array` passed a
+list that is not a literal need the list protocol's conditional besides, and an `if` would make
+`Bool` visible in `Js`, which names no core type. What would remove the file whole is the
+backend writing an intrinsic passed as a value as an arrow of its in-place form —
+`(a, b) => a === b`, `(o, n, xs) => o[n](...plain(xs))` — with check 2 exempting `Js`: a contract
+change (`boundary.md` §4, §4.2), left for the owner.
 
 ## Step 5 — the schema engine (2026-10-01)
 
