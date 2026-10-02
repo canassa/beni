@@ -6,29 +6,31 @@
 --! program runs is the clock the program sees.
 
 import Browser
+import Duration
 import Js
 import Sub exposing (Sub)
 import Task exposing (Resume)
 
 
---| A length of time, in whole milliseconds.
-pub type Duration
-    = Duration Int
+--| A length of time, in whole milliseconds and never negative: core's
+--| `Duration`, by the name a page has always used (`boundary.md` §9.8.15).
+pub type alias Duration =
+    Duration.Duration
 
 
---| `n` milliseconds.
+--| `n` milliseconds; no time at all when `n` is negative.
 pub millis : Int → Duration
-millis n = Duration n
+millis n = Duration.millis n
 
 
---| `n` seconds.
+--| `n` seconds; no time at all when `n` is negative.
 pub seconds : Int → Duration
-seconds n = Duration (n * 1000)
+seconds n = Duration.seconds n
 
 
---| How many milliseconds.
+--| How many milliseconds: core's `Duration.toMillis`.
 pub inMillis : Duration → Int
-inMillis (Duration n) = n
+inMillis duration = Duration.toMillis duration
 
 
 --| A moment, as the milliseconds since the Unix epoch.
@@ -53,7 +55,7 @@ now () = Posix (Js.to (Js.call (Js.global "Date") "now" []))
 
 --| Wait for `duration`. Only the calling fiber waits.
 pub sleep : Duration → ()
-sleep (Duration ms) = Task.callback λresume → startTimer ms resume
+sleep duration = Task.callback λresume → startTimer (Duration.toMillis duration) resume
 
 
 -- One timer, which resumes the waiting fiber, and what clears it.
@@ -73,11 +75,13 @@ type Key
 --| declaration of one interval shares one timer, and each receives each
 --| tick through its own tagger.
 pub every : Duration, (Posix → msg) → Sub msg
-every (Duration ms) tag = Sub.listen (Every ms) (ticks ms _) tag
+every interval tag =
+    ms = Duration.toMillis interval
+    Sub.listen (Every ms) (ticks ms _) tag
 
 
 ticks : Int, Browser.Send Posix → ()
 ticks ms emit =
-    _ = sleep (Duration ms)
+    _ = sleep (Duration.millis ms)
     _ = emit (now ())
     ticks ms emit

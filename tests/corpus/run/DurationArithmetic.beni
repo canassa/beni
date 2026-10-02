@@ -1,0 +1,42 @@
+-- run: core's `Duration` (transparent-effects-proposal.md §17.6): whole
+-- milliseconds, never negative. Each constructor scales its count, and a
+-- negative count is `zero`, not a negative length; `sum` adds; `times`
+-- rounds to the nearest millisecond, is `zero` for a negative factor or
+-- one that is not a number, and the longest duration for an infinite one;
+-- two durations compare as lengths, the derived `==` and `<` included.
+import Duration exposing (Duration)
+import Node exposing (Program)
+
+
+ms : Duration → String
+ms d = String.fromInt (Duration.toMillis d)
+
+
+holds : Bool → String
+holds b = if b then "yes" else "no"
+
+
+main : Program
+main =
+    hundred = Duration.millis 100
+
+    Node.printLines
+        [ ms (Duration.millis 250)
+        , ms (Duration.seconds 2)
+        , ms (Duration.minutes 3)
+        , ms (Duration.hours 1)
+        , ms Duration.zero
+        , ms (Duration.millis (-5))
+        , ms (Duration.seconds (-1))
+        , ms (Duration.sum (Duration.seconds 1) (Duration.millis 5))
+        , ms (Duration.times hundred 1.5)
+        , ms (Duration.times hundred 0.004)
+        , ms (Duration.times hundred 0.005)
+        , ms (Duration.times hundred (-2.0))
+        , ms (Duration.times hundred (0.0 / 0.0))
+        , ms (Duration.times hundred (1.0 / 0.0))
+        , holds (Duration.millis (-5) == Duration.zero)
+        , holds (Duration.seconds 1 == Duration.millis 1000)
+        , holds (Duration.millis 999 < Duration.seconds 1)
+        , holds (Duration.minutes 1 > Duration.seconds 59)
+        ]

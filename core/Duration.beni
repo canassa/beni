@@ -1,0 +1,87 @@
+--! A length of time, in whole milliseconds and never negative
+--! (`transparent-effects-proposal.md` §17.6): what `Task.sleep` waits, what
+--! a `Schedule` answers, what an HTTP request's timeout allows.
+--!
+--!     Duration.sum (Duration.seconds 1) (Duration.millis 250)
+--!
+--! An argument no length fits is given the nearest one that does, never a
+--! crash: a negative count is `zero`, and `times` rounds to the nearest
+--! millisecond. Two durations compare as lengths, `==` and `<` included.
+--!
+--! The names are Effect's `Duration` (Elm has none). Effect's also carries
+--! nanoseconds, infinities and negative lengths; beni's timers count
+--! milliseconds, nothing waits forever but `Task.never`, and a negative wait
+--! means nothing, so here a duration is one whole number.
+--!
+--! Nothing here is `foreign`.
+
+--| A length of time, in whole milliseconds, never negative.
+pub opaque type Duration
+    = Duration Int
+
+
+--| No time at all.
+pub zero : Duration
+zero = Duration 0
+
+
+-- The largest whole number a double holds exactly: 2⁵³ − 1 milliseconds,
+-- some 285 000 years, is the longest duration, so a product that would be
+-- infinite is this instead.
+longest : Int
+longest = 9007199254740991
+
+
+--| `n` milliseconds; `zero` when `n` is negative.
+--|
+--|     toMillis (millis 250) == 250
+--|     millis (-5) == zero
+pub millis : Int → Duration
+millis n = if n > 0 then Duration n else zero
+
+
+--| `n` seconds; `zero` when `n` is negative.
+pub seconds : Int → Duration
+seconds n = millis (n * 1000)
+
+
+--| `n` minutes; `zero` when `n` is negative.
+pub minutes : Int → Duration
+minutes n = millis (n * 60000)
+
+
+--| `n` hours; `zero` when `n` is negative.
+pub hours : Int → Duration
+hours n = millis (n * 3600000)
+
+
+--| How many milliseconds.
+--|
+--|     toMillis (seconds 2) == 2000
+pub toMillis : Duration → Int
+toMillis (Duration n) = n
+
+
+--| The two lengths together.
+--|
+--|     sum (seconds 1) (millis 5) == millis 1005
+pub sum : Duration, Duration → Duration
+sum (Duration a) (Duration b) = Duration (a + b)
+
+
+--| The length `factor` times over, rounded to the nearest millisecond:
+--| `zero` when the factor is negative or not a number, and the longest
+--| duration there is when the product is too large to count.
+--|
+--|     times (millis 100) 1.5 == millis 150
+--|     times (millis 100) (-2.0) == zero
+pub times : Duration, Float → Duration
+times (Duration n) factor =
+    product = toFloat n * factor
+
+    if isNaN product || product ≤ 0 then
+        zero
+    else if isInfinite product then
+        Duration longest
+    else
+        Duration (Basics.min (round product) longest)
