@@ -737,6 +737,14 @@ intrinsic. Each slice is specified before it is built (rule 1), red first (rule 
 | K4 | **The bar, measured** | `bench/size.mjs` both ways (no program larger, research 49 §4.2's twenty smaller); the kernel workloads of research 49 §7 in instructions, single-threaded and with threads, and in wall time on a quiet machine (load under 2), the scope workload re-run before anything is concluded from it; `bench/fiber`'s research 44 workloads | every workload within noise or better; a reproducible loss is a wall reported to the owner (rule 10), never a reason to bring JavaScript back |
 | K5 | **What the beni kernel makes cheap** (research 48's kernel list, each specified in `transparent-effects-proposal.md` first) | `Task.resume`; `Task.interruptible` inside a masked region; `spawnDetached` (a root in the registry); `poll`; `waitAny` and `race` over the private observers; the fiber slots (clock, log context, seed) as fields of the one literal, copied in `fork`; a development-only spawn site for logical stack traces (`Js.development`) | each with its `run/` fixture, written in `Task.beni` with no new `foreign` |
 
+*K5, specified 2026-10-02* (`docs/design/transparent-effects-proposal.md` §17, the owner having
+taken research 48's decisions): the kernel additions are §17.3's `resume`, `poll`, `spawnDetached`,
+`uninterruptibleMask`/`restore` with a `Restore` token (decision 12, in place of the
+`Task.interruptible` above) and `defer`; §17.5's **four** slots — clock, scheduler, log context,
+random seed — copied by reference in `fork`; and §17.6's `Task.sleep` over the clock slot.
+`waitAny`/`race` are no longer kernel work: §17.7's combinators are library beni over `scope`,
+`spawnIn`, `wait`, `cancel` and `Deferred`. The development-only spawn site stays with P6.
+
 **Not required by the step, and kept out of it** (research 49 §3.3, §3.4): a lowering that writes a
 small non-tail continuation twice so the fast path allocates nothing, and `Opt` dropping the dead
 branch behind a `Js.Ref` specialisation folded. Either is a general compiler change, priced on its

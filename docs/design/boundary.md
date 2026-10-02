@@ -139,7 +139,10 @@ JavaScript to test it. `sync` anywhere else in the signature — around a type t
 written out, or on a function the platform hands back — is `misplaced_sync`. *Amended 2026-10-02 (R47-4):* a platform package may also write `sync` in an ordinary beni
 declaration's signature, where it demands the same of every caller
 ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15.2 item 1); a user
-package may not.
+package may not. *Amended 2026-10-02 (research 48 decision 10):* core is such a package (§2), and
+the owner chose this mark — not a `foreign` — for `Ref.update` and `Ref.modify`'s function
+parameter, so that their read and write cannot be split by another fiber; `transparent-effects-proposal.md`
+§17.2 says what the mark promises there. Nothing in the check changes.
 
 Four checks run at build time, and all four are things Elm does not do:
 
@@ -2231,6 +2234,9 @@ promise (its own documentation) and a release build renames fields, so a program
 formats it. No `debug` level (that is `Debug.log`'s job in development), no structured fields, no
 reporting hook and no log context (A7's third slot) — each can be added without changing these
 three. Being `impure`, a call is never dropped by `--release`, and an unused `Log` costs nothing.
+*Superseded 2026-10-02 by §9.8.15 (b):* `Log` moves into core with these three signatures and
+their output unchanged, and gains levels, annotations, spans, a minimum and sinks
+(`transparent-effects-proposal.md` §17.11).
 
 *As built, 2026-10-01* (`platforms/html/Html.beni`; `platforms/browser/`: `Listen.beni`,
 `Browser/Events.beni`, `Browser/Navigation.beni`, `Url.beni`/`.js`, `Random.beni`,
@@ -3340,6 +3346,42 @@ fiber); `Random.generate` (no fiber) **1 955 → 2 121** (+166); the `Http` + `T
 and its abandonment, finaliser boundaries, the culprit's recovery and the registry). The `bench/ui`
 table app is a `Tea.sandbox` and builds to the same bytes; the fiber benchmark (`bench/fiber`,
 Node) moved within its run-to-run noise.
+
+#### 9.8.15 Time, the log and a program that cannot wake, per platform (2026-10-02)
+
+*Added 2026-10-02*, with the owner's adoption of research 48's decisions. The APIs are core's and
+their contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §17; this
+section records only what each platform changes, so a platform author finds it here.
+
+**(a) Time moves into core** (§17.6). `browser`'s `Time.Duration` becomes an alias of core's
+`Duration.Duration`; `Time.millis`, `Time.seconds` and `Time.inMillis` stay, as calls of core's
+`Duration.millis`, `seconds` and `toMillis`; `Time.sleep` is `Task.sleep`, which waits on the
+calling fiber's clock; `Time.now` reads `Clock.now`. `Http`'s `timeout : Maybe Duration` and every
+page's signatures are unchanged, and a page that never calls `Clock.run` still runs on the host's
+`setTimeout` and `Date`, so the test driver's virtual clock governs it as before. `node`'s
+`Io.sleep : Int → ()` keeps its signature as `Task.sleep (Duration.millis ms)`, and `Io.js`'s
+`startTimer` is deleted.
+
+**(b) The log moves into core** (§17.11). `platforms/browser/Log.beni` is removed; core's `Log`
+keeps `info`, `warn` and `error : String → ()` with the same output on a page (the default sink is
+the console method for the level), adds `trace`, `debug`, `log`, `annotate`, `span`, `minimum` and
+`withSink`, and `browser-tea` re-exports it as it re-exported the browser's. A platform replaces the
+default sink with `Log.setSink`; **`node`'s `Io.run` installs one that writes a `logfmt` line per
+entry to standard error.** §9.8.10 (d) is superseded by this paragraph.
+
+**(c) A Node program that can never wake ends, with exit 1** (§17.10; A8's "never a silent exit
+0"). `Io.run` sets the exit code to 1 when it starts its fiber, which the fiber's end overwrites as
+today (the program's code, or 130). When Node's event loop is about to empty (`beforeExit`) and that
+fiber has not ended, `Io.js` writes *"beni: the program cannot go on: every fiber is waiting for
+something that can never happen."* to standard error, schedules nothing, runs no finaliser, and the
+process exits 1 — the ending §9.8.14 (k) gives Node's defects. **When `Io.run`'s fiber ends,** after
+its output and exit code, `Io.js` calls `Task.shutdown` with a deadline of 1 000 ms, so a fiber
+still running — a `Task.spawnDetached` one — is cancelled and cleaned up rather than keeping the
+process alive. A page is not affected: it is alive while it is open.
+
+**Nothing else moves.** `Tea`'s command table and policies, `Sub.listen`, `Dom.rendered` and the
+teardown of §9.8.14 are unchanged; the combinators of §17.7 cancel and wait exactly as
+`closeScope` does, so they inherit §9.8.14 (e)'s order and its deadline.
 
 ## Appendix — what is deliberately not done
 

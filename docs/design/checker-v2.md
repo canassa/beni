@@ -5382,6 +5382,17 @@ section says only where it sits in this checker.
   class reaching a demand and publishes it `sync`, and `Sync.check` reports it at the word when the
   body makes it suspend. Lowering refuses the word (`misplaced_sync`) in a package that may not
   write `foreign`; the parser reads it in every top-level annotation.
+- *Amended 2026-10-02 (research 48 decision 10; `transparent-effects-proposal.md` §17.2):* **core
+  is a package that may write `foreign`** (`boundary.md` §2), so the bullet above already covers a
+  `sync` in core's own beni signatures — lowering admits it under `options.core` as under
+  `options.platform`, and `core/Schema.beni` relies on it. The owner chose this form for
+  `Ref.update : Ref a, sync (a → a) → ()` and `Ref.modify : Ref a, sync (a → b × a) → b`: each is
+  a `DemandKind.signature` demand in its own graph, published `sync` in its summary, so every use
+  demands its copy and a suspending argument is `sync_boundary` there, with the chain; a body of
+  core's that made the class suspend would be refused at the word. **No checker change**: no new
+  demand kind, code, interface bit or format version. Its fixtures are §17.2's
+  (`check/bad/RefUpdateSuspends`, `check/bad/RefUpdateWrapperSuspends`,
+  `check/good/RefUpdateImpure`).
 
 ## 28. Amendment of 2026-10-01: the boundary rows
 

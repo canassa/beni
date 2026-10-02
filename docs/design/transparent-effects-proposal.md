@@ -51,6 +51,13 @@ module; and library traversals get source order (§5), landing with the pending 
 whether `List` becomes an array-backed sequence. The first slice, inference, is §14; the second,
 the `sync` check, is §15.
 
+**The owner's decisions, 2026-10-02.** The eighteen choices of
+[`research/48`](research/48-effect-parity-ledger.md) §5 — the road to feature and quality parity
+with Effect v4 — are taken as recommended, except the tenth: `Ref.update`'s atomicity is a `sync`
+mark in core's own beni signature, not a JavaScript `foreign`. §17 is the contract for the APIs
+they settle (slices P1–P5, and the logging and tracing of P7–P8, of
+[`plans/effects-plan.md`](../../plans/effects-plan.md) §8); §6.5's list is superseded by it.
+
 **What it assumes, already decided elsewhere.** No automatic currying, `_` placeholder, pipe-first
 `|>`, n-ary types `Int, Int -> Int`, and a rest-of-block bind `let x <- e` (`fast-compiler.md`
 §9.3). JavaScript is the target, and a modern one. Errors are `Result` values and `?` unwraps them
@@ -648,6 +655,27 @@ Queue.take       : Queue a → a
 Queue.put        : Queue a, a → ()
 RateLimiter.with : RateLimiter, (() → a) → a
 ```
+
+*Amended 2026-10-02 (the owner's adoption of research 48's decisions; §17 is the contract):* **the
+signatures above are superseded** and are kept only so the argument below stays readable. What
+replaces each:
+
+| Above | Now | Why |
+|---|---|---|
+| `Fiber.join : Fiber a → Result Cancelled a` | `Task.join : Fiber a → a` (propagates) and `Task.wait : Fiber a → Exit a` (observes), as built (§16.5) | A1, A2: a defect is fatal and `Exit a = Done a \| Cancelled` |
+| `Fiber.cancel`, `Scope.spawn` | `Task.cancel`, `Task.spawnIn`, as built | a nullary method cannot be dot-called (`static-dispatch-spike.md` §1.1), so these are qualified calls of `Task` |
+| `Task.bracket : (() → r), (r → ()), (r → a) → a` | `Task.bracket : (() → r), (r, Exit a → ()), (r → a) → a`, as built | A3: the release sees the outcome |
+| `Task.par2` | `Task.par`, `Task.par3`, `Task.parOk` (§17.7) | one name per arity; `parOk` is the fail-fast form research 48 §0 finding 4 forces |
+| `Task.parAll : Int, List (() → a) → List a` | `Task.forEach : List a, Int, (a → b) → List b` and `Task.forEachOk` (§17.7) | subject first; the bound stays mandatory |
+| `Task.race : List (() → a) → a` | `Task.race`, `Task.raceAll`, `Task.raceOk` (§17.7) | a first argument makes the list non-empty; `raceOk` is Effect's `race` on a `Result` |
+| `Task.timeout : Int, …` | `Task.timeout : Duration, (() → a) → Maybe a` (§17.7) | A12 (3): `Duration`, not a bare `Int` |
+| `Task.retry : Int, …` | `Task.retry : Schedule e, (() → Result e a) → Result e a` and `Task.repeat` (§17.8) | A4: a `Schedule`, not a count |
+| `Semaphore.with` | `Semaphore.withPermit`, `Semaphore.withPermits` (§17.9) | Effect's names; FIFO (decision 8) |
+| `Queue.take : Queue a → a`, `Queue.put` | `Queue.take : Queue a → Maybe a`, `Queue.offer : Queue a, a → Bool` (§17.9) | decision 9: `Nothing` once ended and drained; Effect's `offer` |
+| `RateLimiter.with` | **not in this adoption** | Effect v4 keeps its rate limiter in `unstable/persistence` over a store; a `Semaphore` and `Task.sleep` write one, and it waits with `Pool` for the batteries slice (`plans/effects-plan.md` §8, P9) |
+
+The three obligations below hold unchanged for the new signatures: the bound is mandatory, every
+argument is a thunk, and a cancelled waiter is removed from every waiter list.
 
 **All eleven are available, and that is the point of the decision.** `research/16` §5.6: seven of
 the eleven — spawn/join, scope, bounded parallel, retry, semaphore, queue, rate limiter — are free
@@ -1488,6 +1516,14 @@ Six places, each a boundary where a beni function is called by something that ca
    makes the class suspend itself (by unifying the parameter with a function that suspends) is
    `sync_boundary` at the word, *"`program`'s signature marks this function `sync`"*, with the
    chain. A mark on a `foreign` is read as before.
+
+   *Amended 2026-10-02 (the owner's decision 10 of research 48):* **core is one of the packages
+   this paragraph means.** `boundary.md` §2 gives core every privilege a platform package has, and
+   lowering already admits the word in both (`core/Schema.beni`'s `mapping` and `recursive` use
+   it). The owner took the rule as the way `Ref.update` and `Ref.modify` promise atomicity —
+   beni over `Js`, with no `foreign` and no sibling — rather than research 48's two-line `foreign`.
+   §17.2 says what the mark promises there and what it does not; nothing in this item, in §15.3–
+   §15.5 or in the checker changes.
 2. **A `foreign`'s `where` evidence.** §14.3 rule 6 already says the sibling calls its evidence
    during the call; it calls it from JavaScript, synchronously — `core/List.js`'s `eq` loop is the
    case (plan §2.1). So every `where` type of a `foreign` is `sync`, with nothing written.
@@ -1922,3 +1958,925 @@ in Firefox. Measurements, against Effect v4 in both hosts, are
 3.4 ms, and a release program using a scope, a bracket, a spawn, a join and a sleep is 2 114 bytes
 brotli against Effect's 26 878 for the same program; the budget of 64 keeps
 a page painting through a loop of pure yields. Everything in §16.7 remains undone.
+
+---
+
+## 17. The adoption: Effect parity, as specified (2026-10-02)
+
+**Status: normative** for slices P1–P5 of [`plans/effects-plan.md`](../../plans/effects-plan.md) §8
+(the kernel's last pieces, time, the structured combinators, schedules, coordination), for the
+logging and tracing of P7–P8, and for the Node rule research 48's finding 3 asks for. It is slice
+P0: specification, no code. Where this section and §6.5 disagree, this section wins (§6.5's
+amendment of the same day lists what it supersedes); where it and §16 disagree about something §16
+built, §16 stands and this section is wrong. The ledger and its evidence are
+[`research/48`](research/48-effect-parity-ledger.md); the kernel's port to beni, which several of
+the additions here ride on, is [`research/49`](research/49-task-kernel-in-beni.md) and
+`plans/core-in-beni.md` step 2 (K1–K5).
+
+**The owner's decisions (2026-10-02).** Research 48 §5's eighteen are taken as recommended, with one
+change:
+
+| # | Decided |
+|---|---|
+| 1 | `core/Duration` and one `Task.sleep : Duration → ()` over the fiber's clock; `Time.Duration` an alias; `Time.sleep` and `Io.sleep` calls of `Task.sleep` (§17.6) |
+| 2 | a virtual clock in core — `Clock.virtual`, `adjust`, `run` — in a fiber slot (§17.5, §17.6) |
+| 3 | programs may write coordination primitives: `Task.resume` and a public `Ref` (§17.3, §17.4) |
+| 4 | `race`/`raceAll` = first to return; `raceOk` = first `Ok`, every `Err` when none (§17.7) |
+| 5 | separate fail-fast `…Ok` forms, `forEachOk` and `parOk` (§17.7) |
+| 6 | the concurrency bound of `forEach` is a mandatory `Int` (§17.7) |
+| 7 | `Schedule` is a closure returning the next schedule, with a pure `step` handed the random draw; v4's names (§17.8) |
+| 8 | `Semaphore` is FIFO (§17.9) |
+| 9 | `Queue.end`, and `take : Queue a → Maybe a` (§17.9) |
+| **10** | **changed by the owner:** `Ref.update` and `Ref.modify` are beni, their function parameter marked `sync` in core's own signature — not a JavaScript `foreign` (§17.2) |
+| 11 | `Task.spawnDetached`, a root in the teardown's registry (§17.3) |
+| 12 | `Task.uninterruptibleMask` with a `Restore` token (§17.3) |
+| 13 | four fixed fiber slots: clock, scheduler, log context, random seed (§17.5) |
+| 14 | core `Log` with levels, `annotate`, `span`, `minimum` and platform sinks; the browser's `Log` moves into core (§17.11) |
+| 15 | `core/Trace` with `span` now; compiler-emitted spans later (§17.11) |
+| 16 | a Node program that can never wake is reported and exits 1 (§17.10) |
+| 17 | no `Stream` in v1 |
+| 18 | no `startImmediately` knob unless a measurement asks for one (§17.7, *How a combinator starts its children*) |
+
+**Conventions.** Signatures are in today's syntax (`λ`, `→`, `▷`, `…`, `×`; `language.md` §12.7).
+Every function is subject first, saturated and uncurried; wherever Effect takes an `Effect` value
+this takes a thunk `() → a`, never a started computation (§6.5's second obligation). Names are
+Elm's where Elm has the concept, Effect's otherwise, with `wait` for Effect's `await` (a reserved
+word of the target, the precedent `Task.wait` set). A nullary method cannot be dot-called, so these
+are qualified calls: `Queue.take q`, `Task.join fiber`. Effects are inferred: no signature below
+says `suspends`, and the rung each function publishes is what its body makes it. Where the rung
+matters — an `impure` that `--release` must keep — it is stated (a `-- impure` comment, or "rung"
+in the text), and a slice whose function infers otherwise has a defect. **Citations** are research 48's: `Effect.ts:N` is
+`references/effect/packages/effect/src/Effect.ts` line N at `4.0.0-rc.116`, `effect.ts:N` is
+`src/internal/effect.ts`, any other `Module.ts:N` is `src/Module.ts`.
+
+**Where the code lives.** Every function here is beni. Those marked **K** change the fiber kernel
+and land in `core/Task.beni` after the kernel's port (`plans/core-in-beni.md` K3, as its K5); the
+rest is library code over the kernel's public operations and over `Js`, in its own core module.
+No new `foreign` and no new sibling is introduced by this section.
+
+### 17.1 What every API here owes
+
+1. **Cancellation is prompt and leaves nothing behind.** Every function that parks does so through
+   `Task.callback`, whose canceller **removes the waiter** from whatever list holds it — Effect's
+   one mechanism for the same obligation (`Deferred.ts:174-187`, `Semaphore.ts:207-223`) and §6.5's
+   third. A cancelled waiter is never handed a value, never counted, and never blocks a waiter
+   behind it.
+2. **A combinator returns only after the fibers it started have finished their cleanup** (A10).
+   Every child a combinator starts lives in a `Task.scope` the combinator opens, so the scope's end
+   cancels and awaits whatever is left, and a cancellation of the calling fiber reaches the
+   children first (A11).
+3. **One fiber runs at a time, and the runtime switches only at a suspension point** (§16.4). This
+   is the fact `Ref.update`'s atomicity, every waiter list here and every "in order" below rest on:
+   `Task.resume`, `Deferred.complete`, `Queue.offer` and the rest **queue** a woken fiber, never run
+   it inside the call that woke it. The one piece of other code an `impure` operation may run
+   inside itself is a wait's canceller (§6.2), which is `sync` and belongs to the primitive.
+4. **No runtime error, and no catch (`CLAUDE.md` rule 9).** Nothing here calls a host API that
+   documents a failure: the clock and timers are `Date.now`, `setTimeout` and `clearTimeout`, the
+   log's sinks `console` and `process.stderr.write`. So nothing here catches anything, and a throw
+   that reaches any of it is a defect, handled as every defect is (§16.5; `boundary.md` §9.8.14).
+   An argument no meaning fits is given the nearest one that keeps the guarantee — each is listed
+   where it arises — rather than a crash, as Elm's `List.take -1` is `[]`.
+5. **Deterministic.** What a program observes — which waiter is served, which branch wins, the
+   order of results, every id — depends on the program and the scheduler's FIFO alone, never on a
+   hash, a timestamp or a host's timer resolution; on a virtual clock (§17.6), not on wall time
+   either. That is what lets a `run/` fixture print an order (`plans/effects-plan.md` §8, *Timing
+   fixtures never sleep for real*).
+6. **Code that does not use a slice pays nothing for it**: every `emit/` golden and run hash outside
+   the slice is unchanged, and `Reach.zig` keeps no function a program does not reach. The one
+   exception is §17.5's slots, four fields on the fiber record, which every program that runs a
+   fiber carries and K5 measures.
+
+### 17.2 `sync` in core's own signatures (decision 10)
+
+**What the owner changed.** Research 48 §3 put `Ref.update` and `Ref.modify` behind a two-line
+`foreign` because, it said, `sync` could be written only in a `foreign` signature. That was already
+out of date when it was written: R47-4 (§15.2 item 1, amended 2026-10-02) lets a package that may
+write `foreign` mark `sync` in the signature of **any** top-level declaration, and core is such a
+package (`boundary.md` §2: core may do what a platform may). Lowering admits the word when
+`options.core or options.platform` (`src/bir/Lower.zig`, `.type_sync`), and `core/Schema.beni`
+already marks `mapping`, `injection`, `recursive` and its conversions that way. So the decision
+needs **no change to the language or the checker**; it is that rule, used where it was needed:
+
+```elm
+--| Replace the value with what `f` makes of it. `f` must not suspend: no other
+--| fiber runs between the read and the write, so no update is lost.
+pub update : Ref a, sync (a → a) → ()
+update ref f = set ref (f (get ref))
+
+--| Like `update`, and also return something computed from the old value.
+pub modify : Ref a, sync (a → b × a) → b
+modify ref f =
+    ( result, next ) = f (get ref)
+    _ = set ref next
+    result
+```
+
+**What the mark means there, exactly.** Read as §15.2 item 1's amended paragraph reads it:
+
+- It is a **demand in `update`'s own graph** on the class of `f`'s function type, attributed to the
+  word. `update`'s summary therefore publishes that class `sync` whatever the body does with it
+  (§15.3), and **every use of `Ref.update`, in any module, demands its copy**: a function that may
+  suspend, passed there directly, through a `let`, through a record or through another function's
+  parameter, is `sync_boundary` at the argument, with the one-hop chain (§15.4). A wrapper a
+  program writes — `bump r = Ref.update r (λn → n + 1)`, or one that takes the function as a
+  parameter — publishes the demand on, with nothing written (§15.3, first bullet).
+- **A body that made the marked class suspend itself** would be `sync_boundary` at the word in
+  `core/Ref.beni`, *"`update`'s signature marks this function `sync`"* — the mark is checked against
+  core's own code, not trusted, which is the reason to prefer it to a `foreign` whose sibling no
+  check reads.
+- **It is not a type.** `sync (a → a)` unifies with any `a → a`; the demand rides beside
+  unification (§15.1).
+
+**What it buys, stated as a guarantee.** A function that cannot suspend runs from its first
+instruction to its return without any other fiber running (§17.1 item 3), so between `get` and
+`set` nothing else can write the cell, and **no update is lost**. Effect states the same of its
+`Ref.update` (`Ref.ts:573`, whose body is `self.ref.current = f(self.ref.current)`), where it
+holds because an `Effect`'s plain function argument cannot run effects.
+
+**What it does not promise.** `sync` refuses suspension, not impurity. An `f` that is itself
+`impure` may write the same `Ref` — an `f` that calls `Ref.set r 0` and then returns `n + 1` —
+and then `update`'s own write, which comes last, wins. That is a deterministic consequence of the program's own code,
+not a race, and it is what Effect's `update` does with a function that writes the cell; the doc
+comment says so. A program that needs an update which itself waits — a read, a request, then the
+write — uses `Ref.Locked` (P9), a `Ref` behind a one-permit `Semaphore`, exactly Effect's
+`SynchronizedRef` (`SynchronizedRef.ts:307`).
+
+**Which other core signatures carry it.** Every function parameter in this section that core
+calls synchronously, during the call: `Ref.update`'s and `modify`'s `f`, a log sink and a trace
+exporter (§17.11). A thunk the runtime runs in a fiber — a spawned body, a combinator's branch,
+the work `retry` repeats — is left unmarked (report 43 §9.6), because waiting is what a fiber is
+for.
+
+**Fixtures.** `check/bad/RefUpdateSuspends` (a function that calls `Task.sleep` handed to
+`Ref.update`: `sync_boundary` at the argument, the chain naming `Task.sleep`);
+`check/bad/RefUpdateWrapperSuspends` (the same through a program's own wrapper that takes the
+function as a parameter: the demand published on, the error at the wrapper's caller);
+`check/good/RefUpdateImpure` (an `impure` function, which `Log`s, is accepted).
+
+### 17.3 The kernel's last pieces (P1)
+
+```elm
+-- core/Task.beni — additions
+pub resume : Resume a, a → ()                                   -- K
+pub never : () → a
+pub poll : Fiber a → Maybe (Exit a)                             -- K
+pub joinAll : List (Fiber a) → List a
+pub cancelAll : List (Fiber a) → ()
+pub spawnDetached : (() → a) → Fiber a                          -- K
+pub foreign type Restore                                        -- K: opaque, as `Fiber` is
+pub uninterruptibleMask : (Restore → a) → a                     -- K
+pub restore : Restore, (() → b) → b                             -- K
+pub onExit : (() → a), (Exit a → ()) → a
+pub defer : Scope, (Exit () → ()) → ()                          -- K
+```
+
+**`resume r value`** — rung `impure`. Hands `value` to the fiber waiting on `r` (the `Resume` a
+`Task.callback` registration was given) and queues it; the waiting fiber runs at a later turn,
+never inside `resume` (§17.1 item 3). One-shot: a second `resume` of the same `Resume`, a `resume`
+after the waiting fiber was cancelled (its wait is done, §6.2 item 3), and a `resume` during the
+teardown's *stopping* phase all do nothing (`boundary.md` §9.8.14 (d) step 6; research 48 §4.1). A
+`resume` called while the registration function is still running answers the wait at once, with no
+park, as a platform's synchronous callback does today (`Task.callback`'s documentation). It is the
+one function that lets a program — not only a platform, through `Js` — finish a wait it started,
+and with `Ref` it makes every primitive of §17.4 and §17.9 ordinary beni (research 48 §0 finding
+2). **The `Y` sentinel cannot leak through it**: `resume` is `impure`, never `suspends`, and passes
+a beni value to a JavaScript function the kernel made; no beni value is the sentinel (§16.1).
+Effect: the `resume` its `callback` hands out (`effect.ts:1218`), which a program may hold and call.
+
+**`never ()`** — parks forever: a `callback` whose registration keeps nothing and whose canceller
+does nothing. Cancelling the fiber ends the wait like any other. Under Node a program whose every
+fiber is in `never` is §17.10's case. Effect: `Effect.never` (`effect.ts:1227`,
+`callback(constVoid)`).
+
+**`poll fiber`** — rung `impure`. `Just` the fiber's `Exit` once it has ended, `Nothing` while it
+runs, without waiting. A fiber that is cancelled but still running its cleanup is running, as
+`Task.running` already says. Effect: `pollUnsafe` on the fiber (`Fiber.ts:86`).
+
+**`joinAll fibers`** — waits for every fiber in the list, then: when any ended `Cancelled`, the
+caller is cancelled (as `join` of that fiber would cancel it, A2); otherwise their values, in list
+order. It waits for all before deciding, as Effect's `Fiber.joinAll` (`Fiber.ts:330`) awaits every
+fiber before it fails; a list that names one fiber twice waits once and gives its value twice.
+**`cancelAll fibers`** — interrupts every fiber in the list, in list order, then waits until all
+have ended; Effect's `interruptAll` (`effect.ts:934`: interrupt each, then await all). Neither
+takes ownership: a fiber that belongs to a scope still belongs to it.
+
+**`spawnDetached work`** — rung `impure`. Starts `work` in a fiber that is **not** a child of the
+current one: it is a root, kept in the registry of roots that `boundary.md` §9.8.14 (c) built, so
+it outlives the fiber that started it, is not cancelled when that fiber ends, and is reached by
+`Task.shutdown` with every other root. It inherits the four slots of §17.5 from the fiber (or the
+outside-any-fiber record) that started it, as Effect's `forkDetach` keeps its parent's context
+(`Effect.ts:8704`, `effect.ts:5477`). What ends it is its own end, `Task.cancel`, or a shutdown —
+on a page the defect teardown, on Node the end of `Io.run` (§17.10). Its children are its own, as
+any fiber's are.
+
+**`uninterruptibleMask λrestore → …`** and **`restore token work`.** The mask runs its function
+uninterruptibly, exactly as `uninterruptible` does, and hands it a `Restore` token. `restore token
+work` runs `work` with the interruptibility that held **where the mask was entered** — so inside a
+mask entered from interruptible code, `work` is interruptible, and inside a mask entered from an
+uninterruptible region it is not — and puts the mask's back when `work` ends, either way. Effect:
+`uninterruptibleMask(restore => …)` (`Effect.ts:7422`, `effect.ts:4550`), whose `restore` is a
+function polymorphic in its effect; a token plus a function of it needs no rank-2 type (research 48
+§2.2). An interrupt latched while masked is delivered at the next suspension point inside the
+restored region, or after the mask at the next suspension point there — beni's rule (§16.4, report
+43 §9.2 rule 2), not Effect's moment of unmasking, for the reason `boundary.md` §9.8.14 (a) gives.
+**A token used where it cannot mean anything** — after its mask has returned, or by a fiber other
+than the one that entered the mask — runs `work` with the interruptibility it already has: it
+restores nothing, never unmasks someone else's region, and is not an error. `bracket` is unchanged;
+`Semaphore.withPermits` (§17.9) is the first library user, as `Semaphore.ts:289` is Effect's.
+
+**`onExit work finally`** — `bracket` with no resource: runs `work`, then `finally` with `Done
+value` or `Cancelled`, uninterruptibly, and returns the value (or goes on being cancelled).
+Effect's `onExit` (`Effect.ts:6987`); `ensuring` and `onInterrupt` are a `case` on the `Exit`.
+`finally` may suspend, as every finaliser may (§16.4).
+
+**`defer scope finally`** — a finaliser on a **scope** rather than on an expression: it runs when
+the scope closes, after the scope's fibers have been cancelled and awaited (A11), **last added
+first**, uninterruptibly, told `Done ()` when the scope's function returned and `Cancelled` when
+the fiber running it was cancelled. Added to a scope that has already closed, it runs **at once**,
+in the calling fiber, told `Cancelled` — Effect's rule for a finaliser added to a closed scope
+(report 23 case 4.3; `Scope.ts:348`). A root scope's deferred finalisers run when `closeRoot`
+closes it, in one fiber `closeRoot` starts for them (it does not wait, as it waits for nothing
+else), and at a teardown with the root's other cleanup.
+
+### 17.4 `Ref` and `Deferred` (P1)
+
+```elm
+-- core/Ref.beni
+pub opaque type Ref a
+pub make : a → Ref a                     -- impure: a new cell
+pub get : Ref a → a                      -- impure
+pub set : Ref a, a → ()                  -- impure
+pub update : Ref a, sync (a → a) → ()
+pub modify : Ref a, sync (a → b × a) → b
+
+-- core/Deferred.beni
+pub opaque type Deferred a
+pub make : () → Deferred a               -- impure
+pub wait : Deferred a → a                -- parks until completed
+pub complete : Deferred a, a → Bool      -- impure: True if this call completed it
+pub poll : Deferred a → Maybe a          -- impure
+pub isDone : Deferred a → Bool           -- impure
+```
+
+**`Ref`** is a mutable cell that any fiber may read and write — Effect's `Ref` (`Ref.ts:173`,
+`:200`, `:236`, `:573`, `:461`) and the `Js.Ref` core and the platforms already have, offered to
+every program (decision 3; rule 7: nothing withheld). **Every operation must infer `impure`**, the
+owner's A5 where it is load-bearing: `make` because two cells made by two calls are two identities
+and `--release` may not merge them, `get` because two reads around a `set` are two different values
+and `--release` may not memoise one into the other (report 22 §4.1). `Js.ref` is `pure`, so `make`
+cannot be a bare `Js.ref`; its body builds its cell with an operation that is `impure`, and the
+fixtures below are what proves it. `update` and `modify` are §17.2's. There is no `getAndSet`,
+`updateAndGet` and the like: each is a `modify` (`Ref.ts:59-747` has a dozen of them, every one a
+`modify` with a fixed function).
+
+**`Deferred`** is a value that is completed once and waited for by any number of fibers — Effect's
+`Deferred` (`Deferred.ts:172`, `:174`, `:261`, `:701`, `:749`). **`wait d`** returns the value at once
+when `d` is complete, and otherwise parks until it is; a cancelled waiter is removed from the
+waiter list by its canceller (`Deferred.ts:179-186` is the model, line for line). **`complete d
+value`** completes `d` and returns `True`, then queues every waiter, **in the order they began to
+wait**; when `d` was already complete it changes nothing and returns `False` — the first completion
+wins (report 23 case 6.1). `fail`, `die` and `interrupt` are not offered: a failure is a `Result`
+carried in `a`, a defect is fatal (A1), and a waiter that should stop is cancelled. Both modules
+are beni over `Js` and `Task.callback`/`Task.resume`; neither is a kernel change.
+
+**Fixtures.** `run/RefModify` (`update`, `modify`, `set`, `get`; both builds);
+`run/RefMakeDistinct` (two `Ref.make 0` in one function are two cells under `--release`);
+`run/RefReadsKeptInRelease` (two `Ref.get`s around a `Ref.set` read two values in both builds);
+`run/RefUpdateAcrossFibers` (two fibers each `update` the same cell 1 000 times, yielding between
+updates: 2 000, every time); `run/DeferredWaitComplete` (three waiters woken in wait order, the
+value read by `poll` and `isDone`); `run/DeferredSecondComplete` (`True`, then `False`, the first
+value kept); `run/DeferredWaiterCancelled` (a cancelled waiter is removed: the next `complete`
+reaches the live waiter and nothing else); `run/TaskShutdown` gains a `Deferred` waiter (research
+48 §4.1). For §17.3: `run/ResumeOneShot` (report 23 row 3: the second `resume` does nothing),
+`run/ResumeAfterCancel`, `run/CancelReentrant` (row 8), `run/UninterruptibleLatch` (row 11),
+`run/UninterruptibleMaskRestore` (row 13: interruptible inside `restore`, not outside it),
+`run/RestoreOutsideMask` (a token used after its mask, and by another fiber, restores nothing),
+`run/SpawnDetached` (row 24: it still runs after its parent ends, and `Task.shutdown` reaches it),
+`run/PollFiber`, `run/JoinAllCancelAll`, `run/OnExitSeesOutcome`, `run/ScopeDeferLifo`,
+`run/ScopeDeferAfterClose` (runs at once, told `Cancelled`).
+
+### 17.5 The fiber's four slots (decision 13)
+
+A7 refused a general `Context` and allowed a few fixed per-fiber slots; Effect v4 made the same
+move when it replaced `FiberRef` with `Context.Reference` (`Context.ts:1325`; research 48 §2.6).
+The fiber record gains **four fields** — the one literal keeps one hidden class (research 49 §2) —
+and the outside-any-fiber record the same four:
+
+| Slot | Holds | Default | Read by |
+|---|---|---|---|
+| **clock** | the real clock, or a `Clock.Virtual` (§17.6) | the real clock | `Task.sleep`, `Clock.now`, `Log`'s time and spans, `Trace`'s times, `retry`/`repeat`'s elapsed time, `Time.now` |
+| **scheduler** | the scheduler the fiber's resumptions are queued on | the one scheduler of §16.4 | the kernel. **No API in this section writes it**: it exists so that a deterministic scheduler for tests can be installed per subtree later without adding a field to every fiber (report 21 §8.4: retrofitting one means threading it through every primitive) |
+| **log context** | the annotations, the log spans, the minimum level and a sink override (§17.11), and the current trace span | none, none, `Info`, none, none | `Log`, `Trace` |
+| **random seed** | `Maybe` a seed of core's `Random.Pcg` | `Nothing` | `retry`/`repeat`'s jitter (§17.8); `Random.withSeed` and the platforms' `Random.value` (P9) |
+
+**Inheritance.** A fiber started by `spawn`, `spawnIn`, `spawnDetached` or a combinator of §17.7
+copies its starter's four fields **by reference** at the start — Effect's fork copies the parent's
+context the same way. A fiber `Task.start` makes (a platform's root) gets the defaults. Every slot
+value is immutable, so sharing one is safe: a change makes a new value.
+
+**Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
+`Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set
+the field on the current fiber (or the outside record), run their function, and put the old value
+back when it ends — returned or cancelled, as an `onExit` finaliser would. A fiber started inside
+keeps what it copied, after the function has returned. There is no `set` for a slot.
+
+**Cost.** Four fields written per fiber start, one read where a slot is used. K5 measures spawn and
+join against research 49 §4.3's figures; a reproducible loss is a wall reported to the owner, never
+a reason to drop a slot (`CLAUDE.md` rule 10).
+
+### 17.6 Time: `Duration`, `Task.sleep`, `Clock` (P2)
+
+```elm
+-- core/Duration.beni
+pub opaque type Duration                 -- whole milliseconds, never negative; eq and compare derived
+pub zero : Duration
+pub millis : Int → Duration
+pub seconds : Int → Duration
+pub minutes : Int → Duration
+pub hours : Int → Duration
+pub toMillis : Duration → Int
+pub sum : Duration, Duration → Duration
+pub times : Duration, Float → Duration
+
+-- core/Task.beni
+pub sleep : Duration → ()                                        -- K: through the clock slot
+
+-- core/Clock.beni
+pub now : () → Int                       -- impure: epoch milliseconds, through the clock slot
+pub opaque type Virtual
+pub virtual : Int → Virtual              -- impure: a new clock reading these epoch milliseconds
+pub run : Virtual, (() → a) → a
+pub adjust : Virtual, Duration → ()
+```
+
+**`Duration`** is a length of time in **whole milliseconds, never negative**: `millis`, `seconds`,
+`minutes` and `hours` clamp a negative count to `zero`, `times` rounds to the nearest millisecond
+and clamps at `zero`. Effect's `Duration` (`Duration.ts:691`, `:707`, `:723`, `:788`, `:1408`
+`times`, `:1488` `sum`) also carries nanoseconds, infinities and negative lengths
+(`Duration.ts:402-419`); beni's timers count milliseconds, nothing here waits forever but
+`Task.never`, and a negative wait has no meaning, so the type stays one non-negative `Int` and its
+derived `compare` is the order of lengths. The names are Effect's (Elm has no duration); the
+browser's `Time.inMillis` stays as `Time`'s own name for `toMillis`.
+
+**`Time.Duration` becomes an alias** of `Duration.Duration`, and `Time.millis`, `Time.seconds` and
+`Time.inMillis` stay, as calls of core's (research 48 §4.2), so `Http`'s `timeout : Maybe Duration`
+and every page signature are unchanged. `Time.sleep` is `Task.sleep`. `Time.now` reads `Clock.now`,
+so a page's code under `Clock.run` sees the virtual time. `Io.sleep` keeps its signature,
+`Int → ()`, as `Task.sleep (Duration.millis ms)`, and `Io.js`'s `startTimer` goes.
+
+**`Task.sleep d`** waits `d` on the calling fiber's clock; only that fiber waits. **A duration of
+`zero` does not park or yield** — it returns at once, on either clock, so `sleep` never doubles as
+`yieldNow` (Effect's test clock does the same, `testing/TestClock.ts:330`). On the real clock it is
+one host timer — `setTimeout` through `Js.global`, present in every host beni targets and already
+relied on by the teardown's deadline — whose canceller clears it; a wait longer than the timer's
+limit, 2³¹ − 1 ms, is a chain of timers, so it never fires early (both hosts clamp a longer delay to
+1 ms). On a virtual clock it registers a sleeper (below). Effect: `Effect.sleep` (`Effect.ts:4707`)
+over the `Clock` reference (`Clock.ts:51`).
+
+**`Clock.now ()`** is the epoch milliseconds of the calling fiber's clock: `Date.now()` on the real
+one, the virtual clock's reading on a virtual one. Effect's `Clock.currentTimeMillis`
+(`Clock.ts:265`). A page's or a process's own `Date` is not touched: the browser driver's
+host-level clock (`tests/corpus/README.md`) stays what a page that never calls `Clock.run` sees.
+
+**The virtual clock** is a reading and a list of sleepers, ordered by wake time and then by the
+order they began to sleep — Effect's `TestClock` (`testing/TestClock.ts:201`, `SleepOrder`).
+
+- **`Clock.virtual t`** makes one, reading `t`, with no sleepers. Two are independent.
+- **`Clock.run v work`** runs `work` with the clock slot set to `v` (§17.5), so `work` and every
+  fiber it starts — and the fibers those start — sleep on and read `v`.
+- **`Clock.adjust v d`** moves `v` forward by `d` (a `zero` changes nothing; time never goes back),
+  and returns once everything that moving it woke has run as far as it can:
+  1. **settle**: wait until no fiber but the caller is ready to run;
+  2. while the earliest sleeper's wake time is at or before the target: set the reading to that
+     time, resume **every** sleeper due at exactly that time, in the order they began to sleep, and
+     settle again — so a sleeper that the woken code registers, if it is due by the target, is
+     woken in the same `adjust`;
+  3. set the reading to the target, and return.
+
+  *Settled* means the scheduler's ready queue holds nothing but the caller: every fiber is parked,
+  has ended, or is the caller. It does not wait for host events — a real timer, a file read — which
+  a test on a virtual clock should not depend on. **Departure from Effect, with the reason.**
+  Effect's `adjust` yields **once** after waking each sleeper (`testing/TestClock.ts:361-366`), so a
+  woken fiber that yields more than once before it sleeps again can still be running when the next
+  sleeper wakes, and the interleaving a test prints depends on how many yields the code under test
+  happens to make. Settling makes the order a function of the program alone (§17.1 item 5).
+  `adjust` suspends; it is called by the test, outside `Clock.run`, typically from the fiber that
+  `spawn`ed the work under test.
+- **A sleeper that is cancelled is removed** (§17.1 item 1), so it is never woken, never counted
+  and never holds up a settle.
+- **A sleeper nobody will ever adjust for** is, under Node, a program that can never wake, and
+  §17.10 reports it — Effect logs a warning for a test that sleeps on a `TestClock` it never adjusts
+  (`testing/TestClock.ts:338`, `warningStart`); beni ends the program, exit 1.
+
+```elm
+-- Three fibers sleeping 30, 10 and 20 ms wake in time order, with no wall time:
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    sleeper = λms → λ() → Clock.run clock λ() →
+        _ = Task.sleep (Duration.millis ms)
+        Debug.log "woke" ms
+    fibers = List.map [ 30, 10, 20 ] λms → Task.spawn (sleeper ms)
+    _ = Clock.adjust clock (Duration.millis 30)
+    _ = Task.joinAll fibers
+    Node.print "done"
+```
+
+**Fixtures.** `run/VirtualClockSleepOrder` (the program above: 10, 20, 30);
+`run/VirtualClockInherited` (a child spawned inside `Clock.run` reads its parent's virtual clock,
+and keeps it after `run` returns); `run/VirtualClockNow` (`Clock.now` and `Time`-free arithmetic
+before and after an `adjust`); `run/VirtualClockSettles` (a woken fiber that yields three times
+before sleeping again finishes those steps before the next sleeper wakes);
+`run/VirtualClockSleeperCancelled`; `run/VirtualClockNeverAdjusted` (`.crash`: §17.10's report);
+`run/SleepZeroDoesNotYield` (another ready fiber does not run across a `sleep zero`);
+`run/DurationArithmetic` (clamping and rounding); page `browser/tea/SleepBeyondTimerLimit` (a
+2³¹ + 5 ms sleep on the driver's clock does not fire after `advance 1`, and does after the rest);
+every existing `browser/tea/` page unchanged.
+
+### 17.7 Structured combinators (P3)
+
+```elm
+-- core/Task.beni
+pub par : (() → a), (() → b) → a × b
+pub par3 : (() → a), (() → b), (() → c) → a × b × c
+pub parOk : (() → Result e a), (() → Result e b) → Result e (a × b)
+pub forEach : List a, Int, (a → b) → List b
+pub forEachOk : List a, Int, (a → Result e b) → Result e (List b)
+pub race : (() → a), (() → a) → a
+pub raceAll : (() → a), List (() → a) → a
+pub raceOk : List (() → Result e a) → Result (List e) a
+pub timeout : Duration, (() → a) → Maybe a
+```
+
+All nine are beni over `scope`, `spawnIn`, `wait`, `cancel` and `Deferred` (report 43 §11 item 9).
+**What they share:**
+
+- **Children in a private scope.** Each branch, or each call of `forEach`'s function, runs in its
+  own child fiber in a `Task.scope` the combinator opens, so §17.1 item 2 holds: the combinator
+  returns, or is cancelled, only after every child it started has ended and run its cleanup — a
+  loser, a sibling of the first `Err`, a timed-out body. The release a child's `bracket` runs is
+  therefore always printed **before** the value the combinator returns (research 48's
+  `run/RaceLosersCancelled`).
+- **Children see the caller's slots** (§17.5): a `timeout` inside `Clock.run` times out on the
+  virtual clock.
+- **A child that ends `Cancelled` by itself** — it joined a cancelled fiber, or cancelled itself —
+  is treated as `join` treats it (A2): the combinator cancels the other children, waits for them,
+  and the calling fiber is cancelled. The exceptions are the races, below, where such a branch
+  merely does not win.
+- **How a combinator starts its children.** Each child is queued as `spawnIn` queues it, in
+  argument or list order, so the first runs first. Effect forks its children with
+  `startImmediately` (`effect.ts`'s `iterateConcurrentImpl` calls `forkUnsafe(parentFiber, eff,
+  true, true)`), running each inline until it first suspends, and has a fast case for an item that
+  is already a value (`effect.ts:4965-4975`); beni's thunks are never values, and a queued start
+  costs one microtask drain for the whole batch, not a macrotask per child (decision 18). **P3's
+  measurement decides**: if `par` of two thunks that never park, or `forEach` over 10 000 such
+  items, is slower than Effect's `all`/`forEach` on the same work, the kernel gains a **core-private**
+  immediate start for the combinators — never a public knob — specified then. *This replaces the
+  plan's "forks no fiber": a child is a fiber whether or not it parks, because the protocol's
+  `resume` is bound to the fiber current when the wait is registered (`Task.js`'s `suspend`), so
+  work that may park needs a fiber of its own before it starts.*
+
+**`par a b`, `par3 a b c`** — run the thunks concurrently; their values, in argument order. Effect:
+`Effect.all` over a tuple with unbounded concurrency (`Effect.ts:492`).
+
+**`parOk a b`** — as `par`, for thunks that answer a `Result`: the **first `Err` to arrive**
+cancels the other branch, waits for its cleanup, and is the answer; `Ok` of both values otherwise.
+Effect's `all` is fail-fast on the first failure in the same way and waits for the siblings
+(report 23 case 3.2). It is the `Result`-aware half research 48 §0 finding 4 forces: beni's
+failures are values, invisible to a combinator that does not look for them.
+
+**`forEach xs bound f`** — calls `f` on every element, **at most `bound` calls in flight at once**,
+started in list order, each as the one before it ends; the results in **list order**. The bound is
+mandatory (§6.5's first obligation; `List.length xs` is how a program says "all at once"), and **a
+bound below 1 is 1**: the guarantee the bound buys is a ceiling, and 1 is the nearest ceiling that
+still runs the work (§17.1 item 4; Cats Effect's `require(n >= 1)` would be a crash). An empty list
+is `[]` and starts nothing. Effect: `forEach` with `concurrency` (`Effect.ts:777`).
+**`forEachOk xs bound f`** — as `forEach`, for a function that answers a `Result`: on the first
+`Err`, no further element is started, the calls in flight are cancelled and awaited, and that `Err`
+is the answer; `Ok` of every result, in list order, otherwise. `validate` and `partition` are
+`forEach` and then `Result.combine`/`Result.partition` (P9).
+
+**`race a b`, `raceAll first rest`** — run every branch concurrently; the **first to return** is the
+answer, and every other branch is cancelled and awaited before it is returned (A10). A branch that
+ends `Cancelled` by itself never wins; when every branch has, the calling fiber is cancelled.
+`raceAll`'s first argument makes the list non-empty by construction. Effect calls this `raceFirst`
+/ `raceAllFirst` (`Effect.ts:4904`, `:4807`): with no failure channel, "first to settle" and
+"first to succeed" differ only through `Result`, which `raceOk` handles.
+
+**`raceOk thunks`** — Effect's `race` (`Effect.ts:4847`, `effect.ts:1712`): the **first `Ok`** wins,
+and the rest are cancelled and awaited; an `Err` does not end the race (report 23 case 3.5). When no
+branch answers `Ok`, the answer is `Err` of every branch's error **in argument order** (report 23
+row 31), a branch that ended `Cancelled` contributing none. When every branch ended `Cancelled`, the
+calling fiber is cancelled. **An empty list is `Err []`** at once — the nearest meaning: no branch,
+so no success and no error (§17.1 item 4).
+
+**`timeout d work`** — runs `work` in a child; when it returns before `d` has passed on the caller's
+clock, `Just` its value; otherwise the child is cancelled, its cleanup awaited, and the answer is
+`Nothing` — **after** the cleanup, so `timeout 50` may take longer than 50 ms, and the doc comment
+says so (A10; report 23 case 3.7 measured Effect's at 255 ms). `work` that is `uninterruptible` when
+the time passes runs to its next suspension point first: a timeout is a request, not a guarantee
+(report 23 case 3.10). **A `d` of `zero` answers `Nothing` without starting `work`**, on either
+clock — the one reading that does not depend on how fast a timer fires. A child that ends
+`Cancelled` by itself cancels the caller. Effect's `timeoutOption` (`Effect.ts:4604`); P2 chose the
+`Maybe` (report 23 §0.2 row 6), and `Maybe.withDefault` is `timeoutOrElse`. HTTP's own per-request
+`timeout` (`boundary.md` §9.8.12) stays: it answers `Error.Timeout`, this cancels the fiber, which
+aborts the request through its canceller; `Http`'s doc says which to reach for.
+
+**Fixtures** (report 23 rows 25–33 under these names, both builds): `run/ParBoth`,
+`run/ParChildCancelled`, `run/ParOkFailCancelsSibling`, `run/ForEachOrder`, `run/ForEachBounded`
+(peak concurrency, counted in a `Ref`, never above the bound), `run/ForEachBoundBelowOne`,
+`run/ForEachOkFailFast`, `run/RaceLosersCancelled` (the loser's release logs before the winner's
+value), `run/RaceAllCancelled`, `run/RaceOkOneSideFails`, `run/RaceOkAllFail`, `run/RaceOkEmpty`,
+`run/TimeoutAwaitsCleanup` (on a virtual clock), `run/TimeoutUninterruptible`, `run/TimeoutZero`,
+`run/ParentFinalizerOrder` (row 23: children first, A11); pages `browser/tea/TimeoutAroundRequest`
+(a request to the faked slow service under `timeout` 500: after `advance 500`, `Nothing`, and
+`timers` 0) and `browser/tea/RaceTwoServices`.
+
+### 17.8 `Schedule`, `retry`, `repeat` (P4)
+
+```elm
+-- core/Schedule.beni
+pub opaque type Schedule i                -- a closure: Metadata i → Step i
+pub type Step i
+    = Continue Duration (Schedule i)
+    | Stop
+pub type alias Metadata i =
+    input : i
+    attempt : Int
+    elapsed : Duration
+    random : Float
+
+pub step : Schedule i, Metadata i → Step i
+pub delays : Schedule i, List i → List Duration
+pub fromStep : (Metadata i → Step i) → Schedule i
+
+pub recurs : Int → Schedule i
+pub spaced : Duration → Schedule i
+pub fixed : Duration → Schedule i
+pub exponential : Duration, Float → Schedule i
+pub fibonacci : Duration → Schedule i
+pub forever : Schedule i
+pub during : Duration → Schedule i
+pub jittered : Schedule i → Schedule i
+pub upTo : Schedule i, Duration → Schedule i
+pub while : Schedule i, (Metadata i → Bool) → Schedule i
+pub max : Schedule i, Schedule i → Schedule i
+pub min : Schedule i, Schedule i → Schedule i
+pub concat : Schedule i, Schedule i → Schedule i
+pub modifyDelay : Schedule i, (Metadata i, Duration → Duration) → Schedule i
+
+-- core/Task.beni
+pub retry : Schedule e, (() → Result e a) → Result e a
+pub repeat : Schedule a, (() → a) → a
+```
+
+**The representation** (decision 7, A4's sub-question). A schedule is a function from one step's
+**metadata** to a `Step`: `Stop`, or `Continue` with the delay before the next run and **the
+schedule to use for the step after it**. The next schedule carries whatever state the schedule
+needs — a counter, the last two Fibonacci delays, the start of a window — in its closure, so
+schedules of different state compose without an existential type, and every value is immutable.
+Effect's v4 `Schedule` is a step function plus one metadata record (`Schedule.ts:53`, `fromStep`
+`:250`, `toStep` `:344`, `InputMetadata` at `Schedule.ts:63-70`); beni keeps its metadata's
+`input`, `attempt` and `elapsed`, adds the **random draw** so that a step is a pure function, and
+drops the schedule's `Output`, which nothing here reads (`delays` is what a test of a schedule
+reads instead).
+
+- **`attempt`** counts from 1: the step after the first run is attempt 1. **`elapsed`** is the time
+  from the start of the first run to now, on the running fiber's clock. **`random`** is one draw in
+  [0, 1), made by the runner for every step whether or not the schedule reads it.
+- **`step s m`** applies a schedule. **`delays s inputs`** runs one purely — each input in turn, as
+  if each run took no time (`elapsed` is the sum of the delays so far) and every draw were 0.5 —
+  and returns the delays until it stops or the inputs run out. So a schedule is tested with no clock
+  at all, and jitter with chosen draws through `step`. `fromStep` writes a schedule of one's own.
+
+**The constructors and combinators** are v4's, by name and by meaning:
+
+| beni | Effect v4 | Delay, and when it stops |
+|---|---|---|
+| `recurs n` | `recurs` (`Schedule.ts:1169`) | zero; stops after `n` steps (`attempt ≤ n`), so `retry (recurs 2)` runs at most three times; `n < 1` stops at once |
+| `spaced d` | `spaced` (`:1198`) | `d` after each run; never stops |
+| `fixed d` | `fixed` (`:933`) | to the next multiple of `d` from the first start; a run longer than `d` is followed at once, and missed intervals are not replayed (its doc at `:907-908`) |
+| `exponential base factor` | `exponential` (`:850`) | `base × factor^(attempt − 1)`: 100, 200, 400 ms for `exponential (millis 100) 2.0`. Effect's `factor` defaults to 2; beni has no defaults, so it is written |
+| `fibonacci one` | `fibonacci` (`:882`) | `one`, `2 × one`, `3 × one`, `5 × one`, … — Effect's sequence exactly (its first step returns `0 + one`) |
+| `forever` | `forever` (`:1460`, `spaced(zero)`) | zero; never stops |
+| `during d` | `during` (`:750`) | zero; stops once `elapsed > d` |
+| `jittered s` | `jittered` (`:1093`) | `s`'s delay × a factor in [0.8, 1.2): `delay × (0.8 × (1 − random) + 1.2 × random)`, Effect's formula (`:1097-1099`) |
+| `upTo s d` | `upTo` with `duration` (`:1294`) | `s`'s, while `elapsed ≤ d`. Effect's `times` option is `max s (recurs n)` |
+| `while s p` | `while` (`:1323`) | `s`'s, while `p` holds of the step's metadata — `while (exponential …) λm → isTransient m.input` |
+| `max a b` | `max` (`:618`) | continues while **both** continue; the **longer** delay |
+| `min a b` | `min` (`:783`) | continues while **either** continues; the **shorter** delay of those that do |
+| `concat a b` | `concat` (`:500`) | `a` until it stops, then `b` with its own attempts from 1 |
+| `modifyDelay s f` | `modifyDelay` (`:1043`) | `f` of the metadata and `s`'s delay |
+
+Effect takes a non-empty array in `max`/`min`; two arguments and nesting say the same. `concat` is
+v4's name; `andThen` (research 48 §3) would read as Elm's bind. `cron`, `windowed`, `tap` and the
+outputs wait for a use. A module may declare `max`, `min` and `while` beside the prelude's: checked
+on this tree, the module's own declaration is what an unqualified name means inside it (so
+`Schedule.beni` writes `Basics.max`), and `Schedule.max` is unambiguous outside.
+
+**`retry schedule work`** — runs `work` in the calling fiber; an `Ok` is the answer at once. On an
+`Err e`, it steps the schedule with `input = e`: `Continue d next` sleeps `d` on the fiber's clock
+and runs `work` again with `next`; `Stop` makes that last `Err` the answer. Effect's `retry`
+(`Effect.ts:4090`) retries on a failure and never on a defect or an interrupt (report 23 case 5.2);
+beni's is the same by construction — a defect ends the program, and a cancelled `work` never
+returns, so it is never retried. `retryOrElse` is a `case` on the answer. **`repeat schedule work`**
+— runs `work`, steps the schedule with the value as `input`, sleeps and runs again while it
+continues; the last value is the answer (`Effect.ts:7656`; `repeat (recurs 2)` runs three times, as
+Effect's doc example at `Schedule.ts:43-47` prints `[1, 2, 3]`).
+
+**The draw.** `retry` and `repeat` draw `random` from the fiber's seed slot (§17.5) when it holds a
+seed — stepping core's `Random.Pcg` and storing the next seed back in the slot — and from the
+host's `Math.random()` when it does not. A draw that is not a test's concern needs no seed; a test
+that prints jittered times sets one (P9's `Random.withSeed`) or tests the schedule with `step`.
+
+**Fixtures.** `run/ScheduleDelays` (pure: `delays` of every row of the table above, `jittered` and
+`modifyDelay` through `step` with fixed draws — no clock at all); `run/RetryBackoff` (row 34, on a
+virtual clock: attempts at 0, 100, 300, 700 ms, then `Ok`); `run/RetryRecursCount` (`recurs 2`:
+three runs, then the last `Err`); `run/RetryNotOnCancel` (row 35: a cancelled attempt is not
+retried, and the caller is cancelled); `run/RepeatWhile`; page `browser/tea/RetryRequest` (a faked
+service failing twice; `advance` through the backoff).
+
+### 17.9 `Semaphore`, `Queue`, `Latch` (P5)
+
+```elm
+-- core/Semaphore.beni
+pub opaque type Semaphore
+pub make : Int → Semaphore                                   -- impure
+pub withPermits : Semaphore, Int, (() → a) → a
+pub withPermit : Semaphore, (() → a) → a
+pub tryWithPermits : Semaphore, Int, (() → a) → Maybe a
+pub available : Semaphore → Int                              -- impure
+pub resize : Semaphore, Int → ()                             -- impure
+
+-- core/Queue.beni
+pub opaque type Queue a
+pub bounded : Int → Queue a                                  -- impure, and the three below
+pub dropping : Int → Queue a
+pub sliding : Int → Queue a
+pub unbounded : () → Queue a
+pub offer : Queue a, a → Bool
+pub offerAll : Queue a, List a → List a
+pub take : Queue a → Maybe a
+pub takeAll : Queue a → List a
+pub takeN : Queue a, Int → List a
+pub poll : Queue a → Maybe a                                 -- impure
+pub size : Queue a → Int                                     -- impure
+pub end : Queue a → ()                                       -- impure
+
+-- core/Latch.beni
+pub opaque type Latch
+pub make : Bool → Latch                                      -- impure: open or closed
+pub open : Latch → ()                                        -- impure
+pub close : Latch → ()                                       -- impure
+pub release : Latch → ()                                     -- impure
+pub wait : Latch → ()
+pub isOpen : Latch → Bool                                    -- impure
+```
+
+Each module is beni over `Ref`, `Task.callback`, `Task.resume` and (for `withPermits`)
+`uninterruptibleMask`; each keeps its waiters in a list from which the canceller removes a cancelled
+one (§17.1 item 1).
+
+**`Semaphore`** — a count of permits. **`withPermits s n work`** waits until `n` permits can be
+taken, takes them, runs `work`, and gives them back when `work` ends, returned or cancelled. The
+wait is interruptible and the give-back is guaranteed — Effect's shape exactly
+(`Semaphore.ts:287-300`: `uninterruptibleMask`, `restore(wait)`, `onExit` release), written with
+§17.3's mask. **FIFO** (decision 8): requests are served in the order they began to wait, and a
+request waits while any earlier one still waits, even if there are permits enough for it — so a
+request for many is never starved by a stream of requests for few. Effect serves whatever fits,
+scanning in registration order, and says a smaller later request may overtake a larger earlier one
+(`Semaphore.ts:121-127`); beni takes the fairness for a little throughput under mixed sizes. Two
+consequences of FIFO the implementation owes: when the waiter at the head is cancelled, the next
+ones are re-examined at once, since the head may have been all that held them; and **a request for
+more permits than the semaphore has** would block the whole queue forever, so it is served when
+**every** permit is free and takes them all (the nearest meaning, §17.1 item 4 — Effect's would
+wait for a `resize`). A request for `n ≤ 0` takes nothing and does not wait. `withPermit` is
+`withPermits s 1`. **`tryWithPermits s n work`** runs `work` with the permits only if it can take
+them now **without passing anyone who waits**, else answers `Nothing` and runs nothing
+(`withPermitsIfAvailable`, `Semaphore.ts:461`, which does not have FIFO to respect). **`resize s
+n`** sets the number of permits (a negative `n` is 0), keeping those taken; waiters that now fit are
+served, in order (`Semaphore.ts:270`). **`available s`** is the free count. No bare `take` or
+`release`: Effect documents them as not interruption-safe, and a permit leaked by a cancellation is
+the guarantee this module exists for (report 22 §8).
+
+**`Queue`** — values passed between fibers, first in, first out. **`bounded n`** parks an offer while
+the queue holds `n`; **`dropping n`** refuses the new value when full (`offer` answers `False`);
+**`sliding n`** drops the oldest to make room; **`unbounded ()`** never fills (`Queue.ts:501`,
+`:574`, `:538`, `:612`). A capacity below 1 is 1. **`offer q v`** answers `True` when `v` was
+accepted, `False` when a dropping queue dropped it or the queue has ended (`Queue.ts:646`); parked
+offers are served in order. **`offerAll q vs`** offers each in turn and answers those **not**
+accepted, in order (`Queue.ts:763`). **`take q`** answers the oldest value, parking while the queue
+is empty; **`Nothing` once the queue has ended and is empty**, so a consumer's loop ends with `?`
+(decision 9). Effect fails a `take` from an ended queue with `Cause.Done` (`Queue.ts:1426`, its
+example at `:1415`); beni has no failure channel, and `Maybe` is that `Done`. **`takeAll q`**
+parks while empty, then answers every value held — `[]` only once ended and empty
+(`Queue.ts:1244`). **`takeN q n`** parks until `n` values are held, or the queue ends, and answers
+up to `n` (`Queue.ts:1331`). **`poll q`** answers the oldest value or `Nothing` without waiting
+(`:1465`); **`size q`** the count held (`:1736`). **`end q`** ends the queue (`Queue.ts:1005`): later
+offers answer `False`, values already held are still taken, takers parked on an empty queue are
+answered `Nothing`, and parked offerers are answered `False`, their values not accepted. A second
+`end` does nothing. There is no `shutdown` and no `interrupt`: a waiter that should stop is
+cancelled, which its scope does (research 48 §5 item 9).
+
+**`Latch`** — a gate fibers wait at (`Latch.ts`). **`wait l`** returns at once when `l` is open and
+otherwise parks until it is opened or released (`Latch.ts:87`). **`open`** opens it and wakes every
+waiter, in order; later waits pass (`:216`). **`close`** closes it; later waits park (`:312`).
+**`release`** wakes every current waiter **without** opening it — a one-shot pulse; later waits
+still park (`:260`). **`isOpen`** says which (`:382`). Effect's `open`/`close`/`release` answer
+whether they changed anything; nothing here has needed it, and an `impure` `()` is never dropped.
+`whenOpen` is `wait` and then the work.
+
+**Fixtures** (report 23 rows 36–38 and the obligations above): `run/QueueTakerCancelled`,
+`run/QueueBoundedBackpressure`, `run/QueueEndDrains` (takers see every value, then `Nothing`),
+`run/QueueEndWakesOfferers`, `run/QueueSlidingDropping`, `run/QueueTakeAllTakeN`,
+`run/SemaphorePermitsNotLeaked` (a holder cancelled inside `withPermits` gives its permit back),
+`run/SemaphoreFifo` (a request for 3 is not overtaken by later requests for 1),
+`run/SemaphoreHeadCancelled` (cancelling the head lets the requests behind it through),
+`run/SemaphoreOversizeRequest`, `run/SemaphoreTryDoesNotJump`, `run/LatchRelease`,
+`run/LatchOpenClose`; and the retained-bytes check of research 48 §2.10 (*Leak freedom*) in
+`bench/fiber`: 100 000 cancelled waits on each primitive leave the heap where it started.
+
+### 17.10 A program that can never wake (decision 16; A8, Node)
+
+A8 decided "never a silent exit 0". Today an `Io.run` program whose fiber parks on something
+nothing will ever answer — a `Task.never`, a `Deferred` no one completes, a virtual clock no one
+adjusts, a `Resume` a registration kept and dropped — lets Node's event loop empty and **exits 0
+with no output** (research 48 §0 finding 3, verified). The `node` platform's rule:
+
+- **`Io.run` sets the exit code to 1 when it starts the fiber**, and the fiber's end sets it as
+  now: the program's code when it ends `Done`, 130 when it ends `Cancelled`. A process that leaves
+  by any route the platform did not foresee therefore leaves 1, never 0.
+- **When Node's event loop is about to empty** (`process`'s `beforeExit` event, which fires only
+  when no timer, socket or other handle can run anything again) **while `Io.run`'s fiber has not
+  ended**, the platform writes to standard error
+
+  ```
+  beni: the program cannot go on: every fiber is waiting for something that can never happen.
+  ```
+
+  followed, in a development build once P6 has landed, by each waiting fiber's logical trace (its
+  pending continuations and spawn sites, through the source maps), and the process exits **1**. It
+  schedules nothing — work queued in `beforeExit` would make Node run the loop again — and runs no
+  finaliser: the program has not failed in a way cleanup can repair, and §9.8.14 (k) already gives
+  Node's defects the same ending. Effect keeps the process alive instead, waiting forever (research
+  22 D9's reference-counted keep-alive); a program that provably cannot wake should end, loudly.
+- **When `Io.run`'s fiber ends, the program ends** — Effect's `runMain` and Go's `main` alike. Its
+  output and exit code are written as now, and then `Task.shutdown` (`boundary.md` §9.8.14) stops
+  every fiber still running — a `spawnDetached` fiber, a root another library started — with its
+  cleanup run under the teardown's deadline, so a detached fiber holding a timer does not keep the
+  process alive after the program has answered. The deadline is the `browser` platform's, 1 000 ms.
+  A program with no such fiber (every program on `master` today) sees no change.
+- **A browser page is not affected**: a page is alive while it is open, and a fiber parked forever
+  in it is the page's business, not a program that has ended. The report is Node's.
+
+**Fixtures.** `run/MainParkedForever` (`.crash`: research 48 §6's program, `Task.callback` keeping
+its `Resume`; **red today** — it exits 0 with no output); `run/MainParkedOnNever`,
+`run/MainParkedOnDeferred` (`.crash`); `run/VirtualClockNeverAdjusted` (§17.6); and
+`run/SpawnDetachedEndsWithMain` (a detached fiber sleeping 100 seconds is cancelled when `Io.run`'s
+fiber ends, its release prints, and the process exits with the program's code at once).
+
+### 17.11 `Log` and `Trace` (P7, P8)
+
+```elm
+-- core/Log.beni (replaces platforms/browser/Log.beni, whose three functions keep their signatures)
+pub type Level
+    = Trace
+    | Debug
+    | Info
+    | Warn
+    | Error
+pub trace : String → ()                  -- impure, as are debug, info, warn, error and log
+pub debug : String → ()
+pub info : String → ()
+pub warn : String → ()
+pub error : String → ()
+pub log : Level, String → ()
+pub annotate : String, String, (() → a) → a
+pub span : String, (() → a) → a
+pub minimum : Level, (() → a) → a
+pub type alias Entry =
+    level : Level
+    message : String
+    annotations : List (String × String)     -- outermost first
+    spans : List (String × Int)              -- label, milliseconds since it began
+    time : Int                               -- epoch milliseconds, from the fiber's clock
+pub withSink : sync (Entry → ()), (() → a) → a
+pub setSink : sync (Entry → ()) → ()     -- impure; for a platform
+pub logfmt : Entry → String
+
+-- core/Trace.beni
+pub type alias Span =
+    id : Int
+    parent : Maybe Int
+    name : String
+    start : Int
+    end : Int
+    annotations : List (String × String)
+    exit : Exit ()
+pub span : String, (() → a) → a
+pub annotate : String, String → ()       -- impure
+pub withExporter : sync (Span → ()), (() → a) → a
+pub toLog : Span → ()                    -- impure: an exporter that logs the span at Debug
+```
+
+**Levels.** Five, ordered `Trace < Debug < Info < Warn < Error` by the derived `compare` (constructor
+order). Effect has `Fatal` too (`LogLevel.ts:67`); a defect ends a beni program, so a level that
+says "about to end" says nothing a defect report does not. The constructors live beside the
+`Debug` module and a `Trace` module without ambiguity — checked on this tree: a constructor and a
+module are different names. `debug` is a release-safe level, unlike `Debug.log`, which `--release`
+refuses; the two are different tools.
+
+**A call** builds an `Entry` — its level, the message, the fiber's annotations (outermost first,
+an inner `annotate` of the same key replacing the outer), its log spans as `label` and the
+milliseconds since that span began, and the time, all read from the calling fiber's slots (§17.5)
+and clock — and hands it to the sink, **unless its level is below the fiber's minimum**, in which
+case it builds nothing and costs one comparison. The default minimum is `Info`, Effect's
+(`internal/references.ts:58`). `annotate key value work`, `span label work` and `minimum level
+work` change the log context for `work` and every fiber it starts (§17.5) — Effect's `annotateLogs`
+(`Effect.ts:14001`), `withLogSpan` (`:14114`) and `MinimumLogLevel` (`References.ts:349`). Every
+call is `impure`, so `--release` never drops one, and an unused `Log` costs nothing.
+
+**Sinks.** The sink is the platform's (decision 14):
+
+- **The default**, core's own, is the `console` method for the level — `console.debug` for `Trace`
+  and `Debug`, then `console.info`, `console.warn`, `console.error` — given the message with each
+  span appended as ` label=Nms` (Effect's span text, `effect.ts:6539`), and the annotations as a
+  second argument, an object of strings, when there are any. With no span and no annotation it is
+  exactly today's `Log.info`'s call, so every page that logs prints what it printed. It is what a
+  browser program uses.
+- **`Log.setSink f`** replaces the default for the whole program; the last call wins, as
+  `Task.onDefect`'s does. A platform calls it. **The `node` platform's `Io.run` installs a sink
+  that writes one `logfmt` line per entry to standard error** — Effect's `formatLogFmt`
+  (`Logger.ts:559`), the quoting `JSON.stringify`'s: `timestamp=<ISO 8601> level=INFO
+  message="saving" user=7 save=12ms`. Standard error keeps a program's own output on standard
+  output clean, which is the convention every Unix tool keeps and Effect's `LogToStderr` reference
+  offers (`Logger.ts:166-176`). A Node program that never calls `Io.run` logs through the default.
+- **`Log.withSink f work`** sends `work`'s entries, and those of the fibers it starts, to `f`
+  instead — Effect's `Logger.replace`/`Logger.layer` for a subtree (`Logger.ts:1027`). It is how a
+  test reads what was logged. `f` is `sync`: a sink is called during the log call (§17.2), and a
+  log line that could suspend would make every function that logs suspend.
+- **`Log.logfmt entry`** is the Node sink's text, for a sink of one's own.
+
+**`Trace`.** **`Trace.span name work`** runs `work` inside a span: it takes the next span id — a
+counter per program, from 1, in the order spans begin, so ids are deterministic — records the
+fiber's current span as its parent, makes itself current for `work` and the fibers `work` starts,
+and when `work` ends, returned or cancelled, hands the finished `Span` — its times from the fiber's
+clock and `exit` saying how it ended — to the exporter in effect. **`Trace.annotate key value`**
+adds an annotation to the current span, and does nothing outside one. **No exporter is installed by
+default**: a span then records nothing and costs a slot read and two writes. **`withExporter f
+work`** installs one for a subtree (Effect's `withTracer`, `Effect.ts:7963`); `f` is `sync`, as a
+sink is. **`Trace.toLog`** is a ready exporter that logs each span at `Debug` through the log sink —
+the platforms' console exporter, research 48's "the browser and Node ship a console one", written
+once in core. Effect: `withSpan` (`Effect.ts:8371`), `annotateCurrentSpan` (`:8089`). The compiler
+writing a span around every function that may suspend, at no per-call `Error`, remains the thing to
+revisit (decision sheet C4).
+
+**The browser's `Log` moves into core** (research 48 §4.2: module names are global, so the two
+cannot both exist): `platforms/browser/Log.beni` is removed and `browser-tea` re-exports core's,
+whose `info`, `warn` and `error` have the same signatures and, by the default sink, the same
+output. `boundary.md` §9.8.10 (d) records the move.
+
+**Fixtures.** `run/LogLevels` (every level through `withSink`, the default minimum dropping `Trace`
+and `Debug`); `run/LogMinimumLevel`; `run/LogAnnotationsInherited` (a spawned child's entries carry
+its parent's annotations, and an inner `annotate` replaces an outer one of the same key);
+`run/LogSpanLabel` (on a virtual clock, so the span's milliseconds are fixed); the release pass
+prints the same entries; a black-box test of the Node sink's line on standard error (a virtual
+clock fixes the timestamp); the existing `browser/tea` logging page unchanged;
+`run/TraceSpansNested` (parent and child span names, ids and order across fibers);
+`run/TraceCancelledSpan` (a span whose work is cancelled is exported with `Cancelled`).
+
+### 17.12 Choices this section made, for the owner to see
+
+Each was taken here so the slices can proceed, and each is reversible until its slice ships.
+
+1. **Decision 10 needs no language change.** R47-4's rule already covered core (`boundary.md` §2,
+   `Lower.zig`); §17.2 only states what it means for `Ref`.
+2. **Out-of-range arguments get the nearest meaning, never a crash**: a `forEach` bound below 1 is 1;
+   a queue capacity below 1 is 1; negative durations and permits are 0; a semaphore request larger
+   than the semaphore takes every permit when all are free; `raceOk []` is `Err []`; `timeout zero`
+   is `Nothing` without starting the work. The alternative for each is a defect (Cats Effect's
+   `require`), which rule 9 argues against for a program's own arguments.
+3. **Combinator children start queued**, as `spawnIn`'s do, until P3's measurement says otherwise
+   (§17.7); the plan's "forks no fiber" is replaced by "costs one fiber and no extra turn".
+4. **`Clock.adjust` settles** between wake times instead of yielding once as Effect's does (§17.6).
+5. **`Duration` uses Effect's names** (`sum`, `times`, `toMillis`) where research 48 §3 wrote
+   `add`, `scale`; it is whole non-negative milliseconds. `Io.sleep` keeps `Int`.
+6. **`Schedule.concat`**, v4's name, where research 48 §3 wrote `andThen`; `while` takes the step's
+   metadata, as Effect's does, where research 48 wrote `i → Bool`; `Queue.takeAll`/`takeN`, v4's
+   names, where it wrote `takeUpTo`; `upTo` takes only a duration.
+7. **The scheduler slot is reserved**: present on every fiber, written by nothing yet (§17.5).
+8. **The program ends when `Io.run`'s fiber ends**, with `Task.shutdown` for what is left (§17.10).
+9. **Logging**: `Info` is the default minimum; the browser keeps today's console output; Node logs
+   `logfmt` to standard error, installed by `Io.run`; spans are exported only when a program installs
+   an exporter.
+10. **`RateLimiter`**, the one §6.5 primitive not specified here, waits for P9 with `Pool`.
+
+### 17.13 What this section does not do
+
+- **No code.** Every slice still lands red fixtures first, then code, the gates, a read-only review
+  and its measurement against Effect v4 in `bench/fiber` (`plans/effects-plan.md` §8).
+- **P6** (logical stack traces) is §7.4's and the plan's; §17.10's report gains its traces then.
+- **P9's batteries** — `Task.once`, `FiberMap`/`FiberSet`, `PubSub`, `Cache`, `Batch`, `Pool`,
+  `RateLimiter`, `Ref.Locked`, `Result.combine`/`partition`, `Random.withSeed` — are specified when
+  P9 starts; §17.5's seed slot and §17.8's draw are what `Random.withSeed` will write and read.
+- **`Stream`, STM, `Metric`, `Layer`** (P10) are not in v1.

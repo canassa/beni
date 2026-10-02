@@ -6,6 +6,11 @@ inheriting what Effect does only because it lives in TypeScript — generators, 
 the `R` channel of `Effect<A, E, R>` where transparent effects and plain functions already do the
 job.
 
+**Status, 2026-10-02: decided.** The owner took §5's eighteen choices as recommended except #10
+(§5); the contract they settle is [`transparent-effects-proposal.md`](../transparent-effects-proposal.md)
+§17, and the slices are `plans/effects-plan.md` §8. This report stays the evidence; where a name
+here differs from §17's, §17's is the one to build (§17.12 lists each).
+
 **What this is.** One row per Effect v4 capability area, read from Effect's source: what Effect
 provides, what beni has today, a status, and the beni shape that reaches parity. The prioritised
 slice plan that follows from it is appended to [`plans/effects-plan.md`](../../../plans/effects-plan.md)
@@ -331,6 +336,11 @@ read-modify-write in a runtime that interleaves at suspension points. So `update
 `foreign` — two lines of JavaScript each — or the language allows `sync` in a core declaration's
 signature. §5 item 10.
 
+*Corrected 2026-10-02:* the premise was out of date. Since R47-4 (`transparent-effects-proposal.md`
+§15.2 item 1, amended) any package that may write `foreign` — core included — may mark `sync` in
+any top-level signature, and `core/Schema.beni` already does. The owner chose that form for
+`update` and `modify` (§5 item 10, decided); P2 §17.2 specifies it.
+
 ---
 
 ## 4. Where this touches other work
@@ -375,7 +385,8 @@ JavaScript or beni. The four **K** additions — `resume`, the clock slot behind
 step 2 starts (so step 2 ports them) or as part of it, **never in the middle**, so the kernel is
 written once. One tension to flag: §5 item 10's `foreign` `Ref.update` adds JavaScript where
 step 2 removes it; the alternative is a language change that lets core write `sync` in a beni
-signature, which step 2 may want for its own kernel declarations anyway.
+signature, which step 2 may want for its own kernel declarations anyway. *(Resolved 2026-10-02:
+the owner chose the second, which R47-4 already allowed; no JavaScript is added.)*
 
 ### 4.4 P2 §6.5's primitive list
 
@@ -392,26 +403,33 @@ than editing it in place (rule 2: no section is renumbered).
 Each is taken in the plan as recommended unless the owner says otherwise; each is reversible
 until its slice ships.
 
-| # | Question | Recommendation | Alternative |
-|---|---|---|---|
-| 1 | Where does time live? | **`core/Duration` and one `Task.sleep : Duration -> ()`** over a clock slot; the platforms' `Time.Duration` becomes an alias and `Io.sleep` a call of `Task.sleep` | keep `Duration` and `sleep` per platform; core combinators then take a bare `Int` of milliseconds |
-| 2 | Deterministic time (A13) | **a virtual clock in core**, `Clock.virtual`/`adjust`/`run`, as a fiber slot, so `run/` fixtures test timing on Node by order alone | the browser driver's host-level clock only; Node timing fixtures sleep for real, or do not exist |
-| 3 | May programs write coordination primitives? | **yes: `Task.resume` and a public `Ref`** — rule 7, nothing withheld | core ships the primitives and programs get only those (`Resume` stays callable only through `Js`) |
-| 4 | `race` without a failure channel | **`race`/`raceAll` = first to return; `raceOk` = first `Ok`, every `Err` when none** | Effect's names on `Result` thunks: `race` = first `Ok`, `raceFirst` = first to return |
-| 5 | Fail-fast on `Err` | **separate `…Ok` forms** (`forEachOk`, `parOk`) that cancel the rest on the first `Err` and wait | one `forEach`; a program wanting fail-fast writes the scope and cancellation itself |
-| 6 | The concurrency bound | **mandatory `Int`** on `forEach` (P2 §6.5, report 16's 901 MiB against 78.6 KiB); `par`/`par3` need none | Effect's optional `concurrency`, defaulting to sequential, with an "unbounded" value |
-| 7 | `Schedule`'s representation | **a closure returning the next schedule**, with a pure `step` that is handed the random draw, so jitter is testable and composition needs no existential type; v4's `max`/`min` names | a fixed state record (`Int` + `Duration`), which cannot compose `while` or schedules of different state; or v3's `intersect`/`union` names |
-| 8 | Semaphore order | **FIFO**: a request for many permits is never starved by small ones | Effect's order (scan in registration order, serve what fits), slightly higher throughput under mixed sizes |
-| 9 | How a queue ends | **`Queue.end`; `take : Queue a -> Maybe a`**, `Nothing` once ended and drained, so `?` ends a consumer loop | `take : Queue a -> a`; ending cancels the waiting takers (Effect's `shutdown`) |
-| 10 | `Ref.update`'s atomicity | **`sync` callbacks through a two-line `foreign`** | allow `sync` in a core beni signature (a language change), or no guarantee (a suspending update may lose a write) |
-| 11 | Detached fibers | **`Task.spawnDetached`, a root in the teardown's registry** | none: a program opens a root scope with `openRoot` (platform-facing today) |
-| 12 | `uninterruptibleMask` | **yes, with a `Restore` token** (no rank-2 type) | `uninterruptible` only; `bracket` stays the only way to have an interruptible middle |
-| 13 | Fiber-local state | **four fixed slots**: clock, scheduler, log context (annotations, spans, level, trace parent), random seed | A7's three, and `Random.withSeed` is not offered; or a general typed `Task.Local a` (report 22 §10 item 1's probe first) |
-| 14 | Logging (A16) | **core `Log`** with levels, `annotate`, `span`, `minimum`; platform sinks; the browser's `Log` moves into core | keep the browser's three functions, add a Node one, no annotations |
-| 15 | Tracing | **`core/Trace` with `span` now**; compiler-emitted spans revisited later | no tracing until a platform asks for an exporter |
-| 16 | A program that can never wake (finding 3) | **report it and exit 1** when the loop would empty with the root fiber parked; `Io.run` leaves exit code 1 until its fiber ends | Effect's keep-alive: the process stays up forever, waiting |
-| 17 | Streams | **not in v1** (C1); revisit once `Queue.end` exists | a minimal pull `Stream` with the coordination slice |
-| 18 | `startImmediately` | **no knob** unless a measurement asks for one: beni's scheduled start is a microtask, Effect's a macrotask | `Task.spawnNow`, starting the child before `spawn` returns |
+**Decided by the owner, 2026-10-02: all eighteen as recommended, except #10.** `Ref.update`'s
+atomicity is a `sync` mark in core's own beni signature, as R47-4 allowed in a platform's, and not
+a JavaScript `foreign`. The rule needed no change to admit it: R47-4 lets any package that may
+write `foreign` mark a top-level signature, and core is one (`boundary.md` §2). The contract for
+every decision is [`transparent-effects-proposal.md`](../transparent-effects-proposal.md) §17,
+whose §17.12 lists what the specification had to choose beyond this table.
+
+| # | Question | Recommendation | Alternative | Decided (2026-10-02) |
+|---|---|---|---|---|
+| 1 | Where does time live? | **`core/Duration` and one `Task.sleep : Duration -> ()`** over a clock slot; the platforms' `Time.Duration` becomes an alias and `Io.sleep` a call of `Task.sleep` | keep `Duration` and `sleep` per platform; core combinators then take a bare `Int` of milliseconds | as recommended |
+| 2 | Deterministic time (A13) | **a virtual clock in core**, `Clock.virtual`/`adjust`/`run`, as a fiber slot, so `run/` fixtures test timing on Node by order alone | the browser driver's host-level clock only; Node timing fixtures sleep for real, or do not exist | as recommended |
+| 3 | May programs write coordination primitives? | **yes: `Task.resume` and a public `Ref`** — rule 7, nothing withheld | core ships the primitives and programs get only those (`Resume` stays callable only through `Js`) | as recommended |
+| 4 | `race` without a failure channel | **`race`/`raceAll` = first to return; `raceOk` = first `Ok`, every `Err` when none** | Effect's names on `Result` thunks: `race` = first `Ok`, `raceFirst` = first to return | as recommended |
+| 5 | Fail-fast on `Err` | **separate `…Ok` forms** (`forEachOk`, `parOk`) that cancel the rest on the first `Err` and wait | one `forEach`; a program wanting fail-fast writes the scope and cancellation itself | as recommended |
+| 6 | The concurrency bound | **mandatory `Int`** on `forEach` (P2 §6.5, report 16's 901 MiB against 78.6 KiB); `par`/`par3` need none | Effect's optional `concurrency`, defaulting to sequential, with an "unbounded" value | as recommended |
+| 7 | `Schedule`'s representation | **a closure returning the next schedule**, with a pure `step` that is handed the random draw, so jitter is testable and composition needs no existential type; v4's `max`/`min` names | a fixed state record (`Int` + `Duration`), which cannot compose `while` or schedules of different state; or v3's `intersect`/`union` names | as recommended |
+| 8 | Semaphore order | **FIFO**: a request for many permits is never starved by small ones | Effect's order (scan in registration order, serve what fits), slightly higher throughput under mixed sizes | as recommended |
+| 9 | How a queue ends | **`Queue.end`; `take : Queue a -> Maybe a`**, `Nothing` once ended and drained, so `?` ends a consumer loop | `take : Queue a -> a`; ending cancels the waiting takers (Effect's `shutdown`) | as recommended |
+| 10 | `Ref.update`'s atomicity | **`sync` callbacks through a two-line `foreign`** | allow `sync` in a core beni signature (a language change), or no guarantee (a suspending update may lose a write) | **the alternative**: `sync` in core's own beni signature — `Ref.update` and `modify` are beni over `Js`, with no `foreign` (P2 §17.2) |
+| 11 | Detached fibers | **`Task.spawnDetached`, a root in the teardown's registry** | none: a program opens a root scope with `openRoot` (platform-facing today) | as recommended |
+| 12 | `uninterruptibleMask` | **yes, with a `Restore` token** (no rank-2 type) | `uninterruptible` only; `bracket` stays the only way to have an interruptible middle | as recommended |
+| 13 | Fiber-local state | **four fixed slots**: clock, scheduler, log context (annotations, spans, level, trace parent), random seed | A7's three, and `Random.withSeed` is not offered; or a general typed `Task.Local a` (report 22 §10 item 1's probe first) | as recommended |
+| 14 | Logging (A16) | **core `Log`** with levels, `annotate`, `span`, `minimum`; platform sinks; the browser's `Log` moves into core | keep the browser's three functions, add a Node one, no annotations | as recommended |
+| 15 | Tracing | **`core/Trace` with `span` now**; compiler-emitted spans revisited later | no tracing until a platform asks for an exporter | as recommended |
+| 16 | A program that can never wake (finding 3) | **report it and exit 1** when the loop would empty with the root fiber parked; `Io.run` leaves exit code 1 until its fiber ends | Effect's keep-alive: the process stays up forever, waiting | as recommended |
+| 17 | Streams | **not in v1** (C1); revisit once `Queue.end` exists | a minimal pull `Stream` with the coordination slice | as recommended |
+| 18 | `startImmediately` | **no knob** unless a measurement asks for one: beni's scheduled start is a microtask, Effect's a macrotask | `Task.spawnNow`, starting the child before `spawn` returns | as recommended |
 
 ---
 
@@ -420,6 +438,9 @@ until its slice ships.
 - **Whether a core module may export `max` and `min` beside the prelude's `Basics.max`/`min`.**
   `Schedule.max` would be called qualified, but a module declaring a name its prelude also exposes
   may be refused as ambiguous inside it. If so, `both`/`either` (v3's semantics, plainer words).
+  *Answered 2026-10-02, on this tree:* it may. A module declaring `pub max`, `pub min` and
+  `pub while` checks; inside it the unqualified name is its own (so it writes `Basics.max`), and
+  `Schedule.max` is unambiguous outside it (P2 §17.8).
 - **Nothing about the silent exit is undetermined; it is recorded here because it is the one
   behaviour this report ran.** Finding 3 is read off `platforms/node/runtime.js` (`exitCode =
   program.code`, 0 for `Node.done`) and `Io.js` (`finish` sets it only when the fiber ends), and
