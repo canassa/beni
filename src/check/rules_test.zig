@@ -61,6 +61,7 @@ const files = [_]File{
     .{ .path = "Flat.zig", .text = @embedFile("Flat.zig") },
     .{ .path = "Generalize.zig", .text = @embedFile("Generalize.zig") },
     .{ .path = "Groups.zig", .text = @embedFile("Groups.zig") },
+    .{ .path = "Identity.zig", .text = @embedFile("Identity.zig") },
     .{ .path = "Incremental.zig", .text = @embedFile("Incremental.zig") },
     .{ .path = "Injective.zig", .text = @embedFile("Injective.zig") },
     .{ .path = "Instances.zig", .text = @embedFile("Instances.zig") },

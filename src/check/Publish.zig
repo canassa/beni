@@ -23,6 +23,7 @@ const iface_bytes = @import("../resolve/iface_bytes.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Schemes = @import("Schemes.zig");
+const Dispatch = @import("Dispatch.zig");
 const Context = @import("Context.zig");
 const Report = @import("Report.zig");
 const Walk = @import("Walk.zig");
@@ -45,6 +46,9 @@ pub const Input = struct {
     types: *Types,
     /// The derived contexts, settled in P5 (§11.2): the rows publish them.
     contexts: *Contexts,
+    /// The dispatch table P6 wrote: each value's identity parameters are
+    /// published as its quantifiers' identity bit (checker-v2.md §33).
+    dispatch: ?*const Dispatch = null,
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
@@ -80,6 +84,17 @@ pub fn fill(in: Input) Error!u32 {
             break :blk .{ .effects = e, .decl = d.int() };
         } else null;
         defer writer.effects = null;
+        // Its identity parameters, as the quantifiers they are of.
+        var quantifiers: []u16 = &.{};
+        defer gpa.free(quantifiers);
+        if (decl) |d| if (in.dispatch) |table| {
+            const reqs = table.declRequirements(d.int());
+            const ids = table.declIdentities(d.int());
+            quantifiers = try gpa.alloc(u16, ids.len);
+            for (ids, quantifiers) |j, *q| q.* = if (j < reqs.len) reqs[j].quantified else std.math.maxInt(u16);
+        };
+        writer.identities = quantifiers;
+        defer writer.identities = &.{};
         v.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.values));

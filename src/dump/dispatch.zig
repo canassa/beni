@@ -82,14 +82,17 @@ pub fn write(
         const info: Dispatch.DeclInfo = if (i < dispatch.decls.len) dispatch.decls[i] else .{};
         try w.print("  decl {s} evidence={d} arity={d} convention={s}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, info.value_arity, @tagName(info.convention) });
         for (requirements, 0..) |e, k| try cx.writeRequirement(w, k, e);
+        // Its identity parameters (checker-v2.md §33), after the evidence.
+        for (dispatch.declIdentities(@intCast(i)), 0..) |j, k| try w.print("    identity {d} requirement={d}\n", .{ k, j });
     }
     // The `let` function bindings that generalise and promote their
     // requirements (checker-v2.md §8.4, §13.1), by
     // instruction, each with its requirement list.
-    for (dispatch.lets) |let| {
+    for (dispatch.lets, 0..) |let, li| {
         const r = let.requirements;
         try w.print("  let {d} evidence={d}\n", .{ let.inst.int(), r.len });
         for (dispatch.requirements[r.start..][0..r.len], 0..) |e, k| try cx.writeRequirement(w, k, e);
+        for (dispatch.letIdentities(@intCast(li)), 0..) |j, k| try w.print("    identity {d} requirement={d}\n", .{ k, j });
     }
     // Which shape each `?` solved as (`checker.md` §6.5), ascending by
     // instruction.
@@ -443,6 +446,8 @@ const Context = struct {
             },
             .undetermined => try w.writeAll("undetermined"),
             .field => try w.writeAll("field"),
+            .identity => try w.writeAll("identity"),
+            .text => |r| try w.print("text \"{s}\"", .{cx.dispatch.textOf(r)}),
         }
     }
 };

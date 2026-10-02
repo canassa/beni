@@ -5,62 +5,19 @@
 // function into the after-render phase of the next flush (backend.md
 // §15.11). Everything here reaches the page only through it.
 
-// ---- Keys: compared by value ---------------------------------------------
+// ---- Keys: by their types' identities, then by their types' `compare` -----
 
-// The rank of a value's kind: `()`, a `Bool`, a number, a string (a
-// `String` or a `Char`), then everything built of fields — a constructor,
-// a record, a tuple, a list cell.
-const rank = (v) => {
-  if (v === null || v === undefined) return 0;
-  switch (typeof v) {
-    case "boolean":
-      return 1;
-    case "number":
-      return 2;
-    case "string":
-      return 3;
-    default:
-      return 4;
-  }
-};
+// `{ t, c, v }`: the identity of the key's type, the compiler's string
+// (static-dispatch-spike.md §8.6); the type's own `compare`, the `where`
+// clause's evidence; and the value (boundary.md §9.8.3).
+export const keyOf = (compare, type, value) => ({ t: type, c: compare, v: value });
 
-// A list in any of its forms (backend.md §4, *Lists are arrays*: a plain
-// array, a view, a trie) as a plain array, so that two equal lists are
-// built alike: a view's or a trie's fields are how it is stored, not what
-// it holds. Every other value is itself.
-const plain = (v) => (v != null && typeof v.$plain === "function" ? v.$plain() : v);
-
-// A total order on the values a key can hold, by value alone: two values
-// are equal exactly when they are built alike. Fields are compared in the
-// order of their names, so a record's literal order does not matter.
-const order = (x, y) => {
-  if (x === y) return 0;
-  const a = plain(x);
-  const b = plain(y);
-  const ra = rank(a);
-  const rb = rank(b);
-  if (ra !== rb) return ra - rb;
-  if (ra === 0) return 0;
-  if (ra < 4) return a < b ? -1 : a > b ? 1 : 0;
-  const ka = Object.keys(a).sort();
-  const kb = Object.keys(b).sort();
-  if (ka.length !== kb.length) return ka.length - kb.length;
-  for (let i = 0; i < ka.length; i++) {
-    if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
-  }
-  for (const k of ka) {
-    const c = order(a[k], b[k]);
-    if (c !== 0) return c;
-  }
-  return 0;
-};
-
-// The key's own `compare` is not called: it is what admits the type.
-export const key = (compare, k) => k;
-
+// Two keys of one identity are of one type, so either's `compare` orders
+// both; keys of two types are ordered by their identities' text.
 export const compareKeys = (a, b) => {
-  const c = order(a, b);
-  return c < 0 ? "LT" : c > 0 ? "GT" : "EQ";
+  if (a === b) return "EQ";
+  if (a.t !== b.t) return a.t < b.t ? "LT" : "GT";
+  return a.c(a.v, b.v);
 };
 
 // ---- Outlets ----------------------------------------------------------------

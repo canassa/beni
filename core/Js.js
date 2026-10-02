@@ -102,6 +102,12 @@ export const development = (unit) => true;
 // suspend is the safe answer.
 export const maySuspend = (f) => true;
 
+// `Js.fingerprint` is written in place as the identity its call carries;
+// passed as a value it takes the identity as the hidden argument after its
+// evidence, like any declaration that needs one (static-dispatch-spike.md
+// §8.6), and answers it.
+export const fingerprint = (compare, type, value, order) => type;
+
 // Written in place as its body, like `pure` (backend.md §4,
 // *`Js.suspending` is its body*); passed as a value, it calls what it is
 // given.

@@ -376,6 +376,13 @@ pub const Code = enum {
     /// key a string literal that is a JavaScript identifier other than
     /// `__proto__`, no key twice. The checker's, at the call.
     invalid_js_object,
+    /// Appended on 2026-10-02 with type identities
+    /// (`static-dispatch-spike.md` §8.6, checker-v2.md §33): a site that
+    /// must pass a type's identity — a key's, to `Hosted.key` through
+    /// `Cmd.keyed` or `Sub.listen` — at a type that mentions a variable its
+    /// declaration has no requirement on, or a declaration that takes an
+    /// identity used as evidence. The checker's, at the site.
+    type_identity_unknown,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -544,6 +551,7 @@ pub fn title(code: Code) []const u8 {
         .tuple_type_removed => "REMOVED TUPLE TYPE",
         .core_contract_violation => "CORE CONTRACT VIOLATION",
         .invalid_js_object => "INVALID OBJECT FIELDS",
+        .type_identity_unknown => "UNKNOWN TYPE IDENTITY",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

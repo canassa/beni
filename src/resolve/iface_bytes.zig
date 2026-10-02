@@ -86,7 +86,9 @@ pub const magic = "BENIIFC\x00";
 /// sync << 8` (§15.5).
 /// 11: and whether the declaration's body reads the class, in bit 9: a
 /// declaration with such a class has a second, suspendable body (§16.2).
-pub const format_version: u32 = 11;
+/// 12: a quantifier's flag word carries bit 9, `identity`: the value takes
+/// the quantifier's type identity as a hidden parameter (checker-v2.md §33).
+pub const format_version: u32 = 12;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

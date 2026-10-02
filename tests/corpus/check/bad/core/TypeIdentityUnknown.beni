@@ -1,0 +1,17 @@
+-- check/bad (core): a type's identity is read from the declaration's own
+-- identity parameter for each type variable it has a requirement on
+-- (static-dispatch-spike.md §8.6). `Id a`'s derived `compare` compares no
+-- `a`, so `name` has no requirement on `a` and nothing to read `a`'s
+-- identity from: `Id User` and `Id Post` would be one type here, and two
+-- keys of them one key. type_identity_unknown at 17:5.
+import Js
+
+
+type Id a
+    = Id Int
+
+
+name : Id a → String
+name i =
+    -- With `where a.compare : a, a → Order` it checks.
+    Js.fingerprint i EQ

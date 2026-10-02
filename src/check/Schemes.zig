@@ -139,6 +139,10 @@ pub const Writer = struct {
     /// effect block (transparent-effects-proposal.md §14.6); null writes
     /// none, as for everything that is not a value.
     effects: ?Effects.Publication = null,
+    /// The quantifiers of the value the next `add` writes whose type
+    /// identity it takes (checker-v2.md §33): their flag word gets the
+    /// identity bit. Empty for everything else.
+    identities: []const u16 = &.{},
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -227,6 +231,10 @@ pub const Writer = struct {
         try w.writeConstraints();
         if (std.debug.runtime_safety and !w.too_deep) try Evidence.assertWrittenOrder(w.store, w.interner, w.gpa, v, w.pending_roots.items);
         const count = w.quantified_count;
+        for (w.identities) |q| {
+            const at = @as(usize, q) * Interface.Quantified.words;
+            if (q < count and at < w.pending_flags.items.len) w.pending_flags.items[at] |= Interface.Quantified.identity_bit;
+        }
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
         const effects = if (w.effects) |p| try w.writeEffects(p, v) else Interface.no_terms;

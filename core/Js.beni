@@ -257,6 +257,19 @@ pub foreign pure development : () → bool
 pub foreign pure maySuspend : f → bool
 
 
+--| The identity of `k`'s type: a string the compiler writes where this is
+--| called, naming the type with its module and every argument, so two
+--| calls give equal strings exactly when their types are one. Where `k` is
+--| a type variable, the string is built from the identity the declaration's
+--| own callers hand it, which the compiler supplies with nothing written.
+--| `x` is evaluated and not read, and so is `o`, any `Order` — `EQ` — which
+--| names the type `compare` answers, since this module names no core type.
+--| What `Hosted.key` tells the types of two keys apart with (`boundary.md`
+--| §9.8.3; `static-dispatch-spike.md` §8.6).
+pub foreign pure fingerprint : k, order → name
+    where k.compare : k, k → order
+
+
 --| The body's value, and the opposite promise to `pure`'s: that it may be
 --| the fiber runtime's sentinel, so a call of it may suspend. What `Task`
 --| returns its sentinel with, written in beni; nothing else needs it.

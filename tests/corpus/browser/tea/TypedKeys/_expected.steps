@@ -1,0 +1,10 @@
+# Both bodies have started and sent their names.
+advance 10
+click #alpha
+advance 50
+click #beta
+advance 100
+click #user
+advance 50
+click #post
+advance 100

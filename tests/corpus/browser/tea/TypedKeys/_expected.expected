@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="alpha">"alpha"</button>
+    <button id="beta">"beta"</button>
+    <button id="user">"user"</button>
+    <button id="post">"post"</button>
+    <p>"alpha heard alpha, beta heard beta"</p>
+  </main>
+</body>
+-- advance 10
+(the DOM did not change)
+-- click #alpha
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- click #beta
+(the DOM did not change)
+-- advance 100
+console.log: alpha 1 done: ()
+console.log: beta 2 done: ()
+(the DOM did not change)
+-- click #user
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- click #post
+(the DOM did not change)
+-- advance 100
+console.log: user 3 done: ()
+console.log: post 4 done: ()
+(the DOM did not change)

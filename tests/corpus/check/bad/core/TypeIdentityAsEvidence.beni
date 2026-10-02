@@ -1,0 +1,26 @@
+-- check/bad (core): a declaration that takes a type's identity cannot be
+-- evidence (static-dispatch-spike.md §8.6). `Box`'s own `compare` asks for
+-- its element's identity, so it takes one more hidden parameter than a
+-- `compare` handed to `List.compare` is called with. Called directly, as
+-- `<` on two boxes does, it is passed one; as the element order of a list
+-- it would not be. type_identity_unknown at 26:20, the list comparison.
+import Js
+
+
+type Box a
+    = Box a
+
+
+pub compare : Box a, Box a → Order
+    where a.compare : a, a → Order
+compare (Box x) (Box y) =
+    _ = Js.fingerprint x EQ
+    x.compare y
+
+
+direct : Bool
+direct = Box 1 < Box 2
+
+
+inList : Bool
+inList = [ Box 1 ] < [ Box 2 ]

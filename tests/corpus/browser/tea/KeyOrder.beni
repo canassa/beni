@@ -1,11 +1,13 @@
 -- Subscriptions start in their keys' order (boundary.md §9.8.5), and that
 -- order is the same in a development and a release build (backend.md §9,
--- *Item 4, taken up*). `Hosted` orders keys by what their values hold —
--- field names and constructor tags — so a release build that respelled
--- `Lane`'s tags as their declaration indices, or `Spot`'s fields by how
--- often they are named, would start `Zeta` before `Alpha`, or the spot
--- whose `second` is smaller first. Each body sends its name once, the
--- moment it starts, and the page lists the names in arrival order.
+-- *Item 4, taken up*). Keys are ordered by their types' identities, then
+-- by each type's own `compare` (§9.8.3, amended 2026-10-02): `Lane`'s
+-- derived one by declaration, so `Zeta` before `Alpha`, and `Spot`'s by
+-- its fields' names, `first` before `second`. A key ordered by how its
+-- value is stored would move with a release build, which spells `Lane`'s
+-- tags as integers and `Spot`'s fields by how often they are named. Each
+-- body sends its name once, the moment it starts, and the page lists the
+-- names in arrival order.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub exposing (Sub)

@@ -4902,7 +4902,7 @@ pub const Lowerer = struct {
                             if (use.index >= n or rank[use.index] == infinite) break false;
                             deepest = @max(deepest, rank[use.index]);
                         },
-                        .param, .ext_derived, .field => break false,
+                        .param, .ext_derived, .field, .identity, .text => break false,
                     }
                 } else true;
                 if (!ok or deepest + 1 > leaf_rank_limit) continue;
@@ -4994,7 +4994,35 @@ pub const Lowerer = struct {
                 try l.reportDispatchBug(l.region, field_inside_derived);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            // A type's identity (`static-dispatch-spike.md` §8.6): its text,
+            // a parameter's value joined in with `+`.
+            .identity, .text => return l.identityValue(i, p),
         }
+    }
+
+    /// An `identity` term as a string: one literal when every part is
+    /// text, else the parts joined left to right with `+`, a parameter
+    /// read by its name (`backend.md` §4, *`Js.fingerprint` is its type's
+    /// identity*).
+    fn identityValue(l: *Lowerer, i: Dispatch.TermIndex, p: u32) Allocator.Error!Node.Index {
+        const d = l.in.dispatch;
+        const parts: []const Dispatch.TermIndex = switch (d.term(i)) {
+            .identity => d.argsOfTerm(i),
+            else => &.{i},
+        };
+        var out: ?Node.Index = null;
+        for (parts) |part| {
+            const value = switch (d.term(part)) {
+                .text => |r| try l.stringNode(d.textOf(r), p),
+                .param => try l.termName(d.term(part), p),
+                else => {
+                    try l.reportEvidenceShape(l.region);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                },
+            };
+            out = if (out) |left| try l.binary(.add, left, value, p) else value;
+        }
+        return out orelse l.stringNode("", p);
     }
 
     /// `(a, b) => <name>(<bound…>, a, b)` — a constrained value in VALUE
@@ -6144,7 +6172,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .eq, left, right, p);
             },
-            .field => {
+            .field, .identity, .text => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -6205,7 +6233,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .compare, left, right, p);
             },
-            .field => {
+            .field, .identity, .text => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -6916,8 +6944,9 @@ pub const Lowerer = struct {
                 const field_fn = try l.fieldMember(values[0], l.bir.symbol(m.name), p);
                 return l.suspension(out, inst, try l.call(field_fn, values[1..], p));
             },
-            // Never a callee: an `err` site becomes no term at all.
-            .undetermined => {
+            // Never a callee: an `err` site becomes no term at all, and an
+            // identity is only ever a root.
+            .undetermined, .identity, .text => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -7111,7 +7140,7 @@ pub const Lowerer = struct {
                 try l.reportDispatchBug(inst, field_without_receiver);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            .undetermined => {
+            .undetermined, .identity, .text => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -7357,6 +7386,17 @@ pub const Lowerer = struct {
                 for (arg_insts) |a| try l.discard(out, a, p);
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
                 return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            }
+            // `Js.fingerprint x` is the identity its site carries, the last
+            // root (`backend.md` §4, *`Js.fingerprint` is its type's
+            // identity*); `x` is evaluated for what it does.
+            if (which == .fingerprint) {
+                for (arg_insts) |a| try l.discard(out, a, p);
+                if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
+                    try l.reportEvidenceShape(inst);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                return l.identityValue(roots[roots.len - 1], p);
             }
             // `Js.suspending`'s body is a suspension point where it is not
             // in tail position (`backend.md` §4, *`Js.suspending` is its
@@ -8042,6 +8082,8 @@ pub const Lowerer = struct {
             W.development => l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
+            // Answered at the call, from its site (`callExpr`).
+            W.fingerprint => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -8307,7 +8349,7 @@ pub const Lowerer = struct {
                     const self: Loop.Self = .{ .local = payload.local };
                     // A function binding that generalised takes its evidence
                     // first, named `$l<inst>$<k>` (backend.md §4).
-                    const evidence: u32 = if (l.in.dispatch.letIndex(def)) |i| l.in.dispatch.lets[i].requirements.len else 0;
+                    const evidence: u32 = if (l.in.dispatch.letIndex(def)) |i| l.in.dispatch.lets[i].requirements.len + l.in.dispatch.lets[i].identities.len else 0;
                     const ev_let: Inst.OptionalIndex = if (evidence != 0) def.toOptional() else .none;
                     if (params.len == 0) {
                         // §8 again: `go = \i acc -> …` inherits the binding's

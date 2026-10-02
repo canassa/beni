@@ -345,6 +345,11 @@ pub const Quantified = struct {
     /// `@intFromEnum` of a `TypeStore.Kind`.
     kind: u8,
     equatable: bool,
+    /// The value takes this quantifier's type identity as a hidden
+    /// parameter after its evidence (`static-dispatch-spike.md` §8.6,
+    /// checker-v2.md §33): bit 9 of the flag word. Only a scheme's
+    /// quantifier with a constraint has it.
+    identity: bool = false,
     /// Index into this interface's own `symbols` column, NOT a `Symbol`.
     ///
     /// A `Symbol` is an index into the session's interner, whose numbering
@@ -375,13 +380,16 @@ pub const Quantified = struct {
     pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
-        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8);
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9);
     }
+
+    pub const identity_bit: u32 = 1 << 9;
 
     pub fn unpack(flag_word: u32, name_word: u32, start: u32, len: u32) Quantified {
         return .{
             .kind = @truncate(flag_word),
             .equatable = (flag_word >> 8) & 1 == 1,
+            .identity = (flag_word >> 9) & 1 == 1,
             .name = @enumFromInt(name_word),
             .constraints_start = start,
             .constraints_len = len,

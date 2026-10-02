@@ -1,0 +1,102 @@
+-- A key is matched by its type's own `compare`, never by how its value is
+-- stored (boundary.md §9.8.3, amended 2026-10-02): a `Set` and a `Dict` are
+-- balanced trees whose shape depends on the order they were built in, and
+-- `Bag` compares by its own `compare`, which sorts what it holds. Each
+-- button's second click builds a key equal to its first one's, in another
+-- order, so under `Restart` it must cancel the body the first click
+-- started; a key matched by its representation would be a second key, and
+-- both bodies would finish.
+import Cmd exposing (Cmd)
+import Dict
+import Html exposing (Html)
+import Set
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Bag
+    = Bag (List Int)
+
+
+pub compare : Bag, Bag → Order
+compare (Bag a) (Bag b) = List.compare (List.sort a) (List.sort b)
+
+
+type Msg
+    = BySet
+    | ByDict
+    | ByBag
+
+
+ascending : List Int
+ascending = [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+
+
+-- An even count builds from `ascending`, an odd one from its reverse.
+order : Int → List Int
+order n =
+    if Int.mod n 2 == 0 then
+        ascending
+    else
+        List.reverse ascending
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        BySet →
+            ( n + 1
+            , Cmd.keyed
+                (Set.fromList (order n))
+                Cmd.Restart
+                (work "set ${String.fromInt (n + 1)}" _)
+            )
+
+        ByDict →
+            ( n + 1
+            , Cmd.keyed
+                (Dict.fromList (List.map (order n) λk → ( k, "v" )))
+                Cmd.Restart
+                (work "dict ${String.fromInt (n + 1)}" _)
+            )
+
+        ByBag →
+            ( n + 1
+            , Cmd.keyed (Bag (order n)) Cmd.Restart (work "bag ${String.fromInt (n + 1)}" _)
+            )
+
+
+work : String, Cmd.Send Msg → ()
+work name _ =
+    Task.bracket
+        (λ() → ())
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    Debug.log "${name} done" ()
+
+                Cancelled →
+                    Debug.log "${name} cancelled" ()
+        )
+        λ_ → Time.sleep (Time.millis 100)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="set" onClick={BySet}>set</button>
+        <button id="dict" onClick={ByDict}>dict</button>
+        <button id="bag" onClick={ByBag}>bag</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

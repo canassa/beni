@@ -1,7 +1,7 @@
 -- load
 <body>
   <main>
-    <p>"alpha, zeta, spot 120, spot 210"</p>
+    <p>"zeta, alpha, spot 120, spot 210"</p>
   </main>
 </body>
 -- advance 10

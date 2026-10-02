@@ -1,0 +1,129 @@
+-- Keys of different types are different keys, however alike their values
+-- are built (boundary.md §9.8.3, amended 2026-10-02): the compiler hands
+-- every key its type's identity. `Alpha.Key 1` and `Beta.Key 1` are one
+-- constructor name over one payload in two modules, and `Id User` and
+-- `Id Post` differ only in a type argument no value holds. Each pair is
+-- keyed under `Restart` through a function of any key type — `restart`, a
+-- top-level one, and `local`, a `let` function that generalises — so the
+-- identity is the caller's and is passed through it: the second click of a
+-- pair must not cancel the first's body, and both finish.
+--
+-- The two subscriptions are keyed the same way, and each body sends its
+-- own name once it starts: with one key, one body would run and its name
+-- would reach both taggers.
+import Alpha
+import Beta
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type User
+    = User
+
+
+type Post
+    = Post
+
+
+type Id a
+    = Id Int
+
+
+userId : Id User
+userId = Id 1
+
+
+postId : Id Post
+postId = Id 1
+
+
+type Msg
+    = ByAlpha
+    | ByBeta
+    | ByUser
+    | ByPost
+    | Heard String String
+
+
+type alias Model =
+    count : Int
+    heard : List String
+
+
+restart : k, String → Cmd Msg
+    where k.compare : k, k → Order
+restart key name = Cmd.keyed key Cmd.Restart (work name _)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    n = model.count + 1
+    next = { model | count = n }
+    local key name = Cmd.keyed key Cmd.Restart (work name _)
+    case msg of
+        ByAlpha →
+            ( next, restart (Alpha.Key 1) "alpha ${String.fromInt n}" )
+
+        ByBeta →
+            ( next, restart (Beta.Key 1) "beta ${String.fromInt n}" )
+
+        ByUser →
+            ( next, local userId "user ${String.fromInt n}" )
+
+        ByPost →
+            ( next, local postId "post ${String.fromInt n}" )
+
+        Heard tagger name →
+            ( { model | heard = model.heard ++ [ "${tagger} heard ${name}" ] }, Cmd.none )
+
+
+work : String, Cmd.Send Msg → ()
+work name _ =
+    Task.bracket
+        (λ() → ())
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    Debug.log "${name} done" ()
+
+                Cancelled →
+                    Debug.log "${name} cancelled" ()
+        )
+        λ_ → Time.sleep (Time.millis 100)
+
+
+say : String, Cmd.Send String → ()
+say name send = send name
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ =
+    Sub.batch
+        [ Sub.listen (Alpha.Key 1) (say "alpha" _) (Heard "alpha" _)
+        , Sub.listen (Beta.Key 1) (say "beta" _) (Heard "beta" _)
+        ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="alpha" onClick={ByAlpha}>alpha</button>
+        <button id="beta" onClick={ByBeta}>beta</button>
+        <button id="user" onClick={ByUser}>user</button>
+        <button id="post" onClick={ByPost}>post</button>
+        <p>{String.join model.heard ", "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { count = 0, heard = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

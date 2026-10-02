@@ -83,8 +83,11 @@ const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
 /// 8 since the `appends` column (`Dispatch.appends`, a `++` on lists); 9
-/// since `boundary` (checker-v2.md §28); 10 since `debug` (§32).
-pub const format_version: u32 = 10;
+/// since `boundary` (checker-v2.md §28); 10 since `debug` (§32); 11 since
+/// type identities (§33): a decl and a let row grow 12 → 20 bytes by their
+/// `identities` range, two columns, `identities` and `text`, and two term
+/// tags, `identity` (its parts in `args`) and `text` (a range of `text`).
+pub const format_version: u32 = 11;
 
 pub const Column = enum(u32) {
     terms,
@@ -103,6 +106,8 @@ pub const Column = enum(u32) {
     boundary,
     debug,
     debug_nodes,
+    identities,
+    text,
     symbols,
     module_refs,
     type_refs,
@@ -117,8 +122,8 @@ pub const Column = enum(u32) {
             .terms => term_bytes,
             .args => 4,
             .sites => 16,
-            .decls => 12,
-            .lets => 12,
+            .decls => 20,
+            .lets => 20,
             .requirements => 12,
             .contexts => 8,
             .derived => 32,
@@ -130,6 +135,8 @@ pub const Column = enum(u32) {
             .boundary => 12,
             .debug => 16,
             .debug_nodes => 12,
+            .identities => 4,
+            .text => 1,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -223,19 +230,25 @@ pub fn write(
     defer gpa.free(decls);
     @memset(decls, 0);
     for (d.decls, 0..) |info, i| {
-        const row = decls[i * 12 ..][0..12];
+        const row = decls[i * 20 ..][0..20];
         writeRange(row[0..8], info.requirements);
         std.mem.writeInt(u16, row[8..10], info.value_arity, .little);
         row[10] = @intFromEnum(info.convention);
+        writeRange(row[12..20], info.identities);
     }
 
     const lets = try gpa.alloc(u8, d.lets.len * Column.lets.width());
     defer gpa.free(lets);
     for (d.lets, 0..) |let, i| {
-        const row = lets[i * 12 ..][0..12];
+        const row = lets[i * 20 ..][0..20];
         std.mem.writeInt(u32, row[0..4], @intFromEnum(let.inst), .little);
         writeRange(row[4..12], let.requirements);
+        writeRange(row[12..20], let.identities);
     }
+
+    const identities = try gpa.alloc(u8, d.identities.len * 4);
+    defer gpa.free(identities);
+    for (d.identities, 0..) |j, i| std.mem.writeInt(u32, identities[i * 4 ..][0..4], j, .little);
 
     const requirements = try gpa.alloc(u8, d.requirements.len * Column.requirements.width());
     defer gpa.free(requirements);
@@ -390,6 +403,8 @@ pub fn write(
         boundary,
         debug,
         debug_nodes,
+        identities,
+        d.text,
         symbols,
         module_refs,
         type_refs,
@@ -412,6 +427,8 @@ pub fn write(
         @intCast(d.boundary.len),
         @intCast(d.debug.len),
         @intCast(d.debug_nodes.len),
+        @intCast(d.identities.len),
+        @intCast(d.text.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -544,7 +561,8 @@ const Writer = struct {
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(u.module), .little);
                 std.mem.writeInt(u32, row[8..12], try w.typeRef(u.type), .little);
             },
-            .undetermined, .field => {},
+            .text => |r| writeRange(row[4..12], r),
+            .undetermined, .field, .identity => {},
         }
         writeRange(row[12..20], t.argsOf());
     }
@@ -708,11 +726,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         const decls = try gpa.alloc(Dispatch.DeclInfo, lengths[@intFromEnum(Column.decls)]);
         out.table.decls = decls;
         for (decls, 0..) |*info, i| {
-            const row = in_bytes[i * 12 ..][0..12];
+            const row = in_bytes[i * 20 ..][0..20];
             info.* = .{
                 .requirements = readRange(row[0..8]),
                 .value_arity = std.mem.readInt(u16, row[8..10], .little),
                 .convention = std.enums.fromInt(Dispatch.Convention, row[10]) orelse return error.BadSidecar,
+                .identities = readRange(row[12..20]),
             };
         }
     }
@@ -721,13 +740,21 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         const lets = try gpa.alloc(Dispatch.LetInfo, lengths[@intFromEnum(Column.lets)]);
         out.table.lets = lets;
         for (lets, 0..) |*let, i| {
-            const row = in_bytes[i * 12 ..][0..12];
+            const row = in_bytes[i * 20 ..][0..20];
             let.* = .{
                 .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .requirements = readRange(row[4..12]),
+                .identities = readRange(row[12..20]),
             };
         }
     }
+    {
+        const in_bytes = col(bytes, offsets, .identities);
+        const identities = try gpa.alloc(u32, lengths[@intFromEnum(Column.identities)]);
+        out.table.identities = identities;
+        for (identities, 0..) |*j, i| j.* = std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little);
+    }
+    out.table.text = try gpa.dupe(u8, col(bytes, offsets, .text)[0..lengths[@intFromEnum(Column.text)]]);
     {
         const in_bytes = col(bytes, offsets, .requirements);
         const requirements = try gpa.alloc(Dispatch.Requirement, lengths[@intFromEnum(Column.requirements)]);
@@ -926,7 +953,7 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
     // Only the four terms that name a function take arguments; any other
     // row with a non-empty range is not one this writer produced.
     switch (tag) {
-        .top, .ext, .derived, .ext_derived => {},
+        .top, .ext, .derived, .ext_derived, .identity => {},
         else => if (args.len != 0) return error.BadSidecar,
     }
     return switch (tag) {
@@ -961,6 +988,8 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
         },
         .undetermined => .undetermined,
         .field => .field,
+        .identity => .{ .identity = args },
+        .text => .{ .text = .{ .start = a, .len = b } },
     };
 }
 
@@ -1015,6 +1044,12 @@ pub fn verify(l: *const Loaded) bool {
                 .derived => |index| if (index >= d.derived.len) return false,
                 else => {},
             },
+            .text => |x| if (!rangeOk(x, d.text.len)) return false,
+            // An identity's parts are text or a parameter (checker-v2.md §33).
+            .identity => for (d.argsAt(r)) |arg| switch (d.terms[arg.int()]) {
+                .text, .param => {},
+                else => return false,
+            },
             else => {},
         }
     }
@@ -1044,9 +1079,11 @@ pub fn verify(l: *const Loaded) bool {
         if ((info.convention == .plain) != (info.requirements.len == 0)) return false;
         // A thunk is a value of non-function type: arity 0 by `of`.
         if (info.convention == .thunk and info.value_arity != 0) return false;
+        if (!identitiesOk(d, info.identities, info.requirements)) return false;
     }
     for (d.lets) |let| {
         if (!rangeOk(let.requirements, d.requirements.len)) return false;
+        if (!identitiesOk(d, let.identities, let.requirements)) return false;
     }
     // A boundary row names a declaration (`decls` has one per `Bir.Decl`).
     for (d.boundary) |b| {
@@ -1065,6 +1102,18 @@ pub fn verify(l: *const Loaded) bool {
             if (n.kind == .field and n.count != 1) return false;
         }
         if (owed != 0) return false;
+    }
+    return true;
+}
+
+/// A binder's identities fit the column and each names one of its own
+/// requirements, ascending (checker-v2.md §33).
+fn identitiesOk(d: *const Dispatch, r: Dispatch.Range, requirements: Dispatch.Range) bool {
+    if (!rangeOk(r, d.identities.len)) return false;
+    if (r.len == 0) return true;
+    for (d.identities[r.start..][0..r.len], 0..) |j, i| {
+        if (j >= requirements.len) return false;
+        if (i != 0 and d.identities[r.start + i - 1] >= j) return false;
     }
     return true;
 }

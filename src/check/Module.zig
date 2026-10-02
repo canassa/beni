@@ -59,6 +59,7 @@ const Tree = @import("constrain/Tree.zig");
 const MarkupTexts = @import("MarkupTexts.zig");
 const Instances = @import("Instances.zig");
 const Elaborate = @import("Elaborate.zig");
+const Identity = @import("Identity.zig");
 const Groups = @import("Groups.zig");
 const Contexts = @import("Contexts.zig");
 const Decl = @import("constrain/Decl.zig");
@@ -358,6 +359,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .roundtrip = in.roundtrip_interfaces,
         .types = in.types,
         .contexts = &solver.contexts,
+        .dispatch = in.dispatch,
     });
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
     if (in.profile) |p| p.end(in.tid, p8_token.?, .publish, file.int(), 0);
@@ -736,7 +738,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         info.* = .{ .inst = row.inst, .requirements = .{ .start = start, .len = kept.len } };
         scheme.* = row.scheme;
     }
-    const out = try Elaborate.run(.{
+    var out = try Elaborate.run(.{
         .cx = solver.cx,
         .evidence = &solver.evidence,
         .eager = eager,
@@ -751,6 +753,19 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .report = report,
         .clean = !report.quiet and report.errors == 0,
     });
+    // The type identities (checker-v2.md §33), in a module that has
+    // reported nothing: a failed site says nothing of what it would pass.
+    const identity: Identity.Result = if (report.errors == 0) try Identity.run(.{
+        .cx = solver.cx,
+        .report = report,
+        .decls = decls,
+        .lets = lets,
+        .requirements = requirements.items,
+        .roots = roots.items,
+        .decl_scheme = decl_scheme,
+        .let_schemes = let_schemes,
+        .out = &out,
+    }) else .{};
     in.dispatch.deinit(gpa);
     // Every `?` the solver decided, by instruction (`checker.md` §6.5): the
     // shape is the one thing about a `?` the backend cannot work out.
@@ -791,6 +806,8 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .appends = try appends.toOwnedSlice(gpa),
         .lets = lets,
         .requirements = try requirements.toOwnedSlice(gpa),
+        .identities = identity.identities,
+        .text = identity.text,
         .terms = out.terms,
         .args = out.args,
         .sites = out.sites,

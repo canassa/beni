@@ -365,7 +365,7 @@ pub fn termsEdges(
             } }),
             .primitive => |prim| try out.append(scratch, .{ .primitive = prim }),
             .undetermined => try out.append(scratch, .undetermined),
-            .param, .field => {},
+            .param, .field, .identity, .text => {},
         }
         const args = dispatch.argsAt(t.argsOf());
         var a = args.len;

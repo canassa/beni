@@ -11,23 +11,30 @@ import Browser exposing (Host)
 import Js
 
 
---| A command's or subscription's key, whatever its type: two keys are the
---| same when their values are, compared by value and never by how the
---| value's `compare` was built. A key's type must have `compare`, which is
---| what keeps functions out of keys.
+--| A command's or subscription's key, whatever its type: its type's
+--| identity, its type's `compare`, and the value (`boundary.md` §9.8.3).
+--| Two keys are the same when they are of one type and that type's
+--| `compare` calls them equal — however each was built or stored. A key's
+--| type must have `compare`, which is what keeps functions out of keys.
 pub foreign type Key
 
 
---| Any value as a key.
-pub foreign pure key : k → Key
+--| Any value as a key. Its type's identity is the compiler's, handed on by
+--| every function generic over the key with nothing written.
+pub key : k → Key
+    where k.compare : k, k → Order
+key k = keyOf (Js.fingerprint k EQ) k
+
+
+foreign pure keyOf : String, k → Key
     where k.compare : k, k → Order
 
 
 foreign pure compareKeys : Key, Key → Order
 
 
---| The order of two keys: by value, the same for equal values whatever
---| built them.
+--| The order of two keys: by their types' identities, then, for two keys
+--| of one type, by that type's `compare`.
 pub compare : Key, Key → Order
 compare a b = compareKeys a b
 

@@ -1,0 +1,59 @@
+-- dispatch (core): type identities (static-dispatch-spike.md §8.6,
+-- checker-v2.md §33). `Js.fingerprint` is the seed: its site passes one
+-- `identity` root after the evidence, text where the type is concrete. A
+-- declaration generic over the type takes an identity parameter after its
+-- evidence (`identity 0 requirement=0`, hidden parameter 1) and passes it
+-- on as a `param` part — `named`, which every type below reaches, and
+-- `nested`, which wraps its own in `Maybe`. A `let` function that
+-- generalises takes one too. A record's fields are named in text order,
+-- whatever order the type spells them in; a phantom argument is named
+-- though no value holds it. `plain` keys nothing and takes none.
+import Js
+
+
+type Key
+    = Key Int
+
+
+type Id a
+    = Id Int
+
+
+type User
+    = User
+
+
+named : k → String
+    where k.compare : k, k → Order
+named k = Js.fingerprint k EQ
+
+
+nested : k → String
+    where k.compare : k, k → Order
+nested k = named (Just k)
+
+
+ofKey : String
+ofKey = named (Key 1)
+
+
+ofPhantom : Id User → String
+ofPhantom i = named i
+
+
+ofShapes : String
+ofShapes = named ( 1, { zed = "z", alpha = Key 2 } )
+
+
+ofNested : String
+ofNested = nested [ 'c' ]
+
+
+viaLet : Int → String
+viaLet n =
+    twice x = named x
+    twice n
+
+
+plain : Int → Bool
+plain n = n < 3

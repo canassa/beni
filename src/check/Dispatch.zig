@@ -125,6 +125,13 @@ pub const Term = union(enum(u8)) {
     undetermined,
     /// A record receiver: a plain field call. A callee only.
     field,
+    /// A type's identity (`static-dispatch-spike.md` §8.6, checker-v2.md
+    /// §33): its parts, a run of `args`, each a `text` or a `param` naming
+    /// an enclosing binder's identity parameter. Only a site's root, after
+    /// the evidence roots.
+    identity: Range,
+    /// Literal identity text: a run of `text`. Only an `identity`'s part.
+    text: Range,
 
     /// `k` is a `u32` since dispatch format 4: a derived row
     /// can have more than 65 535 context entries or positions.
@@ -146,6 +153,7 @@ pub const Term = union(enum(u8)) {
             .ext => |u| u.args,
             .derived => |u| u.args,
             .ext_derived => |u| u.args,
+            .identity => |r| r,
             else => .empty,
         };
     }
@@ -169,6 +177,11 @@ pub const Site = struct {
 pub const DeclInfo = struct {
     /// A range of `requirements`, in canonical order (spike §7.2).
     requirements: Range = .empty,
+    /// Its identity parameters (checker-v2.md §33): a range of
+    /// `identities`, each the requirement index its quantifier is placed
+    /// at, ascending. Identity `i` is hidden parameter
+    /// `requirements.len + i`.
+    identities: Range = .empty,
     /// The parameter count of the declaration's solved type, 0 for a
     /// non-function.
     value_arity: u16 = 0,
@@ -179,7 +192,7 @@ pub const DeclInfo = struct {
 
 /// A generalised constrained `let` function binding (checker-v2.md §8.4,
 /// §13.1).
-pub const LetInfo = struct { inst: Bir.Inst.Index, requirements: Range };
+pub const LetInfo = struct { inst: Bir.Inst.Index, requirements: Range, identities: Range = .empty };
 
 /// One evidence parameter: which quantifier of its scheme it came from, and
 /// which method (spike §7.2's canonical order).
@@ -369,6 +382,11 @@ decls: []const DeclInfo = &.{},
 /// One per promoting `let` function binding, sorted by `inst` (§8.4).
 lets: []const LetInfo = &.{},
 requirements: []const Requirement = &.{},
+/// What every `DeclInfo.identities` and `LetInfo.identities` ranges over:
+/// requirement indices (checker-v2.md §33).
+identities: []const u32 = &.{},
+/// What every `text` term ranges over: identity text.
+text: []const u8 = &.{},
 contexts: []const ContextEntry = &.{},
 /// Sorted by emitted name text (§8.5). Exactly the functions this module
 /// emits: a derived method of another module's type is an `ext_derived`
@@ -412,6 +430,8 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.decls);
     gpa.free(d.lets);
     gpa.free(d.requirements);
+    gpa.free(d.identities);
+    gpa.free(d.text);
     gpa.free(d.contexts);
     gpa.free(d.derived);
     gpa.free(d.tries);
@@ -604,6 +624,58 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
     return n;
 }
 
+/// The identity parameters of an imported value (checker-v2.md §33): each
+/// quantifier with the identity bit and a constraint, as the requirement
+/// index of its first constraint in `extRequirementCount`'s order. Writes
+/// the first `out.len` of them to `out` and returns how many there are.
+pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: u32, out: []u32) u32 {
+    if (module.int() >= interfaces.len) return 0;
+    const iface = &interfaces[module.int()];
+    if (value >= iface.values.len) return 0;
+    const index = iface.values[value].scheme;
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return 0;
+    const s = iface.scheme(index);
+    var n: u32 = 0;
+    var at: u32 = 0;
+    var i: u32 = 0;
+    while (i < s.quantified_count) : (i += 1) {
+        const q = iface.quantified(s, i);
+        if (q.identity and q.constraints_len != 0) {
+            if (n < out.len) out[n] = at;
+            n += 1;
+        }
+        at += q.constraints_len;
+    }
+    return n;
+}
+
+/// How many identity parameters an imported value takes.
+pub fn extIdentityCount(interfaces: []const Interface, module: Graph.Index, value: u32) u32 {
+    return extIdentities(interfaces, module, value, &.{});
+}
+
+/// The identity parameters of `decl`: requirement indices, ascending.
+pub fn declIdentities(d: *const Dispatch, decl: u32) []const u32 {
+    if (decl >= d.decls.len) return &.{};
+    const r = d.decls[decl].identities;
+    if (r.len == 0) return &.{};
+    return d.identities[r.start..][0..r.len];
+}
+
+/// The identity parameters of `lets[i]`.
+pub fn letIdentities(d: *const Dispatch, i: u32) []const u32 {
+    if (i >= d.lets.len) return &.{};
+    const r = d.lets[i].identities;
+    if (r.len == 0) return &.{};
+    return d.identities[r.start..][0..r.len];
+}
+
+/// The text of a `text` term.
+pub fn textOf(d: *const Dispatch, r: Range) []const u8 {
+    if (r.len == 0) return "";
+    return d.text[r.start..][0..r.len];
+}
+
 /// Another module's derived `kind` of type `id`, as its declaring module
 /// published it (checker-v2.md §14.2): the record and
 /// the context range of its row — exported or hidden — or null when the
@@ -649,11 +721,13 @@ fn publishedMethod(interfaces: []const Interface, types: *const Types, interner:
 /// re-assert both call it; nothing else counts evidence.
 pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global) u32 {
     return switch (t) {
-        .top => |u| @intCast(d.declRequirements(u.decl.int()).len),
-        .ext => |u| extRequirementCount(interfaces, u.module, @intFromEnum(u.value)),
+        .top => |u| @intCast(d.declRequirements(u.decl.int()).len + d.declIdentities(u.decl.int()).len),
+        .ext => |u| extRequirementCount(interfaces, u.module, @intFromEnum(u.value)) + extIdentityCount(interfaces, u.module, @intFromEnum(u.value)),
         .derived => |u| @intCast(d.contextOf(u.index).len),
         .ext_derived => |u| publishedCount(interfaces, types, interner, u.type, u.kind),
-        .param, .primitive, .undetermined, .field => 0,
+        // An identity's parts are its own, and say their count.
+        .identity => |r| r.len,
+        .param, .primitive, .undetermined, .field, .text => 0,
     };
 }
 
@@ -667,9 +741,9 @@ pub fn referenceCount(d: *const Dispatch, bir: *const Bir, interfaces: []const I
     if (inst.int() >= bir.insts.len) return 0;
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
-        .top => @intCast(d.declRequirements(data.lhs).len),
-        .ext_value => extRequirementCount(interfaces, @enumFromInt(data.lhs), data.rhs),
-        .local => if (d.localLet(bir, owner orelse return 0, data.lhs)) |i| d.lets[i].requirements.len else 0,
+        .top => @intCast(d.declRequirements(data.lhs).len + d.declIdentities(data.lhs).len),
+        .ext_value => extRequirementCount(interfaces, @enumFromInt(data.lhs), data.rhs) + extIdentityCount(interfaces, @enumFromInt(data.lhs), data.rhs),
+        .local => if (d.localLet(bir, owner orelse return 0, data.lhs)) |i| d.lets[i].requirements.len + d.lets[i].identities.len else 0,
         else => 0,
     };
 }
@@ -894,7 +968,7 @@ const I7 = struct {
                 },
                 .primitive, .field, .param => return site.evidence.len == 0,
                 // Never a callee: an `err` SITE becomes no term at all.
-                .undetermined => return false,
+                .undetermined, .identity, .text => return false,
             }
         }
         if (wants_callee) return false;
@@ -928,6 +1002,15 @@ const I7 = struct {
         switch (t) {
             .field => return false,
             .derived => |u| if (u.index >= d.derived.len) return false,
+            .text => |x| if (@as(u64, x.start) + x.len > d.text.len) return false,
+            // An identity's parts are text or an identity parameter.
+            .identity => for (d.argsAt(r)) |arg| {
+                if (arg.int() >= d.terms.len) return false;
+                switch (d.terms[arg.int()]) {
+                    .text, .param => {},
+                    else => return false,
+                }
+            },
             else => {},
         }
         if (r.len != cx.count(t)) return false;

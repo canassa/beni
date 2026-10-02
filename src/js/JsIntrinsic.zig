@@ -85,6 +85,10 @@ pub const Which = enum {
     /// that body takes (`backend.md` §4, *`Js.maySuspend` is the body's
     /// answer*).
     maySuspend,
+    /// The identity of its argument's type: the identity term its site
+    /// carries, a string literal or a concatenation (`backend.md` §4,
+    /// *`Js.fingerprint` is its type's identity*).
+    fingerprint,
 };
 
 /// Whether `inst` is a `case` on `Js.development` — what an `if` on it

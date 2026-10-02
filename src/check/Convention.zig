@@ -89,7 +89,7 @@ pub fn ofDecl(dispatch: *const Dispatch, bir: *const Bir, decl: u32) Use {
     const info = dispatch.decls[decl];
     return .{
         .convention = info.convention,
-        .evidence = info.requirements.len,
+        .evidence = info.requirements.len + info.identities.len,
         .arity = if (params != 0) params else info.value_arity,
     };
 }
@@ -102,7 +102,7 @@ pub fn ofDecl(dispatch: *const Dispatch, bir: *const Bir, decl: u32) Use {
 pub fn ofLet(dispatch: *const Dispatch, bir: *const Bir, i: u32) Use {
     if (i >= dispatch.lets.len) return .{ .convention = .plain, .evidence = 0, .arity = 0 };
     const inst = dispatch.lets[i].inst;
-    const evidence = dispatch.lets[i].requirements.len;
+    const evidence = dispatch.lets[i].requirements.len + dispatch.lets[i].identities.len;
     const data = bir.instData(inst);
     const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
     var arity: u32 = @intCast(bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index).len);
@@ -131,7 +131,7 @@ pub fn definitionOf(dispatch: *const Dispatch, bir: *const Bir, decl: u32) Defin
 /// count `Dispatch.extRequirementCount` gives every consumer, and the arity
 /// of the scheme's body through any alias (`importArity`).
 pub fn ofImport(interfaces: []const Interface, module: Graph.Index, value: u32) Use {
-    const evidence = Dispatch.extRequirementCount(interfaces, module, value);
+    const evidence = Dispatch.extRequirementCount(interfaces, module, value) + Dispatch.extIdentityCount(interfaces, module, value);
     const arity = importArity(interfaces, module, value);
     return .{ .convention = of(0, false, arity, evidence), .evidence = evidence, .arity = arity };
 }

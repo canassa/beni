@@ -1,0 +1,12 @@
+click #set
+advance 50
+click #set
+advance 100
+click #dict
+advance 50
+click #dict
+advance 100
+click #bag
+advance 50
+click #bag
+advance 100

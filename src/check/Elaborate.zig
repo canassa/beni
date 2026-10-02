@@ -119,6 +119,27 @@ pub const Output = struct {
     /// assert does not hold them to a tree (§12.2). Owned by the
     /// scratch arena.
     poisoned: []const Bir.Inst.Index,
+    /// Every root of every site whose evidence is a value's, with the
+    /// variable its wanted was raised on: what the identity pass reads
+    /// (checker-v2.md §33). Owned by the scratch arena.
+    slots: []const Slot = &.{},
+    /// Per promoting `let`, the one around it (`LetScopes.parent`), or
+    /// `no_let`. Owned by the scratch arena; empty with no `let` row.
+    let_parent: []const u32 = &.{},
+};
+
+/// One root of a site whose evidence belongs to a value of this module,
+/// an import or a promoting `let` (checker-v2.md §33): which root, the
+/// type the callee's requirement was instantiated at, and the binders
+/// around the site.
+pub const Slot = struct {
+    inst: Bir.Inst.Index,
+    root: u32,
+    type: Var,
+    /// The site's declaration, or `no_let` (a P5 row: never).
+    decl: u32,
+    /// The innermost promoting `let` around the site, or `no_let`.
+    let: u32,
 };
 
 /// Whose `param` a term is: the site's declaration, or a P5 row (by its
@@ -167,6 +188,8 @@ row_entries: std.ArrayList(Dispatch.ContextEntry) = .empty,
 internals: std.ArrayList(Internal) = .empty,
 /// The sites P6 wrote nothing for because a wanted was `poisoned`.
 poisoned: std.ArrayList(Bir.Inst.Index) = .empty,
+/// `Output.slots`, in the scratch arena.
+slots: std.ArrayList(Slot) = .empty,
 /// `Eager.markerKeys`: row `marker_row`'s open-wanted lookup.
 marker_row: u32 = std.math.maxInt(u32),
 marker_keys: std.HashMapUnmanaged(MarkerKey, u32, MarkerKey.HashContext, std.hash_map.default_max_load_percentage) = .empty,
@@ -460,6 +483,7 @@ fn site(e: *Elaborate, event: Event) Error!void {
                 .callee = if (has_callee) terms.items[0].toOptional() else .none,
                 .evidence = try e.addArgs(terms.items[first..]),
             });
+            try e.recordSlots(event);
             return;
         }
     }
@@ -478,6 +502,52 @@ fn site(e: *Elaborate, event: Event) Error!void {
         try e.terms.append(e.gpa, t);
         try e.sites.append(e.gpa, .{ .inst = event.inst, .callee = at.toOptional() });
     }
+}
+
+/// The roots of a site just written whose evidence is a value's, each with
+/// the type its requirement was instantiated at (checker-v2.md §33): the
+/// root wanted's receiver, or for a group call the callee's requirement
+/// root, which is the caller's own.
+fn recordSlots(e: *Elaborate, event: Event) Error!void {
+    const ev = e.in.evidence;
+    const decl: u32 = switch (event.binder) {
+        .decl => |d| d,
+        else => return,
+    };
+    switch (event.what) {
+        .callee => |start| {
+            const id = e.follow(start) orelse return;
+            switch (ev.answer(id)) {
+                .top => |x| try e.wantedSlots(event, decl, ev.argsOf(x.args)),
+                .ext => |x| try e.wantedSlots(event, decl, ev.argsOf(x.args)),
+                .group_call => |d| try e.rootSlots(event, decl, e.in.decls[d].requirements),
+                else => {},
+            }
+        },
+        .evidence => |r| try e.wantedSlots(event, decl, ev.argsOf(r)),
+        .group => |d| try e.rootSlots(event, decl, e.in.decls[d].requirements),
+        .let_group => |l| try e.rootSlots(event, decl, e.in.lets[l].requirements),
+    }
+}
+
+fn wantedSlots(e: *Elaborate, event: Event, decl: u32, ids: []const WantedId) Error!void {
+    for (ids, 0..) |id, k| try e.slots.append(e.scratch, .{
+        .inst = event.inst,
+        .root = @intCast(k),
+        .type = e.in.evidence.get(id).receiver,
+        .decl = decl,
+        .let = event.let,
+    });
+}
+
+fn rootSlots(e: *Elaborate, event: Event, decl: u32, r: Dispatch.Range) Error!void {
+    for (e.in.roots[r.start..][0..r.len], 0..) |q, k| try e.slots.append(e.scratch, .{
+        .inst = event.inst,
+        .root = @intCast(k),
+        .type = q,
+        .decl = decl,
+        .let = event.let,
+    });
 }
 
 /// A method call's callee: a value's evidence is the site's roots; any
@@ -948,6 +1018,8 @@ fn finish(e: *Elaborate) Error!Output {
         .symbols = symbols,
         .internals = e.internals.items,
         .poisoned = e.poisoned.items,
+        .slots = e.slots.items,
+        .let_parent = try e.scratch.dupe(u32, e.scopes.parent),
     };
 }
 

@@ -1,0 +1,73 @@
+module TypeIdentities
+  decl named evidence=1 arity=1 convention=function
+    requirement 0 quantified=0 var=k method=compare
+    identity 0 requirement=0
+  decl nested evidence=1 arity=1 convention=function
+    requirement 0 quantified=0 var=k method=compare
+    identity 0 requirement=0
+  decl ofKey evidence=0 arity=0 convention=plain
+  decl ofPhantom evidence=0 arity=1 convention=plain
+  decl ofShapes evidence=0 arity=0 convention=plain
+  decl ofNested evidence=0 arity=0 convention=plain
+  decl viaLet evidence=0 arity=1 convention=plain
+  decl plain evidence=0 arity=1 convention=plain
+  let 61 evidence=1
+    requirement 0 quantified=0 var=k method=compare
+    identity 0 requirement=0
+  derived 0 compare TypeIdentities.Id context=0
+    body 0 primitive num_compare
+  derived 1 eq TypeIdentities.Id context=0
+    body 0 primitive strict_eq
+  derived 2 compare TypeIdentities.Key context=0
+    body 0 primitive num_compare
+  derived 3 eq TypeIdentities.Key context=0
+    body 0 primitive strict_eq
+  derived 4 compare TypeIdentities.User context=0
+  derived 5 eq TypeIdentities.User context=0
+  derived 6 compare r$alpha$zed context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  derived 7 compare t2 context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  site 13
+    evidence param 0
+    evidence identity
+      param 1
+  site 26
+    evidence ext_derived Maybe.Maybe compare #1
+      param 0
+    evidence identity
+      text "core:Maybe.Maybe("
+      param 1
+      text ")"
+  site 32
+    evidence derived 2
+    evidence identity
+      text "TypeIdentities.Key"
+  site 41
+    evidence derived 0
+    evidence identity
+      text "TypeIdentities.Id(TypeIdentities.User)"
+  site 51
+    evidence derived 7 #2
+      primitive num_compare
+      derived 6
+        derived 2
+        primitive string_compare
+    evidence identity
+      text "(core:Basics.Int,{alpha=TypeIdentities.Key,zed=core:String.String})"
+  site 56
+    evidence ext List compare #3
+      primitive char_compare
+    evidence identity
+      text "core:List.List(core:Char.Char)"
+  site 65
+    evidence param let 61 0
+    evidence identity
+      param let 61 1
+  site 68
+    evidence primitive num_compare
+    evidence identity
+      text "core:Basics.Int"
+  site 76 callee primitive num_compare
