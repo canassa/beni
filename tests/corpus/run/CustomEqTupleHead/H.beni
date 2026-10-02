@@ -16,13 +16,13 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder ( a, b ), Holder ( a, b ) -> Bool
+pub eq : Holder (a × b), Holder (a × b) → Bool
     where
-        a.eq : a, a -> Bool
-        , b.eq : b, b -> Bool
+        a.eq : a, a → Bool
+        , b.eq : b, b → Bool
 eq left right =
     case left of
-        Holder ( la, lb ) ->
+        Holder ( la, lb ) →
             case right of
-                Holder ( ra, rb ) ->
+                Holder ( ra, rb ) →
                     la == ra && lb == rb

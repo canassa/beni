@@ -15,15 +15,15 @@ type Colour
 
 
 blank : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 blank = Debug.log "blank" []
 
 
-sizeInts : List Int -> Int
+sizeInts : List Int → Int
 sizeInts xs = List.length xs
 
 
-sizeColours : List Colour -> Int
+sizeColours : List Colour → Int
 sizeColours xs = List.length xs
 
 

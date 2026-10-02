@@ -11,13 +11,13 @@ type alias V =
 
 -- An instance: its first node a clone, which a node-making host call
 -- returns (never `null`), its last an object literal, its `q` null.
-instance : V -> V
+instance : V → V
 instance proto =
     c = Js.call proto "cloneNode" [ Js.from True ]
     Js.from { s = c, q = Js.null, e = Js.from { tag = "end" } }
 
 
-first : V -> V
+first : V → V
 first i =
     if Js.isNull (Js.get i "s") then
         Js.get i "q"
@@ -25,7 +25,7 @@ first i =
         Js.get i "s"
 
 
-last : V -> V
+last : V → V
 last i =
     if Js.isNull (Js.get i "e") then
         Js.get i "q"
@@ -38,12 +38,12 @@ block : V
 block = Js.from { t = "kind" }
 
 
-view : Int -> V
+view : Int → V
 view _ = block
 
 
 -- What `patch` does when it is shown the block it shows already.
-patch : V, V -> String
+patch : V, V → String
 patch shown b =
     if Js.same b shown then
         "same"
@@ -52,7 +52,7 @@ patch shown b =
 
 
 -- A block made here is never the module's one.
-fresh : V -> String
+fresh : V → String
 fresh b =
     made = Js.from { t = "kind" }
     if Js.same made b then
@@ -63,11 +63,11 @@ fresh b =
 
 -- Put `n` at the end of `parent`, a host value: inserting before `null`
 -- is appending.
-append : V, V -> ()
+append : V, V → ()
 append parent n = Js.to (Js.call parent "insertBefore" [ n, Js.null ])
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () =
     proto = Js.get (Js.global "globalThis") "probeNode"
 

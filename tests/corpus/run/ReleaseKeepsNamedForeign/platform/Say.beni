@@ -3,4 +3,4 @@
 --! may write `foreign`, and `impure` is the rung that says so.
 
 --| Write `text` and a newline, now.
-pub foreign impure say : String -> ()
+pub foreign impure say : String → ()

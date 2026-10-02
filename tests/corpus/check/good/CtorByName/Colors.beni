@@ -6,14 +6,14 @@ pub type Color
     | Blue
 
 
-pub next : Color -> Color
+pub next : Color → Color
 next c =
     case c of
-        Red ->
+        Red →
             Green
 
-        Green ->
+        Green →
             Blue
 
-        Blue ->
+        Blue →
             Red

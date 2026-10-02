@@ -11,25 +11,25 @@ type alias Grid =
     cells : Array Int
 
 
-pub make : Int, Int -> Grid
+pub make : Int, Int → Grid
 make w h =
     { w = w
     , h = h
-    , cells = Array.initialize (w * h) λi -> if Int.mod (i * 7) 5 == 0 then 1 else 0
+    , cells = Array.initialize (w * h) λi → if Int.mod (i * 7) 5 == 0 then 1 else 0
     }
 
 
-cell : Grid, Int, Int -> Int
+cell : Grid, Int, Int → Int
 cell g x y =
     case Array.get g.cells (Int.mod y g.h * g.w + Int.mod x g.w) of
-        Just v ->
+        Just v →
             v
 
-        Nothing ->
+        Nothing →
             0
 
 
-neighbours : Grid, Int, Int -> Int
+neighbours : Grid, Int, Int → Int
 neighbours g x y =
     cell g (x - 1) (y - 1)
         + cell g x (y - 1)
@@ -42,13 +42,13 @@ neighbours g x y =
 
 
 --| One tick that changes `k` cells, chosen from `seed`.
-pub tick : Grid, Int, Int -> Grid
+pub tick : Grid, Int, Int → Grid
 tick g k seed = tickHelp g 0 k seed
 
 
-tickHelp : Grid, Int, Int, Int -> Grid
+tickHelp : Grid, Int, Int, Int → Grid
 tickHelp g j k seed =
-    if j >= k then
+    if j ≥ k then
         g
     else
         i = Int.mod (seed + j * 7919) (g.w * g.h)
@@ -63,5 +63,5 @@ tickHelp g j k seed =
         tickHelp { g | cells = Array.set g.cells i v } (j + 1) k seed
 
 
-pub population : Grid -> Int
-population g = Array.foldl g.cells 0 λv s -> s + v
+pub population : Grid → Int
+population g = Array.foldl g.cells 0 λv s → s + v

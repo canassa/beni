@@ -12,22 +12,22 @@ import Node exposing (Program)
 import String
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
-s : String, String -> String
+s : String, String → String
 s label v = Debug.log label v
 
 
-three : Int, Int, Int -> Int
+three : Int, Int, Int → Int
 three x y z = x + y + z
 
 
 -- The callee of an application is an expression like any other, so a call
 -- whose head is itself a call has an order to pin: head first, arguments
 -- after.
-chooser : Int -> (Int, Int, Int -> Int)
+chooser : Int → (Int, Int, Int → Int)
 chooser _ = three
 
 
@@ -35,7 +35,7 @@ chooser _ = three
 -- evaluated in parameter order, and all of them before any parameter is
 -- rebound — swapping two of them is the shape that catches a rebind-as-you-go
 -- bug, because the result would be `x` twice.
-swapLoop : Int, Int, Int -> Int
+swapLoop : Int, Int, Int → Int
 swapLoop steps x y =
     if steps == 0 then
         x * 100 + y

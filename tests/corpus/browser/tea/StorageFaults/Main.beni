@@ -21,37 +21,37 @@ type Msg
     | Inc
 
 
-written : Result Storage.Error () -> String
+written : Result Storage.Error () → String
 written result =
     case result of
-        Ok () ->
+        Ok () →
             "written"
 
-        Err Storage.QuotaExceeded ->
+        Err Storage.QuotaExceeded →
             "over the quota"
 
-        Err Storage.Unavailable ->
+        Err Storage.Unavailable →
             "no storage"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Quota ->
+        Quota →
             _ = Fault.fillQuota ()
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
-        Blocked ->
+        Blocked →
             _ = Fault.blockSession ()
 
             _ = Storage.remove Session "k"
 
             found =
                 case Storage.get Session "k" of
-                    Just _ ->
+                    Just _ →
                         "found"
 
-                    Nothing ->
+                    Nothing →
                         "nothing"
             ( lines
                 ++ [ found
@@ -61,26 +61,26 @@ update msg lines =
             , Cmd.none
             )
 
-        Broken ->
+        Broken →
             _ = Fault.breakStorage ()
             ( lines ++ [ written (Storage.set Local "k" "v") ], Cmd.none )
 
-        Inc ->
+        Inc →
             ( lines ++ [ "inc" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="quota" onClick={Quota}>quota</button>
         <button id="blocked" onClick={Blocked}>blocked</button>
         <button id="broken" onClick={Broken}>broken</button>
         <button id="inc" onClick={Inc}>inc</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

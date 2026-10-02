@@ -10,8 +10,8 @@ pub swap p = ( p.second, p.first )
 
 pub firstOf xs ifEmpty =
     case xs of
-        [] ->
+        [] →
             ifEmpty
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             x

@@ -41,46 +41,46 @@ wiped : String
 wiped = Debug.log "wiped" ""
 
 
-louder : Request -> Request
+louder : Request → Request
 louder r =
     case r of
-        Shout name ->
+        Shout name →
             Shout (name ++ "!")
 
-        other ->
+        other →
             other
 
 
-mood : Request -> Mood
+mood : Request → Mood
 mood r =
     case r of
-        Shout _ ->
+        Shout _ →
             Hushed
 
-        _ ->
+        _ →
             Calm
 
 
-tone : Mood -> String
+tone : Mood → String
 tone m =
     case m of
-        Calm ->
+        Calm →
             ""
 
-        Hushed ->
+        Hushed →
             quiet
 
 
-run : Request -> ( String, Request )
+run : Request → String × Request
 run r =
     case louder r of
-        Greet name ->
+        Greet name →
             ( "hello " ++ name ++ tone (mood r), Wipe )
 
-        Shout name ->
+        Shout name →
             ( String.toUpper name ++ loud, Wipe )
 
-        Wipe ->
+        Wipe →
             ( wiped, Wipe )
 
 

@@ -9,17 +9,17 @@ import Node exposing (Program)
 import String
 
 
-noteChar : String, Char -> Char
+noteChar : String, Char → Char
 noteChar tag ch = Debug.log tag ch
 
 
 main : Program
 main =
-    mapped = String.map "abc" λch -> noteChar "String.map" ch
-    kept = String.filter "abc" λch -> noteChar "String.filter" ch /= 'b'
-    folded = String.foldl "abc" 0 λch acc -> Char.toCode (noteChar "String.foldl" ch) + acc
-    searched = String.any "abc" λch -> noteChar "String.any" ch == 'b'
-    every = String.all "abc" λch -> noteChar "String.all" ch /= 'c'
+    mapped = String.map "abc" λch → noteChar "String.map" ch
+    kept = String.filter "abc" λch → noteChar "String.filter" ch ≠ 'b'
+    folded = String.foldl "abc" 0 λch acc → Char.toCode (noteChar "String.foldl" ch) + acc
+    searched = String.any "abc" λch → noteChar "String.any" ch == 'b'
+    every = String.all "abc" λch → noteChar "String.all" ch ≠ 'c'
     Node.printLines
         [ mapped
         , kept

@@ -22,17 +22,17 @@ type alias Model =
     ticks : Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Tick ->
+        Tick →
             { model | ticks = model.ticks + 1 }
 
-        Select name ->
+        Select name →
             { model | selected = name }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="tick" onClick={Tick}>tick</button>
@@ -40,8 +40,7 @@ view model =
         <p>{Debug.log "view" model.ticks}</p>
         <ul>
             <For each={model.rows}>
-                {λrow -> <li class={[ ( "sel", Debug.log "row" row == model.selected ) ]}>{row}</li>
-                }
+                {λrow → <li class={[ ( "sel", Debug.log "row" row == model.selected ) ]}>{row}</li>}
             </For>
         </ul>
     </main>

@@ -16,25 +16,25 @@ type Order
     | Desc
 
 
-area : Shape -> Float
+area : Shape → Float
 area shape =
     case shape of
-        Circle r ->
+        Circle r →
             3 * r * r
 
-        Square s ->
+        Square s →
             s * s
 
 
-isTimeout : Error -> Bool
+isTimeout : Error → Bool
 isTimeout err =
     case err of
-        Timeout ->
+        Timeout →
             True
 
-        _ ->
+        _ →
             False
 
 
-values : ( Shape, Error, Maybe Int, Order )
+values : Shape × Error × Maybe Int × Order
 values = ( Circle 1, Timeout, Just 1, Asc )

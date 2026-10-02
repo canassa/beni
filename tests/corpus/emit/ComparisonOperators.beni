@@ -17,44 +17,44 @@
 import Node exposing (Program)
 
 
-pub ints : Int, Int -> Bool
+pub ints : Int, Int → Bool
 ints a b = a < b
 
 
-pub chars : Char, Char -> Bool
+pub chars : Char, Char → Bool
 chars a b = a < b
 
 
-pub strings : String, String -> Bool
+pub strings : String, String → Bool
 strings a b = a < b
 
 
-pub same : Int, Int -> Bool
+pub same : Int, Int → Bool
 same a b = a == b
 
 
-pub different : Int, Int -> Bool
-different a b = a /= b
+pub different : Int, Int → Bool
+different a b = a ≠ b
 
 
-pub before : a, a -> Bool
-    where a.compare : a, a -> Order
+pub before : a, a → Bool
+    where a.compare : a, a → Order
 before x y = x < y
 
 
-pub notAfter : a, a -> Bool
-    where a.compare : a, a -> Order
-notAfter x y = x <= y
+pub notAfter : a, a → Bool
+    where a.compare : a, a → Order
+notAfter x y = x ≤ y
 
 
-pub after : a, a -> Bool
-    where a.compare : a, a -> Order
+pub after : a, a → Bool
+    where a.compare : a, a → Order
 after x y = x > y
 
 
-pub notBefore : a, a -> Bool
-    where a.compare : a, a -> Order
-notBefore x y = x >= y
+pub notBefore : a, a → Bool
+    where a.compare : a, a → Order
+notBefore x y = x ≥ y
 
 
 main : Program

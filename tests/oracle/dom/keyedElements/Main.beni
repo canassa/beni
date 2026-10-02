@@ -11,7 +11,7 @@ staticKey =
     </ul>
 
 
-pub dynamicKey : { cls : String, text : String } -> Html msg
+pub dynamicKey : { cls : String, text : String } → Html msg
 dynamicKey item =
     <ul>
         <li class={item.cls}>

@@ -11,29 +11,29 @@ busy : Js.Ref Bool
 busy = Js.ref False
 
 
-pub guard : Js.Value -> ()
+pub guard : Js.Value → ()
 guard queue =
     _ = Js.write busy True
 
-    _ = Js.finally (λ() -> Js.each queue λf -> Js.to (Js.apply f [])) λ() -> Js.write busy False
+    _ = Js.finally (λ() → Js.each queue λf → Js.to (Js.apply f [])) λ() → Js.write busy False
     Js.set queue "length" (Js.from 0)
 
 
-pub render : Js.Value -> Js.Value
+pub render : Js.Value → Js.Value
 render view =
     if Js.read busy then
         Js.null
     else
         _ = Js.write busy True
-        Js.finally (λ() -> Js.apply view []) λ() -> Js.write busy False
+        Js.finally (λ() → Js.apply view []) λ() → Js.write busy False
 
 
-pub measured : Js.Value -> String
+pub measured : Js.Value → String
 measured node =
     width : Int
-    width = Js.finally (λ() -> Js.to (Js.get node "offsetWidth")) λ() -> Js.write busy False
+    width = Js.finally (λ() → Js.to (Js.get node "offsetWidth")) λ() → Js.write busy False
     "${String.fromInt width}px"
 
 
-pub passed : (() -> Int), (() -> ()) -> Int
+pub passed : (() → Int), (() → ()) → Int
 passed f g = Js.finally f g

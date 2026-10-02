@@ -17,7 +17,7 @@ pub init : Model
 init = { items = Dict.empty, selected = Set.empty }
 
 
-pub view : Model -> Html msg
+pub view : Model → Html msg
 view model = div [] [ text (String.fromInt (Dict.size model.items)) ]
 
 

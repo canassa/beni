@@ -9,7 +9,7 @@ pub type W
     = W (Holder.Holder Key.Key)
 
 
-pub mkW : Int -> W
+pub mkW : Int → W
 mkW n = W (Holder.Holder (Key.Key n))
 
 

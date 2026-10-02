@@ -8,12 +8,12 @@ type alias State =
     { name : String, data : String }
 
 
-pub template : String, String -> Html msg
+pub template : String, String → Html msg
 template name data =
     <my-element some-attr={name} notProp={data} my-attr={data} />
 
 
-pub template2 : State -> Html msg
+pub template2 : State → Html msg
 template2 state =
     <my-element
         some-attr={state.name}

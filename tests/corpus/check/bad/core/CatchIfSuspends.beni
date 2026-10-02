@@ -7,16 +7,16 @@ import Js
 import Task
 
 
-pub foreign suspends get : Int -> Int
+pub foreign suspends get : Int → Int
 
 
-body : Int -> Int
-body n = Js.catchIf (λ() -> get n) (λ_ -> True) λ_ -> 0
+body : Int → Int
+body n = Js.catchIf (λ() → get n) (λ_ → True) λ_ → 0
 
 
-test : Int -> Int
-test n = Js.catchIf (λ() -> n) (λ_ -> get n == 0) λ_ -> 0
+test : Int → Int
+test n = Js.catchIf (λ() → n) (λ_ → get n == 0) λ_ → 0
 
 
-handler : Int -> Int
-handler n = Js.catchIf (λ() -> n) (λ_ -> True) λ_ -> get n
+handler : Int → Int
+handler n = Js.catchIf (λ() → n) (λ_ → True) λ_ → get n

@@ -28,10 +28,10 @@ p : Schema P P
 p =
     Schema.record
         (Schema.fields
-            |> Schema.field "required" Schema.int
-            |> Schema.field "nullish" (Schema.nullable Schema.int)
-            |> Schema.optional "maybe" Schema.int
-            |> Schema.optional "both" (Schema.nullable Schema.int)
+            ▷ Schema.field "required" Schema.int
+            ▷ Schema.field "nullish" (Schema.nullable Schema.int)
+            ▷ Schema.optional "maybe" Schema.int
+            ▷ Schema.optional "both" (Schema.nullable Schema.int)
         )
         (Schema.mapping toP fromP)
         (Schema.mapping toP fromP)
@@ -50,22 +50,22 @@ fromFlag f = ( (), f.on )
 flag : Schema Flag Flag
 flag =
     Schema.record
-        (Schema.fields |> Schema.optional "on" Schema.bool |> Schema.key "is-on")
+        (Schema.fields ▷ Schema.optional "on" Schema.bool ▷ Schema.key "is-on")
         (Schema.mapping toFlag fromFlag)
         (Schema.mapping toFlag fromFlag)
 
 
-nullable : Nullable Int -> String
+nullable : Nullable Int → String
 nullable n =
     case n of
-        Null ->
+        Null →
             "Null"
 
-        NonNull v ->
+        NonNull v →
             "NonNull " ++ String.fromInt v
 
 
-showP : P -> String
+showP : P → String
 showP v =
     "{ required = "
         ++ String.fromInt v.required
@@ -73,42 +73,42 @@ showP v =
         ++ nullable v.nullish
         ++ ", maybe = "
         ++ (case v.maybe of
-               Missing ->
+               Missing →
                    "Missing"
 
-               Present n ->
+               Present n →
                    "Present " ++ String.fromInt n
            )
         ++ ", both = "
         ++ (case v.both of
-               Missing ->
+               Missing →
                    "Missing"
 
-               Present n ->
+               Present n →
                    "Present (" ++ nullable n ++ ")"
            )
         ++ " }"
 
 
-showFlag : Flag -> String
+showFlag : Flag → String
 showFlag f =
     case f.on of
-        Missing ->
+        Missing →
             "{ on = Missing }"
 
-        Present True ->
+        Present True →
             "{ on = Present True }"
 
-        Present False ->
+        Present False →
             "{ on = Present False }"
 
 
-parse : String -> String
+parse : String → String
 parse text = text ++ " => " ++ Show.result (Schema.parse p text) showP
 
 
-print : P -> String
-print v = showP v ++ " => " ++ Show.result (Schema.print p v) λs -> s
+print : P → String
+print v = showP v ++ " => " ++ Show.result (Schema.print p v) λs → s
 
 
 main : Node.Program
@@ -134,8 +134,8 @@ main =
         , Show.result
             (Schema.parseWith flag { defaultOptions | unknownKeys = Reject } "{\"on\":true}")
             showFlag
-        , Show.result (Schema.print flag { on = Present False }) λs -> s
-        , Show.result (Schema.print flag { on = Missing }) λs -> s
+        , Show.result (Schema.print flag { on = Present False }) λs → s
+        , Show.result (Schema.print flag { on = Missing }) λs → s
         ]
 
 

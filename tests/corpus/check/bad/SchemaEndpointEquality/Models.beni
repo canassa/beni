@@ -1,7 +1,7 @@
 import Schema exposing (Conversion)
 
 
-toFunction : Conversion Int (Int -> Int)
+toFunction : Conversion Int (Int → Int)
 toFunction = Debug.todo "checker-only conversion"
 
 

@@ -29,28 +29,28 @@
 import Node exposing (Program)
 
 
-pub samePoint : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
+pub samePoint : { x : Int, y : Int }, { x : Int, y : Int } → Bool
 samePoint a b = a == b
 
 
-pub sameLabel : { x : String, y : Char }, { x : String, y : Char } -> Bool
+pub sameLabel : { x : String, y : Char }, { x : String, y : Char } → Bool
 sameLabel a b = a == b
 
 
-pub samePair : ( Int, Int ), ( Int, Int ) -> Bool
+pub samePair : Int × Int, Int × Int → Bool
 samePair a b = a == b
 
 
-pub sameMixed : ( Char, String ), ( Char, String ) -> Bool
+pub sameMixed : Char × String, Char × String → Bool
 sameMixed a b = a == b
 
 
-pub sameUnit : (), () -> Bool
+pub sameUnit : (), () → Bool
 sameUnit a b = a == b
 
 
-pub differs : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
-differs a b = a /= b
+pub differs : { x : Int, y : Int }, { x : Int, y : Int } → Bool
+differs a b = a ≠ b
 
 
 main : Program

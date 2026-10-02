@@ -2,9 +2,9 @@
 -- expected: break before the operator, one per line, operands indented 4.
 process xs =
     xs
-        |> List.map λx -> x * 2
-        |> List.filter λx -> x > 10
-        |> List.sum
+        ▷ List.map λx → x * 2
+        ▷ List.filter λx → x > 10
+        ▷ List.sum
 
 
 longSum a b c d =

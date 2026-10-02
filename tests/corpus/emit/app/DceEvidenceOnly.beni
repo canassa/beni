@@ -30,23 +30,23 @@ pub type Tagged
     = Tagged String
 
 
-pub eq : Tagged, Tagged -> Bool
+pub eq : Tagged, Tagged → Bool
 eq a b = byLength a == byLength b
 
 
-pub byLength : Tagged -> Int
+pub byLength : Tagged → Int
 byLength t =
     case t of
-        Tagged text ->
+        Tagged text →
             String.length text
 
 
-pub unusedMethod : Tagged -> Int
+pub unusedMethod : Tagged → Int
 unusedMethod t = byLength t + 1
 
 
-pub anyEqual : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub anyEqual : a, a → Bool
+    where a.eq : a, a → Bool
 anyEqual x y = x.eq y
 
 

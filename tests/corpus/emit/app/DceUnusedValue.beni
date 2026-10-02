@@ -21,19 +21,19 @@ import Node exposing (Program)
 import String
 
 
-helper : Int -> Int
+helper : Int → Int
 helper n = n + 1
 
 
-pub used : Int -> String
+pub used : Int → String
 used n = String.fromInt (helper n)
 
 
-orphanHelper : String -> Int
+orphanHelper : String → Int
 orphanHelper text = String.length text
 
 
-pub orphan : String -> String
+pub orphan : String → String
 orphan text = String.fromInt (orphanHelper text)
 
 

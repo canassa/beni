@@ -6,31 +6,31 @@ import Node exposing (Program)
 import String
 
 
-scope : String, (String -> String) -> String
+scope : String, (String → String) → String
 scope label body = label ++ "(" ++ body label ++ ")"
 
 
-twice : Int, (Int -> Int) -> Int
+twice : Int, (Int → Int) → Int
 twice n body = body n + body (n + 1)
 
 
 nested : String
 nested =
-    outer <- scope "a"
-    inner <- scope "b"
+    outer ← scope "a"
+    inner ← scope "b"
     outer ++ inner
 
 
 counted : Int
 counted =
-    n <- twice 10
+    n ← twice 10
     n * 2
 
 
 mixed : String
 mixed =
     prefix = "p"
-    s <- scope "c"
+    s ← scope "c"
     suffix = "q"
     prefix ++ s ++ suffix
 

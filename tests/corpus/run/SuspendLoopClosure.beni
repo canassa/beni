@@ -10,14 +10,14 @@ import Io
 import Node exposing (Program)
 
 
-build : Int, List (Int -> Int) -> List (Int -> Int)
+build : Int, List (Int → Int) → List (Int → Int)
 build n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         _ = Io.sleep 0
-        build (n - 1) [ (λx -> x + n), ...acc ]
+        build (n - 1) [ (λx → x + n), …acc ]
 
 
 main : Program
-main = Io.run λ() -> Node.printLines (List.map (build 3 []) λf -> String.fromInt (f 0))
+main = Io.run λ() → Node.printLines (List.map (build 3 []) λf → String.fromInt (f 0))

@@ -44,31 +44,31 @@ all : Schema.Options
 all = { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = True }
 
 
-presence : Schema.Presence a, (a -> String) -> String
+presence : Schema.Presence a, (a → String) → String
 presence p show =
     case p of
-        Missing ->
+        Missing →
             "Missing"
 
-        Present a ->
+        Present a →
             "Present " ++ show a
 
 
-nullable : Schema.Nullable a, (a -> String) -> String
+nullable : Schema.Nullable a, (a → String) → String
 nullable n show =
     case n of
-        Null ->
+        Null →
             "Null"
 
-        NonNull a ->
+        NonNull a →
             "NonNull " ++ show a
 
 
-quoted : String -> String
+quoted : String → String
 quoted s = "\"" ++ s ++ "\""
 
 
-showPerson : Person.Type -> String
+showPerson : Person.Type → String
 showPerson p =
     String.join
         [ p.name
@@ -78,10 +78,10 @@ showPerson p =
         , if p.alive then "alive" else "dead"
         , presence p.nickname quoted
         , nullable p.middle quoted
-        , presence p.title λt -> nullable t quoted
+        , presence p.title λt → nullable t quoted
         , "[" ++ String.join (List.map p.tags quoted) "," ++ "]"
         , "["
-            ++ String.join (List.map p.friends λf -> f.name ++ (if f.best then "!" else "")) ","
+            ++ String.join (List.map p.friends λf → f.name ++ (if f.best then "!" else "")) ","
             ++ "]"
         , p.address.street ++ " " ++ String.fromInt p.address.number
         , Show.json p.extra
@@ -94,11 +94,11 @@ base =
     "\"name\":\"Ana\",\"the-age\":30,\"h\":1.5,\"weight\":60,\"alive\":true,\"middle\":null,\"tags\":[\"a\",\"b\"],\"friends\":[{\"name\":\"Bo\",\"best\":true}],\"address\":{\"street\":\"Main\",\"number\":1},\"extra\":{\"k\":[1,null]},\"nothing\":null"
 
 
-parsed : String -> String
+parsed : String → String
 parsed text = Show.result (Person.parse text) showPerson
 
 
-parsedAll : String -> String
+parsedAll : String → String
 parsedAll text = Show.result (Person.parseWith all text) showPerson
 
 
@@ -120,8 +120,8 @@ person =
     }
 
 
-printed : Person.Type -> String
-printed p = Show.result (Person.print p) λs -> s
+printed : Person.Type → String
+printed p = Show.result (Person.print p) λs → s
 
 
 main : Node.Program
@@ -152,11 +152,11 @@ main =
             (Person.printWith all
                 { person | age = 9007199254740992, height = 1 / 0, weight = 0 / 0 }
             )
-            λs -> s
+            λs → s
         , "-- the description, through the library"
-        , Show.result (Schema.decode (Friend.schema ()) { name = "Di", best = True }) λf -> f.name
+        , Show.result (Schema.decode (Friend.schema ()) { name = "Di", best = True }) λf → f.name
         , Show.value (Schema.write (Friend.schema ()) { name = "Di", best = True })
         , Show.result
             (Schema.read (Friend.schema ()) (Show.host "{\"name\":\"Ed\",\"best\":false}"))
-            λf -> f.name
+            λf → f.name
         ]

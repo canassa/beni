@@ -20,36 +20,36 @@ emphasised : Style
 emphasised = { defaultStyle | bold = True }
 
 
-pub text : String -> Element msg
+pub text : String → Element msg
 text content = Text content
 
 
-pub button : String, msg -> Element msg
+pub button : String, msg → Element msg
 button label onPress = Button label onPress
 
 
-pub column : List (Element msg) -> Element msg
+pub column : List (Element msg) → Element msg
 column children = Column children
 
 
-pub render : Element msg -> String
+pub render : Element msg → String
 render element =
     case element of
-        Text content ->
+        Text content →
             content
 
-        Button label _ ->
+        Button label _ →
             "[${label}]"
 
-        Column children ->
+        Column children →
             children
-                |> List.map render
-                |> String.join "\n"
+                ▷ List.map render
+                ▷ String.join "\n"
 
 
-pub shout : Element msg -> String
+pub shout : Element msg → String
 shout element = String.toUpper (render element)
 
 
-pub indent : Style, String -> String
+pub indent : Style, String → String
 indent style line = String.repeat " " style.padding ++ line

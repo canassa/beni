@@ -7,7 +7,7 @@
 import Js
 
 
-pub refuse : Js.Value, Js.Value -> ()
+pub refuse : Js.Value, Js.Value → ()
 refuse m root =
     id : String
     id = Js.to (Js.get m "n")
@@ -28,7 +28,7 @@ refuse m root =
         ()
 
 
-pub label : Int -> String
+pub label : Int → String
 label n =
     if n < 0 then
         "minus"

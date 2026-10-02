@@ -18,15 +18,15 @@ import Show
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 type alias Mixed b =
@@ -45,10 +45,10 @@ mixed : Schema (Mixed String) (Mixed Int)
 mixed =
     Schema.record
         (Schema.fields
-            |> Schema.field "a" Schema.string
-            |> Schema.field "b" (Schema.converted Schema.string decimalInt)
-            |> Schema.key "b-text"
-            |> Schema.field "c" Schema.int
+            ▷ Schema.field "a" Schema.string
+            ▷ Schema.field "b" (Schema.converted Schema.string decimalInt)
+            ▷ Schema.key "b-text"
+            ▷ Schema.field "c" Schema.int
         )
         (Schema.mapping toMixed fromMixed)
         (Schema.mapping toMixed fromMixed)
@@ -59,15 +59,15 @@ mixed =
 picky : Conversion (List Int) Int
 picky =
     Schema.conversion
-        (λxs ->
+        (λxs →
             case xs of
-                [] ->
+                [] →
                     Err []
 
-                [ x ] ->
+                [ x ] →
                     Ok x
 
-                _ ->
+                _ →
                     Err
                         [ Schema.issueAt [ Index 1 ] "one element only"
                         , { path = [ Field "nowhere" ]
@@ -79,7 +79,7 @@ picky =
                           }
                         ]
         )
-        λx -> Ok [ x ]
+        λx → Ok [ x ]
 
 
 type alias Box =
@@ -95,7 +95,7 @@ fromBox b = ( (), b.items )
 box : Schema Box Box
 box =
     Schema.record
-        (Schema.fields |> Schema.field "items" (Schema.list Schema.int))
+        (Schema.fields ▷ Schema.field "items" (Schema.list Schema.int))
         (Schema.mapping toBox fromBox)
         (Schema.mapping toBox fromBox)
 
@@ -114,8 +114,8 @@ wrapper : Schema (Wrapper (List Int)) (Wrapper Int)
 wrapper =
     Schema.record
         (Schema.fields
-            |> Schema.field "inner" (Schema.converted (Schema.list Schema.int) picky)
-            |> Schema.key "in"
+            ▷ Schema.field "inner" (Schema.converted (Schema.list Schema.int) picky)
+            ▷ Schema.key "in"
         )
         (Schema.mapping toWrapper fromWrapper)
         (Schema.mapping toWrapper fromWrapper)
@@ -133,8 +133,8 @@ reported : Schema.Options
 reported = { all | reportInput = True }
 
 
-issues : Result (List Issue) a -> String
-issues r = Show.result r λ_ -> ""
+issues : Result (List Issue) a → String
+issues r = Show.result r λ_ → ""
 
 
 bad : String
@@ -155,6 +155,6 @@ main =
         , "-- a conversion's issues"
         , issues (Schema.parse wrapper "{\"in\":[1,2,3]}")
         , issues (Schema.parse wrapper "{\"in\":[]}")
-        , Show.result (Schema.parse wrapper "{\"in\":[7]}") λw -> String.fromInt w.inner
+        , Show.result (Schema.parse wrapper "{\"in\":[7]}") λw → String.fromInt w.inner
         , issues (Schema.decodeWith wrapper reported { inner = [ 1, 2 ] })
         ]

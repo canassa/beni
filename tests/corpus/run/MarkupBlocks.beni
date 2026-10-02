@@ -22,25 +22,25 @@ type Tree
     | Branch String (List Tree)
 
 
-item : String -> Html msg
+item : String → Html msg
 item label = <li>{label}</li>
 
 
-tree : Tree -> Html msg
+tree : Tree → Html msg
 tree t =
     case t of
-        Leaf label ->
+        Leaf label →
             <li>{label}</li>
 
-        Branch label children ->
+        Branch label children →
             <li>{label}<ul>{List.map children tree}</ul></li>
 
 
-counter : Int -> Html Int
+counter : Int → Html Int
 counter n = <button onClick={n + 1}>{n}</button>
 
 
-view : Bool -> Html Msg
+view : Bool → Html Msg
 view on =
     greeting = <>Hello, <b>world</b></>
 

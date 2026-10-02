@@ -5,37 +5,37 @@
 -- takes it as its only argument, grouping parentheses around the callee are
 -- looked through, and a chain is left-associative. `<|` inserts at the other
 -- end and is right-associative: `f a <| x` is `f a x`.
-firstArgument : List Int -> List Int
-firstArgument xs = xs |> List.map double
+firstArgument : List Int → List Int
+firstArgument xs = xs ▷ List.map double
 
 
-bareCallee : List Int -> Int
-bareCallee xs = xs |> List.sum
+bareCallee : List Int → Int
+bareCallee xs = xs ▷ List.sum
 
 
-throughParens : List Int -> List Int
-throughParens xs = xs |> (List.map double)
+throughParens : List Int → List Int
+throughParens xs = xs ▷ (List.map double)
 
 
-chain : List Int -> Int
+chain : List Int → Int
 chain xs =
     xs
-        |> List.map double
-        |> List.filter big
-        |> List.sum
+        ▷ List.map double
+        ▷ List.filter big
+        ▷ List.sum
 
 
-applyLeft : Int -> String
-applyLeft n = String.fromInt <| n + 1
+applyLeft : Int → String
+applyLeft n = String.fromInt ◁ n + 1
 
 
-applyLeftNested : (Int -> Int), Int -> Int
-applyLeftNested f x = f <| f <| x
+applyLeftNested : (Int → Int), Int → Int
+applyLeftNested f x = f ◁ f ◁ x
 
 
-double : Int -> Int
+double : Int → Int
 double n = n * 2
 
 
-big : Int -> Bool
+big : Int → Bool
 big n = n > 10

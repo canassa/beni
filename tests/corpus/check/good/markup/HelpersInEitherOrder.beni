@@ -10,7 +10,7 @@ type Msg
     = Picked Int
 
 
-pub view : List { id : Int, label : String } -> Html Msg
+pub view : List { id : Int, label : String } → Html Msg
 view rows =
     <ul>
         <For each={rows} keyed={.id}>{row}</For>

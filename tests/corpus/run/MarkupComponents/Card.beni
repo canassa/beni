@@ -12,7 +12,7 @@ pub defaults : Props msg
 defaults = { title = "untitled", wide = False, children = <></> }
 
 
-pub view : Props msg -> Html msg
+pub view : Props msg → Html msg
 view props =
     <section class={[ ( "card", True ), ( "wide", props.wide ) ]}>
         <h2>{props.title}</h2>
@@ -20,13 +20,13 @@ view props =
     </section>
 
 
-pub header : { text : String } -> Html msg
+pub header : { text : String } → Html msg
 header props = <header>{props.text}</header>
 
 
-pub listOf : { items : List String, children : String -> Html msg } -> Html msg
+pub listOf : { items : List String, children : String → Html msg } → Html msg
 listOf props = <ul><For each={props.items}>{props.children}</For></ul>
 
 
-pub badge : { label : String, children : Html msg } -> Html msg
+pub badge : { label : String, children : Html msg } → Html msg
 badge props = <span title={props.label}>{props.children}</span>

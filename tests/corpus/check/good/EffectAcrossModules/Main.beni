@@ -10,29 +10,29 @@ pub type Loud
     = Loud Int
 
 
-pub eq : Loud, Loud -> Bool
+pub eq : Loud, Loud → Bool
 eq a b =
     case ( a, b ) of
-        ( Loud x, Loud y ) ->
+        ( Loud x, Loud y ) →
             Debug.log "eq" (x == y)
 
 
 pub twice x = Lib.logged (Lib.logged x)
 
 
-pub viaApply n = Lib.apply (λx -> Debug.log "x" x) n
+pub viaApply n = Lib.apply (λx → Debug.log "x" x) n
 
 
-pub pureApply n = Lib.apply (λx -> x + 1) n
+pub pureApply n = Lib.apply (λx → x + 1) n
 
 
-pub viaHandler n = Lib.runHandler (λx -> Debug.log "h" x) n
+pub viaHandler n = Lib.runHandler (λx → Debug.log "h" x) n
 
 
-pub viaApi n = Lib.callApi { log = λs -> Debug.log s (), size = n }
+pub viaApi n = Lib.callApi { log = λs → Debug.log s (), size = n }
 
 
-pub quietApi n = Lib.callApi { log = λs -> (), size = n }
+pub quietApi n = Lib.callApi { log = λs → (), size = n }
 
 
 pub countLoud xs = Lib.countEq xs (Loud 1)

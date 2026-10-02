@@ -6,12 +6,12 @@
 -- overflows the stack at load.
 
 evens : List a
-    where a.eq : a, a -> Bool
-evens = List.filter odds λx -> x == x
+    where a.eq : a, a → Bool
+evens = List.filter odds λx → x == x
 
 
 odds : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 odds = List.reverse evens
 
 

@@ -3,13 +3,13 @@
 -- multi-line doc block; a doc block separated from its declaration by blank
 -- lines; and `--|x` with no space.
 --| Documented public function.
-pub greet : String -> String
+pub greet : String → String
 greet name =
     "hi ${name}"
 
 
 --| Private helper, documented.
-helper : Int -> Int
+helper : Int → Int
 helper n =
     n
 

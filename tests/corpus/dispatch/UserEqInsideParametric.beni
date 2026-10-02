@@ -18,12 +18,12 @@ pub type Id
     = Id Int Int
 
 
-pub eq : Id, Id -> Bool
+pub eq : Id, Id → Bool
 eq a b =
     case a of
-        Id x _ ->
+        Id x _ →
             case b of
-                Id y _ ->
+                Id y _ →
                     x == y
 
 

@@ -38,8 +38,8 @@ pub type alias Program =
 --| message a handler sends goes through `update`. Several messages in one
 --| task are rendered once, after the task.
 pub sandbox :
-      { init : model, update : msg, model -> model, view : model -> Html msg }
-    -> Program
+      { init : model, update : msg, model → model, view : model → Html msg }
+    → Program
 sandbox app = Browser.program app
 
 
@@ -52,18 +52,18 @@ sandbox app = Browser.program app
 --| message started it. A command that never waits runs where its fiber
 --| would have started, with none.
 pub element :
-      { init : ( model, Cmd msg )
-      , update : msg, model -> ( model, Cmd msg )
-      , view : model -> Html msg
-      , subscriptions : model -> Sub msg
+      { init : model × Cmd msg
+      , update : msg, model → model × Cmd msg
+      , view : model → Html msg
+      , subscriptions : model → Sub msg
       }
-    -> Program
+    → Program
 element app =
     Browser.hosted
-        { init = λhost -> start host app.init
-        , update = λhost msg state -> step host (app.update msg state.model) state
-        , settle = λhost state -> settle host (app.subscriptions state.model) state
-        , view = λstate -> app.view state.model
+        { init = λhost → start host app.init
+        , update = λhost msg state → step host (app.update msg state.model) state
+        , settle = λhost state → settle host (app.subscriptions state.model) state
+        , view = λstate → app.view state.model
         }
 
 
@@ -78,17 +78,17 @@ pub type alias Document msg =
 --| and the render that renders the body writes the title when it differs
 --| from the page's, so the two never disagree.
 pub document :
-      { init : ( model, Cmd msg )
-      , update : msg, model -> ( model, Cmd msg )
-      , view : model -> Document msg
-      , subscriptions : model -> Sub msg
+      { init : model × Cmd msg
+      , update : msg, model → model × Cmd msg
+      , view : model → Document msg
+      , subscriptions : model → Sub msg
       }
-    -> Program
+    → Program
 document app =
     element
         { init = app.init
         , update = app.update
-        , view = λmodel -> titled (app.view model)
+        , view = λmodel → titled (app.view model)
         , subscriptions = app.subscriptions
         }
 
@@ -110,43 +110,43 @@ document app =
 --|             , onUrlChange = UrlChanged
 --|             }
 pub application :
-      { init : Url, Navigation.Key -> ( model, Cmd msg )
-      , update : msg, model -> ( model, Cmd msg )
-      , view : model -> Document msg
-      , subscriptions : model -> Sub msg
-      , onUrlRequest : UrlRequest -> msg
-      , onUrlChange : Url -> msg
+      { init : Url, Navigation.Key → model × Cmd msg
+      , update : msg, model → model × Cmd msg
+      , view : model → Document msg
+      , subscriptions : model → Sub msg
+      , onUrlRequest : UrlRequest → msg
+      , onUrlChange : Url → msg
       }
-    -> Program
+    → Program
 application app =
     subscriptions =
-        λmodel ->
+        λmodel →
             Sub.batch
                 [ app.subscriptions model
                 , Navigation.onUrlRequest app.onUrlRequest
                 , Navigation.onUrlChange app.onUrlChange
                 ]
     Browser.hosted
-        { init = λhost -> start host (app.init (address ()) (Navigation.key ()))
-        , update = λhost msg state -> step host (app.update msg state.model) state
-        , settle = λhost state -> settle host (subscriptions state.model) state
-        , view = λstate -> titled (app.view state.model)
+        { init = λhost → start host (app.init (address ()) (Navigation.key ()))
+        , update = λhost msg state → step host (app.update msg state.model) state
+        , settle = λhost state → settle host (subscriptions state.model) state
+        , view = λstate → titled (app.view state.model)
         }
 
 
 -- The page's address, or the defect of an application that has none.
-address : () -> Url
+address : () → Url
 address () =
     case Navigation.currentUrl () of
-        Just url ->
+        Just url →
             url
 
-        Nothing ->
+        Nothing →
             Hosted.defect
                 "Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle."
 
 
-titled : Document msg -> Html msg
+titled : Document msg → Html msg
 titled page =
     _ = Hosted.title page.title
     page.body
@@ -186,89 +186,89 @@ type alias Live msg =
     relay : Relay msg
 
 
-start : Host msg, ( model, Cmd msg ) -> State model msg
+start : Host msg, model × Cmd msg → State model msg
 start host ( model, cmd ) =
     perform host cmd { model = model, scope = Task.openRoot (), jobs = Dict.empty, live = Idle }
 
 
-step : Host msg, ( model, Cmd msg ), State model msg -> State model msg
+step : Host msg, model × Cmd msg, State model msg → State model msg
 step host ( model, cmd ) state = perform host cmd { state | model = model }
 
 
-perform : Host msg, Cmd msg, State model msg -> State model msg
-perform host cmd state = List.foldl (Cmd.items cmd) state λit s -> item host it s
+perform : Host msg, Cmd msg, State model msg → State model msg
+perform host cmd state = List.foldl (Cmd.items cmd) state λit s → item host it s
 
 
-item : Host msg, Item msg, State model msg -> State model msg
+item : Host msg, Item msg, State model msg → State model msg
 item host it state =
     case it of
-        Perform job ->
+        Perform job →
             _ = spawn host state.scope job
             state
 
-        Now job ->
+        Now job →
             _ = queue host job
             state
 
-        Keyed path policy job ->
+        Keyed path policy job →
             keyed host path policy job state
 
-        KeyedNow path policy job ->
+        KeyedNow path policy job →
             keyedNow host path policy job state
 
-        Cancel path ->
+        Cancel path →
             stopped state.scope (runsAt state path) { state | jobs = Dict.remove state.jobs path }
 
-        CancelAll prefix ->
-            ( gone, kept ) = Dict.partition state.jobs λpath _ -> startsWith path prefix
+        CancelAll prefix →
+            ( gone, kept ) = Dict.partition state.jobs λpath _ → startsWith path prefix
             { state | jobs = stopped state.scope (List.concat (Dict.values gone)) kept }
 
-        After work ->
+        After work →
             _ = Hosted.afterRender host work
             state
 
 
 -- A keyed body that may wait.
-keyed : Host msg, List Key, Policy, Job msg, State model msg -> State model msg
+keyed : Host msg, List Key, Policy, Job msg, State model msg → State model msg
 keyed host path policy job state =
     old = List.filter (runsAt state path) running
     case ( policy, old ) of
-        ( _, [] ) ->
+        ( _, [] ) →
             put state path [ spawn host state.scope job ]
 
-        ( Restart, _ ) ->
-            closing old (put state path [ spawnAfter host state.scope (λ() -> stop old) job ])
+        ( Restart, _ ) →
+            closing old (put state path [ spawnAfter host state.scope (λ() → stop old) job ])
 
-        ( Ignore, _ ) ->
+        ( Ignore, _ ) →
             state
 
-        ( Queue, _ ) ->
-            put state path [ spawnAfter host state.scope (λ() -> waitFor old) job ]
+        ( Queue, _ ) →
+            put state path [ spawnAfter host state.scope (λ() → waitFor old) job ]
 
-        ( Concurrent, _ ) ->
-            put state path [ spawn host state.scope job, ...old ]
+        ( Concurrent, _ ) →
+            put state path [ spawn host state.scope job, …old ]
 
 
 -- A keyed body that never waits: queued as a fiber would have been
 -- spawned, unless a body it must wait for is in a fiber.
-keyedNow : Host msg, List Key, Policy, Job msg, State model msg -> State model msg
+keyedNow : Host msg, List Key, Policy, Job msg, State model msg → State model msg
 keyedNow host path policy job state =
     old = List.filter (runsAt state path) running
     case ( policy, old ) of
-        ( _, [] ) ->
+        ( _, [] ) →
             put state path [ queue host job ]
 
-        ( Restart, _ ) ->
+        ( Restart, _ ) →
             closing old (put state path [ (starter policy old) host state.scope job ])
 
-        ( Ignore, _ ) ->
+        ( Ignore, _ ) →
             state
 
-        ( Queue, _ ) ->
+        ( Queue, _ ) →
             put state path [ (starter policy old) host state.scope job ]
 
-        ( Concurrent, _ ) ->
-            put state path [ queue host job, ...old ]
+        ( Concurrent, _ ) →
+            put state path [ queue host job, …old ]
 
 
 -- How a body that never waits starts once `old` have ended (`Restart`
@@ -276,8 +276,8 @@ keyedNow host path policy job state =
 -- before it runs, to its end, before it — and otherwise in a fiber that
 -- cancels them (`Restart`) or waits for them (`Queue`) first, since only a
 -- fiber can wait. The fiber is reached only through an `InFiber` arm.
-starter : Policy, List (Run msg) -> (Host msg, Scope, Job msg -> Run msg)
-starter policy old = List.foldl old (λhost _ job -> queue host job) λr otherwise ->
+starter : Policy, List (Run msg) → (Host msg, Scope, Job msg → Run msg)
+starter policy old = List.foldl old (λhost _ job → queue host job) λr otherwise →
     startAfter policy old r otherwise
 
 
@@ -285,64 +285,64 @@ startAfter :
       Policy
     , List (Run msg)
     , Run msg
-    , (Host msg, Scope, Job msg -> Run msg)
-    -> (Host msg, Scope, Job msg -> Run msg)
+    , (Host msg, Scope, Job msg → Run msg)
+    → (Host msg, Scope, Job msg → Run msg)
 startAfter policy old r otherwise =
     case r of
-        InFiber _ _ ->
-            λhost scope job -> spawnAfter host scope (λ() -> settleFirst policy old) job
+        InFiber _ _ →
+            λhost scope job → spawnAfter host scope (λ() → settleFirst policy old) job
 
-        Queued _ _ ->
+        Queued _ _ →
             otherwise
 
 
-settleFirst : Policy, List (Run msg) -> ()
+settleFirst : Policy, List (Run msg) → ()
 settleFirst policy old =
     case policy of
-        Restart ->
+        Restart →
             stop old
 
-        _ ->
+        _ →
             waitFor old
 
 
 -- Start a body in a fiber of the program's scope, with an outlet of its
 -- own as its `send`.
-spawn : Host msg, Scope, Job msg -> Run msg
+spawn : Host msg, Scope, Job msg → Run msg
 spawn host scope job =
     o = Hosted.outlet host
-    InFiber (Task.spawnIn scope λ() -> Hosted.runJob job (Hosted.emit o _)) o
+    InFiber (Task.spawnIn scope λ() → Hosted.runJob job (Hosted.emit o _)) o
 
 
 -- The same, once `first` has returned.
-spawnAfter : Host msg, Scope, (() -> ()), Job msg -> Run msg
+spawnAfter : Host msg, Scope, (() → ()), Job msg → Run msg
 spawnAfter host scope first job =
-    spawn host scope (Hosted.job λsend -> after (first ()) (Hosted.runJob job send))
+    spawn host scope (Hosted.job λsend → after (first ()) (Hosted.runJob job send))
 
 
 -- Queue a body that never waits where a fiber spawned now would first
 -- run, with an outlet of its own as its `send`.
-queue : Host msg, Job msg -> Run msg
+queue : Host msg, Job msg → Run msg
 queue host job =
     o = Hosted.outlet host
-    Queued (Task.soon λ() -> Hosted.callJob job (Hosted.emit o _)) o
+    Queued (Task.soon λ() → Hosted.callJob job (Hosted.emit o _)) o
 
 
-running : Run msg -> Bool
+running : Run msg → Bool
 running r =
     case r of
-        InFiber fiber _ ->
+        InFiber fiber _ →
             Task.running fiber
 
-        Queued soon _ ->
+        Queued soon _ →
             Task.queued soon
 
 
-runsAt : State model msg, List Key -> List (Run msg)
+runsAt : State model msg, List Key → List (Run msg)
 runsAt state path = Maybe.withDefault (Dict.get state.jobs path) []
 
 
-put : State model msg, List Key, List (Run msg) -> State model msg
+put : State model msg, List Key, List (Run msg) → State model msg
 put state path runs = { state | jobs = Dict.insert state.jobs path runs }
 
 
@@ -350,7 +350,7 @@ put state path runs = { state | jobs = Dict.insert state.jobs path runs }
 -- lands, and cancel the fibers in one of the scope's own. A body still
 -- queued runs to its end, as a fiber not yet started runs to its first
 -- wait before its cancellation can reach it.
-stopped : Scope, List (Run msg), a -> a
+stopped : Scope, List (Run msg), a → a
 stopped scope runs value =
     _ = closing runs ()
     _ = (cancelling runs) scope
@@ -358,88 +358,88 @@ stopped scope runs value =
 
 
 -- What cancels the fibers of `runs`: nothing when none is a fiber.
-cancelling : List (Run msg) -> (Scope -> ())
-cancelling runs = List.foldl runs (λ_ -> ()) λr k -> canceller runs r k
+cancelling : List (Run msg) → (Scope → ())
+cancelling runs = List.foldl runs (λ_ → ()) λr k → canceller runs r k
 
 
-canceller : List (Run msg), Run msg, (Scope -> ()) -> (Scope -> ())
+canceller : List (Run msg), Run msg, (Scope → ()) → (Scope → ())
 canceller runs r k =
     case r of
-        InFiber _ _ ->
-            λscope ->
-                _ = Task.spawnIn scope λ() -> stop runs
+        InFiber _ _ →
+            λscope →
+                _ = Task.spawnIn scope λ() → stop runs
                 ()
 
-        Queued _ _ ->
+        Queued _ _ →
             k
 
 
-closing : List (Run msg), a -> a
-closing runs value = List.foldl runs value λr v -> after (close r) v
+closing : List (Run msg), a → a
+closing runs value = List.foldl runs value λr v → after (close r) v
 
 
-close : Run msg -> ()
+close : Run msg → ()
 close r =
     case r of
-        InFiber _ o ->
+        InFiber _ o →
             Hosted.close o
 
-        Queued _ o ->
+        Queued _ o →
             Hosted.close o
 
 
 -- Cancel each fiber and wait for its cleanup.
-stop : List (Run msg) -> ()
-stop runs = List.foldl runs () λr _ -> stopOne r
+stop : List (Run msg) → ()
+stop runs = List.foldl runs () λr _ → stopOne r
 
 
-stopOne : Run msg -> ()
+stopOne : Run msg → ()
 stopOne r =
     case r of
-        InFiber fiber _ ->
+        InFiber fiber _ →
             Task.cancel fiber
 
-        Queued _ _ ->
+        Queued _ _ →
             ()
 
 
 -- Wait for each fiber to end. Work queued before the fiber that waits runs
 -- before it.
-waitFor : List (Run msg) -> ()
-waitFor runs = List.foldl runs () λr _ -> waitOne r
+waitFor : List (Run msg) → ()
+waitFor runs = List.foldl runs () λr _ → waitOne r
 
 
-waitOne : Run msg -> ()
+waitOne : Run msg → ()
 waitOne r =
     case r of
-        InFiber fiber _ ->
+        InFiber fiber _ →
             ended (Task.wait fiber)
 
-        Queued _ _ ->
+        Queued _ _ →
             ()
 
 
-ended : Exit a -> ()
+ended : Exit a → ()
 ended _ = ()
 
 
-after : (), a -> a
+after : (), a → a
 after _ value = value
 
 
-startsWith : List Key, List Key -> Bool
+startsWith : List Key, List Key → Bool
 startsWith path prefix =
     case ( path, prefix ) of
-        ( _, [] ) ->
+        ( _, [] ) →
             True
 
-        ( [ p, ...ps ], [ q, ...qs ] ) ->
+        ( [ p, …ps ], [ q, …qs ] ) →
             if p == q then
                 startsWith ps qs
             else
                 False
 
-        _ ->
+        _ →
             False
 
 
@@ -447,59 +447,59 @@ startsWith path prefix =
 -- keys that stayed keep their fiber and take their new taggers, keys that
 -- arrived start. With no `Listen` and nothing running there is nothing to
 -- do, and a program that never subscribes reaches no more than that.
-settle : Host msg, Sub msg, State model msg -> State model msg
+settle : Host msg, Sub msg, State model msg → State model msg
 settle host sub state =
     case sub of
-        Sub.Listen declared ->
+        Sub.Listen declared →
             { state | live = Running (diff host state.scope declared (lives state.live)) }
 
-        Sub.None ->
+        Sub.None →
             case state.live of
-                Idle ->
+                Idle →
                     state
 
-                Running live ->
+                Running live →
                     { state | live = Running (diff host state.scope [] live) }
 
 
-lives : Lives msg -> Dict Key (Live msg)
+lives : Lives msg → Dict Key (Live msg)
 lives l =
     case l of
-        Idle ->
+        Idle →
             Dict.empty
 
-        Running live ->
+        Running live →
             live
 
 
-diff : Host msg, Scope, List ( Key, Tap msg ), Dict Key (Live msg) -> Dict Key (Live msg)
+diff : Host msg, Scope, List (Key × Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
 diff host scope declared live =
-    wanted = List.foldl declared Dict.empty λ( k, t ) d ->
+    wanted = List.foldl declared Dict.empty λ( k, t ) d →
         Dict.insert d k (List.append (Maybe.withDefault (Dict.get d k) []) [ t ])
-    kept = Dict.foldl live Dict.empty λk l d -> keep scope wanted k l d
-    Dict.foldl wanted kept λk taps d -> arrive host scope k taps d
+    kept = Dict.foldl live Dict.empty λk l d → keep scope wanted k l d
+    Dict.foldl wanted kept λk taps d → arrive host scope k taps d
 
 
-keep : Scope, Dict Key (List (Tap msg)), Key, Live msg, Dict Key (Live msg) -> Dict Key (Live msg)
+keep : Scope, Dict Key (List (Tap msg)), Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)
 keep scope wanted k l d =
     case Dict.get wanted k of
-        Just taps ->
+        Just taps →
             _ = Hosted.retap l.relay taps
             Dict.insert d k l
 
-        Nothing ->
+        Nothing →
             _ = Hosted.closeRelay l.relay
-            _ = Task.spawnIn scope λ() -> Task.cancel l.fiber
+            _ = Task.spawnIn scope λ() → Task.cancel l.fiber
             d
 
 
-arrive : Host msg, Scope, Key, List (Tap msg), Dict Key (Live msg) -> Dict Key (Live msg)
+arrive : Host msg, Scope, Key, List (Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
 arrive host scope k taps d =
     case ( Dict.member d k, taps ) of
-        ( False, [ first, ..._ ] ) ->
+        ( False, [ first, …_ ] ) →
             r = Hosted.relay host first
             _ = Hosted.retap r taps
-            Dict.insert d k { fiber = Task.spawnIn scope λ() -> Hosted.run r, relay = r }
+            Dict.insert d k { fiber = Task.spawnIn scope λ() → Hosted.run r, relay = r }
 
-        _ ->
+        _ →
             d

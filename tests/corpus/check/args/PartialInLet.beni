@@ -1,6 +1,6 @@
 -- check/args: a `let` binding with an annotation that says it is a value
 -- and a body that is still a function.
-pub biggest : Int -> Int
+pub biggest : Int → Int
 biggest n =
     m : Int
     m = max n

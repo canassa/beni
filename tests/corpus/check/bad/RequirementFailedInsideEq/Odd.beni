@@ -4,5 +4,5 @@ pub type T
     = T Int
 
 
-pub eq : Int, Int -> Bool
+pub eq : Int, Int → Bool
 eq a b = True

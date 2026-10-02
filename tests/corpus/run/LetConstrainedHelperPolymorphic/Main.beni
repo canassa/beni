@@ -27,18 +27,18 @@ pub type Colour
     | Green
 
 
-pub render : Colour, Int -> String
+pub render : Colour, Int → String
 render c n =
     case c of
-        Red ->
+        Red →
             "red" ++ String.fromInt n
 
-        Green ->
+        Green →
             "green" ++ String.fromInt n
 
 
-label : a, Int -> String
-    where a.render : a, Int -> String
+label : a, Int → String
+    where a.render : a, Int → String
 label x n = x.render n
 
 
@@ -47,13 +47,13 @@ pairEq x y =
     inner x y && inner [ x ] [ y ]
 
 
-describe : Colour, Shape -> String
+describe : Colour, Shape → String
 describe c s =
     show x = "<" ++ label x 1 ++ ">"
     show c ++ show s
 
 
-text : Bool -> String
+text : Bool → String
 text b =
     if b then
         "True"

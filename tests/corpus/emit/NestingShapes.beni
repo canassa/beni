@@ -84,11 +84,11 @@ long =
     ]
 
 
-pub every : Bool, Bool, Bool, Bool -> Bool
+pub every : Bool, Bool, Bool, Bool → Bool
 every a b c d = a && b && c && d
 
 
-pub pick : Int -> String
+pub pick : Int → String
 pick k =
     name =
         if k == 1 then

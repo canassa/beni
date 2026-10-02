@@ -6,14 +6,14 @@ import Node exposing (Program)
 
 
 pub type Inner
-    = Inner String (Int -> Int)
+    = Inner String (Int → Int)
 
 
-plusOne : Int -> Int
+plusOne : Int → Int
 plusOne value = value + 1
 
 
-minusOne : Int -> Int
+minusOne : Int → Int
 minusOne value = value - 1
 
 
@@ -31,13 +31,13 @@ different =
 
 pub eq left right =
     case left of
-        Inner labelLeft _ ->
+        Inner labelLeft _ →
             case right of
-                Inner labelRight _ ->
+                Inner labelRight _ →
                     labelLeft == labelRight
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

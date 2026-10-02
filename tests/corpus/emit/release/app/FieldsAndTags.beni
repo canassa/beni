@@ -21,20 +21,20 @@ type alias Meter =
     total : Int
 
 
-bump : Meter -> Meter
+bump : Meter → Meter
 bump m = { m | count = m.count + 1, total = m.total + m.count }
 
 
-says : Light -> String
+says : Light → String
 says light =
     case light of
-        Red ->
+        Red →
             "stop"
 
-        Amber n ->
+        Amber n →
             "wait ${String.fromInt n}"
 
-        Green ->
+        Green →
             "go"
 
 

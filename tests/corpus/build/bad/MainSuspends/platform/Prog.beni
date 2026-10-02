@@ -3,7 +3,7 @@
 pub foreign type Program
 
 
-pub foreign pure say : String -> Program
+pub foreign pure say : String → Program
 
 
-pub foreign suspends fetch : String -> String
+pub foreign suspends fetch : String → String

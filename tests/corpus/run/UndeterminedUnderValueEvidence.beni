@@ -17,12 +17,12 @@ type Pair a
     = Pair a Int
 
 
-pub eq : Pair a, Pair a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Pair a, Pair a → Bool
+    where a.eq : a, a → Bool
 eq (Pair x i) (Pair y j) = x == y && i == j
 
 
-yesNo : Bool -> String
+yesNo : Bool → String
 yesNo b =
     if b then
         "yes"
@@ -30,7 +30,7 @@ yesNo b =
         "no"
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

@@ -4,7 +4,7 @@
 -- it is hoisted, and it does not run until `even n` calls it, by which time
 -- `base` is initialised. A VALUE binding that did the same would be
 -- `let_forward_reference` (§7).
-isEven : Int -> Bool
+isEven : Int → Bool
 isEven n =
     even k =
         if k == base then

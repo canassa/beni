@@ -4,8 +4,7 @@
 -- `| B` layout.
 type alias Config = { host : String, port : Int, user : String, password : String, timeout : Int, verbose : Bool }
 type alias Pair a b =
-      ( a
-      , b )
+      a × b
 type Event = Click Int
        Int | Key
   String | Resize { width : Int,

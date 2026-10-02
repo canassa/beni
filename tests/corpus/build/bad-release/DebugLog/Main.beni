@@ -13,7 +13,7 @@ import Node exposing (Program)
 import String
 
 
-report : Int -> Int
+report : Int → Int
 report n = Debug.log "report" (n + 1)
 
 

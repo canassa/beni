@@ -10,5 +10,5 @@ import Hidden
 
 
 --| A program that writes `line`, shouted.
-pub shout : String -> Base.Program
+pub shout : String → Base.Program
 shout line = Base.say (Hidden.loud line)

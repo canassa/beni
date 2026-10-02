@@ -18,34 +18,34 @@ import Node exposing (Program)
 import String
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
-twice : Int, (Int -> String) -> String
+twice : Int, (Int → String) → String
 twice n body = body n ++ "/" ++ body (n + 1)
 
 
-usingAll : List (Int -> Int), (List Int -> String) -> String
-usingAll fs body = body (List.map fs λf -> f 7)
+usingAll : List (Int → Int), (List Int → String) → String
+usingAll fs body = body (List.map fs λf → f 7)
 
 
 insideRest : String
 insideRest =
-    n <- twice 10
+    n ← twice 10
     String.join (List.map (List.map [ 1, 2 ] (subtract n _)) String.fromInt) ","
 
 
 nestedInCallee : String
 nestedInCallee =
-    applied <- usingAll [ subtract 100 _, subtract _ 100 ]
+    applied ← usingAll [ subtract 100 _, subtract _ 100 ]
     String.join (List.map applied String.fromInt) ","
 
 
 pipedIntoHole : String
 pipedIntoHole =
-    n <- twice 1
-    String.fromInt ((n |> subtract _) 100)
+    n ← twice 1
+    String.fromInt ((n ▷ subtract _) 100)
 
 
 main : Program

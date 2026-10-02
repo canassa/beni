@@ -8,36 +8,36 @@
 -- demands that the held function not suspend, so the `==` on a `Check`
 -- holding one is refused at the value. The uses are functions of `()`, so
 -- that no top-level value is refused for suspending at load (§15.2 item 7).
-pub foreign suspends get : Int -> Bool
+pub foreign suspends get : Int → Bool
 
 
-pub foreign pure countWhere : List a -> Int
-    where a.probe : a -> Bool
+pub foreign pure countWhere : List a → Int
+    where a.probe : a → Bool
 
 
 pub type Item
     = Item Int
 
 
-pub probe : Item -> Bool
+pub probe : Item → Bool
 probe (Item n) = get n
 
 
-count : () -> Int
+count : () → Int
 count () = countWhere [ Item 1 ]
 
 
 pub type Check
-    = Check (Int -> Bool)
+    = Check (Int → Bool)
 
 
-pub eq : Check, Check -> Bool
+pub eq : Check, Check → Bool
 eq (Check f) (Check g) = f 0 == g 0
 
 
-same : () -> Bool
-same () = Check (λn -> get n) == Check λn -> n > 0
+same : () → Bool
+same () = Check (λn → get n) == Check λn → n > 0
 
 
-fine : () -> Bool
-fine () = Check (λn -> n < 0) == Check λn -> n > 0
+fine : () → Bool
+fine () = Check (λn → n < 0) == Check λn → n > 0

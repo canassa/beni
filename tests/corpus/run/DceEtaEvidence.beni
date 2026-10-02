@@ -30,17 +30,17 @@ pub type Pair a
     = Pair a a
 
 
-pub eq : Pair a, Pair a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Pair a, Pair a → Bool
+    where a.eq : a, a → Bool
 eq x y =
     case x of
-        Pair firstX _ ->
+        Pair firstX _ →
             case y of
-                Pair firstY _ ->
+                Pair firstY _ →
                     firstX == firstY
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

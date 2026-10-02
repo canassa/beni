@@ -10,7 +10,7 @@ type Msg
     = Mount (Html Msg)
 
 
-pub iifeValue : { compute : String } -> Html msg
+pub iifeValue : { compute : String } → Html msg
 iifeValue state = <div data={state.compute} />
 
 

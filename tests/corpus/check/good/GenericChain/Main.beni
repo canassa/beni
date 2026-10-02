@@ -9,12 +9,12 @@ pub type Metre
     = Metre Int
 
 
-pub scale : Metre, Int -> Metre
+pub scale : Metre, Int → Metre
 scale m factor =
     case m of
-        Metre n ->
+        Metre n →
             Metre (n * factor)
 
 
-pub grow : Metre -> Metre
+pub grow : Metre → Metre
 grow m = Lib.outer m 3

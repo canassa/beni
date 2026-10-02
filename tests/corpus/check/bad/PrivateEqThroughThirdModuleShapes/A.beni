@@ -7,14 +7,14 @@ pub type T
     = T Int
 
 
-eq : T, T -> Bool
+eq : T, T → Bool
 eq left right =
     case left of
-        T x ->
+        T x →
             case right of
-                T y ->
+                T y →
                     Int.mod x 10 == Int.mod y 10
 
 
-pub inside : T, T -> Bool
+pub inside : T, T → Bool
 inside a b = a == b

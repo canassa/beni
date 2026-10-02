@@ -5,12 +5,12 @@
 -- the emitter defines it as an arrow over its type's parameter. A clean
 -- check here would build a program that overflows the stack
 -- (`RangeError`) on the first read.
-compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = λx -> f (g x)
+compose : (b → c), (a → b) → (a → c)
+compose f g = λx → f (g x)
 
 
-keep : a -> a
-    where a.eq : a, a -> Bool
+keep : a → a
+    where a.eq : a, a → Bool
 keep x =
     if x == x then
         x
@@ -18,6 +18,6 @@ keep x =
         x
 
 
-h : a -> a
-    where a.eq : a, a -> Bool
+h : a → a
+    where a.eq : a, a → Bool
 h = compose h keep

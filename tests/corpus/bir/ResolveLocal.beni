@@ -2,13 +2,13 @@
 -- function parameters, lambda parameters, `let` definitions, `let` pattern
 -- variables, and `case` pattern variables; the innermost wins over
 -- top-level names that are NOT otherwise in scope here.
-f : Int, ( Int, Int ), Maybe Int -> Int
+f : Int, Int × Int, Maybe Int → Int
 f a ( b, c ) m =
     d = a + b
     ( g, h ) = ( c, d )
     case m of
-        Just n ->
-            (λk -> k + n + g + h) d
+        Just n →
+            (λk → k + n + g + h) d
 
-        Nothing ->
+        Nothing →
             0

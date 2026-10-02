@@ -4,37 +4,37 @@
 -- operand a name or `_`, before, between or after the other items. The
 -- tree holds each as `spread` / `pat_spread` over its operand (frontend.md
 -- §3.5).
-build x xs ys = ( [ x, ...xs ], [ ...xs, x ], [ ...xs, ...ys ], [ ...xs, x, ...ys ], [ ...xs ] )
+build x xs ys = ( [ x, …xs ], [ …xs, x ], [ …xs, …ys ], [ …xs, x, …ys ], [ …xs ] )
 
 
-operands f x xs ys = [ ...f x, 0, ...xs ++ ys ]
+operands f x xs ys = [ …f x, 0, …xs ++ ys ]
 
 
 shapes xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             1
 
-        [ ...init, last ] ->
+        [ …init, last ] →
             2
 
-        [ first, ...middle, last ] ->
+        [ first, …middle, last ] →
             3
 
-        [ x, ..._ ] ->
+        [ x, …_ ] →
             4
 
-        [ ...rest ] ->
+        [ …rest ] →
             5
 
 
 nested xs =
     case xs of
-        [ [ a, ...b ], ...c ] ->
+        [ [ a, …b ], …c ] →
             a
 
-        _ ->
+        _ →
             0

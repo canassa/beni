@@ -32,11 +32,11 @@ subject : String
 subject = "\u{1F600}a\u{1F600}a"
 
 
-shown : List Int -> String
+shown : List Int → String
 shown ns = "[" ++ String.join (List.map ns String.fromInt) "," ++ "]"
 
 
-yesNo : Bool -> String
+yesNo : Bool → String
 yesNo b =
     if b then
         "yes"

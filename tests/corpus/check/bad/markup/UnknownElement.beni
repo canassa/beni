@@ -6,5 +6,5 @@
 import Html exposing (Html)
 
 
-pub view : { count : Int } -> Html msg
+pub view : { count : Int } → Html msg
 view model = <spam title="x">{model}</spam>

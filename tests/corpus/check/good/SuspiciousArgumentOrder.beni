@@ -5,17 +5,17 @@
 -- order. Each message prints the call in beni's order (`replace`'s three
 -- arguments rotate, the subject moving to the front) and, for a string
 -- subject, the method form that says the literal is meant.
-pub fields : String -> List String
+pub fields : String → List String
 fields line = String.split "," line
 
 
-pub isUrl : String -> Bool
+pub isUrl : String → Bool
 isUrl s = String.startsWith "http" s
 
 
-pub dashes : String -> String
+pub dashes : String → String
 dashes s = String.replace " " "-" s
 
 
-pub percent : Int -> Int
+pub percent : Int → Int
 percent n = clamp 0 100 n

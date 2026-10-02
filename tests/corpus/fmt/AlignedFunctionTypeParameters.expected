@@ -7,24 +7,24 @@
 update :
       Msg
     , Model
-    -> Model
+    → Model
 update msg model = model
 
 
 configure :
       { host : String, port : Int, retries : Int, timeout : Int }
     , List String
-    -> Result String Config
+    → Result String Config
 configure config args = Err "todo"
 
 
 single :
       { host : String, port : Int, retries : Int, timeout : Int, verbose : Bool, depth : Int }
-    -> String
+    → String
 single config = config.host
 
 
-short : Int, Int -> Int
+short : Int, Int → Int
 short a b = a + b
 
 
@@ -32,13 +32,13 @@ type alias Handlers =
     onEvent :
           { name : String, payload : String, timestamp : Int }
         , { previous : Model, next : Model }
-        -> Model
+        → Model
 
 
 local x =
     go :
           Int
         , Int
-        -> Int
+        → Int
     go a b = a + b
     go x x

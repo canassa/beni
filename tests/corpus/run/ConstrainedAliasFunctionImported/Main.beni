@@ -4,11 +4,11 @@ import Node exposing (Program)
 
 
 mine : Pred a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 mine = M.sameP
 
 
-tf : Bool -> String
+tf : Bool → String
 tf b =
     if b then
         "t"

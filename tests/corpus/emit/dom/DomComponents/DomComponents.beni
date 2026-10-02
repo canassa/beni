@@ -9,7 +9,7 @@ import Card
 import Html exposing (Html)
 
 
-pub page : { title : String, name : String } -> Html msg
+pub page : { title : String, name : String } → Html msg
 page r =
     <main>
         <Card title={r.title}>Welcome, <b>{r.name}</b>!</Card><Card title="static">no values</Card>

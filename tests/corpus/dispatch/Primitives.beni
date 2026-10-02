@@ -7,25 +7,25 @@
 -- never `<` on the JavaScript strings — the two orders differ for astral
 -- characters and `"a" < "b"` and `String.compare a b` must agree (§3.2,
 -- §9.1, A.26).
-pub ints : Int, Int -> Bool
+pub ints : Int, Int → Bool
 ints a b = a < b
 
 
-pub floats : Float, Float -> Bool
+pub floats : Float, Float → Bool
 floats a b = a == b
 
 
-pub bools : Bool, Bool -> Bool
-bools a b = a <= b
+pub bools : Bool, Bool → Bool
+bools a b = a ≤ b
 
 
-pub chars : Char, Char -> Bool
+pub chars : Char, Char → Bool
 chars a b = a > b
 
 
-pub strings : String, String -> Bool
-strings a b = a >= b
+pub strings : String, String → Bool
+strings a b = a ≥ b
 
 
-pub orders : Order, Order -> Bool
+pub orders : Order, Order → Bool
 orders a b = a < b

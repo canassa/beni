@@ -2,7 +2,7 @@
 -- pattern (§7, §8.1): tuple, nested tuple, record, unit and `as` patterns,
 -- plus an annotated definition; later bindings and the body see them all.
 -- (A list pattern is refutable and may not be bound in a `let`, §7.)
-split : ( Int, ( String, Bool ) ), { name : String, age : Int } -> String
+split : Int × (String × Bool), { name : String, age : Int } → String
 split input person =
     ( n, ( s, flag ) ) = input
     { name, age } = person

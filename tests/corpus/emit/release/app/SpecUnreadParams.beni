@@ -19,17 +19,17 @@ settings : Config
 settings = { title = "unused", width = 3 }
 
 
-banner : Config, String -> String
+banner : Config, String → String
 banner config name = "[ ${name} | ${String.fromInt (String.length name)} | ${String.toUpper name} ]"
 
 
-framed : Config, String -> String
+framed : Config, String → String
 framed config name = "( ${name} | ${String.fromInt (String.length name)} | ${String.toLower name} )"
 
 
-nth : Int -> Config
+nth : Int → Config
 nth n =
-    if n <= 0 then
+    if n ≤ 0 then
         settings
     else
         nth (n - 1)

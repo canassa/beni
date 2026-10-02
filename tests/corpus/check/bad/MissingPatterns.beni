@@ -6,8 +6,8 @@ pub type Weekday
     | Wed
 
 
-pub short : Weekday -> String
+pub short : Weekday → String
 short d =
     case d of
-        Mon ->
+        Mon →
             "mon"

@@ -27,20 +27,20 @@ type alias Model =
 
 
 -- `second` is named more often than `first`.
-spotName : Spot -> String
+spotName : Spot → String
 spotName s =
     "spot ${String.fromInt s.first}${String.fromInt s.second}${String.fromInt (s.second - s.second)}"
 
 
-hello : String, Cmd.Send String -> ()
+hello : String, Cmd.Send String → ()
 hello name send = send name
 
 
-update : String, Model -> ( Model, Cmd String )
+update : String, Model → Model × Cmd String
 update name model = ( { model | seen = model.seen ++ [ name ] }, Cmd.none )
 
 
-subscriptions : Model -> Sub String
+subscriptions : Model → Sub String
 subscriptions _ =
     a = { first = 1, second = 2 }
     b = { first = 2, second = 1 }
@@ -52,7 +52,7 @@ subscriptions _ =
         ]
 
 
-view : Model -> Html String
+view : Model → Html String
 view model =
     <main>
         <p>{String.join model.seen ", "}</p>

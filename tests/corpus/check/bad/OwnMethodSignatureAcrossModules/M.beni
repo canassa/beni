@@ -8,5 +8,5 @@ pub type T
     = T Int
 
 
-pub eq : T, Int -> Bool
+pub eq : T, Int → Bool
 eq (T a) b = a == b

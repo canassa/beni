@@ -1,5 +1,5 @@
 -- check/bad: §10.3. `<` is the `compare` method (§3.1) and a function type
 -- has no methods, so `f < g` is `no_methods_on_shape` — not `not_equatable`,
 -- which §3.4 keeps for `eq` alone because it is the better message there.
-pub later : (Int -> Int), (Int -> Int) -> Bool
+pub later : (Int → Int), (Int → Int) → Bool
 later f g = f < g

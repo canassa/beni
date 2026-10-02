@@ -6,14 +6,14 @@
 -- whose chain runs through the function `twice`. A function is not
 -- evaluated at load: `twice`, and `later`, a value whose body is a lambda,
 -- suspend only when something calls them, so neither is refused.
-pub foreign suspends fetch : Int -> Int
+pub foreign suspends fetch : Int → Int
 
 
 answer : Int
 answer = fetch 42
 
 
-twice : Int -> Int
+twice : Int → Int
 twice n = fetch n + fetch n
 
 
@@ -21,5 +21,5 @@ total : Int
 total = twice 1 + 2
 
 
-later : () -> Int
-later = λ() -> fetch 1
+later : () → Int
+later = λ() → fetch 1

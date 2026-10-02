@@ -22,12 +22,12 @@ pub type Unused
     | Two String
 
 
-pub unusedEqual : Unused, Unused -> Bool
+pub unusedEqual : Unused, Unused → Bool
 unusedEqual a b = a == b
 
 
-pub unusedGeneric : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub unusedGeneric : a, a → Bool
+    where a.eq : a, a → Bool
 unusedGeneric x y = x.eq y
 
 
@@ -35,15 +35,15 @@ pub unusedConstant : String
 unusedConstant = String.fromInt (String.length "abc")
 
 
-pub unusedRecursive : Int -> Int
+pub unusedRecursive : Int → Int
 unusedRecursive n =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         1 + unusedRecursive (n - 1)
 
 
-pub unusedEven : Int -> Bool
+pub unusedEven : Int → Bool
 unusedEven n =
     if n == 0 then
         True
@@ -51,7 +51,7 @@ unusedEven n =
         unusedOdd (n - 1)
 
 
-pub unusedOdd : Int -> Bool
+pub unusedOdd : Int → Bool
 unusedOdd n =
     if n == 0 then
         False
@@ -59,7 +59,7 @@ unusedOdd n =
         unusedEven (n - 1)
 
 
-greet : String -> String
+greet : String → String
 greet who = "hello, " ++ who
 
 

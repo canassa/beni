@@ -11,21 +11,21 @@
 import Node exposing (Program)
 
 
-lookup : a -> a
-    where a.eq : a, a -> Bool
+lookup : a → a
+    where a.eq : a, a → Bool
 lookup =
     table = Debug.log "table (where)" (List.range 1 3)
-    λx ->
+    λx →
         if List.length table == 3 && x == x then
             x
         else
             x
 
 
-lookupPlain : Int -> Int
+lookupPlain : Int → Int
 lookupPlain =
     table = Debug.log "table (plain)" (List.range 1 3)
-    λx ->
+    λx →
         if List.length table == 3 then
             x
         else

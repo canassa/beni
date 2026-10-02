@@ -34,8 +34,8 @@ pub type Boxed
     = Boxed Float
 
 
-sameAs : a, a -> Bool
-    where a.eq : a, a -> Bool
+sameAs : a, a → Bool
+    where a.eq : a, a → Bool
 sameAs x y = x == y
 
 
@@ -47,7 +47,7 @@ negativeZero : Float
 negativeZero = 0.0 * -1.0
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -59,7 +59,7 @@ main : Program
 main =
     Node.printLines
         [ show (nan == nan)
-        , show (nan /= nan)
+        , show (nan ≠ nan)
         , show (( nan, 1 ) == ( nan, 1 ))
         , show ({ v = nan } == { v = nan })
         , show (Boxed nan == Boxed nan)

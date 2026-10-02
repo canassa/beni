@@ -38,28 +38,28 @@ pub type Box k
     | Holding k
 
 
-pub keepLarger : Box k, k -> Box k
-    where k.compare : k, k -> Order
+pub keepLarger : Box k, k → Box k
+    where k.compare : k, k → Order
 keepLarger box candidate =
     case box of
-        Empty ->
+        Empty →
             Holding candidate
 
-        Holding held ->
+        Holding held →
             if held < candidate then
                 Holding candidate
             else
                 Holding held
 
 
-pub keepEqual : Box k, k -> Box k
-    where k.eq : k, k -> Bool
+pub keepEqual : Box k, k → Box k
+    where k.eq : k, k → Bool
 keepEqual box candidate =
     case box of
-        Empty ->
+        Empty →
             Holding candidate
 
-        Holding held ->
+        Holding held →
             if held == candidate then
                 Holding held
             else
@@ -70,38 +70,38 @@ pub type Pair a
     = Pair a a
 
 
-pub compare : Pair a, Pair a -> Order
-    where a.compare : a, a -> Order
+pub compare : Pair a, Pair a → Order
+    where a.compare : a, a → Order
 compare (Pair leftHigh leftLow) (Pair rightHigh rightLow) =
     case leftHigh.compare rightHigh of
-        EQ ->
+        EQ →
             leftLow.compare rightLow
 
-        other ->
+        other →
             other
 
 
-showList : List Int -> String
+showList : List Int → String
 showList xs = String.join (List.map xs String.fromInt) ","
 
 
-showBoxList : Box (List Int) -> String
+showBoxList : Box (List Int) → String
 showBoxList box =
     case box of
-        Empty ->
+        Empty →
             "empty"
 
-        Holding held ->
+        Holding held →
             showList held
 
 
-showBoxPair : Box (Pair Int) -> String
+showBoxPair : Box (Pair Int) → String
 showBoxPair box =
     case box of
-        Empty ->
+        Empty →
             "empty"
 
-        Holding (Pair high low) ->
+        Holding (Pair high low) →
             String.join [ String.fromInt high, String.fromInt low ] "/"
 
 

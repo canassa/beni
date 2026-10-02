@@ -2032,9 +2032,10 @@
     (type_fn
       (type_con Model)
       (type_con List
-        (type_tuple
-          (type_con String)
-          (type_con Int)))))
+        (type_paren
+          (type_tuple
+            (type_con String)
+            (type_con Int))))))
   (definition summary
     (pat_var model)
     (apply

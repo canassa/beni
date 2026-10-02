@@ -23,99 +23,99 @@ type Token
     | Dot
 
 
-score : Token -> Int
+score : Token → Int
 score token =
     case token of
-        Plus ->
+        Plus →
             1
 
-        Minus ->
+        Minus →
             2
 
-        Times ->
+        Times →
             3
 
-        Over ->
+        Over →
             4
 
-        Open ->
+        Open →
             5
 
-        Close ->
+        Close →
             6
 
-        Comma ->
+        Comma →
             7
 
-        Semi ->
+        Semi →
             8
 
-        Dot ->
+        Dot →
             9
 
 
-total : List Token, Int -> Int
+total : List Token, Int → Int
 total ts acc =
     case ts of
-        [] ->
+        [] →
             acc
 
-        [ Plus, ...rest ] ->
+        [ Plus, …rest ] →
             total rest (acc + 1)
 
-        [ Minus, ...rest ] ->
+        [ Minus, …rest ] →
             total rest (acc + 2)
 
-        [ Times, ...rest ] ->
+        [ Times, …rest ] →
             total rest (acc + 3)
 
-        [ Over, ...rest ] ->
+        [ Over, …rest ] →
             total rest (acc + 4)
 
-        [ Open, ...rest ] ->
+        [ Open, …rest ] →
             total rest (acc + 5)
 
-        [ Close, ...rest ] ->
+        [ Close, …rest ] →
             total rest (acc + 6)
 
-        [ Comma, ...rest ] ->
+        [ Comma, …rest ] →
             total rest (acc + 7)
 
-        [ Semi, ...rest ] ->
+        [ Semi, …rest ] →
             total rest (acc + 8)
 
-        [ Dot, ...rest ] ->
+        [ Dot, …rest ] →
             total rest (acc + 9)
 
 
-tokenFor : Int -> Token
+tokenFor : Int → Token
 tokenFor n =
     case Int.mod n 9 of
-        0 ->
+        0 →
             Plus
 
-        1 ->
+        1 →
             Minus
 
-        2 ->
+        2 →
             Times
 
-        3 ->
+        3 →
             Over
 
-        4 ->
+        4 →
             Open
 
-        5 ->
+        5 →
             Close
 
-        6 ->
+        6 →
             Comma
 
-        7 ->
+        7 →
             Semi
 
-        _ ->
+        _ →
             Dot
 
 
@@ -126,5 +126,5 @@ main =
         , String.fromInt (total [] 100)
         , String.fromInt (total (List.map (List.range 1 90) tokenFor) 0)
         , String.fromInt
-            (List.foldl (List.map (List.range 1 9) tokenFor) 0 λt acc -> acc + score t)
+            (List.foldl (List.map (List.range 1 9) tokenFor) 0 λt acc → acc + score t)
         ]

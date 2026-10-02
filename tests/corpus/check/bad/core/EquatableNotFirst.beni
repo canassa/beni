@@ -2,9 +2,9 @@
 -- VARIABLE at its first occurrence, not the argument it stands in front of
 -- — so `equatable a -> equatable a` marks `a` twice, and `a -> equatable a`
 -- marks a later occurrence. Both are mistakes about what the prefix means.
-pub twice : equatable a, equatable a -> Bool
+pub twice : equatable a, equatable a → Bool
 twice x y = True
 
 
-pub late : a, equatable a -> Bool
+pub late : a, equatable a → Bool
 late x y = True

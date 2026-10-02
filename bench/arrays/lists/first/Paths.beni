@@ -5,32 +5,32 @@ import List
 
 
 --| The path to each of `n` nodes along a chain, root first, every path kept.
-pub chainPaths : Int -> List (List Int)
-chainPaths n = List.foldl (List.range 1 n) [] λi paths ->
+pub chainPaths : Int → List (List Int)
+chainPaths n = List.foldl (List.range 1 n) [] λi paths →
     case List.last paths of
-        Nothing ->
+        Nothing →
             [ [ i ] ]
 
-        Just parent ->
+        Just parent →
             List.push paths (List.push parent i)
 
 
 --| Every path's elements summed, for the differential test (quadratic, and
 --| not timed).
-pub checksum : List (List Int) -> Int
-checksum paths = List.foldl paths 0 λp acc -> List.foldl p acc λx s -> Int.mod (s * 31 + x) 1000003
+pub checksum : List (List Int) → Int
+checksum paths = List.foldl paths 0 λp acc → List.foldl p acc λx s → Int.mod (s * 31 + x) 1000003
 
 
 --| An editing session of `n` steps: every fourth step undoes the last edit,
 --| the others record the current state on the undo stack and replace it.
-pub undoSession : Int -> ( Int, List Int )
-undoSession n = List.foldl (List.range 1 n) ( 0, [] ) λi ( current, history ) ->
+pub undoSession : Int → Int × List Int
+undoSession n = List.foldl (List.range 1 n) ( 0, [] ) λi ( current, history ) →
     if Int.mod i 4 == 0 then
         case List.last history of
-            Just previous ->
+            Just previous →
                 ( previous, List.pop history )
 
-            Nothing ->
+            Nothing →
                 ( current, history )
     else
         ( i, List.push history current )

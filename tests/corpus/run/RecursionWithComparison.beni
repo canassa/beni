@@ -42,10 +42,10 @@ sumDown n =
 
 largest xs m =
     case xs of
-        [] ->
+        [] →
             m
 
-        [ x, ...r ] ->
+        [ x, …r ] →
             largest r
                 (if x > m then
                     x
@@ -66,10 +66,10 @@ symFlip x y = sym y x
 
 findMax xs best =
     case xs of
-        [] ->
+        [] →
             best
 
-        [ x, ...r ] ->
+        [ x, …r ] →
             step r x best
 
 
@@ -82,10 +82,10 @@ step r x best =
 
 a1 xs ys =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ x, ...r ] ->
+        [ x, …r ] →
             (if List.member ys x then
                 1
              else
@@ -96,17 +96,17 @@ a1 xs ys =
 
 b1 xs ys =
     case ys of
-        [] ->
+        [] →
             a1 xs []
 
-        [ y, ...r ] ->
+        [ y, …r ] →
             if y < y then
                 99
             else
                 a1 xs r
 
 
-flag : Bool -> String
+flag : Bool → String
 flag b =
     if b then
         "T"

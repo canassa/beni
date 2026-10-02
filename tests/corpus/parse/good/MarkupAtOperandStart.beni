@@ -12,7 +12,7 @@ paren f = f (<b />)
 items = [ <li />, <li /> ]
 
 
-row = λr -> <tr />
+row = λr → <tr />
 
 
-piped f = f <| <>x</>
+piped f = f ◁ <>x</>

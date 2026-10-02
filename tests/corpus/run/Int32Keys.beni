@@ -35,11 +35,11 @@ type Tagged
     | Untagged
 
 
-show : Int32 -> String
+show : Int32 → String
 show n = String.fromInt (Int32.toInt n)
 
 
-yesNo : Bool -> String
+yesNo : Bool → String
 yesNo b =
     if b then
         "True"

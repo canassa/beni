@@ -17,7 +17,7 @@
 import Node exposing (Program)
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -29,19 +29,19 @@ main : Program
 main =
     Node.printLines
         [ show (1 < 2)
-        , show (2 <= 2)
+        , show (2 ≤ 2)
         , show (3 > 4)
-        , show (4 >= 4)
+        , show (4 ≥ 4)
         , show (1.5 < 1.25)
-        , show (1.5 >= 1.5)
+        , show (1.5 ≥ 1.5)
         , show ('a' < 'b')
-        , show ('b' <= 'a')
+        , show ('b' ≤ 'a')
         , show ('z' > 'a')
-        , show ('a' >= 'a')
+        , show ('a' ≥ 'a')
         , show ("apple" < "banana")
-        , show ("banana" <= "apple")
+        , show ("banana" ≤ "apple")
         , show ("b" > "a")
-        , show ("a" >= "a")
+        , show ("a" ≥ "a")
         , show ("\u{10000}" < "\u{E000}")
         , show ('\u{10000}' < '\u{E000}')
         ]

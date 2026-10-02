@@ -17,47 +17,47 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String -> ()
+say : String → ()
 say line = Debug.log line ()
 
 
-describe : Exit Int -> String
+describe : Exit Int → String
 describe exit =
     case exit of
-        Done n ->
+        Done n →
             "done " ++ String.fromInt n
 
-        Cancelled ->
+        Cancelled →
             "cancelled"
 
 
-sleepThen : Int -> Int
+sleepThen : Int → Int
 sleepThen n =
     _ = Io.sleep 100000
     n
 
 
-held : String, (() -> Int) -> Int
+held : String, (() → Int) → Int
 held name work =
     Task.bracket
-        (λ() -> say (name ++ " acquired"))
-        (λ_ exit -> say (name ++ " released: " ++ describe exit))
-        λ_ -> work ()
+        (λ() → say (name ++ " acquired"))
+        (λ_ exit → say (name ++ " released: " ++ describe exit))
+        λ_ → work ()
 
 
 main : Program
-main = Io.run λ() ->
+main = Io.run λ() →
     -- Success.
-    n = held "plain" λ() -> 5
+    n = held "plain" λ() → 5
     _ = say ("plain returned " ++ String.fromInt n)
     -- Cancelled from outside, two brackets deep.
-    waiting = Task.spawn λ() -> held "outer" λ() -> held "inner" λ() -> sleepThen 0
+    waiting = Task.spawn λ() → held "outer" λ() → held "inner" λ() → sleepThen 0
     _ = Io.sleep 1
     _ = Task.cancel waiting
     _ = say "cancel returned"
     -- Cancelled by joining a cancelled fiber.
-    victim = Task.spawn λ() -> held "victim" λ() -> sleepThen 1
-    joiner = Task.spawn λ() -> held "joiner" λ() -> Task.join victim
+    victim = Task.spawn λ() → held "victim" λ() → sleepThen 1
+    joiner = Task.spawn λ() → held "joiner" λ() → Task.join victim
     _ = Io.sleep 1
     _ = Task.cancel victim
     ended = Task.wait joiner

@@ -2,10 +2,10 @@ pub type Trip a b c
     = Trip a b c Int
 
 
-pub eq : Trip a a a, Trip a a a -> Bool
+pub eq : Trip a a a, Trip a a a → Bool
 eq left right =
     case left of
-        Trip _ _ _ n ->
+        Trip _ _ _ n →
             case right of
-                Trip _ _ _ m ->
+                Trip _ _ _ m →
                     n == m

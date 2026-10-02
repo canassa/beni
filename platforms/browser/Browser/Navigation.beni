@@ -26,7 +26,7 @@ pub opaque type Key
 
 
 --| The page's key.
-pub key : () -> Key
+pub key : () → Key
 key () = Page
 
 
@@ -46,39 +46,39 @@ pub type Error
 --|         case Browser.Navigation.currentUrl () of
 --|             Just url -> filterOf url.fragment
 --|             Nothing -> All
-pub currentUrl : () -> Maybe Url
+pub currentUrl : () → Maybe Url
 currentUrl () = Url.fromString (Js.to (Js.get (Js.global "location") "href"))
 
 
 --| Add an entry to the browser's history with the URL, resolved against
 --| the page, and tell every follower of the address. The page is not
 --| reloaded.
-pub pushUrl : Key, String -> Result Error ()
+pub pushUrl : Key, String → Result Error ()
 pushUrl _ url = change "pushState" url
 
 
 --| Replace the current entry of the browser's history with the URL, and
 --| tell every follower of the address.
-pub replaceUrl : Key, String -> Result Error ()
+pub replaceUrl : Key, String → Result Error ()
 replaceUrl _ url = change "replaceState" url
 
 
 --| Go back `n` entries in the history. The address changes when the
 --| browser has gone back, and followers hear it then; `n = 0` does
 --| nothing.
-pub back : Key, Int -> Result Error ()
+pub back : Key, Int → Result Error ()
 back _ n = go (negate n)
 
 
 --| Go forward `n` entries in the history, as `back` goes back.
-pub forward : Key, Int -> Result Error ()
+pub forward : Key, Int → Result Error ()
 forward _ n = go n
 
 
 --| Leave the page for the URL, resolved against the page. An address that
 --| does not resolve, and a `javascript:` one, which would run text as
 --| script, is `BadUrl`.
-pub load : String -> Result Error ()
+pub load : String → Result Error ()
 load url =
     target = resolve url
     if Js.isNull target || Js.same (Js.get target "protocol") (Js.from "javascript:") then
@@ -88,12 +88,12 @@ load url =
         -- parse and a `SecurityError` for one it refuses; nothing else is
         -- caught (CLAUDE.md rule 9).
         Js.catchIf
-            (λ() ->
+            (λ() →
                 _ = Js.call (Js.global "location") "assign" [ Js.get target "href" ]
                 Ok ()
             )
-            (λerror -> isDomException error "SyntaxError" || isDomException error "SecurityError")
-            λerror ->
+            (λerror → isDomException error "SyntaxError" || isDomException error "SecurityError")
+            λerror →
                 if isDomException error "SyntaxError" then
                     Err (BadUrl url)
                 else
@@ -101,7 +101,7 @@ load url =
 
 
 --| Load the page again.
-pub reload : () -> ()
+pub reload : () → ()
 reload () = Js.to (Js.call (Js.global "location") "reload" [])
 
 
@@ -124,24 +124,24 @@ type Requests
 --| on an `<a href>` with no `download` and a `target` that is empty or
 --| `_self`. Any other click is the host's. It covers the whole document,
 --| markup outside a program's mount included. It never returns.
-pub eachUrlRequest : (Browser.UrlRequest -> ()) -> ()
-eachUrlRequest f = Listen.each "window" "click" request λr -> sendRequest f r
+pub eachUrlRequest : (Browser.UrlRequest → ()) → ()
+eachUrlRequest f = Listen.each "window" "click" request λr → sendRequest f r
 
 
 --| Each click on a link the page should handle itself, as `eachUrlRequest`
 --| decides it: `Internal` with its `Url` for a link to the page's own
 --| protocol, host and port, `External` with its `href` for any other.
-pub onUrlRequest : (Browser.UrlRequest -> msg) -> Sub msg
+pub onUrlRequest : (Browser.UrlRequest → msg) → Sub msg
 onUrlRequest tag = Sub.listen LinkClick (eachUrlRequest _) tag
 
 
-sendRequest : Send Browser.UrlRequest, Maybe Browser.UrlRequest -> ()
+sendRequest : Send Browser.UrlRequest, Maybe Browser.UrlRequest → ()
 sendRequest send r =
     case r of
-        Just u ->
+        Just u →
             send u
 
-        Nothing ->
+        Nothing →
             ()
 
 
@@ -149,7 +149,7 @@ sendRequest send r =
 -- click is dispatched: a default already prevented has been handled, a
 -- modified or non-main click is the user asking the host, and so is a link
 -- that downloads or opens elsewhere.
-request : Js.Value -> Maybe Browser.UrlRequest
+request : Js.Value → Maybe Browser.UrlRequest
 request event =
     if
         Js.to (Js.get event "defaultPrevented")
@@ -175,7 +175,7 @@ request event =
             href = Js.to (Js.get a "href")
             location = Js.global "location"
             case Url.fromString href of
-                Just url ->
+                Just url →
                     if
                         Js.same (Js.get a "protocol") (Js.get location "protocol")
                             && Js.same (Js.get a "host") (Js.get location "host")
@@ -184,21 +184,21 @@ request event =
                     else
                         Just (Browser.External href)
 
-                Nothing ->
+                Nothing →
                     Just (Browser.External href)
 
 
-sameContext : Js.Value -> Bool
+sameContext : Js.Value → Bool
 sameContext target = Js.same target (Js.from "") || Js.same target (Js.from "_self")
 
 
 -- The nearest `<a>` at or above the click's target, along its composed
 -- path, or null.
-anchorOf : Js.Value -> Js.Value
+anchorOf : Js.Value → Js.Value
 anchorOf event =
     found = Js.ref Js.null
     anchor = Js.global "HTMLAnchorElement"
-    _ = Js.each (Js.call event "composedPath" []) λnode ->
+    _ = Js.each (Js.call event "composedPath" []) λnode →
         if Js.isNull (Js.read found) && Js.instanceOf node anchor then
             Js.write found node
         else
@@ -212,13 +212,13 @@ anchorOf event =
 --| and every `pushUrl` and `replaceUrl` on the page. It never returns;
 --| cancelling the fiber removes the listener. An address that is not a
 --| `Url` is skipped.
-pub eachUrlChange : (Url -> ()) -> ()
+pub eachUrlChange : (Url → ()) → ()
 eachUrlChange f = follow f
 
 
 --| The page's new address each time it changes. An address that is not a
 --| `Url` sends nothing.
-pub onUrlChange : (Url -> msg) -> Sub msg
+pub onUrlChange : (Url → msg) → Sub msg
 onUrlChange tag = Sub.listen UrlChange (eachUrlChange _) tag
 
 
@@ -226,18 +226,18 @@ onUrlChange tag = Sub.listen UrlChange (eachUrlChange _) tag
 -- back and forward buttons, and this module's own announcement of a push
 -- or a replace, in the order they fire. The address is read when each
 -- fires.
-follow : Send Url -> ()
-follow send = Listen.eachOf2 "window" "popstate" announcement (λ_ -> currentUrl ()) λurl ->
+follow : Send Url → ()
+follow send = Listen.eachOf2 "window" "popstate" announcement (λ_ → currentUrl ()) λurl →
     sendUrl send url
 
 
-sendUrl : Send Url, Maybe Url -> ()
+sendUrl : Send Url, Maybe Url → ()
 sendUrl send url =
     case url of
-        Just u ->
+        Just u →
             send u
 
-        Nothing ->
+        Nothing →
             ()
 
 
@@ -253,7 +253,7 @@ announcement = "beni:navigate"
 -- Safari and Firefox throw. Chrome drops a call over its limit with a
 -- warning instead, so the address is compared afterwards — the one way to
 -- see that drop.
-change : String, String -> Result Error ()
+change : String, String → Result Error ()
 change method url =
     target = resolve url
     location = Js.global "location"
@@ -265,12 +265,12 @@ change method url =
         href = Js.get target "href"
         changed =
             Js.catchIf
-                (λ() ->
+                (λ() →
                     _ = Js.call (Js.global "history") method [ Js.null, Js.from "", href ]
                     Js.same (Js.get location "href") href
                 )
-                (λerror -> isDomException error "SecurityError")
-                λ_ -> False
+                (λerror → isDomException error "SecurityError")
+                λ_ → False
         if changed then
             _ =
                 Js.call (Js.global "window") "dispatchEvent"
@@ -280,36 +280,36 @@ change method url =
             Err Throttled
 
 
-go : Int -> Result Error ()
+go : Int → Result Error ()
 go n =
     if n == 0 then
         Ok ()
     else
         Js.catchIf
-            (λ() ->
+            (λ() →
                 _ = Js.call (Js.global "history") "go" [ Js.from n ]
                 Ok ()
             )
-            (λerror -> isDomException error "SecurityError")
-            λ_ -> Err Throttled
+            (λerror → isDomException error "SecurityError")
+            λ_ → Err Throttled
 
 
 -- The URL resolved against the page's address, or null: `URL.parse`
 -- answers null for what does not resolve, and an engine without it has
 -- `new URL`, whose one documented failure is a `TypeError`.
-resolve : String -> Js.Value
+resolve : String → Js.Value
 resolve url =
     constructor = Js.global "URL"
     base = Js.get (Js.global "location") "href"
     if Js.isUndefined (Js.get constructor "parse") then
         Js.catchIf
-            (λ() -> Js.construct constructor [ Js.from url, base ])
-            (λerror -> Js.instanceOf error (Js.global "TypeError"))
-            λ_ -> Js.null
+            (λ() → Js.construct constructor [ Js.from url, base ])
+            (λerror → Js.instanceOf error (Js.global "TypeError"))
+            λ_ → Js.null
     else
         Js.call constructor "parse" [ Js.from url, base ]
 
 
-isDomException : Js.Value, String -> Bool
+isDomException : Js.Value, String → Bool
 isDomException error name =
     Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

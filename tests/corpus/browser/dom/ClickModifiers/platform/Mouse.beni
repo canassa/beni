@@ -6,5 +6,5 @@ import Js
 
 
 --| The event's `button`: 0 the main button, 1 the wheel, 2 the secondary.
-pub button : Event -> Int
+pub button : Event → Int
 button event = Js.to (Js.get (Js.from event) "button")

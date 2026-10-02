@@ -18,21 +18,21 @@ type Triple
     = Triple Int Int Int
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
 -- An interpolation may not contain a string literal (`language.md` §2.6), so
 -- the label of each segment's log has to be baked into a function.
-seg0 : Int -> Int
+seg0 : Int → Int
 seg0 v = Debug.log "interp.0" v
 
 
-seg1 : Int -> Int
+seg1 : Int → Int
 seg1 v = Debug.log "interp.1" v
 
 
-seg2 : Int -> Int
+seg2 : Int → Int
 seg2 v = Debug.log "interp.2" v
 
 

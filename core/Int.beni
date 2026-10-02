@@ -22,7 +22,7 @@ import Js
 --|     Int.mod (-1) 4 == 3
 --|     Int.mod 11 4 == 3
 --|     Int.mod 7 0 == 0
-pub mod : Int, Int -> Int
+pub mod : Int, Int → Int
 mod n k =
     -- `%` takes the sign of the dividend; this answer takes the modulus's.
     if k == 0 then 0 else Js.rem (Js.rem n k + k) k
@@ -36,5 +36,5 @@ mod n k =
 --|     Int.rem (-1) 4 == -1
 --|     Int.rem 11 4 == 3
 --|     Int.rem 7 0 == 0
-pub rem : Int, Int -> Int
+pub rem : Int, Int → Int
 rem n k = if k == 0 then 0 else Js.rem n k

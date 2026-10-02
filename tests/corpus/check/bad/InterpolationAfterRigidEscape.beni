@@ -9,6 +9,6 @@
 f x =
     s = "${x}"
 
-    g : a -> a
+    g : a → a
     g y = if True then y else x
     ( s, g 1 )

@@ -2,5 +2,5 @@
 -- §29.2), not "`Int` has no method called `modBy`": the message writes
 -- `Int.mod n 2`, since `Int.mod` is a function of the `Int` module and the
 -- type's methods stay `Basics`'s (§29.3), so there is no `n.mod 2`.
-even : Int -> Bool
+even : Int → Bool
 even n = n.modBy 2 == 0

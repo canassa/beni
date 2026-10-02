@@ -8,5 +8,5 @@ type Hidden a
     = Hidden a
 
 
-pub make : a -> Hidden a
+pub make : a → Hidden a
 make x = Hidden x

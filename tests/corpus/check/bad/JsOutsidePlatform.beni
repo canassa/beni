@@ -7,9 +7,9 @@
 import Js
 
 
-pub same : Js.Value, Js.Value -> Bool
+pub same : Js.Value, Js.Value → Bool
 same a b = Js.same a b
 
 
-pub size : Js.Value -> Int
+pub size : Js.Value → Int
 size v = Js.to (Js.get v "length")

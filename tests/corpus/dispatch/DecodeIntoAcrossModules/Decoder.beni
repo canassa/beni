@@ -11,6 +11,6 @@
 import String
 
 
-pub decodeInto : String -> a
-    where a.fromList : List Char -> a
+pub decodeInto : String → a
+    where a.fromList : List Char → a
 decodeInto s = a.fromList (String.toList s)

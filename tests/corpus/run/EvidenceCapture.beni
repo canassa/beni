@@ -16,9 +16,9 @@ import String
 
 -- `a.same` is one constraint, so one hidden parameter. `List.map`'s lambda
 -- is one level down and `List.foldl`'s is two, and `$m$0` is read there.
-countEach : List a -> List Int
-    where a.same : a, a -> Bool
-countEach xs = List.map xs λx -> List.foldl xs 0 λy n -> if x.same y then n + 1 else n
+countEach : List a → List Int
+    where a.same : a, a → Bool
+countEach xs = List.map xs λx → List.foldl xs 0 λy n → if x.same y then n + 1 else n
 
 
 pub type Colour
@@ -26,23 +26,23 @@ pub type Colour
     | Green
 
 
-pub same : Colour, Colour -> Bool
+pub same : Colour, Colour → Bool
 same a b =
     case a of
-        Red ->
+        Red →
             case b of
-                Red ->
+                Red →
                     True
 
-                Green ->
+                Green →
                     False
 
-        Green ->
+        Green →
             case b of
-                Red ->
+                Red →
                     False
 
-                Green ->
+                Green →
                     True
 
 

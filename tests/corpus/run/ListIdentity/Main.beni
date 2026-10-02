@@ -31,7 +31,7 @@ type alias Row =
     id : Int
 
 
-show : String, Bool -> String
+show : String, Bool → String
 show label b =
     if b then
         label ++ " same"
@@ -46,23 +46,23 @@ main =
 
     firstOf xs =
         case xs of
-            [ x, ..._ ] ->
+            [ x, …_ ] →
                 Identity.refEq x (headOr rows)
 
-            [] ->
+            [] →
                 False
 
     a = [ 1, 2 ]
     b = [ 3, 4 ]
     joined = List.concat [ [], a, [], b, [], [] ]
 
-    mapped = List.concatMap [ 1, 2, 3 ] λn ->
+    mapped = List.concatMap [ 1, 2, 3 ] λn →
         if n == 2 then
             b
         else
             []
 
-    mappedTwo = List.concatMap [ 1, 2, 3 ] λn ->
+    mappedTwo = List.concatMap [ 1, 2, 3 ] λn →
         if n == 3 then
             []
         else if n == 1 then
@@ -70,9 +70,9 @@ main =
         else
             b
 
-    ( kept, _ ) = List.partition rows λr -> r.id < 2
+    ( kept, _ ) = List.partition rows λr → r.id < 2
     Node.printLines
-        [ show "filter element" (firstOf (List.filter rows λr -> r.id == 1))
+        [ show "filter element" (firstOf (List.filter rows λr → r.id == 1))
         , show "take element" (firstOf (List.take rows 2))
         , show "partition element" (firstOf kept)
         , show "append element" (firstOf (List.append rows [ { id = 9 } ]))
@@ -88,11 +88,11 @@ main =
         ]
 
 
-headOr : List Row -> Row
+headOr : List Row → Row
 headOr xs =
     case xs of
-        [ x, ..._ ] ->
+        [ x, …_ ] →
             x
 
-        [] ->
+        [] →
             { id = 0 }

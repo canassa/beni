@@ -7,13 +7,13 @@
 -- probe now rolls back the dispatch builder and the diagnostics too. This
 -- fixture puts the two together: the declaration must check clean and its
 -- dispatch table must hold exactly the sites the SURVIVING shape needs.
-pub firstBigger : Result String a, a -> Result String Bool
-    where a.compare : a, a -> Order
+pub firstBigger : Result String a, a → Result String Bool
+    where a.compare : a, a → Order
 firstBigger r limit =
     value = r?
     Ok (bigger value limit)
 
 
-pub bigger : a, a -> Bool
-    where a.compare : a, a -> Order
+pub bigger : a, a → Bool
+    where a.compare : a, a → Order
 bigger x y = x.compare y == GT

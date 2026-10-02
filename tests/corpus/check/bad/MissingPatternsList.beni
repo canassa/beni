@@ -3,8 +3,8 @@
 -- non-empty one — and the example is spelled in the list syntax,
 -- `[ _, ..._ ]`, not as the length alternative the algorithm uses
 -- internally.
-pub headOr : List Int -> Int
+pub headOr : List Int → Int
 headOr xs =
     case xs of
-        [] ->
+        [] →
             0

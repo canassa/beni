@@ -4,8 +4,8 @@ pub type Shape
     = Square Int
 
 
-pub render : Shape, Int -> String
+pub render : Shape, Int → String
 render s n =
     case s of
-        Square side ->
+        Square side →
             "square" ++ String.fromInt (side * n)

@@ -10,15 +10,15 @@ pub type Msg
     | Decrement
 
 
-pub update : Msg, Model -> Model
+pub update : Msg, Model → Model
 update msg model =
     case msg of
-        Increment ->
+        Increment →
             { model | count = model.count + 1 }
 
-        Decrement ->
+        Decrement →
             { model | count = model.count - 1 }
 
 
-pub step : Model -> Model
+pub step : Model → Model
 step model = update Increment

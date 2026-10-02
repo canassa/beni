@@ -1,13 +1,13 @@
 -- check/bad: two spellings of one integer are one pattern (`0x10` is 16),
 -- so the second branch is dead. Literal patterns are compared by VALUE.
-pub name : Int -> String
+pub name : Int → String
 name n =
     case n of
-        0x10 ->
+        0x10 →
             "sixteen"
 
-        16 ->
+        16 →
             "also sixteen"
 
-        _ ->
+        _ →
             "other"

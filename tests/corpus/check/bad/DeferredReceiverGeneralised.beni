@@ -14,4 +14,4 @@ g n =
     if n > 5 then
         n
     else
-        f n { combine = λz -> z + 1 }
+        f n { combine = λz → z + 1 }

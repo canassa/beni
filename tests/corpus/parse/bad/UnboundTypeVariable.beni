@@ -9,5 +9,5 @@ type alias Wrapper =
     List b
 
 
-f : c -> c
+f : c → c
 f x = x

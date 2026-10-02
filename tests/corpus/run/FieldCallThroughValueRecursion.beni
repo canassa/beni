@@ -25,7 +25,7 @@ fb n y =
     if n > 0 then
         y
     else
-        _ = fa 1 { combine = λz -> z + 1 }
+        _ = fa 1 { combine = λz → z + 1 }
         y
 
 

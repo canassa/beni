@@ -17,29 +17,29 @@ type Colour
     | Blue
 
 
-area : Shape -> Float
+area : Shape → Float
 area shape =
     case shape of
-        Circle r ->
+        Circle r →
             3.0 * r * r
 
-        Rect w h ->
+        Rect w h →
             w * h
 
-        Dot ->
+        Dot →
             0.0
 
 
-name : Colour -> String
+name : Colour → String
 name colour =
     case colour of
-        Red ->
+        Red →
             "red"
 
-        Green ->
+        Green →
             "green"
 
-        Blue ->
+        Blue →
             "blue"
 
 

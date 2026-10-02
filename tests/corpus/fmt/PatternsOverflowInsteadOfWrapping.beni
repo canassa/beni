@@ -6,12 +6,12 @@
 -- guide AND unreadable. Every pattern below stays on one line, whatever its
 -- width and whatever the author did.
 f x = case x of
-  Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) -> 2
-  ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) -> 3
+  Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) → 2
+  ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) → 3
   [ aLongFieldName
       , anotherLongFieldName
       , aThirdLongFieldName
       , moreStuffHere
       , extraLongNameHere
-      ] -> 4
-  _ -> 5
+      ] → 4
+  _ → 5

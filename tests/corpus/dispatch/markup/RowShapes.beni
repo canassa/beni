@@ -19,25 +19,25 @@ type alias Model =
     title : Maybe String
 
 
-viewRow : Row -> Html msg
+viewRow : Row → Html msg
 viewRow row = <li>{row.label}</li>
 
 
-viewCell : Model, Row -> Html msg
+viewCell : Model, Row → Html msg
 viewCell model row = <li>{row.id}</li>
 
 
-viewAt : String, Int -> Html msg
+viewAt : String, Int → Html msg
 viewAt name position = <li>{name}{position}</li>
 
 
-pub view : Model -> Html msg
+pub view : Model → Html msg
 view model =
     <div>
         <For each={model.rows} keyed={.id}>{viewRow}</For>
         <For each={model.rows} keyed={False}>{viewCell model _}</For>
-        <For each={model.names}>{λname position -> <li>{name}{position}</li>}</For>
+        <For each={model.names}>{λname position → <li>{name}{position}</li>}</For>
         <For each={model.names}>{viewAt}</For>
-        <Show when={model.title} keyed>{λtitle -> <h1>{title}</h1>}</Show>
+        <Show when={model.title} keyed>{λtitle → <h1>{title}</h1>}</Show>
         <Show when={model.user} keyed={.id} fallback={<p>Nobody</p>}>{viewRow}</Show>
     </div>

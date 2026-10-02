@@ -12,30 +12,30 @@ type alias Item =
     category : Int
 
 
-pub countIn : Array Item, Int -> Int
-countIn items c = Array.foldl items 0 λit n -> if it.category == c then n + 1 else n
+pub countIn : Array Item, Int → Int
+countIn items c = Array.foldl items 0 λit n → if it.category == c then n + 1 else n
 
 
-pub total : Array Item -> Float
-total items = Array.foldl items 0.0 λit s -> s + it.price
+pub total : Array Item → Float
+total items = Array.foldl items 0.0 λit s → s + it.price
 
 
-pub inCategory : Array Item, Int -> Array Item
-inCategory items c = Array.filter items λit -> it.category == c
+pub inCategory : Array Item, Int → Array Item
+inCategory items c = Array.filter items λit → it.category == c
 
 
-pub cheapest : Array Item, Int -> Array Item
-cheapest items k = Array.slice (Array.sortWith items λa b -> compare a.price b.price) 0 k
+pub cheapest : Array Item, Int → Array Item
+cheapest items k = Array.slice (Array.sortWith items λa b → compare a.price b.price) 0 k
 
 
-find : Array Item, Int, Int, Int -> Maybe Item
+find : Array Item, Int, Int, Int → Maybe Item
 find items id lo hi =
     if lo > hi then
         Nothing
     else
         mid = (lo + hi) // 2
         case Array.get items mid of
-            Just it ->
+            Just it →
                 if it.id == id then
                     Just it
                 else if it.id < id then
@@ -43,42 +43,42 @@ find items id lo hi =
                 else
                     find items id lo (mid - 1)
 
-            Nothing ->
+            Nothing →
                 Nothing
 
 
 --| `k` lookups by id, each a binary search over the id-sorted items.
-pub lookups : Array Item, Int -> Float
+pub lookups : Array Item, Int → Float
 lookups items k = lookupsHelp items 0 k 0.0
 
 
-lookupsHelp : Array Item, Int, Int, Float -> Float
+lookupsHelp : Array Item, Int, Int, Float → Float
 lookupsHelp items j k acc =
-    if j >= k then
+    if j ≥ k then
         acc
     else
         id = Int.mod (j * 7919) (Array.length items)
         case find items id 0 (Array.length items - 1) of
-            Just it ->
+            Just it →
                 lookupsHelp items (j + 1) k (acc + it.price)
 
-            Nothing ->
+            Nothing →
                 lookupsHelp items (j + 1) k acc
 
 
 --| One page of a paginated view: `size` items from `start`, read by index.
-pub page : Array Item, Int, Int -> List String
+pub page : Array Item, Int, Int → List String
 page items start size = pageHelp items (start + size - 1) start []
 
 
-pageHelp : Array Item, Int, Int, List String -> List String
+pageHelp : Array Item, Int, Int, List String → List String
 pageHelp items i start acc =
     if i < start then
         acc
     else
         case Array.get items i of
-            Just it ->
-                pageHelp items (i - 1) start [ it.name, ...acc ]
+            Just it →
+                pageHelp items (i - 1) start [ it.name, …acc ]
 
-            Nothing ->
+            Nothing →
                 pageHelp items (i - 1) start acc

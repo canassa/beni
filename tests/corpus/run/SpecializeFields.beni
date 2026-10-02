@@ -13,11 +13,11 @@ type alias Point =
     tag : String
 
 
-point : Int -> Point
+point : Int → Point
 point n = { x = n, y = n * 2, label = "unused", tag = "read" }
 
 
-shown : Int -> Point
+shown : Int → Point
 shown n = { x = n, y = 0, label = "kept", tag = "t" }
 
 

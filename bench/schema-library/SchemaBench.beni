@@ -41,16 +41,16 @@ user : Schema (User Int) (User Int)
 user =
     Schema.record
         (Schema.fields
-            |> Schema.field "userId" Schema.int
-            |> Schema.key "user-id"
-            |> Schema.field "displayName" Schema.string
-            |> Schema.key "display-name"
-            |> Schema.field "email" Schema.string
-            |> Schema.field "age" Schema.int
-            |> Schema.field "active" Schema.bool
-            |> Schema.field "score" Schema.finiteFloat
-            |> Schema.field "role" Schema.string
-            |> Schema.optional "nickname" Schema.string
+            ▷ Schema.field "userId" Schema.int
+            ▷ Schema.key "user-id"
+            ▷ Schema.field "displayName" Schema.string
+            ▷ Schema.key "display-name"
+            ▷ Schema.field "email" Schema.string
+            ▷ Schema.field "age" Schema.int
+            ▷ Schema.field "active" Schema.bool
+            ▷ Schema.field "score" Schema.finiteFloat
+            ▷ Schema.field "role" Schema.string
+            ▷ Schema.optional "nickname" Schema.string
         )
         (Schema.mapping toUser fromUser)
         (Schema.mapping toUser fromUser)
@@ -66,51 +66,51 @@ all =
 
 
 -- How many issues an operation found: 0 when it succeeded.
-count : Result (List Schema.Issue) a -> Int
+count : Result (List Schema.Issue) a → Int
 count r =
     case r of
-        Ok _ ->
+        Ok _ →
             0
 
-        Err found ->
+        Err found →
             List.length found
 
 
-pub parseUser : String -> Int
+pub parseUser : String → Int
 parseUser text = count (Schema.parse user text)
 
 
-pub parseUserAll : String -> Int
+pub parseUserAll : String → Int
 parseUserAll text = count (Schema.parseWith user all text)
 
 
-pub parseUsers : String -> Int
+pub parseUsers : String → Int
 parseUsers text = count (Schema.parse users text)
 
 
-pub readUser : Schema.Value -> Int
+pub readUser : Schema.Value → Int
 readUser v = count (Schema.read user v)
 
 
-pub printUser : User Int -> Int
+pub printUser : User Int → Int
 printUser u = count (Schema.print user u)
 
 
-pub printUsers : List (User Int) -> Int
+pub printUsers : List (User Int) → Int
 printUsers us = count (Schema.print users us)
 
 
-pub decodeUser : User Int -> Int
+pub decodeUser : User Int → Int
 decodeUser u = count (Schema.decode user u)
 
 
 -- A value to print: the user a text describes, or a fixed one.
-pub prepare : String -> User Int
-prepare text = Schema.parse user text |> Result.withDefault fallback
+pub prepare : String → User Int
+prepare text = Schema.parse user text ▷ Result.withDefault fallback
 
 
-pub prepareList : String -> List (User Int)
-prepareList text = Schema.parse users text |> Result.withDefault []
+pub prepareList : String → List (User Int)
+prepareList text = Schema.parse users text ▷ Result.withDefault []
 
 
 fallback : User Int
@@ -143,21 +143,21 @@ pub schema UsersDecl =
     List UserDecl
 
 
-pub parseUserDecl : String -> Int
+pub parseUserDecl : String → Int
 parseUserDecl text = count (UserDecl.parse text)
 
 
-pub parseUserDeclAll : String -> Int
+pub parseUserDeclAll : String → Int
 parseUserDeclAll text = count (UserDecl.parseWith all text)
 
 
-pub parseUsersDecl : String -> Int
+pub parseUsersDecl : String → Int
 parseUsersDecl text = count (UsersDecl.parse text)
 
 
-pub printUserDecl : User Int -> Int
+pub printUserDecl : User Int → Int
 printUserDecl u = count (UserDecl.print u)
 
 
-pub printUsersDecl : List (User Int) -> Int
+pub printUsersDecl : List (User Int) → Int
 printUsersDecl us = count (UsersDecl.print us)

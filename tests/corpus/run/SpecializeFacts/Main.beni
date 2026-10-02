@@ -19,7 +19,7 @@ type alias Shape =
     mode : String
 
 
-shape : Int -> Shape
+shape : Int → Shape
 shape n = { kind = "box", size = n, mode = "plain" }
 
 
@@ -27,7 +27,7 @@ small : Shape
 small = { kind = "box", size = 1, mode = "plain" }
 
 
-describe : Shape -> String
+describe : Shape → String
 describe s = "${s.kind} ${String.fromInt s.size} ${s.mode}"
 
 

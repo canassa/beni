@@ -14,19 +14,19 @@ type alias User =
     name : String
 
 
-viewUser : User -> Html msg
+viewUser : User → Html msg
 viewUser user = <b>{user.name}</b>
 
 
-view : Maybe String, Maybe User, Maybe () -> Html msg
+view : Maybe String, Maybe User, Maybe () → Html msg
 view title user unit =
     <div>
-        <Show when={title} keyed>{λt -> <h1>{t}</h1>}</Show>
+        <Show when={title} keyed>{λt → <h1>{t}</h1>}</Show>
         <Show when={user} keyed={.id} fallback={<p>Nobody</p>}>{viewUser}</Show>
         <Show when={user} keyed={True}>
-            {λu -> if u.id > 1 then <i>{u.name}</i> else <u>{u.name}</u>}
+            {λu → if u.id > 1 then <i>{u.name}</i> else <u>{u.name}</u>}
         </Show>
-        <Show when={unit} keyed fallback={<p>no unit</p>}>{λ_ -> <p>unit</p>}</Show>
+        <Show when={unit} keyed fallback={<p>no unit</p>}>{λ_ → <p>unit</p>}</Show>
     </div>
 
 

@@ -5,8 +5,8 @@ schema Message tagged "kind" of
         value : Int
 
 
-bad : Message.Encoded -> Bool
+bad : Message.Encoded → Bool
 bad message =
     case message of
-        Message.Encoded.Text row ->
+        Message.Encoded.Text row →
             True

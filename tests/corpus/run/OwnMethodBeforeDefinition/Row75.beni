@@ -10,7 +10,7 @@ pub type U
 pub compare a b =
     s = T 1 == T 2
     case ( a, b ) of
-        ( U x, U y ) ->
+        ( U x, U y ) →
             if s then
                 LT
             else
@@ -19,5 +19,5 @@ pub compare a b =
 
 pub eq a b =
     case ( a, b ) of
-        ( T _, T _ ) ->
+        ( T _, T _ ) →
             True

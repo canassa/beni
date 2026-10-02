@@ -8,25 +8,25 @@ import Node exposing (Program)
 import String
 
 
-add3 : Int, Int, Int -> Int
+add3 : Int, Int, Int → Int
 add3 a b c = a + b + c
 
 
-apply : (Int -> Int), Int -> Int
+apply : (Int → Int), Int → Int
 apply f n = f n
 
 
 main : Program
 main =
-    addOne = λb c -> add3 1 b c
+    addOne = λb c → add3 1 b c
     addOneTwo = add3 1 2 _
-    counterFrom start = λstep -> start + step
+    counterFrom start = λstep → start + step
     Node.printLines
         [ String.fromInt (add3 1 2 3)
         , String.fromInt (addOne 2 3)
         , String.fromInt (addOneTwo 3)
         , String.fromInt (apply (add3 1 2 _) 3)
-        , String.fromInt (apply (λn -> n * 2) 21)
+        , String.fromInt (apply (λn → n * 2) 21)
         , String.fromInt ((counterFrom 10) 5)
         , String.join (List.map (List.map [ 1, 2, 3 ] (add3 1 1 _)) String.fromInt) ","
         ]

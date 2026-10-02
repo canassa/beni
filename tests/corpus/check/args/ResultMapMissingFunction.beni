@@ -1,4 +1,4 @@
 -- check/args: `Result.map` takes the result and then the function; only
 -- the result is there.
-pub bumped : Result String Int -> Result String Int
+pub bumped : Result String Int → Result String Int
 bumped r = Result.map r

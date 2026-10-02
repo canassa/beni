@@ -23,7 +23,7 @@ import Node exposing (Program)
 import String
 
 
-pub describe : Int -> String
+pub describe : Int → String
 describe n = String.padLeft (String.fromInt n) 4 '.'
 
 

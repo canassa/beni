@@ -10,48 +10,48 @@ decoder : Json.Decode.Decoder Int
 decoder = Json.Decode.int
 
 
-encode : Int -> E.Value
+encode : Int → E.Value
 encode n = E.int n
 
 
-describe : Http.Error -> String
+describe : Http.Error → String
 describe err =
     case err of
-        Http.Timeout ->
+        Http.Timeout →
             "timeout"
 
-        Http.BadStatus code ->
+        Http.BadStatus code →
             "bad status ${code}"
 
-        _ ->
+        _ →
             "other"
 
 
-wrap : Int -> Maybe.Maybe Int
+wrap : Int → Maybe.Maybe Int
 wrap n = Maybe.Just n
 
 
-unwrap : Result.Result String Int -> Int
+unwrap : Result.Result String Int → Int
 unwrap r =
     case r of
-        Result.Ok n ->
+        Result.Ok n →
             n
 
-        Result.Err _ ->
+        Result.Err _ →
             0
 
 
-upper : String -> String
+upper : String → String
 upper = String.toUpper
 
 
-chars : String -> List Char
-chars s = String.toList s |> List.map Char.toUpper
+chars : String → List Char
+chars s = String.toList s ▷ List.map Char.toUpper
 
 
 nested : Json.Decode.Decoder (List (Maybe.Maybe Int))
 nested = Json.Decode.list (Json.Decode.maybe Json.Decode.int)
 
 
-logged : Int -> Int
+logged : Int → Int
 logged n = Debug.log "n" n

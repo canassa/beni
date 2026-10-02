@@ -19,16 +19,16 @@ type Size
     | Large
 
 
-sizeText : Size -> String
+sizeText : Size → String
 sizeText size =
     case size of
-        Small ->
+        Small →
             "small"
 
-        Medium n ->
+        Medium n →
             "medium ${String.fromInt n}"
 
-        Large ->
+        Large →
             "large"
 
 

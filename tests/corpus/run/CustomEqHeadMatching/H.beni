@@ -15,11 +15,11 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder (List a), Holder (List a) -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Holder (List a), Holder (List a) → Bool
+    where a.eq : a, a → Bool
 eq left right =
     case left of
-        Holder l ->
+        Holder l →
             case right of
-                Holder r ->
+                Holder r →
                     l == r

@@ -10,7 +10,7 @@ pub type alias R =
     extra : Bool
 
 
-pub describe : R -> String
+pub describe : R → String
 describe r =
     if r.extra then
         r.name

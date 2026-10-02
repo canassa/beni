@@ -3,11 +3,11 @@
 -- inside a branch at a strange column; expected: `case x of` alone,
 -- branches indented 4, `->` at line end, body indented 4 more, at most one
 -- blank line between branches.
-describe x = case x of 0 -> "zero"
+describe x = case x of 0 → "zero"
                        1
-                         -> "one"
+                         → "one"
 
 
-                       _ ->
+                       _ →
                               y = x
                               "many ${y}"

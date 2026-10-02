@@ -11,8 +11,8 @@ import Node exposing (Program)
 
 
 type alias Check =
-    forward : Int -> Result Problem Int
-    backward : Int -> Result Problem Int
+    forward : Int → Result Problem Int
+    backward : Int → Result Problem Int
 
 
 type alias Problem =
@@ -20,34 +20,34 @@ type alias Problem =
     value : Int
 
 
-make : (Int -> Result Problem Int), (Int -> Result Problem Int) -> Check
+make : (Int → Result Problem Int), (Int → Result Problem Int) → Check
 make forward backward = { forward = identity forward, backward = identity backward }
 
 
 positive : Check
 positive =
     make
-        (λn ->
+        (λn →
             if n > 0 then
                 Ok n
             else
                 Err { message = "not positive", value = n }
         )
-        λn -> Ok (n * 2)
+        λn → Ok (n * 2)
 
 
-run : Check, Int -> String
+run : Check, Int → String
 run check n =
     case check.forward n of
-        Ok v ->
+        Ok v →
             case check.backward v of
-                Ok w ->
+                Ok w →
                     "ok " ++ String.fromInt w
 
-                Err problem ->
+                Err problem →
                     problem.message
 
-        Err problem ->
+        Err problem →
             problem.message ++ " " ++ String.fromInt problem.value
 
 

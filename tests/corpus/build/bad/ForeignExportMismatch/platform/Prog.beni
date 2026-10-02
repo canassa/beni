@@ -5,7 +5,7 @@
 pub foreign type Program
 
 
-pub foreign pure say : String -> Program
+pub foreign pure say : String → Program
 
 
-pub foreign pure shout : String -> Program
+pub foreign pure shout : String → Program

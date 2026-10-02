@@ -28,13 +28,13 @@ pub type Shape
     | Rect Float Float
 
 
-pub eqGen : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub eqGen : a, a → Bool
+    where a.eq : a, a → Bool
 eqGen x y = x.eq y
 
 
-pub cmpGen : a, a -> Order
-    where a.compare : a, a -> Order
+pub cmpGen : a, a → Order
+    where a.compare : a, a → Order
 cmpGen x y = x.compare y
 
 

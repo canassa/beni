@@ -27,7 +27,7 @@
 import Node exposing (Program)
 
 
-pub joins : Int -> Int
+pub joins : Int → Int
 joins n =
     one = n * 2
     two = one * 3
@@ -35,7 +35,7 @@ joins n =
     one + two + three
 
 
-pub branching : Int -> Int
+pub branching : Int → Int
 branching n =
     if n > 0 then
         n * 2
@@ -43,15 +43,15 @@ branching n =
         n - 1
 
 
-pub carried : Int, Int -> Int
+pub carried : Int, Int → Int
 carried n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         carried (n - 1) (acc + n)
 
 
-pub shaped : Int -> { count : Int, label : Int }
+pub shaped : Int → { count : Int, label : Int }
 shaped n = { count = n, label = n * 2 }
 
 

@@ -13,19 +13,19 @@
 import Node exposing (Program)
 
 
-show : Bool -> String
+show : Bool → String
 show b = if b then "True" else "False"
 
 
-reaches : Int, Int -> Bool
-reaches n target = n >= target || reaches (n + 1) target
+reaches : Int, Int → Bool
+reaches n target = n ≥ target || reaches (n + 1) target
 
 
-stays : Int, Int -> Bool
-stays n stop = n >= stop || (Int.mod n 7 /= 3 || n < 999990) && stays (n + 1) stop
+stays : Int, Int → Bool
+stays n stop = n ≥ stop || (Int.mod n 7 ≠ 3 || n < 999990) && stays (n + 1) stop
 
 
-either : Int, Int -> Bool
+either : Int, Int → Bool
 either n stop = n == stop || n < stop && either (n + 1) stop
 
 

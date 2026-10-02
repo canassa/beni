@@ -22,13 +22,13 @@ pub type Box a
     = Box a a
 
 
-pub eq : Box a, Box a -> Bool
-    where a.describe : a, Int -> String
+pub eq : Box a, Box a → Bool
+    where a.describe : a, Int → String
 eq p q =
     case p of
-        Box x _ ->
+        Box x _ →
             case q of
-                Box y _ ->
+                Box y _ →
                     x.describe 1 == y.describe 2
 
 

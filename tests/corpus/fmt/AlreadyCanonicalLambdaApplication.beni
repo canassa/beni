@@ -2,19 +2,19 @@
 -- body is a block, an application that fits on one line, one that does not
 -- with its head on one line and its last argument, a list, hanging below it
 -- indented 4 (§12.5), and nested parenthesised arguments.
-inc = λn -> n + 1
+inc = λn → n + 1
 
 
-swap = λ( a, b ) -> ( b, a )
+swap = λ( a, b ) → ( b, a )
 
 
 describe =
-    λx ->
+    λx →
         case x of
-            0 ->
+            0 →
                 "zero"
 
-            _ ->
+            _ →
                 "other"
 
 
@@ -22,7 +22,7 @@ short f x = f x 1
 
 
 long =
-    List.foldl (λitem acc -> acc + String.length item * 2) 0
+    List.foldl (λitem acc → acc + String.length item * 2) 0
         [ "some", "long", "list", "of", "strings", "here", "and", "more", "and", "more" ]
 
 

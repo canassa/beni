@@ -26,15 +26,15 @@ type alias Config =
     host : String
     port : Int
     retries : Int
-    onError : String -> Msg
+    onError : String → Msg
 
 
 pub type alias Handler model msg =
-    msg, model -> ( model, List msg )
+    msg, model → model × List msg
 
 
 pub update :
       Msg
-    , { host : String, port : Int, retries : Int, onError : String -> Msg }
-    -> ( { host : String, port : Int, retries : Int, onError : String -> Msg }, List String )
+    , { host : String, port : Int, retries : Int, onError : String → Msg }
+    → { host : String, port : Int, retries : Int, onError : String → Msg } × List String
 update msg config = ( config, [] )

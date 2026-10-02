@@ -6,14 +6,14 @@ pub type Value
     | Items (List Value)
 
 
-pub size : Value -> Int
+pub size : Value → Int
 size v =
     case v of
-        Text s ->
+        Text s →
             String.length s
 
-        Number n ->
+        Number n →
             n
 
-        Items xs ->
+        Items xs →
             List.length xs

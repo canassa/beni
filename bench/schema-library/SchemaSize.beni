@@ -41,16 +41,16 @@ user : Schema User User
 user =
     Schema.record
         (Schema.fields
-            |> Schema.field "userId" Schema.int
-            |> Schema.key "user-id"
-            |> Schema.field "displayName" Schema.string
-            |> Schema.key "display-name"
-            |> Schema.field "email" Schema.string
-            |> Schema.field "age" Schema.int
-            |> Schema.field "active" Schema.bool
-            |> Schema.field "score" Schema.finiteFloat
-            |> Schema.field "role" Schema.string
-            |> Schema.optional "nickname" Schema.string
+            ▷ Schema.field "userId" Schema.int
+            ▷ Schema.key "user-id"
+            ▷ Schema.field "displayName" Schema.string
+            ▷ Schema.key "display-name"
+            ▷ Schema.field "email" Schema.string
+            ▷ Schema.field "age" Schema.int
+            ▷ Schema.field "active" Schema.bool
+            ▷ Schema.field "score" Schema.finiteFloat
+            ▷ Schema.field "role" Schema.string
+            ▷ Schema.optional "nickname" Schema.string
         )
         (Schema.mapping toUser fromUser)
         (Schema.mapping toUser fromUser)
@@ -62,10 +62,10 @@ main =
         Schema.parse
             user
             "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
-            |> Result.andThen (Schema.print user _)
+            ▷ Result.andThen (Schema.print user _)
     of
-        Ok text ->
+        Ok text →
             Node.print text
 
-        Err issues ->
-            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1
+        Err issues →
+            Node.exitWith (String.join (List.map issues λi → i.message) "\n") 1

@@ -14,9 +14,9 @@ shell : Tea.Program
 shell =
     Tea.sandbox
         { init = ()
-        , update = λ_ m -> m
+        , update = λ_ m → m
         , view =
-            λ_ ->
+            λ_ →
                 <main>
                     <a id="outside" href="/outside">outside</a>
                     <div id="app" />
@@ -28,24 +28,24 @@ mounted : Tea.Program
 mounted =
     Tea.element
         { init = ( [], Cmd.none )
-        , update = λr lines -> ( lines ++ [ describe r ], Cmd.none )
+        , update = λr lines → ( lines ++ [ describe r ], Cmd.none )
         , view =
-            λlines ->
+            λlines →
                 <section>
                     <a id="inside" href="/inside">inside</a>
-                    <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+                    <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
                 </section>
-        , subscriptions = λ_ -> Navigation.onUrlRequest λr -> r
+        , subscriptions = λ_ → Navigation.onUrlRequest λr → r
         }
 
 
-describe : Browser.UrlRequest -> String
+describe : Browser.UrlRequest → String
 describe r =
     case r of
-        Browser.Internal url ->
+        Browser.Internal url →
             "Internal ${url.path}"
 
-        Browser.External href ->
+        Browser.External href →
             "External ${href}"
 
 

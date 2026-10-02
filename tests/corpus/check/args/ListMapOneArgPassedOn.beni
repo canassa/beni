@@ -1,5 +1,5 @@
 -- check/args: `List.map` given only its list is not a value waiting for a
 -- function — it is a call one argument short. The message lands on the call
 -- where it is written, not two arguments later on `List.length`.
-pub sizes : List Int -> Int
+pub sizes : List Int → Int
 sizes xs = List.length (List.map xs)

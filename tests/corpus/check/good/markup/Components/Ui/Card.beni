@@ -15,7 +15,7 @@ pub defaults : Props msg
 defaults = { title = "Untitled", open = False, children = <></> }
 
 
-pub view : Props msg -> Html msg
+pub view : Props msg → Html msg
 view props =
     <section class={[ ( "card", True ), ( "open", props.open ) ]}>
         <h2>{props.title}</h2>
@@ -23,9 +23,9 @@ view props =
     </section>
 
 
-pub header : { title : String } -> Html msg
+pub header : { title : String } → Html msg
 header props = <header>{props.title}</header>
 
 
-pub counter : { count : Int } -> Html Int
+pub counter : { count : Int } → Html Int
 counter props = <button onClick={props.count + 1}>{props.count}</button>

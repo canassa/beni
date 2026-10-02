@@ -40,12 +40,12 @@ type alias Point =
     y : Int
 
 
-log : String, Int -> Int
+log : String, Int → Int
 log label v = Debug.log label v
 
 
 -- Hazard 1: a surviving effectful call sits between the binding and its use.
-afterEffect : Point -> Int
+afterEffect : Point → Int
 afterEffect p =
     first = log "inline.first" p.x
 
@@ -54,16 +54,16 @@ afterEffect p =
 
 
 -- Hazard 2: the single use is inside a closure, and the closure runs twice.
-insideLambda : Point -> Int
+insideLambda : Point → Int
 insideLambda p =
     v = log "inline.lambda" p.x
 
-    f = λ_ -> v + 1
+    f = λ_ → v + 1
     f () + f ()
 
 
 -- Hazard 3: the single use is inside a loop the binding sits outside of.
-insideLoop : Point -> Int
+insideLoop : Point → Int
 insideLoop p =
     v = log "inline.loop" p.x
 
@@ -77,7 +77,7 @@ insideLoop p =
 
 -- Hazard 4: a loop prologue binding whose base the loop reassigns. `a` is
 -- read exactly once, into the slot that is written AFTER its own.
-swap : Int, Int, Int -> Int
+swap : Int, Int, Int → Int
 swap n a b =
     if n == 0 then
         b

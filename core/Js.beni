@@ -39,66 +39,66 @@ pub foreign pure undefined : Value
 
 
 --| The value itself, seen as a JavaScript value. Compiled to nothing.
-pub foreign pure from : a -> Value
+pub foreign pure from : a → Value
 
 
 --| The JavaScript value read back as whatever the caller says it is.
 --| Compiled to nothing, and unchecked: the caller answers for the type.
-pub foreign pure to : Value -> a
+pub foreign pure to : Value → a
 
 
 --| `a === b`.
-pub foreign pure same : a, a -> bool
+pub foreign pure same : a, a → bool
 
 
 --| `v === null`.
-pub foreign pure isNull : Value -> bool
+pub foreign pure isNull : Value → bool
 
 
 --| `v === undefined`.
-pub foreign pure isUndefined : Value -> bool
+pub foreign pure isUndefined : Value → bool
 
 
 --| `v == null`: null or undefined.
-pub foreign pure isNullish : Value -> bool
+pub foreign pure isNullish : Value → bool
 
 
 --| `a & b`.
-pub foreign pure bitAnd : int, int -> int
+pub foreign pure bitAnd : int, int → int
 
 
 --| `a | b`.
-pub foreign pure bitOr : int, int -> int
+pub foreign pure bitOr : int, int → int
 
 
 --| `a ^ b`.
-pub foreign pure bitXor : int, int -> int
+pub foreign pure bitXor : int, int → int
 
 
 --| `a << n`.
-pub foreign pure shiftLeft : int, int -> int
+pub foreign pure shiftLeft : int, int → int
 
 
 --| `a >> n`.
-pub foreign pure shiftRight : int, int -> int
+pub foreign pure shiftRight : int, int → int
 
 
 --| `a >>> n`: unsigned, so its answer is 0…4294967295.
-pub foreign pure shiftRightZero : int, int -> int
+pub foreign pure shiftRightZero : int, int → int
 
 
 --| `a % b`: the remainder, with the sign of `a`; `NaN` when `b` is `0`.
-pub foreign pure rem : int, int -> int
+pub foreign pure rem : int, int → int
 
 
 --| `typeof v`: `"string"`, `"number"`, `"object"` and the rest, as a
 --| `Value` to compare with `same`.
-pub foreign pure typeOf : Value -> Value
+pub foreign pure typeOf : Value → Value
 
 
 --| `v instanceof C`: what a `catchIf` test asks of what was thrown,
 --| `Js.instanceOf e (Js.global "TypeError")`.
-pub foreign impure instanceOf : Value, Value -> bool
+pub foreign impure instanceOf : Value, Value → bool
 
 
 --| `/pattern/flags`, a regular expression literal. Both arguments are
@@ -107,57 +107,57 @@ pub foreign impure instanceOf : Value, Value -> bool
 --| JavaScript refuses stops the file loading, as a `RegExp` that throws
 --| would stop the code that makes it. `Js.regExp "^\\d+$" ""` is
 --| `/^\d+$/` (`backend.md` §4, *`Js.regExp` is a literal*).
-pub foreign pure regExp : pattern, flags -> Value
+pub foreign pure regExp : pattern, flags → Value
 
 
 --| `globalThis.name`.
-pub foreign impure global : name -> Value
+pub foreign impure global : name → Value
 
 
 --| `o.name`, or `o[name]` when the name is not a literal identifier.
-pub foreign impure get : Value, name -> Value
+pub foreign impure get : Value, name → Value
 
 
 --| `o.name = v`, a statement.
-pub foreign impure set : Value, name, Value -> ()
+pub foreign impure set : Value, name, Value → ()
 
 
 --| `o.name(a, b)`: the arguments are written as a list literal, one
 --| JavaScript argument per element.
-pub foreign impure call : Value, name, args -> Value
+pub foreign impure call : Value, name, args → Value
 
 
 --| `f(a, b)`: the arguments are written as a list literal.
-pub foreign impure apply : Value, args -> Value
+pub foreign impure apply : Value, args → Value
 
 
 --| `new C(a, b)`: an object made by a constructor, the arguments written
 --| as a list literal. `Js.construct (Js.global "Error") [ Js.from m ]` is
 --| `new Error(m)`.
-pub foreign impure construct : Value, args -> Value
+pub foreign impure construct : Value, args → Value
 
 
 --| `[a, b]`: a new JavaScript array, its elements written as a list
 --| literal.
-pub foreign impure array : elements -> Value
+pub foreign impure array : elements → Value
 
 
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
 --| order. Written with a lambda, `Js.each xs λx -> …`, the lambda's body
 --| is the loop's body.
-pub foreign impure each : Value, (Value -> ()) -> ()
+pub foreign impure each : Value, (Value → ()) → ()
 
 
 --| `o[k]`: an element of an array, or of anything indexed by number.
-pub foreign impure at : Value, index -> Value
+pub foreign impure at : Value, index → Value
 
 
 --| `o[k] = v`, a statement: an element of an array written.
-pub foreign impure setAt : Value, index, Value -> ()
+pub foreign impure setAt : Value, index, Value → ()
 
 
 --| `throw v`, a statement. Nothing after it runs.
-pub foreign impure throw : Value -> a
+pub foreign impure throw : Value → a
 
 
 --| A mutable cell holding an `a`: `ref` makes one, `read` reads it and
@@ -170,15 +170,15 @@ pub foreign type Ref a
 
 
 --| A new cell holding `v`.
-pub foreign pure ref : a -> Ref a
+pub foreign pure ref : a → Ref a
 
 
 --| What the cell holds now.
-pub foreign impure read : Ref a -> a
+pub foreign impure read : Ref a → a
 
 
 --| Make the cell hold `v`, a statement.
-pub foreign impure write : Ref a, a -> ()
+pub foreign impure write : Ref a, a → ()
 
 
 --| `try { body() } finally { cleanup() }`: the body's value, and the
@@ -188,7 +188,7 @@ pub foreign impure write : Ref a, a -> ()
 --| no function is made. Both are `sync`: a body that suspended would leave
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
-pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
+pub foreign impure finally : sync (() → a), sync (() → ()) → a
 
 
 --| `try { return body() } catch (e) { if (!test(e)) throw e; return
@@ -201,7 +201,7 @@ pub foreign impure finally : sync (() -> a), sync (() -> ()) -> a
 --| handler are the `catch` block, and no function is made. All three are
 --| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
 --| is `try … catch`*).
-pub foreign impure catchIf : sync (() -> a), sync (Value -> bool), sync (Value -> a) -> a
+pub foreign impure catchIf : sync (() → a), sync (Value → bool), sync (Value → a) → a
 
 
 --| The body's value, and a promise: that computing it is total, throws
@@ -212,7 +212,7 @@ pub foreign impure catchIf : sync (() -> a), sync (Value -> bool), sync (Value -
 --| `Js` declaration: the caller answers for it. Written with a lambda,
 --| `Js.pure λ() -> …` is the lambda's body and no function is made
 --| (`backend.md` §4, *`Js.pure` is its body*).
-pub foreign pure pure : sync (() -> a) -> a
+pub foreign pure pure : sync (() → a) → a
 
 
 --| `True` in a development build and `False` under `--release`. An `if`
@@ -222,7 +222,7 @@ pub foreign pure pure : sync (() -> a) -> a
 --| (`backend.md` §4, *`Js.development` is the build's mode*). A function
 --| of `()` because a `foreign` value that is not one may not be
 --| polymorphic, and this module names no `Bool`.
-pub foreign pure development : () -> bool
+pub foreign pure development : () → bool
 
 
 --| Whether `f`, a function, may suspend: the answer the checker infers for
@@ -233,4 +233,4 @@ pub foreign pure development : () -> bool
 --| keeps only the branch each body takes — so what only the other branch
 --| needs costs a program that never takes it nothing (`backend.md` §4,
 --| *`Js.maySuspend` is the body's answer*).
-pub foreign pure maySuspend : f -> bool
+pub foreign pure maySuspend : f → bool

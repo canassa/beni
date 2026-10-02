@@ -12,28 +12,28 @@ import Node exposing (Program)
 import String
 
 
-sumTo : Int, (Int -> Int) -> Int
+sumTo : Int, (Int → Int) → Int
 sumTo n k =
-    if n <= 0 then
+    if n ≤ 0 then
         k 0
     else
-        m <- sumTo (n - 1)
+        m ← sumTo (n - 1)
         m + 1
 
 
-chainTo : Int, (Int -> Int) -> Int
+chainTo : Int, (Int → Int) → Int
 chainTo n k =
-    if n <= 0 then
+    if n ≤ 0 then
         k 0
     else
-        m <- chainTo (n - 1)
+        m ← chainTo (n - 1)
         k (m + n)
 
 
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (sumTo 3 λx -> x)
-        , String.fromInt (chainTo 3 λx -> x)
-        , String.fromInt (chainTo 100 λx -> x)
+        [ String.fromInt (sumTo 3 λx → x)
+        , String.fromInt (chainTo 3 λx → x)
+        , String.fromInt (chainTo 100 λx → x)
         ]

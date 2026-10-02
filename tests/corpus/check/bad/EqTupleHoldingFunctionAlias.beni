@@ -4,12 +4,12 @@
 -- (checker-v2.md §9.5). A walk that skipped
 -- alias nodes would accept this program.
 type Handler
-    = Handler (Int -> Int)
+    = Handler (Int → Int)
 
 
 type alias H =
     Handler
 
 
-same : H, H -> Bool
+same : H, H → Bool
 same a b = ( a, 1 ) == ( b, 1 )

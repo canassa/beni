@@ -22,10 +22,10 @@ type Shape
 pub pick a b c =
     if a == b then
         case c of
-            Red ->
+            Red →
                 "red"
 
-            Green ->
+            Green →
                 "green"
     else
         "no"

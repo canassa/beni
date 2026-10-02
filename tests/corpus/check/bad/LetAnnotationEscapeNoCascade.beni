@@ -3,10 +3,10 @@
 -- no second message about `a` outside `g` (checker-v2.md §8.3): no TYPE
 -- MISMATCH at 16:9 naming `g`'s `a`, and the escape itself is not missed.
 --
-coerce : b -> String
+coerce : b → String
 coerce x =
-    (λz ->
-        g : a -> a
+    (λz →
+        g : a → a
         g y = z
         g "s"
     )

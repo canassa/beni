@@ -3,9 +3,9 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder a, Holder a -> Bool
-    where a.key : a, () -> Int
+pub eq : Holder a, Holder a → Bool
+    where a.key : a, () → Int
 eq x y =
     case ( x, y ) of
-        ( Holder p, Holder q ) ->
+        ( Holder p, Holder q ) →
             p.key () == q.key ()

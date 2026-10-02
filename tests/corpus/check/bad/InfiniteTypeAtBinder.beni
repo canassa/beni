@@ -11,11 +11,11 @@
 -- node does the same, so `y` is poisoned before `"s"` is unified and there
 -- is no second diagnostic.
 
-g : Int -> Int
+g : Int → Int
 g x =
-    _ = (λy -> y y) λy -> y y
+    _ = (λy → y y) λy → y y
     x
 
 
-f : Int -> Int
-f z = (λy -> y y) "s"
+f : Int → Int
+f z = (λy → y y) "s"

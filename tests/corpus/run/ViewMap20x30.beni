@@ -15,29 +15,29 @@ type Html
     | Text String
 
 
-div : List Attr, List Html -> Html
+div : List Attr, List Html → Html
 div attrs kids = Node "div" attrs kids
 
 
-text : String -> Html
+text : String → Html
 text s = Text s
 
 
-cls : String -> Attr
+cls : String → Attr
 cls c = Attr "class" c
 
 
-count : Html -> Int
+count : Html → Int
 count h =
     case h of
-        Text _ ->
+        Text _ →
             1
 
-        Node _ _ kids ->
+        Node _ _ kids →
             1 + List.sum (List.map kids count)
 
 
-view : { items : List Int } -> Html
+view : { items : List Int } → Html
 view model =
     div [ cls "c0", Attr "id" "x0" ]
         [ text "first0"
@@ -56,7 +56,7 @@ view model =
         , text "b0.12"
         , div
             []
-            (List.map model.items λit0 ->
+            (List.map model.items λit0 →
                 div [ cls "c1", Attr "id" "x1" ]
                     [ text "first1"
                     , text "b1.0"
@@ -74,7 +74,7 @@ view model =
                     , text "b1.12"
                     , div
                         []
-                        (List.map model.items λit1 ->
+                        (List.map model.items λit1 →
                             div [ cls "c2", Attr "id" "x2" ]
                                 [ text "first2"
                                 , text "b2.0"
@@ -92,7 +92,7 @@ view model =
                                 , text "b2.12"
                                 , div
                                     []
-                                    (List.map model.items λit2 ->
+                                    (List.map model.items λit2 →
                                         div [ cls "c3", Attr "id" "x3" ]
                                             [ text "first3"
                                             , text "b3.0"
@@ -110,7 +110,7 @@ view model =
                                             , text "b3.12"
                                             , div
                                                 []
-                                                (List.map model.items λit3 ->
+                                                (List.map model.items λit3 →
                                                     div [ cls "c4", Attr "id" "x4" ]
                                                         [ text "first4"
                                                         , text "b4.0"
@@ -128,7 +128,7 @@ view model =
                                                         , text "b4.12"
                                                         , div
                                                             []
-                                                            (List.map model.items λit4 ->
+                                                            (List.map model.items λit4 →
                                                                 div
                                                                     [ cls "c5"
                                                                     , Attr
@@ -165,7 +165,7 @@ view model =
                                                                         "b5.12"
                                                                     , div
                                                                         []
-                                                                        (List.map model.items λit5 ->
+                                                                        (List.map model.items λit5 →
                                                                             div
                                                                                 [ cls
                                                                                     "c6"
@@ -205,7 +205,7 @@ view model =
                                                                                     []
                                                                                     (List.map
                                                                                         model.items
-                                                                                        λit6 ->
+                                                                                        λit6 →
                                                                                             div
                                                                                                 [ cls
                                                                                                     "c7"
@@ -245,7 +245,7 @@ view model =
                                                                                                     []
                                                                                                     (List.map
                                                                                                         model.items
-                                                                                                        λit7 ->
+                                                                                                        λit7 →
                                                                                                             div
                                                                                                                 [ cls
                                                                                                                     "c8"
@@ -285,7 +285,7 @@ view model =
                                                                                                                     []
                                                                                                                     (List.map
                                                                                                                         model.items
-                                                                                                                        λit8 ->
+                                                                                                                        λit8 →
                                                                                                                             div
                                                                                                                                 [ cls
                                                                                                                                     "c9"
@@ -325,7 +325,7 @@ view model =
                                                                                                                                     []
                                                                                                                                     (List.map
                                                                                                                                         model.items
-                                                                                                                                        λit9 ->
+                                                                                                                                        λit9 →
                                                                                                                                             div
                                                                                                                                                 [ cls
                                                                                                                                                     "c10"
@@ -365,7 +365,7 @@ view model =
                                                                                                                                                     []
                                                                                                                                                     (List.map
                                                                                                                                                         model.items
-                                                                                                                                                        λit10 ->
+                                                                                                                                                        λit10 →
                                                                                                                                                             div
                                                                                                                                                                 [ cls
                                                                                                                                                                     "c11"
@@ -405,7 +405,7 @@ view model =
                                                                                                                                                                     []
                                                                                                                                                                     (List.map
                                                                                                                                                                         model.items
-                                                                                                                                                                        λit11 ->
+                                                                                                                                                                        λit11 →
                                                                                                                                                                             div
                                                                                                                                                                                 [ cls
                                                                                                                                                                                     "c12"
@@ -445,7 +445,7 @@ view model =
                                                                                                                                                                                     []
                                                                                                                                                                                     (List.map
                                                                                                                                                                                         model.items
-                                                                                                                                                                                        λit12 ->
+                                                                                                                                                                                        λit12 →
                                                                                                                                                                                             div
                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                     "c13"
@@ -485,7 +485,7 @@ view model =
                                                                                                                                                                                                     []
                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                        λit13 ->
+                                                                                                                                                                                                        λit13 →
                                                                                                                                                                                                             div
                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                     "c14"
@@ -525,7 +525,7 @@ view model =
                                                                                                                                                                                                                     []
                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                        λit14 ->
+                                                                                                                                                                                                                        λit14 →
                                                                                                                                                                                                                             div
                                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                                     "c15"
@@ -565,7 +565,7 @@ view model =
                                                                                                                                                                                                                                     []
                                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                                        λit15 ->
+                                                                                                                                                                                                                                        λit15 →
                                                                                                                                                                                                                                             div
                                                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                                                     "c16"
@@ -605,7 +605,7 @@ view model =
                                                                                                                                                                                                                                                     []
                                                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                                                        λit16 ->
+                                                                                                                                                                                                                                                        λit16 →
                                                                                                                                                                                                                                                             div
                                                                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                                                                     "c17"
@@ -645,7 +645,7 @@ view model =
                                                                                                                                                                                                                                                                     []
                                                                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                                                                        λit17 ->
+                                                                                                                                                                                                                                                                        λit17 →
                                                                                                                                                                                                                                                                             div
                                                                                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                                                                                     "c18"
@@ -685,7 +685,7 @@ view model =
                                                                                                                                                                                                                                                                                     []
                                                                                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                                                                                        λit18 ->
+                                                                                                                                                                                                                                                                                        λit18 →
                                                                                                                                                                                                                                                                                             div
                                                                                                                                                                                                                                                                                                 [ cls
                                                                                                                                                                                                                                                                                                     "c19"
@@ -725,7 +725,7 @@ view model =
                                                                                                                                                                                                                                                                                                     []
                                                                                                                                                                                                                                                                                                     (List.map
                                                                                                                                                                                                                                                                                                         model.items
-                                                                                                                                                                                                                                                                                                        λit19 ->
+                                                                                                                                                                                                                                                                                                        λit19 →
                                                                                                                                                                                                                                                                                                             text
                                                                                                                                                                                                                                                                                                                 "leaf"
                                                                                                                                                                                                                                                                                                     )

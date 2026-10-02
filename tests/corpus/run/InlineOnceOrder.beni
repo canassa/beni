@@ -8,13 +8,13 @@
 import Node exposing (Program)
 
 
-pick : Int, Int -> Int
+pick : Int, Int → Int
 pick a _ =
     _ = Debug.log "body" a
     a + a
 
 
-countDown : Int, Int -> Int
+countDown : Int, Int → Int
 countDown n acc =
     if n == 0 then
         acc
@@ -22,15 +22,15 @@ countDown n acc =
         countDown (n - 1) (acc + Debug.log "step" n)
 
 
-total : Int -> Int
+total : Int → Int
 total n = countDown n 0
 
 
-first : Int, Int -> Int
+first : Int, Int → Int
 first a unread = a
 
 
-run : () -> Int
+run : () → Int
 run () =
     pick (Debug.log "first" 1) (Debug.log "second" 2) + total 3 + first 0 (Debug.log "unread" 4)
 

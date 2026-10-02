@@ -5,8 +5,8 @@
 --| Add two numbers.
 pub foreign pure add :
       number
-    -> number
-    -> number
+    → number
+    → number
 
 
 foreign type Table k v

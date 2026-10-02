@@ -4,18 +4,18 @@
 -- line indented 8, each after the first led by its comma; the source order
 -- is kept, never sorted; and a constraint's own type is printed flat, so a
 -- clause the author broke across lines is joined.
-pub insert : Dict k v, k, v -> Dict k v
-    where k.compare : k, k -> Order
+pub insert : Dict k v, k, v → Dict k v
+    where k.compare : k, k → Order
 insert d k v = d
 
 
-pub pairUp : List a, List b -> Bool
+pub pairUp : List a, List b → Bool
     where
-        b.compare : b, b -> Order
-        , a.eq : a, a -> Bool
+        b.compare : b, b → Order
+        , a.eq : a, a → Bool
 pairUp xs ys = True
 
 
-pub fold : a, b -> b
-    where a.fold : a, (a, b -> b), b -> b
+pub fold : a, b → b
+    where a.fold : a, (a, b → b), b → b
 fold x y = y

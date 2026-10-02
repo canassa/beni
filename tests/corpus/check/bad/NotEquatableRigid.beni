@@ -6,5 +6,5 @@
 -- method — never at the annotation (§10.4). Not `not_equatable` with the
 -- `rigid_variable` reason, which would say the type could not be compared
 -- rather than what to write.
-pub contains : a, List a -> Bool
-contains needle xs = List.any xs λx -> x == needle
+pub contains : a, List a → Bool
+contains needle xs = List.any xs λx → x == needle

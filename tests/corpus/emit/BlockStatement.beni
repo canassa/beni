@@ -7,13 +7,13 @@
 import Node exposing (Program)
 
 
-say : String -> ()
+say : String → ()
 say s =
     _ = Debug.log "say" s
     ()
 
 
-pub statement : Bool -> Int
+pub statement : Bool → Int
 statement c =
     say "a"
     if c then
@@ -23,7 +23,7 @@ statement c =
     1
 
 
-pub discarded : Bool -> Int
+pub discarded : Bool → Int
 discarded c =
     _ = say "a"
     _ =

@@ -13,11 +13,11 @@ type Tag a
     = Tag Int
 
 
-t : Tag (Int -> Int)
+t : Tag (Int → Int)
 t = Tag 1
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

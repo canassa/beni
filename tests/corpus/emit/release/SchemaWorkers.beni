@@ -14,15 +14,15 @@ import Schema exposing (Conversion)
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 pub schema Page a =

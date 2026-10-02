@@ -7,7 +7,7 @@ import Dict
 import Set
 type alias A = Int
 type B = B
-f : Int -> Int
+f : Int → Int
 
 -- between annotation and definition
 f x = x

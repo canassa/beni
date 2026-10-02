@@ -6,5 +6,5 @@ pub type Wrapper
 
 
 bad =
-    Wrapper (Payload.HasFn λvalue -> value + 1)
-        == Wrapper (Payload.HasFn λvalue -> value - 1)
+    Wrapper (Payload.HasFn λvalue → value + 1)
+        == Wrapper (Payload.HasFn λvalue → value - 1)

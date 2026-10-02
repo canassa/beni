@@ -22,7 +22,7 @@ import Node exposing (Program)
 import String
 
 
-show : Int32 -> String
+show : Int32 → String
 show n = String.fromInt (Int32.toInt n)
 
 

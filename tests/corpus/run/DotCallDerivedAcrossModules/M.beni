@@ -14,5 +14,5 @@ pub type Tag a
     = Tag a
 
 
-pub isLow : Level -> Bool
+pub isLow : Level → Bool
 isLow l = l.eq Low

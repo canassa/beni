@@ -12,11 +12,11 @@ import Set exposing (Set)
 import String
 
 
-show : Set String -> String
+show : Set String → String
 show set = "{" ++ String.join (Set.toList set) "," ++ "}"
 
 
-flag : Bool -> String
+flag : Bool → String
 flag b =
     if b then
         "True"
@@ -58,8 +58,8 @@ main =
         , show (Set.diff left right)
         , show (Set.diff right left)
         , show (Set.diff left left)
-        , String.fromInt (Set.foldl left 0 λv acc -> String.length v + acc)
-        , String.join (Set.foldr left [] λv acc -> [ v, ...acc ]) ","
-        , show (Set.filter left λv -> v == "a")
-        , show (Set.map left λv -> v ++ "!")
+        , String.fromInt (Set.foldl left 0 λv acc → String.length v + acc)
+        , String.join (Set.foldr left [] λv acc → [ v, …acc ]) ","
+        , show (Set.filter left λv → v == "a")
+        , show (Set.map left λv → v ++ "!")
         ]

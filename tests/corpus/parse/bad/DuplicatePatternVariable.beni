@@ -2,7 +2,7 @@
 -- (§7). Second at 9:5: a function whose two parameters share a name.
 f p =
     case p of
-        ( a, a ) ->
+        ( a, a ) →
             a
 
 

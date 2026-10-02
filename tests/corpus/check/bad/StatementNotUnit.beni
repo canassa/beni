@@ -9,19 +9,19 @@
 import List
 
 
-pushed : List Int -> List Int
+pushed : List Int → List Int
 pushed xs =
     List.push xs 4
     xs
 
 
-arithmetic : Int -> Int
+arithmetic : Int → Int
 arithmetic n =
     n + 1
     n
 
 
-acrossLines : List Int -> List Int
+acrossLines : List Int → List Int
 acrossLines xs =
     List.push
         xs
@@ -29,7 +29,7 @@ acrossLines xs =
     xs
 
 
-inside : List Int -> List Int
+inside : List Int → List Int
 inside xs =
     List.push xs "a"
     _ = List.push xs 5

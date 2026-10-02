@@ -9,5 +9,5 @@ pub type X a
     = X (W a)
 
 
-pub mk : Int -> W Int
+pub mk : Int → W Int
 mk n = W (H.Holder n) 1

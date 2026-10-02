@@ -34,49 +34,49 @@ type alias Model =
     next : Int
 
 
-fresh : Model, Int -> ( List Row, Int )
+fresh : Model, Int → List Row × Int
 fresh model count =
-    ( List.map (List.range 0 (count - 1)) λk ->
+    ( List.map (List.range 0 (count - 1)) λk →
         { id = model.next + k, label = "r${String.fromInt (model.next + k)}" }
     , model.next + count
     )
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        SwapEnds ->
+        SwapEnds →
             case model.rows of
-                [ a, b, c ] ->
+                [ a, b, c ] →
                     { model | rows = [ c, b, a ] }
 
-                _ ->
+                _ →
                     model
 
-        Promote ->
+        Promote →
             ( rows, next ) = fresh model 1
             case model.rows of
-                [ _, second, ..._ ] ->
-                    { rows = [ second, ...rows ], next = next }
+                [ _, second, …_ ] →
+                    { rows = [ second, …rows ], next = next }
 
-                _ ->
+                _ →
                     model
 
-        ReplaceAll ->
+        ReplaceAll →
             ( rows, next ) = fresh model 3
             { rows = rows, next = next }
 
-        KeepMiddle ->
+        KeepMiddle →
             ( rows, next ) = fresh model 2
-            case ( rows, List.drop model.rows 1 |> List.head ) of
-                ( [ a, b ], Just kept ) ->
+            case ( rows, List.drop model.rows 1 ▷ List.head ) of
+                ( [ a, b ], Just kept ) →
                     { rows = [ a, kept, b ], next = next }
 
-                _ ->
+                _ →
                     model
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="ends" onClick={SwapEnds}>ends</button>
@@ -84,11 +84,11 @@ view model =
         <button id="all" onClick={ReplaceAll}>all</button>
         <button id="keep" onClick={KeepMiddle}>keep</button>
         <ul id="only">
-            <For each={model.rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>{λr → <li><input />{r.label}</li>}</For>
         </ul>
         <ol id="framed">
             <li>first</li>
-            <For each={model.rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
+            <For each={model.rows} keyed={.id}>{λr → <li><input />{r.label}</li>}</For>
             <li>last</li>
         </ol>
     </main>

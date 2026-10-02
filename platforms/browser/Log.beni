@@ -13,15 +13,15 @@ import Js
 
 
 --| `console.info` of the line.
-pub info : String -> ()
+pub info : String → ()
 info line = Js.to (Js.call (Js.global "console") "info" [ Js.from line ])
 
 
 --| `console.warn` of the line.
-pub warn : String -> ()
+pub warn : String → ()
 warn line = Js.to (Js.call (Js.global "console") "warn" [ Js.from line ])
 
 
 --| `console.error` of the line.
-pub error : String -> ()
+pub error : String → ()
 error line = Js.to (Js.call (Js.global "console") "error" [ Js.from line ])

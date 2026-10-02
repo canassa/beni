@@ -7,13 +7,13 @@
 import Node exposing (Program)
 
 
-depth : List a -> Int
+depth : List a → Int
 depth xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ _, ...rest ] ->
+        [ _, …rest ] →
             1
                 + depth rest
                 + (if False then
@@ -24,13 +24,13 @@ depth xs =
 
 
 inner u =
-    d : List a -> Int
+    d : List a → Int
     d xs =
         case xs of
-            [] ->
+            [] →
                 0
 
-            [ _, ...rest ] ->
+            [ _, …rest ] →
                 1
                     + d rest
                     + (if False then

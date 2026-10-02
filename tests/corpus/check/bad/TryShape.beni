@@ -1,3 +1,3 @@
 -- check/bad: `?` needs a `Result` or a `Maybe`, and this is a plain `Int`.
-pub twice : Int -> Result String Int
+pub twice : Int → Result String Int
 twice n = Ok (n? + 1)

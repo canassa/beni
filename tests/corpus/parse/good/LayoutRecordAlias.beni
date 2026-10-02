@@ -9,7 +9,7 @@ type alias Contact =
         --| The city.
         city : String
     --| A saturated greeting function.
-    greet : String, Int -> String
+    greet : String, Int → String
     --| A type application split over several lines.
     result :
         Result

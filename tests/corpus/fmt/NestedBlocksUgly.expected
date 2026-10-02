@@ -3,18 +3,18 @@
 -- to multiples of 4 with the structure unchanged.
 run m flag =
     case m of
-        Just n ->
+        Just n →
             if flag then
                 doubled = n * 2
                 doubled
             else
-                (λk ->
+                (λk →
                     case k of
-                        0 ->
+                        0 →
                             1
-                        _ ->
+                        _ →
                             k
                 )
                     n
-        Nothing ->
+        Nothing →
             0

@@ -26,17 +26,17 @@ init : Model
 init = { left = 0, right = 0 }
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Left m ->
+        Left m →
             { model | left = Counter.update m model.left }
 
-        Right m ->
+        Right m →
             { model | right = Counter.update m model.right }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         {Html.map (Counter.view "left" model.left) Left}
@@ -57,7 +57,7 @@ type alias Loop =
     renders : List String
 
 
-runTask : List Msg, Loop -> Loop
+runTask : List Msg, Loop → Loop
 runTask msgs loop =
     if List.isEmpty msgs then
         loop

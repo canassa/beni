@@ -3,5 +3,5 @@
 import Html exposing (Html)
 
 
-pub view : { title : String, footer : Maybe (Html msg), children : Html msg } -> Html msg
+pub view : { title : String, footer : Maybe (Html msg), children : Html msg } → Html msg
 view props = <section><h2>{props.title}</h2>{props.children}{props.footer}</section>

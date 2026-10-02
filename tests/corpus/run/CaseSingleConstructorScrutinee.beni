@@ -32,21 +32,21 @@ type Box
 nullary : Int
 nullary =
     case Debug.log "nullary" Inc of
-        Inc ->
+        Inc →
             1
 
 
-wildFields : Box -> Int
+wildFields : Box → Int
 wildFields b =
     case Debug.log "wildFields" b of
-        Box _ _ ->
+        Box _ _ →
             2
 
 
 boundField : Int
 boundField =
     case Debug.log "boundField" (Box 3 "c") of
-        Box k _ ->
+        Box k _ →
             k
 
 
@@ -56,7 +56,7 @@ main =
 
     five =
         case ( Debug.log "tupleElement" 0, 5 ) of
-            ( _, k ) ->
+            ( _, k ) →
                 k
     Node.printLines
         (List.map [ nullary, wildFields (Box 0 "b"), boundField, four, five ] String.fromInt)

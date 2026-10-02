@@ -12,7 +12,7 @@ type W a
     = W (H.Holder a)
 
 
-mk : a -> W a
+mk : a → W a
 mk x = W (H.Holder x)
 
 

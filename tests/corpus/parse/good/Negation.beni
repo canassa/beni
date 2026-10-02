@@ -27,7 +27,7 @@ subtraction f =
 
 
 negInPipe x =
-    -x |> abs
+    -x ▷ abs
 
 
 negField r =
@@ -52,8 +52,8 @@ negCall f x =
 
 negLiteralPattern n =
     case n of
-        -1 ->
+        -1 →
             True
 
-        _ ->
+        _ →
             False

@@ -4,7 +4,7 @@
 import Schema exposing (Issue, IssueCode, PathSegment, Field, Index)
 
 
-pub issue : Issue -> String
+pub issue : Issue → String
 issue i =
     direction i.direction
         ++ " "
@@ -16,128 +16,128 @@ issue i =
         ++ " "
         ++ i.message
         ++ (case i.input of
-               Just v ->
+               Just v →
                    " <- " ++ json v
 
-               Nothing ->
+               Nothing →
                    ""
            )
 
 
-pub issues : List Issue -> String
+pub issues : List Issue → String
 issues found = String.join (List.map found issue) " | "
 
 
-pub result : Result (List Issue) a, (a -> String) -> String
+pub result : Result (List Issue) a, (a → String) → String
 result r show =
     case r of
-        Ok v ->
+        Ok v →
             "Ok " ++ show v
 
-        Err found ->
+        Err found →
             "Err " ++ issues found
 
 
-pub json : Schema.Value -> String
+pub json : Schema.Value → String
 json v =
     case Schema.print Schema.value v of
-        Ok text ->
+        Ok text →
             text
 
-        Err found ->
+        Err found →
             "<" ++ issues found ++ ">"
 
 
-pub value : Result (List Issue) Schema.Value -> String
+pub value : Result (List Issue) Schema.Value → String
 value r = result r json
 
 
-path : List PathSegment -> String
+path : List PathSegment → String
 path segments =
     case segments of
-        [] ->
+        [] →
             "/"
 
-        _ ->
+        _ →
             String.concat (List.map segments segment)
 
 
-segment : PathSegment -> String
+segment : PathSegment → String
 segment s =
     case s of
-        Field k ->
+        Field k →
             "/" ++ k
 
-        Index i ->
+        Index i →
             "/" ++ String.fromInt i
 
 
-direction : Schema.Direction -> String
+direction : Schema.Direction → String
 direction d =
     case d of
-        Schema.Decoding ->
+        Schema.Decoding →
             "decoding"
 
-        Schema.Encoding ->
+        Schema.Encoding →
             "encoding"
 
 
-endpoint : Schema.Endpoint -> String
+endpoint : Schema.Endpoint → String
 endpoint which =
     case which of
-        Schema.Encoded ->
+        Schema.Encoded →
             "Encoded"
 
-        Schema.Type ->
+        Schema.Type →
             "Type"
 
 
-code : IssueCode -> String
+code : IssueCode → String
 code c =
     case c of
-        Schema.WrongShape ->
+        Schema.WrongShape →
             "WrongShape"
 
-        Schema.MissingKey ->
+        Schema.MissingKey →
             "MissingKey"
 
-        Schema.UnknownKey ->
+        Schema.UnknownKey →
             "UnknownKey"
 
-        Schema.UnknownTag ->
+        Schema.UnknownTag →
             "UnknownTag"
 
-        Schema.InvalidValue ->
+        Schema.InvalidValue →
             "InvalidValue"
 
-        Schema.DepthExceeded ->
+        Schema.DepthExceeded →
             "DepthExceeded"
 
-        Schema.InvalidOptions ->
+        Schema.InvalidOptions →
             "InvalidOptions"
 
-        Schema.ConversionFailed ->
+        Schema.ConversionFailed →
             "ConversionFailed"
 
-        Schema.CheckFailed ->
+        Schema.CheckFailed →
             "CheckFailed"
 
-        Schema.ParseFailed ->
+        Schema.ParseFailed →
             "ParseFailed"
 
-        Schema.PrintFailed ->
+        Schema.PrintFailed →
             "PrintFailed"
 
-        Schema.InvalidSchema ->
+        Schema.InvalidSchema →
             "InvalidSchema"
 
 
 --| A host value, parsed from JSON text.
-pub host : String -> Schema.Value
+pub host : String → Schema.Value
 host text =
     case Schema.parse Schema.value text of
-        Ok v ->
+        Ok v →
             v
 
-        Err _ ->
+        Err _ →
             host "null"

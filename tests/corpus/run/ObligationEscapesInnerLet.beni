@@ -12,7 +12,7 @@
 import Node exposing (Program)
 
 
-snd : ( Int, Int ) -> Int
+snd : Int × Int → Int
 snd ( _, b ) = b
 
 

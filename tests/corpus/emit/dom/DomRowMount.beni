@@ -23,11 +23,11 @@ type alias Model =
     picked : Int
 
 
-pub after : Model -> Html Msg
+pub after : Model → Html Msg
 after model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 <li
                     class={if model.picked == row.id then "on" else ""}
                     style={[ ( "order", String.fromInt row.id ) ]}
@@ -40,19 +40,19 @@ after model =
     </ul>
 
 
-pub before : Model -> Html Msg
+pub before : Model → Html Msg
 before model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {λrow -> <li title={row.label} class={if model.picked == row.id then "on" else ""} />}
+            {λrow → <li title={row.label} class={if model.picked == row.id then "on" else ""} />}
         </For>
     </ul>
 
 
-pub toggled : Model -> Html Msg
+pub toggled : Model → Html Msg
 toggled model =
     <ul>
         <For each={model.rows} keyed={.id}>
-            {λrow -> <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}
+            {λrow → <li class={[ ( "on", model.picked == row.id ) ]}>{row.label}</li>}
         </For>
     </ul>

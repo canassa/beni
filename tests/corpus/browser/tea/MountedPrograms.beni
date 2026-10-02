@@ -21,9 +21,9 @@ shell : Tea.Program
 shell =
     Tea.sandbox
         { init = 0
-        , update = λPoke n -> n + 1
+        , update = λPoke n → n + 1
         , view =
-            λn ->
+            λn →
                 <main>
                     <button id="poke" onClick={Poke}>poke {n}</button>
                     <div id="a"><span>first child of a</span></div>
@@ -41,9 +41,9 @@ counter : Tea.Program
 counter =
     Tea.element
         { init = ( 0, Cmd.none )
-        , update = λUp n -> ( n + 10, Cmd.none )
-        , view = λn -> <button id="up" onClick={Up}>up {n}</button>
-        , subscriptions = λ_ -> Sub.none
+        , update = λUp n → ( n + 10, Cmd.none )
+        , view = λn → <button id="up" onClick={Up}>up {n}</button>
+        , subscriptions = λ_ → Sub.none
         }
 
 
@@ -55,8 +55,8 @@ namer : Tea.Program
 namer =
     Tea.sandbox
         { init = "x"
-        , update = λRename s -> s ++ "y"
-        , view = λs -> <button id="rename" onClick={Rename}>{s}</button>
+        , update = λRename s → s ++ "y"
+        , view = λs → <button id="rename" onClick={Rename}>{s}</button>
         }
 
 

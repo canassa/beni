@@ -6,7 +6,7 @@
 import Schema exposing (Conversion)
 
 
-conv : Conversion Int (Int -> Int)
+conv : Conversion Int (Int → Int)
 conv = Debug.todo "checker-only conversion"
 
 
@@ -28,9 +28,9 @@ type alias FW =
     F.Type
 
 
-bump : RW -> Int
+bump : RW → Int
 bump r = r + 1
 
 
-same : FW, FW -> Bool
+same : FW, FW → Bool
 same p q = p == q

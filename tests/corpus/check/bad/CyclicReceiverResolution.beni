@@ -5,14 +5,14 @@
 -- would never finish. Where each is reported is open (see the
 -- `.codes`).
 
-f : Int -> Int
+f : Int → Int
 f z =
     k y = ( y, y ) == y
     z
 
 
-g : Int -> Int
+g : Int → Int
 g z =
-    case (λy -> ( y, y ) == y) of
-        _ ->
+    case (λy → ( y, y ) == y) of
+        _ →
             z

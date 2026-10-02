@@ -29,20 +29,20 @@ pub foreign type Event
 
 --| The text, as a text hole shows it: `Html.text s` and `<>{s}</>` render
 --| alike.
-pub markup text : String -> Html msg
+pub markup text : String → Html msg
 
 
 --| The same markup, with every message its handlers produce passed through
 --| the function before it is sent. Nested maps apply innermost first.
-pub markup map : Html a, (a -> b) -> Html b
+pub markup map : Html a, (a → b) → Html b
 
 
 --| The value of the form control an event came from.
-pub foreign impure targetValue : Event -> String
+pub foreign impure targetValue : Event → String
 
 
 --| Whether the checkbox an event came from is checked.
-pub foreign impure targetChecked : Event -> Bool
+pub foreign impure targetChecked : Event → Bool
 
 
 -- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
@@ -56,34 +56,34 @@ pub foreign impure targetChecked : Event -> Bool
 --| `"ArrowUp"`, `"Backspace"`). `""` for any other event.
 --|
 --|     onKeyDown={λevent -> if Html.key event == "Enter" then Add else Ignored}
-pub key : Event -> String
+pub key : Event → String
 key event = stringProp event "key"
 
 
 --| The physical key of a keyboard event, whatever the layout types with
 --| it: `"KeyA"`, `"Enter"`, `"Digit1"`. `""` for any other event.
-pub code : Event -> String
+pub code : Event → String
 code event = stringProp event "code"
 
 
 --| Whether Control was held during a keyboard or mouse event.
-pub ctrlKey : Event -> Bool
+pub ctrlKey : Event → Bool
 ctrlKey event = boolProp event "ctrlKey"
 
 
 --| Whether Shift was held during a keyboard or mouse event.
-pub shiftKey : Event -> Bool
+pub shiftKey : Event → Bool
 shiftKey event = boolProp event "shiftKey"
 
 
 --| Whether Alt (Option on a Mac) was held during a keyboard or mouse event.
-pub altKey : Event -> Bool
+pub altKey : Event → Bool
 altKey event = boolProp event "altKey"
 
 
 --| Whether Meta (Command on a Mac, the Windows key elsewhere) was held
 --| during a keyboard or mouse event.
-pub metaKey : Event -> Bool
+pub metaKey : Event → Bool
 metaKey event = boolProp event "metaKey"
 
 
@@ -98,17 +98,17 @@ metaKey event = boolProp event "metaKey"
 --|             Indent
 --|         else
 --|             Ignored}
-pub preventDefault : Event -> ()
+pub preventDefault : Event → ()
 preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 
-stringProp : Event, String -> String
+stringProp : Event, String → String
 stringProp event name =
     v = Js.get (Js.from event) name
     if Js.isNullish v then "" else Js.to v
 
 
-boolProp : Event, String -> Bool
+boolProp : Event, String → Bool
 boolProp event name = Js.same (Js.get (Js.from event) name) (Js.from True)
 
 

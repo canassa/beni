@@ -15,7 +15,7 @@ import Int32
 import Node exposing (Program)
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

@@ -11,7 +11,7 @@ pub attribute "value" property stateful on "input" "select" : String
 pub event "onInput" name "input" delegated via targetValue : String
 
 
-pub markup map : Html a, (a -> b) -> Html b
+pub markup map : Html a, (a → b) → Html b
 
 
 pub markup : Int

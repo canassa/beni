@@ -11,7 +11,7 @@ type T
     = T Int
 
 
-pub same : T, T -> Bool
+pub same : T, T → Bool
 same (T a) (T b) = a == b
 
 

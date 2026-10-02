@@ -18,7 +18,7 @@ type Shape
     | Square Int
 
 
-isPicked : Maybe Int, Int -> String
+isPicked : Maybe Int, Int → String
 isPicked picked n =
     if picked == Just n then
         "picked"
@@ -26,9 +26,9 @@ isPicked picked n =
         "not picked"
 
 
-notTwo : Shape -> String
+notTwo : Shape → String
 notTwo shape =
-    if shape /= Circle 2 then
+    if shape ≠ Circle 2 then
         "other"
     else
         "circle 2"

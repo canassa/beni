@@ -9,7 +9,7 @@ g a b = a + b
 direct x = g _ (x?)
 
 
-piped x = x? |> g _
+piped x = x? ▷ g _
 
 
-pipedLeft x = g _ <| x?
+pipedLeft x = g _ ◁ x?

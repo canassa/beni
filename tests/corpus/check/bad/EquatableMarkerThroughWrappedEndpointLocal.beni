@@ -15,7 +15,7 @@ conv = Debug.todo "checker-only conversion"
 
 
 type Mine
-    = Mine (Int -> Int)
+    = Mine (Int → Int)
 
 
 pub schema Loop tagged "kind" of
@@ -27,7 +27,7 @@ type Holds
     = Holds Loop.Type
 
 
-mk : Int -> Holds
+mk : Int → Holds
 mk n = Debug.todo "h"
 
 

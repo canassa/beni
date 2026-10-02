@@ -26,7 +26,7 @@ import Node exposing (Program)
 import String
 
 
-note : String, Int -> Int
+note : String, Int → Int
 note tag n = Debug.log tag n
 
 
@@ -39,9 +39,9 @@ big = List.range 1 20000
 main : Program
 main =
     -- Order, on lists of equal length.
-    three = List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λx y z -> note "map3" x + y + z
+    three = List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λx y z → note "map3" x + y + z
 
-    four = List.map4 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] [ 1000, 2000, 3000 ] λx y z w ->
+    four = List.map4 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] [ 1000, 2000, 3000 ] λx y z w →
         note "map4" x + y + z + w
 
     five =
@@ -50,25 +50,25 @@ main =
             [ 100, 200, 300 ]
             [ 1000, 2000, 3000 ]
             [ 10000, 20000, 30000 ]
-            λx y z w v -> note "map5" x + y + z + w + v
+            λx y z w v → note "map5" x + y + z + w + v
 
     -- Stopping at the shortest, with the short list in a different
     -- position each time: one log line per PAIR that exists, and none
     -- for the elements left over.
-    shortSecond = List.map2 [ 1, 2, 3 ] [ 10 ] λx y -> note "map2short" x + y
+    shortSecond = List.map2 [ 1, 2, 3 ] [ 10 ] λx y → note "map2short" x + y
 
-    shortFirst = List.map3 [ 1, 2 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λx y z ->
+    shortFirst = List.map3 [ 1, 2 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λx y z →
         note "map3short" x + y + z
 
-    shortLast = List.map4 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] [ 1000 ] λx y z w ->
+    shortLast = List.map4 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] [ 1000 ] λx y z w →
         note "map4short" x + y + z + w
 
     shortMiddle =
-        List.map5 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100 ] [ 1000, 2000, 3000 ] [ 10000, 20000, 30000 ] λx y z w v ->
+        List.map5 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100 ] [ 1000, 2000, 3000 ] [ 10000, 20000, 30000 ] λx y z w v →
             note "map5short" x + y + z + w + v
 
     -- An EMPTY list anywhere is the degenerate case of the same rule.
-    none = List.map2 [ 1, 2, 3 ] [] λx y -> note "map2none" x + y
+    none = List.map2 [ 1, 2, 3 ] [] λx y → note "map2none" x + y
     Node.printLines
         [ Debug.toString three
         , Debug.toString four
@@ -78,19 +78,19 @@ main =
         , Debug.toString shortLast
         , Debug.toString shortMiddle
         , Debug.toString none
-        , Debug.toString (List.indexedMap [ "a", "b" ] λi x -> x ++ String.fromInt i)
+        , Debug.toString (List.indexedMap [ "a", "b" ] λi x → x ++ String.fromInt i)
 
         -- Twenty thousand elements through each of them: this is the fail-first
         -- half, past the depth the old recursive shape died at (5 700 for
         -- `map2`, 3 700 for `map5`).
-        , String.fromInt (List.length (List.map2 big big λx y -> x + y))
-        , String.fromInt (List.length (List.map3 big big big λx y z -> x + y + z))
-        , String.fromInt (List.length (List.map4 big big big big λx y z w -> x + y + z + w))
+        , String.fromInt (List.length (List.map2 big big λx y → x + y))
+        , String.fromInt (List.length (List.map3 big big big λx y z → x + y + z))
+        , String.fromInt (List.length (List.map4 big big big big λx y z w → x + y + z + w))
         , String.fromInt
-            (List.length (List.map5 big big big big big λx y z w v -> x + y + z + w + v))
-        , String.fromInt (List.length (List.indexedMap big λi x -> i + x))
+            (List.length (List.map5 big big big big big λx y z w v → x + y + z + w + v))
+        , String.fromInt (List.length (List.indexedMap big λi x → i + x))
 
         -- …and the last element of one of them, so a loop that produced a
         -- list of the right LENGTH and the wrong contents is caught too.
-        , Debug.toString (List.drop (List.map2 big big λx y -> x + y) 19999)
+        , Debug.toString (List.drop (List.map2 big big λx y → x + y) 19999)
         ]

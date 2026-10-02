@@ -94,84 +94,84 @@ pub columns : List Column
 columns = [ Backlog, InProgress, Done ]
 
 
-pub columnName : Column -> String
+pub columnName : Column → String
 columnName column =
     case column of
-        Backlog ->
+        Backlog →
             "Backlog"
 
-        InProgress ->
+        InProgress →
             "In progress"
 
-        Done ->
+        Done →
             "Done"
 
 
-columnKey : Column -> String
+columnKey : Column → String
 columnKey column =
     case column of
-        Backlog ->
+        Backlog →
             "backlog"
 
-        InProgress ->
+        InProgress →
             "in_progress"
 
-        Done ->
+        Done →
             "done"
 
 
-columnFromKey : String -> Maybe Column
+columnFromKey : String → Maybe Column
 columnFromKey key =
     case key of
-        "backlog" ->
+        "backlog" →
             Just Backlog
 
-        "in_progress" ->
+        "in_progress" →
             Just InProgress
 
-        "done" ->
+        "done" →
             Just Done
 
-        _ ->
+        _ →
             Nothing
 
 
-nextColumn : Column -> Maybe Column
+nextColumn : Column → Maybe Column
 nextColumn column =
     case column of
-        Backlog ->
+        Backlog →
             Just InProgress
 
-        InProgress ->
+        InProgress →
             Just Done
 
-        Done ->
+        Done →
             Nothing
 
 
-previousColumn : Column -> Maybe Column
+previousColumn : Column → Maybe Column
 previousColumn column =
     case column of
-        Backlog ->
+        Backlog →
             Nothing
 
-        InProgress ->
+        InProgress →
             Just Backlog
 
-        Done ->
+        Done →
             Just InProgress
 
 
-pub update : Msg, Model -> Model
+pub update : Msg, Model → Model
 update msg model =
     case msg of
-        NoOp ->
+        NoOp →
             model
 
-        SetNewCardTitle title ->
+        SetNewCardTitle title →
             { model | newCardTitle = title }
 
-        AddCard ->
+        AddCard →
             title = String.trim model.newCardTitle
             if String.isEmpty title then
                 addError "A card needs a title." model
@@ -182,7 +182,7 @@ update msg model =
                     , description = ""
                     , labels = []
                     , column = Backlog
-                    , order = cardsIn Backlog model |> List.length
+                    , order = cardsIn Backlog model ▷ List.length
                     }
                 { model
                     | cards = Dict.insert model.cards card.id card
@@ -190,143 +190,143 @@ update msg model =
                     , newCardTitle = ""
                 }
 
-        DeleteCard id ->
+        DeleteCard id →
             { model | cards = Dict.remove model.cards id }
-                |> renumber
+                ▷ renumber
 
-        MoveCard id column ->
+        MoveCard id column →
             moveCard id column model
 
-        StartEditTitle id ->
+        StartEditTitle id →
             case Dict.get model.cards id of
-                Just card ->
+                Just card →
                     { model | editing = EditingTitle id card.title }
 
-                Nothing ->
+                Nothing →
                     model
 
-        StartEditDescription id ->
+        StartEditDescription id →
             case Dict.get model.cards id of
-                Just card ->
+                Just card →
                     { model | editing = EditingDescription id card.description }
 
-                Nothing ->
+                Nothing →
                     model
 
-        EditInput str ->
+        EditInput str →
             case model.editing of
-                NotEditing ->
+                NotEditing →
                     model
 
-                EditingTitle id _ ->
+                EditingTitle id _ →
                     { model | editing = EditingTitle id str }
 
-                EditingDescription id _ ->
+                EditingDescription id _ →
                     { model | editing = EditingDescription id str }
 
-        CommitEdit ->
+        CommitEdit →
             commitEdit model
 
-        CancelEdit ->
+        CancelEdit →
             { model | editing = NotEditing }
 
-        DragStart id ->
+        DragStart id →
             { model | drag = Just { cardId = id, over = Nothing } }
 
-        DragOver column ->
+        DragOver column →
             case model.drag of
-                Just drag ->
+                Just drag →
                     { model | drag = Just { drag | over = Just column } }
 
-                Nothing ->
+                Nothing →
                     model
 
-        DragEnd ->
+        DragEnd →
             { model | drag = Nothing }
 
-        Drop ->
+        Drop →
             case model.drag of
-                Just { cardId, over } ->
+                Just { cardId, over } →
                     case over of
-                        Just column ->
+                        Just column →
                             moveCard cardId column { model | drag = Nothing }
 
-                        Nothing ->
+                        Nothing →
                             { model | drag = Nothing }
 
-                Nothing ->
+                Nothing →
                     model
 
-        SetFilter str ->
+        SetFilter str →
             { model | filter = String.toLower str }
 
-        ToggleCollapse key ->
+        ToggleCollapse key →
             if Set.member model.collapsed key then
                 { model | collapsed = Set.remove model.collapsed key }
             else
                 { model | collapsed = Set.insert model.collapsed key }
 
-        ToggleLabel id label ->
+        ToggleLabel id label →
             updateCard id (toggleLabel label) model
 
-        Loaded result ->
+        Loaded result →
             case result of
-                Ok cards ->
+                Ok cards →
                     { model
-                        | cards = cards |> List.map (λc -> ( c.id, c )) |> Dict.fromList
-                        , nextId = 1 + List.foldl cards 0 λc acc -> max acc c.id
+                        | cards = cards ▷ List.map (λc → ( c.id, c )) ▷ Dict.fromList
+                        , nextId = 1 + List.foldl cards 0 λc acc → max acc c.id
                     }
 
-                Err error ->
+                Err error →
                     addError (Decode.errorToString error) model
 
-        KeyDown key ->
+        KeyDown key →
             handleKey key model
 
 
-addError : String, Model -> Model
-addError message model = { model | errors = [ message, ...List.take model.errors 4 ] }
+addError : String, Model → Model
+addError message model = { model | errors = [ message, …List.take model.errors 4 ] }
 
 
-updateCard : Int, (Card -> Card), Model -> Model
+updateCard : Int, (Card → Card), Model → Model
 updateCard id f model =
     case Dict.get model.cards id of
-        Just card ->
+        Just card →
             { model | cards = Dict.insert model.cards id (f card) }
 
-        Nothing ->
+        Nothing →
             model
 
 
-toggleLabel : String, Card -> Card
+toggleLabel : String, Card → Card
 toggleLabel label card =
     if List.member card.labels label then
-        { card | labels = List.filter card.labels λl -> l /= label }
+        { card | labels = List.filter card.labels λl → l ≠ label }
     else
-        { card | labels = [ label, ...card.labels ] }
+        { card | labels = [ label, …card.labels ] }
 
 
-commitEdit : Model -> Model
+commitEdit : Model → Model
 commitEdit model =
     finished = { model | editing = NotEditing }
     case model.editing of
-        NotEditing ->
+        NotEditing →
             model
 
-        EditingTitle id title ->
+        EditingTitle id title →
             if String.isEmpty (String.trim title) then
                 addError "Title cannot be empty." finished
             else
-                updateCard id (λcard -> { card | title = String.trim title }) finished
+                updateCard id (λcard → { card | title = String.trim title }) finished
 
-        EditingDescription id description ->
-            updateCard id (λcard -> { card | description = description }) finished
+        EditingDescription id description →
+            updateCard id (λcard → { card | description = description }) finished
 
 
-moveCard : Int, Column, Model -> Model
+moveCard : Int, Column, Model → Model
 moveCard id column model =
     case Dict.get model.cards id of
-        Just card ->
+        Just card →
             if card.column == column then
                 model
             else
@@ -336,86 +336,86 @@ moveCard id column model =
                         , order = List.length (cardsIn column model)
                     }
                 { model | cards = Dict.insert model.cards id moved }
-                    |> renumber
+                    ▷ renumber
 
-        Nothing ->
+        Nothing →
             model
 
 
-renumber : Model -> Model
+renumber : Model → Model
 renumber model =
     renumberColumn column cards =
         cardsIn column model
-            |> List.indexedMap λindex card -> { card | order = index }
-            |> List.foldl cards λcard acc -> Dict.insert acc card.id card
+            ▷ List.indexedMap λindex card → { card | order = index }
+            ▷ List.foldl cards λcard acc → Dict.insert acc card.id card
     { model | cards = List.foldl columns model.cards renumberColumn }
 
 
-cardsIn : Column, Model -> List Card
+cardsIn : Column, Model → List Card
 cardsIn column model =
     model.cards
-        |> Dict.values
-        |> List.filter λcard -> card.column == column
-        |> List.sortBy .order
+        ▷ Dict.values
+        ▷ List.filter λcard → card.column == column
+        ▷ List.sortBy .order
 
 
-visibleCardsIn : Column, Model -> List Card
+visibleCardsIn : Column, Model → List Card
 visibleCardsIn column model =
     cardsIn column model
-        |> List.filter (matchesFilter model.filter)
+        ▷ List.filter (matchesFilter model.filter)
 
 
-matchesFilter : String, Card -> Bool
+matchesFilter : String, Card → Bool
 matchesFilter filter card =
     String.isEmpty filter
         || String.contains (String.toLower card.title) filter
         || String.contains (String.toLower card.description) filter
-        || List.any card.labels λlabel -> String.contains (String.toLower label) filter
+        || List.any card.labels λlabel → String.contains (String.toLower label) filter
 
 
-handleKey : String, Model -> Model
+handleKey : String, Model → Model
 handleKey key model =
     case ( key, model.editing ) of
-        ( "Escape", _ ) ->
+        ( "Escape", _ ) →
             { model | editing = NotEditing, drag = Nothing }
 
-        ( "Enter", EditingTitle _ _ ) ->
+        ( "Enter", EditingTitle _ _ ) →
             commitEdit model
 
-        ( "Enter", NotEditing ) ->
+        ( "Enter", NotEditing ) →
             update AddCard model
 
-        ( "ArrowRight", NotEditing ) ->
+        ( "ArrowRight", NotEditing ) →
             shiftSelected nextColumn model
 
-        ( "ArrowLeft", NotEditing ) ->
+        ( "ArrowLeft", NotEditing ) →
             shiftSelected previousColumn model
 
-        _ ->
+        _ →
             model
 
 
-shiftSelected : (Column -> Maybe Column), Model -> Model
+shiftSelected : (Column → Maybe Column), Model → Model
 shiftSelected direction model =
     case model.drag of
-        Just { cardId } ->
+        Just { cardId } →
             case Dict.get model.cards cardId of
-                Just card ->
+                Just card →
                     case direction card.column of
-                        Just target ->
+                        Just target →
                             moveCard cardId target model
 
-                        Nothing ->
+                        Nothing →
                             model
 
-                Nothing ->
+                Nothing →
                     model
 
-        Nothing ->
+        Nothing →
             model
 
 
-pub view : Model -> Html Msg
+pub view : Model → Html Msg
 view model =
     div [ class "board" ]
         [ viewHeader model
@@ -424,7 +424,7 @@ view model =
         ]
 
 
-viewHeader : Model -> Html Msg
+viewHeader : Model → Html Msg
 viewHeader model =
     div [ class "header" ]
         [ h1 [] [ text "Kanban" ]
@@ -445,18 +445,18 @@ viewHeader model =
         ]
 
 
-countLabel : Model -> String
+countLabel : Model → String
 countLabel model =
     total = Dict.size model.cards
 
-    done = cardsIn Done model |> List.length
+    done = cardsIn Done model ▷ List.length
     if total == 0 then
         "no cards"
     else
         "${done} of ${total} done (${percent done total}%)"
 
 
-percent : Int, Int -> Int
+percent : Int, Int → Int
 percent part whole =
     if whole == 0 then
         0
@@ -464,17 +464,17 @@ percent part whole =
         part * 100 // whole
 
 
-viewErrors : List String -> Html Msg
+viewErrors : List String → Html Msg
 viewErrors errors =
     case errors of
-        [] ->
+        [] →
             text ""
 
-        _ ->
-            ul [ class "errors" ] (List.map errors λerr -> li [] [ text err ])
+        _ →
+            ul [ class "errors" ] (List.map errors λerr → li [] [ text err ])
 
 
-viewColumn : Model, Column -> Html Msg
+viewColumn : Model, Column → Html Msg
 viewColumn model column =
     key = columnKey column
 
@@ -484,10 +484,10 @@ viewColumn model column =
 
     hovered =
         case model.drag of
-            Just { over } ->
+            Just { over } →
                 over == Just column
 
-            Nothing ->
+            Nothing →
                 False
     div
         [ classList
@@ -509,7 +509,7 @@ viewColumn model column =
         ]
 
 
-viewDropZone : Column -> Html Msg
+viewDropZone : Column → Html Msg
 viewDropZone column =
     div
         [ class "dropzone"
@@ -518,14 +518,14 @@ viewDropZone column =
         [ text "Drop here to move to ${columnName column}" ]
 
 
-viewCard : Model, Card -> Html Msg
+viewCard : Model, Card → Html Msg
 viewCard model card =
     dragging =
         case model.drag of
-            Just { cardId } ->
+            Just { cardId } →
                 cardId == card.id
 
-            Nothing ->
+            Nothing →
                 False
     li
         [ classList
@@ -541,10 +541,10 @@ viewCard model card =
         ]
 
 
-viewCardTitle : Editing, Card -> Html Msg
+viewCardTitle : Editing, Card → Html Msg
 viewCardTitle editing card =
     case editing of
-        EditingTitle id draft ->
+        EditingTitle id draft →
             if id == card.id then
                 input
                     [ class "title-input"
@@ -555,11 +555,11 @@ viewCardTitle editing card =
             else
                 staticTitle card
 
-        _ ->
+        _ →
             staticTitle card
 
 
-staticTitle : Card -> Html Msg
+staticTitle : Card → Html Msg
 staticTitle card =
     span
         [ class "title"
@@ -568,10 +568,10 @@ staticTitle card =
         [ text "#${card.id} ${card.title}" ]
 
 
-viewCardDescription : Editing, Card -> Html Msg
+viewCardDescription : Editing, Card → Html Msg
 viewCardDescription editing card =
     case editing of
-        EditingDescription id draft ->
+        EditingDescription id draft →
             if id == card.id then
                 div []
                     [ input [ value draft, onInput EditInput ] []
@@ -581,11 +581,11 @@ viewCardDescription editing card =
             else
                 staticDescription card
 
-        _ ->
+        _ →
             staticDescription card
 
 
-staticDescription : Card -> Html Msg
+staticDescription : Card → Html Msg
 staticDescription card =
     div
         [ class "description"
@@ -600,18 +600,18 @@ staticDescription card =
         ]
 
 
-truncate80 : String -> String
+truncate80 : String → String
 truncate80 s =
-    if String.length s <= 80 then
+    if String.length s ≤ 80 then
         s
     else
         String.left s 77 ++ "..."
 
 
-viewLabels : Card -> Html Msg
+viewLabels : Card → Html Msg
 viewLabels card =
     ul [ class "labels" ]
-        (List.map (List.sortBy card.labels identity) λlabel ->
+        (List.map (List.sortBy card.labels identity) λlabel →
             li
                 [ class "label label-${label}"
                 , onClick (ToggleLabel card.id label)
@@ -620,14 +620,14 @@ viewLabels card =
         )
 
 
-viewCardActions : Card -> Html Msg
+viewCardActions : Card → Html Msg
 viewCardActions card =
     moveButton direction label =
         case direction card.column of
-            Just target ->
+            Just target →
                 button [ onClick (MoveCard card.id target) ] [ text label ]
 
-            Nothing ->
+            Nothing →
                 text ""
     div [ class "actions" ]
         [ moveButton previousColumn "<"
@@ -637,7 +637,7 @@ viewCardActions card =
         ]
 
 
-pub encodeModel : Model -> Encode.Value
+pub encodeModel : Model → Encode.Value
 encodeModel model =
     Encode.object
         [ ( "cards", Encode.list encodeCard (Dict.values model.cards) )
@@ -646,7 +646,7 @@ encodeModel model =
         ]
 
 
-encodeCard : Card -> Encode.Value
+encodeCard : Card → Encode.Value
 encodeCard card =
     Encode.object
         [ ( "id", Encode.int card.id )
@@ -676,39 +676,38 @@ cardDecoder =
 columnDecoder : Decoder Column
 columnDecoder =
     Decode.string
-        |> Decode.andThen λkey ->
+        ▷ Decode.andThen λkey →
             case columnFromKey key of
-                Just column ->
+                Just column →
                     Decode.succeed column
 
-                Nothing ->
+                Nothing →
                     Decode.fail "unknown column: ${key}"
 
 
-pub load : String -> Result String Model
+pub load : String → Result String Model
 load json =
     cards =
         Decode.decodeString cardsDecoder json
-            |> Result.mapError Decode.errorToString
+            ▷ Result.mapError Decode.errorToString
     Ok (update (Loaded (Ok cards?)) init)
 
 
-pub summary : Model -> List ( String, Int )
-summary model = List.map columns λcolumn ->
-    ( columnName column, List.length (cardsIn column model) )
+pub summary : Model → List (String × Int)
+summary model = List.map columns λcolumn → ( columnName column, List.length (cardsIn column model) )
 
 
-pub labelsInUse : Model -> List String
+pub labelsInUse : Model → List String
 labelsInUse model =
     model.cards
-        |> Dict.values
-        |> List.concatMap .labels
-        |> Set.fromList
-        |> Set.toList
+        ▷ Dict.values
+        ▷ List.concatMap .labels
+        ▷ Set.fromList
+        ▷ Set.toList
 
 
-pub oldestCard : Model -> Maybe Card
+pub oldestCard : Model → Maybe Card
 oldestCard model =
     Dict.values model.cards
-        |> List.sortBy .id
-        |> List.head
+        ▷ List.sortBy .id
+        ▷ List.head

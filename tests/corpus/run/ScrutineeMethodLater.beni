@@ -19,8 +19,8 @@ type Box a
 
 
 f n =
-    case ( (λy -> y.h ()) (K n), (Box 1).g () ) of
-        ( r, _ ) ->
+    case ( (λy → y.h ()) (K n), (Box 1).g () ) of
+        ( r, _ ) →
             q z = r.combine z
             ( q 1, q "s" )
 

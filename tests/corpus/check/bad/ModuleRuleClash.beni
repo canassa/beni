@@ -17,9 +17,9 @@ pub type Colour
     | Green
 
 
-pub eq : Version, Version -> Bool
+pub eq : Version, Version → Bool
 eq a b = True
 
 
-pub sameColour : Colour, Colour -> Bool
+pub sameColour : Colour, Colour → Bool
 sameColour a b = a == b

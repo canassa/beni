@@ -75,20 +75,20 @@ pub schema Message tagged "kind" of
 
 -- Nominal endpoint methods remain ordinary module values. They do not enter
 -- the schema namespace member table.
-pub addCount : Message.Type, Int -> Int
+pub addCount : Message.Type, Int → Int
 addCount message extra =
     case message of
-        Message.Text row ->
+        Message.Text row →
             extra
 
-        Message.Count row ->
+        Message.Count row →
             row.value + extra
 
 
 -- This custom well-known method is selected by Message.Type. Tree.Type is a
 -- second nominal endpoint in the same module and still has derived evidence;
 -- spelling `left < right` for Tree would hit the module-rule name clash.
-pub compare : Message.Type, Message.Type -> Order
+pub compare : Message.Type, Message.Type → Order
 compare left right = EQ
 
 
@@ -131,11 +131,11 @@ privateEncodedEvent : PrivateEvent.Encoded
 privateEncodedEvent = PrivateEvent.Encoded.Closed { reason = "done" }
 
 
-privateCase : PrivateEvent.Type -> Bool
+privateCase : PrivateEvent.Type → Bool
 privateCase event =
     case event of
-        PrivateEvent.Open row ->
+        PrivateEvent.Open row →
             True
 
-        PrivateEvent.Closed row ->
+        PrivateEvent.Closed row →
             False

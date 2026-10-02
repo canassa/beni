@@ -9,10 +9,10 @@
 pub foreign type Event
 
 
-pub foreign pure targetValue : Event -> String
+pub foreign pure targetValue : Event → String
 
 
-pub plain : Event -> String
+pub plain : Event → String
 plain _ = ""
 
 

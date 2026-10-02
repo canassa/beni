@@ -1,21 +1,21 @@
 -- Already canonical (§9): `if c then` / body / `else` / body, an `else if`
 -- chain, and a short `if` written on one line that fits there and stays,
 -- joining its `=` line (§12.5).
-grade : Int -> String
+grade : Int → String
 grade score =
-    if score >= 90 then
+    if score ≥ 90 then
         "A"
-    else if score >= 80 then
+    else if score ≥ 80 then
         "B"
     else
         "F"
 
 
-tiny : Bool -> Int
+tiny : Bool → Int
 tiny b = if b then 1 else 0
 
 
-nested : Bool, Bool -> Int
+nested : Bool, Bool → Int
 nested a b =
     if a then
         if b then

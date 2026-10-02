@@ -11,14 +11,14 @@ type Msg
     = Inc
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view count =
     <main>
         <p id="count">{String.fromInt count}</p>
-        <button id="boom" onClick={λ_ -> Debug.todo "handler threw"}>boom</button>
+        <button id="boom" onClick={λ_ → Debug.todo "handler threw"}>boom</button>
         <button id="inc" onClick={Inc}>inc</button>
     </main>
 
 
 main : Browser.Program
-main = Browser.program { init = 0, update = λInc count -> count + 1, view = view }
+main = Browser.program { init = 0, update = λInc count → count + 1, view = view }

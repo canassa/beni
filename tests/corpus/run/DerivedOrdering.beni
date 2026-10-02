@@ -63,7 +63,7 @@ type alias Row =
     rank : Rank
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -71,17 +71,17 @@ show b =
         "False"
 
 
-order : a, a -> String
-    where a.compare : a, a -> Order
+order : a, a → String
+    where a.compare : a, a → Order
 order x y =
     case x.compare y of
-        LT ->
+        LT →
             "LT"
 
-        EQ ->
+        EQ →
             "EQ"
 
-        GT ->
+        GT →
             "GT"
 
 
@@ -90,7 +90,7 @@ main =
     Node.printLines
         [ show (Low < High)
         , show (High < Low)
-        , show (Mid <= Mid)
+        , show (Mid ≤ Mid)
         , show (Circle 9 < Rect 1 1)
         , show (Circle 1 < Circle 2)
         , show (Rect 1 2 < Rect 1 3)

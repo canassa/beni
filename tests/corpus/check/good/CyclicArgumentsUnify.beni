@@ -3,7 +3,7 @@
 -- holds it). Unification is coinductive (checker-v2.md §7.3), so the two
 -- unify and the program checks, never with a false NESTING TOO DEEP
 -- ("more than 4200 levels").
-sameArgs : x, x -> Int
+sameArgs : x, x → Int
 sameArgs p q = 0
 
 

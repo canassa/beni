@@ -34,17 +34,13 @@ main =
 
     passed =
         String.fromInt
-            (Catch.passed (λ() -> Catch.fail "TypeError" "p") (λerr -> Catch.isTypeError err) λ_ ->
-                3
-            )
+            (Catch.passed (λ() → Catch.fail "TypeError" "p") (λerr → Catch.isTypeError err) λ_ → 3)
 
     asValue =
         String.fromInt
-            (Catch.asValue (λ() -> Catch.fail "TypeError" "v") (λerr -> Catch.isTypeError err) λ_ ->
-                5
-            )
+            (Catch.asValue (λ() → Catch.fail "TypeError" "v") (λerr → Catch.isTypeError err) λ_ → 5)
 
-    asValueOk = String.fromInt (Catch.asValue (λ() -> 6) (λerr -> Catch.isTypeError err) λ_ -> 5)
+    asValueOk = String.fromInt (Catch.asValue (λ() → 6) (λerr → Catch.isTypeError err) λ_ → 5)
 
     summed = String.fromInt (Catch.sumTo 4 0)
     Node.printLines

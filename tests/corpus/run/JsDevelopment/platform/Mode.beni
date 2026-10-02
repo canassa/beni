@@ -7,25 +7,25 @@
 import Js
 
 
-pub describe : () -> String
+pub describe : () → String
 describe () = if Js.development () then devOnly () else releaseOnly ()
 
 
-devOnly : () -> String
+devOnly : () → String
 devOnly () = "a development build"
 
 
-releaseOnly : () -> String
+releaseOnly : () → String
 releaseOnly () = "a release build"
 
 
-pub check : Int -> Int
+pub check : Int → Int
 check n =
     case Js.development () of
-        False ->
+        False →
             n * 2
 
-        True ->
+        True →
             n + 1
 
 
@@ -35,11 +35,11 @@ flag = Js.development ()
 
 -- In a discarded position, the arm the build does not take is not written
 -- either: a release build has no `noted`.
-pub note : () -> Int
+pub note : () → Int
 note () =
     _ = if Js.development () then noted () else ()
     1
 
 
-noted : () -> ()
+noted : () → ()
 noted () = Js.to (Js.call (Js.global "console") "log" [ Js.from "noted in a development build" ])

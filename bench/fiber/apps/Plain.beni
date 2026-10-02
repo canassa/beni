@@ -3,7 +3,7 @@
 import Node exposing (Program)
 
 
-worker : Int -> Int
+worker : Int → Int
 worker n = n * 2
 
 

@@ -22,29 +22,29 @@ flag = Js.ref False
 
 
 -- Called twice, as statements: written where it is called, and gone.
-stop : () -> ()
+stop : () → ()
 stop () = Js.write dead True
 
 
 -- With a parameter, called with literals: each call is the assignment of
 -- its argument.
-set : Int -> ()
+set : Int → ()
 set n = Js.write count n
 
 
 -- Called nine times: nine `noise = true` would be larger than nine calls
 -- and the function, so every call stays.
-bump : () -> ()
+bump : () → ()
 bump () = Js.write noise True
 
 
 -- Called as a statement once and also stored where the host can call it:
 -- the function must stay, so its call does too.
-raise : () -> ()
+raise : () → ()
 raise () = Js.write flag True
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () =
     _ = stop ()
     _ = set 3

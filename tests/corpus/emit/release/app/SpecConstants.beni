@@ -15,15 +15,15 @@ limit : Int
 limit = 3
 
 
-pad : Int, String -> String
+pad : Int, String → String
 pad width s =
-    if String.length s >= width then
+    if String.length s ≥ width then
         s
     else
         pad width (s ++ ".")
 
 
-scale : Int, Int -> Int
+scale : Int, Int → Int
 scale factor n =
     if factor == 1 then
         n
@@ -31,7 +31,7 @@ scale factor n =
         n * factor
 
 
-clamp : Int -> Int
+clamp : Int → Int
 clamp n =
     if n > limit * 2 then
         limit * 2
@@ -39,7 +39,7 @@ clamp n =
         n
 
 
-shout : Bool, String -> String
+shout : Bool, String → String
 shout loud s =
     if loud then
         String.toUpper s

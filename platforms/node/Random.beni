@@ -34,10 +34,10 @@ pub type alias Generator a =
 --| processes started at once do not share a sequence.
 --|
 --|     Random.value (Random.int 1 6)
-pub value : Generator a -> a
+pub value : Generator a → a
 value generator =
     case Pcg.step generator (processSeed ()) of
-        ( v, after ) ->
+        ( v, after ) →
             _ = Js.write seed (Just after)
             v
 
@@ -47,20 +47,20 @@ seed : Js.Ref (Maybe Seed)
 seed = Js.ref Nothing
 
 
-processSeed : () -> Seed
+processSeed : () → Seed
 processSeed () =
     case Js.read seed of
-        Just s ->
+        Just s →
             s
 
-        Nothing ->
+        Nothing →
             Pcg.initialSeed (entropy ())
 
 
 -- 32 bits from Node's Web Crypto (`globalThis.crypto`, Node 19 and later).
 -- `getRandomValues` throws only for an array that is not of integers or
 -- longer than 65 536 bytes, and this one is neither.
-entropy : () -> Int
+entropy : () → Int
 entropy () =
     words =
         Js.call (Js.global "crypto") "getRandomValues"
@@ -72,12 +72,12 @@ entropy () =
 
 --| A seed from an integer: the same integer, the same seed, so a run can
 --| be reproduced.
-pub initialSeed : Int -> Seed
+pub initialSeed : Int → Seed
 initialSeed = Pcg.initialSeed
 
 
 --| Run a generator on a seed: the value, and the seed to use next.
-pub step : Generator a, Seed -> ( a, Seed )
+pub step : Generator a, Seed → a × Seed
 step = Pcg.step
 
 
@@ -88,7 +88,7 @@ independentSeed = Pcg.independentSeed
 
 
 --| An integer from `a` to `b`, both included, each as likely.
-pub int : Int, Int -> Generator Int
+pub int : Int, Int → Generator Int
 int = Pcg.int
 
 
@@ -103,55 +103,55 @@ maxInt = Pcg.maxInt
 
 
 --| A float from `a` to `b`, from 53 bits of randomness.
-pub float : Float, Float -> Generator Float
+pub float : Float, Float → Generator Float
 float = Pcg.float
 
 
 --| Always this value.
-pub constant : a -> Generator a
+pub constant : a → Generator a
 constant = Pcg.constant
 
 
 --| Two values, one from each generator.
-pub pair : Generator a, Generator b -> Generator ( a, b )
+pub pair : Generator a, Generator b → Generator (a × b)
 pair = Pcg.pair
 
 
 --| `n` values from the generator.
-pub list : Generator a, Int -> Generator (List a)
+pub list : Generator a, Int → Generator (List a)
 list = Pcg.list
 
 
 --| One of the values, each as likely.
-pub uniform : a, List a -> Generator a
+pub uniform : a, List a → Generator a
 uniform = Pcg.uniform
 
 
 --| One of the values, each as likely as its weight against the rest.
-pub weighted : ( Float, a ), List ( Float, a ) -> Generator a
+pub weighted : Float × a, List (Float × a) → Generator a
 weighted = Pcg.weighted
 
 
 --| The generator's values, transformed.
-pub map : Generator a, (a -> b) -> Generator b
+pub map : Generator a, (a → b) → Generator b
 map = Pcg.map
 
 
 --| Two generators' values, combined.
-pub map2 : Generator a, Generator b, (a, b -> c) -> Generator c
+pub map2 : Generator a, Generator b, (a, b → c) → Generator c
 map2 = Pcg.map2
 
 
 --| Three generators' values, combined.
-pub map3 : Generator a, Generator b, Generator c, (a, b, c -> d) -> Generator d
+pub map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
 map3 = Pcg.map3
 
 
 --| A generator chosen by the value of another.
-pub andThen : Generator a, (a -> Generator b) -> Generator b
+pub andThen : Generator a, (a → Generator b) → Generator b
 andThen = Pcg.andThen
 
 
 --| A generator made only when it is run: for one that refers to itself.
-pub lazy : (() -> Generator a) -> Generator a
+pub lazy : (() → Generator a) → Generator a
 lazy = Pcg.lazy

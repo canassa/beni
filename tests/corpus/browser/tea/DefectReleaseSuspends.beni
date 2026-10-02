@@ -20,34 +20,34 @@ type Msg
     | Boom
 
 
-slowly : String, Int -> ()
+slowly : String, Int → ()
 slowly name ms =
     _ = Log.info "${name} release starts"
     _ = Time.sleep (Time.millis ms)
     Log.info "${name} release ends"
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Start ->
+        Start →
             ( n
             , Cmd.batch
-                [ Cmd.perform λ_ ->
-                    Task.bracket (λ() -> ()) (λ_ _ -> slowly "first" 200) λ_ ->
+                [ Cmd.perform λ_ →
+                    Task.bracket (λ() → ()) (λ_ _ → slowly "first" 200) λ_ →
                         Time.sleep (Time.seconds 60)
-                , Cmd.perform λ_ ->
-                    Task.bracket (λ() -> ()) (λ_ _ -> Log.info "second outer released") λ_ ->
-                        Task.bracket (λ() -> ()) (λ_ _ -> slowly "second inner" 5000) λ_ ->
+                , Cmd.perform λ_ →
+                    Task.bracket (λ() → ()) (λ_ _ → Log.info "second outer released") λ_ →
+                        Task.bracket (λ() → ()) (λ_ _ → slowly "second inner" 5000) λ_ →
                             Time.sleep (Time.seconds 60)
                 ]
             )
 
-        Boom ->
+        Boom →
             Debug.todo "update threw"
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view _ =
     <main>
         <button id="start" onClick={Start}>start</button>
@@ -58,4 +58,4 @@ view _ =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

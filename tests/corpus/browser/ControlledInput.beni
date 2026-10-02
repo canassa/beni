@@ -16,23 +16,23 @@ type alias Model =
     saved : List String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Typed text ->
+        Typed text →
             if String.contains text "!" then
                 model
             else
                 { model | draft = text }
 
-        Pressed key ->
+        Pressed key →
             if key == "Enter" then
-                { draft = "", saved = [ model.draft, ...model.saved ] }
+                { draft = "", saved = [ model.draft, …model.saved ] }
             else
                 model
 
 
-view : Model -> Node Msg
+view : Model → Node Msg
 view model =
     Page.element "form" []
         [ Page.element "input"
@@ -45,7 +45,7 @@ view model =
         , Page.element
             "ul"
             []
-            (List.map model.saved λtext -> Page.element "li" [] [ Page.text text ])
+            (List.map model.saved λtext → Page.element "li" [] [ Page.text text ])
         ]
 
 

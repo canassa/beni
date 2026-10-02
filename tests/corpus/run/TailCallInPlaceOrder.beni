@@ -15,37 +15,37 @@
 import Node exposing (Program)
 
 
-note : String, Int -> Int
+note : String, Int → Int
 note label n = Debug.log label n
 
 
-walk : Int, Int, Int -> String
+walk : Int, Int, Int → String
 walk a b n =
-    if n <= 0 then
+    if n ≤ 0 then
         "${String.fromInt a},${String.fromInt b}"
     else
         walk (note "a" (b + 1)) (note "b" (a * 10)) (n - 1)
 
 
-rotate : Int, Int, Int, Int -> String
+rotate : Int, Int, Int, Int → String
 rotate a b c n =
-    if n <= 0 then
+    if n ≤ 0 then
         "${String.fromInt a},${String.fromInt b},${String.fromInt c}"
     else
         rotate b c a (n - 1)
 
 
-pairs : ( Int, Int ), Int, Int -> Int
+pairs : Int × Int, Int, Int → Int
 pairs ( x, y ) acc n =
-    if n <= 0 then
+    if n ≤ 0 then
         acc + x * 100 + y
     else
         pairs ( y, x + 1 ) (acc + x) (n - 1)
 
 
-ticks : Int, Int, () -> Int
+ticks : Int, Int, () → Int
 ticks n acc () =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         ticks (note "n" (n - 1)) (acc + n) (Debug.log "tick" ())

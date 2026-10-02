@@ -27,42 +27,42 @@ plain = List.range 1 40
 view : List Int
 view =
     case List.range 0 40 of
-        [ _, ...rest ] ->
+        [ _, …rest ] →
             rest
 
-        [] ->
+        [] →
             []
 
 
 pushed : List Int
-pushed = List.foldl (List.range 1 40) [] λn acc -> List.push acc n
+pushed = List.foldl (List.range 1 40) [] λn acc → List.push acc n
 
 
 prepended : List Int
-prepended = List.foldr (List.range 1 40) [] λn acc -> [ n, ...acc ]
+prepended = List.foldr (List.range 1 40) [] λn acc → [ n, …acc ]
 
 
 pushedTail : List Int
 pushedTail =
-    case List.foldl (List.range 0 40) [] λn acc -> List.push acc n of
-        [ _, ...rest ] ->
+    case List.foldl (List.range 0 40) [] λn acc → List.push acc n of
+        [ _, …rest ] →
             rest
 
-        [] ->
+        [] →
             []
 
 
 prependedTail : List Int
 prependedTail =
-    case List.foldr (List.range 0 40) [] λn acc -> [ n, ...acc ] of
-        [ _, ...rest ] ->
+    case List.foldr (List.range 0 40) [] λn acc → [ n, …acc ] of
+        [ _, …rest ] →
             rest
 
-        [] ->
+        [] →
             []
 
 
-forms : List ( String, List Int )
+forms : List (String × List Int)
 forms =
     [ ( "plain", plain )
     , ( "view", view )
@@ -73,72 +73,72 @@ forms =
     ]
 
 
-weighted : List Int -> Int
-weighted xs = List.foldl (List.indexedMap xs λi x -> (i + 1) * x) 0 (+)
+weighted : List Int → Int
+weighted xs = List.foldl (List.indexedMap xs λi x → (i + 1) * x) 0 (+)
 
 
-bools : List Bool -> String
-bools bs = String.concat (List.map bs λb -> if b then "T" else "F")
+bools : List Bool → String
+bools bs = String.concat (List.map bs λb → if b then "T" else "F")
 
 
-line : ( String, List Int ) -> String
+line : String × List Int → String
 line ( name, xs ) =
-    others = List.map forms λ( _, ys ) -> ys
+    others = List.map forms λ( _, ys ) → ys
     String.join
         [ name
-        , bools (List.map others λys -> xs == ys)
-        , String.join (List.map others λys -> Debug.toString (xs.compare ys)) ","
-        , Debug.toString (xs.compare [ ...plain, 41 ])
+        , bools (List.map others λys → xs == ys)
+        , String.join (List.map others λys → Debug.toString (xs.compare ys)) ","
+        , Debug.toString (xs.compare [ …plain, 41 ])
         , Debug.toString (xs.compare (List.set plain 39 41))
         , String.join
-            (List.map others λys ->
+            (List.map others λys →
                 String.fromInt (List.length (xs ++ ys))
                     ++ "/"
                     ++ String.fromInt (weighted (xs ++ ys))
             )
             ","
-        , String.join (List.map others λys -> String.fromInt (weighted [ ...ys, ...xs ])) ","
+        , String.join (List.map others λys → String.fromInt (weighted [ …ys, …xs ])) ","
         , Debug.toString xs
         ]
         " "
 
 
-readers : ( String, List Int ) -> String
+readers : String × List Int → String
 readers ( name, xs ) =
     ends =
         case xs of
-            [ first, ...middle, last ] ->
+            [ first, …middle, last ] →
                 String.fromInt first
                     ++ ".."
                     ++ String.fromInt (List.length middle)
                     ++ ".."
                     ++ String.fromInt last
 
-            _ ->
+            _ →
                 "short"
     String.join
         [ name
-        , String.fromInt (List.foldr xs 0 λx acc -> acc * 3 + x |> Int.mod 1000003)
+        , String.fromInt (List.foldr xs 0 λx acc → acc * 3 + x ▷ Int.mod 1000003)
         , String.fromInt (weighted (List.reverse xs))
-        , String.fromInt (weighted (List.sortWith xs λa b -> compare b a))
+        , String.fromInt (weighted (List.sortWith xs λa b → compare b a))
         , ends
         ]
         " "
 
 
 -- A pattern's `rest` of a plain list: a view.
-afterFirst : List a -> List a
+afterFirst : List a → List a
 afterFirst xs =
     case xs of
-        [ _, ...more ] ->
+        [ _, …more ] →
             more
 
-        [] ->
+        [] →
             []
 
 
 letterTrie : List Char
-letterTrie = List.foldl (String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN") [] λc acc ->
+letterTrie = List.foldl (String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN") [] λc acc →
     List.push acc c
 
 
@@ -157,9 +157,9 @@ main =
             ++ List.map forms readers
             ++ [ String.fromList letterTrie
                , String.fromList letterView
-               , String.join (List.foldl words [] λw acc -> List.push acc w) "-"
-               , String.join (afterFirst [ "x", ...words ]) "+"
+               , String.join (List.foldl words [] λw acc → List.push acc w) "-"
+               , String.join (afterFirst [ "x", …words ]) "+"
                , Debug.toString
-                   (Dict.toList (Dict.fromList (List.map pushed λn -> ( Int.mod n 7, n ))))
+                   (Dict.toList (Dict.fromList (List.map pushed λn → ( Int.mod n 7, n ))))
                ]
         )

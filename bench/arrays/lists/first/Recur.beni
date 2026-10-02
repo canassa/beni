@@ -9,31 +9,31 @@ import List
 -- 1. map and filter by hand -------------------------------------------------
 
 --| `map` by hand: walk with `x :: rest`, build with `push`. A tail call.
-pub mapRec : List a, (a -> b) -> List b
+pub mapRec : List a, (a → b) → List b
 mapRec xs f = mapRecHelp xs f []
 
 
-mapRecHelp : List a, (a -> b), List b -> List b
+mapRecHelp : List a, (a → b), List b → List b
 mapRecHelp xs f acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             mapRecHelp rest f (List.push acc (f x))
 
 
-pub filterRec : List a, (a -> Bool) -> List a
+pub filterRec : List a, (a → Bool) → List a
 filterRec xs keep = filterRecHelp xs keep []
 
 
-filterRecHelp : List a, (a -> Bool), List a -> List a
+filterRecHelp : List a, (a → Bool), List a → List a
 filterRecHelp xs keep acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
                 filterRecHelp rest keep (List.push acc x)
             else
@@ -41,12 +41,12 @@ filterRecHelp xs keep acc =
 
 
 --| `map` as a fold that pushes: the accumulator version, with no `reverse`.
-pub mapAcc : List a, (a -> b) -> List b
-mapAcc xs f = List.foldl xs [] λx acc -> List.push acc (f x)
+pub mapAcc : List a, (a → b) → List b
+mapAcc xs f = List.foldl xs [] λx acc → List.push acc (f x)
 
 
-pub filterAcc : List a, (a -> Bool) -> List a
-filterAcc xs keep = List.foldl xs [] λx acc ->
+pub filterAcc : List a, (a → Bool) → List a
+filterAcc xs keep = List.foldl xs [] λx acc →
     if keep x then
         List.push acc x
     else
@@ -56,36 +56,36 @@ filterAcc xs keep = List.foldl xs [] λx acc ->
 -- 2. `x :: rest` recursion -----------------------------------------------------
 
 --| The same walk as the cons version: `x :: rest` is a view here.
-pub sum : List Int -> Int
+pub sum : List Int → Int
 sum xs = sumHelp xs 0
 
 
-sumHelp : List Int, Int -> Int
+sumHelp : List Int, Int → Int
 sumHelp xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             sumHelp rest (acc + x)
 
 
 --| The walk an array-first programmer reaches for first.
-pub sumFold : List Int -> Int
-sumFold xs = List.foldl xs 0 λx acc -> acc + x
+pub sumFold : List Int → Int
+sumFold xs = List.foldl xs 0 λx acc → acc + x
 
 
-pub takeWhile : List a, (a -> Bool) -> List a
+pub takeWhile : List a, (a → Bool) → List a
 takeWhile xs keep = takeWhileHelp xs keep []
 
 
-takeWhileHelp : List a, (a -> Bool), List a -> List a
+takeWhileHelp : List a, (a → Bool), List a → List a
 takeWhileHelp xs keep acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
                 takeWhileHelp rest keep (List.push acc x)
             else
@@ -94,48 +94,48 @@ takeWhileHelp xs keep acc =
 
 --| Neighbouring pairs: `[1, 2, 3]` gives `[(1, 2), (2, 3)]`. The rest is
 --| passed on as it was matched; nothing is put back on its front.
-pub pairwise : List a -> List ( a, a )
+pub pairwise : List a → List (a × a)
 pairwise xs = pairwiseHelp xs []
 
 
-pairwiseHelp : List a, List ( a, a ) -> List ( a, a )
+pairwiseHelp : List a, List (a × a) → List (a × a)
 pairwiseHelp xs acc =
     case xs of
-        [ a, ...rest ] ->
+        [ a, …rest ] →
             case rest of
-                [ b, ..._ ] ->
+                [ b, …_ ] →
                     pairwiseHelp rest (List.push acc ( a, b ))
 
-                [] ->
+                [] →
                     acc
 
-        [] ->
+        [] →
             acc
 
 
 --| Merge sort the array way: split at the middle with `take`/`drop` (two
 --| slices), sort both halves, merge by pushing the smaller head.
-pub mergeSort : List Int -> List Int
+pub mergeSort : List Int → List Int
 mergeSort xs =
     n = List.length xs
-    if n <= 1 then
+    if n ≤ 1 then
         xs
     else
         half = n // 2
         merge (mergeSort (List.take xs half)) (mergeSort (List.drop xs half)) []
 
 
-merge : List Int, List Int, List Int -> List Int
+merge : List Int, List Int, List Int → List Int
 merge xs ys acc =
     case ( xs, ys ) of
-        ( [], _ ) ->
+        ( [], _ ) →
             acc ++ ys
 
-        ( _, [] ) ->
+        ( _, [] ) →
             acc ++ xs
 
-        ( [ x, ...xt ], [ y, ...yt ] ) ->
-            if x <= y then
+        ( [ x, …xt ], [ y, …yt ] ) →
+            if x ≤ y then
                 merge xt ys (List.push acc x)
             else
                 merge xs yt (List.push acc y)

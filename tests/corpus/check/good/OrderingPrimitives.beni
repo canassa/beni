@@ -4,17 +4,17 @@
 -- suspends: `"a" < "b"` compiles here and takes `String.compare`'s answer
 -- (§3.2, A.26). Every one of these is typed `Bool` while `compare` itself
 -- answers `Order`; the backend supplies the test (§3.1, A.3).
-pub ints : Int, Int -> Bool
+pub ints : Int, Int → Bool
 ints a b = a < b
 
 
-pub floats : Float, Float -> Bool
-floats a b = a >= b
+pub floats : Float, Float → Bool
+floats a b = a ≥ b
 
 
-pub chars : Char, Char -> Bool
-chars a b = a <= b
+pub chars : Char, Char → Bool
+chars a b = a ≤ b
 
 
-pub strings : String, String -> Bool
+pub strings : String, String → Bool
 strings a b = a > b

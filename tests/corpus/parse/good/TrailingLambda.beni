@@ -6,33 +6,33 @@
 -- second `|>`. A trailing lambda is an argument like any other after `_`, on
 -- the right of `<-` (the callback is appended after it) and in a markup hole,
 -- where the hole's `}` ends it.
-stages : List { done : Bool, title : String } -> String
+stages : List { done : Bool, title : String } → String
 stages todos =
     todos
-        |> List.filter λt -> t.done
-        |> List.map λt -> t.title
-        |> String.join ", "
+        ▷ List.filter λt → t.done
+        ▷ List.map λt → t.title
+        ▷ String.join ", "
 
 
-oneLine : List { done : Bool } -> Int
-oneLine xs = xs |> List.filter λt -> t.done |> List.length
+oneLine : List { done : Bool } → Int
+oneLine xs = xs ▷ List.filter λt → t.done ▷ List.length
 
 
-blockBody : List Int -> List Int
-blockBody xs = List.map xs λx ->
+blockBody : List Int → List Int
+blockBody xs = List.map xs λx →
     y = x + 1
     y * 2
 
 
-placeholder : List (List Int) -> List (List Int)
-placeholder xss = List.map xss (List.map _ λx -> x + 1)
+placeholder : List (List Int) → List (List Int)
+placeholder xss = List.map xss (List.map _ λx → x + 1)
 
 
-bind : Maybe Int -> Maybe Int
+bind : Maybe Int → Maybe Int
 bind m =
-    x <- Maybe.andThen (Maybe.map m λy -> y + 1)
+    x ← Maybe.andThen (Maybe.map m λy → y + 1)
     Just x
 
 
-hole : List String -> Html msg
-hole items = <ul>{List.map items λi -> <li>{i}</li>}</ul>
+hole : List String → Html msg
+hole items = <ul>{List.map items λi → <li>{i}</li>}</ul>

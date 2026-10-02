@@ -8,17 +8,17 @@ pub type Msg
     | Decrement
 
 
-pub update : Msg, Int -> Int
+pub update : Msg, Int → Int
 update msg count =
     case msg of
-        Increment ->
+        Increment →
             count + 1
 
-        Decrement ->
+        Decrement →
             count - 1
 
 
-pub view : String, Int -> Html Msg
+pub view : String, Int → Html Msg
 view name count =
     <div id={name}>
         <button id={"${name}-dec"} onClick={Decrement}>-</button>

@@ -37,7 +37,7 @@ type alias Point =
     y : Int
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -45,16 +45,16 @@ show b =
         "False"
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) ","
 
 
-nested : List (List Int) -> String
+nested : List (List Int) → String
 nested xss = String.join (List.map xss ints) " | "
 
 
-points : List Point -> String
-points ps = String.join (List.map ps λp -> ints [ p.x, p.y ]) " | "
+points : List Point → String
+points ps = String.join (List.map ps λp → ints [ p.x, p.y ]) " | "
 
 
 main : Program
@@ -62,7 +62,7 @@ main =
     Node.printLines
         [ show ([ 1, 2 ] < [ 1, 2, 3 ])
         , show ([ 1, 2, 3 ] < [ 1, 2 ])
-        , show ([ 1, 2 ] <= [ 1, 2 ])
+        , show ([ 1, 2 ] ≤ [ 1, 2 ])
         , show ([ 2 ] > [ 1, 9, 9 ])
         , show ([] < [ 1 ])
         , show ([ "a", "b" ] < [ "a", "c" ])

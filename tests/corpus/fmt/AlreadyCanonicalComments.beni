@@ -7,7 +7,7 @@ import Dict
 
 -- an own-line comment between imports and declarations
 --| Documents `total`.
-total : List Int -> Int
+total : List Int → Int
 total xs =
     -- before the first binding
     a = List.sum xs
@@ -19,16 +19,16 @@ total xs =
     a + b
 
 
-pick : Bool -> Int
+pick : Bool → Int
 pick flag =
     -- before case
     case flag of
         -- before the first branch
-        True ->
+        True →
             1
 
         -- between branches
-        False ->
+        False →
             2
 
 

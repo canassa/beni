@@ -3,27 +3,27 @@
 import Ui.Html exposing (Attribute, On, Always, WithValue, WithChecked)
 
 
-pub onClick : msg -> Attribute msg
+pub onClick : msg → Attribute msg
 onClick msg = On "click" (Always msg)
 
 
-pub onDoubleClick : msg -> Attribute msg
+pub onDoubleClick : msg → Attribute msg
 onDoubleClick msg = On "dblclick" (Always msg)
 
 
-pub onSubmit : msg -> Attribute msg
+pub onSubmit : msg → Attribute msg
 onSubmit msg = On "submit" (Always msg)
 
 
 --| The control's value on every keystroke.
-pub onInput : (String -> msg) -> Attribute msg
+pub onInput : (String → msg) → Attribute msg
 onInput toMsg = On "input" (WithValue toMsg)
 
 
 --| The control's value once it is committed.
-pub onChange : (String -> msg) -> Attribute msg
+pub onChange : (String → msg) → Attribute msg
 onChange toMsg = On "change" (WithValue toMsg)
 
 
-pub onCheck : (Bool -> msg) -> Attribute msg
+pub onCheck : (Bool → msg) → Attribute msg
 onCheck toMsg = On "change" (WithChecked toMsg)

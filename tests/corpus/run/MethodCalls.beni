@@ -22,37 +22,37 @@ pub type Metre
 
 -- A method of `Metre` is a `pub` value of the module that declares it
 -- (§1.2), so this is what `m.scale 3` resolves to.
-pub scale : Metre, Int -> Metre
+pub scale : Metre, Int → Metre
 scale m factor =
     case m of
-        Metre n ->
+        Metre n →
             Metre (n * factor)
 
 
-pub width : Metre -> Int
+pub width : Metre → Int
 width m =
     case m of
-        Metre n ->
+        Metre n →
             n
 
 
 -- One `where` constraint is one hidden parameter, and the body calls it.
-inner : a, Int -> a
-    where a.scale : a, Int -> a
+inner : a, Int → a
+    where a.scale : a, Int → a
 inner x factor = x.scale factor
 
 
-middle : a, Int -> a
-    where a.scale : a, Int -> a
+middle : a, Int → a
+    where a.scale : a, Int → a
 middle x factor = inner x factor
 
 
-outer : a, Int -> a
-    where a.scale : a, Int -> a
+outer : a, Int → a
+    where a.scale : a, Int → a
 outer x factor = middle x factor
 
 
-show : Metre -> String
+show : Metre → String
 show m = String.fromInt (width m)
 
 

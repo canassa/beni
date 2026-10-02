@@ -8,11 +8,11 @@
 import Schema exposing (Conversion)
 
 
-mk : Int -> Conversion Int (Int -> Int)
+mk : Int → Conversion Int (Int → Int)
 mk n = Debug.todo "checker-only conversion"
 
 
-conversion : Conversion Int (Int -> Int)
+conversion : Conversion Int (Int → Int)
 conversion = mk 0
 
 
@@ -25,9 +25,9 @@ type Wrap
     = Wrap Fn.Type
 
 
-same : Wrap, Wrap -> Bool
+same : Wrap, Wrap → Bool
 same left right = left == right
 
 
-sameFn : Fn.Type, Fn.Type -> Bool
+sameFn : Fn.Type, Fn.Type → Bool
 sameFn left right = left == right

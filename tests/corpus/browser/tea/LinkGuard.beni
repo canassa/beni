@@ -26,35 +26,35 @@ type Msg
     | Handled
 
 
-shown : Browser.UrlRequest -> String
+shown : Browser.UrlRequest → String
 shown r =
     case r of
-        Browser.Internal url ->
-            query = Maybe.withDefault (Maybe.map url.query λq -> "?" ++ q) ""
-            fragment = Maybe.withDefault (Maybe.map url.fragment λf -> "#" ++ f) ""
+        Browser.Internal url →
+            query = Maybe.withDefault (Maybe.map url.query λq → "?" ++ q) ""
+            fragment = Maybe.withDefault (Maybe.map url.fragment λf → "#" ++ f) ""
             "Internal ${url.host} ${url.path}${query}${fragment}"
 
-        Browser.External href ->
+        Browser.External href →
             "External ${href}"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Requested r ->
+        Requested r →
             ( lines ++ [ shown r ], Cmd.none )
 
-        Handled ->
+        Handled →
             ( lines ++ [ "handled by the link" ], Cmd.none )
 
 
-handle : Event -> Msg
+handle : Event → Msg
 handle event =
     _ = Html.preventDefault event
     Handled
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <a id="relative" href="/blog/42?x=1#c">relative</a>
@@ -69,7 +69,7 @@ view lines =
         <a id="nested" href="/n"><span id="inner">inner</span></a>
         <a id="handled" href="/h" onClick={handle}>handled</a>
         <a id="nohref">no href</a>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
@@ -79,5 +79,5 @@ main =
         { init = ( [], Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Navigation.onUrlRequest Requested
+        , subscriptions = λ_ → Navigation.onUrlRequest Requested
         }

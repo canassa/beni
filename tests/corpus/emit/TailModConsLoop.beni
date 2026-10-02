@@ -20,41 +20,41 @@
 import Node exposing (Program)
 
 
-pub mapRec : List a, (a -> b) -> List b
+pub mapRec : List a, (a → b) → List b
 mapRec xs f =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ f x, ...mapRec rest f ]
+        [ x, …rest ] →
+            [ f x, …mapRec rest f ]
 
 
-pub twice : List a -> List a
+pub twice : List a → List a
 twice xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ x, x, ...twice rest ]
+        [ x, …rest ] →
+            [ x, x, …twice rest ]
 
 
-pub filterRec : List a, (a -> Bool) -> List a
+pub filterRec : List a, (a → Bool) → List a
 filterRec xs keep =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
-                [ x, ...filterRec rest keep ]
+                [ x, …filterRec rest keep ]
             else
                 filterRec rest keep
 
 
-pub plain : Int, List Int -> List Int
-plain n xs = [ n, ...xs ]
+pub plain : Int, List Int → List Int
+plain n xs = [ n, …xs ]
 
 
 main : Program

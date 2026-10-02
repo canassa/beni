@@ -7,7 +7,7 @@
 -- the first argument, the position below.
 
 r =
-    { f1 = λn -> n + 1
+    { f1 = λn → n + 1
     , f2 = 1
     , f3 = 1
     , f4 = 1

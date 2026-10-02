@@ -43,7 +43,7 @@ g n =
         f (n - 1)
 
 
-retag : Tagged x -> Tagged y
+retag : Tagged x → Tagged y
 retag x = x
 
 

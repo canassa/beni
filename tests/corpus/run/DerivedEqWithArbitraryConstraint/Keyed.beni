@@ -2,8 +2,8 @@ pub type Keyed
     = Keyed Int String
 
 
-pub key : Keyed, () -> Int
+pub key : Keyed, () → Int
 key value () =
     case value of
-        Keyed number _ ->
+        Keyed number _ →
             number

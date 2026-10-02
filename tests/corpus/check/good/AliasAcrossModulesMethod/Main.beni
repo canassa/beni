@@ -15,9 +15,9 @@
 import Lib exposing (Point, origin)
 
 
-pub same : Point, Point -> Bool
+pub same : Point, Point → Bool
 same a b = a == b
 
 
-pub atOrigin : Point -> Bool
+pub atOrigin : Point → Bool
 atOrigin p = p == origin

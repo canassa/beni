@@ -15,44 +15,44 @@ type Msg
     | SaveSession
 
 
-report : Area, String -> String
+report : Area, String → String
 report area key =
     case Storage.get area key of
-        Just text ->
+        Just text →
             "${key} = ${text}"
 
-        Nothing ->
+        Nothing →
             "${key} unset"
 
 
-written : Result Storage.Error () -> String
+written : Result Storage.Error () → String
 written result =
     case result of
-        Ok () ->
+        Ok () →
             "written"
 
-        Err Storage.QuotaExceeded ->
+        Err Storage.QuotaExceeded →
             "over the quota"
 
-        Err Storage.Unavailable ->
+        Err Storage.Unavailable →
             "no storage"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Save ->
+        Save →
             ( lines ++ [ written (Storage.set Local "draft" "eggs"), report Local "draft" ]
             , Cmd.none
             )
 
-        Forget ->
+        Forget →
             _ = Storage.remove Local "todos"
             ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ]
             , Cmd.none
             )
 
-        SaveSession ->
+        SaveSession →
             ( lines
                 ++ [ written (Storage.set Session "tab" "1")
                    , report Session "tab"
@@ -62,13 +62,13 @@ update msg lines =
             )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="save" onClick={Save}>save</button>
         <button id="forget" onClick={Forget}>forget</button>
         <button id="session" onClick={SaveSession}>session</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
@@ -78,5 +78,5 @@ main =
         { init = ( [ report Local "todos", report Local "draft" ], Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

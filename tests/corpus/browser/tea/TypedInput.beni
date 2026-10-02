@@ -20,18 +20,18 @@ type alias Model =
     seen : List String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Typed text ->
+        Typed text →
             { text = String.toUpper text, seen = model.seen ++ [ text ] }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <input id="name" value={model.text} onInput={Typed} />
-        <ol><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ol>
+        <ol><For each={model.seen} keyed={False}>{λs → <li>{s}</li>}</For></ol>
     </main>
 
 

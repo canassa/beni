@@ -13,7 +13,7 @@ pub type Html msg
 pub type Attribute msg
     = Property String String
     | Toggle String Bool
-    | Classes (List ( String, Bool ))
+    | Classes (List (String × Bool))
     | On String (Handler msg)
 
 
@@ -21,161 +21,161 @@ pub type Attribute msg
 --| from the value or the checked state of the control it came from.
 pub type Handler msg
     = Always msg
-    | WithValue (String -> msg)
-    | WithChecked (Bool -> msg)
+    | WithValue (String → msg)
+    | WithChecked (Bool → msg)
 
 
-pub text : String -> Html msg
+pub text : String → Html msg
 text content = Text content
 
 
-pub node : String, List (Attribute msg), List (Html msg) -> Html msg
+pub node : String, List (Attribute msg), List (Html msg) → Html msg
 node tag attributes children = Element tag attributes children
 
 
-pub div : List (Attribute msg), List (Html msg) -> Html msg
+pub div : List (Attribute msg), List (Html msg) → Html msg
 div attributes children = Element "div" attributes children
 
 
-pub span : List (Attribute msg), List (Html msg) -> Html msg
+pub span : List (Attribute msg), List (Html msg) → Html msg
 span attributes children = Element "span" attributes children
 
 
-pub p : List (Attribute msg), List (Html msg) -> Html msg
+pub p : List (Attribute msg), List (Html msg) → Html msg
 p attributes children = Element "p" attributes children
 
 
-pub h1 : List (Attribute msg), List (Html msg) -> Html msg
+pub h1 : List (Attribute msg), List (Html msg) → Html msg
 h1 attributes children = Element "h1" attributes children
 
 
-pub h2 : List (Attribute msg), List (Html msg) -> Html msg
+pub h2 : List (Attribute msg), List (Html msg) → Html msg
 h2 attributes children = Element "h2" attributes children
 
 
-pub button : List (Attribute msg), List (Html msg) -> Html msg
+pub button : List (Attribute msg), List (Html msg) → Html msg
 button attributes children = Element "button" attributes children
 
 
-pub ul : List (Attribute msg), List (Html msg) -> Html msg
+pub ul : List (Attribute msg), List (Html msg) → Html msg
 ul attributes children = Element "ul" attributes children
 
 
-pub li : List (Attribute msg), List (Html msg) -> Html msg
+pub li : List (Attribute msg), List (Html msg) → Html msg
 li attributes children = Element "li" attributes children
 
 
-pub label : List (Attribute msg), List (Html msg) -> Html msg
+pub label : List (Attribute msg), List (Html msg) → Html msg
 label attributes children = Element "label" attributes children
 
 
-pub textarea : List (Attribute msg), List (Html msg) -> Html msg
+pub textarea : List (Attribute msg), List (Html msg) → Html msg
 textarea attributes children = Element "textarea" attributes children
 
 
 --| An `input` takes no children; the empty list keeps Elm's call shape.
-pub input : List (Attribute msg), List (Html msg) -> Html msg
+pub input : List (Attribute msg), List (Html msg) → Html msg
 input attributes _ = Void "input" attributes
 
 
-pub br : List (Attribute msg) -> Html msg
+pub br : List (Attribute msg) → Html msg
 br attributes = Void "br" attributes
 
 
 --| The same view, with every message its handlers produce passed through
 --| the function.
-pub map : Html a, (a -> b) -> Html b
+pub map : Html a, (a → b) → Html b
 map html f =
     case html of
-        Element tag attributes children ->
+        Element tag attributes children →
             Element tag (List.map attributes (mapAttribute _ f)) (List.map children (map _ f))
 
-        Void tag attributes ->
+        Void tag attributes →
             Void tag (List.map attributes (mapAttribute _ f))
 
-        Text content ->
+        Text content →
             Text content
 
 
-mapAttribute : Attribute a, (a -> b) -> Attribute b
+mapAttribute : Attribute a, (a → b) → Attribute b
 mapAttribute attribute f =
     case attribute of
-        Property name value ->
+        Property name value →
             Property name value
 
-        Toggle name on ->
+        Toggle name on →
             Toggle name on
 
-        Classes entries ->
+        Classes entries →
             Classes entries
 
-        On event handler ->
+        On event handler →
             On event (mapHandler handler f)
 
 
-mapHandler : Handler a, (a -> b) -> Handler b
+mapHandler : Handler a, (a → b) → Handler b
 mapHandler handler f =
     case handler of
-        Always msg ->
+        Always msg →
             Always (f msg)
 
-        WithValue toMsg ->
-            WithValue λvalue -> f (toMsg value)
+        WithValue toMsg →
+            WithValue λvalue → f (toMsg value)
 
-        WithChecked toMsg ->
-            WithChecked λchecked -> f (toMsg checked)
+        WithChecked toMsg →
+            WithChecked λchecked → f (toMsg checked)
 
 
 --| The view as HTML text. Handlers are not markup and are left out.
-pub render : Html msg -> String
+pub render : Html msg → String
 render html =
     case html of
-        Element tag attributes children ->
+        Element tag attributes children →
             "<${tag}${renderAttributes attributes}>"
                 ++ String.concat (List.map children render)
                 ++ "</${tag}>"
 
-        Void tag attributes ->
+        Void tag attributes →
             "<${tag}${renderAttributes attributes}>"
 
-        Text content ->
+        Text content →
             escape content
 
 
-renderAttributes : List (Attribute msg) -> String
+renderAttributes : List (Attribute msg) → String
 renderAttributes attributes =
     attributes
-        |> List.filterMap renderAttribute
-        |> List.map λwritten -> " " ++ written
-        |> String.concat
+        ▷ List.filterMap renderAttribute
+        ▷ List.map λwritten → " " ++ written
+        ▷ String.concat
 
 
-renderAttribute : Attribute msg -> Maybe String
+renderAttribute : Attribute msg → Maybe String
 renderAttribute attribute =
     case attribute of
-        Property name value ->
+        Property name value →
             Just "${name}=\"${escape value}\""
 
-        Toggle name on ->
+        Toggle name on →
             if on then
                 Just name
             else
                 Nothing
 
-        Classes entries ->
+        Classes entries →
             case List.filterMap entries activeClass of
-                [] ->
+                [] →
                     Nothing
 
-                names ->
+                names →
                     joined = escape (String.join names " ")
                     Just "class=\"${joined}\""
 
-        On _ _ ->
+        On _ _ →
             Nothing
 
 
-activeClass : ( String, Bool ) -> Maybe String
+activeClass : String × Bool → Maybe String
 activeClass ( name, on ) =
     if on then
         Just name
@@ -183,35 +183,35 @@ activeClass ( name, on ) =
         Nothing
 
 
-escape : String -> String
+escape : String → String
 escape raw =
     raw
-        |> String.replace "&" "&amp;"
-        |> String.replace "<" "&lt;"
-        |> String.replace ">" "&gt;"
-        |> String.replace "\"" "&quot;"
+        ▷ String.replace "&" "&amp;"
+        ▷ String.replace "<" "&lt;"
+        ▷ String.replace ">" "&gt;"
+        ▷ String.replace "\"" "&quot;"
 
 
 --| Every event this view listens for, in document order, with the handler
 --| that answers it: what a runtime needs to attach listeners.
-pub handlers : Html msg -> List ( String, Handler msg )
+pub handlers : Html msg → List (String × Handler msg)
 handlers html =
     case html of
-        Element _ attributes children ->
+        Element _ attributes children →
             List.filterMap attributes handlerOf ++ List.concatMap children handlers
 
-        Void _ attributes ->
+        Void _ attributes →
             List.filterMap attributes handlerOf
 
-        Text _ ->
+        Text _ →
             []
 
 
-handlerOf : Attribute msg -> Maybe ( String, Handler msg )
+handlerOf : Attribute msg → Maybe (String × Handler msg)
 handlerOf attribute =
     case attribute of
-        On event handler ->
+        On event handler →
             Just ( event, handler )
 
-        _ ->
+        _ →
             Nothing

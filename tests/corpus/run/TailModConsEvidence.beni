@@ -14,47 +14,47 @@ import Node exposing (Program)
 import String
 
 
-removeAll : List a, a -> List a
-    where a.eq : a, a -> Bool
+removeAll : List a, a → List a
+    where a.eq : a, a → Bool
 removeAll xs value =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if x == value then
                 removeAll rest value
             else
-                [ x, ...removeAll rest value ]
+                [ x, …removeAll rest value ]
 
 
 type Box
     = Box Int
 
 
-tagged : List a, a, Int -> List Int
-    where a.eq : a, a -> Bool
+tagged : List a, a, Int → List Int
+    where a.eq : a, a → Bool
 tagged xs value n =
-    if n <= 0 then
+    if n ≤ 0 then
         []
     else
         case xs of
-            [] ->
+            [] →
                 []
 
-            [ x, ..._ ] ->
+            [ x, …_ ] →
                 [ (if x == value then
                       1
                    else
                       0
                   )
-                , ...tagged [ Box 1 ] (Box 1) (n - 1)
+                , …tagged [ Box 1 ] (Box 1) (n - 1)
                 ]
 
 
 main : Program
 main =
-    noisy = List.map (List.range 1 100000) λi -> Int.mod i 4
+    noisy = List.map (List.range 1 100000) λi → Int.mod i 4
     Node.printLines
         [ String.join (List.map (removeAll [ 1, 2, 1, 3 ] 1) String.fromInt) ","
         , String.fromInt (List.length (removeAll noisy 0))

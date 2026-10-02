@@ -44,13 +44,13 @@ pub type Box k
     | Box k
 
 
-pub put : Box k, k -> Box k
-    where k.compare : k, k -> Order
+pub put : Box k, k → Box k
+    where k.compare : k, k → Order
 put box _ = box
 
 
-pub tag : Box k, k -> Box k
-    where k.eq : k, k -> Bool
+pub tag : Box k, k → Box k
+    where k.eq : k, k → Bool
 tag box _ = box
 
 
@@ -58,12 +58,12 @@ pub type Pair a
     = Pair a a
 
 
-pub compare : Pair a, Pair a -> Order
-    where a.compare : a, a -> Order
+pub compare : Pair a, Pair a → Order
+    where a.compare : a, a → Order
 compare (Pair x _) (Pair y _) = x.compare y
 
 
-pub size : Box k -> Int
+pub size : Box k → Int
 size _ = 1
 
 

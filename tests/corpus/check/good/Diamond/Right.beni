@@ -3,5 +3,5 @@
 import Base exposing (Unit, factor)
 
 
-pub scaleDown : Unit, Int -> Int
+pub scaleDown : Unit, Int → Int
 scaleDown u n = n // factor u

@@ -1,9 +1,9 @@
 import Models
 
 
-same : Models.Box.Type, Models.Box.Type -> Bool
+same : Models.Box.Type, Models.Box.Type → Bool
 same left right = left == right
 
 
-sameForward : Models.A.Type, Models.A.Type -> Bool
+sameForward : Models.A.Type, Models.A.Type → Bool
 sameForward left right = left == right

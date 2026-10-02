@@ -25,17 +25,17 @@ type Route
     | NotFound
 
 
-route : Parser (Route -> a) a
+route : Parser (Route → a) a
 route =
     oneOf
         [ map top Home
-        , s "blog" |> slash int |> map Blog
-        , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
-        , s "search" |> Url.Parser.questionMark (Query.string "q") |> map Search
+        , s "blog" ▷ slash int ▷ map Blog
+        , s "user" ▷ slash string ▷ slash (s "comment") ▷ slash int ▷ map2 Comment
+        , s "search" ▷ Url.Parser.questionMark (Query.string "q") ▷ map Search
         ]
 
 
-toRoute : Url -> Route
+toRoute : Url → Route
 toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
 
 
@@ -51,51 +51,51 @@ type alias Model =
     log : List String
 
 
-init : Url, Navigation.Key -> ( Model, Cmd Msg )
+init : Url, Navigation.Key → Model × Cmd Msg
 init url key = ( { key = key, route = toRoute url, log = [] }, Cmd.none )
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        ClickedLink (Browser.Internal url) ->
-            ( model, Cmd.task (λ() -> Navigation.pushUrl model.key (Url.toString url)) Navigated )
+        ClickedLink (Browser.Internal url) →
+            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Navigated )
 
-        ClickedLink (Browser.External href) ->
+        ClickedLink (Browser.External href) →
             ( { model | log = model.log ++ [ "load ${href}" ] }
-            , Cmd.task (λ() -> Navigation.load href) Navigated
+            , Cmd.task (λ() → Navigation.load href) Navigated
             )
 
-        UrlChanged url ->
+        UrlChanged url →
             ( { model | route = toRoute url }, Cmd.none )
 
-        Navigated (Ok ()) ->
+        Navigated (Ok ()) →
             ( model, Cmd.none )
 
-        Navigated (Err _) ->
+        Navigated (Err _) →
             ( { model | log = model.log ++ [ "refused" ] }, Cmd.none )
 
 
-title : Route -> String
+title : Route → String
 title r =
     case r of
-        Home ->
+        Home →
             "Home"
 
-        Blog n ->
+        Blog n →
             "Blog ${String.fromInt n}"
 
-        Comment user n ->
+        Comment user n →
             "Comment ${String.fromInt n} by ${user}"
 
-        Search q ->
+        Search q →
             "Search " ++ Maybe.withDefault q ""
 
-        NotFound ->
+        NotFound →
             "Not found"
 
 
-view : Model -> Tea.Document Msg
+view : Model → Tea.Document Msg
 view model =
     { title = title model.route
     , body =
@@ -108,7 +108,7 @@ view model =
                 <a id="lost" href="/nowhere">lost</a>
             </nav>
             <h1>{title model.route}</h1>
-            <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+            <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
         </main>
     }
 
@@ -119,7 +119,7 @@ main =
         { init = init
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         , onUrlRequest = ClickedLink
         , onUrlChange = UrlChanged
         }

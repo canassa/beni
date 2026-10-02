@@ -24,7 +24,7 @@ type Y
     | YLeaf Int
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

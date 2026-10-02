@@ -83,10 +83,11 @@
         (type_con String)
         (type_paren
           (type_con List
-            (type_tuple
-              (type_con Int)
-              (type_con Maybe
-                (type_var b))))))
+            (type_paren
+              (type_tuple
+                (type_con Int)
+                (type_con Maybe
+                  (type_var b)))))))
       (type_con List
         (type_var b))))
   (definition k
@@ -121,9 +122,10 @@
           (type_paren
             (type_con Result
               (type_con String)
-              (type_tuple
-                (type_con Int)
-                (type_con Int))))))))
+              (type_paren
+                (type_tuple
+                  (type_con Int)
+                  (type_con Int)))))))))
   (definition m
     (list))
   (annotation n
@@ -131,11 +133,12 @@
       (type_record_ext rec
         (record_type_field items
           (type_con List
-            (type_tuple
-              (type_con Int)
-              (type_record
-                (record_type_field name
-                  (type_con String)))))))
+            (type_paren
+              (type_tuple
+                (type_con Int)
+                (type_record
+                  (record_type_field name
+                    (type_con String))))))))
       (type_con Int)))
   (definition n
     (pat_var rec)

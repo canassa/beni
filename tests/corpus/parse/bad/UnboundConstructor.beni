@@ -5,8 +5,8 @@ x = Foo
 
 f m =
     case m of
-        Bar ->
+        Bar →
             1
 
-        _ ->
+        _ →
             2

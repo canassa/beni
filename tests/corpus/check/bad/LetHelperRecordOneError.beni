@@ -4,7 +4,7 @@
 -- function is NOT EQUATABLE, and a record has no methods for `.name`. The
 -- second says nothing more about the same receiver at the same use, so the
 -- use gets one message (`Instances.noMethodsAs`), not two.
-text : Bool -> String
+text : Bool → String
 text b =
     if b then
         "T"
@@ -14,4 +14,4 @@ text b =
 
 f u =
     h s = s.name 0 ++ text (s == s)
-    h { name = λn -> "x" }
+    h { name = λn → "x" }

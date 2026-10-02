@@ -20,57 +20,57 @@ type Msg
     | Inc
 
 
-show : Result Http.Error String -> String
+show : Result Http.Error String → String
 show result =
     case result of
-        Ok text ->
+        Ok text →
             "ok ${text}"
 
-        Err Http.NetworkError ->
+        Err Http.NetworkError →
             "network error"
 
-        Err _ ->
+        Err _ →
             "another error"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Fetch ->
+        Fetch →
             ( lines
             , Cmd.task
-                (λ() -> Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
                 Got
             )
 
-        Break ->
+        Break →
             ( lines
             , Cmd.task
-                (λ() ->
+                (λ() →
                     _ = Fault.breakFetch ()
                     Http.get { url = "data:text/plain,hello", expect = Http.expectString }
                 )
                 Got
             )
 
-        Got result ->
+        Got result →
             ( lines ++ [ show result ], Cmd.none )
 
-        Inc ->
+        Inc →
             ( lines ++ [ "inc" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="fetch" onClick={Fetch}>fetch</button>
         <button id="break" onClick={Break}>break</button>
         <button id="inc" onClick={Inc}>inc</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

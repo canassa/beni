@@ -3,7 +3,7 @@
 -- need no `where` clause and no evidence — `core`'s `abs`, `max` and
 -- `run/DecodeInto`'s `sameNum`. Each answers with the method type checked
 -- against the well-known one first.
-pub absolute : number -> number
+pub absolute : number → number
 absolute n =
     if n < 0 then
         negate n
@@ -11,7 +11,7 @@ absolute n =
         n
 
 
-pub larger : number, number -> number
+pub larger : number, number → number
 larger a b =
     if a < b then
         b
@@ -19,5 +19,5 @@ larger a b =
         a
 
 
-pub sameNum : number, number -> Bool
+pub sameNum : number, number → Bool
 sameNum x y = number.eq x y && x == y

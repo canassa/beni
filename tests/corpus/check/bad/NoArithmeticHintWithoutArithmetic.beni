@@ -4,7 +4,7 @@
 -- (checker-v2.md §15.3). None of them prints it — and for the list it
 -- would displace the left-to-right hint.
 
-add : Int, Int -> Int
+add : Int, Int → Int
 add a b = a + b
 
 
@@ -16,7 +16,7 @@ sum : Int
 sum = add 1 "two"
 
 
-shout : List String -> String
+shout : List String → String
 shout words = String.concat words
 
 

@@ -8,7 +8,7 @@ type T
     = T Int
 
 
-pub combine : T, Int -> Int
+pub combine : T, Int → Int
 combine (T a) b = a + b
 
 
@@ -17,5 +17,5 @@ f x =
     ( g 1, g "s" )
 
 
-pair : ( Int, Int )
+pair : Int × Int
 pair = f (T 5)

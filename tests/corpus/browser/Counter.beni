@@ -12,20 +12,20 @@ type Msg
     | Stay
 
 
-update : Msg, Int -> Int
+update : Msg, Int → Int
 update msg count =
     case msg of
-        Increment ->
+        Increment →
             Debug.log "count" (count + 1)
 
-        Decrement ->
+        Decrement →
             count - 1
 
-        Stay ->
+        Stay →
             count
 
 
-view : Int -> Node Msg
+view : Int → Node Msg
 view count =
     Page.element "main" []
         [ Page.element "button" [ Page.attribute "id" "dec", Page.onClick Decrement ]

@@ -9,9 +9,9 @@
 pub foreign type Handle
 
 
-pub compare : Handle, Handle -> Order
+pub compare : Handle, Handle → Order
 compare a b = LT
 
 
-pub before : ( Handle, Int ), ( Handle, Int ) -> Bool
+pub before : Handle × Int, Handle × Int → Bool
 before a b = a < b

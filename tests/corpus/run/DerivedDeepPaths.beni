@@ -32,7 +32,7 @@ type Even
 
 
 type Odd
-    = O ( Int, Even )
+    = O (Int × Even)
 
 
 type Tree a
@@ -40,7 +40,7 @@ type Tree a
     | Leaf
 
 
-rose : Int, Rose -> Rose
+rose : Int, Rose → Rose
 rose n acc =
     if n == 0 then
         acc
@@ -48,7 +48,7 @@ rose n acc =
         rose (n - 1) (Rose n [ acc ])
 
 
-evens : Int, Even -> Even
+evens : Int, Even → Even
 evens n acc =
     if n == 0 then
         acc
@@ -56,7 +56,7 @@ evens n acc =
         evens (n - 1) (E n (O ( n, acc )))
 
 
-spine : Int, Tree (Maybe Int) -> Tree (Maybe Int)
+spine : Int, Tree (Maybe Int) → Tree (Maybe Int)
 spine n acc =
     if n == 0 then
         acc
@@ -64,7 +64,7 @@ spine n acc =
         spine (n - 1) (Node acc (Just n) Leaf)
 
 
-show : String, Bool -> String
+show : String, Bool → String
 show label b =
     if b then
         label ++ ": True"

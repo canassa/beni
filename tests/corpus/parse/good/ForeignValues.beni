@@ -2,18 +2,18 @@
 -- without a doc comment, with type variables, function and record types.
 -- Parsing is legal in every file; only lowering cares about `--core`.
 --| Add two numbers.
-pub foreign pure add : number, number -> number
+pub foreign pure add : number, number → number
 
 
-pub foreign pure length : String -> Int
+pub foreign pure length : String → Int
 
 
-foreign pure unsafeCoerce : a -> b
+foreign pure unsafeCoerce : a → b
 
 
 --| Private, documented, record-typed.
 foreign pure origin : { x : Float, y : Float }
 
 
-double : Int -> Int
+double : Int → Int
 double n = add n n

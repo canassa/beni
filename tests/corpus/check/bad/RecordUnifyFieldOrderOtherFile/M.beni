@@ -1,4 +1,4 @@
-f : { zp : Int, zq : String } -> Int
+f : { zp : Int, zq : String } → Int
 f r = r.zp
 
 

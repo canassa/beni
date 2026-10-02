@@ -3,9 +3,9 @@
 -- the next line after a comment, both lex `l_brace ellipsis` and parse as
 -- a `markup_spread`.
 view a b =
-    <Card { ...a }
+    <Card { …a }
         {
             -- the rest
-            ...b
+            …b
         }
     />

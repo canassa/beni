@@ -8,7 +8,7 @@ fnf = 1
 flexf = 1
 
 
-k : Int -> Int
+k : Int → Int
 k n = n
 
 

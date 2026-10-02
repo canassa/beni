@@ -8,8 +8,8 @@
 import Node exposing (Program)
 
 
-pub pairEq : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub pairEq : a, a → Bool
+    where a.eq : a, a → Bool
 pairEq x y =
     inner a b = a == b
     inner x y && inner [ x ] [ y ]

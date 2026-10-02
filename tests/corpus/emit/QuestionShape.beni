@@ -22,19 +22,19 @@ import Node exposing (Program)
 import String
 
 
-pub maybe : String -> Maybe Int
+pub maybe : String → Maybe Int
 maybe text = Just (String.toInt text? + 1)
 
 
-pub result : Result String Int -> Result String String
+pub result : Result String Int → Result String String
 result r = Ok (String.fromInt (r?))
 
 
-pub atom : Maybe Int, Int -> Maybe Int
+pub atom : Maybe Int, Int → Maybe Int
 atom m offset = Just (m? + offset)
 
 
-pub twice : Maybe Int, Maybe Int -> Maybe Int
+pub twice : Maybe Int, Maybe Int → Maybe Int
 twice a b = Just (a? + b?)
 
 

@@ -11,69 +11,69 @@
 import Node exposing (Program)
 
 
-describe : List Int -> String
+describe : List Int → String
 describe xs =
     case xs of
-        [] ->
+        [] →
             "empty"
 
-        [ x ] ->
+        [ x ] →
             "one ${x}"
 
-        [ first, ...middle, last ] ->
+        [ first, …middle, last ] →
             "first ${first}, last ${last}, ${Debug.toString middle} between"
 
 
-ends : List (Maybe Int) -> String
+ends : List (Maybe Int) → String
 ends xs =
     case xs of
-        [ ..._, Just 0 ] ->
+        [ …_, Just 0 ] →
             "ends in zero"
 
-        [ Just a, ..._, Nothing ] ->
+        [ Just a, …_, Nothing ] →
             "from ${a} to nothing"
 
-        [ ...init, Just z ] ->
+        [ …init, Just z ] →
             "${Debug.toString init} then ${z}"
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             "other"
 
-        [] ->
+        [] →
             "empty"
 
 
-heads : List (List Int) -> String
+heads : List (List Int) → String
 heads xss =
     case xss of
-        [ [ a, ..._ ], ...rest ] ->
+        [ [ a, …_ ], …rest ] →
             "a ${a}, ${Debug.toString rest}"
 
-        [ ...init, [] ] ->
+        [ …init, [] ] →
             "last empty after ${Debug.toString init}"
 
-        _ ->
+        _ →
             "other"
 
 
-pairUp : ( List Int, List Int ) -> String
+pairUp : List Int × List Int → String
 pairUp pair =
     case pair of
-        ( [ ...a, x ], [ y, ...b ] ) ->
+        ( [ …a, x ], [ y, …b ] ) →
             "${x} meets ${y}"
 
-        _ ->
+        _ →
             "no pair"
 
 
-note : String, a -> a
+note : String, a → a
 note tag x = Debug.log tag x
 
 
 main : Program
 main =
     xs = [ 1, 2, 3 ]
-    built = [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
+    built = [ note "a" 0, …note "b" xs, note "c" 4, …note "d" [ 5 ] ]
     Node.printLines
         [ describe []
         , describe [ 7 ]
@@ -94,9 +94,9 @@ main =
         , pairUp ( [ 1, 2 ], [ 3, 4 ] )
         , pairUp ( [], [ 3 ] )
         , Debug.toString built
-        , Debug.toString [ 0, ...xs ]
-        , Debug.toString [ ...xs, 4 ]
-        , Debug.toString [ ...xs, ...xs ]
-        , Debug.toString [ ...[], 1, ...[] ]
-        , Debug.toString [ ...xs ]
+        , Debug.toString [ 0, …xs ]
+        , Debug.toString [ …xs, 4 ]
+        , Debug.toString [ …xs, …xs ]
+        , Debug.toString [ …[], 1, …[] ]
+        , Debug.toString [ …xs ]
         ]

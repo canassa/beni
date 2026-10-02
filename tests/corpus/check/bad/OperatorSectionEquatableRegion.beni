@@ -5,7 +5,7 @@
 -- `(==) inc inc` underlines `(==)` at 13:6 — not the first operand, a
 -- token the author did not write the mistake at.
 --
-pub inc : Int -> Int
+pub inc : Int → Int
 inc n = n
 
 

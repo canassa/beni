@@ -3,16 +3,16 @@
 --! 4, as amended 2026-10-02). Every call passes `null` for each `()`.
 
 --| Count calls: the sibling takes no parameter at all.
-pub foreign impure tick : () -> Int
+pub foreign impure tick : () → Int
 
 
 --| Twice `n`: the sibling takes `n` and not the `()`.
-pub foreign pure double : Int, () -> Int
+pub foreign pure double : Int, () → Int
 
 
 --| `n + 1`: the sibling takes `n` and the first `()`, and checks it is `null`.
-pub foreign pure next : Int, (), () -> Int
+pub foreign pure next : Int, (), () → Int
 
 
 --| `1`: the sibling takes the `()` and checks it is `null`, as before.
-pub foreign pure one : () -> Int
+pub foreign pure one : () → Int

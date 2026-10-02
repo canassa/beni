@@ -15,15 +15,15 @@ type alias Model =
     title : String
 
 
-select : Model, Int -> Model
+select : Model, Int → Model
 select model id = { model | selected = id }
 
 
-rename : Model, String -> Model
+rename : Model, String → Model
 rename model title = { model | title = title }
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "same"

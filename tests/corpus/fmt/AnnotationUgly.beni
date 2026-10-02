@@ -1,11 +1,11 @@
 -- Formatter: annotations without spaces, spread over lines with `->` at
 -- line ends, `pub` followed by extra spaces; expected: `f : A -> B` on one
 -- line when it fits, `pub` on the annotation line with one space.
-f:Int->Int
+f:Int→Int
 f x = x
-pub   g : Int ->
-   Int ->
+pub   g : Int →
+   Int →
      Int
 g a b = a + b
-h : (Int->Int), List Int -> List Int
+h : (Int→Int), List Int → List Int
 h fn xs = List.map fn xs

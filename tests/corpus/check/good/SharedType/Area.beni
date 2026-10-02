@@ -2,11 +2,11 @@
 import Shape exposing (Shape, Circle, Rect)
 
 
-pub area : Shape -> Int
+pub area : Shape → Int
 area s =
     case s of
-        Circle r ->
+        Circle r →
             3 * r * r
 
-        Rect w h ->
+        Rect w h →
             w * h

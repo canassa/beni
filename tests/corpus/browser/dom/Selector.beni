@@ -31,36 +31,36 @@ type alias Model =
     ids : List Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Pick id ->
+        Pick id →
             { model | selected = Just id }
 
-        Unpick ->
+        Unpick →
             { model | selected = Nothing }
 
-        PickAndEdit id ->
+        PickAndEdit id →
             { model
                 | selected = Just id
                 , rows =
-                    List.map model.rows λrow ->
+                    List.map model.rows λrow →
                         if row.id == 1 then { row | label = "${row.label}!" } else row
             }
 
-        Drop id ->
-            { model | rows = List.filter model.rows λrow -> row.id /= id }
+        Drop id →
+            { model | rows = List.filter model.rows λrow → row.id ≠ id }
 
-        Cursor n ->
+        Cursor n →
             { model | cursor = n }
 
 
-rowClass : Model, Row -> String
+rowClass : Model, Row → String
 rowClass model row =
     Debug.log "row ${String.fromInt row.id}" (if model.selected == Just row.id then "on" else "")
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="pick9" onClick={Pick 9}>9</button>
@@ -70,7 +70,7 @@ view model =
         <button id="cursor2" onClick={Cursor 2}>cursor 2</button>
         <ul>
             <For each={model.rows} keyed={.id}>
-                {λrow ->
+                {λrow →
                     <li class={rowClass model row}>
                         <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>{row.label}</a>
                     </li>
@@ -79,11 +79,11 @@ view model =
         </ul>
         <ol>
             <For each={model.ids}>
-                {λn ->
+                {λn →
                     <li
                         class={Debug.log
                                   "id ${String.fromInt n}"
-                                  (if n /= model.cursor then "" else "at")
+                                  (if n ≠ model.cursor then "" else "at")
                               }
                     >
                         {n}

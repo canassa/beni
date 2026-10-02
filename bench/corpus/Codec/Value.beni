@@ -9,29 +9,29 @@ pub type Value
     | Number Float
     | Text String
     | Array (List Value)
-    | Object (List ( String, Value ))
+    | Object (List (String × Value))
 
 
 --| The field of an object with this name, the first one when a name
 --| repeats. `Nothing` for a missing field and for a value that is not an
 --| object.
-pub get : Value, String -> Maybe Value
+pub get : Value, String → Maybe Value
 get value name =
     case value of
-        Object fields ->
+        Object fields →
             lookup fields name
 
-        _ ->
+        _ →
             Nothing
 
 
-lookup : List ( String, Value ), String -> Maybe Value
+lookup : List (String × Value), String → Maybe Value
 lookup fields name =
     case fields of
-        [] ->
+        [] →
             Nothing
 
-        [ ( key, value ), ...rest ] ->
+        [ ( key, value ), …rest ] →
             if key == name then
                 Just value
             else
@@ -39,71 +39,71 @@ lookup fields name =
 
 
 --| What kind of value this is, as an error message names it.
-pub kind : Value -> String
+pub kind : Value → String
 kind value =
     case value of
-        Null ->
+        Null →
             "null"
 
-        Boolean _ ->
+        Boolean _ →
             "a boolean"
 
-        Number _ ->
+        Number _ →
             "a number"
 
-        Text _ ->
+        Text _ →
             "a string"
 
-        Array items ->
+        Array items →
             "an array of ${List.length items}"
 
-        Object fields ->
+        Object fields →
             "an object with ${List.length fields} fields"
 
 
 --| The value as JSON text. An indent of 0 prints it on one line; any
 --| other indent puts every array element and object field on its own
 --| line, nested that many spaces per level.
-pub print : Value, Int -> String
+pub print : Value, Int → String
 print value indent = printAt value indent 0
 
 
-printAt : Value, Int, Int -> String
+printAt : Value, Int, Int → String
 printAt value indent depth =
     case value of
-        Null ->
+        Null →
             "null"
 
-        Boolean b ->
+        Boolean b →
             if b then
                 "true"
             else
                 "false"
 
-        Number n ->
+        Number n →
             printNumber n
 
-        Text s ->
+        Text s →
             quote s
 
-        Array items ->
+        Array items →
             if List.isEmpty items then
                 "[]"
             else
                 items
-                    |> List.map λitem -> printAt item indent (depth + 1)
-                    |> block "[" "]" indent depth
+                    ▷ List.map λitem → printAt item indent (depth + 1)
+                    ▷ block "[" "]" indent depth
 
-        Object fields ->
+        Object fields →
             if List.isEmpty fields then
                 "{}"
             else
                 fields
-                    |> List.map λ( key, item ) -> printField key item indent depth
-                    |> block "{" "}" indent depth
+                    ▷ List.map λ( key, item ) → printField key item indent depth
+                    ▷ block "{" "}" indent depth
 
 
-printField : String, Value, Int, Int -> String
+printField : String, Value, Int, Int → String
 printField key item indent depth =
     separator =
         if indent == 0 then
@@ -113,7 +113,7 @@ printField key item indent depth =
     quote key ++ separator ++ printAt item indent (depth + 1)
 
 
-block : List String, String, String, Int, Int -> String
+block : List String, String, String, Int, Int → String
 block parts open close indent depth =
     if indent == 0 then
         open ++ String.join parts "," ++ close
@@ -123,7 +123,7 @@ block parts open close indent depth =
         open ++ inner ++ String.join parts ("," ++ inner) ++ outer ++ close
 
 
-printNumber : Float -> String
+printNumber : Float → String
 printNumber n =
     if isNaN n || isInfinite n then
         "null"
@@ -135,36 +135,36 @@ printNumber n =
 
 --| A string as a JSON string literal: quoted, with the characters JSON
 --| does not allow bare written as escapes.
-pub quote : String -> String
+pub quote : String → String
 quote s = "\"" ++ String.concat (List.map (String.toList s) escape) ++ "\""
 
 
-escape : Char -> String
+escape : Char → String
 escape c =
     case c of
-        '"' ->
+        '"' →
             "\\\""
 
-        '\\' ->
+        '\\' →
             "\\\\"
 
-        '\n' ->
+        '\n' →
             "\\n"
 
-        '\r' ->
+        '\r' →
             "\\r"
 
-        '\t' ->
+        '\t' →
             "\\t"
 
-        _ ->
+        _ →
             if Char.toCode c < 32 then
                 "\\u" ++ String.padLeft (hex (Char.toCode c)) 4 '0'
             else
                 String.fromChar c
 
 
-hex : Int -> String
+hex : Int → String
 hex n =
     digit d = String.slice "0123456789abcdef" d (d + 1)
     if n < 16 then
@@ -175,30 +175,30 @@ hex n =
 
 --| Two values are the same JSON: numbers by value, objects field by field
 --| in order.
-pub same : Value, Value -> Bool
+pub same : Value, Value → Bool
 same a b =
     case ( a, b ) of
-        ( Null, Null ) ->
+        ( Null, Null ) →
             True
 
-        ( Boolean x, Boolean y ) ->
+        ( Boolean x, Boolean y ) →
             x == y
 
-        ( Number x, Number y ) ->
+        ( Number x, Number y ) →
             x == y
 
-        ( Text x, Text y ) ->
+        ( Text x, Text y ) →
             x == y
 
-        ( Array xs, Array ys ) ->
+        ( Array xs, Array ys ) →
             List.length xs == List.length ys && List.all (List.map2 xs ys same) identity
 
-        ( Object xs, Object ys ) ->
+        ( Object xs, Object ys ) →
             List.length xs
                 == List.length ys
                 && List.all
-                    (List.map2 xs ys λ( k1, v1 ) ( k2, v2 ) -> k1 == k2 && same v1 v2)
+                    (List.map2 xs ys λ( k1, v1 ) ( k2, v2 ) → k1 == k2 && same v1 v2)
                     identity
 
-        _ ->
+        _ →
             False

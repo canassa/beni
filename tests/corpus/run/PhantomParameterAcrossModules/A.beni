@@ -17,9 +17,9 @@ type Hid a
     = Hid Int
 
 
-pub make : Int -> Tag (Int -> Int)
+pub make : Int → Tag (Int → Int)
 make n = Tag n
 
 
-pub hidden : Int -> Hid (Int -> Int)
+pub hidden : Int → Hid (Int → Int)
 hidden n = Hid n

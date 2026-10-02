@@ -21,11 +21,11 @@ pub idle : Msg
 idle = Run
 
 
-pub button : String -> { label : String, msg : Msg }
+pub button : String → { label : String, msg : Msg }
 button label = { label = label, msg = Run }
 
 
-pub both : Bool -> ( Msg, Msg )
+pub both : Bool → Msg × Msg
 both b =
     if b then
         ( Run, Add 1 )
@@ -33,7 +33,7 @@ both b =
         ( Run, Run )
 
 
-pub none : Int -> Maybe Int
+pub none : Int → Maybe Int
 none n =
     if n > 0 then
         Just n
@@ -41,13 +41,13 @@ none n =
         Nothing
 
 
-pub isRun : Msg -> Bool
+pub isRun : Msg → Bool
 isRun m =
     case m of
-        Run ->
+        Run →
             True
 
-        _ ->
+        _ →
             False
 
 

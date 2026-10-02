@@ -8,19 +8,19 @@
 -- either. `later`'s is inside a `let` whose binding has no annotation of
 -- its own: the table is read once every type is final, not at the call, so
 -- no order of solving changes which function a `++` calls.
-pub joinWords : String, String -> String
+pub joinWords : String, String → String
 joinWords a b = a ++ b
 
 
-pub joinLists : List Int, List Int -> List Int
+pub joinLists : List Int, List Int → List Int
 joinLists a b = a ++ b
 
 
-pub glue : appendable, appendable -> appendable
+pub glue : appendable, appendable → appendable
 glue a b = a ++ b
 
 
-pub later : List Int -> List Int
+pub later : List Int → List Int
 later xs =
     doubled = xs ++ xs
     List.reverse doubled

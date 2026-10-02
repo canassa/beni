@@ -18,24 +18,24 @@ type Msg
     | Stop String
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Run key policy ->
+        Run key policy →
             ( n + 1, Cmd.keyed key policy (work "${key} ${String.fromInt (n + 1)}" _) )
 
-        Stop key ->
+        Stop key →
             ( n, Cmd.cancel key )
 
 
-work : String, Cmd.Send Msg -> ()
+work : String, Cmd.Send Msg → ()
 work name _ =
     _ = Debug.log "start ${name}" ()
     _ = Time.sleep (Time.millis 100)
     Debug.log "end ${name}" ()
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view _ =
     <main>
         <button id="ignore" onClick={Run "ignore" Cmd.Ignore}>ignore</button>
@@ -51,5 +51,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

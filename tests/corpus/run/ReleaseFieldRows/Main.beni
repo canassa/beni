@@ -142,7 +142,7 @@ wide =
 
 
 -- Every field read, so the last ones are spelled with two characters.
-wideSum : Wide -> Int
+wideSum : Wide → Int
 wideSum w =
     w.f01
         + w.f02
@@ -212,11 +212,11 @@ type alias Letters =
 
 
 type alias Counter =
-    step : Int -> Int
+    step : Int → Int
     name : String
 
 
-pairText : Pair -> String
+pairText : Pair → String
 pairText p = "${String.fromInt p.zeta}/${String.fromInt p.alpha}"
 
 
@@ -230,7 +230,7 @@ main =
 
     pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
 
-    byPair = Dict.fromList (List.map pairs λp -> ( p, p.zeta + p.alpha ))
+    byPair = Dict.fromList (List.map pairs λp → ( p, p.zeta + p.alpha ))
 
     letters : Letters
     letters = { a = 1, b = "b" }
@@ -238,7 +238,7 @@ main =
     tuple = ( letters.b, letters.a )
 
     counter : Counter
-    counter = { step = λn -> n + 10, name = "counter" }
+    counter = { step = λn → n + 10, name = "counter" }
     Node.printLines
         [ Shapes.nameOf rect
         , Shapes.nameOf disc
@@ -251,7 +251,7 @@ main =
         , if Shapes.pairOf 2 1 < Shapes.pairOf 1 2 then "zeta second" else "zeta first"
         , String.fromInt (Shapes.zetaOf (Shapes.pairOf 7 8))
         , case tuple of
-            ( b, a ) ->
+            ( b, a ) →
                 "${b} ${String.fromInt a}"
         , "${counter.name} ${String.fromInt (counter.step 1)}"
         , String.fromInt (wideSum wide)

@@ -26,12 +26,12 @@ odd : Schema Odd Odd
 odd =
     Schema.record
         (Schema.fields
-            |> Schema.field "proto" Schema.int
-            |> Schema.key "__proto__"
-            |> Schema.field "ctor" Schema.int
-            |> Schema.key "constructor"
-            |> Schema.optional "text" Schema.string
-            |> Schema.key "toString"
+            ▷ Schema.field "proto" Schema.int
+            ▷ Schema.key "__proto__"
+            ▷ Schema.field "ctor" Schema.int
+            ▷ Schema.key "constructor"
+            ▷ Schema.optional "text" Schema.string
+            ▷ Schema.key "toString"
         )
         (Schema.mapping toOdd fromOdd)
         (Schema.mapping toOdd fromOdd)
@@ -50,12 +50,12 @@ fromPlain p = ( (), p.a )
 plain : Schema Plain Plain
 plain =
     Schema.record
-        (Schema.fields |> Schema.field "a" Schema.int)
+        (Schema.fields ▷ Schema.field "a" Schema.int)
         (Schema.mapping toPlain fromPlain)
         (Schema.mapping toPlain fromPlain)
 
 
-showOdd : Odd -> String
+showOdd : Odd → String
 showOdd o =
     "{ proto = "
         ++ String.fromInt o.proto
@@ -63,10 +63,10 @@ showOdd o =
         ++ String.fromInt o.ctor
         ++ ", text = "
         ++ (case o.text of
-               Missing ->
+               Missing →
                    "Missing"
 
-               Present s ->
+               Present s →
                    "Present " ++ s
            )
         ++ " }"
@@ -84,10 +84,10 @@ main =
             showOdd
         , Show.result (Schema.parse odd "{\"__proto__\":1,\"constructor\":2}") showOdd
         , Show.result (Schema.parseWith odd all "{}") showOdd
-        , Show.result (Schema.print odd { proto = 1, ctor = 2, text = Present "three" }) λs -> s
+        , Show.result (Schema.print odd { proto = 1, ctor = 2, text = Present "three" }) λs → s
         , Show.result
             (Schema.write odd { proto = 4, ctor = 5, text = Missing }
-                |> Result.andThen (Schema.read odd _)
+                ▷ Result.andThen (Schema.read odd _)
             )
             showOdd
         , Show.result
@@ -96,15 +96,15 @@ main =
                 { defaultOptions | unknownKeys = Reject }
                 "{\"a\":1,\"__proto__\":{\"polluted\":true}}"
             )
-            λp -> String.fromInt p.a
-        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"polluted\":true}}") λp ->
+            λp → String.fromInt p.a
+        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"polluted\":true}}") λp →
             String.fromInt p.a
         , Show.result
             (Schema.parse Schema.value "{\"a\":1,\"__proto__\":{\"polluted\":true}}")
             Show.json
-        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"a\":\"inherited\"}}") λp ->
+        , Show.result (Schema.parse plain "{\"a\":1,\"__proto__\":{\"a\":\"inherited\"}}") λp →
             String.fromInt p.a
-        , Show.result (Schema.parse plain "{\"__proto__\":{\"a\":1}}") λp -> String.fromInt p.a
+        , Show.result (Schema.parse plain "{\"__proto__\":{\"a\":1}}") λp → String.fromInt p.a
         ]
 
 

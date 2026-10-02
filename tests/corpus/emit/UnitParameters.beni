@@ -10,23 +10,23 @@
 import Node exposing (Program)
 
 
-pub thunk : () -> Int
+pub thunk : () → Int
 thunk () = 42
 
 
-pub later : Int, () -> Int
+pub later : Int, () → Int
 later n () = n + 1
 
 
-pub first : (), Int -> Int
+pub first : (), Int → Int
 first () n = n
 
 
-pub lambda : () -> (() -> Int)
-lambda () = λ() -> 7
+pub lambda : () → (() → Int)
+lambda () = λ() → 7
 
 
-pub calls : Int -> Int
+pub calls : Int → Int
 calls n =
     f = lambda ()
     thunk () + later n () + first () n + f ()

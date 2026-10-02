@@ -33,7 +33,7 @@ pub countAgain : CountAgain
 countAgain = 2
 
 
-pub asCount : Int -> Count
+pub asCount : Int → Count
 asCount n = n
 
 

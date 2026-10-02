@@ -2,26 +2,26 @@
 -- bindings before the bind stay an ordinary `let` whose body is the call,
 -- the bindings after it and the `in` body become the callback's body, and a
 -- `let` whose only binding is a bind produces no `let` at all.
-only : Int -> Int
+only : Int → Int
 only n =
-    x <- withScope n
+    x ← withScope n
     x
 
 
-around : Int -> Int
+around : Int → Int
 around n =
     before = n + 1
-    x <- withScope before
+    x ← withScope before
     after = x * 2
     after
 
 
-several : Int -> Int
+several : Int → Int
 several n =
-    x <- withScope n
-    y <- withScope x
+    x ← withScope n
+    y ← withScope x
     x + y
 
 
-withScope : Int, (Int -> Int) -> Int
+withScope : Int, (Int → Int) → Int
 withScope n body = body n

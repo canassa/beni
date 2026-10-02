@@ -17,22 +17,22 @@ type Point
     = Point Int Int
 
 
-add : Int, Int -> Int
+add : Int, Int → Int
 add a b = a + b
 
 
-sum3 : Int, Int, Int -> Int
+sum3 : Int, Int, Int → Int
 sum3 a b c = a + b + c
 
 
-area : Point -> Int
+area : Point → Int
 area p =
     case p of
-        Point x y ->
+        Point x y →
             x * y
 
 
-callWith : (Int, Int -> Int), Int, Int -> Int
+callWith : (Int, Int → Int), Int, Int → Int
 callWith f a b = f a b
 
 
@@ -43,7 +43,7 @@ main =
         , String.fromInt (sum3 1 2 3)
         , String.fromInt (area (Point 6 7))
         , String.fromInt (callWith add 20 22)
-        , String.fromInt (callWith (λa b -> a * b) 6 7)
+        , String.fromInt (callWith (λa b → a * b) 6 7)
         , String.fromInt (List.foldl [ 1, 2, 3, 4 ] 0 add)
         , String.join (List.map (List.map [ 1, 2, 3 ] (add 10 _)) String.fromInt) ","
         , String.fromInt (String.length (String.append "ab" "cde"))

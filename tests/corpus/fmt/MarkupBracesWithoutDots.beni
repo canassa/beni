@@ -6,4 +6,4 @@ view x =
 
 
 form x =
-    <For each{x.rows}>{λr -> <li>{r}</li>}</For>
+    <For each{x.rows}>{λr → <li>{r}</li>}</For>

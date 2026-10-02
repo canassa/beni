@@ -1,11 +1,11 @@
 -- check/bad: `Int`, `Float`, `Char` and `String` have infinitely many
 -- values, so no set of literal branches is ever exhaustive: a wildcard or a
 -- variable is required (checker.md §6.6).
-pub name : Int -> String
+pub name : Int → String
 name n =
     case n of
-        1 ->
+        1 →
             "one"
 
-        2 ->
+        2 →
             "two"

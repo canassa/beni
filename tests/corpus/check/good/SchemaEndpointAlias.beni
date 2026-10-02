@@ -43,41 +43,41 @@ type W
     = W RecW
 
 
-same : RW, RW -> Bool
+same : RW, RW → Bool
 same p q = p == q
 
 
-less : RE, RE -> Bool
+less : RE, RE → Bool
 less p q = p < q
 
 
-method : RW, RW -> Bool
+method : RW, RW → Bool
 method p q = Basics.eq p q
 
 
-records : RecW, RecW -> Bool
+records : RecW, RecW → Bool
 records p q = p == q
 
 
-sorted : RL -> RL
+sorted : RL → RL
 sorted xs = List.sort xs
 
 
-fields : Both, Both -> Bool
+fields : Both, Both → Bool
 fields p q = p == q
 
 
-wrapped : H, H -> Bool
+wrapped : H, H → Bool
 wrapped p q = p < q
 
 
-wrappedRecord : W, W -> Bool
+wrappedRecord : W, W → Bool
 wrappedRecord p q = p == q
 
 
-field : RecW -> Int
+field : RecW → Int
 field r = r.x
 
 
-direct : R.Type -> RW
+direct : R.Type → RW
 direct r = r

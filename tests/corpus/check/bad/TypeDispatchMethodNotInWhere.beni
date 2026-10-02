@@ -6,6 +6,6 @@
 -- is not `missing_where_constraint` (there is no receiver value whose type
 -- went looking for a method) — it is the dispatch asking for a constraint
 -- the clause does not carry, and the message names the one to add.
-pub decode : String -> Result String a
-    where a.describe : a -> String
+pub decode : String → Result String a
+    where a.describe : a → String
 decode s = a.decode s

@@ -8,13 +8,13 @@
 import Models
 
 
-field : Models.PrivRecW -> Int
+field : Models.PrivRecW → Int
 field r = r.z
 
 
-bump : Models.PrivRecW -> Int
+bump : Models.PrivRecW → Int
 bump r = r + 1
 
 
-use : Int -> Int
+use : Int → Int
 use n = field (Models.mk n)

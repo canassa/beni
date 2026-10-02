@@ -6,88 +6,88 @@
 pub foreign type Array a
 
 
-pub foreign pure length : Array a -> Int
+pub foreign pure length : Array a → Int
 
 
-pub foreign pure unsafeGet : Array a, Int -> a
+pub foreign pure unsafeGet : Array a, Int → a
 
 
-pub foreign pure set : Array a, Int, a -> Array a
+pub foreign pure set : Array a, Int, a → Array a
 
 
-pub foreign pure push : Array a, a -> Array a
+pub foreign pure push : Array a, a → Array a
 
 
-pub foreign pure pop : Array a -> Array a
+pub foreign pure pop : Array a → Array a
 
 
-pub foreign pure slice : Array a, Int, Int -> Array a
+pub foreign pure slice : Array a, Int, Int → Array a
 
 
-pub foreign pure append : Array a, Array a -> Array a
+pub foreign pure append : Array a, Array a → Array a
 
 
-pub foreign pure fromList : List a -> Array a
+pub foreign pure fromList : List a → Array a
 
 
-pub foreign pure toList : Array a -> List a
+pub foreign pure toList : Array a → List a
 
 
-pub foreign pure sortWith : Array a, (a, a -> Order) -> Array a
+pub foreign pure sortWith : Array a, (a, a → Order) → Array a
 
 
-pub foreign pure fromJs : Array a -> Array a
+pub foreign pure fromJs : Array a → Array a
 
 
-pub foreign pure toJs : Array a -> Array a
+pub foreign pure toJs : Array a → Array a
 
 
-pub foreign pure chunks : Array a -> Array (Array a)
+pub foreign pure chunks : Array a → Array (Array a)
 
 
 pub empty : Array a
 empty = fromList []
 
 
-pub isEmpty : Array a -> Bool
+pub isEmpty : Array a → Bool
 isEmpty arr = length arr == 0
 
 
-pub get : Array a, Int -> Maybe a
+pub get : Array a, Int → Maybe a
 get arr i =
-    if 0 <= i && i < length arr then
+    if 0 ≤ i && i < length arr then
         Just (unsafeGet arr i)
     else
         Nothing
 
 
-pub update : Array a, Int, (a -> a) -> Array a
+pub update : Array a, Int, (a → a) → Array a
 update arr i func =
     case get arr i of
-        Just x ->
+        Just x →
             set arr i (func x)
 
-        Nothing ->
+        Nothing →
             arr
 
 
-pub foldl : Array a, b, (a, b -> b) -> b
+pub foldl : Array a, b, (a, b → b) → b
 foldl arr acc func = foldlHelp arr 0 (length arr) acc func
 
 
-foldlHelp : Array a, Int, Int, b, (a, b -> b) -> b
+foldlHelp : Array a, Int, Int, b, (a, b → b) → b
 foldlHelp arr i n acc func =
-    if i >= n then
+    if i ≥ n then
         acc
     else
         foldlHelp arr (i + 1) n (func (unsafeGet arr i) acc) func
 
 
-pub foldr : Array a, b, (a, b -> b) -> b
+pub foldr : Array a, b, (a, b → b) → b
 foldr arr acc func = foldrHelp arr (length arr - 1) acc func
 
 
-foldrHelp : Array a, Int, b, (a, b -> b) -> b
+foldrHelp : Array a, Int, b, (a, b → b) → b
 foldrHelp arr i acc func =
     if i < 0 then
         acc
@@ -95,42 +95,42 @@ foldrHelp arr i acc func =
         foldrHelp arr (i - 1) (func (unsafeGet arr i) acc) func
 
 
-pub initialize : Int, (Int -> a) -> Array a
+pub initialize : Int, (Int → a) → Array a
 initialize n func = fromList (initializeHelp (n - 1) [] func)
 
 
-initializeHelp : Int, List a, (Int -> a) -> List a
+initializeHelp : Int, List a, (Int → a) → List a
 initializeHelp i acc func =
     if i < 0 then
         acc
     else
-        initializeHelp (i - 1) [ func i, ...acc ] func
+        initializeHelp (i - 1) [ func i, …acc ] func
 
 
-pub repeat : a, Int -> Array a
+pub repeat : a, Int → Array a
 repeat value n = fromList (List.repeat value n)
 
 
-pub map : Array a, (a -> b) -> Array b
-map arr func = fromList (List.reverse (foldl arr [] λx acc -> [ func x, ...acc ]))
+pub map : Array a, (a → b) → Array b
+map arr func = fromList (List.reverse (foldl arr [] λx acc → [ func x, …acc ]))
 
 
-pub indexedMap : Array a, (Int, a -> b) -> Array b
+pub indexedMap : Array a, (Int, a → b) → Array b
 indexedMap arr func = fromList (List.reverse (indexedMapHelp arr 0 (length arr) [] func))
 
 
-indexedMapHelp : Array a, Int, Int, List b, (Int, a -> b) -> List b
+indexedMapHelp : Array a, Int, Int, List b, (Int, a → b) → List b
 indexedMapHelp arr i n acc func =
-    if i >= n then
+    if i ≥ n then
         acc
     else
-        indexedMapHelp arr (i + 1) n [ func i (unsafeGet arr i), ...acc ] func
+        indexedMapHelp arr (i + 1) n [ func i (unsafeGet arr i), …acc ] func
 
 
 --| Keeps the input's identity when every element is kept (report 38 §7).
-pub filter : Array a, (a -> Bool) -> Array a
+pub filter : Array a, (a → Bool) → Array a
 filter arr isGood =
-    kept = foldr arr [] λx acc -> if isGood x then [ x, ...acc ] else acc
+    kept = foldr arr [] λx acc → if isGood x then [ x, …acc ] else acc
 
     n = List.length kept
     if n == length arr then

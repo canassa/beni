@@ -4,4 +4,4 @@
 pub element "input" void
 
 
-pub markup text : String -> Int
+pub markup text : String → Int

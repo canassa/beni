@@ -48,12 +48,12 @@ pub foreign type Resume a
 --| by nothing else: `andThen value next` is `next value`. Calling it by hand
 --| is allowed and does exactly that — which is why it is `impure`: it calls
 --| `next` during the call, and `next` may be.
-pub foreign impure andThen : a, sync (a -> b) -> b
+pub foreign impure andThen : a, sync (a → b) → b
 
 
 --| Used by the code the compiler emits, and by nothing else: always `False`
 --| for any value a program can hold.
-pub foreign pure isWaiting : a -> Bool
+pub foreign pure isWaiting : a → Bool
 
 
 --| Wait for a platform's callback: the one way a fiber suspends. The
@@ -63,52 +63,52 @@ pub foreign pure isWaiting : a -> Bool
 --|
 --|     sleep ms =
 --|         Task.callback λresume -> startTimer ms resume
-pub foreign suspends callback : sync (Resume a -> (() -> ())) -> a
+pub foreign suspends callback : sync (Resume a → (() → ())) → a
 
 
 --| Start `work` in a new fiber, a child of the current one, and return at
 --| once. The child is cancelled when the current fiber ends.
-pub foreign impure spawn : (() -> a) -> Fiber a
+pub foreign impure spawn : (() → a) → Fiber a
 
 
 --| Wait for a fiber's value. If it was cancelled, the fiber that joins it is
 --| cancelled too.
-pub foreign suspends join : Fiber a -> a
+pub foreign suspends join : Fiber a → a
 
 
 --| Wait for a fiber to end, and say how.
-pub foreign suspends wait : Fiber a -> Exit a
+pub foreign suspends wait : Fiber a → Exit a
 
 
 --| Cancel a fiber and wait until its cleanup has run. Cancelling a fiber
 --| that has ended does nothing.
-pub foreign suspends cancel : Fiber a -> ()
+pub foreign suspends cancel : Fiber a → ()
 
 
 --| Let every other fiber that is ready run first.
-pub foreign suspends yieldNow : () -> ()
+pub foreign suspends yieldNow : () → ()
 
 
 --| Start `work` in a new fiber that belongs to `scope`.
-pub foreign impure spawnIn : Scope, (() -> a) -> Fiber a
+pub foreign impure spawnIn : Scope, (() → a) → Fiber a
 
 
 --| Whether a fiber is still running: `False` once it has ended, either
 --| way. A fiber that has been cancelled but is still running its cleanup
 --| is still running.
-pub foreign impure running : Fiber a -> Bool
+pub foreign impure running : Fiber a → Bool
 
 
 --| A scope that no function brackets, for a platform whose program
 --| outlives every call: a page program's commands and subscriptions run
 --| in one. `closeRoot` ends it; nothing else does.
-pub foreign impure openRoot : () -> Scope
+pub foreign impure openRoot : () → Scope
 
 
 --| Cancel every fiber of a scope `openRoot` made, without waiting for
 --| their cleanup, which runs as each is resumed. A fiber started in the
 --| scope afterwards is cancelled before it runs.
-pub foreign impure closeRoot : Scope -> ()
+pub foreign impure closeRoot : Scope → ()
 
 
 --| Work queued to run once, in no fiber, where a fiber started now would
@@ -125,11 +125,11 @@ pub foreign type Soon
 --| as a fiber's children do, and is cancelled when it returns. Nothing stops it: a fiber that has not started
 --| runs until it first suspends before anything can cancel it, and work
 --| that never suspends runs to its end.
-pub foreign impure soon : sync (() -> ()) -> Soon
+pub foreign impure soon : sync (() → ()) → Soon
 
 
 --| Whether queued work has not run yet.
-pub foreign impure queued : Soon -> Bool
+pub foreign impure queued : Soon → Bool
 
 
 --| What runs when a fiber throws: a defect, after which no program code runs
@@ -137,7 +137,7 @@ pub foreign impure queued : Soon -> Bool
 --| program — the browser stops the page — and the throw goes on to the
 --| host; then every fiber is cancelled and its cleanup run, as `shutdown`
 --| does (§9.8.14). The last one given is the one called.
-pub foreign impure onDefect : (() -> ()) -> ()
+pub foreign impure onDefect : (() → ()) → ()
 
 
 --| Stop every fiber: close every root scope, cancel every fiber and run its
@@ -147,30 +147,30 @@ pub foreign impure onDefect : (() -> ()) -> ()
 --| platform calls when its program stops (`boundary.md` §9.8.14); a
 --| program never does. It returns at once — the cleanup runs in a later
 --| task — and a second call does nothing.
-pub foreign impure shutdown : Int, sync (Int -> ()) -> ()
+pub foreign impure shutdown : Int, sync (Int → ()) → ()
 
 
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
 --| platform's entry point uses; a program asks its platform instead.
-pub foreign impure start : (() -> a), sync (Exit a -> ()) -> ()
+pub foreign impure start : (() → a), sync (Exit a → ()) → ()
 
 
-foreign impure openScope : () -> Scope
+foreign impure openScope : () → Scope
 
 
-foreign suspends closeScope : Scope, a -> a
+foreign suspends closeScope : Scope, a → a
 
 
-foreign impure mask : () -> ()
+foreign impure mask : () → ()
 
 
-foreign impure unmask : a -> a
+foreign impure unmask : a → a
 
 
-foreign impure pushFinalizer : r, (() -> ()) -> r
+foreign impure pushFinalizer : r, (() → ()) → r
 
 
-foreign impure popFinalizer : a -> a
+foreign impure popFinalizer : a → a
 
 
 --| Run `body` with a scope, and when it returns, cancel every fiber it
@@ -180,7 +180,7 @@ foreign impure popFinalizer : a -> a
 --|         x = Task.spawnIn s a
 --|         y = Task.spawnIn s b
 --|         ( Task.join x, Task.join y )
-pub scope : (Scope -> a) -> a
+pub scope : (Scope → a) → a
 scope body =
     s = openScope ()
     closeScope s (body s)
@@ -188,7 +188,7 @@ scope body =
 
 --| Run `work` where cancellation cannot reach it. A cancellation that
 --| arrives meanwhile is delivered at the fiber's next suspension after it.
-pub uninterruptible : (() -> a) -> a
+pub uninterruptible : (() → a) → a
 uninterruptible work = unmask (work (mask ()))
 
 
@@ -197,12 +197,12 @@ uninterruptible work = unmask (work (mask ()))
 --| during the use. Acquire and release cannot be interrupted.
 --|
 --|     Task.bracket (λ() -> open path) (λfile _ -> close file) λfile -> read file
-pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a
+pub bracket : (() → r), (r, Exit a → ()), (r → a) → a
 bracket acquire release use =
     resource = uninterruptible acquire
-    result = use (pushFinalizer resource λ() -> release resource Cancelled)
-    uninterruptible λ() -> after (release resource (Done (popFinalizer result))) result
+    result = use (pushFinalizer resource λ() → release resource Cancelled)
+    uninterruptible λ() → after (release resource (Done (popFinalizer result))) result
 
 
-after : (), a -> a
+after : (), a → a
 after _ value = value

@@ -19,20 +19,20 @@ type alias Model =
     bad : Bool
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Bad ->
+        Bad →
             { model | bad = True }
 
-        Fix ->
+        Fix →
             { model | bad = False }
 
-        Inc ->
+        Inc →
             { model | count = model.count + 1 }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     _ =
         if model.bad then

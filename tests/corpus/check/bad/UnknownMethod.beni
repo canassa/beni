@@ -6,5 +6,5 @@ pub type Shape
     = Circle Float
 
 
-pub area : Shape -> Float
+pub area : Shape → Float
 area s = s.volume 2

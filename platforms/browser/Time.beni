@@ -17,17 +17,17 @@ pub type Duration
 
 
 --| `n` milliseconds.
-pub millis : Int -> Duration
+pub millis : Int → Duration
 millis n = Duration n
 
 
 --| `n` seconds.
-pub seconds : Int -> Duration
+pub seconds : Int → Duration
 seconds n = Duration (n * 1000)
 
 
 --| How many milliseconds.
-pub inMillis : Duration -> Int
+pub inMillis : Duration → Int
 inMillis (Duration n) = n
 
 
@@ -37,32 +37,32 @@ pub type Posix
 
 
 --| The milliseconds since the Unix epoch.
-pub toMillis : Posix -> Int
+pub toMillis : Posix → Int
 toMillis (Posix n) = n
 
 
 --| The moment from the milliseconds since the Unix epoch.
-pub fromMillis : Int -> Posix
+pub fromMillis : Int → Posix
 fromMillis n = Posix n
 
 
 --| What the clock says now.
-pub now : () -> Posix
+pub now : () → Posix
 now () = Posix (Js.to (Js.call (Js.global "Date") "now" []))
 
 
 --| Wait for `duration`. Only the calling fiber waits.
-pub sleep : Duration -> ()
-sleep (Duration ms) = Task.callback λresume -> startTimer ms resume
+pub sleep : Duration → ()
+sleep (Duration ms) = Task.callback λresume → startTimer ms resume
 
 
 -- One timer, which resumes the waiting fiber, and what clears it.
-startTimer : Int, Resume () -> (() -> ())
+startTimer : Int, Resume () → (() → ())
 startTimer ms resume =
     timer =
         Js.apply (Js.global "setTimeout")
-            [ Js.from λ() -> Js.to (Js.apply (Js.from resume) [ Js.null ]), Js.from ms ]
-    λ() -> Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
+            [ Js.from λ() → Js.to (Js.apply (Js.from resume) [ Js.null ]), Js.from ms ]
+    λ() → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
 
 
 type Key
@@ -72,11 +72,11 @@ type Key
 --| A message every `interval`, carrying the moment it fired. Every
 --| declaration of one interval shares one timer, and each receives each
 --| tick through its own tagger.
-pub every : Duration, (Posix -> msg) -> Sub msg
+pub every : Duration, (Posix → msg) → Sub msg
 every (Duration ms) tag = Sub.listen (Every ms) (ticks ms _) tag
 
 
-ticks : Int, Browser.Send Posix -> ()
+ticks : Int, Browser.Send Posix → ()
 ticks ms emit =
     _ = sleep (Duration ms)
     _ = emit (now ())

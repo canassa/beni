@@ -2,9 +2,9 @@
 -- `name_removed` (checker-v2.md §29.2), naming `Int.rem` — not "`Basics`
 -- does not expose `remainderBy`", which would not say what replaced it.
 -- A pipeline into it is the same name.
-odd : Int -> Bool
-odd n = Basics.remainderBy n 2 /= 0
+odd : Int → Bool
+odd n = Basics.remainderBy n 2 ≠ 0
 
 
-wrap : Int -> Int
-wrap n = n |> Basics.modBy 7
+wrap : Int → Int
+wrap n = n ▷ Basics.modBy 7

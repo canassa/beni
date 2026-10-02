@@ -1,9 +1,9 @@
 pub type Keyed
-    = Keyed Int (Int -> Int)
+    = Keyed Int (Int → Int)
 
 
-pub key : Keyed, () -> Int
+pub key : Keyed, () → Int
 key value () =
     case value of
-        Keyed number _ ->
+        Keyed number _ →
             number

@@ -33,8 +33,8 @@ third : Int
 third = 10
 
 
-deferred : () -> Int
-deferred = λ_ -> scale * 3
+deferred : () → Int
+deferred = λ_ → scale * 3
 
 
 scale : Int
@@ -45,11 +45,11 @@ offset : Int
 offset = 100
 
 
-shift : Int -> Int
+shift : Int → Int
 shift n = n + offset
 
 
-isEven : Int -> Bool
+isEven : Int → Bool
 isEven n =
     if n == 0 then
         True
@@ -57,7 +57,7 @@ isEven n =
         isOdd (n - 1)
 
 
-isOdd : Int -> Bool
+isOdd : Int → Bool
 isOdd n =
     if n == 0 then
         False

@@ -10,11 +10,11 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder a, Holder a -> Bool
-    where a.key : a, () -> Int
+pub eq : Holder a, Holder a → Bool
+    where a.key : a, () → Int
 eq left right =
     case left of
-        Holder l ->
+        Holder l →
             case right of
-                Holder r ->
+                Holder r →
                     l.key () == r.key ()

@@ -13,7 +13,7 @@ type Msg
     = Inc
 
 
-view : Int -> Tea.Document Msg
+view : Int → Tea.Document Msg
 view n =
     { title = "Even ${String.fromInt (n // 2 * 2)}"
     , body = <button id="inc" onClick={Inc}>count {n}</button>
@@ -24,7 +24,7 @@ main : Tea.Program
 main =
     Tea.document
         { init = ( 0, Cmd.none )
-        , update = λInc n -> ( n + 1, Cmd.none )
+        , update = λInc n → ( n + 1, Cmd.none )
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

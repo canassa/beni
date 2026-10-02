@@ -2,4 +2,4 @@
 -- §12.9 *width*), so `λ`, two bytes, is one column, and this line — 100
 -- columns, 101 bytes — fits and stays on one line.
 isInfinite x =
-    run (λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity")) xxx
+    run (λ() → Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity")) xxx

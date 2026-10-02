@@ -16,35 +16,35 @@ type alias Row =
     label : String
 
 
-viewRow : Row -> Html msg
+viewRow : Row → Html msg
 viewRow row = <li>{row.label}</li>
 
 
-viewCell : String, Row -> Html msg
+viewCell : String, Row → Html msg
 viewCell prefix row = <li>{prefix}{row.id}</li>
 
 
-viewAt : String, Int -> Html msg
+viewAt : String, Int → Html msg
 viewAt name position = <li>{position}:{name}</li>
 
 
-view : String, List Row, List String -> Html msg
+view : String, List Row, List String → Html msg
 view prefix rows names =
     <div>
         <ul>
             <For each={rows} keyed={.id} fallback={<li>none</li>}>
-                {λ{ id, label } ->
+                {λ{ id, label } →
                     text = String.toUpper label
                     <li id="row-${String.fromInt id}">{text}</li>
                 }
             </For>
         </ul>
         <ol>
-            <For each={names} keyed={False}>{λname position -> <li>{position} {name}</li>}</For>
+            <For each={names} keyed={False}>{λname position → <li>{position} {name}</li>}</For>
         </ol>
         <ol>
             <For each={rows} keyed>
-                {λrow -> if row.id > 1 then <b>{row.label}</b> else <i>{row.label}</i>}
+                {λrow → if row.id > 1 then <b>{row.label}</b> else <i>{row.label}</i>}
             </For>
         </ol>
         <ul><For each={rows} keyed={.id}>{viewRow}</For></ul>

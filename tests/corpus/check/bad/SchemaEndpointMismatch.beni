@@ -3,7 +3,7 @@ schema Message tagged "kind" of
         value : Int
 
 
-accept : Message.Type -> Message.Type
+accept : Message.Type → Message.Type
 accept message = message
 
 

@@ -7,7 +7,7 @@
 -- `answered`, an alias whose chain ends in a failed wanted. Elaboration
 -- (P6) follows the chain to its end and treats it as failed: the module
 -- has its message, so no evidence is written and no `internal` is added.
-apply : (Int -> Int) -> Int
+apply : (Int → Int) → Int
 apply f = f 1
 
 

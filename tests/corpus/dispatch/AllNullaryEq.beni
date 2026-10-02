@@ -11,9 +11,9 @@ pub type Colour
     | Blue
 
 
-pub sameColour : Colour, Colour -> Bool
+pub sameColour : Colour, Colour → Bool
 sameColour a b = a == b
 
 
-pub before : Colour, Colour -> Bool
+pub before : Colour, Colour → Bool
 before a b = a < b

@@ -25,10 +25,10 @@ viaRecord x y =
     ( cx || cy, { t = Trip.Trip x y one 5 } == { t = Trip.Trip x y one 6 } )
 
 
-show : ( Bool, Bool ) -> String
+show : Bool × Bool → String
 show pair =
     case pair of
-        ( a, b ) ->
+        ( a, b ) →
             (if a then
                 "True"
              else

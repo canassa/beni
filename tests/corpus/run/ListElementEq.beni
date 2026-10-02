@@ -32,16 +32,16 @@ pub type Id
 
 
 -- Two ids are the same when their MAJOR numbers are.
-pub eq : Id, Id -> Bool
+pub eq : Id, Id → Bool
 eq a b =
     case a of
-        Id majorA _ ->
+        Id majorA _ →
             case b of
-                Id majorB _ ->
+                Id majorB _ →
                     majorA == majorB
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -63,5 +63,5 @@ main =
         , show ([ [ 1 ], [ 2, 3 ] ] == [ [ 1 ], [ 2, 4 ] ])
         , show ([ Just (Id 1 2), Nothing ] == [ Just (Id 1 99), Nothing ])
         , show ([ Just (Id 1 2) ] == [ Nothing ])
-        , show ([ "a", "b" ] /= [ "a", "b" ])
+        , show ([ "a", "b" ] ≠ [ "a", "b" ])
         ]

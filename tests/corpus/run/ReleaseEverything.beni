@@ -52,108 +52,108 @@ pub type Op
     | Pow
 
 
-pub tokenize : String -> Result String (List Token)
+pub tokenize : String → Result String (List Token)
 tokenize input = tokenizeChars (String.toList input) []
 
 
-tokenizeChars : List Char, List Token -> Result String (List Token)
+tokenizeChars : List Char, List Token → Result String (List Token)
 tokenizeChars chars acc =
     case chars of
-        [] ->
+        [] →
             Ok (List.reverse acc)
 
-        [ ' ', ...rest ] ->
+        [ ' ', …rest ] →
             tokenizeChars rest acc
 
-        [ '\n', ...rest ] ->
+        [ '\n', …rest ] →
             tokenizeChars rest acc
 
-        [ '+', ...rest ] ->
-            tokenizeChars rest [ TPlus, ...acc ]
+        [ '+', …rest ] →
+            tokenizeChars rest [ TPlus, …acc ]
 
-        [ '-', ...rest ] ->
-            tokenizeChars rest [ TMinus, ...acc ]
+        [ '-', …rest ] →
+            tokenizeChars rest [ TMinus, …acc ]
 
-        [ '*', ...rest ] ->
-            tokenizeChars rest [ TStar, ...acc ]
+        [ '*', …rest ] →
+            tokenizeChars rest [ TStar, …acc ]
 
-        [ '/', ...rest ] ->
-            tokenizeChars rest [ TSlash, ...acc ]
+        [ '/', …rest ] →
+            tokenizeChars rest [ TSlash, …acc ]
 
-        [ '^', ...rest ] ->
-            tokenizeChars rest [ TCaret, ...acc ]
+        [ '^', …rest ] →
+            tokenizeChars rest [ TCaret, …acc ]
 
-        [ '(', ...rest ] ->
-            tokenizeChars rest [ TLParen, ...acc ]
+        [ '(', …rest ] →
+            tokenizeChars rest [ TLParen, …acc ]
 
-        [ ')', ...rest ] ->
-            tokenizeChars rest [ TRParen, ...acc ]
+        [ ')', …rest ] →
+            tokenizeChars rest [ TRParen, …acc ]
 
-        [ ',', ...rest ] ->
-            tokenizeChars rest [ TComma, ...acc ]
+        [ ',', …rest ] →
+            tokenizeChars rest [ TComma, …acc ]
 
-        [ c, ...rest ] ->
+        [ c, …rest ] →
             if Char.isDigit c then
                 ( digits, remaining ) = span isNumberChar chars
 
                 text = String.fromList digits
                 case String.toFloat text of
-                    Just n ->
-                        tokenizeChars remaining [ TNumber n, ...acc ]
+                    Just n →
+                        tokenizeChars remaining [ TNumber n, …acc ]
 
-                    Nothing ->
+                    Nothing →
                         Err "bad number: ${text}"
             else if Char.isAlpha c then
                 ( letters, remaining ) = span Char.isAlphaNum chars
-                tokenizeChars remaining [ TIdent (String.fromList letters), ...acc ]
+                tokenizeChars remaining [ TIdent (String.fromList letters), …acc ]
             else
                 Err "unexpected character: ${c}"
 
 
-isNumberChar : Char -> Bool
+isNumberChar : Char → Bool
 isNumberChar c = Char.isDigit c || c == '.'
 
 
-span : (a -> Bool), List a -> ( List a, List a )
+span : (a → Bool), List a → List a × List a
 span predicate items =
     go taken remaining =
         case remaining of
-            [ x, ...rest ] ->
+            [ x, …rest ] →
                 if predicate x then
-                    go [ x, ...taken ] rest
+                    go [ x, …taken ] rest
                 else
                     ( List.reverse taken, remaining )
 
-            [] ->
+            [] →
                 ( List.reverse taken, [] )
     go [] items
 
 
-pub parse : String -> Result String Expr
+pub parse : String → Result String Expr
 parse input =
     tokens = tokenize input?
 
     ( expr, rest ) = parseExpr 0 tokens?
     case rest of
-        [] ->
+        [] →
             Ok expr
 
-        [ token, ..._ ] ->
+        [ token, …_ ] →
             Err "unexpected ${describeToken token} after expression"
 
 
-parseExpr : Int, List Token -> Result String ( Expr, List Token )
+parseExpr : Int, List Token → Result String (Expr × List Token)
 parseExpr minPrec tokens =
     ( left, rest ) = parseUnary tokens?
     climb minPrec left rest
 
 
-climb : Int, Expr, List Token -> Result String ( Expr, List Token )
+climb : Int, Expr, List Token → Result String (Expr × List Token)
 climb minPrec left tokens =
     case tokens of
-        [ token, ...rest ] ->
+        [ token, …rest ] →
             case binaryOp token of
-                Just ( op, prec, rightAssoc ) ->
+                Just ( op, prec, rightAssoc ) →
                     if prec < minPrec then
                         Ok ( left, tokens )
                     else
@@ -166,270 +166,270 @@ climb minPrec left tokens =
                         ( right, remaining ) = parseExpr nextMin rest?
                         climb minPrec (Binary op left right) remaining
 
-                Nothing ->
+                Nothing →
                     Ok ( left, tokens )
 
-        [] ->
+        [] →
             Ok ( left, [] )
 
 
-binaryOp : Token -> Maybe ( Op, Int, Bool )
+binaryOp : Token → Maybe (Op × Int × Bool)
 binaryOp token =
     case token of
-        TPlus ->
+        TPlus →
             Just ( Add, 1, False )
 
-        TMinus ->
+        TMinus →
             Just ( Sub, 1, False )
 
-        TStar ->
+        TStar →
             Just ( Mul, 2, False )
 
-        TSlash ->
+        TSlash →
             Just ( Div, 2, False )
 
-        TCaret ->
+        TCaret →
             Just ( Pow, 3, True )
 
-        _ ->
+        _ →
             Nothing
 
 
-parseUnary : List Token -> Result String ( Expr, List Token )
+parseUnary : List Token → Result String (Expr × List Token)
 parseUnary tokens =
     case tokens of
-        [ TMinus, ...rest ] ->
+        [ TMinus, …rest ] →
             ( operand, remaining ) = parseUnary rest?
             Ok ( Neg operand, remaining )
 
-        _ ->
+        _ →
             parseAtom tokens
 
 
-parseAtom : List Token -> Result String ( Expr, List Token )
+parseAtom : List Token → Result String (Expr × List Token)
 parseAtom tokens =
     case tokens of
-        [ TNumber n, ...rest ] ->
+        [ TNumber n, …rest ] →
             Ok ( Number n, rest )
 
-        [ TIdent name, TLParen, ...rest ] ->
+        [ TIdent name, TLParen, …rest ] →
             ( args, remaining ) = parseArgs rest []?
             Ok ( Call name args, remaining )
 
-        [ TIdent name, ...rest ] ->
+        [ TIdent name, …rest ] →
             Ok ( Var name, rest )
 
-        [ TLParen, ...rest ] ->
+        [ TLParen, …rest ] →
             ( inner, remaining ) = parseExpr 0 rest?
             case remaining of
-                [ TRParen, ...afterParen ] ->
+                [ TRParen, …afterParen ] →
                     Ok ( inner, afterParen )
 
-                _ ->
+                _ →
                     Err "expected closing parenthesis"
 
-        [ token, ..._ ] ->
+        [ token, …_ ] →
             Err "unexpected ${describeToken token}"
 
-        [] ->
+        [] →
             Err "unexpected end of input"
 
 
-parseArgs : List Token, List Expr -> Result String ( List Expr, List Token )
+parseArgs : List Token, List Expr → Result String (List Expr × List Token)
 parseArgs tokens acc =
     case tokens of
-        [ TRParen, ...rest ] ->
+        [ TRParen, …rest ] →
             Ok ( List.reverse acc, rest )
 
-        _ ->
+        _ →
             ( arg, remaining ) = parseExpr 0 tokens?
             case remaining of
-                [ TComma, ...afterComma ] ->
-                    parseArgs afterComma [ arg, ...acc ]
+                [ TComma, …afterComma ] →
+                    parseArgs afterComma [ arg, …acc ]
 
-                [ TRParen, ...afterParen ] ->
-                    Ok ( List.reverse [ arg, ...acc ], afterParen )
+                [ TRParen, …afterParen ] →
+                    Ok ( List.reverse [ arg, …acc ], afterParen )
 
-                _ ->
+                _ →
                     Err "expected `,` or `)` in argument list"
 
 
-describeToken : Token -> String
+describeToken : Token → String
 describeToken token =
     case token of
-        TNumber n ->
+        TNumber n →
             "number ${n}"
 
-        TIdent name ->
+        TIdent name →
             "identifier ${name}"
 
-        TPlus ->
+        TPlus →
             "`+`"
 
-        TMinus ->
+        TMinus →
             "`-`"
 
-        TStar ->
+        TStar →
             "`*`"
 
-        TSlash ->
+        TSlash →
             "`/`"
 
-        TCaret ->
+        TCaret →
             "`^`"
 
-        TLParen ->
+        TLParen →
             "`(`"
 
-        TRParen ->
+        TRParen →
             "`)`"
 
-        TComma ->
+        TComma →
             "`,`"
 
 
-pub eval : Dict String Float, Expr -> Result String Float
+pub eval : Dict String Float, Expr → Result String Float
 eval env expr =
     case expr of
-        Number n ->
+        Number n →
             Ok n
 
-        Var name ->
-            Dict.get env name |> Result.fromMaybe "unknown variable ${name}"
+        Var name →
+            Dict.get env name ▷ Result.fromMaybe "unknown variable ${name}"
 
-        Neg inner ->
+        Neg inner →
             Ok (negate (eval env inner?))
 
-        Binary op left right ->
+        Binary op left right →
             l = eval env left?
 
             r = eval env right?
             case op of
-                Add ->
+                Add →
                     Ok (l + r)
 
-                Sub ->
+                Sub →
                     Ok (l - r)
 
-                Mul ->
+                Mul →
                     Ok (l * r)
 
-                Div ->
+                Div →
                     if r == 0 then
                         Err "division by zero"
                     else
                         Ok (l / r)
 
-                Pow ->
+                Pow →
                     Ok (l ^ r)
 
-        Call name args ->
+        Call name args →
             values = evalAll env args?
             callFunction name values
 
 
-evalAll : Dict String Float, List Expr -> Result String (List Float)
+evalAll : Dict String Float, List Expr → Result String (List Float)
 evalAll env exprs =
     case exprs of
-        [] ->
+        [] →
             Ok []
 
-        [ first, ...rest ] ->
-            Ok [ eval env first?, ...evalAll env rest? ]
+        [ first, …rest ] →
+            Ok [ eval env first?, …evalAll env rest? ]
 
 
-callFunction : String, List Float -> Result String Float
+callFunction : String, List Float → Result String Float
 callFunction name args =
     case ( name, args ) of
-        ( "sqrt", [ x ] ) ->
+        ( "sqrt", [ x ] ) →
             Ok (sqrt x)
 
-        ( "abs", [ x ] ) ->
+        ( "abs", [ x ] ) →
             Ok (abs x)
 
-        ( "max", [ a, b ] ) ->
+        ( "max", [ a, b ] ) →
             Ok (max a b)
 
-        ( "min", [ a, b ] ) ->
+        ( "min", [ a, b ] ) →
             Ok (min a b)
 
-        ( "sum", xs ) ->
+        ( "sum", xs ) →
             Ok (List.sum xs)
 
-        ( _, _ ) ->
+        ( _, _ ) →
             Err "unknown function ${name} with ${List.length args} arguments"
 
 
-pub print : Expr -> String
+pub print : Expr → String
 print expr =
     case expr of
-        Number n ->
+        Number n →
             String.fromFloat n
 
-        Var name ->
+        Var name →
             name
 
-        Neg inner ->
+        Neg inner →
             "-${printAtom inner}"
 
-        Binary op left right ->
+        Binary op left right →
             "${printAtom left} ${opSymbol op} ${printAtom right}"
 
-        Call name args ->
+        Call name args →
             name ++ "(" ++ String.join (List.map args print) ", " ++ ")"
 
 
-printAtom : Expr -> String
+printAtom : Expr → String
 printAtom expr =
     case expr of
-        Binary _ _ _ ->
+        Binary _ _ _ →
             "(" ++ print expr ++ ")"
 
-        _ ->
+        _ →
             print expr
 
 
-opSymbol : Op -> String
+opSymbol : Op → String
 opSymbol op =
     case op of
-        Add ->
+        Add →
             "+"
 
-        Sub ->
+        Sub →
             "-"
 
-        Mul ->
+        Mul →
             "*"
 
-        Div ->
+        Div →
             "/"
 
-        Pow ->
+        Pow →
             "^"
 
 
-pub calculate : Dict String Float, String -> Result String Float
+pub calculate : Dict String Float, String → Result String Float
 calculate env input = eval env (parse input?)
 
 
-show : String -> String
+show : String → String
 show input =
     env = Dict.insert (Dict.insert Dict.empty "x" 3.0) "y" 4.0
     case calculate env input of
-        Ok value ->
+        Ok value →
             input ++ " = " ++ String.fromFloat value
 
-        Err message ->
+        Err message →
             input ++ " ! " ++ message
 
 
-reprint : String -> String
+reprint : String → String
 reprint input =
     case parse input of
-        Ok expr ->
+        Ok expr →
             print expr
 
-        Err message ->
+        Err message →
             "! " ++ message
 
 

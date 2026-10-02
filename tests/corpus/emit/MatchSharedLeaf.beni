@@ -23,30 +23,30 @@ type Flag
     | Off
 
 
-pub verdict : Int, Int, Flag -> String
+pub verdict : Int, Int, Flag → String
 verdict x y flag =
     case ( x, y, flag ) of
-        ( 0, b, On ) ->
+        ( 0, b, On ) →
             "on axis ${String.fromInt b}"
 
-        ( a, 0, Off ) ->
+        ( a, 0, Off ) →
             "off axis ${String.fromInt a}"
 
-        ( a, b, _ ) ->
+        ( a, b, _ ) →
             "sum ${String.fromInt (a + b)}"
 
 
-pub report : Int, Int, Flag -> String
+pub report : Int, Int, Flag → String
 report x y flag =
     String.append "> "
         (case ( x, y, flag ) of
-            ( 0, b, On ) ->
+            ( 0, b, On ) →
                 "on axis ${String.fromInt b}"
 
-            ( a, 0, Off ) ->
+            ( a, 0, Off ) →
                 "off axis ${String.fromInt a}"
 
-            ( a, b, _ ) ->
+            ( a, b, _ ) →
                 "sum ${String.fromInt (a + b)}"
         )
 

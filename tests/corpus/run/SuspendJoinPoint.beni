@@ -14,23 +14,23 @@ import Node exposing (Program)
 import Task
 
 
-slow : Int -> Int
+slow : Int → Int
 slow n =
     _ = Task.yieldNow ()
     n
 
 
-classify : Int -> String
+classify : Int → String
 classify n =
     label =
         case Int.mod n 3 of
-            0 ->
+            0 →
                 "zero " ++ String.fromInt (slow n)
 
-            1 ->
+            1 →
                 "one"
 
-            _ ->
+            _ →
                 "two " ++ String.fromInt (slow n + slow 1)
     size =
         if n > 4 then
@@ -40,13 +40,13 @@ classify n =
     label ++ " / " ++ String.fromInt size
 
 
-check : Int -> Bool
+check : Int → Bool
 check n =
     ok = n > 3 && Debug.log "right operand" (slow n) > 0
     ok
 
 
-loop : Int, Int -> Int
+loop : Int, Int → Int
 loop n acc =
     if n == 0 then
         acc
@@ -60,7 +60,7 @@ loop n acc =
 
 
 main : Program
-main = Io.run λ() ->
+main = Io.run λ() →
     Node.printLines
         [ classify 3
         , classify 4

@@ -21,44 +21,44 @@ import Node exposing (Program)
 import String
 
 
-summary : List Int -> String
+summary : List Int → String
 summary xs =
     String.fromInt (List.length xs)
         ++ ":"
-        ++ String.fromInt (List.foldl (List.indexedMap xs λi x -> (i + 1) * x) 0 (+))
+        ++ String.fromInt (List.foldl (List.indexedMap xs λi x → (i + 1) * x) 0 (+))
 
 
-tail : List Int -> List Int
+tail : List Int → List Int
 tail xs =
     case xs of
-        [ _, ...more ] ->
+        [ _, …more ] →
             more
 
-        [] ->
+        [] →
             []
 
 
-prependMany : List Int, Int, Int -> List Int
+prependMany : List Int, Int, Int → List Int
 prependMany xs from n =
-    if n <= 0 then
+    if n ≤ 0 then
         xs
     else
-        prependMany [ from, ...xs ] (from + 1) (n - 1)
+        prependMany [ from, …xs ] (from + 1) (n - 1)
 
 
-pushMany : List Int, Int, Int -> List Int
+pushMany : List Int, Int, Int → List Int
 pushMany xs from n =
-    if n <= 0 then
+    if n ≤ 0 then
         xs
     else
         pushMany (List.push xs from) (from + 1) (n - 1)
 
 
-both : String, List Int, List Int -> String
+both : String, List Int, List Int → String
 both label input result = label ++ " " ++ summary input ++ " -> " ++ summary result
 
 
-forms : List ( String, List Int )
+forms : List (String × List Int)
 forms =
     [ ( "plain 5", List.range 1 5 )
     , ( "plain 31", List.range 1 31 )
@@ -73,23 +73,23 @@ forms =
     ]
 
 
-prepends : ( String, List Int ) -> String
+prepends : String × List Int → String
 prepends ( label, xs ) =
-    one = [ 100, ...xs ]
+    one = [ 100, …xs ]
 
-    two = [ 200, 201, ...xs ]
+    two = [ 200, 201, …xs ]
     String.join
-        [ both label xs one, summary two, summary [ 300, ...one ], summary [ 400, ...one ] ]
+        [ both label xs one, summary two, summary [ 300, …one ], summary [ 400, …one ] ]
         " "
 
 
-appends : ( String, List Int ) -> String
+appends : String × List Int → String
 appends ( label, xs ) =
     String.join
-        [ both label xs [ ...xs, 7 ]
-        , summary [ ...xs, 8, 9 ]
-        , summary [ ...xs, ...List.range 50 80 ]
-        , summary [ ...xs, ...List.range 50 81 ]
+        [ both label xs [ …xs, 7 ]
+        , summary [ …xs, 8, 9 ]
+        , summary [ …xs, …List.range 50 80 ]
+        , summary [ …xs, …List.range 50 81 ]
         , summary (xs ++ [ 7 ])
         , summary (List.append xs (List.range 50 60))
         , summary xs
@@ -103,24 +103,24 @@ main =
 
     -- Two prepends onto one version, both kept: the second may not
     -- write the head slot the first claimed.
-    first = [ 1000, ...base ]
+    first = [ 1000, …base ]
 
-    second = [ 2000, ...base ]
+    second = [ 2000, …base ]
 
-    third = [ 3000, ...first ]
+    third = [ 3000, …first ]
 
     -- 32 prepends fill the head; the 33rd makes it a leaf.
     full = prependMany base 500 32
 
-    fuller = [ 999, ...full ]
+    fuller = [ 999, …full ]
 
     -- The runtime re-cons: the view's backing array holds 0 just
     -- before it, so `[ 0, ...v ]` is the wider list.
     v = tail (List.range 0 40)
 
-    again = [ 0, ...v ]
+    again = [ 0, …v ]
 
-    other = [ 5, ...v ]
+    other = [ 5, …v ]
     Node.printLines
         (List.map forms prepends
             ++ List.map forms appends

@@ -7,7 +7,7 @@ type alias Slots =
     { a : Html (), b : Html () }
 
 
-pub trailingSlotsAfterElement : Slots -> Html ()
+pub trailingSlotsAfterElement : Slots → Html ()
 trailingSlotsAfterElement s =
     <div>
         <span>static</span>
@@ -16,7 +16,7 @@ trailingSlotsAfterElement s =
     </div>
 
 
-pub trailingComponentAndSlot : Slots -> Html ()
+pub trailingComponentAndSlot : Slots → Html ()
 trailingComponentAndSlot s =
     <div>
         <span>static</span>
@@ -25,7 +25,7 @@ trailingComponentAndSlot s =
     </div>
 
 
-pub nestedParent : Slots -> Html ()
+pub nestedParent : Slots → Html ()
 nestedParent s =
     <div>
         <header>
@@ -36,7 +36,7 @@ nestedParent s =
     </div>
 
 
-pub slotsBeforeElement : Slots -> Html ()
+pub slotsBeforeElement : Slots → Html ()
 slotsBeforeElement s =
     <div>
         {s.a}
@@ -45,7 +45,7 @@ slotsBeforeElement s =
     </div>
 
 
-pub singleTrailingSlot : Slots -> Html ()
+pub singleTrailingSlot : Slots → Html ()
 singleTrailingSlot s =
     <div>
         <span>static</span>

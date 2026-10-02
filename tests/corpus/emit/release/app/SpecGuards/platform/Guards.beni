@@ -11,11 +11,11 @@ type alias V =
 
 -- A holder keeps the node it is given, and a marker whose parent stands
 -- in for the node when it has none.
-holder : V, V -> V
+holder : V, V → V
 holder n marker = Js.from { p = n, m = marker }
 
 
-parentOf : V -> V
+parentOf : V → V
 parentOf h =
     if Js.isNull (Js.get h "p") then
         Js.get (Js.get h "m") "parentNode"
@@ -27,7 +27,7 @@ parentOf h =
 -- `null` (the first test) nor `undefined` (the second reads a property of
 -- it), so every holder's `p` is never `null`: `parentOf` is its read, and
 -- nothing reads `m`.
-mount : V -> String
+mount : V → String
 mount root =
     _ =
         if Js.isNull root || not (Js.isUndefined (Js.get root "taken")) then
@@ -37,5 +37,5 @@ mount root =
     Js.to (Js.get (parentOf (holder root (Js.get (Js.global "globalThis") "probeMarker"))) "name")
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () = [ mount (Js.get (Js.global "globalThis") "probeRoot") ]

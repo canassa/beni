@@ -19,7 +19,7 @@
 --| The label comes first, as in Elm: it is short and the value is often
 --| long, so the label stays beside the word `log` when the call wraps an
 --| expression (`language.md` §12.4). As a statement, `Debug.log "done" ()`.
-pub foreign impure log : String, a -> a
+pub foreign impure log : String, a → a
 
 
 --| Say that some code is not done yet, with a message about what is missing.
@@ -28,7 +28,7 @@ pub foreign impure log : String, a -> a
 --|
 --|     view model =
 --|         Debug.todo "render the settings page"
-pub foreign impure todo : String -> a
+pub foreign impure todo : String → a
 
 
 --| Turn any value into a string for debugging.
@@ -37,4 +37,4 @@ pub foreign impure todo : String -> a
 --|
 --| The exact text is not a promise and will change. For output a user reads,
 --| write the conversion yourself.
-pub foreign pure toString : a -> String
+pub foreign pure toString : a → String

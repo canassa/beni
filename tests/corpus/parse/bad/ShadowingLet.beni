@@ -9,14 +9,14 @@ f x =
 g m =
     n = 2
     case m of
-        Just n ->
+        Just n →
             n
 
-        Nothing ->
+        Nothing →
             n
 
 
 ok =
-    ( λk -> k
-    , λk -> k
+    ( λk → k
+    , λk → k
     )

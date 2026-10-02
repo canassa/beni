@@ -12,7 +12,7 @@ type alias State =
     { id : String, color : String, name : String, content : String, visible : Bool }
 
 
-pub template3 : State -> Html msg
+pub template3 : State → Html msg
 template3 state =
     <div
         "foo"=""
@@ -28,7 +28,7 @@ template5 =
     <div class="a" className="b"></div>
 
 
-pub template6 : List ( String, String ) -> Html msg
+pub template6 : List (String × String) → Html msg
 template6 someStyle =
     <div style={someStyle} textContent="Hi" />
 
@@ -38,7 +38,7 @@ template13 =
     <input type="checkbox" checked={True} />
 
 
-pub template14 : State -> Html msg
+pub template14 : State → Html msg
 template14 state =
     <input type="checkbox" checked={state.visible} />
 
@@ -62,11 +62,11 @@ template17 =
     </button>
 
 
-pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } -> Html ()
+pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } → Html ()
 template20 r =
     <div>
-        <input value={r.s} min={r.min} max={r.max} onInput={λ_ -> ()} readonly />
-        <input checked={r.s2} min={r.min} max={r.max} onInput={λ_ -> ()} readonly={r.value} />
+        <input value={r.s} min={r.min} max={r.max} onInput={λ_ → ()} readonly />
+        <input checked={r.s2} min={r.min} max={r.max} onInput={λ_ → ()} readonly={r.value} />
     </div>
 
 
@@ -84,7 +84,7 @@ template30 =
     />
 
 
-pub template31 : String -> Html msg
+pub template31 : String → Html msg
 template31 color =
     <div style={[ ( "background-color", color ) ]} />
 
@@ -94,12 +94,12 @@ template39 =
     <input value={"10"} />
 
 
-pub template40 : String -> Html msg
+pub template40 : String → Html msg
 template40 a =
     <div style={[ ( "color", a ) ]} />
 
 
-pub template41 : { color : String, red : String, blue : String } -> Html msg
+pub template41 : { color : String, red : String, blue : String } → Html msg
 template41 state =
     <select value={state.color}>
         <option value={state.red}>Red</option>
@@ -192,12 +192,12 @@ template65 =
     <div style={[ ( "background", "red" ), ( "color", "green" ) ]} />
 
 
-pub template66 : String -> Html msg
+pub template66 : String → Html msg
 template66 signal =
     <div style={[ ( "background", "red" ), ( "color", "green" ), ( "border", signal ) ]} />
 
 
-pub template70 : Bool -> Html msg
+pub template70 : Bool → Html msg
 template70 value =
     <video playsinline={value} />
 
@@ -222,7 +222,7 @@ template74 =
     <div><video poster="1.jpg" /></div>
 
 
-pub template77 : { width : String, height : String } -> Html msg
+pub template77 : { width : String, height : String } → Html msg
 template77 props =
     <div style={[ ( "width", props.width ), ( "height", props.height ) ]} />
 
@@ -237,12 +237,12 @@ myVideo =
     <video src="test.mp4" muted />
 
 
-pub template94 : Bool -> Html msg
+pub template94 : Bool → Html msg
 template94 isActive =
     <div class={[ ( "todo", True ), ( "active", isActive ) ]} />
 
 
-pub template96 : Bool -> Html msg
+pub template96 : Bool → Html msg
 template96 isActive =
     <div class={[ ( "todo", True ), ( "item", True ), ( "active", isActive ) ]} />
 

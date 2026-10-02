@@ -15,17 +15,17 @@ type Box a
     = Box a
 
 
-pub h : K, () -> Box Int
+pub h : K, () → Box Int
 h (K m) u = Box m
 
 
-pub combine : Box a, z -> a
+pub combine : Box a, z → a
 combine (Box a) z = a
 
 
 pair n =
-    case (λy -> y.h ()) (K n) of
-        r ->
+    case (λy → y.h ()) (K n) of
+        r →
             q z = r.combine z
             ( q 1, q "s" )
 

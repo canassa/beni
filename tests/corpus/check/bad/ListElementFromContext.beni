@@ -9,7 +9,7 @@ xs : List String
 xs = [ 1, 2 ]
 
 
-shout : List String -> String
+shout : List String → String
 shout words = String.concat words
 
 

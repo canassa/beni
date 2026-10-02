@@ -7,11 +7,11 @@
 import Node exposing (Program)
 
 
-b : String, Int -> Int
+b : String, Int → Int
 b label v = Debug.log label v
 
 
-conj : Int -> Bool
+conj : Int → Bool
 conj k =
     (
         y1 = b "t1" k
@@ -1215,7 +1215,7 @@ conj k =
         )
 
 
-disj : Int -> Bool
+disj : Int → Bool
 disj k =
     (
         y1 = b "f1" k

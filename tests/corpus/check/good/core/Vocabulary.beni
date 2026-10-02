@@ -11,10 +11,10 @@ pub foreign type Html msg
 pub foreign type Event
 
 
-pub foreign pure targetValue : Event -> String
+pub foreign pure targetValue : Event → String
 
 
-pub markup map : Html a, (a -> b) -> Html b
+pub markup map : Html a, (a → b) → Html b
 
 
 pub element "input" void

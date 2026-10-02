@@ -18,10 +18,10 @@ cells = List.range 1 20000
 
 main : Program
 main =
-    ( big, small ) = List.partition cells λn -> n > 19000
+    ( big, small ) = List.partition cells λn → n > 19000
     Node.printLines
-        [ String.fromInt (List.foldl (List.map cells λn -> n * 2) 0 λx acc -> x + acc)
-        , String.fromInt (List.length (List.filter cells λn -> n > 19000))
-        , String.fromInt (List.length (List.filterMap cells λn -> Just n))
+        [ String.fromInt (List.foldl (List.map cells λn → n * 2) 0 λx acc → x + acc)
+        , String.fromInt (List.length (List.filter cells λn → n > 19000))
+        , String.fromInt (List.length (List.filterMap cells λn → Just n))
         , String.fromInt (List.length big + List.length small)
         ]

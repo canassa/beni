@@ -9,7 +9,7 @@ import Node
 import Probe
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "true"

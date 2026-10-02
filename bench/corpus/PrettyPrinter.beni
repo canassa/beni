@@ -19,7 +19,7 @@ pub empty : Doc
 empty = Empty
 
 
-pub text : String -> Doc
+pub text : String → Doc
 text = Text
 
 
@@ -31,43 +31,43 @@ pub softline : Doc
 softline = SoftLine
 
 
-pub nest : Int, Doc -> Doc
+pub nest : Int, Doc → Doc
 nest = Nest
 
 
-pub group : Doc -> Doc
+pub group : Doc → Doc
 group = Group
 
 
-pub append : Doc, Doc -> Doc
+pub append : Doc, Doc → Doc
 append = Concat
 
 
-pub concat : List Doc -> Doc
+pub concat : List Doc → Doc
 concat docs = List.foldr docs Empty Concat
 
 
-pub join : List Doc, Doc -> Doc
+pub join : List Doc, Doc → Doc
 join docs separator =
     case docs of
-        [] ->
+        [] →
             Empty
 
-        [ only ] ->
+        [ only ] →
             only
 
-        [ first, ...rest ] ->
+        [ first, …rest ] →
             Concat first (Concat separator (join rest separator))
 
 
-pub bracket : String, Doc, String -> Doc
+pub bracket : String, Doc, String → Doc
 bracket open inner close =
     Group
         (Concat (Text open) (Concat (Nest 4 (Concat SoftLine inner)) (Concat SoftLine (Text close)))
         )
 
 
-pub hang : Int, Doc -> Doc
+pub hang : Int, Doc → Doc
 hang indent doc = Group (Nest indent doc)
 
 
@@ -82,95 +82,95 @@ type alias Item =
     doc : Doc
 
 
-pub render : Int, Doc -> String
+pub render : Int, Doc → String
 render w doc =
     layout w 0 [ { indent = 0, mode = Break, doc = doc } ] []
-        |> List.reverse
-        |> String.concat
+        ▷ List.reverse
+        ▷ String.concat
 
 
-layout : Int, Int, List Item, List String -> List String
+layout : Int, Int, List Item, List String → List String
 layout w column items acc =
     case items of
-        [] ->
+        [] →
             acc
 
-        [ item, ...rest ] ->
+        [ item, …rest ] →
             case item.doc of
-                Empty ->
+                Empty →
                     layout w column rest acc
 
-                Text s ->
-                    layout w (column + String.length s) rest [ s, ...acc ]
+                Text s →
+                    layout w (column + String.length s) rest [ s, …acc ]
 
-                Line ->
-                    layout w item.indent rest [ newline item.indent, ...acc ]
+                Line →
+                    layout w item.indent rest [ newline item.indent, …acc ]
 
-                SoftLine ->
+                SoftLine →
                     case item.mode of
-                        Flat ->
-                            layout w (column + 1) rest [ " ", ...acc ]
+                        Flat →
+                            layout w (column + 1) rest [ " ", …acc ]
 
-                        Break ->
-                            layout w item.indent rest [ newline item.indent, ...acc ]
+                        Break →
+                            layout w item.indent rest [ newline item.indent, …acc ]
 
-                Nest n inner ->
+                Nest n inner →
                     layout
                         w
                         column
-                        [ { item | indent = item.indent + n, doc = inner }, ...rest ]
+                        [ { item | indent = item.indent + n, doc = inner }, …rest ]
                         acc
 
-                Concat left right ->
-                    layout w column [ { item | doc = left }, { item | doc = right }, ...rest ] acc
+                Concat left right →
+                    layout w column [ { item | doc = left }, { item | doc = right }, …rest ] acc
 
-                Group inner ->
+                Group inner →
                     flat = { item | mode = Flat, doc = inner }
-                    if fits (w - column) [ flat, ...rest ] then
-                        layout w column [ flat, ...rest ] acc
+                    if fits (w - column) [ flat, …rest ] then
+                        layout w column [ flat, …rest ] acc
                     else
-                        layout w column [ { item | mode = Break, doc = inner }, ...rest ] acc
+                        layout w column [ { item | mode = Break, doc = inner }, …rest ] acc
 
 
-fits : Int, List Item -> Bool
+fits : Int, List Item → Bool
 fits remaining items =
     if remaining < 0 then
         False
     else
         case items of
-            [] ->
+            [] →
                 True
 
-            [ item, ...rest ] ->
+            [ item, …rest ] →
                 case item.doc of
-                    Empty ->
+                    Empty →
                         fits remaining rest
 
-                    Text s ->
+                    Text s →
                         fits (remaining - String.length s) rest
 
-                    Line ->
+                    Line →
                         True
 
-                    SoftLine ->
+                    SoftLine →
                         case item.mode of
-                            Flat ->
+                            Flat →
                                 fits (remaining - 1) rest
 
-                            Break ->
+                            Break →
                                 True
 
-                    Nest n inner ->
-                        fits remaining [ { item | indent = item.indent + n, doc = inner }, ...rest ]
+                    Nest n inner →
+                        fits remaining [ { item | indent = item.indent + n, doc = inner }, …rest ]
 
-                    Concat left right ->
-                        fits remaining [ { item | doc = left }, { item | doc = right }, ...rest ]
+                    Concat left right →
+                        fits remaining [ { item | doc = left }, { item | doc = right }, …rest ]
 
-                    Group inner ->
-                        fits remaining [ { item | mode = Flat, doc = inner }, ...rest ]
+                    Group inner →
+                        fits remaining [ { item | mode = Flat, doc = inner }, …rest ]
 
 
-newline : Int -> String
+newline : Int → String
 newline indent = "\n" ++ String.repeat " " indent
 
 
@@ -183,13 +183,13 @@ pub type Value
     | Object (Dict String Value)
 
 
-pub valueDoc : Value -> Doc
+pub valueDoc : Value → Doc
 valueDoc value =
     case value of
-        Null ->
+        Null →
             Text "null"
 
-        Bool b ->
+        Bool b →
             Text
                 (if b then
                     "true"
@@ -197,19 +197,19 @@ valueDoc value =
                     "false"
                 )
 
-        Number n ->
+        Number n →
             Text (String.fromFloat n)
 
-        String s ->
+        String s →
             Text (quote s)
 
-        Array [] ->
+        Array [] →
             Text "[]"
 
-        Array items ->
+        Array items →
             bracket "[" (join (List.map items valueDoc) (Concat (Text ",") SoftLine)) "]"
 
-        Object fields ->
+        Object fields →
             if Dict.isEmpty fields then
                 Text "{}"
             else
@@ -220,24 +220,24 @@ valueDoc value =
                     "}"
 
 
-fieldDoc : ( String, Value ) -> Doc
+fieldDoc : String × Value → Doc
 fieldDoc ( key, value ) = Concat (Text (quote key)) (Concat (Text ": ") (valueDoc value))
 
 
-quote : String -> String
+quote : String → String
 quote s = "\"" ++ escape s ++ "\""
 
 
-escape : String -> String
+escape : String → String
 escape s =
     s
-        |> String.replace "\\" "\\\\"
-        |> String.replace "\"" "\\\""
-        |> String.replace "\n" "\\n"
-        |> String.replace "\t" "\\t"
+        ▷ String.replace "\\" "\\\\"
+        ▷ String.replace "\"" "\\\""
+        ▷ String.replace "\n" "\\n"
+        ▷ String.replace "\t" "\\t"
 
 
-pub printValue : Int, Value -> String
+pub printValue : Int, Value → String
 printValue w value = render w (valueDoc value)
 
 
@@ -256,42 +256,42 @@ sample =
         )
 
 
-pub depth : Doc -> Int
+pub depth : Doc → Int
 depth doc =
     case doc of
-        Nest _ inner ->
+        Nest _ inner →
             1 + depth inner
 
-        Concat left right ->
+        Concat left right →
             max (depth left) (depth right)
 
-        Group inner ->
+        Group inner →
             depth inner
 
-        _ ->
+        _ →
             0
 
 
-pub width : Doc -> Int
+pub width : Doc → Int
 width doc =
     case doc of
-        Empty ->
+        Empty →
             0
 
-        Text s ->
+        Text s →
             String.length s
 
-        Line ->
+        Line →
             0
 
-        SoftLine ->
+        SoftLine →
             1
 
-        Nest _ inner ->
+        Nest _ inner →
             width inner
 
-        Concat left right ->
+        Concat left right →
             width left + width right
 
-        Group inner ->
+        Group inner →
             width inner

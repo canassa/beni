@@ -32,14 +32,14 @@ pair :
     , Schema Int Int
     , String
     , String
-    -> Schema { a : Int, b : Int } { a : Int, b : Int }
+    → Schema { a : Int, b : Int } { a : Int, b : Int }
 pair sa sb ka kb =
     Schema.record
         (Schema.fields
-            |> Schema.field "a" sa
-            |> Schema.key ka
-            |> Schema.field "b" sb
-            |> Schema.key kb
+            ▷ Schema.field "a" sa
+            ▷ Schema.key ka
+            ▷ Schema.field "b" sb
+            ▷ Schema.key kb
         )
         (Schema.mapping two unTwo)
         (Schema.mapping two unTwo)
@@ -48,7 +48,7 @@ pair sa sb ka kb =
 sameName : Schema { a : Int, b : Int } { a : Int, b : Int }
 sameName =
     Schema.record
-        (Schema.fields |> Schema.field "a" Schema.int |> Schema.field "a" Schema.int)
+        (Schema.fields ▷ Schema.field "a" Schema.int ▷ Schema.field "a" Schema.int)
         (Schema.mapping two unTwo)
         (Schema.mapping two unTwo)
 
@@ -56,7 +56,7 @@ sameName =
 keyTwice : Schema { a : Int } { a : Int }
 keyTwice =
     Schema.record
-        (Schema.fields |> Schema.field "a" Schema.int |> Schema.key "x" |> Schema.key "y")
+        (Schema.fields ▷ Schema.field "a" Schema.int ▷ Schema.key "x" ▷ Schema.key "y")
         (Schema.mapping one unOne)
         (Schema.mapping one unOne)
 
@@ -64,7 +64,7 @@ keyTwice =
 keyFirst : Schema { a : Int } { a : Int }
 keyFirst =
     Schema.record
-        (Schema.fields |> Schema.key "x" |> Schema.field "a" Schema.int)
+        (Schema.fields ▷ Schema.key "x" ▷ Schema.field "a" Schema.int)
         (Schema.mapping one unOne)
         (Schema.mapping one unOne)
 
@@ -75,29 +75,29 @@ type T
 
 
 injA : Schema.Injection { a : Int } T
-injA = Schema.injection A λt ->
+injA = Schema.injection A λt →
     case t of
-        A r ->
+        A r →
             Just r
 
-        B ->
+        B →
             Nothing
 
 
 injB : Schema.Injection () T
-injB = Schema.injection (λ() -> B) λt ->
+injB = Schema.injection (λ() → B) λt →
     case t of
-        B ->
+        B →
             Just ()
 
-        A _ ->
+        A _ →
             Nothing
 
 
 aRecord : Schema { a : Int } { a : Int }
 aRecord =
     Schema.record
-        (Schema.fields |> Schema.field "a" Schema.int)
+        (Schema.fields ▷ Schema.field "a" Schema.int)
         (Schema.mapping one unOne)
         (Schema.mapping one unOne)
 
@@ -123,7 +123,7 @@ notARecord =
         [ Schema.variant
             "A"
             "a"
-            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) λr -> Ok r.a))
+            (Schema.converted Schema.int (Schema.conversion (λn → Ok { a = n }) λr → Ok r.a))
             intA
             injA
         , Schema.nullary "B" "b" injB injB
@@ -145,10 +145,10 @@ twoTwice : Schema { p : Int, q : Int, r : Int, s : Int } { p : Int, q : Int, r :
 twoTwice =
     Schema.record
         (Schema.fields
-            |> Schema.field "b" Schema.int
-            |> Schema.field "a" Schema.int
-            |> Schema.field "a" Schema.int
-            |> Schema.field "b" Schema.int
+            ▷ Schema.field "b" Schema.int
+            ▷ Schema.field "a" Schema.int
+            ▷ Schema.field "a" Schema.int
+            ▷ Schema.field "b" Schema.int
         )
         (Schema.mapping four unFour)
         (Schema.mapping four unFour)
@@ -164,7 +164,7 @@ brokenLast =
         , Schema.variant
             "A"
             "a"
-            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) λr -> Ok r.a))
+            (Schema.converted Schema.int (Schema.conversion (λn → Ok { a = n }) λr → Ok r.a))
             intA
             injA
         ]
@@ -186,17 +186,17 @@ tagsFirst =
 -- The body runs the schema it is building, and keeps what that answered as
 -- its conversion's failure.
 early : Schema Int Int
-early = Schema.recursive "Early" λself ->
+early = Schema.recursive "Early" λself →
     answer = Schema.decode self 1
     Schema.converted
         Schema.int
         (Schema.conversion
-            (λn ->
+            (λn →
                 case answer of
-                    Ok _ ->
+                    Ok _ →
                         Ok n
 
-                    Err found ->
+                    Err found →
                         Err found
             )
             Ok
@@ -205,38 +205,38 @@ early = Schema.recursive "Early" λself ->
 
 -- `Loop` converts itself: nothing is read on the way round.
 loop : Schema Int Int
-loop = Schema.recursive "Loop" λself -> Schema.converted self (Schema.conversion Ok Ok)
+loop = Schema.recursive "Loop" λself → Schema.converted self (Schema.conversion Ok Ok)
 
 
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 counted : Schema String Int
 counted = Schema.converted Schema.string decimalInt
 
 
-issues : Result (List Schema.Issue) a -> String
-issues r = Show.result r λ_ -> "built"
+issues : Result (List Schema.Issue) a → String
+issues r = Show.result r λ_ → "built"
 
 
-invalid : Schema e a -> String
+invalid : Schema e a → String
 invalid s =
     case (Schema.describe s).root of
-        Schema.Invalid message ->
+        Schema.Invalid message →
             "describe: " ++ message
 
-        _ ->
+        _ →
             "describe: no Invalid at the root"
 
 
@@ -274,21 +274,21 @@ main =
         ]
 
 
-host : String -> Schema.Value
+host : String → Schema.Value
 host text =
     case Schema.parse Schema.value text of
-        Ok v ->
+        Ok v →
             v
 
-        Err _ ->
+        Err _ →
             host "null"
 
 
 intA : Schema.Injection Int T
-intA = Schema.injection (λn -> A { a = n }) λt ->
+intA = Schema.injection (λn → A { a = n }) λt →
     case t of
-        A r ->
+        A r →
             Just r.a
 
-        B ->
+        B →
             Nothing

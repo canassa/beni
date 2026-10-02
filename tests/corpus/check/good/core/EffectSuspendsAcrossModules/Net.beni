@@ -5,4 +5,4 @@
 -- names `Net`, gets `suspends` from `Users`' record alone. A thunk that
 -- would suspend is a pure value to build (`later`), and suspends when it is
 -- called (`now`).
-pub foreign suspends get : Int -> String
+pub foreign suspends get : Int → String

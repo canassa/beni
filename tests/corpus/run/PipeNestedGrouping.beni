@@ -10,25 +10,25 @@ import Node exposing (Program)
 import String
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
-three : Int, Int, Int -> Int
+three : Int, Int, Int → Int
 three a b c = a - b - c
 
 
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (1 |> (2 |> subtract))
-        , String.fromInt (1 |> (2 |> three 3))
-        , String.fromInt (1 |> (2 |> (3 |> three)))
-        , String.fromInt (1 |> (subtract <| 2))
-        , String.fromInt ((1 |> subtract) <| 2)
-        , String.fromInt ((1 |> three 2) <| 3)
+        [ String.fromInt (1 ▷ (2 ▷ subtract))
+        , String.fromInt (1 ▷ (2 ▷ three 3))
+        , String.fromInt (1 ▷ (2 ▷ (3 ▷ three)))
+        , String.fromInt (1 ▷ (subtract ◁ 2))
+        , String.fromInt ((1 ▷ subtract) ◁ 2)
+        , String.fromInt ((1 ▷ three 2) ◁ 3)
         -- A parenthesised lambda is looked through the same way, so it is
         -- the CALLEE and the operand is its argument. `pipe_rhs_not_application`
         -- says so: parenthesising does not pass the block along as a value.
-        , String.fromInt (5 |> (λy -> y + 1))
+        , String.fromInt (5 ▷ (λy → y + 1))
         ]

@@ -10,17 +10,17 @@ import Task
 
 
 main : Program
-main = Io.run λ() ->
-    reader = Task.spawn λ() -> Io.readFile "this file does not exist.txt"
-    _ = Task.spawn λ() -> Debug.log "another fiber ran" ()
+main = Io.run λ() →
+    reader = Task.spawn λ() → Io.readFile "this file does not exist.txt"
+    _ = Task.spawn λ() → Debug.log "another fiber ran" ()
     answer =
         case Task.join reader of
-            Ok text ->
+            Ok text →
                 "read " ++ String.fromInt (String.length text)
 
-            Err Io.NotFound ->
+            Err Io.NotFound →
                 "could not read: not found"
 
-            Err _ ->
+            Err _ →
                 "could not read, for another reason"
     Node.print answer

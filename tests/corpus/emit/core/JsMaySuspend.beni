@@ -8,33 +8,33 @@
 import Js
 
 
-start : (() -> ()) -> String
+start : (() → ()) → String
 start f = if Js.maySuspend f then inFiber f else direct f
 
 
-inFiber : (() -> ()) -> String
+inFiber : (() → ()) → String
 inFiber _ = "in a fiber"
 
 
-direct : (() -> ()) -> String
+direct : (() → ()) → String
 direct f =
     _ = f ()
     "directly"
 
 
-pub quick : () -> String
-quick () = start λ() -> ()
+pub quick : () → String
+quick () = start λ() → ()
 
 
-pub fixed : () -> String
+pub fixed : () → String
 fixed () =
     case Js.maySuspend quiet of
-        True ->
+        True →
             "quiet may suspend"
 
-        False ->
+        False →
             "quiet does not suspend"
 
 
-quiet : () -> ()
+quiet : () → ()
 quiet () = ()

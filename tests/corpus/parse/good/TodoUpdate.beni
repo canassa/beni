@@ -31,16 +31,16 @@ type Msg
     | ChangeVisibility Visibility
 
 
-pub update : Msg, Model -> ( Model, List String )
+pub update : Msg, Model → Model × List String
 update msg model =
     case msg of
-        NoOp ->
+        NoOp →
             ( model, [] )
 
-        UpdateField str ->
+        UpdateField str →
             ( { model | field = str }, [] )
 
-        Add ->
+        Add →
             title = String.trim model.field
             if String.isEmpty title then
                 ( model, [] )
@@ -53,10 +53,10 @@ update msg model =
                 , [ "added ${title}" ]
                 )
 
-        Delete id ->
-            ( { model | todos = List.filter model.todos λt -> t.id /= id }, [] )
+        Delete id →
+            ( { model | todos = List.filter model.todos λt → t.id ≠ id }, [] )
 
-        Check id isDone ->
+        Check id isDone →
             updateTodo t =
                 if t.id == id then
                     { t | done = isDone }
@@ -64,28 +64,28 @@ update msg model =
                     t
             ( { model | todos = List.map model.todos updateTodo }, [] )
 
-        CheckAll isDone ->
-            ( { model | todos = List.map model.todos λt -> { t | done = isDone } }, [] )
+        CheckAll isDone →
+            ( { model | todos = List.map model.todos λt → { t | done = isDone } }, [] )
 
-        DeleteComplete ->
-            ( { model | todos = List.filter model.todos λt -> not t.done }, [] )
+        DeleteComplete →
+            ( { model | todos = List.filter model.todos λt → not t.done }, [] )
 
-        ChangeVisibility visibility ->
+        ChangeVisibility visibility →
             ( { model | visibility = visibility }, [ "now showing ${visibilityName visibility}" ] )
 
 
-newTodo : String, Int -> Todo
+newTodo : String, Int → Todo
 newTodo title id = { id = id, title = title, done = False }
 
 
-visibilityName : Visibility -> String
+visibilityName : Visibility → String
 visibilityName v =
     case v of
-        All ->
+        All →
             "all"
 
-        Active ->
+        Active →
             "active"
 
-        Completed ->
+        Completed →
             "completed"

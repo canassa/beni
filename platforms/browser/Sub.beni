@@ -23,7 +23,7 @@ import Hosted exposing (Key, Tap)
 --| constructor nothing builds*). A program never needs either.
 pub type Sub msg
     = None
-    | Listen (List ( Key, Tap msg ))
+    | Listen (List (Key × Tap msg))
 
 
 --| None.
@@ -32,46 +32,46 @@ none = None
 
 
 --| All of these.
-pub batch : List (Sub msg) -> Sub msg
+pub batch : List (Sub msg) → Sub msg
 batch subs = List.foldr subs None both
 
 
-both : Sub msg, Sub msg -> Sub msg
+both : Sub msg, Sub msg → Sub msg
 both sub rest =
     case sub of
-        None ->
+        None →
             rest
 
-        Listen list ->
+        Listen list →
             case rest of
-                None ->
+                None →
                     Listen list
 
-                Listen more ->
+                Listen more →
                     Listen (List.append list more)
 
 
 --| Every declaration, in order: its key and its tap. What the
 --| architecture that runs a program reads; a program never needs it.
-pub taps : Sub msg -> List ( Key, Tap msg )
+pub taps : Sub msg → List (Key × Tap msg)
 taps sub =
     case sub of
-        None ->
+        None →
             []
 
-        Listen list ->
+        Listen list →
             list
 
 
 --| The same subscriptions, each message passed through `tag`.
-pub map : Sub a, (a -> msg) -> Sub msg
+pub map : Sub a, (a → msg) → Sub msg
 map sub tag =
     case sub of
-        None ->
+        None →
             None
 
-        Listen list ->
-            Listen (List.map list λ( k, t ) -> ( k, Hosted.mapTap t tag ))
+        Listen list →
+            Listen (List.map list λ( k, t ) → ( k, Hosted.mapTap t tag ))
 
 
 --| While `key` is in the set, one fiber runs `body`, and each value it
@@ -81,6 +81,6 @@ map sub tag =
 --|
 --|     every interval tag =
 --|         Sub.listen (Every interval) (ticks interval _) tag
-pub listen : k, (Browser.Send a -> ()), (a -> msg) -> Sub msg
-    where k.compare : k, k -> Order
+pub listen : k, (Browser.Send a → ()), (a → msg) → Sub msg
+    where k.compare : k, k → Order
 listen k body tag = Listen [ ( Hosted.key k, Hosted.tap body tag ) ]

@@ -1,4 +1,4 @@
 -- check/bad: `Int` and `Float` are different types and beni never converts
 -- between them silently.
-pub half : Int -> Float
+pub half : Int → Float
 half n = n / 2

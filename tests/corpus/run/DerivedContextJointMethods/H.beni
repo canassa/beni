@@ -5,6 +5,6 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder a, Holder a -> Bool
-    where a.compare : a, a -> Order
-eq (Holder x) (Holder y) = x.compare y /= GT
+pub eq : Holder a, Holder a → Bool
+    where a.compare : a, a → Order
+eq (Holder x) (Holder y) = x.compare y ≠ GT

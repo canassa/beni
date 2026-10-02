@@ -1,4 +1,4 @@
 -- check/args: `List.concatMap` given its list and nothing else. The
 -- function comes last now, so that is the one a call one short is missing.
-pub spread : List Int -> List Int
+pub spread : List Int → List Int
 spread xs = List.concatMap xs

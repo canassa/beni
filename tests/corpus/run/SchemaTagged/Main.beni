@@ -26,15 +26,15 @@ type Wire
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 toValue ( (), v ) = { value = v }
@@ -43,10 +43,10 @@ toValue ( (), v ) = { value = v }
 fromValue r = ( (), r.value )
 
 
-payload : Schema e a -> Schema { value : e } { value : a }
+payload : Schema e a → Schema { value : e } { value : a }
 payload s =
     Schema.record
-        (Schema.fields |> Schema.field "value" s)
+        (Schema.fields ▷ Schema.field "value" s)
         (Schema.mapping toValue fromValue)
         (Schema.mapping toValue fromValue)
 
@@ -58,87 +58,87 @@ message =
             "Text"
             "text"
             (payload Schema.string)
-            (Schema.injection WireText λw ->
+            (Schema.injection WireText λw →
                 case w of
-                    WireText p ->
+                    WireText p →
                         Just p
 
-                    _ ->
+                    _ →
                         Nothing
             )
-            (Schema.injection Text λm ->
+            (Schema.injection Text λm →
                 case m of
-                    Text p ->
+                    Text p →
                         Just p
 
-                    _ ->
+                    _ →
                         Nothing
             )
         , Schema.variant
             "Count"
             "count"
             (payload (Schema.converted Schema.string decimalInt))
-            (Schema.injection WireCount λw ->
+            (Schema.injection WireCount λw →
                 case w of
-                    WireCount p ->
+                    WireCount p →
                         Just p
 
-                    _ ->
+                    _ →
                         Nothing
             )
-            (Schema.injection Count λm ->
+            (Schema.injection Count λm →
                 case m of
-                    Count p ->
+                    Count p →
                         Just p
 
-                    _ ->
+                    _ →
                         Nothing
             )
         , Schema.nullary
             "Ping"
             "ping"
-            (Schema.injection (λ() -> WirePing) λw ->
+            (Schema.injection (λ() → WirePing) λw →
                 case w of
-                    WirePing ->
+                    WirePing →
                         Just ()
 
-                    _ ->
+                    _ →
                         Nothing
             )
-            (Schema.injection (λ() -> Ping) λm ->
+            (Schema.injection (λ() → Ping) λm →
                 case m of
-                    Ping ->
+                    Ping →
                         Just ()
 
-                    _ ->
+                    _ →
                         Nothing
             )
         ]
 
 
-showMessage : Message -> String
+showMessage : Message → String
 showMessage m =
     case m of
-        Text p ->
+        Text p →
             "Text " ++ p.value
 
-        Count p ->
+        Count p →
             "Count " ++ String.fromInt p.value
 
-        Ping ->
+        Ping →
             "Ping"
 
 
-showWire : Wire -> String
+showWire : Wire → String
 showWire w =
     case w of
-        WireText p ->
+        WireText p →
             "WireText " ++ p.value
 
-        WireCount p ->
+        WireCount p →
             "WireCount \"" ++ p.value ++ "\""
 
-        WirePing ->
+        WirePing →
             "WirePing"
 
 
@@ -154,26 +154,26 @@ fromChildren r = ( (), r.children )
 
 
 tree : Schema Tree Tree
-tree = Schema.recursive "Tree" λself ->
-    leaf = Schema.injection Leaf λt ->
+tree = Schema.recursive "Tree" λself →
+    leaf = Schema.injection Leaf λt →
         case t of
-            Leaf p ->
+            Leaf p →
                 Just p
 
-            _ ->
+            _ →
                 Nothing
 
-    branch = Schema.injection Branch λt ->
+    branch = Schema.injection Branch λt →
         case t of
-            Branch p ->
+            Branch p →
                 Just p
 
-            _ ->
+            _ →
                 Nothing
 
     children =
         Schema.record
-            (Schema.fields |> Schema.field "children" (Schema.list self))
+            (Schema.fields ▷ Schema.field "children" (Schema.list self))
             (Schema.mapping toChildren fromChildren)
             (Schema.mapping toChildren fromChildren)
     Schema.tagged "type"
@@ -182,13 +182,13 @@ tree = Schema.recursive "Tree" λself ->
         ]
 
 
-showTree : Tree -> String
+showTree : Tree → String
 showTree t =
     case t of
-        Leaf p ->
+        Leaf p →
             String.fromInt p.value
 
-        Branch p ->
+        Branch p →
             "[" ++ String.join (List.map p.children showTree) " " ++ "]"
 
 
@@ -219,9 +219,9 @@ main =
                 "{\"extra\":1,\"kind\":\"text\",\"value\":\"a\"}"
             )
             showMessage
-        , Show.result (Schema.print message (Count { value = 7 })) λs -> s
-        , Show.result (Schema.print message (Text { value = "hi" })) λs -> s
-        , Show.result (Schema.print message Ping) λs -> s
+        , Show.result (Schema.print message (Count { value = 7 })) λs → s
+        , Show.result (Schema.print message (Text { value = "hi" })) λs → s
+        , Show.result (Schema.print message Ping) λs → s
         , Show.result (Schema.decode message (WireCount { value = "12" })) showMessage
         , Show.result (Schema.decode message (WireCount { value = "1 2" })) showMessage
         , Show.result (Schema.encode message (Count { value = 12 })) showWire
@@ -244,7 +244,7 @@ main =
                 tree
                 (Branch { children = [ Leaf { value = 1 }, Branch { children = [] } ] })
             )
-            λs -> s
+            λs → s
         , Show.result
             (Schema.encode
                 tree

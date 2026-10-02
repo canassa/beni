@@ -16,10 +16,10 @@ pub bumped : Counter
 bumped = (Counter 1).bump 2
 
 
-pub bump : Counter, Int -> Counter
+pub bump : Counter, Int → Counter
 bump c step =
     case c of
-        Counter n ->
+        Counter n →
             case bumped of
-                Counter seed ->
+                Counter seed →
                     Counter (n + step + seed)

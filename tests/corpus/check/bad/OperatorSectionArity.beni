@@ -10,7 +10,7 @@
 -- `String`: on this branch `<` is the receiver's `compare` method (§3.1) and
 -- `"a" < "b"` COMPILES, so the mistake has to be one the operator's own
 -- pinning rule catches — both operands are one type (A.33).
-pub tooFew : Int -> Bool
+pub tooFew : Int → Bool
 tooFew n = (==) n
 
 
@@ -22,5 +22,5 @@ pub wrongType : Bool
 wrongType = (<) "a" 1
 
 
-pub handWritten : Int -> Bool
-handWritten n = (λa b -> a == b) n
+pub handWritten : Int → Bool
+handWritten n = (λa b → a == b) n

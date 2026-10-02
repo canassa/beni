@@ -9,11 +9,11 @@
 import Schema exposing (Conversion)
 
 
-mk : Int -> Conversion Int Int
+mk : Int → Conversion Int Int
 mk n = Debug.todo "checker-only conversion"
 
 
-mkLoop : Int -> Loop.Type
+mkLoop : Int → Loop.Type
 mkLoop n = Debug.todo "l"
 
 

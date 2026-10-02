@@ -8,15 +8,15 @@ import Schema exposing (Conversion)
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issueAt [ Schema.Index 0 ] ("not a decimal integer: " ++ s) ]
         )
-        λn ->
+        λn →
             if n < 0 then
                 Err []
             else

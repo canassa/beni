@@ -8,7 +8,7 @@ import Ui.List as List
 
 view model =
     <div>
-        <Card {...model.card} title="x" done />
-        <List>{λitem -> <li>{item}</li>}</List>
+        <Card {…model.card} title="x" done />
+        <List>{λitem → <li>{item}</li>}</List>
         <Card.header title="y"><h1>Hi</h1>text</Card.header>
     </div>

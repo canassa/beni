@@ -12,22 +12,22 @@
 -- discharge ran twice; on the paths that SUCCEED the same double answer
 -- emitted one evidence argument twice. The golden's whole job is the count.
 pub type Handler
-    = Handler (Int -> Int)
+    = Handler (Int → Int)
 
 
-pub eqGen : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub eqGen : a, a → Bool
+    where a.eq : a, a → Bool
 eqGen x y = x.eq y
 
 
-pub cmpGen : a, a -> Order
-    where a.compare : a, a -> Order
+pub cmpGen : a, a → Order
+    where a.compare : a, a → Order
 cmpGen x y = x.compare y
 
 
 pub bad1 : Bool
-bad1 = eqGen (Handler λn -> n) (Handler λn -> n)
+bad1 = eqGen (Handler λn → n) (Handler λn → n)
 
 
 pub bad2 : Order
-bad2 = cmpGen (Handler λn -> n) (Handler λn -> n)
+bad2 = cmpGen (Handler λn → n) (Handler λn → n)

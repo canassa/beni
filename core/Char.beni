@@ -25,26 +25,26 @@ pub equatable foreign type Char
 --|
 --|     toCode 'A' == 0x41
 --|     toCode 'π' == 0x03C0
-pub toCode : Char -> Int
+pub toCode : Char → Int
 toCode char =
     -- `codePointAt` and not `charCodeAt`: the second halves an astral
     -- character and answers a surrogate, which is not a scalar value.
-    Js.pure λ() -> Js.to (Js.call (Js.from char) "codePointAt" [ Js.from 0 ])
+    Js.pure λ() → Js.to (Js.call (Js.from char) "codePointAt" [ Js.from 0 ])
 
 
 --| Convert a Unicode code point to a character.
 --|
 --|     fromCode 0x41 == 'A'
-pub fromCode : Int -> Char
+pub fromCode : Int → Char
 fromCode code =
     -- Out of range, a fraction or a surrogate half is replaced rather than
     -- thrown: U+FFFD is the Unicode replacement character, the
     -- specification's own answer to "this is not a scalar value".
-    Js.pure λ() ->
+    Js.pure λ() →
         if
             Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from code ])
-                && 0 <= code
-                && code <= 0x10FFFF
+                && 0 ≤ code
+                && code ≤ 0x10FFFF
                 && (code < 0xD800 || 0xDFFF < code)
         then
             Js.to (Js.call (Js.global "String") "fromCodePoint" [ Js.from code ])
@@ -55,8 +55,8 @@ fromCode code =
 --| Convert to upper case.
 --|
 --|     toUpper 'a' == 'A'
-pub toUpper : Char -> Char
-toUpper char = Js.pure λ() ->
+pub toUpper : Char → Char
+toUpper char = Js.pure λ() →
     mapped = Js.call (Js.from char) "toUpperCase" []
     points : Int
     points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
@@ -66,8 +66,8 @@ toUpper char = Js.pure λ() ->
 --| Convert to lower case.
 --|
 --|     toLower 'A' == 'a'
-pub toLower : Char -> Char
-toLower char = Js.pure λ() ->
+pub toLower : Char → Char
+toLower char = Js.pure λ() →
     mapped = Js.call (Js.from char) "toLowerCase" []
     points : Int
     points = Js.to (Js.get (Js.call (Js.global "Array") "from" [ mapped ]) "length")
@@ -78,27 +78,27 @@ toLower char = Js.pure λ() ->
 --|
 --|     isUpper 'A' == True
 --|     isUpper 'a' == False
-pub isUpper : Char -> Bool
+pub isUpper : Char → Bool
 isUpper char =
     code = toCode char
-    code <= 0x5A && 0x41 <= code
+    code ≤ 0x5A && 0x41 ≤ code
 
 
 --| Detect lower case ASCII characters.
 --|
 --|     isLower 'a' == True
 --|     isLower 'A' == False
-pub isLower : Char -> Bool
+pub isLower : Char → Bool
 isLower char =
     code = toCode char
-    0x61 <= code && code <= 0x7A
+    0x61 ≤ code && code ≤ 0x7A
 
 
 --| Detect upper case and lower case ASCII characters.
 --|
 --|     isAlpha 'a' == True
 --|     isAlpha '0' == False
-pub isAlpha : Char -> Bool
+pub isAlpha : Char → Bool
 isAlpha char = isLower char || isUpper char
 
 
@@ -106,7 +106,7 @@ isAlpha char = isLower char || isUpper char
 --|
 --|     isAlphaNum 'a' == True
 --|     isAlphaNum '-' == False
-pub isAlphaNum : Char -> Bool
+pub isAlphaNum : Char → Bool
 isAlphaNum char = isLower char || isUpper char || isDigit char
 
 
@@ -114,29 +114,29 @@ isAlphaNum char = isLower char || isUpper char || isDigit char
 --|
 --|     isDigit '0' == True
 --|     isDigit 'a' == False
-pub isDigit : Char -> Bool
+pub isDigit : Char → Bool
 isDigit char =
     code = toCode char
-    code <= 0x39 && 0x30 <= code
+    code ≤ 0x39 && 0x30 ≤ code
 
 
 --| Detect octal digits `01234567`.
 --|
 --|     isOctDigit '7' == True
 --|     isOctDigit '8' == False
-pub isOctDigit : Char -> Bool
+pub isOctDigit : Char → Bool
 isOctDigit char =
     code = toCode char
-    code <= 0x37 && 0x30 <= code
+    code ≤ 0x37 && 0x30 ≤ code
 
 
 --| Detect hexadecimal digits `0123456789abcdefABCDEF`.
 --|
 --|     isHexDigit 'f' == True
 --|     isHexDigit 'g' == False
-pub isHexDigit : Char -> Bool
+pub isHexDigit : Char → Bool
 isHexDigit char =
     code = toCode char
-    (0x30 <= code && code <= 0x39)
-        || (0x41 <= code && code <= 0x46)
-        || (0x61 <= code && code <= 0x66)
+    (0x30 ≤ code && code ≤ 0x39)
+        || (0x41 ≤ code && code ≤ 0x46)
+        || (0x61 ≤ code && code ≤ 0x66)

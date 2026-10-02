@@ -8,7 +8,7 @@ type W a
     = W (H.Holder a)
 
 
-f : Int -> Int
+f : Int → Int
 f n = n
 
 

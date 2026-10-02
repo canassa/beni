@@ -10,13 +10,13 @@ type alias Todo =
     label : String
 
 
-pub view : List Todo, Maybe Todo -> Html msg
+pub view : List Todo, Maybe Todo → Html msg
 view todos editing =
     <div>
-        <For each={todos} keyed={λt -> t}>{λt -> <p>{t.label}</p>}</For>
-        <Show when={editing} keyed={λt -> t}>{λt -> <p>{t.label}</p>}</Show>
+        <For each={todos} keyed={λt → t}>{λt → <p>{t.label}</p>}</For>
+        <Show when={editing} keyed={λt → t}>{λt → <p>{t.label}</p>}</Show>
     </div>
 
 
-pub list : List a, (a -> k), (a -> Html msg) -> Html msg
+pub list : List a, (a → k), (a → Html msg) → Html msg
 list items key row = <ul><For each={items} keyed={key}>{row}</For></ul>

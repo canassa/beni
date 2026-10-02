@@ -20,15 +20,15 @@ import Helpers
 import Node exposing (Program)
 
 
-addTwo : Int -> Int
+addTwo : Int → Int
 addTwo = Helpers.adder 2
 
 
-twice : Int -> Int
+twice : Int → Int
 twice n = n * 2
 
 
-describe : Bool, Int -> String
+describe : Bool, Int → String
 describe verbose n =
     b = Helpers.box "item" n
 

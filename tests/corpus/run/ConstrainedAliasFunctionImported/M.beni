@@ -12,19 +12,19 @@
 -- instead of the closure `($p) => M$same(eq, $p)`, would build with exit 0
 -- and throw `TypeError: isGood$2 is not a function`.
 pub type alias Pred a =
-    a -> Bool
+    a → Bool
 
 
 pub same : Pred a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 same x = x == x
 
 
 pub sameL : Pred a
-    where a.eq : a, a -> Bool
-sameL = λx -> x == x
+    where a.eq : a, a → Bool
+sameL = λx → x == x
 
 
 pub sameP : Pred a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 sameP = same

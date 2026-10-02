@@ -39,7 +39,7 @@ pub type Tree
     | Node Tree Int Tree
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -47,8 +47,8 @@ show b =
         "False"
 
 
-sameAs : a, a -> Bool
-    where a.eq : a, a -> Bool
+sameAs : a, a → Bool
+    where a.eq : a, a → Bool
 sameAs x y = x == y
 
 
@@ -72,7 +72,7 @@ main =
         , show (Circle 1.0 == Rect 1.0 1.0)
         , show (left == Node (Node Leaf 1 Leaf) 2 Leaf)
         , show (left == Node (Node Leaf 9 Leaf) 2 Leaf)
-        , show (left /= Node Leaf 2 Leaf)
+        , show (left ≠ Node Leaf 2 Leaf)
         , show (sameAs ( 1, "a" ) ( 1, "a" ))
         , show (sameAs left (Node Leaf 2 Leaf))
         ]

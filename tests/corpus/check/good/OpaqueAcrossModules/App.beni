@@ -7,8 +7,8 @@ pub twice : Counter
 twice = bump (bump zero)
 
 
-pub label : Counter -> String
+pub label : Counter → String
 label c =
     case c of
-        anything ->
+        anything →
             "count ${value anything}"

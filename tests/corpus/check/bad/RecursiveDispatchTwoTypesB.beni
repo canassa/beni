@@ -13,7 +13,7 @@ type Box a
 
 
 pub eq (Box a) (Box b) =
-    _ = λw -> (K 0).show ()
+    _ = λw → (K 0).show ()
     True
 
 

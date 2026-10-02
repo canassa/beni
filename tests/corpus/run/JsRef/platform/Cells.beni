@@ -6,10 +6,10 @@ import Js
 
 
 --| A counter whose cell is captured by the closure it returns: a `let`.
-pub counter : Int -> (() -> Int)
+pub counter : Int → (() → Int)
 counter start =
     n = Js.ref start
-    λ() ->
+    λ() →
         _ = Js.write n (Js.read n + 1)
         Js.read n
 
@@ -20,14 +20,14 @@ calls = Js.ref 0
 
 
 --| How many times it has been called, counting this one.
-pub tick : () -> Int
+pub tick : () → Int
 tick () =
     _ = Js.write calls (Js.read calls + 1)
     Js.read calls
 
 
 --| One step of a loop that counts in a cell.
-countDown : Js.Ref Int, Int -> ()
+countDown : Js.Ref Int, Int → ()
 countDown total k =
     if k == 0 then
         ()
@@ -38,7 +38,7 @@ countDown total k =
 
 --| A cell passed to another function escapes: `{ v }`, and the writes the
 --| callee makes are the caller's to read.
-pub sumTo : Int -> Int
+pub sumTo : Int → Int
 sumTo n =
     total = Js.ref 0
 
@@ -46,7 +46,7 @@ sumTo n =
     Js.read total
 
 
-pair : Int, () -> String
+pair : Int, () → String
 pair a _ = String.fromInt a
 
 
@@ -69,7 +69,7 @@ snapshot =
 
 
 --| A cell made and returned escapes; each call makes a new one.
-pub fresh : () -> Js.Ref Int
+pub fresh : () → Js.Ref Int
 fresh () = Js.ref 0
 
 

@@ -29,7 +29,7 @@ import Node exposing (Program)
 import String
 
 
-log : String, Int -> Int
+log : String, Int → Int
 log label v = Debug.log label v
 
 
@@ -37,7 +37,7 @@ pub dropped : Int
 dropped = log "dead.declaration" 99
 
 
-report : Int -> Int
+report : Int → Int
 report n =
     first = log "dead.first" n
     ignored = log "dead.ignored" (n * 10)

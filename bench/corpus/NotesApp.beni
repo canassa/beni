@@ -55,7 +55,7 @@ pub type Msg
     | SaveResult (Result String Int)
 
 
-pub init : Int -> Model
+pub init : Int → Model
 init now =
     { notes = Dict.empty
     , nextId = 1
@@ -69,10 +69,10 @@ init now =
     }
 
 
-pub update : Msg, Model -> Model
+pub update : Msg, Model → Model
 update msg model =
     case msg of
-        NewNote ->
+        NewNote →
             note =
                 { id = model.nextId
                 , title = "Untitled"
@@ -82,39 +82,39 @@ update msg model =
                 , updatedAt = model.now
                 }
             model
-                |> pushHistory
-                |> setNotes (Dict.insert model.notes note.id note)
-                |> select (Just note.id)
-                |> bumpId
+                ▷ pushHistory
+                ▷ setNotes (Dict.insert model.notes note.id note)
+                ▷ select (Just note.id)
+                ▷ bumpId
 
-        Select id ->
+        Select id →
             select model (Just id)
 
-        Deselect ->
+        Deselect →
             select model Nothing
 
-        SetTitle title ->
-            editSelected model λnote -> { note | title = title }
+        SetTitle title →
+            editSelected model λnote → { note | title = title }
 
-        SetBody body ->
-            editSelected model λnote -> { note | body = body }
+        SetBody body →
+            editSelected model λnote → { note | body = body }
 
-        AddTag tag ->
+        AddTag tag →
             clean = String.trim (String.toLower tag)
             if String.isEmpty clean then
                 model
             else
-                editSelected model λnote -> { note | tags = Set.insert note.tags clean }
+                editSelected model λnote → { note | tags = Set.insert note.tags clean }
 
-        RemoveTag tag ->
-            editSelected model λnote -> { note | tags = Set.remove note.tags tag }
+        RemoveTag tag →
+            editSelected model λnote → { note | tags = Set.remove note.tags tag }
 
-        TogglePin id ->
+        TogglePin id →
             model
-                |> pushHistory
-                |> editNote id λnote -> { note | pinned = not note.pinned }
+                ▷ pushHistory
+                ▷ editNote id λnote → { note | pinned = not note.pinned }
 
-        Delete id ->
+        Delete id →
             remaining = Dict.remove model.notes id
 
             selected =
@@ -123,94 +123,94 @@ update msg model =
                 else
                     model.selected
             model
-                |> pushHistory
-                |> setNotes remaining
-                |> select selected
+                ▷ pushHistory
+                ▷ setNotes remaining
+                ▷ select selected
 
-        SetQuery query ->
+        SetQuery query →
             { model | query = query }
 
-        FilterTag tag ->
+        FilterTag tag →
             { model | activeTag = tag }
 
-        Undo ->
+        Undo →
             case model.history of
-                [ previous, ...rest ] ->
+                [ previous, …rest ] →
                     { model
                         | notes = previous
                         , history = rest
-                        , future = [ model.notes, ...model.future ]
+                        , future = [ model.notes, …model.future ]
                     }
 
-                [] ->
+                [] →
                     model
 
-        Redo ->
+        Redo →
             case model.future of
-                [ next, ...rest ] ->
+                [ next, …rest ] →
                     { model
                         | notes = next
                         , future = rest
-                        , history = [ model.notes, ...model.history ]
+                        , history = [ model.notes, …model.history ]
                     }
 
-                [] ->
+                [] →
                     model
 
-        Tick now ->
+        Tick now →
             { model | now = now }
 
-        SaveResult result ->
+        SaveResult result →
             case result of
-                Ok at ->
+                Ok at →
                     { model | status = Saved at }
 
-                Err reason ->
+                Err reason →
                     { model | status = Failed reason }
 
 
-pushHistory : Model -> Model
+pushHistory : Model → Model
 pushHistory model =
     { model
-        | history = List.take [ model.notes, ...model.history ] 50
+        | history = List.take [ model.notes, …model.history ] 50
         , future = []
     }
 
 
-setNotes : Model, Dict Int Note -> Model
+setNotes : Model, Dict Int Note → Model
 setNotes model notes = { model | notes = notes }
 
 
-select : Model, Maybe Int -> Model
+select : Model, Maybe Int → Model
 select model id = { model | selected = id }
 
 
-bumpId : Model -> Model
+bumpId : Model → Model
 bumpId model = { model | nextId = model.nextId + 1 }
 
 
-editNote : Model, Int, (Note -> Note) -> Model
+editNote : Model, Int, (Note → Note) → Model
 editNote model id f =
     case Dict.get model.notes id of
-        Just note ->
+        Just note →
             edited = f note
             { model | notes = Dict.insert model.notes id { edited | updatedAt = model.now } }
 
-        Nothing ->
+        Nothing →
             model
 
 
-editSelected : Model, (Note -> Note) -> Model
+editSelected : Model, (Note → Note) → Model
 editSelected model f =
     case model.selected of
-        Just id ->
+        Just id →
             editNote model id f
 
-        Nothing ->
+        Nothing →
             model
 
 
-pub visibleNotes : Model -> List Note
+pub visibleNotes : Model → List Note
 visibleNotes model =
     query = String.toLower (String.trim model.query)
 
@@ -221,10 +221,10 @@ visibleNotes model =
 
     matchesTag note =
         case model.activeTag of
-            Just tag ->
+            Just tag →
                 Set.member note.tags tag
 
-            Nothing ->
+            Nothing →
                 True
 
     rank note =
@@ -234,34 +234,34 @@ visibleNotes model =
             1
 
     pinnedFirstThenNewest a b =
-        if rank a /= rank b then
+        if rank a ≠ rank b then
             compare (rank a) (rank b)
         else
             compare b.updatedAt a.updatedAt
     Dict.values model.notes
-        |> List.filter matchesQuery
-        |> List.filter matchesTag
-        |> List.sortWith pinnedFirstThenNewest
+        ▷ List.filter matchesQuery
+        ▷ List.filter matchesTag
+        ▷ List.sortWith pinnedFirstThenNewest
 
 
-pub allTags : Model -> List ( String, Int )
+pub allTags : Model → List (String × Int)
 allTags model =
-    count tag counts = Dict.update counts tag λexisting -> Just (Maybe.withDefault existing 0 + 1)
+    count tag counts = Dict.update counts tag λexisting → Just (Maybe.withDefault existing 0 + 1)
 
     countNote note counts = Set.foldl note.tags counts count
 
     commonestFirst ( tag1, n1 ) ( tag2, n2 ) =
-        if n1 /= n2 then
+        if n1 ≠ n2 then
             compare n2 n1
         else
             String.compare tag1 tag2
     Dict.values model.notes
-        |> List.foldl Dict.empty countNote
-        |> Dict.toList
-        |> List.sortWith commonestFirst
+        ▷ List.foldl Dict.empty countNote
+        ▷ Dict.toList
+        ▷ List.sortWith commonestFirst
 
 
-pub view : Model -> Html Msg
+pub view : Model → Html Msg
 view model =
     div [ class "app" ]
         [ viewSidebar model
@@ -270,7 +270,7 @@ view model =
         ]
 
 
-viewSidebar : Model -> Html Msg
+viewSidebar : Model → Html Msg
 viewSidebar model =
     div [ class "sidebar" ]
         [ h1 [] [ text "Notes" ]
@@ -283,11 +283,11 @@ viewSidebar model =
         ]
 
 
-viewTags : Model -> Html Msg
+viewTags : Model → Html Msg
 viewTags model =
     ul [ class "tags" ]
         [ li [ onClick (FilterTag Nothing) ] [ text "all" ]
-        , ...List.map (allTags model) λ( tag, n ) ->
+        , …List.map (allTags model) λ( tag, n ) →
             li
                 [ classList [ ( "active", model.activeTag == Just tag ) ]
                 , onClick (FilterTag (Just tag))
@@ -296,7 +296,7 @@ viewTags model =
         ]
 
 
-viewNoteItem : Maybe Int, Note -> Html Msg
+viewNoteItem : Maybe Int, Note → Html Msg
 viewNoteItem selected note =
     li
         [ classList
@@ -320,24 +320,24 @@ viewNoteItem selected note =
         ]
 
 
-preview : String -> String
+preview : String → String
 preview body =
-    firstLine = body |> String.lines |> List.head |> Maybe.withDefault ""
+    firstLine = body ▷ String.lines ▷ List.head ▷ Maybe.withDefault ""
     if String.length firstLine > 40 then
         String.left firstLine 37 ++ "..."
     else
         firstLine
 
 
-viewEditor : Model -> Html Msg
+viewEditor : Model → Html Msg
 viewEditor model =
-    case model.selected |> Maybe.andThen λid -> Dict.get model.notes id of
-        Just note ->
+    case model.selected ▷ Maybe.andThen λid → Dict.get model.notes id of
+        Just note →
             div [ class "editor" ]
                 [ input [ value note.title, onInput SetTitle ] []
                 , textarea [ value note.body, onInput SetBody ] []
                 , ul [ class "note-tags" ]
-                    (List.map (Set.toList note.tags) λtag ->
+                    (List.map (Set.toList note.tags) λtag →
                         li [ onClick (RemoveTag tag) ] [ text tag ]
                     )
                 , input [ placeholder "Add tag", onInput AddTag ] []
@@ -345,21 +345,21 @@ viewEditor model =
                 , button [ onClick Deselect ] [ text "Close" ]
                 ]
 
-        Nothing ->
+        Nothing →
             div [ class "editor empty" ] [ text "Select or create a note" ]
 
 
-viewStatus : Status -> Html Msg
+viewStatus : Status → Html Msg
 viewStatus status =
     case status of
-        Idle ->
+        Idle →
             text ""
 
-        Saving ->
+        Saving →
             span [ class "status" ] [ text "Saving..." ]
 
-        Saved at ->
+        Saved at →
             span [ class "status" ] [ text "Saved at ${at}" ]
 
-        Failed reason ->
+        Failed reason →
             span [ class "status error" ] [ text "Save failed: ${reason}" ]

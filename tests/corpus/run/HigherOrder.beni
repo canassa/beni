@@ -16,32 +16,32 @@ import Node exposing (Program)
 import String
 
 
-compose : (b -> c), (a -> b), a -> c
+compose : (b → c), (a → b), a → c
 compose g f x = g (f x)
 
 
-twice : (a -> a), a -> a
+twice : (a → a), a → a
 twice f x = f (f x)
 
 
-pick : Bool -> (Int -> Int)
+pick : Bool → (Int → Int)
 pick big =
     if big then
-        λn -> n * 100
+        λn → n * 100
     else
-        λn -> n + 1
+        λn → n + 1
 
 
 main : Program
 main =
     bump = pick False
     Node.printLines
-        [ String.fromInt (compose (λn -> n + 1) (λn -> n * 2) 5)
-        , String.fromInt (twice (λn -> n * 3) 2)
+        [ String.fromInt (compose (λn → n + 1) (λn → n * 2) 5)
+        , String.fromInt (twice (λn → n * 3) 2)
         , String.fromInt ((pick True) 5)
         , String.fromInt ((pick False) 5)
         , String.join (List.map (List.map [ 1, 2 ] (pick True)) String.fromInt) ","
-        , String.fromInt ((identity λn -> n - 1) 10)
-        , String.fromInt (16 |> bump)
-        , String.fromInt ((λn -> n + 1) ((λn -> n * 2) 5))
+        , String.fromInt ((identity λn → n - 1) 10)
+        , String.fromInt (16 ▷ bump)
+        , String.fromInt ((λn → n + 1) ((λn → n * 2) 5))
         ]

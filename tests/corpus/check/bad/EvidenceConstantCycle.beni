@@ -9,8 +9,8 @@
 -- DEFINED IN TERMS OF ITSELF at the position below.
 
 zs : List a
-    where a.eq : a, a -> Bool
-zs = List.filter zs λx -> x == x
+    where a.eq : a, a → Bool
+zs = List.filter zs λx → x == x
 
 
 ints : List Int

@@ -5,7 +5,7 @@ import H
 import Mid
 
 
-f : Int -> Int
+f : Int → Int
 f n = n
 
 

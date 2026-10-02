@@ -4,6 +4,6 @@
 -- what gives the declaration its one evidence parameter (§7.2). The
 -- program is correct, and the interface shows the constraint it carries.
 --
-pub decode : String -> Result String a
-    where a.decode : String -> Result String a
+pub decode : String → Result String a
+    where a.decode : String → Result String a
 decode s = a.decode s

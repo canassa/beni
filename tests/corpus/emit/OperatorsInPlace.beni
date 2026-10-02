@@ -15,47 +15,47 @@ import Int32 exposing (Int32)
 import Node exposing (Program)
 
 
-pub arithmetic : Int, Int -> Int
+pub arithmetic : Int, Int → Int
 arithmetic a b = a + b * 2 - (a - b)
 
 
-pub floats : Float, Float -> Float
+pub floats : Float, Float → Float
 floats x y = x / y + negate x
 
 
-pub power : Int, Int, Int -> Int
+pub power : Int, Int, Int → Int
 power a b c = a ^ b ^ c
 
 
-pub powerLeft : Int, Int, Int -> Int
+pub powerLeft : Int, Int, Int → Int
 powerLeft a b c = (a ^ b) ^ c
 
 
-pub powerOfNegation : Int, Int -> Int
+pub powerOfNegation : Int, Int → Int
 powerOfNegation a b = negate a ^ b
 
 
-pub byName : Int, Int -> Bool
+pub byName : Int, Int → Bool
 byName a b = Basics.lt a b && Basics.ge a b
 
 
-pub notBoth : Bool, Bool -> Bool
+pub notBoth : Bool, Bool → Bool
 notBoth a b = not (a && b) || not a
 
 
-pub divide : Int, Int -> Int
+pub divide : Int, Int → Int
 divide a b = a // b + Int.mod b a + Int.rem b a
 
 
-pub wrap : Int32, Int32 -> Int
+pub wrap : Int32, Int32 → Int
 wrap a b = Int32.toInt (Int32.add (Int32.sub a b) (Int32.fromInt 1))
 
 
-pub bits : Int32, Int32 -> Int32
+pub bits : Int32, Int32 → Int32
 bits a b = Int32.xor (Int32.and a b) (Int32.or (Int32.shiftLeft a 3) (Int32.shiftRightZero b 2))
 
 
-pub product : Int32, Int32 -> Int
+pub product : Int32, Int32 → Int
 product a b = Int32.toUnsignedInt (Int32.mul (Int32.shiftRight a 1) b)
 
 

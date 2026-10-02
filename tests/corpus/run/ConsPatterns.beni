@@ -5,29 +5,29 @@ import Node exposing (Program)
 import String
 
 
-sumOf : List Int -> Int
+sumOf : List Int → Int
 sumOf xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ first, ...rest ] ->
+        [ first, …rest ] →
             first + sumOf rest
 
 
-shape : List Int -> String
+shape : List Int → String
 shape xs =
     case xs of
-        [] ->
+        [] →
             "empty"
 
-        [ a ] ->
+        [ a ] →
             "one: ${String.fromInt a}"
 
-        [ a, b ] ->
+        [ a, b ] →
             "two: ${String.fromInt (a + b)}"
 
-        [ a, _, _, ..._ ] ->
+        [ a, _, _, …_ ] →
             "many, starting ${String.fromInt a}"
 
 

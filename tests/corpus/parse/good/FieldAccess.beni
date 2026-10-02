@@ -29,7 +29,7 @@ fieldOnTuple = ( 1, 2 ).1
 nestedAccessors r = .city (.address r)
 
 
-accessorPipe person = person |> .name |> String.toUpper
+accessorPipe person = person ▷ .name ▷ String.toUpper
 
 
 bigIndex t = t.12

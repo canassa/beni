@@ -14,12 +14,12 @@ import Task
 
 
 main : Program
-main = Io.run λ() ->
-    one = Task.spawn λ() -> 1
+main = Io.run λ() →
+    one = Task.spawn λ() → 1
     _ = Io.sleep 1
     xs = List.range 1 1000000
-    fast = List.foldl xs 0 λx acc -> acc + x * Task.join one
-    slow = List.foldl xs 0 λx acc ->
+    fast = List.foldl xs 0 λx acc → acc + x * Task.join one
+    slow = List.foldl xs 0 λx acc →
         _ =
             if Int.mod x 1000 == 0 then
                 Task.yieldNow ()

@@ -5,6 +5,6 @@ pub type Guarded a
     = Guarded a
 
 
-pub eq : Guarded a, Guarded a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Guarded a, Guarded a → Bool
+    where a.eq : a, a → Bool
 eq (Guarded left) (Guarded right) = left == right

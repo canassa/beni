@@ -17,7 +17,7 @@ import Node exposing (Program)
 import Task
 
 
-slow : String -> Int
+slow : String → Int
 slow label =
     _ = Debug.log "before sleep" label
     _ = Io.sleep 1
@@ -25,7 +25,7 @@ slow label =
     String.length label
 
 
-fast : Task.Fiber Int, String -> Int
+fast : Task.Fiber Int, String → Int
 fast done label =
     _ = Debug.log "before join" label
     n = Task.join done
@@ -33,13 +33,13 @@ fast done label =
     n
 
 
-pair : Int, Int -> Int
+pair : Int, Int → Int
 pair a b = a * 100 + b
 
 
 main : Program
-main = Io.run λ() ->
-    done = Task.spawn λ() -> 7
+main = Io.run λ() →
+    done = Task.spawn λ() → 7
     _ = Io.sleep 1
     a = pair (Debug.log "first argument" 1) (slow "second argument")
     b = fast done "joined"

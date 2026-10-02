@@ -25,9 +25,9 @@ pub show (K n) u =
         "c"
 
 
-pub eq : Box a, Box a -> Bool
+pub eq : Box a, Box a → Bool
 eq (Box a) (Box b) =
-    _ = λw -> (K 0).show ()
+    _ = λw → (K 0).show ()
     True
 
 

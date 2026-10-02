@@ -20,29 +20,29 @@ type Msg
     | Done (Result Http.Error String)
 
 
-progress : Http.Progress -> String
+progress : Http.Progress → String
 progress p =
     case p of
-        Http.Sending s ->
+        Http.Sending s →
             "Sending ${String.fromInt s.sent}/${String.fromInt s.size} = ${String.fromFloat (Http.fractionSent s)}"
 
-        Http.Receiving r ->
+        Http.Receiving r →
             size =
                 case r.size of
-                    Just n ->
+                    Just n →
                         String.fromInt n
 
-                    Nothing ->
+                    Nothing →
                         "?"
             "Receiving ${String.fromInt r.received}/${size} = ${String.fromFloat (Http.fractionReceived r)}"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Go method url ->
+        Go method url →
             ( lines
-            , Cmd.perform λsend ->
+            , Cmd.perform λsend →
                 send
                     (Done
                         (Http.request
@@ -56,34 +56,34 @@ update msg lines =
                                     Http.emptyBody
                             , expect = Http.expectString
                             , timeout = Nothing
-                            , tracker = Just λp -> send (Progressed p)
+                            , tracker = Just λp → send (Progressed p)
                             }
                         )
                     )
             )
 
-        Progressed p ->
+        Progressed p →
             ( lines ++ [ progress p ], Cmd.none )
 
-        Done (Ok text) ->
+        Done (Ok text) →
             ( lines ++ [ "done: ${text}" ], Cmd.none )
 
-        Done (Err _) ->
+        Done (Err _) →
             ( lines ++ [ "failed" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="sized" onClick={Go "POST" "/sized"}>sized</button>
         <button id="unsized" onClick={Go "GET" "/unsized"}>unsized</button>
         <button id="short" onClick={Go "GET" "/short"}>short</button>
         <button id="head" onClick={Go "HEAD" "/head"}>head</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -1,13 +1,13 @@
 -- Formatter: `λ` heads, with spaces after `λ` and none around `->`, a body on
 -- the next line, a thunk; expected: `λ` printed as read, with no space before
 -- the first parameter (language.md §12.1), and canonical body placement.
-f = λx -> x + 1
+f = λx → x + 1
 
 
-g = λa b -> a + b
+g = λa b → a + b
 
 
-thunk = λ() -> 0
+thunk = λ() → 0
 
 
-k = List.map [ 1, 2 ] λx -> x * 2
+k = List.map [ 1, 2 ] λx → x * 2

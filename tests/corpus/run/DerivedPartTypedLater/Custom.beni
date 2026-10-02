@@ -2,10 +2,10 @@ pub type Custom
     = Custom Int Int
 
 
-pub eq : Custom, Custom -> Bool
+pub eq : Custom, Custom → Bool
 eq left right =
     case left of
-        Custom n _ ->
+        Custom n _ →
             case right of
-                Custom m _ ->
+                Custom m _ →
                     n == m

@@ -11,17 +11,17 @@ decoder : Json.Decode.Decoder Int
 decoder = Json.Decode.int
 
 
-encode : Int -> E.Value
+encode : Int → E.Value
 encode n = E.int n
 
 
-isTimeout : Http.Error -> Bool
+isTimeout : Http.Error → Bool
 isTimeout err =
     case err of
-        Http.Timeout ->
+        Http.Timeout →
             True
 
-        _ ->
+        _ →
             False
 
 

@@ -35,19 +35,19 @@ rows r =
 pub viewInput : Html Msg
 viewInput =
     case input Oops of
-        ( v, _ ) ->
+        ( v, _ ) →
             v
 
 
 pub viewHole : Html Msg
 viewHole =
     case hole (Html.text "x") of
-        ( v, _ ) ->
+        ( v, _ ) →
             v
 
 
 pub viewRows : Html Msg
 viewRows =
-    case rows λn -> <button onClick={Oops "x"} /> of
-        ( v, _ ) ->
+    case rows λn → <button onClick={Oops "x"} /> of
+        ( v, _ ) →
             v

@@ -4,16 +4,16 @@
 -- on one line whatever breaks the source had, which joins the `=` line when
 -- that fits. One that is the first operand of a broken chain, where the next
 -- operator would continue its body, is printed in parentheses.
-short xs = List.map xs λx -> x + 1
+short xs = List.map xs λx → x + 1
 
 
-long xs = List.map xs λx ->
+long xs = List.map xs λx →
     someVeryLongFunctionName x anotherArgument yetAnotherArgument andOneMoreOfThem
 
 
-head xs = List.foldl xs 0 λx acc -> x + acc
+head xs = List.foldl xs 0 λx acc → x + acc
 
 
 first xs =
-    List.map xs (λt -> t)
-        |> List.length
+    List.map xs (λt → t)
+        ▷ List.length

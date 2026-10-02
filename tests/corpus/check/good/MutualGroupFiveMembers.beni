@@ -14,10 +14,10 @@
 
 pub m1 n pair =
     case n of
-        0 ->
+        0 →
             "${pair.0}"
 
-        _ ->
+        _ →
             m2 pair.1 (n - 1) pair
 
 
@@ -30,7 +30,7 @@ pub m2 flag k pair =
 
 pub m3 pair k =
     case pair of
-        ( s, b ) ->
+        ( s, b ) →
             m4 "${k}" b k ( s, b )
 
 

@@ -16,22 +16,22 @@ type Msg
     | Bump
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        FromFiber ->
+        FromFiber →
             ( n, Cmd.perform flushing )
 
-        FromUpdate ->
+        FromUpdate →
             _ = Browser.flush ()
             _ = Debug.log "update flushed" ()
             ( n + 1, Cmd.none )
 
-        Bump ->
+        Bump →
             ( n + 1, Cmd.none )
 
 
-flushing : Cmd.Send Msg -> ()
+flushing : Cmd.Send Msg → ()
 flushing send =
     _ = send Bump
     _ = Debug.log "sent" ()
@@ -39,7 +39,7 @@ flushing send =
     Debug.log "flushed" ()
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view n =
     _ = Debug.log "render" n
     <main>
@@ -54,5 +54,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

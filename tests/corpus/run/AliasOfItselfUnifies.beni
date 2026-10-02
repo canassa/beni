@@ -11,7 +11,7 @@ type alias Id a =
     a
 
 
-wrap : a -> Id a
+wrap : a → Id a
 wrap x = x
 
 

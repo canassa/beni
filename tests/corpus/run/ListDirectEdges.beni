@@ -16,59 +16,59 @@ import Node exposing (Program)
 import String
 
 
-note : String, Int -> Int
+note : String, Int → Int
 note tag n = Debug.log tag n
 
 
-show : List Int -> String
+show : List Int → String
 show xs = Debug.toString xs
 
 
 main : Program
 main =
-    nested = List.map [ 1, 2 ] λx -> List.map [ 10, 20 ] λy -> note "inner" (x * y)
+    nested = List.map [ 1, 2 ] λx → List.map [ 10, 20 ] λy → note "inner" (x * y)
 
-    picked = List.filterMap [ 1, 2, 3 ] λx ->
-        case List.concatMap [ x, x ] λy -> [ note "concatMap" y ] of
-            [ 2, _ ] ->
+    picked = List.filterMap [ 1, 2, 3 ] λx →
+        case List.concatMap [ x, x ] λy → [ note "concatMap" y ] of
+            [ 2, _ ] →
                 Nothing
 
-            other ->
+            other →
                 Just (List.sum other)
 
-    indexed = List.indexedMap [ 5, 6, 7 ] λi x -> note "indexedMap" (i * 100 + x)
+    indexed = List.indexedMap [ 5, 6, 7 ] λi x → note "indexedMap" (i * 100 + x)
 
-    fives = List.map5 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] [ 0, 0, 0 ] λa b c d v ->
+    fives = List.map5 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] [ 0, 0, 0 ] λa b c d v →
         note "map5" (a + b + c + d + v)
 
-    halves = List.partition [ 1, 2, 3, 4 ] λx -> note "partition" x > 2
+    halves = List.partition [ 1, 2, 3, 4 ] λx → note "partition" x > 2
     Node.printLines
         [ Debug.toString nested
         , Debug.toString picked
         , show indexed
         , show fives
         , Debug.toString halves
-        , show (List.map [] λx -> x + 1)
-        , show (List.map [ 1 ] λx -> x + 1)
-        , show (List.filter [] λx -> x > 1)
-        , show (List.filter [ 1, 2, 3, 4 ] λx -> x > 10)
-        , show (List.filter [ 1, 2, 3, 4 ] λx -> x > 0)
-        , show (List.filter [ 1, 2, 3, 4 ] λx -> Int.mod x 2 == 1)
+        , show (List.map [] λx → x + 1)
+        , show (List.map [ 1 ] λx → x + 1)
+        , show (List.filter [] λx → x > 1)
+        , show (List.filter [ 1, 2, 3, 4 ] λx → x > 10)
+        , show (List.filter [ 1, 2, 3, 4 ] λx → x > 0)
+        , show (List.filter [ 1, 2, 3, 4 ] λx → Int.mod x 2 == 1)
         , show
-            (List.filterMap [ 1, 2, 3 ] λx ->
+            (List.filterMap [ 1, 2, 3 ] λx →
                 if x == 2 then
                     Just x
                 else
                     Nothing
             )
         , show
-            (List.filterMap [ 1, 2, 3 ] λx ->
+            (List.filterMap [ 1, 2, 3 ] λx →
                 if x == 2 then
                     Nothing
                 else
                     Just x
             )
-        , show (List.indexedMap [] λi x -> i + x)
+        , show (List.indexedMap [] λi x → i + x)
         , show (List.take [ 1, 2, 3 ] (0 - 1))
         , show (List.take [ 1, 2, 3 ] 0)
         , show (List.take [ 1, 2, 3 ] 2)
@@ -84,40 +84,40 @@ main =
         , show (List.concat [ [], [ 1, 2 ], [], [ 3 ], [] ])
         , show (List.concat [ [ 1 ], [ 2 ], [ 3 ] ])
         , show
-            (List.concatMap [ 1, 2, 3 ] λx ->
+            (List.concatMap [ 1, 2, 3 ] λx →
                 if x == 2 then
                     []
                 else
                     [ x, x ]
             )
         , show
-            (List.concatMap [ 1, 2, 3 ] λx ->
+            (List.concatMap [ 1, 2, 3 ] λx →
                 if x == 3 then
                     []
                 else
                     [ x ]
             )
         , show
-            (List.concatMap [ 1, 2, 3 ] λx ->
+            (List.concatMap [ 1, 2, 3 ] λx →
                 if x == 1 then
                     [ 7, 8 ]
                 else
                     []
             )
-        , show (List.concatMap [] λx -> [ x ])
-        , show (List.map2 [ 1, 2, 3 ] [] λa b -> a + b)
-        , show (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100 ] λa b c -> a + b + c)
+        , show (List.concatMap [] λx → [ x ])
+        , show (List.map2 [ 1, 2, 3 ] [] λa b → a + b)
+        , show (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100 ] λa b c → a + b + c)
         , show
-            (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] λa b c d -> a + b + c + d)
-        , Debug.toString (List.partition [] λx -> x > 1)
-        , Debug.toString (List.partition [ 1, 2, 3, 4 ] λx -> x > 0)
+            (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] λa b c d → a + b + c + d)
+        , Debug.toString (List.partition [] λx → x > 1)
+        , Debug.toString (List.partition [ 1, 2, 3, 4 ] λx → x > 0)
         , Debug.toString (List.unzip [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ) ])
         , Debug.toString (List.unzip [])
         , show (List.intersperse [ 1, 2, 3 ] 0)
         , show (List.intersperse [ 1 ] 0)
         , show (List.sort [ 5, 3, 9, 1, 3, 7, 2 ])
         , Debug.toString
-            (List.sortBy [ ( 2, "b" ), ( 1, "x" ), ( 2, "a" ), ( 1, "y" ) ] λ( k, _ ) ->
+            (List.sortBy [ ( 2, "b" ), ( 1, "x" ), ( 2, "a" ), ( 1, "y" ) ] λ( k, _ ) →
                 note "sortBy" k
             )
         ]

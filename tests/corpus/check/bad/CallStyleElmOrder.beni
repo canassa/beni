@@ -2,13 +2,13 @@
 -- is the `type_mismatch` it was, and its hint prints the call in beni's
 -- order — the one order in which every argument fits — for two arguments
 -- and for three.
-joined : List String -> String
+joined : List String → String
 joined names = String.join ", " names
 
 
-fallback : Maybe Int -> Int
+fallback : Maybe Int → Int
 fallback m = Maybe.withDefault 0 m
 
 
-middle : String -> String
+middle : String → String
 middle s = String.slice 1 3 s

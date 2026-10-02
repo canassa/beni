@@ -23,41 +23,41 @@ pub foreign type Attribute msg
 
 
 --| An element with its attributes and its children.
-pub foreign pure element : String, List (Attribute msg), List (Node msg) -> Node msg
+pub foreign pure element : String, List (Attribute msg), List (Node msg) → Node msg
 
 
 --| A text node.
-pub foreign pure text : String -> Node msg
+pub foreign pure text : String → Node msg
 
 
 --| An attribute, written with `setAttribute`.
-pub foreign pure attribute : String, String -> Attribute msg
+pub foreign pure attribute : String, String → Attribute msg
 
 
 --| The live `value` of a form control, written as a property: what a
 --| controlled input holds after every render.
-pub foreign pure value : String -> Attribute msg
+pub foreign pure value : String → Attribute msg
 
 
 --| Send `msg` when the element is clicked.
-pub foreign pure onClick : msg -> Attribute msg
+pub foreign pure onClick : msg → Attribute msg
 
 
 --| Send the message made from the control's value on every `input` event.
-pub foreign pure onInput : sync (String -> msg) -> Attribute msg
+pub foreign pure onInput : sync (String → msg) → Attribute msg
 
 
 --| Send the message made from the key's name on every `keydown` event.
-pub foreign pure onKeyDown : sync (String -> msg) -> Attribute msg
+pub foreign pure onKeyDown : sync (String → msg) → Attribute msg
 
 
 --| A page that renders `view` once and never changes.
-pub foreign pure show : Node msg -> Program
+pub foreign pure show : Node msg → Program
 
 
 --| A page with a model: `init` is rendered first, and every message a
 --| handler sends goes through `update` before the next render.
 --| `update` and `view` are `sync`: neither may suspend.
 pub foreign pure sandbox :
-      { init : model, update : sync (msg, model -> model), view : sync (model -> Node msg) }
-    -> Program
+      { init : model, update : sync (msg, model → model), view : sync (model → Node msg) }
+    → Program

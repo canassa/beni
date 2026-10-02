@@ -23,24 +23,24 @@ pub type Colour
     | Blue
 
 
-countEq : List a, a, Int -> Int
-    where a.eq : a, a -> Bool
+countEq : List a, a, Int → Int
+    where a.eq : a, a → Bool
 countEq xs value acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if x == value then
                 countEq rest value (acc + 1)
             else
                 countEq rest value acc
 
 
-spin : List a, a, Int -> Int
-    where a.eq : a, a -> Bool
+spin : List a, a, Int → Int
+    where a.eq : a, a → Bool
 spin xs value n =
-    if n <= 0 then
+    if n ≤ 0 then
         countEq xs value 0
     else
         spin [ Red, Blue, Red ] Red (n - 1)

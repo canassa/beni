@@ -74,19 +74,19 @@ none = Cmd []
 
 
 --| All of these commands, in order.
-pub batch : List (Cmd msg) -> Cmd msg
+pub batch : List (Cmd msg) → Cmd msg
 batch cmds = Cmd (List.concat (List.map cmds items))
 
 
 --| The pieces of a command, in the order they run.
-pub items : Cmd msg -> List (Item msg)
+pub items : Cmd msg → List (Item msg)
 items (Cmd list) = list
 
 
 --| Run `body` in a fiber of its own — or, when it never waits, with no
 --| fiber, where that fiber would have started. Nothing can cancel it but
 --| the program's end.
-pub perform : (Send msg -> ()) -> Cmd msg
+pub perform : (Send msg → ()) → Cmd msg
 perform body =
     if Js.maySuspend body then
         Cmd [ Perform (Hosted.job body) ]
@@ -107,8 +107,8 @@ perform body =
 --|
 --| A body that waits first is debounced by `Restart`; one that waits last
 --| is throttled by `Ignore`.
-pub keyed : k, Policy, (Send msg -> ()) -> Cmd msg
-    where k.compare : k, k -> Order
+pub keyed : k, Policy, (Send msg → ()) → Cmd msg
+    where k.compare : k, k → Order
 keyed k policy body =
     if Js.maySuspend body then
         Cmd [ Keyed [ Hosted.key k ] policy (Hosted.job body) ]
@@ -119,8 +119,8 @@ keyed k policy body =
 --| Cancel every body running under `key`. Their `send` does nothing from
 --| the moment this command is returned; with nothing running, nothing
 --| happens.
-pub cancel : k -> Cmd msg
-    where k.compare : k, k -> Order
+pub cancel : k → Cmd msg
+    where k.compare : k, k → Order
 cancel k = Cmd [ Cancel [ Hosted.key k ] ]
 
 
@@ -138,35 +138,35 @@ cancelAll = Cmd [ CancelAll [] ]
 --|     RowMsg id m ->
 --|         ( row, cmd ) = Row.update m (rowOf model id)
 --|         ( setRow model id row, Cmd.map cmd id (RowMsg id _) )
-pub map : Cmd a, k, (a -> msg) -> Cmd msg
-    where k.compare : k, k -> Order
+pub map : Cmd a, k, (a → msg) → Cmd msg
+    where k.compare : k, k → Order
 map (Cmd list) segment tag =
     s = Hosted.key segment
     Cmd (List.map list (mapItem _ s tag))
 
 
-mapItem : Item a, Key, (a -> msg) -> Item msg
+mapItem : Item a, Key, (a → msg) → Item msg
 mapItem item segment tag =
     case item of
-        Perform job ->
+        Perform job →
             Perform (Hosted.mapJob job tag)
 
-        Now job ->
+        Now job →
             Now (Hosted.mapJob job tag)
 
-        Keyed path policy job ->
-            Keyed [ segment, ...path ] policy (Hosted.mapJob job tag)
+        Keyed path policy job →
+            Keyed [ segment, …path ] policy (Hosted.mapJob job tag)
 
-        KeyedNow path policy job ->
-            KeyedNow [ segment, ...path ] policy (Hosted.mapJob job tag)
+        KeyedNow path policy job →
+            KeyedNow [ segment, …path ] policy (Hosted.mapJob job tag)
 
-        Cancel path ->
-            Cancel [ segment, ...path ]
+        Cancel path →
+            Cancel [ segment, …path ]
 
-        CancelAll path ->
-            CancelAll [ segment, ...path ]
+        CancelAll path →
+            CancelAll [ segment, …path ]
 
-        After work ->
+        After work →
             After (Hosted.mapLater work tag)
 
 
@@ -174,16 +174,16 @@ mapItem item segment tag =
 --| update's model: after every write of the render, before the next
 --| message, synchronously, so the nodes it rendered exist and a focus or
 --| a measurement costs no frame. It must not wait.
-pub afterRender : (Send msg -> ()) -> Cmd msg
+pub afterRender : (Send msg → ()) → Cmd msg
 afterRender body = Cmd [ After (Hosted.later body) ]
 
 
 --| Run `work`, as `perform` runs a body, and send what it returns through
 --| `tag`: the command form of calling `work` directly.
-pub task : (() -> a), (a -> msg) -> Cmd msg
-task work tag = perform λsend -> send (tag (work ()))
+pub task : (() → a), (a → msg) → Cmd msg
+task work tag = perform λsend → send (tag (work ()))
 
 
 --| Run `work`, as `perform` runs a body, for what it does.
-pub do : (() -> ()) -> Cmd msg
-do work = perform λ_ -> work ()
+pub do : (() → ()) → Cmd msg
+do work = perform λ_ → work ()

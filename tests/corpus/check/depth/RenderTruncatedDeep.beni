@@ -1,60 +1,50 @@
 -- check/depth: a type printed past Render.max_depth truncates to `…`.
 -- The diagnostic is unaffected: only how much of the type it shows.
 pub f :
-      ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( ( Int, Int ), Int ), Int ), Int )
-                                                        , Int
-                                                        )
-                                                      , Int
-                                                      )
-                                                    , Int
-                                                    )
-                                                  , Int
-                                                  )
-                                                , Int
-                                                )
-                                              , Int
-                                              )
-                                            , Int
-                                            )
-                                          , Int
-                                          )
-                                        , Int
-                                        )
-                                      , Int
-                                      )
-                                    , Int
-                                    )
-                                  , Int
-                                  )
-                                , Int
-                                )
-                              , Int
-                              )
-                            , Int
-                            )
-                          , Int
+      (((((((((((((((((((((((((((((Int × Int) × Int) × Int) × Int) × Int) × Int) × Int) × Int) × Int
                           )
-                        , Int
+                              × Int
+                         )
+                             × Int
                         )
-                      , Int
+                            × Int
+                       )
+                           × Int
                       )
-                    , Int
+                          × Int
+                     )
+                         × Int
                     )
-                  , Int
+                        × Int
+                   )
+                       × Int
                   )
-                , Int
+                      × Int
+                 )
+                     × Int
                 )
-              , Int
+                    × Int
+               )
+                   × Int
               )
-            , Int
+                  × Int
+             )
+                 × Int
             )
-          , Int
+                × Int
+           )
+               × Int
           )
-        , Int
+              × Int
+         )
+             × Int
         )
-      , Int
+            × Int
+       )
+           × Int
       )
-    -> Int
+          × Int
+    → Int
 f _ = 1
 
 

@@ -16,33 +16,33 @@ import Node exposing (Program)
 import String
 
 
-logged : List Int -> List Int
+logged : List Int → List Int
 logged xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             [ Debug.log "head" x
             , (case x of
-                  2 ->
+                  2 →
                       Debug.log "case" 20
 
-                  _ ->
+                  _ →
                       Debug.log "case" 0
               )
-            , ...logged (Debug.log "arg" rest)
+            , …logged (Debug.log "arg" rest)
             ]
 
 
-adders : List Int -> List (Int -> Int)
+adders : List Int → List (Int → Int)
 adders xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ (λy -> y + x), ...adders rest ]
+        [ x, …rest ] →
+            [ (λy → y + x), …adders rest ]
 
 
 main : Program
@@ -50,5 +50,5 @@ main =
     out = logged [ 1, 2 ]
     Node.printLines
         [ String.join (List.map out String.fromInt) ","
-        , String.join (List.map (adders [ 10, 20, 30 ]) λf -> String.fromInt (f 0)) ","
+        , String.join (List.map (adders [ 10, 20, 30 ]) λf → String.fromInt (f 0)) ","
         ]

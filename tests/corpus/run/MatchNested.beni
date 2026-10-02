@@ -35,41 +35,41 @@ type Outer
     | Empty
 
 
-describe : Shape, Colour -> String
+describe : Shape, Colour → String
 describe shape colour =
     case ( shape, colour ) of
-        ( Circle, Red ) ->
+        ( Circle, Red ) →
             "red circle"
 
-        ( Circle, _ ) ->
+        ( Circle, _ ) →
             "circle"
 
-        ( Square, Red ) ->
+        ( Square, Red ) →
             "red square"
 
-        ( _, Blue ) ->
+        ( _, Blue ) →
             "blue thing"
 
-        ( _, _ ) ->
+        ( _, _ ) →
             "thing"
 
 
-depth : Outer -> String
+depth : Outer → String
 depth o =
     case o of
-        Boxed (Pair (Leaf a) (Leaf b)) ->
+        Boxed (Pair (Leaf a) (Leaf b)) →
             "two leaves ${String.fromInt (a + b)}"
 
-        Boxed (Pair (Leaf a) _) ->
+        Boxed (Pair (Leaf a) _) →
             "left leaf ${String.fromInt a}"
 
-        Boxed (Pair _ _) ->
+        Boxed (Pair _ _) →
             "pair"
 
-        Boxed (Leaf n) ->
+        Boxed (Leaf n) →
             "leaf ${String.fromInt n}"
 
-        Empty ->
+        Empty →
             "empty"
 
 

@@ -3,7 +3,7 @@
 -- operator, an argument, a list element — and its `)` ends the last item
 -- wherever it stands. It is a `paren` around a `block`, and how
 -- `--migrate-let` writes a `let` that no opener heads.
-ok : Bool, Int -> Bool
+ok : Bool, Int → Bool
 ok first b =
     first
         && (
@@ -12,17 +12,17 @@ ok first b =
         )
 
 
-argument : Int -> List Int
+argument : Int → List Int
 argument n =
     List.map
         [ n ]
         (
             k = n * 2
-            λx -> x + k
+            λx → x + k
         )
 
 
-element : Int -> List Int
+element : Int → List Int
 element n =
     [ 1
     , (

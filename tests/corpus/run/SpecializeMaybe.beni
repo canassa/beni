@@ -11,32 +11,32 @@
 import Node
 
 
-pick : List String, Int -> String
-pick words i = List.get words (Debug.log "index" i) |> Maybe.withDefault "none"
+pick : List String, Int → String
+pick words i = List.get words (Debug.log "index" i) ▷ Maybe.withDefault "none"
 
 
-firstOr : List Int, Int -> Int
+firstOr : List Int, Int → Int
 firstOr xs d =
     case List.head xs of
-        Just x ->
+        Just x →
             Debug.log "just" (x * 2)
 
-        Nothing ->
+        Nothing →
             Debug.log "nothing" d
 
 
-shown : List Int -> String
+shown : List Int → String
 shown xs =
     m = List.head xs
     case m of
-        Just x ->
+        Just x →
             Debug.toString m ++ String.fromInt x
 
-        Nothing ->
+        Nothing →
             "empty"
 
 
-sign : Int -> Maybe String
+sign : Int → Maybe String
 sign n =
     if n > 0 then
         Just "positive"
@@ -46,7 +46,7 @@ sign n =
         Nothing
 
 
-describe : Int -> String
+describe : Int → String
 describe n = Maybe.withDefault (sign n) "zero"
 
 

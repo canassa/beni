@@ -105,22 +105,22 @@ nouns =
 -- was thrown away ("not a Smi") and 1 000 rows built unoptimised, which
 -- Solid's `Math.random` never meets (`plans/runtime-in-beni.md`, *Append
 -- against Solid 1*).
-next : Int -> Int
+next : Int → Int
 next seed = Int.mod (seed * 16807) 1073741789
 
 
 -- A word by its index: `List.get`, not `List.drop` then `List.head`, which
 -- makes a view of the list to read one element.
-pick : List String, Int, Int -> String
-pick words count seed = List.get words (Int.mod seed count) |> Maybe.withDefault ""
+pick : List String, Int, Int → String
+pick words count seed = List.get words (Int.mod seed count) ▷ Maybe.withDefault ""
 
 
 -- `count` rows with ids from `id` up, and the seed after them.
-build : Int, Int, Int -> ( List Row, Int )
+build : Int, Int, Int → List Row × Int
 build count id seed = buildFrom (id + count - 1) id seed []
 
 
-buildFrom : Int, Int, Int, List Row -> ( List Row, Int )
+buildFrom : Int, Int, Int, List Row → List Row × Int
 buildFrom id first seed rows =
     if id < first then
         ( rows, seed )
@@ -132,63 +132,63 @@ buildFrom id first seed rows =
         n = next c
 
         label = "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
-        buildFrom (id - 1) first n [ { id = id, label = label }, ...rows ]
+        buildFrom (id - 1) first n [ { id = id, label = label }, …rows ]
 
 
-replace : Model, Int -> Model
+replace : Model, Int → Model
 replace model count =
     ( rows, seed ) = build count model.nextId model.seed
     { model | rows = rows, nextId = model.nextId + count, seed = seed }
 
 
-at : List Row, Int -> Maybe Row
+at : List Row, Int → Maybe Row
 at rows index = List.get rows index
 
 
-swapRows : List Row -> List Row
+swapRows : List Row → List Row
 swapRows rows =
     case ( at rows 1, at rows 998 ) of
-        ( Just a, Just b ) ->
-            List.indexedMap rows λi row -> if i == 1 then b else if i == 998 then a else row
+        ( Just a, Just b ) →
+            List.indexedMap rows λi row → if i == 1 then b else if i == 998 then a else row
 
-        _ ->
+        _ →
             rows
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Run ->
+        Run →
             replace model 1000
 
-        RunLots ->
+        RunLots →
             replace model 10000
 
-        Add ->
+        Add →
             ( rows, seed ) = build 1000 model.nextId model.seed
             { model | rows = model.rows ++ rows, nextId = model.nextId + 1000, seed = seed }
 
-        Update ->
+        Update →
             { model
                 | rows =
-                    List.indexedMap model.rows λi row ->
+                    List.indexedMap model.rows λi row →
                         if Int.mod i 10 == 0 then { row | label = row.label ++ " !!!" } else row
             }
 
-        Clear ->
+        Clear →
             { model | rows = [] }
 
-        SwapRows ->
+        SwapRows →
             { model | rows = swapRows model.rows }
 
-        Select id ->
+        Select id →
             { model | selected = Just id }
 
-        Remove id ->
-            { model | rows = List.filter model.rows λrow -> row.id /= id }
+        Remove id →
+            { model | rows = List.filter model.rows λrow → row.id ≠ id }
 
 
-rowClass : Model, Row -> String
+rowClass : Model, Row → String
 rowClass model row =
     if model.selected == Just row.id then
         "danger"
@@ -196,7 +196,7 @@ rowClass model row =
         ""
 
 
-button : String, String, Msg -> Html Msg
+button : String, String, Msg → Html Msg
 button id label msg =
     <div class="col-sm-6 smallpad">
         <button type="button" class="btn btn-primary btn-block" id={id} onClick={msg}>
@@ -205,7 +205,7 @@ button id label msg =
     </div>
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <div class="container">
         <div class="jumbotron">
@@ -226,7 +226,7 @@ view model =
         <table class="table table-hover table-striped test-data">
             <tbody>
                 <For each={model.rows} keyed={.id}>
-                    {λrow ->
+                    {λrow →
                         <tr class={rowClass model row}>
                             <td class="col-md-1">{row.id}</td>
                             <td class="col-md-4"><a onClick={Select row.id}>{row.label}</a></td>

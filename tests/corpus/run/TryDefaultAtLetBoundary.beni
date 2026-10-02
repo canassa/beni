@@ -10,7 +10,7 @@
 import Node exposing (Program)
 
 
-pair : Int -> ( Result String Int, Result Int Int )
+pair : Int → Result String Int × Result Int Int
 pair n =
     unwrap u = u?
     ( unwrap (Ok (Ok n)), unwrap (Err 7) )

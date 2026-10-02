@@ -9,16 +9,16 @@ pub type T
     = T Int
 
 
-eq : T, T -> Bool
+eq : T, T → Bool
 eq a b =
     case ( a, b ) of
-        ( T x, T y ) ->
+        ( T x, T y ) →
             Int.mod x 10 == Int.mod y 10
 
 
-pub inside : T, T -> Bool
+pub inside : T, T → Bool
 inside a b = a == b
 
 
-pub insideTuple : T, T -> Bool
+pub insideTuple : T, T → Bool
 insideTuple a b = ( a, 0 ) == ( b, 0 )

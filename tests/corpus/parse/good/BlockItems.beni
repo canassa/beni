@@ -6,18 +6,18 @@
 -- level and in a block, a branch's and a lambda's `->`, `then` and `else`.
 -- A block of one expression is that expression: `one` and every branch
 -- body of one line parse as they did before blocks.
-kinds : Int -> Int
+kinds : Int → Int
 kinds n =
-    double : Int -> Int
+    double : Int → Int
     double x = x * 2
 
     ( a, b ) = ( n, double n )
-    r <- apply a
+    r ← apply a
     log r
     a + b + r
 
 
-one : Bool -> Int
+one : Bool → Int
 one c =
     if c then
         1
@@ -25,16 +25,16 @@ one c =
         2
 
 
-openers : Maybe Int, Bool -> Int
+openers : Maybe Int, Bool → Int
 openers m c =
     case m of
-        Just n ->
+        Just n →
             k = n + 1
             k
 
-        Nothing ->
+        Nothing →
             f =
-                λx ->
+                λx →
                     y = x
                     y
             if c then

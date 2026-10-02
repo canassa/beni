@@ -4,45 +4,45 @@ import Node exposing (Program)
 import String
 
 
-roman : Int -> String
+roman : Int → String
 roman n =
     case n of
-        1 ->
+        1 →
             "I"
 
-        2 ->
+        2 →
             "II"
 
-        3 ->
+        3 →
             "III"
 
-        _ ->
+        _ →
             "many"
 
 
-kind : String -> String
+kind : String → String
 kind word =
     case word of
-        "yes" ->
+        "yes" →
             "affirmative"
 
-        "no" ->
+        "no" →
             "negative"
 
-        _ ->
+        _ →
             "unclear"
 
 
-letter : Char -> String
+letter : Char → String
 letter c =
     case c of
-        'a' ->
+        'a' →
             "first"
 
-        'z' ->
+        'z' →
             "last"
 
-        _ ->
+        _ →
             "middle"
 
 

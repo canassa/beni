@@ -7,13 +7,13 @@
 -- marked argument, whatever lowering then says of it; in a `let`
 -- annotation the same spelling is a type variable applied to nothing and a
 -- parenthesised type, as it always was: two arguments.
-pub foreign pure onInput : sync (String -> msg) -> Attribute msg
+pub foreign pure onInput : sync (String → msg) → Attribute msg
 
 
-pub foreign pure program : { update : sync (msg, model -> model), init : model } -> Program
+pub foreign pure program : { update : sync (msg, model → model), init : model } → Program
 
 
-pub foreign pure handlers : List (sync (Event -> msg)) -> Attribute msg
+pub foreign pure handlers : List (sync (Event → msg)) → Attribute msg
 
 
 pair : Pair sync (Int)

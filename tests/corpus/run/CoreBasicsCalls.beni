@@ -28,11 +28,11 @@ type Impossible
     = Impossible Never
 
 
-drain : Impossible -> Int
+drain : Impossible → Int
 drain (Impossible nothingness) = never nothingness
 
 
-showBool : Bool -> String
+showBool : Bool → String
 showBool b =
     if b then
         "True"

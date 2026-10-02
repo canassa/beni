@@ -8,50 +8,50 @@ import Set exposing (Set)
 
 pub type Validation a
     = Valid a
-    | Invalid (List ( String, String ))
+    | Invalid (List (String × String))
 
 
 pub type alias Validator a =
-    String, a -> Validation a
+    String, a → Validation a
 
 
-pub map : Validation a, (a -> b) -> Validation b
+pub map : Validation a, (a → b) → Validation b
 map validation f =
     case validation of
-        Valid a ->
+        Valid a →
             Valid (f a)
 
-        Invalid errors ->
+        Invalid errors →
             Invalid errors
 
 
-pub andMap : Validation (a -> b), Validation a -> Validation b
+pub andMap : Validation (a → b), Validation a → Validation b
 andMap function value =
     case ( function, value ) of
-        ( Valid f, Valid a ) ->
+        ( Valid f, Valid a ) →
             Valid (f a)
 
-        ( Invalid errors, Valid _ ) ->
+        ( Invalid errors, Valid _ ) →
             Invalid errors
 
-        ( Valid _, Invalid errors ) ->
+        ( Valid _, Invalid errors ) →
             Invalid errors
 
-        ( Invalid left, Invalid right ) ->
+        ( Invalid left, Invalid right ) →
             Invalid (left ++ right)
 
 
-pub andThen : Validation a, (a -> Validation b) -> Validation b
+pub andThen : Validation a, (a → Validation b) → Validation b
 andThen validation f =
     case validation of
-        Valid a ->
+        Valid a →
             f a
 
-        Invalid errors ->
+        Invalid errors →
             Invalid errors
 
 
-pub fail : String, String -> Validation a
+pub fail : String, String → Validation a
 fail field message = Invalid [ ( field, message ) ]
 
 
@@ -63,18 +63,18 @@ required field value =
         Valid value
 
 
-pub minLength : Int -> Validator String
+pub minLength : Int → Validator String
 minLength n =
-    λfield value ->
+    λfield value →
         if String.length value < n then
             fail field "must be at least ${n} characters"
         else
             Valid value
 
 
-pub maxLength : Int -> Validator String
+pub maxLength : Int → Validator String
 maxLength n =
-    λfield value ->
+    λfield value →
         if String.length value > n then
             fail field "must be at most ${n} characters"
         else
@@ -84,19 +84,19 @@ maxLength n =
 pub email : Validator String
 email field value =
     case String.split value "@" of
-        [ local, domain ] ->
+        [ local, domain ] →
             if String.isEmpty local || not (String.contains domain ".") then
                 fail field "must be a valid email address"
             else
                 Valid value
 
-        _ ->
+        _ →
             fail field "must be a valid email address"
 
 
-pub oneOfSet : Set String -> Validator String
+pub oneOfSet : Set String → Validator String
 oneOfSet allowed =
-    λfield value ->
+    λfield value →
         if Set.member allowed value then
             Valid value
         else
@@ -104,55 +104,55 @@ oneOfSet allowed =
             fail field "must be one of: ${choices}"
 
 
-pub intBetween : Int, Int -> Validator Int
+pub intBetween : Int, Int → Validator Int
 intBetween low high =
-    λfield value ->
+    λfield value →
         if value < low || value > high then
             fail field "must be between ${low} and ${high}"
         else
             Valid value
 
 
-pub matches : String, String -> Validator String
+pub matches : String, String → Validator String
 matches otherName other =
-    λfield value ->
+    λfield value →
         if value == other then
             Valid value
         else
             fail field "must match ${otherName}"
 
 
-pub all : List (Validator a) -> Validator a
+pub all : List (Validator a) → Validator a
 all validators =
-    λfield value ->
-        List.foldl validators (Valid value) λvalidator acc ->
+    λfield value →
+        List.foldl validators (Valid value) λvalidator acc →
             case ( acc, validator field value ) of
-                ( Valid _, Valid v ) ->
+                ( Valid _, Valid v ) →
                     Valid v
 
-                ( Valid _, Invalid errors ) ->
+                ( Valid _, Invalid errors ) →
                     Invalid errors
 
-                ( Invalid errors, Valid _ ) ->
+                ( Invalid errors, Valid _ ) →
                     Invalid errors
 
-                ( Invalid left, Invalid right ) ->
+                ( Invalid left, Invalid right ) →
                     Invalid (left ++ right)
 
 
-pub firstOf : List (Validator a) -> Validator a
+pub firstOf : List (Validator a) → Validator a
 firstOf validators =
-    λfield value ->
+    λfield value →
         case validators of
-            [] ->
+            [] →
                 Valid value
 
-            [ validator, ...rest ] ->
+            [ validator, …rest ] →
                 case validator field value of
-                    Valid v ->
+                    Valid v →
                         (firstOf rest) field v
 
-                    invalid ->
+                    invalid →
                         invalid
 
 
@@ -193,7 +193,7 @@ countries : Set String
 countries = Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ]
 
 
-pub validateSignUp : SignUpForm -> Validation SignUp
+pub validateSignUp : SignUpForm → Validation SignUp
 validateSignUp form =
     -- The applicative idiom needs a CURRIED function in the `Valid`, and a
     -- constructor is n-ary now (`language.md` §6.7), so the currying is
@@ -201,27 +201,26 @@ validateSignUp form =
     -- construction, which is the one place where saturated calls cost
     -- something in readability.
     Valid
-        (λuser ->
-            λmail ->
-                λpass -> λyears -> λcountry -> λnews -> SignUp user mail pass years country news
+        (λuser →
+            λmail → λpass → λyears → λcountry → λnews → SignUp user mail pass years country news
         )
-        |> andMap
+        ▷ andMap
             ((firstOf [ required, minLength 3, maxLength 20, usernameChars ])
                 "username"
                 form.username
             )
-        |> andMap ((firstOf [ required, email ]) "email" form.email)
-        |> andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
-        |> andMap (parseAge "age" form.age |> andThen λv -> (intBetween 13 120) "age" v)
-        |> andMap ((firstOf [ required, oneOfSet countries ]) "country" form.country)
-        |> andMap (Valid form.newsletter)
-        |> andThen (checkConfirm form _)
-        |> andThen (checkTerms form _)
+        ▷ andMap ((firstOf [ required, email ]) "email" form.email)
+        ▷ andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
+        ▷ andMap (parseAge "age" form.age ▷ andThen λv → (intBetween 13 120) "age" v)
+        ▷ andMap ((firstOf [ required, oneOfSet countries ]) "country" form.country)
+        ▷ andMap (Valid form.newsletter)
+        ▷ andThen (checkConfirm form _)
+        ▷ andThen (checkTerms form _)
 
 
 usernameChars : Validator String
 usernameChars field value =
-    if String.all value λc -> Char.isAlphaNum c || c == '_' then
+    if String.all value λc → Char.isAlphaNum c || c == '_' then
         Valid value
     else
         fail field "may only contain letters, digits and underscores"
@@ -238,27 +237,27 @@ strongPassword field value =
         fail field "must contain upper and lower case letters and a digit"
 
 
-parseAge : String, String -> Validation Int
+parseAge : String, String → Validation Int
 parseAge field value =
     case String.toInt (String.trim value) of
-        Just n ->
+        Just n →
             Valid n
 
-        Nothing ->
+        Nothing →
             fail field "must be a whole number"
 
 
-checkConfirm : SignUpForm, SignUp -> Validation SignUp
+checkConfirm : SignUpForm, SignUp → Validation SignUp
 checkConfirm form signUp =
     case (matches "password" form.password) "passwordConfirm" form.passwordConfirm of
-        Valid _ ->
+        Valid _ →
             Valid signUp
 
-        Invalid errors ->
+        Invalid errors →
             Invalid errors
 
 
-checkTerms : SignUpForm, SignUp -> Validation SignUp
+checkTerms : SignUpForm, SignUp → Validation SignUp
 checkTerms form signUp =
     if form.terms then
         Valid signUp
@@ -266,52 +265,52 @@ checkTerms form signUp =
         fail "terms" "must be accepted"
 
 
-pub errorsByField : Validation a -> Dict String (List String)
+pub errorsByField : Validation a → Dict String (List String)
 errorsByField validation =
     case validation of
-        Valid _ ->
+        Valid _ →
             Dict.empty
 
-        Invalid errors ->
-            List.foldl errors Dict.empty λ( field, message ) acc ->
-                Dict.update acc field λexisting ->
+        Invalid errors →
+            List.foldl errors Dict.empty λ( field, message ) acc →
+                Dict.update acc field λexisting →
                     Just (Maybe.withDefault existing [] ++ [ message ])
 
 
-pub errorSummary : Validation a -> String
+pub errorSummary : Validation a → String
 errorSummary validation =
     case validation of
-        Valid _ ->
+        Valid _ →
             "ok"
 
-        Invalid errors ->
+        Invalid errors →
             errors
-                |> List.map λ( field, message ) -> "${field} ${message}"
-                |> String.join "; "
+                ▷ List.map λ( field, message ) → "${field} ${message}"
+                ▷ String.join "; "
 
 
-pub fieldError : String, Validation a -> Maybe String
+pub fieldError : String, Validation a → Maybe String
 fieldError field validation =
     errorsByField validation
-        |> Dict.get field
-        |> Maybe.andThen List.head
+        ▷ Dict.get field
+        ▷ Maybe.andThen List.head
 
 
-pub isValid : Validation a -> Bool
+pub isValid : Validation a → Bool
 isValid validation =
     case validation of
-        Valid _ ->
+        Valid _ →
             True
 
-        Invalid _ ->
+        Invalid _ →
             False
 
 
-pub toResult : Validation a -> Result (List ( String, String )) a
+pub toResult : Validation a → Result (List (String × String)) a
 toResult validation =
     case validation of
-        Valid a ->
+        Valid a →
             Ok a
 
-        Invalid errors ->
+        Invalid errors →
             Err errors

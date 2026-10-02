@@ -4,10 +4,10 @@ pub type Ci
     = Ci String
 
 
-pub eq : Ci, Ci -> Bool
+pub eq : Ci, Ci → Bool
 eq left right =
     case left of
-        Ci a ->
+        Ci a →
             case right of
-                Ci b ->
+                Ci b →
                     String.toLower a == String.toLower b

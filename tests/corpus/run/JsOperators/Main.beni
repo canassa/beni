@@ -7,14 +7,14 @@ import Node
 import Ops
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) " "
 
 
-bools : List Bool -> String
+bools : List Bool → String
 bools xs =
     String.join
-        (List.map xs λb ->
+        (List.map xs λb →
             if b then
                 "yes"
             else

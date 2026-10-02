@@ -3,44 +3,44 @@
 -- branch or starts the next outer branch. Three shapes: inner case as the
 -- whole body; inner case inside a `let` whose `in` continues the outer branch;
 -- inner branches only one column right of the outer pattern column.
-combine : Maybe Int, Maybe Int -> Int
+combine : Maybe Int, Maybe Int → Int
 combine a b =
     case a of
-        Just x ->
+        Just x →
             case b of
-                Just y ->
+                Just y →
                     x + y
 
-                Nothing ->
+                Nothing →
                     x
 
-        Nothing ->
+        Nothing →
             0
 
 
-combineLet : Maybe Int, Maybe Int -> Int
+combineLet : Maybe Int, Maybe Int → Int
 combineLet a b =
     case a of
-        Just x ->
+        Just x →
             y =
                 case b of
-                    Just z ->
+                    Just z →
                         z
 
-                    Nothing ->
+                    Nothing →
                         0
             x + y
 
-        Nothing ->
+        Nothing →
             0
 
 
-tight : Maybe Int, Maybe Int -> Int
+tight : Maybe Int, Maybe Int → Int
 tight a b =
     case a of
-        Just x ->
+        Just x →
          case b of
-          Just y -> x + y
-          Nothing -> x
+          Just y → x + y
+          Nothing → x
 
-        Nothing -> 0
+        Nothing → 0

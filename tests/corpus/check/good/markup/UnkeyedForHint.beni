@@ -11,9 +11,9 @@ type alias Tag =
     slug : String
 
 
-pub view : List Tag, List (List Int) -> Html msg
+pub view : List Tag, List (List Int) → Html msg
 view tags rows =
     <div>
-        <For each={tags}>{λt -> <p>{t.slug}</p>}</For>
-        <For each={rows}>{λr -> <p>x</p>}</For>
+        <For each={tags}>{λt → <p>{t.slug}</p>}</For>
+        <For each={rows}>{λr → <p>x</p>}</For>
     </div>

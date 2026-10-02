@@ -14,9 +14,9 @@ pub type Shape
     | Rect Float Float
 
 
-pub wider : Shape, Shape -> Bool
+pub wider : Shape, Shape → Bool
 wider a b = True
 
 
-pub bigger : Shape, Shape -> Bool
+pub bigger : Shape, Shape → Bool
 bigger a b = a.wider b

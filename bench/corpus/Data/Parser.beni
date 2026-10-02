@@ -5,7 +5,7 @@ import Data.Token as T
 
 
 pub type alias Parser a =
-    run : String -> Result String ( a, String )
+    run : String → Result String (a × String)
 
 
 pub type Json
@@ -16,44 +16,44 @@ pub type Json
     | JList (List Json)
 
 
-pub succeed : a -> Parser a
-succeed value = { run = λinput -> Ok ( value, input ) }
+pub succeed : a → Parser a
+succeed value = { run = λinput → Ok ( value, input ) }
 
 
-pub fail : String -> Parser a
-fail reason = { run = λ_ -> Err reason }
+pub fail : String → Parser a
+fail reason = { run = λ_ → Err reason }
 
 
-pub map : (a -> b), Parser a -> Parser b
+pub map : (a → b), Parser a → Parser b
 map f parser =
     { run =
-        λinput ->
+        λinput →
             case parser.run input of
-                Ok ( value, rest ) ->
+                Ok ( value, rest ) →
                     Ok ( f value, rest )
 
-                Err reason ->
+                Err reason →
                     Err reason
     }
 
 
-pub andThen : (a -> Parser b), Parser a -> Parser b
+pub andThen : (a → Parser b), Parser a → Parser b
 andThen next parser =
     { run =
-        λinput ->
+        λinput →
             case parser.run input of
-                Ok ( value, rest ) ->
+                Ok ( value, rest ) →
                     (next value).run rest
 
-                Err reason ->
+                Err reason →
                     Err reason
     }
 
 
-pub keyword : String -> Parser ()
+pub keyword : String → Parser ()
 keyword word =
     { run =
-        λinput ->
+        λinput →
             if String.startsWith input word then
                 Ok ( (), String.dropLeft input (String.length word) )
             else
@@ -61,20 +61,20 @@ keyword word =
     }
 
 
-pub oneOf : List (Parser a) -> Parser a
+pub oneOf : List (Parser a) → Parser a
 oneOf parsers =
     { run =
-        λinput ->
+        λinput →
             case parsers of
-                [] ->
+                [] →
                     Err "no alternative matched"
 
-                [ first, ...rest ] ->
+                [ first, …rest ] →
                     case first.run input of
-                        Ok result ->
+                        Ok result →
                             Ok result
 
-                        Err _ ->
+                        Err _ →
                             (oneOf rest).run input
     }
 
@@ -82,37 +82,37 @@ oneOf parsers =
 pub literal : Parser Json
 literal =
     oneOf
-        [ map (λ_ -> JNull) (keyword "null")
-        , map (λ_ -> JBool True) (keyword "true")
-        , map (λ_ -> JBool False) (keyword "false")
+        [ map (λ_ → JNull) (keyword "null")
+        , map (λ_ → JBool True) (keyword "true")
+        , map (λ_ → JBool False) (keyword "false")
         ]
 
 
-pub parseTwice : String -> Result String ( Json, Json )
+pub parseTwice : String → Result String (Json × Json)
 parseTwice input =
     second = literal.run (String.trimLeft (T.afterFirst input))?
     Ok ( second.0, second.0 )
 
 
-pub describe : Json -> String
+pub describe : Json → String
 describe json =
     case json of
-        JNull ->
+        JNull →
             "null"
 
-        JBool True ->
+        JBool True →
             "true"
 
-        JBool False ->
+        JBool False →
             "false"
 
-        JNumber n ->
+        JNumber n →
             "number ${n}"
 
-        JString s ->
+        JString s →
             "string \"${s}\""
 
-        JList items ->
+        JList items →
             "list of ${List.length items}"
 
 

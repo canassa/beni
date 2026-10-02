@@ -21,7 +21,7 @@ type Chain
     | Stop (Maybe Key) (Maybe Key)
 
 
-chain : Int, Chain -> Chain
+chain : Int, Chain → Chain
 chain n acc =
     if n == 0 then
         acc
@@ -29,7 +29,7 @@ chain n acc =
         chain (n - 1) (Link (Key n) acc)
 
 
-show : String, Bool -> String
+show : String, Bool → String
 show label b =
     if b then
         label ++ ": True"

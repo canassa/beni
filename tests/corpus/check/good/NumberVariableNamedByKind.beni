@@ -12,4 +12,4 @@ pub h = List.singleton 2
 
 pub f u =
     p1 = []
-    [ 1, ...p1 ]
+    [ 1, …p1 ]

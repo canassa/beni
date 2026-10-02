@@ -2,5 +2,5 @@
 -- compile time (fast-compiler.md §3.1 point 5). `dischargeMethod` raises
 -- it itself now (static-dispatch-spike.md §6.3, §3.4) and points at the
 -- OPERATOR, which is what §10.3 asks of a well-known call.
-pub same : (Int -> Int), (Int -> Int) -> Bool
+pub same : (Int → Int), (Int → Int) → Bool
 same f g = f == g

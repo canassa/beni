@@ -10,7 +10,7 @@ pub a : Int
 a = f 1
 
 
-pub f : Int -> Int
+pub f : Int → Int
 f n = n + b
 
 

@@ -9,7 +9,7 @@
 import Node exposing (Program)
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
@@ -108,10 +108,10 @@ main =
         , n "e15" 15
         , n "e16" 16
         , case Just (n "e17" 17) of
-            Just v ->
+            Just v →
                 v
 
-            Nothing ->
+            Nothing →
                 0
         , n "e18" 18
         , n "e19" 19
@@ -135,10 +135,10 @@ main =
 
     headOf xs =
         case xs of
-            [ x, ..._ ] ->
+            [ x, …_ ] →
                 x
 
-            [] ->
+            [] →
                 0
     Node.printLines
         [ String.fromInt (List.length logged)

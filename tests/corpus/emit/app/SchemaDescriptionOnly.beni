@@ -21,9 +21,9 @@ main : Program
 main =
     Node.printLines
         [ case (Schema.describe (Tree.schema ())).root of
-            Schema.Reference _ ->
+            Schema.Reference _ →
                 "a reference"
 
-            _ ->
+            _ →
                 "something else"
         ]

@@ -37,13 +37,13 @@ badAfter =
         == After (Wrapper (Holder.Holder "right" identity))
 
 
-badGeneric : Generic String, Generic String -> Bool
+badGeneric : Generic String, Generic String → Bool
 badGeneric left right = left == right
 
 
-badRecord : { value : Holder.Holder String }, { value : Holder.Holder String } -> Bool
+badRecord : { value : Holder.Holder String }, { value : Holder.Holder String } → Bool
 badRecord left right = left == right
 
 
-badTuple : ( Holder.Holder String, Int ), ( Holder.Holder String, Int ) -> Bool
+badTuple : Holder.Holder String × Int, Holder.Holder String × Int → Bool
 badTuple left right = left == right

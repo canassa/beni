@@ -2,5 +2,5 @@
 import Counter exposing (Counter)
 
 
-f : Counter -> String
+f : Counter → String
 f c = c.count

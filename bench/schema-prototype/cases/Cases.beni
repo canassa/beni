@@ -43,21 +43,21 @@ type NestedNode
     = NestedNode { inner : WireNode, children : List NestedNode }
 
 
-conversionIssue : Schema.Context, String -> List Schema.Issue
+conversionIssue : Schema.Context, String → List Schema.Issue
 conversionIssue context message = [ Schema.issue context (Invalid "decimal_text") message ]
 
 
 numericText : Schema.Schema String Int
 numericText =
     Schema.transform Schema.string Schema.int.decoded
-        (λcontext text ->
+        (λcontext text →
             case String.toInt text of
-                Nothing ->
+                Nothing →
                     Err (conversionIssue context "expected decimal integer text")
-                Just value ->
+                Just value →
                     Ok value
         )
-        λcontext value ->
+        λcontext value →
             if value < 0 then
                 Err (conversionIssue context "negative integers cannot be encoded")
             else
@@ -69,7 +69,7 @@ pairEndpoint =
     Schema.object2Endpoint "pair"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" Schema.boolEndpoint)
-        (λname active -> { name = name, active = active })
+        (λname active → { name = name, active = active })
         .name
         .active
 
@@ -82,7 +82,7 @@ optionalTextEndpoint : Schema.Endpoint OptionalText
 optionalTextEndpoint =
     Schema.object1Endpoint "optional text"
         (Schema.optionalField "middle" (Schema.nullableEndpoint Schema.stringEndpoint))
-        (λmiddle -> { middle = middle })
+        (λmiddle → { middle = middle })
         .middle
 
 
@@ -94,7 +94,7 @@ userIdEndpoint : Schema.Endpoint UserId
 userIdEndpoint =
     Schema.object1Endpoint "user id"
         (Schema.requiredField "user-id" Schema.stringEndpoint)
-        (λuserId -> { userId = userId })
+        (λuserId → { userId = userId })
         .userId
 
 
@@ -116,7 +116,7 @@ messageEncodedEndpoint =
         }
         readEncodedMessage
         writeEncodedMessage
-        λ_ _ -> Ok ()
+        λ_ _ → Ok ()
 
 
 messageProgramEndpoint : Schema.Endpoint MessageProgram.Message
@@ -133,70 +133,70 @@ messageProgramEndpoint =
         }
         readProgramMessage
         writeProgramMessage
-        λ_ _ -> Ok ()
+        λ_ _ → Ok ()
 
 
 messageSchema : Schema.Schema MessageEncoded.Message MessageProgram.Message
 messageSchema =
     Schema.make messageEncodedEndpoint messageProgramEndpoint
-        (λ_ encoded -> Ok (encodedToProgram encoded))
-        λ_ program ->
+        (λ_ encoded → Ok (encodedToProgram encoded))
+        λ_ program →
             case program of
-                MessageProgram.Text payload ->
+                MessageProgram.Text payload →
                     Ok (MessageEncoded.Text payload)
-                MessageProgram.Count payload ->
+                MessageProgram.Count payload →
                     Ok (MessageEncoded.Count payload)
 
 
-readEncodedMessage : Schema.Context, Value -> Result (List Schema.Issue) MessageEncoded.Message
+readEncodedMessage : Schema.Context, Value → Result (List Schema.Issue) MessageEncoded.Message
 readEncodedMessage context value =
     case value of
-        Object [ ( "kind", Text "text" ), ( "value", Text text ) ] ->
+        Object [ ( "kind", Text "text" ), ( "value", Text text ) ] →
             Ok (MessageEncoded.Text { value = text })
-        Object [ ( "kind", Text "count" ), ( "value", Number number ) ] ->
-            Result.map (Schema.decode Schema.int number) λcount ->
+        Object [ ( "kind", Text "count" ), ( "value", Number number ) ] →
+            Result.map (Schema.decode Schema.int number) λcount →
                 MessageEncoded.Count { value = count }
-        _ ->
+        _ →
             Err [ Schema.issue context (Expected "tagged message") "expected tagged message" ]
 
 
-writeEncodedMessage : Schema.Context, MessageEncoded.Message -> Result (List Schema.Issue) Value
+writeEncodedMessage : Schema.Context, MessageEncoded.Message → Result (List Schema.Issue) Value
 writeEncodedMessage _ message =
     case message of
-        MessageEncoded.Text payload ->
+        MessageEncoded.Text payload →
             Ok (Object [ ( "kind", Text "text" ), ( "value", Text payload.value ) ])
-        MessageEncoded.Count payload ->
+        MessageEncoded.Count payload →
             Ok (Object [ ( "kind", Text "count" ), ( "value", Number (toFloat payload.value) ) ])
 
 
-readProgramMessage : Schema.Context, Value -> Result (List Schema.Issue) MessageProgram.Message
+readProgramMessage : Schema.Context, Value → Result (List Schema.Issue) MessageProgram.Message
 readProgramMessage context value =
     case readEncodedMessage context value of
-        Err issues ->
+        Err issues →
             Err issues
-        Ok encoded ->
+        Ok encoded →
             Ok (encodedToProgram encoded)
 
 
-encodedToProgram : MessageEncoded.Message -> MessageProgram.Message
+encodedToProgram : MessageEncoded.Message → MessageProgram.Message
 encodedToProgram encoded =
     case encoded of
-        MessageEncoded.Text payload ->
+        MessageEncoded.Text payload →
             MessageProgram.Text payload
-        MessageEncoded.Count payload ->
+        MessageEncoded.Count payload →
             MessageProgram.Count payload
 
 
-writeProgramMessage : Schema.Context, MessageProgram.Message -> Result (List Schema.Issue) Value
+writeProgramMessage : Schema.Context, MessageProgram.Message → Result (List Schema.Issue) Value
 writeProgramMessage _ message =
     case message of
-        MessageProgram.Text payload ->
+        MessageProgram.Text payload →
             Ok (Object [ ( "kind", Text "text" ), ( "value", Text payload.value ) ])
-        MessageProgram.Count payload ->
+        MessageProgram.Count payload →
             Ok (Object [ ( "kind", Text "count" ), ( "value", Number (toFloat payload.value) ) ])
 
 
-wireNodeEndpoint : () -> Schema.Endpoint WireNode
+wireNodeEndpoint : () → Schema.Endpoint WireNode
 wireNodeEndpoint () =
     Schema.recursiveEndpoint "WireNode"
         (Schema.ObjectShape
@@ -204,19 +204,19 @@ wireNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "WireNode") )
             ]
         )
-        λ() ->
+        λ() →
             Schema.object2Endpoint "wire node"
                 (Schema.requiredField "value" Schema.stringEndpoint)
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "WireNode" wireNodeEndpoint))
                 )
-                (λvalue children -> WireNode { value = value, children = children })
-                (λ(WireNode node) -> node.value)
-                λ(WireNode node) -> node.children
+                (λvalue children → WireNode { value = value, children = children })
+                (λ(WireNode node) → node.value)
+                λ(WireNode node) → node.children
 
 
-programNodeEndpoint : () -> Schema.Endpoint ProgramNode
+programNodeEndpoint : () → Schema.Endpoint ProgramNode
 programNodeEndpoint () =
     Schema.recursiveEndpoint "ProgramNode"
         (Schema.ObjectShape
@@ -224,16 +224,16 @@ programNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "ProgramNode") )
             ]
         )
-        λ() ->
+        λ() →
             Schema.object2Endpoint "program node"
                 (Schema.requiredField "value" Schema.int.decoded)
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "ProgramNode" programNodeEndpoint))
                 )
-                (λvalue children -> ProgramNode { value = value, children = children })
-                (λ(ProgramNode node) -> node.value)
-                λ(ProgramNode node) -> node.children
+                (λvalue children → ProgramNode { value = value, children = children })
+                (λ(ProgramNode node) → node.value)
+                λ(ProgramNode node) → node.children
 
 
 nodeSchema : Schema.Schema WireNode ProgramNode
@@ -242,7 +242,7 @@ nodeSchema = Schema.make (wireNodeEndpoint ()) (programNodeEndpoint ()) decodeNo
 
 -- A recursive endpoint nested inside another recursive endpoint. The outer
 -- wrapper currently publishes only its own definition, not the inner one's.
-nestedNodeEndpoint : () -> Schema.Endpoint NestedNode
+nestedNodeEndpoint : () → Schema.Endpoint NestedNode
 nestedNodeEndpoint () =
     Schema.recursiveEndpoint "NestedNode"
         (Schema.ObjectShape
@@ -250,67 +250,67 @@ nestedNodeEndpoint () =
             , ( "children", Schema.ListShape (Schema.ReferenceShape "NestedNode") )
             ]
         )
-        λ() ->
+        λ() →
             Schema.object2Endpoint "nested node"
                 (Schema.requiredField "inner" (wireNodeEndpoint ()))
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "NestedNode" nestedNodeEndpoint))
                 )
-                (λinner children -> NestedNode { inner = inner, children = children })
-                (λ(NestedNode node) -> node.inner)
-                λ(NestedNode node) -> node.children
+                (λinner children → NestedNode { inner = inner, children = children })
+                (λ(NestedNode node) → node.inner)
+                λ(NestedNode node) → node.children
 
 
-decodeNode : Schema.Context, WireNode -> Result (List Schema.Issue) ProgramNode
+decodeNode : Schema.Context, WireNode → Result (List Schema.Issue) ProgramNode
 decodeNode context (WireNode node) =
-    value <- Result.andThen (numericText.decodeValue context node.value)
-    children <- Result.andThen (decodeNodes context node.children)
+    value ← Result.andThen (numericText.decodeValue context node.value)
+    children ← Result.andThen (decodeNodes context node.children)
     Ok (ProgramNode { value = value, children = children })
 
 
-decodeNodes : Schema.Context, List WireNode -> Result (List Schema.Issue) (List ProgramNode)
+decodeNodes : Schema.Context, List WireNode → Result (List Schema.Issue) (List ProgramNode)
 decodeNodes context nodes =
     case nodes of
-        [] ->
+        [] →
             Ok []
-        [ first, ...rest ] ->
-            decoded <- Result.andThen (decodeNode context first)
-            decodedRest <- Result.andThen (decodeNodes context rest)
-            Ok [ decoded, ...decodedRest ]
+        [ first, …rest ] →
+            decoded ← Result.andThen (decodeNode context first)
+            decodedRest ← Result.andThen (decodeNodes context rest)
+            Ok [ decoded, …decodedRest ]
 
 
-encodeNode : Schema.Context, ProgramNode -> Result (List Schema.Issue) WireNode
+encodeNode : Schema.Context, ProgramNode → Result (List Schema.Issue) WireNode
 encodeNode context (ProgramNode node) =
-    value <- Result.andThen (numericText.encodeValue context node.value)
-    children <- Result.andThen (encodeNodes context node.children)
+    value ← Result.andThen (numericText.encodeValue context node.value)
+    children ← Result.andThen (encodeNodes context node.children)
     Ok (WireNode { value = value, children = children })
 
 
-encodeNodes : Schema.Context, List ProgramNode -> Result (List Schema.Issue) (List WireNode)
+encodeNodes : Schema.Context, List ProgramNode → Result (List Schema.Issue) (List WireNode)
 encodeNodes context nodes =
     case nodes of
-        [] ->
+        [] →
             Ok []
-        [ first, ...rest ] ->
-            encoded <- Result.andThen (encodeNode context first)
-            encodedRest <- Result.andThen (encodeNodes context rest)
-            Ok [ encoded, ...encodedRest ]
+        [ first, …rest ] →
+            encoded ← Result.andThen (encodeNode context first)
+            encodedRest ← Result.andThen (encodeNodes context rest)
+            Ok [ encoded, …encodedRest ]
 
 
 badConversionEndpoint : Schema.Endpoint String
 badConversionEndpoint =
     Schema.endpoint
         { root = Schema.StringShape, definitions = [] }
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Text _ ->
+                Text _ →
                     Err [ Schema.issue context (Invalid "conversion") "conversion rejected value" ]
-                _ ->
+                _ →
                     Err [ Schema.issue context (Expected "string") "expected string" ]
         )
-        (λ_ text -> Ok (Text text))
-        λ_ _ -> Ok ()
+        (λ_ text → Ok (Text text))
+        λ_ _ → Ok ()
 
 
 adverseEndpoint : Schema.Endpoint Pair
@@ -318,9 +318,9 @@ adverseEndpoint =
     Schema.object2Endpoint "adverse"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" badConversionEndpoint)
-        (λname active -> { name = name, active = active == "yes" })
+        (λname active → { name = name, active = active == "yes" })
         .name
-        λpair ->
+        λpair →
             if pair.active then
                 "yes"
             else
@@ -328,14 +328,14 @@ adverseEndpoint =
 
 
 positiveEndpoint : Schema.Endpoint Int
-positiveEndpoint = Schema.refine Schema.int.decoded "must be positive" λvalue -> value > 0
+positiveEndpoint = Schema.refine Schema.int.decoded "must be positive" λvalue → value > 0
 
 
 prevalidatedSchema : Schema.Schema String Int
 prevalidatedSchema =
     Schema.transform Schema.string positiveEndpoint
-        (λcontext _ -> Err [ Schema.issue context (Invalid "decode") "unused decode" ])
-        λcontext _ ->
+        (λcontext _ → Err [ Schema.issue context (Invalid "decode") "unused decode" ])
+        λcontext _ →
             Err
                 [ Schema.issue
                     context
@@ -349,7 +349,7 @@ positiveBoxSchema =
     Schema.fromEndpoint
         (Schema.object1Endpoint "positive box"
             (Schema.requiredField "count" positiveEndpoint)
-            (λcount -> { count = count })
+            (λcount → { count = count })
             .count
         )
 
@@ -359,7 +359,7 @@ stageWireEndpoint =
     Schema.object2Endpoint "staged"
         (Schema.requiredField "name" Schema.stringEndpoint)
         (Schema.requiredField "active" Schema.stringEndpoint)
-        (λname active -> { name = name, active = active })
+        (λname active → { name = name, active = active })
         .name
         .active
 
@@ -367,7 +367,7 @@ stageWireEndpoint =
 stagedSchema : Schema.Schema StageWire Pair
 stagedSchema =
     Schema.make stageWireEndpoint pairEndpoint
-        (λcontext wire ->
+        (λcontext wire →
             if wire.active == "yes" then
                 Ok { name = wire.name, active = True }
             else
@@ -375,7 +375,7 @@ stagedSchema =
                     [ Schema.issue context (Invalid "conversion") "active conversion rejected value"
                     ]
         )
-        λ_ pair ->
+        λ_ pair →
             Ok
                 { name = pair.name
                 , active =
@@ -406,7 +406,7 @@ depthOptions : Schema.Options
 depthOptions = { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 4 }
 
 
-issueAt : List PathSegment, Direction, Code, String -> Schema.Issue
+issueAt : List PathSegment, Direction, Code, String → Schema.Issue
 issueAt path direction code message =
     { path = path, direction = direction, code = code, message = message }
 
@@ -429,7 +429,7 @@ deepProgram =
         }
 
 
-pub results : List ( String, Bool )
+pub results : List (String × Bool)
 results =
     [ ( "decode conversion failure is complete"
       , Schema.decode numericText "x"

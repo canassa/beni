@@ -17,21 +17,21 @@ type K
 
 
 pub ma (K n) x =
-    if n <= 0 then
+    if n ≤ 0 then
         x
     else
         (K (n - 1)).mb x
 
 
 pub mb (K n) x =
-    if n <= 0 then
+    if n ≤ 0 then
         x
     else
         (K (n - 1)).mc x
 
 
 pub mc (K n) x =
-    if n <= 0 then
+    if n ≤ 0 then
         x
     else
         (K (n - 1)).ma x

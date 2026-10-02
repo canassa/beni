@@ -9,7 +9,7 @@ import Node
 import Ssr
 
 
-view : String, Int, Float, Char, Bool, Maybe (Html msg), List (Html msg) -> Html msg
+view : String, Int, Float, Char, Bool, Maybe (Html msg), List (Html msg) → Html msg
 view s i f c b maybe items =
     <p>
         {s}|{i}|{f}|{c}|{b}|{Html.text "<t>"}|{maybe}|{items}|{}|{ -- nothing
@@ -17,7 +17,7 @@ view s i f c b maybe items =
     </p>
 
 
-numberFirst : Int -> Html msg
+numberFirst : Int → Html msg
 numberFirst n = <>{n}{n}</>
 
 

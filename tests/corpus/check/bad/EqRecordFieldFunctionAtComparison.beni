@@ -11,4 +11,4 @@ g r =
     ( b, fn n )
 
 
-use = g { x = 1, f = λn -> n + 1 }
+use = g { x = 1, f = λn → n + 1 }

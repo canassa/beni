@@ -4,7 +4,7 @@
 names = [ "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo" ]
 config = { host = "localhost", port = 8080, user = "admin", password = "secret", timeout = 30, retries = 5, verbose = True }
 big = ( "a very long first element of a tuple", "a very long second element of a tuple", 1234567890 )
-call = List.foldl [ "some", "long", "list", "of", "strings", "here" ] 0 (λitem acc -> acc + String.length item * 2)
-signature : { host : String, port : Int, user : String, password : String, timeout : Int }, Result String { host : String, port : Int } -> Bool
+call = List.foldl [ "some", "long", "list", "of", "strings", "here" ] 0 (λitem acc → acc + String.length item * 2)
+signature : { host : String, port : Int, user : String, password : String, timeout : Int }, Result String { host : String, port : Int } → Bool
 signature _ _ = True
 condition a b c d = String.isEmpty a && String.isEmpty b && String.isEmpty c && String.isEmpty d && String.isEmpty (a ++ b ++ c ++ d)

@@ -7,7 +7,7 @@ type T
     = T (H.Holder (Maybe T)) P.Q
 
 
-a = T (H.Holder Nothing) (P.Q λn -> n)
+a = T (H.Holder Nothing) (P.Q λn → n)
 
 
 x1 = a == a

@@ -5,23 +5,23 @@ import List
 
 
 --| Accumulate one result per input by `push`.
-pub collect : Int -> Array Int
-collect n = List.foldl (List.range 1 n) Array.empty λx acc -> Array.push acc (Int.mod (x * x) 1000)
+pub collect : Int → Array Int
+collect n = List.foldl (List.range 1 n) Array.empty λx acc → Array.push acc (Int.mod (x * x) 1000)
 
 
 --| Count `samples` into `buckets` buckets.
-pub histogram : List Int, Int -> Array Int
-histogram samples buckets = List.foldl samples (Array.repeat 0 buckets) λx acc ->
-    Array.update acc (Int.mod x buckets) λc -> c + 1
+pub histogram : List Int, Int → Array Int
+histogram samples buckets = List.foldl samples (Array.repeat 0 buckets) λx acc →
+    Array.update acc (Int.mod x buckets) λc → c + 1
 
 
 --| Fewest coins making each amount up to `n`, by a table built with `push`
 --| whose every entry reads four earlier ones.
-pub coins : Int -> Array Int
+pub coins : Int → Array Int
 coins n = coinsHelp 1 n (Array.push Array.empty 0)
 
 
-coinsHelp : Int, Int, Array Int -> Array Int
+coinsHelp : Int, Int, Array Int → Array Int
 coinsHelp i n dp =
     if i > n then
         dp
@@ -30,15 +30,15 @@ coinsHelp i n dp =
         coinsHelp (i + 1) n (Array.push dp best)
 
 
-via : Array Int, Int, Int -> Int
+via : Array Int, Int, Int → Int
 via dp i coin =
     case Array.get dp (i - coin) of
-        Just c ->
+        Just c →
             c + 1
 
-        Nothing ->
+        Nothing →
             1000000000
 
 
-pub total : Array Int -> Int
-total arr = Array.foldl arr 0 λv s -> s + v
+pub total : Array Int → Int
+total arr = Array.foldl arr 0 λv s → s + v

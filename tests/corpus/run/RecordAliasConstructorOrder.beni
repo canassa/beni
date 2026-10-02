@@ -19,7 +19,7 @@ type alias Outer =
 
 -- Annotated, so the record is closed where `==` meets it: the same
 -- comparison written inline after `q.zed` is `no_methods_on_shape`.
-same : Q, Q -> Bool
+same : Q, Q → Bool
 same a b = a == b
 
 

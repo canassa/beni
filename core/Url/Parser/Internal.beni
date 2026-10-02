@@ -7,4 +7,4 @@ import Dict exposing (Dict)
 
 --| A query parser: what it makes of the query's values, by key.
 pub type QueryParser a
-    = Q (Dict String (List String) -> a)
+    = Q (Dict String (List String) → a)

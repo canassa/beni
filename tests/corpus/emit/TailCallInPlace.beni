@@ -15,36 +15,36 @@
 import Node exposing (Program)
 
 
-pub sum : Int, Int -> Int
+pub sum : Int, Int → Int
 sum n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         sum (n - 1) (acc + n)
 
 
-pub swap : Int, Int, Int -> Int
+pub swap : Int, Int, Int → Int
 swap a b n =
-    if n <= 0 then
+    if n ≤ 0 then
         a - b
     else
         swap b a (n - 1)
 
 
-pub logged : Int, Int -> Int
+pub logged : Int, Int → Int
 logged a b =
-    if a <= 0 then
+    if a ≤ 0 then
         b
     else
         logged (a - 1) (String.length (String.fromInt a) + b)
 
 
-pub closures : Int, List (Int -> Int) -> List (Int -> Int)
+pub closures : Int, List (Int → Int) → List (Int → Int)
 closures n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
-        closures (n - 1) [ λx -> x + n, ...acc ]
+        closures (n - 1) [ λx → x + n, …acc ]
 
 
 main : Program

@@ -19,7 +19,7 @@ type Msg
     | Down Html.Event
 
 
-pub view : Int -> Html Msg
+pub view : Int → Html Msg
 view n =
     <form onSubmit={Sent}>
         <button onClick={Clicked n}>go</button>

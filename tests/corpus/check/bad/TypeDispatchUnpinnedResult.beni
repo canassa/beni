@@ -13,8 +13,8 @@
 -- `check/bad/WhereNonWellKnownAtLiteral`. Return-type dispatch is the
 -- natural producer of `.any`, because a constraint that never reaches an
 -- argument has nothing but the caller to pin it.
-pub decodeInto : Int -> a
-    where a.fromInt : Int -> a
+pub decodeInto : Int → a
+    where a.fromInt : Int → a
 decodeInto n = a.fromInt n
 
 

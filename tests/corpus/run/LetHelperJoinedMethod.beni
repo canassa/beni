@@ -34,7 +34,7 @@ u1 = check "a" "b"
 u2 = check 1 2
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

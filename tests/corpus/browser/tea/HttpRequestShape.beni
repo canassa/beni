@@ -17,17 +17,17 @@ type Msg
     | Got String (Result Http.Error String)
 
 
-shown : Result Http.Error String -> String
+shown : Result Http.Error String → String
 shown result =
     case result of
-        Ok text ->
+        Ok text →
             "ok ${text}"
 
-        Err _ ->
+        Err _ →
             "failed"
 
 
-plain : String, String, List Http.Header, Http.Body -> Result Http.Error String
+plain : String, String, List Http.Header, Http.Body → Result Http.Error String
 plain method url headers body =
     Http.request
         { method = method
@@ -40,44 +40,44 @@ plain method url headers body =
         }
 
 
-work : String -> (() -> Result Http.Error String)
+work : String → (() → Result Http.Error String)
 work name =
     case name of
-        "get" ->
-            λ() -> Http.get { url = "/items?page=2", expect = Http.expectString }
+        "get" →
+            λ() → Http.get { url = "/items?page=2", expect = Http.expectString }
 
-        "headers" ->
-            λ() ->
+        "headers" →
+            λ() →
                 plain
                     "GET"
                     "/headers"
                     [ Http.header "X-B" "1", Http.header "X-A" "2", Http.header "x-b" "3" ]
                     Http.emptyBody
 
-        "post" ->
-            λ() ->
+        "post" →
+            λ() →
                 Http.post
                     { url = "/notes"
                     , body = Http.stringBody "text/plain" "hello"
                     , expect = Http.expectString
                     }
 
-        "typed" ->
-            λ() ->
+        "typed" →
+            λ() →
                 plain
                     "PUT"
                     "/notes/1"
                     [ Http.header "Content-Type" "application/x-note" ]
                     (Http.stringBody "text/plain" "hi")
 
-        "patch" ->
-            λ() -> plain "patch" "/notes/1" [] (Http.stringBody "text/plain" "p")
+        "patch" →
+            λ() → plain "patch" "/notes/1" [] (Http.stringBody "text/plain" "p")
 
-        "delete" ->
-            λ() -> plain "DELETE" "/notes/1" [] Http.emptyBody
+        "delete" →
+            λ() → plain "DELETE" "/notes/1" [] Http.emptyBody
 
-        _ ->
-            λ() ->
+        _ →
+            λ() →
                 Http.riskyRequest
                     { method = "GET"
                     , headers = []
@@ -89,27 +89,27 @@ work name =
                     }
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Send name ->
+        Send name →
             ( lines, Cmd.task (work name) (Got name _) )
 
-        Got name result ->
+        Got name result →
             ( lines ++ [ "${name}: ${shown result}" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <For each={[ "get", "headers", "post", "typed", "patch", "delete", "risky" ]} keyed={False}>
-            {λname -> <button id={name} onClick={Send name}>{name}</button>}
+            {λname → <button id={name} onClick={Send name}>{name}</button>}
         </For>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

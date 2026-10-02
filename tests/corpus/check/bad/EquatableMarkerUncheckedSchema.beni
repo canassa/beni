@@ -10,11 +10,11 @@
 import Schema exposing (Conversion)
 
 
-mkM : Int -> Mine
+mkM : Int → Mine
 mkM n = Debug.todo "m"
 
 
-g : Int -> Bool
+g : Int → Bool
 g n = Basics.eq (mkM n) (mkM 2)
 
 
@@ -27,7 +27,7 @@ rconv = Debug.todo "c"
 
 
 type Fn
-    = Fn (Int -> Int)
+    = Fn (Int → Int)
 
 
 pub schema R =

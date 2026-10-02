@@ -6,25 +6,25 @@
 -- `-` followed by a space, `then`, `else`, `of`, and the next line of a
 -- multiline string. B4: a token left of the column ends the block, as the
 -- `else` in `inner` ends the block of its `then`.
-starts : Int -> List Int
+starts : Int → List Int
 starts n =
     -n
     .field
-    λx -> x
+    λx → x
     if True then 1 else 2
     case n of
-        _ -> 0
+        _ → 0
     \\a multiline
     \\string
     [ n ]
 
 
-continues : Int -> List Int
+continues : Int → List Int
 continues n =
     m = n
     + 1
     - 2
-    |> identity
+    ▷ identity
     k =
         if m > 0
         then m
@@ -32,14 +32,14 @@ continues n =
     j =
         case k
         of
-            _ -> k
+            _ → k
     [ m
     , k
     , j
     ]
 
 
-inner : Bool -> Int
+inner : Bool → Int
 inner c =
     if c then
         y = 1

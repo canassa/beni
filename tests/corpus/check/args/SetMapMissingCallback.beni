@@ -4,5 +4,5 @@
 import Set exposing (Set)
 
 
-pub shouted : Set String -> Set String
+pub shouted : Set String → Set String
 shouted names = Set.map names

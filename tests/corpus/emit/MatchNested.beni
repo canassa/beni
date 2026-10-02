@@ -33,38 +33,38 @@ type Inner
     | Pair Inner Inner
 
 
-pub describe : Shape, Colour -> String
+pub describe : Shape, Colour → String
 describe shape colour =
     case ( shape, colour ) of
-        ( Circle, Red ) ->
+        ( Circle, Red ) →
             "red circle"
 
-        ( Circle, _ ) ->
+        ( Circle, _ ) →
             "circle"
 
-        ( Square, Red ) ->
+        ( Square, Red ) →
             "red square"
 
-        ( _, Blue ) ->
+        ( _, Blue ) →
             "blue thing"
 
-        ( _, _ ) ->
+        ( _, _ ) →
             "thing"
 
 
-pub nested : Inner -> String
+pub nested : Inner → String
 nested i =
     case i of
-        Pair (Leaf a) (Leaf b) ->
+        Pair (Leaf a) (Leaf b) →
             "two leaves ${String.fromInt (a + b)}"
 
-        Pair (Leaf a) _ ->
+        Pair (Leaf a) _ →
             "left leaf ${String.fromInt a}"
 
-        Pair _ _ ->
+        Pair _ _ →
             "pair"
 
-        Leaf n ->
+        Leaf n →
             "leaf ${String.fromInt n}"
 
 

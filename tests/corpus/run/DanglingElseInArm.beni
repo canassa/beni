@@ -8,7 +8,7 @@
 import Node exposing (Program)
 
 
-step : ( Bool, Bool, Bool ) -> ()
+step : Bool × Bool × Bool → ()
 step ( a, b, c ) =
     if a then
         if b then

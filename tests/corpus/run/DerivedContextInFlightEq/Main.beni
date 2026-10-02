@@ -28,7 +28,7 @@ pub eq (T a) (T b) =
 viaBox (T x) (T y) = B.Box (T x) == B.Box (T y)
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

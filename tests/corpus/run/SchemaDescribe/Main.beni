@@ -15,7 +15,7 @@ import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, Varia
 
 
 loud : Conversion String Int
-loud = Schema.conversion (λ_ -> Ok 0) λn -> Ok (String.fromInt n)
+loud = Schema.conversion (λ_ → Ok 0) λn → Ok (String.fromInt n)
 
 
 one ( (), a ) = { a = a }
@@ -46,10 +46,10 @@ flat : Schema (Flat String) (Flat Int)
 flat =
     Schema.record
         (Schema.fields
-            |> Schema.field "id" (Schema.converted Schema.string loud)
-            |> Schema.key "the-id"
-            |> Schema.field "tags" (Schema.list Schema.string)
-            |> Schema.optional "note" (Schema.nullable Schema.finiteFloat)
+            ▷ Schema.field "id" (Schema.converted Schema.string loud)
+            ▷ Schema.key "the-id"
+            ▷ Schema.field "tags" (Schema.list Schema.string)
+            ▷ Schema.optional "note" (Schema.nullable Schema.finiteFloat)
         )
         (Schema.mapping toFlat fromFlat)
         (Schema.mapping toFlat fromFlat)
@@ -62,20 +62,20 @@ type Shape2
 
 shape2 : Schema Shape2 Shape2
 shape2 =
-    dot = Schema.injection (λ() -> Dot) λs ->
+    dot = Schema.injection (λ() → Dot) λs →
         case s of
-            Dot ->
+            Dot →
                 Just ()
 
-            _ ->
+            _ →
                 Nothing
 
-    circle = Schema.injection Circle λs ->
+    circle = Schema.injection Circle λs →
         case s of
-            Circle r ->
+            Circle r →
                 Just r
 
-            _ ->
+            _ →
                 Nothing
     Schema.tagged "shape"
         [ Schema.nullary "Dot" "dot" dot dot
@@ -83,7 +83,7 @@ shape2 =
             "Circle"
             "circle"
             (Schema.record
-                (Schema.fields |> Schema.field "a" Schema.float)
+                (Schema.fields ▷ Schema.field "a" Schema.float)
                 (Schema.mapping one unOne)
                 (Schema.mapping one unOne)
             )
@@ -103,14 +103,14 @@ type Inner
 
 
 inner : Schema Inner Inner
-inner = Schema.recursive "Inner" λself ->
-    i = Schema.injection Inner λ(Inner r) -> Just r
+inner = Schema.recursive "Inner" λself →
+    i = Schema.injection Inner λ(Inner r) → Just r
     Schema.tagged "t"
         [ Schema.variant
             "Inner"
             "inner"
             (Schema.record
-                (Schema.fields |> Schema.field "a" (Schema.list self))
+                (Schema.fields ▷ Schema.field "a" (Schema.list self))
                 (Schema.mapping one unOne)
                 (Schema.mapping one unOne)
             )
@@ -120,16 +120,16 @@ inner = Schema.recursive "Inner" λself ->
 
 
 outer : Schema Outer Outer
-outer = Schema.recursive "Outer" λself ->
-    o = Schema.injection Outer λ(Outer r) -> Just r
+outer = Schema.recursive "Outer" λself →
+    o = Schema.injection Outer λ(Outer r) → Just r
     Schema.tagged "t"
         [ Schema.variant
             "Outer"
             "outer"
             (Schema.record
                 (Schema.fields
-                    |> Schema.field "a" inner
-                    |> Schema.field "b" (Schema.list self)
+                    ▷ Schema.field "a" inner
+                    ▷ Schema.field "b" (Schema.list self)
                 )
                 (Schema.mapping two unTwo)
                 (Schema.mapping two unTwo)
@@ -141,62 +141,62 @@ outer = Schema.recursive "Outer" λself ->
 
 -- Two schemas, one name.
 twice : Schema (List Int) (List Int)
-twice = Schema.list (Schema.recursive "Same" λ_ -> Schema.int)
+twice = Schema.list (Schema.recursive "Same" λ_ → Schema.int)
 
 
 twins : Schema { a : List Int, b : List Int } { a : List Int, b : List Int }
 twins =
     Schema.record
         (Schema.fields
-            |> Schema.field "a" twice
-            |> Schema.field "b" (Schema.list (Schema.recursive "Same" λ_ -> Schema.int))
+            ▷ Schema.field "a" twice
+            ▷ Schema.field "b" (Schema.list (Schema.recursive "Same" λ_ → Schema.int))
         )
         (Schema.mapping two unTwo)
         (Schema.mapping two unTwo)
 
 
-shape : Shape -> String
+shape : Shape → String
 shape s =
     case s of
-        Schema.Primitive k ->
+        Schema.Primitive k →
             primitive k
 
-        Schema.ListOf child ->
+        Schema.ListOf child →
             "List (" ++ shape child ++ ")"
 
-        Schema.NullableOf child ->
+        Schema.NullableOf child →
             "Nullable (" ++ shape child ++ ")"
 
-        Schema.RecordOf fields ->
+        Schema.RecordOf fields →
             "{ " ++ String.join (List.map fields field) ", " ++ " }"
 
-        Schema.TaggedOf discriminator variants ->
+        Schema.TaggedOf discriminator variants →
             "tagged \""
                 ++ discriminator
                 ++ "\" [ "
                 ++ String.join (List.map variants variant) " | "
                 ++ " ]"
 
-        Schema.Converted child ->
+        Schema.Converted child →
             "Converted (" ++ shape child ++ ")"
 
-        Schema.Flipped child ->
+        Schema.Flipped child →
             "Flipped (" ++ shape child ++ ")"
 
-        Schema.TypeOnly child ->
+        Schema.TypeOnly child →
             "TypeOnly (" ++ shape child ++ ")"
 
-        Schema.EncodedOnly child ->
+        Schema.EncodedOnly child →
             "EncodedOnly (" ++ shape child ++ ")"
 
-        Schema.Reference id ->
+        Schema.Reference id →
             "#" ++ String.fromInt id
 
-        Schema.Invalid message ->
+        Schema.Invalid message →
             "Invalid \"" ++ message ++ "\""
 
 
-field : FieldShape -> String
+field : FieldShape → String
 field f =
     f.name
         ++ (if f.key == f.name then
@@ -213,54 +213,54 @@ field f =
         ++ shape f.shape
 
 
-variant : VariantShape -> String
+variant : VariantShape → String
 variant v =
     v.name
         ++ " as \""
         ++ v.tag
         ++ "\""
         ++ (case v.payload of
-               Just p ->
+               Just p →
                    " " ++ shape p
 
-               Nothing ->
+               Nothing →
                    ""
            )
 
 
-primitive : Schema.PrimitiveKind -> String
+primitive : Schema.PrimitiveKind → String
 primitive k =
     case k of
-        Schema.StringKind ->
+        Schema.StringKind →
             "String"
 
-        Schema.BoolKind ->
+        Schema.BoolKind →
             "Bool"
 
-        Schema.IntKind ->
+        Schema.IntKind →
             "Int"
 
-        Schema.FloatKind ->
+        Schema.FloatKind →
             "Float"
 
-        Schema.FiniteFloatKind ->
+        Schema.FiniteFloatKind →
             "FiniteFloat"
 
-        Schema.NullKind ->
+        Schema.NullKind →
             "Null"
 
-        Schema.ValueKind ->
+        Schema.ValueKind →
             "Value"
 
 
-definition : Definition -> String
+definition : Definition → String
 definition d = "  #" ++ String.fromInt d.id ++ " " ++ d.name ++ " = " ++ shape d.shape
 
 
-describe : Schema e a -> String
+describe : Schema e a → String
 describe s =
     d = Schema.describe s
-    String.join [ shape d.root, ...List.map d.definitions definition ] "\n"
+    String.join [ shape d.root, …List.map d.definitions definition ] "\n"
 
 
 main : Node.Program

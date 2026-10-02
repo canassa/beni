@@ -26,15 +26,15 @@ type Msg
     | Select Int
 
 
-row : Int -> Row
+row : Int → Row
 row id = { id = id, label = "row " ++ String.fromInt id }
 
 
-pub create : Int -> Model
-create n = { rows = Array.initialize n λi -> row (i + 1), selected = 0, nextId = n + 1 }
+pub create : Int → Model
+create n = { rows = Array.initialize n λi → row (i + 1), selected = 0, nextId = n + 1 }
 
 
-pub updateLabel : Int -> Msg
+pub updateLabel : Int → Msg
 updateLabel i = UpdateLabel i
 
 
@@ -42,15 +42,15 @@ pub updateEvery10th : Msg
 updateEvery10th = UpdateEvery10th
 
 
-pub swap : Int, Int -> Msg
+pub swap : Int, Int → Msg
 swap i j = Swap i j
 
 
-pub remove : Int -> Msg
+pub remove : Int → Msg
 remove id = Remove id
 
 
-pub append : Int -> Msg
+pub append : Int → Msg
 append n = Append n
 
 
@@ -58,47 +58,47 @@ pub addOne : Msg
 addOne = AddOne
 
 
-pub select : Int -> Msg
+pub select : Int → Msg
 select id = Select id
 
 
-pub update : Msg, Model -> Model
+pub update : Msg, Model → Model
 update msg model =
     case msg of
-        UpdateLabel i ->
-            { model | rows = Array.update model.rows i λr -> { r | label = r.label ++ " !!!" } }
+        UpdateLabel i →
+            { model | rows = Array.update model.rows i λr → { r | label = r.label ++ " !!!" } }
 
-        UpdateEvery10th ->
+        UpdateEvery10th →
             { model
                 | rows =
-                    Array.indexedMap model.rows λi r ->
+                    Array.indexedMap model.rows λi r →
                         if Int.mod i 10 == 0 then { r | label = r.label ++ " !!!" } else r
             }
 
-        Swap i j ->
+        Swap i j →
             case Array.get model.rows i of
-                Just a ->
+                Just a →
                     case Array.get model.rows j of
-                        Just b ->
+                        Just b →
                             { model | rows = Array.set (Array.set model.rows i b) j a }
 
-                        Nothing ->
+                        Nothing →
                             model
 
-                Nothing ->
+                Nothing →
                     model
 
-        Remove id ->
-            { model | rows = Array.filter model.rows λr -> r.id /= id }
+        Remove id →
+            { model | rows = Array.filter model.rows λr → r.id ≠ id }
 
-        Append n ->
+        Append n →
             { model
-                | rows = Array.append model.rows (Array.initialize n λi -> row (model.nextId + i))
+                | rows = Array.append model.rows (Array.initialize n λi → row (model.nextId + i))
                 , nextId = model.nextId + n
             }
 
-        AddOne ->
+        AddOne →
             { model | rows = Array.push model.rows (row model.nextId), nextId = model.nextId + 1 }
 
-        Select id ->
+        Select id →
             { model | selected = id }

@@ -11,7 +11,7 @@ type T
     = T Int
 
 
-pub combine : T, Int -> Int
+pub combine : T, Int → Int
 combine (T a) b = a + b
 
 

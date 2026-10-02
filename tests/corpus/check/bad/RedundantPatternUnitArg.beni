@@ -3,14 +3,14 @@
 -- it can never run — the same answer `Just ( a, b )` then `Just _` gives.
 -- A relation that could not specialise a nested unit at all would report
 -- this branch as useful (checker.md §6).
-pub label : Maybe () -> Int
+pub label : Maybe () → Int
 label m =
     case m of
-        Just () ->
+        Just () →
             1
 
-        Just _ ->
+        Just _ →
             2
 
-        Nothing ->
+        Nothing →
             0

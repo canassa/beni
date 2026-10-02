@@ -4,15 +4,15 @@
 import Helpers exposing (firstOf, pair, swap)
 
 
-pub numbers : ( Int, String )
+pub numbers : Int × String
 numbers = pair 1 "one"
 
 
-pub words : ( String, Int )
+pub words : String × Int
 words = pair "two" 2
 
 
-pub flipped : ( Int, String )
+pub flipped : Int × String
 flipped = swap { first = "three", second = 3 }
 
 

@@ -6,17 +6,17 @@
 -- mark. Outside a `foreign` signature `sync` is an ordinary type variable,
 -- so `wrap` means what it always meant.
 type alias Handler =
-    Int -> Int
+    Int → Int
 
 
-pub foreign pure one : sync (Handler) -> Int
+pub foreign pure one : sync (Handler) → Int
 
 
-pub foreign pure two : Int -> sync (Int -> Int)
+pub foreign pure two : Int → sync (Int → Int)
 
 
-pub foreign pure three : (sync (Int -> Int) -> Int) -> Int
+pub foreign pure three : (sync (Int → Int) → Int) → Int
 
 
-wrap : sync -> List sync
+wrap : sync → List sync
 wrap x = [ x ]

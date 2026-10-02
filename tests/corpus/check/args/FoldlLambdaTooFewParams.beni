@@ -1,4 +1,4 @@
 -- check/args: `List.foldl` hands its function the element AND the
 -- accumulator, and this lambda only names the element.
-pub total : List Int -> Int
-total xs = List.foldl xs 0 λx -> x
+pub total : List Int → Int
+total xs = List.foldl xs 0 λx → x

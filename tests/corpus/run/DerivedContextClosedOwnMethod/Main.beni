@@ -22,7 +22,7 @@ pub key (T x) u =
 same a b = W (H.Holder (T a)) == W (H.Holder (T b))
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

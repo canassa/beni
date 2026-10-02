@@ -10,21 +10,21 @@ pub type Colour
     | Green
 
 
-pub sameColour : Colour, Colour -> Bool
+pub sameColour : Colour, Colour → Bool
 sameColour a b = a == b
 
 
-pub sameRecord : { x : Int, y : String }, { x : Int, y : String } -> Bool
+pub sameRecord : { x : Int, y : String }, { x : Int, y : String } → Bool
 sameRecord a b = a == b
 
 
-pub samePair : ( Int, Char ), ( Int, Char ) -> Bool
+pub samePair : Int × Char, Int × Char → Bool
 samePair a b = a == b
 
 
-pub sameList : List Int, List Int -> Bool
+pub sameList : List Int, List Int → Bool
 sameList a b = a == b
 
 
-pub sameMaybe : Maybe Int, Maybe Int -> Bool
-sameMaybe a b = a /= b
+pub sameMaybe : Maybe Int, Maybe Int → Bool
+sameMaybe a b = a ≠ b

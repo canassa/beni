@@ -5,7 +5,7 @@ import Left exposing (scaleUp)
 import Right exposing (scaleDown)
 
 
-pub round : Unit, Int -> Int
+pub round : Unit, Int → Int
 round u n = scaleDown u (scaleUp u n)
 
 

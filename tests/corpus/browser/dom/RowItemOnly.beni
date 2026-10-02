@@ -23,27 +23,27 @@ type alias Model =
     selected : Maybe Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Pick id ->
+        Pick id →
             { model | selected = Just id }
 
-        Relabel ->
+        Relabel →
             { model
                 | rows =
-                    List.map model.rows λrow ->
+                    List.map model.rows λrow →
                         if row.id == 2 then { row | label = "${row.label}!" } else row
             }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="relabel" onClick={Relabel}>relabel</button>
         <ul>
             <For each={model.rows} keyed={.id}>
-                {λrow ->
+                {λrow →
                     <li class={if model.selected == Just row.id then "on" else ""}>
                         <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>
                             {Debug.log "label" row.label}

@@ -19,23 +19,23 @@
 import Node exposing (Program)
 
 
-bump : Int -> Int
+bump : Int → Int
 bump n = n + 1
 
 
-pub sortedFields : Int, Int -> { alpha : Int, zed : Int }
+pub sortedFields : Int, Int → { alpha : Int, zed : Int }
 sortedFields a b = { alpha = bump a, zed = bump b }
 
 
-pub unsortedFields : Int, Int -> { alpha : Int, zed : Int }
+pub unsortedFields : Int, Int → { alpha : Int, zed : Int }
 unsortedFields a b = { zed = bump a, alpha = bump b }
 
 
-pub unsortedAtoms : Int, Int -> { alpha : Int, zed : Int }
+pub unsortedAtoms : Int, Int → { alpha : Int, zed : Int }
 unsortedAtoms a b = { zed = a, alpha = b }
 
 
-pub unsortedOne : Int, Int -> { alpha : Int, zed : Int }
+pub unsortedOne : Int, Int → { alpha : Int, zed : Int }
 unsortedOne a b = { zed = bump a, alpha = b }
 
 

@@ -1,12 +1,12 @@
 -- Merely exporting a value called `eq` must not mark every type in this
 -- module as an equality boundary. Its completed receiver is Other, not HasFn.
 pub type HasFn
-    = HasFn (Int -> Int)
+    = HasFn (Int → Int)
 
 
 pub type Other
     = Other Int
 
 
-pub eq : Other, Other -> Bool
+pub eq : Other, Other → Bool
 eq _ _ = True

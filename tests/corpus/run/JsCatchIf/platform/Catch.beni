@@ -13,12 +13,12 @@ log = Js.ref ""
 
 
 --| Record one effect.
-pub note : String -> ()
+pub note : String → ()
 note s = Js.write log "${Js.read log}${s}; "
 
 
 --| What was recorded since the last `take`, and a fresh record.
-pub take : () -> String
+pub take : () → String
 take () =
     seen = Js.read log
     _ = Js.write log ""
@@ -26,64 +26,64 @@ take () =
 
 
 --| Throw a new `kind` (a global error constructor) with message `m`.
-pub fail : String, String -> a
+pub fail : String, String → a
 fail kind m = Js.throw (Js.construct (Js.global kind) [ Js.from m ])
 
 
-isType : Js.Value -> Bool
+isType : Js.Value → Bool
 isType err = Js.instanceOf err (Js.global "TypeError")
 
 
-message : Js.Value -> String
+message : Js.Value → String
 message err = Js.to (Js.get err "message")
 
 
 --| In tail position: the body's value, or the handler's for a `TypeError`.
-pub tail : Bool -> String
+pub tail : Bool → String
 tail throws =
     Js.catchIf
-        (λ() ->
+        (λ() →
             _ = note "body"
             if throws then
                 fail "TypeError" "bad"
             else
                 "fine"
         )
-        (λerr -> isType err)
-        λerr -> "caught ${message err}"
+        (λerr → isType err)
+        λerr → "caught ${message err}"
 
 
 --| Bound, then used after the `try`.
-pub valued : Bool -> String
+pub valued : Bool → String
 valued throws =
     v =
         Js.catchIf
-            (λ() ->
+            (λ() →
                 if throws then
                     fail "TypeError" "bound"
                 else
                     1
             )
-            (λerr -> isType err)
-            λ_ -> 2
+            (λerr → isType err)
+            λ_ → 2
 
     _ = note "after"
     String.fromInt v
 
 
 --| Discarded: the body's statements, or the handler's.
-pub discarded : Bool -> String
+pub discarded : Bool → String
 discarded throws =
     _ =
         Js.catchIf
-            (λ() ->
+            (λ() →
                 if throws then
                     fail "TypeError" "dropped"
                 else
                     note "body"
             )
-            (λerr -> isType err)
-            λerr -> note "caught ${message err}"
+            (λerr → isType err)
+            λerr → note "caught ${message err}"
 
     _ = note "after"
     "done"
@@ -91,85 +91,85 @@ discarded throws =
 
 --| Thrown on: the inner test does not hold of a `RangeError`, which leaves
 --| the inner `try` unchanged and is taken by the outer one, which names it.
-pub rethrown : () -> String
+pub rethrown : () → String
 rethrown () =
     Js.catchIf
-        (λ() ->
+        (λ() →
             Js.catchIf
-                (λ() ->
+                (λ() →
                     _ = note "inner"
                     fail "RangeError" "far"
                 )
-                (λerr -> isType err)
-                λ_ -> "inner took it"
+                (λerr → isType err)
+                λ_ → "inner took it"
         )
-        (λerr -> Js.instanceOf err (Js.global "RangeError"))
-        λerr -> "outer took ${message err}"
+        (λerr → Js.instanceOf err (Js.global "RangeError"))
+        λerr → "outer took ${message err}"
 
 
 --| A test that reads what was thrown: a `DOMException` caught by its
 --| `name`, as `Storage` catches a full quota, and one of another name thrown
 --| on to the caller's own `catchIf`.
-pub named : String -> String
+pub named : String → String
 named name =
     Js.catchIf
-        (λ() ->
+        (λ() →
             Js.catchIf
-                (λ() ->
+                (λ() →
                     Js.throw (Js.construct (Js.global "DOMException") [ Js.from "m", Js.from name ])
                 )
-                (λerr ->
+                (λerr →
                     Js.instanceOf err (Js.global "DOMException")
                         && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
                 )
-                λ_ -> "over the quota"
+                λ_ → "over the quota"
         )
-        (λerr -> Js.instanceOf err (Js.global "DOMException"))
-        λerr -> "thrown on: ${nameOf err}"
+        (λerr → Js.instanceOf err (Js.global "DOMException"))
+        λerr → "thrown on: ${nameOf err}"
 
 
-nameOf : Js.Value -> String
+nameOf : Js.Value → String
 nameOf err = Js.to (Js.get err "name")
 
 
 --| The test and the handler name the caught value differently.
-pub renamed : () -> String
-renamed () = Js.catchIf (λ() -> fail "TypeError" "two names") (λfirst -> isType first) λsecond ->
+pub renamed : () → String
+renamed () = Js.catchIf (λ() → fail "TypeError" "two names") (λfirst → isType first) λsecond →
     message second
 
 
 --| A function made by a call that records it.
-make : String, a -> (() -> a)
+make : String, a → (() → a)
 make s v =
     _ = note "make ${s}"
-    λ() ->
+    λ() →
         _ = note s
         v
 
 
-testOf : String -> (Js.Value -> Bool)
+testOf : String → (Js.Value → Bool)
 testOf s =
     _ = note "make ${s}"
-    λerr ->
+    λerr →
         _ = note s
         isType err
 
 
-handlerOf : String -> (Js.Value -> Int)
+handlerOf : String → (Js.Value → Int)
 handlerOf s =
     _ = note "make ${s}"
-    λ_ ->
+    λ_ →
         _ = note s
         9
 
 
 --| Arguments that are not lambdas are evaluated first, in order, and
 --| called in their blocks.
-pub ordered : Bool -> Int
+pub ordered : Bool → Int
 ordered throws =
     Js.catchIf
         (if throws then
-            λ() -> fail "TypeError" "made"
+            λ() → fail "TypeError" "made"
          else
             make "body" 7
         )
@@ -178,35 +178,35 @@ ordered throws =
 
 
 --| Functions passed in.
-pub passed : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+pub passed : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 passed f t h = Js.catchIf f t h
 
 
 --| `Js.catchIf` itself passed as a value: the sibling's function.
-pub asValue : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+pub asValue : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 asValue f t h = apply Js.catchIf f t h
 
 
 apply :
-      ((() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int)
-    , (() -> Int)
-    , (Js.Value -> Bool)
-    , (Js.Value -> Int)
-    -> Int
+      ((() → Int), (Js.Value → Bool), (Js.Value → Int) → Int)
+    , (() → Int)
+    , (Js.Value → Bool)
+    , (Js.Value → Int)
+    → Int
 apply k f t h = k f t h
 
 
 --| In tail position of a function that loops: the `try` does not take the
 --| loop's jump inside it.
-pub sumTo : Int, Int -> Int
+pub sumTo : Int, Int → Int
 sumTo n acc =
     if n == 0 then
-        Js.catchIf (λ() -> acc) (λerr -> isType err) λ_ -> 0
+        Js.catchIf (λ() → acc) (λerr → isType err) λ_ → 0
     else
         sumTo (n - 1) (acc + n)
 
 
 --| Whether `TypeError` is what was thrown: a test written once, for a
 --| caller's lambda.
-pub isTypeError : Js.Value -> Bool
+pub isTypeError : Js.Value → Bool
 isTypeError err = isType err

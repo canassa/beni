@@ -4,9 +4,9 @@
 import Json.Value as J
 
 
-pub text : String -> J.Value
+pub text : String → J.Value
 text s = J.Text s
 
 
-pub total : List J.Value -> Int
-total vs = List.foldl vs 0 λv acc -> acc + J.size v
+pub total : List J.Value → Int
+total vs = List.foldl vs 0 λv acc → acc + J.size v

@@ -22,93 +22,93 @@ type Wrap
 
 
 -- `Maybe ()`: the unit is the payload of a real choice.
-maybeUnit : Maybe () -> Int
+maybeUnit : Maybe () → Int
 maybeUnit m =
     case m of
-        Just () ->
+        Just () →
             1
 
-        Nothing ->
+        Nothing →
             0
 
 
 -- `Result String ()`: the "did it succeed" shape.
-resultUnit : Result String () -> Int
+resultUnit : Result String () → Int
 resultUnit r =
     case r of
-        Ok () ->
+        Ok () →
             1
 
-        Err _ ->
+        Err _ →
             0
 
 
 -- A unit inside a tuple inside a constructor.
-tupleUnit : Maybe ( (), Int ) -> Int
+tupleUnit : Maybe (() × Int) → Int
 tupleUnit m =
     case m of
-        Just ( (), n ) ->
+        Just ( (), n ) →
             n
 
-        Nothing ->
+        Nothing →
             0
 
 
 -- A unit as one field of a multi-field constructor of a user type.
-userCtor : T -> Int
+userCtor : T → Int
 userCtor v =
     case v of
-        A () n ->
+        A () n →
             n
 
-        B ->
+        B →
             0
 
 
 -- Nested twice.
-twice : Maybe (Maybe ()) -> Int
+twice : Maybe (Maybe ()) → Int
 twice m =
     case m of
-        Just (Just ()) ->
+        Just (Just ()) →
             2
 
-        Just Nothing ->
+        Just Nothing →
             1
 
-        Nothing ->
+        Nothing →
             0
 
 
 -- A unit inside a list pattern, both spellings.
-listUnit : List () -> Int
+listUnit : List () → Int
 listUnit xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ () ] ->
+        [ () ] →
             1
 
-        [ (), ..._ ] ->
+        [ (), …_ ] →
             2
 
 
 -- An irrefutable PARAMETER: `Wrap` is the only constructor of its type, so
 -- `Wrap ()` matches every value of it (`language.md` §7).
-unwrap : Wrap, Int -> Int
+unwrap : Wrap, Int → Int
 unwrap (Wrap ()) n = n
 
 
 -- A lookup table, so the `Flat` fast path of `checker.md` §6 rather than
 -- the two relations: every branch is a key, and a single-constructor
 -- wrapper around `()` contributes no key column at all.
-table : Wrap, Bool -> Int
+table : Wrap, Bool → Int
 table w b =
     case ( w, b ) of
-        ( Wrap (), True ) ->
+        ( Wrap (), True ) →
             1
 
-        ( Wrap (), False ) ->
+        ( Wrap (), False ) →
             0
 
 
@@ -116,7 +116,7 @@ table w b =
 lambdaAndLet : Int
 lambdaAndLet =
     (Wrap ()) = Wrap ()
-    (λ(Wrap ()) -> 9) (Wrap ())
+    (λ(Wrap ()) → 9) (Wrap ())
 
 
 main : Program

@@ -11,17 +11,17 @@ type alias Pair =
 
 
 type alias Callbacks =
-    { f : Int, Int -> Int
+    { f : Int, Int → Int
     , g : Bool
-    , h : Int, Int, String -> Bool
-    , i : { x : Int, y : Int }, Int -> Int
+    , h : Int, Int, String → Bool
+    , i : { x : Int, y : Int }, Int → Int
     }
 
 
 type alias Open r =
-    { r | step : Int, Int -> Int, label : String }
+    { r | step : Int, Int → Int, label : String }
 
 
-pub apply : Callbacks, Int -> Int
+pub apply : Callbacks, Int → Int
 apply cs n =
     cs.f n n

@@ -12,11 +12,11 @@ type Msg
     | Remove Int
 
 
-pub table : { rows : List { id : Int, label : String }, selected : Maybe Int } -> Html Msg
+pub table : { rows : List { id : Int, label : String }, selected : Maybe Int } → Html Msg
 table model =
     <table>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 <tr class={if model.selected == Just row.id then "danger" else ""}>
                     <td>{row.id}</td>
                     <td><a onClick={Select row.id}>{row.label}</a></td>

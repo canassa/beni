@@ -2,11 +2,11 @@
 -- so a nested `case` gets a nested example. Both `Result` constructors ARE
 -- named here, so the search goes INTO them and finds the `Maybe` inside
 -- `Ok` incomplete — Maranget's `I(P, n)` recursing on a complete column.
-pub check : Result String (Maybe Int) -> Int
+pub check : Result String (Maybe Int) → Int
 check r =
     case r of
-        Ok (Just n) ->
+        Ok (Just n) →
             n
 
-        Err msg ->
+        Err msg →
             0

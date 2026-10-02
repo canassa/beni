@@ -1217,7 +1217,7 @@ deep =
     )
 
 
-mk : a -> Conversion Int a
+mk : a → Conversion Int a
 mk x = Debug.todo "x"
 
 

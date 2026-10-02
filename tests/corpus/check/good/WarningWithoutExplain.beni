@@ -10,5 +10,5 @@
 pub bigger a b = a < b
 
 
-pub annotated : Int, Int -> Bool
+pub annotated : Int, Int → Bool
 annotated a b = a < b

@@ -4,9 +4,9 @@
 -- read without the mark, so `apply` checks as it would unmarked. `wrap`'s
 -- `sync` is not followed by `(`, so it is an ordinary type variable, as it
 -- always was.
-apply : sync (Int -> Int), Int -> Int
+apply : sync (Int → Int), Int → Int
 apply f n = f n
 
 
-wrap : sync -> List sync
+wrap : sync → List sync
 wrap x = [ x ]

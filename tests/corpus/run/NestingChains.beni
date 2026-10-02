@@ -19,19 +19,19 @@
 import Node exposing (Program)
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
-s : String, String -> String
+s : String, String → String
 s label v = Debug.log label v
 
 
-b : String, Bool -> Bool
+b : String, Bool → Bool
 b label v = Debug.log label v
 
 
-inc : Int -> Int
+inc : Int → Int
 inc x = Debug.log "inc" (x + 1)
 
 
@@ -128,10 +128,10 @@ main =
             && b "and4" True
             && b "and5" True
             && (case Just (b "and6" True) of
-                   Just v ->
+                   Just v →
                        v
 
-                   Nothing ->
+                   Nothing →
                        False
                )
             && b "and7" True
@@ -360,76 +360,76 @@ main =
 
     piped =
         n "seed" 0
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
-            |> inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
+            ▷ inc
 
     nested =
         inc

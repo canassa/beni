@@ -6,16 +6,16 @@ pub type Counter
     = Counter Int
 
 
-shift : Counter, Int -> Counter
+shift : Counter, Int → Counter
 shift c step =
     case c of
-        Counter n ->
+        Counter n →
             Counter (n + step)
 
 
-pub bump : Counter, Int -> Counter
+pub bump : Counter, Int → Counter
 bump c step = c.shift step
 
 
-pub twice : Counter -> Counter
+pub twice : Counter → Counter
 twice c = (c.bump 1).bump 2

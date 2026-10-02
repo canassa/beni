@@ -7,10 +7,10 @@
 --
 --
 type Box
-    = Box (Int -> Int)
+    = Box (Int → Int)
 
 
-k : Int -> Int
+k : Int → Int
 k n = n
 
 

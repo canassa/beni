@@ -17,25 +17,25 @@ type Pair
     = Pair (Maybe Int) Int
 
 
-pub un : Maybe Int -> Int
+pub un : Maybe Int → Int
 un (Just n) = n
 
 
-pub side : Shape -> Int
+pub side : Shape → Int
 side (Circle r) = r
 
 
-pub nullary : Maybe Int -> Int
+pub nullary : Maybe Int → Int
 nullary Nothing = 0
 
 
-pub nested : Pair -> Int
+pub nested : Pair → Int
 nested (Pair (Just a) b) = a + b
 
 
-pub inTuple : ( Maybe Int, Int ) -> Int
+pub inTuple : Maybe Int × Int → Int
 inTuple ( Just a, b ) = a + b
 
 
-pub fine : Boxed -> Int
+pub fine : Boxed → Int
 fine (Boxed n) = n

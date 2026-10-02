@@ -14,10 +14,10 @@ import Url exposing (Url)
 main : Tea.Program
 main =
     Tea.application
-        { init = λurl _ -> ( Debug.log "init ran" url.path, Cmd.none )
-        , update = λ_ m -> ( m, Cmd.none )
-        , view = λpath -> { title = path, body = <p>{path}</p> }
-        , subscriptions = λ_ -> Sub.none
-        , onUrlRequest = λ_ -> ()
-        , onUrlChange = λ_ -> ()
+        { init = λurl _ → ( Debug.log "init ran" url.path, Cmd.none )
+        , update = λ_ m → ( m, Cmd.none )
+        , view = λpath → { title = path, body = <p>{path}</p> }
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = λ_ → ()
+        , onUrlChange = λ_ → ()
         }

@@ -5,10 +5,10 @@ import Node exposing (Program)
 
 
 type W
-    = W (H.Holder ( Int, Nocase.Ci ))
+    = W (H.Holder (Int × Nocase.Ci))
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

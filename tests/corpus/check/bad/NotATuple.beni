@@ -3,5 +3,5 @@ pub type alias Point =
     x : Int
 
 
-pub firstOf : Point -> Int
+pub firstOf : Point → Int
 firstOf p = p.0

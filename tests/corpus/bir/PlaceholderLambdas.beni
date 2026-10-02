@@ -3,33 +3,33 @@
 -- parameter. A nested `_` belongs to the inner call, a placeholder may fill
 -- the first position, and the lambda wraps the whole call, so everything
 -- else in it is lowered inside the lambda.
-addOne : List Int -> List Int
+addOne : List Int → List Int
 addOne xs = List.map xs (add 1 _)
 
 
-firstPosition : Int -> Int
+firstPosition : Int → Int
 firstPosition n = apply (subtract _ n)
 
 
-nested : Int -> Int
+nested : Int → Int
 nested n = outer (inner _) n
 
 
-add : Int, Int -> Int
+add : Int, Int → Int
 add a b = a + b
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
-apply : (Int -> Int) -> Int
+apply : (Int → Int) → Int
 apply f = f 1
 
 
-outer : (Int -> Int), Int -> Int
+outer : (Int → Int), Int → Int
 outer f n = f n
 
 
-inner : Int -> Int
+inner : Int → Int
 inner n = n

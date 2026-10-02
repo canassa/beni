@@ -4,7 +4,7 @@
 -- nothing about the negative literal, which is the mistake. Elm hints
 -- `f (-1)` here. Expected: the same TYPE MISMATCH, with a hint that writes
 -- the argument in parentheses, `(-1)`.
-dec : Int -> Int
+dec : Int → Int
 dec n = n - 1
 
 

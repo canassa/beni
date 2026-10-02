@@ -33,7 +33,7 @@ type Msg
     | Favourited String Bool
 
 
-pub view : Model -> Html Msg
+pub view : Model → Html Msg
 view model =
     <div class="typeahead" style={[ ( "max-width", "${model.width}px" ) ]}>
         <input class="query" value={model.query} placeholder="Search…" onInput={Typed} />
@@ -41,28 +41,28 @@ view model =
     </div>
 
 
-viewStatus : Model -> Html Msg
+viewStatus : Model → Html Msg
 viewStatus model =
     case model.status of
-        Idle ->
+        Idle →
             <p class="hint">Start typing.</p>
 
-        Loading ->
+        Loading →
             <p class="hint" "aria-busy"="true">Searching…</p>
 
-        Failed reason ->
+        Failed reason →
             <p class="error" role="alert">Could not search: {reason}</p>
 
-        Loaded [] ->
+        Loaded [] →
             <p class="hint">No results for “{model.query}”.</p>
 
-        Loaded hits ->
+        Loaded hits →
             <ul class="results">
-                <For each={hits} keyed={.id}>{λhit -> viewHit model hit}</For>
+                <For each={hits} keyed={.id}>{λhit → viewHit model hit}</For>
             </ul>
 
 
-viewHit : Model, Hit -> Html Msg
+viewHit : Model, Hit → Html Msg
 viewHit model hit =
     isFav = List.member model.favourites hit.id
     isSaving = List.member model.saving hit.id

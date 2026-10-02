@@ -6,7 +6,7 @@ type W a
     = W (H.Holder a) a
 
 
-same : W Int, W Int -> Bool
+same : W Int, W Int → Bool
 same l r = l == r
 
 

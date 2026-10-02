@@ -8,25 +8,25 @@
 import Node exposing (Program)
 
 
-pub lists : List Int, List Int -> List Int
+pub lists : List Int, List Int → List Int
 lists a b = a ++ b
 
 
-pub spread : List Int, List Int -> List Int
-spread a b = [ ...a, ...b ]
+pub spread : List Int, List Int → List Int
+spread a b = [ …a, …b ]
 
 
-pub strings : String, String -> String
+pub strings : String, String → String
 strings a b = a ++ b
 
 
-pub generic : appendable, appendable -> appendable
+pub generic : appendable, appendable → appendable
 generic a b = a ++ b
 
 
-pub grow : Int, List Int -> List Int
+pub grow : Int, List Int → List Int
 grow n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         grow (n - 1) (acc ++ [ n ])

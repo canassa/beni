@@ -5,7 +5,7 @@ import M
 import Node exposing (Program)
 
 
-showBool : Bool -> String
+showBool : Bool → String
 showBool b =
     if b then
         "True"
@@ -13,16 +13,16 @@ showBool b =
         "False"
 
 
-showOrder : Order -> String
+showOrder : Order → String
 showOrder o =
     case o of
-        LT ->
+        LT →
             "LT"
 
-        EQ ->
+        EQ →
             "EQ"
 
-        GT ->
+        GT →
             "GT"
 
 

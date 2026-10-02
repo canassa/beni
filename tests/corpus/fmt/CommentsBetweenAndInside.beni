@@ -14,7 +14,7 @@ type alias R =
     }
 
 
-f : Int -> Int
+f : Int → Int
 -- between the annotation and its definition
 f x =
     x
@@ -33,7 +33,7 @@ rec =
 
 
 g x =
-    h <- Task.wrap x -- after a bind
+    h ← Task.wrap x -- after a bind
     y =
         1
     y

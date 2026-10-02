@@ -34,7 +34,7 @@ import Node exposing (Program)
 import String
 
 
-unsigned : Int32 -> String
+unsigned : Int32 → String
 unsigned n = String.fromInt (Int32.toUnsignedInt n)
 
 
@@ -46,31 +46,31 @@ fnvOffset : Int32
 fnvOffset = Int32.fromInt 0x811C9DC5
 
 
-fnv1a : String -> Int32
+fnv1a : String → Int32
 fnv1a text = List.foldl (String.toList text) fnvOffset fnvStep
 
 
-fnvStep : Char, Int32 -> Int32
+fnvStep : Char, Int32 → Int32
 fnvStep char hash = Int32.mul (Int32.xor hash (Int32.fromInt (Char.toCode char))) fnvPrime
 
 
-xorshift32 : Int32 -> Int32
+xorshift32 : Int32 → Int32
 xorshift32 seed =
     a = Int32.xor seed (Int32.shiftLeft seed 13)
     b = Int32.xor a (Int32.shiftRightZero a 17)
     Int32.xor b (Int32.shiftLeft b 5)
 
 
-xorshiftRun : Int32, Int -> List Int32
+xorshiftRun : Int32, Int → List Int32
 xorshiftRun seed count =
-    if count <= 0 then
+    if count ≤ 0 then
         []
     else
         next = xorshift32 seed
-        [ next, ...xorshiftRun next (count - 1) ]
+        [ next, …xorshiftRun next (count - 1) ]
 
 
-fmix32 : Int32 -> Int32
+fmix32 : Int32 → Int32
 fmix32 h =
     a = Int32.xor h (Int32.shiftRightZero h 16)
     b = Int32.mul a (Int32.fromInt 0x85EBCA6B)
@@ -82,7 +82,7 @@ fmix32 h =
 main : Program
 main =
     Node.printLines
-        (List.map [ "", "a", "foobar", "hello", "beni" ] (λtext -> unsigned (fnv1a text))
+        (List.map [ "", "a", "foobar", "hello", "beni" ] (λtext → unsigned (fnv1a text))
             ++ List.map (xorshiftRun Int32.one 8) unsigned
-            ++ List.map [ 0, 1, 2, 0x9747B28C, 123456789 ] λn -> unsigned (fmix32 (Int32.fromInt n))
+            ++ List.map [ 0, 1, 2, 0x9747B28C, 123456789 ] λn → unsigned (fmix32 (Int32.fromInt n))
         )

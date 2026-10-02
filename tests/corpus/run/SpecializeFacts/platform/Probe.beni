@@ -10,13 +10,13 @@ type alias V =
 
 
 -- Every `Node` instance's `s` is a clone a host call makes: nonnull.
-node : V -> V
+node : V → V
 node proto = Js.from { s = Js.call proto "cloneNode" [ Js.from True ], q = Js.from "fallback" }
 
 
 -- A `Slot` instance's `s` is `null` in one construction and a node in
 -- another: no fold.
-slot : Bool, V -> V
+slot : Bool, V → V
 slot empty proto =
     if empty then
         Js.from { s = Js.null, q = Js.from "slot fallback" }
@@ -24,7 +24,7 @@ slot empty proto =
         Js.from { s = Js.call proto "cloneNode" [ Js.from True ], q = Js.from "unused" }
 
 
-firstNode : V -> String
+firstNode : V → String
 firstNode i =
     if Js.isNull (Js.get i "s") then
         Js.to (Js.get i "q")
@@ -32,7 +32,7 @@ firstNode i =
         Js.to (Js.get (Js.get i "s") "name")
 
 
-firstSlot : V -> String
+firstSlot : V → String
 firstSlot i =
     if Js.isNull (Js.get i "s") then
         Js.to (Js.get i "q")
@@ -45,7 +45,7 @@ block : V
 block = Js.from { t = "kind" }
 
 
-same : V, V -> String
+same : V, V → String
 same a b =
     if Js.same a b then
         "same"
@@ -53,12 +53,12 @@ same a b =
         "other"
 
 
-made : () -> V
+made : () → V
 made () = Js.from { t = "kind" }
 
 
 -- A property no literal has is `undefined`, not `null`.
-missing : V -> String
+missing : V → String
 missing r =
     if Js.isNull (Js.get r "zzz") then
         "null"
@@ -68,13 +68,13 @@ missing r =
         "something"
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () =
     _ =
         Js.set
             (Js.global "globalThis")
             "probeNode"
-            (Js.from { cloneNode = λ_ -> Js.from { name = "cloned" } })
+            (Js.from { cloneNode = λ_ → Js.from { name = "cloned" } })
 
     proto = Js.get (Js.global "globalThis") "probeNode"
     [ firstNode (node proto)

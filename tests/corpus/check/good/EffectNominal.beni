@@ -9,50 +9,50 @@
 -- argument's. `Box a` holds only a type parameter, so a function in it
 -- travels by the argument (`openBox` is `!e1` in the box's function).
 pub type Parser a
-    = Parser (String -> Maybe a)
+    = Parser (String → Maybe a)
 
 
 pub type Stream
-    = Stream (() -> ( Int, Stream ))
+    = Stream (() → Int × Stream)
 
 
 pub type Box a
     = Box a
 
 
-pub run : Parser a, String -> Maybe a
+pub run : Parser a, String → Maybe a
 run p s =
     case p of
-        Parser f ->
+        Parser f →
             f s
 
 
 pub loudParser : Parser String
-loudParser = Parser λs -> Debug.log "parse" (Just s)
+loudParser = Parser λs → Debug.log "parse" (Just s)
 
 
-pub useLoud : String -> Maybe String
+pub useLoud : String → Maybe String
 useLoud s = run loudParser s
 
 
-pub useQuiet : String -> Maybe String
-useQuiet s = run (Parser λx -> Just x) s
+pub useQuiet : String → Maybe String
+useQuiet s = run (Parser λx → Just x) s
 
 
-pub nth : Stream, Int -> Int
+pub nth : Stream, Int → Int
 nth stream n =
     case stream of
-        Stream next ->
+        Stream next →
             case next () of
-                ( value, rest ) ->
+                ( value, rest ) →
                     if n == 0 then
                         value
                     else
                         nth rest (n - 1)
 
 
-pub openBox : Box (Int -> Int), Int -> Int
+pub openBox : Box (Int → Int), Int → Int
 openBox box x =
     case box of
-        Box f ->
+        Box f →
             f x

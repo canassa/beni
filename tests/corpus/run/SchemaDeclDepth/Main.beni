@@ -24,37 +24,37 @@ pub schema Holder =
     rows : List (List Int)
 
 
-text : Int -> String
+text : Int → String
 text n = String.repeat "{\"t\":\"link\",\"next\":" n ++ "{\"t\":\"end\"}" ++ String.repeat "}" n
 
 
-typed : Int -> Chain.Type
+typed : Int → Chain.Type
 typed n = build n Chain.End
 
 
-build : Int, Chain.Type -> Chain.Type
+build : Int, Chain.Type → Chain.Type
 build n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         build (n - 1) (Chain.Link { next = acc })
 
 
-links : Chain.Type -> Int
+links : Chain.Type → Int
 links c = count c 0
 
 
-count : Chain.Type, Int -> Int
+count : Chain.Type, Int → Int
 count c n =
     case c of
-        Chain.End ->
+        Chain.End →
             n
 
-        Chain.Link r ->
+        Chain.Link r →
             count r.next (n + 1)
 
 
-bound : Int -> Schema.Options
+bound : Int → Schema.Options
 bound d = { defaultOptions | maxDepth = d }
 
 
@@ -63,15 +63,15 @@ defaultOptions = Schema.defaultOptions
 
 
 -- The path a failure names is n links long: shown by its length.
-issues : Result (List Schema.Issue) a -> String
+issues : Result (List Schema.Issue) a → String
 issues r =
     case r of
-        Ok _ ->
+        Ok _ →
             "Ok"
 
-        Err found ->
+        Err found →
             String.join
-                (List.map found λi ->
+                (List.map found λi →
                     Show.issue { i | path = [] }
                         ++ " at depth "
                         ++ String.fromInt (List.length i.path)
@@ -79,19 +79,19 @@ issues r =
                 " | "
 
 
-at : Int, Int -> String
+at : Int, Int → String
 at d n =
     "maxDepth "
         ++ String.fromInt d
         ++ ", "
         ++ String.fromInt n
         ++ " links: "
-        ++ Show.result (Chain.parseWith (bound d) (text n)) λc -> String.fromInt (links c)
+        ++ Show.result (Chain.parseWith (bound d) (text n)) λc → String.fromInt (links c)
         ++ " / "
-        ++ Show.result (Chain.printWith (bound d) (typed n)) λs -> String.fromInt (String.length s)
+        ++ Show.result (Chain.printWith (bound d) (typed n)) λs → String.fromInt (String.length s)
 
 
-over : Int, Int -> String
+over : Int, Int → String
 over d n =
     "maxDepth "
         ++ String.fromInt d
@@ -103,7 +103,7 @@ over d n =
         ++ issues (Chain.printWith (bound d) (typed n))
 
 
-nested : Int -> Schema.Value
+nested : Int → Schema.Value
 nested n = Show.host (String.repeat "[" n ++ String.repeat "]" n)
 
 
@@ -121,13 +121,13 @@ main =
         , at Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2)
         , over Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2 + 1)
         , "-- the default is 512"
-        , Show.result (Chain.parse (text 256)) λc -> String.fromInt (links c)
+        , Show.result (Chain.parse (text 256)) λc → String.fromInt (links c)
         , issues (Chain.parse (text 257))
         , "-- options"
         , issues (Chain.parseWith (bound (Schema.maxDepthCeiling + 1)) (text 0))
         , issues (Chain.printWith (bound (-1)) Chain.End)
         , "-- a Value and a list of lists, inside a record"
-        , Show.result (Holder.printWith (bound 4) { held = nested 3, rows = [ [ 1 ] ] }) λs -> s
+        , Show.result (Holder.printWith (bound 4) { held = nested 3, rows = [ [ 1 ] ] }) λs → s
         , issues (Holder.printWith (bound 4) { held = nested 5, rows = [] })
         , issues (Holder.parseWith (bound 2) "{\"held\":[[[[]]]],\"rows\":[[1]]}")
         , issues (Holder.printWith (bound 2) { held = nested 0, rows = [ [ 1 ] ] })

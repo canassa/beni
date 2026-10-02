@@ -24,11 +24,11 @@ import Node exposing (Program)
 import String
 
 
-show : Int32 -> String
+show : Int32 → String
 show n = String.fromInt (Int32.toInt n)
 
 
-unsigned : Int32 -> String
+unsigned : Int32 → String
 unsigned n = String.fromInt (Int32.toUnsignedInt n)
 
 

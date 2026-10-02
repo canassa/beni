@@ -8,5 +8,5 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder Int, Holder Int -> Bool
+pub eq : Holder Int, Holder Int → Bool
 eq (Holder x) (Holder y) = Int.mod x 10 == Int.mod y 10

@@ -95,5 +95,5 @@ schema L5 tagged "kind" of
         payload : Int via conv5
 
 
-same : L0.Type, L0.Type -> Bool
+same : L0.Type, L0.Type → Bool
 same a b = a == b

@@ -40,11 +40,11 @@ reject =
     { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
 
 
-showProto : Proto.Type -> String
+showProto : Proto.Type → String
 showProto p = String.fromInt p.proto ++ " " ++ String.fromInt p.ctor ++ " " ++ p.str
 
 
-showOrdered : Ordered.Type -> String
+showOrdered : Ordered.Type → String
 showOrdered o =
     String.join (List.map [ o.zeta, o.ten, o.alpha, o.two, o.big ] String.fromInt) ","
         ++ " "
@@ -65,7 +65,7 @@ main =
                 "{\"__proto__\":1,\"constructor\":2,\"toString\":\"s\",\"valueOf\":3,\"hasOwnProperty\":4}"
             )
             showProto
-        , Show.result (Proto.print { proto = 1, ctor = 2, str = "s" }) λs -> s
+        , Show.result (Proto.print { proto = 1, ctor = 2, str = "s" }) λs → s
         , Show.result
             (Ordered.parse
                 "{\"z\":1,\"10\":1.0,\"a\":1e2,\"2\":2,\"a \\\"quoted\\\"\\\\key\\n\":\"w\",\"4294967295\":5,\"z\":6}"
@@ -73,10 +73,10 @@ main =
             showOrdered
         , Show.result
             (Ordered.print { zeta = 1, ten = 10, alpha = 3, two = 2, weird = "w", big = 5 })
-            λs -> s
-        , Show.result (Indexed.print (Indexed.One { first = 1, name = "n" })) λs -> s
-        , Show.result (Indexed.parse "{\"name\":\"n\",\"1\":1,\"0\":\"one\"}") λi ->
+            λs → s
+        , Show.result (Indexed.print (Indexed.One { first = 1, name = "n" })) λs → s
+        , Show.result (Indexed.parse "{\"name\":\"n\",\"1\":1,\"0\":\"one\"}") λi →
             case i of
-                Indexed.One r ->
+                Indexed.One r →
                     String.fromInt r.first ++ r.name
         ]

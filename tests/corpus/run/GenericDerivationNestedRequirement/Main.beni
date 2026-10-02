@@ -8,7 +8,7 @@ type Outer a
     = Outer (Holder.Holder a)
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

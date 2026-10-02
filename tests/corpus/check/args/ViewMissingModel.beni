@@ -8,9 +8,9 @@ pub type alias Model =
     count : Int
 
 
-pub view : Config, Model -> String
+pub view : Config, Model → String
 view config model = "${config.title}: ${model.count}"
 
 
-pub render : Config, Model -> String
+pub render : Config, Model → String
 render config model = view config

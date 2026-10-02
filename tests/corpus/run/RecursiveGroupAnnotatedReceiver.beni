@@ -21,7 +21,7 @@ f n =
     ( q 1, q "s" )
 
 
-g : Int -> Box Int
+g : Int → Box Int
 g n =
     if n > 100 then
         Box n
@@ -30,7 +30,7 @@ g n =
         Box n
 
 
-g2 : Int -> Box Int
+g2 : Int → Box Int
 g2 n =
     if n > 100 then
         Box n
@@ -49,7 +49,7 @@ f2 n =
 unbox (Box v) = v
 
 
-both : ( Box Int, Box Int ) -> String
+both : Box Int × Box Int → String
 both ( a, b ) = "Box " ++ String.fromInt (unbox a) ++ ", Box " ++ String.fromInt (unbox b)
 
 

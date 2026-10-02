@@ -14,9 +14,9 @@ type alias Name =
     String
 
 
-bad : a -> Id b
+bad : a → Id b
 bad x = x
 
 
-f5 : Id a -> Name
+f5 : Id a → Name
 f5 x = x

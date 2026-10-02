@@ -30,20 +30,20 @@ type alias Outer =
     frames : Int
 
 
-updateOuter : OuterMsg, Outer -> Outer
+updateOuter : OuterMsg, Outer → Outer
 updateOuter msg model =
     case Debug.log "outer got" msg of
-        Bump ->
+        Bump →
             { model | bumps = model.bumps + 1 }
 
-        Tapped ->
+        Tapped →
             { model | taps = model.taps + 1 }
 
-        Framed ->
+        Framed →
             { model | frames = model.frames + 1 }
 
 
-viewOuter : Outer -> Html OuterMsg
+viewOuter : Outer → Html OuterMsg
 viewOuter model =
     <main>
         <button id="bump" onClick={Bump}>bump</button>
@@ -58,14 +58,14 @@ type InnerMsg
     = Inc
 
 
-updateInner : InnerMsg, Int -> Int
+updateInner : InnerMsg, Int → Int
 updateInner msg n =
     case msg of
-        Inc ->
+        Inc →
             Debug.log "inner counted" (n + 1)
 
 
-viewInner : Int -> Html InnerMsg
+viewInner : Int → Html InnerMsg
 viewInner n =
     <div>
         <button id="inc" onClick={Inc}>inc</button>

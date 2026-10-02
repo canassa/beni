@@ -4,4 +4,4 @@ pub foreign type Program
 
 
 --| A page showing `text` as its heading.
-pub foreign pure heading : String -> Program
+pub foreign pure heading : String → Program

@@ -24,13 +24,13 @@ type Msg
 
 -- The service: a request answered after half a second on the page's clock.
 type alias Service =
-    get : String -> String
+    get : String → String
 
 
 service : Service
 service =
     { get =
-        λpath ->
+        λpath →
             _ = Time.sleep (Time.millis 500)
             "answer to ${path}"
     }
@@ -41,50 +41,50 @@ type alias Model =
     seen : List String
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Start ->
+        Start →
             ( { model | on = True }
             , Cmd.batch
-                [ Cmd.perform λsend ->
+                [ Cmd.perform λsend →
                     _ = Time.sleep (Time.millis 300)
                     send Slept
-                , Cmd.keyed "search" Cmd.Restart λsend -> send (Answered (service.get "/search"))
+                , Cmd.keyed "search" Cmd.Restart λsend → send (Answered (service.get "/search"))
                 ]
             )
 
-        Boom ->
+        Boom →
             Debug.todo "update threw"
 
-        Slept ->
+        Slept →
             ( { model | seen = model.seen ++ [ "slept" ] }, Cmd.none )
 
-        Answered text ->
+        Answered text →
             ( { model | seen = model.seen ++ [ text ] }, Cmd.none )
 
-        Ticked ->
+        Ticked →
             ( { model | seen = model.seen ++ [ "tick" ] }, Cmd.none )
 
-        Resized ->
+        Resized →
             ( { model | seen = model.seen ++ [ "resized" ] }, Cmd.none )
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model → Sub Msg
 subscriptions model =
     if model.on then
         Sub.batch
-            [ Time.every (Time.millis 200) λ_ -> Ticked, Browser.Events.onResize λ_ -> Resized ]
+            [ Time.every (Time.millis 200) λ_ → Ticked, Browser.Events.onResize λ_ → Resized ]
     else
         Sub.none
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="start" onClick={Start}>start</button>
         <button id="boom" onClick={Boom}>boom</button>
-        <ul><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ul>
+        <ul><For each={model.seen} keyed={False}>{λs → <li>{s}</li>}</For></ul>
     </main>
 
 

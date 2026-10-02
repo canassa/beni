@@ -19,7 +19,7 @@ leaf : Html String
 leaf = <button id="leaf" onClick={"leaf"}>{Html.text "press"}</button>
 
 
-view : String -> Html Msg
+view : String → Html Msg
 view last =
     <main>
         <p>{Html.text last}</p>
@@ -27,10 +27,10 @@ view last =
     </main>
 
 
-update : Msg, String -> String
+update : Msg, String → String
 update msg _ =
     case msg of
-        Clicked s ->
+        Clicked s →
             s
 
 

@@ -9,14 +9,14 @@
 -- `where` clause, so the `try` rows and the evidence rows are visible in one
 -- module — the probe rolls the dispatch builder back between its guesses
 -- (A.35), and a site the losing guess recorded must not survive.
-pub parse : Result String Int, Result String Int -> Result String Int
+pub parse : Result String Int, Result String Int → Result String Int
 parse a b = Ok (a? + b?)
 
 
-pub firstPlus : Maybe Int -> Maybe Int
+pub firstPlus : Maybe Int → Maybe Int
 firstPlus m = Just (m? + 1)
 
 
-pub bigger : Result String a, a -> Result String Bool
-    where a.compare : a, a -> Order
+pub bigger : Result String a, a → Result String Bool
+    where a.compare : a, a → Order
 bigger r limit = Ok ((r?).compare limit == GT)

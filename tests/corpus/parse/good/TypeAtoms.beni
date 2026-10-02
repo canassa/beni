@@ -5,7 +5,7 @@
 import Dict
 
 
-a : b -> b
+a : b → b
 a x = x
 
 
@@ -21,15 +21,15 @@ d : ()
 d = ()
 
 
-e2 : (Int -> Int) -> Int
+e2 : (Int → Int) → Int
 e2 fn = fn 1
 
 
-f : ( Int, String )
+f : Int × String
 f = ( 1, "" )
 
 
-g : ( Int, String, Char )
+g : Int × String × Char
 g = ( 1, "", 'c' )
 
 
@@ -41,21 +41,21 @@ i : { x : Int, y : Int }
 i = { x = 1, y = 2 }
 
 
-j : { r | x : Int } -> Int
+j : { r | x : Int } → Int
 j r = r.x
 
 
-k : Dict.Dict String (List ( Int, Maybe b )) -> List b
+k : Dict.Dict String (List (Int × Maybe b)) → List b
 k _ = []
 
 
-l : (Int -> Int), (Int -> Int), Int -> Int
+l : (Int → Int), (Int → Int), Int → Int
 l p q x = p (q x)
 
 
-m : List (Maybe (Result String ( Int, Int )))
+m : List (Maybe (Result String (Int × Int)))
 m = []
 
 
-n : { rec | items : List ( Int, { name : String } ) } -> Int
+n : { rec | items : List (Int × { name : String }) } → Int
 n rec = List.length rec.items

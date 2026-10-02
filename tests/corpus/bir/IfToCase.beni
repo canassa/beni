@@ -1,7 +1,7 @@
 -- BIR: `if c then a else b` lowers to a two-branch `case` on `True`/`False`
 -- (§8.2), including an `else if` chain, which becomes nested cases, and an
 -- `if` used as an argument.
-sign : Int -> Int
+sign : Int → Int
 sign n =
     if n < 0 then
         -1
@@ -11,5 +11,5 @@ sign n =
         1
 
 
-clamp01 : Float -> Float
+clamp01 : Float → Float
 clamp01 x = max 0 (if x > 1 then 1 else x)

@@ -23,11 +23,11 @@ type alias Model =
     log : List String
 
 
-held : String, Bool -> String
+held : String, Bool → String
 held name on = if on then " " ++ name else ""
 
 
-describe : String, Html.Event -> Msg
+describe : String, Html.Event → Msg
 describe what event =
     Pressed
         ("${what} ${Html.key event} ${Html.code event}"
@@ -38,17 +38,17 @@ describe what event =
         )
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Pressed line ->
+        Pressed line →
             ( { model | log = model.log ++ [ line ] }, Cmd.none )
 
-        Toggle ->
+        Toggle →
             ( { model | on = not model.on }, Cmd.none )
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model → Sub Msg
 subscriptions model =
     if model.on then
         Sub.batch
@@ -60,11 +60,11 @@ subscriptions model =
         Sub.none
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>
-        <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 

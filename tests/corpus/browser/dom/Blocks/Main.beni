@@ -28,21 +28,21 @@ type alias Model =
     items : List String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Toggle ->
+        Toggle →
             { on = not model.on
             , status = Busy (List.length model.items + 1)
-            , items = [ "x", ...model.items ]
+            , items = [ "x", …model.items ]
             }
 
 
-badge : String -> Html msg
+badge : String → Html msg
 badge label = <b>{label}</b>
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     greeting = <em>{if model.on then "on" else "off"}</em>
     <main>
@@ -52,19 +52,19 @@ view model =
             link
         </a>
         {case model.status of
-            Idle ->
+            Idle →
                 badge "idle"
 
-            Busy n ->
+            Busy n →
                 <i>busy {n}</i>
         }
         <Card title="Card" footer={if model.on then Just (badge "footer") else Nothing}>
             {Html.text "text"} and <b>markup</b>
         </Card>
-        <ol>{List.map model.items λitem -> <li>{item}</li>}</ol>
+        <ol>{List.map model.items λitem → <li>{item}</li>}</ol>
         <ul>
             <For each={model.items} keyed={False} fallback={<li>empty</li>}>
-                {λitem -> <li>{item}</li>}
+                {λitem → <li>{item}</li>}
             </For>
         </ul>
     </main>

@@ -8,11 +8,11 @@ pub type Box a
     = Box a a
 
 
-pub eq : Box a, Box a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Box a, Box a → Bool
+    where a.eq : a, a → Bool
 eq x y =
     case x of
-        Box first _ ->
+        Box first _ →
             case y of
-                Box other _ ->
+                Box other _ →
                     first == other

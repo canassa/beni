@@ -7,4 +7,4 @@ import List
 pub foreign type Program
 
 
-pub foreign pure finish : List ( String, Bool ) -> Program
+pub foreign pure finish : List (String × Bool) → Program

@@ -6,8 +6,8 @@ type K
 pub mix (K n) b = K n
 
 
-useMix : a, b -> a
-    where a.mix : a, b -> a
+useMix : a, b → a
+    where a.mix : a, b → a
 useMix x y = x.mix y
 
 

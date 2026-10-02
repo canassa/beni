@@ -9,15 +9,15 @@
 import Box exposing (Box)
 
 
-pub viaParam : Box Int -> String
+pub viaParam : Box Int → String
 viaParam bx = bx.describe bx
 
 
-pub wrapped : Box Int -> String
+pub wrapped : Box Int → String
 wrapped bx = bx.describe (Box.Box bx)
 
 
-pub wrapped2 : Box Int -> String
+pub wrapped2 : Box Int → String
 wrapped2 bx =
     w = Box.Box bx
     bx.describe w

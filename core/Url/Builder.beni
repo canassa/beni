@@ -23,14 +23,14 @@ pub type QueryParameter
 --|
 --|     absolute [ "packages", "elm", "core" ] [] == "/packages/elm/core"
 --|     absolute [ "products" ] [ int "page" 2 ] == "/products?page=2"
-pub absolute : List String, List QueryParameter -> String
+pub absolute : List String, List QueryParameter → String
 absolute pathSegments parameters = "/" ++ path pathSegments ++ toQuery parameters
 
 
 --| A relative URL: the path segments, then the query.
 --|
 --|     relative [ "elm", "core" ] [] == "elm/core"
-pub relative : List String, List QueryParameter -> String
+pub relative : List String, List QueryParameter → String
 relative pathSegments parameters = path pathSegments ++ toQuery parameters
 
 
@@ -38,7 +38,7 @@ relative pathSegments parameters = path pathSegments ++ toQuery parameters
 --| the query.
 --|
 --|     crossOrigin "https://example.com" [ "products" ] [] == "https://example.com/products"
-pub crossOrigin : String, List String, List QueryParameter -> String
+pub crossOrigin : String, List String, List QueryParameter → String
 crossOrigin prePath pathSegments parameters =
     prePath ++ "/" ++ path pathSegments ++ toQuery parameters
 
@@ -46,46 +46,46 @@ crossOrigin prePath pathSegments parameters =
 --| Any of the three, and a fragment, written as given.
 --|
 --|     custom Relative [ "there" ] [] (Just "top") == "there#top"
-pub custom : Root, List String, List QueryParameter, Maybe String -> String
+pub custom : Root, List String, List QueryParameter, Maybe String → String
 custom root pathSegments parameters maybeFragment =
     fragmentless = rootToPrePath root ++ path pathSegments ++ toQuery parameters
     case maybeFragment of
-        Nothing ->
+        Nothing →
             fragmentless
 
-        Just fragment ->
+        Just fragment →
             "${fragmentless}#${fragment}"
 
 
-rootToPrePath : Root -> String
+rootToPrePath : Root → String
 rootToPrePath root =
     case root of
-        Absolute ->
+        Absolute →
             "/"
 
-        Relative ->
+        Relative →
             ""
 
-        CrossOrigin prePath ->
+        CrossOrigin prePath →
             prePath ++ "/"
 
 
 -- The segments, each encoded, joined by `/`.
-path : List String -> String
+path : List String → String
 path segments = String.join (List.map segments Url.percentEncode) "/"
 
 
 --| A query parameter whose value is a string; both are percent-encoded.
 --|
 --|     absolute [ "products" ] [ string "search" "hat" ] == "/products?search=hat"
-pub string : String, String -> QueryParameter
+pub string : String, String → QueryParameter
 string key value = QueryParameter (Url.percentEncode key) (Url.percentEncode value)
 
 
 --| A query parameter whose value is an integer.
 --|
 --|     absolute [ "products" ] [ int "page" 2 ] == "/products?page=2"
-pub int : String, Int -> QueryParameter
+pub int : String, Int → QueryParameter
 int key value = QueryParameter (Url.percentEncode key) (String.fromInt value)
 
 
@@ -94,15 +94,15 @@ int key value = QueryParameter (Url.percentEncode key) (String.fromInt value)
 --|
 --|     toQuery [] == ""
 --|     toQuery [ int "page" 2 ] == "?page=2"
-pub toQuery : List QueryParameter -> String
+pub toQuery : List QueryParameter → String
 toQuery parameters =
     case parameters of
-        [] ->
+        [] →
             ""
 
-        _ ->
+        _ →
             "?" ++ String.join (List.map parameters toQueryPair) "&"
 
 
-toQueryPair : QueryParameter -> String
+toQueryPair : QueryParameter → String
 toQueryPair (QueryParameter key value) = "${key}=${value}"

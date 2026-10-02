@@ -6,18 +6,18 @@ pub type T
 
 pub eq left right =
     case left of
-        T n _ ->
+        T n _ →
             case right of
-                T m _ ->
+                T m _ →
                     n == m
 
 
 pub compare left right =
     same = { v = left } == { v = right }
     case left of
-        T n _ ->
+        T n _ →
             case right of
-                T m _ ->
+                T m _ →
                     if same then
                         LT
                     else

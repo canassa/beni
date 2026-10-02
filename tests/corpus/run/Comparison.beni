@@ -5,7 +5,7 @@ import Node exposing (Program)
 import String
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -17,12 +17,12 @@ main : Program
 main =
     Node.printLines
         [ show (1 < 2)
-        , show (2 <= 2)
+        , show (2 ≤ 2)
         , show (3 > 4)
-        , show (4 >= 4)
+        , show (4 ≥ 4)
         , show (1 == 1)
         , show ([ 1, 2 ] == [ 1, 2 ])
-        , show ([ 1, 2 ] /= [ 2, 1 ])
+        , show ([ 1, 2 ] ≠ [ 2, 1 ])
         , show (True && False)
         , show (True || False)
         , show (not True)

@@ -15,26 +15,26 @@ type Msg
     | Got (Result Http.Error String)
 
 
-shown : Result Http.Error String -> String
+shown : Result Http.Error String → String
 shown result =
     case result of
-        Ok text ->
+        Ok text →
             "ok ${text}"
 
-        Err (Http.BadRequest Http.MultipartContentType) ->
+        Err (Http.BadRequest Http.MultipartContentType) →
             "MultipartContentType"
 
-        Err _ ->
+        Err _ →
             "another error"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Send headers ->
+        Send headers →
             ( lines
             , Cmd.task
-                (λ() ->
+                (λ() →
                     Http.request
                         { method = "POST"
                         , headers = headers
@@ -50,22 +50,22 @@ update msg lines =
                 Got
             )
 
-        Got result ->
+        Got result →
             ( lines ++ [ shown result ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="send" onClick={Send []}>send</button>
         <button id="typed" onClick={Send [ Http.header "Content-Type" "multipart/form-data" ]}>
             typed
         </button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

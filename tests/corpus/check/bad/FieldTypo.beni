@@ -5,5 +5,5 @@ pub type alias Person =
     age : Int
 
 
-pub who : Person -> String
+pub who : Person → String
 who p = p.nme

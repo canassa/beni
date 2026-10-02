@@ -1,4 +1,4 @@
 -- check/bad: a number where text is wanted. The hint is Elm's: there is no
 -- implicit conversion, so say which one you meant.
-pub shout : Int -> String
+pub shout : Int → String
 shout n = n ++ "!"

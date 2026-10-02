@@ -37,25 +37,25 @@ type K5
     = K5 Int
 
 
-f1 : K1 -> K1 -> Bool
+f1 : K1 → K1 → Bool
 f1 a b = a == b
 
 
-f2 : K2 -> K2 -> Bool
+f2 : K2 → K2 → Bool
 f2 a b = a == b
 
 
-f3 : K3 -> K3 -> Bool
+f3 : K3 → K3 → Bool
 f3 a b = a == b
 
 
-f4 : K4 -> K4 -> Order
+f4 : K4 → K4 → Order
 f4 a b = compare a b
 
 
-f5 : K5 -> K5 -> Bool
+f5 : K5 → K5 → Bool
 f5 a b = a == b
 
 
-f6 : Trip Char Char Char -> Bool
+f6 : Trip Char Char Char → Bool
 f6 t = t == t

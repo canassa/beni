@@ -8,35 +8,35 @@ import Node exposing (Program)
 import String
 
 
-withDiff : Int, Int, (Int -> String) -> String
+withDiff : Int, Int, (Int → String) → String
 withDiff a b body = body (a - b)
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
 piped : String
 piped =
-    x <- 100 |> withDiff 1
+    x ← 100 ▷ withDiff 1
     String.fromInt x
 
 
 chained : String
 chained =
-    x <- 200 |> subtract 50 |> withDiff 7
+    x ← 200 ▷ subtract 50 ▷ withDiff 7
     String.fromInt x
 
 
 appliedLeft : String
 appliedLeft =
-    x <- withDiff 100 <| 1
+    x ← withDiff 100 ◁ 1
     String.fromInt x
 
 
 parenthesised : String
 parenthesised =
-    x <- 100 |> (withDiff 1)
+    x ← 100 ▷ (withDiff 1)
     String.fromInt x
 
 

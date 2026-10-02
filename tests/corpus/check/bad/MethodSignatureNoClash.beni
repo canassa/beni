@@ -9,7 +9,7 @@ pub type Mod
     = Mod Int
 
 
-pub eq : Mod, Int -> Bool
+pub eq : Mod, Int → Bool
 eq a b = True
 
 

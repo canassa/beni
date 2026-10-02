@@ -5,12 +5,12 @@ import Js
 
 
 --| A fresh empty object.
-object : () -> Js.Value
+object : () → Js.Value
 object _ = Js.apply (Js.global "Object") []
 
 
 --| Count to `n` in a property of an object, one tail call per step.
-pub countTo : Int -> Int
+pub countTo : Int → Int
 countTo n =
     o = object ()
 
@@ -18,7 +18,7 @@ countTo n =
     step o n
 
 
-step : Js.Value, Int -> Int
+step : Js.Value, Int → Int
 step o n =
     k : Int
     k = Js.to (Js.get o "n")
@@ -71,20 +71,20 @@ readThenWrite =
     Js.to (Js.apply (Js.global "String") [ Js.get o "v", Js.from (Js.set o "v" (Js.from 2)) ])
 
 
-bump : Js.Value -> Int
+bump : Js.Value → Int
 bump o =
     _ = Js.set o "v" (Js.from 2)
     0
 
 
-second : Int, Int -> String
+second : Int, Int → String
 second _ b = String.fromInt b
 
 
 --| A property read bound before a call that writes the property keeps what
 --| it read: `1`, not the `2` the call writes. The release optimiser may not
 --| fold the read into the call's arguments, after the call.
-pub readBeforeCall : () -> String
+pub readBeforeCall : () → String
 readBeforeCall () =
     o = Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
 

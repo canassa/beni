@@ -3,19 +3,19 @@
 import Html exposing (Html)
 
 
-item : String -> Html msg
+item : String → Html msg
 item label = <li><a href="#">{label}</a> <em>note</em></li>
 
 
-heading : Int, Int -> Html msg
+heading : Int, Int → Html msg
 heading index value = <h2>Section {index} <span>{value}</span></h2>
 
 
-para : Int -> Html msg
+para : Int → Html msg
 para index = <p>The static text of section {index}, which no message changes.</p>
 
 
-pub section : { index : Int, value : Int } -> Html msg
+pub section : { index : Int, value : Int } → Html msg
 section props =
     <section class="s">
         {heading props.index props.value}

@@ -24,13 +24,13 @@ pub type alias Parser a =
 --|     -- ?search=hat          Just "hat"
 --|     -- ?search=hat&search=x Nothing
 --|     -- ?other=1             Nothing
-pub string : String -> Parser (Maybe String)
-string key = custom key λvalues ->
+pub string : String → Parser (Maybe String)
+string key = custom key λvalues →
     case values of
-        [ value ] ->
+        [ value ] →
             Just value
 
-        _ ->
+        _ →
             Nothing
 
 
@@ -41,13 +41,13 @@ string key = custom key λvalues ->
 --|     page = int "page"
 --|     -- ?page=2   Just 2
 --|     -- ?page=two Nothing
-pub int : String -> Parser (Maybe Int)
-int key = custom key λvalues ->
+pub int : String → Parser (Maybe Int)
+int key = custom key λvalues →
     case values of
-        [ value ] ->
+        [ value ] →
             String.toInt value
 
-        _ ->
+        _ →
             Nothing
 
 
@@ -56,13 +56,13 @@ int key = custom key λvalues ->
 --|
 --|     order : Parser (Maybe Order)
 --|     order = enum "order" (Dict.fromList [ ( "asc", LT ), ( "desc", GT ) ])
-pub enum : String, Dict String a -> Parser (Maybe a)
-enum key dict = custom key λvalues ->
+pub enum : String, Dict String a → Parser (Maybe a)
+enum key dict = custom key λvalues →
     case values of
-        [ value ] ->
+        [ value ] →
             Dict.get dict value
 
-        _ ->
+        _ →
             Nothing
 
 
@@ -71,36 +71,36 @@ enum key dict = custom key λvalues ->
 --|     posts : Parser (List Int)
 --|     posts = custom "post" (List.filterMap _ String.toInt)
 --|     -- ?post=2&post=7 [ 2, 7 ]
-pub custom : String, (List String -> a) -> Parser a
-custom key func = Q λdict -> func (Maybe.withDefault (Dict.get dict key) [])
+pub custom : String, (List String → a) → Parser a
+custom key func = Q λdict → func (Maybe.withDefault (Dict.get dict key) [])
 
 
 --| The parser's value passed through `func`.
-pub map : Parser a, (a -> b) -> Parser b
-map (Q pa) func = Q λdict -> func (pa dict)
+pub map : Parser a, (a → b) → Parser b
+map (Q pa) func = Q λdict → func (pa dict)
 
 
 --| Two parsers' values combined.
 --|
 --|     query : Parser Query
 --|     query = map2 (string "search") (int "page") Query
-pub map2 : Parser a, Parser b, (a, b -> r) -> Parser r
-map2 (Q pa) (Q pb) func = Q λdict -> func (pa dict) (pb dict)
+pub map2 : Parser a, Parser b, (a, b → r) → Parser r
+map2 (Q pa) (Q pb) func = Q λdict → func (pa dict) (pb dict)
 
 
 --| Three parsers' values combined.
-pub map3 : Parser a, Parser b, Parser c, (a, b, c -> r) -> Parser r
-map3 (Q pa) (Q pb) (Q pc) func = Q λdict -> func (pa dict) (pb dict) (pc dict)
+pub map3 : Parser a, Parser b, Parser c, (a, b, c → r) → Parser r
+map3 (Q pa) (Q pb) (Q pc) func = Q λdict → func (pa dict) (pb dict) (pc dict)
 
 
 --| Four parsers' values combined.
-pub map4 : Parser a, Parser b, Parser c, Parser d, (a, b, c, d -> r) -> Parser r
-map4 (Q pa) (Q pb) (Q pc) (Q pd) func = Q λdict -> func (pa dict) (pb dict) (pc dict) (pd dict)
+pub map4 : Parser a, Parser b, Parser c, Parser d, (a, b, c, d → r) → Parser r
+map4 (Q pa) (Q pb) (Q pc) (Q pd) func = Q λdict → func (pa dict) (pb dict) (pc dict) (pd dict)
 
 
 --| Five parsers' values combined.
-pub map5 : Parser a, Parser b, Parser c, Parser d, Parser e, (a, b, c, d, e -> r) -> Parser r
-map5 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) func = Q λdict ->
+pub map5 : Parser a, Parser b, Parser c, Parser d, Parser e, (a, b, c, d, e → r) → Parser r
+map5 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) func = Q λdict →
     func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict)
 
 
@@ -112,9 +112,9 @@ pub map6 :
     , Parser d
     , Parser e
     , Parser f
-    , (a, b, c, d, e, f -> r)
-    -> Parser r
-map6 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) func = Q λdict ->
+    , (a, b, c, d, e, f → r)
+    → Parser r
+map6 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) func = Q λdict →
     func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict)
 
 
@@ -127,9 +127,9 @@ pub map7 :
     , Parser e
     , Parser f
     , Parser g
-    , (a, b, c, d, e, f, g -> r)
-    -> Parser r
-map7 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) func = Q λdict ->
+    , (a, b, c, d, e, f, g → r)
+    → Parser r
+map7 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) func = Q λdict →
     func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict) (pg dict)
 
 
@@ -143,7 +143,7 @@ pub map8 :
     , Parser f
     , Parser g
     , Parser h
-    , (a, b, c, d, e, f, g, h -> r)
-    -> Parser r
-map8 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) (Q ph) func = Q λdict ->
+    , (a, b, c, d, e, f, g, h → r)
+    → Parser r
+map8 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) (Q ph) func = Q λdict →
     func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict) (pg dict) (ph dict)

@@ -9,11 +9,11 @@
 import Node exposing (Program)
 
 
-step : Int, Int -> Int
+step : Int, Int → Int
 step acc i = acc + i * i
 
 
-sumTo : Int, Int, Int -> Int
+sumTo : Int, Int, Int → Int
 sumTo acc i n =
     if i > n then
         acc

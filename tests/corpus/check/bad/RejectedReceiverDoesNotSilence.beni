@@ -8,9 +8,9 @@ type T
     = T Int
 
 
-pub bar : T, Int -> Int
+pub bar : T, Int → Int
 bar (T n) m = n + m
 
 
-f : T -> Int
+f : T → Int
 f x = x.foo 1 + x.baz 2 + x.bar 3 + String.length x

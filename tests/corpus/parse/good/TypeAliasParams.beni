@@ -9,11 +9,11 @@ type alias Name =
 
 
 type alias Pair a =
-    ( a, a )
+    a × a
 
 
 type alias Handler model msg =
-    msg -> model -> ( model, List msg )
+    msg → model → model × List msg
 
 
 type alias Entry k v =

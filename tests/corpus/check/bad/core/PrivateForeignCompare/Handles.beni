@@ -10,5 +10,5 @@
 pub foreign type Handle
 
 
-compare : Handle, Handle -> Order
+compare : Handle, Handle → Order
 compare a b = LT

@@ -1,9 +1,9 @@
 --! The `ssr` runtime's beni half: `escape`, as the lowering calls it, and
 --! `list`, one parameter short.
 
-pub escape : String -> String
+pub escape : String → String
 escape text = text
 
 
-pub list : String, String -> String
+pub list : String, String → String
 list items row = items

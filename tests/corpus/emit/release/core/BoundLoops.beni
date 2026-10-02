@@ -14,13 +14,13 @@
 import Js
 
 
-pub scan : Js.Value, Int -> Int
+pub scan : Js.Value, Int → Int
 scan xs m =
     p = upTo xs m 0
     p * 2
 
 
-upTo : Js.Value, Int, Int -> Int
+upTo : Js.Value, Int, Int → Int
 upTo xs m k =
     if k < m && not (Js.isNull (Js.at xs k)) then
         upTo xs m (k + 1)
@@ -28,13 +28,13 @@ upTo xs m k =
         k
 
 
-pub fill : Js.Value, Int -> Int
+pub fill : Js.Value, Int → Int
 fill xs n =
     _ = fillFrom xs n 0
     n
 
 
-fillFrom : Js.Value, Int, Int -> ()
+fillFrom : Js.Value, Int, Int → ()
 fillFrom xs n k =
     if k == n then
         ()
@@ -43,13 +43,13 @@ fillFrom xs n k =
         fillFrom xs n (k + 1)
 
 
-pub ends : Js.Value, Int -> Int
+pub ends : Js.Value, Int → Int
 ends xs n =
     ( a, b ) = both xs 0 n
     a + b
 
 
-both : Js.Value, Int, Int -> ( Int, Int )
+both : Js.Value, Int, Int → Int × Int
 both xs a b =
     if a < b && Js.same (Js.at xs a) (Js.at xs (b - 1)) then
         both xs (a + 1) (b - 1)
@@ -57,13 +57,13 @@ both xs a b =
         ( a, b )
 
 
-pub pick : Js.Value -> Int
+pub pick : Js.Value → Int
 pick xs =
     big = firstBig xs 0
     big + 1
 
 
-firstBig : Js.Value, Int -> Int
+firstBig : Js.Value, Int → Int
 firstBig xs k =
     if k == Js.to (Js.get xs "length") then
         -1
@@ -73,11 +73,11 @@ firstBig xs k =
         firstBig xs (k + 1)
 
 
-pub total : Js.Value -> Int
+pub total : Js.Value → Int
 total rows = rowsFrom rows 0 0
 
 
-rowsFrom : Js.Value, Int, Int -> Int
+rowsFrom : Js.Value, Int, Int → Int
 rowsFrom rows r sum =
     if r == Js.to (Js.get rows "length") then
         sum
@@ -86,7 +86,7 @@ rowsFrom rows r sum =
         rowsFrom rows (r + 1) (sum + s)
 
 
-rowSum : Js.Value, Int, Int -> Int
+rowSum : Js.Value, Int, Int → Int
 rowSum row k sum =
     if k == Js.to (Js.get row "length") then
         sum

@@ -30,15 +30,15 @@ pub compare x y =
         EQ
     else
         case x of
-            Box _ m ->
+            Box _ m →
                 case y of
-                    Box _ n ->
+                    Box _ n →
                         Basics.compare m n
 
 
 pub eq x y =
     case x of
-        Box a m ->
+        Box a m →
             case y of
-                Box b n ->
+                Box b n →
                     a == b && m // 10 == n // 10

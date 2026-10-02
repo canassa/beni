@@ -12,48 +12,48 @@ import Node exposing (Program)
 import Url exposing (Url)
 
 
-describe : Maybe Url -> String
+describe : Maybe Url → String
 describe url =
     case url of
-        Nothing ->
+        Nothing →
             "Nothing"
 
-        Just u ->
+        Just u →
             protocol =
                 case u.protocol of
-                    Url.Http ->
+                    Url.Http →
                         "http"
 
-                    Url.Https ->
+                    Url.Https →
                         "https"
 
             port_ =
                 case u.port_ of
-                    Just p ->
+                    Just p →
                         String.fromInt p
 
-                    Nothing ->
+                    Nothing →
                         "-"
             "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment} = ${Url.toString u}"
 
 
-shown : Maybe String -> String
+shown : Maybe String → String
 shown s =
     case s of
-        Just text ->
+        Just text →
             "[${text}]"
 
-        Nothing ->
+        Nothing →
             "-"
 
 
-decoded : String -> String
+decoded : String → String
 decoded s =
     case Url.percentDecode s of
-        Just text ->
+        Just text →
             "[${text}]"
 
-        Nothing ->
+        Nothing →
             "undecodable"
 
 

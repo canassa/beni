@@ -7,7 +7,7 @@
 import Two
 
 
-f : Two.A -> Bool
+f : Two.A → Bool
 f a = a < a
 
 

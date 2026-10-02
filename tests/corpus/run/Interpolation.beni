@@ -5,7 +5,7 @@ import Node exposing (Program)
 import String
 
 
-greet : String, Int -> String
+greet : String, Int → String
 greet name age = "${name} is ${String.fromInt age}"
 
 

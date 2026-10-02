@@ -24,7 +24,7 @@ type alias PrivateAlias =
     id : Id
 
 
-pub annotated : Int -> Int
+pub annotated : Int → Int
 annotated n = n + secret
 
 

@@ -22,40 +22,40 @@ type alias Model =
         at : Maybe Int
 
 
-isOn : Maybe Int, Int -> String
+isOn : Maybe Int, Int → String
 isOn selected id = if selected == Just id then "on" else ""
 
 
-pub table : Model -> Html msg
+pub table : Model → Html msg
 table model =
     <div>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 <p class={if model.selected == Just row.parent then "on" else ""}>{row.label}</p>
             }
         </For>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 <p class={if model.selected == Just row.id then "on" else ""}>
                     {Maybe.withDefault model.selected 0}
                 </p>
             }
         </For>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 sel = model.selected
                 <p class={if sel == Just row.id then "on" else ""}>{row.label}</p>
             }
         </For>
         <For each={model.rows} keyed={False}>
-            {λrow -> <p class={if model.selected == Just row.id then "on" else ""}>{row.label}</p>}
+            {λrow → <p class={if model.selected == Just row.id then "on" else ""}>{row.label}</p>}
         </For>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 <p class={if { at = Just row.id } == model.pick then "on" else ""}>{row.label}</p>
             }
         </For>
         <For each={model.rows} keyed={.id}>
-            {λrow -> <p class={isOn model.selected (row.id + 1)}>{row.label}</p>}
+            {λrow → <p class={isOn model.selected (row.id + 1)}>{row.label}</p>}
         </For>
     </div>

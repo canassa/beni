@@ -10,44 +10,44 @@
 import Js
 
 
-pub decodes : String -> Maybe String
+pub decodes : String → Maybe String
 decodes text =
     Js.catchIf
-        (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
-        (λerr -> Js.instanceOf err (Js.global "URIError"))
-        λ_ -> Nothing
+        (λ() → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
+        (λerr → Js.instanceOf err (Js.global "URIError"))
+        λ_ → Nothing
 
 
-pub stored : Js.Value, String, String -> Int
+pub stored : Js.Value, String, String → Int
 stored area key value =
     code : Int
     code =
         Js.catchIf
-            (λ() ->
+            (λ() →
                 _ = Js.call area "setItem" [ Js.from key, Js.from value ]
                 0
             )
-            (λerr ->
+            (λerr →
                 Js.instanceOf err (Js.global "DOMException")
                     && Js.same (Js.get err "name") (Js.from "QuotaExceededError")
             )
-            λ_ -> 1
+            λ_ → 1
     code + 1
 
 
-pub drop : Js.Value -> ()
+pub drop : Js.Value → ()
 drop f =
-    Js.catchIf (λ() -> Js.to (Js.apply f [])) (λerr -> Js.instanceOf err (Js.global "TypeError")) λ_ ->
+    Js.catchIf (λ() → Js.to (Js.apply f [])) (λerr → Js.instanceOf err (Js.global "TypeError")) λ_ →
         ()
 
 
-pub passed : (() -> Int), (Js.Value -> Bool), (Js.Value -> Int) -> Int
+pub passed : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 passed f t h = Js.catchIf f t h
 
 
-pub digits : String -> Bool
+pub digits : String → Bool
 digits s = Js.to (Js.call (Js.regExp "^\\d+$" "") "test" [ Js.from s ])
 
 
-pub wrap : Int, Int -> Int
+pub wrap : Int, Int → Int
 wrap a b = Js.bitOr (Js.rem a b) 0

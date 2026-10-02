@@ -14,11 +14,11 @@ import Node exposing (Program)
 import String
 
 
-pairs : Dict String Int -> String
-pairs dict = String.join (List.map (Dict.toList dict) λp -> p.0 ++ "=" ++ String.fromInt p.1) ","
+pairs : Dict String Int → String
+pairs dict = String.join (List.map (Dict.toList dict) λp → p.0 ++ "=" ++ String.fromInt p.1) ","
 
 
-flag : Bool -> String
+flag : Bool → String
 flag b =
     if b then
         "True"
@@ -48,11 +48,11 @@ main =
         , String.fromInt (Dict.size (Dict.insert left "a" 99))
         , pairs (Dict.remove left "z")
         , String.fromInt (Dict.size (Dict.remove Dict.empty "z"))
-        , pairs (Dict.update left "a" λ_ -> Just 7)
-        , pairs (Dict.update left "a" λ_ -> Nothing)
-        , pairs (Dict.update left "z" λ_ -> Just 7)
-        , pairs (Dict.update left "z" λ_ -> Nothing)
-        , pairs (Dict.update left "a" λv -> v)
+        , pairs (Dict.update left "a" λ_ → Just 7)
+        , pairs (Dict.update left "a" λ_ → Nothing)
+        , pairs (Dict.update left "z" λ_ → Just 7)
+        , pairs (Dict.update left "z" λ_ → Nothing)
+        , pairs (Dict.update left "a" λv → v)
         , pairs (Dict.union left right)
         , pairs (Dict.union right left)
         , pairs (Dict.union left Dict.empty)
@@ -62,7 +62,7 @@ main =
         , pairs (Dict.diff right left)
         , "[" ++ pairs (Dict.diff left left) ++ "]"
         , pairs (Dict.fromList [ ( "a", 1 ), ( "a", 2 ) ])
-        , String.fromInt (Dict.foldr left 0 λ_ v acc -> v + acc)
-        , String.join (Dict.foldr left [] λk _ acc -> [ k, ...acc ]) ","
-        , String.join (Dict.foldl left [] λk _ acc -> [ k, ...acc ]) ","
+        , String.fromInt (Dict.foldr left 0 λ_ v acc → v + acc)
+        , String.join (Dict.foldr left [] λk _ acc → [ k, …acc ]) ","
+        , String.join (Dict.foldl left [] λk _ acc → [ k, …acc ]) ","
         ]

@@ -13,7 +13,7 @@ type alias Id a =
 
 deep :
       a
-    -> Id
+    → Id
         (Id
             (Id
                 (Id

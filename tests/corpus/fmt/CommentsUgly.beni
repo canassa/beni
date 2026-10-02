@@ -23,9 +23,9 @@ f x = -- after equals
          -- in else
          case x of
                 -- before branch
-             True -> 1 -- after branch
+             True → 1 -- after branch
                    -- between branches
-             False -> [ 1 -- in list
+             False → [ 1 -- in list
                       , 2
                       -- before close
                       ]

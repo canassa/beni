@@ -25,35 +25,35 @@ type Keys
 listen : Cmd Msg
 listen =
     Cmd.batch
-        [ Cmd.keyed Keys Cmd.Restart λsend ->
-            Browser.Events.eachKeyDown λevent -> send (Saw ("down ${Html.key event}"))
-        , Cmd.keyed Keys Cmd.Concurrent λsend ->
-            Browser.Events.eachKeyUp λevent -> send (Saw ("up ${Html.key event}"))
-        , Cmd.keyed Keys Cmd.Concurrent λsend ->
-            Browser.Navigation.eachUrlChange λurl ->
+        [ Cmd.keyed Keys Cmd.Restart λsend →
+            Browser.Events.eachKeyDown λevent → send (Saw ("down ${Html.key event}"))
+        , Cmd.keyed Keys Cmd.Concurrent λsend →
+            Browser.Events.eachKeyUp λevent → send (Saw ("up ${Html.key event}"))
+        , Cmd.keyed Keys Cmd.Concurrent λsend →
+            Browser.Navigation.eachUrlChange λurl →
                 send (Saw ("url " ++ Maybe.withDefault url.fragment ""))
         ]
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg log =
     case msg of
-        Saw what ->
+        Saw what →
             ( log ++ [ what ], Cmd.none )
 
-        Stop ->
+        Stop →
             ( log ++ [ "stopped" ], Cmd.cancel Keys )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view log =
     <main>
         <button id="stop" onClick={Stop}>stop</button>
-        <ul><For each={log} keyed={False}>{λline -> <li>{line}</li>}</For></ul>
+        <ul><For each={log} keyed={False}>{λline → <li>{line}</li>}</For></ul>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], listen ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], listen ), update = update, view = view, subscriptions = λ_ → Sub.none }

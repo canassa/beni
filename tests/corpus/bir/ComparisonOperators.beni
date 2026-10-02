@@ -6,7 +6,7 @@
 -- lambda over the same node (§3.1, Appendix A.22), not a reference to
 -- `Basics.eq`, which would be structural equality and the wrong answer;
 -- `(+)` beside them is unchanged.
-comparisons a b = ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+comparisons a b = ( a == b, a ≠ b, a < b, a > b, a ≤ b, a ≥ b )
 
 
-asFunctions = [ (==), (/=), (<), (>), (<=), (>=), (+) ]
+asFunctions = [ (==), (≠), (<), (>), (≤), (≥), (+) ]

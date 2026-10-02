@@ -9,7 +9,7 @@
 pick t id = if t.id == id then { t | done = not t.done } else t
 
 
-grade s = if s >= 90 then "A" else if s >= 80 then "B" else "F"
+grade s = if s ≥ 90 then "A" else if s ≥ 80 then "B" else "F"
 
 
 inList flag = [ if flag then 1 else 0, max (if flag then 2 else 3) 4 ]
@@ -32,7 +32,7 @@ vertical b =
 withCase b =
     if b then
         case b of
-            _ ->
+            _ →
                 1
     else
         0

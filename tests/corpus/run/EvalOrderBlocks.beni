@@ -28,15 +28,15 @@ type Shape
     | Tri Int Int
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
-b : String, Bool -> Bool
+b : String, Bool → Bool
 b label v = Debug.log label v
 
 
-shape : String, Shape -> Shape
+shape : String, Shape → Shape
 shape label v = Debug.log label v
 
 
@@ -52,24 +52,24 @@ main =
 
     onceSimple =
         case shape "case.scrutinee" subject of
-            Circle a ->
+            Circle a →
                 a
 
-            Square a ->
+            Square a →
                 a
 
-            Tri a c ->
+            Tri a c →
                 a + c
 
     tupleScrutinee =
         case ( shape "tuple.scrutinee.0" subject, n "tuple.scrutinee.1" 7 ) of
-            ( Circle a, 7 ) ->
+            ( Circle a, 7 ) →
                 a
 
-            ( Tri a c, 7 ) ->
+            ( Tri a c, 7 ) →
                 a + c
 
-            ( _, other ) ->
+            ( _, other ) →
                 other
 
     conditional =
@@ -86,26 +86,26 @@ main =
     andShortStatements =
         b "and.stmt.short.left" False
             && (case shape "and.stmt.short.right" subject of
-                   Circle a ->
+                   Circle a →
                        a > 0
 
-                   Square a ->
+                   Square a →
                        a > 0
 
-                   Tri a c ->
+                   Tri a c →
                        a < c
                )
 
     andBothStatements =
         b "and.stmt.both.left" True
             && (case shape "and.stmt.both.right" subject of
-                   Circle a ->
+                   Circle a →
                        a > 0
 
-                   Square a ->
+                   Square a →
                        a > 0
 
-                   Tri a c ->
+                   Tri a c →
                        a < c
                )
     Node.printLines

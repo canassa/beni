@@ -7,19 +7,19 @@ import Task exposing (Exit)
 
 --| The runtime's entry, for the harness: `work` in a root fiber, `done`
 --| with how it ended.
-pub start : (() -> a), (Exit a -> ()) -> ()
+pub start : (() → a), (Exit a → ()) → ()
 start work done = Task.start work done
 
 
 --| A plain function: the baseline a call is measured against.
-pub inc : Int -> Int
+pub inc : Int → Int
 inc n = n + 1
 
 
 --| A function that may suspend and never does here: its class is
 --| `suspends`, so every call of it is a suspension point, and every one
 --| takes the fast path.
-pub incS : Int -> Int
+pub incS : Int → Int
 incS n =
     if n < 0 then
         _ = Task.yieldNow ()
@@ -29,7 +29,7 @@ incS n =
 
 
 --| `n` plain calls, in a loop.
-pub loopPlain : Int, Int -> Int
+pub loopPlain : Int, Int → Int
 loopPlain n acc =
     if n == 0 then
         acc
@@ -39,7 +39,7 @@ loopPlain n acc =
 
 --| `n` suspension points in a tail-call loop: the loop's fast path, a
 --| comparison per call and no allocation.
-pub loopSuspending : Int, Int -> Int
+pub loopSuspending : Int, Int → Int
 loopSuspending n acc =
     if n == 0 then
         acc
@@ -49,7 +49,7 @@ loopSuspending n acc =
 
 --| Four suspension points in sequence, outside a loop: each hands the rest
 --| of the function to `Task.andThen` as a closure, fast path or not.
-four : Int -> Int
+four : Int → Int
 four x =
     a = incS x
     b = incS a
@@ -58,7 +58,7 @@ four x =
 
 
 --| `4 n` sequenced suspension points.
-pub loopSequenced : Int, Int -> Int
+pub loopSequenced : Int, Int → Int
 loopSequenced n acc =
     if n == 0 then
         acc
@@ -67,7 +67,7 @@ loopSequenced n acc =
 
 
 --| `n` suspension points that really park: each yields to the scheduler.
-pub loopYielding : Int, Int -> Int
+pub loopYielding : Int, Int → Int
 loopYielding n acc =
     if n == 0 then
         acc
@@ -78,13 +78,13 @@ loopYielding n acc =
 
 --| `n` fibers, each yielding once and answering its index; joined in order
 --| and summed.
-pub fanOut : Int -> Int
+pub fanOut : Int → Int
 fanOut n =
-    fibers = List.map (List.range 1 n) λi -> Task.spawn λ() -> worker i
-    List.foldl fibers 0 λf acc -> acc + Task.join f
+    fibers = List.map (List.range 1 n) λi → Task.spawn λ() → worker i
+    List.foldl fibers 0 λf acc → acc + Task.join f
 
 
-worker : Int -> Int
+worker : Int → Int
 worker i =
     _ = Task.yieldNow ()
     i
@@ -92,8 +92,8 @@ worker i =
 
 --| The spike's four primitives together, for the size of what a program
 --| that uses them ships: a scope, a bracket, a spawn and a join.
-pub together : Int -> Int
-together n = Task.scope λs ->
-    Task.bracket (λ() -> n) (λ_ _ -> ()) λr ->
-        f = Task.spawnIn s λ() -> worker r
+pub together : Int → Int
+together n = Task.scope λs →
+    Task.bracket (λ() → n) (λ_ _ → ()) λr →
+        f = Task.spawnIn s λ() → worker r
         Task.join f

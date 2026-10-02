@@ -23,16 +23,16 @@ type alias Model =
     names : List String
 
 
-viewName : String -> Html msg
+viewName : String → Html msg
 viewName name = <li>{name}</li>
 
 
-pub table : Model -> Html msg
+pub table : Model → Html msg
 table model =
     <table>
         <tbody>
             <For each={model.rows} keyed={.id}>
-                {λrow ->
+                {λrow →
                     <tr class={[ ( "danger", row.id == model.selected ) ]}><td>{row.label}</td></tr>
                 }
             </For>
@@ -40,21 +40,21 @@ table model =
     </table>
 
 
-pub lists : Model -> Html msg
+pub lists : Model → Html msg
 lists model =
     <div>
-        <ol><For each={model.names} keyed={False}>{λname i -> <li>{i}. {name}</li>}</For></ol>
+        <ol><For each={model.names} keyed={False}>{λname i → <li>{i}. {name}</li>}</For></ol>
         <ul><For each={model.names} fallback={<li>none</li>}>{viewName}</For></ul>
         <ul>
             <For each={model.names}>
-                {λname -> if name == "" then <li>blank</li> else <li>{name}</li>}
+                {λname → if name == "" then <li>blank</li> else <li>{name}</li>}
             </For>
         </ul>
     </div>
 
 
-pub first : Model -> Html msg
+pub first : Model → Html msg
 first model =
     <Show when={List.head model.rows} keyed={.id} fallback={<p>none</p>}>
-        {λrow -> <p>{row.label} of {model.selected}</p>}
+        {λrow → <p>{row.label} of {model.selected}</p>}
     </Show>

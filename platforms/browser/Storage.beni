@@ -37,7 +37,7 @@ pub type Error
 
 
 --| The text stored under the key, or `Nothing`.
-pub get : Area, String -> Maybe String
+pub get : Area, String → Maybe String
 get area key =
     s = storage area
     if Js.isNullish s then
@@ -51,23 +51,23 @@ get area key =
 
 
 --| Store the text under the key, replacing what was there.
-pub set : Area, String, String -> Result Error ()
+pub set : Area, String, String → Result Error ()
 set area key value =
     s = storage area
     if Js.isNullish s then
         Err Unavailable
     else
         Js.catchIf
-            (λ() ->
+            (λ() →
                 _ = Js.call s "setItem" [ Js.from key, Js.from value ]
                 Ok ()
             )
-            (λerror -> isDomError error "QuotaExceededError")
-            λ_ -> Err QuotaExceeded
+            (λerror → isDomError error "QuotaExceededError")
+            λ_ → Err QuotaExceeded
 
 
 --| Forget the key.
-pub remove : Area, String -> ()
+pub remove : Area, String → ()
 remove area key =
     s = storage area
     if Js.isNullish s then
@@ -77,7 +77,7 @@ remove area key =
 
 
 --| Every key stored, in the browser's order.
-pub keys : Area -> List String
+pub keys : Area → List String
 keys area =
     s = storage area
     if Js.isNullish s then
@@ -86,7 +86,7 @@ keys area =
         keysFrom s 0 (Js.to (Js.get s "length")) (Js.array [])
 
 
-keysFrom : Js.Value, Int, Int, Js.Value -> List String
+keysFrom : Js.Value, Int, Int, Js.Value → List String
 keysFrom s i n found =
     if i < n then
         _ = Js.call found "push" [ Js.call s "key" [ Js.from i ] ]
@@ -96,21 +96,21 @@ keysFrom s i n found =
 
 
 -- The area, or `null`: reading it may throw a `SecurityError`.
-storage : Area -> Js.Value
+storage : Area → Js.Value
 storage area =
     Js.catchIf
-        (λ() ->
+        (λ() →
             case area of
-                Local ->
+                Local →
                     Js.global "localStorage"
 
-                Session ->
+                Session →
                     Js.global "sessionStorage"
         )
-        (λerror -> isDomError error "SecurityError")
-        λ_ -> Js.null
+        (λerror → isDomError error "SecurityError")
+        λ_ → Js.null
 
 
-isDomError : Js.Value, String -> Bool
+isDomError : Js.Value, String → Bool
 isDomError error name =
     Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)

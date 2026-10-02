@@ -6,7 +6,7 @@
 import Schema exposing (Conversion)
 
 
-mk : Int -> Conversion Int Int
+mk : Int → Conversion Int Int
 mk n = Debug.todo "checker-only conversion"
 
 

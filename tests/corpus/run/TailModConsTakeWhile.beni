@@ -8,29 +8,29 @@ import Node exposing (Program)
 import String
 
 
-takeWhile : List a, (a -> Bool) -> List a
+takeWhile : List a, (a → Bool) → List a
 takeWhile xs keep =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
-                [ x, ...takeWhile rest keep ]
+                [ x, …takeWhile rest keep ]
             else
                 []
 
 
-show : List Int -> String
+show : List Int → String
 show xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
-    kept = takeWhile (List.range 1 200000) λx -> x <= 100000
+    kept = takeWhile (List.range 1 200000) λx → x ≤ 100000
     Node.printLines
-        [ show (takeWhile [ 1, 2, 3, 9, 4 ] λx -> x < 5)
-        , show (takeWhile [ 9, 1 ] λx -> x < 5)
+        [ show (takeWhile [ 1, 2, 3, 9, 4 ] λx → x < 5)
+        , show (takeWhile [ 9, 1 ] λx → x < 5)
         , String.fromInt (List.length kept)
         , String.fromInt (List.sum kept)
         ]

@@ -8,7 +8,7 @@
 import Js
 
 
-pub indexOf : Js.Value, Js.Value, Int -> Int
+pub indexOf : Js.Value, Js.Value, Int → Int
 indexOf xs x k =
     if k == Js.to (Js.get xs "length") then
         -1
@@ -18,7 +18,7 @@ indexOf xs x k =
         indexOf xs x (k + 1)
 
 
-pub classify : Int -> String
+pub classify : Int → String
 classify n =
     if n < 0 then
         m = String.fromInt (0 - n)
@@ -30,7 +30,7 @@ classify n =
         "plus " ++ s ++ "/" ++ s
 
 
-pub settle : Js.Value -> ()
+pub settle : Js.Value → ()
 settle o =
     _ =
         if Js.isNull (Js.get o "v") then
@@ -41,7 +41,7 @@ settle o =
     Js.set o "done" (Js.from True)
 
 
-pub describe : Js.Value -> ()
+pub describe : Js.Value → ()
 describe o =
     if Js.isNull o then
         ()

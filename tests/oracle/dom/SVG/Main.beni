@@ -27,7 +27,7 @@ template =
     </svg>
 
 
-pub template2 : State, { stroke : String } -> Html msg
+pub template2 : State, { stroke : String } → Html msg
 template2 state props =
     <svg width="400" height="180">
         <rect
@@ -63,7 +63,7 @@ template6 =
     </Component>
 
 
-pub template7 : String -> Html msg
+pub template7 : String → Html msg
 template7 url =
     <svg viewBox={"0 0 160 40"} xmlns="http://www.w3.org/2000/svg">
         <a xlink:href={url}>
@@ -74,7 +74,7 @@ template7 url =
     </svg>
 
 
-pub template8 : String -> Html msg
+pub template8 : String → Html msg
 template8 text =
     <svg viewBox={"0 0 160 40"} xmlns="http://www.w3.org/2000/svg">
         <text x="10" y="25" textContent={text} />

@@ -32,13 +32,13 @@ type Msg
     | Said String
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Twice fibers policy ->
+        Twice fibers policy →
             ( n + 1, keyed fibers (name policy) policy "${name policy} ${String.fromInt (n + 1)}" )
 
-        Cancelled fibers ->
+        Cancelled fibers →
             ( n + 1
             , Cmd.batch
                 [ keyed fibers "cancel" Cmd.Concurrent "cancelled ${String.fromInt (n + 1)}"
@@ -46,45 +46,45 @@ update msg n =
                 ]
             )
 
-        Sleep ->
+        Sleep →
             ( n + 1, Cmd.keyed "replace" Cmd.Restart sleeper )
 
-        Replace fibers ->
+        Replace fibers →
             ( n + 1, keyed fibers "replace" Cmd.Restart "replacement ${String.fromInt (n + 1)}" )
 
-        Said what ->
+        Said what →
             _ = Log.info "update: ${what}"
             ( n, Cmd.none )
 
 
 -- The body under `key`: one that never waits, or the same one with a wait
 -- no run takes, which makes it one that may.
-keyed : Bool, String, Cmd.Policy, String -> Cmd Msg
+keyed : Bool, String, Cmd.Policy, String → Cmd Msg
 keyed fibers key policy what =
     if fibers then
-        Cmd.keyed key policy λsend -> say send (λ() -> pause False) what
+        Cmd.keyed key policy λsend → say send (λ() → pause False) what
     else
-        Cmd.keyed key policy λsend -> say send (λ() -> ()) what
+        Cmd.keyed key policy λsend → say send (λ() → ()) what
 
 
-name : Cmd.Policy -> String
+name : Cmd.Policy → String
 name policy =
     case policy of
-        Cmd.Restart ->
+        Cmd.Restart →
             "restart"
 
-        Cmd.Ignore ->
+        Cmd.Ignore →
             "ignore"
 
-        Cmd.Queue ->
+        Cmd.Queue →
             "queue"
 
-        Cmd.Concurrent ->
+        Cmd.Concurrent →
             "concurrent"
 
 
 -- Waits only when asked to, which no run does.
-pause : Bool -> ()
+pause : Bool → ()
 pause yes =
     if yes then
         Task.yieldNow ()
@@ -92,20 +92,20 @@ pause yes =
         ()
 
 
-say : Cmd.Send Msg, (() -> ()), String -> ()
+say : Cmd.Send Msg, (() → ()), String → ()
 say send hold what =
     _ = hold ()
     _ = Log.info "body: ${what}"
     send (Said what)
 
 
-sleeper : Cmd.Send Msg -> ()
+sleeper : Cmd.Send Msg → ()
 sleeper _ =
-    Task.bracket (λ() -> Log.info "sleeper starts") (λ_ _ -> Log.info "sleeper cleans up") λ_ ->
+    Task.bracket (λ() → Log.info "sleeper starts") (λ_ _ → Log.info "sleeper cleans up") λ_ →
         Time.sleep (Time.millis 1000)
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view _ =
     <main>
         <button id="restart-d" onClick={Twice False Cmd.Restart}>restart</button>
@@ -130,5 +130,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

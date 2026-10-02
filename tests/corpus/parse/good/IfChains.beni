@@ -1,18 +1,18 @@
 -- if/then/else chains, nested ifs in both branches, negative literals after
 -- `then`/`else`/`<`, and a one-line `if`.
-grade : Int -> String
+grade : Int → String
 grade score =
-    if score >= 90 then
+    if score ≥ 90 then
         "A"
-    else if score >= 80 then
+    else if score ≥ 80 then
         "B"
-    else if score >= 70 then
+    else if score ≥ 70 then
         "C"
     else
         "F"
 
 
-clampSign : Int -> Int
+clampSign : Int → Int
 clampSign n =
     if n < 0 then
         if n < -10 then -10 else -1

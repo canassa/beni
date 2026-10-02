@@ -16,7 +16,7 @@ pairEq x y =
     inner x y && inner [ x ] [ y ]
 
 
-text : Bool -> String
+text : Bool → String
 text b =
     if b then
         "True"

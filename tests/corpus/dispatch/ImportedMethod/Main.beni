@@ -4,9 +4,9 @@
 import Token exposing (Token, bump)
 
 
-pub step : Token -> Token
+pub step : Token → Token
 step t = t.bump 1
 
 
-pub same : Token, Token -> Bool
+pub same : Token, Token → Bool
 same a b = a == b

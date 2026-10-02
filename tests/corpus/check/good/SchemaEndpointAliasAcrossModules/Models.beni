@@ -47,7 +47,7 @@ pub type alias PrivW =
     Priv.Type
 
 
-pub mkPriv : Int -> PrivW
+pub mkPriv : Int → PrivW
 mkPriv n = Priv.P { w = n }
 
 

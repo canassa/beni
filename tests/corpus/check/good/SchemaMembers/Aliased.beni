@@ -23,21 +23,21 @@ pub compared : Order
 compared = count.compare count
 
 
-pub programCase : M.Message.Type -> Bool
+pub programCase : M.Message.Type → Bool
 programCase message =
     case message of
-        M.Message.Text row ->
+        M.Message.Text row →
             True
 
-        M.Message.Count row ->
+        M.Message.Count row →
             True
 
 
-pub encodedCase : M.Message.Encoded -> Bool
+pub encodedCase : M.Message.Encoded → Bool
 encodedCase message =
     case message of
-        M.Message.Encoded.Text row ->
+        M.Message.Encoded.Text row →
             True
 
-        M.Message.Encoded.Count row ->
+        M.Message.Encoded.Count row →
             True

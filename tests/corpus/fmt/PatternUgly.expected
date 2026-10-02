@@ -3,15 +3,15 @@
 -- parameters; expected: canonical spacing, structure unchanged.
 f v =
     case v of
-        [ ( a, b ), ...rest ] ->
+        [ ( a, b ), …rest ] →
             a
-        [ x, y ] ->
+        [ x, y ] →
             x
-        [ ({ c } as r), ..._ ] ->
+        [ ({ c } as r), …_ ] →
             c
-        [ Just (Just (z)) ] ->
+        [ Just (Just (z)) ] →
             z
-        _ ->
+        _ →
             0
 
 
@@ -20,4 +20,4 @@ g p =
     a
 
 
-h = λ( a, b ) -> a
+h = λ( a, b ) → a

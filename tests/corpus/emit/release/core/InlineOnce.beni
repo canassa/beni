@@ -22,11 +22,11 @@
 import Js
 
 
-pub put : Js.Value, Js.Value, Js.Value -> ()
+pub put : Js.Value, Js.Value, Js.Value → ()
 put parent i before = putRun parent (Js.get i "first") (Js.get i "last") before
 
 
-putRun : Js.Value, Js.Value, Js.Value, Js.Value -> ()
+putRun : Js.Value, Js.Value, Js.Value, Js.Value → ()
 putRun parent n end before =
     next = Js.get n "nextSibling"
     _ = Js.call parent "insertBefore" [ n, before ]
@@ -36,15 +36,15 @@ putRun parent n end before =
         putRun parent next end before
 
 
-double : Int -> Int
+double : Int → Int
 double n = n * 2 + 1
 
 
-pub label : Int, String -> String
+pub label : Int, String → String
 label n unit = String.append (String.fromInt (double n)) unit
 
 
-exclaim : String, Bool -> String
+exclaim : String, Bool → String
 exclaim s loud =
     if loud then
         String.append s "!"
@@ -52,11 +52,11 @@ exclaim s loud =
         s
 
 
-pub shout : String, Bool -> String
+pub shout : String, Bool → String
 shout s loud = exclaim s loud
 
 
-describe : Int -> String
+describe : Int → String
 describe n =
     if n == 0 then
         "none"
@@ -64,19 +64,19 @@ describe n =
         "some"
 
 
-pub grade : Int -> String
+pub grade : Int → String
 grade n = describe (n - 1)
 
 
-twice : Int -> Int
+twice : Int → Int
 twice n = n * 3 + 1
 
 
-pub both : Int -> Int
+pub both : Int → Int
 both n = twice n + twice (n + 1)
 
 
-pub exported : Int -> Int
+pub exported : Int → Int
 exported n = n + 1
 
 

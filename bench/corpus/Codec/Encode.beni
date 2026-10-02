@@ -12,23 +12,23 @@ pub type alias Value =
 
 --| The value as JSON text, indented that many spaces per level; 0 prints
 --| it on one line.
-pub encode : Value, Int -> String
+pub encode : Value, Int → String
 encode value indent = Json.print value indent
 
 
-pub string : String -> Value
+pub string : String → Value
 string s = Text s
 
 
-pub int : Int -> Value
+pub int : Int → Value
 int n = Number (toFloat n)
 
 
-pub float : Float -> Value
+pub float : Float → Value
 float n = Number n
 
 
-pub bool : Bool -> Value
+pub bool : Bool → Value
 bool b = Boolean b
 
 
@@ -36,40 +36,40 @@ pub null : Value
 null = Null
 
 
-pub list : List a, (a -> Value) -> Value
+pub list : List a, (a → Value) → Value
 list items encoder = Array (List.map items encoder)
 
 
-pub set : Set a, (a -> Value) -> Value
+pub set : Set a, (a → Value) → Value
 set items encoder = Array (List.map (Set.toList items) encoder)
 
 
-pub object : List ( String, Value ) -> Value
+pub object : List (String × Value) → Value
 object fields = Object fields
 
 
 --| A dictionary as an object, its keys turned into field names.
-pub dict : Dict k v, (k -> String), (v -> Value) -> Value
+pub dict : Dict k v, (k → String), (v → Value) → Value
 dict entries toKey encoder =
-    Dict.foldr entries [] (λkey item fields -> [ ( toKey key, encoder item ), ...fields ])
-        |> Object
+    Dict.foldr entries [] (λkey item fields → [ ( toKey key, encoder item ), …fields ])
+        ▷ Object
 
 
 --| A value that may be missing, as `null` when it is.
-pub maybe : Maybe a, (a -> Value) -> Value
+pub maybe : Maybe a, (a → Value) → Value
 maybe item encoder =
     case item of
-        Just present ->
+        Just present →
             encoder present
 
-        Nothing ->
+        Nothing →
             Null
 
 
 --| The fields whose value is present, the others left out rather than
 --| written as `null`.
-pub optionalFields : List ( String, Maybe Value ) -> Value
+pub optionalFields : List (String × Maybe Value) → Value
 optionalFields fields =
     fields
-        |> List.filterMap λ( name, item ) -> Maybe.map item λpresent -> ( name, present )
-        |> Object
+        ▷ List.filterMap λ( name, item ) → Maybe.map item λpresent → ( name, present )
+        ▷ Object

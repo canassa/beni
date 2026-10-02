@@ -44,15 +44,15 @@ pub schema Boxed a tagged "box" of
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue ("not a decimal integer: " ++ s) ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 counted : Schema String Int
@@ -64,26 +64,26 @@ all =
     { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
 
 
-ints : Page.Type Int -> String
+ints : Page.Type Int → String
 ints p = String.fromInt p.total ++ ": " ++ String.join (List.map p.items String.fromInt) ","
 
 
-showPages : Pages.Type -> String
+showPages : Pages.Type → String
 showPages p =
     String.join
-        (List.map p.pairs.items λx -> String.fromInt x.left ++ "-" ++ String.fromInt x.right)
+        (List.map p.pairs.items λx → String.fromInt x.left ++ "-" ++ String.fromInt x.right)
         ","
         ++ " / "
         ++ String.join p.names.items ","
 
 
-boxed : Boxed.Type Int -> String
+boxed : Boxed.Type Int → String
 boxed b =
     case b of
-        Boxed.Full f ->
+        Boxed.Full f →
             String.fromInt f.content ++ " " ++ boxed f.rest
 
-        Boxed.Empty ->
+        Boxed.Empty →
             "."
 
 
@@ -97,19 +97,19 @@ main =
         , Show.result
             (Page.parseWith counted all "{\"items\":[\"3\",\"x\",5],\"total\":\"2\",\"more\":1}")
             ints
-        , Show.result (Page.print counted { items = [ 5, 6 ], total = 2 }) λs -> s
-        , Show.result (Page.print Schema.int { items = [ 9007199254740992 ], total = 2 }) λs -> s
+        , Show.result (Page.print counted { items = [ 5, 6 ], total = 2 }) λs → s
+        , Show.result (Page.print Schema.int { items = [ 9007199254740992 ], total = 2 }) λs → s
         , "-- arguments checked first"
         , Show.result (Page.parse (Schema.tagged "k" []) "{\"items\":[],\"total\":0}") ints
-        , Show.result (Page.parse (Schema.flip counted) "{\"items\":[],\"total\":0}") λp ->
+        , Show.result (Page.parse (Schema.flip counted) "{\"items\":[],\"total\":0}") λp →
             String.join p.items ","
-        , Show.result (Page.parse (Schema.flip counted) "not even JSON") λp ->
+        , Show.result (Page.parse (Schema.flip counted) "not even JSON") λp →
             String.join p.items ","
         , Show.result
             (Page.parseWith Schema.int { all | maxDepth = -1 } "{\"items\":[],\"total\":0}")
             ints
-        , Show.result (Page.print (Schema.flip counted) { items = [], total = 0 }) λs -> s
-        , Show.result (Tagged.parse Schema.int (Schema.tagged "unused" []) "{\"first\":1}") λt ->
+        , Show.result (Page.print (Schema.flip counted) { items = [], total = 0 }) λs → s
+        , Show.result (Tagged.parse Schema.int (Schema.tagged "unused" []) "{\"first\":1}") λt →
             String.fromInt t.first
         , "-- arguments written in a declaration"
         , Show.result
@@ -129,7 +129,7 @@ main =
                 , names = { items = [], total = 0 }
                 }
             )
-            λs -> s
+            λs → s
         , "-- a generic recursive union"
         , Show.result
             (Boxed.parse
@@ -143,6 +143,6 @@ main =
                 "{\"box\":\"full\",\"content\":1,\"rest\":{\"box\":\"full\",\"content\":\"2\",\"rest\":{\"box\":\"empty\"}}}"
             )
             boxed
-        , Show.result (Boxed.print Schema.int (Boxed.Full { content = 7, rest = Boxed.Empty })) λs ->
+        , Show.result (Boxed.print Schema.int (Boxed.Full { content = 7, rest = Boxed.Empty })) λs →
             s
         ]

@@ -1,17 +1,17 @@
 import Users
 
 
-pub names : List Int -> Int
+pub names : List Int → Int
 names ids = List.length (Users.fetchAll ids)
 
 
-pub later : List Int -> (() -> List String)
-later ids = λ() -> Users.fetchAll ids
+pub later : List Int → (() → List String)
+later ids = λ() → Users.fetchAll ids
 
 
-pub now : List Int -> List String
+pub now : List Int → List String
 now ids = (later ids) ()
 
 
-pub quiet : List Int -> Int
+pub quiet : List Int → Int
 quiet ids = Users.count ids

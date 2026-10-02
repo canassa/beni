@@ -1,11 +1,11 @@
 -- check/bad: a tuple has exactly one constructor, so what a `case` on one
 -- can be missing is a COMBINATION, and the example has to name the whole
 -- tuple to say which.
-pub both : ( Bool, Bool ) -> Int
+pub both : Bool × Bool → Int
 both p =
     case p of
-        ( True, True ) ->
+        ( True, True ) →
             1
 
-        ( False, False ) ->
+        ( False, False ) →
             0

@@ -6,16 +6,16 @@
 import Colors exposing (Blue, Color, Green, Red)
 
 
-pub name : Color -> String
+pub name : Color → String
 name c =
     case c of
-        Red ->
+        Red →
             "red"
 
-        Green ->
+        Green →
             "green"
 
-        Blue ->
+        Blue →
             "blue"
 
 

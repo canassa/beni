@@ -10,88 +10,88 @@ import Set exposing (Set)
 
 
 --| Group a list by a key function; keys keep first-seen order in `groupOrder`.
-pub groupBy : List a, (a -> String) -> Dict String (List a)
+pub groupBy : List a, (a → String) → Dict String (List a)
 groupBy items key =
-    step item groups = Dict.update groups (key item) λexisting ->
+    step item groups = Dict.update groups (key item) λexisting →
         case existing of
-            Just group ->
-                Just [ item, ...group ]
+            Just group →
+                Just [ item, …group ]
 
-            Nothing ->
+            Nothing →
                 Just [ item ]
     List.foldl items Dict.empty step
-        |> Dict.map λ_ group -> List.reverse group
+        ▷ Dict.map λ_ group → List.reverse group
 
 
 --| The order in which keys were first seen.
-pub groupOrder : List a, (a -> String) -> List String
+pub groupOrder : List a, (a → String) → List String
 groupOrder items key =
     step item ( seen, order ) =
         k = key item
         if Set.member seen k then
             ( seen, order )
         else
-            ( Set.insert seen k, [ k, ...order ] )
+            ( Set.insert seen k, [ k, …order ] )
 
     walked = List.foldl items ( Set.empty, [] ) step
     List.reverse walked.1
 
 
-pub frequencies : List String -> Dict String Int
-frequencies items = List.foldl items Dict.empty λitem counts -> insertWith counts item 1 (+)
+pub frequencies : List String → Dict String Int
+frequencies items = List.foldl items Dict.empty λitem counts → insertWith counts item 1 (+)
 
 
-pub insertWith : Dict String v, String, v, (v, v -> v) -> Dict String v
-insertWith dict key value combine = Dict.update dict key λexisting ->
+pub insertWith : Dict String v, String, v, (v, v → v) → Dict String v
+insertWith dict key value combine = Dict.update dict key λexisting →
     case existing of
-        Just old ->
+        Just old →
             Just (combine value old)
 
-        Nothing ->
+        Nothing →
             Just value
 
 
-pub fromListWith : List ( String, v ), (v, v -> v) -> Dict String v
-fromListWith pairs combine = List.foldl pairs Dict.empty λ( k, v ) acc -> insertWith acc k v combine
+pub fromListWith : List (String × v), (v, v → v) → Dict String v
+fromListWith pairs combine = List.foldl pairs Dict.empty λ( k, v ) acc → insertWith acc k v combine
 
 
-pub unionWith : Dict String v, Dict String v, (v, v -> v) -> Dict String v
-unionWith left right combine = Dict.foldl left right λk v acc -> insertWith acc k v combine
+pub unionWith : Dict String v, Dict String v, (v, v → v) → Dict String v
+unionWith left right combine = Dict.foldl left right λk v acc → insertWith acc k v combine
 
 
-pub invert : Dict String String -> Dict String (List String)
-invert dict = Dict.foldl dict Dict.empty λk v acc -> insertWith acc v [ k ] (++)
+pub invert : Dict String String → Dict String (List String)
+invert dict = Dict.foldl dict Dict.empty λk v acc → insertWith acc v [ k ] (++)
 
 
-pub filterMap : Dict String a, (String, a -> Maybe b) -> Dict String b
-filterMap dict f = Dict.foldl dict Dict.empty λk v acc ->
+pub filterMap : Dict String a, (String, a → Maybe b) → Dict String b
+filterMap dict f = Dict.foldl dict Dict.empty λk v acc →
     case f k v of
-        Just w ->
+        Just w →
             Dict.insert acc k w
 
-        Nothing ->
+        Nothing →
             acc
 
 
-pub mapKeys : Dict String v, (String -> String) -> Dict String v
-mapKeys dict f = Dict.foldl dict Dict.empty λk v acc -> Dict.insert acc (f k) v
+pub mapKeys : Dict String v, (String → String) → Dict String v
+mapKeys dict f = Dict.foldl dict Dict.empty λk v acc → Dict.insert acc (f k) v
 
 
-pub partition : Dict String v, (String, v -> Bool) -> ( Dict String v, Dict String v )
-partition dict predicate = Dict.foldl dict ( Dict.empty, Dict.empty ) λk v ( yes, no ) ->
+pub partition : Dict String v, (String, v → Bool) → Dict String v × Dict String v
+partition dict predicate = Dict.foldl dict ( Dict.empty, Dict.empty ) λk v ( yes, no ) →
     if predicate k v then
         ( Dict.insert yes k v, no )
     else
         ( yes, Dict.insert no k v )
 
 
-pub find : Dict String v, (String, v -> Bool) -> Maybe ( String, v )
-find dict predicate = Dict.foldl dict Nothing λk v found ->
+pub find : Dict String v, (String, v → Bool) → Maybe (String × v)
+find dict predicate = Dict.foldl dict Nothing λk v found →
     case found of
-        Just _ ->
+        Just _ →
             found
 
-        Nothing ->
+        Nothing →
             if predicate k v then
                 Just ( k, v )
             else
@@ -102,94 +102,94 @@ find dict predicate = Dict.foldl dict Nothing λk v found ->
 -- `Maybe ( String, v )` needs `v.eq`, which this annotation does not give,
 -- so `--checker=v2` refuses the comparison (`missing_where_constraint`:
 -- an annotation's `where` clause is the whole of what the body may use).
-pub any : Dict String v, (String, v -> Bool) -> Bool
+pub any : Dict String v, (String, v → Bool) → Bool
 any dict predicate =
     case find dict predicate of
-        Just _ ->
+        Just _ →
             True
 
-        Nothing ->
+        Nothing →
             False
 
 
-pub all : Dict String v, (String, v -> Bool) -> Bool
-all dict predicate = not (any dict λk v -> not (predicate k v))
+pub all : Dict String v, (String, v → Bool) → Bool
+all dict predicate = not (any dict λk v → not (predicate k v))
 
 
-pub toSortedList : Dict String v, (v, v -> Order) -> List ( String, v )
+pub toSortedList : Dict String v, (v, v → Order) → List (String × v)
 toSortedList dict ordering =
     Dict.toList dict
-        |> List.sortWith λ( _, a ) ( _, b ) -> ordering a b
+        ▷ List.sortWith λ( _, a ) ( _, b ) → ordering a b
 
 
-pub topN : Dict String Int, Int -> List ( String, Int )
+pub topN : Dict String Int, Int → List (String × Int)
 topN counts n =
-    toSortedList counts (λa b -> compare b a)
-        |> List.take n
+    toSortedList counts (λa b → compare b a)
+        ▷ List.take n
 
 
-pub keysWhere : Dict String v, (v -> Bool) -> Set String
-keysWhere dict predicate = Dict.foldl dict Set.empty λk v acc ->
+pub keysWhere : Dict String v, (v → Bool) → Set String
+keysWhere dict predicate = Dict.foldl dict Set.empty λk v acc →
     if predicate v then
         Set.insert acc k
     else
         acc
 
 
-pub restrict : Dict String v, Set String -> Dict String v
-restrict dict keys = Dict.filter dict λk _ -> Set.member keys k
+pub restrict : Dict String v, Set String → Dict String v
+restrict dict keys = Dict.filter dict λk _ → Set.member keys k
 
 
-pub without : Dict String v, Set String -> Dict String v
-without dict keys = Dict.filter dict λk _ -> not (Set.member keys k)
+pub without : Dict String v, Set String → Dict String v
+without dict keys = Dict.filter dict λk _ → not (Set.member keys k)
 
 
-pub symmetricDifference : Set String, Set String -> Set String
+pub symmetricDifference : Set String, Set String → Set String
 symmetricDifference a b = Set.union (Set.diff a b) (Set.diff b a)
 
 
-pub powerSetSize : Set String -> Int
+pub powerSetSize : Set String → Int
 powerSetSize set = 2 ^ Set.size set
 
 
-pub renameKey : Dict String v, String, String -> Dict String v
+pub renameKey : Dict String v, String, String → Dict String v
 renameKey dict from to =
     case Dict.get dict from of
-        Just value ->
-            dict |> Dict.remove from |> Dict.insert to value
+        Just value →
+            dict ▷ Dict.remove from ▷ Dict.insert to value
 
-        Nothing ->
+        Nothing →
             dict
 
 
-pub updateAll : Dict String v, List String, (v -> v) -> Dict String v
-updateAll dict keys f = List.foldl keys dict λk acc -> Dict.update acc k (Maybe.map _ f)
+pub updateAll : Dict String v, List String, (v → v) → Dict String v
+updateAll dict keys f = List.foldl keys dict λk acc → Dict.update acc k (Maybe.map _ f)
 
 
-pub getOrInsert : Dict String v, String, v -> ( v, Dict String v )
+pub getOrInsert : Dict String v, String, v → v × Dict String v
 getOrInsert dict key default =
     case Dict.get dict key of
-        Just value ->
+        Just value →
             ( value, dict )
 
-        Nothing ->
+        Nothing →
             ( default, Dict.insert dict key default )
 
 
-pub nested : Dict String (Dict String Int) -> List ( String, String, Int )
+pub nested : Dict String (Dict String Int) → List (String × String × Int)
 nested outer =
     Dict.foldl outer
         []
-        (λa inner acc -> Dict.foldl inner acc λb n acc2 -> [ ( a, b, n ), ...acc2 ])
-        |> List.reverse
+        (λa inner acc → Dict.foldl inner acc λb n acc2 → [ ( a, b, n ), …acc2 ])
+        ▷ List.reverse
 
 
-pub describe : Dict String Int -> String
+pub describe : Dict String Int → String
 describe counts =
-    total = Dict.foldl counts 0 λ_ n acc -> acc + n
+    total = Dict.foldl counts 0 λ_ n acc → acc + n
 
     entries =
         topN counts 3
-            |> List.map λ( k, n ) -> "${k}=${n}"
-            |> String.join ", "
+            ▷ List.map λ( k, n ) → "${k}=${n}"
+            ▷ String.join ", "
     "${Dict.size counts} keys, ${total} total; top: ${entries}"

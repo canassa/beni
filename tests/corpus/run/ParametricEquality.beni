@@ -37,12 +37,12 @@ pub type Pair a b
     = Pair a b
 
 
-sameAs : a, a -> Bool
-    where a.eq : a, a -> Bool
+sameAs : a, a → Bool
+    where a.eq : a, a → Bool
 sameAs x y = x == y
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

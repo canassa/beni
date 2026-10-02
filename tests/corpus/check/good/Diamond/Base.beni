@@ -7,11 +7,11 @@ pub type Unit
     | Feet
 
 
-pub factor : Unit -> Int
+pub factor : Unit → Int
 factor u =
     case u of
-        Metres ->
+        Metres →
             1
 
-        Feet ->
+        Feet →
             3

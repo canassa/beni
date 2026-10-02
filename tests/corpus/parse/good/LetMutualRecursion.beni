@@ -1,6 +1,6 @@
 -- Mutually recursive `let` definitions: all bindings of one `let` are in scope
 -- in every body (§7), regardless of textual order.
-isEven : Int -> Bool
+isEven : Int → Bool
 isEven n =
     even k =
         if k == 0 then

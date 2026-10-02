@@ -14,7 +14,7 @@ import Node exposing (Program)
 import Task
 
 
-depth : Int -> Int
+depth : Int → Int
 depth n =
     _ = Task.yieldNow ()
     if n == 0 then
@@ -23,7 +23,7 @@ depth n =
         1 + depth (n - 1)
 
 
-countdown : Int, Int -> Int
+countdown : Int, Int → Int
 countdown n acc =
     _ = Task.yieldNow ()
     if n == 0 then
@@ -33,5 +33,5 @@ countdown n acc =
 
 
 main : Program
-main = Io.run λ() ->
+main = Io.run λ() →
     Node.printLines [ String.fromInt (depth 200000), String.fromInt (countdown 200000 0) ]

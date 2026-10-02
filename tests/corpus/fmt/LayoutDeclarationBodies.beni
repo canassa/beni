@@ -9,7 +9,7 @@ type alias Contact =
         street : String
         --| The city.
         city : String
-    greet : String, Int -> String
+    greet : String, Int → String
     result :
         Result
             String

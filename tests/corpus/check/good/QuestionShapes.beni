@@ -1,24 +1,24 @@
 -- check/good: `?` (checker.md §6.5) picks its shape from the enclosing
 -- definition's result type — `Result` here, `Maybe` there — and the two are
 -- never converted into each other.
-pub parseBoth : String, String -> Result String Int
+pub parseBoth : String, String → Result String Int
 parseBoth a b =
     left = parseOne a?
     right = parseOne b?
     Ok (left + right)
 
 
-parseOne : String -> Result String Int
+parseOne : String → Result String Int
 parseOne s =
     case String.toInt s of
-        Just value ->
+        Just value →
             Ok value
 
-        Nothing ->
+        Nothing →
             Err "not a number: ${s}"
 
 
-pub firstTwo : List Int -> Maybe Int
+pub firstTwo : List Int → Maybe Int
 firstTwo xs =
     head = List.head xs?
     Just (head + 1)

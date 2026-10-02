@@ -17,14 +17,14 @@ pub type K
 pub compare left right =
     same = L (Holder.Holder "a" identity) == L (Holder.Holder "b" identity)
     case left of
-        K a ->
+        K a →
             case right of
-                K b ->
+                K b →
                     if same then
                         EQ
                     else
                         Basics.compare a b
 
 
-identity : Int -> Int
+identity : Int → Int
 identity v = v

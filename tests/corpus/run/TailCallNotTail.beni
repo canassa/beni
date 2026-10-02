@@ -13,17 +13,17 @@ import Node exposing (Program)
 import String
 
 
-depth : Int -> Int
+depth : Int → Int
 depth n =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         1 + depth (n - 1)
 
 
-total : Int, Int -> Int
+total : Int, Int → Int
 total n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else if n == 5 then
         total (n - 1) (total 2 acc)

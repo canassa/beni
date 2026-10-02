@@ -23,8 +23,8 @@ main =
         User.parse
             "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
     of
-        Ok user ->
+        Ok user →
             Node.print user.displayName
 
-        Err issues ->
-            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1
+        Err issues →
+            Node.exitWith (String.join (List.map issues λi → i.message) "\n") 1

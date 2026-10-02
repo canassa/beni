@@ -7,7 +7,7 @@
 -- body, and never `a  =  … a …`.
 g r s =
     case [ r, { a = r, b = r } ] of
-        _ ->
+        _ →
             case [ s, { a = s, b = s } ] of
-                _ ->
+                _ →
                     [ r, s ]

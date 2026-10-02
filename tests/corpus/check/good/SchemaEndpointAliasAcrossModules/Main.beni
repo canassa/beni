@@ -14,49 +14,49 @@ type L
     = L Local
 
 
-same : Models.RW, Models.RW -> Bool
+same : Models.RW, Models.RW → Bool
 same p q = p == q
 
 
-less : Models.RE, Models.RE -> Bool
+less : Models.RE, Models.RE → Bool
 less p q = p < q
 
 
-records : Models.RecW, Models.RecW -> Bool
+records : Models.RecW, Models.RecW → Bool
 records p q = p == q
 
 
-sorted : Models.RL -> Models.RL
+sorted : Models.RL → Models.RL
 sorted xs = List.sort xs
 
 
-fields : Models.Both, Models.Both -> Bool
+fields : Models.Both, Models.Both → Bool
 fields p q = p == q
 
 
-pages : Models.PageW Int, Models.PageW Int -> Bool
+pages : Models.PageW Int, Models.PageW Int → Bool
 pages p q = p == q
 
 
-wrapped : Models.H, Models.H -> Bool
+wrapped : Models.H, Models.H → Bool
 wrapped p q = p == q
 
 
-local : L, L -> Bool
+local : L, L → Bool
 local p q = p < q
 
 
-private : Models.PrivW, Models.PrivW -> Bool
+private : Models.PrivW, Models.PrivW → Bool
 private p q = p == q
 
 
-usePrivate : Int -> Bool
+usePrivate : Int → Bool
 usePrivate n = private (Models.mkPriv n) (Models.mkPriv 2)
 
 
-field : Models.RecW -> Int
+field : Models.RecW → Int
 field r = r.x
 
 
-pub back : Local -> Models.RW
+pub back : Local → Models.RW
 back r = r

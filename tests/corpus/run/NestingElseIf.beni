@@ -18,15 +18,15 @@
 import Node exposing (Program)
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
-c : Int, Int -> Bool
+c : Int, Int → Bool
 c k i = Debug.log ("test " ++ String.fromInt i) (k == i)
 
 
-tailChain : Int -> String
+tailChain : Int → String
 tailChain k =
     if c k 1 then
         "arm1"
@@ -53,10 +53,10 @@ tailChain k =
         "arm11"
     else if c k 12 then
         case n "leaf12" 12 of
-            12 ->
+            12 →
                 "twelve"
 
-            _ ->
+            _ →
                 "not twelve"
     else if c k 13 then
         "arm13"
@@ -118,7 +118,7 @@ tailChain k =
         "none"
 
 
-valueChain : Int -> String
+valueChain : Int → String
 valueChain k =
     r =
         if c k 1 then
@@ -148,10 +148,10 @@ valueChain k =
                 "arm11"
             else if c k 12 then
                 case n "leaf12" 12 of
-                    12 ->
+                    12 →
                         "twelve"
 
-                    _ ->
+                    _ →
                         "not twelve"
             else if c k 13 then
                 "arm13"
@@ -174,7 +174,7 @@ valueChain k =
     r ++ "!"
 
 
-shortChain : Int -> String
+shortChain : Int → String
 shortChain k =
     r =
         if c k 1 then
@@ -212,11 +212,11 @@ shortChain k =
     r ++ "?"
 
 
-above : Int, Int -> Bool
+above : Int, Int → Bool
 above k i = Debug.log ("above " ++ String.fromInt i) (k > i)
 
 
-thenTail : Int -> String
+thenTail : Int → String
 thenTail k =
     if above k 0 then
         if above k 1 then
@@ -281,7 +281,7 @@ thenTail k =
         "0"
 
 
-thenValue : Int -> String
+thenValue : Int → String
 thenValue k =
     r =
         if above k 0 then

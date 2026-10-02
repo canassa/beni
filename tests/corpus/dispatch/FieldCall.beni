@@ -8,8 +8,8 @@
 -- `check/bad/MethodOnTuple` and the hint in §10.3).
 pub type alias Handler =
     name : String
-    run : Int -> Int
+    run : Int → Int
 
 
-pub invoke : Handler -> Int
+pub invoke : Handler → Int
 invoke handler = handler.run 1

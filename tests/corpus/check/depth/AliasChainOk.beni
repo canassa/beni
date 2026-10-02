@@ -2039,5 +2039,5 @@ type alias A509 =
     Int
 
 
-pub f : A0 -> Int
+pub f : A0 → Int
 f _ = 1

@@ -7,12 +7,12 @@
 -- says is the better message; `compare` has no marker of its own and says
 -- what it found instead.
 pub type Handler
-    = Handler (Int -> Int)
+    = Handler (Int → Int)
 
 
-pub before : Handler, Handler -> Bool
+pub before : Handler, Handler → Bool
 before a b = a < b
 
 
-pub same : Handler, Handler -> Bool
+pub same : Handler, Handler → Bool
 same a b = a == b

@@ -10,4 +10,4 @@ g s =
         (parse s? + parse s?)
 
 
-parse s = String.toInt s |> Result.fromMaybe "nan"
+parse s = String.toInt s ▷ Result.fromMaybe "nan"

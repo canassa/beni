@@ -20,16 +20,16 @@ import Node exposing (Program)
 import String
 
 
-pub describe : List Int -> String
+pub describe : List Int → String
 describe xs =
     case xs of
-        [] ->
+        [] →
             "empty"
 
-        [ x ] ->
+        [ x ] →
             "one " ++ String.fromInt x
 
-        [ x, y, ...rest ] ->
+        [ x, y, …rest ] →
             String.fromInt x
                 ++ ", "
                 ++ String.fromInt y
@@ -38,56 +38,56 @@ describe xs =
                 ++ " more"
 
 
-pub exact : List Int -> Int
+pub exact : List Int → Int
 exact xs =
     case xs of
-        [ x, y ] ->
+        [ x, y ] →
             x + y
 
-        [ x, y, ..._ ] ->
+        [ x, y, …_ ] →
             x - y
 
-        _ ->
+        _ →
             0
 
 
-pub nestedHead : List (List Int) -> Int
+pub nestedHead : List (List Int) → Int
 nestedHead xss =
     case xss of
-        [ [ a, ...inner ], ...outer ] ->
+        [ [ a, …inner ], …outer ] →
             a + List.length inner + List.length outer
 
-        _ ->
+        _ →
             0
 
 
-pub aliased : List Int -> List Int
+pub aliased : List Int → List Int
 aliased xs =
     case xs of
-        ([ x, ..._ ]) as whole ->
-            [ x, ...whole ]
+        ([ x, …_ ]) as whole →
+            [ x, …whole ]
 
-        [] ->
+        [] →
             []
 
 
-pub firstOnly : List Int -> Int
+pub firstOnly : List Int → Int
 firstOnly xs =
     case xs of
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             x
 
-        [] ->
+        [] →
             0
 
 
-pub second : List Int -> Maybe Int
+pub second : List Int → Maybe Int
 second xs =
     case xs of
-        [ _, y, ..._ ] ->
+        [ _, y, …_ ] →
             Just y
 
-        _ ->
+        _ →
             Nothing
 
 

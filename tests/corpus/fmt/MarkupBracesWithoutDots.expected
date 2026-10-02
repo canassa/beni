@@ -4,4 +4,4 @@
 view x = <div {x} />
 
 
-form x = <For each {x.rows}>{λr -> <li>{r}</li>}</For>
+form x = <For each {x.rows}>{λr → <li>{r}</li>}</For>

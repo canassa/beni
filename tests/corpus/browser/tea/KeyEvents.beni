@@ -21,20 +21,20 @@ type alias Model =
     last : String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Typed text ->
+        Typed text →
             { model | draft = text }
 
-        Add ->
+        Add →
             { model | draft = "", items = model.items ++ [ model.draft ] }
 
-        Pressed what ->
+        Pressed what →
             { model | last = what }
 
 
-pressed : Html.Event -> Msg
+pressed : Html.Event → Msg
 pressed event =
     if Html.key event == "Enter" && not (Html.shiftKey event) then
         _ = Html.preventDefault event
@@ -43,11 +43,11 @@ pressed event =
         Pressed (describe event)
 
 
-flag : Bool, String -> String
+flag : Bool, String → String
 flag on name = if on then name ++ " " else ""
 
 
-describe : Html.Event -> String
+describe : Html.Event → String
 describe event =
     flag (Html.ctrlKey event) "ctrl"
         ++ flag (Html.shiftKey event) "shift"
@@ -56,12 +56,12 @@ describe event =
         ++ "key=\"${Html.key event}\" code=\"${Html.code event}\""
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <input id="new" value={model.draft} onInput={Typed} onKeyDown={pressed} />
-        <button id="click" onClick={λevent -> Pressed (describe event)}>click</button>
-        <ul><For each={model.items} keyed={False}>{λitem -> <li>{item}</li>}</For></ul>
+        <button id="click" onClick={λevent → Pressed (describe event)}>click</button>
+        <ul><For each={model.items} keyed={False}>{λitem → <li>{item}</li>}</For></ul>
         <p id="last">{model.last}</p>
     </main>
 

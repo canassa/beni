@@ -2,19 +2,19 @@
 -- branch continues with the value, the Err branch returns from the
 -- enclosing named function. In Result position; the shape is identical for
 -- Maybe (see QuestionMaybe). Also `?` on an application and chained twice.
-parse : String -> Result String Int
+parse : String → Result String Int
 parse s = Result.fromMaybe (String.toInt s) "nan"
 
 
-both : String, String -> Result String Int
+both : String, String → Result String Int
 both a b = Ok (parse a? + parse b?)
 
 
-nested : Result String (Result String Int) -> Result String Int
+nested : Result String (Result String Int) → Result String Int
 nested r = Ok (r??)
 
 
-inLet : String -> Result String Int
+inLet : String → Result String Int
 inLet s =
     twice t = Ok (parse t? * 2)
     twice s

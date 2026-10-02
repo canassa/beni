@@ -19,12 +19,12 @@ view model =
     theme = model.theme
     <table>
         <For each={model.rows} keyed={.id}>
-            {λrow ->
+            {λrow →
                 cls = rowClass model row
                 <tr class={cls}><td>{label model.page}</td><td>{theme.dark}</td></tr>
             }
         </For>
         <For each={model.rows}>{viewRow model _}</For>
         <For each={model.rows} keyed={False}>{viewRow}</For>
-        <Show when={model.user} keyed={.id}>{λuser -> <p>{user.name}</p>}</Show>
+        <Show when={model.user} keyed={.id}>{λuser → <p>{user.name}</p>}</Show>
     </table>

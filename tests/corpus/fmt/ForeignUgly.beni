@@ -3,8 +3,8 @@
 -- expected: `pub foreign pure name : Type` on one line when it fits, doc space
 -- inserted, two blank lines between declarations.
 --|Add two numbers.
-pub   foreign   pure   add : number ->
-    number ->
+pub   foreign   pure   add : number →
+    number →
       number
 foreign   type   Table   k   v
 pub foreign type List a

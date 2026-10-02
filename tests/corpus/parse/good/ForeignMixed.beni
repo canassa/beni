@@ -12,20 +12,20 @@ pub foreign type Char
 
 
 --| Code point of a character.
-pub foreign pure toCode : Char -> Int
+pub foreign pure toCode : Char → Int
 
 
 --| Build a character from a code point.
-pub foreign pure fromCode : Int -> Char
+pub foreign pure fromCode : Int → Char
 
 
-pub isUpper : Char -> Bool
+pub isUpper : Char → Bool
 isUpper c =
     code = toCode c
-    code >= 65 && code <= 90
+    code ≥ 65 && code ≤ 90
 
 
-pub toUpper : Char -> Char
+pub toUpper : Char → Char
 toUpper c =
     if isUpper c then
         c

@@ -19,12 +19,12 @@ pub type Metre
     = Metre Int
 
 
-pub fromInt : Int -> Metre
+pub fromInt : Int → Metre
 fromInt n = Metre n
 
 
-make : Int -> a
-    where a.fromInt : Int -> a
+make : Int → a
+    where a.fromInt : Int → a
 make n = a.fromInt n
 
 

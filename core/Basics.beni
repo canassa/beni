@@ -97,32 +97,32 @@ pub type Never
 --|     add 3 4 == 7
 --|
 --| This is what `+` desugars to.
-pub foreign pure add : number, number -> number
+pub foreign pure add : number, number → number
 
 
 --| Subtract the second number from the first. What `-` desugars to.
 --|
 --|     sub 4 3 == 1
-pub foreign pure sub : number, number -> number
+pub foreign pure sub : number, number → number
 
 
 --| Multiply two numbers. What `*` desugars to.
 --|
 --|     mul 2 3 == 6
-pub foreign pure mul : number, number -> number
+pub foreign pure mul : number, number → number
 
 
 --| Floating-point division. What `/` desugars to.
 --|
 --|     fdiv 3 2 == 1.5
-pub foreign pure fdiv : Float, Float -> Float
+pub foreign pure fdiv : Float, Float → Float
 
 
 --| Integer division, truncated towards zero. What `//` desugars to.
 --|
 --|     idiv 3 2 == 1
 --|     idiv (-3) 2 == -1
-pub idiv : Int, Int -> Int
+pub idiv : Int, Int → Int
 idiv a b =
     -- Truncated towards zero, and 0 for a zero divisor rather than
     -- Infinity: `Int` has no infinity, so answering one would put a value
@@ -130,7 +130,7 @@ idiv a b =
     if b == 0 then
         0
     else
-        Js.pure λ() ->
+        Js.pure λ() →
             Js.to
                 (Js.call (Js.global "Math") "trunc"
                     [ Js.from (Js.to (Js.from a) / Js.to (Js.from b)) ]
@@ -140,7 +140,7 @@ idiv a b =
 --| Exponentiation. What `^` desugars to.
 --|
 --|     pow 3 2 == 9
-pub foreign pure pow : number, number -> number
+pub foreign pure pow : number, number → number
 
 
 --| Check if two values are equal. Equality is structural: two values of the
@@ -151,13 +151,13 @@ pub foreign pure pow : number, number -> number
 --|
 --| The `equatable` marker rules out the one case that cannot be decided:
 --| comparing functions is a compile error, not a crash. What `==` desugars to.
-pub foreign pure eq : equatable a, a -> Bool
+pub foreign pure eq : equatable a, a → Bool
 
 
 --| Check if two values are not equal. What `/=` desugars to.
 --|
 --|     neq 1 2 == True
-pub foreign pure neq : equatable a, a -> Bool
+pub foreign pure neq : equatable a, a → Bool
 
 
 --| Check if the first number is less than the second. What `<` desugars to.
@@ -165,41 +165,41 @@ pub foreign pure neq : equatable a, a -> Bool
 --|     lt 1 2 == True
 --|
 --| Numbers only. `String.compare` orders text.
-pub foreign pure lt : number, number -> Bool
+pub foreign pure lt : number, number → Bool
 
 
 --| Check if the first number is greater than the second. What `>` desugars to.
 --|
 --|     gt 2 1 == True
-pub foreign pure gt : number, number -> Bool
+pub foreign pure gt : number, number → Bool
 
 
 --| Check if the first number is less than or equal to the second. What `<=`
 --| desugars to.
 --|
 --|     le 1 1 == True
-pub foreign pure le : number, number -> Bool
+pub foreign pure le : number, number → Bool
 
 
 --| Check if the first number is greater than or equal to the second. What `>=`
 --| desugars to.
 --|
 --|     ge 1 1 == True
-pub foreign pure ge : number, number -> Bool
+pub foreign pure ge : number, number → Bool
 
 
 --| The logical AND, short-circuiting: the second argument is evaluated only
 --| when the first is `True`. What `&&` desugars to.
 --|
 --|     and True False == False
-pub foreign pure and : Bool, Bool -> Bool
+pub foreign pure and : Bool, Bool → Bool
 
 
 --| The logical OR, short-circuiting: the second argument is evaluated only
 --| when the first is `False`. What `||` desugars to.
 --|
 --|     or True False == True
-pub foreign pure or : Bool, Bool -> Bool
+pub foreign pure or : Bool, Bool → Bool
 
 
 --| Put two appendable values together. `appendable` is `String` or `List a`.
@@ -208,13 +208,13 @@ pub foreign pure or : Bool, Bool -> Bool
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
 --|
 --| What `++` desugars to.
-pub foreign pure append : appendable, appendable -> appendable
+pub foreign pure append : appendable, appendable → appendable
 
 
 --| Convert an integer into a float.
 --|
 --|     toFloat 5 == 5.0
-pub toFloat : Int -> Float
+pub toFloat : Int → Float
 toFloat n = Js.to (Js.from n)
 
 
@@ -222,101 +222,101 @@ toFloat n = Js.to (Js.from n)
 --|
 --|     round 1.5 == 2
 --|     round (-1.5) == -1
-pub round : Float -> Int
-round x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "round" [ Js.from x ])
+pub round : Float → Int
+round x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "round" [ Js.from x ])
 
 
 --| Floor a number, rounding down.
 --|
 --|     floor 1.9 == 1
-pub floor : Float -> Int
-floor x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ])
+pub floor : Float → Int
+floor x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ])
 
 
 --| Ceiling a number, rounding up.
 --|
 --|     ceiling 1.1 == 2
-pub ceiling : Float -> Int
-ceiling x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "ceil" [ Js.from x ])
+pub ceiling : Float → Int
+ceiling x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "ceil" [ Js.from x ])
 
 
 --| Truncate a number, dropping the decimal part.
 --|
 --|     truncate 1.9 == 1
 --|     truncate (-1.9) == -1
-pub truncate : Float -> Int
-truncate x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ])
+pub truncate : Float → Int
+truncate x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "trunc" [ Js.from x ])
 
 
 --| Take the square root of a number.
 --|
 --|     sqrt 9 == 3
-pub sqrt : Float -> Float
-sqrt x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ])
+pub sqrt : Float → Float
+sqrt x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "sqrt" [ Js.from x ])
 
 
 --| An approximation of Euler's constant.
 pub e : Float
-e = Js.pure λ() -> Js.to (Js.get (Js.global "Math") "E")
+e = Js.pure λ() → Js.to (Js.get (Js.global "Math") "E")
 
 
 --| An approximation of pi.
 pub pi : Float
-pi = Js.pure λ() -> Js.to (Js.get (Js.global "Math") "PI")
+pi = Js.pure λ() → Js.to (Js.get (Js.global "Math") "PI")
 
 
 --| Figure out the cosine of an angle in radians.
-pub cos : Float -> Float
-cos x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "cos" [ Js.from x ])
+pub cos : Float → Float
+cos x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "cos" [ Js.from x ])
 
 
 --| Figure out the sine of an angle in radians.
-pub sin : Float -> Float
-sin x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "sin" [ Js.from x ])
+pub sin : Float → Float
+sin x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "sin" [ Js.from x ])
 
 
 --| Figure out the tangent of an angle in radians.
-pub tan : Float -> Float
-tan x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "tan" [ Js.from x ])
+pub tan : Float → Float
+tan x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "tan" [ Js.from x ])
 
 
 --| Figure out the arccosine of a number, in radians.
-pub acos : Float -> Float
-acos x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "acos" [ Js.from x ])
+pub acos : Float → Float
+acos x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "acos" [ Js.from x ])
 
 
 --| Figure out the arcsine of a number, in radians.
-pub asin : Float -> Float
-asin x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "asin" [ Js.from x ])
+pub asin : Float → Float
+asin x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "asin" [ Js.from x ])
 
 
 --| Figure out the arctangent of a number, in radians. Prefer `atan2` when you
 --| have both sides of the triangle: it can tell the quadrants apart.
-pub atan : Float -> Float
-atan x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "atan" [ Js.from x ])
+pub atan : Float → Float
+atan x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "atan" [ Js.from x ])
 
 
 --| Figure out the arctangent of `y / x` in radians, keeping the signs of both
 --| arguments so the answer lands in the right quadrant.
-pub atan2 : Float, Float -> Float
-atan2 y x = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "atan2" [ Js.from y, Js.from x ])
+pub atan2 : Float, Float → Float
+atan2 y x = Js.pure λ() → Js.to (Js.call (Js.global "Math") "atan2" [ Js.from y, Js.from x ])
 
 
 --| Determine whether a float is an undefined or unrepresentable number.
 --|
 --|     isNaN (0 / 0) == True
 --|     isNaN (sqrt (-1)) == True
-pub isNaN : Float -> Bool
-isNaN x = Js.pure λ() -> Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from x ])
+pub isNaN : Float → Bool
+isNaN x = Js.pure λ() → Js.to (Js.call (Js.global "Number") "isNaN" [ Js.from x ])
 
 
 --| Determine whether a float is positive or negative infinity.
 --|
 --|     isInfinite (1 / 0) == True
-pub isInfinite : Float -> Bool
+pub isInfinite : Float → Bool
 isInfinite x =
     -- NaN's absolute value is NaN, which is not `Infinity`.
-    Js.pure λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity")
+    Js.pure λ() → Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity")
 
 
 --| Negate a number.
@@ -325,14 +325,14 @@ isInfinite x =
 --|
 --| This is what the prefix `-` desugars to, which is why it is written as a
 --| subtraction from zero rather than as `-n`.
-pub negate : number -> number
+pub negate : number → number
 negate n = 0 - n
 
 
 --| Get the absolute value of a number.
 --|
 --|     abs (-25) == 25
-pub abs : number -> number
+pub abs : number → number
 abs n =
     if n < 0 then
         negate n
@@ -343,7 +343,7 @@ abs n =
 --| Find the larger of two numbers.
 --|
 --|     max 42 12345678 == 12345678
-pub max : number, number -> number
+pub max : number, number → number
 max x y =
     if x > y then
         x
@@ -354,7 +354,7 @@ max x y =
 --| Find the smaller of two numbers.
 --|
 --|     min 42 12345678 == 42
-pub min : number, number -> number
+pub min : number, number → number
 min x y =
     if x < y then
         x
@@ -367,7 +367,7 @@ min x y =
 --|
 --|     clamp 42 100 200 == 100
 --|     clamp 178 100 200 == 178
-pub clamp : number, number, number -> number
+pub clamp : number, number, number → number
 clamp n low high =
     if n < low then
         low
@@ -384,7 +384,7 @@ clamp n low high =
 --|
 --| Only numbers. Ordering anything else is an explicit function you pass in,
 --| such as `String.compare` or a lambda over a record field.
-pub compare : number, number -> Order
+pub compare : number, number → Order
 compare x y =
     if x < y then
         LT
@@ -397,7 +397,7 @@ compare x y =
 --| Negate a boolean value.
 --|
 --|     not True == False
-pub not : Bool -> Bool
+pub not : Bool → Bool
 not b =
     if b then
         False
@@ -409,7 +409,7 @@ not b =
 --|
 --|     xor True False == True
 --|     xor True True == False
-pub xor : Bool, Bool -> Bool
+pub xor : Bool, Bool → Bool
 xor a b =
     if a then
         not b
@@ -421,7 +421,7 @@ xor a b =
 --| argument to a higher-order function.
 --|
 --|     identity 42 == 42
-pub identity : a -> a
+pub identity : a → a
 identity a = a
 
 
@@ -430,21 +430,21 @@ identity a = a
 --|
 --|     always 0 1 == 0
 --|     List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]
-pub always : a, b -> a
+pub always : a, b → a
 always a _ = a
 
 
 --| A function that can never be called, turned into any type you like. If you
 --| hold a `Never` you are in a branch that cannot happen, and this is how you
 --| tell the type checker so.
-pub never : Never -> a
+pub never : Never → a
 never (JustOneMore nvr) = never nvr
 
 
 --| Convert degrees to the standard angle unit, radians.
 --|
 --|     degrees 180 == 3.141592653589793
-pub degrees : Float -> Float
+pub degrees : Float → Float
 degrees angle = angle * pi / 180
 
 
@@ -452,26 +452,26 @@ degrees angle = angle * pi / 180
 --| and exists so an angle's unit is written down at the point it is chosen.
 --|
 --|     radians pi == 3.141592653589793
-pub radians : Float -> Float
+pub radians : Float → Float
 radians angle = angle
 
 
 --| Convert turns to the standard angle unit, radians. One turn is 360 degrees.
 --|
 --|     turns 0.5 == 3.141592653589793
-pub turns : Float -> Float
+pub turns : Float → Float
 turns angle = 2 * pi * angle
 
 
 --| Convert Cartesian coordinates to polar coordinates.
 --|
 --|     toPolar ( 0, 1 ) == ( 1, 1.5707963267948966 )
-pub toPolar : ( Float, Float ) -> ( Float, Float )
+pub toPolar : Float × Float → Float × Float
 toPolar ( x, y ) = ( sqrt (x * x + y * y), atan2 y x )
 
 
 --| Convert polar coordinates to Cartesian coordinates.
 --|
 --|     fromPolar ( 1, 0 ) == ( 1, 0 )
-pub fromPolar : ( Float, Float ) -> ( Float, Float )
+pub fromPolar : Float × Float → Float × Float
 fromPolar ( radius, theta ) = ( radius * cos theta, radius * sin theta )

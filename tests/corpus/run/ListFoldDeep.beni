@@ -20,8 +20,8 @@ import String
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (List.foldl (List.range 1 20000) 0 λx acc -> x + acc)
-        , String.fromInt (List.foldr (List.range 1 20000) 0 λx acc -> x + acc)
-        , String.fromInt (List.length (List.map (List.range 1 20000) λn -> n * 2))
-        , String.fromInt (List.foldr [ 1, 2, 3 ] 0 λx acc -> x - acc)
+        [ String.fromInt (List.foldl (List.range 1 20000) 0 λx acc → x + acc)
+        , String.fromInt (List.foldr (List.range 1 20000) 0 λx acc → x + acc)
+        , String.fromInt (List.length (List.map (List.range 1 20000) λn → n * 2))
+        , String.fromInt (List.foldr [ 1, 2, 3 ] 0 λx acc → x - acc)
         ]

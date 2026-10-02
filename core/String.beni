@@ -55,8 +55,8 @@ pub equatable foreign type String
 --|
 --|     length "innumerable" == 11
 --|     length "" == 0
-pub length : String -> Int
-length s = Js.pure λ() -> Js.to (Js.get (Js.call (Js.global "Array") "from" [ Js.from s ]) "length")
+pub length : String → Int
+length s = Js.pure λ() → Js.to (Js.get (Js.call (Js.global "Array") "from" [ Js.from s ]) "length")
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
@@ -64,14 +64,14 @@ length s = Js.pure λ() -> Js.to (Js.get (Js.call (Js.global "Array") "from" [ J
 --|
 --|     slice "snakes on a plane!" 7 9 == "on"
 --|     slice "snakes on a plane!" 0 (-7) == "snakes on a"
-pub slice : String, Int, Int -> String
-slice s start end = Js.pure λ() ->
+pub slice : String, Int, Int → String
+slice s start end = Js.pure λ() →
     points = Js.call (Js.global "Array") "from" [ Js.from s ]
     n : Int
     n = Js.to (Js.get points "length")
     from = clamp start n
     to = clamp end n
-    if to <= from then
+    if to ≤ from then
         ""
     else
         Js.to
@@ -82,7 +82,7 @@ slice s start end = Js.pure λ() ->
 
 -- An index into `n` code points: a negative one counts from the end, and
 -- either is kept within 0…n.
-clamp : Int, Int -> Int
+clamp : Int, Int → Int
 clamp i n =
     if i < 0 then
         Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
@@ -93,7 +93,7 @@ clamp i n =
 --| Append two strings. `++` does the same thing.
 --|
 --|     append "butter" "fly" == "butterfly"
-pub append : String, String -> String
+pub append : String, String → String
 append a b =
     -- JavaScript's `+` on two strings, the casts compiled to nothing.
     Js.to (Js.from (Js.to (Js.from a) + Js.to (Js.from b)))
@@ -105,8 +105,8 @@ append a b =
 --|     compare "b" "b" == EQ
 --|
 --| `"a" < "b"` calls it: it is `String`'s own `compare` method.
-pub compare : String, String -> Order
-compare a b = Js.pure λ() ->
+pub compare : String, String → Order
+compare a b = Js.pure λ() →
     -- Code units are compared until the first that differ. Code unit
     -- order is not code point order — an astral character is a pair
     -- of units in 0xD800…0xDFFF and sorts above U+FFFF, which `<` on
@@ -150,7 +150,7 @@ compare a b = Js.pure λ() ->
 
 -- The first index below `n` where the two strings' code units differ, or
 -- `n`.
-firstDifference : Js.Value, Js.Value, Int, Int -> Int
+firstDifference : Js.Value, Js.Value, Int, Int → Int
 firstDifference x y i n =
     if
         i < n
@@ -161,7 +161,7 @@ firstDifference x y i n =
         i
 
 
-pointAt : Js.Value, Int -> Int
+pointAt : Js.Value, Int → Int
 pointAt s i = Js.to (Js.call s "codePointAt" [ Js.from i ])
 
 
@@ -169,58 +169,58 @@ pointAt s i = Js.to (Js.call s "codePointAt" [ Js.from i ])
 --| comparisons and VIRTUAL YELLING.
 --|
 --|     toUpper "skinner" == "SKINNER"
-pub toUpper : String -> String
-toUpper s = Js.pure λ() -> Js.to (Js.call (Js.from s) "toUpperCase" [])
+pub toUpper : String → String
+toUpper s = Js.pure λ() → Js.to (Js.call (Js.from s) "toUpperCase" [])
 
 
 --| Convert a string to all lower case.
 --|
 --|     toLower "X" == "x"
-pub toLower : String -> String
-toLower s = Js.pure λ() -> Js.to (Js.call (Js.from s) "toLowerCase" [])
+pub toLower : String → String
+toLower s = Js.pure λ() → Js.to (Js.call (Js.from s) "toLowerCase" [])
 
 
 --| Get rid of whitespace on both sides of a string.
 --|
 --|     trim "  hats \n" == "hats"
-pub trim : String -> String
-trim s = Js.pure λ() -> Js.to (Js.call (Js.from s) "trim" [])
+pub trim : String → String
+trim s = Js.pure λ() → Js.to (Js.call (Js.from s) "trim" [])
 
 
 --| Get rid of whitespace on the left of a string.
 --|
 --|     trimLeft "  hats \n" == "hats \n"
-pub trimLeft : String -> String
-trimLeft s = Js.pure λ() -> Js.to (Js.call (Js.from s) "trimStart" [])
+pub trimLeft : String → String
+trimLeft s = Js.pure λ() → Js.to (Js.call (Js.from s) "trimStart" [])
 
 
 --| Get rid of whitespace on the right of a string.
 --|
 --|     trimRight "  hats \n" == "  hats"
-pub trimRight : String -> String
-trimRight s = Js.pure λ() -> Js.to (Js.call (Js.from s) "trimEnd" [])
+pub trimRight : String → String
+trimRight s = Js.pure λ() → Js.to (Js.call (Js.from s) "trimEnd" [])
 
 
 --| Break a string into words, splitting on chunks of whitespace.
 --|
 --|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
-pub words : String -> List String
-words s = Js.pure λ() ->
+pub words : String → List String
+words s = Js.pure λ() →
     Js.to
         (Js.call (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ]) "filter"
             [ Js.from isWord ]
         )
 
 
-isWord : Js.Value -> Bool
-isWord w = Js.to (Js.get w "length") /= 0
+isWord : Js.Value → Bool
+isWord w = Js.to (Js.get w "length") ≠ 0
 
 
 --| Break a string into lines, splitting on newlines.
 --|
 --|     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
-pub lines : String -> List String
-lines s = Js.pure λ() -> Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ])
+pub lines : String → List String
+lines s = Js.pure λ() → Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\r|\n" "" ])
 
 
 --| Split a string using a given separator. The string being split comes
@@ -236,8 +236,8 @@ lines s = Js.pure λ() -> Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|\
 --|
 --|     split "" "" == []
 --|     split "" "," == [ "" ]
-pub split : String, String -> List String
-split s separator = Js.pure λ() ->
+pub split : String, String → List String
+split s separator = Js.pure λ() →
     if separator == "" then
         Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
     else
@@ -262,8 +262,8 @@ split s separator = Js.pure λ() ->
 --|     indexes "aaaa" "aa" == [ 0, 2 ]
 --|     indexes "abc" "" == []
 --|     indexes "" "" == []
-pub indexes : String, String -> List Int
-indexes haystack needle = Js.pure λ() ->
+pub indexes : String, String → List Int
+indexes haystack needle = Js.pure λ() →
     -- `indexOf` answers in UTF-16 code units, so each match is translated
     -- by one forward walk that carries its position between matches —
     -- `scanned` a code unit offset and `point` the code points before it,
@@ -279,7 +279,7 @@ indexes haystack needle = Js.pure λ() ->
         Js.to found
 
 
-search : Js.Value, String, Js.Value, Int, Int, Int -> ()
+search : Js.Value, String, Js.Value, Int, Int, Int → ()
 search h needle found at scanned point =
     if at < 0 then
         ()
@@ -296,7 +296,7 @@ search h needle found at scanned point =
 
 -- `scanned` moved up to `at`, a code point at a time, and the code points
 -- it passed counted onto `point`.
-advance : Js.Value, Int, Int, Int -> ( Int, Int )
+advance : Js.Value, Int, Int, Int → Int × Int
 advance h at scanned point =
     if scanned < at then
         advance
@@ -314,7 +314,7 @@ advance h at scanned point =
         ( scanned, point )
 
 
-indexOf : Js.Value, String, Int -> Int
+indexOf : Js.Value, String, Int → Int
 indexOf h needle from = Js.to (Js.call h "indexOf" [ Js.from needle, Js.from from ])
 
 
@@ -323,8 +323,8 @@ indexOf h needle from = Js.to (Js.call h "indexOf" [ Js.from needle, Js.from fro
 --|
 --|     toInt "123" == Just 123
 --|     toInt "1.3" == Nothing
-pub toInt : String -> Maybe Int
-toInt s = Js.pure λ() ->
+pub toInt : String → Maybe Int
+toInt s = Js.pure λ() →
     -- Every specification-defined failure is a constructor (`boundary.md`
     -- §4.1): text that is not a number is `Nothing`, never a NaN pretending
     -- to be an `Int`, and neither is one past 2^53.
@@ -341,8 +341,8 @@ toInt s = Js.pure λ() ->
 --| Convert an `Int` to a `String`.
 --|
 --|     fromInt 123 == "123"
-pub fromInt : Int -> String
-fromInt n = Js.pure λ() -> Js.to (Js.apply (Js.global "String") [ Js.from n ])
+pub fromInt : Int → String
+fromInt n = Js.pure λ() → Js.to (Js.apply (Js.global "String") [ Js.from n ])
 
 
 --| Try to convert a string into a float, failing on improperly formatted
@@ -350,8 +350,8 @@ fromInt n = Js.pure λ() -> Js.to (Js.apply (Js.global "String") [ Js.from n ])
 --|
 --|     toFloat "123" == Just 123.0
 --|     toFloat "abc" == Nothing
-pub toFloat : String -> Maybe Float
-toFloat s = Js.pure λ() ->
+pub toFloat : String → Maybe Float
+toFloat s = Js.pure λ() →
     if
         Js.to
             (Js.call (Js.regExp "^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$" "") "test"
@@ -370,8 +370,8 @@ toFloat s = Js.pure λ() ->
 --| Convert a `Float` to a `String`.
 --|
 --|     fromFloat 1.5 == "1.5"
-pub fromFloat : Float -> String
-fromFloat n = Js.pure λ() ->
+pub fromFloat : Float → String
+fromFloat n = Js.pure λ() →
     -- `String(1.0)` is "1" in JavaScript and `1` is not a float literal in
     -- beni's own syntax, so a whole float prints with its point.
     if Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ]) then
@@ -383,22 +383,22 @@ fromFloat n = Js.pure λ() ->
 --| Create a string from a given character.
 --|
 --|     fromChar 'a' == "a"
-pub fromChar : Char -> String
+pub fromChar : Char → String
 fromChar c = Js.to (Js.from c)
 
 
 --| Convert a string to a list of characters.
 --|
 --|     toList "abc" == [ 'a', 'b', 'c' ]
-pub toList : String -> List Char
-toList s = Js.pure λ() -> Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
+pub toList : String → List Char
+toList s = Js.pure λ() → Js.to (Js.call (Js.global "Array") "from" [ Js.from s ])
 
 
 --| Convert a list of characters into a string.
 --|
 --|     fromList [ 'a', 'b', 'c' ] == "abc"
-pub fromList : List Char -> String
-fromList list = Js.pure λ() ->
+pub fromList : List Char → String
+fromList list = Js.pure λ() →
     xs = Js.from list
 
     plain =
@@ -413,21 +413,21 @@ fromList list = Js.pure λ() ->
 --|
 --|     isEmpty "" == True
 --|     isEmpty "the world" == False
-pub isEmpty : String -> Bool
+pub isEmpty : String → Bool
 isEmpty str = str == ""
 
 
 --| Reverse a string.
 --|
 --|     reverse "stressed" == "desserts"
-pub reverse : String -> String
+pub reverse : String → String
 reverse str = fromList (List.reverse (toList str))
 
 
 --| Repeat a string `n` times.
 --|
 --|     repeat "ha" 3 == "hahaha"
-pub repeat : String, Int -> String
+pub repeat : String, Int → String
 repeat chunk n = concat (List.repeat chunk n)
 
 
@@ -446,14 +446,14 @@ repeat chunk n = concat (List.repeat chunk n)
 --|
 --|     replace "abc" "" "-" == "a-b-c"
 --|     replace "" "" "-" == ""
-pub replace : String, String, String -> String
+pub replace : String, String, String → String
 replace str before after = join (split str before) after
 
 
 --| Concatenate many strings into one.
 --|
 --|     concat [ "never", "the", "less" ] == "nevertheless"
-pub concat : List String -> String
+pub concat : List String → String
 concat strings = join strings ""
 
 
@@ -461,20 +461,20 @@ concat strings = join strings ""
 --| here, so `names |> join ", "` puts the separator between its elements.
 --|
 --|     join [ "cat", "dog" ] ", " == "cat, dog"
-pub join : List String, String -> String
+pub join : List String, String → String
 join chunks sep =
     case chunks of
-        [] ->
+        [] →
             ""
 
-        [ first, ...rest ] ->
-            List.foldl rest first λchunk acc -> append (append acc sep) chunk
+        [ first, …rest ] →
+            List.foldl rest first λchunk acc → append (append acc sep) chunk
 
 
 --| Take `n` characters from the left side of a string.
 --|
 --|     left "Mulder" 2 == "Mu"
-pub left : String, Int -> String
+pub left : String, Int → String
 left str n =
     if n < 1 then
         ""
@@ -485,7 +485,7 @@ left str n =
 --| Take `n` characters from the right side of a string.
 --|
 --|     right "Scully" 2 == "ly"
-pub right : String, Int -> String
+pub right : String, Int → String
 right str n =
     if n < 1 then
         ""
@@ -496,7 +496,7 @@ right str n =
 --| Drop `n` characters from the left side of a string.
 --|
 --|     dropLeft "The Lone Gunmen" 2 == "e Lone Gunmen"
-pub dropLeft : String, Int -> String
+pub dropLeft : String, Int → String
 dropLeft str n =
     if n < 1 then
         str
@@ -507,7 +507,7 @@ dropLeft str n =
 --| Drop `n` characters from the right side of a string.
 --|
 --|     dropRight "Cigarette Smoking Man" 2 == "Cigarette Smoking M"
-pub dropRight : String, Int -> String
+pub dropRight : String, Int → String
 dropRight str n =
     if n < 1 then
         str
@@ -529,16 +529,16 @@ dropRight str n =
 --|
 --|     contains "abc" "" == True
 --|     contains "" "" == True
-pub contains : String, String -> Bool
+pub contains : String, String → Bool
 contains str sub =
     if isEmpty sub then
         True
     else
         case indexes str sub of
-            [] ->
+            [] →
                 False
 
-            _ ->
+            _ →
                 True
 
 
@@ -549,7 +549,7 @@ contains str sub =
 --|     startsWith "theory" "ory" == False
 --|     startsWith "abc" "" == True
 --|     startsWith "" "" == True
-pub startsWith : String, String -> Bool
+pub startsWith : String, String → Bool
 startsWith str prefix = left str (length prefix) == prefix
 
 
@@ -560,7 +560,7 @@ startsWith str prefix = left str (length prefix) == prefix
 --|     endsWith "theory" "the" == False
 --|     endsWith "abc" "" == True
 --|     endsWith "" "" == True
-pub endsWith : String, String -> Bool
+pub endsWith : String, String → Bool
 endsWith str suffix = right str (length suffix) == suffix
 
 
@@ -569,7 +569,7 @@ endsWith str suffix = right str (length suffix) == suffix
 --| overlaps exactly as `indexes` does.
 --|
 --|     indices "Mississippi" "i" == [ 1, 4, 7, 10 ]
-pub indices : String, String -> List Int
+pub indices : String, String → List Int
 indices str sub = indexes str sub
 
 
@@ -577,7 +577,7 @@ indices str sub = indexes str sub
 --| so `"he truth is out there" |> cons 'T'` puts the `'T'` on the front.
 --|
 --|     cons "he truth is out there" 'T' == "The truth is out there"
-pub cons : String, Char -> String
+pub cons : String, Char → String
 cons str char = append (fromChar char) str
 
 
@@ -585,20 +585,20 @@ cons str char = append (fromChar char) str
 --|
 --|     uncons "abc" == Just ( 'a', "bc" )
 --|     uncons "" == Nothing
-pub uncons : String -> Maybe ( Char, String )
+pub uncons : String → Maybe (Char × String)
 uncons str =
     case toList str of
-        [ char, ...rest ] ->
+        [ char, …rest ] →
             Just ( char, fromList rest )
 
-        [] ->
+        [] →
             Nothing
 
 
 --| Pad a string on both sides until it has a given length.
 --|
 --|     pad "1" 5 ' ' == "  1  "
-pub pad : String, Int, Char -> String
+pub pad : String, Int, Char → String
 pad str n char =
     half = Basics.toFloat (n - length str) / 2
     repeat (fromChar char) (ceiling half) ++ str ++ repeat (fromChar char) (floor half)
@@ -607,54 +607,54 @@ pad str n char =
 --| Pad a string on the left until it has a given length.
 --|
 --|     padLeft "1" 5 '.' == "....1"
-pub padLeft : String, Int, Char -> String
+pub padLeft : String, Int, Char → String
 padLeft str n char = repeat (fromChar char) (n - length str) ++ str
 
 
 --| Pad a string on the right until it has a given length.
 --|
 --|     padRight "1" 5 '.' == "1...."
-pub padRight : String, Int, Char -> String
+pub padRight : String, Int, Char → String
 padRight str n char = str ++ repeat (fromChar char) (n - length str)
 
 
 --| Transform every character in a string.
 --|
 --|     map "a/b/c" (λchar -> if char == '/' then '.' else char) == "a.b.c"
-pub map : String, (Char -> Char) -> String
+pub map : String, (Char → Char) → String
 map str func = fromList (List.map (toList str) func)
 
 
 --| Keep only the characters that pass the test.
 --|
 --|     filter "R2-D2" Char.isDigit == "22"
-pub filter : String, (Char -> Bool) -> String
+pub filter : String, (Char → Bool) → String
 filter str isGood = fromList (List.filter (toList str) isGood)
 
 
 --| Reduce a string from the left, starting from an initial value.
 --|
 --|     foldl "time" "" (λchar acc -> cons acc char) == "emit"
-pub foldl : String, b, (Char, b -> b) -> b
+pub foldl : String, b, (Char, b → b) → b
 foldl str acc func = List.foldl (toList str) acc func
 
 
 --| Reduce a string from the right, starting from an initial value.
 --|
 --|     foldr "time" "" (λchar acc -> cons acc char) == "time"
-pub foldr : String, b, (Char, b -> b) -> b
+pub foldr : String, b, (Char, b → b) → b
 foldr str acc func = List.foldr (toList str) acc func
 
 
 --| Determine whether any characters pass the test.
 --|
 --|     any "R2-D2" Char.isDigit == True
-pub any : String, (Char -> Bool) -> Bool
+pub any : String, (Char → Bool) → Bool
 any str isGood = List.any (toList str) isGood
 
 
 --| Determine whether all characters pass the test.
 --|
 --|     all "2D2" Char.isDigit == False
-pub all : String, (Char -> Bool) -> Bool
+pub all : String, (Char → Bool) → Bool
 all str isGood = List.all (toList str) isGood

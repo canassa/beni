@@ -11,20 +11,20 @@ type Shape
     | Group (List Shape)
 
 
-name : Shape -> String
+name : Shape → String
 name shape =
     case shape of
-        Circle _ ->
+        Circle _ →
             "circle"
 
-        Square _ ->
+        Square _ →
             "square"
 
-        Group [] ->
+        Group [] →
             "empty"
 
-        Group [ Square _, ..._ ] ->
+        Group [ Square _, …_ ] →
             "squares"
 
-        Group [ Group _, ..._ ] ->
+        Group [ Group _, …_ ] →
             "groups"

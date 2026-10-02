@@ -2,11 +2,11 @@
 -- position (§6.6); the Maybe/Result choice is M2's. The `case` returns
 -- from the nearest enclosing definition with parameters: `firstTwo`, and
 -- in `viaHelper` the `let` helper `headPlus n` itself (§6.6).
-firstTwo : List Int -> Maybe ( Int, Int )
+firstTwo : List Int → Maybe (Int × Int)
 firstTwo xs = Just ( List.head xs?, List.head (List.drop xs 1)? )
 
 
-viaHelper : List Int -> Maybe Int
+viaHelper : List Int → Maybe Int
 viaHelper xs =
     headPlus n = Just (List.head xs? + n)
     headPlus 1

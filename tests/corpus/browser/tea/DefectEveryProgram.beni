@@ -14,19 +14,19 @@ import Tea
 import Time
 
 
-outcome : Exit a -> String
+outcome : Exit a → String
 outcome exit =
     case exit of
-        Done _ ->
+        Done _ →
             "Done"
 
-        Cancelled ->
+        Cancelled →
             "Cancelled"
 
 
-sleeper : String -> Cmd msg
-sleeper name = Cmd.perform λ_ ->
-    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ ->
+sleeper : String → Cmd msg
+sleeper name = Cmd.perform λ_ →
+    Task.bracket (λ() → ()) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ →
         Time.sleep (Time.millis 1000)
 
 
@@ -38,14 +38,14 @@ first : Tea.Program
 first =
     Tea.element
         { init = ( 0, sleeper "first" )
-        , update = λBoom _ -> Debug.todo "the first program's update threw"
+        , update = λBoom _ → Debug.todo "the first program's update threw"
         , view =
-            λ_ ->
+            λ_ →
                 <main>
                     <button id="boom" onClick={Boom}>boom</button>
                     <section id="second" />
                 </main>
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }
 
 
@@ -57,9 +57,9 @@ second : Tea.Program
 second =
     Tea.element
         { init = ( 0, sleeper "second" )
-        , update = λInc n -> ( n + 1, Cmd.none )
-        , view = λn -> <button id="inc" onClick={Inc}>{String.fromInt n}</button>
-        , subscriptions = λ_ -> Sub.none
+        , update = λInc n → ( n + 1, Cmd.none )
+        , view = λn → <button id="inc" onClick={Inc}>{String.fromInt n}</button>
+        , subscriptions = λ_ → Sub.none
         }
 
 

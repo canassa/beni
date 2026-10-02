@@ -12,22 +12,22 @@ import Node exposing (Program)
 import String
 
 
-walk : Int, Int -> Int
+walk : Int, Int → Int
 walk n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         byThree = Int.mod n 3
         case byThree of
-            0 ->
+            0 →
                 walk (n - 1) (acc + 1)
 
-            _ ->
+            _ →
                 case Int.mod n 2 of
-                    0 ->
+                    0 →
                         walk (n - 1) (acc + 2)
 
-                    _ ->
+                    _ →
                         walk (n - 1) acc
 
 

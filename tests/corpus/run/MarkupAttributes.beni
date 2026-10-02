@@ -16,7 +16,7 @@ type Msg
     = Clicked
 
 
-view : String, Int, Bool -> Html Msg
+view : String, Int, Bool → Html Msg
 view name size on =
     <div>
         <p title="Fish &amp; &quot;chips&quot; <b>" class="size-${String.fromInt size}" id={name}>

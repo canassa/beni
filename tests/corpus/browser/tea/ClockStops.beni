@@ -20,21 +20,21 @@ type alias Model =
     last : Int
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Tick t ->
+        Tick t →
             ( { model | last = Time.toMillis t }, Cmd.none )
 
-        Toggle ->
+        Toggle →
             ( { model | on = not model.on }, Cmd.none )
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model → Sub Msg
 subscriptions model = if model.on then Time.every (Time.millis 100) Tick else Sub.none
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>

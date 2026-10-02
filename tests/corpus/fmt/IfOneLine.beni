@@ -7,13 +7,13 @@
 -- the author broke, and `nested` is an `if` written on one line inside a
 -- vertical one, which stays on its line.
 pick t id = if t.id == id then { t | done = not t.done } else t
-grade s = if s >= 90 then "A" else if s >= 80 then "B" else "F"
+grade s = if s ≥ 90 then "A" else if s ≥ 80 then "B" else "F"
 inList flag = [ if flag then 1 else 0, max (if flag then 2 else 3) 4 ]
 long flag = if flag then "a fairly long string literal on this side" else "and another long one on that side"
 vertical b = if b then 1
     else 0
 withCase b = if b then case b of
-    _ -> 1 else 0
+    _ → 1 else 0
 brokenList b = if b then [ 1
     , 2 ] else []
 nested a b =

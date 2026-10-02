@@ -10,16 +10,16 @@ table : Dict String Int
 table = insert "a" 1 empty
 
 
-describe : Error -> String
+describe : Error → String
 describe err =
     case err of
-        Timeout ->
+        Timeout →
             "timeout"
 
-        BadStatus code ->
+        BadStatus code →
             "status ${code}"
 
-        _ ->
+        _ →
             "other"
 
 

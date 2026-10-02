@@ -3,4 +3,4 @@
 --! `fetch` hands a caller. Each scenario logs what it was answered.
 
 --| Start the named request; what it is answered is logged when it comes.
-pub foreign impure go : String -> ()
+pub foreign impure go : String → ()

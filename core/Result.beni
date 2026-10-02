@@ -30,13 +30,13 @@ pub type Result e a
 --|
 --|     withDefault (Ok 123) 0 == 123
 --|     withDefault (Err "no") 0 == 0
-pub withDefault : Result x a, a -> a
+pub withDefault : Result x a, a → a
 withDefault result default =
     case result of
-        Ok value ->
+        Ok value →
             value
 
-        Err _ ->
+        Err _ →
             default
 
 
@@ -49,13 +49,13 @@ withDefault result default =
 --| The `Result` comes first, so this reads well in a pipeline:
 --|
 --|     (Ok 4.0 |> map sqrt) == Ok 2.0
-pub map : Result x a, (a -> value) -> Result x value
+pub map : Result x a, (a → value) → Result x value
 map result func =
     case result of
-        Ok value ->
+        Ok value →
             Ok (func value)
 
-        Err x ->
+        Err x →
             Err x
 
 
@@ -64,18 +64,18 @@ map result func =
 --|
 --|     map2 (Ok 3) (Ok 4) (+) == Ok 7
 --|     map2 (Ok 3) (Err "no") (+) == Err "no"
-pub map2 : Result x a, Result x b, (a, b -> value) -> Result x value
+pub map2 : Result x a, Result x b, (a, b → value) → Result x value
 map2 ra rb func =
     case ra of
-        Err x ->
+        Err x →
             Err x
 
-        Ok a ->
+        Ok a →
             case rb of
-                Err x ->
+                Err x →
                     Err x
 
-                Ok b ->
+                Ok b →
                     Ok (func a b)
 
 
@@ -83,23 +83,23 @@ map2 ra rb func =
 --|
 --|     map3 (Ok 1) (Ok 2) (Ok 3) (λa b c -> a + b + c) == Ok 6
 --|     map3 (Ok 1) (Err "no") (Ok 3) (λa b c -> a + b + c) == Err "no"
-pub map3 : Result x a, Result x b, Result x c, (a, b, c -> value) -> Result x value
+pub map3 : Result x a, Result x b, Result x c, (a, b, c → value) → Result x value
 map3 ra rb rc func =
     case ra of
-        Err x ->
+        Err x →
             Err x
 
-        Ok a ->
+        Ok a →
             case rb of
-                Err x ->
+                Err x →
                     Err x
 
-                Ok b ->
+                Ok b →
                     case rc of
-                        Err x ->
+                        Err x →
                             Err x
 
-                        Ok c ->
+                        Ok c →
                             Ok (func a b c)
 
 
@@ -109,29 +109,29 @@ pub map4 :
     , Result x b
     , Result x c
     , Result x d
-    , (a, b, c, d -> value)
-    -> Result x value
+    , (a, b, c, d → value)
+    → Result x value
 map4 ra rb rc rd func =
     case ra of
-        Err x ->
+        Err x →
             Err x
 
-        Ok a ->
+        Ok a →
             case rb of
-                Err x ->
+                Err x →
                     Err x
 
-                Ok b ->
+                Ok b →
                     case rc of
-                        Err x ->
+                        Err x →
                             Err x
 
-                        Ok c ->
+                        Ok c →
                             case rd of
-                                Err x ->
+                                Err x →
                                     Err x
 
-                                Ok d ->
+                                Ok d →
                                     Ok (func a b c d)
 
 
@@ -142,34 +142,34 @@ pub map5 :
     , Result x c
     , Result x d
     , Result x e
-    , (a, b, c, d, e -> value)
-    -> Result x value
+    , (a, b, c, d, e → value)
+    → Result x value
 map5 ra rb rc rd re func =
     case ra of
-        Err x ->
+        Err x →
             Err x
 
-        Ok a ->
+        Ok a →
             case rb of
-                Err x ->
+                Err x →
                     Err x
 
-                Ok b ->
+                Ok b →
                     case rc of
-                        Err x ->
+                        Err x →
                             Err x
 
-                        Ok c ->
+                        Ok c →
                             case rd of
-                                Err x ->
+                                Err x →
                                     Err x
 
-                                Ok d ->
+                                Ok d →
                                     case re of
-                                        Err x ->
+                                        Err x →
                                             Err x
 
-                                        Ok value ->
+                                        Ok value →
                                             Ok (func a b c d value)
 
 
@@ -182,13 +182,13 @@ map5 ra rb rc rd re func =
 --| block as the callback. The `?` operator does the same thing with less
 --| punctuation: `toInt s?` is the number, or an early return of the `Err` from
 --| the enclosing function.
-pub andThen : Result x a, (a -> Result x b) -> Result x b
+pub andThen : Result x a, (a → Result x b) → Result x b
 andThen result callback =
     case result of
-        Ok value ->
+        Ok value →
             callback value
 
-        Err x ->
+        Err x →
             Err x
 
 
@@ -196,13 +196,13 @@ andThen result callback =
 --|
 --|     mapError (Err 42) Debug.toString == Err "42"
 --|     mapError (Ok 42) Debug.toString == Ok 42
-pub mapError : Result x a, (x -> y) -> Result y a
+pub mapError : Result x a, (x → y) → Result y a
 mapError result func =
     case result of
-        Ok value ->
+        Ok value →
             Ok value
 
-        Err x ->
+        Err x →
             Err (func x)
 
 
@@ -210,13 +210,13 @@ mapError result func =
 --|
 --|     toMaybe (Ok 42) == Just 42
 --|     toMaybe (Err "no") == Nothing
-pub toMaybe : Result x a -> Maybe a
+pub toMaybe : Result x a → Maybe a
 toMaybe result =
     case result of
-        Ok value ->
+        Ok value →
             Just value
 
-        Err _ ->
+        Err _ →
             Nothing
 
 
@@ -225,11 +225,11 @@ toMaybe result =
 --|
 --|     fromMaybe (Just 42) "lost" == Ok 42
 --|     fromMaybe Nothing "lost" == Err "lost"
-pub fromMaybe : Maybe a, x -> Result x a
+pub fromMaybe : Maybe a, x → Result x a
 fromMaybe maybe err =
     case maybe of
-        Just value ->
+        Just value →
             Ok value
 
-        Nothing ->
+        Nothing →
             Err err

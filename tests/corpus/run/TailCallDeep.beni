@@ -12,9 +12,9 @@ import Node exposing (Program)
 import String
 
 
-count : Int, Int -> Int
+count : Int, Int → Int
 count n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         count (n - 1) (acc + n)

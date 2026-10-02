@@ -23,7 +23,7 @@ eq (T x) (T y) = helper x y
 helper x y = Int.mod x 10 == Int.mod y 10
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

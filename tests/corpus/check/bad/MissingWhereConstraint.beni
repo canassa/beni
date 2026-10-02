@@ -2,5 +2,5 @@
 -- `where` clause declares (§6.2 Rule U2), and the body asks for one it does
 -- not. The message points at the CALL that needs the method — the answer to
 -- report 18 §2.4 — and quotes the clause that would fix it.
-pub twice : a, Int -> a
+pub twice : a, Int → a
 twice x factor = x.scale factor

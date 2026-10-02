@@ -18,14 +18,14 @@ type Msg
 
 viewNode model node =
     case node of
-        File name size ->
+        File name size →
             <li class="file">
                 <span class="icon"><i class="fa fa-file" /></span>
                 <span class="name">{name}</span>
                 <span class="size">{size} bytes</span>
             </li>
 
-        Folder name children ->
+        Folder name children →
             <li class={if List.member name model.open then "folder open" else "folder"}>
                 <button
                     class="toggle"
@@ -131,7 +131,7 @@ shell model =
                                                                                                                                                                 >
                                                                                                                                                                     <Tree.panel
                                                                                                                                                                         title="Files"
-                                                                                                                                                                        {...Tree.defaults}
+                                                                                                                                                                        {…Tree.defaults}
                                                                                                                                                                     >
                                                                                                                                                                         <ul
                                                                                                                                                                             class="tree"
@@ -188,7 +188,7 @@ breadcrumbs path =
     <nav class="breadcrumb" aria-label="breadcrumbs">
         <ul>
             <For each={path} keyed>
-                {λsegment index ->
+                {λsegment index →
                     <li class={if index == List.length path - 1 then "is-active" else ""}>
                         <a
                             href="#${segment}"

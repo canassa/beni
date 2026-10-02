@@ -17,72 +17,72 @@ import Node exposing (Program)
 import String
 
 
-outer : Maybe Int, Int -> String
+outer : Maybe Int, Int → String
 outer m fallback =
     inner x = Just (m? + x)
     case inner 1 of
-        Just v ->
+        Just v →
             "inner ${String.fromInt v}"
 
-        Nothing ->
+        Nothing →
             "fallback ${String.fromInt fallback}"
 
 
-sumUntil : List (Maybe Int), Int -> Maybe Int
+sumUntil : List (Maybe Int), Int → Maybe Int
 sumUntil xs acc =
     case xs of
-        [] ->
+        [] →
             Just acc
 
-        [ first, ...rest ] ->
+        [ first, …rest ] →
             sumUntil rest (acc + first?)
 
 
-pick : Maybe Int, Bool -> Maybe String
+pick : Maybe Int, Bool → Maybe String
 pick m flag =
     case flag of
-        True ->
+        True →
             Just (String.fromInt (m?))
 
-        False ->
+        False →
             Just "skipped"
 
 
-classify : Maybe Int -> Maybe String
+classify : Maybe Int → Maybe String
 classify m =
     case m? of
-        0 ->
+        0 →
             Just "zero"
 
-        other ->
+        other →
             Just (String.fromInt other)
 
 
-flatten : Maybe (Maybe Int) -> Maybe Int
+flatten : Maybe (Maybe Int) → Maybe Int
 flatten mm = Just (mm?? + 1)
 
 
-field : Maybe { size : Int } -> Maybe Int
+field : Maybe { size : Int } → Maybe Int
 field m = Just (m?.size + 1)
 
 
-showMaybe : Maybe Int -> String
+showMaybe : Maybe Int → String
 showMaybe m =
     case m of
-        Just n ->
+        Just n →
             String.fromInt n
 
-        Nothing ->
+        Nothing →
             "nothing"
 
 
-showText : Maybe String -> String
+showText : Maybe String → String
 showText m =
     case m of
-        Just s ->
+        Just s →
             s
 
-        Nothing ->
+        Nothing →
             "nothing"
 
 

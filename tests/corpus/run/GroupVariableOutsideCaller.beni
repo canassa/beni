@@ -22,14 +22,14 @@ f u =
 
 g xs =
     case xs of
-        [] ->
+        [] →
             f 0 == 1
 
-        [ a, ..._ ] ->
+        [ a, …_ ] →
             a == a
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

@@ -8,19 +8,19 @@ type Boxed
     = Boxed Int
 
 
-pub refutable : Maybe Int -> Int
+pub refutable : Maybe Int → Int
 refutable m =
     Just v = m
     v
 
 
-pub insideTuple : ( Maybe Int, Int ) -> Int
+pub insideTuple : Maybe Int × Int → Int
 insideTuple pair =
     ( Just v, n ) = pair
     v + n
 
 
-pub fine : Boxed -> Int
+pub fine : Boxed → Int
 fine b =
     (Boxed n) = b
     n

@@ -22,21 +22,21 @@ all =
     { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
 
 
-showUsers : Users.Type -> String
+showUsers : Users.Type → String
 showUsers u =
     "users "
         ++ String.fromInt u.page.total
         ++ " "
-        ++ String.join (List.map u.page.items λx -> x.name ++ ":" ++ String.fromInt x.age) ","
+        ++ String.join (List.map u.page.items λx → x.name ++ ":" ++ String.fromInt x.age) ","
 
 
-showTree : Tree.Type -> String
+showTree : Tree.Type → String
 showTree t =
     case t of
-        Tree.Leaf r ->
+        Tree.Leaf r →
             String.fromInt r.value
 
-        Tree.Branch r ->
+        Tree.Branch r →
             "[" ++ String.join (List.map r.children showTree) " " ++ "]"
 
 
@@ -63,7 +63,7 @@ main =
             (Users.print
                 { page = { items = [ { name = "a", age = 3 } ], total = 1 }, owner = Schema.Null }
             )
-            λs -> s
+            λs → s
         , Show.result
             (Users.printWith all
                 { page =
@@ -71,7 +71,7 @@ main =
                 , owner = Schema.NonNull { name = "c", age = -1 }
                 }
             )
-            λs -> s
+            λs → s
         , Show.result
             (Tree.parse
                 "{\"kind\":\"branch\",\"children\":[{\"kind\":\"leaf\",\"value\":1},{\"kind\":\"branch\",\"children\":[{\"kind\":\"leaf\",\"value\":\"2\"}]}]}"
@@ -83,10 +83,10 @@ main =
                     { children = [ Tree.Leaf { value = 1 }, Tree.Branch { children = [] } ] }
                 )
             )
-            λs -> s
+            λs → s
         , Show.result
             (Page.parse (User.schema ()) "{\"items\":[{\"name\":\"d\",\"age\":\"z\"}],\"total\":1}")
-            λp -> String.fromInt p.total
+            λp → String.fromInt p.total
         , if Tree.Leaf { value = 1 } == Tree.Leaf { value = 1 } then "equal" else "different"
         , if Tree.Leaf { value = 1 } == Tree.Branch { children = [] } then "equal" else "different"
         ]

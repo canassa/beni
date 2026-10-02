@@ -13,7 +13,7 @@ initial : Model
 initial = { count = 0, name = "" }
 
 
-bumpLocal : Model -> Model
+bumpLocal : Model → Model
 bumpLocal model = { model | count = model.count + 1 }
 
 
@@ -21,5 +21,5 @@ bumpTop : Model
 bumpTop = { initial | count = 1, name = "one" }
 
 
-bumpImport : Int -> { timeout : Int }
+bumpImport : Int → { timeout : Int }
 bumpImport t = { config | timeout = t }

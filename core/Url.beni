@@ -48,8 +48,8 @@ pub type Protocol
 --|     Url.fromString "HTTPS://Example.com:443/hats/../caps?q=top%20hat"
 --|     -- Just { protocol = Https, host = "example.com", port_ = Nothing,
 --|     --        path = "/caps", query = Just "q=top%20hat", fragment = Nothing }
-pub fromString : String -> Maybe Url
-fromString str = Js.pure λ() ->
+pub fromString : String → Maybe Url
+fromString str = Js.pure λ() →
     url = parse str
     if
         Js.isNull url
@@ -68,14 +68,14 @@ fromString str = Js.pure λ() ->
 -- The host's parse, or null: `URL.parse` answers null for text that does
 -- not parse, so nothing is caught. An engine without it has `new URL`,
 -- whose one documented failure is a `TypeError` (CLAUDE.md rule 9).
-parse : String -> Js.Value
+parse : String → Js.Value
 parse str =
     url = Js.global "URL"
     if Js.isUndefined (Js.get url "parse") then
         Js.catchIf
-            (λ() -> Js.construct url [ Js.from str ])
-            (λerror -> Js.instanceOf error (Js.global "TypeError"))
-            λ_ -> Js.null
+            (λ() → Js.construct url [ Js.from str ])
+            (λerror → Js.instanceOf error (Js.global "TypeError"))
+            λ_ → Js.null
     else
         Js.call url "parse" [ Js.from str ]
 
@@ -83,7 +83,7 @@ parse str =
 -- Elm's record of a parsed URL. `search` and `hash` are "" both for none
 -- and for a bare `?` or `#`, which `href` still shows: the text before the
 -- fragment ends in the `?` of an empty query.
-parts : Protocol, Js.Value -> Url
+parts : Protocol, Js.Value → Url
 parts protocol url =
     href = Js.get url "href"
     hash = Js.get url "hash"
@@ -132,33 +132,33 @@ parts protocol url =
 --|     Url.toString { protocol = Https, host = "example.com", port_ = Just 8042,
 --|                    path = "/over/there", query = Just "name=ferret", fragment = Nothing }
 --|     -- "https://example.com:8042/over/there?name=ferret"
-pub toString : Url -> String
+pub toString : Url → String
 toString url =
     scheme =
         case url.protocol of
-            Http ->
+            Http →
                 "http://"
 
-            Https ->
+            Https →
                 "https://"
 
     withPort =
         case url.port_ of
-            Nothing ->
+            Nothing →
                 scheme ++ url.host
 
-            Just p ->
+            Just p →
                 "${scheme}${url.host}:${String.fromInt p}"
     withPort ++ url.path ++ prefixed "?" url.query ++ prefixed "#" url.fragment
 
 
-prefixed : String, Maybe String -> String
+prefixed : String, Maybe String → String
 prefixed prefix segment =
     case segment of
-        Nothing ->
+        Nothing →
             ""
 
-        Just s ->
+        Just s →
             prefix ++ s
 
 
@@ -168,7 +168,7 @@ prefixed prefix segment =
 --|
 --|     percentEncode "to be" == "to%20be"
 --|     percentEncode "€" == "%E2%82%AC"
-pub percentEncode : String -> String
+pub percentEncode : String → String
 percentEncode str =
     Js.to (Js.apply (Js.global "encodeURIComponent") [ Js.call (Js.from str) "toWellFormed" [] ])
 
@@ -179,12 +179,12 @@ percentEncode str =
 --|
 --|     percentDecode "to%20be" == Just "to be"
 --|     percentDecode "%C2" == Nothing
-pub percentDecode : String -> Maybe String
+pub percentDecode : String → Maybe String
 percentDecode str =
     -- `decodeURIComponent` documents one failure, a `URIError` for text that
     -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
     -- thrown on (CLAUDE.md rule 9).
     Js.catchIf
-        (λ() -> Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
-        (λerror -> Js.instanceOf error (Js.global "URIError"))
-        λ_ -> Nothing
+        (λ() → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+        (λerror → Js.instanceOf error (Js.global "URIError"))
+        λ_ → Nothing

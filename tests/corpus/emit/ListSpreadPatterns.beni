@@ -17,43 +17,43 @@
 import Node exposing (Program)
 
 
-pub lastOr : List Int -> Int
+pub lastOr : List Int → Int
 lastOr xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ ...init, last ] ->
+        [ …init, last ] →
             last
 
 
-pub middle : List Int -> List Int
+pub middle : List Int → List Int
 middle xs =
     case xs of
-        [ first, ...between, last ] ->
+        [ first, …between, last ] →
             between
 
-        _ ->
+        _ →
             []
 
 
-pub endsInZero : List Int -> Bool
+pub endsInZero : List Int → Bool
 endsInZero xs =
     case xs of
-        [ ..._, 0 ] ->
+        [ …_, 0 ] →
             True
 
-        _ ->
+        _ →
             False
 
 
-pub headOr : List Int -> Int
+pub headOr : List Int → Int
 headOr xs =
     case xs of
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             x
 
-        [] ->
+        [] →
             0
 
 

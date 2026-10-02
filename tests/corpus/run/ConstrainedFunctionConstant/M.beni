@@ -12,8 +12,8 @@
 -- build with exit 0 and print the JavaScript source text
 -- `($p$1, $p$2) => Main$maxOf($m$0, $p$1, $p$2)` for `h 1 2`, and
 -- `same 1 2` would print `t`.
-pub maxOf : a, a -> a
-    where a.compare : a, a -> Order
+pub maxOf : a, a → a
+    where a.compare : a, a → Order
 maxOf a b =
     if a < b then
         b
@@ -21,11 +21,11 @@ maxOf a b =
         a
 
 
-pub h : a, a -> a
-    where a.compare : a, a -> Order
+pub h : a, a → a
+    where a.compare : a, a → Order
 h = maxOf
 
 
 pub blank : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 blank = []

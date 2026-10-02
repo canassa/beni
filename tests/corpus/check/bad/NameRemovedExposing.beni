@@ -4,5 +4,5 @@
 import Basics exposing (logBase, max)
 
 
-bigger : Int -> Int
+bigger : Int → Int
 bigger n = max n 3

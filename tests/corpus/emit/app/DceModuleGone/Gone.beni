@@ -5,11 +5,11 @@ pub type Shade
     | Deep
 
 
-pub name : Shade -> String
+pub name : Shade → String
 name s =
     case s of
-        Pale ->
+        Pale →
             "pale"
 
-        Deep ->
+        Deep →
             "deep"

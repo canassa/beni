@@ -6,5 +6,5 @@ f r =
     render r
         (λz
         -- why the lambda
-        -> z
+        → z
         )

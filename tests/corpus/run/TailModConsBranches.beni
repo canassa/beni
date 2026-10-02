@@ -19,14 +19,14 @@ import Node exposing (Program)
 import String
 
 
-twice : List a -> List a
+twice : List a → List a
 twice xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ x, x, ...twice rest ]
+        [ x, …rest ] →
+            [ x, x, …twice rest ]
 
 
 type Op
@@ -36,92 +36,92 @@ type Op
     | Stop
 
 
-expand : List Op, List Int -> List Int
+expand : List Op, List Int → List Int
 expand ops ending =
     case ops of
-        [] ->
+        [] →
             []
 
-        [ (Keep n), ...rest ] ->
-            [ n, ...expand rest ending ]
+        [ (Keep n), …rest ] →
+            [ n, …expand rest ending ]
 
-        [ (Dup n), ...rest ] ->
-            [ n, n + 1, ...expand rest ending ]
+        [ (Dup n), …rest ] →
+            [ n, n + 1, …expand rest ending ]
 
-        [ Skip, ...rest ] ->
+        [ Skip, …rest ] →
             expand rest ending
 
-        [ Stop, ..._ ] ->
+        [ Stop, …_ ] →
             ending
 
 
-alternate : List Int, Bool -> List Int
+alternate : List Int, Bool → List Int
 alternate xs flip =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             [ x
-            , ...(if flip then
-                     alternate rest False
-                  else
-                     alternate (List.drop rest 0) True
-                 )
+            , …(if flip then
+                   alternate rest False
+                else
+                   alternate (List.drop rest 0) True
+               )
             ]
 
 
-countdown : Int -> List Int
+countdown : Int → List Int
 countdown start =
     go n =
-        if n <= 0 then
+        if n ≤ 0 then
             [ 0 ]
         else
-            [ n, ...go (n - 1) ]
+            [ n, …go (n - 1) ]
     go start
 
 
-withLet : List Int -> List Int
+withLet : List Int → List Int
 withLet xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             [ x
-            , ...(
+            , …(
                 y = x * 3
-                [ y, ...withLet rest ]
+                [ y, …withLet rest ]
             )
             ]
 
 
-chunks : List Int, Int -> List (List Int)
+chunks : List Int, Int → List (List Int)
 chunks xs n =
     case xs of
-        [] ->
+        [] →
             []
 
-        _ ->
+        _ →
             first k ys =
-                if k <= 0 then
+                if k ≤ 0 then
                     []
                 else
                     case ys of
-                        [] ->
+                        [] →
                             []
 
-                        [ y, ...rest ] ->
-                            [ y, ...first (k - 1) rest ]
-            [ first n xs, ...chunks (List.drop xs n) n ]
+                        [ y, …rest ] →
+                            [ y, …first (k - 1) rest ]
+            [ first n xs, …chunks (List.drop xs n) n ]
 
 
-show : List Int -> String
+show : List Int → String
 show xs = String.join (List.map xs String.fromInt) ","
 
 
-opsFor : Int -> List Op
-opsFor n = List.map (List.range 1 n) λi ->
+opsFor : Int → List Op
+opsFor n = List.map (List.range 1 n) λi →
     if Int.mod i 3 == 0 then
         Skip
     else if Int.mod i 3 == 1 then
@@ -146,8 +146,7 @@ main =
         , String.fromInt (List.sum (countdown 100000))
         , String.fromInt (List.sum (withLet big))
         , String.join
-            (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) λc -> String.join (List.map c String.fromInt) "+"
-            )
+            (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) λc → String.join (List.map c String.fromInt) "+")
             ","
         , String.fromInt (List.length (chunks big 3))
         ]

@@ -6,5 +6,5 @@ pub type Holder a
     = Holder a
 
 
-pub eq : Holder Int, Holder Int -> Bool
+pub eq : Holder Int, Holder Int → Bool
 eq (Holder a) (Holder b) = a == b

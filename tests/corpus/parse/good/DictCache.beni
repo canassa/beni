@@ -15,13 +15,13 @@ pub empty : Cache
 empty = { hits = 0, misses = 0, table = Dict.empty }
 
 
-pub fib : Int, Cache -> ( Int, Cache )
+pub fib : Int, Cache → Int × Cache
 fib n cache =
     case Dict.get cache.table n of
-        Just value ->
+        Just value →
             ( value, { cache | hits = cache.hits + 1 } )
 
-        Nothing ->
+        Nothing →
             if n < 2 then
                 ( n, { cache | misses = cache.misses + 1 } )
             else
@@ -38,16 +38,16 @@ fib n cache =
                 )
 
 
-pub fibAll : List Int, Cache -> ( List Int, Cache )
+pub fibAll : List Int, Cache → List Int × Cache
 fibAll ns cache =
     step n ( acc, c ) =
         ( value, c1 ) = fib n c
-        ( [ value, ...acc ], c1 )
+        ( [ value, …acc ], c1 )
     List.foldl ns ( [], cache ) step
-        |> (λ( values, final ) -> ( List.reverse values, final ))
+        ▷ (λ( values, final ) → ( List.reverse values, final ))
 
 
-pub hitRate : Cache -> Float
+pub hitRate : Cache → Float
 hitRate cache =
     total = cache.hits + cache.misses
     if total == 0 then

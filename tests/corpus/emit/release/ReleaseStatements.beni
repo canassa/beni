@@ -16,25 +16,25 @@
 import Node exposing (Program)
 
 
-pub sum : Int, Int -> Int
+pub sum : Int, Int → Int
 sum n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         sum (n - 1) (acc + n)
 
 
-tick : () -> Int
+tick : () → Int
 tick () = 7
 
 
-say : Int -> ()
+say : Int → ()
 say n =
     _ = Debug.log "say" n
     ()
 
 
-pub twice : Bool -> Int
+pub twice : Bool → Int
 twice c =
     _ = say 1
 
@@ -46,7 +46,7 @@ twice c =
     2
 
 
-pub quiet : Int -> Int
+pub quiet : Int → Int
 quiet n =
     _ = n * 2
     n

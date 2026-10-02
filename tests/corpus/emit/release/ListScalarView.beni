@@ -18,84 +18,84 @@
 import Node exposing (Program)
 
 
-pub sum : List Int, Int -> Int
+pub sum : List Int, Int → Int
 sum xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             sum rest (acc + x)
 
 
-pub mapRec : List a, (a -> b) -> List b
+pub mapRec : List a, (a → b) → List b
 mapRec xs f =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ f x, ...mapRec rest f ]
+        [ x, …rest ] →
+            [ f x, …mapRec rest f ]
 
 
-pub merge : List Int, List Int -> List Int
+pub merge : List Int, List Int → List Int
 merge xs ys =
     case xs of
-        [] ->
+        [] →
             ys
 
-        [ x, ...restX ] ->
+        [ x, …restX ] →
             case ys of
-                [] ->
+                [] →
                     xs
 
-                [ y, ...restY ] ->
-                    if x <= y then
-                        [ x, ...merge restX ys ]
+                [ y, …restY ] →
+                    if x ≤ y then
+                        [ x, …merge restX ys ]
                     else
-                        [ y, ...merge xs restY ]
+                        [ y, …merge xs restY ]
 
 
-pub dropWhile : List Int, (Int -> Bool) -> List Int
+pub dropWhile : List Int, (Int → Bool) → List Int
 dropWhile xs keep =
     case xs of
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
                 dropWhile rest keep
             else
                 xs
 
-        [] ->
+        [] →
             xs
 
 
-pub capture : List Int, List (() -> Int) -> List (() -> Int)
+pub capture : List Int, List (() → Int) → List (() → Int)
 capture xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ _, ...rest ] ->
-            capture rest (List.push acc λ() -> List.length rest)
+        [ _, …rest ] →
+            capture rest (List.push acc λ() → List.length rest)
 
 
-pub pairwise : List Int -> List ( Int, Int )
+pub pairwise : List Int → List (Int × Int)
 pairwise xs =
     case xs of
-        [ a, b, ...rest ] ->
-            [ ( a, b ), ...pairwise [ b, ...rest ] ]
+        [ a, b, …rest ] →
+            [ ( a, b ), …pairwise [ b, …rest ] ]
 
-        _ ->
+        _ →
             []
 
 
-pub notAWalk : List Int, Int -> Int
+pub notAWalk : List Int, Int → Int
 notAWalk xs n =
     case xs of
-        [] ->
+        [] →
             n
 
-        [ _, ...rest ] ->
+        [ _, …rest ] →
             notAWalk (List.drop rest 1) (n - 1)
 
 

@@ -26,28 +26,28 @@ pub type Pair
     = Pair Int Int
 
 
-pub sum : Pair -> Int
+pub sum : Pair → Int
 sum p =
     case p of
-        Pair a b ->
+        Pair a b →
             a + b
 
 
-pub swap : Pair -> Pair
+pub swap : Pair → Pair
 swap p =
     case p of
-        Pair a b ->
+        Pair a b →
             Pair b a
 
 
-pub square : Pair -> Int
+pub square : Pair → Int
 square p =
     case p of
-        Pair a _ ->
+        Pair a _ →
             a * a
 
 
-pub held : (Pair -> Int), Pair -> Int
+pub held : (Pair → Int), Pair → Int
 held measure p =
     once = measure p
     measure p + once

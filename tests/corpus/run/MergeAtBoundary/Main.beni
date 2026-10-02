@@ -26,13 +26,13 @@ f m =
 
     _ =
         case y of
-            Box _ ->
+            Box _ →
                 0
     f m
 
 
 eq (Box a) (Box b) =
-    _ = λu -> f u
+    _ = λu → f u
     a == b
 
 

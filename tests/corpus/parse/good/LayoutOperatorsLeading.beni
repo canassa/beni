@@ -10,9 +10,9 @@ type Msg
 
 total xs =
     xs
-        |> List.map (λx -> x * 2)
-        |> List.filter (λx -> x > 2)
-        |> List.sum
+        ▷ List.map (λx → x * 2)
+        ▷ List.filter (λx → x > 2)
+        ▷ List.sum
 
 
 longSum a b c d =
@@ -39,11 +39,11 @@ branch m =
         m
     of
         Just x
-            ->
+            →
                 x
 
         Nothing
-            -> 0
+            → 0
 
 
 

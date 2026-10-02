@@ -29,44 +29,44 @@ type alias Model =
     seen : List String
 
 
-pulses : (Int -> msg) -> Sub msg
+pulses : (Int → msg) → Sub msg
 pulses tag = Sub.listen Pulse (beat 1 _) tag
 
 
-beat : Int, Cmd.Send Int -> ()
-beat n send = Task.bracket (λ() -> Debug.log "acquire" ()) (λ_ _ -> Debug.log "release" ()) λ_ ->
+beat : Int, Cmd.Send Int → ()
+beat n send = Task.bracket (λ() → Debug.log "acquire" ()) (λ_ _ → Debug.log "release" ()) λ_ →
     loop n send
 
 
-loop : Int, Cmd.Send Int -> ()
+loop : Int, Cmd.Send Int → ()
 loop n send =
     _ = Time.sleep (Time.millis 100)
     _ = send n
     loop (n + 1) send
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Pulsed label n ->
+        Pulsed label n →
             ( { model | seen = model.seen ++ [ "${label} ${String.fromInt n}" ] }, Cmd.none )
 
-        Child n ->
+        Child n →
             ( { model | seen = model.seen ++ [ "child ${String.fromInt n}" ] }, Cmd.none )
 
-        Rename ->
+        Rename →
             ( { model | label = model.label ++ "'" }, Cmd.none )
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model → Sub Msg
 subscriptions model = Sub.batch [ pulses (Pulsed model.label _), Sub.map (pulses identity) Child ]
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="rename" onClick={Rename}>rename</button>
-        <ol><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ol>
+        <ol><For each={model.seen} keyed={False}>{λs → <li>{s}</li>}</For></ol>
     </main>
 
 

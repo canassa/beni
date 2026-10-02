@@ -40,93 +40,93 @@ pub type alias Url =
     query : String
 
 
-pub fromUrl : Url -> Route
+pub fromUrl : Url → Route
 fromUrl url =
     segments =
         url.path
-            |> String.split "/"
-            |> List.filter λs -> not (String.isEmpty s)
-            |> List.map decodeSegment
+            ▷ String.split "/"
+            ▷ List.filter λs → not (String.isEmpty s)
+            ▷ List.map decodeSegment
 
     params = parseQuery url.query
     case segments of
-        [] ->
+        [] →
             Home
 
-        [ "about" ] ->
+        [ "about" ] →
             About
 
-        [ "users" ] ->
+        [ "users" ] →
             Users (usersQuery params)
 
-        [ "users", idText ] ->
+        [ "users", idText ] →
             case String.toInt idText of
-                Just id ->
+                Just id →
                     User id
 
-                Nothing ->
+                Nothing →
                     NotFound url.path
 
-        [ "users", idText, "edit" ] ->
+        [ "users", idText, "edit" ] →
             case String.toInt idText of
-                Just id ->
+                Just id →
                     UserEdit id
 
-                Nothing ->
+                Nothing →
                     NotFound url.path
 
-        [ "posts", slug ] ->
+        [ "posts", slug ] →
             Post slug
 
-        [ "search" ] ->
+        [ "search" ] →
             Search
-                (Dict.get params "q" |> Maybe.withDefault "")
-                (Dict.get params "page" |> Maybe.andThen String.toInt |> Maybe.withDefault 1)
+                (Dict.get params "q" ▷ Maybe.withDefault "")
+                (Dict.get params "page" ▷ Maybe.andThen String.toInt ▷ Maybe.withDefault 1)
 
-        [ "settings" ] ->
+        [ "settings" ] →
             Settings Profile
 
-        [ "settings", tab ] ->
+        [ "settings", tab ] →
             case tab of
-                "profile" ->
+                "profile" →
                     Settings Profile
 
-                "security" ->
+                "security" →
                     Settings Security
 
-                "billing" ->
+                "billing" →
                     Settings Billing
 
-                _ ->
+                _ →
                     NotFound url.path
 
-        _ ->
+        _ →
             NotFound url.path
 
 
-usersQuery : Dict String String -> UsersQuery
+usersQuery : Dict String String → UsersQuery
 usersQuery params =
     intParam name default =
         Dict.get params name
-            |> Maybe.andThen String.toInt
-            |> Maybe.withDefault default
-    { page = intParam "page" 1 |> clampPage
-    , perPage = intParam "per_page" 20 |> clamp 1 100
+            ▷ Maybe.andThen String.toInt
+            ▷ Maybe.withDefault default
+    { page = intParam "page" 1 ▷ clampPage
+    , perPage = intParam "per_page" 20 ▷ clamp 1 100
     , sort =
         case Dict.get params "sort" of
-            Just "created" ->
+            Just "created" →
                 ByCreated
 
-            Just "activity" ->
+            Just "activity" →
                 ByActivity
 
-            _ ->
+            _ →
                 ByName
-    , filter = Dict.get params "filter" |> Maybe.andThen nonEmpty
+    , filter = Dict.get params "filter" ▷ Maybe.andThen nonEmpty
     }
 
 
-clampPage : Int -> Int
+clampPage : Int → Int
 clampPage page =
     if page < 1 then
         1
@@ -134,7 +134,7 @@ clampPage page =
         page
 
 
-nonEmpty : String -> Maybe String
+nonEmpty : String → Maybe String
 nonEmpty s =
     if String.isEmpty (String.trim s) then
         Nothing
@@ -142,176 +142,176 @@ nonEmpty s =
         Just s
 
 
-pub parseQuery : String -> Dict String String
+pub parseQuery : String → Dict String String
 parseQuery query =
     query
-        |> String.split "&"
-        |> List.filterMap parsePair
-        |> Dict.fromList
+        ▷ String.split "&"
+        ▷ List.filterMap parsePair
+        ▷ Dict.fromList
 
 
-parsePair : String -> Maybe ( String, String )
+parsePair : String → Maybe (String × String)
 parsePair pair =
     case String.split pair "=" of
-        [ key ] ->
+        [ key ] →
             if String.isEmpty key then
                 Nothing
             else
                 Just ( decodeSegment key, "" )
 
-        [ key, ...rest ] ->
+        [ key, …rest ] →
             Just ( decodeSegment key, decodeSegment (String.join rest "=") )
 
-        [] ->
+        [] →
             Nothing
 
 
-decodeSegment : String -> String
+decodeSegment : String → String
 decodeSegment segment =
     segment
-        |> String.replace "+" " "
-        |> String.replace "%20" " "
-        |> String.replace "%2F" "/"
-        |> String.replace "%3D" "="
-        |> String.replace "%26" "&"
+        ▷ String.replace "+" " "
+        ▷ String.replace "%20" " "
+        ▷ String.replace "%2F" "/"
+        ▷ String.replace "%3D" "="
+        ▷ String.replace "%26" "&"
 
 
-encodeSegment : String -> String
+encodeSegment : String → String
 encodeSegment segment =
     segment
-        |> String.replace "&" "%26"
-        |> String.replace "=" "%3D"
-        |> String.replace "/" "%2F"
-        |> String.replace " " "%20"
+        ▷ String.replace "&" "%26"
+        ▷ String.replace "=" "%3D"
+        ▷ String.replace "/" "%2F"
+        ▷ String.replace " " "%20"
 
 
-pub toUrl : Route -> String
+pub toUrl : Route → String
 toUrl route =
     case route of
-        Home ->
+        Home →
             "/"
 
-        About ->
+        About →
             "/about"
 
-        Users query ->
+        Users query →
             "/users" ++ usersQueryString query
 
-        User id ->
+        User id →
             "/users/${id}"
 
-        UserEdit id ->
+        UserEdit id →
             "/users/${id}/edit"
 
-        Post slug ->
+        Post slug →
             "/posts/" ++ encodeSegment slug
 
-        Search q page ->
+        Search q page →
             "/search?q=${encodeSegment q}&page=${page}"
 
-        Settings tab ->
+        Settings tab →
             "/settings/" ++ tabName tab
 
-        NotFound path ->
+        NotFound path →
             path
 
 
-usersQueryString : UsersQuery -> String
+usersQueryString : UsersQuery → String
 usersQueryString query =
     pairs =
-        [ if query.page /= 1 then
+        [ if query.page ≠ 1 then
             Just ( "page", String.fromInt query.page )
           else
             Nothing
-        , if query.perPage /= 20 then
+        , if query.perPage ≠ 20 then
             Just ( "per_page", String.fromInt query.perPage )
           else
             Nothing
         , case query.sort of
-            ByName ->
+            ByName →
                 Nothing
 
-            ByCreated ->
+            ByCreated →
                 Just ( "sort", "created" )
 
-            ByActivity ->
+            ByActivity →
                 Just ( "sort", "activity" )
-        , Maybe.map query.filter λf -> ( "filter", encodeSegment f )
+        , Maybe.map query.filter λf → ( "filter", encodeSegment f )
         ]
-            |> List.filterMap identity
+            ▷ List.filterMap identity
     case pairs of
-        [] ->
+        [] →
             ""
 
-        _ ->
-            "?" ++ String.join (List.map pairs λ( k, v ) -> "${k}=${v}") "&"
+        _ →
+            "?" ++ String.join (List.map pairs λ( k, v ) → "${k}=${v}") "&"
 
 
-tabName : SettingsTab -> String
+tabName : SettingsTab → String
 tabName tab =
     case tab of
-        Profile ->
+        Profile →
             "profile"
 
-        Security ->
+        Security →
             "security"
 
-        Billing ->
+        Billing →
             "billing"
 
 
-pub title : Route -> String
+pub title : Route → String
 title route =
     case route of
-        Home ->
+        Home →
             "Home"
 
-        About ->
+        About →
             "About"
 
-        Users query ->
+        Users query →
             "Users (page ${query.page})"
 
-        User id ->
+        User id →
             "User #${id}"
 
-        UserEdit id ->
+        UserEdit id →
             "Edit user #${id}"
 
-        Post slug ->
+        Post slug →
             "Post: ${slug}"
 
-        Search q _ ->
+        Search q _ →
             "Search: ${q}"
 
-        Settings tab ->
+        Settings tab →
             "Settings: ${tabName tab}"
 
-        NotFound _ ->
+        NotFound _ →
             "Not found"
 
 
-pub breadcrumbs : Route -> List ( String, Route )
+pub breadcrumbs : Route → List (String × Route)
 breadcrumbs route =
     root = ( "Home", Home )
     case route of
-        Home ->
+        Home →
             [ root ]
 
-        User id ->
+        User id →
             [ root, ( "Users", Users defaultUsersQuery ), ( "User #${id}", route ) ]
 
-        UserEdit id ->
+        UserEdit id →
             [ root
             , ( "Users", Users defaultUsersQuery )
             , ( "User #${id}", User id )
             , ( "Edit", route )
             ]
 
-        Settings tab ->
+        Settings tab →
             [ root, ( "Settings", Settings Profile ), ( tabName tab, route ) ]
 
-        _ ->
+        _ →
             [ root, ( title route, route ) ]
 
 
@@ -319,20 +319,20 @@ pub defaultUsersQuery : UsersQuery
 defaultUsersQuery = { page = 1, perPage = 20, sort = ByName, filter = Nothing }
 
 
-pub requiresAuth : Route -> Bool
+pub requiresAuth : Route → Bool
 requiresAuth route =
     case route of
-        UserEdit _ ->
+        UserEdit _ →
             True
 
-        Settings _ ->
+        Settings _ →
             True
 
-        _ ->
+        _ →
             False
 
 
-pub redirect : { loggedIn : Bool }, Route -> Route
+pub redirect : { loggedIn : Bool }, Route → Route
 redirect session route =
     if requiresAuth route && not session.loggedIn then
         Search "login" 1
@@ -340,23 +340,23 @@ redirect session route =
         route
 
 
-pub isSameSection : Route, Route -> Bool
+pub isSameSection : Route, Route → Bool
 isSameSection a b =
     case ( a, b ) of
-        ( Users _, Users _ ) ->
+        ( Users _, Users _ ) →
             True
 
-        ( Users _, User _ ) ->
+        ( Users _, User _ ) →
             True
 
-        ( User _, Users _ ) ->
+        ( User _, Users _ ) →
             True
 
-        ( User _, User _ ) ->
+        ( User _, User _ ) →
             True
 
-        ( Settings _, Settings _ ) ->
+        ( Settings _, Settings _ ) →
             True
 
-        _ ->
+        _ →
             a == b

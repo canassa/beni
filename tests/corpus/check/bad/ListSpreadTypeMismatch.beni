@@ -5,19 +5,19 @@
 -- `...xs` (15:14, the 1st element of the literal after the spread), and a
 -- pattern spread's name, a `List Int`, where a `List String` is wanted
 -- (22:13).
-pub greet : List String -> List Int
-greet names = [ 1, ...names ]
+pub greet : List String → List Int
+greet names = [ 1, …names ]
 
 
-pub append : List Int -> List Int
-append xs = [ ...xs, "b" ]
+pub append : List Int → List Int
+append xs = [ …xs, "b" ]
 
 
-pub initNames : List Int -> List String
+pub initNames : List Int → List String
 initNames xs =
     case xs of
-        [ ...init, 0 ] ->
+        [ …init, 0 ] →
             init
 
-        _ ->
+        _ →
             []

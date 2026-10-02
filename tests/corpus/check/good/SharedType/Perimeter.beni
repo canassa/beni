@@ -3,11 +3,11 @@
 import Shape
 
 
-pub perimeter : Shape.Shape -> Int
+pub perimeter : Shape.Shape → Int
 perimeter s =
     case s of
-        Shape.Circle r ->
+        Shape.Circle r →
             6 * r
 
-        Shape.Rect w h ->
+        Shape.Rect w h →
             2 * (w + h)

@@ -15,7 +15,7 @@ type alias Named =
     point : Point
 
 
-shift : Int, Point -> Point
+shift : Int, Point → Point
 shift dx p = { p | x = p.x + dx }
 
 

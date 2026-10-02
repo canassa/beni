@@ -3,8 +3,8 @@ schema Message tagged "kind" of
         value : Int
 
 
-bad : Message.Type -> Bool
+bad : Message.Type → Bool
 bad message =
     case message of
-        Message.Unknown row ->
+        Message.Unknown row →
             True

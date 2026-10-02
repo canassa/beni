@@ -32,18 +32,18 @@
 -- A.68 fix it landed after, and the tuple's `eq` was handed to `List$eq` as
 -- the element comparison of `[ 1 ]`. In the golden it is the root `derived
 -- 0` with its two list arguments.
-pub pair : a, b -> Bool
+pub pair : a, b → Bool
     where
-        a.eq : a, a -> Bool
-        , b.eq : b, b -> Bool
+        a.eq : a, a → Bool
+        , b.eq : b, b → Bool
 pair x y = x == x && y == y
 
 
-pub three : a, b, c -> Bool
+pub three : a, b, c → Bool
     where
-        a.eq : a, a -> Bool
-        , b.eq : b, b -> Bool
-        , c.eq : c, c -> Bool
+        a.eq : a, a → Bool
+        , b.eq : b, b → Bool
+        , c.eq : c, c → Bool
 three x y z = x == x && y == y && z == z
 
 

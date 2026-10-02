@@ -10,5 +10,5 @@ type alias Model =
     title : String
 
 
-pub select : Model, Int -> Model
+pub select : Model, Int → Model
 select model id = { model | selected = id }

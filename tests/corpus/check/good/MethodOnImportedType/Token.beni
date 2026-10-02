@@ -5,8 +5,8 @@ pub type Token
     = Token Int
 
 
-pub bump : Token, Int -> Token
+pub bump : Token, Int → Token
 bump t step =
     case t of
-        Token n ->
+        Token n →
             Token (n + step)

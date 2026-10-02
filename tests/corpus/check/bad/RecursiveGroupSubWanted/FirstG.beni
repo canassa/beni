@@ -10,8 +10,8 @@ type Box a
 pub mix (K n) b = K n
 
 
-combine : Box a, b -> Box a
-    where a.mix : a, b -> a
+combine : Box a, b → Box a
+    where a.mix : a, b → a
 combine (Box a) z = Box (a.mix z)
 
 

@@ -22,7 +22,7 @@ import Node exposing (Program)
 import String
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -35,7 +35,7 @@ main =
     fruit = Dict.fromList [ ( "pear", 2 ), ( "apple", 1 ), ( "fig", 3 ) ]
     Node.printLines
         [ show ("a" < "b")
-        , show ("b" >= "a")
+        , show ("b" ≥ "a")
         , show ("a" < "A")
         , String.join (List.sort [ "pear", "apple", "fig" ]) ","
         , String.join (List.sort [ "\u{10000}", "\u{E000}", "a" ]) ","

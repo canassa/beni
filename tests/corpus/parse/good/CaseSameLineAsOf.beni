@@ -1,19 +1,19 @@
 -- Branches starting on the same line as `of` (§4 rule 4): the first branch's
 -- column is wherever it lands and later branches must match it exactly.
-sign : Int -> Int
+sign : Int → Int
 sign n =
-    case compare n 0 of LT -> -1
-                        EQ -> 0
-                        GT -> 1
+    case compare n 0 of LT → -1
+                        EQ → 0
+                        GT → 1
 
 
-isNothing : Maybe a -> Bool
+isNothing : Maybe a → Bool
 isNothing m =
-    case m of Nothing -> True
-              Just _ -> False
+    case m of Nothing → True
+              Just _ → False
 
 
-single : Maybe Int -> Int
+single : Maybe Int → Int
 single m =
-    case m of Just n -> n
-              Nothing -> 0
+    case m of Just n → n
+              Nothing → 0

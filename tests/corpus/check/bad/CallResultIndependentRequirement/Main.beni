@@ -8,8 +8,8 @@
 import T exposing (T)
 
 
-f : a, () -> Int
-    where a.foo : a, () -> Int
+f : a, () → Int
+    where a.foo : a, () → Int
 f x _ = x.foo ()
 
 

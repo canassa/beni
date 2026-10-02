@@ -12,11 +12,11 @@ type alias Todo =
     label : String
 
 
-pub view : List Todo, List String -> Html msg
+pub view : List Todo, List String → Html msg
 view todos tags =
     <div>
-        <For each={todos}>{λt -> <p>{t.label}</p>}</For>
-        <For each={tags}>{λt -> <p>{t}</p>}</For>
-        <For each={todos} keyed>{λt -> <p>{t.label}</p>}</For>
-        <For each={todos} keyed={.id}>{λt -> <p>{t.label}</p>}</For>
+        <For each={todos}>{λt → <p>{t.label}</p>}</For>
+        <For each={tags}>{λt → <p>{t}</p>}</For>
+        <For each={todos} keyed>{λt → <p>{t.label}</p>}</For>
+        <For each={todos} keyed={.id}>{λt → <p>{t.label}</p>}</For>
     </div>

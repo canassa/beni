@@ -30,30 +30,30 @@ type alias Model =
     mark : String
 
 
-marked : Model, Row -> String
+marked : Model, Row → String
 marked model r = Debug.log "mark" "${model.mark}${String.fromInt r.id}"
 
 
-named : String, Row -> String
+named : String, Row → String
 named list r = Debug.log "${list} label" r.label
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Add ->
+        Add →
             { model | rows = model.rows ++ [ { id = 3, label = "c" } ] }
 
-        Mark ->
+        Mark →
             { model | mark = "*" }
 
-        Rename ->
+        Rename →
             { model
-                | rows = List.map model.rows λr -> if r.id == 1 then { r | label = "A" } else r
+                | rows = List.map model.rows λr → if r.id == 1 then { r | label = "A" } else r
             }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="add" onClick={Add}>add</button>
@@ -61,17 +61,17 @@ view model =
         <button id="rename" onClick={Rename}>rename</button>
         <ul id="after">
             <For each={model.rows} keyed={.id}>
-                {λr -> <li class={marked model r}>{named "after" r}</li>}
+                {λr → <li class={marked model r}>{named "after" r}</li>}
             </For>
         </ul>
         <ul id="before">
             <For each={model.rows} keyed={.id}>
-                {λr -> <li title={named "before" r} class={marked model r} />}
+                {λr → <li title={named "before" r} class={marked model r} />}
             </For>
         </ul>
         <ul id="toggled">
             <For each={model.rows} keyed={.id}>
-                {λr ->
+                {λr →
                     <li class={[ ( "on", model.mark == "*" ) ]} title={marked model r}>
                         {named "toggled" r}
                     </li>

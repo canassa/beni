@@ -23,20 +23,20 @@ type alias Model =
     visible : Int
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Resized _ ->
+        Resized _ →
             ( { model | resizes = model.resizes + 1 }, Cmd.none )
 
-        Seen v ->
+        Seen v →
             ( { model | visible = model.visible + (if v == Visible then 1 else 0) }, Cmd.none )
 
-        Toggle ->
+        Toggle →
             ( { model | on = not model.on }, Cmd.none )
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : Model → Sub Msg
 subscriptions model =
     if model.on then
         Sub.batch [ Browser.Events.onResize Resized, Browser.Events.onVisibilityChange Seen ]
@@ -44,7 +44,7 @@ subscriptions model =
         Sub.none
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>

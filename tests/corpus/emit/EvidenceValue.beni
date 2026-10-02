@@ -18,27 +18,27 @@ pub type Metre
     = Metre Int
 
 
-pub scale : Metre, Int -> Metre
+pub scale : Metre, Int → Metre
 scale m factor =
     case m of
-        Metre n ->
+        Metre n →
             Metre (n * factor)
 
 
-twice : a, Int -> a
-    where a.scale : a, Int -> a
+twice : a, Int → a
+    where a.scale : a, Int → a
 twice x factor = (x.scale factor).scale factor
 
 
-apply : (Metre, Int -> Metre), Metre -> Metre
+apply : (Metre, Int → Metre), Metre → Metre
 apply f m = f m 2
 
 
-pub grow : Metre -> Metre
+pub grow : Metre → Metre
 grow m = apply twice m
 
 
-pub bound : Metre, Int -> Metre
+pub bound : Metre, Int → Metre
 bound = twice
 
 

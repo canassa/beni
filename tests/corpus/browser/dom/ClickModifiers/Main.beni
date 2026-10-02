@@ -13,7 +13,7 @@ type Msg
     = Clicked String
 
 
-describe : String, Event -> Msg
+describe : String, Event → Msg
 describe name event =
     held =
         List.filterMap
@@ -22,7 +22,7 @@ describe name event =
             , ( Html.altKey event, "alt" )
             , ( Html.metaKey event, "meta" )
             ]
-            λ( on, label ) ->
+            λ( on, label ) →
                 if on then
                     Just label
                 else
@@ -32,18 +32,18 @@ describe name event =
     Clicked "${name}: [${shown}] button ${String.fromInt (Mouse.button event)}"
 
 
-prevented : Event -> Msg
+prevented : Event → Msg
 prevented event =
     _ = Html.preventDefault event
     describe "prevented" event
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="plain" onClick={describe "plain" _}>plain</button>
         <button id="prevent" onClick={prevented}>prevent</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
@@ -51,6 +51,6 @@ main : Browser.Program
 main =
     Browser.program
         { init = []
-        , update = λ(Clicked line) lines -> lines ++ [ line ]
+        , update = λ(Clicked line) lines → lines ++ [ line ]
         , view = view
         }

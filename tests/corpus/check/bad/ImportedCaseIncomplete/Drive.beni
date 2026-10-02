@@ -5,11 +5,11 @@
 import Signal exposing (Green, Red, Signal)
 
 
-pub go : Signal -> Bool
+pub go : Signal → Bool
 go s =
     case s of
-        Green ->
+        Green →
             True
 
-        Red ->
+        Red →
             False

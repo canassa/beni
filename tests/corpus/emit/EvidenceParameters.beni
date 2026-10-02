@@ -15,29 +15,29 @@ pub type Metre
     = Metre Int
 
 
-pub scale : Metre, Int -> Metre
+pub scale : Metre, Int → Metre
 scale m factor =
     case m of
-        Metre n ->
+        Metre n →
             Metre (n * factor)
 
 
-inner : a, Int -> a
-    where a.scale : a, Int -> a
+inner : a, Int → a
+    where a.scale : a, Int → a
 inner x factor = x.scale factor
 
 
-middle : a, Int -> a
-    where a.scale : a, Int -> a
+middle : a, Int → a
+    where a.scale : a, Int → a
 middle x factor = inner x factor
 
 
-outer : a, Int -> a
-    where a.scale : a, Int -> a
+outer : a, Int → a
+    where a.scale : a, Int → a
 outer x factor = middle x factor
 
 
-pub grow : Metre -> Metre
+pub grow : Metre → Metre
 grow m = outer m 3
 
 

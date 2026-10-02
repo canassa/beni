@@ -37,7 +37,7 @@ key (T x) u =
         x
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

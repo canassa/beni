@@ -43,7 +43,7 @@ step m =
 tall items =
     Html.ul [ class "list" ]
         [ viewItem "first", viewItem "second", viewItem "third", viewItem "fourth" ]
-        |> wrap
+        ▷ wrap
 
 
 middle =
@@ -62,7 +62,7 @@ wide =
         [ 1 ]
 
 
-paren xs = List.map xs λx ->
+paren xs = List.map xs λx →
     x + aVeryLongNameThatMakesItBreak + anotherVeryLongNameThatMakesItBreak123456789
 
 

@@ -11,25 +11,25 @@
 import Html exposing (Html)
 
 
-label : String, Int -> Html msg
+label : String, Int → Html msg
 label name n = <b>{name} {n}</b>
 
 
-pub page : String, Int -> Html msg
+pub page : String, Int → Html msg
 page name n = <div>{label name n}{label "fixed" 1}</div>
 
 
-pub rows : List String -> Html msg
-rows names = <ul><For each={names}>{λname -> <li>{label name 0}</li>}</For></ul>
+pub rows : List String → Html msg
+rows names = <ul><For each={names}>{λname → <li>{label name 0}</li>}</For></ul>
 
 
-same : a, a -> Html msg
-    where a.eq : a, a -> Bool
+same : a, a → Html msg
+    where a.eq : a, a → Bool
 same x y = <b>{if x == y then "same" else "different"}</b>
 
 
-pub others : Int -> Html msg
+pub others : Int → Html msg
 others n =
-    twice : Int -> Html msg
+    twice : Int → Html msg
     twice m = <i>{m}{m}</i>
     <div>{same n 1}{twice n}{Html.text "t"}</div>

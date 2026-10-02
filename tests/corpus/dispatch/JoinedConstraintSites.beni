@@ -34,17 +34,17 @@ pub type Box k
     = Box k
 
 
-pub put : Box k, k -> Box k
-    where k.compare : k, k -> Order
+pub put : Box k, k → Box k
+    where k.compare : k, k → Order
 put box _ = box
 
 
-pub tag : Box k, k -> Box k
-    where k.eq : k, k -> Bool
+pub tag : Box k, k → Box k
+    where k.eq : k, k → Bool
 tag box _ = box
 
 
-pub size : Box k -> Int
+pub size : Box k → Int
 size _ = 1
 
 

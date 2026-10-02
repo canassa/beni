@@ -16,47 +16,46 @@ type Msg
     | Got String (Result Http.Error String)
 
 
-show : Result Http.Error String -> String
+show : Result Http.Error String → String
 show result =
     case result of
-        Ok text ->
+        Ok text →
             "ok ${text}"
 
-        Err (Http.BadUrl url) ->
+        Err (Http.BadUrl url) →
             "bad url ${url}"
 
-        Err _ ->
+        Err _ →
             "another error"
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Fetch ->
+        Fetch →
             ( lines
             , Cmd.batch
                 [ Cmd.task
-                    (λ() -> Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                    (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
                     (Got "text" _)
                 , Cmd.task
-                    (λ() -> Http.get { url = "data:text/plain,hello", expect = Http.expectWhatever }
-                    )
-                    λr -> Got "whatever" (Result.map r λ() -> "()")
+                    (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectWhatever })
+                    λr → Got "whatever" (Result.map r λ() → "()")
                 , Cmd.task
-                    (λ() -> Http.get { url = "http://[::1", expect = Http.expectString })
+                    (λ() → Http.get { url = "http://[::1", expect = Http.expectString })
                     (Got "bad url" _)
                 ]
             )
 
-        Got label result ->
+        Got label result →
             ( lines ++ [ "${label}: ${show result}" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="fetch" onClick={Fetch}>fetch</button>
-        <ul><For each={List.sort lines} keyed={False}>{λs -> <li>{s}</li>}</For></ul>
+        <ul><For each={List.sort lines} keyed={False}>{λs → <li>{s}</li>}</For></ul>
     </main>
 
 
@@ -66,5 +65,5 @@ main =
         { init = ( [], Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

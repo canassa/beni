@@ -13,9 +13,9 @@ pub type alias Person =
     age : Int
 
 
-pub birthday : Person -> Person
+pub birthday : Person → Person
 birthday p = { p | age = p.age + 1 }
 
 
-pub describe : Person -> String
+pub describe : Person → String
 describe p = "${p.name} is ${p.age}"

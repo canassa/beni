@@ -17,11 +17,11 @@ type alias Model =
     count : Int
 
 
-flip : Model -> Html Bool
+flip : Model → Html Bool
 flip model = <button onClick={not model.on}>flip</button>
 
 
-view : Model -> Html Bool
+view : Model → Html Bool
 view model =
     <main>
         <p>{Html.text "count"} {String.fromInt model.count}</p>
@@ -36,6 +36,6 @@ main : Browser.Program
 main =
     Browser.program
         { init = { on = False, count = 0 }
-        , update = λon m -> { on = on, count = m.count + 1 }
+        , update = λon m → { on = on, count = m.count + 1 }
         , view = view
         }

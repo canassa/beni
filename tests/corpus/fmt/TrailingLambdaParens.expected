@@ -6,41 +6,41 @@
 -- a chain on one line but last, before `?`, and with a comment on either
 -- parenthesis. `f a <| λx -> e` is `f a λx -> e`; a lambda that is not the
 -- last argument keeps its parentheses.
-ends xs = List.map xs λx -> x + 1
+ends xs = List.map xs λx → x + 1
 
 
-inList xs = [ List.map xs λx -> x, xs ]
+inList xs = [ List.map xs λx → x, xs ]
 
 
 stages xs =
     xs
-        |> List.filter λx -> x > 1
-        |> List.map λx -> x * 2
+        ▷ List.filter λx → x > 1
+        ▷ List.map λx → x * 2
 
 
 first xs =
-    List.map xs (λx -> x)
-        |> List.length
+    List.map xs (λx → x)
+        ▷ List.length
 
 
-oneLine xs = xs |> List.map (λx -> x) |> List.length
+oneLine xs = xs ▷ List.map (λx → x) ▷ List.length
 
 
-question m = Maybe.map m (λx -> x)?
+question m = Maybe.map m (λx → x)?
 
 
 commented xs =
     List.map
         xs
-        (λx -> x -- the same
+        (λx → x -- the same
         )
 
 
-piped url = Task.attempt (Http.get url) λr -> r
+piped url = Task.attempt (Http.get url) λr → r
 
 
-notLast xs = List.foldl (λx acc -> x + acc) 0 xs
+notLast xs = List.foldl (λx acc → x + acc) 0 xs
 
 
-long xs = List.map xs λx ->
+long xs = List.map xs λx →
     someVeryLongFunctionName x anotherArgument yetAnotherArgument andOneMoreArg

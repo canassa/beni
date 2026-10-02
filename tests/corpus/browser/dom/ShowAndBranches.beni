@@ -27,20 +27,20 @@ type alias Model =
     left : Bool
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Rename ->
-            { model | user = Maybe.map model.user λu -> { u | name = u.name ++ "!" } }
+        Rename →
+            { model | user = Maybe.map model.user λu → { u | name = u.name ++ "!" } }
 
-        Next ->
+        Next →
             { model | user = Just { id = 2, name = "Grace" } }
 
-        Flip ->
+        Flip →
             { model | left = not model.left }
 
 
-side : Bool -> Html msg
+side : Bool → Html msg
 side left =
     if left then
         <input id="left" />
@@ -48,17 +48,17 @@ side left =
         <input id="right" />
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="rename" onClick={Rename}>rename</button>
         <button id="next" onClick={Next}>next</button>
         <button id="flip" onClick={Flip}>flip</button>
         <Show when={model.user} keyed={.id} fallback={<p>nobody</p>}>
-            {λu -> <label>{u.name}<input id="by-key" /></label>}
+            {λu → <label>{u.name}<input id="by-key" /></label>}
         </Show>
         <Show when={model.user} keyed>
-            {λu -> <label>{u.name}<input id="by-identity" /></label>}
+            {λu → <label>{u.name}<input id="by-identity" /></label>}
         </Show>
         <div>{side model.left}</div>
     </main>

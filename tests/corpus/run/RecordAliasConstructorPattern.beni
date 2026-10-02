@@ -14,24 +14,24 @@ type alias User =
     age : Int
 
 
-nameOf : User -> String
+nameOf : User → String
 nameOf (User n _) = n
 
 
-describe : User -> String
+describe : User → String
 describe user =
     case user of
-        User n a ->
+        User n a →
             n ++ " is " ++ String.fromInt a
 
 
-ageOf : Maybe User -> Int
+ageOf : Maybe User → Int
 ageOf maybe =
     case maybe of
-        Just (User _ a) ->
+        Just (User _ a) →
             a
 
-        Nothing ->
+        Nothing →
             0
 
 
@@ -41,7 +41,7 @@ main =
 
     both =
         case User "Bo" 7 of
-            (User n _) as whole ->
+            (User n _) as whole →
                 n ++ "/" ++ nameOf whole
     Node.printLines
         [ nameOf (User "Cy" 1)

@@ -11,17 +11,17 @@ pub type Value
     | Number Float
     | Text String
     | Array (List Value)
-    | Object (List ( String, Value ))
+    | Object (List (String × Value))
 
 
 --| Parse JSON with the host's ordinary `JSON.parse` numeric semantics.
 --| This includes its duplicate-member behavior: the last member survives.
 --| Boundary depth and node limits, malformed input, and host exceptions are
 --| all returned as `Err` values.
-pub foreign pure parse : String -> Result String Value
+pub foreign pure parse : String → Result String Value
 
 
 --| Print a JSON-only value. Non-finite numbers, malformed foreign values,
 --| duplicate object members, boundary depth/node overflow, and host exceptions
 --| are returned as `Err`.
-pub foreign pure print : Value -> Result String String
+pub foreign pure print : Value → Result String String

@@ -6,7 +6,7 @@
 -- closed.
 
 coerce o =
-    g : { r | x : Int } -> { r | x : Int }
+    g : { r | x : Int } → { r | x : Int }
     g y = o
     g { x = 1, name = "n" }
 

@@ -11,5 +11,5 @@ pub foreign type String
 foreign type Table k v
 
 
-length : List a -> Int
+length : List a → Int
 length _ = 0

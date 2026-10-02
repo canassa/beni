@@ -15,11 +15,11 @@ pub foreign type Event
 
 
 --| The text, as a text hole shows it.
-pub markup text : String -> Html msg
+pub markup text : String → Html msg
 
 
 --| The same markup, its messages passed through the function.
-pub markup map : Html a, (a -> b) -> Html b
+pub markup map : Html a, (a → b) → Html b
 
 
 pub element "*"

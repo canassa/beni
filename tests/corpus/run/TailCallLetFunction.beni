@@ -16,7 +16,7 @@ import Node exposing (Program)
 import String
 
 
-total : Int -> Int
+total : Int → Int
 total limit =
     go i acc =
         if i > limit then
@@ -26,13 +26,13 @@ total limit =
     go 1 0
 
 
-nested : Int, Int -> Int
+nested : Int, Int → Int
 nested n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         inner i sub =
-            if i <= 0 then
+            if i ≤ 0 then
                 sub
             else
                 inner (i - 1) (sub + 1)

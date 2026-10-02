@@ -21,7 +21,7 @@ pub attribute "data-*" : String
 pub event "onInput" delegated via targetValue : String
 
 
-pub markup map : Html a, (a -> b) -> Html b
+pub markup map : Html a, (a → b) → Html b
 
 
-foreign pure targetValue : Event -> String
+foreign pure targetValue : Event → String

@@ -7,7 +7,7 @@
 -- `show n` pins it (eager draining, checker-v2.md §9.1). The hint says why
 -- this `let` is held monomorphic. The fix is a top-level annotated
 -- declaration.
-pub report : Int, String -> String
+pub report : Int, String → String
 report n s =
     show x = x.render 1
     show n ++ show s

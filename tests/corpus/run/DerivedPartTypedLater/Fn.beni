@@ -3,23 +3,23 @@
 -- unsolved variable: the record's part for `v` must become `eq`, not a
 -- structural comparison that ignores it (and not `err`).
 pub type T
-    = T Int (Int -> Int)
+    = T Int (Int → Int)
 
 
 pub eq left right =
     case left of
-        T n _ ->
+        T n _ →
             case right of
-                T m _ ->
+                T m _ →
                     n == m
 
 
 pub compare left right =
     same = { v = left } == { v = right }
     case left of
-        T n _ ->
+        T n _ →
             case right of
-                T m _ ->
+                T m _ →
                     if same then
                         LT
                     else

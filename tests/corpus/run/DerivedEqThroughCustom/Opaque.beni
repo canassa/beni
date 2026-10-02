@@ -5,10 +5,10 @@ pub type Opaque a
     = Opaque String a
 
 
-pub eq : Opaque a, Opaque a -> Bool
+pub eq : Opaque a, Opaque a → Bool
 eq left right =
     case left of
-        Opaque labelLeft _ ->
+        Opaque labelLeft _ →
             case right of
-                Opaque labelRight _ ->
+                Opaque labelRight _ →
                     labelLeft == labelRight

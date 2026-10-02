@@ -11,17 +11,17 @@ type alias Grid =
     cells : Array Int
 
 
-cell : Grid, Int, Int -> Int
+cell : Grid, Int, Int → Int
 cell g x y =
     case Array.get g.cells (Int.mod y g.h * g.w + Int.mod x g.w) of
-        Just v ->
+        Just v →
             v
 
-        Nothing ->
+        Nothing →
             0
 
 
-alive : Grid, Int -> Int
+alive : Grid, Int → Int
 alive g i =
     x = Int.mod i g.w
     y = i // g.w
@@ -41,5 +41,5 @@ alive g i =
         0
 
 
-pub step : Grid -> Grid
-step g = { g | cells = Array.initialize (g.w * g.h) λi -> alive g i }
+pub step : Grid → Grid
+step g = { g | cells = Array.initialize (g.w * g.h) λi → alive g i }

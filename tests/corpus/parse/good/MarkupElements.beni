@@ -12,7 +12,7 @@ view model =
         {}
         {-- a note
         }
-        <Card {...model.card} title="x">body</Card>
+        <Card {…model.card} title="x">body</Card>
         <Ui.Card />
         <Card.header done={True} />
     </div>

@@ -24,11 +24,11 @@ viaFirst u =
     ( g 1, g "s" )
 
 
-pub size : Box a, () -> Int
+pub size : Box a, () → Int
 size b u = 1
 
 
-both : ( Int, Int ) -> String
+both : Int × Int → String
 both ( a, b ) = String.fromInt a ++ " " ++ String.fromInt b
 
 

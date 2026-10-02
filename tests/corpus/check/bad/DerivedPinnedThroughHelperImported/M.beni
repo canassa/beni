@@ -6,5 +6,5 @@ pub type W a
     = W (H.Holder a)
 
 
-pub mk : a -> W a
+pub mk : a → W a
 mk x = W (H.Holder x)

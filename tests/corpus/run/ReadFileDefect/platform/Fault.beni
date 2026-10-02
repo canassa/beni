@@ -3,4 +3,4 @@
 --! disk's own failure, which no program can arrange by itself.
 
 --| From now on, every `fs.promises.readFile` rejects with `EIO`.
-pub foreign impure breakReads : () -> ()
+pub foreign impure breakReads : () → ()

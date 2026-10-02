@@ -40,7 +40,7 @@ pub type Unused
     | Blue
 
 
-pub same : Kept, Kept -> String
+pub same : Kept, Kept → String
 same a b =
     if a == b then
         "yes"

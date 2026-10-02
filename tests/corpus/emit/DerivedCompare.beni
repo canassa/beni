@@ -38,36 +38,36 @@ import Node exposing (Program)
 import String
 
 
-pub before : { x : Int, y : String }, { x : Int, y : String } -> Bool
+pub before : { x : Int, y : String }, { x : Int, y : String } → Bool
 before a b = a < b
 
 
-pub atLeast : { x : Int, y : String }, { x : Int, y : String } -> Bool
-atLeast a b = a >= b
+pub atLeast : { x : Int, y : String }, { x : Int, y : String } → Bool
+atLeast a b = a ≥ b
 
 
-pub pairAtMost : ( Int, Int ), ( Int, Int ) -> Bool
-pairAtMost a b = a <= b
+pub pairAtMost : Int × Int, Int × Int → Bool
+pairAtMost a b = a ≤ b
 
 
-pub mixedAfter : ( Char, Float ), ( Char, Float ) -> Bool
+pub mixedAfter : Char × Float, Char × Float → Bool
 mixedAfter a b = a > b
 
 
-pub tripleBefore : ( Int, Char, String ), ( Int, Char, String ) -> Bool
+pub tripleBefore : Int × Char × String, Int × Char × String → Bool
 tripleBefore a b = a < b
 
 
-pub unitAtMost : (), () -> Bool
-unitAtMost a b = a <= b
+pub unitAtMost : (), () → Bool
+unitAtMost a b = a ≤ b
 
 
-order : a, a -> Order
-    where a.compare : a, a -> Order
+order : a, a → Order
+    where a.compare : a, a → Order
 order x y = x.compare y
 
 
-pub rank : { x : Int, y : String } -> Order
+pub rank : { x : Int, y : String } → Order
 rank r = order r r
 
 

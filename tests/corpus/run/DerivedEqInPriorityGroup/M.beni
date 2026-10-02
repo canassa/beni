@@ -15,11 +15,11 @@ pub type K
     = K Int
 
 
-plusOne : Int -> Int
+plusOne : Int → Int
 plusOne v = v + 1
 
 
-minusOne : Int -> Int
+minusOne : Int → Int
 minusOne v = v - 1
 
 
@@ -34,9 +34,9 @@ pub compare left right =
         W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
             == W (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 minusOne))
     case left of
-        K a ->
+        K a →
             case right of
-                K b ->
+                K b →
                     if s then
                         EQ
                     else

@@ -3,7 +3,7 @@
 -- function-holding `Callback` so capability propagation must stop at
 -- `Inner.eq` instead of walking through to the function.
 pub type Callback
-    = Callback (Int -> Int)
+    = Callback (Int → Int)
 
 
 pub type Inner
@@ -12,7 +12,7 @@ pub type Inner
 
 pub eq left right =
     case left of
-        Inner labelLeft _ ->
+        Inner labelLeft _ →
             case right of
-                Inner labelRight _ ->
+                Inner labelRight _ →
                     labelLeft == labelRight

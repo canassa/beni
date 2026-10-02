@@ -30,36 +30,36 @@ type alias Model =
     tags : List String
 
 
-rotate : List a -> List a
+rotate : List a → List a
 rotate xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             rest ++ [ x ]
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Rotate ->
+        Rotate →
             { model | rows = rotate model.rows }
 
-        Reverse ->
+        Reverse →
             { model | rows = List.reverse model.rows }
 
-        Relabel ->
+        Relabel →
             { model
                 | rows =
-                    List.map model.rows λrow -> if row.id == 2 then { row | label = "two" } else row
+                    List.map model.rows λrow → if row.id == 2 then { row | label = "two" } else row
             }
 
-        Duplicate ->
-            { model | tags = [ "a", ...model.tags ] }
+        Duplicate →
+            { model | tags = [ "a", …model.tags ] }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="rotate" onClick={Rotate}>rotate</button>
@@ -68,14 +68,14 @@ view model =
         <button id="duplicate" onClick={Duplicate}>duplicate</button>
         <ul id="keyed">
             <For each={model.rows} keyed={.id}>
-                {λrow -> <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}
+                {λrow → <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}
             </For>
         </ul>
         <ul id="position">
-            <For each={model.rows} keyed={False}>{λrow -> <li><input />{row.label}</li>}</For>
+            <For each={model.rows} keyed={False}>{λrow → <li><input />{row.label}</li>}</For>
         </ul>
         <ul id="tags">
-            <For each={model.tags} keyed={λtag -> tag}>{λtag -> <li>{tag}</li>}</For>
+            <For each={model.tags} keyed={λtag → tag}>{λtag → <li>{tag}</li>}</For>
         </ul>
     </main>
 

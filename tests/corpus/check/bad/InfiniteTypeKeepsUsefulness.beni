@@ -4,11 +4,11 @@
 -- and the `redundant_pattern` are reported.
 m =
     case List.foldr [] [] List.intersperse of
-        x ->
+        x →
             0
 
-        [ [ [] ] ] ->
+        [ [ [] ] ] →
             1
 
-        _ ->
+        _ →
             2

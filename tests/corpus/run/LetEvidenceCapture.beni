@@ -20,24 +20,24 @@ import Node exposing (Program)
 
 
 tallies u =
-    countEach xs = List.map xs λx -> List.foldl xs 0 λy n -> if x == y then n + 1 else n
+    countEach xs = List.map xs λx → List.foldl xs 0 λy n → if x == y then n + 1 else n
     ( countEach [ 1, 2, 1 ], countEach [ "b", "a", "b" ] )
 
 
 nested u =
     pairs xs =
         both a b = a == b && xs == xs
-        List.map xs λx -> both x x
+        List.map xs λx → both x x
     pairs [ 'a', 'b' ]
 
 
 loops u =
     go ys acc =
         case ys of
-            [] ->
+            [] →
                 acc
 
-            [ y, ...rest ] ->
+            [ y, …rest ] →
                 go rest (if y == y then acc + 1 else acc)
     ( go [ 1, 2, 3 ] 0, go [ "a" ] 0 )
 
@@ -45,18 +45,18 @@ loops u =
 mutual u =
     isIn x ys =
         case ys of
-            [] ->
+            [] →
                 False
 
-            [ y, ...rest ] ->
+            [ y, …rest ] →
                 y == x || notIn x rest
 
     notIn x ys =
         case ys of
-            [] ->
+            [] →
                 False
 
-            [ _, ...rest ] ->
+            [ _, …rest ] →
                 isIn x rest
     ( isIn 2 [ 1, 2 ], isIn "z" [ "a" ] )
 
@@ -66,7 +66,7 @@ values u =
     List.map [ ( 1, 2 ) ] twice ++ List.map [ "a" ] twice
 
 
-text : Bool -> String
+text : Bool → String
 text b =
     if b then
         "True"
@@ -74,7 +74,7 @@ text b =
         "False"
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) ","
 
 

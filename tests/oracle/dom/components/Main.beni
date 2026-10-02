@@ -21,7 +21,7 @@ template3 =
     </Component>
 
 
-pub template7 : Html msg -> Html msg
+pub template7 : Html msg → Html msg
 template7 dynamic =
     <Component>
         <div />

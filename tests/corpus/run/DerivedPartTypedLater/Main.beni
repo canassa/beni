@@ -10,7 +10,7 @@ import Node exposing (Program)
 import Plain
 
 
-inc : Int -> Int
+inc : Int → Int
 inc v = v + 1
 
 
@@ -19,7 +19,7 @@ pair left right =
     same
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

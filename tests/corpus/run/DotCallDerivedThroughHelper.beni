@@ -23,7 +23,7 @@ before x y = x.compare y == LT
 same x y = x.eq y
 
 
-yes : Bool -> String
+yes : Bool → String
 yes b =
     if b then
         "T"

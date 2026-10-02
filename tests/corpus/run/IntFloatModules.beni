@@ -8,7 +8,7 @@ import Node exposing (Program)
 import String
 
 
-pairs : List ( Int, Int )
+pairs : List (Int × Int)
 pairs =
     [ ( 7, 3 )
     , ( -7, 3 )
@@ -22,7 +22,7 @@ pairs =
     ]
 
 
-row : ( Int, Int ) -> String
+row : Int × Int → String
 row ( a, b ) =
     String.join
         [ String.fromInt a

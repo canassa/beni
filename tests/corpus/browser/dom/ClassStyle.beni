@@ -20,17 +20,17 @@ type alias Model =
     step : Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Next ->
+        Next →
             { model | step = model.step + 1 }
 
-        Back ->
+        Back →
             { model | step = model.step - 1 }
 
 
-classesAt : Int -> List ( String, Bool )
+classesAt : Int → List (String × Bool)
 classesAt step =
     if step == 0 then
         [ ( "row", True ), ( "gone", False ), ( "a  b", True ), ( "row", True ) ]
@@ -40,7 +40,7 @@ classesAt step =
         []
 
 
-stylesAt : Int -> List ( String, String )
+stylesAt : Int → List (String × String)
 stylesAt step =
     if step == 0 then
         [ ( "color", "red" )
@@ -56,17 +56,17 @@ stylesAt step =
 
 
 -- Everything but the first entry: a view of the list.
-rest : List a -> List a
+rest : List a → List a
 rest list =
     case list of
-        [ _, ...others ] ->
+        [ _, …others ] →
             others
 
-        [] ->
+        [] →
             []
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="next" onClick={Next}>next</button>
@@ -75,8 +75,8 @@ view model =
         <p id="s" style={stylesAt model.step}>styles</p>
         <p
             id="v"
-            class={rest [ ( "skip", True ), ...classesAt model.step ]}
-            style={rest [ ( "skip", "1px" ), ...stylesAt model.step ]}
+            class={rest [ ( "skip", True ), …classesAt model.step ]}
+            style={rest [ ( "skip", "1px" ), …stylesAt model.step ]}
         >
             views
         </p>

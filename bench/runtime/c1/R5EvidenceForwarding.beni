@@ -55,42 +55,42 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) λn -> Int.mod (n * 7919) 499
+values = List.map (List.range 1 500) λn → Int.mod (n * 7919) 499
 
 
 -- Level 3: the work. Everything it knows about `a` arrives as evidence.
-tally : List a, a -> Int
-    where a.compare : a, a -> Order
-tally xs mark = List.foldl xs 0 λx acc ->
+tally : List a, a → Int
+    where a.compare : a, a → Order
+tally xs mark = List.foldl xs 0 λx acc →
     case x.compare mark of
-        LT ->
+        LT →
             acc + 1
 
-        _ ->
+        _ →
             acc
 
 
 -- Level 2 and level 1: pure forwarding, which is the point. Each one is
 -- generic in `a` and so cannot know what `compare` is; each one forwards the
 -- obligation rather than a value it can see.
-level2 : List a, a -> Int
-    where a.compare : a, a -> Order
+level2 : List a, a → Int
+    where a.compare : a, a → Order
 level2 xs mark = tally xs mark
 
 
-level1 : List a, a -> Int
-    where a.compare : a, a -> Order
+level1 : List a, a → Int
+    where a.compare : a, a → Order
 level1 xs mark = level2 xs mark
 
 
 -- Where the ordering is chosen. In C0 this builds two closures; here it
 -- discharges one obligation with `Int`'s own `compare` and calls.
-tallyBy : List Int, Int -> Int
+tallyBy : List Int, Int → Int
 tallyBy xs mark = level1 xs mark
 
 
 main : Program
 main =
-    total = List.foldl (List.range 1 outerReps) 0 λ_ acc ->
-        List.foldl (List.range 1 innerReps) acc λ_ n -> n + tallyBy values pivot
+    total = List.foldl (List.range 1 outerReps) 0 λ_ acc →
+        List.foldl (List.range 1 innerReps) acc λ_ n → n + tallyBy values pivot
     Node.print (String.fromInt total)

@@ -23,16 +23,16 @@ pub type Signal
     | Go Int
 
 
-pub describe : Signal -> String
+pub describe : Signal → String
 describe s =
     case s of
-        Red ->
+        Red →
             "stop"
 
-        Amber ->
+        Amber →
             "wait"
 
-        Go _ ->
+        Go _ →
             "go"
 
 

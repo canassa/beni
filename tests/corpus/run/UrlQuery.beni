@@ -17,36 +17,36 @@ type alias Three =
     sort : Maybe Order
 
 
-run : Query.Parser a, String -> Maybe a
+run : Query.Parser a, String → Maybe a
 run parser query =
     case Url.fromString ("https://example.com/?" ++ query) of
-        Just url ->
+        Just url →
             Url.Parser.parse (Url.Parser.query parser) url
 
-        Nothing ->
+        Nothing →
             Nothing
 
 
-str : String, String -> String
+str : String, String → String
 str key query =
     case run (Query.string key) query of
-        Just (Just text) ->
+        Just (Just text) →
             "${query}: [${text}]"
 
-        Just Nothing ->
+        Just Nothing →
             "${query}: Nothing"
 
-        Nothing ->
+        Nothing →
             "${query}: no parse"
 
 
-int : String, String -> String
+int : String, String → String
 int key query =
     case run (Query.int key) query of
-        Just (Just n) ->
+        Just (Just n) →
             "${query}: ${String.fromInt n}"
 
-        _ ->
+        _ →
             "${query}: Nothing"
 
 
@@ -54,42 +54,42 @@ sorts : Query.Parser (Maybe Order)
 sorts = Query.enum "sort" (Dict.fromList [ ( "asc", LT ), ( "desc", GT ) ])
 
 
-showOrder : Maybe Order -> String
+showOrder : Maybe Order → String
 showOrder o =
     case o of
-        Just LT ->
+        Just LT →
             "asc"
 
-        Just GT ->
+        Just GT →
             "desc"
 
-        _ ->
+        _ →
             "-"
 
 
-all : String -> String
+all : String → String
 all query =
-    case run (Query.custom "tag" λvalues -> String.join values ",") query of
-        Just text ->
+    case run (Query.custom "tag" λvalues → String.join values ",") query of
+        Just text →
             "${query}: [${text}]"
 
-        Nothing ->
+        Nothing →
             "${query}: no parse"
 
 
-orDash : Maybe String -> String
+orDash : Maybe String → String
 orDash m = Maybe.withDefault m "-"
 
 
-three : String -> String
+three : String → String
 three query =
     case run (Query.map3 (Query.string "q") (Query.int "page") sorts Three) query of
-        Just t ->
+        Just t →
             String.join
                 [ orDash t.q, orDash (Maybe.map t.page String.fromInt), showOrder t.sort ]
                 " "
 
-        Nothing ->
+        Nothing →
             "no parse"
 
 
@@ -112,19 +112,19 @@ main =
         , int "page" "page=2&page=3"
         , all "tag=a&x=1&tag=b&tag=c"
         , all "x=1"
-        , showOrder (Maybe.andThen (run sorts "sort=desc") λs -> s)
-        , showOrder (Maybe.andThen (run sorts "sort=sideways") λs -> s)
+        , showOrder (Maybe.andThen (run sorts "sort=desc") λs → s)
+        , showOrder (Maybe.andThen (run sorts "sort=sideways") λs → s)
         , three "q=hat&page=3&sort=asc"
         , three "page=x"
         , Maybe.withDefault
             (Maybe.map
-                (run (Query.map (Query.int "n") λn -> Maybe.withDefault n 0 + 1) "n=41")
+                (run (Query.map (Query.int "n") λn → Maybe.withDefault n 0 + 1) "n=41")
                 String.fromInt
             )
             "no parse"
         , Maybe.withDefault
             (run
-                (Query.map2 (Query.string "a") (Query.string "b") λa b -> orDash a ++ orDash b)
+                (Query.map2 (Query.string "a") (Query.string "b") λa b → orDash a ++ orDash b)
                 "b=2&a=1"
             )
             "no parse"
@@ -135,7 +135,7 @@ main =
                     (Query.string "b")
                     (Query.string "c")
                     (Query.string "d")
-                    λa b c d -> String.join (List.map [ a, b, c, d ] orDash) ""
+                    λa b c d → String.join (List.map [ a, b, c, d ] orDash) ""
                 )
                 "d=4&b=2&a=1"
             )

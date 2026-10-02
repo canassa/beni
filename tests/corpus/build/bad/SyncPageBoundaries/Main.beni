@@ -22,24 +22,24 @@ type alias Model =
     keys : List String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Typed s ->
+        Typed s →
             { model | draft = s }
 
-        Saved key ->
+        Saved key →
             { model | draft = Net.load key }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
-        <input onInput={λs -> Typed (Net.load s)} />
+        <input onInput={λs → Typed (Net.load s)} />
         <ul>
-            <For each={model.keys} keyed={λk -> k}>{λk -> <li>{Net.load k}</li>}</For>
+            <For each={model.keys} keyed={λk → k}>{λk → <li>{Net.load k}</li>}</For>
         </ul>
-        {Html.map (<p>{model.draft}</p>) λm -> Saved (Net.load "last")}
+        {Html.map (<p>{model.draft}</p>) λm → Saved (Net.load "last")}
     </main>
 
 

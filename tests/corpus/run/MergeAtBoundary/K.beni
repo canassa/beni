@@ -3,5 +3,5 @@ pub type K
     = K Int
 
 
-pub eq : K, K -> Bool
+pub eq : K, K → Bool
 eq (K a) (K b) = Int.mod a 10 == Int.mod b 10

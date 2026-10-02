@@ -1,4 +1,4 @@
 -- check/args: `${…}` takes a value, and this one is a function that has not
 -- been applied yet.
-pub label : Int -> String
+pub label : Int → String
 label n = "n = ${String.fromInt}"

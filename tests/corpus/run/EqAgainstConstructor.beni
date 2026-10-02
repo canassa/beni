@@ -37,7 +37,7 @@ parsed : Result String Int
 parsed = Ok 1
 
 
-yes : String, Bool -> String
+yes : String, Bool → String
 yes name b =
     if b then
         "${name}: yes"
@@ -53,7 +53,7 @@ main =
         , yes "nothing against just" (none == Just 3)
         , yes "just against nothing" (selected == Nothing)
         , yes "nothing" (none == Nothing)
-        , yes "not equal" (selected /= Just 3)
+        , yes "not equal" (selected ≠ Just 3)
         , yes "constructor on the left" (Just 3 == selected)
         , yes "both constructors" (Just (Just 2) == Just (Just 2))
         , yes "nested, inner differs" (Just selected == Just (Just 4))

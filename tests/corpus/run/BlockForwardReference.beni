@@ -8,7 +8,7 @@ import Node exposing (Program)
 import String
 
 
-parity : Int -> String
+parity : Int → String
 parity n =
     step = 1
     answer = describe n

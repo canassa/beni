@@ -17,36 +17,36 @@ type Msg
     | ByRecord Int
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        ByTuple id ->
+        ByTuple id →
             ( n + 1
             , Cmd.keyed ( "row", id ) Cmd.Restart (work "tuple ${String.fromInt (n + 1)}" _)
             )
 
-        ByRecord id ->
+        ByRecord id →
             ( n + 1
             , Cmd.keyed { row = id } Cmd.Restart (work "record ${String.fromInt (n + 1)}" _)
             )
 
 
-work : String, Cmd.Send Msg -> ()
+work : String, Cmd.Send Msg → ()
 work name _ =
     Task.bracket
-        (λ() -> ())
-        (λ_ exit ->
+        (λ() → ())
+        (λ_ exit →
             case exit of
-                Done _ ->
+                Done _ →
                     Debug.log "${name} done" ()
 
-                Cancelled ->
+                Cancelled →
                     Debug.log "${name} cancelled" ()
         )
-        λ_ -> Time.sleep (Time.millis 100)
+        λ_ → Time.sleep (Time.millis 100)
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view _ =
     <main>
         <button id="tuple" onClick={ByTuple 7}>tuple</button>
@@ -60,5 +60,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

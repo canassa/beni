@@ -6,38 +6,38 @@ import Schema
 import String
 
 
-conversionIssue : Schema.Context, String -> List Schema.Issue
+conversionIssue : Schema.Context, String → List Schema.Issue
 conversionIssue context message = [ Schema.issue context (Schema.Invalid "decimal_text") message ]
 
 
 numericText : Schema.Schema String Int
 numericText =
     Schema.transform Schema.string Schema.int.decoded
-        (λcontext text ->
+        (λcontext text →
             case String.toInt text of
-                Nothing ->
+                Nothing →
                     Err (conversionIssue context "expected decimal integer text")
-                Just value ->
+                Just value →
                     Ok value
         )
-        λ_ value -> Ok (String.fromInt value)
+        λ_ value → Ok (String.fromInt value)
 
 
-pub run : Int -> Int
+pub run : Int → Int
 run iterations = loop iterations 0
 
 
-loop : Int, Int -> Int
+loop : Int, Int → Int
 loop left checksum =
-    if left <= 0 then
+    if left ≤ 0 then
         checksum
     else
         case Schema.decode numericText "42" of
-            Err _ ->
+            Err _ →
                 -1
-            Ok value ->
+            Ok value →
                 case Schema.encode numericText value of
-                    Err _ ->
+                    Err _ →
                         -2
-                    Ok text ->
+                    Ok text →
                         loop (left - 1) (checksum + value + String.length text)

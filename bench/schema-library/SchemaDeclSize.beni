@@ -22,10 +22,10 @@ main =
     case
         User.parse
             "{\"user-id\":2,\"display-name\":\"Ada\",\"email\":\"ada@example.test\",\"age\":36,\"active\":true,\"score\":0.5,\"role\":\"editor\"}"
-            |> Result.andThen User.print
+            ▷ Result.andThen User.print
     of
-        Ok text ->
+        Ok text →
             Node.print text
 
-        Err issues ->
-            Node.exitWith (String.join (List.map issues λi -> i.message) "\n") 1
+        Err issues →
+            Node.exitWith (String.join (List.map issues λi → i.message) "\n") 1

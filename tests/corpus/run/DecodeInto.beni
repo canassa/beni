@@ -35,24 +35,24 @@ pub type Tag
     = Tag String
 
 
-pub fromList : List Char -> Tag
+pub fromList : List Char → Tag
 fromList chars = Tag (String.fromList chars)
 
 
-pub label : Tag -> String
+pub label : Tag → String
 label t =
     case t of
-        Tag s ->
+        Tag s →
             s
 
 
-decodeInto : String -> a
-    where a.fromList : List Char -> a
+decodeInto : String → a
+    where a.fromList : List Char → a
 decodeInto s = a.fromList (String.toList s)
 
 
-decodeTwo : String, String -> ( a, a )
-    where a.fromList : List Char -> a
+decodeTwo : String, String → a × a
+    where a.fromList : List Char → a
 decodeTwo x y = ( decodeInto x, decodeInto y )
 
 
@@ -64,7 +64,7 @@ asString : String
 asString = decodeInto "str"
 
 
-pair : ( Tag, Tag )
+pair : Tag × Tag
 pair = decodeTwo "one" "two"
 
 
@@ -74,14 +74,14 @@ later =
     label t
 
 
-sameNum : number, number -> Bool
+sameNum : number, number → Bool
 sameNum x y = number.eq x y
 
 
 pairLabels : String
 pairLabels =
     case pair of
-        ( x, y ) ->
+        ( x, y ) →
             label x ++ "/" ++ label y
 
 

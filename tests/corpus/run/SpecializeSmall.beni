@@ -14,40 +14,40 @@
 import Node
 
 
-identity : a -> a
+identity : a → a
 identity x = x
 
 
-wrap : Int -> Int
+wrap : Int → Int
 wrap n = twice n + 1
 
 
-twice : Int -> Int
+twice : Int → Int
 twice n = Debug.log "twice" n * 2
 
 
-addThen : Int, Int -> Int
+addThen : Int, Int → Int
 addThen a b = a + twice b
 
 
-thenAdd : Int, Int -> Int
+thenAdd : Int, Int → Int
 thenAdd a b = twice a + b
 
 
-both : Int -> Int
+both : Int → Int
 both n = n * n
 
 
-ignore : Int -> Int
+ignore : Int → Int
 ignore _ = 0
 
 
 type alias Op =
     name : String
-    apply : Int -> Int
+    apply : Int → Int
 
 
-apply : Op, Int -> Int
+apply : Op, Int → Int
 apply op n = op.apply n
 
 

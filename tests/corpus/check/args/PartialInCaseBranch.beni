@@ -1,10 +1,10 @@
 -- check/args: one branch of a `case` forgot an argument, so the branches
 -- disagree about whether the result is a function.
-pub pick : Bool, Int -> Int
+pub pick : Bool, Int → Int
 pick flag n =
     case flag of
-        True ->
+        True →
             n
 
-        False ->
+        False →
             max n

@@ -14,28 +14,28 @@ type K
 
 
 pub ma (K n) u =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         (K (n - 1)).mb () + 1
 
 
 pub mb (K n) u =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         (K (n - 1)).mc () + 10
 
 
 pub mc (K n) u =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         (K (n - 1)).md () + 100
 
 
 pub md (K n) u =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         (K (n - 1)).ma () + 1000

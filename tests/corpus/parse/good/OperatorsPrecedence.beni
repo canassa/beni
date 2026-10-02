@@ -3,10 +3,10 @@
 leftMinus a b c = a - b - c
 
 
-rightApply f g x = f <| g <| x
+rightApply f g x = f ◁ g ◁ x
 
 
-leftPipe f g x = x |> f |> g
+leftPipe f g x = x ▷ f ▷ g
 
 
 rightPow a b c = a ^ b ^ c
@@ -18,7 +18,7 @@ notAnd a b c = not (a == b) && c
 mulOverAdd a b c = a + b * c
 
 
-spreadOverAppend a b c = [ ...a ++ b, c ]
+spreadOverAppend a b c = [ …a ++ b, c ]
 
 
 orOverAnd a b c = a || b && c
@@ -27,7 +27,7 @@ orOverAnd a b c = a || b && c
 comparisonOverAppend a b c d = a ++ b == c ++ d
 
 
-pipeLowest f x y = x + y |> f
+pipeLowest f x y = x + y ▷ f
 
 
 powOverMul a b c = a * b ^ c

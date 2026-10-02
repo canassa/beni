@@ -4,7 +4,7 @@
 -- decision — keyword alignment, body indentation — has to be made on the
 -- real widths.
 withIf a =
-    x <- Result.andThen
+    x ← Result.andThen
         (if a then
             someLongFunctionName a
          else
@@ -15,7 +15,7 @@ withIf a =
 
 
 withBlock a =
-    x <- Result.andThen
+    x ← Result.andThen
         (
             y = someLongFunctionName a
             y
@@ -25,11 +25,11 @@ withBlock a =
 
 
 withCase a =
-    x <- Result.andThen
+    x ← Result.andThen
         (case a of
-            Ok v ->
+            Ok v →
                 v
-            Err e ->
+            Err e →
                 e
         )
         extra
@@ -38,5 +38,5 @@ withCase a =
 
 -- No block keyword: the author's line breaks still collapse.
 noBlock a =
-    x <- Result.andThen (readTheHeader a) extra
+    x ← Result.andThen (readTheHeader a) extra
     x

@@ -28,7 +28,7 @@ type alias Step =
     verdict : Order
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -43,9 +43,9 @@ main =
         , show (GT < LT)
         , show (LT < EQ)
         , show (EQ < GT)
-        , show (GT <= GT)
+        , show (GT ≤ GT)
         , show (LT == LT)
-        , show (LT /= GT)
+        , show (LT ≠ GT)
         , show ({ name = "a", verdict = LT } < { name = "a", verdict = GT })
         , show ({ name = "a", verdict = GT } < { name = "a", verdict = LT })
         , show ({ name = "a", verdict = EQ } == { name = "a", verdict = EQ })

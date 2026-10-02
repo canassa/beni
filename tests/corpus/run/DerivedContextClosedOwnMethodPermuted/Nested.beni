@@ -10,7 +10,7 @@ pub type W
     = W (H.Holder T)
 
 
-pub same : Int, Int -> Bool
+pub same : Int, Int → Bool
 same a b = W (H.Holder (T a)) == W (H.Holder (T b))
 
 

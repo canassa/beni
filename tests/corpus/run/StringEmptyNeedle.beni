@@ -28,7 +28,7 @@ import Node exposing (Program)
 import String
 
 
-yesNo : Bool -> String
+yesNo : Bool → String
 yesNo b =
     if b then
         "yes"
@@ -36,9 +36,9 @@ yesNo b =
         "no"
 
 
-shown : List String -> String
+shown : List String → String
 shown xs =
-    String.fromInt (List.length xs) ++ ":" ++ String.join (List.map xs λx -> "<" ++ x ++ ">") ","
+    String.fromInt (List.length xs) ++ ":" ++ String.join (List.map xs λx → "<" ++ x ++ ">") ","
 
 
 main : Program

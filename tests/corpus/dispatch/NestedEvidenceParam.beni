@@ -9,20 +9,20 @@ pub type Box a
     = Box a a
 
 
-pub same : List (List (Box a)), List (List (Box a)) -> Bool
-    where a.eq : a, a -> Bool
+pub same : List (List (Box a)), List (List (Box a)) → Bool
+    where a.eq : a, a → Bool
 same xs ys = xs == ys
 
 
-wrap : a -> List (List (Box a))
+wrap : a → List (List (Box a))
 wrap x = [ [ Box x x ] ]
 
 
 sameInferred x y = wrap x == wrap y
 
 
-pub sameNested : Box a, Box a -> Bool
-    where a.eq : a, a -> Bool
+pub sameNested : Box a, Box a → Bool
+    where a.eq : a, a → Bool
 sameNested x y = same (wrap x) (wrap y) && sameInferred x y
 
 

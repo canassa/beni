@@ -3,10 +3,10 @@
 -- into scope, so `later` is still a forward reference there (§7) and not an
 -- unknown name. The outer bind's forward set has to survive the inner one.
 f g h =
-    a <-
+    a ←
         g
             (
-                b <- h later
+                b ← h later
                 b
             )
     later = 1

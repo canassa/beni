@@ -21,36 +21,36 @@ pub init : Model
 init = { count = 0, history = [] }
 
 
-pub update : Msg, Model -> Model
+pub update : Msg, Model → Model
 update msg model =
     case msg of
-        Increment ->
+        Increment →
             step 1 model
 
-        Decrement ->
+        Decrement →
             step (-1) model
 
-        Reset ->
+        Reset →
             init
 
 
-step : Int, Model -> Model
+step : Int, Model → Model
 step delta model =
     { model
         | count = model.count + delta
-        , history = [ model.count, ...model.history ]
+        , history = [ model.count, …model.history ]
     }
 
 
-pub view : Model -> Element Msg
+pub view : Model → Element Msg
 view model =
     label = "Count: ${model.count}"
 
     recent =
         model.history
-            |> List.take 5
-            |> List.map String.fromInt
-            |> String.join ", "
+            ▷ List.take 5
+            ▷ List.map String.fromInt
+            ▷ String.join ", "
     column
         [ button "-" Decrement
         , text label

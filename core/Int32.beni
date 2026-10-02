@@ -91,7 +91,7 @@ pub equatable foreign type Int32
 --| is truncated towards zero, and a NaN or an infinity is `zero`.
 --|
 --|     toInt (fromInt (truncate 3.7)) == 3
-pub fromInt : Int -> Int32
+pub fromInt : Int → Int32
 fromInt n = Js.to (Js.from (Js.bitOr n 0))
 
 
@@ -103,7 +103,7 @@ fromInt n = Js.to (Js.from (Js.bitOr n 0))
 --|     toInt (fromInt 0xffffffff) == -1
 --|
 --| This never loses anything: every 32-bit value fits an `Int` exactly.
-pub toInt : Int32 -> Int
+pub toInt : Int32 → Int
 toInt x = Js.to (Js.from x)
 
 
@@ -117,7 +117,7 @@ toInt x = Js.to (Js.from x)
 --| Hash functions, checksums and binary formats are published in unsigned
 --| terms, so this is what you print a result with when you want to compare
 --| it against someone else's test vectors.
-pub toUnsignedInt : Int32 -> Int
+pub toUnsignedInt : Int32 → Int
 toUnsignedInt x = Js.shiftRightZero (toInt x) 0
 
 
@@ -126,7 +126,7 @@ toUnsignedInt x = Js.shiftRightZero (toInt x) 0
 --|     toInt (add (fromInt 1) (fromInt 2)) == 3
 --|     add maxValue one == minValue
 --|     add minValue (fromInt (-1)) == maxValue
-pub add : Int32, Int32 -> Int32
+pub add : Int32, Int32 → Int32
 add a b = fromInt (toInt a + toInt b)
 
 
@@ -135,7 +135,7 @@ add a b = fromInt (toInt a + toInt b)
 --|     toInt (sub (fromInt 3) (fromInt 1)) == 2
 --|     sub minValue one == maxValue
 --|     sub maxValue (fromInt (-1)) == minValue
-pub sub : Int32, Int32 -> Int32
+pub sub : Int32, Int32 → Int32
 sub a b = fromInt (toInt a - toInt b)
 
 
@@ -152,8 +152,8 @@ sub a b = fromInt (toInt a - toInt b)
 --|     toInt (mul maxValue maxValue) == 1
 --|     toInt (mul (fromInt 123456789) (fromInt 987654321)) == -67153019
 --|     mul minValue (fromInt (-1)) == minValue
-pub mul : Int32, Int32 -> Int32
-mul a b = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ])
+pub mul : Int32, Int32 → Int32
+mul a b = Js.pure λ() → Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ])
 
 
 --| Integer division, truncated towards zero. **Division by zero is `zero`**,
@@ -169,7 +169,7 @@ mul a b = Js.pure λ() -> Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, 
 --| else here.
 --|
 --|     div minValue (fromInt (-1)) == minValue
-pub div : Int32, Int32 -> Int32
+pub div : Int32, Int32 → Int32
 div a b =
     if toInt b == 0 then
         Js.to (Js.from 0)
@@ -184,7 +184,7 @@ div a b =
 --|     toInt (rem (fromInt (-7)) (fromInt 3)) == -1
 --|     rem (fromInt 7) zero == zero
 --|     rem minValue (fromInt (-1)) == zero
-pub rem : Int32, Int32 -> Int32
+pub rem : Int32, Int32 → Int32
 rem a b =
     if toInt b == 0 then
         Js.to (Js.from 0)
@@ -199,7 +199,7 @@ rem a b =
 --|     toInt (mod (fromInt 7) (fromInt 3)) == 1
 --|     toInt (mod (fromInt (-7)) (fromInt 3)) == 2
 --|     mod (fromInt 7) zero == zero
-pub mod : Int32, Int32 -> Int32
+pub mod : Int32, Int32 → Int32
 mod a b =
     if toInt b == 0 then
         Js.to (Js.from 0)
@@ -211,7 +211,7 @@ mod a b =
 --|
 --|     toInt (and (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0x0f000f00
 --|     and (fromInt 0xdeadbeef) zero == zero
-pub and : Int32, Int32 -> Int32
+pub and : Int32, Int32 → Int32
 and a b = Js.to (Js.from (Js.bitAnd (toInt a) (toInt b)))
 
 
@@ -219,7 +219,7 @@ and a b = Js.to (Js.from (Js.bitAnd (toInt a) (toInt b)))
 --|
 --|     toUnsignedInt (or (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xff0fff0f
 --|     or (fromInt 0xdeadbeef) zero == fromInt 0xdeadbeef
-pub or : Int32, Int32 -> Int32
+pub or : Int32, Int32 → Int32
 or a b = Js.to (Js.from (Js.bitOr (toInt a) (toInt b)))
 
 
@@ -227,7 +227,7 @@ or a b = Js.to (Js.from (Js.bitOr (toInt a) (toInt b)))
 --|
 --|     toUnsignedInt (xor (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xf00ff00f
 --|     xor (fromInt 0xdeadbeef) (fromInt 0xdeadbeef) == zero
-pub xor : Int32, Int32 -> Int32
+pub xor : Int32, Int32 → Int32
 xor a b = Js.to (Js.from (Js.bitXor (toInt a) (toInt b)))
 
 
@@ -239,7 +239,7 @@ xor a b = Js.to (Js.from (Js.bitXor (toInt a) (toInt b)))
 --|     shiftLeft one 31 == minValue
 --|     shiftLeft one 32 == one
 --|     shiftLeft one 33 == fromInt 2
-pub shiftLeft : Int32, Int -> Int32
+pub shiftLeft : Int32, Int → Int32
 shiftLeft x count = Js.to (Js.from (Js.shiftLeft (toInt x) count))
 
 
@@ -249,7 +249,7 @@ shiftLeft x count = Js.to (Js.from (Js.shiftLeft (toInt x) count))
 --|     toInt (shiftRight (fromInt 16) 4) == 1
 --|     toInt (shiftRight (fromInt (-16)) 4) == -1
 --|     shiftRight (fromInt (-1)) 31 == fromInt (-1)
-pub shiftRight : Int32, Int -> Int32
+pub shiftRight : Int32, Int → Int32
 shiftRight x count = Js.to (Js.from (Js.shiftRight (toInt x) count))
 
 
@@ -266,7 +266,7 @@ shiftRight x count = Js.to (Js.from (Js.shiftRight (toInt x) count))
 --| of 0 is therefore the identity rather than a conversion.
 --|
 --|     shiftRightZero (fromInt (-1)) 0 == fromInt (-1)
-pub shiftRightZero : Int32, Int -> Int32
+pub shiftRightZero : Int32, Int → Int32
 shiftRightZero x count = fromInt (Js.shiftRightZero (toInt x) count)
 
 
@@ -307,7 +307,7 @@ maxValue = fromInt 2147483647
 --|     toInt (neg (fromInt 42)) == -42
 --|     neg zero == zero
 --|     neg minValue == minValue
-pub neg : Int32 -> Int32
+pub neg : Int32 → Int32
 neg n = sub zero n
 
 
@@ -317,7 +317,7 @@ neg n = sub zero n
 --|     toInt (complement zero) == -1
 --|     toInt (complement (fromInt 0x0f0f0f0f)) == -252645136
 --|     complement (complement (fromInt 12345)) == fromInt 12345
-pub complement : Int32 -> Int32
+pub complement : Int32 → Int32
 complement n = xor n (fromInt (-1))
 
 
@@ -330,7 +330,7 @@ complement n = xor n (fromInt (-1))
 --|     rotateLeft (fromInt 0x12345678) 8 == fromInt 0x34567812
 --|     rotateLeft (fromInt 12345) 0 == fromInt 12345
 --|     rotateLeft (fromInt 12345) 32 == fromInt 12345
-pub rotateLeft : Int32, Int -> Int32
+pub rotateLeft : Int32, Int → Int32
 rotateLeft n count = or (shiftLeft n count) (shiftRightZero n (32 - count))
 
 
@@ -340,7 +340,7 @@ rotateLeft n count = or (shiftLeft n count) (shiftRightZero n (32 - count))
 --|     rotateRight one 1 == minValue
 --|     rotateRight (fromInt 0x12345678) 8 == fromInt 0x78123456
 --|     rotateRight (fromInt 12345) 0 == fromInt 12345
-pub rotateRight : Int32, Int -> Int32
+pub rotateRight : Int32, Int → Int32
 rotateRight n count = or (shiftRightZero n count) (shiftLeft n (32 - count))
 
 
@@ -351,7 +351,7 @@ rotateRight n count = or (shiftRightZero n count) (shiftLeft n (32 - count))
 --|     eq (fromInt 5) (fromInt 5) == True
 --|     eq (fromInt 5) (fromInt 6) == False
 --|     eq (fromInt 4294967296) zero == True
-pub eq : Int32, Int32 -> Bool
+pub eq : Int32, Int32 → Bool
 eq a b = toInt a == toInt b
 
 
@@ -367,5 +367,5 @@ eq a b = toInt a == toInt b
 --| Signed, not unsigned: `fromInt 0xffffffff` is -1 and sorts below `zero`,
 --| however you print it. Sort a hash table by `toUnsignedInt` when you want
 --| the other order.
-pub compare : Int32, Int32 -> Order
+pub compare : Int32, Int32 → Order
 compare a b = Basics.compare (toInt a) (toInt b)

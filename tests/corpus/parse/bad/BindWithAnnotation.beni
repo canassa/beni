@@ -2,5 +2,5 @@
 -- definition, and a `<-` binding is not one (§6.7).
 f g =
     x : Int
-    x <- g 1
+    x ← g 1
     x

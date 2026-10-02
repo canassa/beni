@@ -26,5 +26,5 @@ f m =
 eq (K a) (K b) = Int.mod 10 a == Int.mod 10 b
 
 
-pub h : Result String K -> Result String Int
+pub h : Result String K → Result String Int
 h m = f m

@@ -4,5 +4,5 @@ pub type alias Settings =
     retries : Int
 
 
-pub attempts : Settings -> Int
+pub attempts : Settings → Int
 attempts s = s.retries 2

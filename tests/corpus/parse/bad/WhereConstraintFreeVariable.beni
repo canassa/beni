@@ -4,6 +4,6 @@
 -- canonical evidence order (§7.2) and are refused here rather than
 -- silently disagreed about at the first call. One message per offending
 -- variable, at its first occurrence.
-pub total : List a -> a
-    where a.fold : a, (x, s -> s), s -> s
+pub total : List a → a
+    where a.fold : a, (x, s → s), s → s
 total xs = xs

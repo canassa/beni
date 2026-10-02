@@ -3,6 +3,6 @@
 -- it is not a local, a top-level value, an exposed name or a prelude value
 -- — and it names a variable of this declaration's own clause, so the
 -- application dispatches on the TYPE and is not a field access on a value.
-pub decode : String -> Result String a
-    where a.decode : String -> Result String a
+pub decode : String → Result String a
+    where a.decode : String → Result String a
 decode s = a.decode s

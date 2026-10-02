@@ -3,9 +3,9 @@
 -- `f` returns it as a `String`; `g` reads the same field of an extensible
 -- record. The message names the field and shows its type against the needed
 -- one, never "This is not a record with a `count` field".
-f : { count : Int } -> String
+f : { count : Int } → String
 f x = x.count
 
 
-g : { r | count : Int } -> String
+g : { r | count : Int } → String
 g x = x.count

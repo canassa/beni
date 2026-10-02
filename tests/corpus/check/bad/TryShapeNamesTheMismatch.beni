@@ -6,9 +6,9 @@
 -- `Result` or a `Maybe`, and this is neither: `Maybe Int`" (or
 -- `Result Int Int`).
 
-fromMaybe : Maybe Int -> Result String Int
+fromMaybe : Maybe Int → Result String Int
 fromMaybe m = Ok (m? + 1)
 
 
-otherError : Result Int Int -> Result String Int
+otherError : Result Int Int → Result String Int
 otherError r = Ok (r? + 1)

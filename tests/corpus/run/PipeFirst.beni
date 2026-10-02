@@ -11,22 +11,22 @@ import Node exposing (Program)
 import String
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
-double : Int -> Int
+double : Int → Int
 double n = n * 2
 
 
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (10 |> subtract 3)
-        , String.fromInt (10 |> double)
-        , String.fromInt (10 |> (subtract 3))
-        , String.fromInt (10 |> subtract 3 |> subtract 2)
-        , String.fromInt (subtract 10 <| 3)
-        , String.fromInt ((10 |> subtract _) 3)
-        , [ 3, 1, 2 ] |> List.sort |> List.map String.fromInt |> String.join ","
+        [ String.fromInt (10 ▷ subtract 3)
+        , String.fromInt (10 ▷ double)
+        , String.fromInt (10 ▷ (subtract 3))
+        , String.fromInt (10 ▷ subtract 3 ▷ subtract 2)
+        , String.fromInt (subtract 10 ◁ 3)
+        , String.fromInt ((10 ▷ subtract _) 3)
+        , [ 3, 1, 2 ] ▷ List.sort ▷ List.map String.fromInt ▷ String.join ","
         ]

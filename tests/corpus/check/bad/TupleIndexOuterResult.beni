@@ -5,7 +5,7 @@
 -- but the wrong code, and never a clean check that runs `String.length`
 -- on a number.
 
-snd : ( Int, Int ) -> Int
+snd : Int × Int → Int
 snd ( _, b ) = b
 
 

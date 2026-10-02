@@ -64,28 +64,28 @@ pub type Shape
     | ListShape Shape
     | OptionalShape Shape
     | RefinedShape String Shape
-    | ObjectShape (List ( String, Shape ))
+    | ObjectShape (List (String × Shape))
     | UnionShape (List Shape)
     | ReferenceShape String
 
 
 pub type alias Description =
     root : Shape
-    definitions : List ( String, Shape )
+    definitions : List (String × Shape)
 
 
 pub type alias Endpoint a =
     description : Description
-    readValue : Context, Value -> Result (List Issue) a
-    writeValue : Context, a -> Result (List Issue) Value
-    validate : Context, a -> Result (List Issue) ()
+    readValue : Context, Value → Result (List Issue) a
+    writeValue : Context, a → Result (List Issue) Value
+    validate : Context, a → Result (List Issue) ()
 
 
 pub type alias Schema e a =
     encoded : Endpoint e
     decoded : Endpoint a
-    decodeValue : Context, e -> Result (List Issue) a
-    encodeValue : Context, a -> Result (List Issue) e
+    decodeValue : Context, e → Result (List Issue) a
+    encodeValue : Context, a → Result (List Issue) e
 
 
 pub type Presence a
@@ -101,10 +101,10 @@ pub type Nullable a
 pub type alias Field a =
     key : String
     shape : Shape
-    definitions : List ( String, Shape )
-    readField : Context, List ( String, Value ) -> Result (List Issue) a
-    writeField : Context, a -> Result (List Issue) (List ( String, Value ))
-    validateField : Context, a -> Result (List Issue) ()
+    definitions : List (String × Shape)
+    readField : Context, List (String × Value) → Result (List Issue) a
+    writeField : Context, a → Result (List Issue) (List (String × Value))
+    validateField : Context, a → Result (List Issue) ()
 
 
 pub defaultOptions : Options
@@ -115,16 +115,16 @@ defaultOptions =
     }
 
 
-rootContext : Options, Direction -> Context
+rootContext : Options, Direction → Context
 rootContext options direction = { options = options, path = [], depth = 0, direction = direction }
 
 
 pub endpoint :
       Description
-    , (Context, Value -> Result (List Issue) a)
-    , (Context, a -> Result (List Issue) Value)
-    , (Context, a -> Result (List Issue) ())
-    -> Endpoint a
+    , (Context, Value → Result (List Issue) a)
+    , (Context, a → Result (List Issue) Value)
+    , (Context, a → Result (List Issue) ())
+    → Endpoint a
 endpoint description readValue writeValue validate =
     { description = description
     , readValue = readValue
@@ -136,9 +136,9 @@ endpoint description readValue writeValue validate =
 pub make :
       Endpoint e
     , Endpoint a
-    , (Context, e -> Result (List Issue) a)
-    , (Context, a -> Result (List Issue) e)
-    -> Schema e a
+    , (Context, e → Result (List Issue) a)
+    , (Context, a → Result (List Issue) e)
+    → Schema e a
 make encoded decoded decodeValue encodeValue =
     { encoded = encoded
     , decoded = decoded
@@ -147,123 +147,123 @@ make encoded decoded decodeValue encodeValue =
     }
 
 
-pub fromEndpoint : Endpoint a -> Schema a a
-fromEndpoint item = make item item (λ_ value -> Ok value) λ_ value -> Ok value
+pub fromEndpoint : Endpoint a → Schema a a
+fromEndpoint item = make item item (λ_ value → Ok value) λ_ value → Ok value
 
 
-pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
+pub decodeWith : Options, Schema e a, e → Result (List Issue) a
 decodeWith options schema value =
     context = rootContext options Decoding
-    _ <- Result.andThen (schema.encoded.validate context value)
-    decodedValue <- Result.andThen (schema.decodeValue context value)
-    _ <- Result.andThen (schema.decoded.validate context decodedValue)
+    _ ← Result.andThen (schema.encoded.validate context value)
+    decodedValue ← Result.andThen (schema.decodeValue context value)
+    _ ← Result.andThen (schema.decoded.validate context decodedValue)
     Ok decodedValue
 
 
-pub decode : Schema e a, e -> Result (List Issue) a
+pub decode : Schema e a, e → Result (List Issue) a
 decode schema value = decodeWith defaultOptions schema value
 
 
-pub encodeWith : Options, Schema e a, a -> Result (List Issue) e
+pub encodeWith : Options, Schema e a, a → Result (List Issue) e
 encodeWith options schema value =
     context = rootContext options Encoding
-    _ <- Result.andThen (schema.decoded.validate context value)
-    encodedValue <- Result.andThen (schema.encodeValue context value)
-    _ <- Result.andThen (schema.encoded.validate context encodedValue)
+    _ ← Result.andThen (schema.decoded.validate context value)
+    encodedValue ← Result.andThen (schema.encodeValue context value)
+    _ ← Result.andThen (schema.encoded.validate context encodedValue)
     Ok encodedValue
 
 
-pub encode : Schema e a, a -> Result (List Issue) e
+pub encode : Schema e a, a → Result (List Issue) e
 encode schema value = encodeWith defaultOptions schema value
 
 
-pub readWith : Options, Schema e a, Value -> Result (List Issue) a
+pub readWith : Options, Schema e a, Value → Result (List Issue) a
 readWith options schema value =
     context = rootContext options Decoding
-    encodedValue <- Result.andThen (schema.encoded.readValue context value)
+    encodedValue ← Result.andThen (schema.encoded.readValue context value)
     decodeWith options schema encodedValue
 
 
-pub read : Schema e a, Value -> Result (List Issue) a
+pub read : Schema e a, Value → Result (List Issue) a
 read schema value = readWith defaultOptions schema value
 
 
-pub writeWith : Options, Schema e a, a -> Result (List Issue) Value
+pub writeWith : Options, Schema e a, a → Result (List Issue) Value
 writeWith options schema value =
     context = rootContext options Encoding
-    encodedValue <- Result.andThen (encodeWith options schema value)
+    encodedValue ← Result.andThen (encodeWith options schema value)
     schema.encoded.writeValue context encodedValue
 
 
-pub write : Schema e a, a -> Result (List Issue) Value
+pub write : Schema e a, a → Result (List Issue) Value
 write schema value = writeWith defaultOptions schema value
 
 
-pub parseWith : Options, Schema e a, String -> Result (List Issue) a
+pub parseWith : Options, Schema e a, String → Result (List Issue) a
 parseWith options schema source =
     case Wire.parse source of
-        Err message ->
+        Err message →
             Err [ issue (rootContext options Decoding) (Invalid "json") message ]
 
-        Ok value ->
+        Ok value →
             readWith options schema value
 
 
-pub parse : Schema e a, String -> Result (List Issue) a
+pub parse : Schema e a, String → Result (List Issue) a
 parse schema source = parseWith defaultOptions schema source
 
 
-pub printWith : Options, Schema e a, a -> Result (List Issue) String
+pub printWith : Options, Schema e a, a → Result (List Issue) String
 printWith options schema value =
     case writeWith options schema value of
-        Err issues ->
+        Err issues →
             Err issues
 
-        Ok wire ->
+        Ok wire →
             case Wire.print wire of
-                Err message ->
+                Err message →
                     Err [ issue (rootContext options Encoding) (Invalid "json") message ]
 
-                Ok source ->
+                Ok source →
                     Ok source
 
 
-pub print : Schema e a, a -> Result (List Issue) String
+pub print : Schema e a, a → Result (List Issue) String
 print schema value = printWith defaultOptions schema value
 
 
-pub flip : Schema e a -> Schema a e
+pub flip : Schema e a → Schema a e
 flip schema = make schema.decoded schema.encoded schema.encodeValue schema.decodeValue
 
 
-pub typeOnly : Schema e a -> Schema a a
+pub typeOnly : Schema e a → Schema a a
 typeOnly schema = fromEndpoint schema.decoded
 
 
-pub encodedOnly : Schema e a -> Schema e e
+pub encodedOnly : Schema e a → Schema e e
 encodedOnly schema = fromEndpoint schema.encoded
 
 
 pub transform :
       Schema e a
     , Endpoint b
-    , (Context, a -> Result (List Issue) b)
-    , (Context, b -> Result (List Issue) a)
-    -> Schema e b
+    , (Context, a → Result (List Issue) b)
+    , (Context, b → Result (List Issue) a)
+    → Schema e b
 transform schema target decodeTransform encodeTransform =
     make schema.encoded target
-        (λcontext encoded ->
-            value <- Result.andThen (schema.decodeValue context encoded)
-            _ <- Result.andThen (schema.decoded.validate context value)
+        (λcontext encoded →
+            value ← Result.andThen (schema.decodeValue context encoded)
+            _ ← Result.andThen (schema.decoded.validate context value)
             decodeTransform context value
         )
-        λcontext value ->
-            original <- Result.andThen (encodeTransform context value)
-            _ <- Result.andThen (schema.decoded.validate context original)
+        λcontext value →
+            original ← Result.andThen (encodeTransform context value)
+            _ ← Result.andThen (schema.decoded.validate context original)
             schema.encodeValue context original
 
 
-pub refine : Endpoint a, String, (a -> Bool) -> Endpoint a
+pub refine : Endpoint a, String, (a → Bool) → Endpoint a
 refine base message predicate =
     endpoint
         { root = RefinedShape message base.description.root
@@ -271,30 +271,30 @@ refine base message predicate =
         }
         base.readValue
         base.writeValue
-        λcontext value ->
-            _ <- Result.andThen (base.validate context value)
+        λcontext value →
+            _ ← Result.andThen (base.validate context value)
             if predicate value then
                 Ok ()
             else
                 Err [ issue context (Invalid "refinement") message ]
 
 
-pub describe : Schema e a -> { encoded : Description, decoded : Description }
+pub describe : Schema e a → { encoded : Description, decoded : Description }
 describe schema = { encoded = schema.encoded.description, decoded = schema.decoded.description }
 
 
 pub stringEndpoint : Endpoint String
 stringEndpoint =
     endpoint (plain StringShape)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Text text ->
+                Wire.Text text →
                     Ok text
-                _ ->
+                _ →
                     expected context "string"
         )
-        (λ_ text -> Ok (Wire.Text text))
-        λ_ _ -> Ok ()
+        (λ_ text → Ok (Wire.Text text))
+        λ_ _ → Ok ()
 
 
 pub string : Schema String String
@@ -304,15 +304,15 @@ string = fromEndpoint stringEndpoint
 pub boolEndpoint : Endpoint Bool
 boolEndpoint =
     endpoint (plain BoolShape)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Flag flag ->
+                Wire.Flag flag →
                     Ok flag
-                _ ->
+                _ →
                     expected context "boolean"
         )
-        (λ_ flag -> Ok (Wire.Flag flag))
-        λ_ _ -> Ok ()
+        (λ_ flag → Ok (Wire.Flag flag))
+        λ_ _ → Ok ()
 
 
 pub bool : Schema Bool Bool
@@ -322,15 +322,15 @@ bool = fromEndpoint boolEndpoint
 pub nullEndpoint : Endpoint ()
 nullEndpoint =
     endpoint (plain NullShape)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Null ->
+                Wire.Null →
                     Ok ()
-                _ ->
+                _ →
                     expected context "null"
         )
-        (λ_ _ -> Ok Wire.Null)
-        λ_ _ -> Ok ()
+        (λ_ _ → Ok Wire.Null)
+        λ_ _ → Ok ()
 
 
 pub null : Schema () ()
@@ -340,13 +340,13 @@ null = fromEndpoint nullEndpoint
 pub int : Schema Float Int
 int =
     make numberEndpoint intEndpoint
-        (λcontext value ->
+        (λcontext value →
             if isSafeWhole value then
                 Ok (round value)
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        λcontext value ->
+        λcontext value →
             asFloat = toFloat value
             if isSafeWhole asFloat then
                 Ok asFloat
@@ -357,183 +357,182 @@ int =
 numberEndpoint : Endpoint Float
 numberEndpoint =
     endpoint (plain NumberShape)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Number number ->
+                Wire.Number number →
                     Ok number
-                _ ->
+                _ →
                     expected context "number"
         )
-        (λcontext number ->
+        (λcontext number →
             if isNaN number || isInfinite number then
                 Err [ issue context (Invalid "finite_number") "JSON numbers must be finite" ]
             else
                 Ok (Wire.Number number)
         )
-        λ_ _ -> Ok ()
+        λ_ _ → Ok ()
 
 
 intEndpoint : Endpoint Int
 intEndpoint =
     endpoint (plain NumberShape)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Number number ->
+                Wire.Number number →
                     if isSafeWhole number then
                         Ok (round number)
                     else
                         Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
-                _ ->
+                _ →
                     expected context "integer"
         )
-        (λcontext value ->
+        (λcontext value →
             number = toFloat value
             if isSafeWhole number then
                 Ok (Wire.Number number)
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
         )
-        λcontext value ->
+        λcontext value →
             if isSafeWhole (toFloat value) then
                 Ok ()
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
 
 
-isSafeWhole : Float -> Bool
+isSafeWhole : Float → Bool
 isSafeWhole value =
     not (isNaN value)
         && not (isInfinite value)
-        && value >= -9007199254740991.0
-        && value <= 9007199254740991.0
+        && value ≥ -9007199254740991.0
+        && value ≤ 9007199254740991.0
         && toFloat (round value) == value
 
 
-pub list : Schema e a -> Schema (List e) (List a)
+pub list : Schema e a → Schema (List e) (List a)
 list item =
     make (listEndpoint item.encoded) (listEndpoint item.decoded)
-        (λcontext values -> traverse context values item.decodeValue)
-        λcontext values -> traverse context values item.encodeValue
+        (λcontext values → traverse context values item.decodeValue)
+        λcontext values → traverse context values item.encodeValue
 
 
-pub listEndpoint : Endpoint a -> Endpoint (List a)
+pub listEndpoint : Endpoint a → Endpoint (List a)
 listEndpoint item =
     endpoint
         { root = ListShape item.description.root, definitions = item.description.definitions }
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Array values ->
-                    nested <- Result.andThen (enter context)
+                Wire.Array values →
+                    nested ← Result.andThen (enter context)
                     traverse nested values item.readValue
-                _ ->
+                _ →
                     expected context "array"
         )
-        (λcontext values ->
-            nested <- Result.andThen (enter context)
+        (λcontext values →
+            nested ← Result.andThen (enter context)
             Result.map (traverse nested values item.writeValue) Wire.Array
         )
-        λcontext values ->
-            nested <- Result.andThen (enter context)
-            Result.map (traverse nested values item.validate) λ_ -> ()
+        λcontext values →
+            nested ← Result.andThen (enter context)
+            Result.map (traverse nested values item.validate) λ_ → ()
 
 
-pub nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+pub nullable : Schema e a → Schema (Nullable e) (Nullable a)
 nullable schema =
     make (nullableEndpoint schema.encoded) (nullableEndpoint schema.decoded)
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Null ->
+                Null →
                     Ok Null
-                NonNull inner ->
+                NonNull inner →
                     Result.map (schema.decodeValue context inner) NonNull
         )
-        λcontext value ->
+        λcontext value →
             case value of
-                Null ->
+                Null →
                     Ok Null
-                NonNull inner ->
+                NonNull inner →
                     Result.map (schema.encodeValue context inner) NonNull
 
 
-pub nullableEndpoint : Endpoint a -> Endpoint (Nullable a)
+pub nullableEndpoint : Endpoint a → Endpoint (Nullable a)
 nullableEndpoint item =
     endpoint
         { root = UnionShape [ NullShape, item.description.root ]
         , definitions = item.description.definitions
         }
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Null ->
+                Wire.Null →
                     Ok Null
-                _ ->
+                _ →
                     Result.map (item.readValue context value) NonNull
         )
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Null ->
+                Null →
                     Ok Wire.Null
-                NonNull inner ->
+                NonNull inner →
                     item.writeValue context inner
         )
-        λcontext value ->
+        λcontext value →
             case value of
-                Null ->
+                Null →
                     Ok ()
-                NonNull inner ->
+                NonNull inner →
                     item.validate context inner
 
 
-pub requiredField : String, Endpoint a -> Field a
+pub requiredField : String, Endpoint a → Field a
 requiredField key item =
     { key = key
     , shape = item.description.root
     , definitions = item.description.definitions
     , readField =
-        λcontext fields ->
+        λcontext fields →
             case lookup key fields of
-                Nothing ->
+                Nothing →
                     Err [ issue (atKey context key) MissingField "required field is missing" ]
-                Just value ->
-                    decodedValue <- Result.andThen (item.readValue (atKey context key) value)
-                    _ <- Result.andThen (item.validate (atKey context key) decodedValue)
+                Just value →
+                    decodedValue ← Result.andThen (item.readValue (atKey context key) value)
+                    _ ← Result.andThen (item.validate (atKey context key) decodedValue)
                     Ok decodedValue
     , writeField =
-        λcontext value ->
-            _ <- Result.andThen (item.validate (atKey context key) value)
-            Result.map (item.writeValue (atKey context key) value) λwire -> [ ( key, wire ) ]
-    , validateField = λcontext value -> item.validate (atKey context key) value
+        λcontext value →
+            _ ← Result.andThen (item.validate (atKey context key) value)
+            Result.map (item.writeValue (atKey context key) value) λwire → [ ( key, wire ) ]
+    , validateField = λcontext value → item.validate (atKey context key) value
     }
 
 
-pub optionalField : String, Endpoint a -> Field (Presence a)
+pub optionalField : String, Endpoint a → Field (Presence a)
 optionalField key item =
     { key = key
     , shape = OptionalShape item.description.root
     , definitions = item.description.definitions
     , readField =
-        λcontext fields ->
+        λcontext fields →
             case lookup key fields of
-                Nothing ->
+                Nothing →
                     Ok Missing
-                Just value ->
-                    decodedValue <- Result.andThen (item.readValue (atKey context key) value)
-                    _ <- Result.andThen (item.validate (atKey context key) decodedValue)
+                Just value →
+                    decodedValue ← Result.andThen (item.readValue (atKey context key) value)
+                    _ ← Result.andThen (item.validate (atKey context key) decodedValue)
                     Ok (Present decodedValue)
     , writeField =
-        λcontext value ->
+        λcontext value →
             case value of
-                Missing ->
+                Missing →
                     Ok []
-                Present inner ->
-                    _ <- Result.andThen (item.validate (atKey context key) inner)
-                    Result.map (item.writeValue (atKey context key) inner) λwire ->
-                        [ ( key, wire ) ]
+                Present inner →
+                    _ ← Result.andThen (item.validate (atKey context key) inner)
+                    Result.map (item.writeValue (atKey context key) inner) λwire → [ ( key, wire ) ]
     , validateField =
-        λcontext value ->
+        λcontext value →
             case value of
-                Missing ->
+                Missing →
                     Ok ()
-                Present inner ->
+                Present inner →
                     item.validate (atKey context key) inner
     }
 
@@ -541,28 +540,28 @@ optionalField key item =
 pub object1Endpoint :
       String
     , Field a
-    , (a -> record)
-    , (record -> a)
-    -> Endpoint record
+    , (a → record)
+    , (record → a)
+    → Endpoint record
 object1Endpoint name field build get =
     endpoint
         { root = ObjectShape [ ( field.key, field.shape ) ], definitions = field.definitions }
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Object fields ->
-                    nested <- Result.andThen (enter context)
+                Wire.Object fields →
+                    nested ← Result.andThen (enter context)
                     unknownResult = unknown nested [ field.key ] fields
                     fieldResult = field.readField nested fields
                     combineObject1 nested.options.errors unknownResult fieldResult build
-                _ ->
+                _ →
                     expected context name
         )
-        (λcontext value ->
-            nested <- Result.andThen (enter context)
+        (λcontext value →
+            nested ← Result.andThen (enter context)
             Result.map (field.writeField nested (get value)) Wire.Object
         )
-        λcontext value ->
-            nested <- Result.andThen (enter context)
+        λcontext value →
+            nested ← Result.andThen (enter context)
             field.validateField nested (get value)
 
 
@@ -570,19 +569,19 @@ pub object2Endpoint :
       String
     , Field a
     , Field b
-    , (a, b -> record)
-    , (record -> a)
-    , (record -> b)
-    -> Endpoint record
+    , (a, b → record)
+    , (record → a)
+    , (record → b)
+    → Endpoint record
 object2Endpoint name first second build getFirst getSecond =
     endpoint
         { root = ObjectShape [ ( first.key, first.shape ), ( second.key, second.shape ) ]
         , definitions = List.append first.definitions second.definitions
         }
-        (λcontext value ->
+        (λcontext value →
             case value of
-                Wire.Object fields ->
-                    nested <- Result.andThen (enter context)
+                Wire.Object fields →
+                    nested ← Result.andThen (enter context)
                     unknownResult = unknown nested [ first.key, second.key ] fields
                     firstResult = first.readField nested fields
                     secondResult = second.readField nested fields
@@ -592,39 +591,39 @@ object2Endpoint name first second build getFirst getSecond =
                         firstResult
                         secondResult
                         build
-                _ ->
+                _ →
                     expected context name
         )
-        (λcontext value ->
-            nested <- Result.andThen (enter context)
+        (λcontext value →
+            nested ← Result.andThen (enter context)
             firstResult = first.writeField nested (getFirst value)
             secondResult = second.writeField nested (getSecond value)
             combineFields nested.options.errors firstResult secondResult
         )
-        λcontext value ->
-            nested <- Result.andThen (enter context)
+        λcontext value →
+            nested ← Result.andThen (enter context)
             firstResult = first.validateField nested (getFirst value)
             secondResult = second.validateField nested (getSecond value)
             combineValidations nested.options.errors firstResult secondResult
 
 
-pub deferEndpoint : String, (() -> Endpoint a) -> Endpoint a
+pub deferEndpoint : String, (() → Endpoint a) → Endpoint a
 deferEndpoint name get =
     endpoint (plain (ReferenceShape name))
-        (λcontext value ->
+        (λcontext value →
             target = get ()
             target.readValue context value
         )
-        (λcontext value ->
+        (λcontext value →
             target = get ()
             target.writeValue context value
         )
-        λcontext value ->
+        λcontext value →
             target = get ()
             target.validate context value
 
 
-pub recursiveEndpoint : String, Shape, (() -> Endpoint a) -> Endpoint a
+pub recursiveEndpoint : String, Shape, (() → Endpoint a) → Endpoint a
 recursiveEndpoint name definition getBody =
     deferred = deferEndpoint name getBody
     { deferred
@@ -632,7 +631,7 @@ recursiveEndpoint name definition getBody =
     }
 
 
-pub issue : Context, Code, String -> Issue
+pub issue : Context, Code, String → Issue
 issue context code message =
     { path = context.path
     , direction = context.direction
@@ -641,67 +640,67 @@ issue context code message =
     }
 
 
-plain : Shape -> Description
+plain : Shape → Description
 plain root = { root = root, definitions = [] }
 
 
-expected : Context, String -> Result (List Issue) a
+expected : Context, String → Result (List Issue) a
 expected context name = Err [ issue context (Expected name) ("expected " ++ name) ]
 
 
-atKey : Context, String -> Context
+atKey : Context, String → Context
 atKey context key = { context | path = List.append context.path [ Key key ] }
 
 
-atIndex : Context, Int -> Context
+atIndex : Context, Int → Context
 atIndex context index = { context | path = List.append context.path [ Index index ] }
 
 
-deeper : Context -> Context
+deeper : Context → Context
 deeper context = { context | depth = context.depth + 1 }
 
 
-enter : Context -> Result (List Issue) Context
+enter : Context → Result (List Issue) Context
 enter context =
-    if context.depth >= context.options.maxDepth then
+    if context.depth ≥ context.options.maxDepth then
         Err [ issue context DepthExceeded "maximum schema depth exceeded" ]
     else
         Ok (deeper context)
 
 
-lookup : String, List ( String, Value ) -> Maybe Value
+lookup : String, List (String × Value) → Maybe Value
 lookup target fields =
     case fields of
-        [] ->
+        [] →
             Nothing
-        [ ( key, value ), ...rest ] ->
+        [ ( key, value ), …rest ] →
             if key == target then
                 Just value
             else
                 lookup target rest
 
 
-unknown : Context, List String, List ( String, Value ) -> Result (List Issue) ()
+unknown : Context, List String, List (String × Value) → Result (List Issue) ()
 unknown context known fields =
     case context.options.unknownFields of
-        IgnoreUnknown ->
+        IgnoreUnknown →
             Ok ()
-        RejectUnknown ->
-            issues = List.foldl fields [] λ( key, _ ) found ->
+        RejectUnknown →
+            issues = List.foldl fields [] λ( key, _ ) found →
                 if List.member known key then
                     found
                 else
                     case context.options.errors of
-                        FirstError ->
+                        FirstError →
                             if found == [] then
                                 [ issue (atKey context key) UnknownField "unknown field"
                                 ]
                             else
                                 found
 
-                        AllErrors ->
+                        AllErrors →
                             [ issue (atKey context key) UnknownField "unknown field"
-                            , ...found
+                            , …found
                             ]
             if issues == [] then
                 Ok ()
@@ -709,34 +708,34 @@ unknown context known fields =
                 Err (List.reverse issues)
 
 
-traverse : Context, List a, (Context, a -> Result (List Issue) b) -> Result (List Issue) (List b)
+traverse : Context, List a, (Context, a → Result (List Issue) b) → Result (List Issue) (List b)
 traverse context values func = traverseHelp context values func 0 [] []
 
 
 traverseHelp :
       Context
     , List a
-    , (Context, a -> Result (List Issue) b)
+    , (Context, a → Result (List Issue) b)
     , Int
     , List b
     , List Issue
-    -> Result (List Issue) (List b)
+    → Result (List Issue) (List b)
 traverseHelp context values func index results issues =
     case values of
-        [] ->
+        [] →
             if issues == [] then
                 Ok (List.reverse results)
             else
                 Err (List.reverse issues)
-        [ value, ...rest ] ->
+        [ value, …rest ] →
             case func (atIndex context index) value of
-                Ok result ->
-                    traverseHelp context rest func (index + 1) [ result, ...results ] issues
-                Err found ->
+                Ok result →
+                    traverseHelp context rest func (index + 1) [ result, …results ] issues
+                Err found →
                     case context.options.errors of
-                        FirstError ->
+                        FirstError →
                             Err found
-                        AllErrors ->
+                        AllErrors →
                             traverseHelp
                                 context
                                 rest
@@ -751,17 +750,17 @@ combineObject2 :
     , Result (List Issue) ()
     , Result (List Issue) a
     , Result (List Issue) b
-    , (a, b -> record)
-    -> Result (List Issue) record
+    , (a, b → record)
+    → Result (List Issue) record
 combineObject2 mode unknownResult first second build =
     case unknownResult of
-        Err issues ->
+        Err issues →
             case mode of
-                FirstError ->
+                FirstError →
                     Err issues
-                AllErrors ->
+                AllErrors →
                     combineAfterUnknown AllErrors issues first second build
-        Ok _ ->
+        Ok _ →
             combineAfterUnknown mode [] first second build
 
 
@@ -769,23 +768,23 @@ combineObject1 :
       ErrorMode
     , Result (List Issue) ()
     , Result (List Issue) a
-    , (a -> record)
-    -> Result (List Issue) record
+    , (a → record)
+    → Result (List Issue) record
 combineObject1 mode unknownResult fieldResult build =
     case unknownResult of
-        Err unknownIssues ->
+        Err unknownIssues →
             case mode of
-                FirstError ->
+                FirstError →
                     Err unknownIssues
 
-                AllErrors ->
+                AllErrors →
                     case fieldResult of
-                        Err fieldIssues ->
+                        Err fieldIssues →
                             Err (List.append unknownIssues fieldIssues)
-                        Ok _ ->
+                        Ok _ →
                             Err unknownIssues
 
-        Ok _ ->
+        Ok _ →
             Result.map fieldResult build
 
 
@@ -794,25 +793,25 @@ combineAfterUnknown :
     , List Issue
     , Result (List Issue) a
     , Result (List Issue) b
-    , (a, b -> record)
-    -> Result (List Issue) record
+    , (a, b → record)
+    → Result (List Issue) record
 combineAfterUnknown mode prior first second build =
     case first of
-        Err firstIssues ->
+        Err firstIssues →
             case mode of
-                FirstError ->
+                FirstError →
                     Err firstIssues
-                AllErrors ->
+                AllErrors →
                     case second of
-                        Err secondIssues ->
+                        Err secondIssues →
                             Err (List.append prior (List.append firstIssues secondIssues))
-                        Ok _ ->
+                        Ok _ →
                             Err (List.append prior firstIssues)
-        Ok a ->
+        Ok a →
             case second of
-                Err secondIssues ->
+                Err secondIssues →
                     Err (List.append prior secondIssues)
-                Ok b ->
+                Ok b →
                     if prior == [] then
                         Ok (build a b)
                     else
@@ -821,26 +820,26 @@ combineAfterUnknown mode prior first second build =
 
 combineFields :
       ErrorMode
-    , Result (List Issue) (List ( String, Value ))
-    , Result (List Issue) (List ( String, Value ))
-    -> Result (List Issue) Value
+    , Result (List Issue) (List (String × Value))
+    , Result (List Issue) (List (String × Value))
+    → Result (List Issue) Value
 combineFields mode first second =
     case first of
-        Err firstIssues ->
+        Err firstIssues →
             case mode of
-                FirstError ->
+                FirstError →
                     Err firstIssues
-                AllErrors ->
+                AllErrors →
                     case second of
-                        Err secondIssues ->
+                        Err secondIssues →
                             Err (List.append firstIssues secondIssues)
-                        Ok _ ->
+                        Ok _ →
                             Err firstIssues
-        Ok firstFields ->
+        Ok firstFields →
             case second of
-                Err secondIssues ->
+                Err secondIssues →
                     Err secondIssues
-                Ok secondFields ->
+                Ok secondFields →
                     Ok (Wire.Object (List.append firstFields secondFields))
 
 
@@ -848,18 +847,18 @@ combineValidations :
       ErrorMode
     , Result (List Issue) ()
     , Result (List Issue) ()
-    -> Result (List Issue) ()
+    → Result (List Issue) ()
 combineValidations mode first second =
     case first of
-        Err firstIssues ->
+        Err firstIssues →
             case mode of
-                FirstError ->
+                FirstError →
                     Err firstIssues
-                AllErrors ->
+                AllErrors →
                     case second of
-                        Err secondIssues ->
+                        Err secondIssues →
                             Err (List.append firstIssues secondIssues)
-                        Ok _ ->
+                        Ok _ →
                             Err firstIssues
-        Ok _ ->
+        Ok _ →
             second

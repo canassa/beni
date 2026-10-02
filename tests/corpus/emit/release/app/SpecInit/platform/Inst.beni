@@ -11,7 +11,7 @@ type alias V =
 
 -- A kind: `m` makes an instance, a literal with its node and no `b`.
 kind : V
-kind = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
+kind = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
 
 
 -- One block, made once; `view` always shows it.
@@ -19,12 +19,12 @@ block : V
 block = Js.from { t = kind }
 
 
-view : Int -> V
+view : Int → V
 view _ = block
 
 
 -- A block mounted on its own: the instance remembers its kind and block.
-unit : V -> V
+unit : V → V
 unit b =
     i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
@@ -34,7 +34,7 @@ unit b =
     i
 
 
-patch : V, V -> String
+patch : V, V → String
 patch i b =
     if Js.same b (Js.get i "b") then
         "same"
@@ -43,11 +43,11 @@ patch i b =
 
 
 -- Made fresh, but one of its two calls never writes `b`.
-bare : () -> V
+bare : () → V
 bare () = Js.from { s = Js.from "node" }
 
 
-marked : () -> V
+marked : () → V
 marked () =
     i = bare ()
 
@@ -55,7 +55,7 @@ marked () =
     i
 
 
-shows : V, V -> String
+shows : V, V → String
 shows i b =
     if Js.same b (Js.get i "b") then
         "shows it"
@@ -63,7 +63,7 @@ shows i b =
         "shows another"
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () =
     [ patch (unit (view 1)) (view 2)
     , shows (marked ()) (view 3)

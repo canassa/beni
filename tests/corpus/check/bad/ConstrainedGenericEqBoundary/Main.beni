@@ -2,9 +2,9 @@ import Guarded
 
 
 pub type Wrapper
-    = Wrapper (Guarded.Guarded (Int -> Int))
+    = Wrapper (Guarded.Guarded (Int → Int))
 
 
 bad =
-    Wrapper (Guarded.Guarded λvalue -> value + 1)
-        == Wrapper (Guarded.Guarded λvalue -> value - 1)
+    Wrapper (Guarded.Guarded λvalue → value + 1)
+        == Wrapper (Guarded.Guarded λvalue → value - 1)

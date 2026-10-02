@@ -19,28 +19,28 @@ type Msg
     | Boom
 
 
-sleepIn : (() -> ()) -> Cmd Msg
-sleepIn release = Cmd.perform λ_ ->
-    Task.bracket (λ() -> ()) (λ_ _ -> release ()) λ_ -> Time.sleep (Time.seconds 60)
+sleepIn : (() → ()) → Cmd Msg
+sleepIn release = Cmd.perform λ_ →
+    Task.bracket (λ() → ()) (λ_ _ → release ()) λ_ → Time.sleep (Time.seconds 60)
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Start ->
+        Start →
             ( n
             , Cmd.batch
-                [ sleepIn λ() -> Log.info "first released"
-                , sleepIn λ() -> Debug.todo "the second release threw"
-                , sleepIn λ() -> Log.info "third released"
+                [ sleepIn λ() → Log.info "first released"
+                , sleepIn λ() → Debug.todo "the second release threw"
+                , sleepIn λ() → Log.info "third released"
                 ]
             )
 
-        Boom ->
+        Boom →
             Debug.todo "update threw"
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view _ =
     <main>
         <button id="start" onClick={Start}>start</button>
@@ -51,4 +51,4 @@ view _ =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -1,4 +1,4 @@
 --! A test platform whose sibling declares a helper with `function`.
 
 --| `text` right-aligned in `width` characters.
-pub foreign pure pad : String, Int -> String
+pub foreign pure pad : String, Int → String

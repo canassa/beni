@@ -15,30 +15,30 @@ type Msg
     = Boom
 
 
-start : () -> Int
+start : () → Int
 start () =
     root = Task.openRoot ()
 
-    _ = Task.spawnIn root λ() ->
+    _ = Task.spawnIn root λ() →
         Task.bracket
-            (λ() -> ())
-            (λ_ exit ->
+            (λ() → ())
+            (λ_ exit →
                 case exit of
-                    Done _ ->
+                    Done _ →
                         Log.info "released: Done"
 
-                    Cancelled ->
+                    Cancelled →
                         Log.info "released: Cancelled"
             )
-            λ_ -> Time.sleep (Time.millis 1000)
+            λ_ → Time.sleep (Time.millis 1000)
     0
 
 
 main : Browser.Program
 main =
     Browser.hosted
-        { init = λ_ -> start ()
-        , update = λ_ Boom _ -> Debug.todo "update threw"
-        , settle = λ_ n -> n
-        , view = λ_ -> <button id="boom" onClick={Boom}>boom</button>
+        { init = λ_ → start ()
+        , update = λ_ Boom _ → Debug.todo "update threw"
+        , settle = λ_ n → n
+        , view = λ_ → <button id="boom" onClick={Boom}>boom</button>
         }

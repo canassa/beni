@@ -8,14 +8,14 @@ pub type B
     | B2
 
 
-pub compare : A, A -> Order
+pub compare : A, A → Order
 compare x y =
     case ( x, y ) of
-        ( A1, A2 ) ->
+        ( A1, A2 ) →
             GT
 
-        ( A2, A1 ) ->
+        ( A2, A1 ) →
             LT
 
-        _ ->
+        _ →
             EQ

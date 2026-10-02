@@ -10,11 +10,11 @@ import Node exposing (Program)
 import String
 
 
-note : String, Int -> Int
+note : String, Int → Int
 note tag n = Debug.log tag n
 
 
-ordered : Int -> Int
+ordered : Int → Int
 ordered n =
     a = note "a" n
     b =
@@ -24,7 +24,7 @@ ordered n =
     note "value" (a + b + c)
 
 
-branch : Bool -> Int
+branch : Bool → Int
 branch taken =
     if taken then
         t = note "then" 1
@@ -34,7 +34,7 @@ branch taken =
         f
 
 
-lazy : Bool, Int -> Bool
+lazy : Bool, Int → Bool
 lazy first n =
     first
         && (
@@ -50,7 +50,7 @@ main =
     b2 = branch False
     l1 = lazy False 1
     l2 = lazy True 2
-    calls = List.map [ 1, 2 ] λx ->
+    calls = List.map [ 1, 2 ] λx →
         y = note "lambda" x
         y * 10
     Node.printLines

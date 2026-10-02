@@ -7,7 +7,7 @@
 -- variables until it is generalised: `pong` logs, and `ping` gets it. `walk`
 -- calls itself through its own annotation and is bit-polymorphic in its
 -- callback; `countdown` calls itself and nothing else, and stays pure.
-pub isEven : Int -> Bool
+pub isEven : Int → Bool
 isEven n =
     if n == 0 then
         True
@@ -15,7 +15,7 @@ isEven n =
         isOdd (n - 1)
 
 
-pub isOdd : Int -> Bool
+pub isOdd : Int → Bool
 isOdd n =
     if n == 0 then
         Debug.log "odd" False
@@ -33,18 +33,18 @@ pub ping n =
 pub pong n = Debug.log "pong" (ping n)
 
 
-pub walk : List a, (a -> ()) -> ()
+pub walk : List a, (a → ()) → ()
 walk xs visit =
     case xs of
-        [] ->
+        [] →
             ()
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             () = visit x
             walk rest visit
 
 
-pub countdown : Int -> Int
+pub countdown : Int → Int
 countdown n =
     if n == 0 then
         0

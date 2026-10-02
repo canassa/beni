@@ -15,54 +15,54 @@
 import Node exposing (Program)
 
 
-allSame : List a -> Bool
-    where a.eq : a, a -> Bool
+allSame : List a → Bool
+    where a.eq : a, a → Bool
 allSame xs =
     case xs of
-        [] ->
+        [] →
             True
 
-        [ x, ...r ] ->
+        [ x, …r ] →
             List.all r ((==) x _)
 
 
 allSame2 xs =
     case xs of
-        [] ->
+        [] →
             True
 
-        [ x, ...r ] ->
+        [ x, …r ] →
             List.all r ((==) x _)
 
 
 sorted xs =
     case xs of
-        [ a, b, ...r ] ->
-            (<=) a b && sorted [ b, ...r ]
+        [ a, b, …r ] →
+            (≤) a b && sorted [ b, …r ]
 
-        _ ->
+        _ →
             True
 
 
-eqVia : a, a -> Bool
-    where a.eq : a, a -> Bool
+eqVia : a, a → Bool
+    where a.eq : a, a → Bool
 eqVia x y = (==) x y
 
 
-allOnes : List Int -> Bool
+allOnes : List Int → Bool
 allOnes xs = List.all xs ((==) 1 _)
 
 
-allOnesLambda : List Int -> Bool
-allOnesLambda xs = List.all xs λv -> (==) 1 v
+allOnesLambda : List Int → Bool
+allOnesLambda xs = List.all xs λv → (==) 1 v
 
 
-anyEq : List a, a -> Bool
-    where a.eq : a, a -> Bool
-anyEq xs y = List.any xs λv -> v == y
+anyEq : List a, a → Bool
+    where a.eq : a, a → Bool
+anyEq xs y = List.any xs λv → v == y
 
 
-tf : Bool -> String
+tf : Bool → String
 tf b =
     if b then
         "t"

@@ -14,29 +14,29 @@ import Node exposing (Program)
 import String
 
 
-firstWins : List Int -> String
+firstWins : List Int → String
 firstWins xs =
     case xs of
-        [ 1, n, ..._ ] ->
+        [ 1, n, …_ ] →
             "one then ${String.fromInt n}"
 
-        [ n, 2, ..._ ] ->
+        [ n, 2, …_ ] →
             "${String.fromInt n} then two"
 
-        _ ->
+        _ →
             "neither"
 
 
-laterWins : List Int -> String
+laterWins : List Int → String
 laterWins xs =
     case xs of
-        [ n, 2, ..._ ] ->
+        [ n, 2, …_ ] →
             "${String.fromInt n} then two"
 
-        [ 1, n, ..._ ] ->
+        [ 1, n, …_ ] →
             "one then ${String.fromInt n}"
 
-        _ ->
+        _ →
             "neither"
 
 

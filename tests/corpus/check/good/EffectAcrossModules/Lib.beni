@@ -6,31 +6,31 @@
 -- expansion), a record of functions (`callApi`, whose arrow depends on the
 -- record's `log` field), and a `where` requirement (`countEq`).
 pub type alias Handler =
-    Int -> Int
+    Int → Int
 
 
 pub type alias Api =
-    log : String -> ()
+    log : String → ()
     size : Int
 
 
-pub logged : a -> a
+pub logged : a → a
 logged x = Debug.log "logged" x
 
 
 pub apply f x = f x
 
 
-pub runHandler : Handler, Int -> Int
+pub runHandler : Handler, Int → Int
 runHandler h x = h x
 
 
-pub callApi : Api -> Int
+pub callApi : Api → Int
 callApi api =
     () = api.log "called"
     api.size
 
 
-pub countEq : List a, a -> Int
-    where a.eq : a, a -> Bool
-countEq xs x = List.length (List.filter xs λy -> y == x)
+pub countEq : List a, a → Int
+    where a.eq : a, a → Bool
+countEq xs x = List.length (List.filter xs λy → y == x)

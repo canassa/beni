@@ -13,22 +13,22 @@
 import Node
 
 
-pick : List String, Int -> String
-pick words i = List.get words i |> Maybe.withDefault ""
+pick : List String, Int → String
+pick words i = List.get words i ▷ Maybe.withDefault ""
 
 
-firstOr : List Int, Int -> Int
+firstOr : List Int, Int → Int
 firstOr xs d =
     case List.head xs of
-        Just x ->
+        Just x →
             x * 2
 
-        Nothing ->
+        Nothing →
             d
 
 
-dropHead : List String, Int -> String
-dropHead words i = List.drop words i |> List.head |> Maybe.withDefault "?"
+dropHead : List String, Int → String
+dropHead words i = List.drop words i ▷ List.head ▷ Maybe.withDefault "?"
 
 
 main : Node.Program

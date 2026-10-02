@@ -27,19 +27,19 @@ type Msg
     | Sent Bool String
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Run fibers ->
+        Run fibers →
             _ = Log.info "update: run"
             ( n
             , if fibers then
-                bodies True λ() -> pause False
+                bodies True λ() → pause False
               else
-                bodies False λ() -> ()
+                bodies False λ() → ()
             )
 
-        Sent fibers what ->
+        Sent fibers what →
             _ = Log.info "update: ${what}"
             ( n + 1
             , if what == "first" then
@@ -51,7 +51,7 @@ update msg n =
 
 -- Waits only when asked to, which no run does: what makes a body that
 -- calls it one that may wait.
-pause : Bool -> ()
+pause : Bool → ()
 pause yes =
     if yes then
         Task.yieldNow ()
@@ -59,31 +59,31 @@ pause yes =
         ()
 
 
-bodies : Bool, (() -> ()) -> Cmd Msg
+bodies : Bool, (() → ()) → Cmd Msg
 bodies fibers hold =
     Cmd.batch
-        [ Cmd.perform λsend -> say send fibers hold "first"
-        , Cmd.perform λsend -> waiting send fibers
-        , Cmd.perform λsend -> say send fibers hold "third"
+        [ Cmd.perform λsend → say send fibers hold "first"
+        , Cmd.perform λsend → waiting send fibers
+        , Cmd.perform λsend → say send fibers hold "third"
         ]
 
 
-more : Bool -> Cmd Msg
+more : Bool → Cmd Msg
 more fibers =
     if fibers then
-        Cmd.perform λsend -> say send fibers (λ() -> pause False) "more"
+        Cmd.perform λsend → say send fibers (λ() → pause False) "more"
     else
-        Cmd.perform λsend -> say send fibers (λ() -> ()) "more"
+        Cmd.perform λsend → say send fibers (λ() → ()) "more"
 
 
-say : Cmd.Send Msg, Bool, (() -> ()), String -> ()
+say : Cmd.Send Msg, Bool, (() → ()), String → ()
 say send fibers hold what =
     _ = hold ()
     _ = Log.info "body: ${what}"
     send (Sent fibers what)
 
 
-waiting : Cmd.Send Msg, Bool -> ()
+waiting : Cmd.Send Msg, Bool → ()
 waiting send fibers =
     _ = Log.info "body: second starts"
     _ = Task.yieldNow ()
@@ -91,7 +91,7 @@ waiting send fibers =
     send (Sent fibers "second")
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view n =
     _ = Log.info "view"
     <main>
@@ -107,5 +107,5 @@ main =
         { init = ( 0, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

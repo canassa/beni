@@ -12,17 +12,17 @@ import Schema exposing (AllErrors, Conversion, Reject, Schema)
 import Show
 
 
-logged : String -> Conversion String String
+logged : String → Conversion String String
 logged name =
     Schema.conversion
-        (λs ->
+        (λs →
             _ = Debug.log name s
             if s == "bad" then
                 Err [ Schema.issue (name ++ " is bad") ]
             else
                 Ok s
         )
-        λs -> Ok s
+        λs → Ok s
 
 
 type alias Three =
@@ -41,9 +41,9 @@ three : Schema Three Three
 three =
     Schema.record
         (Schema.fields
-            |> Schema.field "x" (Schema.converted Schema.string (logged "x"))
-            |> Schema.field "y" (Schema.converted Schema.string (logged "y"))
-            |> Schema.field "z" (Schema.converted Schema.string (logged "z"))
+            ▷ Schema.field "x" (Schema.converted Schema.string (logged "x"))
+            ▷ Schema.field "y" (Schema.converted Schema.string (logged "y"))
+            ▷ Schema.field "z" (Schema.converted Schema.string (logged "z"))
         )
         (Schema.mapping toThree fromThree)
         (Schema.mapping toThree fromThree)
@@ -54,11 +54,11 @@ joined =
     Schema.converted
         three
         (Schema.conversion
-            (λt ->
+            (λt →
                 _ = Debug.log "whole record" t.x
                 Ok (t.x ++ t.y ++ t.z)
             )
-            λs -> Ok { x = s, y = "", z = "" }
+            λs → Ok { x = s, y = "", z = "" }
         )
 
 
@@ -74,17 +74,17 @@ first : Schema.Options
 first = { errors = Schema.FirstError, unknownKeys = Reject, maxDepth = 512, reportInput = False }
 
 
-issues : Result (List Schema.Issue) a -> String
-issues r = Show.result r λ_ -> ""
+issues : Result (List Schema.Issue) a → String
+issues r = Show.result r λ_ → ""
 
 
-described : Schema e a -> String
+described : Schema e a → String
 described s =
     case (Schema.describe s).root of
-        Schema.Converted _ ->
+        Schema.Converted _ →
             "a conversion, described"
 
-        _ ->
+        _ →
             "something else"
 
 
@@ -94,7 +94,7 @@ main =
         [ issues (Schema.parseWith three first "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
         , issues (Schema.parseWith three all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
         , issues (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"bad\",\"z\":\"3\"}")
-        , Show.result (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}") λs -> s
+        , Show.result (Schema.parseWith joined all "{\"x\":\"1\",\"y\":\"2\",\"z\":\"3\"}") λs → s
         , described loud
-        , Show.result (Schema.decode loud "once") λs -> s
+        , Show.result (Schema.decode loud "once") λs → s
         ]

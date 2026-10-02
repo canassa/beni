@@ -24,7 +24,7 @@ greeting = "hi"
 pub answer = 42
 
 
-helper : Int -> Int
+helper : Int → Int
 helper n = n + 1
 
 

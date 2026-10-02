@@ -20,21 +20,21 @@ type alias Model =
     other : Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Count ->
+        Count →
             { model | count = model.count + 1 }
 
-        Other ->
+        Other →
             { model | other = model.other + 1 }
 
 
-tag : String -> Html Msg
+tag : String → Html Msg
 tag name = <i>{Debug.log "tag" name}</i>
 
 
-card : String, Int -> Html Msg
+card : String, Int → Html Msg
 card title n =
     <section>
         {tag title}
@@ -42,13 +42,13 @@ card title n =
     </section>
 
 
-boxed : { n : Int } -> Html Msg
+boxed : { n : Int } → Html Msg
 boxed r = <p>{Debug.log "boxed" r.n}</p>
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
-    local : Int -> Html Msg
+    local : Int → Html Msg
     local n = <em>{Debug.log "local" n}</em>
     <main>
         <button id="count" onClick={Count}>count</button>

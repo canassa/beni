@@ -42,62 +42,62 @@ all =
     { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
 
 
-showShape : Shape.Type -> String
+showShape : Shape.Type → String
 showShape s =
     case s of
-        Shape.Circle c ->
+        Shape.Circle c →
             "Circle " ++ String.fromFloat c.radius
 
-        Shape.Square q ->
+        Shape.Square q →
             "Square " ++ String.fromInt q.side
 
-        Shape.Dot ->
+        Shape.Dot →
             "Dot"
 
 
-showEncoded : Shape.Encoded -> String
+showEncoded : Shape.Encoded → String
 showEncoded s =
     case s of
-        Shape.Encoded.Circle c ->
+        Shape.Encoded.Circle c →
             "encoded Circle " ++ String.fromFloat c.radius
 
-        Shape.Encoded.Square q ->
+        Shape.Encoded.Square q →
             "encoded Square " ++ String.fromInt q.side
 
-        Shape.Encoded.Dot ->
+        Shape.Encoded.Dot →
             "encoded Dot"
 
 
-showTree : Tree.Type -> String
+showTree : Tree.Type → String
 showTree t =
     case t of
-        Tree.Leaf l ->
+        Tree.Leaf l →
             l.label
 
-        Tree.Branch b ->
+        Tree.Branch b →
             "(" ++ String.join (List.map b.children showTree) " " ++ ")"
 
 
-showLight : Light.Type -> String
+showLight : Light.Type → String
 showLight l =
     case l of
-        Light.Red ->
+        Light.Red →
             "Red"
 
-        Light.Green ->
+        Light.Green →
             "Green"
 
 
-shape : String -> String
+shape : String → String
 shape text = Show.result (Shape.parse text) showShape
 
 
-tree : String -> String
+tree : String → String
 tree text = Show.result (Tree.parse text) showTree
 
 
-printed : Result (List Schema.Issue) String -> String
-printed r = Show.result r λs -> s
+printed : Result (List Schema.Issue) String → String
+printed r = Show.result r λs → s
 
 
 main : Node.Program

@@ -11,7 +11,7 @@
 import Html exposing (Html)
 
 
-pub inPlace : { danger : Bool, color : String } -> Html msg
+pub inPlace : { danger : Bool, color : String } → Html msg
 inPlace r =
     <tr
         class={[ ( "row", True ), ( "gone", False ), ( "danger", r.danger ) ]}
@@ -21,11 +21,11 @@ inPlace r =
     </tr>
 
 
-pub lists : { classes : List ( String, Bool ), styles : List ( String, String ) } -> Html msg
+pub lists : { classes : List (String × Bool), styles : List (String × String) } → Html msg
 lists r = <p class={r.classes} style={r.styles}>x</p>
 
 
-pub fields : { text : String, on : Bool, url : String } -> Html msg
+pub fields : { text : String, on : Bool, url : String } → Html msg
 fields r =
     <form action={r.url}>
         <input value={r.text} checked={r.on} />

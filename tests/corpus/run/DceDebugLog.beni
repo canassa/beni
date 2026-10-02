@@ -31,11 +31,11 @@ import Node exposing (Program)
 import String
 
 
-reached : Int -> Int
+reached : Int → Int
 reached n = Debug.log "reached" n * 2
 
 
-pub neverCalled : Int -> Int
+pub neverCalled : Int → Int
 neverCalled n = Debug.log "neverCalled" n + 1
 
 

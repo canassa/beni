@@ -20,48 +20,48 @@ type Msg
     | Late String
 
 
-outcome : Exit a -> String
+outcome : Exit a → String
 outcome exit =
     case exit of
-        Done _ ->
+        Done _ →
             "Done"
 
-        Cancelled ->
+        Cancelled →
             "Cancelled"
 
 
-guarded : String, (() -> a) -> a
+guarded : String, (() → a) → a
 guarded name body =
-    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ -> body ()
+    Task.bracket (λ() → ()) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ → body ()
 
 
-update : Msg, String -> ( String, Cmd Msg )
+update : Msg, String → String × Cmd Msg
 update msg shown =
     case msg of
-        Go ->
+        Go →
             ( "going"
             , Cmd.batch
-                [ Cmd.perform λsend ->
-                    guarded "first outer" λ() ->
-                        guarded "first inner" λ() ->
+                [ Cmd.perform λsend →
+                    guarded "first outer" λ() →
+                        guarded "first inner" λ() →
                             _ = Time.sleep (Time.millis 100)
                             send (Late "first")
-                , Cmd.perform λsend ->
-                    guarded "second" λ() ->
+                , Cmd.perform λsend →
+                    guarded "second" λ() →
                         _ = Time.sleep (Time.millis 100)
                         send (Late "second")
-                , Cmd.perform λ_ ->
-                    guarded "thrower" λ() ->
+                , Cmd.perform λ_ →
+                    guarded "thrower" λ() →
                         _ = Time.sleep (Time.millis 10)
                         Debug.todo "body threw"
                 ]
             )
 
-        Late who ->
+        Late who →
             ( "${who} arrived", Cmd.none )
 
 
-view : String -> Html Msg
+view : String → Html Msg
 view shown =
     <main>
         <p id="shown">{shown}</p>
@@ -75,5 +75,5 @@ main =
         { init = ( "idle", Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

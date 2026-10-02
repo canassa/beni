@@ -6,13 +6,13 @@
 import Html exposing (Html)
 
 
-view : Int -> Html msg
+view : Int → Html msg
 view n =
     left = n + 1
     <section>{left}</section>
 
 
-fragment : Int, Int -> Html msg
+fragment : Int, Int → Html msg
 fragment a b =
     less = a < b
     _ = less

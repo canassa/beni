@@ -6,5 +6,5 @@ import Perimeter exposing (perimeter)
 import Shape exposing (Shape)
 
 
-pub describe : Shape -> String
+pub describe : Shape → String
 describe s = "area ${area s}, perimeter ${perimeter s}"

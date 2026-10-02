@@ -14,31 +14,31 @@ type Rank
     | Queen
 
 
-pub compare : Rank, Rank -> Order
+pub compare : Rank, Rank → Order
 compare a b = Basics.compare (weight a) (weight b)
 
 
-pub eq : Rank, Rank -> Bool
+pub eq : Rank, Rank → Bool
 eq a b = weight a > 1 && weight b > 1 || weight a == weight b
 
 
-weight : Rank -> Int
+weight : Rank → Int
 weight r =
     case r of
-        Ace ->
+        Ace →
             1
 
-        King ->
+        King →
             3
 
-        Queen ->
+        Queen →
             2
 
 
 before x y = x.compare y == LT
 
 
-yes : Bool -> String
+yes : Bool → String
 yes b =
     if b then
         "T"

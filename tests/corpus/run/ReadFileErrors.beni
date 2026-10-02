@@ -8,49 +8,49 @@ import Io exposing (FileError)
 import Node exposing (Program)
 
 
-describe : FileError -> String
+describe : FileError → String
 describe error =
     case error of
-        Io.NotFound ->
+        Io.NotFound →
             "not found"
 
-        Io.PermissionDenied ->
+        Io.PermissionDenied →
             "permission denied"
 
-        Io.IsADirectory ->
+        Io.IsADirectory →
             "is a directory"
 
-        Io.NotADirectory ->
+        Io.NotADirectory →
             "not a directory"
 
-        Io.TooManyOpenFiles ->
+        Io.TooManyOpenFiles →
             "too many open files"
 
-        Io.SymlinkLoop ->
+        Io.SymlinkLoop →
             "symlink loop"
 
-        Io.NameTooLong ->
+        Io.NameTooLong →
             "name too long"
 
-        Io.InvalidPath ->
+        Io.InvalidPath →
             "invalid path"
 
-        Io.TooLarge ->
+        Io.TooLarge →
             "too large"
 
 
-attempt : String, String -> String
+attempt : String, String → String
 attempt label path =
     case Io.readFile path of
-        Ok text ->
+        Ok text →
             label ++ ": read, " ++ String.left text 7
 
-        Err error ->
+        Err error →
             label ++ ": " ++ describe error
 
 
 main : Program
-main = Io.run λ() ->
+main = Io.run λ() →
     Node.printLines
         [ attempt "missing" "no such file.txt"
         , attempt "directory" "."

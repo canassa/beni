@@ -6,7 +6,7 @@
 import Box exposing (Box)
 
 
-listed : Box Int -> String
+listed : Box Int → String
 listed bx =
     w = [ bx ]
     bx.describe w

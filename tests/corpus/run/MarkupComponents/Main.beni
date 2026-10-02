@@ -13,7 +13,7 @@ import Node
 import Ssr
 
 
-page : String -> Html msg
+page : String → Html msg
 page name =
     <main>
         <Card.header text="Top" />
@@ -21,8 +21,8 @@ page name =
             Welcome, <b>{name}</b>!
             <Card.badge label="new">hot &amp; fresh</Card.badge>
         </Card>
-        <Card {...Card.defaults} title="Spread" />
-        <Card.listOf items={[ "a", "b" ]}>{λitem -> <li>{item}</li>}</Card.listOf>
+        <Card {…Card.defaults} title="Spread" />
+        <Card.listOf items={[ "a", "b" ]}>{λitem → <li>{item}</li>}</Card.listOf>
     </main>
 
 

@@ -2,8 +2,8 @@
 -- inside. It derives nothing for `HasFn` (A.23), so nothing may name a
 -- derived method of it.
 pub type HasFn
-    = HasFn (Int -> Int)
+    = HasFn (Int → Int)
 
 
-pub wrap : Int -> HasFn
-wrap n = HasFn λx -> x + n
+pub wrap : Int → HasFn
+wrap n = HasFn λx → x + n

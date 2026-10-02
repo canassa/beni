@@ -22,14 +22,14 @@ import Node exposing (Program)
 import String
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
 main : Program
 main =
     callsLater = twice (n "let.callsLater" 3)
-    deferred = λ_ -> later + 1
+    deferred = λ_ → later + 1
     later = n "let.later" 5
     usesEarlier = later * 10
     twice k = n "let.twice" (k * 2)

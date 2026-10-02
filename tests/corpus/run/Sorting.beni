@@ -17,16 +17,16 @@ people : List Person
 people = [ { name = "Bob", age = 7 }, { name = "Ada", age = 36 }, { name = "Cy", age = 21 } ]
 
 
-names : List Person -> String
-names ps = String.join (List.map ps λp -> p.name) ","
+names : List Person → String
+names ps = String.join (List.map ps λp → p.name) ","
 
 
 main : Program
 main =
     Node.printLines
         [ String.join (List.map (List.sort [ 3, 1, 2 ]) String.fromInt) ","
-        , names (List.sortBy people λp -> p.age)
-        , names (List.sortWith people λa b -> String.compare a.name b.name)
-        , names (List.sortWith people λa b -> compare b.age a.age)
-        , names (List.sortBy people λp -> p.name)
+        , names (List.sortBy people λp → p.age)
+        , names (List.sortWith people λa b → String.compare a.name b.name)
+        , names (List.sortWith people λa b → compare b.age a.age)
+        , names (List.sortBy people λp → p.name)
         ]

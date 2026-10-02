@@ -13,21 +13,21 @@ import Cells
 import Node
 
 
-next : () -> Int
+next : () → Int
 next = Cells.counter 5
 
 
-logged : Int -> Int
+logged : Int → Int
 logged n =
     _ = Debug.log "inside" n
     n + 1
 
 
-shout : String -> String
+shout : String → String
 shout s = "${s}!"
 
 
-total : Int -> Int
+total : Int → Int
 total n = Cells.sumTo 0 n
 
 
@@ -40,7 +40,7 @@ main =
     a = next ()
     b = next ()
     c = next ()
-    later = λw -> shout w
+    later = λw → shout w
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"
         , String.fromInt (total 4)

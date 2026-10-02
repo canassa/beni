@@ -24,13 +24,13 @@ qualifiedReceiver a = String.length.m a
 placeholder x b = x.m _ b
 
 
-pipeIn source x a = source |> x.m a
+pipeIn source x a = source ▷ x.m a
 
 
-pipeOut x a f = x.m a |> f
+pipeOut x a f = x.m a ▷ f
 
 
-pipeOnly source x = source |> x.m
+pipeOnly source x = source ▷ x.m
 
 
 fieldAccess x = x.m

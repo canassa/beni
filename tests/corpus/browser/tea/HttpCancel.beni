@@ -20,37 +20,37 @@ type Msg
     | Found String (Result Http.Error String)
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Typed q ->
+        Typed q →
             ( lines
-            , Cmd.keyed Search Cmd.Restart λsend ->
+            , Cmd.keyed Search Cmd.Restart λsend →
                 send (Found q (Http.get { url = "/search?q=${q}", expect = Http.expectString }))
             )
 
-        Stop ->
+        Stop →
             ( lines, Cmd.cancel Search )
 
-        Found q (Ok text) ->
+        Found q (Ok text) →
             ( lines ++ [ "${q}: ${text}" ], Cmd.none )
 
-        Found q (Err _) ->
+        Found q (Err _) →
             ( lines ++ [ "${q}: failed" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="a" onClick={Typed "a"}>a</button>
         <button id="ab" onClick={Typed "ab"}>ab</button>
         <button id="abc" onClick={Typed "abc"}>abc</button>
         <button id="stop" onClick={Stop}>stop</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

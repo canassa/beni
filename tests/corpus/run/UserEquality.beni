@@ -17,16 +17,16 @@ pub type Version
 
 
 -- Two versions are the same when their MAJOR numbers are.
-pub eq : Version, Version -> Bool
+pub eq : Version, Version → Bool
 eq a b =
     case a of
-        Version majorA _ ->
+        Version majorA _ →
             case b of
-                Version majorB _ ->
+                Version majorB _ →
                     majorA == majorB
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -39,5 +39,5 @@ main =
     Node.printLines
         [ show (Version 1 0 == Version 1 9)
         , show (Version 1 0 == Version 2 0)
-        , show (Version 1 0 /= Version 1 9)
+        , show (Version 1 0 ≠ Version 1 9)
         ]

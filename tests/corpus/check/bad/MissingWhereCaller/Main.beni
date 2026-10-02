@@ -7,5 +7,5 @@
 import Lib
 
 
-pub best : a, a -> a
+pub best : a, a → a
 best x y = Lib.top x y

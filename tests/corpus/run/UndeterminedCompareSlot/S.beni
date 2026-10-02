@@ -2,22 +2,22 @@ pub type Sorted a
     = Sorted (List a)
 
 
-pub eq : Sorted a, Sorted a -> Bool
-    where a.compare : a, a -> Order
+pub eq : Sorted a, Sorted a → Bool
+    where a.compare : a, a → Order
 eq (Sorted l) (Sorted r) =
     case l of
-        [] ->
+        [] →
             case r of
-                [] ->
+                [] →
                     True
 
-                _ ->
+                _ →
                     False
 
-        [ x, ..._ ] ->
+        [ x, …_ ] →
             case r of
-                [ y, ..._ ] ->
+                [ y, …_ ] →
                     not (x < y) && not (y < x)
 
-                [] ->
+                [] →
                     False

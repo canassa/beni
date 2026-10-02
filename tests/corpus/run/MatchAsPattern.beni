@@ -17,41 +17,41 @@ type Wrapped
     | Bare Int
 
 
-head : List Int -> String
+head : List Int → String
 head xs =
     case xs of
-        [ a, ..._ ] as whole ->
+        [ a, …_ ] as whole →
             "${String.fromInt a} of ${String.fromInt (List.length whole)}"
 
-        [] ->
+        [] →
             "none"
 
 
-inner : Wrapped -> String
+inner : Wrapped → String
 inner w =
     case w of
-        Wrap ((Just n) as m) k ->
+        Wrap ((Just n) as m) k →
             "just ${String.fromInt n} of ${String.fromInt (Maybe.withDefault m 0)} plus ${String.fromInt k}"
 
-        Wrap Nothing k ->
+        Wrap Nothing k →
             "nothing plus ${String.fromInt k}"
 
-        Bare k ->
+        Bare k →
             "bare ${String.fromInt k}"
 
 
 -- The `as` row is the one a wildcard column copies under both alternatives,
 -- so its leaf is the shared one and the binding has to be rebuilt there.
-pairUp : Wrapped, Bool -> String
+pairUp : Wrapped, Bool → String
 pairUp w flag =
     case ( w, flag ) of
-        ( Wrap (Just 0) k, True ) ->
+        ( Wrap (Just 0) k, True ) →
             "zero true ${String.fromInt k}"
 
-        ( Bare 0, False ) ->
+        ( Bare 0, False ) →
             "zero false"
 
-        ( other as w2, _ ) ->
+        ( other as w2, _ ) →
             "other ${inner w2} ${inner other}"
 
 

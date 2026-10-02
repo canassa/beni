@@ -9,55 +9,55 @@ import Node exposing (Program)
 import String
 
 
-mergeSort : List Int -> List Int
+mergeSort : List Int → List Int
 mergeSort xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x ] ->
+        [ x ] →
             [ x ]
 
-        _ ->
+        _ →
             case split xs [] [] of
-                ( left, right ) ->
+                ( left, right ) →
                     merge (mergeSort left) (mergeSort right)
 
 
-split : List a, List a, List a -> ( List a, List a )
+split : List a, List a, List a → List a × List a
 split xs left right =
     case xs of
-        [] ->
+        [] →
             ( left, right )
 
-        [ x, ...rest ] ->
-            split rest right [ x, ...left ]
+        [ x, …rest ] →
+            split rest right [ x, …left ]
 
 
-merge : List Int, List Int -> List Int
+merge : List Int, List Int → List Int
 merge xs ys =
     case ( xs, ys ) of
-        ( [], _ ) ->
+        ( [], _ ) →
             ys
 
-        ( _, [] ) ->
+        ( _, [] ) →
             xs
 
-        ( [ x, ...xt ], [ y, ...yt ] ) ->
-            if x <= y then
-                [ x, ...merge xt [ y, ...yt ] ]
+        ( [ x, …xt ], [ y, …yt ] ) →
+            if x ≤ y then
+                [ x, …merge xt [ y, …yt ] ]
             else
-                [ y, ...merge [ x, ...xt ] yt ]
+                [ y, …merge [ x, …xt ] yt ]
 
 
-show : List Int -> String
+show : List Int → String
 show xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
-    evens = List.map (List.range 1 50000) λx -> x * 2
-    odds = List.map (List.range 0 49999) λx -> x * 2 + 1
+    evens = List.map (List.range 1 50000) λx → x * 2
+    odds = List.map (List.range 0 49999) λx → x * 2 + 1
     merged = merge evens odds
     sorted = mergeSort (List.reverse (List.range 1 100000))
     Node.printLines

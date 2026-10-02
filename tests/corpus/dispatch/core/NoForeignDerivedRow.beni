@@ -17,5 +17,5 @@ pub opaque type Hidden
     = Hidden Key
 
 
-pub same : Hidden, Hidden -> Bool
+pub same : Hidden, Hidden → Bool
 same a b = a == b

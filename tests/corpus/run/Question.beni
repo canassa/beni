@@ -14,24 +14,24 @@ import Node exposing (Program)
 import String
 
 
-parseBoth : String, String -> Result String Int
+parseBoth : String, String → Result String Int
 parseBoth a b =
     left = parseOne a?
     right = parseOne b?
     Ok (left + right)
 
 
-parseOne : String -> Result String Int
+parseOne : String → Result String Int
 parseOne s =
     case String.toInt s of
-        Just value ->
+        Just value →
             Ok value
 
-        Nothing ->
+        Nothing →
             Err "not a number: ${s}"
 
 
-firstPlus : List Int -> Maybe Int
+firstPlus : List Int → Maybe Int
 firstPlus xs =
     head = List.head xs?
     Just (head + 1)
@@ -40,45 +40,45 @@ firstPlus xs =
 -- A `?` inside a declaration that carries a `where` clause: the evidence
 -- parameter is in front of `r`, and the early return has to leave the same
 -- function the evidence was passed to.
-firstBigger : Result String a, a -> Result String Bool
-    where a.compare : a, a -> Order
+firstBigger : Result String a, a → Result String Bool
+    where a.compare : a, a → Order
 firstBigger r limit =
     value = r?
     Ok (bigger value limit)
 
 
-bigger : a, a -> Bool
-    where a.compare : a, a -> Order
+bigger : a, a → Bool
+    where a.compare : a, a → Order
 bigger x y = x.compare y == GT
 
 
-showMaybe : Maybe Int -> String
+showMaybe : Maybe Int → String
 showMaybe m =
     case m of
-        Just n ->
+        Just n →
             String.fromInt n
 
-        Nothing ->
+        Nothing →
             "nothing"
 
 
-showResult : Result String Int -> String
+showResult : Result String Int → String
 showResult r =
     case r of
-        Ok n ->
+        Ok n →
             String.fromInt n
 
-        Err message ->
+        Err message →
             message
 
 
-showBool : Result String Bool -> String
+showBool : Result String Bool → String
 showBool r =
     case r of
-        Ok b ->
+        Ok b →
             Debug.toString b
 
-        Err message ->
+        Err message →
             message
 
 

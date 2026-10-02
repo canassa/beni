@@ -16,7 +16,7 @@ import String
 
 
 blank : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 blank = []
 
 
@@ -30,7 +30,7 @@ blankStrings : List String
 blankStrings = blank
 
 
-yn : Bool -> String
+yn : Bool → String
 yn b =
     if b then
         "T"

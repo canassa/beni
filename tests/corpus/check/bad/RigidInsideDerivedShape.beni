@@ -6,9 +6,9 @@
 -- hole with structural `Basics.eq`, and the built program compare
 -- functions and ignore a custom `eq` (`False False False`).
 
-pairEq : a, a -> Bool
+pairEq : a, a → Bool
 pairEq x y = ( x, 1 ) == ( y, 1 )
 
 
-recEq : a, a -> Bool
+recEq : a, a → Bool
 recEq x y = { v = x } == { v = y }

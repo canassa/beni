@@ -11,7 +11,7 @@ type Msg
     = Go
 
 
-update : Msg, Int -> Int
+update : Msg, Int → Int
 update Go n =
     _ = Log.info "went ${String.fromInt (n + 1)}"
     _ = Log.warn "careful"
@@ -19,7 +19,7 @@ update Go n =
     n + 1
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view n = <button id="go" onClick={Go}>{String.fromInt n}</button>
 
 

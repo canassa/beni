@@ -9,19 +9,19 @@ import Node exposing (Program)
 import Task
 
 
-say : String -> ()
+say : String → ()
 say line = Debug.log line ()
 
 
 main : Program
-main = Io.run λ() ->
+main = Io.run λ() →
     root = Task.openRoot ()
 
-    _ = Task.spawnIn root λ() ->
-        Task.bracket (λ() -> ()) (λ_ _ -> say "sleeper released") λ_ -> Io.sleep 100000
+    _ = Task.spawnIn root λ() →
+        Task.bracket (λ() → ()) (λ_ _ → say "sleeper released") λ_ → Io.sleep 100000
 
-    _ = Task.spawnIn root λ() ->
-        Task.bracket (λ() -> ()) (λ_ _ -> say "thrower released") λ_ ->
+    _ = Task.spawnIn root λ() →
+        Task.bracket (λ() → ()) (λ_ _ → say "thrower released") λ_ →
             _ = say "about to throw"
             Debug.todo "the fiber threw"
 

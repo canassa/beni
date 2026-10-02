@@ -6,17 +6,17 @@ import Js
 
 --| A counter: a closure over a cell. Called once, at the top level of
 --| `Main`, whose top level then holds the cell.
-pub counter : Int -> (() -> Int)
+pub counter : Int → (() → Int)
 counter start =
     n = Js.ref start
-    λ() ->
+    λ() →
         _ = Js.write n (Js.read n + 1)
         Js.read n
 
 
 --| A loop whose parameters it reassigns: taken in, they are `let`s bound to
 --| the arguments.
-pub sumTo : Int, Int -> Int
+pub sumTo : Int, Int → Int
 sumTo acc k =
     if k == 0 then
         acc

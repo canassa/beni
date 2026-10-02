@@ -149,9 +149,10 @@
     (type_fn
       (type_tuple
         (type_unit)
-        (type_tuple
-          (type_con Int)
-          (type_con Int)))
+        (type_paren
+          (type_tuple
+            (type_con Int)
+            (type_con Int))))
       (type_con Int)))
   (definition unwrap
     (pat_var pair)
@@ -217,9 +218,10 @@
   (annotation both
     (type_fn
       (type_con Maybe
-        (type_tuple
-          (type_con Int)
-          (type_con Int)))
+        (type_paren
+          (type_tuple
+            (type_con Int)
+            (type_con Int))))
       (type_con Int)))
   (definition both
     (pat_var m)

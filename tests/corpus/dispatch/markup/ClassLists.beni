@@ -7,11 +7,11 @@
 import Html exposing (Html)
 
 
-classes : List ( String, Bool )
+classes : List (String × Bool)
 classes = [ ( "row", True ) ]
 
 
-pub view : String, Bool -> Html msg
+pub view : String, Bool → Html msg
 view size selected =
     <div>
         <p class="btn ${size}" />

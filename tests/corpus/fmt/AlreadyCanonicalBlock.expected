@@ -2,7 +2,7 @@
 -- 4 right of the line its opener is on, the value last, one blank line
 -- between bindings kept, an annotated binding, a pattern binding, and a
 -- nested block.
-total : List Int -> Int
+total : List Int → Int
 total xs =
     count : Int
     count = List.length xs
@@ -11,10 +11,10 @@ total xs =
 
     spread =
         case ( low, high ) of
-            ( Just l, Just h ) ->
+            ( Just l, Just h ) →
                 h - l
 
-            _ ->
+            _ →
                 0
 
     scaled =

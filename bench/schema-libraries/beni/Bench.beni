@@ -56,33 +56,33 @@ strict =
     { errors = Schema.FirstError, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
 
 
-pub parseFlat : String -> Result (List Schema.Issue) User.Type
+pub parseFlat : String → Result (List Schema.Issue) User.Type
 parseFlat text = User.parseWith strict text
 
 
-pub printFlat : User.Type -> Result (List Schema.Issue) String
+pub printFlat : User.Type → Result (List Schema.Issue) String
 printFlat value = User.printWith strict value
 
 
-pub parseList : String -> Result (List Schema.Issue) Users.Type
+pub parseList : String → Result (List Schema.Issue) Users.Type
 parseList text = Users.parseWith strict text
 
 
-pub printList : Users.Type -> Result (List Schema.Issue) String
+pub printList : Users.Type → Result (List Schema.Issue) String
 printList value = Users.printWith strict value
 
 
-pub parseUnion : String -> Result (List Schema.Issue) Items.Type
+pub parseUnion : String → Result (List Schema.Issue) Items.Type
 parseUnion text = Items.parseWith strict text
 
 
-pub printUnion : Items.Type -> Result (List Schema.Issue) String
+pub printUnion : Items.Type → Result (List Schema.Issue) String
 printUnion value = Items.printWith strict value
 
 
-pub parseTypeahead : String -> Result (List Schema.Issue) Typeahead.Type
+pub parseTypeahead : String → Result (List Schema.Issue) Typeahead.Type
 parseTypeahead text = Typeahead.parseWith strict text
 
 
-pub printTypeahead : Typeahead.Type -> Result (List Schema.Issue) String
+pub printTypeahead : Typeahead.Type → Result (List Schema.Issue) String
 printTypeahead value = Typeahead.printWith strict value

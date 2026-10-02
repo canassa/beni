@@ -18,35 +18,35 @@ type Msg
     | Woke
 
 
-update : Msg, Bool -> ( Bool, Cmd Msg )
+update : Msg, Bool → Bool × Cmd Msg
 update msg broken =
     case msg of
-        Start ->
+        Start →
             ( broken
-            , Cmd.perform λsend ->
+            , Cmd.perform λsend →
                 Task.bracket
-                    (λ() -> ())
-                    (λ_ exit ->
+                    (λ() → ())
+                    (λ_ exit →
                         case exit of
-                            Done _ ->
+                            Done _ →
                                 Log.info "released: Done"
 
-                            Cancelled ->
+                            Cancelled →
                                 Log.info "released: Cancelled"
                     )
-                    λ_ ->
+                    λ_ →
                         _ = Time.sleep (Time.millis 100)
                         send Woke
             )
 
-        Break ->
+        Break →
             ( True, Cmd.none )
 
-        Woke ->
+        Woke →
             ( broken, Cmd.none )
 
 
-view : Bool -> Html Msg
+view : Bool → Html Msg
 view broken =
     if broken then
         Debug.todo "view threw"
@@ -63,5 +63,5 @@ main =
         { init = ( False, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

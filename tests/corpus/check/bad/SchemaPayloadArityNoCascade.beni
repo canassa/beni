@@ -10,5 +10,5 @@ schema Shape tagged "kind" of
         v : Int Int Int
 
 
-same : Shape.Type -> Bool
+same : Shape.Type → Bool
 same c = c == c

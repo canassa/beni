@@ -23,36 +23,36 @@ type Flag
     | Off
 
 
-verdict : Point, Flag -> String
+verdict : Point, Flag → String
 verdict p flag =
     case ( p, flag ) of
-        ( Point 0 y, On ) ->
+        ( Point 0 y, On ) →
             "on axis ${String.fromInt y}"
 
-        ( Point x 0, Off ) ->
+        ( Point x 0, Off ) →
             "off axis ${String.fromInt x}"
 
-        ( Point x y, _ ) ->
+        ( Point x y, _ ) →
             "sum ${String.fromInt (x + y)}"
 
 
-describe : Point, Flag -> String
+describe : Point, Flag → String
 describe p flag =
     case ( p, flag ) of
-        ( Point 1 _, On ) ->
+        ( Point 1 _, On ) →
             "one on"
 
-        ( Point _ 1, Off ) ->
+        ( Point _ 1, Off ) →
             "one off"
 
-        ( whole, _ ) ->
+        ( whole, _ ) →
             "plain ${String.fromInt (total whole)}"
 
 
-total : Point -> Int
+total : Point → Int
 total p =
     case p of
-        Point x y ->
+        Point x y →
             x + y
 
 

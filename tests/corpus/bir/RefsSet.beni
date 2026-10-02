@@ -6,15 +6,15 @@ import Dict exposing (Dict, size)
 import String.Extra exposing (padLeft)
 
 
-report : Dict String Int -> String
+report : Dict String Int → String
 report d = format (total d + limit) ++ " of ${Dict.size d}"
 
 
-format : Int -> String
+format : Int → String
 format n = padLeft 4 (String.fromInt n)
 
 
-total : Dict String Int -> Int
+total : Dict String Int → Int
 total d = size d
 
 

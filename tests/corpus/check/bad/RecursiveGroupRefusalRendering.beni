@@ -18,5 +18,5 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        _ = (K 1).ma λq -> q
+        _ = (K 1).ma λq → q
         y

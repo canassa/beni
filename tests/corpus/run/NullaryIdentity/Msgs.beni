@@ -6,5 +6,5 @@ pub type Msg
     | Add Int
 
 
-pub stop : Int -> Msg
+pub stop : Int → Msg
 stop _ = Stop

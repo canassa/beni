@@ -19,7 +19,7 @@ only f = f _
 nested f g b = f (g _) b
 
 
-inPipeline xs = xs |> List.map (add 1 _)
+inPipeline xs = xs ▷ List.map (add 1 _)
 
 
 constructor a = Pair a _

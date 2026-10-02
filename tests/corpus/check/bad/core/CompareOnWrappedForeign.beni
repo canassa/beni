@@ -26,5 +26,5 @@ pub opaque type Hidden
     = Hidden Key
 
 
-pub before : Wraps, Wraps -> Bool
+pub before : Wraps, Wraps → Bool
 before a b = a < b

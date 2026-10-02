@@ -19,15 +19,15 @@ import Schema exposing (Conversion)
 decimalInt : Conversion String Int
 decimalInt =
     Schema.conversion
-        (λs ->
+        (λs →
             case String.toInt s of
-                Just n ->
+                Just n →
                     Ok n
 
-                Nothing ->
+                Nothing →
                     Err [ Schema.issue "not a decimal integer" ]
         )
-        λn -> Ok (String.fromInt n)
+        λn → Ok (String.fromInt n)
 
 
 schema User =
@@ -40,9 +40,9 @@ main : Program
 main =
     Node.printLines
         [ case User.parse "{\"user-name\":\"a\",\"age\":\"3\",\"scores\":[1]}" of
-            Ok u ->
+            Ok u →
                 u.name
 
-            Err _ ->
+            Err _ →
                 "failed"
         ]

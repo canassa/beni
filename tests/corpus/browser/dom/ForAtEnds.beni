@@ -24,39 +24,39 @@ type alias Model =
     items : List String
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Next ->
+        Next →
             { model | shape = if model.shape == 5 then 0 else model.shape + 1 }
 
-        Grow ->
+        Grow →
             { model | items = model.items ++ [ "row ${String.fromInt (List.length model.items)}" ] }
 
-        Empty ->
+        Empty →
             { model | items = [] }
 
 
-leading : List String -> Html msg
+leading : List String → Html msg
 leading items =
     <>
-        <For each={items}>{λs -> <li>{s}</li>}</For>
+        <For each={items}>{λs → <li>{s}</li>}</For>
         <li>leading's last</li>
     </>
 
 
-trailing : List String -> Html msg
+trailing : List String → Html msg
 trailing items =
     <>
         <li>trailing's first</li>
-        <For each={items}>{λs -> <li>{s}</li>}</For>
+        <For each={items}>{λs → <li>{s}</li>}</For>
     </>
 
 
-only : List String -> Html msg
+only : List String → Html msg
 only items =
     <>
-        <For each={items}>{λs -> <li>{s}</li>}</For>
+        <For each={items}>{λs → <li>{s}</li>}</For>
     </>
 
 
@@ -64,7 +64,7 @@ plain : Html msg
 plain = <li>plain</li>
 
 
-shape : Model -> Html msg
+shape : Model → Html msg
 shape model =
     if model.shape == 0 then
         leading model.items
@@ -75,12 +75,12 @@ shape model =
     else if model.shape == 3 then
         plain
     else if model.shape == 4 then
-        Html.map (trailing model.items) λm -> m
+        Html.map (trailing model.items) λm → m
     else
-        Html.map (leading model.items) λm -> m
+        Html.map (leading model.items) λm → m
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="next" onClick={Next}>next</button>

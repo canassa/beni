@@ -28,13 +28,13 @@ pub type Maybe a
 --|
 --| It is best to pattern match when you can, so a missing value is handled
 --| where it happens rather than papered over here.
-pub withDefault : Maybe a, a -> a
+pub withDefault : Maybe a, a → a
 withDefault maybe default =
     case maybe of
-        Just value ->
+        Just value →
             value
 
-        Nothing ->
+        Nothing →
             default
 
 
@@ -46,13 +46,13 @@ withDefault maybe default =
 --| The `Maybe` comes first, so this reads well in a pipeline:
 --|
 --|     (Just 9 |> map sqrt) == Just 3
-pub map : Maybe a, (a -> b) -> Maybe b
+pub map : Maybe a, (a → b) → Maybe b
 map maybe func =
     case maybe of
-        Just value ->
+        Just value →
             Just (func value)
 
-        Nothing ->
+        Nothing →
             Nothing
 
 
@@ -60,18 +60,18 @@ map maybe func =
 --|
 --|     map2 (Just 3) (Just 4) (+) == Just 7
 --|     map2 (Just 3) Nothing (+) == Nothing
-pub map2 : Maybe a, Maybe b, (a, b -> value) -> Maybe value
+pub map2 : Maybe a, Maybe b, (a, b → value) → Maybe value
 map2 ma mb func =
     case ma of
-        Nothing ->
+        Nothing →
             Nothing
 
-        Just a ->
+        Just a →
             case mb of
-                Nothing ->
+                Nothing →
                     Nothing
 
-                Just b ->
+                Just b →
                     Just (func a b)
 
 
@@ -79,23 +79,23 @@ map2 ma mb func =
 --|
 --|     map3 (Just 1) (Just 2) (Just 3) (λa b c -> a + b + c) == Just 6
 --|     map3 (Just 1) Nothing (Just 3) (λa b c -> a + b + c) == Nothing
-pub map3 : Maybe a, Maybe b, Maybe c, (a, b, c -> value) -> Maybe value
+pub map3 : Maybe a, Maybe b, Maybe c, (a, b, c → value) → Maybe value
 map3 ma mb mc func =
     case ma of
-        Nothing ->
+        Nothing →
             Nothing
 
-        Just a ->
+        Just a →
             case mb of
-                Nothing ->
+                Nothing →
                     Nothing
 
-                Just b ->
+                Just b →
                     case mc of
-                        Nothing ->
+                        Nothing →
                             Nothing
 
-                        Just c ->
+                        Just c →
                             Just (func a b c)
 
 
@@ -105,29 +105,29 @@ pub map4 :
     , Maybe b
     , Maybe c
     , Maybe d
-    , (a, b, c, d -> value)
-    -> Maybe value
+    , (a, b, c, d → value)
+    → Maybe value
 map4 ma mb mc md func =
     case ma of
-        Nothing ->
+        Nothing →
             Nothing
 
-        Just a ->
+        Just a →
             case mb of
-                Nothing ->
+                Nothing →
                     Nothing
 
-                Just b ->
+                Just b →
                     case mc of
-                        Nothing ->
+                        Nothing →
                             Nothing
 
-                        Just c ->
+                        Just c →
                             case md of
-                                Nothing ->
+                                Nothing →
                                     Nothing
 
-                                Just d ->
+                                Just d →
                                     Just (func a b c d)
 
 
@@ -138,34 +138,34 @@ pub map5 :
     , Maybe c
     , Maybe d
     , Maybe e
-    , (a, b, c, d, e -> value)
-    -> Maybe value
+    , (a, b, c, d, e → value)
+    → Maybe value
 map5 ma mb mc md me func =
     case ma of
-        Nothing ->
+        Nothing →
             Nothing
 
-        Just a ->
+        Just a →
             case mb of
-                Nothing ->
+                Nothing →
                     Nothing
 
-                Just b ->
+                Just b →
                     case mc of
-                        Nothing ->
+                        Nothing →
                             Nothing
 
-                        Just c ->
+                        Just c →
                             case md of
-                                Nothing ->
+                                Nothing →
                                     Nothing
 
-                                Just d ->
+                                Just d →
                                     case me of
-                                        Nothing ->
+                                        Nothing →
                                             Nothing
 
-                                        Just value ->
+                                        Just value →
                                             Just (func a b c d value)
 
 
@@ -178,11 +178,11 @@ map5 ma mb mc md me func =
 --| block as the callback. The `?` operator does the same thing with less
 --| punctuation: `head xs?` is the value, or an early return of `Nothing` from
 --| the enclosing function.
-pub andThen : Maybe a, (a -> Maybe b) -> Maybe b
+pub andThen : Maybe a, (a → Maybe b) → Maybe b
 andThen maybe callback =
     case maybe of
-        Just value ->
+        Just value →
             callback value
 
-        Nothing ->
+        Nothing →
             Nothing

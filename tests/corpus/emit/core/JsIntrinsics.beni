@@ -9,55 +9,55 @@
 import Js
 
 
-pub read : Js.Value -> Js.Value
+pub read : Js.Value → Js.Value
 read o = Js.get o "firstChild"
 
 
-pub readIndexed : Js.Value, String -> Js.Value
+pub readIndexed : Js.Value, String → Js.Value
 readIndexed o k = Js.get (Js.get o "x-y") k
 
 
-pub write : Js.Value, Js.Value -> ()
+pub write : Js.Value, Js.Value → ()
 write o v = Js.set o "$$root" v
 
 
-pub insert : Js.Value, Js.Value, Js.Value -> Js.Value
+pub insert : Js.Value, Js.Value, Js.Value → Js.Value
 insert parent node before = Js.call parent "insertBefore" [ node, before ]
 
 
-pub make : String -> Js.Value
+pub make : String → Js.Value
 make tag =
     Js.call (Js.get (Js.global "document") "createElement") "call"
         [ Js.global "document", Js.from tag ]
 
 
-pub tests : Js.Value, Js.Value -> List Bool
+pub tests : Js.Value, Js.Value → List Bool
 tests a b = [ Js.same a b, Js.isNull a, Js.isUndefined a, Js.isNullish a ]
 
 
-pub flag : Int -> Bool
-flag flags = Js.bitAnd flags 2 /= 0
+pub flag : Int → Bool
+flag flags = Js.bitAnd flags 2 ≠ 0
 
 
-pub pair : Js.Value -> Js.Value
+pub pair : Js.Value → Js.Value
 pair x = Js.array [ x, Js.null, Js.undefined ]
 
 
-pub callback : Js.Value -> Js.Value
-callback f = Js.apply f [ Js.from λn -> n + 1 ]
+pub callback : Js.Value → Js.Value
+callback f = Js.apply f [ Js.from λn → n + 1 ]
 
 
-pub back : Js.Value -> Int
+pub back : Js.Value → Int
 back v = Js.to v
 
 
-pub second : Js.Value -> Js.Value
+pub second : Js.Value → Js.Value
 second xs = Js.at xs 1
 
 
-pub fail : String -> Int
+pub fail : String → Int
 fail message = Js.throw (Js.apply (Js.global "Error") [ Js.from message ])
 
 
-pub store : Js.Value, Int, Js.Value -> ()
+pub store : Js.Value, Int, Js.Value → ()
 store xs k v = Js.setAt xs k v

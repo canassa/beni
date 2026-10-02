@@ -533,7 +533,7 @@ y =
         0
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

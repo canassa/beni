@@ -18,9 +18,9 @@ pub type Tag
     = Tag Int
 
 
-pub compare : Tag, Tag -> Order
+pub compare : Tag, Tag → Order
 compare a b = LT
 
 
-pub before : ( Handle, Int ), ( Handle, Int ) -> Bool
+pub before : Handle × Int, Handle × Int → Bool
 before a b = a < b

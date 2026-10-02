@@ -8,8 +8,8 @@ type Box a
     = Box a
 
 
-pub same : List (List (Box a)), List (List (Box a)) -> Bool
-    where a.eq : a, a -> Bool
+pub same : List (List (Box a)), List (List (Box a)) → Bool
+    where a.eq : a, a → Bool
 same x y = x == y
 
 

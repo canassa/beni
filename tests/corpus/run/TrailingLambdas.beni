@@ -9,32 +9,32 @@ import Node exposing (Program)
 import String
 
 
-kept : List Int -> String
+kept : List Int → String
 kept xs =
     xs
-        |> List.filter λx -> x > 1
-        |> List.map λx -> String.fromInt (x * 10)
-        |> String.join ","
+        ▷ List.filter λx → x > 1
+        ▷ List.map λx → String.fromInt (x * 10)
+        ▷ String.join ","
 
 
-addEach : List Int -> List Int
+addEach : List Int → List Int
 addEach xs =
-    bump = List.map _ λx -> x + 100
+    bump = List.map _ λx → x + 100
     bump xs
 
 
-withBoth : (Int -> Int), (Int -> String) -> String
+withBoth : (Int → Int), (Int → String) → String
 withBoth f k = k (f 20)
 
 
 bound : String
 bound =
-    x <- withBoth λy -> y + 1
+    x ← withBoth λy → y + 1
     String.fromInt x
 
 
-squares : List Int -> List Int
-squares xs = List.map xs λx ->
+squares : List Int → List Int
+squares xs = List.map xs λx →
     y = x * x
     y + 1
 

@@ -3,7 +3,7 @@
 -- bare `->`, so `( Int -> Int, Int )` is not this type at all — the parser
 -- reads that as a 2-ary function — and a type in a diagnostic is text the
 -- reader pastes back into their source.
-pub apply : ( (Int -> Int), Int ) -> Int
+pub apply : (Int → Int) × Int → Int
 apply _ = 0
 
 

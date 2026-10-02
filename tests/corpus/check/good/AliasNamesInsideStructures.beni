@@ -16,7 +16,7 @@ pub type alias Label =
 
 
 pub type alias Pair a =
-    ( a, a )
+    a × a
 
 
 pub names : List Name

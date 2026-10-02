@@ -5,7 +5,7 @@ import O1
 import Row75
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

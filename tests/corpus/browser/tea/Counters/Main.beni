@@ -23,17 +23,17 @@ type alias Model =
     right : Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Left m ->
+        Left m →
             { model | left = Counter.update m model.left }
 
-        Right m ->
+        Right m →
             { model | right = Counter.update m model.right }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <p>total {Debug.log "view" (model.left + model.right)}</p>

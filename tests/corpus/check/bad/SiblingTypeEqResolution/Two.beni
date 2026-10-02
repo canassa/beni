@@ -6,5 +6,5 @@ pub type B
     = B String
 
 
-pub eq : A, A -> Bool
+pub eq : A, A → Bool
 eq (A x) (A y) = Int.mod x 2 == Int.mod y 2

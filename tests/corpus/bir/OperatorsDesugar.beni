@@ -5,13 +5,13 @@
 arith a b = ( a + b, a - b, a * b, a / b, a // b, a ^ b )
 
 
-comparisons a b = ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+comparisons a b = ( a == b, a ≠ b, a < b, a > b, a ≤ b, a ≥ b )
 
 
 logic a b = ( a && b, a || b )
 
 
-sequences x xs ys = ( xs ++ ys, [ x, ...xs ] )
+sequences x xs ys = ( xs ++ ys, [ x, …xs ] )
 
 
 negation x = -x

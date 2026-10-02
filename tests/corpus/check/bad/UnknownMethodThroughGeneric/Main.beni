@@ -10,5 +10,5 @@ pub type Shape
     = Circle Float
 
 
-pub show : Shape -> String
+pub show : Shape → String
 show shape = Lib.render shape

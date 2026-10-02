@@ -26,76 +26,76 @@ fromNext r = ( (), r.next )
 
 
 chain : Schema Chain Chain
-chain = Schema.recursive "Chain" λself ->
-    link = Schema.injection Link λc ->
+chain = Schema.recursive "Chain" λself →
+    link = Schema.injection Link λc →
         case c of
-            Link r ->
+            Link r →
                 Just r
 
-            End ->
+            End →
                 Nothing
 
-    end = Schema.injection (λ() -> End) λc ->
+    end = Schema.injection (λ() → End) λc →
         case c of
-            End ->
+            End →
                 Just ()
 
-            Link _ ->
+            Link _ →
                 Nothing
 
     next =
         Schema.record
-            (Schema.fields |> Schema.field "next" self)
+            (Schema.fields ▷ Schema.field "next" self)
             (Schema.mapping toNext fromNext)
             (Schema.mapping toNext fromNext)
     Schema.tagged "t"
         [ Schema.nullary "End" "end" end end, Schema.variant "Link" "link" next link link ]
 
 
-text : Int -> String
+text : Int → String
 text n = String.repeat "{\"t\":\"link\",\"next\":" n ++ "{\"t\":\"end\"}" ++ String.repeat "}" n
 
 
-typed : Int -> Chain
+typed : Int → Chain
 typed n = build n End
 
 
-build : Int, Chain -> Chain
+build : Int, Chain → Chain
 build n acc =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         build (n - 1) (Link { next = acc })
 
 
-links : Chain -> Int
+links : Chain → Int
 links c = count c 0
 
 
-count : Chain, Int -> Int
+count : Chain, Int → Int
 count c n =
     case c of
-        End ->
+        End →
             n
 
-        Link r ->
+        Link r →
             count r.next (n + 1)
 
 
-bound : Int -> Schema.Options
+bound : Int → Schema.Options
 bound d = { defaultOptions | maxDepth = d }
 
 
 -- The path a failure names is n links long: shown by its length.
-issues : Result (List Schema.Issue) a -> String
+issues : Result (List Schema.Issue) a → String
 issues r =
     case r of
-        Ok _ ->
+        Ok _ →
             "Ok"
 
-        Err found ->
+        Err found →
             String.join
-                (List.map found λi ->
+                (List.map found λi →
                     Show.issue { i | path = [] }
                         ++ " at depth "
                         ++ String.fromInt (List.length i.path)
@@ -103,22 +103,22 @@ issues r =
                 " | "
 
 
-at : Int, Int -> String
+at : Int, Int → String
 at d n =
     "maxDepth "
         ++ String.fromInt d
         ++ ", "
         ++ String.fromInt n
         ++ " links: "
-        ++ Show.result (Schema.parseWith chain (bound d) (text n)) λc -> String.fromInt (links c)
+        ++ Show.result (Schema.parseWith chain (bound d) (text n)) λc → String.fromInt (links c)
         ++ " / "
-        ++ Show.result (Schema.decodeWith chain (bound d) (typed n)) λc -> String.fromInt (links c)
+        ++ Show.result (Schema.decodeWith chain (bound d) (typed n)) λc → String.fromInt (links c)
         ++ " / "
-        ++ Show.result (Schema.printWith chain (bound d) (typed n)) λs ->
+        ++ Show.result (Schema.printWith chain (bound d) (typed n)) λs →
             String.fromInt (String.length s)
 
 
-over : Int, Int -> String
+over : Int, Int → String
 over d n =
     "maxDepth "
         ++ String.fromInt d
@@ -132,13 +132,13 @@ over d n =
         ++ issues (Schema.printWith chain (bound d) (typed n))
 
 
-nested : Int -> Schema.Value
+nested : Int → Schema.Value
 nested n =
     case Schema.parse Schema.value (String.repeat "[" n ++ String.repeat "]" n) of
-        Ok v ->
+        Ok v →
             v
 
-        Err _ ->
+        Err _ →
             nested 0
 
 
@@ -162,20 +162,20 @@ main =
         , at Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2)
         , over Schema.maxDepthCeiling (Schema.maxDepthCeiling // 2 + 1)
         , "-- the default is 512"
-        , Show.result (Schema.parse chain (text 256)) λc -> String.fromInt (links c)
+        , Show.result (Schema.parse chain (text 256)) λc → String.fromInt (links c)
         , issues (Schema.parse chain (text 257))
         , "-- options"
         , issues (Schema.parseWith chain (bound (Schema.maxDepthCeiling + 1)) (text 0))
         , issues (Schema.parseWith chain (bound (-1)) (text 0))
         , issues (Schema.decodeWith Schema.int (bound 0) 5)
         , "-- a Value"
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) λs -> s
-        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) λs -> s
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 3)) λs → s
+        , Show.result (Schema.printWith Schema.value (bound 3) (nested 4)) λs → s
         , issues (Schema.printWith Schema.value (bound 3) (nested 5))
         , issues (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 4 ])
-        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) λs -> s
+        , Show.result (Schema.printWith (Schema.list Schema.value) (bound 3) [ nested 3 ]) λs → s
         , issues
-            (Schema.parse Schema.value deep |> Result.andThen λv -> Schema.print Schema.value v)
+            (Schema.parse Schema.value deep ▷ Result.andThen λv → Schema.print Schema.value v)
         ]
 
 

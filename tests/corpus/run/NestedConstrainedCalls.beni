@@ -37,27 +37,27 @@ pub type Box k
     | Holding k
 
 
-pub keepLarger : Box k, k -> Box k
-    where k.compare : k, k -> Order
+pub keepLarger : Box k, k → Box k
+    where k.compare : k, k → Order
 keepLarger box candidate =
     case box of
-        Empty ->
+        Empty →
             Holding candidate
 
-        Holding held ->
+        Holding held →
             if held < candidate then
                 Holding candidate
             else
                 Holding held
 
 
-unwrap : Box k, k -> k
+unwrap : Box k, k → k
 unwrap box fallback =
     case box of
-        Empty ->
+        Empty →
             fallback
 
-        Holding held ->
+        Holding held →
             held
 
 

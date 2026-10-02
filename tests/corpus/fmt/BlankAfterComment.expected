@@ -19,7 +19,7 @@ sub a b = a - b
 mul a b = a * b
 
 
-div : Int, Int -> Int
+div : Int, Int → Int
 -- between annotation and definition
 div a b = a // b
 
@@ -45,12 +45,12 @@ branch m =
     case m of
         -- the empty case
 
-        Nothing ->
+        Nothing →
             0
 
         -- the full case
 
-        Just x ->
+        Just x →
             x
 
 

@@ -8,12 +8,12 @@
 import T exposing (T)
 
 
-pub h : T, String -> ( Int, String )
+pub h : T, String → Int × String
 h t y = ( t.m 1, t.m y )
 
 
 pub k t y = ( (T.T 0).m 1, (T.T 0).m y, [ t, T.T 1 ] )
 
 
-pub use : T -> ( Int, String, List T )
+pub use : T → Int × String × List T
 use t = k t "s"

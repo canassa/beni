@@ -17,12 +17,12 @@ type alias Model =
     unsafe : Bool
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update _ model = { model | unsafe = not model.unsafe }
 
 
 -- Each link's URL in the two states: refused ones first, kept ones second.
-url : Bool, String, String -> String
+url : Bool, String, String → String
 url unsafe bad good =
     if unsafe then
         bad
@@ -30,7 +30,7 @@ url unsafe bad good =
         good
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="flip" onClick={Flip}>flip</button>

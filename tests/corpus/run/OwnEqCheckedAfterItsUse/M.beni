@@ -22,9 +22,9 @@ pub compare left right =
     direct = T 1 == T 2
     nested = { v = T 1 } == { v = T 2 }
     case left of
-        K a ->
+        K a →
             case right of
-                K b ->
+                K b →
                     if direct || nested then
                         EQ
                     else
@@ -39,7 +39,7 @@ pub second = { v = T 1 } == { v = T 2 }
 
 pub eq a b =
     case a of
-        T m ->
+        T m →
             case b of
-                T n ->
+                T n →
                     m + 1 == n

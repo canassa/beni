@@ -13,7 +13,7 @@ type alias Name =
     n : Bool
 
 
-f : Shapes.T -> Int
+f : Shapes.T → Int
 f _ = 1
 
 
@@ -21,7 +21,7 @@ x : Int
 x = f (T 1)
 
 
-g : Shapes.Name -> Int
+g : Shapes.Name → Int
 g _ = 1
 
 

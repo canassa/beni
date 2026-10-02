@@ -15,42 +15,42 @@ import Node exposing (Program)
 import String
 
 
-mapRec : List a, (a -> b) -> List b
+mapRec : List a, (a → b) → List b
 mapRec xs f =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ f x, ...mapRec rest f ]
+        [ x, …rest ] →
+            [ f x, …mapRec rest f ]
 
 
-filterRec : List a, (a -> Bool) -> List a
+filterRec : List a, (a → Bool) → List a
 filterRec xs keep =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
-                [ x, ...filterRec rest keep ]
+                [ x, …filterRec rest keep ]
             else
                 filterRec rest keep
 
 
-show : List Int -> String
+show : List Int → String
 show xs = String.join (List.map xs String.fromInt) ","
 
 
 main : Program
 main =
     big = List.range 1 100000
-    doubled = mapRec big λx -> x * 2
-    odd = filterRec big λx -> Int.mod x 2 == 1
+    doubled = mapRec big λx → x * 2
+    odd = filterRec big λx → Int.mod x 2 == 1
     Node.printLines
-        [ show (mapRec [ 1, 2, 3 ] λx -> x * 10)
-        , show (filterRec [ 1, 2, 3, 4, 5 ] λx -> x /= 3)
-        , show (mapRec [] λx -> x + 1)
+        [ show (mapRec [ 1, 2, 3 ] λx → x * 10)
+        , show (filterRec [ 1, 2, 3, 4, 5 ] λx → x ≠ 3)
+        , show (mapRec [] λx → x + 1)
         , String.fromInt (List.length doubled)
         , String.fromInt (List.sum doubled)
         , show (List.take doubled 3)

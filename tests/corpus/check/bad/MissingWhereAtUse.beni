@@ -10,5 +10,5 @@ type Unrelated
     = Unrelated Int
 
 
-direct : a, a -> Bool
+direct : a, a → Bool
 direct x y = [ x ] == [ y ]

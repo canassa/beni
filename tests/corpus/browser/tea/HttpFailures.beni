@@ -24,51 +24,51 @@ type Msg
     | Got String (Result Http.Error String)
 
 
-problem : Http.Problem -> String
+problem : Http.Problem → String
 problem p =
     case p of
-        Http.InvalidMethod m ->
+        Http.InvalidMethod m →
             "InvalidMethod ${m}"
 
-        Http.ForbiddenMethod m ->
+        Http.ForbiddenMethod m →
             "ForbiddenMethod ${m}"
 
-        Http.InvalidHeader name ->
+        Http.InvalidHeader name →
             "InvalidHeader ${name}"
 
-        Http.ForbiddenHeader name ->
+        Http.ForbiddenHeader name →
             "ForbiddenHeader ${name}"
 
-        Http.BodyNotAllowed m ->
+        Http.BodyNotAllowed m →
             "BodyNotAllowed ${m}"
 
-        Http.MultipartContentType ->
+        Http.MultipartContentType →
             "MultipartContentType"
 
 
-shown : Result Http.Error String -> String
+shown : Result Http.Error String → String
 shown result =
     case result of
-        Ok text ->
+        Ok text →
             "ok ${text}"
 
-        Err (Http.BadUrl url) ->
+        Err (Http.BadUrl url) →
             "BadUrl ${url}"
 
-        Err (Http.BadRequest p) ->
+        Err (Http.BadRequest p) →
             "BadRequest (${problem p})"
 
-        Err Http.Timeout ->
+        Err Http.Timeout →
             "Timeout"
 
-        Err Http.NetworkError ->
+        Err Http.NetworkError →
             "NetworkError"
 
-        Err (Http.BadStatus code) ->
+        Err (Http.BadStatus code) →
             "BadStatus ${String.fromInt code}"
 
 
-ask : String, String, List Http.Header, Http.Body, Maybe Int -> Result Http.Error String
+ask : String, String, List Http.Header, Http.Body, Maybe Int → Result Http.Error String
 ask method url headers body timeout =
     Http.request
         { method = method
@@ -81,24 +81,24 @@ ask method url headers body timeout =
         }
 
 
-refused : List ( String, (() -> Result Http.Error String) )
+refused : List (String × (() → Result Http.Error String))
 refused =
-    [ ( "bad url", λ() -> ask "GET" "http://[" [] Http.emptyBody Nothing )
-    , ( "user info", λ() -> ask "GET" "http://u:p@example.com/" [] Http.emptyBody Nothing )
-    , ( "method", λ() -> ask "GE T" "/x" [] Http.emptyBody Nothing )
-    , ( "connect", λ() -> ask "connect" "/x" [] Http.emptyBody Nothing )
-    , ( "name", λ() -> ask "GET" "/x" [ Http.header "Bad Name" "v" ] Http.emptyBody Nothing )
-    , ( "newline", λ() -> ask "GET" "/x" [ Http.header "X-Ok" "a\nb" ] Http.emptyBody Nothing )
-    , ( "euro", λ() -> ask "GET" "/x" [ Http.header "X-Price" "5 €" ] Http.emptyBody Nothing )
-    , ( "cookie", λ() -> ask "GET" "/x" [ Http.header "Cookie" "a=1" ] Http.emptyBody Nothing )
+    [ ( "bad url", λ() → ask "GET" "http://[" [] Http.emptyBody Nothing )
+    , ( "user info", λ() → ask "GET" "http://u:p@example.com/" [] Http.emptyBody Nothing )
+    , ( "method", λ() → ask "GE T" "/x" [] Http.emptyBody Nothing )
+    , ( "connect", λ() → ask "connect" "/x" [] Http.emptyBody Nothing )
+    , ( "name", λ() → ask "GET" "/x" [ Http.header "Bad Name" "v" ] Http.emptyBody Nothing )
+    , ( "newline", λ() → ask "GET" "/x" [ Http.header "X-Ok" "a\nb" ] Http.emptyBody Nothing )
+    , ( "euro", λ() → ask "GET" "/x" [ Http.header "X-Price" "5 €" ] Http.emptyBody Nothing )
+    , ( "cookie", λ() → ask "GET" "/x" [ Http.header "Cookie" "a=1" ] Http.emptyBody Nothing )
     , ( "sec"
-      , λ() -> ask "GET" "/x" [ Http.header "Sec-Fetch-Mode" "cors" ] Http.emptyBody Nothing
+      , λ() → ask "GET" "/x" [ Http.header "Sec-Fetch-Mode" "cors" ] Http.emptyBody Nothing
       )
     , ( "proxy"
-      , λ() -> ask "GET" "/x" [ Http.header "Proxy-Authorization" "x" ] Http.emptyBody Nothing
+      , λ() → ask "GET" "/x" [ Http.header "Proxy-Authorization" "x" ] Http.emptyBody Nothing
       )
     , ( "override"
-      , λ() ->
+      , λ() →
           ask
               "POST"
               "/x"
@@ -106,51 +106,51 @@ refused =
               Http.emptyBody
               Nothing
       )
-    , ( "get body", λ() -> ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
-    , ( "zero", λ() -> ask "GET" "/x" [] Http.emptyBody (Just 0) )
+    , ( "get body", λ() → ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
+    , ( "zero", λ() → ask "GET" "/x" [] Http.emptyBody (Just 0) )
     ]
 
 
-sentLater : String -> (() -> Result Http.Error String)
+sentLater : String → (() → Result Http.Error String)
 sentLater name =
     case name of
-        "down" ->
-            λ() -> Http.get { url = "/down", expect = Http.expectString }
+        "down" →
+            λ() → Http.get { url = "/down", expect = Http.expectString }
 
-        "missing" ->
-            λ() -> Http.get { url = "/missing", expect = Http.expectString }
+        "missing" →
+            λ() → Http.get { url = "/missing", expect = Http.expectString }
 
-        "slow" ->
-            λ() -> ask "GET" "/slow" [] Http.emptyBody (Just 500)
+        "slow" →
+            λ() → ask "GET" "/slow" [] Http.emptyBody (Just 500)
 
-        _ ->
-            λ() -> ask "GET" "/stall" [] Http.emptyBody (Just 500)
+        _ →
+            λ() → ask "GET" "/stall" [] Http.emptyBody (Just 500)
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Run "refused" ->
-            ( lines, Cmd.batch (List.map refused λ( label, work ) -> Cmd.task work (Got label _)) )
+        Run "refused" →
+            ( lines, Cmd.batch (List.map refused λ( label, work ) → Cmd.task work (Got label _)) )
 
-        Run name ->
+        Run name →
             ( lines, Cmd.task (sentLater name) (Got name _) )
 
-        Got label result ->
+        Got label result →
             ( lines ++ [ "${label}: ${shown result}" ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <For each={[ "refused", "down", "missing", "slow", "stall" ]} keyed={False}>
-            {λname -> <button id={name} onClick={Run name}>{name}</button>}
+            {λname → <button id={name} onClick={Run name}>{name}</button>}
         </For>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

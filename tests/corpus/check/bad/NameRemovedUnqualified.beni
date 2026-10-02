@@ -2,9 +2,9 @@
 -- unqualified use is lowering's `name_removed`, whose message writes the
 -- call with `Int.mod` — not `unbound_variable`, which would not say what
 -- replaced it. One diagnostic per use.
-even : Int -> Bool
+even : Int → Bool
 even n = modBy n 2 == 0
 
 
-log10 : Float -> Float
+log10 : Float → Float
 log10 x = logBase x 10

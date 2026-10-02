@@ -8,12 +8,12 @@
 -- call and refuses it, as it does for the literal in `literalCaller`. None
 -- of the three checks clean. The oracle twin is `lying` called
 -- with an `Int`, refused the same way.
-pub lying : number, number -> Int
-    where number.compare : number, number -> Int
+pub lying : number, number → Int
+    where number.compare : number, number → Int
 lying x y = x.compare y + 1
 
 
-pub rigidCaller : number -> Int
+pub rigidCaller : number → Int
 rigidCaller n = lying n n
 
 

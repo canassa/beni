@@ -3,12 +3,12 @@
 -- whose initialiser names `k`, whose body reads `h`: `cyclic_value` at
 -- `h`, the first VALUE on the circle, as without the `where` — never a
 -- clean check whose built program prints a wrong answer.
-compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = λx -> f (g x)
+compose : (b → c), (a → b) → (a → c)
+compose f g = λx → f (g x)
 
 
-keep : a -> a
-    where a.eq : a, a -> Bool
+keep : a → a
+    where a.eq : a, a → Bool
 keep x =
     if x == x then
         x
@@ -16,11 +16,11 @@ keep x =
         x
 
 
-k : a -> a
-    where a.eq : a, a -> Bool
-k = λx -> h x
+k : a → a
+    where a.eq : a, a → Bool
+k = λx → h x
 
 
-h : a -> a
-    where a.eq : a, a -> Bool
+h : a → a
+    where a.eq : a, a → Bool
 h = compose k keep

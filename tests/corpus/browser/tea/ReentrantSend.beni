@@ -26,33 +26,33 @@ type alias Model =
     echoes : Int
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Captured send ->
+        Captured send →
             ( { model | send = Just send }, Cmd.none )
 
-        Twice ->
+        Twice →
             _ = Debug.log "twice begins" ()
-            _ = Maybe.withDefault (Maybe.map model.send λsend -> send (Echo 1)) ()
+            _ = Maybe.withDefault (Maybe.map model.send λsend → send (Echo 1)) ()
             _ = Debug.log "twice ends" ()
             ( model, Cmd.none )
 
-        After ->
+        After →
             ( model, Cmd.afterRender afterWork )
 
-        Echo n ->
+        Echo n →
             ( { model | echoes = Debug.log "echo" (model.echoes + n) }, Cmd.none )
 
 
-afterWork : Cmd.Send Msg -> ()
+afterWork : Cmd.Send Msg → ()
 afterWork send =
     _ = Debug.log "after-render sends" ()
     _ = send (Echo 2)
     Debug.log "after-render ends" ()
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     _ = Debug.log "render" model.echoes
     <main>
@@ -65,8 +65,8 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform λsend -> send (Captured send) )
+        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform λsend → send (Captured send) )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

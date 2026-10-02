@@ -10,14 +10,14 @@ import Node exposing (Program)
 
 
 type alias Shower =
-    show : Int, Int -> String
+    show : Int, Int → String
 
 
-first : Int, Int -> String
+first : Int, Int → String
 first n _ = String.fromInt n
 
 
-render : Shower, Int -> String
+render : Shower, Int → String
 render s k = s.show k (k * 2)
 
 

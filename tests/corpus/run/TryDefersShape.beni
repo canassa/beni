@@ -17,7 +17,7 @@ h m =
 
 k m =
     case m? of
-        v ->
+        v →
             Just (v + 1)
 
 

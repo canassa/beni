@@ -6,5 +6,5 @@ pub type alias PrivRecW =
     PrivRec.Type
 
 
-pub mk : Int -> PrivRecW
+pub mk : Int → PrivRecW
 mk n = { z = n }

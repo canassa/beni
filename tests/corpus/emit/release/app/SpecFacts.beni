@@ -14,11 +14,11 @@ type alias Settings =
     scale : Int
 
 
-settings : String -> Settings
+settings : String → Settings
 settings name = { name = name, verbose = False, scale = 3 }
 
 
-describe : Settings, Int -> String
+describe : Settings, Int → String
 describe s n =
     if s.verbose then
         "${s.name}: ${String.fromInt n} (verbose)"

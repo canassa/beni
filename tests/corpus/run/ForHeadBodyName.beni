@@ -8,13 +8,13 @@
 import Node exposing (Program)
 
 
-count : Int -> Int
+count : Int → Int
 count limit =
     n = walk limit 0 0 0
     n * 10 + limit
 
 
-walk : Int, Int, Int, Int -> Int
+walk : Int, Int, Int, Int → Int
 walk limit at scanned total =
     if at > limit then
         total
@@ -23,7 +23,7 @@ walk limit at scanned total =
         walk limit (at + 7) s p
 
 
-advance : Int, Int, Int -> ( Int, Int )
+advance : Int, Int, Int → Int × Int
 advance at scanned total =
     if scanned < at then
         advance at (scanned + 2) (total + 1)

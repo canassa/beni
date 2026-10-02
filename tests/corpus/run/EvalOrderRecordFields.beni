@@ -22,7 +22,7 @@
 import Node exposing (Program)
 
 
-n : String, Int -> Int
+n : String, Int → Int
 n label v = Debug.log label v
 
 
@@ -38,10 +38,10 @@ main =
         { alpha = n "hoisted.alpha" 1
         , zed =
             case Just (n "hoisted.zed" 2) of
-                Just v ->
+                Just v →
                     v
 
-                Nothing ->
+                Nothing →
                     0
         }
     Node.printLines

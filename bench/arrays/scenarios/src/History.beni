@@ -9,32 +9,32 @@ type alias History =
     past : List (Array Int)
 
 
-pub start : Int -> History
-start n = { current = Array.initialize n λi -> i, past = [] }
+pub start : Int → History
+start n = { current = Array.initialize n λi → i, past = [] }
 
 
-pub edit : History, Int, Int -> History
-edit h i v = { current = Array.set h.current i v, past = List.take [ h.current, ...h.past ] 100 }
+pub edit : History, Int, Int → History
+edit h i v = { current = Array.set h.current i v, past = List.take [ h.current, …h.past ] 100 }
 
 
-pub undo : History -> History
+pub undo : History → History
 undo h =
     case h.past of
-        [] ->
+        [] →
             h
 
-        [ prev, ...rest ] ->
+        [ prev, …rest ] →
             { current = prev, past = rest }
 
 
 --| `k` edits, one cell each, at indices chosen from `seed`.
-pub edits : History, Int, Int -> History
+pub edits : History, Int, Int → History
 edits h k seed = editsHelp h 0 k seed
 
 
-editsHelp : History, Int, Int, Int -> History
+editsHelp : History, Int, Int, Int → History
 editsHelp h j k seed =
-    if j >= k then
+    if j ≥ k then
         h
     else
         editsHelp
@@ -44,5 +44,5 @@ editsHelp h j k seed =
             seed
 
 
-pub sum : History -> Int
-sum h = Array.foldl h.current 0 λv s -> s + v
+pub sum : History → Int
+sum h = Array.foldl h.current 0 λv s → s + v

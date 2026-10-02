@@ -1,7 +1,7 @@
 -- See Main.beni. `Fn` holds a function behind a custom `eq`.
 pub type Fn
-    = Fn (Int -> Int)
+    = Fn (Int → Int)
 
 
-pub eq : Fn, Fn -> Bool
+pub eq : Fn, Fn → Bool
 eq _ _ = True

@@ -1,5 +1,5 @@
 -- check/args: one argument too many, the mirror of the missing one.
-pub double : Int -> Int
+pub double : Int → Int
 double n = n * 2
 
 

@@ -22,7 +22,7 @@ pub type Tag
     = Tag String
 
 
-pub fromList : List Char -> Tag
+pub fromList : List Char → Tag
 fromList chars = Tag (String.fromList chars)
 
 

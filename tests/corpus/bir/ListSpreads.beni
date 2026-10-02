@@ -6,37 +6,37 @@
 -- lowered first in source order; and `whole` is `xs` itself, no call at all.
 -- A pattern keeps its shape: `ends` is a `pat_list` holding a `pat_spread`
 -- over the name it binds, and `firstOf`'s `..._` a spread over `pat_wild`.
-consOne x xs = [ x, ...xs ]
+consOne x xs = [ x, …xs ]
 
 
-consTwo a b xs = [ a, b, ...xs ]
+consTwo a b xs = [ a, b, …xs ]
 
 
-snoc xs x = [ ...xs, x ]
+snoc xs x = [ …xs, x ]
 
 
-both a b = [ ...a, ...b ]
+both a b = [ …a, …b ]
 
 
-between x a y = [ x, ...a, y ]
+between x a y = [ x, …a, y ]
 
 
-whole xs = [ ...xs ]
+whole xs = [ …xs ]
 
 
 ends xs =
     case xs of
-        [ first, ...middle, last ] ->
+        [ first, …middle, last ] →
             middle
 
-        _ ->
+        _ →
             xs
 
 
 firstOf xs =
     case xs of
-        [ x, ..._ ] ->
+        [ x, …_ ] →
             x
 
-        _ ->
+        _ →
             0

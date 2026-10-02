@@ -1,5 +1,5 @@
 import Plat
 
 
-pub page : (Int -> String) -> Int
+pub page : (Int → String) → Int
 page v = Plat.program { init = 1, view = v }

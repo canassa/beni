@@ -5,11 +5,11 @@
 -- blank line between branches.
 describe x =
     case x of
-        0 ->
+        0 →
             "zero"
-        1 ->
+        1 →
             "one"
 
-        _ ->
+        _ →
             y = x
             "many ${y}"

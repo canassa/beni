@@ -26,27 +26,27 @@ extraSpaces =
     <span>Hello   John</span>
 
 
-pub trailingExpr : Values -> Html ()
+pub trailingExpr : Values → Html ()
 trailingExpr v =
     <span>Hello {v.name}</span>
 
 
-pub leadingExpr : Values -> Html ()
+pub leadingExpr : Values → Html ()
 leadingExpr v =
     <span>{v.greeting} John</span>
 
 
-pub multiExpr : Values -> Html ()
+pub multiExpr : Values → Html ()
 multiExpr v =
     <span>{v.greeting} {v.name}</span>
 
 
-pub multiExprSpaced : Values -> Html ()
+pub multiExprSpaced : Values → Html ()
 multiExprSpaced v =
     <span> {v.greeting} {v.name} </span>
 
 
-pub multiExprTogether : Values -> Html ()
+pub multiExprTogether : Values → Html ()
 multiExprTogether v =
     <span> {v.greeting}{v.name} </span>
 
@@ -95,34 +95,34 @@ injection =
     <span>Hi{"<script>alert();</script>"}</span>
 
 
-pub evaluated : Values -> Html ()
+pub evaluated : Values → Html ()
 evaluated v =
     <span>Hello {v.value ++ "!"}</span>
 
 
-pub evaluatedNonString : Values -> Html ()
+pub evaluatedNonString : Values → Html ()
 evaluatedNonString v =
     <span>4 + 5 = {v.number}</span>
 
 
-pub newLineLiteral : Values -> Html ()
+pub newLineLiteral : Values → Html ()
 newLineLiteral v =
     <div>{v.s}{"\n"}d</div>
 
 
-pub trailingSpace : Values -> Html ()
+pub trailingSpace : Values → Html ()
 trailingSpace v =
     <div>
       {v.expr}
     </div>
 
 
-pub leadingSpaceElement : Values -> Html ()
+pub leadingSpaceElement : Values → Html ()
 leadingSpaceElement v =
     <span> {v.expr}</span>
 
 
-pub trailingSpaceElement : Values -> Html ()
+pub trailingSpaceElement : Values → Html ()
 trailingSpaceElement v =
     <span>{v.expr} </span>
 
@@ -132,7 +132,7 @@ escapeAttribute =
     <div normal="Search&hellip;" title={"Search&hellip;"} />
 
 
-pub lastElementExpression : Values -> Html ()
+pub lastElementExpression : Values → Html ()
 lastElementExpression v =
     <div><div></div>{v.expr}</div>
 

@@ -6,7 +6,7 @@
 import Node exposing (Program)
 
 
-note : Int -> ()
+note : Int → ()
 note n =
     _ = Debug.log "note" n
     ()

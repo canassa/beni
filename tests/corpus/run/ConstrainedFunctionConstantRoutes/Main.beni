@@ -23,8 +23,8 @@ import M
 import Node exposing (Program)
 
 
-maxOf : a, a -> a
-    where a.compare : a, a -> Order
+maxOf : a, a → a
+    where a.compare : a, a → Order
 maxOf a b =
     if a < b then
         b
@@ -32,31 +32,31 @@ maxOf a b =
         a
 
 
-top : a, a -> a
-    where a.compare : a, a -> Order
+top : a, a → a
+    where a.compare : a, a → Order
 top = maxOf
 
 
-lam = λx y -> maxOf x y
+lam = λx y → maxOf x y
 
 
-lamA : a, a -> a
-    where a.compare : a, a -> Order
+lamA : a, a → a
+    where a.compare : a, a → Order
 lamA =
-    λx y ->
+    λx y →
         if x < y then
             y
         else
             x
 
 
-eqA : a, a -> Bool
-    where a.eq : a, a -> Bool
+eqA : a, a → Bool
+    where a.eq : a, a → Bool
 eqA = (==)
 
 
-pick : a, a -> a
-    where a.compare : a, a -> Order
+pick : a, a → a
+    where a.compare : a, a → Order
 pick =
     if 1 < 2 then
         maxOf
@@ -64,51 +64,51 @@ pick =
         M.minOf
 
 
-viaLet : a, a -> a
-    where a.compare : a, a -> Order
+viaLet : a, a → a
+    where a.compare : a, a → Order
 viaLet =
     f = maxOf
     f
 
 
-clampAll : List a, a -> List a
-    where a.compare : a, a -> Order
+clampAll : List a, a → List a
+    where a.compare : a, a → Order
 clampAll =
-    λxs cap ->
+    λxs cap →
         case xs of
-            [] ->
+            [] →
                 []
 
-            [ x, ...rest ] ->
-                [ maxOf x cap, ...clampAll rest cap ]
+            [ x, …rest ] →
+                [ maxOf x cap, …clampAll rest cap ]
 
 
-biggest : List a, a -> a
-    where a.compare : a, a -> Order
-biggest = λxs acc -> go xs acc
+biggest : List a, a → a
+    where a.compare : a, a → Order
+biggest = λxs acc → go xs acc
 
 
-go : List a, a -> a
-    where a.compare : a, a -> Order
+go : List a, a → a
+    where a.compare : a, a → Order
 go xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             biggest rest (maxOf x acc)
 
 
 none : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 none = []
 
 
-apply2 : (a, a -> b), a, a -> b
+apply2 : (a, a → b), a, a → b
 apply2 f x y = f x y
 
 
-tf : Bool -> String
+tf : Bool → String
 tf b =
     if b then
         "t"
@@ -116,7 +116,7 @@ tf b =
         "f"
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) ","
 
 

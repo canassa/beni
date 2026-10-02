@@ -5,8 +5,8 @@
 -- annotation: `where a.eq : a, a -> Bool`",
 -- and which is UNEXPECTED TOKEN when written.
 
-f : List Int -> Bool
+f : List Int → Bool
 f xs =
-    g : a, a -> Bool
+    g : a, a → Bool
     g p q = p == q
     g xs xs

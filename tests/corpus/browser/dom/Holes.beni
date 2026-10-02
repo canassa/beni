@@ -27,38 +27,38 @@ type alias Model =
     got : Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Toggle ->
+        Toggle →
             { model | shown = not model.shown }
 
-        More ->
+        More →
             { model | count = model.count + 1 }
 
-        Less ->
+        Less →
             { model | count = model.count - 1 }
 
-        Flip ->
+        Flip →
             { model | on = not model.on }
 
-        Inner n ->
+        Inner n →
             { model | got = model.got + n }
 
 
-items : Int -> List (Html msg)
+items : Int → List (Html msg)
 items n =
-    if n <= 0 then
+    if n ≤ 0 then
         []
     else
-        [ ...items (n - 1), <li>item {String.fromInt n} of {String.fromInt n}</li> ]
+        [ …items (n - 1), <li>item {String.fromInt n} of {String.fromInt n}</li> ]
 
 
-inner : Int -> Html Int
+inner : Int → Html Int
 inner step = <button id="inner" onClick={step}>inner</button>
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>

@@ -18,38 +18,38 @@ type Msg
     = Changed Url
 
 
-describe : Maybe Url -> String
+describe : Maybe Url → String
 describe url =
     case url of
-        Nothing ->
+        Nothing →
             "no url"
 
-        Just u ->
+        Just u →
             protocol =
                 case u.protocol of
-                    Url.Http ->
+                    Url.Http →
                         "http"
 
-                    Url.Https ->
+                    Url.Https →
                         "https"
 
             port_ =
                 case u.port_ of
-                    Just _ ->
+                    Just _ →
                         "a port"
 
-                    Nothing ->
+                    Nothing →
                         "no port"
             "${protocol} ${u.host} ${port_} ${u.path} ${shown u.query} ${shown u.fragment}"
 
 
-shown : Maybe String -> String
+shown : Maybe String → String
 shown s =
     case s of
-        Just text ->
+        Just text →
             "[${text}]"
 
-        Nothing ->
+        Nothing →
             "-"
 
 
@@ -59,26 +59,26 @@ checks =
 
     written =
         case parsed of
-            Just u ->
+            Just u →
                 Url.toString u
 
-            Nothing ->
+            Nothing →
                 "unparsed"
 
     decoded =
         case Url.percentDecode "%E2%82%AC%20" of
-            Just text ->
+            Just text →
                 text
 
-            Nothing ->
+            Nothing →
                 "undecodable"
 
     broken =
         case Url.percentDecode "%C2" of
-            Just _ ->
+            Just _ →
                 "decoded"
 
-            Nothing ->
+            Nothing →
                 "undecodable"
     [ describe parsed
     , written
@@ -92,11 +92,11 @@ checks =
     ]
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
-        <ul><For each={checks} keyed={False}>{λline -> <li>{line}</li>}</For></ul>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ul><For each={checks} keyed={False}>{λline → <li>{line}</li>}</For></ul>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
@@ -104,7 +104,7 @@ main : Tea.Program
 main =
     Tea.element
         { init = ( [ describe (Browser.Navigation.currentUrl ()) ], Cmd.none )
-        , update = λ(Changed url) lines -> ( lines ++ [ describe (Just url) ], Cmd.none )
+        , update = λ(Changed url) lines → ( lines ++ [ describe (Just url) ], Cmd.none )
         , view = view
-        , subscriptions = λ_ -> Browser.Navigation.onUrlChange Changed
+        , subscriptions = λ_ → Browser.Navigation.onUrlChange Changed
         }

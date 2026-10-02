@@ -8,23 +8,23 @@ pub type Tree a
     | Node (Tree a) a (Tree a)
 
 
-pub fold : (a -> b -> b), b, Tree a -> b
+pub fold : (a → b → b), b, Tree a → b
 fold f acc tree =
     case tree of
-        Leaf ->
+        Leaf →
             acc
 
-        Node left value right ->
+        Node left value right →
             fold f (f value (fold f acc left)) right
 
 
-pub insert : Int, Tree Int -> Tree Int
+pub insert : Int, Tree Int → Tree Int
 insert x tree =
     case tree of
-        Leaf ->
+        Leaf →
             Node Leaf x Leaf
 
-        Node left value right ->
+        Node left value right →
             if x < value then
                 Node (insert x left) value right
             else if x > value then
@@ -33,26 +33,26 @@ insert x tree =
                 tree
 
 
-pub fromList : List Int -> Tree Int
+pub fromList : List Int → Tree Int
 fromList xs = List.foldl xs Leaf insert
 
 
-pub toList : Tree a -> List a
-toList tree = fold List.cons [] tree |> List.reverse
+pub toList : Tree a → List a
+toList tree = fold List.cons [] tree ▷ List.reverse
 
 
-pub size : Tree a -> Int
-size = fold (λ_ n -> n + 1) 0
+pub size : Tree a → Int
+size = fold (λ_ n → n + 1) 0
 
 
-pub depth : Tree a -> Int
+pub depth : Tree a → Int
 depth tree =
     case tree of
-        Leaf ->
+        Leaf →
             0
 
-        Node (Leaf) _ (Leaf) ->
+        Node (Leaf) _ (Leaf) →
             1
 
-        Node left _ right ->
+        Node left _ right →
             1 + max (depth left) (depth right)

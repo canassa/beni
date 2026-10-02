@@ -14,7 +14,7 @@ type Bool2
 type Shape
     = Circle Float
     | Rect Float Float
-    | Poly (List ( Float, Float ))
+    | Poly (List (Float × Float))
     | Labeled String Shape
     | Empty
 

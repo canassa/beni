@@ -12,25 +12,25 @@ calls = Js.ref 0
 
 
 --| Count a call, and answer `n`.
-pub tick : Int -> Int
+pub tick : Int → Int
 tick n =
     _ = Js.write calls (Js.read calls + 1)
     n
 
 
 --| How many calls `tick` has had.
-pub ticks : () -> Int
+pub ticks : () → Int
 ticks () = Js.read calls
 
 
 -- A name bound to a loop's variable: the variable is read after the loop.
 -- `[1, 2, null, 4]`.
-sample : () -> Js.Value
+sample : () → Js.Value
 sample () = Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
 
 
 --| The first `null` of the sample from `from`, times ten.
-pub firstNull : Int -> Int
+pub firstNull : Int → Int
 firstNull from =
     xs = sample ()
 
@@ -38,7 +38,7 @@ firstNull from =
     k * 10
 
 
-upToNull : Js.Value, Int -> Int
+upToNull : Js.Value, Int → Int
 upToNull xs k =
     if k < Js.to (Js.get xs "length") && not (Js.isNull (Js.at xs k)) then
         upToNull xs (k + 1)
@@ -48,7 +48,7 @@ upToNull xs k =
 
 -- A tuple pattern bound to a loop whose exits are tuples: no tuple built.
 --| How far the two ends of `xs` mirror each other, as `"a b"`.
-pub mirror : List Int -> String
+pub mirror : List Int → String
 mirror list =
     xs = Js.from list
 
@@ -56,7 +56,7 @@ mirror list =
     "${String.fromInt a} ${String.fromInt b}"
 
 
-inward : Js.Value, Int, Int -> ( Int, Int )
+inward : Js.Value, Int, Int → Int × Int
 inward xs a b =
     if a < b - 1 && Js.same (Js.at xs a) (Js.at xs (b - 1)) then
         inward xs (a + 1) (b - 1)
@@ -66,7 +66,7 @@ inward xs a b =
 
 -- A discarded loop, then the array it wrote.
 --| `[0, 1, 4, …]`, the first `n` squares.
-pub squares : Int -> List Int
+pub squares : Int → List Int
 squares n =
     xs = Js.array []
 
@@ -74,7 +74,7 @@ squares n =
     Js.to xs
 
 
-fillSquares : Js.Value, Int, Int -> ()
+fillSquares : Js.Value, Int, Int → ()
 fillSquares xs n k =
     if k < n then
         _ = Js.setAt xs k (Js.from (k * k))
@@ -90,7 +90,7 @@ pub widths : Int
 widths = sumRows (Js.array [ sample (), Js.array [ Js.from 1, Js.null ], Js.array [] ]) 0 0
 
 
-sumRows : Js.Value, Int, Int -> Int
+sumRows : Js.Value, Int, Int → Int
 sumRows rows r total =
     if r < Js.to (Js.get rows "length") then
         w = upToNull2 (Js.at rows r) 0
@@ -99,7 +99,7 @@ sumRows rows r total =
         total
 
 
-upToNull2 : Js.Value, Int -> Int
+upToNull2 : Js.Value, Int → Int
 upToNull2 xs k =
     if k < Js.to (Js.get xs "length") && not (Js.isNull (Js.at xs k)) then
         upToNull2 xs (k + 1)
@@ -117,26 +117,26 @@ pub type Step
 -- An exit inside a `switch`: its `break` must leave the loop, not the
 -- `switch`.
 --| The total of the steps up to the first `Stop`, and where it stopped.
-pub run : List Step -> String
+pub run : List Step → String
 run steps =
     ( total, at ) = walk steps 0 0
     "${String.fromInt total} at ${String.fromInt at}"
 
 
-walk : List Step, Int, Int -> ( Int, Int )
+walk : List Step, Int, Int → Int × Int
 walk steps k total =
-    case List.drop steps k |> List.head of
-        Nothing ->
+    case List.drop steps k ▷ List.head of
+        Nothing →
             ( total, k )
 
-        Just Skip ->
+        Just Skip →
             walk steps (k + 1) total
 
-        Just Stop ->
+        Just Stop →
             ( total, k )
 
-        Just (Take n) ->
+        Just (Take n) →
             walk steps (k + 1) (total + n)
 
-        Just (Twice n) ->
+        Just (Twice n) →
             walk steps (k + 1) (total + 2 * n)

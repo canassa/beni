@@ -24,7 +24,7 @@ type Wrapped
     = Wrapped { item : Int }
 
 
-inline : { a : Int } -> { r | x : Int } -> Int
+inline : { a : Int } → { r | x : Int } → Int
 inline value = value.a
 
 
@@ -34,5 +34,5 @@ point = { x = 1, y = 2 }
 pick value =
     x = value
     case x of
-        Wrapped row ->
+        Wrapped row →
             row.item

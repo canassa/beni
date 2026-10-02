@@ -7,11 +7,11 @@ import Node exposing (Program)
 import String
 
 
-trace : String -> ()
+trace : String → ()
 trace label = Debug.log label ()
 
 
-steps : Int -> Int
+steps : Int → Int
 steps n =
     trace "first"
     a = Debug.log "a" n

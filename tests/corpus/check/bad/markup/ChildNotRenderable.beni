@@ -5,7 +5,7 @@
 import Html exposing (Html)
 
 
-pub view : { count : Int }, List String -> Html msg
+pub view : { count : Int }, List String → Html msg
 view model names =
     <div>
         {model}

@@ -8,7 +8,7 @@
 import Js
 
 
-pub place : Js.Value, Js.Value -> ()
+pub place : Js.Value, Js.Value → ()
 place s i =
     _ =
         if Js.isNull (Js.get s "i") then
@@ -18,7 +18,7 @@ place s i =
     Js.set s "i" i
 
 
-pub each : Js.Value, Int -> ()
+pub each : Js.Value, Int → ()
 each fs k =
     if k == Js.to (Js.get fs "length") then
         ()
@@ -27,7 +27,7 @@ each fs k =
         each fs (k + 1)
 
 
-pub watch : Js.Value, Js.Value -> ()
+pub watch : Js.Value, Js.Value → ()
 watch node s =
     seen = Js.ref 0
 
@@ -39,13 +39,13 @@ watch node s =
     Js.set
         node
         "$$send"
-        (Js.from λmsg ->
+        (Js.from λmsg →
             _ = tick (Js.read seen)
             Js.write seen (Js.to msg)
         )
 
 
-pub count : Js.Value -> Int
+pub count : Js.Value → Int
 count fs =
     if Js.isNull fs then
         0

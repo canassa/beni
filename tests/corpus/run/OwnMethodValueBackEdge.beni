@@ -17,7 +17,7 @@ type T
 
 
 use n x =
-    if n <= 0 then
+    if n ≤ 0 then
         ( 0, x )
     else
         ( k, y ) = (T n).m x

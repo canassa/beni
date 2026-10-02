@@ -19,21 +19,21 @@ pub foreign type Key
 
 
 --| Any value as a key.
-pub foreign pure key : k -> Key
-    where k.compare : k, k -> Order
+pub foreign pure key : k → Key
+    where k.compare : k, k → Order
 
 
-foreign pure compareKeys : Key, Key -> Order
+foreign pure compareKeys : Key, Key → Order
 
 
 --| The order of two keys: by value, the same for equal values whatever
 --| built them.
-pub compare : Key, Key -> Order
+pub compare : Key, Key → Order
 compare a b = compareKeys a b
 
 
 --| Whether two keys are the same value.
-pub eq : Key, Key -> Bool
+pub eq : Key, Key → Bool
 eq a b = compareKeys a b == EQ
 
 
@@ -42,17 +42,17 @@ pub foreign type Outlet msg
 
 
 --| A new open outlet into the program.
-pub foreign impure outlet : Host msg -> Outlet msg
+pub foreign impure outlet : Host msg → Outlet msg
 
 
 --| Send a message through an outlet: its program's `update` runs, now or,
 --| during another message's `update`, right after it. Once the outlet is
 --| closed, nothing happens.
-pub foreign impure emit : Outlet msg, msg -> ()
+pub foreign impure emit : Outlet msg, msg → ()
 
 
 --| Close an outlet: from now on what is sent through it is dropped.
-pub foreign impure close : Outlet msg -> ()
+pub foreign impure close : Outlet msg → ()
 
 
 --| A command's body, as `Cmd` carries it (`boundary.md` §9.8.11). Held
@@ -65,20 +65,20 @@ pub foreign type Job msg
 
 
 --| A body as a job.
-pub foreign pure job : (Browser.Send msg -> ()) -> Job msg
+pub foreign pure job : (Browser.Send msg → ()) → Job msg
 
 
 --| The same job, its messages passed through `tag`.
-pub foreign pure mapJob : Job a, sync (a -> b) -> Job b
+pub foreign pure mapJob : Job a, sync (a → b) → Job b
 
 
 --| Run a job in the calling fiber, handed `send`, until it returns.
-pub foreign suspends runJob : Job msg, Browser.Send msg -> ()
+pub foreign suspends runJob : Job msg, Browser.Send msg → ()
 
 
 --| Run a job that cannot suspend, handed `send`: what `Cmd` made of a body
 --| whose every use says it never waits.
-pub foreign impure callJob : Job msg, Browser.Send msg -> ()
+pub foreign impure callJob : Job msg, Browser.Send msg → ()
 
 
 --| Work to run after a render, and the function its messages go through.
@@ -87,15 +87,15 @@ pub foreign type Later msg
 
 --| After-render work: `body` runs synchronously in the after-render phase
 --| of the flush that follows, handed a function that sends to the program.
-pub foreign impure later : sync (Browser.Send msg -> ()) -> Later msg
+pub foreign impure later : sync (Browser.Send msg → ()) → Later msg
 
 
 --| The same work, its messages passed through `tag`.
-pub foreign pure mapLater : Later a, sync (a -> b) -> Later b
+pub foreign pure mapLater : Later a, sync (a → b) → Later b
 
 
 --| Queue after-render work into the program's next flush.
-pub foreign impure afterRender : Host msg, Later msg -> ()
+pub foreign impure afterRender : Host msg, Later msg → ()
 
 
 --| A subscription's body and the function each value it sends is turned
@@ -105,11 +105,11 @@ pub foreign type Tap msg
 
 --| The body a subscription runs in a fiber, and its tagger. The body is
 --| handed a function that sends values of type `a`.
-pub foreign impure tap : (Browser.Send a -> ()), sync (a -> msg) -> Tap msg
+pub foreign impure tap : (Browser.Send a → ()), sync (a → msg) → Tap msg
 
 
 --| The same subscription, its messages passed through `tag`.
-pub foreign pure mapTap : Tap a, sync (a -> b) -> Tap b
+pub foreign pure mapTap : Tap a, sync (a → b) → Tap b
 
 
 --| A live subscription: the body of the tap it started with, and the
@@ -118,26 +118,26 @@ pub foreign type Relay msg
 
 
 --| A relay into the program for `tap`'s body, with `tap`'s tagger.
-pub foreign impure relay : Host msg, Tap msg -> Relay msg
+pub foreign impure relay : Host msg, Tap msg → Relay msg
 
 
 --| Run the relay's body, in the current fiber, until it returns.
-pub foreign suspends run : Relay msg -> ()
+pub foreign suspends run : Relay msg → ()
 
 
 --| Replace the relay's taggers with those of `taps`, in order: each value
 --| the body sends becomes one message per tap. Every tap must be one that
 --| sends what the relay's first did — which is what equal keys promise.
-pub foreign impure retap : Relay msg, List (Tap msg) -> ()
+pub foreign impure retap : Relay msg, List (Tap msg) → ()
 
 
 --| Close a relay: what its body sends from now on is dropped.
-pub foreign impure closeRelay : Relay msg -> ()
+pub foreign impure closeRelay : Relay msg → ()
 
 
 --| Write the page's title when it differs from `title`: what a document
 --| program's render does, so the title and the body never disagree.
-pub title : String -> ()
+pub title : String → ()
 title text =
     document = Js.global "document"
     if Js.same (Js.get document "title") (Js.from text) then
@@ -149,5 +149,5 @@ title text =
 --| Stop the program with a defect (`boundary.md` §9.8.10 (c)): an `Error`
 --| with the message is thrown, which the page reports as any defect —
 --| the development crash screen, logged and stopped in release.
-pub defect : String -> a
+pub defect : String → a
 defect message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])

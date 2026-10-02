@@ -4,7 +4,7 @@
 -- instead. Every binding here names only bindings written above it: a value
 -- that names a later value is `let_forward_reference` (§7), which is why
 -- `person` is written above the record pattern that destructures it.
-split : ( Int, ( String, Bool ) ) -> String
+split : Int × (String × Bool) → String
 split input =
     ( n, ( s, flag ) ) = input
     person = { name = s, age = n }
@@ -12,10 +12,10 @@ split input =
 
     ( first, second ) =
         case [ n, n + 1 ] of
-            [ a, b ] ->
+            [ a, b ] →
                 ( a, b )
 
-            _ ->
+            _ →
                 ( n, n )
 
     _ = flag

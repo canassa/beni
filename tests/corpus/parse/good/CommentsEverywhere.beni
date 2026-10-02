@@ -45,7 +45,7 @@ count = -- trailing after `=`
     a + b -- trailing on the value
 
 
-pick : Bool -> Int
+pick : Bool → Int
 pick flag =
     if flag then
         -- inside then
@@ -55,19 +55,19 @@ pick flag =
         2
 
 
-choose : Color -> Int
+choose : Color → Int
 choose color =
     -- before case
     case color of -- trailing after `of`
         -- before the first branch
-        Red ->
+        Red →
             1
 
         -- between branches
-        Green ->
+        Green →
             2 -- trailing on a branch body
 
-        Blue ->
+        Blue →
             -- inside a branch body
             3
 

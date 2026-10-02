@@ -17,30 +17,30 @@ type alias Point =
 
 
 type Item
-    = At Point ( Int, Int )
+    = At Point (Int × Int)
     | Gone
 
 
-place : Item -> String
+place : Item → String
 place item =
     case item of
-        At { x, y } ( 0, b ) ->
+        At { x, y } ( 0, b ) →
             "origin ${String.fromInt (x + y)} then ${String.fromInt b}"
 
-        At { x, y } ( a, b ) ->
+        At { x, y } ( a, b ) →
             "at ${String.fromInt (x + y)} of ${String.fromInt (a + b)}"
 
-        Gone ->
+        Gone →
             "gone"
 
 
-both : Int, Int -> String
+both : Int, Int → String
 both a b =
     case ( a, b ) of
-        ( 0, 0 ) ->
+        ( 0, 0 ) →
             "both zero"
 
-        whole ->
+        whole →
             "pair ${String.fromInt whole.0} ${String.fromInt whole.1}"
 
 

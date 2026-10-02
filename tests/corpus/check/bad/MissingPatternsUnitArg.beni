@@ -3,8 +3,8 @@
 -- `Nothing` missing, and the counterexample has to be `Nothing` alone.
 -- The guard that the fix for the nested-`()` defect did not over-correct
 -- into "a unit argument makes the whole column complete" (checker.md §6).
-pub only : Maybe () -> Int
+pub only : Maybe () → Int
 only m =
     case m of
-        Just () ->
+        Just () →
             1

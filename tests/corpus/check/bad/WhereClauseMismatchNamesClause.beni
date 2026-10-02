@@ -6,8 +6,8 @@
 -- here: This is: `Int, Int -> Int` But I need: `Int, Int -> Order`", naming
 -- neither the clause nor the method.
 
-f : a, a -> Int
-    where a.compare : a, a -> Int
+f : a, a → Int
+    where a.compare : a, a → Int
 f x y = x.compare y + 1
 
 

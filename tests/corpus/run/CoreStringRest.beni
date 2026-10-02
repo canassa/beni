@@ -14,7 +14,7 @@ import Node exposing (Program)
 import String
 
 
-flag : Bool -> String
+flag : Bool → String
 flag b =
     if b then
         "True"
@@ -74,14 +74,14 @@ main =
         , String.padLeft "abc" 2 '.'
         , String.padRight "1" 5 '.'
         , String.padRight "abc" 2 '.'
-        , String.map "a/b/c" λchar ->
+        , String.map "a/b/c" λchar →
             if char == '/' then
                 '.'
             else
                 char
         , String.filter "R2-D2" Char.isDigit
-        , String.foldl "time" "" λchar acc -> String.cons acc char
-        , String.foldr "time" "" λchar acc -> String.cons acc char
+        , String.foldl "time" "" λchar acc → String.cons acc char
+        , String.foldr "time" "" λchar acc → String.cons acc char
         , flag (String.any "R2-D2" Char.isDigit)
         , flag (String.all "2D2" Char.isDigit)
         , flag (String.any "" Char.isDigit)

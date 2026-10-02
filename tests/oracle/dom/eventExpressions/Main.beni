@@ -4,7 +4,7 @@
 import Html exposing (Html)
 
 
-pub template : Int -> Html Int
+pub template : Int → Html Int
 template rowId =
     <div id="main">
         <button onChange={1}>Change Bound</button>

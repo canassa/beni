@@ -18,7 +18,7 @@ type alias P =
     y : String
 
 
-getY : P -> String
+getY : P → String
 getY r = r.y
 
 

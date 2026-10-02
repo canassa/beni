@@ -7,7 +7,7 @@ pub type Wrap
     = Wrap A.T
 
 
-pub wrap : Int -> Wrap
+pub wrap : Int → Wrap
 wrap n = Wrap (A.T n)
 
 
@@ -15,5 +15,5 @@ pub type Other
     = Other Int
 
 
-pub same : Other, Other -> Bool
+pub same : Other, Other → Bool
 same x y = x == y

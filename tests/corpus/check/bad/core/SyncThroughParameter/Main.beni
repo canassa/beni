@@ -7,10 +7,10 @@ direct = Lib.onType Plat.get
 
 
 oneHop : Int
-oneHop = Lib.onType λn -> label (Lib.load n)
+oneHop = Lib.onType λn → label (Lib.load n)
 
 
-label : String -> String
+label : String → String
 label s = "[" ++ s ++ "]"
 
 
@@ -18,5 +18,5 @@ fine : Int
 fine = Lib.onType label2
 
 
-label2 : Int -> String
+label2 : Int → String
 label2 n = label (String.fromInt n)

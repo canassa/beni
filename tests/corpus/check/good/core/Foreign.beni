@@ -9,8 +9,8 @@ pub equatable foreign type Handle
 pub foreign type Opaque a
 
 
-pub foreign pure make : Int -> Handle
+pub foreign pure make : Int → Handle
 
 
-pub same : Handle, Handle -> Bool
+pub same : Handle, Handle → Bool
 same a b = a == b

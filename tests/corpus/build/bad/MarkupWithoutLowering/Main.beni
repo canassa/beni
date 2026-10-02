@@ -8,7 +8,7 @@ import Html exposing (Html)
 import Prog exposing (Program)
 
 
-greeting : String -> Html msg
+greeting : String → Html msg
 greeting name = <p>Hello, {name}!</p>
 
 

@@ -6,7 +6,7 @@
 -- `String.toUpper` with an Int.
 
 f x =
-    g : a -> a
+    g : a → a
     g y = x
     g "hello"
 

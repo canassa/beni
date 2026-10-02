@@ -17,20 +17,20 @@ main =
     held = (Random.step (Random.int 1 6) (Random.initialSeed 42)).0
     Node.printLines
         [ "rolls in 1..6: "
-            ++ (if List.all rolls λn -> n >= 1 && n <= 6 then
+            ++ (if List.all rolls λn → n ≥ 1 && n ≤ 6 then
                    "yes"
                 else
                    "no"
                )
         , "100 rolls: " ++ String.fromInt (List.length rolls)
         , "the seed is stepped: "
-            ++ (if first /= second then
+            ++ (if first ≠ second then
                    "yes"
                 else
                    "no"
                )
         , "float in [0, 1): "
-            ++ (if fraction >= 0 && fraction < 1 then
+            ++ (if fraction ≥ 0 && fraction < 1 then
                    "yes"
                 else
                    "no"

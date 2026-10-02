@@ -4,87 +4,87 @@
 -- recursion through a local `go`, nested `case` in a `let` inside a lambda,
 -- and `?` on applications.
 pub opaque type Parser a
-    = Parser (String -> Result String ( a, String ))
+    = Parser (String → Result String (a × String))
 
 
-pub run : Parser a, String -> Result String a
+pub run : Parser a, String → Result String a
 run (Parser p) input =
     case p input of
-        Ok ( value, "" ) ->
+        Ok ( value, "" ) →
             Ok value
 
-        Ok ( _, rest ) ->
+        Ok ( _, rest ) →
             Err "unconsumed input: ${rest}"
 
-        Err message ->
+        Err message →
             Err message
 
 
-pub succeed : a -> Parser a
-succeed value = Parser λinput -> Ok ( value, input )
+pub succeed : a → Parser a
+succeed value = Parser λinput → Ok ( value, input )
 
 
-pub fail : String -> Parser a
-fail message = Parser λ_ -> Err message
+pub fail : String → Parser a
+fail message = Parser λ_ → Err message
 
 
-pub char : Char -> Parser Char
-char expected = Parser λinput ->
+pub char : Char → Parser Char
+char expected = Parser λinput →
     case String.uncons input of
-        Just ( c, rest ) ->
+        Just ( c, rest ) →
             if c == expected then
                 Ok ( c, rest )
             else
                 Err "expected ${expected} but got ${c}"
 
-        Nothing ->
+        Nothing →
             Err "unexpected end of input"
 
 
-pub map : Parser a, (a -> b) -> Parser b
-map (Parser p) f = Parser λinput ->
+pub map : Parser a, (a → b) → Parser b
+map (Parser p) f = Parser λinput →
     case p input of
-        Ok ( value, rest ) ->
+        Ok ( value, rest ) →
             Ok ( f value, rest )
 
-        Err message ->
+        Err message →
             Err message
 
 
-pub andThen : Parser a, (a -> Parser b) -> Parser b
-andThen (Parser p) f = Parser λinput ->
+pub andThen : Parser a, (a → Parser b) → Parser b
+andThen (Parser p) f = Parser λinput →
     step ( value, rest ) =
         case f value of
-            Parser q ->
+            Parser q →
                 q rest
-    p input |> Result.andThen step
+    p input ▷ Result.andThen step
 
 
-pub many : Parser a -> Parser (List a)
+pub many : Parser a → Parser (List a)
 many (Parser p) =
     go acc input =
         case p input of
-            Ok ( value, rest ) ->
-                go [ value, ...acc ] rest
+            Ok ( value, rest ) →
+                go [ value, …acc ] rest
 
-            Err _ ->
+            Err _ →
                 Ok ( List.reverse acc, input )
     Parser (go [])
 
 
-pub oneOf : List (Parser a) -> Parser a
-oneOf parsers = Parser λinput ->
+pub oneOf : List (Parser a) → Parser a
+oneOf parsers = Parser λinput →
     try remaining =
         case remaining of
-            [] ->
+            [] →
                 Err "no parser matched"
 
-            [ (Parser p), ...rest ] ->
+            [ (Parser p), …rest ] →
                 case p input of
-                    Ok result ->
+                    Ok result →
                         Ok result
 
-                    Err _ ->
+                    Err _ →
                         try rest
     try parsers
 
@@ -92,14 +92,14 @@ oneOf parsers = Parser λinput ->
 pub digits : Parser Int
 digits =
     many (oneOf (List.map [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ] char))
-        |> andThen λcs ->
+        ▷ andThen λcs →
             case String.toInt (String.fromList cs) of
-                Just n ->
+                Just n →
                     succeed n
 
-                Nothing ->
+                Nothing →
                     fail "expected digits"
 
 
-sumOf : String, String -> Result String Int
+sumOf : String, String → Result String Int
 sumOf a b = Ok (run digits a? + run digits b?)

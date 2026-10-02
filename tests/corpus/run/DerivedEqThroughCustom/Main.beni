@@ -30,7 +30,7 @@ pub type RankedOuter
 
 
 pub type OpaqueOuter
-    = OpaqueOuter (Opaque.Opaque (Int -> Int))
+    = OpaqueOuter (Opaque.Opaque (Int → Int))
 
 
 -- Declared before SpecializedOuter to exercise forward capability
@@ -47,11 +47,11 @@ pub type ArbitraryOuter
     = ArbitraryOuter (ArbitraryHolder.Holder KeyedFunction.Keyed)
 
 
-plusOne : Int -> Int
+plusOne : Int → Int
 plusOne value = value + 1
 
 
-minusOne : Int -> Int
+minusOne : Int → Int
 minusOne value = value - 1
 
 
@@ -123,7 +123,7 @@ differentArbitrary : ArbitraryOuter
 differentArbitrary = ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 plusOne))
 
 
-show : Bool -> String
+show : Bool → String
 show value =
     if value then
         "True"

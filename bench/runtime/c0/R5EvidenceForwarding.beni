@@ -48,41 +48,41 @@ pivot = 250
 
 
 values : List Int
-values = List.map (List.range 1 500) λn -> Int.mod (n * 7919) 499
+values = List.map (List.range 1 500) λn → Int.mod (n * 7919) 499
 
 
 -- Level 3: the work. Everything it knows about `a` arrives in `cmp`.
-tally : List a, a, (a, a -> Order) -> Int
-tally xs mark cmp = List.foldl xs 0 λx acc ->
+tally : List a, a, (a, a → Order) → Int
+tally xs mark cmp = List.foldl xs 0 λx acc →
     case cmp x mark of
-        LT ->
+        LT →
             acc + 1
 
-        _ ->
+        _ →
             acc
 
 
 -- Level 2 and level 1: pure forwarding, which is the point. Each one is
 -- generic in `a` and so cannot know what `cmp` is.
-level2 : List a, a, (a, a -> Order) -> Int
+level2 : List a, a, (a, a → Order) → Int
 level2 xs mark cmp = tally xs mark cmp
 
 
-level1 : List a, a, (a, a -> Order) -> Int
+level1 : List a, a, (a, a → Order) → Int
 level1 xs mark cmp = level2 xs mark cmp
 
 
 -- Where the ordering is chosen. `key` closes over `scale`, and the
 -- comparator closes over `key`: a fresh closure per call, handed three
 -- levels down.
-tallyBy : List Int, Int, Int -> Int
+tallyBy : List Int, Int, Int → Int
 tallyBy xs mark scale =
-    key = λx -> x * scale
-    level1 xs mark λa b -> compare (key a) (key b)
+    key = λx → x * scale
+    level1 xs mark λa b → compare (key a) (key b)
 
 
 main : Program
 main =
-    total = List.foldl (List.range 1 outerReps) 0 λ_ acc ->
-        List.foldl (List.range 1 innerReps) acc λ_ n -> n + tallyBy values pivot 1
+    total = List.foldl (List.range 1 outerReps) 0 λ_ acc →
+        List.foldl (List.range 1 innerReps) acc λ_ n → n + tallyBy values pivot 1
     Node.print (String.fromInt total)

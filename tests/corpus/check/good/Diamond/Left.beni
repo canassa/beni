@@ -2,5 +2,5 @@
 import Base exposing (Unit, factor)
 
 
-pub scaleUp : Unit, Int -> Int
+pub scaleUp : Unit, Int → Int
 scaleUp u n = n * factor u

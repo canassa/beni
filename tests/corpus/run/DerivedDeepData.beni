@@ -33,7 +33,7 @@ type Deep
     = Deep { next : Maybe Deep, v : Int }
 
 
-list : Int, L -> L
+list : Int, L → L
 list n acc =
     if n == 0 then
         acc
@@ -41,7 +41,7 @@ list n acc =
         list (n - 1) (Cons n acc)
 
 
-deep : Int, Maybe Deep -> Maybe Deep
+deep : Int, Maybe Deep → Maybe Deep
 deep n acc =
     if n == 0 then
         acc
@@ -49,7 +49,7 @@ deep n acc =
         deep (n - 1) (Just (Deep { next = acc, v = n }))
 
 
-show : String, Bool -> String
+show : String, Bool → String
 show label b =
     if b then
         label ++ ": True"
@@ -81,5 +81,5 @@ main =
         , show "bigger < longer" (bigger < longer)
         , show "deep == deep" (nested == nestedTwin)
         , show "deep == other" (nested == nestedOther)
-        , show "deep /= other" (nested /= nestedOther)
+        , show "deep /= other" (nested ≠ nestedOther)
         ]

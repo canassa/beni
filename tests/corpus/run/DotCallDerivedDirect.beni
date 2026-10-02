@@ -18,20 +18,20 @@ type Box a
     | Empty
 
 
-show : Order -> String
+show : Order → String
 show o =
     case o of
-        LT ->
+        LT →
             "LT"
 
-        EQ ->
+        EQ →
             "EQ"
 
-        GT ->
+        GT →
             "GT"
 
 
-yes : Bool -> String
+yes : Bool → String
 yes b =
     if b then
         "T"
@@ -52,5 +52,5 @@ main =
         , show (( 1, "b" ).compare ( 1, "a" ))
         , yes (( Red, 2 ).eq ( Red, 2 ))
         , show ((3).compare 4)
-        , yes ({ eq = λn -> n > 2 }.eq 3)
+        , yes ({ eq = λn → n > 2 }.eq 3)
         ]

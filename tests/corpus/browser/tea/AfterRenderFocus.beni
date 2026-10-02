@@ -29,36 +29,36 @@ type alias Model =
     failure : String
 
 
-focus : String, Cmd.Send Msg -> ()
+focus : String, Cmd.Send Msg → ()
 focus id send =
     case Dom.focus id of
-        Ok () ->
+        Ok () →
             Debug.log "focused ${id}" ()
 
-        Err why ->
+        Err why →
             send (Failed why)
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Edit ->
+        Edit →
             ( { model | editing = True }, Cmd.afterRender (focus "first" _) )
 
-        Open ->
+        Open →
             ( model, Cmd.perform openThenFocus )
 
-        Opened ->
+        Opened →
             ( { model | opened = True }, Cmd.none )
 
-        Missing ->
+        Missing →
             ( model, Cmd.afterRender (focus "nowhere" _) )
 
-        Failed (Dom.NotFound id) ->
+        Failed (Dom.NotFound id) →
             ( { model | failure = "not found: ${id}" }, Cmd.none )
 
 
-openThenFocus : Cmd.Send Msg -> ()
+openThenFocus : Cmd.Send Msg → ()
 openThenFocus send =
     _ = send Opened
     _ = Debug.log "waiting for the render" ()
@@ -66,7 +66,7 @@ openThenFocus send =
     focus "second" send
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="edit" onClick={Edit}>edit</button>
@@ -84,5 +84,5 @@ main =
         { init = ( { editing = False, opened = False, failure = "" }, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Sub.none
+        , subscriptions = λ_ → Sub.none
         }

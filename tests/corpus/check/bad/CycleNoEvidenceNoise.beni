@@ -8,4 +8,4 @@
 -- message. It runs last, gated on every error the module
 -- reported, so the golden holds the cycle alone.
 --
-r = { f = λx -> if x == 0 then 0 else r.f (x - 1) }
+r = { f = λx → if x == 0 then 0 else r.f (x - 1) }

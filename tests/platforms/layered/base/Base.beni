@@ -4,4 +4,4 @@ pub foreign type Program
 
 
 --| A program that writes one line.
-pub foreign pure say : String -> Program
+pub foreign pure say : String → Program

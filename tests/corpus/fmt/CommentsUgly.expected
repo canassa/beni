@@ -28,10 +28,10 @@ f x = -- after equals
         -- in else
         case x of
             -- before branch
-            True ->
+            True →
                 1 -- after branch
             -- between branches
-            False ->
+            False →
                 [ 1 -- in list
                 , 2
                 -- before close

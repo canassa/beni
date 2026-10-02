@@ -17,7 +17,7 @@ type alias Point =
     tag : String
 
 
-point : Int -> Point
+point : Int → Point
 point n = { x = n, y = n * 2, label = "unused", rank = 7, tag = "shown" }
 
 

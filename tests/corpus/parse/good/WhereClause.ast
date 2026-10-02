@@ -26,9 +26,10 @@
       (type_con List
         (type_var b))
       (type_con List
-        (type_tuple
-          (type_var a)
-          (type_var b))))
+        (type_paren
+          (type_tuple
+            (type_var a)
+            (type_var b)))))
     (where_constraint a .eq
       (type_fn
         (type_var a)

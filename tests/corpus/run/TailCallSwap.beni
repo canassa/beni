@@ -11,9 +11,9 @@ import Node exposing (Program)
 import String
 
 
-swap : Int, Int, Int -> String
+swap : Int, Int, Int → String
 swap a b n =
-    if n <= 0 then
+    if n ≤ 0 then
         "${String.fromInt a},${String.fromInt b}"
     else
         swap b a (n - 1)

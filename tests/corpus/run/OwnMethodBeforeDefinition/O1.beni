@@ -3,13 +3,13 @@ type T
     = T Int
 
 
-pub use : Int, Int -> Bool
+pub use : Int, Int → Bool
 use a b = T a == T b
 
 
 eq left right =
     case left of
-        T x ->
+        T x →
             case right of
-                T y ->
+                T y →
                     Int.mod x 10 == Int.mod y 10

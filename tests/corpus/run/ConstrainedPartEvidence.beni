@@ -28,21 +28,21 @@ pub type Box a
 
 
 -- Two boxes are equal when their FIRST slots are.
-pub eq : Box a, Box a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Box a, Box a → Bool
+    where a.eq : a, a → Bool
 eq x y =
     case x of
-        Box first _ ->
+        Box first _ →
             case y of
-                Box other _ ->
+                Box other _ →
                     first == other
 
 
-sameBox : Box Int, Box Int -> Bool
+sameBox : Box Int, Box Int → Bool
 sameBox a b = a == b
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

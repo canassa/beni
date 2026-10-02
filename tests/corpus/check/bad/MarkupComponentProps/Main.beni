@@ -8,7 +8,7 @@ import Card
 
 view model =
     <div>
-        <Card title="x" {...model.a} />
-        <Card {...model.a} {...model.b} />
+        <Card title="x" {…model.a} />
+        <Card {…model.a} {…model.b} />
         <Card children={model.c}>body</Card>
     </div>

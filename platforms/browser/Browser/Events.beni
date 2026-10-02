@@ -36,14 +36,14 @@ type Key
 
 
 --| The window's inner size, now.
-pub foreign impure size : () -> Size
+pub foreign impure size : () → Size
 
 
-foreign impure hidden : () -> Bool
+foreign impure hidden : () → Bool
 
 
 --| Whether the page can be seen, now.
-pub visibility : () -> Visibility
+pub visibility : () → Visibility
 visibility () =
     if hidden () then
         Hidden
@@ -62,41 +62,41 @@ visibility () =
 --| that changes faster than `f` takes it is coalesced into the latest.
 --|
 --|     Task.spawn λ() -> Browser.Events.eachResize λsize -> Log.info (String.fromInt size.width)
-pub eachResize : (Size -> ()) -> ()
+pub eachResize : (Size → ()) → ()
 eachResize f = watch "window" "resize" size f
 
 
 --| Call `f` with whether the page can be seen each time that changes.
-pub eachVisibilityChange : (Visibility -> ()) -> ()
+pub eachVisibilityChange : (Visibility → ()) → ()
 eachVisibilityChange f = watch "document" "visibilitychange" visibility f
 
 
 --| Call `f` with each key pressed anywhere in the page, in order. No key
 --| is lost or merged; `f` runs one fiber turn after the event, so it cannot
 --| prevent the key's default.
-pub eachKeyDown : (Html.Event -> ()) -> ()
+pub eachKeyDown : (Html.Event → ()) → ()
 eachKeyDown f = Listen.each "document" "keydown" event f
 
 
 --| Call `f` with each key released anywhere in the page, in order.
-pub eachKeyUp : (Html.Event -> ()) -> ()
+pub eachKeyUp : (Html.Event → ()) → ()
 eachKeyUp f = Listen.each "document" "keyup" event f
 
 
 --| Call `f` with each `keypress` of the page, in order.
-pub eachKeyPress : (Html.Event -> ()) -> ()
+pub eachKeyPress : (Html.Event → ()) → ()
 eachKeyPress f = Listen.each "document" "keypress" event f
 
 
 -- ---- Subscriptions --------------------------------------------------------------
 
 --| The window's new size, each time it is resized.
-pub onResize : (Size -> msg) -> Sub msg
+pub onResize : (Size → msg) → Sub msg
 onResize tag = Sub.listen Resize (eachResize _) tag
 
 
 --| Whether the page can be seen, each time that changes.
-pub onVisibilityChange : (Visibility -> msg) -> Sub msg
+pub onVisibilityChange : (Visibility → msg) → Sub msg
 onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) tag
 
 
@@ -109,22 +109,22 @@ onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) ta
 --| No key is lost or merged. The function runs one fiber turn after the
 --| event, so it cannot prevent the key's default; a handler on an element
 --| (`onKeyDown` with `Html.preventDefault`) can.
-pub onKeyDown : (Html.Event -> msg) -> Sub msg
+pub onKeyDown : (Html.Event → msg) → Sub msg
 onKeyDown tag = Sub.listen KeyDown (eachKeyDown _) tag
 
 
 --| A message for each key released anywhere in the page, in order.
-pub onKeyUp : (Html.Event -> msg) -> Sub msg
+pub onKeyUp : (Html.Event → msg) → Sub msg
 onKeyUp tag = Sub.listen KeyUp (eachKeyUp _) tag
 
 
 --| A message for each `keypress` of the page, in order: a key that types a
 --| character. The DOM deprecates the event; Elm keeps it, and so does this.
-pub onKeyPress : (Html.Event -> msg) -> Sub msg
+pub onKeyPress : (Html.Event → msg) → Sub msg
 onKeyPress tag = Sub.listen KeyPress (eachKeyPress _) tag
 
 
-event : Js.Value -> Html.Event
+event : Js.Value → Html.Event
 event v = Js.to v
 
 
@@ -133,26 +133,26 @@ event v = Js.to v
 foreign type Listener
 
 
-foreign impure listen : String, String -> Listener
+foreign impure listen : String, String → Listener
 
 
-foreign impure unlisten : Listener -> ()
+foreign impure unlisten : Listener → ()
 
 
-foreign impure onEvent : Listener, Resume () -> (() -> ())
+foreign impure onEvent : Listener, Resume () → (() → ())
 
 
 -- Wait for at least one event since the last wait.
-next : Listener -> ()
-next l = Task.callback λresume -> onEvent l resume
+next : Listener → ()
+next l = Task.callback λresume → onEvent l resume
 
 
-watch : String, String, (() -> a), Browser.Send a -> ()
-watch target name read emit = Task.bracket (λ() -> listen target name) (λl _ -> unlisten l) λl ->
+watch : String, String, (() → a), Browser.Send a → ()
+watch target name read emit = Task.bracket (λ() → listen target name) (λl _ → unlisten l) λl →
     forward l read emit
 
 
-forward : Listener, (() -> a), Browser.Send a -> ()
+forward : Listener, (() → a), Browser.Send a → ()
 forward l read emit =
     _ = next l
     _ = emit (read ())

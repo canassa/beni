@@ -5,15 +5,15 @@ import Node exposing (Program)
 import String
 
 
-fact : Int -> Int
+fact : Int → Int
 fact n =
-    if n <= 1 then
+    if n ≤ 1 then
         1
     else
         n * fact (n - 1)
 
 
-fib : Int -> Int
+fib : Int → Int
 fib n =
     if n < 2 then
         n
@@ -21,7 +21,7 @@ fib n =
         fib (n - 1) + fib (n - 2)
 
 
-isEven : Int -> Bool
+isEven : Int → Bool
 isEven n =
     if n == 0 then
         True
@@ -29,7 +29,7 @@ isEven n =
         isOdd (n - 1)
 
 
-isOdd : Int -> Bool
+isOdd : Int → Bool
 isOdd n =
     if n == 0 then
         False

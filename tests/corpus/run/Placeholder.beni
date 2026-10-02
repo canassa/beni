@@ -7,15 +7,15 @@ import Node exposing (Program)
 import String
 
 
-subtract : Int, Int -> Int
+subtract : Int, Int → Int
 subtract a b = a - b
 
 
-between : Int, Int, Int -> Int
+between : Int, Int, Int → Int
 between lo hi n = clamp n lo hi
 
 
-apply : (Int -> Int), Int -> Int
+apply : (Int → Int), Int → Int
 apply f n = f n
 
 

@@ -3,10 +3,10 @@
 -- and one space before its parentheses, the broken signature one parameter
 -- per line, and a record parameter laid out as it would be unmarked.
 pub foreign pure onInput :
-      sync (String -> msg)
-    -> Attribute msg
+      sync (String → msg)
+    → Attribute msg
 
 
 pub foreign pure program :
-      { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) }
-    -> Program
+      { init : model, update : sync (msg, model → model), view : sync (model → Html msg) }
+    → Program

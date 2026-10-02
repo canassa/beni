@@ -3,12 +3,12 @@
 -- being computed, so `h` is on its own initialiser's circle:
 -- `cyclic_value`, as without the `where` — never a clean check whose
 -- program overflows the stack when run.
-compose : (b -> c), (a -> b) -> (a -> c)
-compose f g = λx -> f (g x)
+compose : (b → c), (a → b) → (a → c)
+compose f g = λx → f (g x)
 
 
-keep : a -> a
-    where a.eq : a, a -> Bool
+keep : a → a
+    where a.eq : a, a → Bool
 keep x =
     if x == x then
         x
@@ -16,10 +16,10 @@ keep x =
         x
 
 
-applyTo : a, (a -> b) -> b
+applyTo : a, (a → b) → b
 applyTo x f = f x
 
 
-h : a -> a
-    where a.eq : a, a -> Bool
+h : a → a
+    where a.eq : a, a → Bool
 h = applyTo keep (compose h _)

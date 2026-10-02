@@ -1,31 +1,31 @@
 -- Lambdas with one, two and many parameters, destructuring parameters,
 -- wildcards, a lambda applied directly, a lambda as an argument, and lambdas
 -- returning lambdas.
-inc = λn -> n + 1
+inc = λn → n + 1
 
 
-add = λa b -> a + b
+add = λa b → a + b
 
 
-swap = λ( a, b ) -> ( b, a )
+swap = λ( a, b ) → ( b, a )
 
 
-nameOf = λ{ name } _ -> name
+nameOf = λ{ name } _ → name
 
 
-curried = λa -> λb -> λc -> a + b + c
+curried = λa → λb → λc → a + b + c
 
 
-applyTwice f x = (λg y -> g (g y)) f x
+applyTwice f x = (λg y → g (g y)) f x
 
 
-sumPairs xs = List.map xs λ( a, b ) -> a + b
+sumPairs xs = List.map xs λ( a, b ) → a + b
 
 
-ignoreAll = λ_ _ _ -> ()
+ignoreAll = λ_ _ _ → ()
 
 
 multiLine =
-    λx ->
+    λx →
         y = x + 1
         y * 2

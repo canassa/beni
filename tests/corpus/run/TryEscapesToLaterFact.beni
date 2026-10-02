@@ -29,7 +29,7 @@ f k =
 
 main : Program
 main =
-    ( first, second ) = f λn -> Just (n + 1)
+    ( first, second ) = f λn → Just (n + 1)
     Node.printLines
         [ Debug.toString (h (Just 1))
         , Debug.toString (h Nothing)

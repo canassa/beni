@@ -4,7 +4,7 @@
 import Geometry exposing (Point, origin)
 
 
-pub shift : Point, Int -> Point
+pub shift : Point, Int → Point
 shift p dx = { p | x = p.x + dx }
 
 

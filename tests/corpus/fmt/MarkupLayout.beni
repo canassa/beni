@@ -35,4 +35,4 @@ noted =
 
 
 rows items =
-    <ul><For each={items} keyed={.id}>{λitem -> <li class={item.cls} title={item.title}>{item.label} and a longer tail than fits</li>}</For></ul>
+    <ul><For each={items} keyed={.id}>{λitem → <li class={item.cls} title={item.title}>{item.label} and a longer tail than fits</li>}</For></ul>

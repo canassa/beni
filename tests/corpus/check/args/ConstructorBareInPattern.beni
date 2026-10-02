@@ -8,8 +8,8 @@ pub type Pair
     = Pair Int Int
 
 
-pub first : Pair -> Int
+pub first : Pair → Int
 first p =
     case p of
-        Pair ->
+        Pair →
             0

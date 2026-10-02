@@ -7,23 +7,23 @@
 -- parameter to the `sync` one, so its summary says the parameter is `sync`
 -- (`!sync` in the interface) with nothing written, and `relay`, which
 -- passes a parameter on to `onType`, says it again.
-pub foreign suspends get : Int -> String
+pub foreign suspends get : Int → String
 
 
-pub foreign impure log : String -> ()
+pub foreign impure log : String → ()
 
 
-pub foreign pure onEvent : sync (Int -> String) -> Int
+pub foreign pure onEvent : sync (Int → String) → Int
 
 
-pub foreign impure spawn : (() -> String) -> Int
+pub foreign impure spawn : (() → String) → Int
 
 
-pub onType : (Int -> String) -> Int
-onType f = onEvent λn -> f n
+pub onType : (Int → String) → Int
+onType f = onEvent λn → f n
 
 
-pub relay : (Int -> String) -> Int
+pub relay : (Int → String) → Int
 relay g = onType g
 
 
@@ -32,26 +32,26 @@ plain = onType String.fromInt
 
 
 pub logged : Int
-logged = onEvent λn ->
+logged = onEvent λn →
     () = log "event"
     String.fromInt n
 
 
 pub later : Int
-later = onEvent λn ->
-    fetch = λ() -> get n
+later = onEvent λn →
+    fetch = λ() → get n
     "later"
 
 
 pub spawned : Int
-spawned = spawn λ() -> get 1
+spawned = spawn λ() → get 1
 
 
 pub type Key
     = Key Int
 
 
-pub eq : Key, Key -> Bool
+pub eq : Key, Key → Bool
 eq (Key a) (Key b) =
     () = log "compared"
     a == b

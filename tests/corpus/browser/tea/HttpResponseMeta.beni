@@ -17,53 +17,53 @@ type Msg
     | Got String
 
 
-describe : Http.Response String -> Result String String
+describe : Http.Response String → Result String String
 describe response =
     case response of
-        Http.GoodStatus_ meta body ->
+        Http.GoodStatus_ meta body →
             Ok ("good " ++ metadata meta body)
 
-        Http.BadStatus_ meta body ->
+        Http.BadStatus_ meta body →
             Ok ("bad " ++ metadata meta body)
 
-        _ ->
+        _ →
             Err "no answer"
 
 
-metadata : Http.Metadata, String -> String
+metadata : Http.Metadata, String → String
 metadata meta body =
     headers =
         String.join
-            (List.map (Dict.toList meta.headers) λ( name, value ) -> "${name}=${value}")
+            (List.map (Dict.toList meta.headers) λ( name, value ) → "${name}=${value}")
             "; "
-    path = Maybe.withDefault (Maybe.map (Url.fromString meta.url) λu -> u.path) meta.url
+    path = Maybe.withDefault (Maybe.map (Url.fromString meta.url) λu → u.path) meta.url
     "${String.fromInt meta.statusCode} [${meta.statusText}] ${path} {${headers}} ${body}"
 
 
-ask : String -> (() -> Result String String)
-ask url = λ() -> Http.get { url = url, expect = Http.expectStringResponse describe }
+ask : String → (() → Result String String)
+ask url = λ() → Http.get { url = url, expect = Http.expectStringResponse describe }
 
 
-update : Msg, List String -> ( List String, Cmd Msg )
+update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
-        Ask url ->
-            ( lines, Cmd.task (ask url) λresult -> Got (Result.withDefault result "failed") )
+        Ask url →
+            ( lines, Cmd.task (ask url) λresult → Got (Result.withDefault result "failed") )
 
-        Got line ->
+        Got line →
             ( lines ++ [ line ], Cmd.none )
 
 
-view : List String -> Html Msg
+view : List String → Html Msg
 view lines =
     <main>
         <button id="ok" onClick={Ask "/ok"}>ok</button>
         <button id="missing" onClick={Ask "/missing"}>missing</button>
-        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -15,7 +15,7 @@ type T
     = T Int
 
 
-pub eq : T, T -> Bool
+pub eq : T, T → Bool
 eq a b = True
 
 

@@ -10,7 +10,7 @@
 import Js
 
 
-pub gather : Js.Value, Js.Value -> ()
+pub gather : Js.Value, Js.Value → ()
 gather from into =
     if Js.isNull (Js.get from "firstChild") then
         ()
@@ -19,7 +19,7 @@ gather from into =
         gather from into
 
 
-pub each : Js.Value, Int -> ()
+pub each : Js.Value, Int → ()
 each fs k =
     if k == Js.to (Js.get fs "length") then
         ()
@@ -28,7 +28,7 @@ each fs k =
         each fs (k + 1)
 
 
-pub find : Js.Value, Int -> Int
+pub find : Js.Value, Int → Int
 find xs k =
     if Js.isNull (Js.at xs k) then
         k
@@ -36,7 +36,7 @@ find xs k =
         find xs (k + 2)
 
 
-pub settle : Js.Value, Js.Value -> ()
+pub settle : Js.Value, Js.Value → ()
 settle n end =
     next = Js.get n "nextSibling"
 

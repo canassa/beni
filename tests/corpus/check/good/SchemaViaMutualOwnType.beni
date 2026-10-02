@@ -9,7 +9,7 @@
 import Schema exposing (Conversion)
 
 
-toMine : Int -> Conversion Int Mine
+toMine : Int → Conversion Int Mine
 toMine n = Debug.todo "checker-only conversion"
 
 
@@ -37,17 +37,17 @@ type HoldsRec
     = HoldsRec Rec.Type
 
 
-sameLoop : Loop.Type, Loop.Type -> Bool
+sameLoop : Loop.Type, Loop.Type → Bool
 sameLoop a b = a == b
 
 
-sameMine : Mine, Mine -> Bool
+sameMine : Mine, Mine → Bool
 sameMine a b = a == b
 
 
-sameHolds : HoldsRec, HoldsRec -> Bool
+sameHolds : HoldsRec, HoldsRec → Bool
 sameHolds a b = a == b
 
 
-cmpLoop : Loop.Type, Loop.Type -> Bool
+cmpLoop : Loop.Type, Loop.Type → Bool
 cmpLoop a b = a < b

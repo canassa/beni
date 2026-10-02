@@ -9,8 +9,8 @@
 -- (`f`, `t`, `t`, `2`, `9`, `b`, `2`); a `run/` fixture must be warning-free.
 --
 -- None of the three is CONSTRAINED CONSTANT.
-maxOf : a, a -> a
-    where a.compare : a, a -> Order
+maxOf : a, a → a
+    where a.compare : a, a → Order
 maxOf a b =
     if a < b then
         b
@@ -21,7 +21,7 @@ maxOf a b =
 pub equals = (==)
 
 
-pub eqs = λa b -> a == b
+pub eqs = λa b → a == b
 
 
 pub bigger = maxOf

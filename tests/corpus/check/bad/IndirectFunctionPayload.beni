@@ -10,16 +10,16 @@
 -- The gate is now the transitive one `Types.isEquatable` already settles,
 -- with a `comparable` twin beside it (A.54).
 pub type HasFn
-    = HasFn (Int -> Int)
+    = HasFn (Int → Int)
 
 
 pub type IndirectFn
     = Indirect HasFn
 
 
-pub before : IndirectFn, IndirectFn -> Bool
+pub before : IndirectFn, IndirectFn → Bool
 before a b = a < b
 
 
-pub same : IndirectFn, IndirectFn -> Bool
+pub same : IndirectFn, IndirectFn → Bool
 same a b = a == b

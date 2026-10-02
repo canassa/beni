@@ -3,8 +3,8 @@ import M
 import Node exposing (Program)
 
 
-maxOf : a, a -> a
-    where a.compare : a, a -> Order
+maxOf : a, a → a
+    where a.compare : a, a → Order
 maxOf a b =
     if a < b then
         b
@@ -18,7 +18,7 @@ h = maxOf
 same = (==)
 
 
-tf : Bool -> String
+tf : Bool → String
 tf b =
     if b then
         "t"

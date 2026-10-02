@@ -20,46 +20,46 @@ type Route
     | Search (Maybe String)
 
 
-route : Parser (Route -> a) a
+route : Parser (Route → a) a
 route =
     oneOf
         [ map top Home
-        , s "blog" |> slash int |> map Blog
-        , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
-        , s "tree" |> slash string |> slash string |> slash int |> map3 Tree
-        , s "search" |> Url.Parser.questionMark (Query.string "q") |> map Search
+        , s "blog" ▷ slash int ▷ map Blog
+        , s "user" ▷ slash string ▷ slash (s "comment") ▷ slash int ▷ map2 Comment
+        , s "tree" ▷ slash string ▷ slash string ▷ slash int ▷ map3 Tree
+        , s "search" ▷ Url.Parser.questionMark (Query.string "q") ▷ map Search
         ]
 
 
-showRoute : Maybe Route -> String
+showRoute : Maybe Route → String
 showRoute r =
     case r of
-        Nothing ->
+        Nothing →
             "no match"
 
-        Just Home ->
+        Just Home →
             "Home"
 
-        Just (Blog n) ->
+        Just (Blog n) →
             "Blog ${String.fromInt n}"
 
-        Just (Comment user n) ->
+        Just (Comment user n) →
             "Comment ${user} ${String.fromInt n}"
 
-        Just (Tree a b n) ->
+        Just (Tree a b n) →
             "Tree ${a} ${b} ${String.fromInt n}"
 
-        Just (Search q) ->
+        Just (Search q) →
             "Search " ++ Maybe.withDefault q "-"
 
 
-at : String -> Url.Url
+at : String → Url.Url
 at path =
     case Url.fromString ("https://example.com" ++ path) of
-        Just url ->
+        Just url →
             url
 
-        Nothing ->
+        Nothing →
             { protocol = Url.Https
             , host = "unparsed"
             , port_ = Nothing
@@ -69,55 +69,55 @@ at path =
             }
 
 
-toRoute : String -> String
+toRoute : String → String
 toRoute path = "${path} -> ${showRoute (Url.Parser.parse route (at path))}"
 
 
-css : Parser (String -> a) a
-css = custom "CSS_FILE" λsegment ->
+css : Parser (String → a) a
+css = custom "CSS_FILE" λsegment →
     if String.endsWith segment ".css" then
         Just segment
     else
         Nothing
 
 
-showString : Maybe String -> String
+showString : Maybe String → String
 showString m =
     case m of
-        Just text ->
+        Just text →
             "Just ${text}"
 
-        Nothing ->
+        Nothing →
             "Nothing"
 
 
-showInt : Maybe Int -> String
+showInt : Maybe Int → String
 showInt m =
     case m of
-        Just n ->
+        Just n →
             "Just ${String.fromInt n}"
 
-        Nothing ->
+        Nothing →
             "Nothing"
 
 
 -- `oneOf` keeps the first parser that matches the WHOLE path: `s "a"`
 -- consumes only one segment of `/a/b`, so the second parser wins.
-order : Parser (String -> a) a
+order : Parser (String → a) a
 order =
     oneOf
-        [ s "a" |> map "first"
-        , s "a" |> slash (s "b") |> map "second"
-        , s "a" |> slash string |> map λx -> "third ${x}"
+        [ s "a" ▷ map "first"
+        , s "a" ▷ slash (s "b") ▷ map "second"
+        , s "a" ▷ slash string ▷ map λx → "third ${x}"
         ]
 
 
-roundTrip : List String -> String
+roundTrip : List String → String
 roundTrip segments =
     built = Url.Builder.absolute segments []
     parsed =
         Url.Parser.parse
-            (s "tags" |> slash string |> slash string |> map2 λa b -> "[${a}] [${b}]")
+            (s "tags" ▷ slash string ▷ slash string ▷ map2 λa b → "[${a}] [${b}]")
             (at built)
     "${built} -> ${showString parsed}"
 
@@ -140,16 +140,16 @@ main =
         , toRoute "/unknown"
         , showString (Url.Parser.parse css (at "/style.css"))
         , showString (Url.Parser.parse css (at "/style.js"))
-        , showInt (Url.Parser.parse (s "blog" |> slash int) (at "/blog/42"))
-        , showInt (Url.Parser.parse (s "blog" |> slash int) (at "/blog/42/"))
+        , showInt (Url.Parser.parse (s "blog" ▷ slash int) (at "/blog/42"))
+        , showInt (Url.Parser.parse (s "blog" ▷ slash int) (at "/blog/42/"))
         , showString
             (Url.Parser.parse
-                (s "docs" |> slash (fragment λf -> Maybe.withDefault f "-"))
+                (s "docs" ▷ slash (fragment λf → Maybe.withDefault f "-"))
                 (at "/docs#a%20b")
             )
         , showString
             (Url.Parser.parse
-                (s "docs" |> slash (fragment λf -> Maybe.withDefault f "-"))
+                (s "docs" ▷ slash (fragment λf → Maybe.withDefault f "-"))
                 (at "/docs")
             )
         , showString (Url.Parser.parse order (at "/a"))

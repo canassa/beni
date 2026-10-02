@@ -15,10 +15,10 @@ size = 100000
 
 
 cells : List Int
-cells = List.initialize size λi -> i + 1
+cells = List.initialize size λi → i + 1
 
 
-ends : List Int -> String
+ends : List Int → String
 ends xs =
     String.join
         [ String.fromInt (List.length xs)
@@ -37,7 +37,7 @@ main =
         , Debug.toString (List.get cells (size - 1))
         , Debug.toString (List.last cells)
         , ends (List.set cells (size - 1) 0)
-        , ends (List.update cells (size - 1) λx -> x * 2)
+        , ends (List.update cells (size - 1) λx → x * 2)
         , ends (List.push cells 0)
         , ends (List.pop cells)
         , ends (List.slice cells 1 (-1))

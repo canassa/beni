@@ -15,26 +15,26 @@ import Node exposing (Program)
 import String
 
 
-order : a, a -> String
-    where a.compare : a, a -> Order
+order : a, a → String
+    where a.compare : a, a → Order
 order x y =
     case x.compare y of
-        LT ->
+        LT →
             "LT"
 
-        EQ ->
+        EQ →
             "EQ"
 
-        GT ->
+        GT →
             "GT"
 
 
-same : a, a -> Bool
-    where a.eq : a, a -> Bool
+same : a, a → Bool
+    where a.eq : a, a → Bool
 same x y = x == y
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -42,27 +42,27 @@ show b =
         "False"
 
 
-ints : Int, Int -> String
+ints : Int, Int → String
 ints a b = order a b
 
 
-floats : Float, Float -> String
+floats : Float, Float → String
 floats a b = order a b
 
 
-chars : Char, Char -> String
+chars : Char, Char → String
 chars a b = order a b
 
 
-strings : String, String -> String
+strings : String, String → String
 strings a b = order a b
 
 
-sameInts : Int, Int -> Bool
+sameInts : Int, Int → Bool
 sameInts a b = same a b
 
 
-sameChars : Char, Char -> Bool
+sameChars : Char, Char → Bool
 sameChars a b = same a b
 
 

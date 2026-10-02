@@ -20,24 +20,24 @@ type alias Model =
     rows : List Int
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Toggle ->
+        Toggle →
             { model | on = not model.on }
 
-        Reverse ->
+        Reverse →
             { model | rows = List.reverse model.rows }
 
-        Drop ->
-            { model | rows = List.filter model.rows λn -> n /= 2 && n /= 3 }
+        Drop →
+            { model | rows = List.filter model.rows λn → n ≠ 2 && n ≠ 3 }
 
 
 nothing : Html msg
 nothing = <></>
 
 
-maybeBold : Bool -> Html msg
+maybeBold : Bool → Html msg
 maybeBold on =
     if on then
         <b>on</b>
@@ -45,7 +45,7 @@ maybeBold on =
         <></>
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="toggle" onClick={Toggle}>toggle</button>
@@ -54,8 +54,8 @@ view model =
         <p>before {maybeBold model.on} after</p>
         <p>a {nothing} b</p>
         <ul>
-            <For each={model.rows} keyed={λn -> n}>
-                {λn ->
+            <For each={model.rows} keyed={λn → n}>
+                {λn →
                     if Int.mod n 2 == 1 then
                         <></>
                     else

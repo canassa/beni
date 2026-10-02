@@ -6,73 +6,73 @@
 -- take every value (`[ ...init, True ]`, `[ ...init, False ]`); and a list
 -- inside a constructor. The spread's operand has the list's own type, so
 -- `init` and `middle` come back as `List a`.
-pub headOr : List Int -> Int
+pub headOr : List Int → Int
 headOr xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             x
 
 
-pub pairs : List Int -> Int
+pub pairs : List Int → Int
 pairs xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ x ] ->
+        [ x ] →
             x
 
-        [ x, y, ...rest ] ->
+        [ x, y, …rest ] →
             x + y
 
 
-pub initOf : List a -> List a
+pub initOf : List a → List a
 initOf xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ ...init, last ] ->
+        [ …init, last ] →
             init
 
 
-pub inner : List a -> List a
+pub inner : List a → List a
 inner xs =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x ] ->
+        [ x ] →
             []
 
-        [ first, ...middle, last ] ->
+        [ first, …middle, last ] →
             middle
 
 
-pub endsTrue : List Bool -> Bool
+pub endsTrue : List Bool → Bool
 endsTrue xs =
     case xs of
-        [] ->
+        [] →
             False
 
-        [ ...init, True ] ->
+        [ …init, True ] →
             True
 
-        [ ...init, False ] ->
+        [ …init, False ] →
             False
 
 
-pub firstJust : Maybe (List Int) -> Int
+pub firstJust : Maybe (List Int) → Int
 firstJust m =
     case m of
-        Nothing ->
+        Nothing →
             0
 
-        Just [] ->
+        Just [] →
             0
 
-        Just [ x, ..._ ] ->
+        Just [ x, …_ ] →
             x

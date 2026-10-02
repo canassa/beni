@@ -3,20 +3,20 @@
 -- when the author wrote one and it fits, and the vertical form with the
 -- comma leading each line when the author broke it — in expressions and in
 -- patterns alike.
-cons x xs = [x,...xs]
+cons x xs = [x,…xs]
 
 
 snoc xs x =
-    [ ...  xs , x ]
+    [ …  xs , x ]
 
 
 rows header body footer = [ header
-    , ...body
+    , …body
   , footer ]
 
 
 ends xs =
     case xs of
-        [first,...middle,last] -> middle
-        [x,..._] -> [x]
-        [...rest] -> rest
+        [first,…middle,last] → middle
+        [x,…_] → [x]
+        […rest] → rest

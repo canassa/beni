@@ -36,7 +36,7 @@ import String
 
 
 -- Source names that are JavaScript reserved words, and one that is `eval`.
-newClass : Int -> Int
+newClass : Int → Int
 newClass class =
     new = class + 1
 
@@ -51,7 +51,7 @@ newClass class =
 
 
 -- Sixty-one locals in one declaration: past the 54 one-character names.
-sixtyOne : Int -> Int
+sixtyOne : Int → Int
 sixtyOne seed =
     v01 = seed + 1
     v02 = v01 + 1
@@ -117,24 +117,24 @@ sixtyOne seed =
 
 
 -- The same source name in two sibling `case` branches.
-siblings : List Int -> Int
+siblings : List Int → Int
 siblings xs =
     case xs of
-        [ v ] ->
+        [ v ] →
             v * 100
 
-        [ v, ...rest ] ->
+        [ v, …rest ] →
             v + List.length rest
 
-        [] ->
+        [] →
             0
 
 
 -- A loop whose label is the declaration's own name, beside a local bound
 -- from the same source name.
-labelled : Int, Int -> Int
+labelled : Int, Int → Int
 labelled labelledN acc =
-    if labelledN <= 0 then
+    if labelledN ≤ 0 then
         acc
     else
         step = acc + labelledN
@@ -142,13 +142,13 @@ labelled labelledN acc =
 
 
 -- Eight globals mentioned in one declaration, with locals beside them.
-crowded : List Int -> String
+crowded : List Int → String
 crowded xs =
-    total = List.foldl xs 0 λx sum -> sum + x
+    total = List.foldl xs 0 λx sum → sum + x
 
     count = List.length xs
 
-    biggest = List.foldl xs 0 λx best -> if x > best then x else best
+    biggest = List.foldl xs 0 λx best → if x > best then x else best
 
     shown = String.join (List.map xs String.fromInt) ","
 

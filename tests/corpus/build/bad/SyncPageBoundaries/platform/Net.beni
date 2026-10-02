@@ -3,4 +3,4 @@
 --! wait.
 
 --| The text stored under a key, from a store that may be slow to answer.
-pub foreign suspends load : String -> String
+pub foreign suspends load : String → String

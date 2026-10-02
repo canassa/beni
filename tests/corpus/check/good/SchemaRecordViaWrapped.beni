@@ -25,5 +25,5 @@ type HoldsRec
     = HoldsRec Rec.Type
 
 
-sameHolds : HoldsRec, HoldsRec -> Bool
+sameHolds : HoldsRec, HoldsRec → Bool
 sameHolds a b = a == b

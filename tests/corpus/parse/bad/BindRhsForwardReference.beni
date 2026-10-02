@@ -3,7 +3,7 @@
 -- second bind's `g x` is fine: `x` is bound at the `<-` above it, and a
 -- name bound at or before a `<-` is in scope in the whole block.
 f g =
-    x <- g later
-    y <- g x
+    x ← g later
+    y ← g x
     later = 1
     x + y + later

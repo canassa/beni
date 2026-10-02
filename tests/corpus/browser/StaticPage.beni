@@ -4,7 +4,7 @@
 import Page exposing (Node)
 
 
-item : String -> Node msg
+item : String → Node msg
 item name = Page.element "li" [ Page.attribute "class" "item" ] [ Page.text name ]
 
 

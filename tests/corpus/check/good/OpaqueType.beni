@@ -9,8 +9,8 @@ pub zero : Counter
 zero = Counter 0
 
 
-pub bump : Counter -> Counter
+pub bump : Counter → Counter
 bump counter =
     case counter of
-        Counter n ->
+        Counter n →
             Counter (n + 1)

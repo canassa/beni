@@ -5,5 +5,5 @@
 import Html exposing (Html)
 
 
-pub raw : String -> Html msg
+pub raw : String → Html msg
 raw markup = <div id="raw" innerHTML={markup} />

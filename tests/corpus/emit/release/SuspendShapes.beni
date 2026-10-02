@@ -25,13 +25,13 @@ import Io
 import Task
 
 
-pub fetch : Int -> Int
+pub fetch : Int → Int
 fetch n =
     _ = Io.sleep n
     n + 1
 
 
-pub pick : Int -> Int
+pub pick : Int → Int
 pick n =
     m =
         if n > 0 then
@@ -41,27 +41,27 @@ pick n =
     m * 2
 
 
-pub total : List Int, Int -> Int
+pub total : List Int, Int → Int
 total xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             total rest (acc + fetch x)
 
 
-twice : (Int -> Int), Int -> Int
+twice : (Int → Int), Int → Int
 twice f x = f (f x)
 
 
-pub both : Int -> Int
-both n = twice fetch n + twice (λk -> k + 1) n
+pub both : Int → Int
+both n = twice fetch n + twice (λk → k + 1) n
 
 
-pub plain : Int -> Int
+pub plain : Int → Int
 plain n =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         n + plain (n - 1)

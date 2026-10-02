@@ -13,63 +13,63 @@ import Node exposing (Program)
 import String
 
 
-day : Int -> String
+day : Int → String
 day n =
     case n of
-        0 ->
+        0 →
             "Sun"
 
-        1 ->
+        1 →
             "Mon"
 
-        2 ->
+        2 →
             "Tue"
 
-        3 ->
+        3 →
             "Wed"
 
-        -1 ->
+        -1 →
             "yesterday"
 
-        _ ->
+        _ →
             "later"
 
 
-greek : String -> Int
+greek : String → Int
 greek name =
     case name of
-        "alpha" ->
+        "alpha" →
             1
 
-        "beta" ->
+        "beta" →
             2
 
-        "gamma" ->
+        "gamma" →
             3
 
-        "delta" ->
+        "delta" →
             4
 
-        _ ->
+        _ →
             0
 
 
-vowel : Char -> String
+vowel : Char → String
 vowel c =
     case c of
-        'a' ->
+        'a' →
             "first"
 
-        'e' ->
+        'e' →
             "second"
 
-        'i' ->
+        'i' →
             "third"
 
-        'o' ->
+        'o' →
             "fourth"
 
-        _ ->
+        _ →
             "consonant"
 
 

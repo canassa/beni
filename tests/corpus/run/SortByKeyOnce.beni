@@ -27,15 +27,15 @@ type alias Row =
     tag : String
 
 
-note : String, Int -> Int
+note : String, Int → Int
 note tag n = Debug.log tag n
 
 
-tags : List Row -> String
-tags rs = String.join (List.map rs λr -> r.tag) ""
+tags : List Row → String
+tags rs = String.join (List.map rs λr → r.tag) ""
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) ","
 
 
@@ -59,19 +59,19 @@ rows =
 
 main : Program
 main =
-    none = List.sortBy [] λx -> note "zero" x
+    none = List.sortBy [] λx → note "zero" x
 
-    one = List.sortBy [ 5 ] λx -> note "one" x
+    one = List.sortBy [ 5 ] λx → note "one" x
 
-    few = List.sortBy three λx -> note "three" x
+    few = List.sortBy three λx → note "three" x
 
-    many = List.sortBy eight λx -> note "eight" x
+    many = List.sortBy eight λx → note "eight" x
 
-    stable = List.sortBy rows λr -> r.rank
+    stable = List.sortBy rows λr → r.rank
 
-    spelled = List.sortWith rows λx y -> compare x.rank y.rank
+    spelled = List.sortWith rows λx y → compare x.rank y.rank
 
-    huge = List.sortBy (List.range 1 20000) λn -> 0 - n
+    huge = List.sortBy (List.range 1 20000) λn → 0 - n
     Node.printLines
         [ ints none
         , ints one
@@ -79,8 +79,8 @@ main =
         , ints many
         , tags stable
         , tags spelled
-        , ints (List.sortBy eight λx -> 0 - x)
-        , ints (List.sortWith eight λx y -> compare y x)
+        , ints (List.sortBy eight λx → 0 - x)
+        , ints (List.sortWith eight λx y → compare y x)
         , String.fromInt (List.length huge)
         , ints (List.take huge 3)
         ]

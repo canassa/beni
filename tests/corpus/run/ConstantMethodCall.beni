@@ -26,17 +26,17 @@ pub bumped : Counter
 bumped = (Counter 1).bump 2
 
 
-pub bump : Counter, Int -> Counter
+pub bump : Counter, Int → Counter
 bump c step =
     case c of
-        Counter n ->
+        Counter n →
             Counter (n + step)
 
 
-pub count : Counter -> Int
+pub count : Counter → Int
 count c =
     case c of
-        Counter n ->
+        Counter n →
             n
 
 

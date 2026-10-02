@@ -15,13 +15,13 @@ busy : Js.Ref Bool
 busy = Js.ref False
 
 
-pub count : Js.Value -> Int
+pub count : Js.Value → Int
 count xs =
     n = Js.ref 0
 
     last = Js.ref (Js.get xs "first")
 
-    _ = Js.each xs λx ->
+    _ = Js.each xs λx →
         _ = Js.write n (Js.read n + 1)
         Js.write last x
 

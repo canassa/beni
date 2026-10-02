@@ -3,5 +3,5 @@
 -- them, so nothing about the TYPES is obviously wrong at a glance — the
 -- mistake only shows up as the wrong thing arriving in the first position,
 -- which is now the list.
-pub concatAll : List String -> String
-concatAll parts = List.foldl (λpart acc -> acc ++ part) "" parts
+pub concatAll : List String → String
+concatAll parts = List.foldl (λpart acc → acc ++ part) "" parts

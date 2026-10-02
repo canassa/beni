@@ -18,14 +18,14 @@ pub type Id
     = Id Int Int
 
 
-eq : Id, Id -> Bool
+eq : Id, Id → Bool
 eq a b =
     case a of
-        Id majorA _ ->
+        Id majorA _ →
             case b of
-                Id majorB _ ->
+                Id majorB _ →
                     majorA == majorB
 
 
-pub sameMajor : Id, Id -> Bool
+pub sameMajor : Id, Id → Bool
 sameMajor a b = a == b

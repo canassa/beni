@@ -29,12 +29,12 @@ second =
 third x =
     case x of
 
-        1 ->
+        1 →
             1
 
 
 
-        _ ->
+        _ →
 
             2
 

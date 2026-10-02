@@ -19,5 +19,5 @@ pub key (T x) u =
         0
 
 
-pub same : Int, Int -> Bool
+pub same : Int, Int → Bool
 same a b = W (H.Holder (T a)) == W (H.Holder (T b))

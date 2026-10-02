@@ -18,29 +18,29 @@
 import Node exposing (Program)
 
 
-before : a, a -> Bool
-    where a.compare : a, a -> Order
+before : a, a → Bool
+    where a.compare : a, a → Order
 before x y = x < y
 
 
-sameAs : a, a -> Bool
-    where a.eq : a, a -> Bool
+sameAs : a, a → Bool
+    where a.eq : a, a → Bool
 sameAs x y = x == y
 
 
-pub ints : Int, Int -> Bool
+pub ints : Int, Int → Bool
 ints a b = before a b
 
 
-pub chars : Char, Char -> Bool
+pub chars : Char, Char → Bool
 chars a b = before a b
 
 
-pub strings : String, String -> Bool
+pub strings : String, String → Bool
 strings a b = before a b
 
 
-pub sameInts : Int, Int -> Bool
+pub sameInts : Int, Int → Bool
 sameInts a b = sameAs a b
 
 

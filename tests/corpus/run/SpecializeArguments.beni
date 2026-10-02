@@ -15,39 +15,39 @@ limit : Int
 limit = 4
 
 
-twice : Int, Int -> Int
+twice : Int, Int → Int
 twice k n = k * n
 
 
-offset : Int, Int -> Int
+offset : Int, Int → Int
 offset by n = n + by
 
 
-countUp : Int, Int -> Int
+countUp : Int, Int → Int
 countUp step n =
-    if n >= 10 then
+    if n ≥ 10 then
         n
     else
         countUp step (n + step)
 
 
-guarded : Bool, Int -> Bool
+guarded : Bool, Int → Bool
 guarded on n = on && Debug.log "and-right" n > 0
 
 
-either : Bool, Int -> Bool
+either : Bool, Int → Bool
 either off n = off || Debug.log "or-right" n > 0
 
 
-square : Int -> Int
+square : Int → Int
 square b = b ^ 2
 
 
-quoted : String, String -> String
+quoted : String, String → String
 quoted q s = q ++ s ++ q
 
 
-over : Int -> Bool
+over : Int → Bool
 over n = n > limit
 
 

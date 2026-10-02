@@ -61,7 +61,7 @@ empty = Dict Leaf
 --| either, so this one is unconstrained too.
 --|
 --|     Dict.singleton "Tom" 42
-pub singleton : k, v -> Dict k v
+pub singleton : k, v → Dict k v
 singleton key value = Dict (Node Black key value Leaf Leaf)
 
 
@@ -71,27 +71,27 @@ singleton key value = Dict (Node Black key value Leaf Leaf)
 --|
 --|     get (fromList [ ( "Tom", "cat" ) ]) "Tom" == Just "cat"
 --|     get (fromList [ ( "Tom", "cat" ) ]) "Jerry" == Nothing
-pub get : Dict k v, k -> Maybe v
-    where k.compare : k, k -> Order
+pub get : Dict k v, k → Maybe v
+    where k.compare : k, k → Order
 get (Dict tree) targetKey = getHelp tree targetKey
 
 
-getHelp : Tree k v, k -> Maybe v
-    where k.compare : k, k -> Order
+getHelp : Tree k v, k → Maybe v
+    where k.compare : k, k → Order
 getHelp tree targetKey =
     case tree of
-        Leaf ->
+        Leaf →
             Nothing
 
-        Node _ key value left right ->
+        Node _ key value left right →
             case targetKey.compare key of
-                LT ->
+                LT →
                     getHelp left targetKey
 
-                EQ ->
+                EQ →
                     Just value
 
-                GT ->
+                GT →
                     getHelp right targetKey
 
 
@@ -99,42 +99,42 @@ getHelp tree targetKey =
 --|
 --|     member (fromList [ ( "Tom", "cat" ) ]) "Tom" == True
 --|     member (fromList [ ( "Tom", "cat" ) ]) "Jerry" == False
-pub member : Dict k v, k -> Bool
-    where k.compare : k, k -> Order
+pub member : Dict k v, k → Bool
+    where k.compare : k, k → Order
 member dict key =
     case get dict key of
-        Just _ ->
+        Just _ →
             True
 
-        Nothing ->
+        Nothing →
             False
 
 
 --| Determine the number of key-value pairs in the dictionary.
-pub size : Dict k v -> Int
+pub size : Dict k v → Int
 size (Dict tree) = sizeHelp 0 tree
 
 
-sizeHelp : Int, Tree k v -> Int
+sizeHelp : Int, Tree k v → Int
 sizeHelp n tree =
     case tree of
-        Leaf ->
+        Leaf →
             n
 
-        Node _ _ _ left right ->
+        Node _ _ _ left right →
             sizeHelp (sizeHelp (n + 1) right) left
 
 
 --| Determine if a dictionary is empty.
 --|
 --|     isEmpty empty == True
-pub isEmpty : Dict k v -> Bool
+pub isEmpty : Dict k v → Bool
 isEmpty (Dict tree) =
     case tree of
-        Leaf ->
+        Leaf →
             True
 
-        Node _ _ _ _ _ ->
+        Node _ _ _ _ _ →
             False
 
 
@@ -142,49 +142,49 @@ isEmpty (Dict tree) =
 --| is a collision.
 --|
 --|     insert empty "Tom" 42
-pub insert : Dict k v, k, v -> Dict k v
-    where k.compare : k, k -> Order
+pub insert : Dict k v, k, v → Dict k v
+    where k.compare : k, k → Order
 insert (Dict tree) key value = Dict (blacken (insertHelp tree key value))
 
 
 -- The root node is always black.
-blacken : Tree k v -> Tree k v
+blacken : Tree k v → Tree k v
 blacken tree =
     case tree of
-        Node Red key value left right ->
+        Node Red key value left right →
             Node Black key value left right
 
-        _ ->
+        _ →
             tree
 
 
-insertHelp : Tree k v, k, v -> Tree k v
-    where k.compare : k, k -> Order
+insertHelp : Tree k v, k, v → Tree k v
+    where k.compare : k, k → Order
 insertHelp tree key value =
     case tree of
         -- New nodes are always red. If it violates the rules, it will be
         -- fixed when balancing.
-        Leaf ->
+        Leaf →
             Node Red key value Leaf Leaf
 
-        Node nColor nKey nValue nLeft nRight ->
+        Node nColor nKey nValue nLeft nRight →
             case key.compare nKey of
-                LT ->
+                LT →
                     balance nColor nKey nValue (insertHelp nLeft key value) nRight
 
-                EQ ->
+                EQ →
                     Node nColor nKey value nLeft nRight
 
-                GT ->
+                GT →
                     balance nColor nKey nValue nLeft (insertHelp nRight key value)
 
 
-balance : NColor, k, v, Tree k v, Tree k v -> Tree k v
+balance : NColor, k, v, Tree k v, Tree k v → Tree k v
 balance color key value left right =
     case right of
-        Node Red rK rV rLeft rRight ->
+        Node Red rK rV rLeft rRight →
             case left of
-                Node Red lK lV lLeft lRight ->
+                Node Red lK lV lLeft lRight →
                     Node
                         Red
                         key
@@ -192,12 +192,12 @@ balance color key value left right =
                         (Node Black lK lV lLeft lRight)
                         (Node Black rK rV rLeft rRight)
 
-                _ ->
+                _ →
                     Node color rK rV (Node Red key value left rLeft) rRight
 
-        _ ->
+        _ →
             case left of
-                Node Red lK lV (Node Red llK llV llLeft llRight) lRight ->
+                Node Red lK lV (Node Red llK llV llLeft llRight) lRight →
                     Node
                         Red
                         lK
@@ -205,7 +205,7 @@ balance color key value left right =
                         (Node Black llK llV llLeft llRight)
                         (Node Black key value lRight right)
 
-                _ ->
+                _ →
                     Node color key value left right
 
 
@@ -213,33 +213,33 @@ balance color key value left right =
 --| changes are made.
 --|
 --|     remove animals "Tom"
-pub remove : Dict k v, k -> Dict k v
-    where k.compare : k, k -> Order
+pub remove : Dict k v, k → Dict k v
+    where k.compare : k, k → Order
 remove (Dict tree) key = Dict (blacken (removeHelp tree key))
 
 
 -- The easiest thing to remove from the tree, other than a red node, is a
 -- black node with a red child. So the deletion walks down rearranging as it
 -- goes, so that the node it finally removes is one of those.
-removeHelp : Tree k v, k -> Tree k v
-    where k.compare : k, k -> Order
+removeHelp : Tree k v, k → Tree k v
+    where k.compare : k, k → Order
 removeHelp tree targetKey =
     case tree of
-        Leaf ->
+        Leaf →
             Leaf
 
-        Node color key value left right ->
+        Node color key value left right →
             case targetKey.compare key of
-                LT ->
+                LT →
                     case left of
-                        Node Black _ _ lLeft _ ->
+                        Node Black _ _ lLeft _ →
                             case lLeft of
-                                Node Red _ _ _ _ ->
+                                Node Red _ _ _ _ →
                                     Node color key value (removeHelp left targetKey) right
 
-                                _ ->
+                                _ →
                                     case moveRedLeft tree of
-                                        Node nColor nKey nValue nLeft nRight ->
+                                        Node nColor nKey nValue nLeft nRight →
                                             balance
                                                 nColor
                                                 nKey
@@ -247,13 +247,13 @@ removeHelp tree targetKey =
                                                 (removeHelp nLeft targetKey)
                                                 nRight
 
-                                        Leaf ->
+                                        Leaf →
                                             Leaf
 
-                        _ ->
+                        _ →
                             Node color key value (removeHelp left targetKey) right
 
-                _ ->
+                _ →
                     removeHelpEQGT
                         (removeHelpPrepEQGT tree color key value left right)
                         targetKey
@@ -261,79 +261,79 @@ removeHelp tree targetKey =
 
 -- Rearrange the node so that the `EQ` and `GT` cases can proceed: either
 -- rotate a red left child up, or borrow from the right.
-removeHelpPrepEQGT : Tree k v, NColor, k, v, Tree k v, Tree k v -> Tree k v
+removeHelpPrepEQGT : Tree k v, NColor, k, v, Tree k v, Tree k v → Tree k v
 removeHelpPrepEQGT tree color key value left right =
     case left of
-        Node Red lK lV lLeft lRight ->
+        Node Red lK lV lLeft lRight →
             Node color lK lV lLeft (Node Red key value lRight right)
 
-        _ ->
+        _ →
             case right of
-                Node Black _ _ (Node Black _ _ _ _) _ ->
+                Node Black _ _ (Node Black _ _ _ _) _ →
                     moveRedRight tree
 
-                Node Black _ _ Leaf _ ->
+                Node Black _ _ Leaf _ →
                     moveRedRight tree
 
-                _ ->
+                _ →
                     tree
 
 
 -- When we find the node to delete, we replace it with the minimum of its
 -- right subtree and then delete that minimum instead.
-removeHelpEQGT : Tree k v, k -> Tree k v
-    where k.compare : k, k -> Order
+removeHelpEQGT : Tree k v, k → Tree k v
+    where k.compare : k, k → Order
 removeHelpEQGT tree targetKey =
     case tree of
-        Node color key value left right ->
+        Node color key value left right →
             case targetKey.compare key of
-                EQ ->
+                EQ →
                     case getMin right of
-                        Node _ minKey minValue _ _ ->
+                        Node _ minKey minValue _ _ →
                             balance color minKey minValue left (removeMin right)
 
-                        Leaf ->
+                        Leaf →
                             Leaf
 
-                _ ->
+                _ →
                     balance color key value left (removeHelp right targetKey)
 
-        Leaf ->
+        Leaf →
             Leaf
 
 
-getMin : Tree k v -> Tree k v
+getMin : Tree k v → Tree k v
 getMin tree =
     case tree of
-        Node _ _ _ ((Node _ _ _ _ _) as left) _ ->
+        Node _ _ _ ((Node _ _ _ _ _) as left) _ →
             getMin left
 
-        _ ->
+        _ →
             tree
 
 
-removeMin : Tree k v -> Tree k v
+removeMin : Tree k v → Tree k v
 removeMin tree =
     case tree of
-        Node color key value ((Node lColor _ _ lLeft _) as left) right ->
+        Node color key value ((Node lColor _ _ lLeft _) as left) right →
             case lColor of
-                Black ->
+                Black →
                     case lLeft of
-                        Node Red _ _ _ _ ->
+                        Node Red _ _ _ _ →
                             Node color key value (removeMin left) right
 
-                        _ ->
+                        _ →
                             case moveRedLeft tree of
-                                Node nColor nKey nValue nLeft nRight ->
+                                Node nColor nKey nValue nLeft nRight →
                                     balance nColor nKey nValue (removeMin nLeft) nRight
 
-                                Leaf ->
+                                Leaf →
                                     Leaf
 
-                _ ->
+                _ →
                     Node color key value (removeMin left) right
 
-        _ ->
+        _ →
             Leaf
 
 
@@ -341,12 +341,12 @@ removeMin tree =
 -- child are both black. Elm writes this as two top-level patterns; the inner
 -- `case` here is the same three cases with lines short enough to read, and
 -- the colour of the node itself does not affect the result.
-moveRedLeft : Tree k v -> Tree k v
+moveRedLeft : Tree k v → Tree k v
 moveRedLeft tree =
     case tree of
-        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) ->
+        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) →
             case rLeft of
-                Node Red rlK rlV rlL rlR ->
+                Node Red rlK rlV rlL rlR →
                     Node
                         Red
                         rlK
@@ -354,21 +354,21 @@ moveRedLeft tree =
                         (Node Black k v (Node Red lK lV lLeft lRight) rlL)
                         (Node Black rK rV rlR rRight)
 
-                _ ->
+                _ →
                     Node Black k v (Node Red lK lV lLeft lRight) (Node Red rK rV rLeft rRight)
 
-        _ ->
+        _ →
             tree
 
 
 -- The mirror of `moveRedLeft`: rotate the left child up when it already has
 -- a red child of its own, otherwise recolour.
-moveRedRight : Tree k v -> Tree k v
+moveRedRight : Tree k v → Tree k v
 moveRedRight tree =
     case tree of
-        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) ->
+        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) →
             case lLeft of
-                Node Red llK llV llLeft llRight ->
+                Node Red llK llV llLeft llRight →
                     Node
                         Red
                         lK
@@ -376,10 +376,10 @@ moveRedRight tree =
                         (Node Black llK llV llLeft llRight)
                         (Node Black k v lRight (Node Red rK rV rLeft rRight))
 
-                _ ->
+                _ →
                     Node Black k v (Node Red lK lV lLeft lRight) (Node Red rK rV rLeft rRight)
 
-        _ ->
+        _ →
             tree
 
 
@@ -388,35 +388,35 @@ moveRedRight tree =
 --| applies to.
 --|
 --|     update animals "Tom" λ_ -> Just Cat
-pub update : Dict k v, k, (Maybe v -> Maybe v) -> Dict k v
-    where k.compare : k, k -> Order
+pub update : Dict k v, k, (Maybe v → Maybe v) → Dict k v
+    where k.compare : k, k → Order
 update dict targetKey alter =
     case alter (get dict targetKey) of
-        Just value ->
+        Just value →
             insert dict targetKey value
 
-        Nothing ->
+        Nothing →
             remove dict targetKey
 
 
 --| Combine two dictionaries. If there is a collision, preference is given to
 --| the first dictionary.
-pub union : Dict k v, Dict k v -> Dict k v
-    where k.compare : k, k -> Order
-union t1 t2 = foldl t1 t2 λkey value dict -> insert dict key value
+pub union : Dict k v, Dict k v → Dict k v
+    where k.compare : k, k → Order
+union t1 t2 = foldl t1 t2 λkey value dict → insert dict key value
 
 
 --| Keep a key-value pair when its key appears in the second dictionary.
-pub intersect : Dict k v, Dict k v -> Dict k v
-    where k.compare : k, k -> Order
-intersect t1 t2 = filter t1 λkey _ -> member t2 key
+pub intersect : Dict k v, Dict k v → Dict k v
+    where k.compare : k, k → Order
+intersect t1 t2 = filter t1 λkey _ → member t2 key
 
 
 --| Keep a key-value pair when its key does not appear in the second
 --| dictionary.
-pub diff : Dict k a, Dict k b -> Dict k a
-    where k.compare : k, k -> Order
-diff t1 t2 = foldl t2 t1 λkey _ t -> remove t key
+pub diff : Dict k a, Dict k b → Dict k a
+    where k.compare : k, k → Order
+diff t1 t2 = foldl t2 t1 λkey _ t → remove t key
 
 
 --| The most general way of combining two dictionaries. The two dictionaries
@@ -433,30 +433,30 @@ pub merge :
       Dict k a
     , Dict k b
     , result
-    , (k, a, result -> result)
-    , (k, a, b, result -> result)
-    , (k, b, result -> result)
-    -> result
-    where k.compare : k, k -> Order
+    , (k, a, result → result)
+    , (k, a, b, result → result)
+    , (k, b, result → result)
+    → result
+    where k.compare : k, k → Order
 merge leftDict rightDict initialResult leftStep bothStep rightStep =
     stepState rKey rValue ( list, result ) =
         case list of
-            [] ->
+            [] →
                 ( list, rightStep rKey rValue result )
 
-            [ ( lKey, lValue ), ...rest ] ->
+            [ ( lKey, lValue ), …rest ] →
                 case lKey.compare rKey of
-                    LT ->
+                    LT →
                         stepState rKey rValue ( rest, leftStep lKey lValue result )
 
-                    GT ->
+                    GT →
                         ( list, rightStep rKey rValue result )
 
-                    EQ ->
+                    EQ →
                         ( rest, bothStep lKey lValue rValue result )
 
     ( leftovers, intermediateResult ) = foldl rightDict ( toList leftDict, initialResult ) stepState
-    List.foldl leftovers intermediateResult λ( key, value ) result -> leftStep key value result
+    List.foldl leftovers intermediateResult λ( key, value ) result → leftStep key value result
 
 
 --| Apply a function to all values in a dictionary. The keys, and therefore
@@ -466,17 +466,17 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
 --|
 --| `func` is called in ascending key order (`checker.md` Appendix B), which
 --| is what `mapTree` binds its three pieces in order to get.
-pub map : Dict k a, (k, a -> b) -> Dict k b
+pub map : Dict k a, (k, a → b) → Dict k b
 map (Dict tree) func = Dict (mapTree tree func)
 
 
-mapTree : Tree k a, (k, a -> b) -> Tree k b
+mapTree : Tree k a, (k, a → b) → Tree k b
 mapTree tree func =
     case tree of
-        Leaf ->
+        Leaf →
             Leaf
 
-        Node color key value left right ->
+        Node color key value left right →
             newLeft = mapTree left func
             newValue = func key value
             newRight = mapTree right func
@@ -487,17 +487,17 @@ mapTree tree func =
 --| key.
 --|
 --|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (λ_ _ count -> count + 1) == 2
-pub foldl : Dict k v, b, (k, v, b -> b) -> b
+pub foldl : Dict k v, b, (k, v, b → b) → b
 foldl (Dict tree) acc func = foldlTree tree acc func
 
 
-foldlTree : Tree k v, b, (k, v, b -> b) -> b
+foldlTree : Tree k v, b, (k, v, b → b) → b
 foldlTree tree acc func =
     case tree of
-        Leaf ->
+        Leaf →
             acc
 
-        Node _ key value left right ->
+        Node _ key value left right →
             foldlTree right (func key value (foldlTree left acc func)) func
 
 
@@ -505,26 +505,26 @@ foldlTree tree acc func =
 --| key.
 --|
 --|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (λkey _ names -> [ key, ...names ]) == [ "a", "b" ]
-pub foldr : Dict k v, b, (k, v, b -> b) -> b
+pub foldr : Dict k v, b, (k, v, b → b) → b
 foldr (Dict tree) acc func = foldrTree tree acc func
 
 
-foldrTree : Tree k v, b, (k, v, b -> b) -> b
+foldrTree : Tree k v, b, (k, v, b → b) → b
 foldrTree tree acc func =
     case tree of
-        Leaf ->
+        Leaf →
             acc
 
-        Node _ key value left right ->
+        Node _ key value left right →
             foldrTree left (func key value (foldrTree right acc func)) func
 
 
 --| Keep only the key-value pairs that pass the given test.
 --|
 --|     filter animals (λ_ animal -> animal == Cat)
-pub filter : Dict k v, (k, v -> Bool) -> Dict k v
-    where k.compare : k, k -> Order
-filter (Dict tree) isGood = foldlTree tree empty λkey value dict ->
+pub filter : Dict k v, (k, v → Bool) → Dict k v
+    where k.compare : k, k → Order
+filter (Dict tree) isGood = foldlTree tree empty λkey value dict →
     if isGood key value then
         insert dict key value
     else
@@ -536,8 +536,8 @@ filter (Dict tree) isGood = foldlTree tree empty λkey value dict ->
 --| contains the pairs that did not.
 --|
 --|     partition animals (λ_ animal -> animal == Cat)
-pub partition : Dict k v, (k, v -> Bool) -> ( Dict k v, Dict k v )
-    where k.compare : k, k -> Order
+pub partition : Dict k v, (k, v → Bool) → Dict k v × Dict k v
+    where k.compare : k, k → Order
 partition (Dict tree) isGood =
     step key value ( trues, falses ) =
         if isGood key value then
@@ -550,15 +550,15 @@ partition (Dict tree) isGood =
 --| Get all of the keys in a dictionary, sorted from lowest to highest.
 --|
 --|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
-pub keys : Dict k v -> List k
-keys dict = foldl dict [] λkey _ keyList -> List.push keyList key
+pub keys : Dict k v → List k
+keys dict = foldl dict [] λkey _ keyList → List.push keyList key
 
 
 --| Get all of the values in a dictionary, in the order of their keys.
 --|
 --|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
-pub values : Dict k v -> List v
-values dict = foldl dict [] λ_ value valueList -> List.push valueList value
+pub values : Dict k v → List v
+values dict = foldl dict [] λ_ value valueList → List.push valueList value
 
 
 --| Convert a dictionary into an association list of key-value pairs, sorted
@@ -566,14 +566,14 @@ values dict = foldl dict [] λ_ value valueList -> List.push valueList value
 --|
 --|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ])
 --|         == [ ( "a", 0 ), ( "b", 1 ) ]
-pub toList : Dict k v -> List ( k, v )
-toList dict = foldl dict [] λkey value list -> List.push list ( key, value )
+pub toList : Dict k v → List (k × v)
+toList dict = foldl dict [] λkey value list → List.push list ( key, value )
 
 
 --| Convert an association list into a dictionary, ordered by the key type's
 --| own `compare`.
 --|
 --|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
-pub fromList : List ( k, v ) -> Dict k v
-    where k.compare : k, k -> Order
-fromList assocs = List.foldl assocs empty λ( key, value ) dict -> insert dict key value
+pub fromList : List (k × v) → Dict k v
+    where k.compare : k, k → Order
+fromList assocs = List.foldl assocs empty λ( key, value ) dict → insert dict key value

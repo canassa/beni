@@ -41,7 +41,7 @@ samples =
 
     chosen =
         (Random.step
-            (Random.andThen die λn -> Random.map (Random.int 0 n) λm -> m <= n)
+            (Random.andThen die λn → Random.map (Random.int 0 n) λm → m ≤ n)
             seed
         ).0
 
@@ -49,7 +49,7 @@ samples =
 
     fromChild =
         case Random.step Random.independentSeed seed of
-            ( child, _ ) ->
+            ( child, _ ) →
                 (Random.step die child).0
     [ "ints " ++ nums ints
     , "backwards " ++ nums backwards
@@ -63,7 +63,7 @@ samples =
                "outside"
            )
     , "float "
-        ++ (if fraction >= 0 && fraction < 1 then
+        ++ (if fraction ≥ 0 && fraction < 1 then
                "in [0, 1)"
             else
                "out of range"
@@ -72,23 +72,23 @@ samples =
     ]
 
 
-update : Msg, List Int -> ( List Int, Cmd Msg )
+update : Msg, List Int → List Int × Cmd Msg
 update msg rolls =
     case msg of
-        Roll ->
+        Roll →
             ( rolls, Random.generate (Random.list die 3) Rolled )
 
-        Rolled more ->
+        Rolled more →
             ( rolls ++ more, Cmd.none )
 
-        Draw ->
+        Draw →
             ( rolls ++ Random.value (Random.list die 3), Cmd.none )
 
 
-view : List Int -> Html Msg
+view : List Int → Html Msg
 view rolls =
     <main>
-        <ul><For each={samples} keyed={False}>{λline -> <li>{line}</li>}</For></ul>
+        <ul><For each={samples} keyed={False}>{λline → <li>{line}</li>}</For></ul>
         <button id="roll" onClick={Roll}>roll</button>
         <button id="draw" onClick={Draw}>draw</button>
         <p id="rolls">{nums rolls}</p>
@@ -98,8 +98,8 @@ view rolls =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
 
 
-nums : List Int -> String
+nums : List Int → String
 nums ns = String.join (List.map ns String.fromInt) " "

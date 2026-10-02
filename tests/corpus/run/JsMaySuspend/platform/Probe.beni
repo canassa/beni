@@ -7,7 +7,7 @@
 import Js
 
 
-pub start : (() -> ()) -> String
+pub start : (() → ()) → String
 start f =
     if Js.maySuspend f then
         inFiber f
@@ -15,36 +15,36 @@ start f =
         direct f
 
 
-inFiber : (() -> ()) -> String
+inFiber : (() → ()) → String
 inFiber _ = "in a fiber"
 
 
-direct : (() -> ()) -> String
+direct : (() → ()) → String
 direct f =
     _ = f ()
     "directly"
 
 
-pub forward : (() -> ()) -> String
+pub forward : (() → ()) → String
 forward f = start f
 
 
-pub fixed : () -> String
+pub fixed : () → String
 fixed () =
     case Js.maySuspend quiet of
-        True ->
+        True →
             "quiet may suspend"
 
-        False ->
+        False →
             "quiet does not suspend"
 
 
-quiet : () -> ()
+quiet : () → ()
 quiet () = ()
 
 
 -- In a discarded position, the arm a body does not take is not written.
-pub count : (() -> ()) -> Int
+pub count : (() → ()) → Int
 count f =
     _ =
         if Js.maySuspend f then

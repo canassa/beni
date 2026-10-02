@@ -14,22 +14,22 @@ import Node exposing (Program)
 import String
 
 
-classify : List Int -> String
+classify : List Int → String
 classify xs =
     case xs of
-        [] ->
+        [] →
             "empty"
 
-        [ 1 ] ->
+        [ 1 ] →
             "one one"
 
-        [ x ] ->
+        [ x ] →
             "single ${String.fromInt x}"
 
-        [ 1, 2, ...rest ] ->
+        [ 1, 2, …rest ] →
             "twelve then ${String.fromInt (List.length rest)}"
 
-        [ x, y, ...rest ] ->
+        [ x, y, …rest ] →
             "${String.fromInt (x + y)} then ${String.fromInt (List.length rest)}"
 
 

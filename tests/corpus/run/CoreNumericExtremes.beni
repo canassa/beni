@@ -18,16 +18,16 @@ import Node exposing (Program)
 import String
 
 
-order : Order -> String
+order : Order → String
 order o =
     case o of
-        LT ->
+        LT →
             "LT"
 
-        EQ ->
+        EQ →
             "EQ"
 
-        GT ->
+        GT →
             "GT"
 
 

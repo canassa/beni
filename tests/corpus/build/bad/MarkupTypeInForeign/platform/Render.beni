@@ -1,4 +1,4 @@
 import Html exposing (Html)
 
 
-pub foreign pure render : Html msg -> String
+pub foreign pure render : Html msg → String

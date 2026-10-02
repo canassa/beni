@@ -41,11 +41,11 @@ pub type Zinc
     | Ingot Int Int
 
 
-pub sorted : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
+pub sorted : { hue : Int, name : String }, { hue : Int, name : String } → Bool
 sorted a b = a < b
 
 
-pub same : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
+pub same : { hue : Int, name : String }, { hue : Int, name : String } → Bool
 same a b = a == b
 
 

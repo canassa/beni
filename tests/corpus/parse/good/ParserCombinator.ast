@@ -6,9 +6,10 @@
           (type_con String)
           (type_con Result
             (type_con String)
-            (type_tuple
-              (type_var a)
-              (type_con String)))))))
+            (type_paren
+              (type_tuple
+                (type_var a)
+                (type_con String))))))))
   (annotation pub run
     (type_fn
       (type_con Parser

@@ -14,9 +14,9 @@
 import Int32 exposing (Int32)
 
 
-widen : Int32, Int -> Int32
+widen : Int32, Int → Int32
 widen a b = Int32.add a b
 
 
-narrow : Int32 -> Int
+narrow : Int32 → Int
 narrow a = Int32.toInt a + a

@@ -3,7 +3,7 @@
 import M
 
 
-tf : Bool -> String
+tf : Bool → String
 tf b =
     if b then
         "t"

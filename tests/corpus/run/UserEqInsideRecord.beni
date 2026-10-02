@@ -24,16 +24,16 @@ pub type Id
 
 
 -- Two ids are the same when their MAJOR numbers are.
-pub eq : Id, Id -> Bool
+pub eq : Id, Id → Bool
 eq a b =
     case a of
-        Id majorA _ ->
+        Id majorA _ →
             case b of
-                Id majorB _ ->
+                Id majorB _ →
                     majorA == majorB
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

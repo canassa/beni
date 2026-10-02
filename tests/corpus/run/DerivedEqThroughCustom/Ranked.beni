@@ -3,15 +3,15 @@
 -- function payload. The reversed rank is deliberate so a structural order
 -- would print the opposite answers.
 pub type Ranked
-    = Ranked Int (Int -> Int)
+    = Ranked Int (Int → Int)
 
 
-pub compare : Ranked, Ranked -> Order
+pub compare : Ranked, Ranked → Order
 compare left right =
     case left of
-        Ranked rankLeft _ ->
+        Ranked rankLeft _ →
             case right of
-                Ranked rankRight _ ->
+                Ranked rankRight _ →
                     if rankLeft > rankRight then
                         LT
                     else if rankLeft == rankRight then

@@ -6,5 +6,5 @@ pub type Token
     = Token Int
 
 
-pub make : Int -> Token
+pub make : Int → Token
 make n = Token n

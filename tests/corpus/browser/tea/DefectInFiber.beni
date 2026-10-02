@@ -19,27 +19,27 @@ type Msg
     | Late
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg count =
     case msg of
-        Go ->
+        Go →
             ( count + 10
             , Cmd.batch
-                [ Cmd.perform λsend ->
+                [ Cmd.perform λsend →
                     _ = Time.sleep (Time.millis 50)
                     send Late
-                , Cmd.perform λ_ -> Debug.todo "body threw"
+                , Cmd.perform λ_ → Debug.todo "body threw"
                 ]
             )
 
-        Inc ->
+        Inc →
             ( count + 1, Cmd.none )
 
-        Late ->
+        Late →
             ( count + 100, Cmd.none )
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view count =
     <main>
         <p id="count">{String.fromInt count}</p>
@@ -51,4 +51,4 @@ view count =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -23,7 +23,7 @@ pub mb (K n) y =
     if n > 0 then
         y
     else
-        _ = (K 1).ma { combine = λz -> z + 1 }
+        _ = (K 1).ma { combine = λz → z + 1 }
         y
 
 

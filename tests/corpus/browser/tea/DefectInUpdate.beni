@@ -22,20 +22,20 @@ type alias Model =
     ticks : Int
 
 
-update : Msg, Model -> ( Model, Cmd Msg )
+update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
-        Boom ->
+        Boom →
             Debug.todo "update threw"
 
-        Inc ->
+        Inc →
             ( { model | count = model.count + 1 }, Cmd.none )
 
-        Tick ->
+        Tick →
             ( { model | ticks = model.ticks + 1 }, Cmd.none )
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <p id="count">{String.fromInt model.count}</p>
@@ -51,5 +51,5 @@ main =
         { init = ( { count = 0, ticks = 0 }, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ -> Time.every (Time.millis 100) λ_ -> Tick
+        , subscriptions = λ_ → Time.every (Time.millis 100) λ_ → Tick
         }

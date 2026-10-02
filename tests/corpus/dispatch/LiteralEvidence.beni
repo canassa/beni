@@ -14,13 +14,13 @@
 -- `pairOfLiterals` is A.59, the same bridge one level in: a `number`
 -- position of a DERIVED shape answers `num_compare` where it used to be a
 -- hole (`part 0 err`).
-pub gen : a, a -> Order
-    where a.compare : a, a -> Order
+pub gen : a, a → Order
+    where a.compare : a, a → Order
 gen x y = x.compare y
 
 
-pub eqGen : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub eqGen : a, a → Bool
+    where a.eq : a, a → Bool
 eqGen x y = x.eq y
 
 
@@ -44,6 +44,6 @@ pub pairOfLiterals : Order
 pairOfLiterals = cmp ( 1, 2.5 ) ( 3, 4.5 )
 
 
-pub cmp : a, a -> Order
-    where a.compare : a, a -> Order
+pub cmp : a, a → Order
+    where a.compare : a, a → Order
 cmp x y = x.compare y

@@ -24,41 +24,41 @@ type alias Row =
     label : String
 
 
-swap : List Row -> List Row
+swap : List Row → List Row
 swap rows =
     case rows of
-        [ first, ...rest ] ->
+        [ first, …rest ] →
             case List.reverse rest of
-                [ last, ...middle ] ->
-                    [ last, ...List.reverse middle ++ [ first ] ]
+                [ last, …middle ] →
+                    [ last, …List.reverse middle ++ [ first ] ]
 
-                [] ->
+                [] →
                     rows
 
-        [] ->
+        [] →
             rows
 
 
-update : Msg, List Row -> List Row
+update : Msg, List Row → List Row
 update msg rows =
     case msg of
-        Swap ->
+        Swap →
             swap rows
 
-        DropB ->
-            List.filter rows λrow -> row.label /= "b"
+        DropB →
+            List.filter rows λrow → row.label ≠ "b"
 
-        AddE ->
+        AddE →
             rows ++ [ { id = 2, label = "e" } ]
 
-        DropTwos ->
-            List.filter rows λrow -> row.id /= 2
+        DropTwos →
+            List.filter rows λrow → row.id ≠ 2
 
-        AddF ->
-            [ { id = 2, label = "f" }, ...rows ]
+        AddF →
+            [ { id = 2, label = "f" }, …rows ]
 
 
-view : List Row -> Html Msg
+view : List Row → Html Msg
 view rows =
     <main>
         <button id="swap" onClick={Swap}>swap</button>
@@ -68,7 +68,7 @@ view rows =
         <button id="addf" onClick={AddF}>add f</button>
         <ul>
             <For each={rows} keyed={.id}>
-                {λrow -> <li><input />{row.label}</li>}
+                {λrow → <li><input />{row.label}</li>}
             </For>
         </ul>
     </main>

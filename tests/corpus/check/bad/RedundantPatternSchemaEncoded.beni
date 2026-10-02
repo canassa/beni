@@ -5,14 +5,14 @@ schema Message tagged "kind" of
         value : Int
 
 
-bad : Message.Encoded -> Bool
+bad : Message.Encoded → Bool
 bad message =
     case message of
-        Message.Encoded.Text row ->
+        Message.Encoded.Text row →
             True
 
-        Message.Encoded.Text row ->
+        Message.Encoded.Text row →
             False
 
-        Message.Encoded.Count row ->
+        Message.Encoded.Count row →
             True

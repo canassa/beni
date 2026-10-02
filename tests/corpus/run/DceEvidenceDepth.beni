@@ -30,31 +30,31 @@ pub type Version
     = Version Int Int
 
 
-pub eq : Version, Version -> Bool
+pub eq : Version, Version → Bool
 eq a b =
     case a of
-        Version majorA _ ->
+        Version majorA _ →
             case b of
-                Version majorB _ ->
+                Version majorB _ →
                     majorA == majorB
 
 
-pub inner : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub inner : a, a → Bool
+    where a.eq : a, a → Bool
 inner x y = x.eq y
 
 
-pub middle : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub middle : a, a → Bool
+    where a.eq : a, a → Bool
 middle x y = inner x y
 
 
-pub outer : a, a -> Bool
-    where a.eq : a, a -> Bool
+pub outer : a, a → Bool
+    where a.eq : a, a → Bool
 outer x y = middle x y
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

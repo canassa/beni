@@ -16,23 +16,23 @@ idle : Msg
 idle = Run
 
 
-run : Int -> Msg
+run : Int → Msg
 run _ = Run
 
 
-alsoRun : Bool -> Msg
+alsoRun : Bool → Msg
 alsoRun _ = Run
 
 
-add : Int -> Msg
+add : Int → Msg
 add n = Add n
 
 
-none : Int -> Maybe Int
+none : Int → Maybe Int
 none _ = Nothing
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "same"
@@ -49,6 +49,6 @@ main =
         , show (Identity.refEq (Msgs.stop 1) (Msgs.stop 2))
         , show (Identity.refEq (none 1) Nothing)
         , show
-            (Identity.refEq (List.head [ 1 ] |> Maybe.andThen λ_ -> List.head []) (List.head []))
+            (Identity.refEq (List.head [ 1 ] ▷ Maybe.andThen λ_ → List.head []) (List.head []))
         , show (Identity.refEq (add 1) (add 1))
         ]

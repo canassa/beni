@@ -6,7 +6,7 @@
 -- functions to `Lib.onType` and is refused there. The chain stops at the
 -- first imported value (decision 7a): `Lib.load` suspends because `Lib`'s
 -- record says so, and nothing of `Lib`'s body is named.
-pub foreign suspends get : Int -> String
+pub foreign suspends get : Int → String
 
 
-pub foreign pure onEvent : sync (Int -> String) -> Int
+pub foreign pure onEvent : sync (Int → String) → Int

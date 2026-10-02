@@ -23,9 +23,9 @@ main : Program
 main =
     Node.printLines
         [ case Shape.print (Shape.Square { side = 2 }) of
-            Ok text ->
+            Ok text →
                 text
 
-            Err _ ->
+            Err _ →
                 "failed"
         ]

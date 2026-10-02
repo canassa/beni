@@ -15,7 +15,7 @@ type T
 pub combine (T a) z = a
 
 
-f : T -> ( Int, Int )
+f : T → Int × Int
 f x =
     q z = x.combine z
     ( q 1, q "s" )

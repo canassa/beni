@@ -42,77 +42,77 @@ type alias Row =
     done : Bool
 
 
-row : Int, String -> Row
+row : Int, String → Row
 row id label = { id = id, label = label, done = False }
 
 
-swapAt : List Row, Int, Int -> List Row
+swapAt : List Row, Int, Int → List Row
 swapAt rows i j =
-    case ( List.drop rows i |> List.head, List.drop rows j |> List.head ) of
-        ( Just a, Just b ) ->
-            List.indexedMap rows λk r -> if k == i then b else if k == j then a else r
+    case ( List.drop rows i ▷ List.head, List.drop rows j ▷ List.head ) of
+        ( Just a, Just b ) →
+            List.indexedMap rows λk r → if k == i then b else if k == j then a else r
 
-        _ ->
+        _ →
             rows
 
 
-insertAt : List Row, Int, Row -> List Row
-insertAt rows k r = List.take rows k ++ [ r, ...List.drop rows k ]
+insertAt : List Row, Int, Row → List Row
+insertAt rows k r = List.take rows k ++ [ r, …List.drop rows k ]
 
 
-lastOf : List Row -> Row
-lastOf rows = List.reverse rows |> List.head |> Maybe.withDefault (row 0 "none")
+lastOf : List Row → Row
+lastOf rows = List.reverse rows ▷ List.head ▷ Maybe.withDefault (row 0 "none")
 
 
-update : Msg, List Row -> List Row
+update : Msg, List Row → List Row
 update msg rows =
     case msg of
-        RemoveMiddle ->
-            List.filter rows λr -> r.id /= 3
+        RemoveMiddle →
+            List.filter rows λr → r.id ≠ 3
 
-        SwapInner ->
+        SwapInner →
             swapAt rows 1 (List.length rows - 2)
 
-        SwapEnds ->
+        SwapEnds →
             swapAt rows 0 (List.length rows - 1)
 
-        Insert ->
+        Insert →
             insertAt rows 2 (row 7 "g")
 
-        Replace ->
-            List.map rows λr -> if r.id == 7 then row 8 "h" else r
+        Replace →
+            List.map rows λr → if r.id == 7 then row 8 "h" else r
 
-        EditEnd ->
-            List.indexedMap (List.drop rows 1) λk r ->
+        EditEnd →
+            List.indexedMap (List.drop rows 1) λk r →
                 if k == List.length rows - 2 then
                     { r | label = r.label ++ "!", done = True }
                 else
                     r
 
-        CopyLast ->
+        CopyLast →
             insertAt rows 1 (lastOf rows)
 
-        CopyFirst ->
+        CopyFirst →
             case rows of
-                [ first, ..._ ] ->
+                [ first, …_ ] →
                     insertAt rows 2 first
 
-                [] ->
+                [] →
                     rows
 
-        Dedupe ->
-            List.foldr rows [] λr kept ->
-                if List.any kept λk -> k.id == r.id then kept else [ r, ...kept ]
+        Dedupe →
+            List.foldr rows [] λr kept →
+                if List.any kept λk → k.id == r.id then kept else [ r, …kept ]
 
-        Flip ->
-            List.indexedMap (swapAt rows 0 (List.length rows - 1)) λk r ->
+        Flip →
+            List.indexedMap (swapAt rows 0 (List.length rows - 1)) λk r →
                 if k == List.length rows - 1 then { r | done = not r.done } else r
 
-        Twins ->
+        Twins →
             insertAt (insertAt rows 1 (row 9 "i")) 3 (row 9 "j")
 
 
-viewRow : Row -> Html Msg
+viewRow : Row → Html Msg
 viewRow r =
     if r.done then
         <li class="done">{r.label}</li>
@@ -120,7 +120,7 @@ viewRow r =
         <li><input />{r.label}</li>
 
 
-view : List Row -> Html Msg
+view : List Row → Html Msg
 view rows =
     <main>
         <button id="remove" onClick={RemoveMiddle}>remove</button>
@@ -135,14 +135,14 @@ view rows =
         <button id="flip" onClick={Flip}>flip</button>
         <button id="twins" onClick={Twins}>twins</button>
         <ul id="at">
-            <For each={rows} keyed={.id}>{λr k -> <li><input />{r.label} at {k}</li>}</For>
+            <For each={rows} keyed={.id}>{λr k → <li><input />{r.label} at {k}</li>}</For>
         </ul>
         <ul id="drawn">
             <For each={rows} keyed={.id}>{viewRow}</For>
         </ul>
         <ol id="framed">
             <li>first</li>
-            <For each={rows} keyed={.id}>{λr -> <li><input />{r.label}</li>}</For>
+            <For each={rows} keyed={.id}>{λr → <li><input />{r.label}</li>}</For>
             <li>last</li>
         </ol>
     </main>

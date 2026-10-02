@@ -30,7 +30,7 @@ import Node exposing (Program)
 import String
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"

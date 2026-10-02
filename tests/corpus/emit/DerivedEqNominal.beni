@@ -57,15 +57,15 @@ pub type Box a
     = Box a
 
 
-pub sameShape : Shape, Shape -> Bool
+pub sameShape : Shape, Shape → Bool
 sameShape a b = a == b
 
 
-pub sameTree : Tree, Tree -> Bool
+pub sameTree : Tree, Tree → Bool
 sameTree a b = a == b
 
 
-pub sameBoxes : Box Int, Box Int -> Bool
+pub sameBoxes : Box Int, Box Int → Bool
 sameBoxes a b = a == b
 
 

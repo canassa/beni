@@ -30,55 +30,55 @@ type Size
     | Large Int
 
 
-pub name : Colour -> String
+pub name : Colour → String
 name colour =
     case colour of
-        Red ->
+        Red →
             "red"
 
-        Green ->
+        Green →
             "green"
 
-        Blue ->
+        Blue →
             "blue"
 
 
-pub toggle : Bool -> String
+pub toggle : Bool → String
 toggle flag =
     case flag of
-        True ->
+        True →
             "on"
 
-        False ->
+        False →
             "off"
 
 
-pub measure : Size -> Int
+pub measure : Size → Int
 measure size =
     case size of
-        Small n ->
+        Small n →
             n
 
-        Medium n ->
+        Medium n →
             n * 2
 
-        Large n ->
+        Large n →
             n * 3
 
 
-pub weekday : Int -> String
+pub weekday : Int → String
 weekday n =
     case n of
-        0 ->
+        0 →
             "Sun"
 
-        1 ->
+        1 →
             "Mon"
 
-        2 ->
+        2 →
             "Tue"
 
-        _ ->
+        _ →
             "later"
 
 

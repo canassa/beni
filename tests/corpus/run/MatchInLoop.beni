@@ -21,19 +21,19 @@ type Step
     | Reset
 
 
-stepFor : Int -> Step
+stepFor : Int → Step
 stepFor n =
     case Int.mod n 4 of
-        0 ->
+        0 →
             Up
 
-        1 ->
+        1 →
             Down
 
-        2 ->
+        2 →
             Hold
 
-        _ ->
+        _ →
             Reset
 
 
@@ -41,25 +41,25 @@ stepFor n =
 -- `switch` case the tree put it in; the last row is a wildcard in the
 -- column the tree tests first, so two paths reach it and it becomes the
 -- shared leaf with a `continue` of its own behind the block.
-walk : Int, Int, Bool -> Int
+walk : Int, Int, Bool → Int
 walk n acc flag =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         case ( stepFor n, flag ) of
-            ( Up, True ) ->
+            ( Up, True ) →
                 walk (n - 1) (acc + 2) False
 
-            ( Down, True ) ->
+            ( Down, True ) →
                 walk (n - 1) (acc + 1) False
 
-            ( Hold, False ) ->
+            ( Hold, False ) →
                 walk (n - 1) (acc + 3) True
 
-            ( Reset, _ ) ->
+            ( Reset, _ ) →
                 walk (n - 1) (acc + 4) True
 
-            ( _, _ ) ->
+            ( _, _ ) →
                 walk (n - 1) (acc + 1) True
 
 

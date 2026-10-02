@@ -6,5 +6,5 @@ pub type alias Person =
     name : String
 
 
-pub joined : List Person -> String
+pub joined : List Person → String
 joined people = List.foldl people "" .name

@@ -12,19 +12,19 @@ pub type Pair
     = Pair (List Int) String
 
 
-pub isSelected : { selected : Maybe Int }, Int -> Bool
+pub isSelected : { selected : Maybe Int }, Int → Bool
 isSelected model id = model.selected == Just id
 
 
-pub nothing : Maybe Int -> Bool
-nothing m = m /= Nothing
+pub nothing : Maybe Int → Bool
+nothing m = m ≠ Nothing
 
 
-pub nested : Maybe (Maybe Int), Int -> Bool
+pub nested : Maybe (Maybe Int), Int → Bool
 nested m n = Just (Just (n + 1)) == m
 
 
-pub listField : Pair -> Bool
+pub listField : Pair → Bool
 listField p = p == Pair [ 1 ] "a"
 
 

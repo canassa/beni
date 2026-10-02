@@ -29,8 +29,8 @@ type Maybe2 a
     | Full a
 
 
-smallest : a, a -> a
-    where a.compare : a, a -> Order
+smallest : a, a → a
+    where a.compare : a, a → Order
 smallest x y =
     if x < y then
         x
@@ -46,7 +46,7 @@ empty : Maybe2 Never
 empty = Empty
 
 
-show : Bool -> String
+show : Bool → String
 show b =
     if b then
         "True"
@@ -59,7 +59,7 @@ main =
     Node.printLines
         [ show (LT < GT)
         , show (GT < EQ)
-        , show (EQ >= GT)
+        , show (EQ ≥ GT)
         , show (Just LT < Just EQ)
         , show (( EQ, 1 ) < ( EQ, 2 ))
         , show ({ o = GT } > { o = EQ })
@@ -68,7 +68,7 @@ main =
         , Debug.toString (smallest GT EQ)
         , Debug.toString (List.sort [ GT, LT, EQ ])
         , show (nothing == Nothing)
-        , show (nothing <= nothing)
+        , show (nothing ≤ nothing)
         , show (empty == Empty)
-        , show (empty >= empty)
+        , show (empty ≥ empty)
         ]

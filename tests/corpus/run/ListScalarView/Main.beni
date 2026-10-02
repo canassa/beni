@@ -27,200 +27,200 @@ import List
 import Node
 
 
-sumFrom : List Int, Int -> Int
+sumFrom : List Int, Int → Int
 sumFrom xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             sumFrom rest (acc + x)
 
 
-pairSums : List Int, List Int -> List Int
+pairSums : List Int, List Int → List Int
 pairSums xs acc =
     case xs of
-        [ a, b, ...rest ] ->
+        [ a, b, …rest ] →
             pairSums rest (List.push acc (a + b))
 
-        _ ->
+        _ →
             acc
 
 
-mapRec : List Int, (Int -> Int) -> List Int
+mapRec : List Int, (Int → Int) → List Int
 mapRec xs f =
     case xs of
-        [] ->
+        [] →
             []
 
-        [ x, ...rest ] ->
-            [ f x, ...mapRec rest f ]
+        [ x, …rest ] →
+            [ f x, …mapRec rest f ]
 
 
-merge : List Int, List Int -> List Int
+merge : List Int, List Int → List Int
 merge xs ys =
     case xs of
-        [] ->
+        [] →
             ys
 
-        [ x, ...restX ] ->
+        [ x, …restX ] →
             case ys of
-                [] ->
+                [] →
                     xs
 
-                [ y, ...restY ] ->
-                    if x <= y then
-                        [ x, ...merge restX ys ]
+                [ y, …restY ] →
+                    if x ≤ y then
+                        [ x, …merge restX ys ]
                     else
-                        [ y, ...merge xs restY ]
+                        [ y, …merge xs restY ]
 
 
-countDown : List Int, Int, Int -> Int
+countDown : List Int, Int, Int → Int
 countDown xs n acc =
     if n > 0 then
         countDown xs (n - 1) (acc + 1)
     else
         case xs of
-            [] ->
+            [] →
                 acc
 
-            [ x, ...rest ] ->
+            [ x, …rest ] →
                 countDown rest x acc
 
 
-dropWhile : List Int, (Int -> Bool) -> List Int
+dropWhile : List Int, (Int → Bool) → List Int
 dropWhile xs keep =
     case xs of
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if keep x then
                 dropWhile rest keep
             else
                 xs
 
-        [] ->
+        [] →
             xs
 
 
-dropTwo : List Int, Int -> List Int
+dropTwo : List Int, Int → List Int
 dropTwo xs n =
-    if n <= 0 then
+    if n ≤ 0 then
         xs
     else
         case xs of
-            [ _, _, ...rest ] ->
+            [ _, _, …rest ] →
                 dropTwo rest (n - 1)
 
-            _ ->
+            _ →
                 []
 
 
-thunks : List Int, List (() -> Int) -> List (() -> Int)
+thunks : List Int, List (() → Int) → List (() → Int)
 thunks xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ _, ...rest ] ->
-            thunks rest (List.push acc λ() -> List.sum rest)
+        [ _, …rest ] →
+            thunks rest (List.push acc λ() → List.sum rest)
 
 
-lengths : List Int, List Int -> List Int
+lengths : List Int, List Int → List Int
 lengths xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ _, ...rest ] ->
+        [ _, …rest ] →
             lengths rest (List.push acc (List.length rest))
 
 
-whole : List Int, List Int -> List Int
+whole : List Int, List Int → List Int
 whole xs acc =
     case xs of
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             if x == 3 then
                 case xs of
-                    all ->
+                    all →
                         List.append acc all
             else
                 whole rest (List.push acc x)
 
-        [] ->
+        [] →
             acc
 
 
-nested : List Int, Int -> Int
+nested : List Int, Int → Int
 nested xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             case rest of
-                [] ->
+                [] →
                     acc + x
 
-                [ y, ...more ] ->
+                [ y, …more ] →
                     nested more (acc + x * y)
 
 
-pairwise : List Int -> List ( Int, Int )
+pairwise : List Int → List (Int × Int)
 pairwise xs =
     case xs of
-        [ a, b, ...rest ] ->
-            [ ( a, b ), ...pairwise [ b, ...rest ] ]
+        [ a, b, …rest ] →
+            [ ( a, b ), …pairwise [ b, …rest ] ]
 
-        _ ->
+        _ →
             []
 
 
-mergeRe : List Int, List Int -> List Int
+mergeRe : List Int, List Int → List Int
 mergeRe xs ys =
     case ( xs, ys ) of
-        ( [ x, ...restX ], [ y, ...restY ] ) ->
-            if x <= y then
-                [ x, ...mergeRe restX [ y, ...restY ] ]
+        ( [ x, …restX ], [ y, …restY ] ) →
+            if x ≤ y then
+                [ x, …mergeRe restX [ y, …restY ] ]
             else
-                [ y, ...mergeRe [ x, ...restX ] restY ]
+                [ y, …mergeRe [ x, …restX ] restY ]
 
-        ( [], _ ) ->
+        ( [], _ ) →
             ys
 
-        ( _, [] ) ->
+        ( _, [] ) →
             xs
 
 
-upToBig : List Int, Int -> List Int
+upToBig : List Int, Int → List Int
 upToBig xs n =
     if n == 0 then
         []
     else
         case xs of
-            [ x, ...rest ] ->
+            [ x, …rest ] →
                 if x > 30 then
-                    [ x, ...rest ]
+                    [ x, …rest ]
                 else
                     upToBig rest (n - 1)
 
-            [] ->
+            [] →
                 []
 
 
-logged : List Int, Int -> Int
+logged : List Int, Int → Int
 logged xs acc =
     case xs of
-        [] ->
+        [] →
             acc
 
-        [ x, ...rest ] ->
+        [ x, …rest ] →
             logged rest (acc + Debug.log "step" x)
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = String.join (List.map xs String.fromInt) ","
 
 
-same : String, Bool -> String
+same : String, Bool → String
 same label b =
     if b then
         label ++ " same"
@@ -228,37 +228,37 @@ same label b =
         label ++ " copied"
 
 
-forms : List ( String, List Int )
+forms : List (String × List Int)
 forms =
     [ ( "plain", List.range 1 40 )
     , ( "view", List.drop (List.range 0 40) 1 )
-    , ( "pushed", List.foldl (List.range 1 40) [] λn acc -> List.push acc n )
-    , ( "prepended", List.foldr (List.range 1 40) [] λn acc -> [ n, ...acc ] )
+    , ( "pushed", List.foldl (List.range 1 40) [] λn acc → List.push acc n )
+    , ( "prepended", List.foldr (List.range 1 40) [] λn acc → [ n, …acc ] )
     ]
 
 
-report : ( String, List Int ) -> List String
+report : String × List Int → List String
 report ( name, xs ) =
     fromThree = List.drop xs 2
 
     fromBig = List.drop xs 30
     [ name ++ " sum " ++ String.fromInt (sumFrom xs 0)
     , name ++ " pairs " ++ ints (pairSums xs [])
-    , name ++ " map " ++ ints (mapRec xs λx -> x * 2)
+    , name ++ " map " ++ ints (mapRec xs λx → x * 2)
     , name ++ " countDown " ++ String.fromInt (countDown xs 1 0)
-    , name ++ " dropWhile " ++ ints (dropWhile xs λx -> x < 35)
+    , name ++ " dropWhile " ++ ints (dropWhile xs λx → x < 35)
     , name ++ " dropTwo " ++ ints (dropTwo xs 18)
-    , name ++ " thunks " ++ ints (List.map (thunks (List.take xs 4) []) λt -> t ())
+    , name ++ " thunks " ++ ints (List.map (thunks (List.take xs 4) []) λt → t ())
     , name ++ " lengths " ++ ints (List.take (lengths xs []) 3)
     , name ++ " whole " ++ ints (whole xs [])
     , name ++ " nested " ++ String.fromInt (nested xs 0)
-    , same (name ++ " dropWhile none") (Identity.refEq (dropWhile xs λx -> x > 100) xs)
+    , same (name ++ " dropWhile none") (Identity.refEq (dropWhile xs λx → x > 100) xs)
     , same (name ++ " dropTwo 0") (Identity.refEq (dropTwo xs 0) xs)
     , same (name ++ " whole at the start") (Identity.refEq (whole fromThree []) fromThree)
     , name
         ++ " pairwise "
         ++ String.join
-            (List.map (List.take (pairwise xs) 3) λ( a, b ) ->
+            (List.map (List.take (pairwise xs) 3) λ( a, b ) →
                 String.fromInt a ++ "-" ++ String.fromInt b
             )
             ","

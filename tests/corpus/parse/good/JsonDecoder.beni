@@ -30,18 +30,18 @@ user =
 role : Decoder Role
 role =
     Decode.string
-        |> Decode.andThen λs ->
+        ▷ Decode.andThen λs →
             case s of
-                "admin" ->
+                "admin" →
                     Decode.succeed Admin
 
-                "member" ->
+                "member" →
                     Decode.succeed Member
 
-                "guest" ->
+                "guest" →
                     Decode.succeed Guest
 
-                other ->
+                other →
                     Decode.fail "unknown role: ${other}"
 
 
@@ -49,5 +49,5 @@ pub users : Decoder (List User)
 users = Decode.list user
 
 
-pub decodeUsers : String -> Result Decode.Error (List User)
+pub decodeUsers : String → Result Decode.Error (List User)
 decodeUsers json = Decode.decodeString users json

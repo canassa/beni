@@ -10,17 +10,17 @@ pub type Shape
     | Square Int
 
 
-pub area : Shape -> Int
+pub area : Shape → Int
 area s =
     case s of
-        Circle r ->
+        Circle r →
             3 * r * r
 
-        Square w ->
+        Square w →
             w * w
 
 
-pub double : Int -> Int
+pub double : Int → Int
 double n = n * 2
 
 

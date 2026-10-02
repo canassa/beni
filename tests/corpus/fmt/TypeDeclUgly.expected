@@ -12,9 +12,7 @@ type alias Config =
 
 
 type alias Pair a b =
-    ( a
-    , b
-    )
+    a × b
 
 
 type Event

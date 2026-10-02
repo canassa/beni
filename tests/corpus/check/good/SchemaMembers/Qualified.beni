@@ -18,21 +18,21 @@ pub escapedPrivateEndpoint : { value : Int }
 escapedPrivateEndpoint = Models.hiddenInt
 
 
-pub programCase : Models.Message.Type -> Bool
+pub programCase : Models.Message.Type → Bool
 programCase message =
     case message of
-        Models.Message.Text row ->
+        Models.Message.Text row →
             True
 
-        Models.Message.Count row ->
+        Models.Message.Count row →
             True
 
 
-pub encodedCase : Models.Message.Encoded -> Bool
+pub encodedCase : Models.Message.Encoded → Bool
 encodedCase message =
     case message of
-        Models.Message.Encoded.Text row ->
+        Models.Message.Encoded.Text row →
             True
 
-        Models.Message.Encoded.Count row ->
+        Models.Message.Encoded.Count row →
             True

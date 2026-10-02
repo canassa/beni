@@ -20,19 +20,19 @@ pub type Metre
     = Metre Int
 
 
-pub fromInt : Int -> Metre
+pub fromInt : Int → Metre
 fromInt n = Metre n
 
 
-pub width : Metre -> Int
+pub width : Metre → Int
 width m =
     case m of
-        Metre n ->
+        Metre n →
             n
 
 
-make : Int -> a
-    where a.fromInt : Int -> a
+make : Int → a
+    where a.fromInt : Int → a
 make n = a.fromInt n
 
 

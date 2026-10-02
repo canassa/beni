@@ -30,7 +30,7 @@ type alias Sized =
     label : String
 
 
-pub describe : Shape -> Sized
+pub describe : Shape → Sized
 describe s =
     measured = Shapes.area s
 
@@ -38,7 +38,7 @@ describe s =
     { size = twice, label = String.fromInt measured }
 
 
-pub biggest : Shape, Shape -> Int
+pub biggest : Shape, Shape → Int
 biggest one other =
     a = Shapes.area one
 

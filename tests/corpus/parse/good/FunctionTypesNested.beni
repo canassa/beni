@@ -10,27 +10,27 @@ import Dict exposing (Dict)
 
 
 type alias Callbacks msg =
-    onClick : msg -> msg
-    onInput : String -> msg
-    order : Int, Int -> Order
+    onClick : msg → msg
+    onInput : String → msg
+    order : Int, Int → Order
     tag : String
 
 
 type alias Step a =
-    ( (a -> a), a )
+    (a → a) × a
 
 
 type alias Chain =
-    Int, Int -> Int -> Int
+    Int, Int → Int → Int
 
 
-apply : ( (Int -> Int), Int ) -> Int
+apply : (Int → Int) × Int → Int
 apply ( fn, x ) = fn x
 
 
-compose2 : (b -> c), (a -> b), a -> c
+compose2 : (b → c), (a → b), a → c
 compose2 f g x = f (g x)
 
 
-table : Dict String (List (Int -> Int)) -> Dict.Dict String Int
-table d = Dict.map (λ_ fs -> List.length fs) d
+table : Dict String (List (Int → Int)) → Dict.Dict String Int
+table d = Dict.map (λ_ fs → List.length fs) d

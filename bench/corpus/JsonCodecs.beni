@@ -54,31 +54,31 @@ pub type Status
 pub tierDecoder : Decoder Tier
 tierDecoder =
     Decode.string
-        |> Decode.andThen λs ->
+        ▷ Decode.andThen λs →
             case String.toLower s of
-                "free" ->
+                "free" →
                     Decode.succeed Free
 
-                "pro" ->
+                "pro" →
                     Decode.succeed Pro
 
-                "enterprise" ->
+                "enterprise" →
                     Decode.succeed Enterprise
 
-                other ->
+                other →
                     Decode.fail "unknown tier: ${other}"
 
 
-pub tierToString : Tier -> String
+pub tierToString : Tier → String
 tierToString tier =
     case tier of
-        Free ->
+        Free →
             "free"
 
-        Pro ->
+        Pro →
             "pro"
 
-        Enterprise ->
+        Enterprise →
             "enterprise"
 
 
@@ -92,7 +92,7 @@ addressDecoder =
         Address
 
 
-optionalField : String, Decoder a, a -> Decoder a
+optionalField : String, Decoder a, a → Decoder a
 optionalField name decoder default =
     Decode.oneOf
         [ Decode.field name decoder
@@ -123,21 +123,21 @@ lineItemDecoder =
 pub statusDecoder : Decoder Status
 statusDecoder =
     Decode.field "kind" Decode.string
-        |> Decode.andThen λkind ->
+        ▷ Decode.andThen λkind →
             case kind of
-                "pending" ->
+                "pending" →
                     Decode.succeed Pending
 
-                "paid" ->
+                "paid" →
                     Decode.map (Decode.field "at" Decode.int) Paid
 
-                "shipped" ->
+                "shipped" →
                     Decode.map (Decode.field "tracking" Decode.string) Shipped
 
-                "cancelled" ->
+                "cancelled" →
                     Decode.map (optionalField "reason" Decode.string "") Cancelled
 
-                other ->
+                other →
                     Decode.fail "unknown status kind: ${other}"
 
 
@@ -162,11 +162,11 @@ ordersDecoder =
         ]
 
 
-pub encodeTier : Tier -> Encode.Value
+pub encodeTier : Tier → Encode.Value
 encodeTier tier = Encode.string (tierToString tier)
 
 
-pub encodeAddress : Address -> Encode.Value
+pub encodeAddress : Address → Encode.Value
 encodeAddress address =
     Encode.object
         [ ( "street", Encode.string address.street )
@@ -176,7 +176,7 @@ encodeAddress address =
         ]
 
 
-pub encodeCustomer : Customer -> Encode.Value
+pub encodeCustomer : Customer → Encode.Value
 encodeCustomer customer =
     Encode.object
         ([ ( "id", Encode.int customer.id )
@@ -185,16 +185,16 @@ encodeCustomer customer =
          , ( "tier", encodeTier customer.tier )
          ]
             ++ (case customer.address of
-                   Just address ->
+                   Just address →
                        [ ( "address", encodeAddress address ) ]
 
-                   Nothing ->
+                   Nothing →
                        []
                )
         )
 
 
-pub encodeLineItem : LineItem -> Encode.Value
+pub encodeLineItem : LineItem → Encode.Value
 encodeLineItem item =
     Encode.object
         [ ( "sku", Encode.string item.sku )
@@ -203,25 +203,25 @@ encodeLineItem item =
         ]
 
 
-pub encodeStatus : Status -> Encode.Value
+pub encodeStatus : Status → Encode.Value
 encodeStatus status =
     case status of
-        Pending ->
+        Pending →
             Encode.object [ ( "kind", Encode.string "pending" ) ]
 
-        Paid at ->
+        Paid at →
             Encode.object [ ( "kind", Encode.string "paid" ), ( "at", Encode.int at ) ]
 
-        Shipped tracking ->
+        Shipped tracking →
             Encode.object
                 [ ( "kind", Encode.string "shipped" ), ( "tracking", Encode.string tracking ) ]
 
-        Cancelled reason ->
+        Cancelled reason →
             Encode.object
                 [ ( "kind", Encode.string "cancelled" ), ( "reason", Encode.string reason ) ]
 
 
-pub encodeOrder : Order -> Encode.Value
+pub encodeOrder : Order → Encode.Value
 encodeOrder order =
     Encode.object
         [ ( "id", Encode.int order.id )
@@ -233,26 +233,26 @@ encodeOrder order =
         ]
 
 
-pub orderTotal : Order -> Float
+pub orderTotal : Order → Float
 orderTotal order =
     order.items
-        |> List.map λitem -> toFloat item.quantity * item.unitPrice
-        |> List.sum
+        ▷ List.map λitem → toFloat item.quantity * item.unitPrice
+        ▷ List.sum
 
 
-pub discount : Order -> Float
+pub discount : Order → Float
 discount order =
     total = orderTotal order
 
     rate =
         case order.customer.tier of
-            Free ->
+            Free →
                 0
 
-            Pro ->
+            Pro →
                 0.1
 
-            Enterprise ->
+            Enterprise →
                 if total > 1000 then
                     0.25
                 else
@@ -260,35 +260,35 @@ discount order =
     total * rate
 
 
-pub parseOrders : String -> Result String (List Order)
+pub parseOrders : String → Result String (List Order)
 parseOrders json =
     Decode.decodeString ordersDecoder json
-        |> Result.mapError Decode.errorToString
+        ▷ Result.mapError Decode.errorToString
 
 
-pub roundTrip : String -> Result String String
+pub roundTrip : String → Result String String
 roundTrip json =
     orders = parseOrders json?
     Ok (Encode.encode (Encode.list orders encodeOrder) 2)
 
 
-pub summarize : String -> Result String (Dict String Int)
+pub summarize : String → Result String (Dict String Int)
 summarize json =
     orders = parseOrders json?
 
-    bump counts key = Dict.update counts key λexisting -> Just (Maybe.withDefault existing 0 + 1)
+    bump counts key = Dict.update counts key λexisting → Just (Maybe.withDefault existing 0 + 1)
 
     statusKey order =
         case order.status of
-            Pending ->
+            Pending →
                 "pending"
 
-            Paid _ ->
+            Paid _ →
                 "paid"
 
-            Shipped _ ->
+            Shipped _ →
                 "shipped"
 
-            Cancelled _ ->
+            Cancelled _ →
                 "cancelled"
-    Ok (List.foldl orders Dict.empty λorder counts -> bump counts (statusKey order))
+    Ok (List.foldl orders Dict.empty λorder counts → bump counts (statusKey order))

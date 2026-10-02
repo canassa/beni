@@ -5,118 +5,118 @@
 import Http exposing (Error, BadUrl, Timeout)
 
 
-describe : Int -> String
+describe : Int → String
 describe n =
     case n of
-        0 ->
+        0 →
             "zero"
 
-        -1 ->
+        -1 →
             "minus one"
 
-        1 ->
+        1 →
             "one"
 
-        _ ->
+        _ →
             "many"
 
 
-classify : Char -> Int
+classify : Char → Int
 classify c =
     case c of
-        'a' ->
+        'a' →
             1
 
-        '\n' ->
+        '\n' →
             2
 
-        other ->
+        other →
             Char.toCode other
 
 
-greet : String -> String
+greet : String → String
 greet s =
     case s of
-        "hello" ->
+        "hello" →
             "hi"
 
-        "" ->
+        "" →
             "..."
 
-        name ->
+        name →
             name
 
 
-sumList : List Int -> Int
+sumList : List Int → Int
 sumList xs =
     case xs of
-        [] ->
+        [] →
             0
 
-        [ single ] ->
+        [ single ] →
             single
 
-        [ a, b ] ->
+        [ a, b ] →
             a + b
 
-        [ first, second, ...rest ] ->
+        [ first, second, …rest ] →
             first + second + sumList rest
 
 
-heads : List (Maybe Int) -> Int
+heads : List (Maybe Int) → Int
 heads ms =
     case ms of
-        [ Just x, ..._ ] ->
+        [ Just x, …_ ] →
             x
 
-        [ Nothing, Just y, ..._ ] ->
+        [ Nothing, Just y, …_ ] →
             y
 
-        [ ((Just z) as whole), ..._ ] ->
+        [ ((Just z) as whole), …_ ] →
             z + List.length [ whole ]
 
-        _ ->
+        _ →
             0
 
 
-unwrap : ( (), ( Int, Int ) ) -> Int
+unwrap : () × (Int × Int) → Int
 unwrap pair =
     case pair of
-        ( (), ( a, b ) ) ->
+        ( (), ( a, b ) ) →
             a + b
 
 
-status : Error -> String
+status : Error → String
 status err =
     case err of
-        BadUrl url ->
+        BadUrl url →
             url
 
-        Timeout ->
+        Timeout →
             "timeout"
 
-        Http.NetworkError ->
+        Http.NetworkError →
             "network"
 
-        Http.BadStatus code ->
+        Http.BadStatus code →
             "status ${code}"
 
-        _ ->
+        _ →
             "?"
 
 
-fullName : { a | first : String, last : String } -> String
+fullName : { a | first : String, last : String } → String
 fullName person =
     case person of
-        { first, last } ->
+        { first, last } →
             first ++ last
 
 
-both : Maybe ( Int, Int ) -> Int
+both : Maybe (Int × Int) → Int
 both m =
     case m of
-        Just (( a, b ) as pair) ->
+        Just (( a, b ) as pair) →
             a + b + pair.0
 
-        Maybe.Nothing ->
+        Maybe.Nothing →
             0

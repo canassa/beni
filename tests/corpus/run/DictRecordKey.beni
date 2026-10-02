@@ -27,7 +27,7 @@ type alias Slot =
     index : Int
 
 
-label : Slot -> String
+label : Slot → String
 label slot = slot.section ++ "#" ++ String.fromInt slot.index
 
 

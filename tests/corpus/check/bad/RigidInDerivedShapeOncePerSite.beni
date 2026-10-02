@@ -3,13 +3,13 @@
 -- rigids are two (checker-v2.md §9.2's rigid row). None of the three checks
 -- clean, and the same clause is not said once per occurrence.
 --
-f : a, a -> Bool
+f : a, a → Bool
 f x y = ( x, x ) == ( y, y )
 
 
-g : a, b -> Bool
+g : a, b → Bool
 g x y = ( x, y ) == ( x, y )
 
 
-h : a -> Bool
+h : a → Bool
 h x = { p = x, q = x, r = x } < { p = x, q = x, r = x }

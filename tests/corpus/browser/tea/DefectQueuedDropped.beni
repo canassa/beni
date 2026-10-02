@@ -22,48 +22,47 @@ type Msg
     | Then
 
 
-outcome : Exit a -> String
+outcome : Exit a → String
 outcome exit =
     case exit of
-        Done _ ->
+        Done _ →
             "Done"
 
-        Cancelled ->
+        Cancelled →
             "Cancelled"
 
 
-waiter : Cmd.Send Msg -> ()
-waiter send =
-    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "waiter released: ${outcome exit}") λ_ ->
-        _ = send Ping
-        Dom.rendered ()
+waiter : Cmd.Send Msg → ()
+waiter send = Task.bracket (λ() → ()) (λ_ exit → Log.info "waiter released: ${outcome exit}") λ_ →
+    _ = send Ping
+    Dom.rendered ()
 
 
-thrower : Cmd.Send Msg -> ()
+thrower : Cmd.Send Msg → ()
 thrower send =
     _ = send Then
     Debug.todo "body threw"
 
 
-update : Msg, Int -> ( Int, Cmd Msg )
+update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
-        Go ->
+        Go →
             ( n, Cmd.batch [ Cmd.perform waiter, Cmd.perform thrower ] )
 
-        Ping ->
+        Ping →
             ( n + 1, Cmd.none )
 
-        Then ->
+        Then →
             ( n + 10
             , Cmd.batch
-                [ Cmd.afterRender λ_ -> Log.info "after-render work ran"
-                , Cmd.do λ() -> Log.info "queued body ran"
+                [ Cmd.afterRender λ_ → Log.info "after-render work ran"
+                , Cmd.do λ() → Log.info "queued body ran"
                 ]
             )
 
 
-view : Int -> Html Msg
+view : Int → Html Msg
 view n =
     <main>
         <p id="n">{String.fromInt n}</p>
@@ -74,4 +73,4 @@ view n =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

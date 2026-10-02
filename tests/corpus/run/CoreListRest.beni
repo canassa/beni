@@ -9,11 +9,11 @@ import Node exposing (Program)
 import String
 
 
-ints : List Int -> String
+ints : List Int → String
 ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
-flag : Bool -> String
+flag : Bool → String
 flag b =
     if b then
         "True"
@@ -40,14 +40,14 @@ main =
         , ints numbers
         , String.join (List.map flags flag) ","
         , ints (List.unzip []).0
-        , ints (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λa b c -> a + b + c)
-        , ints (List.map3 [ 1, 2, 3 ] [ 10 ] [ 100, 200 ] λa b c -> a + b + c)
-        , ints (List.map4 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] λa b c d -> a + b + c + d)
-        , ints (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [] λa b c d -> a + b + c + d)
+        , ints (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] λa b c → a + b + c)
+        , ints (List.map3 [ 1, 2, 3 ] [ 10 ] [ 100, 200 ] λa b c → a + b + c)
+        , ints (List.map4 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] λa b c d → a + b + c + d)
+        , ints (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [] λa b c d → a + b + c + d)
         , ints
-            (List.map5 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] [ 10000 ] λa b c d f -> a + b + c + d + f)
+            (List.map5 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] [ 10000 ] λa b c d f → a + b + c + d + f)
         , ints
-            (List.map5 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] [ 10000 ] λa b c d f ->
+            (List.map5 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] [ 10000 ] λa b c d f →
                 a + b + c + d + f
             )
         ]

@@ -5,20 +5,20 @@
 -- declaration whose body calls it through a `let` function (33:13); a
 -- declaration that hands `List.map` a function that calls it (43:13); and a
 -- record field, where the region is the field's value (48:32).
-pub foreign suspends get : Int -> String
+pub foreign suspends get : Int → String
 
 
-pub foreign pure onEvent : sync (Int -> String) -> Int
+pub foreign pure onEvent : sync (Int → String) → Int
 
 
-pub foreign pure program : { init : Int, view : sync (Int -> String) } -> Int
+pub foreign pure program : { init : Int, view : sync (Int → String) } → Int
 
 
 direct : Int
-direct = onEvent λn -> get n
+direct = onEvent λn → get n
 
 
-load : Int -> String
+load : Int → String
 load n =
     fetch k = get k
     fetch n
@@ -28,8 +28,8 @@ viaLoad : Int
 viaLoad = onEvent load
 
 
-each : Int -> String
-each n = String.concat (List.map [ n ] λx -> get x)
+each : Int → String
+each n = String.concat (List.map [ n ] λx → get x)
 
 
 viaMap : Int

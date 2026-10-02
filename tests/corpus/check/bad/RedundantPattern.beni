@@ -1,10 +1,10 @@
 -- check/bad: a branch under a variable can never run. The caret is under
 -- the PATTERN, because that is what is dead — not under the body.
-pub label : Maybe Int -> String
+pub label : Maybe Int → String
 label m =
     case m of
-        anything ->
+        anything →
             "something"
 
-        Nothing ->
+        Nothing →
             "nothing"

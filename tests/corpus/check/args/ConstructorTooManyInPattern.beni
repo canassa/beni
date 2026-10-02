@@ -5,11 +5,11 @@ pub type Flag
     | Off
 
 
-pub toInt : Flag -> Int
+pub toInt : Flag → Int
 toInt f =
     case f of
-        On x ->
+        On x →
             x
 
-        Off ->
+        Off →
             0

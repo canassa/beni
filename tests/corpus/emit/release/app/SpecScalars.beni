@@ -17,17 +17,17 @@ type alias Box =
     name : String
 
 
-area : Int, Int -> Int
+area : Int, Int → Int
 area w h =
     r = { w = w * 2, h = h + 1, name = "r" }
     r.w * r.h + String.length r.name
 
 
-describe : Box -> String
+describe : Box → String
 describe b = "${b.name} ${String.fromInt b.w}"
 
 
-kept : Int -> String
+kept : Int → String
 kept w =
     r = { w = w, h = 1, name = "kept" }
     describe r ++ String.fromInt r.h
@@ -35,14 +35,14 @@ kept w =
 
 type alias Shape =
     label : String
-    measure : Int -> Int
+    measure : Int → Int
 
 
-measure : Int -> Int
+measure : Int → Int
 measure n = n * n + 1
 
 
-run : Shape -> String
+run : Shape → String
 run shape = String.fromInt (shape.measure 3)
 
 

@@ -9,7 +9,7 @@
 check flag =
     same =
         if flag then
-            λa b -> a == b
+            λa b → a == b
         else
-            λa b -> a /= b
+            λa b → a ≠ b
     same "a" "a" && same 'b' 'b'

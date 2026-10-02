@@ -6,14 +6,14 @@ pub type Version
     = Version Int Int Int
 
 
-pub eq : Version, Version -> Bool
+pub eq : Version, Version → Bool
 eq a b =
     case a of
-        Version majorA _ _ ->
+        Version majorA _ _ →
             case b of
-                Version majorB _ _ ->
+                Version majorB _ _ →
                     majorA == majorB
 
 
-pub sameMajor : Version, Version -> Bool
+pub sameMajor : Version, Version → Bool
 sameMajor a b = a == b

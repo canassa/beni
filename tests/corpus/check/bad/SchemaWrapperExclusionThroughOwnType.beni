@@ -17,7 +17,7 @@ conv = Debug.todo "checker-only conversion"
 
 
 type Mine
-    = Mine (Int -> Int)
+    = Mine (Int → Int)
     | Back Loop.Type
 
 
@@ -32,5 +32,5 @@ type Holds
     = Holds Loop.Type
 
 
-sameHolds : Holds, Holds -> Bool
+sameHolds : Holds, Holds → Bool
 sameHolds a b = a == b

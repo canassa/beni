@@ -2,13 +2,13 @@
 --! arrange by itself (`boundary.md` §4.1, §9.8.10 (b)).
 
 --| From now on, `setItem` throws a `QuotaExceededError`.
-pub foreign impure fillQuota : () -> ()
+pub foreign impure fillQuota : () → ()
 
 
 --| From now on, reading `sessionStorage` throws a `SecurityError`.
-pub foreign impure blockSession : () -> ()
+pub foreign impure blockSession : () → ()
 
 
 --| From now on, `setItem` throws a `TypeError`, which no standard
 --| documents for it.
-pub foreign impure breakStorage : () -> ()
+pub foreign impure breakStorage : () → ()

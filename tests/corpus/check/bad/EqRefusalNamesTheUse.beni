@@ -8,35 +8,35 @@
 -- first use in source order, so `viaBoth` names `.eq` and `viaBothSwapped`
 -- names `==`, whatever else the body holds.
 type F
-    = F (Int -> Int)
+    = F (Int → Int)
 
 
-h : a -> Bool
-    where a.eq : a, a -> Bool
+h : a → Bool
+    where a.eq : a, a → Bool
 h x = x.eq x
 
 
 viaWhere : Bool
-viaWhere = h (F λy -> y)
+viaWhere = h (F λy → y)
 
 
 viaBasics : Bool
-viaBasics = Basics.eq (F λy -> y) (F λy -> y)
+viaBasics = Basics.eq (F λy → y) (F λy → y)
 
 
 viaBasicsNeq : Bool
-viaBasicsNeq = Basics.neq (F λy -> y) (F λy -> y)
+viaBasicsNeq = Basics.neq (F λy → y) (F λy → y)
 
 
 both x = x.eq x && x == x
 
 
 viaBoth : Bool
-viaBoth = both (F λy -> y)
+viaBoth = both (F λy → y)
 
 
 bothSwapped x = x == x && x.eq x
 
 
 viaBothSwapped : Bool
-viaBothSwapped = bothSwapped (F λy -> y)
+viaBothSwapped = bothSwapped (F λy → y)

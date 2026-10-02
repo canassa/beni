@@ -4,19 +4,19 @@
 -- on a function, and `viaHelper` reaches `.eq` through `h`, whose
 -- requirement it promoted. Each NOT EQUATABLE says `.eq`, not `==`.
 type F
-    = F (Int -> Int)
+    = F (Int → Int)
 
 
 h x = x.eq x
 
 
 direct : Bool
-direct = (F λy -> y).eq (F λy -> y)
+direct = (F λy → y).eq (F λy → y)
 
 
 onFunction : Bool
-onFunction = (λy -> y + 1).eq λy -> y
+onFunction = (λy → y + 1).eq λy → y
 
 
 viaHelper : Bool
-viaHelper = h (F λy -> y)
+viaHelper = h (F λy → y)

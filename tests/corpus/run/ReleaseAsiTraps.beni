@@ -35,33 +35,33 @@ import String
 
 
 -- `a - -1`: the decrement trap, with a literal and with a name.
-minusMinus : Int, Int -> Int
+minusMinus : Int, Int → Int
 minusMinus a b = (a - -1) + (a - -b) + (a + -b) + (-a - b) + -(-a)
 
 
 -- A `return` whose value begins with each troublesome character.
-startsWithParen : Int -> Int
+startsWithParen : Int → Int
 startsWithParen n = (n + 1) * 2
 
 
-startsWithBracket : Int -> String
+startsWithBracket : Int → String
 startsWithBracket n = String.join (List.map [ n, n + 1 ] String.fromInt) ","
 
 
-startsWithBacktick : Int -> String
+startsWithBacktick : Int → String
 startsWithBacktick n = "v=${String.fromInt n}"
 
 
-startsWithMinus : Int -> Int
+startsWithMinus : Int → Int
 startsWithMinus n = -n
 
 
-startsWithSlash : Float, Float -> Float
+startsWithSlash : Float, Float → Float
 startsWithSlash a b = a / b / 2.0
 
 
 -- A template beside an identifier, and a string that is written in pieces.
-pieces : Int -> String
+pieces : Int → String
 pieces n =
     tag = "n"
     body = "${tag}=${String.fromInt n}"

@@ -2,8 +2,8 @@
 -- point-free, `lam` annotated with a lambda body, `blank` a thunk: an
 -- importer sees only their types, and must call and reference each the way
 -- this module defines it (checker-v2.md §12.5).
-pub minOf : a, a -> a
-    where a.compare : a, a -> Order
+pub minOf : a, a → a
+    where a.compare : a, a → Order
 minOf a b =
     if a < b then
         a
@@ -11,16 +11,16 @@ minOf a b =
         b
 
 
-pub h : a, a -> a
-    where a.compare : a, a -> Order
+pub h : a, a → a
+    where a.compare : a, a → Order
 h = minOf
 
 
-pub lam : a, a -> Bool
-    where a.eq : a, a -> Bool
-lam = λx y -> x == y
+pub lam : a, a → Bool
+    where a.eq : a, a → Bool
+lam = λx y → x == y
 
 
 pub blank : List a
-    where a.eq : a, a -> Bool
+    where a.eq : a, a → Bool
 blank = []

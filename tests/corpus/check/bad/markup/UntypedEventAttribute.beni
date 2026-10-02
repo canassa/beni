@@ -6,5 +6,5 @@
 import Html exposing (Html)
 
 
-pub view : String -> Html msg
+pub view : String → Html msg
 view text = <button "onclick"="alert(1)" "ONMOUSEOVER"={text} "hx-get"="/items" />

@@ -10,7 +10,7 @@ type alias V =
 
 
 kind : V
-kind = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
+kind = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
 
 
 block : V
@@ -18,7 +18,7 @@ block = Js.from { t = kind }
 
 
 -- Every instance `m` makes gets `t` and `b` before anything reads them.
-unit : V -> V
+unit : V → V
 unit b =
     i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
@@ -28,7 +28,7 @@ unit b =
     i
 
 
-patch : V, V -> String
+patch : V, V → String
 patch i b =
     if Js.same b (Js.get i "b") then
         "same"
@@ -37,11 +37,11 @@ patch i b =
 
 
 -- One call writes `b`, the other does not: a read may be `undefined`.
-bare : () -> V
+bare : () → V
 bare () = Js.from { s = Js.from "node" }
 
 
-marked : () -> V
+marked : () → V
 marked () =
     i = bare ()
 
@@ -49,7 +49,7 @@ marked () =
     i
 
 
-shown : V -> String
+shown : V → String
 shown i =
     if Js.isUndefined (Js.get i "b") then
         "nothing shown"
@@ -62,10 +62,10 @@ shown i =
 -- method, as `unit`'s does, and `describe` is called twice, so that neither
 -- is written where it is called.
 other : V
-other = Js.from { m = λ_ -> Js.from { s = Js.from "node" } }
+other = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
 
 
-describe : V -> String
+describe : V → String
 describe i =
     if Js.isUndefined (Js.get i "c") then
         "unset"
@@ -73,7 +73,7 @@ describe i =
         "set"
 
 
-described : () -> V
+described : () → V
 described () =
     i = Js.call other "m" [ Js.from 0 ]
 
@@ -81,7 +81,7 @@ described () =
     i
 
 
-pub demo : () -> List String
+pub demo : () → List String
 demo () =
     [ patch (unit block) block
     , shown (marked ())

@@ -5,7 +5,7 @@
 -- The body is never printed as `a, b -> c` against the `+`, and no
 -- TOO MANY ARGS follows at the call.
 
-add : Int -> Int -> Int
+add : Int → Int → Int
 add a b = a + b
 
 

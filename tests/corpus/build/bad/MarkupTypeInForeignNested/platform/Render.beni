@@ -18,78 +18,78 @@ type Plain
     = Plain (List Plain) Int
 
 
-pub foreign pure inRecord : { h : Html () } -> String
+pub foreign pure inRecord : { h : Html () } → String
 
 
-pub foreign pure inAlias : Rec -> String
+pub foreign pure inAlias : Rec → String
 
 
-pub foreign pure inCustom : Wrap -> String
+pub foreign pure inCustom : Wrap → String
 
 
-pub foreign pure inRecursive : Tree -> String
+pub foreign pure inRecursive : Tree → String
 
 
-pub foreign pure plain : Int -> String
+pub foreign pure plain : Int → String
 
 
-pub foreign pure recursive : Plain -> String
+pub foreign pure recursive : Plain → String
 
 
-pub foreign pure inWide : ( Html (), W13 ) -> String
+pub foreign pure inWide : Html () × W13 → String
 
 
 type alias W0 =
-    ( Int, Int )
+    Int × Int
 
 
 type alias W1 =
-    ( W0, W0 )
+    W0 × W0
 
 
 type alias W2 =
-    ( W1, W1 )
+    W1 × W1
 
 
 type alias W3 =
-    ( W2, W2 )
+    W2 × W2
 
 
 type alias W4 =
-    ( W3, W3 )
+    W3 × W3
 
 
 type alias W5 =
-    ( W4, W4 )
+    W4 × W4
 
 
 type alias W6 =
-    ( W5, W5 )
+    W5 × W5
 
 
 type alias W7 =
-    ( W6, W6 )
+    W6 × W6
 
 
 type alias W8 =
-    ( W7, W7 )
+    W7 × W7
 
 
 type alias W9 =
-    ( W8, W8 )
+    W8 × W8
 
 
 type alias W10 =
-    ( W9, W9 )
+    W9 × W9
 
 
 type alias W11 =
-    ( W10, W10 )
+    W10 × W10
 
 
 type alias W12 =
-    ( W11, W11 )
+    W11 × W11
 
 
 type alias W13 =
-    ( W12, W12 )
+    W12 × W12

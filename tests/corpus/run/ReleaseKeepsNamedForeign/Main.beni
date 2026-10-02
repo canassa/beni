@@ -32,30 +32,30 @@ import String
 import Task
 
 
-announce : String -> Int
+announce : String → Int
 announce text =
     _ = Say.say text
     String.length text
 
 
-applyTo : (String -> ()), String -> Int
+applyTo : (String → ()), String → Int
 applyTo f text =
     viaCallback = f ("callback " ++ text)
     String.length text
 
 
-applySync : (String -> ()), String -> Int
+applySync : (String → ()), String → Int
 applySync k text =
     viaSync = k ("sync " ++ text)
     _ = Task.andThen ("then " ++ text) k
     String.length text
 
 
-unitText : () -> String
+unitText : () → String
 unitText _ = ""
 
 
-report : Int -> Int
+report : Int → Int
 report n =
     direct = Say.say "direct"
     nested = String.length (String.fromInt (n + 1) ++ unitText (Say.say "nested"))

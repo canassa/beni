@@ -13,11 +13,11 @@ import Set
 import String
 
 
-show : List Int -> String
+show : List Int → String
 show xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
-yesNo : Bool -> String
+yesNo : Bool → String
 yesNo b =
     if b then
         "yes"
@@ -32,17 +32,17 @@ main =
         -- then the count. Every argument here is an `Int`, so the swapped
         -- reading `repeat 3 7` is a well-typed different program.
         [ show (List.repeat 7 3)
-        , show (7 |> List.repeat 3)
+        , show (7 ▷ List.repeat 3)
         , String.repeat "ab" 3
-        , "ab" |> String.repeat 3
+        , "ab" ▷ String.repeat 3
         -- number first, then the modulus / the bounds.
         , String.fromInt (Int.mod 11 4)
-        , String.fromInt (11 |> Int.mod 4)
+        , String.fromInt (11 ▷ Int.mod 4)
         , String.fromInt (Int.rem 11 4)
         , String.fromInt (Basics.clamp 10 0 5)
         -- subject, then what to look for, then what to put in its place.
         , String.replace "a,b,c" "," "/"
-        , "a,b,c" |> String.replace "," "/"
+        , "a,b,c" ▷ String.replace "," "/"
         , yesNo (String.contains "beni" "en")
         -- subject first, count second, matching `take`/`drop`.
         , String.left "beni" 2
@@ -51,7 +51,7 @@ main =
         , show (List.take (List.range 1 5) 2)
         , show (List.drop (List.range 1 5) 3)
         -- subject first, function last, so the lambda is the final word.
-        , String.foldl "time" "" λchar acc -> String.cons acc char
+        , String.foldl "time" "" λchar acc → String.cons acc char
         , String.join (String.split "a,b,c" ",") "-"
         -- The three builders that LOST an argument when the comparator
         -- left: `Dict.fromList` and `Set.fromList` took an ordering last,
@@ -62,5 +62,5 @@ main =
         -- silently mis-ordered.
         , String.join (Dict.keys (Dict.fromList [ ( "b", 1 ), ( "a", 0 ) ])) ","
         , String.join (Set.toList (Set.fromList [ "b", "a", "b" ])) ","
-        , show (Set.toList (Set.map (Set.fromList [ 3, 1, 2 ]) λn -> n * 10))
+        , show (Set.toList (Set.map (Set.fromList [ 3, 1, 2 ]) λn → n * 10))
         ]

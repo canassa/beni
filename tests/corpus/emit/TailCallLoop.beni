@@ -15,17 +15,17 @@
 import Node exposing (Program)
 
 
-pub countUp : Int, Int, Int -> Int
+pub countUp : Int, Int, Int → Int
 countUp n acc step =
-    if n <= 0 then
+    if n ≤ 0 then
         acc
     else
         countUp (n - 1) (acc + step) step
 
 
-pub plain : Int -> Int
+pub plain : Int → Int
 plain n =
-    if n <= 0 then
+    if n ≤ 0 then
         0
     else
         1 + plain (n - 1)

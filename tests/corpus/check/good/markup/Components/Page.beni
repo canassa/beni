@@ -15,7 +15,7 @@ type Msg
     | Renamed String
 
 
-pub view : { title : String, count : Int } -> Html Msg
+pub view : { title : String, count : Int } → Html Msg
 view model =
     <main>
         <Card title={model.title} open>
@@ -23,6 +23,6 @@ view model =
             <input value={model.title} onInput={Renamed} />
             <button onClick={Reset}>Reset</button>
         </Card>
-        <Card {...Card.defaults} title="Spread" />
+        <Card {…Card.defaults} title="Spread" />
         {Html.map (Card.counter { count = model.count }) Counted}
     </main>

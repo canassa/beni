@@ -58,21 +58,21 @@ pub array =
     }
 
 
-pub member : List Int, Int -> Bool
+pub member : List Int, Int → Bool
 member xs x = List.member xs x
 
 
-pub sort : List Int -> List Int
+pub sort : List Int → List Int
 sort xs = List.sort xs
 
 
-pub sortBy : List Int, (Int -> Int) -> List Int
+pub sortBy : List Int, (Int → Int) → List Int
 sortBy xs f = List.sortBy xs f
 
 
-pub eq : List Int, List Int -> Bool
+pub eq : List Int, List Int → Bool
 eq xs ys = xs == ys
 
 
-pub lt : List Int, List Int -> Bool
+pub lt : List Int, List Int → Bool
 lt xs ys = xs < ys
