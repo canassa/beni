@@ -15,6 +15,10 @@
 --     before its first line; a second call does nothing.
 --   - `done` is called once every fiber has ended, with the number of
 --     releases the deadline cut short.
+--   - A fiber waiting on a `Deferred` nothing completes is cancelled like
+--     the rest (transparent-effects-proposal.md §17.4): its wait ends and
+--     its release runs.
+import Deferred
 import Io
 import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
@@ -68,6 +72,9 @@ main = Io.run λ() →
         guarded "e parent" λ() →
             _ = Task.spawn λ() → guarded "e child" λ() → Io.sleep 100000
             Io.sleep 100000
+
+    unanswered = Deferred.make ()
+    _ = Task.spawnIn root λ() → guarded "f, waiting on a Deferred," λ() → Deferred.wait unanswered
 
     -- Twice: the first lets every fiber start, the second lets the child
     -- `e` started start too.

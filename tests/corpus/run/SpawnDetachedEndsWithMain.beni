@@ -1,0 +1,28 @@
+-- run: a detached fiber does not keep a Node program alive
+-- (transparent-effects-proposal.md §17.10; boundary.md §9.8.15 (c)). It
+-- sleeps 100 seconds on a real timer. When `Io.run`'s fiber ends the
+-- program ends: its output is written, then the detached fiber is
+-- cancelled — its timer cleared, its release run, told `Cancelled` — and
+-- the process exits at once, with the program's own code, 0.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+main : Program
+main = Io.run λ() →
+    _ = Task.spawnDetached λ() →
+        Task.bracket (λ() → ()) (λ_ exit → Debug.log "detached released: ${outcome exit}" ()) λ_ →
+            Io.sleep 100000
+    _ = Task.yieldNow ()
+    Node.print "main done"

@@ -1,0 +1,15 @@
+-- run: a Node program whose fiber waits in `Task.never` can never wake,
+-- and says so (transparent-effects-proposal.md §17.10; boundary.md
+-- §9.8.15 (c)). Nothing holds Node's event loop open, so it empties; the
+-- program reports it on standard error and exits 1 — never a silent exit
+-- 0. What it printed before the wait stands.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    _ = Debug.log "waiting forever" ()
+    _ = Task.never ()
+    Node.print "not reached"

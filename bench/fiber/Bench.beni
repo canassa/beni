@@ -2,6 +2,8 @@
 -- (docs/design/research/44-effects-runtime-spike.md §7). Built with
 -- `--library`, so every `pub` value is a root and the harness imports it;
 -- `node.mjs` and `chrome.mjs` start each workload in a fiber with `start`.
+import Deferred
+import Ref exposing (Ref)
 import Task exposing (Exit)
 
 
@@ -97,3 +99,56 @@ together n = Task.scope λs →
     Task.bracket (λ() → n) (λ_ _ → ()) λr →
         f = Task.spawnIn s λ() → worker r
         Task.join f
+
+
+--| `n` hand-offs through a `Deferred`: a fiber waits on a new one, the
+--| caller completes it, and the waiter is joined.
+pub deferredHandoff : Int, Int → Int
+deferredHandoff n acc =
+    if n == 0 then
+        acc
+    else
+        d = Deferred.make ()
+        f = Task.spawn λ() → Deferred.wait d
+        _ = Task.yieldNow ()
+        _ = Deferred.complete d 1
+        deferredHandoff (n - 1) (acc + Task.join f)
+
+
+--| `n` times a new `Deferred` completed and then waited for: the wait
+--| answers at once.
+pub deferredReady : Int, Int → Int
+deferredReady n acc =
+    if n == 0 then
+        acc
+    else
+        d = Deferred.make ()
+        _ = Deferred.complete d 1
+        deferredReady (n - 1) (acc + Deferred.wait d)
+
+
+--| `n` updates of one `Ref`.
+pub refUpdates : Int → Int
+refUpdates n =
+    r = Ref.make 0
+    _ = updateTimes r n
+    Ref.get r
+
+
+updateTimes : Ref Int, Int → ()
+updateTimes r n =
+    if n == 0 then
+        ()
+    else
+        _ = Ref.update r λx → x + 1
+        updateTimes r (n - 1)
+
+
+--| `n` detached fibers, each started and joined in turn.
+pub detachJoin : Int, Int → Int
+detachJoin n acc =
+    if n == 0 then
+        acc
+    else
+        f = Task.spawnDetached λ() → 1
+        detachJoin (n - 1) (acc + Task.join f)

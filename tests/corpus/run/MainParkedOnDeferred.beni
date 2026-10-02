@@ -1,0 +1,19 @@
+-- run: a Node program whose fiber waits on a `Deferred` that nothing will
+-- ever complete can never wake, and says so
+-- (transparent-effects-proposal.md §17.10; boundary.md §9.8.15 (c)). The
+-- only fiber that could complete it has ended without doing so; a
+-- `Deferred` holds nothing open, so Node's event loop empties, and the
+-- program reports it on standard error and exits 1.
+import Deferred
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    d = Deferred.make ()
+    helper = Task.spawn λ() → Debug.log "the helper ends without completing" ()
+    _ = Task.join helper
+    v = Deferred.wait d
+    Node.print "not reached ${String.fromInt v}"

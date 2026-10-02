@@ -672,3 +672,19 @@ and P3's combinators only use.
 23's conformance rows 1–38, renamed as above, are green. After P8 every row of the ledger is
 `have`, `n/a` with its reason, or a P9/P10 battery. The owner's bar — feature and quality parity —
 is met when that holds and every slice's measurement shows no operation slower than Effect's.
+
+*P1 as built (2026-10-02).* The kernel's pieces landed as `plans/core-in-beni.md` K5 (its note);
+`core/Ref` before it. **`core/Deferred.beni`** is beni over `Task.callback` and `Task.resume`, no
+`foreign`: a record of `done`, `value` and the waiters' `Resume`s, `complete` queuing each waiter in
+the order it began to wait, the canceller splicing a cancelled waiter out — `Deferred.ts:174-187`
+line for line. Fixtures: `run/DeferredWaitComplete`, `run/DeferredSecondComplete`,
+`run/DeferredWaiterCancelled`, `run/TaskShutdown` with a `Deferred` waiter, and the never-wakes
+reports `run/MainParkedOnNever` and `run/MainParkedOnDeferred` (`.crash`), with
+`run/SpawnDetachedEndsWithMain` (a detached fiber on a 100-second timer is cancelled when `Io.run`'s
+fiber ends, and the process exits at once). **Against Effect v4** (`bench/fiber`, `node node.mjs
+--group=coordination`, a development library build as the harness has always used; median of 9
+after 3 warm-ups, ns per operation, load average 11–13 so ratios rather than times): a `Deferred`
+hand-off — spawn a waiter, complete, join — 1 532 against Effect's 2 950 (`forkChild`,
+`Deferred.await`, `Deferred.succeed`, `Fiber.join`); a `Deferred` completed and then waited for 38
+against 475; `Ref.update` 3.1 against 127 (Effect's `Ref.update` in `Effect.gen`); a detached fiber
+started and joined 355 against 2 292 (`forkDetach`, `Fiber.join`). No operation is slower.

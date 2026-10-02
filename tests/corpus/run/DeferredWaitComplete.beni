@@ -1,0 +1,31 @@
+-- run: `Deferred` (transparent-effects-proposal.md §17.4). Three fibers
+-- wait on one `Deferred`; `complete` wakes them in the order they began to
+-- wait, each at a later turn — the line after `complete` prints first —
+-- and every one sees the value. Before completion `poll` is `Nothing` and
+-- `isDone` `False`; after, `Just` the value and `True`, and a `wait` on a
+-- completed `Deferred` answers at once.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Task exposing (Fiber)
+
+
+waiter : Deferred Int, String → Fiber Int
+waiter d name = Task.spawn λ() → Debug.log "${name} got" (Deferred.wait d)
+
+
+main : Program
+main = Io.run λ() →
+    d = Deferred.make ()
+    b = waiter d "b"
+    a = waiter d "a"
+    c = waiter d "c"
+    _ = Task.yieldNow ()
+    _ = Debug.log "before: poll" (Deferred.poll d)
+    _ = Debug.log "before: isDone" (Deferred.isDone d)
+    _ = Debug.log "complete" (Deferred.complete d 7)
+    _ = Debug.log "completed" ()
+    _ = Task.joinAll [ a, b, c ]
+    _ = Debug.log "after: poll" (Deferred.poll d)
+    _ = Debug.log "after: isDone" (Deferred.isDone d)
+    Node.print "late wait: ${String.fromInt (Deferred.wait d)}"

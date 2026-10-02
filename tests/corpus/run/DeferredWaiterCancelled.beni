@@ -1,0 +1,30 @@
+-- run: a fiber cancelled while it waits on a `Deferred` is taken off its
+-- list (transparent-effects-proposal.md §17.1 item 1, §17.4). Of three
+-- waiters the middle one is cancelled: its release runs and its line after
+-- the wait never prints. The next `complete` reaches the two live waiters,
+-- in their order, and nothing else — the cancelled one is never handed the
+-- value and never counted.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Task exposing (Fiber)
+
+
+waiter : Deferred Int, String → Fiber Int
+waiter d name = Task.spawn λ() →
+    Task.bracket (λ() → ()) (λ_ _ → Debug.log "${name} released" ()) λ_ →
+        Debug.log "${name} got" (Deferred.wait d)
+
+
+main : Program
+main = Io.run λ() →
+    d = Deferred.make ()
+    first = waiter d "first"
+    middle = waiter d "middle"
+    last = waiter d "last"
+    _ = Task.yieldNow ()
+    _ = Task.cancel middle
+    _ = Debug.log "complete" (Deferred.complete d 1)
+    _ = Task.join first
+    _ = Task.join last
+    Node.print "done"

@@ -1,0 +1,81 @@
+--! A value that is completed once and waited for by any number of fibers
+--! (`transparent-effects-proposal.md` §17.4): Effect's `Deferred`.
+--!
+--!     ready = Deferred.make ()
+--!     _ = Task.spawn λ() → Deferred.complete ready (load ())
+--!     config = Deferred.wait ready
+--!
+--! **The first completion wins.** `complete` gives the value to every fiber
+--! waiting, in the order they began to wait, and answers `True`; once
+--! completed, a `Deferred` keeps its value, and a later `complete` changes
+--! nothing and answers `False`.
+--!
+--! **Waiting is cancellable and leaves nothing behind.** A fiber cancelled
+--! while it waits is taken off the list at once: it is never handed the
+--! value, and nothing holds on to it.
+--!
+--! There is no failure to complete with: a failure is a `Result` carried in
+--! the value, and a waiter that should stop is cancelled.
+--!
+--! Nothing here is `foreign`: it is beni over `Task.callback` and
+--! `Task.resume`.
+
+import Js
+import Task
+
+
+--| A value that is completed once, and may be waited for until it is.
+pub opaque type Deferred a
+    = Deferred Js.Value
+
+
+--| A new `Deferred`, not completed. Each call makes a new one.
+pub make : () → Deferred a
+make () = Deferred (Js.from { done = False, value = Js.null, waiters = Js.array [] })
+
+
+--| The value, once the `Deferred` is completed: at once when it already is,
+--| and otherwise when `complete` is called. Cancelling the fiber that waits
+--| ends the wait.
+pub wait : Deferred a → a
+wait (Deferred d) =
+    if Js.to (Js.get d "done") then
+        Js.to (Js.get d "value")
+    else
+        Task.callback λresume →
+            waiter = Js.from resume
+            waiters = Js.get d "waiters"
+            _ = Js.call waiters "push" [ waiter ]
+
+            λ() →
+                i : Int
+                i = Js.to (Js.call waiters "indexOf" [ waiter ])
+                if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ]) else ()
+
+
+--| Complete the `Deferred` with `value`, and answer `True`: every fiber
+--| waiting goes on with it, in the order they began to wait, each at a
+--| later turn — never inside this call. When it was already completed,
+--| nothing changes and the answer is `False`.
+pub complete : Deferred a, a → Bool
+complete (Deferred d) value =
+    if Js.to (Js.get d "done") then
+        False
+    else
+        _ = Js.set d "done" (Js.from True)
+        _ = Js.set d "value" (Js.from value)
+        waiters = Js.get d "waiters"
+        _ = Js.set d "waiters" (Js.array [])
+        _ = Js.each waiters λw → Task.resume (Js.to w) value
+        True
+
+
+--| `Just` the value once the `Deferred` is completed, `Nothing` before,
+--| without waiting.
+pub poll : Deferred a → Maybe a
+poll (Deferred d) = if Js.to (Js.get d "done") then Just (Js.to (Js.get d "value")) else Nothing
+
+
+--| Whether the `Deferred` has been completed.
+pub isDone : Deferred a → Bool
+isDone (Deferred d) = Js.to (Js.get d "done")

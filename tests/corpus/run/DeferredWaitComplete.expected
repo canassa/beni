@@ -1,0 +1,10 @@
+before: poll: Nothing
+before: isDone: False
+complete: True
+completed: ()
+b got: 7
+a got: 7
+c got: 7
+after: poll: Just 7
+after: isDone: True
+late wait: 7

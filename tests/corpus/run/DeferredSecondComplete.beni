@@ -1,0 +1,19 @@
+-- run: the first completion of a `Deferred` wins
+-- (transparent-effects-proposal.md §17.4; report 23 case 6.1). The first
+-- `complete` answers `True`; the second answers `False` and changes
+-- nothing, so the waiter — and every later `wait` — sees the first value.
+import Deferred
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    d = Deferred.make ()
+    waiter = Task.spawn λ() → Deferred.wait d
+    _ = Task.yieldNow ()
+    _ = Debug.log "first complete" (Deferred.complete d "first")
+    _ = Debug.log "second complete" (Deferred.complete d "second")
+    _ = Debug.log "waiter got" (Task.join waiter)
+    Node.print (Deferred.wait d)

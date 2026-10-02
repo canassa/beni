@@ -104,6 +104,30 @@ export async function all(beni, effect, sizes = {}, progress = () => {}) {
   return out;
 }
 
+// The coordination workloads (transparent-effects-proposal.md §17.3–§17.4,
+// `plans/effects-plan.md` §8 P1), each beni's and then Effect's: `node.mjs
+// --group=coordination`.
+export async function coordination(beni, effect, sizes = {}, progress = () => {}) {
+  const h = sizes.handoffs ?? 20_000;
+  const r = sizes.ready ?? 200_000;
+  const u = sizes.updates ?? 1_000_000;
+  const d = sizes.detached ?? 20_000;
+  const pairs = [
+    [`${h} Deferred hand-offs (spawn, wait, complete, join)`, h, () => inFiber(beni, () => beni.Bench$deferredHandoff(h, 0)), () => effect.deferredHandoff(h), h],
+    [`${r} Deferreds completed, then waited for`, r, () => inFiber(beni, () => beni.Bench$deferredReady(r, 0)), () => effect.deferredReady(r), r],
+    [`${u} Ref.update`, u, () => inFiber(beni, () => beni.Bench$refUpdates(u)), () => effect.refUpdates(u), u],
+    [`${d} detached fibers, each joined`, d, () => inFiber(beni, () => beni.Bench$detachJoin(d, 0)), () => effect.detachJoin(d), d],
+  ];
+  const out = [];
+  for (const [label, ops, b, e, expect] of pairs) {
+    out.push(await measure(`beni: ${label}`, ops, b, expect));
+    progress(out[out.length - 1].label);
+    out.push(await measure(`Effect v4: ${label}`, ops, e, expect));
+    progress(out[out.length - 1].label);
+  }
+  return out;
+}
+
 // The same yielding loop under each budget (`budgets` maps a label to a
 // beni build whose runtime escapes to a macrotask after that many
 // resumptions), then Effect's, for `latency`.
