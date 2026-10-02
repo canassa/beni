@@ -785,6 +785,23 @@ version's count — and caches the array as E1t's did. Neither claim is a reader
 
 #### The runtime: `core/List.js`
 
+*Amended 2026-10-02, the owner's decision on research 50 §7 (`plans/core-in-beni.md` step 3):*
+**the runtime is beni, in `core/List.beni`.** Every row of the table below is a declaration with a
+beni body written over `Js` — the view and trie headers are `Js.object` literals with the keys and
+key order of this section (one call site per form, so one hidden class per form), their `$plain`
+is a `Js.method` held in a top-level value (`backend.md` §4, *`Js.method` is a `function`*), the
+claims are the same runtime tests (`b.length === c` before a `push`), and the loops are tail-call
+loops (§8). `eq` and `compare` are beni loops over the `where` evidence, so they are no longer
+`foreign` and their evidence needs no `sync` covering. What the text below calls "exports of
+`core/List.js`" are those declarations; the emitter imports `unsafeGet`, `view`, `base`, `offset`
+and `close` from `_core/List.mjs` as before (*The emitter's imports of the core-private exports*).
+The sibling `core/List.js` keeps only `length`, `at`, `put`, `identical`, `kept` and `half`, which
+the code generator writes in place (*`List.beni`'s loops read and write in place*), for a value of
+one; a program ships none of it. Invariants, protocol, identities and costs are unchanged: the
+claim sweep (`bench/arrays/lists/claim-prepend-test.mjs core`) runs against the runtime compiled
+from `List.beni` (`core-shipped.mjs` builds it), and every `run/` program prints its golden in
+both builds.
+
 `List a` stays `pub equatable foreign type List a`: it has no constructors, and the checker is not
 touched by any of this. `core/List.js` is the one file that knows the view and trie forms. Its
 exports, each a `foreign` of `List.beni`, are the runtime every other part of this contract calls:

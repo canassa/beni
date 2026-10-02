@@ -22,13 +22,14 @@
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
---! The `foreign` half is first-order and nothing that takes a function is
---! `foreign`: every function with a callback is a beni loop over the
---! core-private `base`, `offset` and `at`, building its result in a core-private
+--! The whole runtime is beni over `Js` (research 50): the views and the
+--! trie with its claimable head and tail are `Js.object` headers whose
+--! `$plain` is a `Js.method`, read and written below the public surface.
+--! Every function with a callback is a beni loop over the core-private
+--! `base`, `offset` and `at`, building its result in a core-private
 --! `Builder`, so a callback that suspends parks the loop (`language.md`
---! §6.8, *Callbacks*). The `foreign` half is `cons`, `append`, `length`,
---! the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and
---! `eq` and `compare`, whose `where` evidence is called from JavaScript.
+--! §6.8, *Callbacks*). What stays `foreign` — `length`, `at`, `put`,
+--! `identical`, `kept`, `half` — the code generator writes in place.
 --!
 --! `List a` is equal to another list when they have the same elements in the
 --! same order, by each element's own `eq` — which is what makes `==` on a
@@ -43,6 +44,9 @@
 --! anything with a key that does, and `sortWith` for an ordering you write
 --! yourself, which is how you sort by something that is not the type's own
 --! order.
+
+import Js
+
 
 --| A list of values, all of the same type. `[]` is the empty list, and a
 --| spread puts the elements of one list into another.
@@ -73,7 +77,33 @@ foreign type Builder a
 --| written to keeps a claimable head. At most 31 elements are copied when
 --| `xs` was prepended onto before, and a list of 32 or more that nothing has
 --| written to is converted once, O(n) (`backend.md` §4, *The claimable head*).
-pub foreign pure cons : a, List a → List a
+pub cons : a, List a → List a
+cons x xs = Js.pure λ() →
+    t = Js.from xs
+    if isTrie t then
+        Js.to (triePrepend t (Js.from x))
+    else
+        b = base xs
+        o = offset xs
+        if o > 0 && Js.same (at b (o - 1)) x then
+            if o == 1 then
+                b
+            else
+                Js.to (viewOf (Js.from b) (o - 1))
+        else if length xs ≥ 32 then
+            Js.to (triePrepend (fromPlain (Js.from b) o) (Js.from x))
+        else
+            Js.to (pushFrom (Js.from b) o (Js.array [ Js.from x ]))
+
+
+--| `c` with `b[i] … b[b.length - 1]` pushed onto it.
+pushFrom : Js.Value, Int, Js.Value → Js.Value
+pushFrom b i c =
+    if i < Js.to (Js.get b "length") then
+        _ = Js.call c "push" [ Js.at b i ]
+        pushFrom b (i + 1) c
+    else
+        c
 
 
 --| Put two lists together. `[ …xs, …ys ]` is this function, and `++` on
@@ -86,7 +116,36 @@ pub foreign pure cons : a, List a → List a
 --| each element of `ys` is pushed onto it: O(length of `ys`), so
 --| `[ …xs, x ]` costs what `push xs x` does. Otherwise the result is a
 --| fresh list, O(length of both).
-pub foreign pure append : List a, List a → List a
+pub append : List a, List a → List a
+append xs ys = Js.pure λ() →
+    n = length xs
+    m = length ys
+    if m == 0 then
+        xs
+    else if n == 0 then
+        ys
+    else
+        x = Js.from xs
+        trie = isTrie x
+        if (if trie then m ≥ n else n < 32 || m ≥ 32) then
+            Js.to (Js.call (plainOf x) "concat" [ plainOf (Js.from ys) ])
+        else
+            Js.to
+                (triePushed
+                    (if trie then x else fromPlain (Js.from (base xs)) (offset xs))
+                    (Js.from (base ys))
+                    (offset ys)
+                    m
+                )
+
+
+--| A list's elements as a plain array: itself, or its `$plain()`.
+plainOf : Js.Value → Js.Value
+plainOf x =
+    if isPlain x then
+        x
+    else
+        Js.call x "$plain" []
 
 
 --| Determine the length of a list. O(1).
@@ -102,8 +161,24 @@ pub foreign pure length : List a → Int
 --|
 --| This is what `==` on a list calls. It is written here rather than derived
 --| because `List a` has no constructors for the compiler to walk. O(n).
-pub foreign pure eq : List a, List a → Bool
+pub eq : List a, List a → Bool
     where a.eq : a, a → Bool
+eq xs ys = length xs == length ys && eqFrom (base xs) (offset xs) (base ys) (offset ys)
+
+
+--| Whether `a[i] …` equal `b[j] …` to the end of `a`, each by its own `eq`.
+--| A list's elements end where its base array does, so the two walks end
+--| together when the lists are as long.
+eqFrom : List a, Int, List a, Int → Bool
+    where a.eq : a, a → Bool
+eqFrom a i b j =
+    if i < length a then
+        if at a i == at b j then
+            eqFrom a (i + 1) b (j + 1)
+        else
+            False
+    else
+        True
 
 
 --| Order two lists element by element, by each element's own `compare`.
@@ -115,8 +190,30 @@ pub foreign pure eq : List a, List a → Bool
 --| This is what `<`, `≤`, `>` and `≥` on a list call. Like `eq` it is
 --| written here rather than derived, because `List a` has no constructors
 --| to walk.
-pub foreign pure compare : List a, List a → Order
+pub compare : List a, List a → Order
     where a.compare : a, a → Order
+compare xs ys = compareFrom (base xs) (offset xs) (base ys) (offset ys)
+
+
+--| The first pair of `a[i] …` and `b[j] …` that is not `EQ` decides; with
+--| none, the list with elements left is `GT`, and with neither, `EQ`. Each
+--| list's elements end where its base array does.
+compareFrom : List a, Int, List a, Int → Order
+    where a.compare : a, a → Order
+compareFrom a i b j =
+    if i < length a && j < length b then
+        case (at a i).compare (at b j) of
+            EQ →
+                compareFrom a (i + 1) b (j + 1)
+
+            o →
+                o
+    else if i < length a then
+        GT
+    else if j < length b then
+        LT
+    else
+        EQ
 
 
 --| Replace the element at an index. Out of range — a negative index, or one
@@ -129,7 +226,24 @@ pub foreign pure compare : List a, List a → Order
 --|
 --| A copy up to 256 elements; above, near O(1) after one O(n) conversion
 --| per list.
-pub foreign pure set : List a, Int, a → List a
+pub set : List a, Int, a → List a
+set xs i v = Js.pure λ() →
+    n = length xs
+    if i < 0 || i ≥ n then
+        xs
+    else if isTrie (Js.from xs) then
+        Js.to (trieSet (Js.from xs) i (Js.from v))
+    else
+        b = base xs
+        o = offset xs
+        if Js.same (at b (o + i)) v then
+            xs
+        else if n > 256 then
+            Js.to (trieSet (fromPlain (Js.from b) o) i (Js.from v))
+        else
+            c = Js.call (Js.from b) "slice" [ Js.from o ]
+            _ = Js.setAt c i (Js.from v)
+            Js.to c
 
 
 --| Add an element at the end of a list, which is where a list grows.
@@ -140,7 +254,19 @@ pub foreign pure set : List a, Int, a → List a
 --| per list. Pushing twice onto one version (after an undo) copies at most
 --| 31 elements, never the list. A loop that builds a list with `push` keeps
 --| the order the elements arrived in, so it needs no `reverse`.
-pub foreign pure push : List a, a → List a
+pub push : List a, a → List a
+push xs v = Js.pure λ() →
+    if isTrie (Js.from xs) then
+        Js.to (triePush (Js.from xs) (Js.from v))
+    else
+        b = base xs
+        o = offset xs
+        if length xs ≥ 32 then
+            Js.to (triePush (fromPlain (Js.from b) o) (Js.from v))
+        else
+            c = Js.call (Js.from b) "slice" [ Js.from o ]
+            _ = Js.call c "push" [ Js.from v ]
+            Js.to c
 
 
 --| Remove the last element of a list. `pop []` is the empty list itself.
@@ -148,7 +274,20 @@ pub foreign pure push : List a, a → List a
 --|     pop [ 1, 2, 3 ] == [ 1, 2 ]
 --|
 --| The cost of `set`.
-pub foreign pure pop : List a → List a
+pub pop : List a → List a
+pop xs = Js.pure λ() →
+    n = length xs
+    if n == 0 then
+        xs
+    else if isTrie (Js.from xs) then
+        Js.to (triePop (Js.from xs))
+    else
+        b = base xs
+        o = offset xs
+        if n > 256 then
+            Js.to (triePop (fromPlain (Js.from b) o))
+        else
+            Js.to (Js.call (Js.from b) "slice" [ Js.from o, Js.from (length b - 1) ])
 
 
 --| The elements from index `from` up to but not including `to`, as Elm's
@@ -161,7 +300,35 @@ pub foreign pure pop : List a → List a
 --|     slice [ 0, 1, 2, 3, 4 ] (-2) 5 == [ 3, 4 ]
 --|
 --| O(length of the result), a fresh list.
-pub foreign pure slice : List a, Int, Int → List a
+pub slice : List a, Int, Int → List a
+slice xs from to =
+    n = length xs
+    f = clampIndex from n
+    t = clampIndex to n
+    if f == 0 && t == n then
+        xs
+    else if f ≥ t then
+        []
+    else
+        sliceOf xs f t
+
+
+--| An index of Elm's `Array.slice` clamped to a list of `n`: a negative one
+--| counts from the end.
+clampIndex : Int, Int → Int
+clampIndex i n =
+    if i < 0 then
+        Js.pure λ() → Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
+    else
+        Js.pure λ() → Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
+
+
+--| Elements `from` up to `to` of `xs`, a fresh plain array.
+sliceOf : List a, Int, Int → List a
+sliceOf xs from to =
+    o = offset xs
+    Js.pure λ() →
+        Js.to (Js.call (Js.from (base xs)) "slice" [ Js.from (o + from), Js.from (o + to) ])
 
 
 --| Insert an element before an index, so that it is at that index in the
@@ -172,7 +339,21 @@ pub foreign pure slice : List a, Int, Int → List a
 --|     insertAt [ 1, 2, 3 ] 3 9 == [ 1, 2, 3, 9 ]
 --|
 --| O(n), a fresh list.
-pub foreign pure insertAt : List a, Int, a → List a
+pub insertAt : List a, Int, a → List a
+insertAt xs i v =
+    n = length xs
+    if i < 0 || i > n then
+        xs
+    else
+        b = Js.from (base xs)
+        o = offset xs
+        Js.pure λ() →
+            Js.to
+                (Js.call (Js.call b "slice" [ Js.from o, Js.from (o + i) ]) "concat"
+                    [ Js.array [ Js.from v ]
+                    , Js.call b "slice" [ Js.from (o + i), Js.from (o + n) ]
+                    ]
+                )
 
 
 --| Remove the element at an index. Out of range the result is the list
@@ -181,7 +362,19 @@ pub foreign pure insertAt : List a, Int, a → List a
 --|     removeAt [ 1, 2, 3 ] 1 == [ 1, 3 ]
 --|
 --| O(n), a fresh list.
-pub foreign pure removeAt : List a, Int → List a
+pub removeAt : List a, Int → List a
+removeAt xs i =
+    n = length xs
+    if i < 0 || i ≥ n then
+        xs
+    else
+        b = Js.from (base xs)
+        o = offset xs
+        Js.pure λ() →
+            Js.to
+                (Js.call (Js.call b "slice" [ Js.from o, Js.from (o + i) ]) "concat"
+                    [ Js.call b "slice" [ Js.from (o + i + 1), Js.from (o + n) ] ]
+                )
 
 
 --| Exchange the elements at two indexes. When either is out of range, or
@@ -190,30 +383,69 @@ pub foreign pure removeAt : List a, Int → List a
 --|     swap [ 1, 2, 3 ] 0 2 == [ 3, 2, 1 ]
 --|
 --| Two `set`s.
-pub foreign pure swap : List a, Int, Int → List a
+pub swap : List a, Int, Int → List a
+swap xs i j =
+    n = length xs
+    if i < 0 || j < 0 || i ≥ n || j ≥ n || i == j then
+        xs
+    else
+        x = unsafeGet xs i
+        y = unsafeGet xs j
+        set (set xs i y) j x
 
 
 --| Element `i`, for `0 ≤ i < length xs`, which the caller guarantees: out
 --| of range it would read `undefined` as a value of any type, which is why
 --| it is not `pub` (`backend.md` §4). The code generator imports it for a
 --| list pattern's elements.
-foreign pure unsafeGet : List a, Int → a
+unsafeGet : List a, Int → a
+unsafeGet xs i = Js.pure λ() →
+    v = Js.from xs
+    if isPlain v then
+        Js.to (Js.at v i)
+    else if Js.isUndefined (Js.get v "o") then
+        Js.to (trieGet v i)
+    else
+        Js.to (Js.at (Js.get v "b") (Js.to (Js.get v "o") + i))
 
 
 --| The list without its first `k` elements, `0 ≤ k ≤ length`: the list
 --| itself at 0, `[]` at the end, O(1) otherwise. What a pattern's
 --| `[ x, …rest ]` binds `rest` to; the code generator imports it.
-foreign pure view : List a, Int → List a
+view : List a, Int → List a
+view xs k = Js.pure λ() →
+    if k == 0 then
+        xs
+    else if k ≥ length xs then
+        []
+    else if isTrie (Js.from xs) then
+        Js.to (trieDrop (Js.from xs) k)
+    else
+        Js.to (viewOf (Js.from (base xs)) (offset xs + k))
 
 
 --| The plain array a list is a suffix of, and where in it the list starts
 --| (`backend.md` §8, *Scalar views*): the list itself and 0, a view's
 --| backing array and offset, a trie's plain copy (made once) and 0. Every
 --| loop below reads its list through these two and `at`.
-foreign pure base : List a → List a
+base : List a → List a
+base xs = Js.pure λ() →
+    v = Js.from xs
+    if isPlain v then
+        xs
+    else if Js.isUndefined (Js.get v "o") then
+        Js.to (Js.call v "$plain" [])
+    else
+        Js.to (Js.get v "b")
 
 
-foreign pure offset : List a → Int
+offset : List a → Int
+offset xs = Js.pure λ() →
+    v = Js.from xs
+    if isPlain v || Js.isUndefined (Js.get v "o") then
+        0
+    else
+        Js.to (Js.get v "o")
 
 
 --| Element `i` of an array `base` returned, `i` below its length: `a[i]`.
@@ -228,7 +460,9 @@ foreign pure at : List a, Int → a
 --| write fills them by index with `put`, which builds in a third of the
 --| time pushing takes at 100 000 elements, where an array grown by `push`
 --| is copied as it grows.
-foreign pure builder : Int → Builder a
+builder : Int → Builder a
+builder n = Js.pure λ() →
+    Js.to (Js.construct (Js.global "Array") [ Js.from (if n > 0 then n else 0) ])
 
 
 --| Element `i` of the builder written, `i` below the room it was made with.
@@ -239,7 +473,15 @@ foreign pure put : Builder a, Int, a → Builder a
 --| The builder handed over as a list of its first `n` elements: `n` is
 --| how many a loop `put`, so a builder made with more room
 --| than it needed — `filter`'s — is cut to what it holds.
-foreign pure done : Builder a, Int → List a
+done : Builder a, Int → List a
+done b n = Js.pure λ() →
+    v = Js.from b
+    _ =
+        if Js.to (Js.get v "length") == n then
+            ()
+        else
+            Js.set v "length" (Js.from n)
+    Js.to v
 
 
 --| A building loop's exit (`backend.md` §8, *Tail calls modulo cons, onto
@@ -247,7 +489,13 @@ foreign pure done : Builder a, Int → List a
 --| after it, or `rest` itself when the destination is empty. The code
 --| generator writes the calls, and the destination is the loop's alone
 --| until this hands it over, which is what makes the push sound.
-foreign pure close : List a, List a → List a
+close : List a, List a → List a
+close b v =
+    n = length b
+    if n == 0 then
+        v
+    else
+        done (putAll (Js.to (Js.from b)) n (base v) (offset v) (offset v + length v)) (n + length v)
 
 
 --| Whether two values are the same reference, which beni's `==` cannot
@@ -266,6 +514,500 @@ foreign pure kept : Bool, List a, List b → List b
 
 --| `n // 2` for a non-negative `n`, without `Basics`' sibling.
 foreign pure half : Int → Int
+
+
+-- ---- The three forms, over `Js` (`backend.md` §4, *Lists are arrays*) ----
+--
+-- A view is `{ b, o, length, p, $plain }` and a trie `{ length, h, hc, T,
+-- t, p, $plain }`, each made by one `Js.object` so every one has one shape;
+-- the tree is `{ r, s, off, tc }`. Their fields are read by name, which no
+-- build renames.
+
+--| A view's `$plain()`: its elements as a fresh plain array, made once.
+viewPlain : Js.Value
+viewPlain = Js.method λv →
+    cached = Js.get v "p"
+    if Js.isNull cached then
+        copy = Js.call (Js.get v "b") "slice" [ Js.get v "o" ]
+        _ = Js.set v "p" copy
+        copy
+    else
+        cached
+
+
+--| A trie's `$plain()`: its plain copy, made once per header — the head
+--| backwards, each leaf, then the tail, into an array made its size.
+triePlain : Js.Value
+triePlain = Js.method λa →
+    cached = Js.get a "p"
+    if Js.isNull cached then
+        n = Js.to (Js.get a "length")
+        tr = Js.get a "T"
+        off = Js.to (Js.get tr "off")
+        b = Js.construct (Js.global "Array") [ Js.from n ]
+        j = flatHead (Js.get a "h") (Js.to (Js.get a "hc") - 1) b 0
+        k = flatTree (Js.get tr "r") (Js.to (Js.get tr "s")) off (off + Js.to (Js.get tr "tc")) b j
+        _ = copyTo (Js.get a "t") 0 b k n
+        _ = Js.set a "p" b
+        b
+    else
+        cached
+
+
+flatHead : Js.Value, Int, Js.Value, Int → Int
+flatHead h i b j =
+    if i ≥ 0 then
+        _ = Js.setAt b j (Js.at h i)
+        flatHead h (i - 1) b (j + 1)
+    else
+        j
+
+
+flatTree : Js.Value, Int, Int, Int, Js.Value, Int → Int
+flatTree r s i stop b j =
+    if i < stop then
+        flatTree r s (i + 32) stop b (copyTo (leafAt r s i) 0 b j (j + 32))
+    else
+        j
+
+
+--| `x[i] …` copied into `b[j] … b[stop - 1]`; `stop`. A leaf's 32 and the
+--| tail's rest, one walk.
+copyTo : Js.Value, Int, Js.Value, Int, Int → Int
+copyTo x i b j stop =
+    if j < stop then
+        _ = Js.setAt b j (Js.at x i)
+        copyTo x (i + 1) b (j + 1) stop
+    else
+        j
+
+
+isPlain : Js.Value → Bool
+isPlain = Js.to (Js.get (Js.global "Array") "isArray")
+
+
+isTrie : Js.Value → Bool
+isTrie v = not (Js.isUndefined (Js.get v "T"))
+
+
+isView : Js.Value → Bool
+isView v = not (Js.isUndefined (Js.get v "o"))
+
+
+--| The suffix of plain array `b` from `o`, `1 ≤ o < b.length`.
+viewOf : Js.Value, Int → Js.Value
+viewOf b o =
+    Js.object
+        [ ( "b", b )
+        , ( "o", o )
+        , ( "length", Js.to (Js.get b "length") - o )
+        , ( "p", Js.null )
+        , ( "$plain", viewPlain )
+        ]
+
+
+header : Int, Js.Value, Int, Js.Value, Js.Value → Js.Value
+header n h hc tr t =
+    Js.object
+        [ ( "length", n )
+        , ( "h", h )
+        , ( "hc", hc )
+        , ( "T", tr )
+        , ( "t", t )
+        , ( "p", Js.null )
+        , ( "$plain", triePlain )
+        ]
+
+
+treeOf : Js.Value, Int, Int, Int → Js.Value
+treeOf r s off tc = Js.object [ ( "r", r ), ( "s", s ), ( "off", off ), ( "tc", tc ) ]
+
+
+noTree : Js.Value
+noTree = Js.pure λ() → Js.object [ ( "r", Js.array [] ), ( "s", 5 ), ( "off", 0 ), ( "tc", 0 ) ]
+
+
+--| The leaf holding radix position `i` of a root `r` at shift `s`.
+leafAt : Js.Value, Int, Int → Js.Value
+leafAt r s i =
+    if s > 0 then
+        leafAt (Js.at r (Js.bitAnd (Js.shiftRightZero i s) 31)) (s - 5) i
+    else
+        r
+
+
+--| Element `i` of trie `a`.
+trieGet : Js.Value, Int → Js.Value
+trieGet a i =
+    hc = Js.to (Js.get a "hc")
+    if i < hc then
+        Js.at (Js.get a "h") (hc - 1 - i)
+    else
+        tr = Js.get a "T"
+        j = i - hc
+        tc = Js.to (Js.get tr "tc")
+        if j ≥ tc then
+            Js.at (Js.get a "t") (j - tc)
+        else
+            k = j + Js.to (Js.get tr "off")
+            Js.at (leafAt (Js.get tr "r") (Js.to (Js.get tr "s")) k) (Js.bitAnd k 31)
+
+
+--| Trie `a` without its first `k` elements, `0 < k < length`.
+trieDrop : Js.Value, Int → Js.Value
+trieDrop a k =
+    len = Js.to (Js.get a "length")
+    hc = Js.to (Js.get a "hc")
+    if k ≤ hc then
+        header (len - k) (Js.get a "h") (hc - k) (Js.get a "T") (Js.get a "t")
+    else
+        tr = Js.get a "T"
+        k2 = k - hc
+        tc = Js.to (Js.get tr "tc")
+        if k2 ≥ tc then
+            Js.call (Js.get a "t") "slice" [ Js.from (k2 - tc), Js.from (len - hc - tc) ]
+        else
+            r = Js.get tr "r"
+            s = Js.to (Js.get tr "s")
+            i = Js.to (Js.get tr "off") + Js.bitAnd k2 (-32)
+            front =
+                Js.call (Js.call (leafAt r s i) "slice" [ Js.from (Js.bitAnd k2 31) ]) "reverse" []
+            header
+                (len - k)
+                front
+                (32 - Js.bitAnd k2 31)
+                (treeOf r s (i + 32) (tc - Js.bitAnd k2 (-32) - 32))
+                (Js.get a "t")
+
+
+--| A path copy: node `x` (null: a new node) with `leaf` at radix position
+--| `i`; a gap left of a new child is filled with null.
+putLeaf : Js.Value, Int, Int, Js.Value → Js.Value
+putLeaf x s i leaf =
+    c =
+        if Js.isNull x then
+            Js.array []
+        else
+            Js.call x "slice" []
+    j = Js.bitAnd (Js.shiftRightZero i s) 31
+    _ = padNull c j
+    _ =
+        Js.setAt c j
+            (if s == 5 then
+                leaf
+             else
+                putLeaf
+                    (if j < Js.to (Js.get c "length") then
+                        Js.at c j
+                     else
+                        Js.null
+                    )
+                    (s - 5)
+                    i
+                    leaf
+            )
+    c
+
+
+padNull : Js.Value, Int → ()
+padNull c j =
+    if Js.to (Js.get c "length") < j then
+        _ = Js.call c "push" [ Js.null ]
+        padNull c j
+    else
+        ()
+
+
+--| A copy of node `x` without the leaf at radix position `i` and
+--| everything right of it; null when nothing is left.
+popLeaf : Js.Value, Int, Int → Js.Value
+popLeaf x s i =
+    j = Js.bitAnd (Js.shiftRightZero i s) 31
+    if s == 5 then
+        prefixOrNull x j
+    else
+        c = popLeaf (Js.at x j) (s - 5) i
+        if Js.isNull c then
+            prefixOrNull x j
+        else
+            y = Js.call x "slice" []
+            _ = Js.setAt y j c
+            y
+
+
+prefixOrNull : Js.Value, Int → Js.Value
+prefixOrNull x j =
+    if j == 0 then
+        Js.null
+    else
+        Js.call x "slice" [ Js.from 0, Js.from j ]
+
+
+--| Tree `tr` with `leaf` added at its right end.
+treeRight : Js.Value, Js.Value → Js.Value
+treeRight tr leaf =
+    tc = Js.to (Js.get tr "tc")
+    if tc == 0 then
+        rightGrow (Js.array []) 5 0 0 leaf
+    else
+        rightGrow (Js.get tr "r") (Js.to (Js.get tr "s")) (Js.to (Js.get tr "off")) tc leaf
+
+
+rightGrow : Js.Value, Int, Int, Int, Js.Value → Js.Value
+rightGrow r s off tc leaf =
+    if off + tc ≥ 2 ^ (s + 5) then
+        rightGrow (Js.array [ r ]) (s + 5) off tc leaf
+    else
+        treeOf (putLeaf r s (off + tc) leaf) s off (tc + 32)
+
+
+--| Tree `tr` with `leaf` added at its left end; an empty tree starts
+--| mid-root, and a root with no room left becomes child 16 of a new one.
+treeLeft : Js.Value, Js.Value → Js.Value
+treeLeft tr leaf =
+    tc = Js.to (Js.get tr "tc")
+    if tc == 0 then
+        leftGrow (Js.array []) 5 512 0 leaf
+    else
+        leftGrow (Js.get tr "r") (Js.to (Js.get tr "s")) (Js.to (Js.get tr "off")) tc leaf
+
+
+leftGrow : Js.Value, Int, Int, Int, Js.Value → Js.Value
+leftGrow r s off tc leaf =
+    if off < 32 then
+        leftGrow
+            (Js.call
+                (Js.call (Js.construct (Js.global "Array") [ Js.from 16 ]) "fill" [ Js.null ])
+                "concat"
+                [ Js.array [ r ] ]
+            )
+            (s + 5)
+            (off + 16 * 2 ^ (s + 5))
+            tc
+            leaf
+    else
+        treeOf (putLeaf r s (off - 32) leaf) s (off - 32) (tc + 32)
+
+
+--| THE CLAIM: buffer `b` of a version that reads its first `c` elements,
+--| with `v` at index `c` — in place when this version owns `b`'s end,
+--| shared when `b` already holds `v` there, a copy otherwise.
+claim : Js.Value, Int, Js.Value → Js.Value
+claim b c v =
+    if Js.to (Js.get b "length") == c then
+        _ = Js.call b "push" [ v ]
+        b
+    else if Js.same (Js.at b c) v then
+        b
+    else
+        copy = Js.call b "slice" [ Js.from 0, Js.from c ]
+        _ = Js.call copy "push" [ v ]
+        copy
+
+
+--| Buffer `b`'s first `c` elements with index `k` set to `v`: a copy.
+changed : Js.Value, Int, Int, Js.Value → Js.Value
+changed b c k v =
+    copy = Js.call b "slice" [ Js.from 0, Js.from c ]
+    _ = Js.setAt copy k v
+    copy
+
+
+--| Plain array `b` from index `o` as a trie: an empty head, the tree at
+--| offset 0, the last 1 to 32 elements the tail, built level by level.
+fromPlain : Js.Value, Int → Js.Value
+fromPlain b o =
+    n = Js.to (Js.get b "length") - o
+    full = Js.shiftLeft (Js.shiftRightZero (n - 1) 5) 5
+    if full == 0 then
+        header n (Js.array []) 0 noTree (Js.call b "slice" [ Js.from o ])
+    else
+        fromLevels b o n full (chunks b o (o + full) (Js.array [])) 5
+
+
+fromLevels : Js.Value, Int, Int, Int, Js.Value, Int → Js.Value
+fromLevels b o n full x s =
+    if Js.to (Js.get x "length") > 32 then
+        fromLevels b o n full (chunks x 0 (Js.to (Js.get x "length")) (Js.array [])) (s + 5)
+    else
+        header n (Js.array []) 0 (treeOf x s 0 full) (Js.call b "slice" [ Js.from (o + full) ])
+
+
+--| `out` with `x[i … i + 31]`, `x[i + 32 …]`, … up to `stop` pushed onto
+--| it, 32 to an array: the leaves of a plain array, and each level above
+--| them, written once.
+chunks : Js.Value, Int, Int, Js.Value → Js.Value
+chunks x i stop out =
+    if i < stop then
+        _ = Js.call out "push" [ Js.call x "slice" [ Js.from i, Js.from (i + 32) ] ]
+        chunks x (i + 32) stop out
+    else
+        out
+
+
+--| Trie `a` with element `i` replaced: a copy of the head, the tail or the
+--| leaf it falls in and the path to it; `a` itself when it is already `v`.
+trieSet : Js.Value, Int, Js.Value → Js.Value
+trieSet a i v =
+    if Js.same (trieGet a i) v then
+        a
+    else
+        n = Js.to (Js.get a "length")
+        hc = Js.to (Js.get a "hc")
+        tr = Js.get a "T"
+        if i < hc then
+            header n (changed (Js.get a "h") hc (hc - 1 - i) v) hc tr (Js.get a "t")
+        else
+            j = i - hc
+            tc = Js.to (Js.get tr "tc")
+            if j ≥ tc then
+                header n (Js.get a "h") hc tr (changed (Js.get a "t") (n - hc - tc) (j - tc) v)
+            else
+                k = j + Js.to (Js.get tr "off")
+                r = Js.get tr "r"
+                s = Js.to (Js.get tr "s")
+                header
+                    n
+                    (Js.get a "h")
+                    hc
+                    (treeOf
+                        (putLeaf r s k (changed (leafAt r s k) 32 (Js.bitAnd k 31) v))
+                        s
+                        (Js.to (Js.get tr "off"))
+                        tc
+                    )
+                    (Js.get a "t")
+
+
+--| Trie `a` with `v` at the end: the tail claimed; a full tail moves into
+--| the tree as a leaf.
+triePush : Js.Value, Js.Value → Js.Value
+triePush a v =
+    n = Js.to (Js.get a "length")
+    hc = Js.to (Js.get a "hc")
+    tr = Js.get a "T"
+    c = n - hc - Js.to (Js.get tr "tc")
+    if c < 32 then
+        header (n + 1) (Js.get a "h") hc tr (claim (Js.get a "t") c v)
+    else
+        header (n + 1) (Js.get a "h") hc (treeRight tr (Js.get a "t")) (Js.array [ v ])
+
+
+--| Trie `a` with `b[o] … b[o + m - 1]` at the end, `m > 0`, one header.
+--| They are the last elements of `b` (a list is a suffix of its base), so
+--| a slice of 32 from `i` stops where they do.
+triePushed : Js.Value, Js.Value, Int, Int → Js.Value
+triePushed a b o m =
+    n = Js.to (Js.get a "length")
+    hc = Js.to (Js.get a "hc")
+    tr = Js.get a "T"
+    c = n - hc - Js.to (Js.get tr "tc")
+    if c < 32 then
+        t0 = Js.get a "t"
+        t =
+            if Js.to (Js.get t0 "length") == c then
+                t0
+            else
+                Js.call t0 "slice" [ Js.from 0, Js.from c ]
+        i = fillTail t b o (o + m)
+        pushedLeaves a (n + m) tr t b i (o + m)
+    else
+        pushedLeaves a (n + m) tr (Js.get a "t") b o (o + m)
+
+
+fillTail : Js.Value, Js.Value, Int, Int → Int
+fillTail t b i stop =
+    if Js.to (Js.get t "length") < 32 && i < stop then
+        _ = Js.call t "push" [ Js.at b i ]
+        fillTail t b (i + 1) stop
+    else
+        i
+
+
+pushedLeaves : Js.Value, Int, Js.Value, Js.Value, Js.Value, Int, Int → Js.Value
+pushedLeaves a n tr t b i stop =
+    if i < stop then
+        pushedLeaves
+            a
+            n
+            (treeRight tr t)
+            (Js.call b "slice" [ Js.from i, Js.from (i + 32) ])
+            b
+            (i + 32)
+            stop
+    else
+        header n (Js.get a "h") (Js.to (Js.get a "hc")) tr t
+
+
+--| Trie `a` with `v` at the front: the head claimed; a full head moves
+--| into the tree as a leaf, reversed back into order.
+triePrepend : Js.Value, Js.Value → Js.Value
+triePrepend a v =
+    n = Js.to (Js.get a "length")
+    hc = Js.to (Js.get a "hc")
+    if hc < 32 then
+        header (n + 1) (claim (Js.get a "h") hc v) (hc + 1) (Js.get a "T") (Js.get a "t")
+    else
+        header
+            (n + 1)
+            (Js.array [ v ])
+            1
+            (treeLeft
+                (Js.get a "T")
+                (Js.call (Js.call (Js.get a "h") "slice" [ Js.from 0, Js.from 32 ]) "reverse" [])
+            )
+            (Js.get a "t")
+
+
+--| Trie `a` without its last element.
+triePop : Js.Value → Js.Value
+triePop a =
+    n = Js.to (Js.get a "length")
+    if n ≤ 1 then
+        Js.array []
+    else
+        hc = Js.to (Js.get a "hc")
+        tr = Js.get a "T"
+        tc = Js.to (Js.get tr "tc")
+        if n - hc - tc > 1 then
+            header (n - 1) (Js.get a "h") hc tr (Js.get a "t")
+        else if tc == 0 then
+            Js.call (Js.call (Js.get a "h") "slice" [ Js.from 0, Js.from hc ]) "reverse" []
+        else
+            off = Js.to (Js.get tr "off")
+            r = Js.get tr "r"
+            s = Js.to (Js.get tr "s")
+            lastLeaf = off + tc - 32
+            lf = leafAt r s lastLeaf
+            if lastLeaf == off then
+                header (n - 1) (Js.get a "h") hc noTree lf
+            else
+                popped = popLeaf r s lastLeaf
+                collapse
+                    (if Js.isNull popped then
+                        Js.array []
+                     else
+                        popped
+                    )
+                    s
+                    off
+                    (lastLeaf - 1)
+                    (n - 1)
+                    (Js.get a "h")
+                    hc
+                    lf
+                    (tc - 32)
+
+
+--| A root left with one live child collapses into it; `n`, `h`, `hc` and
+--| `t` are the rest of the result.
+collapse : Js.Value, Int, Int, Int, Int, Js.Value, Int, Js.Value, Int → Js.Value
+collapse r s off end n h hc t tc =
+    if s > 5 && Js.shiftRightZero off s == Js.shiftRightZero end s then
+        j = Js.shiftRightZero off s
+        collapse (Js.at r j) (s - 5) (off - j * 2 ^ s) end n h hc t tc
+    else
+        header n h hc (treeOf r s off tc) t
 
 
 --| Reduce a list from the left, starting from an initial value.
@@ -587,10 +1329,52 @@ putAll b j a i stop =
 --|
 --| When exactly one of the lists is not empty the result is that list
 --| itself (`backend.md` §4, *Identity*); otherwise it is a fresh list made
---| its final size, O(total). It takes no function, so it is `foreign`: one
---| JavaScript loop copies every list, where a beni loop per list paid a
---| call per list.
-pub foreign pure concat : List (List a) → List a
+--| its final size, O(total): one count, then one copy loop per list.
+pub concat : List (List a) → List a
+concat ls =
+    a = base ls
+    o = offset ls
+    n = totalFrom a o 0
+    if n == 0 then
+        []
+    else
+        first = at a (firstFrom a o)
+        if length first == n then
+            first
+        else
+            done (concatFrom a o (builder n) 0) n
+
+
+--| How many elements the lists `a[i] …` to the end of `a` hold together. A
+--| list's elements end where its base array does, so every loop here stops
+--| at `length a`.
+totalFrom : List (List a), Int, Int → Int
+totalFrom a i n =
+    if i < length a then
+        totalFrom a (i + 1) (n + length (at a i))
+    else
+        n
+
+
+--| Where the first list of `a[i] …` that is not empty is, one of which is:
+--| when it holds every element, it is the only one, and `concat` is that
+--| list.
+firstFrom : List (List a), Int → Int
+firstFrom a i =
+    if length (at a i) ≠ 0 then
+        i
+    else
+        firstFrom a (i + 1)
+
+
+--| The lists `a[i] …` written into `b` from `j` on.
+concatFrom : List (List a), Int, Builder a, Int → Builder a
+concatFrom a i b j =
+    if i < length a then
+        l = at a i
+        concatFrom a (i + 1) (putAll b j (base l) (offset l) (offset l + length l)) (j + length l)
+    else
+        b
 
 
 --| Map a given function onto a list and flatten the resulting lists.

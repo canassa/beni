@@ -1,0 +1,24 @@
+-- The list runtime as a program ships it: a `--library` development build
+-- of this module writes `_core/List.mjs` with every writer and reader
+-- claim-prepend-test.mjs drives (core-shipped.mjs builds and loads it). A
+-- list pattern's `rest` is what keeps the emitter's `view` and `unsafeGet`.
+import List
+
+
+pub writers : List Int → List Int
+writers xs = List.slice (List.append (List.set (List.pop (List.push [ 0, …xs ] 1)) 0 2) [ 3 ]) 0 1
+
+
+pub second : List Int → Maybe Int
+second xs =
+    case xs of
+        [ _, …rest ] →
+            case rest of
+                [ y, …_ ] →
+                    Just y
+
+                [] →
+                    Nothing
+
+        [] →
+            Nothing

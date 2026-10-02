@@ -85,7 +85,6 @@ test "a program computes something and prints the right answer" {
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
-        "out/_core/List.foreign.mjs",
         "out/_platform/Node.mjs",
         "out/_platform/Node.foreign.mjs",
         "out/_platform/runtime.foreign.mjs",
@@ -4609,36 +4608,14 @@ test "a program that suspends keeps Task.andThen, which core writes in beni" {
     try expectBuilt(r);
 }
 
-/// The shipped core copied to `mycore/`, with `List`'s core-private `close`
-/// given a beni body over a renamed `foreign`. `close` is one of the values
-/// the emitter calls from other modules (`backend.md` §4, *The emitter's
-/// imports of the core-private exports*); in the shipped core all five are
-/// `foreign`, which hid that `Lower` treated a beni-bodied one as a value
-/// nobody calls. The body is an `if` so that `--release` keeps it a
+/// A program whose building loop's exit calls `List`'s core-private `close`,
+/// one of the values the emitter calls from other modules (`backend.md` §4,
+/// *The emitter's imports of the core-private exports*). Since the list
+/// runtime moved to beni, the shipped core's `close` has a beni body; while
+/// all five were `foreign`, that hid that `Lower` treated a beni-bodied one
+/// as a value nobody calls. Its body is an `if`, so `--release` keeps it a
 /// function of its own rather than writing it into its one caller.
-fn writeCoreWithBeniClose(w: *World) !void {
-    try w.copyTreeInto("core", "mycore", "_");
-    const arena = w.arena.allocator();
-    const beni = try w.read("mycore/List.beni");
-    const foreign_close = "foreign pure close : List a, List a → List a\n";
-    if (std.mem.count(u8, beni, foreign_close) != 1) return error.CoreChanged;
-    try w.write("mycore/List.beni", try std.mem.replaceOwned(u8, arena, beni, foreign_close,
-        \\foreign pure closeJs : List a, List a → List a
-        \\
-        \\
-        \\close : List a, List a → List a
-        \\close b v =
-        \\    if length b == 0 then
-        \\        v
-        \\
-        \\    else
-        \\        closeJs b v
-        \\
-    ));
-    const js = try w.read("mycore/List.js");
-    const export_close = "export const close = ";
-    if (std.mem.count(u8, js, export_close) != 1) return error.CoreChanged;
-    try w.write("mycore/List.js", try std.mem.replaceOwned(u8, arena, js, export_close, "export const closeJs = "));
+fn writeCloseProgram(w: *World) !void {
     // A building loop whose exit hands `close` a non-empty rest.
     try w.write("Main.beni",
         \\import Node exposing (Program)
@@ -4675,12 +4652,12 @@ test "a core-private List value the emitter calls is exported when it has a beni
     // `… does not provide an export named 'List$close'`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try writeCoreWithBeniClose(&w);
+    try writeCloseProgram(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{ "--core-root=mycore", "Main.beni" }, .{ .stdout = "3,4,99,100\n" });
+    const r = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "3,4,99,100\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4699,12 +4676,12 @@ test "a core-private List value the emitter calls keeps its result under --relea
     // `undefined.length`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try writeCoreWithBeniClose(&w);
+    try writeCloseProgram(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{ "--core-root=mycore", "--release", "Main.beni" }, .{ .stdout = "3,4,99,100\n" });
+    const r = try w.buildAndRun(&.{ "--release", "Main.beni" }, .{ .stdout = "3,4,99,100\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4729,16 +4706,12 @@ test "a --core-root core without a core-private List value the emitter calls is 
     const arena = w.arena.allocator();
     try w.copyTreeInto("core", "mycore", "_");
     var beni = try w.read("mycore/List.beni");
-    for ([_][]const u8{ "foreign pure view : ", "view xs " }) |old| {
+    for ([_][]const u8{ "\nview : ", "view xs " }) |old| {
         if (std.mem.count(u8, beni, old) == 0) return error.CoreChanged;
         const new = try std.mem.replaceOwned(u8, arena, old, "view", "viewAt");
         beni = try std.mem.replaceOwned(u8, arena, beni, old, new);
     }
     try w.write("mycore/List.beni", beni);
-    const js = try w.read("mycore/List.js");
-    const export_view = "export const view = ";
-    if (std.mem.count(u8, js, export_view) != 1) return error.CoreChanged;
-    try w.write("mycore/List.js", try std.mem.replaceOwned(u8, arena, js, export_view, "export const viewAt = "));
     // Not a tail call, so `rest` is a list of its own: a view.
     try w.write("Main.beni",
         \\import Node exposing (Program)

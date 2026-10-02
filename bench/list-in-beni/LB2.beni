@@ -1,0 +1,146 @@
+-- Workloads for the List-in-beni port: every operation whose code moves,
+-- on each form a list takes.
+import List
+
+
+pub make : Int → List Int
+make n = List.range 1 n
+
+
+pub pushed : Int → List Int
+pushed n = List.foldl (List.range 1 n) [] λx acc → List.push acc x
+
+
+pub prepended : Int → List Int
+prepended n = List.foldr (List.range 1 n) [] λx acc → [ x, …acc ]
+
+
+pub tailOf : List Int → List Int
+tailOf xs = List.drop xs 1
+
+
+pub chunks : Int → List (List Int)
+chunks n = List.map (List.range 1 (n // 10)) λ_ → List.range 1 10
+
+
+pub equal : List Int, List Int → Bool
+equal xs ys = xs == ys
+
+
+pub compare : List Int, List Int → Order
+compare xs ys = xs.compare ys
+
+
+pub slice : List Int, Int → List Int
+slice xs n = List.slice xs (n // 4) (n // 2)
+
+
+pub insertAt : List Int, Int → List Int
+insertAt xs n = List.insertAt xs (n // 2) 0
+
+
+pub removeAt : List Int, Int → List Int
+removeAt xs n = List.removeAt xs (n // 2)
+
+
+pub swap : List Int, Int → List Int
+swap xs n = List.swap xs 1 (n - 2)
+
+
+pub concat : List (List Int) → List Int
+concat xs = List.concat xs
+
+
+pub concatMap : List Int → List Int
+concatMap xs = List.concatMap xs λx → [ x, x ]
+
+
+pub get : List Int, Int → Maybe Int
+get xs n = List.get xs (n - 2)
+
+
+pub sumGet : List Int → Int
+sumGet xs = sumGetFrom xs 0 (List.length xs) 0
+
+
+sumGetFrom : List Int, Int, Int, Int → Int
+sumGetFrom xs i n acc =
+    if i ≥ n then
+        acc
+    else
+        case List.get xs i of
+            Just x →
+                sumGetFrom xs (i + 1) n (acc + x)
+
+            Nothing →
+                acc
+
+
+pub push : List Int → List Int
+push xs = List.push xs 0
+
+
+pub pushMany : Int → List Int
+pushMany n = List.foldl (List.range 1 n) [] λx acc → List.push acc x
+
+
+pub consMany : Int → List Int
+consMany n = List.foldl (List.range 1 n) [] λx acc → [ x, …acc ]
+
+
+pub cons : List Int → List Int
+cons xs = [ 0, …xs ]
+
+
+pub pop : List Int → List Int
+pop xs = List.pop xs
+
+
+pub set : List Int, Int → List Int
+set xs n = List.set xs (n // 2) 0
+
+
+pub append : List Int → List Int
+append xs = [ …xs, 1, 2, 3 ]
+
+
+pub drop : List Int, Int → List Int
+drop xs n = List.drop xs (n // 2)
+
+
+pub sum : List Int → Int
+sum xs = List.sum xs
+
+
+pub walk : List Int → Int
+walk xs = walkFrom xs 0
+
+
+walkFrom : List Int, Int → Int
+walkFrom xs acc =
+    case xs of
+        [ x, …rest ] →
+            walkFrom rest (acc + x)
+
+        [] →
+            acc
+
+
+pub popAll : List Int → Int
+popAll xs = popAllFrom xs 0
+
+
+popAllFrom : List Int, Int → Int
+popAllFrom xs n =
+    if List.isEmpty xs then
+        n
+    else
+        popAllFrom (List.pop xs) (n + 1)
+
+
+pub pushSum : List Int → Int
+pushSum xs = List.sum (List.push xs 0)
+
+
+pub appendViews : List Int → List Int
+appendViews xs = [ …List.drop xs 1, …List.drop xs 2 ]

@@ -13,6 +13,7 @@ core:Debug -> core:Basics
 core:Debug -> core:Js
 core:Debug -> core:String
 core:List -> core:Basics
+core:List -> core:Js
 core:List -> core:Maybe
 core:Result -> core:List
 core:Result -> core:Maybe

@@ -2449,7 +2449,19 @@ const Emitter = struct {
             e.hoisted = hoist != null;
             if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
             try e.assignFields(slots, todo.items);
-            try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            // A hoisted build writes only the modules its one file holds:
+            // a module nothing imports — `core/List` when every list
+            // comparison went to `_derived` — is not in it, has no names
+            // numbered, and is not printed.
+            var printed: std.ArrayList(u32) = .empty;
+            if (hoist) |*h| {
+                for (h.order) |p| switch (p) {
+                    .module => |i| try printed.append(e.scratch, i),
+                    .file => {},
+                };
+                std.mem.sort(u32, printed.items, {}, std.sort.asc(u32));
+            }
+            try e.pool.run(if (hoist != null) printed.items else todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
         }
 
         // Diagnostics and files in module order, whatever order the workers
@@ -4290,6 +4302,8 @@ const Emitter = struct {
     /// cannot collide with anything, because it is not there.
     fn checkOutputPaths(e: *Emitter) !void {
         const Folded = struct { key: []const u8, index: u32 };
+        // A build a diagnostic stopped may have produced nothing at all.
+        if (e.pending.items.len < 2) return;
         const folded = try e.scratch.alloc(Folded, e.pending.items.len);
         for (e.pending.items, folded, 0..) |output, *slot, index| {
             const key = try e.scratch.dupe(u8, output.path);
