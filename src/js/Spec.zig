@@ -466,6 +466,11 @@ const Spec = struct {
     lit_ids: std.HashMapUnmanaged([]const u8, u32, LitContext, std.hash_map.default_max_load_percentage) = .empty,
     /// Per `Kind`: the id of its literal without bytes, once interned.
     plain_ids: [@typeInfo(Kind).@"enum".fields.len]u32 = @splat(none),
+    /// Per whole-program name: the id of its `name` literal (`nameLat`),
+    /// once interned. Every read of a declaration that makes an object or
+    /// a function asks for it, and the table's probe, hashing the key a
+    /// byte at a time, is generic code Zig's own backend compiles poorly.
+    name_lits: []u32 = &.{},
     /// `countExpr`'s stack, shared by the walks it nests: each owns the
     /// entries above the length it found.
     names: std.ArrayList(Index) = .empty,
@@ -2752,8 +2757,13 @@ const Spec = struct {
 
     /// Slice 6: the value of a declaration's name, `name` and its id.
     fn nameLat(s: *Spec, g: u32) Allocator.Error!Lat {
-        const bytes = std.mem.toBytes(g);
-        return .of(try s.intern(.{ .kind = .name, .bytes = &bytes }));
+        if (g >= s.name_lits.len) s.name_lits = try growSlice(s.arena, u32, s.name_lits, @max(s.globals, g + 1), none);
+        const cached = &s.name_lits[g];
+        if (cached.* == none) {
+            const bytes = std.mem.toBytes(g);
+            cached.* = try s.intern(.{ .kind = .name, .bytes = &bytes });
+        }
+        return .of(cached.*);
     }
 
     fn nameId(lit: Lit) u32 {
