@@ -1,0 +1,23 @@
+-- An application opened from a file stops at start, as a defect
+-- (boundary.md §9.8.13 (d)): its address is not a `Url`, so no route can
+-- be computed, and the development crash screen says an application
+-- needs an `http` or `https` address. `init` never runs. The release
+-- build adds no crash screen (`ApplicationNotHttp.release-expected`).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = λurl _ -> ( Debug.log "init ran" url.path, Cmd.none )
+        , update = λ_ m -> ( m, Cmd.none )
+        , view = λpath -> { title = path, body = <p>{path}</p> }
+        , subscriptions = λ_ -> Sub.none
+        , onUrlRequest = λ_ -> ()
+        , onUrlChange = λ_ -> ()
+        }

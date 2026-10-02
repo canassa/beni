@@ -35,7 +35,7 @@
 //                               link nothing prevented is stopped by the
 //                               driver after every listener of the page and
 //                               logs `(the host follows the link to "<href>")`
-//   click <selector> <n>       `n` of them in one task, then the line
+//   click <selector> <n>        `n` of them in one task, then the line
 //                               `(the step's task ended)` in the transcript
 //   flush <selector>            a click, then the program runtime's `flush`
 //                               export in the same task, then the line
@@ -69,6 +69,11 @@
 //   back / forward              `history.back()` / `history.forward()`, then
 //                               wait for the `popstate` the traversal fires
 //   location                    log `(location: <path><?query><#fragment>)`
+//   title                       log `(title: "<document.title>")`
+//   file                        as the script's first step: the page is opened
+//                               from a file, its address `file:`, not `http:`
+//   throws load                 after the steps that set the page up: the
+//                               program must throw while it loads
 //   store <local|session> "<key>" "<value>"
 //                               `setItem` on that storage
 //   storage <local|session>     log `(localStorage: {…})`, every item by key
@@ -122,7 +127,7 @@
 // `input`.
 
 import { Console } from "node:console";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -295,7 +300,10 @@ async function load({ url, runtime }) {
   try {
     await import(url);
   } catch (error) {
-    record.errors.push(record.describe(error));
+    // A page's module script that throws while it evaluates is reported
+    // to the window's `error` listeners; so is this, which is also how the
+    // prelude records it.
+    dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
     return;
   }
   // The same module instance the program's entry file imported, for the
@@ -335,6 +343,10 @@ function step(s) {
   }
   if (s.command === "url") {
     history.replaceState(null, "", s.text);
+    return null;
+  }
+  if (s.command === "title") {
+    globalThis.__beniHarness.log.push(`(title: ${JSON.stringify(document.title)})`);
     return null;
   }
   if (s.command === "location") {
@@ -629,7 +641,11 @@ if (stepsPath !== undefined) {
     const throws = written.startsWith("throws ");
     const line = throws ? written.slice("throws ".length).trim() : written;
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
-    if (line === "back" || line === "forward" || line === "location") {
+    if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
+    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store"))) {
+      usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
+    }
+    if (["back", "forward", "location", "title", "file", "load"].includes(line)) {
       steps.push({ line: written, where, command: line, selector: null, throws });
       return;
     }
@@ -755,6 +771,9 @@ if (stepsPath !== undefined) {
 // Each page's, set before it is made (`runPage`).
 let entryFile = "";
 let pageUrl = "";
+// Whether the page is opened from a file (the `file` step), as a page a user
+// double-clicked is: its address is `file:`, not `http:`.
+let fromFile = false;
 let entryUrl = "";
 const blank = "<!DOCTYPE html><html><head></head><body></body></html>";
 
@@ -781,12 +800,21 @@ async function serve() {
       return void response.end();
     }
     const dot = file.lastIndexOf(".");
-    response.writeHead(200, { "content-type": types[dot === -1 ? "" : file.slice(dot)] ?? "application/octet-stream" });
+    // A page opened from a file has the opaque origin, so its modules come
+    // from this server across origins.
+    const cors = fromFile ? { "access-control-allow-origin": "*" } : {};
+    response.writeHead(200, { "content-type": types[dot === -1 ? "" : file.slice(dot)] ?? "application/octet-stream", ...cors });
     response.end(bytes);
   });
   await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
   const origin = `http://127.0.0.1:${server.address().port}`;
   pageUrl = `${origin}/_page.html`;
+  if (fromFile) {
+    const dir = join(tmpdir(), "beni-browser-file");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "_page.html"), blank);
+    pageUrl = pathToFileURL(join(dir, "_page.html")).href;
+  }
   entryUrl = `${origin}/fs${entryFile.split("\\").join("/")}`;
   return server;
 }
@@ -920,12 +948,15 @@ async function chromePage(endpoint) {
 // and why it failed (stderr).
 async function runPage(entry) {
   entryFile = resolve(entry);
-  pageUrl = "http://127.0.0.1:8000/_page.html";
+  const script = [...steps];
+  const transcript = [];
+  // A script that begins with `file` opens the page from a file.
+  fromFile = script.length !== 0 && script[0].command === "file";
+  if (fromFile) transcript.push(`-- ${script.shift().line}`);
+  pageUrl = fromFile ? "file:///_page.html" : "http://127.0.0.1:8000/_page.html";
   entryUrl = pathToFileURL(entryFile).href;
   const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
-  const script = [...steps];
 
-  const transcript = [];
   let shown = null;
   let result = null;
   const finish = async (code, why) => {
@@ -988,8 +1019,12 @@ async function runPage(entry) {
     }
   }
 
+  // `throws load`: the program must throw while it loads.
+  const loadThrows = script.length !== 0 && script[0].command === "load";
+  if (loadThrows) script.shift();
+
   if (setupFault !== null) await finish(1, setupFault);
-  else if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
+  else if (await phase(loadThrows ? "throws load" : "load", () => page.run(load, { url: entryUrl, runtime }), loadThrows)) {
     let ok = true;
     for (const s of script) {
       ok = await phase(s.line, async () => {

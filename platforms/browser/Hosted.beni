@@ -8,6 +8,7 @@
 --! body is handed to send with, so a release build never drops a send.
 
 import Browser exposing (Host)
+import Js
 
 
 --| A command's or subscription's key, whatever its type: two keys are the
@@ -132,3 +133,21 @@ pub foreign impure retap : Relay msg, List (Tap msg) -> ()
 
 --| Close a relay: what its body sends from now on is dropped.
 pub foreign impure closeRelay : Relay msg -> ()
+
+
+--| Write the page's title when it differs from `title`: what a document
+--| program's render does, so the title and the body never disagree.
+pub title : String -> ()
+title text =
+    document = Js.global "document"
+    if Js.same (Js.get document "title") (Js.from text) then
+        ()
+    else
+        Js.set document "title" (Js.from text)
+
+
+--| Stop the program with a defect (`boundary.md` §9.8.10 (c)): an `Error`
+--| with the message is thrown, which the page reports as any defect —
+--| the development crash screen, logged and stopped in release.
+pub defect : String -> a
+defect message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])

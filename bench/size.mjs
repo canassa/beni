@@ -497,6 +497,14 @@ const pages = [
       "Tea.element { init = ( 0, Cmd.none ), update = λ_ n -> ( n + 1, Cmd.none ), view = view, subscriptions = λ_ -> Navigation.onUrlRequest λ_ -> 1 }",
     view: "view : Int -> Html Int",
   },
+  {
+    name: "browser-tea application",
+    platform: "browser-tea",
+    imports: `${teaImports}import Cmd\nimport Sub\nimport Url\n`,
+    main:
+      "Tea.application { init = λ_ _ -> ( 0, Cmd.none ), update = λ_ n -> ( n + 1, Cmd.none ), view = λn -> { title = \"\", body = view n }, subscriptions = λ_ -> Sub.none, onUrlRequest = λ_ -> 1, onUrlChange = λ_ -> 2 }",
+    view: "view : Int -> Html Int",
+  },
 ];
 
 function measurePage(options, beni, work, page) {

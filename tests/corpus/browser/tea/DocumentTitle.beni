@@ -1,0 +1,30 @@
+-- `Tea.document` owns the page's title (boundary.md §9.8.13 (d)): the
+-- render that renders the body writes the view's title, so after the
+-- load, a message, or a `flush` in the click's own task, the title and
+-- the body agree. The title here changes only on even counts, so one
+-- message leaves it as it was.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int -> Tea.Document Msg
+view n =
+    { title = "Even ${String.fromInt (n // 2 * 2)}"
+    , body = <button id="inc" onClick={Inc}>count {n}</button>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = ( 0, Cmd.none )
+        , update = λInc n -> ( n + 1, Cmd.none )
+        , view = view
+        , subscriptions = λ_ -> Sub.none
+        }

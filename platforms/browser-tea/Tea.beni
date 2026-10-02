@@ -16,13 +16,15 @@
 --! its four policies and the subscription diff are here, in beni, over
 --! `Browser.hosted`, the `Hosted` module and core's `Task`.
 
-import Browser exposing (Host)
+import Browser exposing (Host, UrlRequest)
+import Browser.Navigation as Navigation
 import Cmd exposing (After, Cancel, CancelAll, Cmd, Concurrent, Ignore, Item, Keyed, KeyedNow, Now, Perform, Policy, Queue, Restart)
 import Dict exposing (Dict)
 import Hosted exposing (Job, Key, Outlet, Relay, Tap)
 import Html exposing (Html)
 import Sub exposing (Sub)
 import Task exposing (Exit, Fiber, Scope, Soon)
+import Url exposing (Url)
 
 
 --| What `main` is: `Browser.Program` under this platform's name, so a
@@ -63,6 +65,91 @@ element app =
         , settle = λhost state -> settle host (app.subscriptions state.model) state
         , view = λstate -> app.view state.model
         }
+
+
+--| What the `view` of a `document` or an `application` makes: the page's
+--| title and its body.
+pub type alias Document msg =
+    title : String
+    body : Html msg
+
+
+--| An `element` that owns the page's title: its `view` makes a `Document`,
+--| and the render that renders the body writes the title when it differs
+--| from the page's, so the two never disagree.
+pub document :
+      { init : ( model, Cmd msg )
+      , update : msg, model -> ( model, Cmd msg )
+      , view : model -> Document msg
+      , subscriptions : model -> Sub msg
+      }
+    -> Program
+document app =
+    element
+        { init = app.init
+        , update = app.update
+        , view = λmodel -> titled (app.view model)
+        , subscriptions = app.subscriptions
+        }
+
+
+--| A `document` that owns the page's address (`docs/design/boundary.md`
+--| §9.8.13 (d)): `init` is handed the address the page was opened at and
+--| the page's navigation key, a click on a link the page should handle is
+--| sent through `onUrlRequest`, and every change of the address through
+--| `onUrlChange`. A page whose address is not `http` or `https` (opened
+--| from a file) stops at start: no route can be computed there.
+--|
+--|     main =
+--|         Tea.application
+--|             { init = λurl key -> ( { key = key, route = toRoute url }, Cmd.none )
+--|             , update = update
+--|             , view = view
+--|             , subscriptions = λ_ -> Sub.none
+--|             , onUrlRequest = ClickedLink
+--|             , onUrlChange = UrlChanged
+--|             }
+pub application :
+      { init : Url, Navigation.Key -> ( model, Cmd msg )
+      , update : msg, model -> ( model, Cmd msg )
+      , view : model -> Document msg
+      , subscriptions : model -> Sub msg
+      , onUrlRequest : UrlRequest -> msg
+      , onUrlChange : Url -> msg
+      }
+    -> Program
+application app =
+    subscriptions =
+        λmodel ->
+            Sub.batch
+                [ app.subscriptions model
+                , Navigation.onUrlRequest app.onUrlRequest
+                , Navigation.onUrlChange app.onUrlChange
+                ]
+    Browser.hosted
+        { init = λhost -> start host (app.init (address ()) (Navigation.key ()))
+        , update = λhost msg state -> step host (app.update msg state.model) state
+        , settle = λhost state -> settle host (subscriptions state.model) state
+        , view = λstate -> titled (app.view state.model)
+        }
+
+
+-- The page's address, or the defect of an application that has none.
+address : () -> Url
+address () =
+    case Navigation.currentUrl () of
+        Just url ->
+            url
+
+        Nothing ->
+            Hosted.defect
+                "Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle."
+
+
+titled : Document msg -> Html msg
+titled page =
+    _ = Hosted.title page.title
+    page.body
 
 
 -- The program's own state beside the model: its scope, the bodies running

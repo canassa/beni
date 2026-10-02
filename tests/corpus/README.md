@@ -135,6 +135,11 @@ project) against it, one step per line, `#` for a comment:
                                 wait for the `popstate` the traversal fires
     location                    log `(location: <path><?query><#fragment>)`,
                                 the origin left out
+    title                       log `(title: "<document.title>")`
+    file                        as the script's first step: the page is
+                                opened from a file, its address `file:`
+    throws load                 after the steps that set the page up: the
+                                program must throw while it loads
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key

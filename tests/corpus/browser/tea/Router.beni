@@ -1,0 +1,125 @@
+-- `Tea.application` routes a page (boundary.md §9.8.13 (d)): started at a
+-- deep link (`/blog/42`), `init` is handed that address and the page's
+-- key, and computes the route with `Url.Parser`; a click on a link is an
+-- `Internal` request, which `update` pushes, and the push comes back
+-- through `onUrlChange` as the new route; `back` and `forward` arrive the
+-- same way. An `External` link would be loaded, which leaves the page, so
+-- none is clicked here; an address no route matches is `NotFound`. The title is
+-- the route's, written in the render that renders it.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+import Url.Parser exposing (Parser, int, map, map2, oneOf, s, slash, string, top)
+import Url.Parser.Query as Query
+
+
+type Route
+    = Home
+    | Blog Int
+    | Comment String Int
+    | Search (Maybe String)
+    | NotFound
+
+
+route : Parser (Route -> a) a
+route =
+    oneOf
+        [ map top Home
+        , s "blog" |> slash int |> map Blog
+        , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
+        , s "search" |> Url.Parser.questionMark (Query.string "q") |> map Search
+        ]
+
+
+toRoute : Url -> Route
+toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
+
+
+type Msg
+    = ClickedLink Browser.UrlRequest
+    | UrlChanged Url
+    | Navigated (Result Navigation.Error ())
+
+
+type alias Model =
+    key : Navigation.Key
+    route : Route
+    log : List String
+
+
+init : Url, Navigation.Key -> ( Model, Cmd Msg )
+init url key = ( { key = key, route = toRoute url, log = [] }, Cmd.none )
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        ClickedLink (Browser.Internal url) ->
+            ( model, Cmd.task (λ() -> Navigation.pushUrl model.key (Url.toString url)) Navigated )
+
+        ClickedLink (Browser.External href) ->
+            ( { model | log = model.log ++ [ "load ${href}" ] }
+            , Cmd.task (λ() -> Navigation.load href) Navigated
+            )
+
+        UrlChanged url ->
+            ( { model | route = toRoute url }, Cmd.none )
+
+        Navigated (Ok ()) ->
+            ( model, Cmd.none )
+
+        Navigated (Err _) ->
+            ( { model | log = model.log ++ [ "refused" ] }, Cmd.none )
+
+
+title : Route -> String
+title r =
+    case r of
+        Home ->
+            "Home"
+
+        Blog n ->
+            "Blog ${String.fromInt n}"
+
+        Comment user n ->
+            "Comment ${String.fromInt n} by ${user}"
+
+        Search q ->
+            "Search " ++ Maybe.withDefault q ""
+
+        NotFound ->
+            "Not found"
+
+
+view : Model -> Tea.Document Msg
+view model =
+    { title = title model.route
+    , body =
+        <main>
+            <nav>
+                <a id="home" href="/">home</a>
+                <a id="blog" href="/blog/7">blog</a>
+                <a id="comment" href="/user/J%C3%BCrgen/comment/3">comment</a>
+                <a id="search" href="/search?q=top+hat">search</a>
+                <a id="lost" href="/nowhere">lost</a>
+            </nav>
+            <h1>{title model.route}</h1>
+            <ol><For each={model.log} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+        </main>
+    }
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Sub.none
+        , onUrlRequest = ClickedLink
+        , onUrlChange = UrlChanged
+        }
