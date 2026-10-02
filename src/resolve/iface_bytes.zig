@@ -168,6 +168,8 @@ pub const Hash = [16]u8;
 
 const hash_key: [16]u8 = @splat(0);
 
+const native_little = @import("builtin").cpu.arch.endian() == .little;
+
 pub fn hash(bytes: []const u8) Hash {
     // `std.hash.SipHash128(1, 3).create(&out, bytes, &hash_key)`, written
     // out for the one key it is ever given: every key, every artifact's and
@@ -175,20 +177,38 @@ pub fn hash(bytes: []const u8) Hash {
     // compiles the compiler the tests run — calls `std.math.rotl` and the
     // streaming state's helpers out of line, several times the work. The
     // unit test below holds the two equal.
-    var v: [4]u64 = .{
-        0x736f6d6570736575,
-        0x646f72616e646f6d ^ 0xee,
-        0x6c7967656e657261,
-        0x7465646279746573,
-    };
+    //
+    // The blocks are the bulk of it — a checked core reads every embedded
+    // artifact through here, every build — so their round is written out
+    // on four locals and the word read in place: through `sipRound`'s
+    // pointer that backend reloads the array's address for every operand.
+    var v0: u64 = 0x736f6d6570736575;
+    var v1: u64 = 0x646f72616e646f6d ^ 0xee;
+    var v2: u64 = 0x6c7967656e657261;
+    var v3: u64 = 0x7465646279746573;
     const aligned = bytes.len - bytes.len % 8;
+    const at: [*]const u8 = bytes.ptr;
     var off: usize = 0;
     while (off < aligned) : (off += 8) {
-        const m = std.mem.littleToNative(u64, @bitCast(bytes[off..][0..8].*));
-        v[3] ^= m;
-        sipRound(&v);
-        v[0] ^= m;
+        const m: u64 = if (native_little) @bitCast(at[off..][0..8].*) else std.mem.readInt(u64, at[off..][0..8], .little);
+        v3 ^= m;
+        v0 +%= v1;
+        v1 = (v1 << 13) | (v1 >> 51);
+        v1 ^= v0;
+        v0 = (v0 << 32) | (v0 >> 32);
+        v2 +%= v3;
+        v3 = (v3 << 16) | (v3 >> 48);
+        v3 ^= v2;
+        v0 +%= v3;
+        v3 = (v3 << 21) | (v3 >> 43);
+        v3 ^= v0;
+        v2 +%= v1;
+        v1 = (v1 << 17) | (v1 >> 47);
+        v1 ^= v2;
+        v2 = (v2 << 32) | (v2 >> 32);
+        v0 ^= m;
     }
+    var v: [4]u64 = .{ v0, v1, v2, v3 };
     var last: [8]u8 = @splat(0);
     for (bytes[aligned..], 0..) |b, i| last[i] = b;
     last[7] = @truncate(bytes.len);
