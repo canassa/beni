@@ -57,7 +57,10 @@
 //                               ""); each one whose default a handler
 //                               prevented logs `(keydown's default prevented)`
 //                               or `(keyup's …)` when its dispatch returns
+//   dblclick <selector>         a bubbling, cancelable `dblclick` MouseEvent
+//                               (`detail` 2), alone: no `click`s before it
 //   focus <selector>            `.focus()`
+//   blur <selector>             `.blur()`
 //   advance <ms>                move the page's virtual clock on by `ms`,
 //                               firing each timer that comes due, in
 //                               order, the page settling after each
@@ -553,8 +556,14 @@ function step(s) {
       if (!target.dispatchEvent(new KeyboardEvent("keyup", key))) globalThis.__beniHarness.log.push("(keyup's default prevented)");
       return null;
     }
+    case "dblclick":
+      target.dispatchEvent(new MouseEvent("dblclick", { ...init, button: 0, detail: 2 }));
+      return null;
     case "focus":
       target.focus();
+      return null;
+    case "blur":
+      target.blur();
       return null;
   }
   return `unknown command \`${s.command}\``;
@@ -776,7 +785,7 @@ if (stepsPath !== undefined) {
       }
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
-    } else if (command === "click" || command === "focus") {
+    } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
     } else if (command === "input" || command === "type") {
       try {

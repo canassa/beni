@@ -117,7 +117,10 @@ project) against it, one step per line, `#` for a comment:
                                 `repeat`) set, `code` given (default `""`);
                                 one whose default a handler prevented logs
                                 `(keydown's default prevented)` (or `keyup's`)
+    dblclick <selector>         a bubbling `dblclick` (`detail` 2), with no
+                                `click`s before it
     focus <selector>            `.focus()`
+    blur <selector>             `.blur()`
     advance <ms>                move the page's virtual clock on by `ms`,
                                 firing each timer that comes due, earliest
                                 first, the page settling after each

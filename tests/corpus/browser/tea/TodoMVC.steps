@@ -1,14 +1,42 @@
 store local "todos-beni" "0buy milk\n1walk the dog"
 url "#/active"
-# Enter adds the draft and stops the key's default.
-input #new-todo "write tests"
+# Enter on a draft of spaces adds nothing; Enter adds the trimmed draft,
+# clears the field and stops the key's default.
+input #new-todo "   "
+key #new-todo Enter code:Enter
+input #new-todo "  write tests "
 key #new-todo Enter code:Enter
 # Complete "buy milk": it leaves the active list, and the list is saved.
 click .todo-list>li:nth-child(1)>div>input
 # The filter follows the address.
+hash "#/completed"
 hash "#/"
-# Destroy the first row, then mark every todo complete with the toggle-all box.
-click .todo-list>li:nth-child(1)>div>button
+# A double-click opens a focused edit field holding the title; Enter saves
+# the trimmed edit.
+dblclick .todo-list>li:nth-child(2)>div>label
+input #edit "  walk the cat  "
+key #edit Enter code:Enter
+# Escape discards the edit.
+dblclick .todo-list>li:nth-child(1)>div>label
+input #edit "never saved"
+key #edit Escape code:Escape
+# Leaving the field saves it.
+dblclick .todo-list>li:nth-child(3)>div>label
+input #edit "write more tests"
+blur #edit
+# An edit emptied deletes the todo.
+dblclick .todo-list>li:nth-child(1)>div>label
+input #edit "  "
+key #edit Enter code:Enter
+storage local
+# The toggle-all box marks every todo as itself: all complete, then all
+# active; completing each by its own box checks it again.
 click #toggle-all
+click #toggle-all
+click .todo-list>li:nth-child(1)>div>input
+click .todo-list>li:nth-child(2)>div>input
+# Destroy a row and clear the rest: the box is cleared, and the list and
+# the footer hide.
+click .todo-list>li:nth-child(1)>div>button
 click #clear-completed
 storage local
