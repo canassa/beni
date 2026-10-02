@@ -110,7 +110,7 @@ const usage = `usage: node bench/size.mjs [options]
   --corpus=<path>     a corpus root; repeatable
                       (default: tests/corpus/run and bench/corpus)
   --dev-only          skip the --release column (halves the run)
-  --pages-only        only the page lines: no floor, no corpus, no total
+  --pages-only        only the page and fibers lines: no floor, no corpus, no total
   --keep              leave the temporary build trees on disk
   --help              print this
 
@@ -467,6 +467,22 @@ const pages = [
     view: "view : {} → Html (Result Http.Error String)",
   },
   {
+    name: "browser-tea http",
+    platform: "browser-tea",
+    imports: `${teaImports}import Cmd\nimport Http\nimport Sub\n`,
+    main:
+      "Tea.element { init = ( Nothing, Cmd.task (λ() → Http.get { url = \"/x\", expect = Http.expectString }) (λr → r) ), update = λr _ → ( Just r, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
+    view: "view : Maybe (Result Http.Error String) → Html (Result Http.Error String)",
+  },
+  {
+    name: "browser-tea every",
+    platform: "browser-tea",
+    imports: `${teaImports}import Cmd\nimport Sub\nimport Time\n`,
+    main:
+      "Tea.element { init = ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → 1) }",
+    view: "view : Int → Html Int",
+  },
+  {
     name: "browser-tea random",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Random\nimport Sub\n`,
@@ -541,6 +557,49 @@ function measurePage(options, beni, work, page) {
   };
 }
 
+/// The `fibers` lines: what of core's fiber runtime (`core/Task.beni`) a
+/// program ships for each capability it uses — a Node `Io.run` that sleeps,
+/// one with a `scope`, a `spawnIn` and a `bracket`, one with the
+/// combinators — beside two pages of the corpus that use most of what a
+/// page can, the API-and-routes acceptance page and TodoMVC. The `http` and
+/// `every` pages above are the browser's two smallest uses. Each is one
+/// whole program, so the line is its whole tree, dev and release.
+const fiberPrograms = [
+  { name: "node sleep", source: "import Io\nimport Node exposing (Program)\n\n\nmain : Program\nmain = Io.run λ() →\n    _ = Io.sleep 10\n    Node.print \"later\"\n" },
+  {
+    name: "node bracket",
+    source:
+      "import Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ() →\n    n = Task.scope λs →\n        f = Task.spawnIn s λ() →\n            Task.bracket (λ() → 1) (λ_ _ → Io.sleep 1) λr →\n                _ = Io.sleep 1\n                r + 1\n        Task.join f\n    Node.print (String.fromInt n)\n",
+  },
+  {
+    name: "node combinators",
+    source:
+      "import Duration\nimport Io\nimport Node exposing (Program)\nimport Task\n\n\nmain : Program\nmain = Io.run λ() →\n    ( a, b ) = Task.par (λ() → after 2 1) λ() → after 1 2\n    c = Task.race (λ() → after 3 3) λ() → after 1 4\n    d = Maybe.withDefault (Task.timeout (Duration.millis 5) λ() → after 1 5) 0\n    Node.print (String.fromInt (a + b + c + d))\n\n\nafter : Int, Int → Int\nafter ms n =\n    _ = Io.sleep ms\n    n\n",
+  },
+  { name: "ApiAndRoutes", platform: "browser-tea", file: "tests/corpus/browser/tea/ApiAndRoutes.beni" },
+  { name: "TodoMVC", platform: "browser-tea", file: "tests/corpus/browser/tea/TodoMVC.beni" },
+];
+
+function measureFiberProgram(options, beni, work, spec) {
+  const platform = spec.platform ?? "node";
+  const projectDir = join(work, `__fibers_${spec.name.replace(/[^\w]/g, "_")}`);
+  mkdirSync(projectDir, { recursive: true });
+  const file = spec.file === undefined ? "Main.beni" : spec.file.split("/").pop();
+  writeFileSync(join(projectDir, file), spec.file === undefined ? spec.source : readFileSync(spec.file, "utf8"));
+  const run = buildProject(beni, work, projectDir, [file], false, false, platform);
+  if (run.status !== 0) {
+    process.stderr.write(`bench/size.mjs: the ${spec.name} program did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`);
+    return null;
+  }
+  return {
+    fibers: true,
+    platform,
+    name: spec.name,
+    ...measureTree(join(projectDir, "out")),
+    ...(measureRelease(options, beni, work, projectDir, [file], false, platform) ?? {}),
+  };
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const beni = resolve(options.beni);
@@ -555,6 +614,11 @@ function main() {
       const page = measurePage(options, beni, work, spec);
       if (page === null) failed = true;
       else console.log(JSON.stringify(page));
+    }
+    for (const spec of fiberPrograms) {
+      const line = measureFiberProgram(options, beni, work, spec);
+      if (line === null) failed = true;
+      else console.log(JSON.stringify(line));
     }
     if (!options.keep) rmSync(work, { recursive: true, force: true });
     process.exit(failed ? 1 : 0);
@@ -800,6 +864,11 @@ function main() {
     const page = measurePage(options, beni, work, spec);
     if (page === null) failed = true;
     else lines.push(JSON.stringify(page));
+  }
+  for (const spec of fiberPrograms) {
+    const line = measureFiberProgram(options, beni, work, spec);
+    if (line === null) failed = true;
+    else lines.push(JSON.stringify(line));
   }
 
   lines.push(
