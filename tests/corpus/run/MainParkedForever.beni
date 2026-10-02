@@ -1,0 +1,22 @@
+-- run: a Node program that can never wake ends, loudly
+-- (transparent-effects-proposal.md §17.10; boundary.md §9.8.15 (c)).
+-- `Io.run`'s fiber parks on a `Task.callback` whose registration keeps
+-- nothing, so nothing can ever answer it and Node's event loop empties.
+-- That used to exit 0 with no output; now `Io.js` reports it on standard
+-- error and the process exits 1. What the program printed before it parked
+-- stands, and the line after the wait never runs.
+import Io
+import Node exposing (Program)
+import Task
+
+
+-- A wait nobody can answer: the registration drops its `Resume`.
+park : () → ()
+park () = Task.callback λ_ → λ() → ()
+
+
+main : Program
+main = Io.run λ() →
+    _ = Debug.log "waiting" ()
+    _ = park ()
+    Node.print "not reached"

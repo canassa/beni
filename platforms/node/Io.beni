@@ -15,6 +15,7 @@
 --! `foreign` that starts the host's operation and returns what cancels it,
 --! so that cancelling a fiber cancels what it was waiting on.
 
+import Js
 import Node exposing (Program)
 import Task exposing (Exit, Resume)
 
@@ -22,12 +23,57 @@ import Task exposing (Exit, Resume)
 --| A program that runs `body` in a new fiber, and does what the `Program` it
 --| returns says when it ends. If the fiber is cancelled, the program exits
 --| 130.
+--|
+--| **When the fiber ends, the program ends**: after its output and exit
+--| code, every fiber still running — one in a root scope, say — is
+--| cancelled and its cleanup run, with 1 000 ms for cleanup that waits, so
+--| nothing keeps the process alive once the program has answered.
+--|
+--| **A program that can never wake is reported**: when every fiber waits
+--| for something nothing can ever answer, so that Node would simply stop,
+--| the program says so on standard error and exits 1 — never a silent exit
+--| 0 (`boundary.md` §9.8.15 (c)).
 pub run : (() → Program) → Program
-run body = after (Task.start body finish) Node.done
+run body =
+    ended = Js.ref False
+
+    _ = Js.call (Js.global "process") "on" [ Js.from "beforeExit", Js.from λ_ → stranded ended ]
+
+    _ = Task.start (λ() → begin body) λexit →
+        _ = Js.write ended True
+        _ = finish exit
+        Task.shutdown 1000 λ_ → ()
+
+    Node.done
 
 
-after : (), a → a
-after _ value = value
+-- The fiber's first act: until it ends, a process that leaves by any route
+-- the platform did not foresee leaves 1. `main` has returned by now, so
+-- nothing writes the code after this but the fiber's end.
+begin : (() → Program) → Program
+begin body =
+    _ = Js.set (Js.global "process") "exitCode" (Js.from 1)
+    body ()
+
+
+-- Node's loop is about to empty: no timer, socket or other handle can run
+-- anything again. If `run`'s fiber has not ended it never will, so say so
+-- and leave the exit code at 1. Nothing is scheduled — work queued here
+-- would run the loop again — and no cleanup is run.
+stranded : Js.Ref Bool → ()
+stranded ended =
+    if Js.read ended then
+        ()
+    else
+        _ = Js.write ended True
+        _ = Js.set (Js.global "process") "exitCode" (Js.from 1)
+        _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from stuck ]
+        ()
+
+
+stuck : String
+stuck =
+    "beni: the program cannot go on: every fiber is waiting for something that can never happen.\n"
 
 
 foreign impure finish : Exit Program → ()

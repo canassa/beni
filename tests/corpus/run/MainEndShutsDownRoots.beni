@@ -1,0 +1,33 @@
+-- run: when `Io.run`'s fiber ends, the program ends
+-- (transparent-effects-proposal.md §17.10; boundary.md §9.8.15 (c)). A
+-- fiber in a root scope, sleeping 5 seconds inside a `bracket`, would keep
+-- Node alive after the program has answered. Now `Io.run` writes the
+-- program's output, then calls `Task.shutdown` with a 1 000 ms deadline:
+-- the sleeper is cancelled at once, its release runs and is told
+-- `Cancelled`, and the process exits with the program's code. Before, it
+-- slept the whole 5 seconds and its release was told `Done`.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+main : Program
+main = Io.run λ() →
+    root = Task.openRoot ()
+
+    _ = Task.spawnIn root λ() →
+        Task.bracket (λ() → ()) (λ_ exit → Debug.log "sleeper released: ${outcome exit}" ()) λ_ →
+            Io.sleep 5000
+
+    _ = Task.yieldNow ()
+    Node.print "answered"
