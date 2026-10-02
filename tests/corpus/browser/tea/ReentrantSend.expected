@@ -9,8 +9,8 @@ console.log: render: 0
   </main>
 </body>
 -- click #twice
-console.log: twice begins: ()
-console.log: twice ends: ()
+console.log: twice begins: ⊤
+console.log: twice ends: ⊤
 console.log: echo: 1
 console.log: render: 1
 <body>
@@ -22,9 +22,9 @@ console.log: render: 1
 </body>
 -- click #after
 console.log: render: 1
-console.log: after-render sends: ()
+console.log: after-render sends: ⊤
 console.log: echo: 3
-console.log: after-render ends: ()
+console.log: after-render ends: ⊤
 console.log: render: 3
 <body>
   <main>

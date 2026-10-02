@@ -1,0 +1,14 @@
+-- `()` is written `⊤` (language.md §12.10): `unit_spelling_removed` at
+-- every `()` — in a type (5:5), a pattern (6:3), an expression (6:10) — and
+-- at a `( )` with a space (10:11), each from its `(` to its `)`; the parse
+-- goes on as `⊤`, so nothing else is reported.
+f : () → Int
+f () = g ()
+
+
+g : ⊤ → Int
+g u = h u ( )
+
+
+h : ⊤, ⊤ → Int
+h a b = 0

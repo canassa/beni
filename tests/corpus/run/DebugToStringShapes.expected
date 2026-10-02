@@ -2,13 +2,13 @@ True
 [True,False]
 (1,"x")
 (1,'c',False)
-()
+⊤
 { a = 1, b = 2 }
 Red
 [Red,Green]
 Just (1,2)
 Just (Just (-1))
-Mark ()
+Mark ⊤
 Hue Green
 Pair (3,4)
 Labeled "a b" (Circle 1.5)

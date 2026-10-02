@@ -1987,8 +1987,8 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             defer p.leave();
             if (p.peekAt(1) == .r_paren) {
                 const open = p.next();
-                _ = p.next();
-                return p.leaf(.type_unit, open);
+                const close = p.next();
+                return p.unitLeaf(.type_unit, open, close);
             }
             const open = p.next();
             try p.pushBracket(.r_paren);
@@ -2091,6 +2091,19 @@ fn reportTupleType(p: *Parse, open: TokenIndex, as_argument: bool) Allocator.Err
     // message whatever was reported just before it.
     try p.errors.append(p.gpa, item);
     return @intCast(p.errors.items.len - 1);
+}
+
+/// `()` left the language (language.md §12.10): `unit_spelling_removed`,
+/// from its `(` to its `)`, and the unit leaf it was is built as before, so
+/// the parse goes on as `⊤`. `close` is the `)`.
+fn unitLeaf(p: *Parse, tag: Node.Tag, open: TokenIndex, close: TokenIndex) Allocator.Error!Index {
+    @branchHint(.cold);
+    var item = p.itemAtToken(.unit_spelling_removed, open);
+    item.end = p.tokenEnd(close);
+    // Every occurrence is reported, as `ascii_symbol_removed` is: each is an
+    // edit.
+    try p.errors.append(p.gpa, item);
+    return p.leaf(tag, open);
 }
 
 /// Stretch the last `tuple_type_removed` report, at `open`, to the `)`
@@ -3308,8 +3321,8 @@ fn parseParens(p: *Parse) Allocator.Error!Index {
     defer p.context = saved_context;
     const open = p.next();
     if (p.peek() == .r_paren) {
-        _ = p.next();
-        return p.leaf(.unit, open);
+        const close = p.next();
+        return p.unitLeaf(.unit, open, close);
     }
     if (p.peek().isOperator() and p.peekAt(1) == .r_paren) {
         const op_tag = p.peek();
@@ -4252,8 +4265,8 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
         .l_paren => {
             const open = p.next();
             if (p.peek() == .r_paren) {
-                _ = p.next();
-                return p.leaf(.pat_unit, open);
+                const close = p.next();
+                return p.unitLeaf(.pat_unit, open, close);
             }
             try p.pushBracket(.r_paren);
             defer p.popBracket();

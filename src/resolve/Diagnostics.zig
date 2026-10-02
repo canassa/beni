@@ -191,7 +191,7 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
         .schema_used_as_value => if (cx.expected == 0) try w.print(
             \\`{s}` names a schema namespace, not a value.
             \\
-            \\Pass its description with `{s}.schema ()`.
+            \\Pass its description with `{s}.schema ⊤`.
         , .{ cx.name, cx.name }) else try w.print(
             \\`{s}` names a generic schema namespace, not a value.
             \\

@@ -604,7 +604,7 @@ const Sync = struct {
                 "Hint: `main` only describes the program. A value that may suspend can only be computed by a function the platform runs, never while `main` is evaluated.",
             ),
             .value => try w.writeAll(
-                "Hint: make it a function — `λ() → …` or a parameter — and call it where waiting is possible, from a function the platform runs.",
+                "Hint: make it a function — `λ⊤ → …` or a parameter — and call it where waiting is possible, from a function the platform runs.",
             ),
             .method => try w.writeAll(
                 "Hint: compare what the values hold, and do the work that suspends before comparing them.",

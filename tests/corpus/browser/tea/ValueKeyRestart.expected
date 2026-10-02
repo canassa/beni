@@ -11,28 +11,28 @@
 -- advance 50
 (the DOM did not change)
 -- click #set
-console.log: set 1 cancelled: ()
+console.log: set 1 cancelled: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: set 2 done: ()
+console.log: set 2 done: ⊤
 (the DOM did not change)
 -- click #dict
 (the DOM did not change)
 -- advance 50
 (the DOM did not change)
 -- click #dict
-console.log: dict 3 cancelled: ()
+console.log: dict 3 cancelled: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: dict 4 done: ()
+console.log: dict 4 done: ⊤
 (the DOM did not change)
 -- click #bag
 (the DOM did not change)
 -- advance 50
 (the DOM did not change)
 -- click #bag
-console.log: bag 5 cancelled: ()
+console.log: bag 5 cancelled: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: bag 6 done: ()
+console.log: bag 6 done: ⊤
 (the DOM did not change)

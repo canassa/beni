@@ -1,12 +1,12 @@
-first: ()
+first: ⊤
 a: 1
-second: ()
+second: ⊤
 discarded: 2
-small: ()
-first: ()
+small: ⊤
+first: ⊤
 a: 2
-second: ()
+second: ⊤
 discarded: 3
-big: ()
+big: ⊤
 1
 20

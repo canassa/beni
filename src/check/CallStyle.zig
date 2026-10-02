@@ -73,7 +73,7 @@ pub fn writeArg(r: *const Reporter, w: *std.Io.Writer, inst: Bir.Inst.Index) std
             if (scalar == '\'' or scalar == '\\') return w.print("'\\{s}'", .{buffer[0..len]});
             return w.print("'{s}'", .{buffer[0..len]});
         },
-        .unit => return w.writeAll("()"),
+        .unit => return w.writeAll("⊤"),
         .local => {
             const at = r.env.locals_base + data.lhs;
             if (at >= bir.locals.len) return w.writeAll("(…)");

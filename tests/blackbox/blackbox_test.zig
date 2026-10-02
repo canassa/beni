@@ -1805,7 +1805,7 @@ test "fmt --migrate-lambda writes every lambda's head as λ in place and restyle
     // so; the multiline string's `\\` and the string's escape are not lambdas.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni", "y   =   \\a → [ \\() → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
+    try w.write("Main.beni", "y   =   \\a → [ \\⊤ → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1821,7 +1821,7 @@ test "fmt --migrate-lambda writes every lambda's head as λ in place and restyle
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("y   =   λa → [ λ() → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
+    try testing.expectEqualStrings("y   =   λa → [ λ⊤ → a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
 }
 
 test "fmt --migrate-lambda migrates a case whose first branch shares the of line after a lambda" {
@@ -1921,7 +1921,9 @@ test "⊤ and (), ⊥ and Never, and an if without else and its else () lower to
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // language.md §12.10: a new spelling of what was there, so the backend
-    // cannot tell the two apart — the missing branch is the unit value.
+    // cannot tell the two apart — the missing branch is the unit value. The
+    // removed spellings are reported and read on as the new ones, so their
+    // BIR is the same too.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Old.beni",
@@ -1948,7 +1950,9 @@ test "⊤ and (), ⊥ and Never, and an if without else and its else () lower to
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), old.exit_code);
+    try testing.expectEqual(@as(u8, 1), old.exit_code);
+    try testing.expect(std.mem.indexOf(u8, old.stderr, "REMOVED UNIT SPELLING") != null);
+    try testing.expect(std.mem.indexOf(u8, old.stderr, "REMOVED NEVER SPELLING") != null);
     try testing.expectEqual(@as(u8, 0), new.exit_code);
     try testing.expectEqualStrings("", new.stderr);
     try testing.expectEqualStrings(old.stdout, new.stdout);
@@ -2032,13 +2036,13 @@ test "fmt --migrate-top writes ⊤ and ⊥ in code only, drops else (), and rest
     , try w.read("Other.beni"));
 }
 
-test "check --explain names each _ = in front of a ⊤, and fmt --migrate-top --discards deletes them" {
+test "check names each _ = in front of a ⊤, and fmt --migrate-top --discards deletes them" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // checker-v2.md §34, frontend.md §11.9: `unit_discarded` is a warning
-    // of the root package, only under `--explain` until the enforce step;
-    // the migration reads it. A `_ =` of an `Int` is a real discard and
+    // of the root package, and `--explain` adds every other package's; the
+    // migration reads it. A `_ =` of an `Int` is a real discard and
     // stays; one whose expression starts on the next line keeps that line's
     // indentation, inside the item.
     var w = try World.init(testing.allocator, testing.io);
@@ -2046,10 +2050,10 @@ test "check --explain names each _ = in front of a ⊤, and fmt --migrate-top --
     try w.write("Main.beni",
         \\f : Int → Int
         \\f n =
-        \\    _ = Debug.log "unit" ()
+        \\    _ = Debug.log "unit" ⊤
         \\    _ = Debug.log "int" n
         \\    _ =
-        \\        Debug.log "below" ()
+        \\        Debug.log "below" ⊤
         \\    n
         \\
     );
@@ -2057,7 +2061,7 @@ test "check --explain names each _ = in front of a ⊤, and fmt --migrate-top --
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try w.run(&.{ "check", "Main.beni" });
+    const plain = try w.run(&.{ "check", "--diagnostics=json", "Main.beni" });
     const explained = try w.run(&.{ "check", "--explain", "--diagnostics=json", "Main.beni" });
     try w.write("discards.json", explained.stderr);
     const migrated = try w.run(&.{ "fmt", "--migrate-top", "--discards=discards.json", "Main.beni" });
@@ -2066,7 +2070,7 @@ test "check --explain names each _ = in front of a ⊤, and fmt --migrate-top --
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), plain.exit_code);
-    try testing.expectEqualStrings("", plain.stderr);
+    try testing.expectEqualStrings(plain.stderr, explained.stderr);
     try testing.expectEqual(@as(u8, 0), explained.exit_code);
     try testing.expectEqual(@as(usize, 2), explained.diagnostics.len);
     for (explained.diagnostics, [_]u32{ 3, 5 }) |d, line| {
@@ -3867,7 +3871,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\  logged : a → a !impure
         \\    x : a
         \\  counter : number  -- evaluates: impure
-        \\  later : () → number !impure
+        \\  later : ⊤ → number !impure
         \\  each : (a → b !e1), List a → List b !e1
         \\    f : a → b !e1
         \\    xs : List a

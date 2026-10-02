@@ -1,7 +1,7 @@
 joinAll: ["a","b","c","b"]
-slow ended: ()
+slow ended: ⊤
 joiner: "Cancelled"
-z released: Cancelled: ()
-x released: Cancelled: ()
-y released: Cancelled: ()
+z released: Cancelled: ⊤
+x released: Cancelled: ⊤
+y released: Cancelled: ⊤
 cancelAll returned

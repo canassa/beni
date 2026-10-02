@@ -1,7 +1,7 @@
 before: poll: Nothing
 before: isDone: False
 complete: True
-completed: ()
+completed: ⊤
 b got: 7
 a got: 7
 c got: 7

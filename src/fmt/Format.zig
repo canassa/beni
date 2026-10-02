@@ -5559,13 +5559,13 @@ test "migrating lambdas writes each head `λ` and touches nothing else" {
         \\f=\x→x+1
         \\g = List.map [ 1 ] (\ a →
         \\      a*2)  -- \x
-        \\h = λa → \b → \() → a + b
+        \\h = λa → \b → \⊤ → a + b
         \\
     ,
         \\f=λx→x+1
         \\g = List.map [ 1 ] (λ a →
         \\      a*2)  -- \x
-        \\h = λa → λb → λ() → a + b
+        \\h = λa → λb → λ⊤ → a + b
         \\
     );
 }
@@ -6157,7 +6157,7 @@ const stress_decls = [_][]const u8{
     "l{d} =\n    a = 1\n\n    b : Int\n    b = 2\n    ( p, q ) = ( a, b )\n    a + b + p + q\n",
     "i{d} x = if x then 1 else if not x then 2 else 3\n",
     "i2{d} x = if aVeryLongConditionNameNumberOne x && aVeryLongConditionNameNumberTwo x then aVeryLongThenBranch x else 0\n",
-    "col{d} = ( [ 1, 2, 3 ], { a = 1, b = \"${x} and ${ y }\" }, ( 1, 2 ), [], {}, () )\n",
+    "col{d} = ( [ 1, 2, 3 ], { a = 1, b = \"${x} and ${ y }\" }, ( 1, 2 ), [], {}, ⊤ )\n",
     "long{d} = [ \"alpha\", \"bravo\", \"charlie\", \"delta\", \"echo\", \"foxtrot\", \"golf\", \"hotel\", \"india\", \"juliet\", \"kilo\" ]\n",
     "s{d} = λa b → a\n",
     "s2{d} = λ( a, b ) { c } _ → a + b + c\n",

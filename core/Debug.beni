@@ -116,7 +116,7 @@ showCode t defs env value =
     else if Js.same t (Js.from "b") then
         if Js.to value then "True" else "False"
     else if Js.same t (Js.from "u") then
-        "()"
+        "⊤"
     else if Js.same t (Js.from "F") then
         "<function>"
     else if Js.same t (Js.from "x") then
@@ -250,7 +250,7 @@ untypedValue value seen =
     else if Js.isNullish value then
         -- `⊤` is `null`, or `undefined` where a function whose result is
         -- `⊤` wrote none (`backend.md` §4, *A `⊤` result is not written*).
-        "()"
+        "⊤"
     else if Js.typeIs value "function" then
         "<function>"
     else if Js.typeIs value "object" then

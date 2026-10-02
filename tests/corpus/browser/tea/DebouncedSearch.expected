@@ -6,7 +6,7 @@
   </main>
 </body>
 -- input #q "a"
-console.log: start a: ()
+console.log: start a: ⊤
 <body>
   <main>
     <input id="q" .value="a">
@@ -16,8 +16,8 @@ console.log: start a: ()
 -- advance 100
 (the DOM did not change)
 -- input #q "ab"
-console.log: release a: ()
-console.log: start ab: ()
+console.log: release a: ⊤
+console.log: start ab: ⊤
 <body>
   <main>
     <input id="q" .value="ab">
@@ -37,11 +37,11 @@ console.log: request: "ab"
   </main>
 </body>
 -- advance 400
-console.log: release ab: ()
-console.log: start abc: ()
+console.log: release ab: ⊤
+console.log: start abc: ⊤
 console.log: request: "abc"
 console.log: got: "abc"
-console.log: release abc: ()
+console.log: release abc: ⊤
 <body>
   <main>
     <input id="q" .value="abc">
@@ -51,7 +51,7 @@ console.log: release abc: ()
   </main>
 </body>
 -- input #q "x"
-console.log: start x: ()
+console.log: start x: ⊤
 <body>
   <main>
     <input id="q" .value="x">
@@ -61,7 +61,7 @@ console.log: start x: ()
   </main>
 </body>
 -- input #q ""
-console.log: release x: ()
+console.log: release x: ⊤
 <body>
   <main>
     <input id="q" .value="">

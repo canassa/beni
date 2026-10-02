@@ -24,7 +24,7 @@ module MixedDependency
   schema Cyclic
     type Type : String
     type Encoded : Int
-    value schema : () → Schema Cyclic.Encoded Cyclic.Type
+    value schema : ⊤ → Schema Cyclic.Encoded Cyclic.Type
     value parse : String → Result (List Issue) Cyclic.Type
     value print : Cyclic.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Cyclic.Type
@@ -33,7 +33,7 @@ module Models
   schema AnnotatedId
     type Type : String
     type Encoded : Int
-    value schema : () → Schema AnnotatedId.Encoded AnnotatedId.Type
+    value schema : ⊤ → Schema AnnotatedId.Encoded AnnotatedId.Type
     value parse : String → Result (List Issue) AnnotatedId.Type
     value print : AnnotatedId.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) AnnotatedId.Type
@@ -41,7 +41,7 @@ module Models
   schema Audit
     type Type : { at : Nullable Int }
     type Encoded : { at : Nullable Int }
-    value schema : () → Schema Audit.Encoded Audit.Type
+    value schema : ⊤ → Schema Audit.Encoded Audit.Type
     value parse : String → Result (List Issue) Audit.Type
     value print : Audit.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Audit.Type
@@ -49,7 +49,7 @@ module Models
   schema Finite
     type Type : Float
     type Encoded : Float
-    value schema : () → Schema Finite.Encoded Finite.Type
+    value schema : ⊤ → Schema Finite.Encoded Finite.Type
     value parse : String → Result (List Issue) Finite.Type
     value print : Finite.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Finite.Type
@@ -57,7 +57,7 @@ module Models
   schema ImportedId
     type Type : String
     type Encoded : Int
-    value schema : () → Schema ImportedId.Encoded ImportedId.Type
+    value schema : ⊤ → Schema ImportedId.Encoded ImportedId.Type
     value parse : String → Result (List Issue) ImportedId.Type
     value print : ImportedId.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) ImportedId.Type
@@ -65,7 +65,7 @@ module Models
   schema Message
     type Type : Message.Type
     type Encoded : Message.Encoded
-    value schema : () → Schema Message.Encoded Message.Type
+    value schema : ⊤ → Schema Message.Encoded Message.Type
     value parse : String → Result (List Issue) Message.Type
     value print : Message.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Message.Type
@@ -77,15 +77,15 @@ module Models
   schema NumberId
     type Type : String
     type Encoded : Int
-    value schema : () → Schema NumberId.Encoded NumberId.Type
+    value schema : ⊤ → Schema NumberId.Encoded NumberId.Type
     value parse : String → Result (List Issue) NumberId.Type
     value print : NumberId.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) NumberId.Type
     value printWith : Options, NumberId.Type → Result (List Issue) String
   schema OnlyNull
-    type Type : Nullable Never
-    type Encoded : Nullable Never
-    value schema : () → Schema OnlyNull.Encoded OnlyNull.Type
+    type Type : Nullable ⊥
+    type Encoded : Nullable ⊥
+    value schema : ⊤ → Schema OnlyNull.Encoded OnlyNull.Type
     value parse : String → Result (List Issue) OnlyNull.Type
     value print : OnlyNull.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) OnlyNull.Type
@@ -101,7 +101,7 @@ module Models
   schema TextId
     type Type : String
     type Encoded : String
-    value schema : () → Schema TextId.Encoded TextId.Type
+    value schema : ⊤ → Schema TextId.Encoded TextId.Type
     value parse : String → Result (List Issue) TextId.Type
     value print : TextId.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) TextId.Type
@@ -109,7 +109,7 @@ module Models
   schema Tree
     type Type : Tree.Type
     type Encoded : Tree.Encoded
-    value schema : () → Schema Tree.Encoded Tree.Type
+    value schema : ⊤ → Schema Tree.Encoded Tree.Type
     value parse : String → Result (List Issue) Tree.Type
     value print : Tree.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Tree.Type
@@ -121,7 +121,7 @@ module Models
   schema User
     type Type : { email : Presence String, id : Int, nickname : Presence (Nullable String) }
     type Encoded : { email : Presence String, id : Int, nickname : Presence (Nullable String) }
-    value schema : () → Schema User.Encoded User.Type
+    value schema : ⊤ → Schema User.Encoded User.Type
     value parse : String → Result (List Issue) User.Type
     value print : User.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) User.Type

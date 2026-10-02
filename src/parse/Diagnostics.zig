@@ -399,7 +399,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\body takes the rest of its line, or the block below it, so nothing can follow
                     \\it as another argument. To pass more after a lambda, put it in parentheses:
                     \\
-                    \\    Task.bracket (λ() → open url) close λconn → use conn
+                    \\    Task.bracket (λ⊤ → open url) close λconn → use conn
                 , .{ contextText(item.context), text });
             } else if (item.construct == .times_in_expression) {
                 try w.print(
@@ -870,6 +870,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\If you meant less than a negative number, write `x < -1`, with a space.
             );
         },
+        .unit_spelling_removed => try w.writeAll(
+            \\`()` is written `⊤` now (U+22A4 DOWN TACK), as the unit type and as its one
+            \\value: `log : String → ⊤`, `else ⊤`, `λ⊤ → e`. I read this one as `⊤` and
+            \\went on.
+            \\
+            \\`beni fmt --migrate-top <file>` writes every one of a file this way, and an
+            \\editor with beni support turns `()` into `⊤` as it is typed.
+        ),
         .tuple_type_removed => {
             try w.writeAll(
                 \\A tuple type is written with `×` now (U+00D7 MULTIPLICATION SIGN). Write this

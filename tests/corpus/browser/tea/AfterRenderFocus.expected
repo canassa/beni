@@ -11,7 +11,7 @@
   </main>
 </body>
 -- click #edit
-console.log: focused first: ()
+console.log: focused first: ⊤
 <body>
   <main>
     <button id="edit">"edit"</button>
@@ -24,8 +24,8 @@ console.log: focused first: ()
   </main>
 </body>
 -- click #open
-console.log: waiting for the render: ()
-console.log: focused second: ()
+console.log: waiting for the render: ⊤
+console.log: focused second: ⊤
 <body>
   <main>
     <button id="edit">"edit"</button>

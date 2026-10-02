@@ -10,18 +10,18 @@
 -- advance 50
 (the DOM did not change)
 -- click #tuple
-console.log: tuple 1 cancelled: ()
+console.log: tuple 1 cancelled: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: tuple 2 done: ()
+console.log: tuple 2 done: ⊤
 (the DOM did not change)
 -- click #record
 (the DOM did not change)
 -- advance 50
 (the DOM did not change)
 -- click #record
-console.log: record 3 cancelled: ()
+console.log: record 3 cancelled: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: record 4 done: ()
+console.log: record 4 done: ⊤
 (the DOM did not change)

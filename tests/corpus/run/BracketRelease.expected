@@ -1,14 +1,14 @@
-plain acquired: ()
-plain released: done 5: ()
-plain returned 5: ()
-outer acquired: ()
-inner acquired: ()
-inner released: cancelled: ()
-outer released: cancelled: ()
-cancel returned: ()
-victim acquired: ()
-joiner acquired: ()
-victim released: cancelled: ()
-joiner released: cancelled: ()
-joiner cancelled: ()
+plain acquired: ⊤
+plain released: done 5: ⊤
+plain returned 5: ⊤
+outer acquired: ⊤
+inner acquired: ⊤
+inner released: cancelled: ⊤
+outer released: cancelled: ⊤
+cancel returned: ⊤
+victim acquired: ⊤
+joiner acquired: ⊤
+victim released: cancelled: ⊤
+joiner released: cancelled: ⊤
+joiner cancelled: ⊤
 end

@@ -1,5 +1,5 @@
 Node Leaf (True,'a') (Node Leaf (False,'b') Leaf)
-Secret [{ label = 'p', x = 1.0 }] ()
+Secret [{ label = 'p', x = 1.0 }] ⊤
 Node Leaf ('x','y') Leaf
 <internals>
 Just <internals>

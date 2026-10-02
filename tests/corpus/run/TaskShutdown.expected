@@ -1,10 +1,10 @@
-shutdown returned: ()
-a inner released: Cancelled: ()
-a outer released: Cancelled: ()
-b released: Cancelled: ()
-f, waiting on a Deferred, released: Cancelled: ()
-e child released: Cancelled: ()
-e parent released: Cancelled: ()
-c released after a wait: ()
-d first released: Cancelled: ()
-done, 1 cut short: ()
+shutdown returned: ⊤
+a inner released: Cancelled: ⊤
+a outer released: Cancelled: ⊤
+b released: Cancelled: ⊤
+f, waiting on a Deferred, released: Cancelled: ⊤
+e child released: Cancelled: ⊤
+e parent released: Cancelled: ⊤
+c released after a wait: ⊤
+d first released: Cancelled: ⊤
+done, 1 cut short: ⊤

@@ -1,9 +1,9 @@
 pair: (1,True)
 char: 'z'
-list: [Just ('a',())]
+list: [Just ('a',⊤)]
 (1,True)
 (2,False)
 True
 { a = 1, b = 2 }
 [Just "c"]
-[Just ('a',())]
+[Just ('a',⊤)]

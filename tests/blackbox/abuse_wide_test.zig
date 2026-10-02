@@ -494,9 +494,9 @@ test "a derived row of more than 65 535 context entries checks" {
     defer holder.deinit();
     const h = &holder.writer;
     try h.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a → Bool\n    where ");
-    for (0..methods) |j| try h.print("{s}a.m{d} : a, () → Int", .{ if (j == 0) "" else ", ", j });
+    for (0..methods) |j| try h.print("{s}a.m{d} : a, ⊤ → Int", .{ if (j == 0) "" else ", ", j });
     try h.writeAll("\neq (Holder x) (Holder y) =\n    ");
-    for (0..methods) |j| try h.print("{s}x.m{d} () == y.m{d} ()", .{ if (j == 0) "" else " && ", j, j });
+    for (0..methods) |j| try h.print("{s}x.m{d} ⊤ == y.m{d} ⊤", .{ if (j == 0) "" else " && ", j, j });
     try h.writeAll("\n");
     try w.write("H.beni", holder.written());
     var wide: std.Io.Writer.Allocating = .init(testing.allocator);

@@ -1,0 +1,17 @@
+-- `Never` is written `⊥` (language.md §12.10): `never_spelling_removed`
+-- at a `Never` that names `Basics`' empty type, through the prelude (8:5)
+-- and qualified (12:5), and the type is the same — `never` takes it — so
+-- nothing else is reported. A module's own `Never` is another type.
+import Other
+
+
+a : Never → Int
+a v = never v
+
+
+b : Basics.Never → Int
+b v = never v
+
+
+c : Other.Never → Other.Never
+c v = v

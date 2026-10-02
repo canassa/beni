@@ -473,7 +473,7 @@ fn write(
             if (wrap) try w.writeByte(')');
         },
         .structure => |s| switch (s) {
-            .unit => try w.writeAll("()"),
+            .unit => try w.writeAll("⊤"),
             // A bare extension variable that closed: only reachable as a
             // record's tail, where `writeRecord` handles it.
             .empty_record => try w.writeAll("{}"),
@@ -546,6 +546,8 @@ fn writeNamed(
     depth: u32,
 ) (std.Io.Writer.Error || Allocator.Error)!void {
     if (id == .none) return w.writeAll("?");
+    // Core's empty type is written `⊥` (language.md §12.10).
+    if (id == cx.types.well_known.never) return w.writeAll("⊥");
     const text = cx.interner.slice(cx.types.name(id));
     const module: ?[]const u8 = if (namer.qualified.contains(id)) cx.interner.slice(cx.types.entry(id).module_name) else null;
     if (args.len == 0) {
@@ -739,7 +741,7 @@ fn writePat(
     const args = pats.args(c);
     const un = pats.unionAt(c.un);
     switch (un.shape) {
-        .unit => return w.writeAll("()"),
+        .unit => return w.writeAll("⊤"),
         .tuple => {
             try w.writeAll("( ");
             for (args, 0..) |arg, i| {

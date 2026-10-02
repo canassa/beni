@@ -1,10 +1,10 @@
 module Later
   value combine : Box a, b → a
-  value f : K, () → number × number2
+  value f : K, ⊤ → number × number2
   value g : Box a, b → number
-  value h : K, () → Box Int
+  value h : K, ⊤ → Box Int
 module Sooner
   value combine : Box a, b → a
-  value f : K, () → number × number2
+  value f : K, ⊤ → number × number2
   value g : Box a, b → number
-  value h : K, () → Box Int
+  value h : K, ⊤ → Box Int

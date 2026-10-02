@@ -1,4 +1,4 @@
-outer: ()
-outer not c: ()
-inner: ()
+outer: ⊤
+outer not c: ⊤
+inner: ⊤
 done

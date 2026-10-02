@@ -1,10 +1,10 @@
 start: 1
 start: 2
-released 2: ()
-released 1: ()
+released 2: ⊤
+released 1: ⊤
 answer: Err "two is bad"
 start: 1
 start: 3
-released 1: ()
-released 3: ()
+released 1: ⊤
+released 3: ⊤
 Ok [10,30]

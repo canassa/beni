@@ -426,8 +426,8 @@ test "two deep demands in a row are refused once, and the other order checks" {
     var s = try Scenario.init("two deep demands");
     defer s.deinit();
     const a = s.arena();
-    const user = try deepUse(a, "use u =\n    ", "(T 0).m ()", 2_150);
-    const method = try deepUse(a, "pub m (T x) u =\n    ", "(T x).m2 ()", 2_150);
+    const user = try deepUse(a, "use u =\n    ", "(T 0).m ⊤", 2_150);
+    const method = try deepUse(a, "pub m (T x) u =\n    ", "(T x).m2 ⊤", 2_150);
     const last = "pub m2 (T x) u =\n    x\n";
     try s.w.write("First.beni", try std.mem.concat(a, u8, &.{ "type T\n    = T Int\n\n\nf x =\n    x\n\n\n", user, "\n\n", method, "\n\n", last }));
     try s.w.write("Last.beni", try std.mem.concat(a, u8, &.{ "type T\n    = T Int\n\n\nf x =\n    x\n\n\n", last, "\n\n", method, "\n\n", user }));
@@ -467,7 +467,7 @@ test "a derived eq whose pass is refused a nested check says so at the compariso
     const n = 600;
     var main: std.ArrayList(u8) = .empty;
     try main.appendSlice(a, "import H\n\n\ntype T\n    = T Int\n\n\ntype K\n    = K Int\n\n\ntype W\n    = W (H.Holder K)\n\n\n");
-    for (0..n) |i| try main.print(a, "pub m{d} (T x) u =\n    (T x).m{d} ()\n\n\n", .{ i, i + 1 });
+    for (0..n) |i| try main.print(a, "pub m{d} (T x) u =\n    (T x).m{d} ⊤\n\n\n", .{ i, i + 1 });
     try main.print(a, "pub m{d} (T x) u =\n    W (H.Holder (K x)) == W (H.Holder (K 1))\n\n\n", .{n});
     try main.appendSlice(a, "pub key (K v) u =\n    v\n");
     try w.write("Main.beni", main.items);
@@ -512,13 +512,13 @@ fn deepUse(arena: std.mem.Allocator, head: []const u8, inner: []const u8, depth:
 }
 
 /// `count` chains of `n + 1` own methods, chain `c` on type `Tc`:
-/// `pub mc_0 (Tc x) u = (Tc x).mc_1 ()` … `pub mc_n (Tc x) u = x`, each
+/// `pub mc_0 (Tc x) u = (Tc x).mc_1 ⊤` … `pub mc_n (Tc x) u = x`, each
 /// written BEFORE the one it calls.
 fn chains(arena: std.mem.Allocator, count: usize, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     for (0..count) |c| {
         try out.print(arena, "type T{d}\n    = T{d} Int\n\n\n", .{ c, c });
-        for (0..n) |i| try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    (T{d} x).m{d}_{d} ()\n\n\n", .{ c, i, c, c, c, i + 1 });
+        for (0..n) |i| try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    (T{d} x).m{d}_{d} ⊤\n\n\n", .{ c, i, c, c, c, i + 1 });
         try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    x\n\n\n", .{ c, n, c });
     }
     return out.items;

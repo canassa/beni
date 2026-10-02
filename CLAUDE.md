@@ -29,7 +29,13 @@ rebuilds.
   `→ ← ≠ ≤ ≥ ▷ ◁ …` replace `-> <- /= <= >= |> <| ...`, a tuple type is
   `Int × String` (`a × b × c` a flat 3-tuple), and a column counts code
   points; the ASCII is refused and `beni fmt --migrate-unicode` rewrites old
-  code (`language.md` §12.7–§12.9).
+  code (`language.md` §12.7–§12.9). **`⊤` and `⊥`** (the owner, 2026-10-02;
+  landed the same day): `⊤` is the unit type and its value — `log : String
+  → ⊤`, `λ⊤ → e`, `key ⊤` — and `⊥` the empty type; `()` and `Never` are
+  refused. An `if` whose `then` branch is `⊤` may leave out its `else`, and
+  a `_ =` in front of a `⊤` is the warning `unit_discarded`: write the line
+  as a statement. `beni fmt --migrate-top` rewrites old code
+  (`language.md` §12.10).
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is

@@ -13,7 +13,7 @@ pairs xs = List.map xs (\( a, b ) → a + b)
 nested = \a → \b → a + b
 
 
-thunk = Maybe.map (Just ()) (\() → 0)
+thunk = Maybe.map (Just ⊤) (\⊤ → 0)
 
 
 rows items = <ul>{List.map items (\i → <li onClick={\_ → i}>{i}</li>)}</ul>

@@ -1,5 +1,5 @@
-parent done: ()
-attached released: Cancelled: ()
-detached tick: ()
+parent done: ⊤
+attached released: Cancelled: ⊤
+detached tick: ⊤
 main done
-detached released: Cancelled: ()
+detached released: Cancelled: ⊤

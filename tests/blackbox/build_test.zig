@@ -3541,7 +3541,7 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("none/Main.beni", elementPage("Cmd.none"));
-    try w.write("waits/Main.beni", elementPage("Cmd.do λ() → Time.sleep (Time.millis 1)"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do λ⊤ → Time.sleep (Time.millis 1)"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3571,7 +3571,7 @@ test "an element whose commands never wait ships no fiber runtime" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn → n"));
-    try w.write("keyed/Main.beni", elementPage("Cmd.keyed () Cmd.Restart λsend → send 1"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed ⊤ Cmd.Restart λsend → send 1"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3626,9 +3626,9 @@ test "a page whose fibers only wait ships no finaliser walk and no children" {
     // that spawn keep each.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("waits/Main.beni", taskPage("Cmd.do λ() → Time.sleep (Time.millis 1)"));
-    try w.write("brackets/Main.beni", taskPage("Cmd.do λ() → Task.bracket (λ() → ()) (λ_ _ → ()) λ_ → Time.sleep (Time.millis 1)"));
-    try w.write("spawns/Main.beni", taskPage("Cmd.do λ() → Task.join (Task.spawn λ() → Time.sleep (Time.millis 1))"));
+    try w.write("waits/Main.beni", taskPage("Cmd.do λ⊤ → Time.sleep (Time.millis 1)"));
+    try w.write("brackets/Main.beni", taskPage("Cmd.do λ⊤ → Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ → Time.sleep (Time.millis 1)"));
+    try w.write("spawns/Main.beni", taskPage("Cmd.do λ⊤ → Task.join (Task.spawn λ⊤ → Time.sleep (Time.millis 1))"));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -4654,7 +4654,7 @@ test "a program that suspends keeps Task.andThen, which core writes in beni" {
         \\
         \\main : Program
         \\main = Io.run λ⊤ →
-        \\    _ = Task.yieldNow ⊤
+        \\    Task.yieldNow ⊤
         \\    Node.print "yielded"
         \\
     );

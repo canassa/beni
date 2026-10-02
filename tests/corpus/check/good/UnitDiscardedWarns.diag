@@ -1,0 +1,1 @@
+[{"code":"unit_discarded","severity":"warning","span":{"file":"tests/corpus/check/good/UnitDiscardedWarns.beni","start":{"line":7,"col":5},"end":{"line":7,"col":8}},"title":"UNIT DISCARDED","message":"This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it."}]

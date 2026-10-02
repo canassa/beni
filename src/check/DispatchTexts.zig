@@ -361,7 +361,7 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
     const what = switch (shape) {
         .record, .record_required => "record",
         .tuple => "tuple",
-        .unit => "`()`",
+        .unit => "`⊤`",
         .function => "function",
         .contains_function, .not_orderable, .too_wide, .open_record, .other => "type",
     };

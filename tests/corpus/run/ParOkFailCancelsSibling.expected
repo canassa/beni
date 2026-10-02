@@ -1,4 +1,4 @@
 fast failed: Err "boom"
-slow released: ()
+slow released: ⊤
 answer: Err "boom"
 Ok ("a","b")

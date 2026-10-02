@@ -1,5 +1,5 @@
 module RefUpdateImpure
-  value bumpAndLog : Ref Int, Ref (List Int) → () !impure
-  value fresh : () → Ref Int !impure
+  value bumpAndLog : Ref Int, Ref (List Int) → ⊤ !impure
+  value fresh : ⊤ → Ref Int !impure
   value peek : Ref Int → Int !impure
   value swapOut : Ref Int → Int !impure

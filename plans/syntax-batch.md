@@ -240,3 +240,13 @@ The mechanical commits touch most of the repository's 1 750 `.beni` files — `c
   the README of the editor support (when there is one) says which key sequence to use.
 - **`Float`'s other functions.** `Float.log` is the one this batch needs; whether `round`, `floor`
   and the rest also move to the `Float` module is a library question, not a syntax one.
+
+*As built, slices 21–24 (2026-10-02).* Six commits: 21, the specification; 22, the teach step;
+23, the mechanical commit (`beni fmt --migrate-top --discards`), the code commit that lets
+`--explain` name every package's discards, and the reviewed-script hand pass; then 24.
+The finding the migration made: a removed `_ =` is one BIR instruction fewer, and a markup site's
+development name carries its instruction's number, so 27 markup programs' development JavaScript
+moved by those names alone (release, every other program and every `emit/` golden byte-identical;
+`frontend.md` §11.9's *As built*). The T-rows were built as written but T14, which the teach step
+refined: an `else ⊤` is kept when an `else` follows it, the drops decided last first so that one
+run is the fixed point. The owner has not yet confirmed §1.4.

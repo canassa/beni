@@ -200,6 +200,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // language.md §12.4: an unqualified `modBy`, `remainderBy` or
         // `logBase`.
         .name_removed => try prelude.writeRemoved(w, prelude.removedName(text) orelse unreachable),
+        .never_spelling_removed => try w.writeAll(
+            \\The type with no values is written `⊥` now (U+22A5 UP TACK): `never : ⊥ → a`.
+            \\I read this `Never` as `⊥` and went on.
+            \\
+            \\`beni fmt --migrate-top <file>` writes every one of a file this way.
+        ),
         .unbound_variable => try w.print(
             \\I cannot find a `{s}` variable.
             \\

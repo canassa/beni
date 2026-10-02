@@ -1,4 +1,4 @@
-child a released: ()
-child b released: ()
-parent released: ()
+child a released: ⊤
+child b released: ⊤
+parent released: ⊤
 done

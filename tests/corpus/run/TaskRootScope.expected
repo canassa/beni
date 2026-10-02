@@ -1,6 +1,6 @@
 quick running: True
-quick runs: ()
+quick runs: ⊤
 quick running: False
-closed: ()
-slow cancelled: ()
+closed: ⊤
+slow cancelled: ⊤
 late ended: Cancelled

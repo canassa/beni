@@ -1,9 +1,9 @@
-returned: child released: Cancelled: ()
-returned: second deferred, after a wait: Done: ()
-returned: first deferred: Done: ()
-scope returned: ()
-cancelled: child released: Cancelled: ()
-cancelled: second deferred, after a wait: Cancelled: ()
-cancelled: first deferred: Cancelled: ()
-around the scope released: Cancelled: ()
+returned: child released: Cancelled: ⊤
+returned: second deferred, after a wait: Done: ⊤
+returned: first deferred: Done: ⊤
+scope returned: ⊤
+cancelled: child released: Cancelled: ⊤
+cancelled: second deferred, after a wait: Cancelled: ⊤
+cancelled: first deferred: Cancelled: ⊤
+around the scope released: Cancelled: ⊤
 done

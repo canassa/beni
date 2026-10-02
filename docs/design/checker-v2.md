@@ -5759,7 +5759,7 @@ part as `text "<text>"`. Nothing else moves, so no golden of a module that keys 
 
 ## 34. Amendment of 2026-10-02: `⊤`, `⊥` and `if` without `else`
 
-*Specified 2026-10-02, not built.* What the checker adds for [`language.md`](language.md) §12.10.
+*Specified 2026-10-02; built the same day.* What the checker adds for [`language.md`](language.md) §12.10.
 The unit type keeps its representation in the type store (`.unit`), and `⊥` is the type `Basics`
 declares (`Types.well_known.never`, unchanged): neither spelling reaches the checker, which sees the
 BIR it always saw. What is new is one category, one error, one warning, and two words of the type

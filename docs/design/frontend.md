@@ -1788,7 +1788,7 @@ budget that way.
 
 ### 11.9 `⊤`, `⊥` and `if` without `else` in the front end
 
-*Added 2026-10-02; not built.* How the front end builds [`language.md`](language.md) §12.10, in
+*Added 2026-10-02; built the same day* (the *As built* notes below). How the front end builds [`language.md`](language.md) §12.10, in
 the order [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 21–24 give.
 
 **The lexer.** Two tags, **`top`** (`⊤`, `E2 8A A4`) and **`bottom`** (`⊥`, `E2 8A A5`), beside
@@ -1868,3 +1868,26 @@ more (`constrain/Expr.zig`, `missingElse`); a number there reaches the message t
 `fast-compiler.md` §8), since it changes a module's warnings. And the flag decides the `else ⊤`
 drops last first, so an `else` that an outer drop removes does not keep an inner one: `if a then
 if b then ⊤ else ⊤ else ⊤` loses both in one run, which is what makes the run a fixed point.
+
+*As built, the migration (2026-10-02):* `beni check --explain --diagnostics=json` over core (with
+`--core`) and every project and fixture (a fixture under a `core/` directory with `--core`, as the
+corpus runs it), 3 246 runs; then the flag with that file over every tracked `.beni` file and the
+`fmt/` goldens, then plain `beni fmt` over the gate's scope. About 940 `_ = ` lines became statements (a fixture under a `core/`
+directory has to be checked with `--core`, or its module never checks clean and its discards go
+unseen). Release output is byte-identical for every `run/` and `browser/`
+program. Development output is too but for 27 markup programs: a markup site's development name
+carries the number of its instruction (`X$t142`), and a removed `_ =` is one instruction fewer, so
+the names move; erasing those numbers, the outputs are identical (checked by script, as the
+release builds and every `emit/` golden are). The hand pass, by reviewed scripts: core's and the
+platforms' comments (a backtick span of JavaScript, `Date.now()`, left alone), the beni programs
+in Zig tests, the docs test's generated module and the design documents' beni code blocks; tests
+whose point is the old spelling keep it. `Basics` writes `⊥` everywhere but its declaration's name.
+
+*As built, the enforce step (2026-10-02):* the parser reports `unit_spelling_removed` from the `(`
+to the `)` of every unit leaf written with parentheses (`Parse.unitLeaf`) and builds the leaf as
+before; lowering reports `never_spelling_removed` at a `Never` the prelude resolves, one exposed
+by an import of `Basics`, and `Basics.Never`. `unit_discarded` is on by default for the root
+package, `--explain` adding every other. The renderer, the call-style hints, the `dispatch` dump
+and every message that quotes code write `⊤` and `⊥`, and `Debug.toString` writes `⊤`
+(`core/Debug.beni`); a type identity's text and the type-body digest keep `()`. The frontend
+artifact's format version is 21.

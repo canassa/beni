@@ -1773,7 +1773,7 @@ the brotli page moves with what it can no longer share, `return G(…)` against 
 `emit/release/core/UnitResults` (a `pub` function ending in a `Js.set`, a loop's `return;`, a
 handler stored on a node, a local function, and an `Int` function that keeps its `return`).
 
-*Amended 2026-10-02 (`language.md` §12.10; specified, not built).* Unit is written `⊤` and the
+*Amended 2026-10-02 (`language.md` §12.10; built the same day).* Unit is written `⊤` and the
 empty type `⊥`. **Nothing in this section moves**: the BIR of `⊤` is the BIR of `()`, so a `⊤`
 is `null` (or `undefined` under the rule above), "the literal `()`" above is the literal `⊤`, and
 an `if` without `else` lowers to the `case` its `else ⊤` spelling does, its missing branch the

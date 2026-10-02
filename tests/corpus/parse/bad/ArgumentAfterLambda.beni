@@ -5,6 +5,6 @@
 -- parsed on, so the second lambda is its last argument and reports nothing.
 bracket with open close use url =
     with
-        λ() → open url
+        λ⊤ → open url
         close
         λconn → use conn

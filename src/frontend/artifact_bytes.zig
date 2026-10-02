@@ -113,7 +113,9 @@ pub const magic = "BENIFE\x00\x00";
 /// 20 (2026-10-02): `⊤` and `⊥` (language.md §12.10) — `Token.Tag` gained
 /// `top` and `bottom`, `Ast.Node.Tag` gained `type_bottom` and `if_then`,
 /// which shifted every later tag; the parser and lowering have new codes.
-pub const format_version: u32 = 20;
+/// 21 (2026-10-02): the parser reports `unit_spelling_removed` and lowering
+/// `never_spelling_removed` (language.md §12.10).
+pub const format_version: u32 = 21;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

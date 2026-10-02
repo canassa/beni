@@ -1,0 +1,2 @@
+module UnitDiscardedWarns
+  value f : Int → Int !impure

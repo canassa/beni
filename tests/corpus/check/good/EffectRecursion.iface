@@ -4,4 +4,4 @@ module EffectRecursion
   value isOdd : Int → Bool !impure
   value ping : number → number2 !impure
   value pong : number → number2 !impure
-  value walk : List a, (a → () !e1) → () !e1
+  value walk : List a, (a → ⊤ !e1) → ⊤ !e1

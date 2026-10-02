@@ -107,8 +107,8 @@ until the migrate step rewrites the examples.
 | `modBy 2 n`, `remainderBy 3 n`, `logBase 10 x`, `Debug.log "l" v` | `Int.mod n 2`, `Int.rem n 3`, `Float.log x 10`, `Debug.log "l" v` (*2026-10-02; built 2026-10-01, the types staying in `Basics`*) | §12.4 |
 | `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|`, `...` | `→`, `←`, `≠`, `≤`, `≥`, `▷`, `◁`, `…` — one spelling each; `&&`, `\|\|`, `==`, `++` unchanged (*2026-10-01, specified; built 2026-10-02*) | §12.7 |
 | `( Int, String )` as a type | `Int × String`; `a × b × c` is a 3-tuple, and `Int × Int → Int` takes one pair where `Int, Int → Int` takes two arguments (*2026-10-01, specified; built 2026-10-02*) | §12.8 |
-| `()`, the unit type and value; `Never` | `⊤` in both roles — `String → ⊤`, `else ⊤`, `λ⊤ → e`; `⊥` for the empty type (*2026-10-02, specified, not built*) | §12.10 |
-| `if c then a else ()` | `if c then a`: an `if` whose `then` branch is `⊤` may leave out its `else` (*2026-10-02, specified, not built*) | §12.10 |
+| `()`, the unit type and value; `Never` | `⊤` in both roles — `String → ⊤`, `else ⊤`, `λ⊤ → e`; `⊥` for the empty type (*2026-10-02, built*) | §12.10 |
+| `if c then a else ()` | `if c then a`: an `if` whose `then` branch is `⊤` may leave out its `else` (*2026-10-02, built*) | §12.10 |
 
 Everything else — application by juxtaposition, `case … of`, `if … then … else`, records, record
 update, lists, tuples, type aliases, custom types, `as` patterns, `.field` accessors — is Elm's.
@@ -641,7 +641,7 @@ The diagnostic additions at the end of §10's catalogue are specified there in �
 ### 6.1 Literals
 
 `Int`, `Float`, `Char`, `String` literals as lexed. `()` is unit. `[a, b]` is a list literal.
-`(a, b, c)` is a tuple literal; `(a)` is grouping. *Amended 2026-10-02 (§12.10; specified, not
+`(a, b, c)` is a tuple literal; `(a)` is grouping. *Amended 2026-10-02 (§12.10; built the same
 built):* unit is written `⊤`, the type and the value, and `()` is removed (`unit_spelling_removed`).
 
 ### 6.2 Names
@@ -1374,7 +1374,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `ascii_symbol_removed`, `tuple_type_removed` | Unicode notation | the next line, appended on 2026-10-01, again never inserted, with §12.7–§12.8 (built 2026-10-02). Both are the parser's, and both parse the old form on as the new one, so one stale spelling costs one message. **`ascii_symbol_removed`** is at each `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|` or `...`, its message the symbol to write, its code point, `beni fmt --migrate-unicode` and the editor input — one code for eight spellings, because the fix and the flag are one. **`tuple_type_removed`** is at the `(` of a parenthesised tuple type, its message the type written with `×`. The lookalikes of §12.7 reuse `invalid_character`, `expected_token` and `unexpected_token`, each with a message naming the symbol |
 | `core_contract_violation` | the backend again | the line before the last, appended on 2026-10-02, again never inserted. A core package that does not declare a value the code generator calls on its own — `Basics.eq` and `String.compare` for a comparison, `List`'s core-private `unsafeGet`, `view`, `base`, `offset` and `close` for a list pattern, a walk or a building loop ([`backend.md`](backend.md) §4, *The emitter's imports of the core-private exports*). Only a `--core-root` core can lack one. Reported where a module first needs the value, once per module and value, and nothing is written; it replaced `internal` for the two comparison values the same day |
 | `invalid_js_object` | `Js` | the line before the last, appended on 2026-10-02, again never inserted, with `Js.object` ([`boundary.md`](boundary.md) §4.2; [`backend.md`](backend.md) §4, *`Js.object` is an object literal*). The checker's, at a call of core's `Js.object` whose fields are not a list literal of `( "key", value )` pairs, each key a string literal that is a JavaScript identifier other than `__proto__`, no key twice. Only core and a platform package can write one (`js_outside_platform`) |
-| `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the last line, appended on 2026-10-02, again never inserted, with §12.10 (specified, not built). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
+| `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the last line, appended on 2026-10-02, again never inserted, with §12.10 (built the same day). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -2849,7 +2849,7 @@ quotes code switch to the symbols). `plans/syntax-batch.md` slices 18–20.
 
 ### 12.10 `⊤` and `⊥`: the trivial and the empty type, and `if` without `else`
 
-*Specified 2026-10-02; not built* (the owner's decision S10,
+*Specified 2026-10-02; built the same day* (the owner's decision S10,
 [`plans/browser-decisions.md`](../../plans/browser-decisions.md)). **`⊤` is the unit type and its one
 value**, written the same in both roles — `log : String → ⊤`, `else ⊤`, `λ⊤ → e`, `key ⊤` — and
 replacing `()` in both, so a parenthesis means only grouping or a tuple. **`⊥` is the type with no
@@ -2959,7 +2959,7 @@ exposed values, and a use of one is `name_removed`; nothing unqualified replaces
 `Float` join the module aliases, so `Int.mod n 2`, `Int.rem n 3` and `Float.log x 10` need no
 import. The exposed types do not change. *Amended 2026-10-01:* the modules `Int` and `Float` do not
 declare those two types, which stay in `Basics` (§12.4); they are ordinary core modules holding
-`mod` and `rem`, and `log`. *Amended 2026-10-02 (§12.10; specified, not built):* the empty type
+`mod` and `rem`, and `log`. *Amended 2026-10-02 (§12.10; built the same day):* the empty type
 is written `⊥`, which names `Basics`' type wherever it stands; `Never` stays among the exposed
 types only so that a stale use is `never_spelling_removed` rather than `unbound_type`. Unlike `Int32` below, they are not an escape hatch beside the language
 everyone writes but the home of three prelude values, which is why they keep a prelude row: an
@@ -3008,7 +3008,7 @@ beni source writes it**, as Elm's writes Elm, with Elm's spacing:
 | function | `<function>` |
 | `foreign type` | `<internals>` |
 
-*Amended 2026-10-02 (§12.10; specified, not built):* from the enforce step the unit value prints
+*Amended 2026-10-02 (§12.10; built the same day):* from the enforce step the unit value prints
 `⊤`, and `Mark ()` prints `Mark ⊤`, as source writes them.
 
 An opaque type prints its constructor, as Elm's does: `Debug` is for the developer who can read

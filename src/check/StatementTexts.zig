@@ -38,7 +38,7 @@ pub fn statementNotUnit(r: *Reporter, region: Bir.Inst.Index, category: Category
     defer shown.deinit();
     Render.writeVar(&shown.writer, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
     const type_text = shown.written();
-    w.print("This line is a statement, so its value is thrown away — but it is {s} `{s}`, not `()`.\n\n", .{ Diagnostics.article(type_text), type_text }) catch return error.OutOfMemory;
+    w.print("This line is a statement, so its value is thrown away — but it is {s} `{s}`, not `⊤`.\n\n", .{ Diagnostics.article(type_text), type_text }) catch return error.OutOfMemory;
 
     // A "returns a new one" function (§29.1): a call, not an operator,
     // passed a local of the very type it returns. The binding the fix

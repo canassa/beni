@@ -22,7 +22,7 @@ module Models
   schema R
     type Type : R.Type
     type Encoded : R.Encoded
-    value schema : () → Schema R.Encoded R.Type
+    value schema : ⊤ → Schema R.Encoded R.Type
     value parse : String → Result (List Issue) R.Type
     value print : R.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) R.Type
@@ -34,7 +34,7 @@ module Models
   schema Rec
     type Type : { x : Int, y : String }
     type Encoded : { x : Int, y : String }
-    value schema : () → Schema Rec.Encoded Rec.Type
+    value schema : ⊤ → Schema Rec.Encoded Rec.Type
     value parse : String → Result (List Issue) Rec.Type
     value print : Rec.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Rec.Type

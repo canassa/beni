@@ -4,10 +4,10 @@ module EffectForeignRungs
   foreign value double : Int → Int
   value fetch : Int → Int !suspends
   foreign value get : Int → Int !suspends
-  foreign value later : (() → Int) → () !impure
-  foreign value makeClock : () → (() → Int !impure) !impure
-  foreign value now : () → Int !impure
+  foreign value later : (⊤ → Int) → ⊤ !impure
+  foreign value makeClock : ⊤ → (⊤ → Int !impure) !impure
+  foreign value now : ⊤ → Int !impure
   value quiet : Int → Int
-  value reading : () → Int !impure
-  value schedule : () → () !impure
-  value tick : () → Int !impure
+  value reading : ⊤ → Int !impure
+  value schedule : ⊤ → ⊤ !impure
+  value tick : ⊤ → Int !impure

@@ -2,7 +2,7 @@ module Models
   schema Event
     type Type : Event.Type
     type Encoded : Event.Encoded
-    value schema : () → Schema Event.Encoded Event.Type
+    value schema : ⊤ → Schema Event.Encoded Event.Type
     value parse : String → Result (List Issue) Event.Type
     value print : Event.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Event.Type
@@ -14,7 +14,7 @@ module Models
   schema User
     type Type : { id : Int }
     type Encoded : { id : Int }
-    value schema : () → Schema User.Encoded User.Type
+    value schema : ⊤ → Schema User.Encoded User.Type
     value parse : String → Result (List Issue) User.Type
     value print : User.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) User.Type

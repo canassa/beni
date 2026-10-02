@@ -194,7 +194,7 @@ fn writeDebugShape(
         switch (n.kind) {
             .unknown => try w.writeAll("_"),
             .function => try w.writeAll("<function>"),
-            .unit => try w.writeAll("()"),
+            .unit => try w.writeAll("⊤"),
             .tuple => try w.writeAll(if (n.count == 0) "( )" else "( "),
             .record => try w.writeAll(if (n.count == 0) "{}" else "{ "),
             .field => try w.print("{s} : ", .{interner.slice(@enumFromInt(n.value))}),

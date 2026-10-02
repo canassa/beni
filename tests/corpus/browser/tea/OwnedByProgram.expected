@@ -3,14 +3,14 @@
   <button id="go">"go"</button>
 </body>
 -- click #go
-console.log: worker starts: ()
+console.log: worker starts: ⊤
 (the DOM did not change)
 -- advance 50
 (the DOM did not change)
 -- click #go
-console.log: worker starts: ()
+console.log: worker starts: ⊤
 (the DOM did not change)
 -- advance 100
-console.log: worker ends: ()
-console.log: worker ends: ()
+console.log: worker ends: ⊤
+console.log: worker ends: ⊤
 (the DOM did not change)

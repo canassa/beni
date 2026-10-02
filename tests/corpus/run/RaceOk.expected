@@ -1,5 +1,5 @@
 one side fails: Ok "slow won"
 every side fails: Err ["first","third"]
 no branches: Err []
-slower released: ()
+slower released: ⊤
 Ok "first Ok"

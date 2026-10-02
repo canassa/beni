@@ -8,11 +8,11 @@ console.log: render: 0
 </body>
 -- click #fiber
 console.log: render: 0
-console.log: sent: ()
+console.log: sent: ⊤
 console.log: render: 1
-console.log: flushed: ()
+console.log: flushed: ⊤
 (the DOM did not change)
 -- click #update
-console.log: update flushed: ()
+console.log: update flushed: ⊤
 console.log: render: 2
 (the DOM did not change)

@@ -1,7 +1,7 @@
 module Net
   foreign value get : Int → String !suspends
 module Page
-  value later : List Int → () → List String !suspends
+  value later : List Int → ⊤ → List String !suspends
   value names : List Int → Int !suspends
   value now : List Int → List String !suspends
   value quiet : List Int → Int

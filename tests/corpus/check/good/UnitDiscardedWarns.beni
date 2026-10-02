@@ -1,0 +1,9 @@
+-- `unit_discarded` (language.md §12.10, checker-v2.md §34): a warning, on
+-- by default for the root package, at the `_ =` in front of a `⊤` (7:5);
+-- the `_ =` of an `Int` is a discard on purpose and says nothing, and the
+-- module checks.
+pub f : Int → Int
+f n =
+    _ = Debug.log "unit" ⊤
+    _ = Debug.log "int" n
+    n

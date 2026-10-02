@@ -1,4 +1,4 @@
-canceller ran: ()
-waiter released: ()
+canceller ran: ⊤
+waiter released: ⊤
 after cancel: "cancelled"
 cancelled

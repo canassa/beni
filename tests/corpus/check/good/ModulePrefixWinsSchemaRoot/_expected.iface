@@ -2,7 +2,7 @@ module A
   schema Models
     type Type : { id : Int }
     type Encoded : { id : Int }
-    value schema : () → Schema Models.Encoded Models.Type
+    value schema : ⊤ → Schema Models.Encoded Models.Type
     value parse : String → Result (List Issue) Models.Type
     value print : Models.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) Models.Type
@@ -13,7 +13,7 @@ module Models
   schema User
     type Type : { id : Int }
     type Encoded : { id : Int }
-    value schema : () → Schema User.Encoded User.Type
+    value schema : ⊤ → Schema User.Encoded User.Type
     value parse : String → Result (List Issue) User.Type
     value print : User.Type → Result (List Issue) String
     value parseWith : Options, String → Result (List Issue) User.Type
