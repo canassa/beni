@@ -1,75 +1,79 @@
---! Every event of one name on the window or the document, as values a
---! subscription's body sends (`docs/design/boundary.md` §9.8.10): the
---! platform's own modules build their subscriptions on it — the keyboard
---! in `Browser.Events`, the address in `Url`. Each event is read while it
---! is dispatched, so what it carried is not read late, and queued until
---! the body's fiber takes it, so none is lost when several arrive between
---! two of its turns. `browser-tea` does not re-export it, as it does not
---! `Hosted`.
+--! Listeners on the window or the document (`docs/design/boundary.md`
+--! §9.8.5, §9.8.10): the platform's own modules build their subscriptions
+--! and direct forms on them — the keyboard and the window in
+--! `Browser.Events`, the address in `Browser.Navigation`. A listener is a
+--! function of what it sends to that adds the host's listener and returns
+--! what removes it; `Sub.on` runs one with no fiber, and `each` runs one
+--! in the calling fiber. Each event is read while it is dispatched, so
+--! what it carried is not read late. `browser-tea` does not re-export it,
+--! as it does not `Hosted`.
 --!
---! Written over `Js`: a listener is an array, `[ queue, waiting, target,
---! name, handler ]` — the values read and not yet taken, the fiber
---! waiting for one (or null), and what `removeEventListener` needs.
+--! Written over `Js`: a fiber's listener is an array, `[ queue, waiting,
+--! remove ]` — the values sent and not yet taken, the fiber waiting for
+--! one (or null), and what removes the host's listener.
 
-import Browser
 import Js
 import Task
 
 
---| Send `read event` for each event named `name` on `target` (`"window"`
---| or `"document"`), in order, for as long as the calling fiber runs. The
---| listener is added when the body starts and removed however it ends.
-pub each : String, String, sync (Js.Value → a), Browser.Send a → ()
-each target name read emit = Task.bracket (λ() → open target name read) (λl _ → close l) λl →
-    pump l emit
+--| Add a listener for every event named `name` on `target` (`"window"` or
+--| `"document"`) that calls `send (read event)` while the event is
+--| dispatched, and return what removes it.
+pub on : String, String, sync (Js.Value → a), sync (a → ()) → (() → ())
+on target name read send =
+    host = Js.global target
+    handler = Js.from λevent → send (read event)
+    _ = Js.call host "addEventListener" [ Js.from name, handler ]
+    λ() → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
 
 
---| The same over the events of two names on one target, in the order they
---| fire: one queue, so an event of one name never overtakes an earlier one
---| of the other.
-pub eachOf2 : String, String, String, sync (Js.Value → a), Browser.Send a → ()
-eachOf2 target name other read emit =
-    Task.bracket
-        (λ() →
-            l = open target name read
-            _ = Js.call (Js.at l 2) "addEventListener" [ Js.from other, Js.at l 4 ]
-            l
-        )
-        (λl _ →
-            _ = Js.call (Js.at l 2) "removeEventListener" [ Js.from other, Js.at l 4 ]
-            close l
-        )
-        λl → pump l emit
+--| The same over the events of two names on one target: one listener, so
+--| an event of one name never overtakes an earlier one of the other.
+pub on2 : String, String, String, sync (Js.Value → a), sync (a → ()) → (() → ())
+on2 target name other read send =
+    host = Js.global target
+    handler = Js.from λevent → send (read event)
+    _ = Js.call host "addEventListener" [ Js.from name, handler ]
+    _ = Js.call host "addEventListener" [ Js.from other, handler ]
+
+    λ() →
+        _ = Js.call host "removeEventListener" [ Js.from name, handler ]
+        Js.to (Js.call host "removeEventListener" [ Js.from other, handler ])
 
 
-open : String, String, sync (Js.Value → a) → Js.Value
-open target name read =
-    on = Js.global target
-    l = Js.array [ Js.array [], Js.null, on, Js.from name, Js.null ]
+--| Call `f` with each value `listener` sends, in order, for as long as the
+--| calling fiber runs: the listener is added when the call starts and
+--| removed however it ends. Values sent while `f` runs, or before the
+--| fiber takes them, are queued, so none is lost and none overtakes
+--| another.
+pub each : sync ((a → ()) → (() → ())), (a → ()) → ()
+each listener f = Task.bracket (λ() → open listener) (λl _ → close l) λl → pump l f
+
+
+open : sync ((a → ()) → (() → ())) → Js.Value
+open listener =
+    l = Js.array [ Js.array [], Js.null, Js.null ]
 
     handler =
-        λevent →
-            v = Js.from (read event)
+        λv →
             waiting = Js.at l 1
             if Js.isNull waiting then
-                Js.to (Js.call (Js.at l 0) "push" [ v ])
+                Js.to (Js.call (Js.at l 0) "push" [ Js.from v ])
             else
                 _ = Js.setAt l 1 Js.null
-                Js.to (Js.apply waiting [ v ])
-
-    _ = Js.setAt l 4 (Js.from handler)
-    _ = Js.call on "addEventListener" [ Js.from name, Js.from handler ]
+                Js.to (Js.apply waiting [ Js.from v ])
+    _ = Js.setAt l 2 (Js.from (listener handler))
     l
 
 
 close : Js.Value → ()
-close l = Js.to (Js.call (Js.at l 2) "removeEventListener" [ Js.at l 3, Js.at l 4 ])
+close l = Js.to (Js.apply (Js.at l 2) [ Js.null ])
 
 
-pump : Js.Value, Browser.Send a → ()
-pump l emit =
-    _ = emit (next l)
-    pump l emit
+pump : Js.Value, (a → ()) → ()
+pump l f =
+    _ = f (next l)
+    pump l f
 
 
 -- The oldest value not yet taken, waiting for one when there is none.

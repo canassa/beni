@@ -4,26 +4,28 @@
 --! before, once per render, and starts what arrived and cancels what left.
 --! No program ever unsubscribes.
 --!
---! A subscription is a **key** and a **body**: while the key is in the set,
---! one fiber runs the body, and every value it sends becomes a message
---! through the tagger of each current declaration of that key. The key is
---! the resource's whole identity — `Time.every` keys by its interval — so
---! two declarations of one key share one fiber, and a tagger that changes
---! from one model to the next never restarts it.
+--! A subscription is a **key** and either a **body**, which one fiber runs
+--! while the key is in the set, or a **listener**, which is added when the
+--! key arrives and removed when it leaves, with no fiber (§9.8.5). Every
+--! value either sends becomes a message through the tagger of each current
+--! declaration of that key. The key is the resource's whole identity —
+--! `Time.every` keys by its interval — so two declarations of one key share
+--! one body or listener, and a tagger that changes from one model to the
+--! next never restarts it.
 
 import Browser
-import Hosted exposing (Key, Tap)
+import Hosted exposing (Key, Kind, Tap)
 
 
 --| The subscriptions a model needs: `None`, or the declarations of every
---| `listen` in it, in order. Only `listen` makes a `Listen` from nothing —
---| `batch` and `map` rebuild one only from one — so a program that never
---| calls it has no `Listen`, and the architecture's code for one is
---| eliminated with it (`docs/design/backend.md` §9, *A `case` arm on a
+--| `listen` and `on` in it, in order. Only those two make a `Listen` from
+--| nothing — `batch` and `map` rebuild one only from one — so a program
+--| that calls neither has no `Listen`, and the architecture's code for one
+--| is eliminated with it (`docs/design/backend.md` §9, *A `case` arm on a
 --| constructor nothing builds*). A program never needs either.
 pub type Sub msg
     = None
-    | Listen (List (Key × Tap msg))
+    | Listen (List (Key × Kind × Tap msg))
 
 
 --| None.
@@ -51,9 +53,9 @@ both sub rest =
                     Listen (List.append list more)
 
 
---| Every declaration, in order: its key and its tap. What the
+--| Every declaration, in order: its key and its work. What the
 --| architecture that runs a program reads; a program never needs it.
-pub taps : Sub msg → List (Key × Tap msg)
+pub taps : Sub msg → List (Key × Kind × Tap msg)
 taps sub =
     case sub of
         None →
@@ -71,16 +73,32 @@ map sub tag =
             None
 
         Listen list →
-            Listen (List.map list λ( k, t ) → ( k, Hosted.mapTap t tag ))
+            Listen (List.map list λ( k, kind, t ) → ( k, kind, Hosted.mapTap t tag ))
 
 
 --| While `key` is in the set, one fiber runs `body`, and each value it
 --| sends reaches `update` through `tag`. The key must name everything the
 --| body depends on, and what it sends: two declarations with one key are
---| one resource, and the body that runs is the one that started it.
+--| one resource, and the body that runs is the one that started it. A
+--| subscription that only waits for an event is `on`, which needs no
+--| fiber.
 --|
 --|     every interval tag =
 --|         Sub.listen (Every interval) (ticks interval _) tag
 pub listen : k, (Browser.Send a → ()), (a → msg) → Sub msg
     where k.compare : k, k → Order
-listen k body tag = Listen [ ( Hosted.key k, Hosted.tap body tag ) ]
+listen k body tag = Listen [ ( Hosted.key k, Hosted.Waits, Hosted.tap body tag ) ]
+
+
+--| While `key` is in the set, the host's listener `start` adds is added,
+--| with no fiber: handed a function, `start` adds a listener that calls it
+--| with a value as each event is dispatched, and returns what removes it.
+--| Each value reaches `update` through `tag` exactly where a fiber waiting
+--| for it would have sent it (`boundary.md` §9.8.5). The key names the
+--| resource, as `listen`'s does.
+--|
+--|     onKeyDown tag =
+--|         Sub.on KeyDown (Listen.on "document" "keydown" Js.to _) tag
+pub on : k, sync ((a → ()) → (() → ())), (a → msg) → Sub msg
+    where k.compare : k, k → Order
+on k start tag = Listen [ ( Hosted.key k, Hosted.Hears, Hosted.hook start tag ) ]

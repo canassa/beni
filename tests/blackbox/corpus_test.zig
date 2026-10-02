@@ -30,7 +30,11 @@
 //!                                   platform, then loaded into a page and
 //!                                   driven by X.steps (when it exists); the
 //!                                   golden is the page after the load and
-//!                                   after every step (`browser.zig`)
+//!                                   after every step (`browser.zig`); a
+//!                                   development build with listener
+//!                                   subscriptions runs a third time with
+//!                                   them in fibers, against the same
+//!                                   golden (boundary.md §9.8.5)
 //!   emit/X.beni       + X.js        `build --platform=node`, then the module's
 //!                                   own `.mjs` is the golden (backend.md §12)
 //!   emit/release/X.beni + X.js      the same, with `--release` added: the golden
@@ -196,7 +200,7 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
-                .dev, .dev_library => .run_dev,
+                .dev, .dev_library, .dev_fiber => .run_dev,
                 .release, .release_library => .run_release,
             },
             .browser => .browser,
@@ -210,7 +214,7 @@ const Kind = enum {
 /// `--schema-library`, every schema root forced through the library
 /// interpreter, against the same golden (`schema.md` §10's differential
 /// corpus).
-const RunPass = enum { dev, release, dev_library, release_library };
+const RunPass = enum { dev, release, dev_library, release_library, dev_fiber };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -1847,15 +1851,17 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [2]?[]const u8 = .{ null, null };
+        var verified: [3]?[]const u8 = .{ null, null, null };
         var first_error: ?anyerror = null;
         // Both builds first, then every page that must run in one Node
         // process (`browser.driveAll`), then each page's verdict.
         // A failure is reported in the order a page at a time would meet
         // it: a release build that fails waits for the development page.
-        var pages: [2]?PagePlan = .{ null, null };
+        // The third page is the development build again with its listener
+        // subscriptions in fibers (`fiberPlan`), when it has any.
+        var pages: [3]?PagePlan = .{ null, null, null };
         var release_error: ?anyerror = null;
-        for ([_]RunPass{ .dev, .release }, &pages) |pass, *plan| {
+        for ([_]RunPass{ .dev, .release }, pages[0..2]) |pass, *plan| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", platform_arg });
             if (pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
@@ -1872,8 +1878,9 @@ const Case = struct {
                 break :blk null;
             };
         }
-        var entries: std.ArrayList([]const u8) = .empty;
-        for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, p.entry);
+        if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
+        var entries: std.ArrayList(browser.Entry) = .empty;
+        for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
             shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
@@ -1951,20 +1958,52 @@ const Case = struct {
         const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = if (pass == .release) "release" else "out";
-        const plan: PagePlan = .{
+        return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,
             .bless = bless,
             .out = out,
             .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out}),
             .skip = false,
-        };
+        }, h, script, record);
+    }
 
-        // Skip the page when this output tree, golden, DOM, driver and
-        // script were verified together before. Chrome always runs.
-        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless and !chrome) {
-            if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try run_hash.lineWith(c.arena, c.w, out, pass_name, golden, bytes, try browser.page(c.arena, h, script.bytes));
+    /// The development build's page again, its test hook set so every
+    /// listener subscription runs in a fiber (`boundary.md` §9.8.5), against
+    /// the same golden, which it never blesses — or null when the build
+    /// carries no hook: it has no listener subscription. The build is
+    /// copied to a directory of its own first, because the driver's one
+    /// Node process has already loaded the development build's modules
+    /// once, and an import of the same files would answer from that.
+    fn fiberPlan(c: Case, dev: PagePlan, h: browser.Harness, script: Script, record: []const u8) !?PagePlan {
+        const out = "out-fiber";
+        // A project may be one an earlier fixture used: nothing of its copy
+        // may stay in this one's.
+        try c.w.tmp.dir.deleteTree(c.w.io, out);
+        const files = try c.w.listFiles(dev.out);
+        var hooked = false;
+        for (files) |rel| {
+            const bytes = try c.w.tmp.dir.readFileAlloc(c.w.io, try std.fs.path.join(c.arena, &.{ dev.out, rel }), c.arena, .limited(world.max_stream_bytes));
+            if (std.mem.endsWith(u8, rel, ".mjs") and std.mem.indexOf(u8, bytes, browser.fiber_hook) != null) hooked = true;
+            try c.w.write(try std.fs.path.join(c.arena, &.{ out, rel }), bytes);
+        }
+        if (!hooked) return null;
+        var plan = dev;
+        plan.pass = .dev_fiber;
+        plan.out = out;
+        plan.entry = out ++ "/_main.mjs";
+        plan.bless = false;
+        plan.skip = false;
+        plan.checked = false;
+        return try c.checkedPlan(plan, h, script, record);
+    }
+
+    /// `plan`, skipped when its output tree, golden, DOM, driver and script
+    /// were verified together before. Chrome always runs.
+    fn checkedPlan(c: Case, plan: PagePlan, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
+        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !plan.bless and c.cfg.chrome == null) {
+            if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(plan.golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
+                const line = try run_hash.lineWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
                 var checked = plan;
                 checked.skip = run_hash.listed(record, line);
                 checked.checked = true;

@@ -2038,6 +2038,93 @@ reaches `update` through `tag`.
 A value reaches `update` one fiber resumption after the host produced it, so a subscription cannot
 `preventDefault`; that needs a `sync` filter in the host's dispatch, which is not designed.
 
+*Amended 2026-10-02 (the owner's decision): **a subscription whose body only listens runs without
+a fiber.*** §9.8.11 (b) took commands that cannot wait off fibers; a subscription's body never
+could be, because every `each…` direct form parks between events, so one `onUrlChange` reached the
+whole fiber kernel — 2 905 of TodoMVC's 9 895 bytes (research 51 §0.2). Now a subscription is one
+of two kinds, chosen by the function that makes it:
+
+```elm
+pub listen : k, (Send a → ()), (a → msg) → Sub msg                   where k.compare : k, k → Order
+pub on : k, sync (sync (a → ()) → (() → ())), (a → msg) → Sub msg    where k.compare : k, k → Order
+```
+
+- **`Sub.listen key body tag`** is unchanged: one fiber runs `body` while `key` is in the set. A
+  body that really waits — `Time.every`'s timer loop, a request — is written this way.
+- **`Sub.on key start tag`** is a **listener**: `start send` adds the host's listener, which calls
+  `send` with a value as each event is dispatched, and returns what removes it. While `key` is in
+  the set the listener is added once; it is removed when the key leaves. **No fiber, no `bracket`
+  and no park per event.** `start` and the `send` it is handed are `sync`. Every subscription of
+  `browser` that only listens is now one — `Browser.Events`' five, `Browser.Navigation`'s
+  `onUrlChange` and `onUrlRequest` — over `Listen.on target name read send` (one event name) and
+  `Listen.on2` (two, one listener, so one never overtakes the other).
+- **The direct forms are derived from the same listener**: `Listen.each start f` adds it when the
+  calling fiber starts the call, queues each value it sends until the fiber takes it, calls `f`
+  with each in order, and removes it however the call ends — what `Listen.each` did, now over any
+  listener. `eachKeyDown f = Listen.each (keys "keydown" _) f` and `onKeyDown tag = Sub.on KeyDown
+  (keys "keydown" _) tag`, so the two cannot drift (§9.8.11 (a)).
+
+**The two kinds are indistinguishable to a program**: the listener is run so that every message
+lands exactly where a fiber running `Listen.each start send` would have sent it. That is the rule,
+and each point below follows from it.
+
+1. **Where it starts.** A fiber spawned by the diff first runs when the scheduler's drain reaches
+   it, and only then adds its listener. A listener is added by core's `Task.soon` work queued by the
+   diff at that same place (§9.8.11 (b)): an event dispatched between the render that settled the
+   set and that turn — by after-render work, say — reaches neither.
+2. **Where each value lands.** A parked fiber that is handed a value is queued at the back of the
+   ready queue and sends it when the drain reaches it; values that arrive before it runs, or while
+   its `send` dispatches, are queued and sent in the same turn, in order, before it parks again. The
+   listener does the same with `Task.soon`: the first value queues one delivery at the back of the
+   ready queue; values that arrive before it runs, or while it runs, join it; the delivery sends
+   them all, in order, and the next value queues a new one. So a message from a listener keeps its
+   place among commands' bodies, fibers' resumptions and other subscriptions — a body that pushes
+   an address and then sends `Pushed` still has `Pushed` applied before the `UrlChanged` its push
+   announced, as before — and the drain's budget of 64 counts a delivery as it counted the
+   resumption. A value is read as its event is dispatched in both, so what it carried is never read
+   late (and `Browser.Events.onResize` no longer coalesces: every resize is a message with the size
+   it fired at, as Elm's is).
+3. **Leaving the set.** The relay is closed at once, in the render that saw the key leave (as
+   before), so nothing the listener sent and nothing it sends later reaches `update`; and **the
+   listener is removed at once**, in that render — a fiber's was removed when the fiber that
+   cancels it ran. A key that leaves before its listener was added (both in one task) never adds
+   it. Nothing a program can observe differs: a closed relay already dropped every value.
+4. **A throw.** `start`, the remover, the `read` and the tagger run as the fiber's would have — the
+   first in `soon` work, the second in the diff (the program's `settle`), the third in the host's
+   listener, the last in the delivery — and each of those is a guard of §9.8.10 (c), so a throw in
+   any of them is a defect by the same path, and nothing catches it (`CLAUDE.md` rule 9). A
+   throw out of a host listener is the host's report, as a fiber-path `read`'s was.
+5. **A defect's teardown** (§9.8.14). A listener is held by no fiber, so no sweep reaches it.
+   Core's **`Task.onShutdown : sync (() → ()) → ()`** registers a function `shutdown` calls once, in
+   a microtask queued at the stop — so after the throw has left the guard's cleanup for the host,
+   as §9.8.14 (b) requires of anything that can throw, and before the teardown's sweep — and
+   `Hosted` registers one, on the first listener it adds, that removes every listener still added.
+   A microtask, not the teardown's macrotask: removing a listener runs no program code and waits
+   for nothing, and a second pending macrotask would need `macrotask`'s one slot to become a queue,
+   which every program that drains would pay for. So after a defect every listener is gone
+   (`DefectReleasesHost`'s `listeners` steps read 0, as before).
+
+**The architecture.** `Sub`'s list carries `Key × Hosted.Watch msg`, `type Watch msg = Waits (Tap
+msg) | Hears (Tap msg)` — a `Tap` built by `Hosted.tap body tag` or `Hosted.hook start tag` — and
+`Tea`'s live set keeps `Fibered fiber relay` or `Heard relay` per key; the first declaration of a
+key decides its kind. Every step that spawns or cancels a fiber is in a `Waits` or `Fibered` arm, so
+a program whose subscriptions all listen reaches no fiber through them (`backend.md` §9, *A `case`
+arm on a constructor nothing builds*). `Hosted.hear relay` runs a listener as 1–3 say,
+`closeRelay` removes it; `Hosted.runHeard relay` runs the same listener under `Listen.each` in a
+fiber.
+
+**The proof is the existing pages, run both ways.** A development build carries a test hook: when
+the page's `globalThis.__beniFiberSubscriptions` is `true` before the program loads, `Tea` runs
+every listener subscription in a fiber through `Hosted.runHeard` — the way every subscription ran
+before this amendment. A release build has no hook (`Js.development`). The corpus runs every
+`browser/` fixture whose development build carries the hook a third time with it set (the driver's
+`--fiber-page`), against the same golden, so every subscription page — `WindowEvents`,
+`KeyEvents`, `KeyOrder`, `KeySubscription`, `LatestTagger`, `Router`, `NavigatePush`,
+`LinkGuard`, `UrlAddress`, `ApiAndRoutes`, `TodoMVC`, the `Defect…` pages and the rest — shows one
+transcript under both paths, and their goldens did not change. `browser/tea/ListenerOrder` pins
+point 2 against commands and fibers, point 1 against after-render work, and point 3's same-task
+arrival and departure.
+
 #### 9.8.6 After render, the DOM capabilities, `Browser.flush` (W49, W50)
 
 **`Cmd.afterRender body`** queues `body` into phase (2) of the next flush (`backend.md` §15.11):
@@ -2086,6 +2173,12 @@ outlet or a relay, so the host itself is only `{ send, after }`, reached through
 | `Tap msg`, `tap : (Send a -> ()), sync (a -> msg) -> Tap msg`, `mapTap` | `impure` (`mapTap` `pure`) | a subscription's body and tagger, the payload type hidden |
 | `Relay msg`, `relay : Host msg, Tap msg -> Relay msg`, `retap`, `closeRelay` | `impure` | a live subscription's current taggers |
 | `run : Relay msg -> ()` | `suspends` | run the relay's body in the calling fiber |
+
+*Amended 2026-10-02 (§9.8.5's amendment):* `Hosted` gains `hook : sync ((a → ()) → (() → ())),
+sync (a → msg) → Tap msg` (`impure`), a listener's tap; `type Watch msg = Waits (Tap msg) | Hears
+(Tap msg)`, what `Sub`'s list carries, with `mapWatch` and `tapOf`; `hear : Relay msg → ()`, a
+listener run with no fiber, and `runHeard`, the same in the calling fiber (`suspends`), for the
+test hook `fibered`. `closeRelay` also removes a listener `hear` added.
 
 *Amended 2026-10-02 (§9.8.3, the type's identity):* `key` is beni, `keyOf (Js.fingerprint k EQ) k`
 over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`
@@ -2241,7 +2334,11 @@ after dispatch, and only `preventDefault` would come too late. The queue is `Lis
 String, sync (Js.Value -> a), Send a -> ()` — the window's or the document's events of one name,
 each `read` as it fires — a module of `browser` for its own modules (`Browser.Navigation` uses it
 too), not re-exported by `browser-tea`, as `Hosted` is not. Elm's decoder may fail, sending
-nothing; a beni function always makes a message, which `update` may ignore.
+nothing; a beni function always makes a message, which `update` may ignore. *(Amended 2026-10-02,
+§9.8.5's amendment: `Listen` is `on : String, String, sync (Js.Value → a), sync (a → ()) → (() →
+())`, the listener itself, with `on2` for two names and `each : sync ((a → ()) → (() → ())), (a →
+()) → ()` for the direct forms; the subscriptions run the listener with no fiber, and a resize is
+no longer coalesced.)*
 
 **(b) Storage, randomness and the address.**
 
@@ -2481,6 +2578,14 @@ runtime — `Random.generate` cost 1 707 bytes over a counter, almost all of it 
 - **What is not the same.** `Task.closeRoot` (which nothing calls yet, W51) does not reach queued
   work. *(Amended 2026-10-02: a defect's teardown, §9.8.14, drops queued work unrun.)* And the choice is as precise as the class: a function chosen at run time between one that
   waits and one that does not (`if b then f else g`) may wait, and runs in a fiber.
+
+*Amended 2026-10-02 (§9.8.5's amendment):* **(c) a subscription that only listens runs without a
+fiber**, by the same rule — the listener's values are delivered by `Task.soon` work where a fiber's
+resumption would have landed — but chosen by the function that makes it (`Sub.on` against
+`Sub.listen`), not by the inferred bit: a listener's `start` returns at once by its shape, so
+there is nothing to infer, and every `each…` direct form of the table in (a) is now `Listen.each`
+over that listener. §9.8.5's amendment has the rule, the five points that keep the two paths
+indistinguishable, and their proof.
 
 **The proof that ordering is unchanged** is a pair of pages that do the same work both ways,
 each body written once and made one that may wait by a wait on a branch no run takes:
@@ -3136,6 +3241,10 @@ fiber holds is released; and no other code of the program runs. What is reached,
 | a command's body queued with no fiber (`Task.soon`, §9.8.11 (b)) | the scheduler's queue | nothing: it is dropped unrun, and what it would have spawned never exists |
 | after-render work (`Hosted.afterRender`, `Cmd.afterRender`) | `Browser.beni`'s `later` queue | nothing: dropped unrun, as every render after the defect is |
 | a `bracket` left open outside any fiber by the throw (in `soon` work, in `init`) | the outside-any-fiber record's finaliser list | a fiber of its own, step 4 of (d) |
+
+*(Amended 2026-10-02, §9.8.5's amendment: a listener a subscription added with no fiber is held
+by `Hosted`'s set of added listeners, and is removed by the function `Hosted` gave
+`Task.onShutdown`, in a microtask queued at the stop, before the sweep.)*
 
 A dropped body or after-render function is program code, which (c) of §9.8.10 says no longer runs; it
 holds no finaliser — work that cannot suspend cannot have parked on anything — so dropping it

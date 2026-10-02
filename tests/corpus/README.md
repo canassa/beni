@@ -105,8 +105,9 @@ project) against it, one step per line, `#` for a comment:
                                 `(the host follows the link to "<href>")`,
                                 so neither DOM leaves the page
     click <selector> <n>        `n` clicks in one task, then `(the step's task ended)`
-    flush <selector>            a click, then the program runtime's `flush()`
-                                in the same task, then `(flushed)`
+    flush <selector>…           a click, then the program runtime's `flush()`
+                                in the same task, then `(flushed)`; with
+                                several selectors, each in turn, in one task
     input <selector> "<text>"   set `.value`, then `input`
     type <selector> "<text>"    per character, in a task of its own: append
                                 it to the live `.value`, then `input`
@@ -231,7 +232,17 @@ attributes, `:focus` on the focused element — or `(the DOM did not
 change)`. An uncaught exception in the page outside a `throws` step (which
 must throw, and records each exception instead), and a step that cannot run,
 fail the case with the step, the message and where it was thrown; they
-are never a golden. `<name>.release-expected` works as in `run/`. Under
+are never a golden. `<name>.release-expected` works as in `run/`.
+
+**Listener subscriptions both ways.** A development build of a page whose
+subscriptions include a listener (`Sub.on`; `boundary.md` §9.8.5) carries a
+test hook, and such a build is run a third time, copied to `out-fiber/`
+and loaded with `--fiber-page`, which sets the hook before the program
+loads: every listener then runs in a fiber, as every subscription did
+before listeners needed none. Its golden is the development build's, which
+it never blesses, so each such page shows that the two paths cannot be told
+apart; its run hash is a third line, `dev_fiber`. A build without the hook
+— no listener subscription, or `--release` — runs as before. Under
 happy-dom an exception a microtask throws escapes to Node; the driver
 reports it to the page's `error` listeners, as a browser does, so a page
 that shows the error it was stopped by (`boundary.md` §9.8.10 (c), the

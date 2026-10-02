@@ -21,8 +21,12 @@
 // runs each page in turn in this one process, each in a page of its own,
 // and writes what a run of it alone would have given — its exit code,
 // stdout and stderr — to its report, as `{"code":…,"stdout":…,"stderr":…}`.
-// The corpus walker runs a fixture's development and release builds so:
-// Node starts, and compiles the DOM, once for both.
+// A `--fiber-page=<entry.mjs>@<report.json>` is such a page whose test hook
+// asks a development build to run every listener subscription in a fiber
+// (`fiberSubscriptions`, below; docs/design/boundary.md §9.8.5). The corpus
+// walker runs a fixture's development and release builds so — and its
+// development build again as a `--fiber-page` when that build carries the
+// hook: Node starts, and compiles the DOM, once for all of them.
 //
 // The steps file has one step per line; `#` starts a comment line:
 //
@@ -37,9 +41,10 @@
 //                               logs `(the host follows the link to "<href>")`
 //   click <selector> <n>        `n` of them in one task, then the line
 //                               `(the step's task ended)` in the transcript
-//   flush <selector>            a click, then the program runtime's `flush`
+//   flush <selector>…           a click, then the program runtime's `flush`
 //                               export in the same task, then the line
-//                               `(flushed)`
+//                               `(flushed)`; with several selectors, each
+//                               in turn, all in that one task
 //   input <selector> "<text>"   set `.value`, then a bubbling `input` InputEvent
 //   type <selector> "<text>"    per character, a task of its own: append it to
 //                               the live `.value`, then an `input` InputEvent;
@@ -522,9 +527,13 @@ function step(s) {
     case "flush": {
       const runtime = globalThis.__beniHarness.runtime;
       if (typeof runtime?.flush !== "function") return "the program runtime exports no `flush`";
-      target.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
-      runtime.flush();
-      globalThis.__beniHarness.log.push("(flushed)");
+      for (const selector of [s.selector, ...s.more]) {
+        const each = document.querySelector(selector);
+        if (each === null) return `no element matches \`${selector}\``;
+        each.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
+        runtime.flush();
+        globalThis.__beniHarness.log.push("(flushed)");
+      }
       return null;
     }
     case "input":
@@ -555,6 +564,15 @@ function step(s) {
 // of the event loop.
 function settle() {
   return new Promise((done) => globalThis.__beniHarness.clock.real(done, 0));
+}
+
+// A `--fiber-page`'s test hook, set before the program loads: a
+// development build of `browser-tea` then runs every listener subscription
+// in a fiber, as every subscription ran before listeners needed none
+// (docs/design/boundary.md §9.8.5). A release build has no hook.
+function fiberSubscriptions() {
+  globalThis.__beniFiberSubscriptions = true;
+  return null;
 }
 
 // The numbers of the requests no step answered and nothing aborted.
@@ -616,7 +634,7 @@ function serialise() {
 const usage = (why) => {
   process.stderr.write(
     `driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) <entry.mjs> [<steps>]\n` +
-      `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] --page=<entry.mjs>@<report.json>…\n`,
+      `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] (--page | --fiber-page)=<entry.mjs>@<report.json>…\n`,
   );
   process.exit(2);
 };
@@ -633,16 +651,16 @@ const positional = [];
 const pages = [];
 for (const arg of process.argv.slice(2)) {
   const m = arg.match(/^--(dom|chrome|steps)=(.+)$/);
-  const p = arg.match(/^--page=(.+)@(.+)$/);
+  const p = arg.match(/^--(page|fiber-page)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
-  else if (p) pages.push({ entry: p[1], report: p[2] });
+  else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
 }
 if (pages.length === 0 && (positional.length < 1 || positional.length > 2)) usage("expected an entry file and at most one steps file");
 if (pages.length !== 0 && positional.length !== 0) usage("--page takes the place of the entry and steps files");
 if ((options.dom === undefined) === (options.chrome === undefined)) usage("give exactly one of --dom and --chrome");
-if (pages.length === 0) pages.push({ entry: positional[0], report: null });
+if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: false });
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // Parse the whole script before the page loads, so a malformed step is
@@ -756,7 +774,9 @@ if (stepsPath !== undefined) {
           headers(body[2]);
         }
       }
-    } else if (command === "click" || command === "focus" || command === "flush") {
+    } else if (command === "flush") {
+      s.more = argument === undefined ? [] : argument.split(/\s+/);
+    } else if (command === "click" || command === "focus") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
     } else if (command === "input" || command === "type") {
       try {
@@ -948,7 +968,7 @@ async function chromePage(endpoint) {
   });
   await send("Page.navigate", { url: pageUrl }, sessionId);
   await loaded;
-  const helpers = `const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests};`;
+  const helpers = `const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -967,7 +987,7 @@ async function chromePage(endpoint) {
 // One page: load `entry` into a fresh page, run the steps, and resolve to
 // what a run of it alone would give — its exit code, its transcript (stdout)
 // and why it failed (stderr).
-async function runPage(entry) {
+async function runPage(entry, fiber) {
   entryFile = resolve(entry);
   const script = [...steps];
   const transcript = [];
@@ -977,6 +997,8 @@ async function runPage(entry) {
   pageUrl = fromFile ? "file:///_page.html" : "http://127.0.0.1:8000/_page.html";
   entryUrl = pathToFileURL(entryFile).href;
   const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
+  // The test hook goes in before anything of the program runs.
+  if (fiber) await page.run(fiberSubscriptions);
 
   let shown = null;
   let result = null;
@@ -1073,11 +1095,11 @@ async function runPage(entry) {
 const written = (stream, text) => new Promise((done) => (text === "" ? done() : stream.write(text, done)));
 
 if (pages[0].report === null) {
-  const r = await runPage(pages[0].entry);
+  const r = await runPage(pages[0].entry, false);
   await written(process.stdout, r.stdout);
   await written(process.stderr, r.stderr);
   process.exit(r.code);
 } else {
-  for (const p of pages) writeFileSync(p.report, JSON.stringify(await runPage(p.entry)));
+  for (const p of pages) writeFileSync(p.report, JSON.stringify(await runPage(p.entry, p.fiber)));
   process.exit(0);
 }

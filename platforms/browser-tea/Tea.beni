@@ -20,8 +20,9 @@ import Browser exposing (Host, UrlRequest)
 import Browser.Navigation as Navigation
 import Cmd exposing (After, Cancel, CancelAll, Cmd, Concurrent, Ignore, Item, Keyed, KeyedNow, Now, Perform, Policy, Queue, Restart)
 import Dict exposing (Dict)
-import Hosted exposing (Job, Key, Outlet, Relay, Tap)
+import Hosted exposing (Hears, Job, Key, Kind, Outlet, Relay, Tap, Waits)
 import Html exposing (Html)
+import Js
 import Sub exposing (Sub)
 import Task exposing (Exit, Fiber, Scope, Soon)
 import Url exposing (Url)
@@ -180,10 +181,14 @@ type Run msg
     | Queued Soon (Outlet msg)
 
 
--- A live subscription: its fiber, and the relay its values go through.
+-- A live subscription: the relay its values go through, and what stops it
+-- when its key leaves — cancel the fiber that runs its body, or remove its
+-- listener (`boundary.md` §9.8.5). Only a `Hosted.Waits` declaration makes
+-- the first in a release build, so a program whose subscriptions all
+-- listen cancels no fiber.
 type alias Live msg =
-    fiber : Fiber ()
     relay : Relay msg
+    stop : Scope → ()
 
 
 start : Host msg, model × Cmd msg → State model msg
@@ -472,34 +477,84 @@ lives l =
             live
 
 
-diff : Host msg, Scope, List (Key × Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
+-- Each key's declarations: how the first runs, which decides whether a
+-- fiber runs it, and every one's tap, in order.
+type alias Wanted msg =
+    Dict Key (Kind × List (Tap msg))
+
+
+diff : Host msg, Scope, List (Key × Kind × Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
 diff host scope declared live =
-    wanted = List.foldl declared Dict.empty λ( k, t ) d →
-        Dict.insert d k (List.append (Maybe.withDefault (Dict.get d k) []) [ t ])
+    wanted = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
     kept = Dict.foldl live Dict.empty λk l d → keep scope wanted k l d
-    Dict.foldl wanted kept λk taps d → arrive host scope k taps d
+    Dict.foldl wanted kept λk ( kind, taps ) d → arrive host scope k kind taps d
 
 
-keep : Scope, Dict Key (List (Tap msg)), Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)
+want : Key, Kind, Tap msg, Wanted msg → Wanted msg
+want k kind t d =
+    ( first, taps ) = Maybe.withDefault (Dict.get d k) ( kind, [] )
+    Dict.insert d k ( first, List.append taps [ t ] )
+
+
+keep : Scope, Wanted msg, Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)
 keep scope wanted k l d =
     case Dict.get wanted k of
-        Just taps →
+        Just ( _, taps ) →
             _ = Hosted.retap l.relay taps
             Dict.insert d k l
 
         Nothing →
-            _ = Hosted.closeRelay l.relay
-            _ = Task.spawnIn scope λ() → Task.cancel l.fiber
+            _ = l.stop scope
             d
 
 
-arrive : Host msg, Scope, Key, List (Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
-arrive host scope k taps d =
+arrive : Host msg, Scope, Key, Kind, List (Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
+arrive host scope k kind taps d =
     case ( Dict.member d k, taps ) of
         ( False, [ first, …_ ] ) →
             r = Hosted.relay host first
             _ = Hosted.retap r taps
-            Dict.insert d k { fiber = Task.spawnIn scope λ() → Hosted.run r, relay = r }
+            Dict.insert d k { relay = r, stop = begin scope r kind }
 
         _ →
             d
+
+
+-- A body runs in a fiber spawned into the program's scope; a listener runs
+-- with none — unless a development build's page asked, through the test
+-- hook, for every listener to run in a fiber as it did before
+-- (`boundary.md` §9.8.5).
+begin : Scope, Relay msg, Kind → (Scope → ())
+begin scope r kind =
+    case kind of
+        Waits →
+            inFiber scope r λ() → Hosted.run r
+
+        Hears →
+            if Js.development () then
+                if Hosted.fibered () then
+                    inFiber scope r λ() → Hosted.runHeard r
+                else
+                    hear r
+            else
+                hear r
+
+
+-- When the key leaves, the relay is closed at once, so nothing the body
+-- sends after lands, and the fiber is cancelled from one of the scope's
+-- own.
+inFiber : Scope, Relay msg, (() → ()) → (Scope → ())
+inFiber scope r body =
+    fiber = Task.spawnIn scope body
+
+    λs →
+        _ = Hosted.closeRelay r
+        _ = Task.spawnIn s λ() → Task.cancel fiber
+        ()
+
+
+-- When the key leaves, the listener is removed at once.
+hear : Relay msg → (Scope → ())
+hear r =
+    _ = Hosted.hear r
+    λ_ → Hosted.unhear r

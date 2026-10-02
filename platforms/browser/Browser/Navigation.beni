@@ -12,7 +12,7 @@
 --!     ClickedLink (Browser.Internal url) →
 --!         ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Pushed )
 
-import Browser exposing (Send)
+import Browser
 import Js
 import Listen
 import Sub exposing (Sub)
@@ -125,17 +125,23 @@ type Requests
 --| `_self`. Any other click is the host's. It covers the whole document,
 --| markup outside a program's mount included. It never returns.
 pub eachUrlRequest : (Browser.UrlRequest → ()) → ()
-eachUrlRequest f = Listen.each "window" "click" request λr → sendRequest f r
+eachUrlRequest f = Listen.each requests f
 
 
 --| Each click on a link the page should handle itself, as `eachUrlRequest`
 --| decides it: `Internal` with its `Url` for a link to the page's own
 --| protocol, host and port, `External` with its `href` for any other.
 pub onUrlRequest : (Browser.UrlRequest → msg) → Sub msg
-onUrlRequest tag = Sub.listen LinkClick (eachUrlRequest _) tag
+onUrlRequest tag = Sub.on LinkClick requests tag
 
 
-sendRequest : Send Browser.UrlRequest, Maybe Browser.UrlRequest → ()
+-- The listener both forms run: one on the window's clicks, which decides
+-- while the click is dispatched.
+requests : sync (Browser.UrlRequest → ()) → (() → ())
+requests send = Listen.on "window" "click" request λr → sendRequest send r
+
+
+sendRequest : sync (Browser.UrlRequest → ()), Maybe Browser.UrlRequest → ()
 sendRequest send r =
     case r of
         Just u →
@@ -213,25 +219,25 @@ anchorOf event =
 --| cancelling the fiber removes the listener. An address that is not a
 --| `Url` is skipped.
 pub eachUrlChange : (Url → ()) → ()
-eachUrlChange f = follow f
+eachUrlChange f = Listen.each follow f
 
 
 --| The page's new address each time it changes. An address that is not a
 --| `Url` sends nothing.
 pub onUrlChange : (Url → msg) → Sub msg
-onUrlChange tag = Sub.listen UrlChange (eachUrlChange _) tag
+onUrlChange tag = Sub.on UrlChange follow tag
 
 
--- `popstate`, which a browser fires for a fragment followed and for the
--- back and forward buttons, and this module's own announcement of a push
--- or a replace, in the order they fire. The address is read when each
--- fires.
-follow : Send Url → ()
-follow send = Listen.eachOf2 "window" "popstate" announcement (λ_ → currentUrl ()) λurl →
+-- The listener both forms run: `popstate`, which a browser fires for a
+-- fragment followed and for the back and forward buttons, and this
+-- module's own announcement of a push or a replace, in the order they
+-- fire. The address is read when each fires.
+follow : sync (Url → ()) → (() → ())
+follow send = Listen.on2 "window" "popstate" announcement (λ_ → currentUrl ()) λurl →
     sendUrl send url
 
 
-sendUrl : Send Url, Maybe Url → ()
+sendUrl : sync (Url → ()), Maybe Url → ()
 sendUrl send url =
     case url of
         Just u →

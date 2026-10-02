@@ -1,0 +1,120 @@
+-- A subscription that only listens runs with no fiber, and every value it
+-- sends lands exactly where the fiber that ran it before would have sent
+-- it (boundary.md §9.8.5) — the corpus runs this page both ways, its
+-- development build a second time with every listener in a fiber, against
+-- this one golden. Three of the amendment's points, each against what a
+-- listener that sent at once would do:
+--
+-- 1. The listener is added where that fiber would first have run, after
+--    the render that subscribed: a push made by that render's after-render
+--    work is heard by nobody (`#follow`).
+-- 2. A value lands at the back of the scheduler's queue: a body that
+--    pushes an address and then answers, and a body queued behind it, both
+--    land before the address change the push announced (`#order`).
+-- 3. A key that arrives and leaves in one task never adds its listener,
+--    and leaving removes it at once (`#on #off`, flushed in one task).
+import Browser.Navigation as Navigation exposing (Key)
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Follow
+    | Quiet
+    | Unfollow
+    | Order
+    | Note String
+    | Pushed String (Result Navigation.Error ())
+    | Changed Url
+
+
+type alias Model =
+    key : Key
+    following : Bool
+    lines : List String
+
+
+fragment : Url → String
+fragment url =
+    case url.fragment of
+        Just f →
+            "#" ++ f
+
+        Nothing →
+            ""
+
+
+push : Key, String → Cmd Msg
+push key url = Cmd.task (λ() → Navigation.pushUrl key url) (Pushed url _)
+
+
+note : Model, String → Model
+note model line = { model | lines = model.lines ++ [ line ] }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Follow →
+            ( { model | following = True }
+            , Cmd.afterRender λsend →
+                _ = Navigation.pushUrl model.key "#/early"
+                send (Note "after render: pushed #/early")
+            )
+
+        Quiet →
+            ( { model | following = True }, Cmd.none )
+
+        Unfollow →
+            ( { model | following = False }, Cmd.none )
+
+        Order →
+            ( model
+            , Cmd.batch
+                [ push model.key "#/a", Cmd.perform λsend → send (Note "the body behind it") ]
+            )
+
+        Note line →
+            ( note model line, Cmd.none )
+
+        Pushed url (Ok ()) →
+            ( note model "pushed ${url}", Cmd.none )
+
+        Pushed url (Err _) →
+            ( note model "${url} not pushed", Cmd.none )
+
+        Changed url →
+            ( note model "changed to ${fragment url}", Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.following then
+        Navigation.onUrlChange Changed
+    else
+        Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="follow" onClick={Follow}>follow</button>
+        <button id="unfollow" onClick={Unfollow}>unfollow</button>
+        <button id="order" onClick={Order}>order</button>
+        <button id="on" onClick={Quiet}>on</button>
+        <button id="off" onClick={Unfollow}>off</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { key = Navigation.key (), following = False, lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

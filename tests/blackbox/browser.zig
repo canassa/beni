@@ -184,6 +184,16 @@ pub const Pages = struct {
     pages: []?world.Result,
 };
 
+/// One page `driveAll` runs: the entry file, and whether the page asks the
+/// build's test hook to run every listener subscription in a fiber (the
+/// driver's `--fiber-page`; `boundary.md` §9.8.5).
+pub const Entry = struct { path: []const u8, fiber: bool = false };
+
+/// The test hook's name in a development build of `browser-tea`
+/// (`Hosted.fibered`): a build that does not contain it has no listener
+/// subscription for `--fiber-page` to change.
+pub const fiber_hook = "__beniFiberSubscriptions";
+
 /// Every page of `entries`, one after another in ONE Node process, each in
 /// a fresh page (the driver's `--page`): Node starts and compiles the DOM
 /// once for all of them, and each page's exit code, stdout and stderr are
@@ -192,7 +202,7 @@ pub fn driveAll(
     w: *World,
     h: Harness,
     chrome: ?[]const u8,
-    entries: []const []const u8,
+    entries: []const Entry,
     steps: ?[]const u8,
     timeout_ms: i64,
 ) !Pages {
@@ -212,7 +222,9 @@ pub fn driveAll(
             error.FileNotFound => {},
             else => return err,
         };
-        try argv.append(arena, try std.fmt.allocPrint(arena, "--page={s}@{s}", .{ entry, report.* }));
+        try argv.append(arena, try std.fmt.allocPrint(arena, "--{s}={s}@{s}", .{
+            if (entry.fiber) "fiber-page" else "page", entry.path, report.*,
+        }));
     }
     const run = try world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .dir = w.tmp.dir }, timeout_ms * @as(i64, @intCast(entries.len)));
     const pages = try arena.alloc(?world.Result, entries.len);

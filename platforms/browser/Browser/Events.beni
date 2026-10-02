@@ -1,18 +1,16 @@
---! The page's own events (`docs/design/boundary.md` §9.8.8, §9.8.10,
---! §9.8.11): the window's size, whether the page is visible, and the
---! keyboard. Each has a direct form first — `eachResize f` calls `f` with
---! every new size for as long as the calling fiber runs — and a
---! subscription, a `Sub.listen` over it, whose body adds one listener when
---! its key arrives and removes it when the key leaves. A size or a
---! visibility that changes faster than the program takes it is coalesced
---! into the latest; every key is delivered, in order.
+--! The page's own events (`docs/design/boundary.md` §9.8.5, §9.8.8,
+--! §9.8.10, §9.8.11): the window's size, whether the page is visible, and
+--! the keyboard. Each is a listener first, and has two forms over it: a
+--! direct form — `eachResize f` calls `f` with every new size for as long
+--! as the calling fiber runs — and a subscription, a `Sub.on` over the same
+--! listener, which adds it when its key arrives and removes it when the key
+--! leaves, with no fiber. Every event is delivered, in order, read as it
+--! is dispatched.
 
-import Browser
 import Html
 import Js
 import Listen
 import Sub exposing (Sub)
-import Task exposing (Exit, Resume)
 
 
 --| The window's inner size, in CSS pixels.
@@ -51,53 +49,65 @@ visibility () =
         Visible
 
 
+-- ---- The listeners ------------------------------------------------------------
+
+resizes : sync (Size → ()) → (() → ())
+resizes send = Listen.on "window" "resize" (λ_ → size ()) send
+
+
+visibilities : sync (Visibility → ()) → (() → ())
+visibilities send = Listen.on "document" "visibilitychange" (λ_ → visibility ()) send
+
+
+keys : String, sync (Html.Event → ()) → (() → ())
+keys name send = Listen.on "document" name event send
+
+
 -- ---- Direct forms -------------------------------------------------------------
 --
 -- Each waits for its events for as long as the calling fiber runs, calling
 -- `f` with each, in order, and never returns: cancelling the fiber removes
--- the listener. A subscription below is `Sub.listen` over one of them
--- (`boundary.md` §9.8.11).
+-- the listener (`boundary.md` §9.8.11).
 
---| Call `f` with the window's new size each time it is resized. A size
---| that changes faster than `f` takes it is coalesced into the latest.
+--| Call `f` with the window's new size each time it is resized.
 --|
 --|     Task.spawn λ() → Browser.Events.eachResize λsize → Log.info (String.fromInt size.width)
 pub eachResize : (Size → ()) → ()
-eachResize f = watch "window" "resize" size f
+eachResize f = Listen.each resizes f
 
 
 --| Call `f` with whether the page can be seen each time that changes.
 pub eachVisibilityChange : (Visibility → ()) → ()
-eachVisibilityChange f = watch "document" "visibilitychange" visibility f
+eachVisibilityChange f = Listen.each visibilities f
 
 
 --| Call `f` with each key pressed anywhere in the page, in order. No key
 --| is lost or merged; `f` runs one fiber turn after the event, so it cannot
 --| prevent the key's default.
 pub eachKeyDown : (Html.Event → ()) → ()
-eachKeyDown f = Listen.each "document" "keydown" event f
+eachKeyDown f = Listen.each (keys "keydown" _) f
 
 
 --| Call `f` with each key released anywhere in the page, in order.
 pub eachKeyUp : (Html.Event → ()) → ()
-eachKeyUp f = Listen.each "document" "keyup" event f
+eachKeyUp f = Listen.each (keys "keyup" _) f
 
 
 --| Call `f` with each `keypress` of the page, in order.
 pub eachKeyPress : (Html.Event → ()) → ()
-eachKeyPress f = Listen.each "document" "keypress" event f
+eachKeyPress f = Listen.each (keys "keypress" _) f
 
 
 -- ---- Subscriptions --------------------------------------------------------------
 
 --| The window's new size, each time it is resized.
 pub onResize : (Size → msg) → Sub msg
-onResize tag = Sub.listen Resize (eachResize _) tag
+onResize tag = Sub.on Resize resizes tag
 
 
 --| Whether the page can be seen, each time that changes.
 pub onVisibilityChange : (Visibility → msg) → Sub msg
-onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) tag
+onVisibilityChange tag = Sub.on VisibilityChange visibilities tag
 
 
 --| A message for each key pressed anywhere in the page, in order, made by
@@ -106,54 +116,23 @@ onVisibilityChange tag = Sub.listen VisibilityChange (eachVisibilityChange _) ta
 --|
 --|     Browser.Events.onKeyDown λevent → KeyPressed (Html.key event)
 --|
---| No key is lost or merged. The function runs one fiber turn after the
+--| No key is lost or merged. The function runs one queue turn after the
 --| event, so it cannot prevent the key's default; a handler on an element
 --| (`onKeyDown` with `Html.preventDefault`) can.
 pub onKeyDown : (Html.Event → msg) → Sub msg
-onKeyDown tag = Sub.listen KeyDown (eachKeyDown _) tag
+onKeyDown tag = Sub.on KeyDown (keys "keydown" _) tag
 
 
 --| A message for each key released anywhere in the page, in order.
 pub onKeyUp : (Html.Event → msg) → Sub msg
-onKeyUp tag = Sub.listen KeyUp (eachKeyUp _) tag
+onKeyUp tag = Sub.on KeyUp (keys "keyup" _) tag
 
 
 --| A message for each `keypress` of the page, in order: a key that types a
 --| character. The DOM deprecates the event; Elm keeps it, and so does this.
 pub onKeyPress : (Html.Event → msg) → Sub msg
-onKeyPress tag = Sub.listen KeyPress (eachKeyPress _) tag
+onKeyPress tag = Sub.on KeyPress (keys "keypress" _) tag
 
 
 event : Js.Value → Html.Event
 event v = Js.to v
-
-
--- A listener: the events of one name on the window or the document,
--- counted until a fiber takes them.
-foreign type Listener
-
-
-foreign impure listen : String, String → Listener
-
-
-foreign impure unlisten : Listener → ()
-
-
-foreign impure onEvent : Listener, Resume () → (() → ())
-
-
--- Wait for at least one event since the last wait.
-next : Listener → ()
-next l = Task.callback λresume → onEvent l resume
-
-
-watch : String, String, (() → a), Browser.Send a → ()
-watch target name read emit = Task.bracket (λ() → listen target name) (λl _ → unlisten l) λl →
-    forward l read emit
-
-
-forward : Listener, (() → a), Browser.Send a → ()
-forward l read emit =
-    _ = next l
-    _ = emit (read ())
-    forward l read emit

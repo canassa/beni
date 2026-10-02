@@ -9,6 +9,8 @@
 
 import Browser exposing (Host)
 import Js
+import Listen
+import Task
 
 
 --| A command's or subscription's key, whatever its type: its type's
@@ -105,8 +107,8 @@ pub foreign pure mapLater : Later a, sync (a → b) → Later b
 pub foreign impure afterRender : Host msg, Later msg → ()
 
 
---| A subscription's body and the function each value it sends is turned
---| into a message with.
+--| A subscription's body or listener, and the function each value it
+--| sends is turned into a message with.
 pub foreign type Tap msg
 
 
@@ -115,21 +117,77 @@ pub foreign type Tap msg
 pub foreign impure tap : (Browser.Send a → ()), sync (a → msg) → Tap msg
 
 
+--| A listener a subscription adds with no fiber, and its tagger
+--| (`boundary.md` §9.8.5): handed a function that sends values of type
+--| `a`, `start` adds the host's listener and returns what removes it.
+pub foreign impure hook : sync ((a → ()) → (() → ())), sync (a → msg) → Tap msg
+
+
 --| The same subscription, its messages passed through `tag`.
 pub foreign pure mapTap : Tap a, sync (a → b) → Tap b
 
 
---| A live subscription: the body of the tap it started with, and the
---| taggers every value it sends goes through, which `retap` replaces.
+--| How a subscription's tap runs while its key is in the set: a body in a
+--| fiber (`tap`'s), or a listener with none (`hook`'s). The first
+--| declaration of a key decides which. Only `Sub.listen` makes a `Waits`,
+--| so a program whose subscriptions all listen reaches no fiber through
+--| them.
+pub type Kind
+    = Waits
+    | Hears
+
+
+--| A live subscription: the body or listener of the tap it started with,
+--| and the taggers every value it sends goes through, which `retap`
+--| replaces.
 pub foreign type Relay msg
 
 
---| A relay into the program for `tap`'s body, with `tap`'s tagger.
+--| A relay into the program for `tap`'s body or listener, with `tap`'s
+--| tagger.
 pub foreign impure relay : Host msg, Tap msg → Relay msg
 
 
 --| Run the relay's body, in the current fiber, until it returns.
 pub foreign suspends run : Relay msg → ()
+
+
+--| Run a relay's listener with no fiber (`boundary.md` §9.8.5): added by
+--| work queued where a fiber spawned now would first run, each value it
+--| sends delivered by work queued where that fiber's resumption would
+--| land, and removed by `unhear` or when the program stops.
+pub hear : Relay msg → ()
+hear r = listen r queue Task.onShutdown
+
+
+queue : sync (() → ()) → ()
+queue work =
+    _ = Task.soon work
+    ()
+
+
+foreign impure listen : Relay msg, sync ((() → ()) → ()), sync ((() → ()) → ()) → ()
+
+
+--| Run a relay's listener in the current fiber, as `Listen.each` runs one,
+--| until the fiber is cancelled: how every listener subscription ran
+--| before `Sub.on` ran with none, kept for the test hook `fibered`.
+pub runHeard : Relay msg → ()
+runHeard r = Listen.each (starter r) (deliver r _)
+
+
+foreign impure starter : Relay msg → ((Js.Value → ()) → (() → ()))
+
+
+foreign impure deliver : Relay msg, Js.Value → ()
+
+
+--| The development build's test hook (`boundary.md` §9.8.5): whether the
+--| page asked, before the program loaded, for every listener subscription
+--| to run in a fiber through `runHeard`. Read only under
+--| `Js.development`, so no release build carries it.
+pub fibered : () → Bool
+fibered () = Js.same (Js.global "__beniFiberSubscriptions") (Js.from True)
 
 
 --| Replace the relay's taggers with those of `taps`, in order: each value
@@ -140,6 +198,10 @@ pub foreign impure retap : Relay msg, List (Tap msg) → ()
 
 --| Close a relay: what its body sends from now on is dropped.
 pub foreign impure closeRelay : Relay msg → ()
+
+
+--| Close a relay `hear` runs, and remove its listener now.
+pub foreign impure unhear : Relay msg → ()
 
 
 --| Write the page's title when it differs from `title`: what a document

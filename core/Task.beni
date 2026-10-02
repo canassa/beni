@@ -381,6 +381,39 @@ newFiber parent stack =
         }
 
 
+-- Whether `onShutdown` was given something, which `shutdown` releases
+-- (`boundary.md` §9.8.5): so a build that never calls it keeps nothing of
+-- this. Each function is taken off the list as it is called, so a second
+-- `shutdown` calls none again.
+releasing : Js.Ref Bool
+releasing = Js.ref False
+
+
+releases : V
+releases = Js.array []
+
+
+releaseAll : () → ()
+releaseAll () =
+    if Js.to (Js.get releases "length") == 0 then
+        ()
+    else
+        _ = Js.apply (Js.call releases "shift" []) [ Js.null ]
+        releaseAll ()
+
+
+--| Call `f` once, when the runtime stops (`shutdown`): in a microtask
+--| queued at the stop, so after the throw that stopped it has gone on to
+--| the host and before any fiber's cleanup, the functions given first
+--| called first. What a platform releases a host resource no fiber
+--| holds with — a listener a subscription added with no fiber
+--| (`boundary.md` §9.8.5); a program never needs it.
+pub onShutdown : sync (() → ()) → ()
+onShutdown f =
+    _ = Js.write releasing True
+    Js.to (Js.call releases "push" [ Js.from f ])
+
+
 -- Queued work is dropped from now on (`runSoon`).
 stopQueue : () → ()
 stopQueue () = if Js.read phase == 0 then Js.write phase 1 else ()
@@ -455,6 +488,12 @@ drainFrom count =
 pub shutdown : Int, sync (Int → ()) → ()
 shutdown ms over =
     _ = if Js.read soonQueued then stopQueue () else ()
+
+    _ =
+        if Js.read releasing then
+            Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from releaseAll ])
+        else
+            ()
     if Js.read fibered then closeAll ms (Js.from over) else ()
 
 
