@@ -188,6 +188,10 @@ pub const Options = struct {
     /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
     /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
     migrate_lambda: bool = false,
+    /// `beni fmt --migrate-unicode` (hidden): write every old ASCII
+    /// spelling as its symbol and every comma tuple type with `×`, and
+    /// touch nothing else (`Format.migrateUnicode`).
+    migrate_unicode: bool = false,
     /// `beni fmt --migrate-names` (hidden): write the removed `Basics`
     /// names as their replacements and touch nothing else
     /// (`Format.migrateNames`).
@@ -1512,6 +1516,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     const tree = session.artifacts.ast(file);
     if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
         !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree)) and
+        !(session.options.migrate_unicode and Format.onlyUnicodeRemoved(tree)) and
         !(session.options.migrate_let and Format.onlyLetRemoved(tree))) return;
 
     const gpa = session.gpa;
@@ -1579,6 +1584,43 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         }
         if (left_alone) {
             out.deinit();
+            return;
+        }
+    } else if (session.options.migrate_unicode) {
+        const problem = Format.migrateUnicode(
+            worker.arena.allocator(),
+            tree,
+            session.artifacts.tokens(file),
+            session.artifacts.comments(file),
+            text,
+            &out.writer,
+        ) catch |err| switch (err) {
+            error.SyntaxErrors => {
+                out.deinit();
+                return;
+            },
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
+        };
+        if (problem) |found| {
+            // frontend.md §11.8: the file is left alone and named.
+            out.deinit();
+            const line_starts = session.store.lineStarts(file);
+            const at = diagnostic.position(line_starts, text, found.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            if (found.code) |code| {
+                try message.writer.print(
+                    "`beni fmt --migrate-unicode` left this file alone: with its symbols written in Unicode it does not parse ({t} here). Rewrite it by hand.",
+                    .{code},
+                );
+                try worker.report(session, file, code, at, at, message.written());
+            } else {
+                try message.writer.writeAll(
+                    "`beni fmt --migrate-unicode` left this file alone: this tuple type holds a comment, which joining its elements with `×` would have to move. Write it with `×` by hand, placing the comment yourself.",
+                );
+                try worker.report(session, file, .unexpected_token, at, at, message.written());
+            }
             return;
         }
     } else if (session.options.migrate_lambda) {

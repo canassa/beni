@@ -152,6 +152,11 @@ pub const Construct = enum {
     /// An argument after a lambda written without parentheses, which is
     /// always the last argument of its call (language.md §12.3).
     argument_after_lambda,
+    /// `×` in an expression: a type token only (language.md §12.7).
+    times_in_expression,
+    /// `*` between two types, where a tuple type's `×` goes (language.md
+    /// §12.7, *Lookalikes*).
+    star_in_type,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -218,12 +223,14 @@ fn constructText(c: Construct) []const u8 {
         .stray_spread => "an expression",
         .spread_operand => "a name or `_`",
         .binding_head, .block_in_tuple, .argument_after_lambda => "something else",
+        .times_in_expression => "an operator",
+        .star_in_type => "`×`",
     };
 }
 
 /// The spelling of an expected token, for prose.
 fn tokenText(tag: Token.Tag) []const u8 {
-    return Token.lexeme(tag) orelse switch (tag) {
+    return Token.lexeme(tag.ascii() orelse tag) orelse switch (tag) {
         .lower_ident => "a name",
         .upper_ident => "a capitalised name",
         .int => "an integer",
@@ -233,7 +240,6 @@ fn tokenText(tag: Token.Tag) []const u8 {
         .markup_gt => ">",
         .markup_self_close => "/>",
         .markup_close_open => "</",
-        .ellipsis => "...",
         else => @tagName(tag),
     };
 }
@@ -295,6 +301,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\`{s}` is not indented enough to be part of it: everything in {s} must be right
                     \\of `{s}` on column {d}. So it ended there, without the `{s}`.
                 , .{ contextText(item.context), text, col, tokenText(item.expected), text, contextText(item.context), head, item.required_col, tokenText(item.expected) });
+            } else if (item.expected == .arrow and std.mem.eql(u8, text, "=") and item.end < source.len and source[item.end] == '>') {
+                // `=>`, another notation's arrow (language.md §12.7).
+                try w.print(
+                    \\I was parsing {s} and ran into `=>`, but I was expecting `{s}` here.
+                    \\
+                    \\A `case` branch and a lambda take the arrow `{s}`, as a function type does:
+                    \\`Just x {s} x`, `λx {s} x + 1`.
+                , .{ contextText(item.context), tokenText(item.expected), tokenText(item.expected), tokenText(item.expected), tokenText(item.expected) });
             } else {
                 try w.print("I was parsing {s} and ran into `{s}`, but I was expecting `{s}` here.", .{ contextText(item.context), text, tokenText(item.expected) });
             }
@@ -383,6 +397,20 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\    Task.bracket (λ() -> open url) close λconn -> use conn
                 , .{ contextText(item.context), text });
+            } else if (item.construct == .times_in_expression) {
+                try w.print(
+                    \\I found `{s}` in an expression, but `×` only writes a tuple type, as in
+                    \\`Int × String`.
+                    \\
+                    \\Multiplication is `*`, and a tuple value is written `( a, b )`.
+                , .{text});
+            } else if (item.construct == .star_in_type) {
+                try w.writeAll(
+                    \\I found `*` between two types. A tuple type joins its element types with `×`
+                    \\(U+00D7 MULTIPLICATION SIGN): `Int × String` is the type of `( 1, "a" )`.
+                    \\
+                    \\Write `×` instead. I read this one as `×` and went on.
+                );
             } else if (item.construct == .block_in_tuple) {
                 try w.writeAll(
                     \\I found a `,` after a block in parentheses. A block is not a tuple element:

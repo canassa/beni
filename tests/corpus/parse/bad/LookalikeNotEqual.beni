@@ -1,0 +1,5 @@
+-- `!=` is another notation's not-equal (language.md §12.7): one
+-- invalid_character for the pair, naming `≠`, read as `≠` so the comparison
+-- parses (5:7). A lone `!` stays plain invalid_character.
+differ a b =
+    a != b

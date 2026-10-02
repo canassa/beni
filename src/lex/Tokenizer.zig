@@ -337,12 +337,35 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             },
             ',' => break :state t.take(1, .comma),
             '?' => break :state t.take(1, .question),
+            '!' => {
+                // `!=`, another notation's not-equal: one lookalike of `≠`
+                // (language.md §12.7). A lone `!` is punctuation the
+                // language has no use for.
+                if (src[t.index + 1] == '=') {
+                    try t.report(.invalid_character, t.index, t.index + 2);
+                    payload = @intFromEnum(Tag.op_ne);
+                    break :state t.take(2, .lookalike);
+                }
+                try t.report(.invalid_character, t.index, t.index + 1);
+                break :state t.take(1, .invalid);
+            },
             '*' => break :state t.take(1, .op_star),
             '^' => break :state t.take(1, .op_caret),
             0x80...0xff => {
                 // `λ` (U+03BB, `CE BB`) is the lambda token, the one
                 // non-ASCII character code may hold (language.md §12.1).
                 if (src[t.index] == 0xCE and src[t.index + 1] == 0xBB) break :state t.take(2, .lambda);
+                // The Unicode notation's nine symbols (language.md §12.7),
+                // each a token wherever code is lexed and never part of a
+                // name or of another token.
+                if (symbolAt(src, t.index)) |symbol| break :state t.take(@intCast(Token.lexeme(symbol).?.len), symbol);
+                // A lookalike of one of them: reported, and read by the
+                // parser as the token it stands for.
+                if (Token.lookalikeAt(src, t.index)) |look| {
+                    try t.report(.invalid_character, t.index, t.index + @as(u32, @intCast(look.bytes.len)));
+                    payload = @intFromEnum(look.tag);
+                    break :state t.take(@intCast(look.bytes.len), .lookalike);
+                }
                 // Non-ASCII outside a string, char or comment (§2.4); a
                 // malformed sequence is the more specific error (§1).
                 const seq = utf8Sequence(src, t.index);
@@ -383,7 +406,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 // `[ x, ...rest ]` (language.md §6.8) and a component's
                 // `{...props}` alike. Longest match, so never `..` and `.`;
                 // whether a spread may stand where it does is the parser's.
-                if (src[t.index + 2] == '.') break :state t.take(3, .ellipsis);
+                if (src[t.index + 2] == '.') break :state t.take(3, .ascii_ellipsis);
                 break :state t.take(2, .dot_dot);
             },
             'a'...'z' => {
@@ -483,25 +506,25 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         // Longest match among operators (§2.2); `--` is always a comment.
         .minus => switch (src[t.index + 1]) {
             '-' => continue :state .comment,
-            '>' => break :state t.take(2, .arrow),
+            '>' => break :state t.take(2, .ascii_arrow),
             else => break :state t.take(1, .op_minus),
         },
         .slash => switch (src[t.index + 1]) {
             '/' => break :state t.take(2, .op_slash_slash),
-            '=' => break :state t.take(2, .op_slash_eq),
+            '=' => break :state t.take(2, .ascii_ne),
             else => break :state t.take(1, .op_slash),
         },
         .pipe => switch (src[t.index + 1]) {
-            '>' => break :state t.take(2, .op_pipe_right),
+            '>' => break :state t.take(2, .ascii_pipe_right),
             '|' => break :state t.take(2, .op_or_or),
             else => break :state t.take(1, .pipe),
         },
         .lt => switch (src[t.index + 1]) {
-            '|' => break :state t.take(2, .op_pipe_left),
-            '=' => break :state t.take(2, .op_lte),
+            '|' => break :state t.take(2, .ascii_pipe_left),
+            '=' => break :state t.take(2, .ascii_le),
             // Longest match (§2.2): `x <-1` is `<-` and `1`, never `<` and
             // `-1`. A comparison with a negative literal needs the space.
-            '-' => break :state t.take(2, .arrow_left),
+            '-' => break :state t.take(2, .ascii_arrow_left),
             // Markup starts at an operand's start (frontend.md §9.3): a
             // letter or `>` next, and a previous token that cannot end an
             // operand — or a `<` that begins its line, whatever precedes it
@@ -517,7 +540,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             else => break :state t.take(1, .op_lt),
         },
         .gt => switch (src[t.index + 1]) {
-            '=' => break :state t.take(2, .op_gte),
+            '=' => break :state t.take(2, .ascii_ge),
             else => break :state t.take(1, .op_gt),
         },
         .equal => switch (src[t.index + 1]) {
@@ -1208,6 +1231,25 @@ const Utf8 = struct { len: u32, valid: bool };
 /// is where lexing resumes (§1, "the next valid boundary"). Reads stop at
 /// the first byte that is not a continuation byte, so the sentinel is never
 /// passed.
+/// The tags of the Unicode notation's symbols (language.md §12.7), whose
+/// bytes are their `Token.lexeme`.
+const symbols = [_]Tag{ .arrow, .arrow_left, .op_ne, .op_le, .op_ge, .op_pipe_right, .op_pipe_left, .ellipsis, .times };
+
+/// The symbol whose bytes begin at `src[i]`, or null.
+fn symbolAt(src: [:0]const u8, i: u32) ?Tag {
+    inline for (symbols) |symbol| {
+        if (std.mem.startsWith(u8, src[i..], Token.lexeme(symbol).?)) return symbol;
+    }
+    return null;
+}
+
+/// The length of the `lookalike` token at `start`.
+fn lookalikeLength(source: [:0]const u8, start: u32) u32 {
+    if (source[start] == '!') return 2;
+    const look = Token.lookalikeAt(source, start) orelse return 1;
+    return @intCast(look.bytes.len);
+}
+
 fn utf8Sequence(src: [:0]const u8, i: u32) Utf8 {
     const n: u32 = std.unicode.utf8ByteSequenceLength(src[i]) catch return .{ .len = 1, .valid = false };
     var k: u32 = 1;
@@ -1412,6 +1454,7 @@ pub fn tokenEnd(source: [:0]const u8, tag: Tag, start: u32) u32 {
         .eof => start,
         .invalid => invalidEnd(source, start),
         .markup_stray => strayEnd(source, start),
+        .lookalike => start + lookalikeLength(source, start),
         .markup_name => scanTagName(source, start, {}),
         .markup_attr => scanAttrName(source, start, {}),
         .markup_text => scanText(source, start),
@@ -1504,7 +1547,7 @@ fn expectLex(source: [:0]const u8, expected: Expected) !void {
             try testing.expectEqualStrings(if (tag == .dot_lower) text[1..] else text, interned);
         } else if (tag == .dot_index) {
             try testing.expectEqual(std.fmt.parseInt(u32, text[1..], 10) catch std.math.maxInt(u32), payload);
-        } else {
+        } else if (tag != .lookalike) {
             try testing.expectEqual(@as(u32, 0), payload);
         }
     }
@@ -1705,7 +1748,7 @@ test "every symbol" {
         .{ .tag = .comma, .start = 12, .text = "," },
         .{ .tag = .colon, .start = 14, .text = ":" },
         .{ .tag = .equal, .start = 16, .text = "=" },
-        .{ .tag = .arrow, .start = 18, .text = "->" },
+        .{ .tag = .ascii_arrow, .start = 18, .text = "->" },
         .{ .tag = .backslash, .start = 21, .text = "\\" },
         .{ .tag = .pipe, .start = 23, .text = "|" },
         .{ .tag = .underscore, .start = 25, .text = "_" },
@@ -1725,16 +1768,16 @@ test "every operator" {
         .{ .tag = .op_plus_plus, .start = 13, .text = "++" },
         .{ .tag = .op_colon_colon, .start = 16, .text = "::" },
         .{ .tag = .op_eq_eq, .start = 19, .text = "==" },
-        .{ .tag = .op_slash_eq, .start = 22, .text = "/=" },
+        .{ .tag = .ascii_ne, .start = 22, .text = "/=" },
         .{ .tag = .op_lt, .start = 25, .text = "<" },
         .{ .tag = .op_gt, .start = 27, .text = ">" },
-        .{ .tag = .op_lte, .start = 29, .text = "<=" },
-        .{ .tag = .op_gte, .start = 32, .text = ">=" },
+        .{ .tag = .ascii_le, .start = 29, .text = "<=" },
+        .{ .tag = .ascii_ge, .start = 32, .text = ">=" },
         .{ .tag = .op_and_and, .start = 35, .text = "&&" },
         .{ .tag = .op_or_or, .start = 38, .text = "||" },
-        .{ .tag = .op_pipe_right, .start = 41, .text = "|>" },
-        .{ .tag = .op_pipe_left, .start = 44, .text = "<|" },
-        .{ .tag = .arrow_left, .start = 47, .text = "<-" },
+        .{ .tag = .ascii_pipe_right, .start = 41, .text = "|>" },
+        .{ .tag = .ascii_pipe_left, .start = 44, .text = "<|" },
+        .{ .tag = .ascii_arrow_left, .start = 47, .text = "<-" },
         .{ .tag = .eof, .start = 49, .text = "" },
     } });
 }
@@ -1743,7 +1786,7 @@ test "longest match: |> vs | >, // vs / /, -> vs - >, <| vs < |, and -- after an
     try expectLex("a|>b a| >b a//b a/ /b a->b a- >b a<|b a< |b a+--c\nb", .{
         .tokens = &.{
             .{ .tag = .lower_ident, .start = 0, .text = "a" },
-            .{ .tag = .op_pipe_right, .start = 1, .text = "|>" },
+            .{ .tag = .ascii_pipe_right, .start = 1, .text = "|>" },
             .{ .tag = .lower_ident, .start = 3, .text = "b" },
             .{ .tag = .lower_ident, .start = 5, .text = "a" },
             .{ .tag = .pipe, .start = 6, .text = "|" },
@@ -1757,14 +1800,14 @@ test "longest match: |> vs | >, // vs / /, -> vs - >, <| vs < |, and -- after an
             .{ .tag = .op_slash, .start = 19, .text = "/" },
             .{ .tag = .lower_ident, .start = 20, .text = "b" },
             .{ .tag = .lower_ident, .start = 22, .text = "a" },
-            .{ .tag = .arrow, .start = 23, .text = "->" },
+            .{ .tag = .ascii_arrow, .start = 23, .text = "->" },
             .{ .tag = .lower_ident, .start = 25, .text = "b" },
             .{ .tag = .lower_ident, .start = 27, .text = "a" },
             .{ .tag = .op_minus, .start = 28, .text = "-" },
             .{ .tag = .op_gt, .start = 30, .text = ">" },
             .{ .tag = .lower_ident, .start = 31, .text = "b" },
             .{ .tag = .lower_ident, .start = 33, .text = "a" },
-            .{ .tag = .op_pipe_left, .start = 34, .text = "<|" },
+            .{ .tag = .ascii_pipe_left, .start = 34, .text = "<|" },
             .{ .tag = .lower_ident, .start = 36, .text = "b" },
             .{ .tag = .lower_ident, .start = 38, .text = "a" },
             .{ .tag = .op_lt, .start = 39, .text = "<" },
@@ -1783,7 +1826,7 @@ test "longest match: |> vs | >, // vs / /, -> vs - >, <| vs < |, and -- after an
 test "longest match: <- wins over < and -, so `x <-1` is a bind arrow (language.md §2.2)" {
     try expectLex("x <-1 y < -1", .{ .tokens = &.{
         .{ .tag = .lower_ident, .start = 0, .text = "x" },
-        .{ .tag = .arrow_left, .start = 2, .text = "<-" },
+        .{ .tag = .ascii_arrow_left, .start = 2, .text = "<-" },
         .{ .tag = .int, .start = 4, .text = "1" },
         .{ .tag = .lower_ident, .start = 6, .text = "y" },
         .{ .tag = .op_lt, .start = 8, .text = "<" },
@@ -2223,6 +2266,55 @@ test "`λ` is the lambda token, never part of a name; `Λ` stays invalid_charact
     });
 }
 
+test "the Unicode symbols are tokens of their own; a lookalike is reported and kept as one token" {
+    // language.md §12.7: a symbol is never part of a name or of another
+    // token (`a→b` is three tokens, `≤=` is `≤` then `=`, `……` is two
+    // spreads), and a string keeps whatever bytes it holds. `⇒`, `!=` and
+    // `−` are lookalikes: `invalid_character`, one `lookalike` token each,
+    // whose payload is the token it stands for.
+    try expectLex("a→b x≤-1 ≤= …… Int×Int \"→\" ⇒ != − ◁▷←≠≥", .{
+        .tokens = &.{
+            .{ .tag = .lower_ident, .start = 0, .text = "a" },
+            .{ .tag = .arrow, .start = 1, .text = "→" },
+            .{ .tag = .lower_ident, .start = 4, .text = "b" },
+            .{ .tag = .lower_ident, .start = 6, .text = "x" },
+            .{ .tag = .op_le, .start = 7, .text = "≤" },
+            .{ .tag = .op_minus, .start = 10, .text = "-" },
+            .{ .tag = .int, .start = 11, .text = "1" },
+            .{ .tag = .op_le, .start = 13, .text = "≤" },
+            .{ .tag = .equal, .start = 16, .text = "=" },
+            .{ .tag = .ellipsis, .start = 18, .text = "…" },
+            .{ .tag = .ellipsis, .start = 21, .text = "…" },
+            .{ .tag = .upper_ident, .start = 25, .text = "Int" },
+            .{ .tag = .times, .start = 28, .text = "×" },
+            .{ .tag = .upper_ident, .start = 30, .text = "Int" },
+            .{ .tag = .str_start, .start = 34, .text = "\"" },
+            .{ .tag = .str_chunk, .start = 35, .text = "→" },
+            .{ .tag = .str_end, .start = 38, .text = "\"" },
+            .{ .tag = .lookalike, .start = 40, .text = "⇒" },
+            .{ .tag = .lookalike, .start = 44, .text = "!=" },
+            .{ .tag = .lookalike, .start = 47, .text = "−" },
+            .{ .tag = .op_pipe_left, .start = 51, .text = "◁" },
+            .{ .tag = .op_pipe_right, .start = 54, .text = "▷" },
+            .{ .tag = .arrow_left, .start = 57, .text = "←" },
+            .{ .tag = .op_ne, .start = 60, .text = "≠" },
+            .{ .tag = .op_ge, .start = 63, .text = "≥" },
+            .{ .tag = .eof, .start = 66, .text = "" },
+        },
+        .diagnostics = &.{
+            .{ .code = .invalid_character, .start = 40, .end = 43 },
+            .{ .code = .invalid_character, .start = 44, .end = 46 },
+            .{ .code = .invalid_character, .start = 47, .end = 50 },
+        },
+    });
+    var interner: InternPool.Local = .empty;
+    defer interner.deinit(testing.allocator);
+    var out: Output = .empty;
+    defer out.deinit(testing.allocator);
+    try tokenize(testing.allocator, "⇒ != −", &interner, &out);
+    try testing.expectEqualSlices(u32, &.{ @intFromEnum(Tag.arrow), @intFromEnum(Tag.op_ne), @intFromEnum(Tag.op_minus), 0 }, out.tokens.items(.payload));
+}
+
 test "non-ASCII outside a string is invalid_character covering the whole character; control bytes too" {
     try expectLex("x = é + \x01 + \x7f", .{
         .tokens = &.{
@@ -2338,7 +2430,7 @@ test "the line column and the line table across many lines, with blank lines and
             .{ .tag = .lower_ident, .start = 48, .line = 5, .text = "model" },
             .{ .tag = .keyword_of, .start = 54, .line = 5, .text = "of" },
             .{ .tag = .upper_ident, .start = 65, .line = 6, .text = "Home" },
-            .{ .tag = .arrow, .start = 70, .line = 6, .text = "->" },
+            .{ .tag = .ascii_arrow, .start = 70, .line = 6, .text = "->" },
             .{ .tag = .int, .start = 85, .line = 7, .text = "1" },
             .{ .tag = .eof, .start = 86, .line = 7, .text = "" },
         },

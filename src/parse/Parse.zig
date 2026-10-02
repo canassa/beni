@@ -70,7 +70,12 @@ const Parse = @This();
 gpa: Allocator,
 scratch_allocator: Allocator,
 source: [:0]const u8,
+/// Every token's tag as the parser reads it: an old ASCII spelling as its
+/// symbol (`Tag.canonical`) and a lookalike as the token it stands for, so
+/// the two spellings parse identically (language.md §12.7). `raw_tags` is
+/// what the lexer wrote, which a token's length is derived from.
 tags: []const Tag,
+raw_tags: []const Tag,
 starts: []const u32,
 lines: []const u32,
 payloads: []const u32,
@@ -228,6 +233,7 @@ pub fn parse(
         .scratch_allocator = scratch,
         .source = source,
         .tags = tokens.items(.tag),
+        .raw_tags = tokens.items(.tag),
         .starts = tokens.items(.start),
         .lines = tokens.items(.line),
         .payloads = tokens.items(.payload),
@@ -246,6 +252,9 @@ pub fn parse(
     defer p.markup_open.deinit(scratch);
     p.cols = try codePointColumns(scratch, source, p.starts, p.lines, line_starts);
     defer scratch.free(p.cols);
+    const read_tags = try readTags(scratch, p.raw_tags, p.payloads);
+    defer if (read_tags.ptr != p.raw_tags.ptr) scratch.free(read_tags);
+    p.tags = read_tags;
     try p.nodes.setCapacity(gpa, estimatedNodeCount(tokens.len));
     try p.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(tokens.len));
 
@@ -280,6 +289,21 @@ pub fn parse(
 inline fn col(p: *const Parse, i: TokenIndex) u32 {
     if (p.cols.len != 0) return p.cols[i];
     return p.starts[i] - p.line_starts[p.lines[i]] + 1;
+}
+
+/// `raw` as the parser reads it (`Parse.tags`): `raw` itself when no token
+/// is an old ASCII spelling or a lookalike, else a copy with each such tag
+/// replaced by the token it stands for.
+fn readTags(scratch: Allocator, raw: []const Tag, payloads: []const u32) Allocator.Error![]const Tag {
+    const first = for (raw, 0..) |tag, i| {
+        if (tag.isAscii() or tag == .lookalike) break i;
+    } else return raw;
+    const tags = try scratch.alloc(Tag, raw.len);
+    @memcpy(tags[0..first], raw[0..first]);
+    for (tags[first..], raw[first..], payloads[first..]) |*t, tag, payload| {
+        t.* = if (tag == .lookalike) @enumFromInt(payload) else tag.canonical();
+    }
+    return tags;
 }
 
 /// Every token's column in code points, or empty when `source` has no
@@ -384,7 +408,7 @@ fn eat(p: *Parse, tag: Tag) ?TokenIndex {
 }
 
 fn tokenEnd(p: *const Parse, i: TokenIndex) u32 {
-    return Tokenizer.tokenEnd(p.source, p.tags[i], p.starts[i]);
+    return Tokenizer.tokenEnd(p.source, p.raw_tags[i], p.starts[i]);
 }
 
 fn tokenText(p: *const Parse, i: TokenIndex) []const u8 {
@@ -1365,7 +1389,7 @@ fn atWhereClause(p: *const Parse) bool {
 /// True when token `t` is the contextual word `where`, compared by TEXT
 /// like `equatable` (§2.2).
 fn isWhereToken(p: *const Parse, t: TokenIndex) bool {
-    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "where");
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.raw_tags[t], p.starts[t]), "where");
 }
 
 /// WhereClause := 'where' Constraint (',' Constraint)*  (§2.1). Empty when
@@ -1547,7 +1571,7 @@ fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index
     _ = p.next(); // foreign
     if (p.peek() == .lower_ident and p.peekAt(1) == .lower_ident) {
         const word = p.next();
-        if (!isRung(Tokenizer.slice(p.source, p.tags[word], p.starts[word]))) {
+        if (!isRung(Tokenizer.slice(p.source, p.raw_tags[word], p.starts[word]))) {
             _ = try p.report(p.itemAtToken(.unknown_foreign_effect, word));
         }
     } else if (p.peek() == .lower_ident) {
@@ -1716,13 +1740,40 @@ const ResultMode = enum { params, single };
 /// it everywhere rather than only inside a record body, and the reason it
 /// is safe is the same reason.
 fn parseTypeItems(p: *Parse) Allocator.Error!void {
-    try p.pushScratch(try p.parseTypeApp());
+    try p.pushScratch(try p.parseProduct());
     while (p.peek() == .comma and !p.commaEndsFieldType()) {
         const before = p.tok_i;
         defer p.assertProgress(before);
         _ = p.next();
+        try p.pushScratch(try p.parseProduct());
+    }
+}
+
+/// `Product := TypeApp ('×' TypeApp)*` (language.md §12.8): a chain of
+/// `n` operands is one flat `n`-tuple, the existing `type_tuple` with the
+/// first `×` as its main token; a parenthesised operand is never
+/// flattened. A `*` where a `×` would continue a product is reported,
+/// with the `×` to write, and read as one.
+fn parseProduct(p: *Parse) Allocator.Error!Index {
+    const first = try p.parseTypeApp();
+    if (p.peek() != .times and p.peek() != .op_star) return first;
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    try p.pushScratch(first);
+    const main = p.tok_i;
+    while (p.peek() == .times or p.peek() == .op_star) {
+        const before = p.tok_i;
+        defer p.assertProgress(before);
+        if (p.peek() == .op_star) {
+            @branchHint(.cold);
+            var item = p.itemAt(.unexpected_token);
+            item.construct = .star_in_type;
+            _ = try p.report(item);
+        }
+        _ = p.next();
         try p.pushScratch(try p.parseTypeApp());
     }
+    return p.rangeNode(.type_tuple, main, try p.listToRange(p.scratchSince(mark)));
 }
 
 /// Whether the comma at the cursor ends the type it follows rather than
@@ -1783,7 +1834,7 @@ fn parseTypeResult(p: *Parse) Allocator.Error!Index {
     defer p.leave();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
-    try p.pushScratch(try p.parseTypeApp());
+    try p.pushScratch(try p.parseProduct());
     return p.finishType(mark, .single);
 }
 
@@ -1805,11 +1856,11 @@ fn isRung(text: []const u8) bool {
 
 /// True when token `t` is the contextual word `sync`.
 fn isSyncToken(p: *const Parse, t: TokenIndex) bool {
-    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "sync");
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.raw_tags[t], p.starts[t]), "sync");
 }
 
 fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
-    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "equatable");
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.raw_tags[t], p.starts[t]), "equatable");
 }
 
 /// TypeApp := 'equatable'? TypeAtom | (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
@@ -2180,11 +2231,11 @@ fn opInfo(tag: Tag) ?OpInfo {
         .op_or_or => .{ .prec = 2, .assoc = .right, .tag = .bool_or },
         .op_and_and => .{ .prec = 3, .assoc = .right, .tag = .bool_and },
         .op_eq_eq => .{ .prec = 4, .assoc = .none, .tag = .eq },
-        .op_slash_eq => .{ .prec = 4, .assoc = .none, .tag = .neq },
+        .op_ne => .{ .prec = 4, .assoc = .none, .tag = .neq },
         .op_lt => .{ .prec = 4, .assoc = .none, .tag = .lt },
         .op_gt => .{ .prec = 4, .assoc = .none, .tag = .gt },
-        .op_lte => .{ .prec = 4, .assoc = .none, .tag = .lte },
-        .op_gte => .{ .prec = 4, .assoc = .none, .tag = .gte },
+        .op_le => .{ .prec = 4, .assoc = .none, .tag = .lte },
+        .op_ge => .{ .prec = 4, .assoc = .none, .tag = .gte },
         .op_plus_plus => .{ .prec = 5, .assoc = .right, .tag = .append },
         .op_colon_colon => .{ .prec = 5, .assoc = .right, .tag = .cons },
         .op_plus => .{ .prec = 6, .assoc = .left, .tag = .add },
@@ -2218,7 +2269,17 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
     var last_op: Tag = .invalid;
     while (true) {
         const tok = p.peek();
-        const info = opInfo(tok) orelse break;
+        const info = opInfo(tok) orelse if (tok == .times) blk: {
+            // `×` is a type token only (language.md §12.7): reported, and
+            // read as the `*` it was probably meant as, so the tree stays
+            // complete.
+            @branchHint(.cold);
+            if (opInfo(.op_star).?.lbp() < min_bp) break;
+            var item = p.itemAt(.unexpected_token);
+            item.construct = .times_in_expression;
+            _ = try p.report(item);
+            break :blk opInfo(.op_star).?;
+        } else break;
         if (info.lbp() < min_bp) break;
         if (tok == .op_lt and p.closingTagAhead()) {
             // `</`, which no expression continues with: a closing tag the

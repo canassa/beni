@@ -2673,7 +2673,8 @@ naming `todos`.
 
 ### 12.7 Unicode notation: one symbol for each arrow, comparison, pipe and spread
 
-*Specified 2026-10-01; not built.* The owner adopted Lean 4's Unicode notation on 2026-10-01
+*Specified 2026-10-01; taught 2026-10-02* (both spellings accepted, `beni fmt --migrate-unicode`
+built; `frontend.md` §11.8's *As built* notes). The owner adopted Lean 4's Unicode notation on 2026-10-01
 ([`plans/browser-decisions.md`](../../plans/browser-decisions.md) S8: "let's adopt the lean unicode
 stuff"), with one spelling each, as §12.1 made `λ` the only lambda: Lean accepts `->` beside `→`
 and `<=` beside `≤`, beni keeps only the symbol. This subsection is the contract for the tokens,

@@ -5,12 +5,12 @@
 9:6 markup_name Card
 9:11 l_brace {
 9:12 lower_ident a
-9:14 ellipsis ...
+9:14 ascii_ellipsis ...
 9:17 lower_ident a
 9:18 r_brace }
 9:19 markup_gt >
 9:20 l_brace {
-9:21 ellipsis ...
+9:21 ascii_ellipsis ...
 9:24 lower_ident a
 9:25 r_brace }
 9:26 markup_close_open </
@@ -20,7 +20,7 @@
 12:7 lower_ident a
 12:9 equal =
 13:5 lower_ident a
-13:7 ellipsis ...
+13:7 ascii_ellipsis ...
 13:10 lower_ident a
 14:1 eof
 -- comments

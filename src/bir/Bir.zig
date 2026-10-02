@@ -545,16 +545,28 @@ pub const WellKnown = enum(u8) {
         };
     }
 
+    /// The operator's symbol, which the dumps print whichever spelling was
+    /// read (language.md §12.7), or null for a dot-call.
+    pub fn symbol(w: WellKnown) ?[]const u8 {
+        return switch (w) {
+            .neq => "≠",
+            .le => "≤",
+            .ge => "≥",
+            else => w.spelling(),
+        };
+    }
+
     /// The origin an operator TOKEN produces, or null for an operator that
-    /// is still a call of its core function (`+`, `++`, `&&`, …).
+    /// is still a call of its core function (`+`, `++`, `&&`, …). An old
+    /// ASCII spelling is its symbol's (`Tag.canonical`).
     pub fn fromOperator(op: @import("../lex/Token.zig").Tag) ?WellKnown {
-        return switch (op) {
+        return switch (op.canonical()) {
             .op_eq_eq => .eq,
-            .op_slash_eq => .neq,
+            .op_ne => .neq,
             .op_lt => .lt,
-            .op_lte => .le,
+            .op_le => .le,
             .op_gt => .gt,
-            .op_gte => .ge,
+            .op_ge => .ge,
             else => null,
         };
     }

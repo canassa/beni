@@ -1,0 +1,9 @@
+-- `−` (U+2212 MINUS SIGN) and `－` (U+FF0D FULLWIDTH HYPHEN-MINUS) look like
+-- `-` (language.md §12.7, *Lookalikes*): each is invalid_character naming it
+-- and `-` (5:7, 8:7), and is read as `-`, so nothing else is reported.
+diff a b =
+    a − b
+
+
+neg a b =
+    a － b

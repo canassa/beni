@@ -1,0 +1,1 @@
+[{"code":"invalid_character","severity":"error","span":{"file":"tests/corpus/parse/bad/LookalikeNotEqual.beni","start":{"line":5,"col":7},"end":{"line":5,"col":9}},"title":"INVALID CHARACTER","message":"I found `!=`, which is how other languages write not-equal.\n\nWrite `≠` (U+2260 NOT EQUAL TO) instead. I read this one as `≠` and went on."}]

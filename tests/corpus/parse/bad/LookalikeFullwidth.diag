@@ -1,0 +1,1 @@
+[{"code":"invalid_character","severity":"error","span":{"file":"tests/corpus/parse/bad/LookalikeFullwidth.beni","start":{"line":6,"col":7},"end":{"line":6,"col":8}},"title":"INVALID CHARACTER","message":"I found `＜`, the fullwidth form of `<`, which is not part of the language's\nsyntax.\n\nWrite the ASCII `<` instead."}]

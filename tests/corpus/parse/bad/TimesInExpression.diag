@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/TimesInExpression.beni","start":{"line":5,"col":7},"end":{"line":5,"col":8}},"title":"UNEXPECTED TOKEN","message":"I found `×` in an expression, but `×` only writes a tuple type, as in\n`Int × String`.\n\nMultiplication is `*`, and a tuple value is written `( a, b )`."}]

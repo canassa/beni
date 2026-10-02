@@ -1,0 +1,10 @@
+-- `⋯` and `‥` look like `…` (language.md §12.7): each is invalid_character
+-- naming it and `…`, and is read as the spread, in an expression and in a
+-- pattern alike (5:15, 6:14).
+rest x xs =
+    case [ x, ⋯xs ] of
+        [ _, ‥tail ] →
+            tail
+
+        [] →
+            []

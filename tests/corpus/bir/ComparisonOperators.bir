@@ -6,7 +6,7 @@ decl 0: value comparisons
   %4 = method_call %2 .eq [%3] (==)
   %5 = local 0 (a)
   %6 = local 1 (b)
-  %7 = method_call %5 .eq [%6] (/=)
+  %7 = method_call %5 .eq [%6] (≠)
   %8 = local 0 (a)
   %9 = local 1 (b)
   %10 = method_call %8 .compare [%9] (<)
@@ -15,10 +15,10 @@ decl 0: value comparisons
   %13 = method_call %11 .compare [%12] (>)
   %14 = local 0 (a)
   %15 = local 1 (b)
-  %16 = method_call %14 .compare [%15] (<=)
+  %16 = method_call %14 .compare [%15] (≤)
   %17 = local 0 (a)
   %18 = local 1 (b)
-  %19 = method_call %17 .compare [%18] (>=)
+  %19 = method_call %17 .compare [%18] (≥)
   %20 = tuple [%4, %7, %10, %13, %16, %19]
   params [%0, %1]
   body %20
@@ -37,7 +37,7 @@ decl 1: value asFunctions
   %7 = pat_var local 3
   %8 = local 2
   %9 = local 3
-  %10 = method_call %8 .eq [%9] (/=)
+  %10 = method_call %8 .eq [%9] (≠)
   %11 = lambda [%6, %7] -> %10
   %12 = pat_var local 4
   %13 = pat_var local 5
@@ -55,13 +55,13 @@ decl 1: value asFunctions
   %25 = pat_var local 9
   %26 = local 8
   %27 = local 9
-  %28 = method_call %26 .compare [%27] (<=)
+  %28 = method_call %26 .compare [%27] (≤)
   %29 = lambda [%24, %25] -> %28
   %30 = pat_var local 10
   %31 = pat_var local 11
   %32 = local 10
   %33 = local 11
-  %34 = method_call %32 .compare [%33] (>=)
+  %34 = method_call %32 .compare [%33] (≥)
   %35 = lambda [%30, %31] -> %34
   %36 = import_value Basics.add
   %37 = list [%5, %11, %17, %23, %29, %35, %36]

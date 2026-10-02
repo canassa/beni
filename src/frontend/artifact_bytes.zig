@@ -105,7 +105,10 @@ pub const magic = "BENIFE\x00\x00";
 /// new code, `block_ends_in_binding`.
 /// 17 (2026-10-02): statements — `Bir.Inst.Tag` gained `let_stmt`, which
 /// shifted every later tag.
-pub const format_version: u32 = 17;
+/// 18 (2026-10-02): the Unicode notation (language.md §12.7) — `Token.Tag`
+/// gained the symbols, `times` and `lookalike`, and the old ASCII spellings
+/// were renamed `ascii_*`, which shifted every later tag.
+pub const format_version: u32 = 18;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

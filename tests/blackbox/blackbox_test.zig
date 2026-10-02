@@ -1852,6 +1852,119 @@ test "fmt --migrate-lambda migrates a case whose first branch shares the of line
     try testing.expectEqualStrings("f m =\n    case g (λx -> x) of Just y -> y\n                        Nothing -> 0\n", try w.read("Main.beni"));
 }
 
+test "fmt --migrate-unicode writes the symbols and × in code only and restyles nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.8: an edit — `f`'s spacing is not canonical and stays
+    // so. Comments, strings, a multiline string, a character and markup text
+    // keep their `->`, `<=` and `...`; the code in an interpolation and a
+    // markup hole is rewritten. A comma tuple type is joined with `×`,
+    // parenthesised only as a type argument or an operand of a product.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\-- a -> b in a comment, |> and ... stay
+        \\f : ( Int, String ) -> Maybe ( Int,String )
+        \\f p=if p/=p then Nothing else Just p
+        \\g xs = case xs of
+        \\    [ x, ...rest ] -> x |> h
+        \\    _ -> "<= stays ${ 1 >= 2 }" ++ "${ h <| 1 }"
+        \\m =
+        \\    \\raw -> <| ... stays
+        \\c = '>'
+        \\k : ( ( Int, Bool ), List ( a, b ) ) -> { at : ( Int, Int ) }
+        \\k = k
+        \\r url =
+        \\    x <- with url
+        \\    x
+        \\v = <p>wait... {x |> f}</p>
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-unicode", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\-- a -> b in a comment, |> and ... stay
+        \\f : Int × String → Maybe (Int × String)
+        \\f p=if p≠p then Nothing else Just p
+        \\g xs = case xs of
+        \\    [ x, …rest ] → x ▷ h
+        \\    _ → "<= stays ${ 1 ≥ 2 }" ++ "${ h ◁ 1 }"
+        \\m =
+        \\    \\raw -> <| ... stays
+        \\c = '>'
+        \\k : (Int × Bool) × List (a × b) → { at : Int × Int }
+        \\k = k
+        \\r url =
+        \\    x ← with url
+        \\    x
+        \\v = <p>wait... {x ▷ f}</p>
+        \\
+    , try w.read("Main.beni"));
+}
+
+test "a tuple type written with × dumps the AST and BIR its comma spelling does" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // language.md §12.7–§12.8, frontend.md §11.8: the two spellings of every
+    // symbol, and `Int × String` beside `( Int, String )`, build the same
+    // nodes, and the dumps name an operator by its symbol whichever was read.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("a/Main.beni",
+        \\pair : Int × String → Int × String
+        \\pair p =
+        \\    p
+        \\
+        \\
+        \\ops a b xs =
+        \\    ( a ≠ b, a ≤ b, a ≥ b, [ a, …xs ] ▷ List.length, ( (≠), List.length ◁ xs ) )
+        \\
+    );
+    try w.write("b/Main.beni",
+        \\pair : ( Int, String ) -> ( Int, String )
+        \\pair p =
+        \\    p
+        \\
+        \\
+        \\ops a b xs =
+        \\    ( a /= b, a <= b, a >= b, [ a, ...xs ] |> List.length, ( (/=), List.length <| xs ) )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const ast_a = try w.run(&.{ "dump", "--stage=ast", "a/Main.beni" });
+    const ast_b = try w.run(&.{ "dump", "--stage=ast", "b/Main.beni" });
+    const bir_a = try w.run(&.{ "dump", "--stage=bir", "a/Main.beni" });
+    const bir_b = try w.run(&.{ "dump", "--stage=bir", "b/Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), ast_a.exit_code);
+    try testing.expectEqual(@as(u8, 0), bir_a.exit_code);
+    try testing.expectEqualStrings(ast_a.stdout, ast_b.stdout);
+    try testing.expectEqualStrings(bir_a.stdout, bir_b.stdout);
+    try testing.expect(std.mem.indexOf(u8, ast_a.stdout, "(op_fn ≠)") != null);
+    try testing.expect(std.mem.indexOf(u8, bir_a.stdout, "(≤)") != null);
+}
+
 test "fmt --migrate-names rewrites each form of a removed name in place and restyles nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

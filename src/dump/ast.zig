@@ -195,7 +195,13 @@ const Dumper = struct {
                 if (tree.typeVarMarker(n) != null) try d.w.writeAll(" equatable");
                 try d.w.print(" {s}", .{d.text(main)});
             },
-            .exposed, .int, .float, .char, .ident, .ctor, .accessor, .op_fn, .pat_var, .pat_int, .pat_char => {
+            // An operator is named by its symbol whichever spelling was read
+            // (language.md §12.7), so the two spellings dump alike.
+            .op_fn => {
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{Token.lexeme(d.tags[main].canonical()) orelse d.text(main)});
+            },
+            .exposed, .int, .float, .char, .ident, .ctor, .accessor, .pat_var, .pat_int, .pat_char => {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(main)});
             },

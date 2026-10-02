@@ -1,0 +1,60 @@
+-- The Unicode notation (language.md §12.7, §12.8): `→` in function types,
+-- `case` branches and lambdas, `←` in a bind, `≠ ≤ ≥` as comparisons and as
+-- functions, `▷` and `◁` as the pipes, `…` as a list's spread and a
+-- pattern's, and `×` writing tuple types — flat (`a × b × c` is one 3-tuple),
+-- grouped by parentheses that are never flattened, as a type argument in
+-- parentheses, after `equatable`, in a record field and around a function.
+-- `x ≤ -1` and a symbol in an interpolation hole are ordinary code; one in a
+-- string is not. Each parses to the tree its ASCII spelling did.
+swap : a × b → b × a
+swap ( a, b ) = ( b, a )
+
+
+triple : a × b × c → Int
+triple _ = 3
+
+
+nested : a × (b × c) → (a × b) × c
+nested ( a, ( b, c ) ) = ( ( a, b ), c )
+
+
+pairs : Maybe (a × b), List (Int × Int) → Dict String (Int × Int)
+pairs _ _ = Dict.empty
+
+
+fields : { at : Int × Int, label : String } → (Int → Int) × String
+fields r = ( λx → x, r.label )
+
+
+marked : equatable a × b, a → Bool
+marked ( x, _ ) y = x == y
+
+
+compare : Int, Int → Bool
+compare a b = a ≠ b && a ≤ b || a ≥ b && a ≤ -1
+
+
+ops = [ (≠), (≤), (≥) ]
+
+
+piped xs = xs ▷ List.reverse ▷ List.map λx → x + 1
+
+
+backward xs = List.length ◁ List.reverse xs
+
+
+spread x xs =
+    case [ x, …xs ] of
+        [ a, …rest ] →
+            a
+
+        [] →
+            0
+
+
+bound url =
+    response ← Task.attempt (Http.get url)
+    Task.succeed response
+
+
+text n = "→ stays text, ${ n ▷ String.fromInt }"

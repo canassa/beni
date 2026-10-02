@@ -1,0 +1,6 @@
+-- `*` between two types (language.md §12.7, *Lookalikes*): unexpected_token,
+-- its message naming `×`, and read as `×`, so the annotation is the tuple
+-- type that was meant and nothing else is reported (4:12, 4:21).
+pair : Int * String * Bool
+pair =
+    ( 1, "a", True )

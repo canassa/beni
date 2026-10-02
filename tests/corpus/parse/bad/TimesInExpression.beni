@@ -1,0 +1,5 @@
+-- `×` is a type token only (language.md §12.7): in an expression it is
+-- unexpected_token, its message saying that multiplication is `*` and a tuple
+-- value is `( a, b )`, and it is read as `*` so the rest parses (5:7).
+area w h =
+    w × h

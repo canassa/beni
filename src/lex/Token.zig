@@ -144,11 +144,21 @@ pub const Tag = enum(u8) {
     comma,
     colon,
     equal,
+    /// `→` (U+2192), the arrow of a function type, a `case` branch and a
+    /// lambda (language.md §12.7).
     arrow,
-    /// `<-`, the rest-of-block bind of a `let` (language.md §6.7). A symbol,
-    /// not an operator: it may appear only between a `let` binding's pattern
-    /// and its right-hand side.
+    /// `->`, the old spelling of `arrow`: the parser reads it as `arrow`
+    /// (`canonical`) until the enforce step refuses it.
+    ascii_arrow,
+    /// `←` (U+2190), the rest-of-block bind (language.md §6.7, §12.7). A
+    /// symbol, not an operator: it may appear only between a binding's
+    /// pattern and its right-hand side.
     arrow_left,
+    /// `<-`, the old spelling of `arrow_left`.
+    ascii_arrow_left,
+    /// `×` (U+00D7), which joins the element types of a tuple type
+    /// (language.md §12.8). A type token only.
+    times,
     /// `\`, the old spelling of a lambda's head (language.md §12.1).
     backslash,
     /// `λ` (U+03BB, the two bytes `CE BB`), which begins a lambda
@@ -171,18 +181,36 @@ pub const Tag = enum(u8) {
     op_plus_plus,
     op_colon_colon,
     op_eq_eq,
-    op_slash_eq,
+    /// `≠` (U+2260), and `/=`, its old spelling (language.md §12.7). Each
+    /// `ascii_*` operator sits beside its symbol, inside the operator range.
+    op_ne,
+    ascii_ne,
     op_lt,
     op_gt,
-    op_lte,
-    op_gte,
+    /// `≤` (U+2264) and `<=`.
+    op_le,
+    ascii_le,
+    /// `≥` (U+2265) and `>=`.
+    op_ge,
+    ascii_ge,
     op_and_and,
     op_or_or,
+    /// `▷` (U+25B7) and `|>`.
     op_pipe_right,
+    ascii_pipe_right,
+    /// `◁` (U+25C1) and `<|`.
     op_pipe_left,
+    ascii_pipe_left,
 
     eof,
     invalid,
+    /// A character a reader cannot tell from one of the symbols, or that a
+    /// habit from another notation produces (`⇒`, `−`, `!=` …, language.md
+    /// §12.7 *Lookalikes*). The lexer reports it as `invalid_character`, and
+    /// its payload is the tag of the token it stands for, which the parser
+    /// reads in its place so the parse goes on. Its length is re-derived from
+    /// its bytes (`Tokenizer.lookalikeAt`).
+    lookalike,
 
     // Markup (frontend.md §9.2). Each one is re-derived from its tag and
     // start alone, so the cached two-column form needs no mode column.
@@ -203,8 +231,11 @@ pub const Tag = enum(u8) {
     /// A run of text between tags, raw: whitespace, newlines and character
     /// references are kept for lowering to judge.
     markup_text,
-    /// `...` as the first token of a hole opened inside a tag (a spread).
+    /// `…` (U+2026), the spread of a list and of a component's attributes
+    /// (language.md §6.8, §12.7).
     ellipsis,
+    /// `...`, the old spelling of `ellipsis`.
+    ascii_ellipsis,
     /// A byte an opening or closing tag cannot hold, reported by the lexer.
     /// It runs as the `invalid` its first byte would start, but stops before
     /// the first `>`, `/`, `{`, `}`, `"`, `=` or whitespace after that byte,
@@ -226,10 +257,51 @@ pub const Tag = enum(u8) {
             @intFromEnum(tag) <= @intFromEnum(Tag.keyword_foreign);
     }
 
-    /// True for the binary operators of language.md §6.5 (`op_*`).
+    /// True for the binary operators of language.md §6.5 (`op_*`), in
+    /// either spelling.
     pub fn isOperator(tag: Tag) bool {
         return @intFromEnum(tag) >= @intFromEnum(Tag.op_plus) and
-            @intFromEnum(tag) <= @intFromEnum(Tag.op_pipe_left);
+            @intFromEnum(tag) <= @intFromEnum(Tag.ascii_pipe_left);
+    }
+
+    /// The symbol an old ASCII spelling stands for (language.md §12.7):
+    /// `ascii_arrow` is `arrow` and so on; every other tag is itself. The
+    /// two tags of a pair are one token to everything but the lexer, the
+    /// formatter, which prints the spelling it read, and the enforce step's
+    /// report.
+    pub fn canonical(tag: Tag) Tag {
+        return switch (tag) {
+            .ascii_arrow => .arrow,
+            .ascii_arrow_left => .arrow_left,
+            .ascii_ne => .op_ne,
+            .ascii_le => .op_le,
+            .ascii_ge => .op_ge,
+            .ascii_pipe_right => .op_pipe_right,
+            .ascii_pipe_left => .op_pipe_left,
+            .ascii_ellipsis => .ellipsis,
+            else => tag,
+        };
+    }
+
+    /// The old ASCII spelling of a symbol's tag, or null for every other
+    /// tag: `canonical`'s inverse.
+    pub fn ascii(tag: Tag) ?Tag {
+        return switch (tag) {
+            .arrow => .ascii_arrow,
+            .arrow_left => .ascii_arrow_left,
+            .op_ne => .ascii_ne,
+            .op_le => .ascii_le,
+            .op_ge => .ascii_ge,
+            .op_pipe_right => .ascii_pipe_right,
+            .op_pipe_left => .ascii_pipe_left,
+            .ellipsis => .ascii_ellipsis,
+            else => null,
+        };
+    }
+
+    /// True for an old ASCII spelling (`ascii_*`).
+    pub fn isAscii(tag: Tag) bool {
+        return tag.canonical() != tag;
     }
 };
 
@@ -264,8 +336,11 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .comma => ",",
         .colon => ":",
         .equal => "=",
-        .arrow => "->",
-        .arrow_left => "<-",
+        .arrow => "→",
+        .ascii_arrow => "->",
+        .arrow_left => "←",
+        .ascii_arrow_left => "<-",
+        .times => "×",
         .backslash => "\\",
         .lambda => "λ",
         .pipe => "|",
@@ -282,21 +357,27 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .op_plus_plus => "++",
         .op_colon_colon => "::",
         .op_eq_eq => "==",
-        .op_slash_eq => "/=",
+        .op_ne => "≠",
+        .ascii_ne => "/=",
         .op_lt => "<",
         .op_gt => ">",
-        .op_lte => "<=",
-        .op_gte => ">=",
+        .op_le => "≤",
+        .ascii_le => "<=",
+        .op_ge => "≥",
+        .ascii_ge => ">=",
         .op_and_and => "&&",
         .op_or_or => "||",
-        .op_pipe_right => "|>",
-        .op_pipe_left => "<|",
+        .op_pipe_right => "▷",
+        .ascii_pipe_right => "|>",
+        .op_pipe_left => "◁",
+        .ascii_pipe_left => "<|",
 
         .markup_open => "<",
         .markup_close_open => "</",
         .markup_gt => ">",
         .markup_self_close => "/>",
-        .ellipsis => "...",
+        .ellipsis => "…",
+        .ascii_ellipsis => "...",
 
         .lower_ident,
         .upper_ident,
@@ -315,11 +396,81 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .char,
         .eof,
         .invalid,
+        .lookalike,
         .markup_name,
         .markup_attr,
         .markup_text,
         .markup_stray,
         => null,
+    };
+}
+
+/// A character the lexer refuses as a lookalike of a symbol or an operator
+/// (language.md §12.7, *Lookalikes*), and the tag it is read as.
+pub const Lookalike = struct {
+    bytes: []const u8,
+    code_point: u21,
+    name: []const u8,
+    tag: Tag,
+};
+
+/// language.md §12.7's lookalike table, but `!=`, which the `!` state
+/// handles, and the fullwidth block, which is not read as anything.
+pub const lookalikes = [_]Lookalike{
+    .{ .bytes = "−", .code_point = 0x2212, .name = "MINUS SIGN", .tag = .op_minus },
+    .{ .bytes = "－", .code_point = 0xFF0D, .name = "FULLWIDTH HYPHEN-MINUS", .tag = .op_minus },
+    .{ .bytes = "⇒", .code_point = 0x21D2, .name = "RIGHTWARDS DOUBLE ARROW", .tag = .arrow },
+    .{ .bytes = "⟶", .code_point = 0x27F6, .name = "LONG RIGHTWARDS ARROW", .tag = .arrow },
+    .{ .bytes = "⟹", .code_point = 0x27F9, .name = "LONG RIGHTWARDS DOUBLE ARROW", .tag = .arrow },
+    .{ .bytes = "➝", .code_point = 0x279D, .name = "TRIANGLE-HEADED RIGHTWARDS ARROW", .tag = .arrow },
+    .{ .bytes = "➔", .code_point = 0x2794, .name = "HEAVY WIDE-HEADED RIGHTWARDS ARROW", .tag = .arrow },
+    .{ .bytes = "↦", .code_point = 0x21A6, .name = "RIGHTWARDS ARROW FROM BAR", .tag = .arrow },
+    .{ .bytes = "⟵", .code_point = 0x27F5, .name = "LONG LEFTWARDS ARROW", .tag = .arrow_left },
+    .{ .bytes = "⇐", .code_point = 0x21D0, .name = "LEFTWARDS DOUBLE ARROW", .tag = .arrow_left },
+    .{ .bytes = "≦", .code_point = 0x2266, .name = "LESS-THAN OVER EQUAL TO", .tag = .op_le },
+    .{ .bytes = "⩽", .code_point = 0x2A7D, .name = "LESS-THAN OR SLANTED EQUAL TO", .tag = .op_le },
+    .{ .bytes = "≧", .code_point = 0x2267, .name = "GREATER-THAN OVER EQUAL TO", .tag = .op_ge },
+    .{ .bytes = "⩾", .code_point = 0x2A7E, .name = "GREATER-THAN OR SLANTED EQUAL TO", .tag = .op_ge },
+    .{ .bytes = "▶", .code_point = 0x25B6, .name = "BLACK RIGHT-POINTING TRIANGLE", .tag = .op_pipe_right },
+    .{ .bytes = "▹", .code_point = 0x25B9, .name = "WHITE RIGHT-POINTING SMALL TRIANGLE", .tag = .op_pipe_right },
+    .{ .bytes = "▸", .code_point = 0x25B8, .name = "BLACK RIGHT-POINTING SMALL TRIANGLE", .tag = .op_pipe_right },
+    .{ .bytes = "▻", .code_point = 0x25BB, .name = "WHITE RIGHT-POINTING POINTER", .tag = .op_pipe_right },
+    .{ .bytes = "⊳", .code_point = 0x22B3, .name = "CONTAINS AS NORMAL SUBGROUP", .tag = .op_pipe_right },
+    .{ .bytes = "◀", .code_point = 0x25C0, .name = "BLACK LEFT-POINTING TRIANGLE", .tag = .op_pipe_left },
+    .{ .bytes = "◃", .code_point = 0x25C3, .name = "WHITE LEFT-POINTING SMALL TRIANGLE", .tag = .op_pipe_left },
+    .{ .bytes = "◂", .code_point = 0x25C2, .name = "BLACK LEFT-POINTING SMALL TRIANGLE", .tag = .op_pipe_left },
+    .{ .bytes = "◅", .code_point = 0x25C5, .name = "WHITE LEFT-POINTING POINTER", .tag = .op_pipe_left },
+    .{ .bytes = "⊲", .code_point = 0x22B2, .name = "NORMAL SUBGROUP OF", .tag = .op_pipe_left },
+    .{ .bytes = "⋯", .code_point = 0x22EF, .name = "MIDLINE HORIZONTAL ELLIPSIS", .tag = .ellipsis },
+    .{ .bytes = "‥", .code_point = 0x2025, .name = "TWO DOT LEADER", .tag = .ellipsis },
+    .{ .bytes = "⨯", .code_point = 0x2A2F, .name = "VECTOR OR CROSS PRODUCT", .tag = .times },
+    .{ .bytes = "✕", .code_point = 0x2715, .name = "MULTIPLICATION X", .tag = .times },
+};
+
+/// The lookalike whose bytes begin at `src[i]`, or null. `!=` is not
+/// among them: the `!` state lexes it.
+pub fn lookalikeAt(src: []const u8, i: u32) ?*const Lookalike {
+    for (&lookalikes) |*look| {
+        if (std.mem.startsWith(u8, src[i..], look.bytes)) return look;
+    }
+    return null;
+}
+
+/// How a message names a symbol's character: its code point and Unicode
+/// name (language.md §12.7), or the ASCII it is for `op_minus`.
+pub fn symbolName(tag: Tag) []const u8 {
+    return switch (tag) {
+        .arrow => "U+2192 RIGHTWARDS ARROW",
+        .arrow_left => "U+2190 LEFTWARDS ARROW",
+        .op_ne => "U+2260 NOT EQUAL TO",
+        .op_le => "U+2264 LESS-THAN OR EQUAL TO",
+        .op_ge => "U+2265 GREATER-THAN OR EQUAL TO",
+        .op_pipe_right => "U+25B7 WHITE RIGHT-POINTING TRIANGLE",
+        .op_pipe_left => "U+25C1 WHITE LEFT-POINTING TRIANGLE",
+        .ellipsis => "U+2026 HORIZONTAL ELLIPSIS",
+        .times => "U+00D7 MULTIPLICATION SIGN",
+        .op_minus => "the ASCII hyphen-minus",
+        else => @tagName(tag),
     };
 }
 
@@ -367,9 +518,27 @@ test "every operator and symbol has a lexeme; no variable-text tag does" {
         const fixed = tag.isKeyword() or tag.isOperator() or
             (@intFromEnum(tag) >= @intFromEnum(Tag.l_paren) and @intFromEnum(tag) <= @intFromEnum(Tag.question)) or
             (@intFromEnum(tag) >= @intFromEnum(Tag.markup_open) and @intFromEnum(tag) <= @intFromEnum(Tag.markup_self_close)) or
-            tag == .ellipsis;
+            tag == .ellipsis or tag == .ascii_ellipsis;
         try std.testing.expectEqual(fixed, lexeme(tag) != null);
     }
+}
+
+test "canonical and ascii pair every old spelling with its symbol" {
+    var pairs: usize = 0;
+    inline for (@typeInfo(Tag).@"enum".fields) |field| {
+        const tag: Tag = @enumFromInt(field.value);
+        if (tag.ascii()) |old| {
+            pairs += 1;
+            try std.testing.expectEqual(tag, old.canonical());
+            try std.testing.expect(old.isAscii());
+            try std.testing.expect(!tag.isAscii());
+            try std.testing.expectEqual(tag.isOperator(), old.isOperator());
+            // The symbol is one code point; the old spelling is ASCII.
+            try std.testing.expectEqual(@as(usize, 1), try std.unicode.utf8CountCodepoints(lexeme(tag).?));
+            for (lexeme(old).?) |b| try std.testing.expect(b < 0x80);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 8), pairs);
 }
 
 test "optional index round trip" {

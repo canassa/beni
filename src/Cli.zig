@@ -374,6 +374,10 @@ pub const Fmt = struct {
     /// kept so a branch written before can be migrated with the flag its
     /// mechanical commit names.
     migrate_trailing_lambda: bool = false,
+    /// `--migrate-unicode`, hidden: write every old ASCII spelling as its
+    /// symbol and every comma tuple type with `×` (`Format.migrateUnicode`)
+    /// instead of formatting.
+    migrate_unicode: bool = false,
     paths: []const []const u8,
 };
 
@@ -924,9 +928,14 @@ const FmtSpecific = struct {
     migrate_names: bool = false,
     migrate_let: bool = false,
     migrate_trailing_lambda: bool = false,
+    migrate_unicode: bool = false,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-trailing-lambda")) {
+        if (std.mem.eql(u8, name, "--migrate-unicode")) {
+            if (value != null) return noValue(name);
+            self.migrate_unicode = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-trailing-lambda")) {
             if (value != null) return noValue(name);
             self.migrate_trailing_lambda = true;
             self.consumed = true;
@@ -978,7 +987,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         @intFromBool(s.specific.migrate_lambda) +
         @intFromBool(s.specific.migrate_names) +
         @intFromBool(s.specific.migrate_let) +
-        @intFromBool(s.specific.migrate_trailing_lambda);
+        @intFromBool(s.specific.migrate_trailing_lambda) +
+        @intFromBool(s.specific.migrate_unicode);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
@@ -992,6 +1002,7 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_names = s.specific.migrate_names,
         .migrate_let = s.specific.migrate_let,
         .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
+        .migrate_unicode = s.specific.migrate_unicode,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

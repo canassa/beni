@@ -1,0 +1,15 @@
+-- Five lookalikes of `▷` — `▶ ▹ ▸ ▻ ⊳` — and five of `◁` — `◀ ◃ ◂ ◅ ⊲` —
+-- (language.md §12.7): each is invalid_character naming it and the triangle
+-- to write, and is read as that pipe, so the pipelines parse (7:9, 8:9, 9:9,
+-- 10:9, 11:9, 15:20, 15:36, 15:53, 15:67, 15:84).
+right xs =
+    xs
+        ▶ List.reverse
+        ▹ List.length
+        ▸ String.fromInt
+        ▻ String.length
+        ⊳ String.fromInt
+
+
+left s =
+    String.fromInt ◀ String.length ◃ String.reverse ◂ String.trim ◅ String.toUpper ⊲ s

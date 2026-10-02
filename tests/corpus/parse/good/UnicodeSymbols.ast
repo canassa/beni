@@ -1,0 +1,199 @@
+(module
+  (annotation swap
+    (type_fn
+      (type_tuple
+        (type_var a)
+        (type_var b))
+      (type_tuple
+        (type_var b)
+        (type_var a))))
+  (definition swap
+    (pat_tuple
+      (pat_var a)
+      (pat_var b))
+    (tuple
+      (ident b)
+      (ident a)))
+  (annotation triple
+    (type_fn
+      (type_tuple
+        (type_var a)
+        (type_var b)
+        (type_var c))
+      (type_con Int)))
+  (definition triple
+    (pat_wild)
+    (int 3))
+  (annotation nested
+    (type_fn
+      (type_tuple
+        (type_var a)
+        (type_paren
+          (type_tuple
+            (type_var b)
+            (type_var c))))
+      (type_tuple
+        (type_paren
+          (type_tuple
+            (type_var a)
+            (type_var b)))
+        (type_var c))))
+  (definition nested
+    (pat_tuple
+      (pat_var a)
+      (pat_tuple
+        (pat_var b)
+        (pat_var c)))
+    (tuple
+      (tuple
+        (ident a)
+        (ident b))
+      (ident c)))
+  (annotation pairs
+    (type_fn
+      (type_con Maybe
+        (type_paren
+          (type_tuple
+            (type_var a)
+            (type_var b))))
+      (type_con List
+        (type_paren
+          (type_tuple
+            (type_con Int)
+            (type_con Int))))
+      (type_con Dict
+        (type_con String)
+        (type_paren
+          (type_tuple
+            (type_con Int)
+            (type_con Int))))))
+  (definition pairs
+    (pat_wild)
+    (pat_wild)
+    (ident Dict.empty))
+  (annotation fields
+    (type_fn
+      (type_record
+        (record_type_field at
+          (type_tuple
+            (type_con Int)
+            (type_con Int)))
+        (record_type_field label
+          (type_con String)))
+      (type_tuple
+        (type_paren
+          (type_fn
+            (type_con Int)
+            (type_con Int)))
+        (type_con String))))
+  (definition fields
+    (pat_var r)
+    (tuple
+      (lambda
+        (pat_var x)
+        (ident x))
+      (field_access .label
+        (ident r))))
+  (annotation marked
+    (type_fn
+      (type_tuple
+        (type_var equatable a)
+        (type_var b))
+      (type_var a)
+      (type_con Bool)))
+  (definition marked
+    (pat_tuple
+      (pat_var x)
+      (pat_wild))
+    (pat_var y)
+    (eq
+      (ident x)
+      (ident y)))
+  (annotation compare
+    (type_fn
+      (type_con Int)
+      (type_con Int)
+      (type_con Bool)))
+  (definition compare
+    (pat_var a)
+    (pat_var b)
+    (bool_or
+      (bool_and
+        (neq
+          (ident a)
+          (ident b))
+        (lte
+          (ident a)
+          (ident b)))
+      (bool_and
+        (gte
+          (ident a)
+          (ident b))
+        (lte
+          (ident a)
+          (negate
+            (int 1))))))
+  (definition ops
+    (list
+      (op_fn ≠)
+      (op_fn ≤)
+      (op_fn ≥)))
+  (definition piped
+    (pat_var xs)
+    (pipe_right
+      (pipe_right
+        (ident xs)
+        (ident List.reverse))
+      (apply
+        (ident List.map)
+        (lambda
+          (pat_var x)
+          (add
+            (ident x)
+            (int 1))))))
+  (definition backward
+    (pat_var xs)
+    (pipe_left
+      (ident List.length)
+      (apply
+        (ident List.reverse)
+        (ident xs))))
+  (definition spread
+    (pat_var x)
+    (pat_var xs)
+    (case
+      (list
+        (ident x)
+        (spread
+          (ident xs)))
+      (branch
+        (pat_list
+          (pat_var a)
+          (pat_spread
+            (pat_var rest)))
+        (ident a))
+      (branch
+        (pat_list)
+        (int 0))))
+  (definition bound
+    (pat_var url)
+    (block
+      (let_bind
+        (pat_var response)
+        (apply
+          (ident Task.attempt)
+          (paren
+            (apply
+              (ident Http.get)
+              (ident url)))))
+      (apply
+        (ident Task.succeed)
+        (ident response))))
+  (definition text
+    (pat_var n)
+    (string
+      (chunk "→ stays text, ")
+      (interp
+        (pipe_right
+          (ident n)
+          (ident String.fromInt))))))

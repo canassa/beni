@@ -666,6 +666,17 @@ fn basicsRef(l: *Lower, name: WellKnown) Allocator.Error!Index {
 /// `import_value(home, function)` for the core function an operator
 /// desugars to, with the home module the operator's own (see
 /// `operatorFunction`) rather than `Basics` for all of them.
+/// The operator token `token` stands for: an old ASCII spelling is its
+/// symbol, a lookalike the token it was read as (language.md §12.7), and a
+/// `×` in an expression the `*` the parser read it as.
+fn opTag(l: *const Lower, token: u32) Token.Tag {
+    return switch (l.tags[token]) {
+        .lookalike => @enumFromInt(l.payloads[token]),
+        .times => .op_star,
+        else => |tag| tag.canonical(),
+    };
+}
+
 fn operatorRef(l: *Lower, op: Token.Tag) Allocator.Error!Index {
     const f = operatorFunction(op);
     return l.importRef(.import_value, .import_value, f.module.symbol(), f.function.symbol());
@@ -2202,10 +2213,10 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             // `Basics.eq` would be structural equality, which is not what
             // the operator means any more. Every other operator is still the
             // reference to its core function.
-            if (Bir.WellKnown.fromOperator(l.tags[main_token])) |origin| return l.operatorLambda(origin);
+            if (Bir.WellKnown.fromOperator(l.opTag(main_token))) |origin| return l.operatorLambda(origin);
             // `(::)`: `cons_removed`, reported by the parser (§6.8).
-            if (l.tags[main_token] == .op_colon_colon) return l.errorInst(.cons_removed);
-            return l.operatorRef(l.tags[main_token]);
+            if (l.opTag(main_token) == .op_colon_colon) return l.errorInst(.cons_removed);
+            return l.operatorRef(l.opTag(main_token));
         },
         .unit => return l.addInst(.unit, 0, 0),
         .negate => {
@@ -2303,11 +2314,11 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const b = l.tree.fullBinop(node);
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
-            if (Bir.WellKnown.fromOperator(l.tags[b.op_token])) |origin| {
+            if (Bir.WellKnown.fromOperator(l.opTag(b.op_token))) |origin| {
                 l.cur_token = b.op_token;
                 return l.methodCall(lhs, origin.method().?.symbol(), origin, &.{rhs.int()});
             }
-            const function = try l.operatorRef(l.tags[b.op_token]);
+            const function = try l.operatorRef(l.opTag(b.op_token));
             l.cur_token = b.op_token;
             return l.call(function, &.{ lhs.int(), rhs.int() });
         },
@@ -2438,11 +2449,11 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
         .op_caret => .{ .module = .Basics, .function = .pow },
         .op_plus_plus => .{ .module = .Basics, .function = .append },
         .op_eq_eq => .{ .module = .Basics, .function = .eq },
-        .op_slash_eq => .{ .module = .Basics, .function = .neq },
+        .op_ne => .{ .module = .Basics, .function = .neq },
         .op_lt => .{ .module = .Basics, .function = .lt },
         .op_gt => .{ .module = .Basics, .function = .gt },
-        .op_lte => .{ .module = .Basics, .function = .le },
-        .op_gte => .{ .module = .Basics, .function = .ge },
+        .op_le => .{ .module = .Basics, .function = .le },
+        .op_ge => .{ .module = .Basics, .function = .ge },
         .op_and_and => .{ .module = .Basics, .function = .@"and" },
         .op_or_or => .{ .module = .Basics, .function = .@"or" },
         // `|>` and `<|` are syntax, not calls (§6.5): they have no core
@@ -4906,7 +4917,7 @@ test "every binary operator maps to the §6.5 core function, except the six comp
         \\  %24 = method_call %22 .eq [%23] (==)
         \\  %25 = local 0 (a)
         \\  %26 = local 1 (b)
-        \\  %27 = method_call %25 .eq [%26] (/=)
+        \\  %27 = method_call %25 .eq [%26] (≠)
         \\  %28 = local 0 (a)
         \\  %29 = local 1 (b)
         \\  %30 = method_call %28 .compare [%29] (<)
@@ -4915,10 +4926,10 @@ test "every binary operator maps to the §6.5 core function, except the six comp
         \\  %33 = method_call %31 .compare [%32] (>)
         \\  %34 = local 0 (a)
         \\  %35 = local 1 (b)
-        \\  %36 = method_call %34 .compare [%35] (<=)
+        \\  %36 = method_call %34 .compare [%35] (≤)
         \\  %37 = local 0 (a)
         \\  %38 = local 1 (b)
-        \\  %39 = method_call %37 .compare [%38] (>=)
+        \\  %39 = method_call %37 .compare [%38] (≥)
         \\  %40 = local 0 (a)
         \\  %41 = local 1 (b)
         \\  %42 = import_value Basics.and
@@ -4980,8 +4991,8 @@ test "the operator table gives every operator a home module, Basics" {
     const ops = [_]Token.Tag{
         .op_plus,        .op_minus,   .op_star,      .op_slash,
         .op_slash_slash, .op_caret,   .op_plus_plus, .op_eq_eq,
-        .op_slash_eq,    .op_lt,      .op_gt,        .op_lte,
-        .op_gte,         .op_and_and, .op_or_or,
+        .op_ne,          .op_lt,      .op_gt,        .op_le,
+        .op_ge,          .op_and_and, .op_or_or,
     };
     for (ops) |op| {
         const f = operatorFunction(op);

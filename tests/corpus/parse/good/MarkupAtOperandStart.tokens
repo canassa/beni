@@ -27,7 +27,7 @@
 15:5 equal =
 15:7 lambda λ
 15:8 lower_ident r
-15:10 arrow ->
+15:10 ascii_arrow ->
 15:13 markup_open <
 15:14 markup_name tr
 15:17 markup_self_close />
@@ -35,7 +35,7 @@
 18:7 lower_ident f
 18:9 equal =
 18:11 lower_ident f
-18:13 op_pipe_left <|
+18:13 ascii_pipe_left <|
 18:16 markup_open <
 18:17 markup_gt >
 18:18 markup_text "x"

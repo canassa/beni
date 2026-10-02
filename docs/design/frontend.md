@@ -1643,7 +1643,7 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
 
 ### 11.8 Unicode notation in the front end
 
-*Added 2026-10-01; specified, not built.* How the lexer, parser, formatter and `beni fmt
+*Added 2026-10-01; taught 2026-10-02* (the *As built* note below). How the lexer, parser, formatter and `beni fmt
 --migrate-unicode` build [`language.md`](language.md) §12.7–§12.9, in the order
 [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 18–20 give.
 
@@ -1718,6 +1718,32 @@ it with the re-parse's first diagnostic — a file that no longer parses.
   layout compares only line-start columns but for the `case` of §12.1, which the re-parse catches.
 - The slice that runs it then runs plain `beni fmt` over the gate's scope, for a joined tuple type
   that now passes 100 columns; it is the one way the flag's output can fail the gate.
+
+*As built, the teach step (2026-10-02):*
+
+- The parser reads `Parse.tags`, the lexer's tags with every `ascii_*` tag replaced by its
+  symbol's (`Token.Tag.canonical`) and every `lookalike` by its payload — a copy made only for a
+  file that holds one (`readTags`), the lexer's own column otherwise — and derives every token's
+  length from `raw_tags`. So no parse site names a pair: `.arrow` is both spellings, and the
+  enforce step has the raw tag to report on. The lookalike table is `Token.lookalikes`, beside
+  `Token.symbolName`, so the lexer's message and the parser's read one list.
+- Lowering reads an operator token through `Lower.opTag`: the symbol for an old spelling, the
+  payload for a lookalike, `*` for a `×` the parser took as one. `Bir.WellKnown.symbol` is the
+  dumps' name for a comparison (`(≠)`), `spelling` the messages' until the enforce step.
+- A `*` that continues a product is `unexpected_token` (construct `star_in_type`) and is read as
+  `×`; a `×` in an expression is `unexpected_token` (`times_in_expression`) and is read as `*`;
+  `=>` where `→` is expected is `expected_token` with the arrow named. A message names an expected
+  token in its old spelling until the enforce step (`tokenText`).
+- A product is `type_tuple` with the first `×` as its main token. `a × (b × c)` keeps the
+  `type_paren` that `( a, ( b, c ) )` never had, so the AST dumps of those two differ; their BIR
+  does not. Flat products and `( Int, String )` against `Int × String` dump identically
+  (`blackbox_test.zig`, *a tuple type written with × dumps …*).
+- The formatter measures every symbol by its token (`→` one column where `->` was two) and prints
+  a product on one line or broken before each `×`, the operands indented 4 past the first's
+  column (`Printer.product`). `--migrate-unicode` is `Format.migrateUnicode`: token edits and
+  tuple-type edits in one source-order walk, an element's text written through the same walk so
+  nested edits apply innermost first, and a file left alone and named when a tuple type it would
+  join holds a comment or its rewrite does not parse.
 
 **What the flag does not rewrite**, and slice 19 rewrites by a reviewed script in the same
 commit: core's doc comments (`--|` examples, which the docs test compiles), code in Zig test

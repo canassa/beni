@@ -1,0 +1,7 @@
+-- `⨯` (U+2A2F VECTOR OR CROSS PRODUCT) and `✕` (U+2715 MULTIPLICATION X) look
+-- like `×` (language.md §12.7): each is invalid_character naming it and `×`,
+-- and is read as `×`, so the tuple types parse (5:12, 5:30). `x` between two
+-- types is a type variable and is not refused here.
+swap : Int ⨯ String → String ✕ Int
+swap ( a, b ) =
+    ( b, a )

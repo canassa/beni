@@ -2,7 +2,7 @@
 6:5 equal =
 6:7 lambda λ
 6:8 lower_ident n
-6:10 arrow ->
+6:10 ascii_arrow ->
 6:13 lower_ident n
 6:15 op_plus +
 6:17 int 1
@@ -17,7 +17,7 @@
 9:28 comma ,
 9:30 lower_ident b
 9:32 r_paren )
-9:34 arrow ->
+9:34 ascii_arrow ->
 9:37 lower_ident a
 9:39 op_plus +
 9:41 lower_ident b
@@ -25,10 +25,10 @@
 12:8 equal =
 12:10 lambda λ
 12:11 lower_ident a
-12:13 arrow ->
+12:13 ascii_arrow ->
 12:16 lambda λ
 12:17 lower_ident b
-12:19 arrow ->
+12:19 ascii_arrow ->
 12:22 lower_ident a
 12:24 op_plus +
 12:26 lower_ident b
@@ -37,7 +37,7 @@
 15:9 lambda λ
 15:10 l_paren (
 15:11 r_paren )
-15:13 arrow ->
+15:13 ascii_arrow ->
 15:16 int 0
 18:1 lower_ident both
 18:6 equal =
@@ -46,20 +46,20 @@
 18:11 lower_ident name
 18:16 r_brace }
 18:18 underscore _
-18:20 arrow ->
+18:20 ascii_arrow ->
 18:23 lower_ident name
 21:1 lower_ident text
 21:6 equal =
 22:5 lambda λ
 22:6 lower_ident x
-22:8 arrow ->
+22:8 ascii_arrow ->
 23:9 multiline_line \\raw \x
 24:9 multiline_line \\more
 27:1 lower_ident escaped
 27:9 equal =
 27:11 lambda λ
 27:12 underscore _
-27:14 arrow ->
+27:14 ascii_arrow ->
 27:17 str_start "
 27:18 str_chunk a\\b
 27:22 str_end "
@@ -74,7 +74,7 @@
 30:28 lower_ident items
 30:34 lambda λ
 30:35 lower_ident i
-30:37 arrow ->
+30:37 ascii_arrow ->
 30:40 markup_open <
 30:41 markup_name li
 30:44 markup_attr onClick
@@ -82,7 +82,7 @@
 30:52 l_brace {
 30:53 lambda λ
 30:54 underscore _
-30:56 arrow ->
+30:56 ascii_arrow ->
 30:59 lower_ident i
 30:60 r_brace }
 30:61 markup_gt >

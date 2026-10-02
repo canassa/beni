@@ -1,0 +1,10 @@
+-- `⟵` and `⇐` look like `←` (language.md §12.7): each is invalid_character
+-- naming it and `←`, and is read as `←`, so the binds parse (8:7, 9:7).
+with x k =
+    k x
+
+
+twice n =
+    a ⟵ with n
+    b ⇐ with (a + a)
+    b

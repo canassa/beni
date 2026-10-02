@@ -1,0 +1,6 @@
+-- A fullwidth form (U+FF01 to U+FF5E) is invalid_character naming the ASCII
+-- character it stands for (language.md §12.7), and is NOT read as it — the
+-- character may be a letter — so the parse goes on as at any stray byte
+-- (6:7).
+less a b =
+    a ＜ b

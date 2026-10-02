@@ -1,0 +1,9 @@
+-- `≦` and `⩽` look like `≤`, and `≧` and `⩾` like `≥` (language.md §12.7):
+-- each is invalid_character naming it and the symbol to write, and is read
+-- as that symbol, so the comparisons parse (5:9, 6:9, 7:9, 8:9).
+checks a b =
+    [ a ≦ b
+    , a ⩽ b
+    , a ≧ b
+    , a ⩾ b
+    ]

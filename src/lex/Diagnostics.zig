@@ -17,6 +17,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
+const Token = @import("Token.zig");
 
 const Diagnostics = @This();
 
@@ -73,6 +74,15 @@ pub fn toOwnedSlice(d: *Diagnostics, gpa: Allocator) Allocator.Error![]Item {
     return d.list.toOwnedSlice(gpa);
 }
 
+/// The ASCII character a fullwidth form (U+FF01 to U+FF5E, `EF BC 81` to
+/// `EF BD 9E`) stands for, 0xFEE0 below it, or null (language.md §12.7).
+fn fullwidthAscii(text: []const u8) ?u8 {
+    if (text.len != 3 or text[0] != 0xEF) return null;
+    const cp = std.unicode.utf8Decode3(text[0..3].*) catch return null;
+    if (cp < 0xFF01 or cp > 0xFF5E) return null;
+    return @intCast(cp - 0xFEE0);
+}
+
 /// Write the Elm-style prose for `item`. `source` is the whole file; the
 /// item's bytes are quoted where that helps. No trailing newline.
 pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -92,6 +102,28 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
         .invalid_character => {
             if (text.len == 0) {
                 try w.writeAll("I found a byte that cannot appear here.");
+            } else if (std.mem.eql(u8, text, "!=")) {
+                // A lookalike (language.md §12.7): the parse went on as `≠`.
+                try w.print(
+                    \\I found `!=`, which is how other languages write not-equal.
+                    \\
+                    \\Write `≠` ({s}) instead. I read this one as `≠` and went on.
+                , .{Token.symbolName(.op_ne)});
+            } else if (Token.lookalikeAt(text, 0)) |look| {
+                const intended = Token.lexeme(look.tag).?;
+                try w.print(
+                    \\I found `{s}` (U+{X:0>4} {s}), which looks like `{s}` but is not part of
+                    \\the language's syntax.
+                    \\
+                    \\Write `{s}` ({s}) instead. I read this one as `{s}` and went on.
+                , .{ text, look.code_point, look.name, intended, intended, Token.symbolName(look.tag), intended });
+            } else if (fullwidthAscii(text)) |ascii| {
+                try w.print(
+                    \\I found `{s}`, the fullwidth form of `{c}`, which is not part of the language's
+                    \\syntax.
+                    \\
+                    \\Write the ASCII `{c}` instead.
+                , .{ text, ascii, ascii });
             } else if (text[0] == '.') {
                 try w.writeAll(
                     \\I found a `.` that does not start a field access.

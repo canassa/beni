@@ -786,6 +786,201 @@ fn isStringLiteral(tree: *const Ast, node: Index) bool {
     };
 }
 
+/// Why `migrateUnicode` left a file alone, at `start` in the source: its
+/// rewrite does not parse (`code`, the re-parse's first diagnostic), or
+/// (`code == null`) a tuple type it would join holds a comment, which a
+/// hand edit must place.
+pub const UnicodeProblem = struct {
+    code: ?diagnostic.Code,
+    start: u32,
+};
+
+/// `beni fmt --migrate-unicode` (frontend.md §11.8): `source` with every old
+/// ASCII spelling — `->`, `<-`, `/=`, `<=`, `>=`, `|>`, `<|`, `...` — written
+/// as its symbol, and every tuple type written `( a, b )` written with `×`,
+/// and nothing else touched: an edit, like `migrateLambda`, so a file keeps
+/// its own layout.
+///
+/// Only tokens are rewritten, so a string, a character, a multiline string,
+/// a comment, a doc comment, markup text and a quoted attribute value keep
+/// their bytes, while the code in an interpolation, a markup hole or an
+/// attribute's `{…}` is reached like any other. A tuple type is its element
+/// types, each its own text rewritten the same way, joined by ` × ` on the
+/// tuple's first line, and parenthesised exactly where a product must be an
+/// atom — a type application's argument, a constructor's payload, `sync`'s
+/// operand, an operand of an enclosing product (language.md §12.8). One that
+/// holds a comment is left for a hand edit, and the file with it.
+///
+/// The output is parsed again; a file whose rewrite does not parse is
+/// written unchanged and the problem returned. One run reaches the fixed
+/// point.
+pub fn migrateUnicode(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    w: *Io.Writer,
+) Error!?UnicodeProblem {
+    if (!onlyUnicodeRemoved(tree)) return error.SyntaxErrors;
+    const n = tree.nodes.len;
+    var m: Measurer = .{
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = try scratch.alloc(u32, n),
+        .firsts = try scratch.alloc(u32, n),
+        .lasts = try scratch.alloc(u32, n),
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+    const tags = m.tags;
+
+    var u: UnicodeRewrite = .{ .m = &m, .scratch = scratch };
+    // Which nodes stand where a type must be an atom.
+    u.atom = try scratch.alloc(bool, n);
+    @memset(u.atom, false);
+    for (0..n) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        switch (tree.nodeTag(node)) {
+            .type_con, .constructor, .type_tuple => for (tree.children(node)) |c| {
+                u.atom[c.int()] = true;
+            },
+            .type_sync => u.atom[tree.operand(node).int()] = true,
+            else => {},
+        }
+    }
+    for (tags, m.starts) |tag, start| {
+        if (tag.isAscii()) try u.tokens.append(scratch, start);
+    }
+    for (0..n) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        if (tree.nodeTag(node) != .type_tuple or tags[tree.nodeMainToken(node)] != .l_paren) continue;
+        if (m.commentIn(m.first(node), m.last(node))) return u.leaveAlone(w, source, .{ .code = null, .start = m.starts[m.first(node)] });
+        try u.tuples.append(scratch, node);
+    }
+    if (u.tokens.items.len == 0 and u.tuples.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+    // Tuples in source order: an outer one before the ones inside it.
+    std.mem.sort(Index, u.tuples.items, &m, struct {
+        fn lessThan(mm: *Measurer, a: Index, b: Index) bool {
+            return mm.starts[mm.first(a)] < mm.starts[mm.first(b)];
+        }
+    }.lessThan);
+
+    var out: std.ArrayList(u8) = .empty;
+    try u.emit(&out, 0, @intCast(source.len), true);
+    try out.append(scratch, 0);
+    const text = out.items[0 .. out.items.len - 1 :0];
+    if (try reparseProblem(scratch, text)) |found| {
+        return u.leaveAlone(w, source, .{ .code = found.code, .start = u.originalOffset(found.start) });
+    }
+    try w.writeAll(text);
+    return null;
+}
+
+/// Whether every syntax error of `tree` is one `--migrate-unicode` rewrites
+/// (none yet: the old spellings still parse).
+pub fn onlyUnicodeRemoved(tree: *const Ast) bool {
+    return tree.errors.len == 0;
+}
+
+/// `migrateUnicode`'s state: the edits, and how to write a range of the
+/// source with them applied.
+const UnicodeRewrite = struct {
+    m: *Measurer,
+    scratch: Allocator,
+    /// Per node: it stands where a type must be an atom.
+    atom: []bool = &.{},
+    /// The start of every old ASCII spelling, in source order.
+    tokens: std.ArrayList(u32) = .empty,
+    /// Every tuple type written with commas, in source order.
+    tuples: std.ArrayList(Index) = .empty,
+    /// Per top-level edit, where it ended in the source and in the output,
+    /// to map an output offset back.
+    ends: std.ArrayList(struct { source: u32, out: u32 }) = .empty,
+
+    fn leaveAlone(_: *UnicodeRewrite, w: *Io.Writer, source: []const u8, problem: UnicodeProblem) Error!?UnicodeProblem {
+        try w.writeAll(source);
+        return problem;
+    }
+
+    /// The source offset an output offset came from: inside an edit, the
+    /// edit's end; elsewhere, shifted by the edits before it.
+    fn originalOffset(u: *const UnicodeRewrite, out_offset: u32) u32 {
+        var shift_from: struct { source: u32, out: u32 } = .{ .source = 0, .out = 0 };
+        for (u.ends.items) |e| {
+            if (e.out > out_offset) break;
+            shift_from = .{ .source = e.source, .out = e.out };
+        }
+        return shift_from.source + (out_offset - shift_from.out);
+    }
+
+    fn tokenEnd(u: *const UnicodeRewrite, t: TokenIndex) u32 {
+        return Tokenizer.tokenEnd(u.m.source, u.m.tags[t], u.m.starts[t]);
+    }
+
+    /// Write `source[from..to]` to `out` with every edit inside it applied.
+    /// `top` records each edit's end for `originalOffset`.
+    fn emit(u: *UnicodeRewrite, out: *std.ArrayList(u8), from: u32, to: u32, top: bool) Error!void {
+        const source = u.m.source;
+        var at = from;
+        var ti = std.sort.lowerBound(u32, u.tokens.items, from, orderU32);
+        var qi: usize = 0;
+        while (qi < u.tuples.items.len and u.m.starts[u.m.first(u.tuples.items[qi])] < from) qi += 1;
+        while (true) {
+            while (ti < u.tokens.items.len and u.tokens.items[ti] < at) ti += 1;
+            while (qi < u.tuples.items.len and u.m.starts[u.m.first(u.tuples.items[qi])] < at) qi += 1;
+            const next_token: u32 = if (ti < u.tokens.items.len) u.tokens.items[ti] else std.math.maxInt(u32);
+            const next_tuple: u32 = if (qi < u.tuples.items.len) u.m.starts[u.m.first(u.tuples.items[qi])] else std.math.maxInt(u32);
+            const next = @min(next_token, next_tuple);
+            if (next >= to) break;
+            try out.appendSlice(u.scratch, source[at..next]);
+            if (next_tuple <= next_token) {
+                const tuple = u.tuples.items[qi];
+                try u.writeProduct(out, tuple);
+                at = u.tokenEnd(u.m.last(tuple));
+            } else {
+                const tag = u.m.tags[tokenAt(u.m.starts, next)];
+                try out.appendSlice(u.scratch, Token.lexeme(tag.canonical()).?);
+                at = next + @as(u32, @intCast(Token.lexeme(tag).?.len));
+            }
+            if (top) try u.ends.append(u.scratch, .{ .source = at, .out = @intCast(out.items.len) });
+        }
+        try out.appendSlice(u.scratch, source[at..to]);
+    }
+
+    /// The comma tuple type `tuple` written as a product.
+    fn writeProduct(u: *UnicodeRewrite, out: *std.ArrayList(u8), tuple: Index) Error!void {
+        const tree = u.m.tree;
+        if (u.atom[tuple.int()]) try out.append(u.scratch, '(');
+        for (tree.children(tuple), 0..) |element, i| {
+            if (i != 0) try out.appendSlice(u.scratch, " × ");
+            // An element that is itself a product is an operand of this one.
+            const wrap = tree.nodeTag(element) == .type_tuple and u.m.tags[tree.nodeMainToken(element)] == .times;
+            if (wrap) try out.append(u.scratch, '(');
+            try u.emit(out, u.m.starts[u.m.first(element)], u.tokenEnd(u.m.last(element)), false);
+            if (wrap) try out.append(u.scratch, ')');
+        }
+        if (u.atom[tuple.int()]) try out.append(u.scratch, ')');
+    }
+};
+
+fn orderU32(context: u32, item: u32) std.math.Order {
+    return std.math.order(context, item);
+}
+
+/// The token that starts at byte `start`.
+fn tokenAt(starts: []const u32, start: u32) TokenIndex {
+    return @intCast(std.sort.lowerBound(u32, starts, start, orderU32));
+}
+
 /// The first lexical or syntax diagnostic of `text`, if any.
 fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?LambdaProblem {
     var interner: InternPool.Local = .empty;
@@ -1360,7 +1555,8 @@ const Measurer = struct {
                     width +|= (if (i == 0) @as(u32, 0) else 2) +| m.w(param);
                 }
                 try m.measure(f.result);
-                width +|= 4 +| m.w(f.result);
+                // ` -> ` or ` → `: the spelling read (language.md §12.9).
+                width +|= 2 +| m.tokenWidth(main) +| m.w(f.result);
                 const last_param = f.params[f.params.len - 1];
                 if (m.brokenBetween(m.first(f.params[0]), f.params[1..], null) or
                     m.tok_lines[m.last(last_param)] != m.tok_lines[m.first(f.result)]) width = no_fit;
@@ -1375,7 +1571,19 @@ const Measurer = struct {
                 try m.measure(inner);
                 m.set(n, m.w(inner) +| 5, main, m.last(inner));
             },
-            .type_tuple, .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
+            // `a × b × c` (language.md §12.8, §12.9): its operands and ` × `
+            // between them, on one line only when the author wrote it on one.
+            .type_tuple => if (m.tags[main] == .times) {
+                const ops = tree.children(n);
+                var width: u32 = 0;
+                for (ops, 0..) |op, i| {
+                    try m.measure(op);
+                    width +|= (if (i == 0) @as(u32, 0) else 2 +| m.tokenWidth(m.first(op) - 1)) +| m.w(op);
+                }
+                if (m.brokenBetween(m.last(ops[0]), ops[1..], null)) width = no_fit;
+                m.set(n, width, m.first(ops[0]), m.last(ops[ops.len - 1]));
+            } else try m.collection(n, tree.children(n)),
+            .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
             .type_record => {
                 if (m.tags[main] == .l_brace) {
                     try m.collection(n, tree.children(n));
@@ -1424,7 +1632,7 @@ const Measurer = struct {
             .spread, .pat_spread => {
                 const e = tree.operand(n);
                 try m.measure(e);
-                m.set(n, 3 +| m.w(e), main, m.last(e));
+                m.set(n, m.tokenWidth(main) +| m.w(e), main, m.last(e));
             },
             .apply => {
                 const all = tree.children(n);
@@ -1450,7 +1658,8 @@ const Measurer = struct {
                     width +|= m.w(p) +| @as(u32, if (i == 0) 0 else 1);
                 }
                 try m.measure(l.body);
-                m.set(n, width +| 4 +| m.w(l.body), main, m.last(l.body));
+                const arrow = m.first(l.body) - 1;
+                m.set(n, width +| 2 +| m.tokenWidth(arrow) +| m.w(l.body), main, m.last(l.body));
             },
             // `if c then a else b` (language.md §12.5): the sum of its parts
             // when the author wrote it on one line and each part has a
@@ -1509,7 +1718,7 @@ const Measurer = struct {
                 const l = tree.fullLetPattern(n);
                 try m.measure(l.pattern);
                 try m.measure(l.value);
-                m.set(n, m.w(l.pattern) +| 4 +| m.w(l.value), m.first(l.pattern), m.last(l.value));
+                m.set(n, m.w(l.pattern) +| 2 +| m.tokenWidth(m.last(l.pattern) + 1) +| m.w(l.value), m.first(l.pattern), m.last(l.value));
             },
             .case => {
                 const c = tree.fullCase(n);
@@ -1604,7 +1813,7 @@ const Measurer = struct {
                 try m.measure(e);
                 // Braces without the `...`, on an element, are lowering's
                 // error, and are printed as written.
-                const dots: u32 = if (m.tags[main + 1] == .ellipsis) 3 else 0;
+                const dots: u32 = if (m.tags[main + 1].canonical() == .ellipsis) m.tokenWidth(main + 1) else 0;
                 m.set(n, 2 +| dots +| m.w(e), main, m.last(e) + 1);
             },
             .markup_attr => {
@@ -2991,7 +3200,7 @@ const Printer = struct {
     /// `λparams ->`'s width.
     fn lambdaHeadWidth(p: *const Printer, lambda: Index) u32 {
         const l = p.tree.fullLambda(lambda);
-        var width: u32 = diagnostic.codePoints(p.text(l.head)) + 3;
+        var width: u32 = diagnostic.codePoints(p.text(l.head)) + 1 + diagnostic.codePoints(p.text(p.first(l.body) - 1));
         for (l.params, 0..) |param, i| width +|= p.widths[param.int()] +| @as(u32, if (i == 0) 0 else 1);
         return width;
     }
@@ -3437,7 +3646,7 @@ const Printer = struct {
             }
             return p.tok(open + 1);
         }
-        if (p.tree.nodeTag(n) == .markup_spread and p.tags[open + 1] == .ellipsis) try p.tok(open + 1);
+        if (p.tree.nodeTag(n) == .markup_spread and p.tags[open + 1].canonical() == .ellipsis) try p.tok(open + 1);
         const e = p.tree.operand(n);
         try p.expr(e, if (one_line) indent else col);
         if (!one_line) p.newline(col);
@@ -3933,7 +4142,7 @@ const Printer = struct {
                 try p.space();
                 try p.node(tree.operand(n), .type, indent);
             },
-            .type_tuple => try p.collection(n, tree.children(n), .type, indent),
+            .type_tuple => if (p.tags[main] == .times) try p.product(n, indent) else try p.collection(n, tree.children(n), .type, indent),
             .type_record => try p.collection(n, tree.children(n), .type_field, indent),
             .type_record_ext => {
                 const r = tree.fullTypeRecordExt(n);
@@ -3978,6 +4187,24 @@ const Printer = struct {
                 return;
             }
             node_i = f.result;
+        }
+    }
+
+    /// A tuple type written with `×` (language.md §12.8, §12.9): on one line
+    /// when it fits and the author wrote it on one; otherwise broken before
+    /// each `×`, the operands after the first one per line, indented 4, the
+    /// `×` leading — an operator chain's shape.
+    fn product(p: *Printer, n: Index, indent: u32) Error!void {
+        const ops = p.tree.children(n);
+        const one_line = p.fits(n);
+        const col = p.curCol();
+        for (ops, 0..) |op, i| {
+            if (i != 0) {
+                if (one_line) try p.space() else p.newline(col + indent_step);
+                try p.tok(p.first(op) - 1); // `×`
+                try p.space();
+            }
+            try p.typ(op, if (one_line) indent else col + indent_step);
         }
     }
 
@@ -5174,6 +5401,65 @@ test "migrating lambdas leaves a file with a syntax error alone" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x ->\n"));
+}
+
+/// `migrateUnicode` over `source`: its output and the problem it reports.
+fn unicodeOnce(a: Allocator, source: [:0]const u8) !struct { text: []const u8, problem: ?UnicodeProblem } {
+    var interner: InternPool.Local = .empty;
+    var out: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(a, source, &interner, &out);
+    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
+    var text: Io.Writer.Allocating = .init(a);
+    const problem = try migrateUnicode(a, &tree, &out.tokens, out.comments.items, source, &text.writer);
+    return .{ .text = text.written(), .problem = problem };
+}
+
+test "migrating to Unicode joins a tuple type the author broke, nests products, and is a fixed point" {
+    // frontend.md §11.8: a tuple type is written on its first line; an
+    // element that is itself a tuple type is an operand of the product, so
+    // it takes parentheses, and so does a product as a constructor's payload
+    // or `sync`'s operand. A second run changes nothing.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const source =
+        \\type T = T ( Int, Int ) | U (List ( a, b ))
+        \\f : ( Int
+        \\    , ( String, Bool )
+        \\    ) -> ( (Int -> Int), Int )
+        \\f = f
+        \\
+    ;
+    const expected =
+        \\type T = T (Int × Int) | U (List (a × b))
+        \\f : Int × (String × Bool) → (Int → Int) × Int
+        \\f = f
+        \\
+    ;
+    const first = try unicodeOnce(a, source);
+    try testing.expectEqual(@as(?UnicodeProblem, null), first.problem);
+    try testing.expectEqualStrings(expected, first.text);
+    const again = try unicodeOnce(a, expected);
+    try testing.expectEqual(@as(?UnicodeProblem, null), again.problem);
+    try testing.expectEqualStrings(expected, again.text);
+}
+
+test "migrating to Unicode leaves a file alone when a tuple type it would join holds a comment" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const source =
+        \\f : ( Int -- the count
+        \\    , String
+        \\    ) -> Int
+        \\f = f
+        \\
+    ;
+    const result = try unicodeOnce(a, source);
+    try testing.expectEqualStrings(source, result.text);
+    const problem = result.problem orelse return error.TestExpectedProblem;
+    try testing.expectEqual(@as(?diagnostic.Code, null), problem.code);
+    try testing.expectEqual(@as(u32, 4), problem.start);
 }
 
 test "strings, chars, numbers, interpolations and multiline strings are printed byte for byte" {

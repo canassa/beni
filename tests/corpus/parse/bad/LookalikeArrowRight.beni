@@ -1,0 +1,22 @@
+-- Six lookalikes of `→` (language.md §12.7): `⇒`, `⟶`, `⟹`, `➝`, `➔` and
+-- `↦`, each invalid_character naming it and `→`, and read as `→`, so the
+-- branches, lambdas and types around them parse. Columns count code points:
+-- the `⇒` after a `→` and a `λ` on line 9 is at 9:22, where an editor shows
+-- it (9:22, 10:17, 13:13, 16:13, 20:11, 21:12, 21:17).
+pick : Maybe Int → Int
+pick m =
+    case m of
+        Just n → (λk ⇒ k) n
+        Nothing ⇒ 0
+
+
+lambda = λx ⟶ x
+
+
+typed : Int ⟹ Int
+typed x =
+    x
+
+
+more = λa ➝ a
+twice = λb ➔ λc ↦ c

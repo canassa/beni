@@ -1,0 +1,12 @@
+-- `=>` where `→` is expected, in a lambda and a `case` branch (language.md
+-- §12.7, *Lookalikes*): expected_token, its message saying that a branch and a
+-- lambda take the arrow a function type does (5:10, 10:16). The parser
+-- recovers past the branch, so the second branch's `=>` is not reported.
+inc = λx => x + 1
+
+
+pick m =
+    case m of
+        Just n => n
+
+        Nothing => 0

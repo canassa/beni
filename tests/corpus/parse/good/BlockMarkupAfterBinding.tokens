@@ -7,7 +7,7 @@
 9:1 lower_ident view
 9:6 colon :
 9:8 upper_ident Int
-9:12 arrow ->
+9:12 ascii_arrow ->
 9:15 upper_ident Html
 9:20 lower_ident msg
 10:1 lower_ident view
@@ -32,7 +32,7 @@
 15:12 upper_ident Int
 15:15 comma ,
 15:17 upper_ident Int
-15:21 arrow ->
+15:21 ascii_arrow ->
 15:24 upper_ident Html
 15:29 lower_ident msg
 16:1 lower_ident fragment
