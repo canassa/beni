@@ -20,6 +20,7 @@
 //! printed one is `Module$base`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 
@@ -142,7 +143,7 @@ fn encodeMappings(
         while (at < target) {
             // Sixteen bytes at a time while they are plain ASCII on one line,
             // which is nearly all of a printed module.
-            if (target - at >= block) {
+            if (use_blocks and target - at >= block) {
                 const v: Block = in.generated[at..][0..block].*;
                 const special = (v >= @as(Block, @splat(0x80))) | (v == @as(Block, @splat('\n'))) | (v == @as(Block, @splat('\r')));
                 if (!@reduce(.Or, special)) {
@@ -199,6 +200,14 @@ fn encodeMappings(
 const block = 16;
 const Block = @Vector(block, u8);
 
+/// Whether the two scans below skip sixteen bytes at a time. Only where
+/// LLVM compiles them: Zig's own backend writes a vector operation as a
+/// loop over its lanes, so a block cost thousands of instructions where
+/// sixteen bytes one at a time cost a hundred — a third of a development
+/// build of a page was its maps' `sourcesContent`. The two paths find the
+/// same bytes; only how fast they skip the ones that need nothing differs.
+const use_blocks = builtin.zig_backend == .stage2_llvm;
+
 /// UTF-16 code units for a UTF-8 lead byte: two for a four-byte sequence,
 /// none for a continuation byte, one otherwise.
 inline fn utf16Units(c: u8) u32 {
@@ -247,12 +256,16 @@ const SourceLines = struct {
 
     /// What the bytes past ASCII before `offset` take back from a column.
     fn shrinkBefore(s: *const SourceLines, offset: usize) i64 {
-        const n = std.sort.lowerBound(u32, s.wide, @as(u32, @intCast(offset)), struct {
-            fn order(target: u32, item: u32) std.math.Order {
-                return std.math.order(target, item);
-            }
-        }.order);
-        return if (n == 0) 0 else s.shrink[n - 1];
+        // `std.sort.lowerBound`, written out: the first `wide` at or past
+        // `offset`. Twice per mark, and the generic search's comparator is a
+        // call per step where Zig's own backend compiles the compiler.
+        var lo: usize = 0;
+        var hi: usize = s.wide.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (s.wide[mid] < offset) lo = mid + 1 else hi = mid;
+        }
+        return if (lo == 0) 0 else s.shrink[lo - 1];
     }
 
     /// Whether `offset` is on 0-based line `line`.
@@ -319,7 +332,7 @@ fn jsonString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) All
     var i: usize = 0;
     while (i < text.len) : (i += 1) {
         // Sixteen bytes at a time while none needs an escape.
-        while (text.len - i >= block) {
+        while (use_blocks and text.len - i >= block) {
             const v: Block = text[i..][0..block].*;
             const special = (v < @as(Block, @splat(0x20))) | (v == @as(Block, @splat('"'))) | (v == @as(Block, @splat('\\')));
             if (@reduce(.Or, special)) break;

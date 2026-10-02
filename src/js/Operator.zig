@@ -122,7 +122,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, m
         },
         else => return null,
     };
-    if (graph.module(owner).package != .core) return null;
+    if (graph.modulePackage(owner) != .core) return null;
     const name = interner.slice(graph.moduleName(owner));
     const table: []const struct { []const u8, Which } = if (std.mem.eql(u8, name, "Basics"))
         &basics
@@ -156,6 +156,6 @@ pub fn isBasicsAppend(graph: *const Graph, interfaces: []const Interface, bir: *
         },
         else => return false,
     };
-    if (graph.module(owner).package != .core) return false;
+    if (graph.modulePackage(owner) != .core) return false;
     return std.mem.eql(u8, interner.slice(graph.moduleName(owner)), "Basics") and std.mem.eql(u8, value, "append");
 }

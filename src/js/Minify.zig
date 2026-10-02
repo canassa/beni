@@ -107,6 +107,17 @@ pub const Token = struct {
 
 pub const Error = Allocator.Error || error{Unsupported};
 
+/// `std.mem.eql(u8, a, b)`, written in place: this file compares a token's
+/// text with a short word or punctuator hundreds of thousands of times a
+/// `--release` build, and most comparisons end at the lengths. Inline, so
+/// a compiler that does not inline `std.mem.eql` and its byte-slice casts
+/// does not pay a call for each.
+inline fn same(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (x != y) return false;
+    return true;
+}
+
 /// The whole pipeline: `source` compacted, with only the top-level units
 /// that `keep`'s exports reach when `keep` is given. Null when the file is
 /// refused and must be copied as it is.
@@ -382,10 +393,10 @@ const puncts = [_][]const u8{
 /// ECMAScript lexes; 0 for a byte that begins none.
 fn punctLen(text: []const u8) usize {
     for (puncts) |p| {
-        if (!std.mem.startsWith(u8, text, p)) continue;
+        if (text.len < p.len or text[0] != p[0] or !same(text[0..p.len], p)) continue;
         // `?.` is optional chaining only when no digit follows: `a?.5:1`
         // is a conditional.
-        if (std.mem.eql(u8, p, "?.") and text.len > 2 and isDigit(text[2])) continue;
+        if (same(p, "?.") and text.len > 2 and isDigit(text[2])) continue;
         return p.len;
     }
     if (text.len == 0) return 0;
@@ -393,11 +404,11 @@ fn punctLen(text: []const u8) usize {
 }
 
 fn isWord(t: Token, source: []const u8, word: []const u8) bool {
-    return t.kind == .ident and std.mem.eql(u8, t.text(source), word);
+    return t.kind == .ident and same(t.text(source), word);
 }
 
 fn isPunct(t: Token, source: []const u8, p: []const u8) bool {
-    return t.kind == .punct and std.mem.eql(u8, t.text(source), p);
+    return t.kind == .punct and same(t.text(source), p);
 }
 
 /// An identifier used as a property name, `a.if`, which is never a keyword.
@@ -416,7 +427,7 @@ fn opensHead(source: []const u8, tokens: []const Token) bool {
     const t = tokens[at];
     if (t.kind != .ident or isProperty(tokens, source, at)) return false;
     const words = [_][]const u8{ "if", "while", "for", "with" };
-    for (words) |w| if (std.mem.eql(u8, t.text(source), w)) return true;
+    for (words) |w| if (same(t.text(source), w)) return true;
     return false;
 }
 
@@ -434,16 +445,16 @@ fn slashIsRegex(source: []const u8, tokens: []const Token) error{Unsupported}!bo
             if (isProperty(tokens, source, tokens.len - 1)) return false;
             const t = p.text(source);
             const regex_after = [_][]const u8{ "return", "typeof", "instanceof", "in", "new", "delete", "void", "throw", "case", "do", "else", "extends", "default" };
-            for (regex_after) |w| if (std.mem.eql(u8, t, w)) return true;
+            for (regex_after) |w| if (same(t, w)) return true;
             const ambiguous = [_][]const u8{ "of", "yield", "await", "let", "get", "set", "static", "async" };
-            for (ambiguous) |w| if (std.mem.eql(u8, t, w)) return error.Unsupported;
+            for (ambiguous) |w| if (same(t, w)) return error.Unsupported;
             return false;
         },
         .punct => {
             const t = p.text(source);
-            if (std.mem.eql(u8, t, ")")) return p.head;
-            if (std.mem.eql(u8, t, "]")) return false;
-            if (std.mem.eql(u8, t, "}") or std.mem.eql(u8, t, "++") or std.mem.eql(u8, t, "--")) return error.Unsupported;
+            if (same(t, ")")) return p.head;
+            if (same(t, "]")) return false;
+            if (same(t, "}") or same(t, "++") or same(t, "--")) return error.Unsupported;
             return true;
         },
     }
@@ -478,7 +489,7 @@ fn newlineIsInert(source: []const u8, a: Token, b: Token) bool {
             const t = a.text(source);
             const ends = [_][]const u8{ ")", "]", "}", "++", "--" };
             var can_end = false;
-            for (ends) |e| can_end = can_end or std.mem.eql(u8, t, e);
+            for (ends) |e| can_end = can_end or same(t, e);
             if (!can_end) return true;
         },
         else => {},
@@ -486,7 +497,7 @@ fn newlineIsInert(source: []const u8, a: Token, b: Token) bool {
     switch (b.kind) {
         .template_middle, .template_tail => return true,
         .punct => {
-            for (inert_before) |p| if (std.mem.eql(u8, b.text(source), p)) return true;
+            for (inert_before) |p| if (same(b.text(source), p)) return true;
             return false;
         },
         else => return false,
@@ -562,7 +573,7 @@ fn verify(arena: Allocator, source: []const u8, tokens: []const Token, plan: Pla
         if (at >= again.len) std.debug.panic("Minify: the compacted file lost a token", .{});
         const got = again[at];
         const want = plan.text(source, tokens, i);
-        if (got.kind != t.kind or !std.mem.eql(u8, got.text(out), want)) {
+        if (got.kind != t.kind or !same(got.text(out), want)) {
             std.debug.panic("Minify: `{s}` became `{s}`", .{ want, got.text(out) });
         }
         if (prev) |a| if ((pending_nl or t.nl) and !plan.inert(source, tokens, a, i) and !got.nl) {
@@ -757,7 +768,7 @@ const Shaker = struct {
             .number, .string, .template, .regex => return true,
             .ident => {
                 const words = [_][]const u8{ "null", "true", "false", "undefined", "NaN", "Infinity" };
-                for (words) |w| if (std.mem.eql(u8, s.text(from), w)) return true;
+                for (words) |w| if (same(s.text(from), w)) return true;
                 return s.bound.contains(s.text(from));
             },
             else => return false,
@@ -1191,7 +1202,7 @@ fn fixedName(text: []const u8) bool {
         "Response",            "ReadableStream",   "WritableStream",   "MessageChannel",        "BroadcastChannel",
         "setImmediate",        "clearImmediate",
     };
-    for (words) |w| if (std.mem.eql(u8, w, text)) return true;
+    for (words) |w| if (same(w, text)) return true;
     return false;
 }
 
@@ -1436,7 +1447,7 @@ pub fn programImports(arena: Allocator, source: []const u8, tokens: []const Toke
         }
         if (j + 2 >= tokens.len or !isWord(tokens[j + 1], source, "from") or tokens[j + 2].kind != .string) continue;
         const quoted = tokens[j + 2].text(source);
-        if (!std.mem.eql(u8, quoted[1 .. quoted.len - 1], specifier)) continue;
+        if (!same(quoted[1 .. quoted.len - 1], specifier)) continue;
         var end = j + 3;
         if (end < tokens.len and isPunct(tokens[end], source, ";")) end += 1;
         try out.append(arena, .{
@@ -1539,7 +1550,7 @@ pub const Hoisted = struct {
 
     /// The binding an export names, or null.
     pub fn exportBinding(h: *const Hoisted, name: []const u8) ?[]const u8 {
-        for (h.exports) |x| if (std.mem.eql(u8, x.name, name)) return x.binding;
+        for (h.exports) |x| if (same(x.name, name)) return x.binding;
         return null;
     }
 
@@ -1610,7 +1621,7 @@ pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const
                     if (t.kind == .string) specifier = t.text(source)[1 .. t.text(source).len - 1];
                     if (t.kind != .ident) continue;
                     const w = t.text(source);
-                    if (std.mem.eql(u8, w, "import") or std.mem.eql(u8, w, "from") or std.mem.eql(u8, w, "as")) continue;
+                    if (same(w, "import") or same(w, "from") or same(w, "as")) continue;
                     try names.append(arena, w);
                 }
                 try imports.append(arena, .{ .unit = u, .specifier = specifier, .names = names.items });
@@ -1649,7 +1660,7 @@ pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const
         const t = s.text(i);
         const moves = if (f) |ff| ff.renamable(t, true) else false;
         if (!moves) try taken.put(arena, t, {});
-        if (c.mask[i] and !outside[i] and std.mem.eql(u8, t, "import")) located = true;
+        if (c.mask[i] and !outside[i] and same(t, "import")) located = true;
         if (!c.mask[i] or outside[i] or Print.isReservedWord(t)) continue;
         // `{ a: …` and `, a: …` are a key or a label: never a read.
         if (s.punct(i + 1, ":") and i > 0 and (s.punct(i - 1, "{") or s.punct(i - 1, ","))) continue;

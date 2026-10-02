@@ -424,7 +424,7 @@ fn jsInPlaceLiterals(g: *Generator, callee: Bir.Inst.Index) u8 {
     const d = bir.instData(callee);
     const module: Graph.Index = @enumFromInt(d.lhs);
     if (module.int() >= g.cx.graph.count()) return 0;
-    if (g.cx.graph.module(module).package != .core) return 0;
+    if (g.cx.graph.modulePackage(module) != .core) return 0;
     if (!std.mem.eql(u8, g.cx.interner.slice(g.cx.graph.moduleName(module)), "Js")) return 0;
     const iface = g.cx.iface(module);
     if (d.rhs >= iface.values.len) return 0;

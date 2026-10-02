@@ -285,8 +285,7 @@ pub fn isPoisoned(g: *const Graph, i: Index) bool {
 }
 
 pub fn dependencies(g: *const Graph, i: Index) []const Index {
-    const m = g.modules.get(i.int());
-    return g.deps[m.deps_start..m.deps_end];
+    return g.deps[g.modules.items(.deps_start)[i.int()]..g.modules.items(.deps_end)[i.int()]];
 }
 
 /// The module `(package, name)` EXACTLY, with none of `lookup`'s fallback:

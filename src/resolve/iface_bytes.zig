@@ -167,9 +167,74 @@ pub const Hash = [16]u8;
 const hash_key: [16]u8 = @splat(0);
 
 pub fn hash(bytes: []const u8) Hash {
+    // `std.hash.SipHash128(1, 3).create(&out, bytes, &hash_key)`, written
+    // out for the one key it is ever given: every key, every artifact's and
+    // every entry's check runs through it, and Zig's own backend — which
+    // compiles the compiler the tests run — calls `std.math.rotl` and the
+    // streaming state's helpers out of line, several times the work. The
+    // unit test below holds the two equal.
+    var v: [4]u64 = .{
+        0x736f6d6570736575,
+        0x646f72616e646f6d ^ 0xee,
+        0x6c7967656e657261,
+        0x7465646279746573,
+    };
+    const aligned = bytes.len - bytes.len % 8;
+    var off: usize = 0;
+    while (off < aligned) : (off += 8) {
+        const m = std.mem.littleToNative(u64, @bitCast(bytes[off..][0..8].*));
+        v[3] ^= m;
+        sipRound(&v);
+        v[0] ^= m;
+    }
+    var last: [8]u8 = @splat(0);
+    for (bytes[aligned..], 0..) |b, i| last[i] = b;
+    last[7] = @truncate(bytes.len);
+    const m = std.mem.littleToNative(u64, @bitCast(last));
+    v[3] ^= m;
+    sipRound(&v);
+    v[0] ^= m;
+    v[2] ^= 0xee;
+    sipRound(&v);
+    sipRound(&v);
+    sipRound(&v);
+    const low = v[0] ^ v[1] ^ v[2] ^ v[3];
+    v[1] ^= 0xdd;
+    sipRound(&v);
+    sipRound(&v);
+    sipRound(&v);
+    const high = v[0] ^ v[1] ^ v[2] ^ v[3];
     var out: Hash = undefined;
-    std.hash.SipHash128(1, 3).create(&out, bytes, &hash_key);
+    std.mem.writeInt(u128, &out, (@as(u128, high) << 64) | low, .little);
     return out;
+}
+
+inline fn sipRound(v: *[4]u64) void {
+    v[0] +%= v[1];
+    v[1] = (v[1] << 13) | (v[1] >> 51);
+    v[1] ^= v[0];
+    v[0] = (v[0] << 32) | (v[0] >> 32);
+    v[2] +%= v[3];
+    v[3] = (v[3] << 16) | (v[3] >> 48);
+    v[3] ^= v[2];
+    v[0] +%= v[3];
+    v[3] = (v[3] << 21) | (v[3] >> 43);
+    v[3] ^= v[0];
+    v[2] +%= v[1];
+    v[1] = (v[1] << 17) | (v[1] >> 47);
+    v[1] ^= v[2];
+    v[2] = (v[2] << 32) | (v[2] >> 32);
+}
+
+test "hash is std's SipHash-1-3-128 with the all-zero key, at every length" {
+    var bytes: [600]u8 = undefined;
+    var prng: std.Random.DefaultPrng = .init(0x5eed);
+    prng.random().bytes(&bytes);
+    for (0..bytes.len + 1) |len| {
+        var want: Hash = undefined;
+        std.hash.SipHash128(1, 3).create(&want, bytes[0..len], &hash_key);
+        try std.testing.expectEqualSlices(u8, &want, &hash(bytes[0..len]));
+    }
 }
 
 /// The hash as the 32 lowercase hex digits `--iface-hash` prints. The byte

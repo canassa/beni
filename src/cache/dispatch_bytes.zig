@@ -497,7 +497,7 @@ const Writer = struct {
 
     fn moduleRef(w: *Writer, m: Graph.Index) Allocator.Error!u32 {
         if (m.int() >= w.graph.count()) return no_ref;
-        const package = w.graph.module(m).package;
+        const package = w.graph.modulePackage(m);
         const name_offset = try w.string(w.graph.moduleName(m));
         const row: ModuleRow = .{ .package = package, .name_offset = name_offset };
         const gop = try w.module_index.getOrPut(w.gpa, row);

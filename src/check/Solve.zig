@@ -691,7 +691,7 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const d = bir.instData(inst);
     const module: Graph.Index = @enumFromInt(d.lhs);
     if (module.int() >= s.cx.graph.count()) return null;
-    if (s.cx.graph.module(module).package != .core) return null;
+    if (s.cx.graph.modulePackage(module) != .core) return null;
     if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return null;
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
@@ -727,7 +727,7 @@ fn isProbe(s: *Solve, inst: Bir.Inst.Index) bool {
     const d = bir.instData(callee);
     const module: Graph.Index = @enumFromInt(d.lhs);
     if (module.int() >= s.cx.graph.count()) return false;
-    if (s.cx.graph.module(module).package != .core) return false;
+    if (s.cx.graph.modulePackage(module) != .core) return false;
     if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return false;
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return false;

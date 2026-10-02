@@ -267,7 +267,7 @@ pub fn collect(
 ) Allocator.Error!Digest {
     const iface = &s.interfaces[m.int()];
     const module_name = s.graph.moduleName(m);
-    const package = s.graph.module(m).package;
+    const package = s.graph.modulePackage(m);
 
     // 1. The type set: the record's `types` table, plus every `type_refs` row
     //    that names THIS module, closed under alias bodies (see the header).

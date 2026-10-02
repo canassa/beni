@@ -3088,7 +3088,7 @@ pub const Lowerer = struct {
         const d = l.bir.instData(callee);
         const base: Symbol = switch (l.bir.instTag(callee)) {
             .top => blk: {
-                if (l.in.graph.module(l.in.module).package != .core) return false;
+                if (l.in.graph.modulePackage(l.in.module) != .core) return false;
                 if (l.module_name != InternPool.WellKnown.List.symbol()) return false;
                 if (d.lhs >= l.bir.decls.len) return false;
                 break :blk l.bir.symbol(l.bir.decls[d.lhs].name);
@@ -3096,7 +3096,7 @@ pub const Lowerer = struct {
             .ext_value => blk: {
                 const module: Graph.Index = @enumFromInt(d.lhs);
                 if (module.int() >= l.in.interfaces.len) return false;
-                if (l.in.graph.module(module).package != .core) return false;
+                if (l.in.graph.modulePackage(module) != .core) return false;
                 if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return false;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.values.len) return false;
@@ -3593,7 +3593,7 @@ pub const Lowerer = struct {
         for (l.bir.ctors[owner.ctors_start..owner.ctors_end]) |sibling| {
             max = @max(max, Bir.SubRange.len(.{ .start = sibling.args_start, .end = sibling.args_end }));
         }
-        if (l.in.graph.module(l.in.module).package == .core and
+        if (l.in.graph.modulePackage(l.in.module) == .core and
             l.module_name == InternPool.WellKnown.Basics.symbol() and
             l.bir.symbol(owner.name) == InternPool.WellKnown.Bool.symbol())
         {
@@ -3703,7 +3703,7 @@ pub const Lowerer = struct {
         const owner = iface.types[@intFromEnum(c.type)];
         var max: u32 = 0;
         for (iface.ctors[owner.ctors_start..owner.ctors_end]) |sibling| max = @max(max, sibling.arity);
-        if (l.in.graph.module(module).package == .core and
+        if (l.in.graph.modulePackage(module) == .core and
             l.in.graph.moduleName(module) == InternPool.WellKnown.Basics.symbol() and
             iface.symbols[@intFromEnum(owner.name)] == InternPool.WellKnown.Bool.symbol())
         {
@@ -8098,7 +8098,7 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         const base: Symbol = switch (l.bir.instTag(inst)) {
             .top => blk: {
-                if (l.in.graph.module(l.in.module).package != .core) return null;
+                if (l.in.graph.modulePackage(l.in.module) != .core) return null;
                 if (l.module_name != InternPool.WellKnown.Basics.symbol()) return null;
                 if (d.lhs >= l.bir.decls.len) return null;
                 break :blk l.bir.symbol(l.bir.decls[d.lhs].name);
@@ -8106,7 +8106,7 @@ pub const Lowerer = struct {
             .ext_value => blk: {
                 const module: Graph.Index = @enumFromInt(d.lhs);
                 if (module.int() >= l.in.interfaces.len) return null;
-                if (l.in.graph.module(module).package != .core) return null;
+                if (l.in.graph.modulePackage(module) != .core) return null;
                 if (l.in.graph.moduleName(module) != InternPool.WellKnown.Basics.symbol()) return null;
                 const iface = &l.in.interfaces[module.int()];
                 if (d.rhs >= iface.values.len) return null;

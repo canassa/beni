@@ -389,7 +389,7 @@ fn collectInterfaceAt(
         .app, .alias => {
             if (cx.iface.typeRef(@enumFromInt(term.lhs))) |ref| {
                 const module_name = cx.iface.symbol(ref.module);
-                if (ref.package == cx.graph.module(cx.module).package and module_name == cx.graph.moduleName(cx.module)) {
+                if (ref.package == cx.graph.modulePackage(cx.module) and module_name == cx.graph.moduleName(cx.module)) {
                     const id = cx.types.find(cx.graph, ref.package, module_name, cx.iface.symbol(ref.name));
                     if (id != .none) try out.append(gpa, id);
                 }

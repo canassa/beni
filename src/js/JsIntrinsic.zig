@@ -125,7 +125,7 @@ pub fn armOf(graph: *const Graph, interfaces: []const Interface, bir: *const Bir
         if (ref.int() >= bir.insts.len or bir.instTag(ref) != .ext_ctor) continue;
         const rd = bir.instData(ref);
         const module: Graph.Index = @enumFromInt(rd.lhs);
-        if (module.int() >= interfaces.len or graph.module(module).package != .core) continue;
+        if (module.int() >= interfaces.len or graph.modulePackage(module) != .core) continue;
         const iface = &interfaces[module.int()];
         if (rd.rhs >= iface.ctors.len) continue;
         if (std.mem.eql(u8, interner.slice(iface.symbols[@intFromEnum(iface.ctors[rd.rhs].name)]), dropped)) return branch;
@@ -160,7 +160,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const d = bir.instData(inst);
     const module: Graph.Index = @enumFromInt(d.lhs);
     if (module.int() >= interfaces.len) return null;
-    if (graph.module(module).package != .core) return null;
+    if (graph.modulePackage(module) != .core) return null;
     if (!std.mem.eql(u8, interner.slice(graph.moduleName(module)), "Js")) return null;
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
