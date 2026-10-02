@@ -1,0 +1,143 @@
+-- `Url.Parser.Query` is elm/url's (boundary.md §9.8.13 (b)): `string`,
+-- `int` and `enum` are `Nothing` unless the key appears exactly once with
+-- a value that converts; `custom` gets every value of the key in order.
+-- A pair without `=` (`?flag`) and one that does not decode are skipped,
+-- and — unlike Elm — a `+` is a space, decoded before the escapes, as a
+-- browser writes a form. `map2`…`map4` combine parsers, the function last.
+import Dict
+import Node exposing (Program)
+import Url
+import Url.Parser
+import Url.Parser.Query as Query
+
+
+type alias Three =
+    q : Maybe String
+    page : Maybe Int
+    sort : Maybe Order
+
+
+run : Query.Parser a, String -> Maybe a
+run parser query =
+    case Url.fromString ("https://example.com/?" ++ query) of
+        Just url ->
+            Url.Parser.parse (Url.Parser.query parser) url
+
+        Nothing ->
+            Nothing
+
+
+str : String, String -> String
+str key query =
+    case run (Query.string key) query of
+        Just (Just text) ->
+            "${query}: [${text}]"
+
+        Just Nothing ->
+            "${query}: Nothing"
+
+        Nothing ->
+            "${query}: no parse"
+
+
+int : String, String -> String
+int key query =
+    case run (Query.int key) query of
+        Just (Just n) ->
+            "${query}: ${String.fromInt n}"
+
+        _ ->
+            "${query}: Nothing"
+
+
+sorts : Query.Parser (Maybe Order)
+sorts = Query.enum "sort" (Dict.fromList [ ( "asc", LT ), ( "desc", GT ) ])
+
+
+showOrder : Maybe Order -> String
+showOrder o =
+    case o of
+        Just LT ->
+            "asc"
+
+        Just GT ->
+            "desc"
+
+        _ ->
+            "-"
+
+
+all : String -> String
+all query =
+    case run (Query.custom "tag" λvalues -> String.join values ",") query of
+        Just text ->
+            "${query}: [${text}]"
+
+        Nothing ->
+            "${query}: no parse"
+
+
+orDash : Maybe String -> String
+orDash m = Maybe.withDefault m "-"
+
+
+three : String -> String
+three query =
+    case run (Query.map3 (Query.string "q") (Query.int "page") sorts Three) query of
+        Just t ->
+            String.join
+                [ orDash t.q, orDash (Maybe.map t.page String.fromInt), showOrder t.sort ]
+                " "
+
+        Nothing ->
+            "no parse"
+
+
+main : Program
+main =
+    Node.printLines
+        [ str "q" "q=hat"
+        , str "q" "other=1"
+        , str "q" "q=hat&q=cap"
+        , str "flag" "flag"
+        , str "flag" "flag="
+        , str "q" "q=top+hat"
+        , str "q" "q=a%2Bb"
+        , str "q" "q=%zz&q=ok"
+        , str "a+b" "a+b=1"
+        , str "q" "q=a=b"
+        , str "q" "q=%E2%82%AC"
+        , int "page" "page=2"
+        , int "page" "page=two"
+        , int "page" "page=2&page=3"
+        , all "tag=a&x=1&tag=b&tag=c"
+        , all "x=1"
+        , showOrder (Maybe.andThen (run sorts "sort=desc") λs -> s)
+        , showOrder (Maybe.andThen (run sorts "sort=sideways") λs -> s)
+        , three "q=hat&page=3&sort=asc"
+        , three "page=x"
+        , Maybe.withDefault
+            (Maybe.map
+                (run (Query.map (Query.int "n") λn -> Maybe.withDefault n 0 + 1) "n=41")
+                String.fromInt
+            )
+            "no parse"
+        , Maybe.withDefault
+            (run
+                (Query.map2 (Query.string "a") (Query.string "b") λa b -> orDash a ++ orDash b)
+                "b=2&a=1"
+            )
+            "no parse"
+        , Maybe.withDefault
+            (run
+                (Query.map4
+                    (Query.string "a")
+                    (Query.string "b")
+                    (Query.string "c")
+                    (Query.string "d")
+                    λa b c d -> String.join (List.map [ a, b, c, d ] orDash) ""
+                )
+                "d=4&b=2&a=1"
+            )
+            "no parse"
+        ]

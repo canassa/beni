@@ -1,0 +1,24 @@
+/ -> Home
+/blog/42 -> Blog 42
+/blog/42/ -> Blog 42
+/blog/ -> no match
+/blog/hello -> no match
+/user/sam/comment/35 -> Comment sam 35
+/tree/elm/core/7 -> Tree elm core 7
+/search?q=top%20hat -> Search top hat
+/search -> Search -
+/user/J%C3%BCrgen/comment/1 -> Comment Jürgen 1
+/bl%6Fg/9 -> Blog 9
+/user/%C2/comment/1 -> no match
+/unknown -> no match
+Just style.css
+Nothing
+Just 42
+Just 42
+Just a%20b
+Just -
+Just first
+Just second
+Just third c
+/tags/c%2Fc%2B%2B/two%20words -> Just [c/c++] [two words]
+/tags/100%25/a%3Fb%23c -> Just [100%] [a?b#c]

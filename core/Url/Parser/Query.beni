@@ -1,0 +1,149 @@
+--! Parsing a URL's query (`docs/design/boundary.md` §9.8.13 (b)):
+--! elm/url's `Url.Parser.Query`, its `map` and `map2`…`map8` subject
+--! first, the function last. `Url.Parser.query` and
+--! `Url.Parser.questionMark` run one on a URL.
+--!
+--! The query is read as a browser writes a form's: pairs split on `&`,
+--! each `key=value`, a `+` a space and then the percent escapes decoded. A
+--! pair without `=`, and one whose key or value does not decode, is
+--! skipped, as Elm skips it; a key's values keep their order.
+
+import Dict exposing (Dict)
+import Url.Parser.Internal exposing (Q, QueryParser)
+
+
+--| Parse a query into an `a`.
+pub type alias Parser a =
+    QueryParser a
+
+
+--| The value of `key`, when it appears exactly once.
+--|
+--|     search : Parser (Maybe String)
+--|     search = string "search"
+--|     -- ?search=hat          Just "hat"
+--|     -- ?search=hat&search=x Nothing
+--|     -- ?other=1             Nothing
+pub string : String -> Parser (Maybe String)
+string key = custom key λvalues ->
+    case values of
+        [ value ] ->
+            Just value
+
+        _ ->
+            Nothing
+
+
+--| The value of `key` as an `Int`, when it appears exactly once and is
+--| one.
+--|
+--|     page : Parser (Maybe Int)
+--|     page = int "page"
+--|     -- ?page=2   Just 2
+--|     -- ?page=two Nothing
+pub int : String -> Parser (Maybe Int)
+int key = custom key λvalues ->
+    case values of
+        [ value ] ->
+            String.toInt value
+
+        _ ->
+            Nothing
+
+
+--| The value of `key` looked up in `dict`, when it appears exactly once
+--| and the dictionary has it.
+--|
+--|     order : Parser (Maybe Order)
+--|     order = enum "order" (Dict.fromList [ ( "asc", LT ), ( "desc", GT ) ])
+pub enum : String, Dict String a -> Parser (Maybe a)
+enum key dict = custom key λvalues ->
+    case values of
+        [ value ] ->
+            Dict.get dict value
+
+        _ ->
+            Nothing
+
+
+--| Every value of `key`, in the order they appear, made into an `a`.
+--|
+--|     posts : Parser (List Int)
+--|     posts = custom "post" (List.filterMap _ String.toInt)
+--|     -- ?post=2&post=7 [ 2, 7 ]
+pub custom : String, (List String -> a) -> Parser a
+custom key func = Q λdict -> func (Maybe.withDefault (Dict.get dict key) [])
+
+
+--| The parser's value passed through `func`.
+pub map : Parser a, (a -> b) -> Parser b
+map (Q pa) func = Q λdict -> func (pa dict)
+
+
+--| Two parsers' values combined.
+--|
+--|     query : Parser Query
+--|     query = map2 (string "search") (int "page") Query
+pub map2 : Parser a, Parser b, (a, b -> r) -> Parser r
+map2 (Q pa) (Q pb) func = Q λdict -> func (pa dict) (pb dict)
+
+
+--| Three parsers' values combined.
+pub map3 : Parser a, Parser b, Parser c, (a, b, c -> r) -> Parser r
+map3 (Q pa) (Q pb) (Q pc) func = Q λdict -> func (pa dict) (pb dict) (pc dict)
+
+
+--| Four parsers' values combined.
+pub map4 : Parser a, Parser b, Parser c, Parser d, (a, b, c, d -> r) -> Parser r
+map4 (Q pa) (Q pb) (Q pc) (Q pd) func = Q λdict -> func (pa dict) (pb dict) (pc dict) (pd dict)
+
+
+--| Five parsers' values combined.
+pub map5 : Parser a, Parser b, Parser c, Parser d, Parser e, (a, b, c, d, e -> r) -> Parser r
+map5 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) func = Q λdict ->
+    func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict)
+
+
+--| Six parsers' values combined.
+pub map6 :
+      Parser a
+    , Parser b
+    , Parser c
+    , Parser d
+    , Parser e
+    , Parser f
+    , (a, b, c, d, e, f -> r)
+    -> Parser r
+map6 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) func = Q λdict ->
+    func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict)
+
+
+--| Seven parsers' values combined.
+pub map7 :
+      Parser a
+    , Parser b
+    , Parser c
+    , Parser d
+    , Parser e
+    , Parser f
+    , Parser g
+    , (a, b, c, d, e, f, g -> r)
+    -> Parser r
+map7 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) func = Q λdict ->
+    func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict) (pg dict)
+
+
+--| Eight parsers' values combined.
+pub map8 :
+      Parser a
+    , Parser b
+    , Parser c
+    , Parser d
+    , Parser e
+    , Parser f
+    , Parser g
+    , Parser h
+    , (a, b, c, d, e, f, g, h -> r)
+    -> Parser r
+map8 (Q pa) (Q pb) (Q pc) (Q pd) (Q pe) (Q pf) (Q pg) (Q ph) func = Q λdict ->
+    func (pa dict) (pb dict) (pc dict) (pd dict) (pe dict) (pf dict) (pg dict) (ph dict)

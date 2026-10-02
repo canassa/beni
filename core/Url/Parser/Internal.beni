@@ -1,0 +1,10 @@
+--! What `Url.Parser` and `Url.Parser.Query` share: a query parser's
+--! representation, elm/url's `Url.Parser.Internal`. A program never needs
+--! it; it builds query parsers with `Url.Parser.Query`.
+
+import Dict exposing (Dict)
+
+
+--| A query parser: what it makes of the query's values, by key.
+pub type QueryParser a
+    = Q (Dict String (List String) -> a)

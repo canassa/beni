@@ -1,0 +1,160 @@
+-- `Url.Parser` is elm/url's (boundary.md §9.8.13 (b)): Elm's own doc
+-- examples as assertions — `/blog/42`, `/tree/42`, a trailing `/`, `top`,
+-- `oneOf` taking the first parser that matches the whole path, `custom` for
+-- a CSS file, `fragment` handed on as it is — then a five-route table with
+-- `map2` and `map3`, a percent-encoded segment decoded before `string` and
+-- `s` see it, a segment that does not decode matching nothing, and URLs
+-- built by `Url.Builder` parsed back to what they were built from.
+import Node exposing (Program)
+import Url
+import Url.Builder
+import Url.Parser exposing (Parser, custom, fragment, int, map, map2, map3, oneOf, s, slash, string, top)
+import Url.Parser.Query as Query
+
+
+type Route
+    = Home
+    | Blog Int
+    | Comment String Int
+    | Tree String String Int
+    | Search (Maybe String)
+
+
+route : Parser (Route -> a) a
+route =
+    oneOf
+        [ map top Home
+        , s "blog" |> slash int |> map Blog
+        , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
+        , s "tree" |> slash string |> slash string |> slash int |> map3 Tree
+        , s "search" |> Url.Parser.questionMark (Query.string "q") |> map Search
+        ]
+
+
+showRoute : Maybe Route -> String
+showRoute r =
+    case r of
+        Nothing ->
+            "no match"
+
+        Just Home ->
+            "Home"
+
+        Just (Blog n) ->
+            "Blog ${String.fromInt n}"
+
+        Just (Comment user n) ->
+            "Comment ${user} ${String.fromInt n}"
+
+        Just (Tree a b n) ->
+            "Tree ${a} ${b} ${String.fromInt n}"
+
+        Just (Search q) ->
+            "Search " ++ Maybe.withDefault q "-"
+
+
+at : String -> Url.Url
+at path =
+    case Url.fromString ("https://example.com" ++ path) of
+        Just url ->
+            url
+
+        Nothing ->
+            { protocol = Url.Https
+            , host = "unparsed"
+            , port_ = Nothing
+            , path = "/"
+            , query = Nothing
+            , fragment = Nothing
+            }
+
+
+toRoute : String -> String
+toRoute path = "${path} -> ${showRoute (Url.Parser.parse route (at path))}"
+
+
+css : Parser (String -> a) a
+css = custom "CSS_FILE" λsegment ->
+    if String.endsWith segment ".css" then
+        Just segment
+    else
+        Nothing
+
+
+showString : Maybe String -> String
+showString m =
+    case m of
+        Just text ->
+            "Just ${text}"
+
+        Nothing ->
+            "Nothing"
+
+
+showInt : Maybe Int -> String
+showInt m =
+    case m of
+        Just n ->
+            "Just ${String.fromInt n}"
+
+        Nothing ->
+            "Nothing"
+
+
+-- `oneOf` keeps the first parser that matches the WHOLE path: `s "a"`
+-- consumes only one segment of `/a/b`, so the second parser wins.
+order : Parser (String -> a) a
+order =
+    oneOf
+        [ s "a" |> map "first"
+        , s "a" |> slash (s "b") |> map "second"
+        , s "a" |> slash string |> map λx -> "third ${x}"
+        ]
+
+
+roundTrip : List String -> String
+roundTrip segments =
+    built = Url.Builder.absolute segments []
+    parsed =
+        Url.Parser.parse
+            (s "tags" |> slash string |> slash string |> map2 λa b -> "[${a}] [${b}]")
+            (at built)
+    "${built} -> ${showString parsed}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ toRoute "/"
+        , toRoute "/blog/42"
+        , toRoute "/blog/42/"
+        , toRoute "/blog/"
+        , toRoute "/blog/hello"
+        , toRoute "/user/sam/comment/35"
+        , toRoute "/tree/elm/core/7"
+        , toRoute "/search?q=top%20hat"
+        , toRoute "/search"
+        , toRoute "/user/J%C3%BCrgen/comment/1"
+        , toRoute "/bl%6Fg/9"
+        , toRoute "/user/%C2/comment/1"
+        , toRoute "/unknown"
+        , showString (Url.Parser.parse css (at "/style.css"))
+        , showString (Url.Parser.parse css (at "/style.js"))
+        , showInt (Url.Parser.parse (s "blog" |> slash int) (at "/blog/42"))
+        , showInt (Url.Parser.parse (s "blog" |> slash int) (at "/blog/42/"))
+        , showString
+            (Url.Parser.parse
+                (s "docs" |> slash (fragment λf -> Maybe.withDefault f "-"))
+                (at "/docs#a%20b")
+            )
+        , showString
+            (Url.Parser.parse
+                (s "docs" |> slash (fragment λf -> Maybe.withDefault f "-"))
+                (at "/docs")
+            )
+        , showString (Url.Parser.parse order (at "/a"))
+        , showString (Url.Parser.parse order (at "/a/b"))
+        , showString (Url.Parser.parse order (at "/a/c"))
+        , roundTrip [ "tags", "c/c++", "two words" ]
+        , roundTrip [ "tags", "100%", "a?b#c" ]
+        ]

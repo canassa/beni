@@ -1,0 +1,310 @@
+--! Turning a URL into a route (`docs/design/boundary.md` §9.8.13 (b)):
+--! elm/url's `Url.Parser`, with no currying. A `Parser a b` threads a
+--! continuation, as Elm's does: `Parser (Int -> a) a` is a parser that
+--! hands an `Int` on. Elm's `</>` and `<?>` are `slash` and
+--! `questionMark`, its own names for them, `map` is subject first, and
+--! `map2`…`map8` hand on a constructor of several fields.
+--!
+--!     route : Parser (Route -> a) a
+--!     route =
+--!         oneOf
+--!             [ map top Home
+--!             , s "blog" |> slash int |> map Blog
+--!             , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
+--!             , s "search" |> questionMark (Query.string "q") |> map Search
+--!             ]
+--!
+--! Two answers differ from Elm's, each a silent wrong one there: a path
+--! segment is percent-decoded before `string`, `int`, `custom` and `s` see
+--! it, and a segment that does not decode matches nothing; and a `+` in a
+--! query is a space (`Url.Parser.Query`).
+
+import Dict exposing (Dict)
+import Url exposing (Url)
+import Url.Parser.Internal exposing (Q, QueryParser)
+
+
+--| A parser of a URL's path, query and fragment, handing what it captures
+--| on to a function of type `a`, which makes a `b`.
+pub opaque type Parser a b
+    = Parser (State a -> List (State b))
+
+
+-- Where a parse is: the segments not yet matched, the query's values by
+-- key, the fragment, and the value made so far.
+type alias State value =
+    unvisited : List String
+    params : Dict String (List String)
+    frag : Maybe String
+    value : value
+
+
+--| One path segment, decoded, as a `String`.
+--|
+--|     -- /alice/  ==>  Just "alice"
+--|     -- /J%C3%BCrgen  ==>  Just "Jürgen"
+pub string : Parser (String -> a) a
+string = custom "STRING" Just
+
+
+--| One path segment as an `Int`.
+--|
+--|     -- /42/  ==>  Just 42
+--|     -- /bob  ==>  Nothing
+pub int : Parser (Int -> a) a
+int = custom "NUMBER" String.toInt
+
+
+--| One path segment that is exactly `str`, once decoded.
+--|
+--|     -- /blog/42  with  s "blog" |> slash int  ==>  Just 42
+pub s : String -> Parser a a
+s str = Parser λstate ->
+    case state.unvisited of
+        [] ->
+            []
+
+        [ next, ...rest ] ->
+            if Url.percentDecode next == Just str then
+                [ { unvisited = rest
+                  , params = state.params
+                  , frag = state.frag
+                  , value = state.value
+                  }
+                ]
+            else
+                []
+
+
+--| One path segment, decoded, made into an `a` by `stringToSomething`, or
+--| no match when it gives `Nothing`. The first argument names the kind of
+--| segment, as Elm's does, and is not read.
+--|
+--|     css : Parser (String -> a) a
+--|     css = custom "CSS_FILE" λsegment ->
+--|         if String.endsWith segment ".css" then Just segment else Nothing
+pub custom : String, (String -> Maybe a) -> Parser (a -> b) b
+custom _ stringToSomething = Parser λstate ->
+    case state.unvisited of
+        [] ->
+            []
+
+        [ next, ...rest ] ->
+            case Maybe.andThen (Url.percentDecode next) stringToSomething of
+                Just nextValue ->
+                    [ { unvisited = rest
+                      , params = state.params
+                      , frag = state.frag
+                      , value = state.value nextValue
+                      }
+                    ]
+
+                Nothing ->
+                    []
+
+
+--| `before`, then `after`: Elm's `</>`.
+--|
+--|     blog : Parser (Int -> a) a
+--|     blog = s "blog" |> slash int
+pub slash : Parser a b, Parser b c -> Parser a c
+slash (Parser parseBefore) (Parser parseAfter) = Parser λstate ->
+    List.concatMap (parseBefore state) parseAfter
+
+
+--| What `parser` captures, handed to `subValue`: a value for a parser that
+--| captures nothing (`map top Home`), a function of one parameter for a
+--| parser that captures one (`map (s "blog" |> slash int) Blog`).
+pub map : Parser a b, a -> Parser (b -> c) c
+map (Parser parseArg) subValue = Parser λstate ->
+    List.map
+        (parseArg
+            { unvisited = state.unvisited
+            , params = state.params
+            , frag = state.frag
+            , value = subValue
+            }
+        )
+        λdone ->
+            { unvisited = done.unvisited
+            , params = done.params
+            , frag = done.frag
+            , value = state.value done.value
+            }
+
+
+--| What `parser` captures, two values, handed to `f`: a constructor of
+--| two fields.
+--|
+--|     s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
+pub map2 : Parser (a -> b -> r) r, (a, b -> r) -> Parser (r -> c) c
+map2 parser f = map parser λxa -> λxb -> f xa xb
+
+
+--| Three captured values handed to `f`.
+pub map3 : Parser (a -> b -> d -> r) r, (a, b, d -> r) -> Parser (r -> c) c
+map3 parser f = map parser λxa -> λxb -> λxd -> f xa xb xd
+
+
+--| Four captured values handed to `f`.
+pub map4 : Parser (a -> b -> d -> e -> r) r, (a, b, d, e -> r) -> Parser (r -> c) c
+map4 parser f = map parser λxa -> λxb -> λxd -> λxe -> f xa xb xd xe
+
+
+--| Five captured values handed to `f`.
+pub map5 : Parser (a -> b -> d -> e -> g -> r) r, (a, b, d, e, g -> r) -> Parser (r -> c) c
+map5 parser f = map parser λxa -> λxb -> λxd -> λxe -> λxg -> f xa xb xd xe xg
+
+
+--| Six captured values handed to `f`.
+pub map6 :
+      Parser (a -> b -> d -> e -> g -> h -> r) r
+    , (a, b, d, e, g, h -> r)
+    -> Parser (r -> c) c
+map6 parser f = map parser λxa -> λxb -> λxd -> λxe -> λxg -> λxh -> f xa xb xd xe xg xh
+
+
+--| Seven captured values handed to `f`.
+pub map7 :
+      Parser (a -> b -> d -> e -> g -> h -> i -> r) r
+    , (a, b, d, e, g, h, i -> r)
+    -> Parser (r -> c) c
+map7 parser f = map parser λxa ->
+    λxb -> λxd -> λxe -> λxg -> λxh -> λxi -> f xa xb xd xe xg xh xi
+
+
+--| Eight captured values handed to `f`.
+pub map8 :
+      Parser (a -> b -> d -> e -> g -> h -> i -> j -> r) r
+    , (a, b, d, e, g, h, i, j -> r)
+    -> Parser (r -> c) c
+map8 parser f = map parser λxa ->
+    λxb -> λxd -> λxe -> λxg -> λxh -> λxi -> λxj -> f xa xb xd xe xg xh xi xj
+
+
+--| The first of `parsers` that matches the whole path wins.
+pub oneOf : List (Parser a b) -> Parser a b
+oneOf parsers = Parser λstate -> List.concatMap parsers λ(Parser parser) -> parser state
+
+
+--| Matches without consuming a segment: the root, under `map top Home`.
+pub top : Parser a a
+top = Parser λstate -> [ state ]
+
+
+--| `parser`, then the query read by `queryParser`: Elm's `<?>`. It never
+--| fails; a missing parameter is the query parser's `Nothing`.
+--|
+--|     s "search" |> questionMark (Query.string "q") |> map Search
+pub questionMark : Parser a (query -> b), QueryParser query -> Parser a b
+questionMark parser queryParser = slash parser (query queryParser)
+
+
+--| The query read by `queryParser`, with no path segment.
+pub query : QueryParser query -> Parser (query -> a) a
+query (Q queryParser) = Parser λstate ->
+    [ { unvisited = state.unvisited
+      , params = state.params
+      , frag = state.frag
+      , value = state.value (queryParser state.params)
+      }
+    ]
+
+
+--| The fragment, as it is in the URL, handed to `toFrag`.
+pub fragment : (Maybe String -> fragment) -> Parser (fragment -> a) a
+fragment toFrag = Parser λstate ->
+    [ { unvisited = state.unvisited
+      , params = state.params
+      , frag = state.frag
+      , value = state.value (toFrag state.frag)
+      }
+    ]
+
+
+--| Run `parser` on the URL: the value of the first way it matches the
+--| whole path, or `Nothing`. A trailing `/` left over still matches.
+--|
+--|     toRoute : Url -> Route
+--|     toRoute url = Maybe.withDefault (parse route url) NotFound
+pub parse : Parser (a -> a) a, Url -> Maybe a
+parse (Parser parser) url =
+    firstMatch
+        (parser
+            { unvisited = preparePath url.path
+            , params = prepareQuery url.query
+            , frag = url.fragment
+            , value = λa -> a
+            }
+        )
+
+
+firstMatch : List (State a) -> Maybe a
+firstMatch states =
+    case states of
+        [] ->
+            Nothing
+
+        [ state, ...rest ] ->
+            case state.unvisited of
+                [] ->
+                    Just state.value
+
+                [ "" ] ->
+                    Just state.value
+
+                _ ->
+                    firstMatch rest
+
+
+-- The path's segments: a leading empty one and one trailing empty one
+-- dropped, so `/blog/42/` is `[ "blog", "42" ]`.
+preparePath : String -> List String
+preparePath path =
+    case String.split path "/" of
+        [ "", ...segments ] ->
+            removeFinalEmpty segments
+
+        segments ->
+            removeFinalEmpty segments
+
+
+removeFinalEmpty : List String -> List String
+removeFinalEmpty segments =
+    case segments of
+        [ ...init, "" ] ->
+            init
+
+        _ ->
+            segments
+
+
+-- Each `key=value` pair decoded, a `+` a space first; a pair that is not
+-- one, or does not decode, skipped. Values keep their order.
+prepareQuery : Maybe String -> Dict String (List String)
+prepareQuery maybeQuery =
+    case maybeQuery of
+        Nothing ->
+            Dict.empty
+
+        Just qry ->
+            List.foldr (String.split qry "&") Dict.empty addParam
+
+
+addParam : String, Dict String (List String) -> Dict String (List String)
+addParam segment dict =
+    case String.split segment "=" of
+        [ rawKey, rawValue ] ->
+            case ( formDecode rawKey, formDecode rawValue ) of
+                ( Just key, Just value ) ->
+                    Dict.update dict key λvalues -> Just [ value, ...Maybe.withDefault values [] ]
+
+                _ ->
+                    dict
+
+        _ ->
+            dict
+
+
+formDecode : String -> Maybe String
+formDecode text = Url.percentDecode (String.replace text "+" " ")

@@ -1,0 +1,23 @@
+q=hat: [hat]
+other=1: Nothing
+q=hat&q=cap: Nothing
+flag: Nothing
+flag=: []
+q=top+hat: [top hat]
+q=a%2Bb: [a+b]
+q=%zz&q=ok: [ok]
+a+b=1: Nothing
+q=a=b: Nothing
+q=%E2%82%AC: [€]
+page=2: 2
+page=two: Nothing
+page=2&page=3: Nothing
+tag=a&x=1&tag=b&tag=c: [a,b,c]
+x=1: []
+desc
+-
+hat 3 asc
+- - -
+42
+12
+12-4
