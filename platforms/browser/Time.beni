@@ -1,15 +1,17 @@
 --! Time in a page: what the clock says, waiting, and a subscription that
---! ticks (`docs/design/boundary.md` §9.8). `sleep` waits in the calling
---! fiber only; every other fiber, and the page, go on. Cancelling a fiber
---! that sleeps clears its timer. The clock and the timer are the page's,
---! read when called, so a test harness that replaces them before the
---! program runs is the clock the program sees.
+--! ticks (`docs/design/boundary.md` §9.8, §9.8.15 (a)). `sleep` waits in
+--! the calling fiber only; every other fiber, and the page, go on.
+--! Cancelling a fiber that sleeps clears its timer. Both read the calling
+--! fiber's clock, core's `Clock`: the page's own `Date` and timers, read
+--! when called — so a test harness that replaces them before the program
+--! runs is the clock the program sees — or a virtual one inside
+--! `Clock.run`.
 
 import Browser
+import Clock
 import Duration
-import Js
 import Sub exposing (Sub)
-import Task exposing (Resume)
+import Task
 
 
 --| A length of time, in whole milliseconds and never negative: core's
@@ -48,23 +50,15 @@ pub fromMillis : Int → Posix
 fromMillis n = Posix n
 
 
---| What the clock says now.
+--| What the calling fiber's clock says now: `Clock.now`.
 pub now : () → Posix
-now () = Posix (Js.to (Js.call (Js.global "Date") "now" []))
+now () = Posix (Clock.now ())
 
 
---| Wait for `duration`. Only the calling fiber waits.
+--| Wait for `duration` on the calling fiber's clock: `Task.sleep`. Only
+--| the calling fiber waits.
 pub sleep : Duration → ()
-sleep duration = Task.callback λresume → startTimer (Duration.toMillis duration) resume
-
-
--- One timer, which resumes the waiting fiber, and what clears it.
-startTimer : Int, Resume () → (() → ())
-startTimer ms resume =
-    timer =
-        Js.apply (Js.global "setTimeout")
-            [ Js.from λ() → Js.to (Js.apply (Js.from resume) [ Js.null ]), Js.from ms ]
-    λ() → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
+sleep duration = Task.sleep duration
 
 
 type Key
@@ -73,10 +67,11 @@ type Key
 
 --| A message every `interval`, carrying the moment it fired. Every
 --| declaration of one interval shares one timer, and each receives each
---| tick through its own tagger.
+--| tick through its own tagger. An interval shorter than 1 ms is 1 ms: a
+--| tick every `zero` would never let the page go on.
 pub every : Duration, (Posix → msg) → Sub msg
 every interval tag =
-    ms = Duration.toMillis interval
+    ms = Basics.max 1 (Duration.toMillis interval)
     Sub.listen (Every ms) (ticks ms _) tag
 
 

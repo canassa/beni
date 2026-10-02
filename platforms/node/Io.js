@@ -22,14 +22,6 @@ export const finish = (exit) => {
   return null;
 };
 
-export const startTimer = (ms, resume) => {
-  const timer = setTimeout(() => resume(null), ms);
-  return (unit) => {
-    clearTimeout(timer);
-    return unit;
-  };
-};
-
 // `FileError`'s constructor for each failure Node documents for
 // `fs.promises.readFile`, by the error's `code`. `FileError` is all
 // nullary, so a constructor is its tag, and a `foreign` names the type,

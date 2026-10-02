@@ -1,0 +1,36 @@
+-- run: a fiber started inside `Clock.run` keeps its parent's virtual
+-- clock (transparent-effects-proposal.md §17.5, §17.6), and keeps it after
+-- `run` has returned; its own children copy it in turn. A fiber started
+-- outside `run` — before it, and after it — is on the real clock. The
+-- grandchild sleeps a minute, which only the `adjust` can end.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+onClock : String → ()
+onClock who =
+    _ = Debug.log "${who} reads" (Clock.now () < 1000000)
+    ()
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    before = Task.spawn λ() → onClock "before run, the real clock: small?"
+
+    child = Clock.run clock λ() →
+        Task.spawn λ() →
+            _ = onClock "child, the virtual clock: small?"
+
+            grandchild = Task.spawn λ() →
+                _ = Task.sleep (Duration.minutes 1)
+                Debug.log "grandchild woke at" (Clock.now ())
+            Task.join grandchild
+    after = Task.spawn λ() → onClock "after run, the real clock: small?"
+    _ = Task.joinAll [ before, after ]
+    _ = Clock.adjust clock (Duration.minutes 1)
+    _ = Task.join child
+    Node.print "done"

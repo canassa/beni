@@ -1,0 +1,60 @@
+-- A request retried with a backoff in a page (transparent-effects-proposal.md
+-- §17.8). The fake service takes 50 ms and fails its first two calls; the
+-- command retries it on `exponential 100 ms`, so the calls start at 0,
+-- 150 and 400 ms on the page's clock, and the third one's answer lands at
+-- 450. Each call is logged as it starts; nothing happens until the
+-- clock moves.
+import Cmd exposing (Cmd)
+import Duration
+import Html exposing (Html)
+import Ref exposing (Ref)
+import Schedule
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Got (Result String String)
+
+
+type alias Model =
+    answer : String
+
+
+-- The fake service: 50 ms, then a failure for its first two calls.
+call : Ref Int → Result String String
+call calls =
+    n = Ref.modify calls λk → ( k + 1, k + 1 )
+    _ = Debug.log "call ${String.fromInt n} at" (Time.toMillis (Time.now ()))
+    _ = Time.sleep (Time.millis 50)
+    if n < 3 then Err "unavailable" else Ok "data"
+
+
+fetch : Ref Int → Result String String
+fetch calls = Task.retry (Schedule.exponential (Duration.millis 100) 2.0) λ() → call calls
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Got (Ok text) →
+            ( { model | answer = text }, Cmd.none )
+
+        Got (Err why) →
+            ( { model | answer = "gave up: ${why}" }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <p>{model.answer}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { answer = "waiting" }, Cmd.task (λ() → fetch (Ref.make 0)) Got )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

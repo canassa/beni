@@ -1,0 +1,6 @@
+run 1 at: 0
+run 2 at: 10
+run 3 at: 20
+while: answer: 3
+recurs 2: answer: 3
+done

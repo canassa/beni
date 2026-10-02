@@ -1,0 +1,39 @@
+-- A sleep longer than a host timer can hold (transparent-effects-proposal.md
+-- §17.6). Both hosts — and this driver, like them — fire a timer whose
+-- delay is past 2³¹ − 1 ms after 1 ms instead, so a single timer would wake
+-- this sleep at once. `Time.sleep` chains timers instead: 2³¹ + 5 ms is
+-- not over after 1 ms, nor after the first 2³¹ − 1, and is after the rest.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Woke
+
+
+update : Msg, String → String × Cmd Msg
+update msg _ =
+    case msg of
+        Woke →
+            ( "woke", Cmd.none )
+
+
+nap : () → ()
+nap () = Time.sleep (Time.millis 2147483653)
+
+
+view : String → Html Msg
+view model = <p>{model}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( "asleep", Cmd.task nap λ_ → Woke )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

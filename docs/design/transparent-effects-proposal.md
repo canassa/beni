@@ -2428,6 +2428,28 @@ before sleeping again finishes those steps before the next sleeper wakes);
 2³¹ + 5 ms sleep on the driver's clock does not fire after `advance 1`, and does after the rest);
 every existing `browser/tea/` page unchanged.
 
+*Amended 2026-10-02 (the owner, as P2 was built).* **A `zero` sleep is Effect's, read from its
+source, not the rule above.** Effect's real clock answers `sleep(0)` — any delay of at most 0 —
+with `yieldNow` (`internal/effect.ts`, `ClockImpl.sleepMillis`: `if (millis <= 0) return
+yieldNow`), and its `TestClock` returns at once when the wake time is not after now
+(`testing/TestClock.ts`, `sleep`: `if (end <= currentTimestamp) return`). So `Task.sleep zero`
+**yields on the real clock** — every other ready fiber runs first, as `yieldNow` — and **returns
+at once on a virtual clock**. That keeps `Io.sleep 0`'s meaning: `run/SuspendLoopClosure` relies on
+it parking, and it still does. The fixture is `run/SleepZeroYields` in place of
+`run/SleepZeroDoesNotYield`. **`Time.every` ticks at least 1 ms apart**: an interval below 1 ms is
+1 ms, since with `zero` a subscription's loop would sleep by yielding, forever, and the page would
+never go on. Each `retry`/`repeat` step whose schedule answers `zero` (`recurs`, `forever`) yields
+in the same way, as Effect's `Schedule` driver sleeps every delay through the clock.
+
+**Where it is built.** `Task.sleep` and the virtual clock's sleepers, `adjust` and its *settle*
+are kernel code in `core/Task.beni`, since `sleep` must register a sleeper and *settle* must see
+the scheduler's queue. `core/Clock.beni` is a thin module over four `Task` functions whose
+parameters or results are `Js.Value` — `currentClock`, `withClock`, `virtualClock`,
+`adjustClock` — which a program cannot call usefully, having no way to make a `Js.Value`
+(`Debug.logAs`'s precedent). A virtual clock is a record of its reading and its sleepers, kept in
+wake-time order and, among equal times, in the order they began to sleep. Setting the clock slot is
+the first slot write, so it is what turns on `fork`'s copy of the slots (§17.5's amendment).
+
 ### 17.7 Structured combinators (P3)
 
 ```elm

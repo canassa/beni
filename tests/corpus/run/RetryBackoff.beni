@@ -1,0 +1,30 @@
+-- run: `Task.retry` with an exponential backoff, on a virtual clock
+-- (transparent-effects-proposal.md §17.8; report 23 row 34). The work
+-- fails three times and then succeeds; the schedule waits 100, 200 and
+-- 400 ms between attempts, so they run at 0, 100, 300 and 700 ms on the
+-- clock, and the fourth's `Ok` is the answer. The test drives the clock
+-- by a second each time it is told an attempt failed, with no wall time.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Ref
+import Schedule
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    attempts = Ref.make 0
+
+    flaky =
+        λ() →
+            n = Ref.modify attempts λk → ( k + 1, k + 1 )
+            _ = Debug.log "attempt ${String.fromInt n} at" (Clock.now ())
+            if n < 4 then Err "busy" else Ok n
+
+    worker = Task.spawn λ() →
+        Clock.run clock λ() → Task.retry (Schedule.exponential (Duration.millis 100) 2.0) flaky
+    _ = Clock.adjust clock (Duration.seconds 1)
+    Node.print "answer: ${Debug.toString (Task.join worker)}"

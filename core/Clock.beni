@@ -1,0 +1,72 @@
+--! What time it is, and a clock a test can move by hand
+--! (`transparent-effects-proposal.md` §17.6): Effect's `Clock` and
+--! `TestClock`.
+--!
+--! Every fiber has a clock. It is the real one unless the fiber runs inside
+--! `Clock.run`, which gives the function it runs — and every fiber that
+--! function starts — a **virtual** clock: one that reads whatever it was
+--! set to, and moves only when `Clock.adjust` moves it. `Task.sleep` waits
+--! on the calling fiber's clock, so code that sleeps can be tested without
+--! waiting:
+--!
+--!     clock = Clock.virtual 0
+--!     worker = Task.spawn λ() → Clock.run clock λ() →
+--!         _ = Task.sleep (Duration.seconds 30)
+--!         Log.info "half a minute later"
+--!     _ = Clock.adjust clock (Duration.seconds 30)
+--!     Task.join worker
+--!
+--! What a program observes on a virtual clock depends on the program
+--! alone: sleepers wake in the order of their wake times, and of the order
+--! they began to sleep among equal ones, and `adjust` lets everything they
+--! wake run as far as it can before it wakes the next.
+--!
+--! Nothing here is `foreign`.
+
+import Duration exposing (Duration)
+import Js
+import Task
+
+
+--| A clock that moves only when `adjust` moves it.
+pub opaque type Virtual
+    = Virtual Js.Value
+
+
+--| The milliseconds since the Unix epoch, on the calling fiber's clock: the
+--| host's `Date.now()` on the real clock, the reading of a virtual one
+--| inside `run`.
+pub now : () → Int
+now () =
+    clock = Task.currentClock ()
+
+    if Js.isUndefined clock then
+        Js.to (Js.call (Js.global "Date") "now" [])
+    else
+        Js.to (Js.get clock "now")
+
+
+--| A new virtual clock reading `epoch` milliseconds, with nothing waiting
+--| on it. Two clocks are independent.
+pub virtual : Int → Virtual
+virtual epoch = Virtual (Task.virtualClock (Js.from epoch))
+
+
+--| Run `work` on the virtual clock: `work`, and every fiber it starts —
+--| and every fiber those start — sleep on it and read it. A fiber started
+--| inside keeps it after `run` returns.
+pub run : Virtual, (() → a) → a
+run (Virtual clock) work = Task.withClock clock work
+
+
+--| Move the clock forward by `duration`, and return once everything that
+--| woke has run as far as it can. Every fiber due by the new reading is
+--| woken, in the order of its wake time, the clock reading that time when
+--| it wakes — so one woken that sleeps again, and is due by the new
+--| reading, wakes in the same `adjust`. Time never goes back; `zero`
+--| changes nothing.
+--|
+--| Called from the fiber that drives the test, outside `run`: it waits for
+--| the others.
+pub adjust : Virtual, Duration → ()
+adjust (Virtual clock) duration = Task.adjustClock clock (Js.from (Duration.toMillis duration))

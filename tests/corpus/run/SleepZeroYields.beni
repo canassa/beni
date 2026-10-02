@@ -1,0 +1,27 @@
+-- run: a `zero` sleep (transparent-effects-proposal.md §17.6, amended:
+-- Effect's `sleep(0)`). On the real clock it waits for no timer but lets
+-- every other ready fiber run first, as `yieldNow` does — the `other`
+-- fiber, queued before it, prints first. On a virtual clock it returns at
+-- once, as Effect's `TestClock` does: `other2`, queued the same way, prints
+-- after.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    other = Task.spawn λ() → Debug.log "other ran" ()
+    _ = Task.sleep Duration.zero
+    _ = Debug.log "after the real zero sleep" ()
+    _ = Task.join other
+    clock = Clock.virtual 0
+    other2 = Task.spawn λ() → Debug.log "other2 ran" ()
+
+    _ = Clock.run clock λ() →
+        _ = Task.sleep Duration.zero
+        Debug.log "after the virtual zero sleep" ()
+    _ = Task.join other2
+    Node.print "done"

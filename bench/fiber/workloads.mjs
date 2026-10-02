@@ -104,6 +104,25 @@ export async function all(beni, effect, sizes = {}, progress = () => {}) {
   return out;
 }
 
+// The time workloads (transparent-effects-proposal.md §17.6, §17.8;
+// `plans/effects-plan.md` §8 P2): `node.mjs --group=time`.
+export async function time(beni, effect, sizes = {}, progress = () => {}) {
+  const z = sizes.zeroSleeps ?? 200_000;
+  const t = sizes.tenHours ?? 2_000;
+  const pairs = [
+    [`${z} zero-length sleeps`, z, () => inFiber(beni, () => beni.Bench$sleepZero(z, 0)), () => effect.sleepZero(z), z],
+    [`ten hours of exponential retry on a virtual clock (report 23 case 5.5), ${t} times`, t, async () => { let s = 0; for (let i = 0; i < t; i++) s += await inFiber(beni, () => beni.Bench$tenHours()); return s; }, async () => { let s = 0; for (let i = 0; i < t; i++) s += await effect.tenHours(); return s; }, 4 * t],
+  ];
+  const out = [];
+  for (const [label, ops, b, e, expect] of pairs) {
+    out.push(await measure(`beni: ${label}`, ops, b, expect));
+    progress(out[out.length - 1].label);
+    out.push(await measure(`Effect v4: ${label}`, ops, e, expect));
+    progress(out[out.length - 1].label);
+  }
+  return out;
+}
+
 // The coordination workloads (transparent-effects-proposal.md §17.3–§17.4,
 // `plans/effects-plan.md` §8 P1), each beni's and then Effect's: `node.mjs
 // --group=coordination`.

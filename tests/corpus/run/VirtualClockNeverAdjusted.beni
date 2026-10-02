@@ -1,0 +1,18 @@
+-- run: a fiber sleeping on a virtual clock nobody adjusts can never wake,
+-- and a Node program waiting for it says so (transparent-effects-proposal.md
+-- §17.6, §17.10). A virtual sleeper holds no host timer, so Node's event
+-- loop empties; the program reports it on standard error and exits 1.
+-- Effect only warns for a test that never adjusts its `TestClock`.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    _ = Debug.log "sleeping on a clock nobody moves" ()
+    _ = Clock.run clock λ() → Task.sleep (Duration.seconds 1)
+    Node.print "not reached"

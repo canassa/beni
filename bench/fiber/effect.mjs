@@ -3,7 +3,8 @@
 // and documentation write them. Pinned to effect@4.0.0-rc.116, the version
 // references/effect is checked out at.
 
-import { Deferred, Effect, Fiber, Ref } from "effect";
+import { Deferred, Effect, Fiber, Ref, Schedule } from "effect";
+import { TestClock } from "effect/testing";
 
 // `n` synchronous operations chained by `flatMap`: Effect's interpreter
 // step, the thing a beni suspension point on its fast path replaces.
@@ -99,3 +100,34 @@ export const detachJoin = (n) =>
       return acc;
     }),
   );
+
+// `n` zero-length sleeps: Effect's real clock answers `sleep(0)` with
+// `yieldNow`.
+export const sleepZero = (n) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      let acc = 0;
+      for (let i = 0; i < n; i++) {
+        yield* Effect.sleep(0);
+        acc += 1;
+      }
+      return acc;
+    }),
+  );
+
+// Report 23 case 5.5: work that fails three times, retried on an
+// exponential schedule of one hour, driven ten hours on the `TestClock`.
+// Answers the number of attempts.
+export const tenHours = () => {
+  let n = 0;
+  const flaky = Effect.suspend(() => {
+    n++;
+    return n < 4 ? Effect.fail("no") : Effect.succeed(n);
+  });
+  const program = Effect.gen(function* () {
+    const f = yield* Effect.forkChild(flaky.pipe(Effect.retry(Schedule.exponential("1 hour"))));
+    yield* TestClock.adjust("10 hours");
+    return yield* Fiber.join(f);
+  });
+  return Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())));
+};

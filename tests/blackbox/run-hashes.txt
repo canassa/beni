@@ -54,7 +54,7 @@ build_test.test.a non-zero exit code from the platform reaches the process #0 53
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
 build_test.test.a program computes something and prints the right answer #0 c7b8158a1bd5f50693cbb15da3fc1f52d2090e37c87e0aed08a1d7db1ee16acc
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 b228c734a43acd30fc976b10d30b0ad24724c47724de6811403f232786f39b0d
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 a596a6c48326328756866c10de16b9e3514f643f5878e97d7acaf7cd0936b5d8
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 102394ae1ad44102a1cca9ef9e4371eb956a40c435d8c489b326988b77666f47
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
@@ -114,7 +114,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 dd4506b9ed8e4553cdf74de323d1fda7ea332e15f04f512e667b4b25a82161f6
 devloop_test.test.beni new --platform=node writes a program that runs #0 c0f53ca97ced02987353a2b505dbcef9ddf54eac2ccb26c70e8634265f2d98ff
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 aaa16b1b33607bbcfc81808a2709122a1ab97f9235a5dfe9d235d1d2c163e037
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 11347e93f4024d5e7e2eb1ee2def20d3d2e3f98dfa4dcd2d24edfd8e53fda09c
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 b3d748c2019f2f7da301af9423efbe2fa8c729f45664bbc5037789bcbbf5f5b2
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 2781f656f0b3dfd1747105f2026bf01f32a03b66b23bd3fdad8673c0d36dc444
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 7f1bdbfd43979171bfba76802ea8ff709f6202175c1c74e1c019d47d4501b745

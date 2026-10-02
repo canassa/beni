@@ -688,3 +688,26 @@ hand-off — spawn a waiter, complete, join — 1 532 against Effect's 2 950 (`f
 `Deferred.await`, `Deferred.succeed`, `Fiber.join`); a `Deferred` completed and then waited for 38
 against 475; `Ref.update` 3.1 against 127 (Effect's `Ref.update` in `Effect.gen`); a detached fiber
 started and joined 355 against 2 292 (`forkDetach`, `Fiber.join`). No operation is slower.
+
+*P2 as built (2026-10-02).* `Task.sleep` over the clock slot, the virtual clock's sleepers,
+`adjust` and its *settle* are in `core/Task.beni`; `core/Clock.beni` (`now`, `virtual`, `run`,
+`adjust`) is beni over four `Js.Value`-typed `Task` functions a program cannot use (P2 §17.6's
+amendment); `Task.retry`/`repeat` step `core/Schedule`. `Time.sleep` is `Task.sleep`, `Time.now`
+is `Clock.now`, `Time.every` floors its interval at 1 ms; `Io.sleep` is `Task.sleep (Duration.millis
+ms)` and `Io.js`'s `startTimer` is deleted, so no JavaScript was added and one export went. A
+`zero` sleep follows Effect's source: it yields on the real clock and returns at once on a virtual
+one (§17.6's amendment). The test driver's fake `setTimeout` now fires a delay past 2³¹ − 1 ms
+after 1 ms, as both hosts do, so `browser/tea/SleepBeyondTimerLimit` tests the timer chain.
+Fixtures: `run/VirtualClockSleepOrder`, `…Inherited`, `…Now`, `…Settles`, `…SleeperCancelled`,
+`…NeverAdjusted` (`.crash`), `run/SleepZeroYields`, `run/RetryBackoff`, `run/RetryRecursCount`,
+`run/RetryNotOnCancel`, `run/RepeatWhile`; pages `browser/tea/SleepBeyondTimerLimit` and
+`browser/tea/RetryRequest`. Since `Task` now imports `Duration` and `Schedule` (and through it
+`Int`), every check reaches three more core modules (`cutoff_test`'s counts, the graph golden).
+**Against Effect v4** (`bench/fiber`, `node node.mjs --group=time`, development library build,
+median of 9 after 3 warm-ups, load average 2–6): a zero-length sleep 302 ns against Effect's
+`sleep(0)` 1 835; report 23 case 5.5 — three failures retried on `exponential` of one hour, ten
+hours of virtual time — 4.3 µs a run against `TestClock`'s 45 µs. **Bytes** (`bench/size.mjs`,
+release brotli): programs that use no timer unchanged; programs that call `Io.sleep` −34 to +138 B
+(most +40 to +80): the timer chain and, where `Io.sleep` is not specialised to one call, core's
+`Duration` boxed as `{a:n}` — an opaque one-constructor type is not unboxed by the release
+optimiser, a compiler gap rather than this slice's.

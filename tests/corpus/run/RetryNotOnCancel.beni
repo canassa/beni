@@ -1,0 +1,34 @@
+-- run: a cancelled attempt is not retried (transparent-effects-proposal.md
+-- §17.8; report 23 row 35). The first attempt waits on a `Deferred`
+-- nothing completes; the fiber running the retry is cancelled during it.
+-- The attempt never returns, so the schedule is never stepped and no
+-- second attempt runs: one `attempt` line, then the release, and the
+-- fiber ends `Cancelled`.
+import Deferred
+import Io
+import Node exposing (Program)
+import Schedule
+import Task exposing (Cancelled, Done)
+
+
+main : Program
+main = Io.run λ() →
+    gate = Deferred.make ()
+
+    worker = Task.spawn λ() →
+        Task.bracket (λ() → ()) (λ_ _ → Debug.log "released" ()) λ_ →
+            Task.retry Schedule.forever λ() →
+                _ = Debug.log "attempt" ()
+                Deferred.wait gate
+    _ = Task.yieldNow ()
+    _ = Task.cancel worker
+
+    case Task.poll worker of
+        Just Cancelled →
+            Node.print "cancelled, not retried"
+
+        Just (Done _) →
+            Node.print "done?"
+
+        Nothing →
+            Node.print "still running?"

@@ -1,0 +1,20 @@
+-- run: `retry (Schedule.recurs 2)` runs the work at most three times
+-- (transparent-effects-proposal.md §17.8): the first run and two retries.
+-- Work that always fails ends with its last `Err` as the answer. `recurs`
+-- waits no time between runs, so on the real clock each retry only lets
+-- other ready fibers run first.
+import Io
+import Node exposing (Program)
+import Ref
+import Schedule
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    runs = Ref.make 0
+
+    answer = Task.retry (Schedule.recurs 2) λ() →
+        n = Ref.modify runs λk → ( k + 1, k + 1 )
+        Err "failure ${String.fromInt n}"
+    Node.print "runs ${String.fromInt (Ref.get runs)}, answer ${Debug.toString answer}"

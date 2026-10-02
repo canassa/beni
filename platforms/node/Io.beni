@@ -15,6 +15,7 @@
 --! `foreign` that starts the host's operation and returns what cancels it,
 --! so that cancelling a fiber cancels what it was waiting on.
 
+import Duration
 import Js
 import Node exposing (Program)
 import Task exposing (Exit, Resume)
@@ -79,12 +80,11 @@ stuck =
 foreign impure finish : Exit Program → ()
 
 
---| Wait `ms` milliseconds. Only the fiber that sleeps waits; the others run.
+--| Wait `ms` milliseconds on the calling fiber's clock: `Task.sleep`. Only
+--| the fiber that sleeps waits; the others run. `0` lets every other ready
+--| fiber run first.
 pub sleep : Int → ()
-sleep ms = Task.callback λresume → startTimer ms resume
-
-
-foreign impure startTimer : Int, Resume () → (() → ())
+sleep ms = Task.sleep (Duration.millis ms)
 
 
 --| Why a file could not be read: one constructor for each failure Node

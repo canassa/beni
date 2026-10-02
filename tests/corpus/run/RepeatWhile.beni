@@ -1,0 +1,37 @@
+-- run: `Task.repeat` (transparent-effects-proposal.md §17.8). The work
+-- counts up; the schedule waits 10 ms after each run while the value is
+-- below 3, on a virtual clock, so the runs are at 0, 10 and 20 ms and the
+-- third value is the answer. `repeat (Schedule.recurs 2)` runs three
+-- times, as Effect's doc example does.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Ref
+import Schedule
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+    count = Ref.make 0
+
+    counting =
+        λ() →
+            n = Ref.modify count λk → ( k + 1, k + 1 )
+            Debug.log "run ${String.fromInt n} at" (Clock.now ())
+
+    worker = Task.spawn λ() →
+        Clock.run clock λ() →
+            Task.repeat (Schedule.while (Schedule.spaced (Duration.millis 10)) λm → m.input < 3) λ() →
+                _ = counting ()
+                Ref.get count
+    _ = Clock.adjust clock (Duration.seconds 1)
+    _ = Debug.log "while: answer" (Task.join worker)
+    _ = Ref.set count 0
+    _ =
+        Debug.log
+            "recurs 2: answer"
+            (Task.repeat (Schedule.recurs 2) λ() → Ref.modify count λk → ( k + 1, k + 1 ))
+    Node.print "done"

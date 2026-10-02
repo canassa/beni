@@ -1,0 +1,31 @@
+-- run: a fiber cancelled while it sleeps on a virtual clock is taken off
+-- the clock's sleepers (transparent-effects-proposal.md §17.1 item 1,
+-- §17.6): its release runs at the cancel, and the `adjust` that passes
+-- its wake time wakes only the live sleeper — the cancelled one never
+-- runs its next line.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    clock = Clock.virtual 0
+
+    doomed = Task.spawn λ() →
+        Clock.run clock λ() →
+            Task.bracket (λ() → ()) (λ_ _ → Debug.log "doomed released" ()) λ_ →
+                _ = Task.sleep (Duration.millis 10)
+                Debug.log "doomed woke" ()
+
+    live = Task.spawn λ() →
+        Clock.run clock λ() →
+            _ = Task.sleep (Duration.millis 10)
+            Debug.log "live woke at" (Clock.now ())
+    _ = Task.yieldNow ()
+    _ = Task.cancel doomed
+    _ = Clock.adjust clock (Duration.millis 10)
+    _ = Task.join live
+    Node.print "done"

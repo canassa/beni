@@ -1,0 +1,5 @@
+before run, the real clock: small? reads: False
+child, the virtual clock: small? reads: True
+after run, the real clock: small? reads: False
+grandchild woke at: 60000
+done

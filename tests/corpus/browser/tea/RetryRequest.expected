@@ -1,0 +1,21 @@
+-- load
+console.log: call 1 at: 0
+<body>
+  <p>"waiting"</p>
+</body>
+-- advance 150
+console.log: call 2 at: 150
+(the DOM did not change)
+-- advance 250
+console.log: call 3 at: 400
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 50
+<body>
+  <p>"data"</p>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)

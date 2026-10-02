@@ -166,7 +166,10 @@ function prelude() {
   record.clock = clock;
   globalThis.setTimeout = (fn, ms, ...args) => {
     const id = clock.next++;
-    const wait = Number(ms);
+    // Both hosts fire a timer whose delay is past 2³¹ − 1 ms after 1 ms;
+    // so does this clock.
+    const asked = Number(ms);
+    const wait = asked > 2147483647 ? 1 : asked;
     clock.timers.push({ id, due: clock.now + (wait > 0 ? wait : 0), fn, args });
     return id;
   };

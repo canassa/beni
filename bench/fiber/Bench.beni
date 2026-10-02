@@ -2,8 +2,11 @@
 -- (docs/design/research/44-effects-runtime-spike.md §7). Built with
 -- `--library`, so every `pub` value is a root and the harness imports it;
 -- `node.mjs` and `chrome.mjs` start each workload in a fiber with `start`.
+import Clock
 import Deferred
+import Duration
 import Ref exposing (Ref)
+import Schedule
 import Task exposing (Exit)
 
 
@@ -152,3 +155,32 @@ detachJoin n acc =
     else
         f = Task.spawnDetached λ() → 1
         detachJoin (n - 1) (acc + Task.join f)
+
+
+--| `n` zero-length sleeps on the real clock: each lets the others run, as
+--| `yieldNow` does.
+pub sleepZero : Int, Int → Int
+sleepZero n acc =
+    if n == 0 then
+        acc
+    else
+        _ = Task.sleep Duration.zero
+        sleepZero (n - 1) (acc + 1)
+
+
+--| Report 23 case 5.5: work that fails three times, retried on an
+--| exponential schedule of one hour, driven ten hours on a virtual clock.
+--| Answers the number of attempts.
+pub tenHours : () → Int
+tenHours () =
+    clock = Clock.virtual 0
+    attempts = Ref.make 0
+
+    retrying = Task.spawn λ() →
+        Clock.run clock λ() →
+            Task.retry (Schedule.exponential (Duration.hours 1) 2.0) λ() →
+                n = Ref.modify attempts λk → ( k + 1, k + 1 )
+                if n < 4 then Err () else Ok n
+    _ = Clock.adjust clock (Duration.hours 10)
+    _ = Task.join retrying
+    Ref.get attempts

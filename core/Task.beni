@@ -51,8 +51,10 @@
 -- answers with a value continues where it is: the fast path is one
 -- comparison.
 
+import Duration exposing (Duration)
 import Js
 import List
+import Schedule exposing (Schedule)
 
 
 type alias V =
@@ -1759,3 +1761,249 @@ pub onExit : (() → a), (Exit a → ()) → a
 onExit work cleanup =
     result = work (pushFinalizer () λ() → cleanup Cancelled)
     uninterruptible λ() → after (cleanup (Done (popFinalizer result))) result
+
+
+-- ---- Time (§17.6) ----------------------------------------------------------
+
+--| Wait `duration` on the calling fiber's clock; only this fiber waits.
+--|
+--| On the real clock that is a host timer, cleared when the fiber is
+--| cancelled; a wait longer than the timer's limit, 2³¹ − 1 ms, is a
+--| chain of timers, so it never ends early. A `zero` wait lets every
+--| other ready fiber run first, as `yieldNow` does — Effect's
+--| `sleep(0)`. Inside `Clock.run` the clock is a virtual one: the fiber
+--| waits until `Clock.adjust` moves that clock past the wake time, and a
+--| `zero` wait returns at once.
+pub sleep : Duration → ()
+sleep duration =
+    ms = Duration.toMillis duration
+    clock = if Js.read slotted then currentClock () else Js.undefined
+
+    if Js.isUndefined clock then
+        if ms == 0 then yieldNow () else realSleep ms
+    else if ms == 0 then
+        ()
+    else
+        virtualSleep clock ms
+
+
+-- The longest delay a host timer keeps: past it, both hosts fire after 1 ms.
+timerLimit : Int
+timerLimit = 2147483647
+
+
+realSleep : Int → ()
+realSleep ms =
+    _ = callback λwake →
+        timer =
+            Js.apply (Js.global "setTimeout")
+                [ Js.from λ() → Js.apply (Js.from wake) [ Js.null ]
+                , Js.from (Basics.min ms timerLimit)
+                ]
+        λ() → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
+
+    if ms > timerLimit then realSleep (ms - timerLimit) else ()
+
+
+-- The slot record of the current fiber, or of the record outside any:
+-- undefined when there is none.
+slotRecord : () → V
+slotRecord () =
+    c = Js.read current
+    src = if Js.isNull c then Js.read outside else c
+    if Js.isNull src then Js.undefined else Js.get src "slots"
+
+
+--| The calling fiber's clock slot (§17.5): undefined for the real clock, or
+--| a clock `virtualClock` made. For core's `Clock`, which is what a program
+--| calls; the `Js.Value` it answers is of no use anywhere else.
+pub currentClock : () → Js.Value
+currentClock () =
+    r = slotRecord ()
+    if Js.isNullish r then Js.undefined else Js.get r "clock"
+
+
+--| Run `work` with the calling fiber's clock slot set to `clock`, and put
+--| the old one back when `work` ends, returned or cancelled. Fibers `work`
+--| starts copy it. For core's `Clock.run`: a program has no `Js.Value` to
+--| give it.
+pub withClock : Js.Value, (() → a) → a
+withClock clock work =
+    _ = Js.write slotted True
+    fiber = here ()
+    old = Js.get fiber "slots"
+    next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+    _ = Js.set next "clock" clock
+    _ = Js.set fiber "slots" next
+    putSlots fiber old (work (pushFinalizer () λ() → Js.set fiber "slots" old))
+
+
+putSlots : V, V, a → a
+putSlots fiber old value =
+    _ = popFinalizer ()
+    _ = Js.set fiber "slots" old
+    value
+
+
+-- ---- The virtual clock (§17.6) ---------------------------------------------
+
+--| A virtual clock reading `epoch` milliseconds, with no sleepers: what
+--| core's `Clock.virtual` makes. A program has no `Js.Value` to give it.
+pub virtualClock : Js.Value → Js.Value
+virtualClock epoch = Js.from { now = epoch, sleepers = Js.array [] }
+
+
+-- Wait on the virtual clock `clock` until it reads `ms` later than now.
+-- Sleepers are kept ordered by wake time, and by the order they began to
+-- sleep among equal times; a cancelled one is taken out.
+virtualSleep : V, Int → ()
+virtualSleep clock ms = callback λwake →
+    at : Int
+    at = Js.to (Js.get clock "now") + ms
+    entry = Js.from { at = at, wake = Js.from wake }
+    sleepers = Js.get clock "sleepers"
+    _ = Js.call sleepers "splice" [ Js.from (insertAt sleepers at 0), Js.from 0, entry ]
+
+    λ() →
+        i : Int
+        i = Js.to (Js.call sleepers "indexOf" [ entry ])
+        if i ≥ 0 then Js.to (Js.call sleepers "splice" [ Js.from i, Js.from 1 ]) else ()
+
+
+-- Where a sleeper waking at `at` goes: after every one waking at or before.
+insertAt : V, Int, Int → Int
+insertAt sleepers at i =
+    if i < Js.to (Js.get sleepers "length") && Js.to (Js.get (Js.at sleepers i) "at") ≤ at then
+        insertAt sleepers at (i + 1)
+    else
+        i
+
+
+--| Move the virtual clock `clock` forward by `ms` milliseconds (a
+--| `Js.Value`), and return once everything that woke has run as far as it
+--| can: core's `Clock.adjust`.
+--|
+--| It first lets every other ready fiber run until none is (*settles*);
+--| then, while the earliest sleeper is due by the target, sets the reading
+--| to its wake time, wakes every sleeper due then, in the order they began
+--| to sleep, and settles again — so a sleeper the woken code registers is
+--| woken too if it is due by the target. Last, the reading is the target.
+pub adjustClock : Js.Value, Js.Value → ()
+adjustClock clock ms =
+    by : Int
+    by = Js.to ms
+
+    if by ≤ 0 then
+        ()
+    else
+        _ = settle ()
+        advance clock (Js.to (Js.get clock "now") + by)
+
+
+advance : V, Int → ()
+advance clock target =
+    sleepers = Js.get clock "sleepers"
+
+    if Js.to (Js.get sleepers "length") > 0 && Js.to (Js.get (Js.at sleepers 0) "at") ≤ target then
+        at : Int
+        at = Js.to (Js.get (Js.at sleepers 0) "at")
+        _ = Js.set clock "now" (Js.from at)
+        _ = wakeDue sleepers at
+        _ = settle ()
+        advance clock target
+    else
+        Js.set clock "now" (Js.from target)
+
+
+wakeDue : V, Int → ()
+wakeDue sleepers at =
+    if Js.to (Js.get sleepers "length") > 0 && Js.to (Js.get (Js.at sleepers 0) "at") == at then
+        entry = Js.call sleepers "shift" []
+        _ = Js.apply (Js.get entry "wake") [ Js.null ]
+        wakeDue sleepers at
+    else
+        ()
+
+
+-- Let every other fiber that is ready run, again and again, until none is:
+-- the scheduler's queue holds nothing but what the caller left there.
+settle : () → ()
+settle () =
+    if Js.to (Js.get queue "length") > Js.read head then
+        _ = yieldNow ()
+        settle ()
+    else
+        ()
+
+
+-- ---- Retrying and repeating (§17.8) ----------------------------------------
+
+--| Run `work`; an `Ok` is the answer at once. On an `Err`, step `policy`
+--| with it: `Stop` makes that `Err` the answer, and `Continue` sleeps its
+--| delay on the calling fiber's clock and runs `work` again, stepping the
+--| next schedule after that. A cancelled `work` never returns, so it is
+--| never retried. Effect's `retry`.
+--|
+--|     -- at most four runs, 100, 200 and 400 ms apart
+--|     Task.retry (Schedule.max (Schedule.exponential (Duration.millis 100) 2.0) (Schedule.recurs 3)) fetch
+pub retry : Schedule e, (() → Result e a) → Result e a
+retry policy work = retryFrom policy work (clockMillis ()) 1
+
+
+retryFrom : Schedule e, (() → Result e a), Int, Int → Result e a
+retryFrom policy work began attempt =
+    case work () of
+        Ok value →
+            Ok value
+
+        Err problem →
+            case Schedule.step policy (metadata problem attempt began) of
+                Schedule.Stop →
+                    Err problem
+
+                Schedule.Continue delay next →
+                    _ = sleep delay
+                    retryFrom next work began (attempt + 1)
+
+
+--| Run `work`, step `policy` with its value, and while it continues
+--| sleep its delay and run `work` again; the last value is the answer.
+--| `repeat (Schedule.recurs 2)` runs `work` three times. Effect's `repeat`.
+pub repeat : Schedule a, (() → a) → a
+repeat policy work = repeatFrom policy work (clockMillis ()) 1
+
+
+repeatFrom : Schedule a, (() → a), Int, Int → a
+repeatFrom policy work began attempt =
+    value = work ()
+
+    case Schedule.step policy (metadata value attempt began) of
+        Schedule.Stop →
+            value
+
+        Schedule.Continue delay next →
+            _ = sleep delay
+            repeatFrom next work began (attempt + 1)
+
+
+-- One step's metadata: the time since `began` on the calling fiber's clock,
+-- and a random draw — from the host, until a seed slot is set (§17.5; the
+-- seed is P9's `Random.withSeed`, which nothing writes yet).
+metadata : i, Int, Int → Schedule.Metadata i
+metadata input attempt began =
+    { input = input
+    , attempt = attempt
+    , elapsed = Duration.millis (clockMillis () - began)
+    , random = Js.to (Js.call (Js.global "Math") "random" [])
+    }
+
+
+-- The epoch milliseconds of the calling fiber's clock (core's `Clock.now`).
+clockMillis : () → Int
+clockMillis () =
+    clock = if Js.read slotted then currentClock () else Js.undefined
+
+    if Js.isUndefined clock then
+        Js.to (Js.call (Js.global "Date") "now" [])
+    else
+        Js.to (Js.get clock "now")
