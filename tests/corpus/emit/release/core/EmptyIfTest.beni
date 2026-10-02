@@ -51,3 +51,9 @@ pub stopCalling : Js.Value → ()
 stopCalling v =
     _ = if Js.to (Js.apply v []) then () else quitCalling ()
     Js.write dead True
+
+
+-- Read here, so the writes above stay (`backend.md` §9, *A variable nothing
+-- reads*).
+pub isDead : () → Bool
+isDead () = Js.read dead

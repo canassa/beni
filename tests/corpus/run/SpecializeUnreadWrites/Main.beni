@@ -1,0 +1,11 @@
+-- A write of a variable nothing reads is not written in a release build
+-- (`backend.md` §9, *A variable nothing reads*; `platform/Cells.beni`), and
+-- its value is still evaluated where it was when it may do something: both
+-- builds log `last` and `scratch` before each count, and print the same
+-- counts.
+import Cells
+import Node
+
+
+main : Node.Program
+main = Node.printLines (List.map [ "a", "bb" ] λs → String.fromInt (Cells.tick s))

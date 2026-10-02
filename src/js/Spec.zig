@@ -2939,12 +2939,13 @@ const Spec = struct {
             // in whose last `return` folded to `null`).
             if (literalStmt(m.ir, stmt)) continue;
             // Fact 3: a write of a property no reachable read reaches is not
-            // written; its value is still evaluated when it may do something.
+            // written, nor one of a variable nothing reads; its value is
+            // still evaluated when it may do something.
             if (try s.deadWrite(m, stmt)) {
                 const value: Index = @enumFromInt(m.ir.data(stmt).rhs);
                 // A read of a program object's property does nothing
                 // either: no getter, no throw (`Pts.safeChain`).
-                if (inert(m.ir, value) or try s.pts.safeChain(m.index, s.cur_top, value) != null) continue;
+                if (inert(m.ir, value) or (s.pts.ok and try s.pts.safeChain(m.index, s.cur_top, value) != null)) continue;
                 m.setNode(stmt, .expr_stmt, value.int(), 0);
                 try out.append(s.arena, raw);
                 continue;
@@ -3045,11 +3046,11 @@ const Spec = struct {
     /// read reaches, on an object named by a chain that does nothing when
     /// evaluated.
     fn deadWrite(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!bool {
-        if (!s.pts.ok) return false;
         const ir = m.ir;
         if (ir.tag(stmt) != .assign_stmt) return false;
         const target: Index = @enumFromInt(ir.data(stmt).lhs);
-        if (ir.tag(target) == .ident) return false;
+        if (ir.tag(target) == .ident) return s.unreadName(m, @enumFromInt(ir.data(target).lhs));
+        if (!s.pts.ok) return false;
         if (ir.tag(target) != .member) return false;
         const td = ir.data(target);
         const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(td.lhs)) orelse return false;
@@ -3057,6 +3058,23 @@ const Spec = struct {
         // Slice 8: `x.p = x.p` on program objects — no getter, no setter,
         // no throw — changes nothing (an identity written in place).
         return sameChain(ir, target, @enumFromInt(ir.data(stmt).rhs)) and try s.pts.safeChain(m.index, s.cur_top, target) != null;
+    }
+
+    /// Whether nothing reads the variable `n` an assignment writes, so that
+    /// the write may go (`backend.md` §9, *A variable nothing reads*): a
+    /// module-level `let` of the program that no statement reads and no
+    /// file the pass cannot see reaches (`escaped`), by the reads the
+    /// round's first sweep counted; or a local of the declaration being
+    /// rewritten that nothing in it reads. A rewrite only takes reads away,
+    /// so a count of none before it is none after.
+    fn unreadName(s: *Spec, m: *Mod, n: NameIndex) bool {
+        if (m.globalOf(n)) |g| {
+            if (g >= s.reads.len or s.reads[g] != 0 or s.escaped[g]) return false;
+            const decl = s.decl[g] orelse return false;
+            return s.mods[decl.module].ir.tag(decl.stmt) == .let_decl;
+        }
+        const i = n.unwrap() orelse return false;
+        return i < m.stamp.len and m.stamp[i] == s.current and m.uses[i] == 0;
     }
 
     /// The arm an `if` with a literal test takes, or null.

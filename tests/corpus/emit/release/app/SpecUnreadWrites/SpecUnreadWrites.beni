@@ -1,0 +1,15 @@
+-- emit: a write of a variable nothing reads is not written (`backend.md`
+-- §9, *A variable nothing reads*; `platform/Cells.beni`):
+--
+--   * `expired`, written by `expire` and read by nothing, goes with its
+--     write, and `expire` with it;
+--   * `stamped`'s write goes, and its value, a call of the host, stays as
+--     a statement;
+--   * `scratch`, a local cell, goes with its write;
+--   * `count`, which `tick` reads back, keeps its writes.
+import Cells
+import Node
+
+
+main : Node.Program
+main = Node.printLines (List.map [ "a", "bb" ] λs → String.fromInt (Cells.tick s))

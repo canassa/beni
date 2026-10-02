@@ -1,0 +1,36 @@
+--! Cells written and never read (`backend.md` §9, *A variable nothing
+--! reads*): their writes go in a release build, and what the written
+--! values do still happens, in the same order.
+
+import Js
+
+
+-- Written, read by nothing.
+expired : Js.Ref Bool
+expired = Js.ref False
+
+
+-- Written with a value that logs, read by nothing.
+last : Js.Ref String
+last = Js.ref ""
+
+
+-- Read.
+count : Js.Ref Int
+count = Js.ref 0
+
+
+expire : () → ()
+expire () = Js.write expired True
+
+
+pub tick : String → Int
+tick label =
+    _ = expire ()
+    _ = Js.write last (Debug.log "last" label)
+    _ = Js.write count (Js.read count + String.length label)
+
+    -- A cell of its own that nothing reads, written with a value that logs.
+    scratch = Js.ref 0
+    _ = Js.write scratch (Debug.log "scratch" (String.length label))
+    Js.read count

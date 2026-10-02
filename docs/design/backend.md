@@ -6169,6 +6169,34 @@ index and in each arm, a `Maybe` read whole by `Debug.toString` and so made, and
 choosing among three), `emit/release/split/EmptyPage`, `HolesPage`, `emit/release/app/SpecScalars`,
 `SpecSmall`, `SpecNodes`.
 
+**A variable nothing reads** (*amended 2026-10-02*). Fact 3 drops a write of a property no read
+reaches; a write of a *variable* nothing reads stayed, and so did the variable: the fiber runtime's
+`expired`, set by the teardown's deadline and read only where a finaliser is (`finalising`), was
+`let y=false` and `y=true` on every page that runs a fiber and registers no finaliser. Now, in the
+rewrite, `x = v` is a dead write — the same as fact 3's, its value still evaluated as a statement
+when it may do something (`inert`, `Pts.safeChain`) — when `x` is
+
+- a module-level `let` of the program that no statement reads, by the reads the round's first
+  sweep counts (an assignment's target is not a read), and that nothing the pass cannot see reaches
+  (`Input.escaping`, the entry's names: `escaped`); or
+- a local of the top-level declaration being rewritten that nothing in it reads, closures
+  included (`uses`).
+
+A rewrite only takes reads away, so a count of none at the round's start is none after it. With its
+writes gone the `let` is referenced by nothing and `prune` drops it, as it drops any declaration
+whose initialiser is inert; a local's binding goes by item 1's rule. A `Js.Ref` that does not
+escape is such a `let` (§4, *A `Js.Ref` that does not escape is a `let`*). Measured (release,
+brotli, the whole bundle, against the build before): the `browser-tea element` page 1 207 →
+**1 146** (cells the hosted mount sets and nothing reads, and a flag set around the render's
+`try`, with the setter and the parameters that only fed them), effects 5 824 → 5 782, `http` 3 836 → 3 805, `every` 4 403 → 4 351, `random`
+1 942 → 1 912, TodoMVC 9 732 → 9 702; `bench/size.mjs`'s lines −639 in all, 42 smaller and none
+larger. Fixtures: `emit/release/app/SpecUnreadWrites` (a cell written and read by nothing goes with
+its writer; one written with a host call keeps the call; a local cell goes; a cell read back keeps
+its writes) — red against the build before; `run/SpecializeUnreadWrites` (the same with
+`Debug.log` in the written values: both builds log the same lines in the same order).
+`emit/release/core/EmptyIfTest` and `LetRuns` wrote a cell only to show a shape around the write,
+and now also read it, so that the write they pin stays.
+
 **Measured again over field renaming** (*added 2026-10-03*; *Item 4, taken up* landed while slices
 6–9 were built, and moved every baseline). Release, brotli, the whole bundle, `bench/size.mjs`'s
 pages and the `bench/ui` app, each slice's compiler in turn:

@@ -29,3 +29,9 @@ count xs =
 
     _ = Js.write busy False
     Js.read n
+
+
+-- Read here, so its write above stays (`backend.md` §9, *A variable nothing
+-- reads*).
+pub isBusy : () → Bool
+isBusy () = Js.read busy
