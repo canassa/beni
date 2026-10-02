@@ -71,6 +71,23 @@ having both is why the garden can be richly furnished *and* still have a way out
 
 ### 3.1 Ports
 
+*Withdrawn 2026-10-03 by the owner; the text below is kept as the record.* **A project names
+exactly one platform, and every line of JavaScript a build runs is in that platform.**
+- **Libraries cannot break beni's guarantees.** A library package is pure beni: it writes no
+  `foreign` and ships no `.js`. It may import its platform's modules, and so be platform-specific,
+  but whatever it does goes through what a platform wraps. A dependency therefore cannot bring a
+  throw, a mistyped value or an unmanaged effect with it, by construction.
+- **Ports are not built.** An app that needs JavaScript the platform does not wrap — an npm
+  library, a browser API — writes its own platform: a package of the project, layered on a shipped
+  one by §9.1 (`"platforms": ["browser-tea"]`), with `foreign` declarations and siblings under §4's
+  checks and rule 9's precise-error discipline. The project names that platform as its one
+  platform. Platforms are trusted, the project's as the shipped ones are.
+- **"One" is what the project names.** §9.1's layering is how platforms are built, kept as it is:
+  `browser-tea` over `browser` over `html` is one platform to the program that selects it, and a
+  project platform is one more layer.
+- **The cost, stated:** a binding over a JavaScript library cannot be published as a library.
+  Whether it can be published as a platform layer that project platforms build on is open.
+
 Ports stay, and stay asynchronous.
 
 **The payload widens to any type the compiler can generate a codec for.** This is the change that

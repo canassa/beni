@@ -259,6 +259,16 @@ Evidence for the first four is in [`research/08-roc-language-answers.md`](resear
   key holds that anyway. Built ahead of it is the **interface record**: flat and index-based per §5,
   holding public names, types, constructors, opacity and inferred schemes; compared by value now,
   hashed and mmap'd unchanged later.
+  *Amended 2026-10-03 — the package model, the owner's four decisions* (specification to follow,
+  before any code): **(1)** a dependency is an archive URL plus its content hash, fetched once
+  into a local cache; no registry service, one may be layered on later. **(2)** Semantic
+  versioning is enforced from interface records, Elm's rule: a removed or changed public item is
+  a major bump, an addition a minor one, checked when a package is published. **(3)** A build
+  holds exactly one version of each package; two requirements on different majors are an error
+  naming both requirers. With URLs and no ranges this is minimal version selection: each
+  manifest names the version, URL and hash it was written against, and the build takes the
+  highest version required within a major, with that requirer's URL and hash. **(4)** An app or
+  workspace may depend on a local path; a published package may not.
 - **`Int` is a double; exact 32-bit work has its own type.** JavaScript has no integer type, and
   every representation costs something:
 
