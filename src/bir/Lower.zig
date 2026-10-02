@@ -1871,6 +1871,20 @@ fn couldBeSchemaQualified(l: *const Lower, token: TokenIndex) bool {
     return false;
 }
 
+/// `⊥` (language.md §12.10): the type core's `Basics` declares as `Never`,
+/// never through this module's scope — inside `Basics` its own declaration,
+/// everywhere else the reference the prelude's `Never` resolves to.
+fn bottomType(l: *Lower) Allocator.Error!Index {
+    const never = WellKnown.Never.symbol();
+    if (l.options.core and std.mem.eql(u8, l.options.module_name, "Basics")) {
+        if (l.types.get(never)) |entry| if (entry.kind == .top) {
+            try l.addRef(.top_type, entry.index, 0);
+            return l.addInst(.type_top, entry.index, Inst.Data.unused);
+        };
+    }
+    return l.importRef(.type_import, .import_type, WellKnown.Basics.symbol(), never);
+}
+
 /// An unqualified upper name in type position (§6.2).
 fn resolveType(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
@@ -1998,6 +2012,7 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInstAt(main_token, .type_fn, @intFromEnum(range), result.int());
         },
         .type_unit => return l.addInst(.type_unit, 0, 0),
+        .type_bottom => return l.bottomType(),
         .type_paren => return l.lowerType(l.tree.operand(node)),
         // `sync (…)`: the function type inside, whose `main_token` becomes
         // the word `sync` — the mark, in the BIR, costs no column
@@ -2287,7 +2302,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const params_record = try l.addRangeRecord(params);
             return l.addInstAt(main_token, .lambda, @intFromEnum(params_record), body.int());
         },
-        .@"if" => return l.lowerIf(node),
+        .@"if", .if_then => return l.lowerIf(node),
         .let, .block => return l.lowerLet(node),
         .case => {
             const c = l.tree.fullCase(node);
@@ -2653,7 +2668,10 @@ fn lowerIf(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const then_branch = try l.addInst(.branch, true_pat.int(), then_expr.int());
     const false_ref = try l.importRef(.import_ctor, .import_ctor, WellKnown.Basics.symbol(), WellKnown.False.symbol());
     const false_pat = try l.addInst(.pat_ctor, false_ref.int(), @intFromEnum(try l.addRangeRecord(SubRange.empty)));
-    const else_expr = try l.lowerExpr(i.else_expr);
+    // An `if` without `else` (language.md §12.10): the missing branch is
+    // the unit value, marked by `lhs` 1 so the checker can tell it from a
+    // written `⊤` (checker-v2.md §34). Nothing else reads the mark.
+    const else_expr = if (i.else_expr) |e| try l.lowerExpr(e) else try l.addInstAt(if_token, .unit, 1, 0);
     const else_branch = try l.addInst(.branch, false_pat.int(), else_expr.int());
     const branches = try l.addRangeRecord(try l.addRange(&.{ then_branch.int(), else_branch.int() }));
     return l.addInstAt(if_token, .case, cond.int(), @intFromEnum(branches));

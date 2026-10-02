@@ -51,6 +51,7 @@ const ParseDiagnostics = @import("parse/Diagnostics.zig");
 const Bir = @import("bir/Bir.zig");
 const Lower = @import("bir/Lower.zig");
 const Format = @import("fmt/Format.zig");
+const Ast = @import("parse/Ast.zig");
 const LowerDiagnostics = @import("bir/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
@@ -205,6 +206,12 @@ pub const Options = struct {
     /// spelling as its symbol and every comma tuple type with `×`, and
     /// touch nothing else (`Format.migrateUnicode`).
     migrate_unicode: bool = false,
+    /// `beni fmt --migrate-top` (hidden): write `()` as `⊤`, the prelude's
+    /// `Never` as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
+    /// `top_discards` names (`Format.migrateTop`, frontend.md §11.9).
+    migrate_top: bool = false,
+    /// `--discards=<file>`'s `unit_discarded` lines, by file path.
+    top_discards: []const TopDiscard = &.{},
     /// `beni fmt --migrate-names` (hidden): write the removed `Basics`
     /// names as their replacements and touch nothing else
     /// (`Format.migrateNames`).
@@ -286,6 +293,10 @@ pub const Options = struct {
     /// It was `--explain` until 2026-09-18. The flag is still parsed and
     /// accepted and now governs nothing (`Cli.Common.explain`, A.83).
     informational: bool = false,
+    /// `--explain`: emit the informational diagnostics a later step turns
+    /// on by default — today `unit_discarded` (language.md §12.10), which
+    /// the `⊤` migration reads (frontend.md §11.9).
+    explain: bool = false,
     /// `run` collects, counts and profiles its diagnostics but does NOT
     /// render them; the caller renders once, later, through `renderLate`.
     ///
@@ -1176,6 +1187,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
         if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
         if (session.options.migrate_unicode and (item.code == .ascii_symbol_removed or item.code == .tuple_type_removed)) continue;
         if (session.options.migrate_let and item.code == .let_removed) continue;
+        if (session.options.migrate_top and item.code == .unit_spelling_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1651,6 +1663,66 @@ fn installFrontend(
 /// (`module_names = false`, so a path that names no module is still
 /// formatted — `frontend.md` §1). Skipped files leave `formatted` null,
 /// which is what the command tests.
+/// `beni fmt --migrate-top` for one file (frontend.md §11.9): true when the
+/// file was left alone — named with a diagnostic — or had a syntax error,
+/// `out` then deinitialised; false when `out` holds the rewrite.
+fn migrateTopFile(session: *Session, worker: *Worker, file: SourceStore.Index, tree: *const Ast, text: [:0]const u8, out: *Io.Writer.Allocating) anyerror!bool {
+    const gpa = session.gpa;
+    const scratch = worker.arena.allocator();
+    const path = session.store.path(file);
+    var discards: std.ArrayList(Format.DiscardAt) = .empty;
+    for (session.options.top_discards) |d| {
+        if (std.mem.eql(u8, d.file, path)) try discards.append(scratch, d.at);
+    }
+    const line_starts = session.store.lineStarts(file);
+    const problem = Format.migrateTop(
+        scratch,
+        tree,
+        session.artifacts.tokens(file),
+        session.artifacts.comments(file),
+        text,
+        line_starts,
+        discards.items,
+        &out.writer,
+    ) catch |err| switch (err) {
+        error.SyntaxErrors => {
+            out.deinit();
+            return true;
+        },
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
+    };
+    const found = problem orelse return false;
+    out.deinit();
+    const at = diagnostic.position(line_starts, text, found.start);
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    const code: diagnostic.Code = switch (found.kind) {
+        .reparse => blk: {
+            try message.writer.print("`beni fmt --migrate-top` left this file alone: rewritten with `⊤` and `⊥` it does not parse ({t} here). Rewrite it by hand.", .{found.code.?});
+            break :blk found.code.?;
+        },
+        .unit_comment => blk: {
+            try message.writer.writeAll("`beni fmt --migrate-top` left this file alone: this `()` holds a comment, which writing it `⊤` would have to move. Write it `⊤` by hand, placing the comment yourself.");
+            break :blk .unexpected_token;
+        },
+        .discard_comment => blk: {
+            try message.writer.writeAll("`beni fmt --migrate-top` left this file alone: a comment stands between this `_ =` and its expression. Delete the `_ =` by hand.");
+            break :blk .unit_discarded;
+        },
+        .discard_unmatched => blk: {
+            try message.writer.writeAll("`beni fmt --migrate-top` left this file alone: a `unit_discarded` line of `--discards` names no `_ =` on this line. Check the file again and pass the new diagnostics.");
+            break :blk .unit_discarded;
+        },
+    };
+    try worker.report(session, file, code, at, at, message.written());
+    return true;
+}
+
+/// One `unit_discarded` line of `beni fmt --migrate-top --discards=<file>`
+/// (frontend.md §11.9): the path its span names and its start.
+pub const TopDiscard = struct { file: []const u8, at: Format.DiscardAt };
+
 fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
     try parsePhase(session, worker, file);
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
@@ -1658,6 +1730,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
         !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree)) and
         !(session.options.migrate_unicode and Format.onlyUnicodeRemoved(tree)) and
+        !(session.options.migrate_top and Format.onlyUnitRemoved(tree)) and
         !(session.options.migrate_let and Format.onlyLetRemoved(tree))) return;
 
     const gpa = session.gpa;
@@ -1727,6 +1800,8 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             out.deinit();
             return;
         }
+    } else if (session.options.migrate_top) {
+        if (try session.migrateTopFile(worker, file, tree, text, &out)) return;
     } else if (session.options.migrate_unicode) {
         const problem = Format.migrateUnicode(
             worker.arena.allocator(),
@@ -2274,6 +2349,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         .{
             .build_id = session.build_id_bytes,
             .informational = session.options.informational,
+            .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
             .lower_core = lower_core,
             .lower_platform = lower_platform,
@@ -2343,6 +2419,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
+                    .explain = r.session.options.explain,
                     .quiet = r.quiet,
                     .jobs = r.session.options.jobs,
                     .size_by_work = r.session.options.size_by_work,
@@ -2378,6 +2455,15 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
             0;
         if (item.code == .statement_not_unit and item.region.int() < bir.insts.len and bir.instTag(item.region) == .let_stmt) {
             try session.reportStatement(file, item, token, bir.instData(item.region).lhs);
+            continue;
+        }
+        // `unit_discarded` spans the `_ =` (checker-v2.md §34): the
+        // pattern's `_` and the `=` after it.
+        if (item.code == .unit_discarded and item.region.int() < bir.insts.len and bir.instTag(item.region) == .let_pattern) {
+            const wild = bir.insts.items(.main_token)[bir.instData(item.region).lhs];
+            const start, _ = session.tokenSpan(file, wild);
+            _, const end = session.tokenSpan(file, wild + 1);
+            try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
             continue;
         }
         const start, const end = session.tokenSpan(file, token);

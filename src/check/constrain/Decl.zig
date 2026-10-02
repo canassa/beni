@@ -402,6 +402,10 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
             const v = try g.freshFlex();
             _ = try g.header(v, m, .none);
             try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(data.lhs), v));
+            // `_ = e`, for `unit_discarded` (checker-v2.md §34).
+            if (g.cx.discards) |list| if (bir.instTag(@enumFromInt(data.lhs)) == .pat_wild) {
+                try list.append(g.cx.scratch, .{ .inst = m, .v = v });
+            };
             return v;
         },
         // What a statement is held to: `()`. It binds nothing.

@@ -1,0 +1,10 @@
+-- `⊥` is a type, with no values (language.md §12.10): in an expression
+-- (5:5) and in a pattern (10:9) it is `unexpected_token`, whose message
+-- points at `never`; the parse goes on after it.
+f =
+    ⊥
+
+
+g x =
+    case x of
+        ⊥ → 0

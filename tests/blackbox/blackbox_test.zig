@@ -1916,6 +1916,184 @@ test "fmt --migrate-unicode writes the symbols and × in code only and restyles 
     , try w.read("Main.beni"));
 }
 
+test "⊤ and (), ⊥ and Never, and an if without else and its else () lower to the same BIR" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // language.md §12.10: a new spelling of what was there, so the backend
+    // cannot tell the two apart — the missing branch is the unit value.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Old.beni",
+        \\f : (), Never → ()
+        \\f () v = never v
+        \\g : Bool, () → ()
+        \\g c u = if c then u else ()
+        \\
+    );
+    try w.write("New.beni",
+        \\f : ⊤, ⊥ → ⊤
+        \\f ⊤ v = never v
+        \\g : Bool, ⊤ → ⊤
+        \\g c u = if c then u
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const old = try w.run(&.{ "dump", "--stage=bir", "Old.beni" });
+    const new = try w.run(&.{ "dump", "--stage=bir", "New.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), old.exit_code);
+    try testing.expectEqual(@as(u8, 0), new.exit_code);
+    try testing.expectEqualStrings("", new.stderr);
+    try testing.expectEqualStrings(old.stdout, new.stdout);
+}
+
+test "fmt --migrate-top writes ⊤ and ⊥ in code only, drops else (), and restyles nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §11.9: an edit — `f`'s spacing is not canonical and stays
+    // so. Comments, strings and markup text keep their `()`; a `( )` with a
+    // space is a unit; an `else ()` an `else` follows is kept (`j`), since
+    // dropping it would hand that `else` to the inner `if` — unless the
+    // outer `else ()` is dropped too (`h`), all in one run, which a second
+    // run must leave as it is. `Other.beni` declares its
+    // own `Never`, so its `Never`s are not the prelude's and stay.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\-- () in a comment stays
+        \\f : Never → ( )
+        \\f v=never v
+        \\g : Bool, Bool → ()
+        \\g a b =
+        \\    if a then
+        \\        Debug.log "() stays" ()
+        \\    else
+        \\        ()
+        \\h a b = if a then if b then () else () else ()
+        \\j a b = if a then if b then () else () else Debug.log "j" ()
+        \\v = <p>(){f ()}</p>
+        \\k : Basics.Never → Maybe Never
+        \\k = k
+        \\
+    );
+    try w.write("Other.beni",
+        \\type Never = Never Never
+        \\n : Never → ()
+        \\n x = ()
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--migrate-top", "Main.beni", "Other.beni" });
+    const once = try w.read("Main.beni");
+    const again = try w.run(&.{ "fmt", "--migrate-top", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\-- () in a comment stays
+        \\f : ⊥ → ⊤
+        \\f v=never v
+        \\g : Bool, Bool → ⊤
+        \\g a b =
+        \\    if a then
+        \\        Debug.log "() stays" ⊤
+        \\h a b = if a then if b then ⊤
+        \\j a b = if a then if b then ⊤ else ⊤ else Debug.log "j" ⊤
+        \\v = <p>(){f ⊤}</p>
+        \\k : ⊥ → Maybe ⊥
+        \\k = k
+        \\
+    , once);
+    try testing.expectEqualStrings(once, try w.read("Main.beni"));
+    try testing.expectEqualStrings(
+        \\type Never = Never Never
+        \\n : Never → ⊤
+        \\n x = ⊤
+        \\
+    , try w.read("Other.beni"));
+}
+
+test "check --explain names each _ = in front of a ⊤, and fmt --migrate-top --discards deletes them" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // checker-v2.md §34, frontend.md §11.9: `unit_discarded` is a warning
+    // of the root package, only under `--explain` until the enforce step;
+    // the migration reads it. A `_ =` of an `Int` is a real discard and
+    // stays; one whose expression starts on the next line keeps that line's
+    // indentation, inside the item.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\f : Int → Int
+        \\f n =
+        \\    _ = Debug.log "unit" ()
+        \\    _ = Debug.log "int" n
+        \\    _ =
+        \\        Debug.log "below" ()
+        \\    n
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.run(&.{ "check", "Main.beni" });
+    const explained = try w.run(&.{ "check", "--explain", "--diagnostics=json", "Main.beni" });
+    try w.write("discards.json", explained.stderr);
+    const migrated = try w.run(&.{ "fmt", "--migrate-top", "--discards=discards.json", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", plain.stderr);
+    try testing.expectEqual(@as(u8, 0), explained.exit_code);
+    try testing.expectEqual(@as(usize, 2), explained.diagnostics.len);
+    for (explained.diagnostics, [_]u32{ 3, 5 }) |d, line| {
+        try testing.expectEqual(diagnostic.Code.unit_discarded, d.code);
+        try testing.expectEqual(diagnostic.Severity.warning, d.severity);
+        try testing.expectEqualStrings("UNIT DISCARDED", d.title);
+        // The span is the `_ =`.
+        try testing.expectEqual(diagnostic.Position{ .line = line, .col = 5 }, d.span.start);
+        try testing.expectEqual(diagnostic.Position{ .line = line, .col = 8 }, d.span.end);
+    }
+    try testing.expectEqual(@as(u8, 0), migrated.exit_code);
+    try testing.expectEqualStrings("", migrated.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\f : Int → Int
+        \\f n =
+        \\    Debug.log "unit" ⊤
+        \\    _ = Debug.log "int" n
+        \\    Debug.log "below" ⊤
+        \\    n
+        \\
+    , try w.read("Main.beni"));
+}
+
 test "fmt --migrate-names rewrites each form of a removed name in place and restyles nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -4607,9 +4785,9 @@ test "a constraint that rode out on an inferred interface is reported without --
     // reported — which is the hint the message gives.
     try testing.expect(std.mem.indexOf(u8, d.message, "annotated") == null);
 
-    // `--explain` is still accepted and now governs nothing: same exit code,
-    // same diagnostics, byte for byte. The flag is kept rather than removed
-    // so nothing scripted against it starts exiting 2 (A.83).
+    // `--explain` no longer governs this warning: same exit code, same
+    // diagnostics, byte for byte (A.83). It gates only `unit_discarded`
+    // (language.md §12.10), which this program does not reach.
     const explained = try w.run(&.{ "check", "--explain", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), explained.exit_code);
     try testing.expectEqualStrings(r.stderr, explained.stderr);

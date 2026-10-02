@@ -1843,9 +1843,10 @@ source-order walk:
   than `Basics`. Lowering's resolution is not needed: the flag works on one file with no project,
   and the two conditions are what make the file's `Never` the prelude's.
 - **`else ⊤`.** An `if` whose `else` branch is a unit leaf (either spelling) loses its `else`
-  half — from the end of its `then` body to the end of the unit — unless the `if` is the `then`
-  branch of an `if` that has an `else`, or a comment lies in the range; the next line keeps its
-  column, so a vertical `if` loses its last two lines.
+  half — from the end of its `then` body to the end of the unit — unless the token after the unit
+  is an `else` (the `if` ends the `then` branch of an outer `if`, whose `else` would become this
+  one's), or a comment lies in the range; the next line keeps its column, so a vertical `if` loses
+  its last two lines.
 - **`_ = e`**, given **`--discards=<file>`**: the file is the JSON array a `beni check --explain
   --diagnostics=json` run printed. For each of its `unit_discarded` diagnostics whose `span.file`
   is the path being formatted, the block item whose `_` begins at the span's start loses
@@ -1858,3 +1859,12 @@ source-order walk:
 
 The slice that runs it runs `beni check --explain --diagnostics=json` over every project and
 fixture first, then the flag with that file, then plain `beni fmt` over the gate's scope.
+
+*As built, the teach step (2026-10-02):* as specified, with three readings. The checker gives an
+`if` without `else` the type of its `then` branch, held to `⊤` before it meets its context, so a
+`then` branch of the wrong type is one `if_without_else_not_unit` and the context says nothing
+more (`constrain/Expr.zig`, `missingElse`); a number there reaches the message through
+`kindNotSatisfied`. `--explain` is now in the cache key (`explain=<0|1>` in the option string,
+`fast-compiler.md` §8), since it changes a module's warnings. And the flag decides the `else ⊤`
+drops last first, so an `else` that an outer drop removes does not keep an inner one: `if a then
+if b then ⊤ else ⊤ else ⊤` loses both in one run, which is what makes the run a fixed point.

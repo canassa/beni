@@ -381,7 +381,7 @@ inline fn inBlock(p: *const Parse, i: TokenIndex) bool {
 /// when it does not continue the literal on the line above (§2.7).
 fn startsItem(p: *const Parse, i: TokenIndex) bool {
     return switch (p.tags[i]) {
-        .lower_ident, .qualified_lower, .upper_ident, .qualified_upper, .dot_lower, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .lambda, .backslash, .keyword_if, .keyword_case, .keyword_let, .underscore, .markup_open, .invalid => true,
+        .lower_ident, .qualified_lower, .upper_ident, .qualified_upper, .dot_lower, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .lambda, .backslash, .keyword_if, .keyword_case, .keyword_let, .underscore, .markup_open, .top, .bottom, .invalid => true,
         .op_minus => i + 1 < p.tags.len and p.starts[i + 1] == p.tokenEnd(i),
         .multiline_line => i == 0 or p.tags[i - 1] != .multiline_line or p.lines[i - 1] + 1 != p.lines[i],
         else => false,
@@ -671,6 +671,18 @@ fn unexpected(p: *Parse, tag: Node.Tag, construct: Construct) Allocator.Error!In
     var item = p.itemAt(.unexpected_token);
     item.construct = construct;
     return p.errorNode(tag, item);
+}
+
+/// `⊥` outside a type (language.md §12.10): `unexpected_token`, whose
+/// message says it is a type with no values. The `⊥` is consumed, so the
+/// parse goes on after it.
+fn bottomOutsideType(p: *Parse, tag: Node.Tag) Allocator.Error!Index {
+    @branchHint(.cold);
+    var item = p.itemAt(.unexpected_token);
+    item.construct = .bottom_outside_type;
+    const node = try p.errorNode(tag, item);
+    _ = p.next();
+    return node;
 }
 
 /// Consume an `invalid` token from the lexer as a silent placeholder carrying
@@ -1718,7 +1730,7 @@ fn reportComment(p: *Parse, code: diagnostic.Code, start: u32) void {
 
 fn canStartTypeAtom(tag: Tag) bool {
     return switch (tag) {
-        .lower_ident, .upper_ident, .qualified_upper, .l_paren, .l_brace, .invalid => true,
+        .lower_ident, .upper_ident, .qualified_upper, .l_paren, .l_brace, .top, .bottom, .invalid => true,
         else => false,
     };
 }
@@ -1951,6 +1963,10 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             return p.unary(.type_sync, word, try p.parseTypeAtom());
         } else return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
+        // `⊤` and `⊥` (language.md §12.10): the unit type `()` builds,
+        // and core's empty type.
+        .top => return p.leaf(.type_unit, p.next()),
+        .bottom => return p.leaf(.type_bottom, p.next()),
         .l_paren => {
             // Inside brackets the `where` comma rule of §2.3 does not
             // apply: a record type's own fields are `lower_ident ':'`, and
@@ -2264,7 +2280,7 @@ fn isBlockStart(tag: Tag) bool {
 /// `-` is the binary minus, §6.5).
 fn canStartAtom(tag: Tag) bool {
     return switch (tag) {
-        .lower_ident, .qualified_lower, .upper_ident, .qualified_upper, .dot_lower, .int, .float, .char, .str_start, .multiline_line, .l_paren, .l_bracket, .l_brace, .invalid => true,
+        .lower_ident, .qualified_lower, .upper_ident, .qualified_upper, .dot_lower, .int, .float, .char, .str_start, .multiline_line, .l_paren, .l_bracket, .l_brace, .top, .bottom, .invalid => true,
         else => false,
     };
 }
@@ -2556,6 +2572,12 @@ fn parseAtom(p: *Parse, operand_start: bool) Allocator.Error!Index {
             return p.unary(.negate, minus, operand);
         },
         .l_paren => return p.parseParens(),
+        // `⊤`, the unit value (language.md §12.10).
+        .top => return p.leaf(.unit, p.next()),
+        .bottom => {
+            @branchHint(.cold);
+            return p.bottomOutsideType(.error_expr);
+        },
         .l_bracket => return p.parseList(),
         .l_brace => return p.parseRecord(),
         .underscore => {
@@ -3540,7 +3562,13 @@ fn parseIf(p: *Parse) Allocator.Error!Index {
     const cond = try p.parseExpr();
     _ = try p.expectToken(.keyword_then);
     const then_expr = try p.parseBody(.opens);
-    _ = try p.expectToken(.keyword_else);
+    // An `if` without `else` (language.md §12.10): its body ended without
+    // one. A token outside the `if`'s block is `eof` to `peek`, so an
+    // `else` left of a block the `if` is inside belongs to an outer `if`.
+    if (p.peek() != .keyword_else) {
+        return p.addNode(.{ .tag = .if_then, .main_token = if_token, .data = .{ .lhs = cond.int(), .rhs = then_expr.int() } });
+    }
+    _ = p.next();
     const else_expr = try p.parseBody(.opens);
     const extra = try p.addExtra(Ast.If{ .then_expr = then_expr, .else_expr = else_expr });
     return p.addNode(.{ .tag = .@"if", .main_token = if_token, .data = .{ .lhs = cond.int(), .rhs = @intFromEnum(extra) } });
@@ -3908,7 +3936,7 @@ fn checkPipeRhs(p: *Parse, node: Index) Allocator.Error!void {
     const tag = p.nodes.items(.tag)[node.int()];
     if (tag.isError()) return; // already reported as something else
     const is_app = switch (tag) {
-        .let, .@"if", .case, .lambda, .question => false,
+        .let, .@"if", .if_then, .case, .lambda, .question => false,
         else => !Node.Tag.isBinop(tag),
     };
     if (!is_app) {
@@ -4055,7 +4083,7 @@ fn canStartPatAtom(tag: Tag) bool {
         // `.float` starts no pattern (language.md §3, `PatAtom`), but it is
         // taken as the start of one so `parsePatAtom` can say so
         // rather than end the `case` in a layout error.
-        .underscore, .lower_ident, .upper_ident, .qualified_upper, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .invalid => true,
+        .underscore, .lower_ident, .upper_ident, .qualified_upper, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .top, .bottom, .invalid => true,
         else => false,
     };
 }
@@ -4190,6 +4218,12 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
         .int => return p.leaf(.pat_int, p.next()),
         .float => return p.floatPattern(),
         .char => return p.leaf(.pat_char, p.next()),
+        // `⊤`, the unit pattern (language.md §12.10).
+        .top => return p.leaf(.pat_unit, p.next()),
+        .bottom => {
+            @branchHint(.cold);
+            return p.bottomOutsideType(.error_pattern);
+        },
         .str_start => {
             const start = p.next();
             var node: ?Index = null;
@@ -4410,7 +4444,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             if (i.alias) |t| try testing.expect(t < token_count);
             try checkIndices(tree, i.exposed);
         },
-        .exposed, .type_var, .type_unit, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
+        .exposed, .type_var, .type_unit, .type_bottom, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
         .annotation => {
             const a = tree.fullAnnotation(n);
             try checkHeader(a.header, token_count, comment_count);
@@ -4509,11 +4543,11 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkIndices(tree, l.params);
             try checkIndex(tree, l.body);
         },
-        .@"if" => {
+        .@"if", .if_then => {
             const i = tree.fullIf(n);
             try checkIndex(tree, i.cond);
             try checkIndex(tree, i.then_expr);
-            try checkIndex(tree, i.else_expr);
+            if (i.else_expr) |e| try checkIndex(tree, e);
         },
         .let, .block => {
             const l = tree.fullLet(n);

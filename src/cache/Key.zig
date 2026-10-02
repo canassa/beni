@@ -347,18 +347,21 @@ pub const OptionBits = struct {
     /// `Lower.Options.platform` for this module's file.
     platform: bool,
     informational: bool,
+    /// `--explain` (frontend.md §11.9): a module's cached warnings differ.
+    explain: bool = false,
     pattern_budget: u32,
 };
 
-/// Room for `core=0;platform=0;informational=0;pattern_budget=` and ten
+/// Room for `core=0;platform=0;informational=0;explain=0;pattern_budget=` and ten
 /// digits, with slack.
 pub const options_buffer_len = 80;
 
 pub fn writeOptions(buffer: *[options_buffer_len]u8, bits: OptionBits) []const u8 {
-    return std.fmt.bufPrint(buffer, "core={d};platform={d};informational={d};pattern_budget={d}", .{
+    return std.fmt.bufPrint(buffer, "core={d};platform={d};informational={d};explain={d};pattern_budget={d}", .{
         @intFromBool(bits.core),
         @intFromBool(bits.platform),
         @intFromBool(bits.informational),
+        @intFromBool(bits.explain),
         bits.pattern_budget,
     }) catch unreachable; // `options_buffer_len` is the bound, asserted below
 }
@@ -435,6 +438,7 @@ pub const Asset = struct { path: []const u8, bytes: []const u8 };
 pub const Options = struct {
     build_id: [16]u8,
     informational: bool,
+    explain: bool = false,
     pattern_budget: u32,
     /// Per FILE index: `Lower.Options`' two bits as that file's lowering
     /// actually ran with them.
@@ -534,6 +538,7 @@ fn ownTermsOf(
         .core = file.int() < options.lower_core.len and options.lower_core[file.int()],
         .platform = file.int() < options.lower_platform.len and options.lower_platform[file.int()],
         .informational = options.informational,
+        .explain = options.explain,
         .pattern_budget = options.pattern_budget,
     });
     // The markup term (`frontend.md` §9.8): a module that writes markup, and
@@ -677,15 +682,15 @@ fn sampleTerms() Terms {
     };
 }
 
-test "the option string is the four flags and nothing else, and it fits its buffer" {
+test "the option string is the five flags and nothing else, and it fits its buffer" {
     var buffer: [options_buffer_len]u8 = undefined;
     try testing.expectEqualStrings(
-        "core=0;platform=0;informational=1;pattern_budget=1000000",
+        "core=0;platform=0;informational=1;explain=0;pattern_budget=1000000",
         writeOptions(&buffer, .{ .core = false, .platform = false, .informational = true, .pattern_budget = 1_000_000 }),
     );
     try testing.expectEqualStrings(
-        "core=1;platform=1;informational=0;pattern_budget=4294967295",
-        writeOptions(&buffer, .{ .core = true, .platform = true, .informational = false, .pattern_budget = std.math.maxInt(u32) }),
+        "core=1;platform=1;informational=0;explain=1;pattern_budget=4294967295",
+        writeOptions(&buffer, .{ .core = true, .platform = true, .informational = false, .explain = true, .pattern_budget = std.math.maxInt(u32) }),
     );
 }
 

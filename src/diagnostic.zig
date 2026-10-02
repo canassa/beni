@@ -383,6 +383,16 @@ pub const Code = enum {
     /// declaration has no requirement on, or a declaration that takes an
     /// identity used as evidence. The checker's, at the site.
     type_identity_unknown,
+    /// Appended on 2026-10-02 with `⊤` and `⊥` (language.md §12.10): `()`
+    /// in a type, an expression or a pattern (the parser's, from the
+    /// enforce step); `Never` naming `Basics`' empty type (lowering's, from
+    /// the enforce step); the `then` branch of an `if` without `else` whose
+    /// type is not `⊤` (the checker's); and a `_ =` in front of a `⊤`, a
+    /// `warning` (the checker's, checker-v2.md §34).
+    unit_spelling_removed,
+    never_spelling_removed,
+    if_without_else_not_unit,
+    unit_discarded,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -552,6 +562,10 @@ pub fn title(code: Code) []const u8 {
         .core_contract_violation => "CORE CONTRACT VIOLATION",
         .invalid_js_object => "INVALID OBJECT FIELDS",
         .type_identity_unknown => "UNKNOWN TYPE IDENTITY",
+        .unit_spelling_removed => "REMOVED UNIT SPELLING",
+        .never_spelling_removed => "REMOVED NEVER SPELLING",
+        .if_without_else_not_unit => "MISSING ELSE",
+        .unit_discarded => "UNIT DISCARDED",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

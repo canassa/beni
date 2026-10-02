@@ -1,0 +1,99 @@
+(module
+  (annotation statement
+    (type_fn
+      (type_con Bool)
+      (type_unit)))
+  (definition statement
+    (pat_var c)
+    (block
+      (stmt
+        (if_then
+          (ident c)
+          (apply
+            (ident log)
+            (string
+              (chunk "yes")))))
+      (apply
+        (ident log)
+        (string
+          (chunk "done")))))
+  (annotation lastLine
+    (type_fn
+      (type_con Bool)
+      (type_unit)))
+  (definition lastLine
+    (pat_var c)
+    (block
+      (stmt
+        (apply
+          (ident log)
+          (string
+            (chunk "start"))))
+      (if_then
+        (ident c)
+        (apply
+          (ident log)
+          (string
+            (chunk "yes"))))))
+  (annotation chain
+    (type_fn
+      (type_con Int)
+      (type_unit)))
+  (definition chain
+    (pat_var n)
+    (if
+      (gt
+        (ident n)
+        (int 1))
+      (apply
+        (ident log)
+        (string
+          (chunk "big")))
+      (if_then
+        (gt
+          (ident n)
+          (int 0))
+        (apply
+          (ident log)
+          (string
+            (chunk "small"))))))
+  (annotation outer
+    (type_fn
+      (type_con Bool)
+      (type_con Bool)
+      (type_unit)))
+  (definition outer
+    (pat_var a)
+    (pat_var b)
+    (if
+      (ident a)
+      (if_then
+        (ident b)
+        (apply
+          (ident log)
+          (string
+            (chunk "both"))))
+      (apply
+        (ident log)
+        (string
+          (chunk "not a")))))
+  (annotation inner
+    (type_fn
+      (type_con Bool)
+      (type_con Bool)
+      (type_unit)))
+  (definition inner
+    (pat_var a)
+    (pat_var b)
+    (if_then
+      (ident a)
+      (if
+        (ident b)
+        (apply
+          (ident log)
+          (string
+            (chunk "b")))
+        (apply
+          (ident log)
+          (string
+            (chunk "not b")))))))

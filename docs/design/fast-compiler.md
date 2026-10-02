@@ -876,15 +876,15 @@ at runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different 
 fixture is written.
 
 **The option string is the flags that change what a module produces, and only those**, written as
-`core=<0|1>;platform=<0|1>;informational=<0|1>;pattern_budget=<n>` — `Lower.Options`' two permission
-bits (`src/bir/Lower.zig:149-162`), the informational-warning switch, and the usefulness budget,
+`core=<0|1>;platform=<0|1>;informational=<0|1>;explain=<0|1>;pattern_budget=<n>` — `Lower.Options`' two permission
+bits (`src/bir/Lower.zig:149-162`), the informational-warning switch, `--explain` (*amended 2026-10-02*: it gates `unit_discarded`, `language.md` §12.10), and the usefulness budget,
 whose exhaustion is an error of that module (`checker.md` §6.6). Everything else on `Cli.Common`,
 `Cli.Check` and `Cli.Build` (`src/Cli.zig:77-162`) is **out**, each for a reason: `--jobs` because
 output is identical for every `n` and keying on it would hide the bug that rule forbids; `--root`
 and `--core-root` because they reach the key through the module name and through `core_epoch`
 respectively, and keying on the string would make `src` and `./src` miss; `--platform` because what
 it changes is what an import resolves to, which the import terms already carry, and an unresolvable
-one is an error and errors are not cached; `--diagnostics`, `--self-profile`, `--explain`,
+one is an error and errors are not cached; `--diagnostics`, `--self-profile`,
 `--iface-hash`, `--positions` because they select a rendering; `--roundtrip-interfaces` because a
 run with it must produce the same record, and exempting it would excuse it from the acceptance
 matrix; `--out`, `--library`, `--release` because they are the backend's and no emitted byte is

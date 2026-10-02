@@ -1,0 +1,21 @@
+-- `⊤` is one token in three roles — a type, the unit value, the unit
+-- pattern — and `⊥` a type (language.md §12.10): a parameter of each, a
+-- thunk `λ⊤ →`, `⊤` as an argument and in a `case` branch, `⊥` inside a
+-- product and as a type argument, and `(⊤)`, a grouping.
+f : ⊤, ⊥ → ⊤
+f ⊤ v = never v
+
+
+thunk : ⊤ → Int
+thunk = λ⊤ → 1
+
+
+g : Maybe (⊤ × ⊥) → ⊤
+g m = f ⊤ (h (⊤))
+
+
+h : ⊤ → ⊥
+h u =
+    case u of
+        ⊤ →
+            h u

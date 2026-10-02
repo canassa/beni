@@ -1,0 +1,9 @@
+-- The lookalikes of `⊤` and `⊥` (language.md §12.10): `⟙`, `⫟` and `⊺`
+-- are read as `⊤`, `⟘` and `⫠` as `⊥`, each `invalid_character` with
+-- the symbol named, and the parse goes on as that symbol.
+f : ⟙, ⟘ → ⫟
+f u v = ⊺
+
+
+g : ⫠ → ⊤
+g v = never v

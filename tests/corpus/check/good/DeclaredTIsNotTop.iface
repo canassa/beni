@@ -1,0 +1,5 @@
+module DeclaredTIsNotTop
+  type T
+    T
+  value t : T
+  value unit : ()

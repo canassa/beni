@@ -1,0 +1,38 @@
+-- An `if` may leave out its `else` (language.md §12.10): as a statement
+-- line, as a block's last line, written on one line, and as the `else`
+-- of an `else if`. Which `if` an `else` belongs to: layout first — in
+-- `outer`, the `else` at the outer `if`'s column is the outer one's, the
+-- inner `if` being inside the block it closes — and on one line the
+-- nearest, so `inner`'s `else` is the second `if`'s.
+statement : Bool → ⊤
+statement c =
+    if c then
+        log "yes"
+    log "done"
+
+
+lastLine : Bool → ⊤
+lastLine c =
+    log "start"
+    if c then log "yes"
+
+
+chain : Int → ⊤
+chain n =
+    if n > 1 then
+        log "big"
+    else if n > 0 then
+        log "small"
+
+
+outer : Bool, Bool → ⊤
+outer a b =
+    if a then
+        if b then
+            log "both"
+    else
+        log "not a"
+
+
+inner : Bool, Bool → ⊤
+inner a b = if a then if b then log "b" else log "not b"

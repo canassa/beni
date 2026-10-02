@@ -480,6 +480,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .roundtrip_interfaces = d.options.roundtrip_interfaces,
         .roundtrip_dispatch = d.options.roundtrip_dispatch,
         .informational = d.options.informational,
+        .explain = d.options.explain,
         .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
         .dependency_errors = dependency_errors,
         .retained = retained,

@@ -245,8 +245,12 @@ pub const Node = struct {
         /// a `SubRange` of parameter type nodes (one or more), `rhs` the
         /// result type.
         type_fn,
-        /// `()`. `main_token` is `(`.
+        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `main_token` is the `⊤`, or the `(`.
         type_unit,
+        /// `⊥`, core's empty type (language.md §12.10). `main_token` is
+        /// the `⊥`.
+        type_bottom,
         /// `( Type )`, grouping. `main_token` is `(`; `lhs` is the inner
         /// type.
         type_paren,
@@ -307,7 +311,8 @@ pub const Node = struct {
         /// `(+)` — an operator as a function. `main_token` is the operator
         /// token (the parentheses are the neighbouring tokens).
         op_fn,
-        /// `()`. `main_token` is `(`.
+        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `main_token` is the `⊤`, or the `(`.
         unit,
 
         // ---- Expressions: composite ------------------------------------
@@ -399,6 +404,10 @@ pub const Node = struct {
         /// `if c then a else b`. `main_token` is `if`; `lhs` is the
         /// condition; `rhs` is the `ExtraIndex` of an `If`.
         @"if",
+        /// `if c then a`, an `if` without `else` (language.md §12.10).
+        /// `main_token` is `if`; `lhs` is the condition; `rhs` the `then`
+        /// body.
+        if_then,
         /// `let … in e`. `main_token` is `let`; `lhs` is the `ExtraIndex`
         /// of a `SubRange` of binding nodes (`let_def`, `let_annotation`,
         /// `let_pattern`); `rhs` is the body.
@@ -458,7 +467,8 @@ pub const Node = struct {
         /// A string without interpolation. `main_token` is `str_start`; the
         /// tokens up to the matching `str_end` are the content.
         pat_string,
-        /// `()`. `main_token` is `(`.
+        /// `⊤`, or `()` until the enforce step (language.md §12.10).
+        /// `main_token` is the `⊤`, or the `(`.
         pat_unit,
         /// `( p )`, grouping. `main_token` is `(`; `lhs` is the inner
         /// pattern.
@@ -918,7 +928,9 @@ pub const full = struct {
         if_token: TokenIndex,
         cond: Node.Index,
         then_expr: Node.Index,
-        else_expr: Node.Index,
+        /// Null for an `if_then`, an `if` without `else` (language.md
+        /// §12.10).
+        else_expr: ?Node.Index,
     };
 
     pub const Let = struct {
@@ -1336,9 +1348,17 @@ pub fn fullLambda(tree: *const Ast, node: Node.Index) full.Lambda {
     };
 }
 
+/// An `if` or an `if_then` (language.md §12.10), whose `else_expr` is
+/// null.
 pub fn fullIf(tree: *const Ast, node: Node.Index) full.If {
-    std.debug.assert(tree.nodeTag(node) == .@"if");
     const data = tree.nodeData(node);
+    if (tree.nodeTag(node) == .if_then) return .{
+        .if_token = tree.nodeMainToken(node),
+        .cond = @enumFromInt(data.lhs),
+        .then_expr = @enumFromInt(data.rhs),
+        .else_expr = null,
+    };
+    std.debug.assert(tree.nodeTag(node) == .@"if");
     const d = tree.extraData(@enumFromInt(data.rhs), If);
     return .{
         .if_token = tree.nodeMainToken(node),

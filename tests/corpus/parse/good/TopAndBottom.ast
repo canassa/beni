@@ -1,0 +1,51 @@
+(module
+  (annotation f
+    (type_fn
+      (type_unit)
+      (type_bottom)
+      (type_unit)))
+  (definition f
+    (pat_unit)
+    (pat_var v)
+    (apply
+      (ident never)
+      (ident v)))
+  (annotation thunk
+    (type_fn
+      (type_unit)
+      (type_con Int)))
+  (definition thunk
+    (lambda
+      (pat_unit)
+      (int 1)))
+  (annotation g
+    (type_fn
+      (type_con Maybe
+        (type_paren
+          (type_tuple
+            (type_unit)
+            (type_bottom))))
+      (type_unit)))
+  (definition g
+    (pat_var m)
+    (apply
+      (ident f)
+      (unit)
+      (paren
+        (apply
+          (ident h)
+          (paren
+            (unit))))))
+  (annotation h
+    (type_fn
+      (type_unit)
+      (type_bottom)))
+  (definition h
+    (pat_var u)
+    (case
+      (ident u)
+      (branch
+        (pat_unit)
+        (apply
+          (ident h)
+          (ident u))))))

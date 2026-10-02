@@ -1,0 +1,10 @@
+-- An `if` without `else` is `⊤` when its condition is false, so its `then`
+-- branch must be `⊤` (language.md §12.10, checker-v2.md §34):
+-- `if_without_else_not_unit` at the branch — a `String` (6:21) and a
+-- number (10:21) — and nothing else, the `if` against its context being
+-- silent once the branch has failed.
+label c = if c then "yes"
+
+
+count : Bool → Int
+count c = if c then 1

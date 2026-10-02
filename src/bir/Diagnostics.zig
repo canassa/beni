@@ -206,18 +206,24 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\It is not a local binding, a top-level value of this module, a name from an
             \\`exposing` list, or a prelude value. Check the spelling, or add it to an import.
         , .{text}),
-        .unbound_constructor => try w.print(
-            \\I cannot find a `{s}` constructor.
-            \\
-            \\It is not declared by a `type` in this module, listed in an `exposing` list, or
-            \\part of the prelude. Check the spelling, or expose it from an import.
-        , .{text}),
-        .unbound_type => try w.print(
-            \\I cannot find a `{s}` type.
-            \\
-            \\It is not declared in this module, listed in an `exposing` list, or part of the
-            \\prelude. Check the spelling, or expose it from an import.
-        , .{text}),
+        .unbound_constructor => {
+            try w.print(
+                \\I cannot find a `{s}` constructor.
+                \\
+                \\It is not declared by a `type` in this module, listed in an `exposing` list, or
+                \\part of the prelude. Check the spelling, or expose it from an import.
+            , .{text});
+            try writeTopHint(w, text);
+        },
+        .unbound_type => {
+            try w.print(
+                \\I cannot find a `{s}` type.
+                \\
+                \\It is not declared in this module, listed in an `exposing` list, or part of the
+                \\prelude. Check the spelling, or expose it from an import.
+            , .{text});
+            try writeTopHint(w, text);
+        },
         .unknown_module_alias => if (item.markup == .component) {
             // A component's tag (language.md §11.8): `Card` and `Ui.Card`
             // name a module, `Card.header` a module then a value.
@@ -516,6 +522,18 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
 /// with the body's parameter and what it returns, `Nothing` with the
 /// fallback, or an empty fragment when there is none. An example stands in
 /// when the `when` or the body is not one the message can take apart.
+/// An unbound `T` is the one name a reader may have meant as `⊤`, the unit
+/// type and value (language.md §12.10, *`T`, the lookalike*): one more
+/// sentence, never a different reading.
+fn writeTopHint(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    if (!std.mem.eql(u8, text, "T")) return;
+    try w.writeAll(
+        \\
+        \\
+        \\Did you mean `⊤` (U+22A4 DOWN TACK), the unit type and its value?
+    );
+}
+
 fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Writer.Error!void {
     const blank = " \t\r\n";
     const when = std.mem.trim(u8, source[item.when_start..item.when_end], blank);

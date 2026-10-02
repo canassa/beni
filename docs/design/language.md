@@ -2929,9 +2929,9 @@ diagnostic rather than `unbound_type`.
 **The migration**, `beni fmt --migrate-top` (`frontend.md` §11.9), is an edit in §12.9's family —
 it keeps the file's layout and reaches its fixed point in one run: `()` → `⊤` in every type,
 expression and pattern; `Never` → `⊥` where the file neither declares nor imports a `Never` of its
-own; `else ⊤` dropped from an `if` whose `else` branch is exactly the unit atom and which is not
-the `then` branch of an `if` with an `else` (dropping it there would hand the outer `else` to the
-inner `if`); and, given the warnings of a `check --explain --diagnostics=json` run as
+own; `else ⊤` dropped from an `if` whose `else` branch is exactly the unit atom, unless an `else`
+follows it (the `if` then ends the `then` branch of an outer `if`, and dropping it would hand the
+outer `else` to the inner one); and, given the warnings of a `check --explain --diagnostics=json` run as
 `--discards=<file>`, `_ = ` deleted in front of each `unit_discarded` line. Dropping `else ⊤` is
 always type-safe: the two branches were unified, so the `then` branch is already `⊤`.
 

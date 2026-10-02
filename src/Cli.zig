@@ -39,7 +39,7 @@ pub const usage =
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
-    \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
+    \\  --explain                 also emit unit_discarded, a `_ =` in front of a ⊤ (language.md §12.10)
     \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
     \\check, build and serve options:
@@ -117,11 +117,10 @@ pub const Common = struct {
     /// `--explain`: emit the informational diagnostics that are otherwise
     /// suppressed (static-dispatch-spike.md §10 preamble, A.10).
     ///
-    /// **It governs nothing today** (A.83). The one diagnostic it gated,
-    /// `ambiguous_method_receiver`, has been emitted by default since
-    /// 2026-09-18. The flag stays parsed and accepted so no invocation that
-    /// passes it starts exiting `2`, and it is where the next informational
-    /// diagnostic goes.
+    /// The one diagnostic it first gated, `ambiguous_method_receiver`, has
+    /// been emitted by default since 2026-09-18 (A.83). Since 2026-10-02 it
+    /// gates `unit_discarded` (language.md §12.10), until the enforce step
+    /// of `⊤` emits that by default; the `⊤` migration reads it.
     explain: bool = false,
     /// `--roundtrip-interfaces` — **hidden**, and hidden on purpose
     /// (`fast-compiler.md` §8's *The interface hash*).
@@ -378,6 +377,13 @@ pub const Fmt = struct {
     /// symbol and every comma tuple type with `×` (`Format.migrateUnicode`)
     /// instead of formatting.
     migrate_unicode: bool = false,
+    /// `--migrate-top`, hidden: write `()` as `⊤`, the prelude's `Never`
+    /// as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
+    /// `--discards` names (`Format.migrateTop`, frontend.md §11.9).
+    migrate_top: bool = false,
+    /// `--discards=<file>`, hidden, with `--migrate-top`: the JSON array
+    /// of a `check --explain --diagnostics=json` run.
+    discards: ?[]const u8 = null,
     paths: []const []const u8,
 };
 
@@ -929,9 +935,18 @@ const FmtSpecific = struct {
     migrate_let: bool = false,
     migrate_trailing_lambda: bool = false,
     migrate_unicode: bool = false,
+    migrate_top: bool = false,
+    discards: ?[]const u8 = null,
 
     fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--migrate-unicode")) {
+        if (std.mem.eql(u8, name, "--migrate-top")) {
+            if (value != null) return noValue(name);
+            self.migrate_top = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--discards")) {
+            self.discards = value orelse return needsValue(name, "<file>");
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--migrate-unicode")) {
             if (value != null) return noValue(name);
             self.migrate_unicode = true;
             self.consumed = true;
@@ -988,10 +1003,15 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         @intFromBool(s.specific.migrate_names) +
         @intFromBool(s.specific.migrate_let) +
         @intFromBool(s.specific.migrate_trailing_lambda) +
-        @intFromBool(s.specific.migrate_unicode);
+        @intFromBool(s.specific.migrate_unicode) +
+        @intFromBool(s.specific.migrate_top);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
+    }
+    if (s.specific.discards != null and !s.specific.migrate_top) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: fmt --discards needs --migrate-top", .{}) };
     }
     return .{ .command = .{ .fmt = .{
         .common = s.common,
@@ -1003,6 +1023,8 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .migrate_let = s.specific.migrate_let,
         .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
         .migrate_unicode = s.specific.migrate_unicode,
+        .migrate_top = s.specific.migrate_top,
+        .discards = s.specific.discards,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
 }

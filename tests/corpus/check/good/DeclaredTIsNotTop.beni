@@ -1,0 +1,12 @@
+-- A `T` the program declares is that declaration, silently, as any name
+-- is (language.md §12.10): it is never read as `⊤`, and no hint is given.
+pub type T
+    = T
+
+
+pub t : T
+t = T
+
+
+pub unit : ⊤
+unit = ⊤

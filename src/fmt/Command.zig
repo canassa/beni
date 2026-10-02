@@ -39,11 +39,23 @@ const Io = std.Io;
 const Cli = @import("../Cli.zig");
 const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
+const fs_read = @import("../fs_read.zig");
+const diagnostic = @import("diagnostic");
 
 /// Run the command to completion and return the process exit code.
 /// `options` is the session configuration `main` derived from the common
 /// flags; `fmt` carries the paths and the mode.
-pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options: Session.Options, fmt: Cli.Fmt) u8 {
+pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, fmt: Cli.Fmt) u8 {
+    var options = options_in;
+    // `--discards=<file>` (frontend.md §11.9): the `unit_discarded` lines of
+    // a `check --explain --diagnostics=json` run, read before any file is.
+    var discards_arena: std.heap.ArenaAllocator = .init(gpa);
+    defer discards_arena.deinit();
+    if (fmt.discards) |path| {
+        options.top_discards = readDiscards(discards_arena.allocator(), io, path) catch |err| {
+            return fail(stderr, "beni: cannot read the discards in '{s}': {t}", .{ path, err });
+        };
+    }
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
     const summary = session.run(fmt.paths, Session.format_phases, stderr) catch |err| switch (err) {
@@ -58,6 +70,23 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     return emitAll(&session, stdout, stderr, fmt, summary) catch |err| switch (err) {
         error.WriteFailed => 2,
     };
+}
+
+/// The `unit_discarded` diagnostics of the JSON array at `path`, every other
+/// code skipped.
+fn readDiscards(arena: Allocator, io: Io, path: []const u8) ![]const Session.TopDiscard {
+    const bytes = try fs_read.readFileAlloc(io, Io.Dir.cwd(), path, arena, .limited(1 << 28));
+    const Row = struct {
+        code: []const u8,
+        span: struct { file: []const u8, start: diagnostic.Position },
+    };
+    const rows = try std.json.parseFromSliceLeaky([]const Row, arena, bytes, .{ .ignore_unknown_fields = true });
+    var out: std.ArrayList(Session.TopDiscard) = .empty;
+    for (rows) |row| {
+        if (!std.mem.eql(u8, row.code, "unit_discarded")) continue;
+        try out.append(arena, .{ .file = row.span.file, .at = .{ .line = row.span.start.line, .col = row.span.start.col } });
+    }
+    return out.items;
 }
 
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {

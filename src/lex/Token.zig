@@ -160,6 +160,12 @@ pub const Tag = enum(u8) {
     /// `×` (U+00D7), which joins the element types of a tuple type
     /// (language.md §12.8). A type token only.
     times,
+    /// `⊤` (U+22A4 DOWN TACK), the unit type and its value — a type, an
+    /// expression and a pattern atom, as `()` is (language.md §12.10).
+    top,
+    /// `⊥` (U+22A5 UP TACK), the empty type: core's `Basics.Never`, in
+    /// type position only (language.md §12.10).
+    bottom,
     /// `\`, the old spelling of a lambda's head (language.md §12.1).
     backslash,
     /// `λ` (U+03BB, the two bytes `CE BB`), which begins a lambda
@@ -342,6 +348,8 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .arrow_left => "←",
         .ascii_arrow_left => "<-",
         .times => "×",
+        .top => "⊤",
+        .bottom => "⊥",
         .backslash => "\\",
         .lambda => "λ",
         .pipe => "|",
@@ -446,6 +454,11 @@ pub const lookalikes = [_]Lookalike{
     .{ .bytes = "‥", .code_point = 0x2025, .name = "TWO DOT LEADER", .tag = .ellipsis },
     .{ .bytes = "⨯", .code_point = 0x2A2F, .name = "VECTOR OR CROSS PRODUCT", .tag = .times },
     .{ .bytes = "✕", .code_point = 0x2715, .name = "MULTIPLICATION X", .tag = .times },
+    .{ .bytes = "⟙", .code_point = 0x27D9, .name = "LARGE DOWN TACK", .tag = .top },
+    .{ .bytes = "⫟", .code_point = 0x2ADF, .name = "SHORT DOWN TACK", .tag = .top },
+    .{ .bytes = "⊺", .code_point = 0x22BA, .name = "INTERCALATE", .tag = .top },
+    .{ .bytes = "⟘", .code_point = 0x27D8, .name = "LARGE UP TACK", .tag = .bottom },
+    .{ .bytes = "⫠", .code_point = 0x2AE0, .name = "SHORT UP TACK", .tag = .bottom },
 };
 
 /// The lookalike whose bytes begin at `src[i]`, or null. `!=` is not
@@ -470,6 +483,8 @@ pub fn symbolName(tag: Tag) []const u8 {
         .op_pipe_left => "U+25C1 WHITE LEFT-POINTING TRIANGLE",
         .ellipsis => "U+2026 HORIZONTAL ELLIPSIS",
         .times => "U+00D7 MULTIPLICATION SIGN",
+        .top => "U+22A4 DOWN TACK",
+        .bottom => "U+22A5 UP TACK",
         .op_minus => "the ASCII hyphen-minus",
         else => @tagName(tag),
     };

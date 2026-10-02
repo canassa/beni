@@ -53,6 +53,14 @@ markup: ?*Markup = null,
 /// inference solves after P5 (transparent-effects-proposal.md §14,
 /// checker-v2.md §26); null in a unit test that builds no module.
 effects: ?*Effects = null,
+/// Where the generator records each `_ = e` — a `let_pattern` whose
+/// pattern is `_` — and the variable of its value, for `unit_discarded`
+/// (checker-v2.md §34); null when that warning is off.
+discards: ?*std.ArrayList(Discard) = null,
+
+/// One `_ = e`: the `let_pattern` and the variable its value was checked
+/// against.
+pub const Discard = struct { inst: Bir.Inst.Index, v: Var };
 
 const Markup = @import("Markup.zig");
 const Effects = @import("Effects.zig");

@@ -80,6 +80,40 @@ pub fn statementNotUnit(r: *Reporter, region: Bir.Inst.Index, category: Category
     try r.emit(.statement_not_unit, region, &out);
 }
 
+/// A mismatch against `⊤` under `statement` or `if_without_else`, which
+/// `Reporter.mismatch` hands here; `kindNotSatisfied` calls `ifWithoutElse`
+/// itself, for a number.
+pub fn unitMismatch(r: *Reporter, region: Bir.Inst.Index, category: Category, actual: Var) Error!void {
+    if (category.tag == .if_without_else) return ifWithoutElse(r, region, actual);
+    return statementNotUnit(r, region, category, actual);
+}
+
+/// `if_without_else_not_unit` (checker-v2.md §34), at the `then` branch
+/// `region` of an `if` without `else`: an `if` with no `else` is `⊤` when
+/// its condition is false, so its `then` branch must be `⊤` too.
+pub fn ifWithoutElse(r: *Reporter, region: Bir.Inst.Index, actual: Var) Error!void {
+    // A branch that failed inside has said so already (§15.2).
+    if (try holdsError(r, actual)) return;
+    var out = r.writer();
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    var shown: std.Io.Writer.Allocating = .init(r.gpa);
+    defer shown.deinit();
+    Render.writeVar(&shown.writer, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+    const type_text = shown.written();
+    w.print(
+        \\This `if` has no `else`, so it is `⊤` when its condition is false — and then its
+        \\`then` branch must be `⊤` too, but it is {s} `{s}`.
+        \\
+        \\Give the `if` the value it has when the condition is false:
+        \\
+        \\    if … then … else …
+    , .{ Diagnostics.article(type_text), type_text }) catch return error.OutOfMemory;
+    try r.emit(.if_without_else_not_unit, region, &out);
+}
+
 /// Whether an error variable is anywhere inside `v`'s type, on a stack
 /// that grows (`Walk`'s rule).
 fn holdsError(r: *Reporter, v: Var) Error!bool {

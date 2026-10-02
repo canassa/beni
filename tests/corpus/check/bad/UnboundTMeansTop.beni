@@ -1,0 +1,6 @@
+-- A capital `T` is the one name a reader may have meant as `⊤` (language.md
+-- §12.10, *`T`, the lookalike*): unbound, as a type (5:5) and as a value
+-- (6:7), it keeps its code and the message asks whether `⊤` was meant.
+-- `S`, unbound too, gets no such sentence.
+f : T → S
+f x = T

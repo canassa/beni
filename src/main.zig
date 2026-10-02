@@ -87,6 +87,7 @@ pub fn main(init: std.process.Init) u8 {
             options.migrate_cons = fmt.migrate_cons;
             options.migrate_lambda = fmt.migrate_lambda;
             options.migrate_unicode = fmt.migrate_unicode;
+            options.migrate_top = fmt.migrate_top;
             options.migrate_names = fmt.migrate_names;
             options.migrate_let = fmt.migrate_let;
             return beni.fmt.Command.run(gpa, io, stdout, stderr, options, fmt);

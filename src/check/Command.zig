@@ -46,6 +46,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // informational warnings of static-dispatch-spike.md §10 (A.83); a
     // `dump` or a `fmt` of the same file stays silent about them.
     options.informational = true;
+    options.explain = check.common.explain;
     options.platform = check.platform;
     options.cache_build_id = check.cache.build_id;
     options.frontend_keys = check.cache.frontend_keys;

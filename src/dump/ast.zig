@@ -205,7 +205,7 @@ const Dumper = struct {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(main)});
             },
-            .unit, .type_unit, .pat_unit, .pat_wild, .placeholder => try d.openTag(tag, main),
+            .unit, .type_unit, .type_bottom, .pat_unit, .pat_wild, .placeholder => try d.openTag(tag, main),
             .annotation => {
                 const a = tree.fullAnnotation(n);
                 try d.openTag(tag, main);
@@ -356,12 +356,12 @@ const Dumper = struct {
                 try d.children(l.params, inner);
                 try d.child(l.body, inner);
             },
-            .@"if" => {
+            .@"if", .if_then => {
                 const i = tree.fullIf(n);
                 try d.openTag(tag, main);
                 try d.child(i.cond, inner);
                 try d.child(i.then_expr, inner);
-                try d.child(i.else_expr, inner);
+                if (i.else_expr) |e| try d.child(e, inner);
             },
             .let, .block => {
                 const l = tree.fullLet(n);

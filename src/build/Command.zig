@@ -48,6 +48,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // is why the run's own wave is held back: the emit phase below can add
     // to it, and the two together are ONE array on stderr.
     options.informational = true;
+    options.explain = build.common.explain;
     options.defer_render = true;
 
     // Opened here for the reason `check/Command.zig` gives: the one failure

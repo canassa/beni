@@ -99,6 +99,8 @@ pub const Input = struct {
     roundtrip_dispatch: bool = false,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
+    /// `unit_discarded` is emitted (checker-v2.md §34).
+    explain: bool = false,
     /// This module's slot of `Check.modules`, under `keep_stores`.
     keep: ?*Check.Module = null,
     /// An error reached a dependency, transitively (`Driver.tainted`): an
@@ -171,6 +173,9 @@ pub fn check(in: Input) Error!Check.Counters {
     var effects_kept = false;
     defer if (!effects_kept) effects.deinit();
     cx.effects = &effects;
+    var discards: std.ArrayList(Context.Discard) = .empty;
+    defer discards.deinit(scratch);
+    if (in.explain and in.informational and !quiet and in.graph.modulePackage(in.module) == .app) cx.discards = &discards;
     var report: Report = undefined;
     try report.init(&cx, in.diagnostics, quiet, decl_scheme, local_type);
     defer report.deinit();
@@ -306,6 +311,11 @@ pub fn check(in: Input) Error!Check.Counters {
         try CallStyle.suspiciousOrder(report.staging(), &report);
         try report.flush();
     }
+    // `unit_discarded` (checker-v2.md §34), the same way: a `_ =` in front
+    // of a `⊤`, under `--explain` until the enforce step.
+    if (cx.discards) |list| if (!quiet and report.errors == 0) {
+        try unitDiscarded(&report, store, list.items);
+    };
     if (in.profile) |p| p.end(in.tid, effects_token.?, .effects, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
@@ -531,6 +541,34 @@ fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
         };
         report.at(null);
         try report.emitText(.invalid_js_object, fault.at, null, text);
+    }
+}
+
+/// `unit_discarded` (checker-v2.md §34): every `_ = e` the generator
+/// recorded whose value is, after solving, `⊤` — through aliases — once per
+/// `let_pattern` (a quiet re-generation records one again). A `warning`, at
+/// the `_ =`, which `Session` spans.
+fn unitDiscarded(report: *Report, store: *TypeStore, discards: []Context.Discard) Error!void {
+    std.mem.sort(Context.Discard, discards, {}, struct {
+        fn lessThan(_: void, a: Context.Discard, b: Context.Discard) bool {
+            return a.inst.int() < b.inst.int();
+        }
+    }.lessThan);
+    var previous: ?Bir.Inst.Index = null;
+    for (discards) |d| {
+        if (previous == d.inst) continue;
+        previous = d.inst;
+        var v = store.find(d.v);
+        var depth: u32 = 0;
+        const unit = while (depth < 64) : (depth += 1) switch (store.content(v)) {
+            .alias => |a| v = store.find(a.actual),
+            .structure => |s| break s == .unit,
+            else => break false,
+        } else false;
+        if (!unit) continue;
+        report.at(null);
+        const message = try report.gpa.dupe(u8, "This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it.");
+        try report.emit(.{ .code = .unit_discarded, .module = report.module, .region = d.inst, .severity = .warning, .message = message });
     }
 }
 

@@ -54,6 +54,9 @@ pub const Category = struct {
         /// A block's statement against `()` (checker-v2.md §29.1); `owner`
         /// is the statement's expression.
         statement,
+        /// The `then` branch of an `if` without `else` against `⊤`
+        /// (checker-v2.md §34); `owner` is the branch.
+        if_without_else,
         schema_conversion,
         /// A requirement that came from a `where` clause, checked
         /// against the method type it resolved to (checker-v2.md §9.2).

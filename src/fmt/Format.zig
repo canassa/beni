@@ -894,6 +894,220 @@ pub fn onlyUnicodeRemoved(tree: *const Ast) bool {
     return true;
 }
 
+/// Why `migrateTop` left a file alone, at `start` in the source.
+pub const TopProblem = struct {
+    kind: Kind,
+    /// The re-parse's first diagnostic, for `reparse`.
+    code: ?diagnostic.Code = null,
+    start: u32,
+
+    pub const Kind = enum {
+        /// The rewrite does not parse.
+        reparse,
+        /// A `()` holds a comment between its parentheses.
+        unit_comment,
+        /// A `unit_discarded` line names no `_ =` of this file.
+        discard_unmatched,
+        /// A comment between a `_ =` and its expression.
+        discard_comment,
+    };
+};
+
+/// Whether every syntax error of `tree` is a `()` (`--migrate-top`'s input).
+pub fn onlyUnitRemoved(tree: *const Ast) bool {
+    for (tree.errors) |e| {
+        if (e.code != .unit_spelling_removed) return false;
+    }
+    return true;
+}
+
+/// A `unit_discarded` warning's start, 1-based, its column in code points
+/// (frontend.md §11.9, `--discards`).
+pub const DiscardAt = struct { line: u32, col: u32 };
+
+/// `beni fmt --migrate-top` (frontend.md §11.9): `source` with every `()`
+/// written `⊤`, every `Never` that is the prelude's written `⊥`, the
+/// `else ⊤` of an `if` dropped, and the `_ = ` of each `discards` line
+/// deleted — an edit, like `migrateUnicode`, so a file keeps its layout.
+///
+/// Only tokens and the nodes they make are rewritten, so a string, a
+/// character, a comment and markup text keep their bytes. `Never` is left
+/// when the file declares a type of that name or imports one by name from
+/// a module other than `Basics`. An `else ⊤` is kept when an `else`
+/// follows it, which dropping it would hand to this `if`, or when a comment
+/// lies in what it would delete. The output is parsed again; a file whose
+/// rewrite does not parse is written unchanged and the problem returned.
+/// One run reaches the fixed point.
+pub fn migrateTop(
+    scratch: Allocator,
+    tree: *const Ast,
+    tokens: *const Token.TokenList,
+    comments: []const Token.Comment,
+    source: [:0]const u8,
+    line_starts: []const u32,
+    discards: []const DiscardAt,
+    w: *Io.Writer,
+) Error!?TopProblem {
+    for (tree.errors) |e| if (e.code != .unit_spelling_removed) return error.SyntaxErrors;
+    const n = tree.nodes.len;
+    var m: Measurer = .{
+        .tree = tree,
+        .tags = tokens.items(.tag),
+        .starts = tokens.items(.start),
+        .tok_lines = tokens.items(.line),
+        .comments = comments,
+        .source = source,
+        .widths = try scratch.alloc(u32, n),
+        .firsts = try scratch.alloc(u32, n),
+        .lasts = try scratch.alloc(u32, n),
+        .scratch = scratch,
+    };
+    defer m.stack.deinit(scratch);
+    try m.measureRoot();
+    const tags = m.tags;
+    const starts = m.starts;
+    const end = struct {
+        fn of(mm: *const Measurer, t: TokenIndex) u32 {
+            return Tokenizer.tokenEnd(mm.source, mm.tags[t], mm.starts[t]);
+        }
+    }.of;
+
+    const Edit = struct { start: u32, end: u32, text: []const u8 };
+    var edits: std.ArrayList(Edit) = .empty;
+    const ElseUnit = struct { last_then: TokenIndex, last_unit: TokenIndex };
+    var elses: std.ArrayList(ElseUnit) = .empty;
+    const never_kept = topNeverShadowed(tree, &m);
+    const matched = try scratch.alloc(bool, discards.len);
+    @memset(matched, false);
+
+    for (0..n) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const main = tree.nodeMainToken(node);
+        switch (tree.nodeTag(node)) {
+            .unit, .type_unit, .pat_unit => if (tags[main] == .l_paren) {
+                if (m.commentIn(main, main + 1)) {
+                    try w.writeAll(source);
+                    return .{ .kind = .unit_comment, .start = starts[main] };
+                }
+                try edits.append(scratch, .{ .start = starts[main], .end = end(&m, main + 1), .text = "⊤" });
+            },
+            .type_con => if (!never_kept and tree.children(node).len == 0) {
+                const name = m.tokenText(main);
+                if (std.mem.eql(u8, name, "Never") or std.mem.eql(u8, name, "Basics.Never")) {
+                    try edits.append(scratch, .{ .start = starts[main], .end = end(&m, main), .text = "⊥" });
+                }
+            },
+            .@"if" => {
+                const i_full = tree.fullIf(node);
+                if (tree.nodeTag(i_full.else_expr.?) != .unit) continue;
+                const last_then = m.last(i_full.then_expr);
+                const last_unit = m.last(i_full.else_expr.?);
+                if (m.commentIn(last_then, last_unit)) continue;
+                try elses.append(scratch, .{ .last_then = last_then, .last_unit = last_unit });
+            },
+            .let_pattern => {
+                const lp = tree.fullLetPattern(node);
+                if (tree.nodeTag(lp.pattern) != .pat_wild) continue;
+                const wild = tree.nodeMainToken(lp.pattern);
+                const at = diagnostic.position(line_starts, source, starts[wild]);
+                const which = for (discards, 0..) |d, k| {
+                    if (d.line == at.line and d.col == at.col) break k;
+                } else continue;
+                matched[which] = true;
+                const first_value = m.first(lp.value);
+                if (m.commentIn(wild, first_value)) {
+                    try w.writeAll(source);
+                    return .{ .kind = .discard_comment, .start = starts[wild] };
+                }
+                try edits.append(scratch, .{ .start = starts[wild], .end = starts[first_value], .text = "" });
+            },
+            else => {},
+        }
+    }
+    // An `else ⊤` an `else` follows is kept: dropping it would hand that
+    // `else` to this `if`. Decided last first, so an `else` that a later
+    // drop removes does not keep an inner one — `if a then if b then ⊤
+    // else ⊤ else ⊤` loses both, and one run is the fixed point.
+    std.mem.sort(ElseUnit, elses.items, {}, struct {
+        fn lessThan(_: void, a: ElseUnit, b: ElseUnit) bool {
+            return a.last_unit > b.last_unit;
+        }
+    }.lessThan);
+    const dropped = try scratch.alloc(bool, tags.len);
+    @memset(dropped, false);
+    for (elses.items) |e| {
+        var next = e.last_unit + 1;
+        while (next < tags.len and dropped[next]) next += 1;
+        if (next < tags.len and tags[next] == .keyword_else) continue;
+        @memset(dropped[e.last_then + 1 .. e.last_unit + 1], true);
+        try edits.append(scratch, .{ .start = end(&m, e.last_then), .end = end(&m, e.last_unit), .text = "" });
+    }
+    for (discards, matched) |d, ok| if (!ok) {
+        try w.writeAll(source);
+        const line = @min(d.line, @as(u32, @intCast(line_starts.len))) -| 1;
+        return .{ .kind = .discard_unmatched, .start = line_starts[line] };
+    };
+    if (edits.items.len == 0) {
+        try w.writeAll(source);
+        return null;
+    }
+    std.mem.sort(Edit, edits.items, {}, struct {
+        fn lessThan(_: void, a: Edit, b: Edit) bool {
+            return a.start < b.start or (a.start == b.start and a.end > b.end);
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    var at: u32 = 0;
+    for (edits.items) |e| {
+        // An edit inside one already applied — the `()` of a dropped
+        // `else ()` — is part of it.
+        if (e.start < at) continue;
+        try out.appendSlice(scratch, source[at..e.start]);
+        try out.appendSlice(scratch, e.text);
+        at = e.end;
+    }
+    try out.appendSlice(scratch, source[at..]);
+    try out.append(scratch, 0);
+    const text = out.items[0 .. out.items.len - 1 :0];
+    if (try reparseProblem(scratch, text)) |found| {
+        try w.writeAll(source);
+        // Where in the source: the last edit that began before it, or the
+        // offset itself when none did.
+        var shift: i64 = 0;
+        var mapped: u32 = found.start;
+        for (edits.items) |e| {
+            const out_start: i64 = @as(i64, e.start) + shift;
+            if (out_start > found.start) break;
+            shift += @as(i64, @intCast(e.text.len)) - (@as(i64, e.end) - @as(i64, e.start));
+            mapped = e.start;
+        }
+        return .{ .kind = .reparse, .code = found.code, .start = @min(mapped, @as(u32, @intCast(source.len))) };
+    }
+    try w.writeAll(text);
+    return null;
+}
+
+/// Whether `Never` in this file may name something other than the prelude's:
+/// the file declares a type, alias or schema of that name, or imports one by
+/// name from a module other than `Basics` (frontend.md §11.9).
+fn topNeverShadowed(tree: *const Ast, m: *const Measurer) bool {
+    for (tree.rootItems()) |item| {
+        switch (tree.nodeTag(item)) {
+            .type_decl, .type_alias, .foreign_type, .schema_decl => if (std.mem.eql(u8, m.tokenText(tree.nodeMainToken(item)), "Never")) return true,
+            .import => {
+                const imp = tree.fullImport(item);
+                const module = if (imp.name) |t| m.tokenText(t) else continue;
+                if (std.mem.eql(u8, module, "Basics")) continue;
+                for (imp.exposed) |e| {
+                    if (std.mem.eql(u8, m.tokenText(tree.nodeMainToken(e)), "Never")) return true;
+                }
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
 /// `migrateUnicode`'s state: the edits, and how to write a range of the
 /// source with them applied.
 const UnicodeRewrite = struct {
@@ -1134,7 +1348,7 @@ fn trimMarkupEnd(line: []const u8) []const u8 {
 /// parentheses (language.md §3) and get elm-format's `op` at line end.
 fn isBlockForm(tag: Node.Tag) bool {
     return switch (tag) {
-        .let, .case, .@"if", .lambda => true,
+        .let, .case, .@"if", .if_then, .lambda => true,
         else => false,
     };
 }
@@ -1565,7 +1779,9 @@ const Measurer = struct {
                     m.tok_lines[m.last(last_param)] != m.tok_lines[m.first(f.result)]) width = no_fit;
                 m.set(n, width, m.first(f.params[0]), m.last(f.result));
             },
-            .type_unit, .unit, .pat_unit => m.set(n, 2, main, main + 1),
+            // `⊤`, or `()` until the enforce step (language.md §12.10).
+            .type_unit, .unit, .pat_unit => if (m.tags[main] == .top) m.set(n, 1, main, main) else m.set(n, 2, main, main + 1),
+            .type_bottom => m.set(n, 1, main, main),
             .placeholder => m.set(n, 1, main, main),
             .type_paren, .paren, .pat_paren => try m.wrapped(n, tree.operand(n)),
             // `sync ` and the parenthesised type (transparent-effects-proposal.md §15.2).
@@ -1668,16 +1884,19 @@ const Measurer = struct {
             // when the author wrote it on one line and each part has a
             // one-line form, else `no_fit`. An `else if` chain is one `if`:
             // its tail is measured the same way and carried by the sum.
-            .@"if" => {
+            // An `if` without `else` (language.md §12.10) is the same
+            // without its `else` half.
+            .@"if", .if_then => {
                 const i = tree.fullIf(n);
                 try m.measure(i.cond);
                 try m.measure(i.then_expr);
-                try m.measure(i.else_expr);
-                const last_tok = m.last(i.else_expr);
+                if (i.else_expr) |e| try m.measure(e);
+                const last_tok = m.last(i.else_expr orelse i.then_expr);
+                const else_width: u32 = if (i.else_expr) |e| 6 +| m.w(e) else 0;
                 const width = if (m.tok_lines[main] != m.tok_lines[last_tok])
                     no_fit
                 else
-                    3 +| m.w(i.cond) +| 6 +| m.w(i.then_expr) +| 6 +| m.w(i.else_expr);
+                    3 +| m.w(i.cond) +| 6 +| m.w(i.then_expr) +| else_width;
                 m.set(n, width, main, last_tok);
             },
             .let => {
@@ -3388,10 +3607,7 @@ const Printer = struct {
                 try p.tok(main);
                 try p.tok(main + 1);
             },
-            .unit => {
-                try p.tok(main);
-                try p.tok(main + 1);
-            },
+            .unit => try p.unitLeaf(main),
             .string => try p.tokRange(main, p.last(n)),
             .multiline_string => {
                 const s = tree.fullMultilineString(n);
@@ -3454,7 +3670,7 @@ const Printer = struct {
                     try p.bodyExpr(l.body, indent + indent_step);
                 }
             },
-            .@"if" => try p.ifExpr(n, indent, null),
+            .@"if", .if_then => try p.ifExpr(n, indent, null),
             // A `let` is `let_removed`, and only `--migrate-let` prints a
             // file that has one.
             .let => if (p.migrate_let) try p.letParenthesised(n, indent, null) else return error.SyntaxErrors,
@@ -3874,7 +4090,7 @@ const Printer = struct {
         const i = p.tree.fullIf(n);
         const then_tok = p.last(i.cond) + 1;
         const else_tok = p.last(i.then_expr) + 1;
-        const else_is_if = p.tree.nodeTag(i.else_expr) == .@"if";
+        const else_is_if = if (i.else_expr) |e| p.tree.nodeTag(e) == .@"if" or p.tree.nodeTag(e) == .if_then else false;
         const kw = keyword_col orelse p.curCol();
         // Written on one line, with one-line parts, and it fits
         // (language.md §12.5): it stays there, an `else if` tail with it.
@@ -3887,10 +4103,11 @@ const Printer = struct {
             try p.tok(then_tok);
             try p.space();
             try p.expr(i.then_expr, indent);
+            const else_expr = i.else_expr orelse return;
             try p.space();
             try p.tok(else_tok);
             try p.space();
-            return p.expr(i.else_expr, indent);
+            return p.expr(else_expr, indent);
         }
         try p.tok(i.if_token);
         if (p.fitsWith(i.cond, 1 + 5, then_tok)) {
@@ -3907,16 +4124,25 @@ const Printer = struct {
         }
         p.newline(indent + indent_step);
         try p.bodyExpr(i.then_expr, indent + indent_step);
+        // An `if` without `else` (language.md §12.10) ends with its body.
+        const else_expr = i.else_expr orelse return;
         try p.leading(else_tok, indent + indent_step);
         p.newline(kw);
         try p.tokRaw(else_tok);
         if (else_is_if) {
             try p.space();
-            try p.ifExpr(i.else_expr, indent, kw);
+            try p.ifExpr(else_expr, indent, kw);
         } else {
             p.newline(indent + indent_step);
-            try p.bodyExpr(i.else_expr, indent + indent_step);
+            try p.bodyExpr(else_expr, indent + indent_step);
         }
+    }
+
+    /// `⊤`, or `()` — two tokens, perhaps with a space between — until
+    /// the enforce step (language.md §12.10).
+    fn unitLeaf(p: *Printer, main: u32) Error!void {
+        try p.tok(main);
+        if (p.tags[main] != .top) try p.tok(main + 1);
     }
 
     /// A block (language.md §12.5, *blocks*), the cursor already at the
@@ -4135,10 +4361,8 @@ const Printer = struct {
                 try p.args(c.name, c.args, .type, one_line, indent);
             },
             .type_fn => try p.arrows(n, indent, false),
-            .type_unit => {
-                try p.tok(main);
-                try p.tok(main + 1);
-            },
+            .type_unit => try p.unitLeaf(main),
+            .type_bottom => try p.tok(main),
             .type_paren => try p.wrapped(n, .type, indent),
             .type_sync => {
                 try p.tok(main);
@@ -4276,10 +4500,7 @@ const Printer = struct {
                 try p.tokRaw(main + 1);
             },
             .pat_string => try p.tokRange(main, p.last(n)),
-            .pat_unit => {
-                try p.tok(main);
-                try p.tok(main + 1);
-            },
+            .pat_unit => try p.unitLeaf(main),
             .pat_paren => try p.wrapped(n, .pattern, indent),
             .pat_tuple, .pat_list => try p.collection(n, tree.children(n), .pattern, indent),
             .pat_record => {

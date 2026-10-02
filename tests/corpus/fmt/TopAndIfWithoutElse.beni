@@ -1,0 +1,15 @@
+-- The formatter prints `⊤` and `⊥` as one column each, and an `if`
+-- without `else` as an `if` with one less its `else` half: on one line
+-- only when written there, else `if c then` and the body below
+-- (language.md §12.10). `( )` prints as `()` until
+-- the enforce step.
+f : ⊤,⊥ → ( )
+f ⊤ v =   never v
+
+
+g : Bool → ⊤
+g c =
+    if c then log "one line"
+    if c then
+      log "below"
+    if c then ( if c then log "x" ) else log "y"

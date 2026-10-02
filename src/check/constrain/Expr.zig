@@ -518,6 +518,14 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     return g.conj(parts.items);
 }
 
+/// Whether a `case`'s branches are an `if` without `else`'s: two, the
+/// second's body the `unit` lowering marks with `lhs` 1 (frontend.md §11.9).
+fn missingElse(bir: *const Bir, branches: []const Bir.Inst.Index) bool {
+    if (branches.len != 2) return false;
+    const body: Bir.Inst.Index = @enumFromInt(bir.instData(branches[1]).rhs);
+    return bir.instTag(body) == .unit and bir.instData(body).lhs == 1;
+}
+
 fn caseExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
     const branches = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
@@ -525,6 +533,27 @@ fn caseExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Categor
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.lhs), scrutinee, .{ .tag = .general }));
+    if (missingElse(bir, branches)) {
+        // An `if` without `else` (checker-v2.md §34): the `then` body is
+        // checked on its own, then held to `⊤` under `if_without_else`, so
+        // a failure inside it reports first and once; then the `if`, whose
+        // type is its branch's, against the context — silent when the
+        // branch already failed, its type poisoned (§15.2). A `True` or
+        // `False` pattern binds nothing and can fail no constraint but the
+        // scrutinee's.
+        for (branches) |b| try parts.append(g.cx.scratch, try Pattern.patternAgainst(g, @enumFromInt(bir.instData(b).lhs), scrutinee));
+        const then_body: Bir.Inst.Index = @enumFromInt(bir.instData(branches[0]).rhs);
+        const missing: Bir.Inst.Index = @enumFromInt(bir.instData(branches[1]).rhs);
+        const t = try g.freshFlex();
+        try parts.append(g.cx.scratch, try expr(g, then_body, t, .{}));
+        const unit = try g.fresh(.{ .structure = .unit });
+        try parts.append(g.cx.scratch, try g.equal(unit, t, then_body, .{ .tag = .if_without_else, .owner = then_body.toOptional() }));
+        // The missing branch is an instruction like any other, and gets its
+        // type: `⊤`, which `t` already is unless the branch failed.
+        try parts.append(g.cx.scratch, try expr(g, missing, t, .{}));
+        try parts.append(g.cx.scratch, try g.equal(expected, t, missing, category));
+        return g.conj(parts.items);
+    }
     for (branches, 0..) |b, i| {
         const bd = bir.instData(b);
         const binders: u32 = @intCast(g.tree.binders.items.len);

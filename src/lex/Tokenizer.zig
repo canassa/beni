@@ -1233,7 +1233,7 @@ const Utf8 = struct { len: u32, valid: bool };
 /// passed.
 /// The tags of the Unicode notation's symbols (language.md §12.7), whose
 /// bytes are their `Token.lexeme`.
-const symbols = [_]Tag{ .arrow, .arrow_left, .op_ne, .op_le, .op_ge, .op_pipe_right, .op_pipe_left, .ellipsis, .times };
+const symbols = [_]Tag{ .arrow, .arrow_left, .op_ne, .op_le, .op_ge, .op_pipe_right, .op_pipe_left, .ellipsis, .times, .top, .bottom };
 
 /// The symbol whose bytes begin at `src[i]`, or null.
 fn symbolAt(src: [:0]const u8, i: u32) ?Tag {

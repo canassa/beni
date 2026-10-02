@@ -157,6 +157,9 @@ pub const Construct = enum {
     /// `*` between two types, where a tuple type's `×` goes (language.md
     /// §12.7, *Lookalikes*).
     star_in_type,
+    /// `⊥` in an expression or a pattern: a type with no values
+    /// (language.md §12.10).
+    bottom_outside_type,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -225,6 +228,7 @@ fn constructText(c: Construct) []const u8 {
         .binding_head, .block_in_tuple, .argument_after_lambda => "something else",
         .times_in_expression => "an operator",
         .star_in_type => "`×`",
+        .bottom_outside_type => "a value",
     };
 }
 
@@ -404,6 +408,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\Multiplication is `*`, and a tuple value is written `( a, b )`.
                 , .{text});
+            } else if (item.construct == .bottom_outside_type) {
+                try w.writeAll(
+                    \\I found `⊥` where a value goes, but `⊥` is a type: the type with no values,
+                    \\so no expression or pattern is ever one.
+                    \\
+                    \\Code that holds a value of type `⊥` is in a branch that cannot happen, and
+                    \\`never` turns that value into whatever the branch needs: `never v`.
+                );
             } else if (item.construct == .star_in_type) {
                 try w.writeAll(
                     \\I found `*` between two types. A tuple type joins its element types with `×`

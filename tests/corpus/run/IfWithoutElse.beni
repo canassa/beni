@@ -1,0 +1,64 @@
+-- run: an `if` without `else` runs its `then` branch when its condition is
+-- true and nothing when it is false (language.md §12.10) — as a statement
+-- line, as a block's last line, at the end of an `else if` chain, and with
+-- the dangling `else` read by layout (`outer`) and on one line (`inner`).
+-- `⊤` is the unit value, and a thunk takes it.
+import Node exposing (Program)
+import String
+
+
+trace : String → ⊤
+trace label = Debug.log label ⊤
+
+
+statement : Bool → ⊤
+statement c =
+    if c then
+        trace "statement taken"
+    trace "after the statement"
+
+
+lastLine : Bool → ⊤
+lastLine c = if c then trace "last line taken"
+
+
+chain : Int → ⊤
+chain n =
+    if n > 1 then
+        trace "big"
+    else if n > 0 then
+        trace "small"
+
+
+outer : Bool, Bool → ⊤
+outer a b =
+    if a then
+        if b then
+            trace "outer: both"
+    else
+        trace "outer: not a"
+
+
+inner : Bool, Bool → ⊤
+inner a b = if a then if b then trace "inner: b" else trace "inner: not b"
+
+
+thunk : ⊤ → Int
+thunk ⊤ = 7
+
+
+main : Program
+main =
+    statement True
+    statement False
+    lastLine True
+    lastLine False
+    chain 2
+    chain 1
+    chain 0
+    outer True True
+    outer True False
+    outer False True
+    inner True False
+    inner False False
+    Node.printLines [ String.fromInt (thunk ⊤) ]

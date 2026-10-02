@@ -154,6 +154,9 @@ pub const Options = struct {
     /// module of the ROOT package. Set by `check` and `build` (A.83); a
     /// warning never changes the exit code.
     informational: bool = false,
+    /// `--explain`: `unit_discarded` too (checker-v2.md §34), until the
+    /// enforce step emits it by default.
+    explain: bool = false,
     /// One per graph module: true when an EARLIER phase already reported on
     /// it. Such a module is still checked — its dependents need schemes —
     /// but silently.

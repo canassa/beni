@@ -289,7 +289,8 @@ test "a key does not depend on --jobs, on argv order, or on the cwd it was run f
     // A rendering flag is not in the key, by name: `fast-compiler.md` §8
     // lists each and says why.
     try expectMoved("--diagnostics=json", base, try keysOf(&w, arena, &.{ "--jobs=1", "--diagnostics=json", "src" }), &.{});
-    try expectMoved("--explain", base, try keysOf(&w, arena, &.{ "--jobs=1", "--explain", "src" }), &.{});
+    // `--explain` is in the key (`unit_discarded`, language.md §12.10):
+    // `--pattern-budget`'s test below has its row.
     // `--iface-hash` is a rendering flag too, but it prints a SECOND sorted
     // block on the same stream, so it cannot be compared in this shape; the
     // rows above it that read `ifaceHashes` run it on its own.
@@ -3174,8 +3175,20 @@ test "--diagnostics is not in the key and cannot change one byte of one entry" {
     try expectFlagOutOfKey("--diagnostics", false, &.{ "--jobs=1", "--diagnostics=text" }, &.{ "--jobs=1", "--diagnostics=json" });
 }
 
-test "--explain is not in the key and cannot change one byte of one entry" {
-    try expectFlagOutOfKey("--explain", false, &.{"--jobs=1"}, &.{ "--jobs=1", "--explain" });
+test "--explain moves every module's key" {
+    // It emits a warning, `unit_discarded` (language.md §12.10), that a run
+    // without it does not: an entry written without it would replay a
+    // module's diagnostics without the warning.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const base = try baselineKeys(&w, arena);
+    const changed = try keysOf(&w, arena, &.{ "--jobs=1", "--explain", "src" });
+    try expectEveryKeyMoved("--explain", base, changed);
 }
 
 test "--roundtrip-interfaces is not in the key and cannot change one byte of one entry" {
