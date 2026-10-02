@@ -557,7 +557,11 @@ not inheriting what Effect must do only because it lives in TypeScript
 **`references/dom-expressions`** (the JSX compiler and DOM runtime Solid is built
 on), pinned 2026-09-20, are the gold standard for UI performance (rule 8);
 `references/elm-browser` and `references/elm-virtual-dom` are Elm's browser
-runtime, read for report 24. Commit the submodule *pointer*, never vendored contents.
+runtime, read for report 24. **The release optimiser's prior art** (pinned 2026-10-02 for
+[`research/52`](docs/design/research/52-release-optimiser-state-of-the-art.md)): `references/llvm-project`,
+`closure-compiler`, `graal` and `ghc` (shallow and sparse: their optimisation passes only), `mlton` and
+`egg`; `references/README.md` lists the pinned commits and the sparse-checkout commands. Commit the
+submodule *pointer*, never vendored contents.
 
 **`references/talks/`** is the one part of `references/` that holds plain files: talks
 and streams kept as primary-source evidence, one directory each with `raw.txt`
