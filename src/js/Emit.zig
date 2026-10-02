@@ -3503,7 +3503,9 @@ const Emitter = struct {
     /// so the module has nothing to write and nothing imports it.
     fn onlyPrimitivesLive(e: *Emitter, m: Graph.Index) bool {
         const live = e.live.of(m);
-        if (live.derived.count() != 0 or live.schemas.count() != 0) return false;
+        // A suspendable twin is a body to write, even when its direct body
+        // is not.
+        if (live.derived.count() != 0 or live.schemas.count() != 0 or live.twins.count() != 0) return false;
         for (e.bir(m).decls, 0..) |d, index| {
             if (live.decl(index) and d.kind != .vocab_markup) return false;
         }

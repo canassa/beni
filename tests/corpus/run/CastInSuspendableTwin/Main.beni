@@ -1,0 +1,13 @@
+-- A record JavaScript sees keeps its field names under `--release`
+-- (boundary.md §4, *What JavaScript may read of a beni value*) when the
+-- declaration that casts it is written only as its suspendable twin: here
+-- `Probe.stringify` is called with a callback that sleeps, so its direct
+-- body is eliminated. The twin's cast used to be dropped with the direct
+-- body, and the release build printed `{"a":1,"b":"two"}`.
+import Io
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main = Io.run λ() -> Node.printLines [ Probe.stringify λ() -> Io.sleep 0 ]

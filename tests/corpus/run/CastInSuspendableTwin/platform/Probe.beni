@@ -1,0 +1,12 @@
+--! A test platform whose one function hands JavaScript a record through
+--! `Js.from` after a callback that may suspend, so a program that passes
+--! one that does reaches only its suspendable body.
+
+import Js
+
+
+--| `JSON.stringify` of a record, once `wait` has returned.
+pub stringify : (() -> ()) -> String
+stringify wait =
+    _ = wait ()
+    Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from { alpha = 1, beta = "two" } ])

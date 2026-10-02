@@ -97,7 +97,9 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
             if (d.kind == .foreign_value) if (d.annotation.unwrap()) |annotation| try walk.typeAt(m, bir, annotation);
         }
         for (in.dispatch[mi].boundary) |row| {
-            if (!in.live.decl(m, row.decl)) continue;
+            // Either body: a declaration that may suspend may be written
+            // only as its suspendable twin, which casts what it casts.
+            if (!in.live.decl(m, row.decl) and !in.live.twin(m, row.decl)) continue;
             switch (row.kind) {
                 .field => try walk.pin(in.interner.slice(@enumFromInt(row.value))),
                 .type => try walk.observe(@enumFromInt(row.value)),
