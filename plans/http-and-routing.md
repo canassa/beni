@@ -62,7 +62,7 @@ does not import it, which must not move by a byte.
 
 | # | Slice | Spec | Fixtures | Size |
 |---|---|---|---|---|
-| **U1** | **`Url` moves to core** (H7). `platforms/browser/Url.beni` → `core/Url.beni` unchanged; `browser-tea` stops re-exporting `"Url"`; the browser modules import it as before | §9.8.13 (a) | `run/UrlBasics` (Node: `fromString`/`toString` on every part, `percentEncode`/`percentDecode` including a lone surrogate and a bad escape) — red today because a `node` program cannot import `Url`; `browser/tea/UrlAddress` unchanged | S |
+| **U1** | **`Url` moves to core** (H7). `platforms/browser/Url.beni` → `core/Url.beni`, `fromString` over the host's `URL.parse` (H7 as amended 2026-10-02); `browser-tea` stops re-exporting `"Url"`; the browser modules import it as before | §9.8.13 (a) | `run/UrlBasics` (Node: `fromString`/`toString` on every part; the WHATWG normalisation — case, `..`, the default port, escapes, a bare `?` and `#`; user information and other schemes `Nothing`; `percentEncode`/`percentDecode` including a lone surrogate and a bad escape) — red today because a `node` program cannot import `Url`; `browser/tea/UrlAddress` unchanged | S |
 | **U2** | **`Url.Builder`**, path segments encoded (H8) | §9.8.13 (b) | `run/UrlBuilder`: every `Root`, empty lists, a segment holding `/`, `?`, `#`, `%` and a space, query keys and values encoded, `int`, `toQuery []`, `custom` with a fragment | S |
 | **U3** | **`Url.Parser` and `Url.Parser.Query`**, `map2`…`map8`, the two decoding changes (H8) | §9.8.13 (b) | `run/UrlParser`: Elm's own doc examples as assertions (`/blog/42`, `/tree/42`, trailing `/`, `top`, `oneOf` order, `custom` CSS file, `fragment`), a five-route table with `map2` and `map3`, a percent-encoded segment decoded, a segment that does not decode matching nothing, built-then-parsed round trips. `run/UrlQuery`: `string`/`int`/`enum` with a key missing, repeated, valueless (`?flag`), `+` as space, a bad escape skipped, `custom` with every value in order, `map2`…`map4` | M |
 | **U4** | **Navigation, direct form**: `Key`, `key`, `pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload`, `Error`, the `beni:navigate` announcement; `eachUrlChange`/`onUrlChange` hear pushes | §9.8.13 (c), all but link requests | `browser/tea/NavigatePush` (pushes and replaces from a command, `location` after each, `onUrlChange` once per push in order, two pushes in one command two messages, `back` and `forward` through the driver's history, `back key 0` nothing); `browser/tea/NavigateErrors` (`BadUrl` for an unparseable address, `CrossOrigin` for another origin, `load "javascript:…"` refused, every result shown) — `Throttled` cannot be forced in either DOM and is pinned by reading the code in review, with the post-condition check named in the slice's report; a successful `load` leaves the page, so no fixture asserts it (the README says so) | M |
@@ -94,7 +94,15 @@ the window `click` listener per click under happy-dom, as §9.8.10 did for the k
 
 ## 3. Choices the specification took for the owner
 
-Each is written into the spec as recommended and is reversible until its slice lands.
+Each is written into the spec as recommended. **Confirmed by the owner on 2026-10-02, all ten as
+recommended, with one amendment to H7:** `Url` stays in core, but `Url.fromString` wraps the
+host's WHATWG `URL.parse` (`new URL` inside a `Js.catchIf` that takes only `TypeError` where the
+engine has no `URL.parse`) instead of the hand-written port of Elm's splitter, so beni sees the
+address exactly as the browser navigates to and fetches it — scheme and host lower-cased, `..`
+resolved, the default port dropped, escapes added. Elm's `Url` record stays, and so does its
+`Nothing` for anything not `http`/`https`. `Url.Parser`, `Url.Parser.Query` and `Url.Builder`
+stay beni code (`URLSearchParams` and `encodeURIComponent` may serve the builder and the query
+parser where measured smaller or faster). `boundary.md` §9.8.13 (a) carries the amendment.
 
 | # | Choice | Recommended (in the spec) | Alternative |
 |---|---|---|---|

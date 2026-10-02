@@ -2151,6 +2151,8 @@ nothing; a beni function always makes a message, which `update` may ignore.
   where Elm's `application` crashes (§4.1: a failure is a value) — and `onUrlChange`, the new
   address after each `hashchange` or `popstate` (one that does not parse sends nothing). A filter
   in `#/active` is read by `init` from `currentUrl ()` and kept by `onUrlChange`.
+  *Amended 2026-10-02:* `Url` is now core's, and `fromString` is the host's WHATWG parser, its
+  parts normalised as the browser normalises them (§9.8.13 (a), its amendment).
 - **`Storage`** has no Elm counterpart (Elm reaches Web Storage through ports): R45 §5's table
   with the area a value, since `localStorage` and `sessionStorage` are one API. Each failure the
   Web Storage standard documents is one value (rule 9, §4.1): **reading the area may throw
@@ -2376,7 +2378,7 @@ section is normative for `browser`'s `Http` and **replaces §9.8.8's `Http` row*
 `getJson`, `postJson` and the four-constructor `Error` are withdrawn, and the fixtures that use
 them are migrated by the slice that lands this (`plans/http-and-routing.md`). The choices it takes
 for the owner are H1–H5 of that plan; each is written here as recommended and is reversible until
-its slice lands.
+its slice lands. *Amended 2026-10-02:* the owner confirmed H1–H5 as recommended.
 
 **The model is elm/http 2.0** (the owner, 2026-10-01: mirror Elm's packages, read their code;
 `Http.elm` and `Elm/Kernel/Http.js` at `2.0.0`). Its pieces keep their names — `request`, `get`,
@@ -2620,7 +2622,8 @@ for `Url.Parser`, `Url.Parser.Query`, `Url.Builder`, `Browser.Navigation`, `Brow
 §9.8.10 (b)'s two stand-ins, which stay. `plans/browser-platform.md` §2.7's "a capability record,
 not Elm's opaque `Key`" is **superseded** by (c) below: the owner's later instruction is Elm's API,
 and the `Key` keeps what the record bought (H6). The choices taken for the owner are H6–H10 of
-`plans/http-and-routing.md`.
+`plans/http-and-routing.md`. *Amended 2026-10-02:* the owner confirmed H6–H10 as recommended,
+H7 with one change, recorded under (a).
 
 **(a) Where `Url` lives** (H7). `Url`, `Url.Parser`, `Url.Parser.Query` and `Url.Builder` are
 pure and use nothing of a page, so they are **core modules**: a library, the `node` platform and a
@@ -2628,6 +2631,30 @@ test can parse and build addresses. `browser`'s `Url` (§9.8.10 (b)) moves to `c
 unchanged, and `browser-tea` stops re-exporting it (every program reaches core). Its
 `percentEncode` and `percentDecode` are `Js` over `encodeURIComponent`/`decodeURIComponent`, which
 every host has.
+
+*Amended 2026-10-02 (the owner, confirming H7):* `Url` moves to core, but **not unchanged**:
+**`Url.fromString` wraps the host's WHATWG URL parser** instead of the hand-written port of Elm's
+splitter, so beni sees exactly the address the browser navigates to and `fetch` requests — one
+parser for the page, the request and the router, never two that disagree.
+
+- It calls `URL.parse(text)`, which answers `null` for text the URL standard does not parse, so
+  nothing is caught. On an engine without `URL.parse` (before Chrome 126, Safari 18, Firefox 126,
+  Node 22.1) it calls `new URL(text)` inside a `Js.catchIf` that takes only a `TypeError`, the
+  standard's one failure (rule 9).
+- **Elm's record and its `Nothing` stay**: a parsed URL whose scheme is not `http:` or `https:`
+  is `Nothing`, and so is one with a username or password, which the record has no field for and
+  `fetch` refuses. A relative text has no base and does not parse: `Nothing`, as in Elm.
+- **The parts are the host's, normalised as the URL standard normalises them**, where Elm's
+  splitter kept the text as written: the scheme and host lower-cased (and an international host
+  in its ASCII, `xn--` form), `.` and `..` path segments resolved, the scheme's default port
+  dropped (`http://a:80/` has `port_ = Nothing`), an empty path written `/`, and the characters
+  the standard escapes in a path, a query and a fragment percent-encoded (a space is `%20`,
+  `ü` is `%C3%BC`). `host` is `hostname` (an IPv6 address in its brackets, which Elm's splitter
+  refused), `port_` is `port` as an `Int` or `Nothing`, `path` is `pathname`, and `query` and
+  `fragment` are `search` and `hash` without their `?` and `#` — `Just ""` when the text ends in a
+  bare `?` or `#`, as Elm's, which `search` and `hash` alone cannot tell from none.
+- `toString` is unchanged, so `toString` of a parsed URL is the host's `href` for every `Url`
+  `fromString` gives.
 
 **(b) The parser: elm/url 1.0's, with no currying.** Elm's `Url.Parser` threads a continuation
 through its type — `Parser (Int -> a) a` is "a parser that will hand an `Int` on" — and that shape
@@ -2917,6 +2944,9 @@ from it. A static host in production needs the same fallback configured; the use
 - **Path segments are decoded and `+` is a space in a query; built path segments are encoded**
   (H8) — each a silent wrong answer in Elm.
 - **`Url` and its parser and builder are core**, not a package of the browser (H7).
+- **`Url.fromString` is the host's WHATWG parser** (amended 2026-10-02, (a)): its parts are
+  normalised as the browser normalises the address it navigates to and fetches, where Elm's
+  splitter kept the text as written.
 - **`key ()` is public, and every push is announced** (H6): the hole Elm's `Key` fenced is closed
   at the announcement, so the direct form can do what `Tea.application` does.
 - **`pushUrl`, `replaceUrl`, `back`, `forward` and `load` return `Result Error ()`** where Elm's
