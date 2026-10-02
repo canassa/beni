@@ -84,8 +84,8 @@ pub const Edge = union(enum) {
     /// core `String.compare` (`backend.md` §9's correction) — but the tag is
     /// yielded whole so the consumer, not the walk, decides that.
     primitive: Dispatch.Primitive,
-    /// The `undetermined` leaf, which lowers to a call of core `Basics.eq`
-    /// in an `eq` position (`Lower.partEq`).
+    /// The `undetermined` leaf, which lowers to `===` (it was a call of core
+    /// `Basics.eq` until 2026-10-02) in an `eq` position (`Lower.partEq`).
     undetermined,
 
     /// `Graph.Index` plus the raw `Interface.ValueIndex`, which only a

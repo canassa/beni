@@ -866,7 +866,10 @@ where a module first needs it (once per module and value), and nothing is writte
 printed name would otherwise name an export `_core/List.mjs` does not have, and the program would
 build with exit 0 and fail to load. A program that never needs the missing value still builds. The
 same code replaces `internal` for the two values a comparison reaches for, `Basics.eq` and
-`String.compare` (`static-dispatch-spike.md` §8), which are the same failure.
+`String.compare` (`static-dispatch-spike.md` §8), which are the same failure. *(Amended the same
+day: `Basics.eq` is no longer one. The `undetermined` leaf it answered is `===` written in place,
+since `Basics.eq` dispatches like `==` — `static-dispatch-spike.md` §3.1, amended — so a comparison
+reaches for `String.compare` alone.)*
 
 #### Identity: what an operation returns unchanged
 
@@ -3656,6 +3659,9 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    Each is a reference to another module's declaration that no `refs` row and no `top`/`ext` target
    records. So: `primitive string_compare` → core `String`'s `compare`; `err` → core `Basics`' `eq`
    (the `err` part is now the `undetermined` term, `checker-v2.md` §13.1, with the same edge).
+   *Amended 2026-10-02:* the `undetermined` term lowers to `===` in place and has no edge;
+   `Basics.eq` dispatches like `==` now and is no structural answer (`static-dispatch-spike.md`
+   §3.1, amended).
    Twelve `run/` fixtures fail without the first — every program that puts a `String` in a `Dict` —
    with a `ReferenceError` at load, after a build that exited 0. *(Found in implementation.)*
 

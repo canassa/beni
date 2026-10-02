@@ -2,6 +2,11 @@
 -- interned before `flexf` (the first declaration names it) — with the same
 -- one `not_equatable` (checker-v2.md §11.4): which failure is reported
 -- follows name text, never interning order.
+--
+-- (2026-10-02: `Basics.eq` and `Basics.neq` ask for `eq` through a
+-- `where` clause, as `==` does — static-dispatch-spike.md §3.1, amended —
+-- and no longer through the `equatable` marker. The refusal stands; it is
+-- reached the way a `where` clause's is.)
 fnf = 1
 
 

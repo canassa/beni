@@ -21,7 +21,7 @@ const nested = support.nested;
 // ---------------------------------------------------------------------------
 
 /// `r = { f1 = 1, …, f<n> = 1 }` with field `fn_at` a function (0: none),
-/// then `same = <compare>` — `Basics.eq r r` or `r == r`.
+/// then `same = <compare>` — `marked r r` (and its declaration) or `r == r`.
 fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u8) ![]u8 {
     var source: std.Io.Writer.Allocating = .init(gpa);
     errdefer source.deinit();
@@ -35,7 +35,7 @@ fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u
     return source.toOwnedSlice();
 }
 
-test "Basics.eq on a record past the old 256-entry worklist walks all of it: all Int is equatable, a function at its last field is not" {
+test "the equatable marker on a record past the old 256-entry worklist walks all of it: all Int is equatable, a function at its last field is not" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -45,21 +45,25 @@ test "Basics.eq on a record past the old 256-entry worklist walks all of it: all
     // growable now, and never answers on width: the all-`Int` record of 300
     // fields is accepted because every field was walked, and the function at
     // field 299 — past the old capacity, at the far end of the worklist — is
-    // found.
+    // found. The marker is core's alone (`language.md` §3) and, since
+    // `Basics.eq` dispatches like `==` (2026-10-02), no shipped function
+    // carries it, so the files are checked as core (`--core`) and declare
+    // their own `marked`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const all_int = try wideRecord(testing.allocator, 300, 0, "Basics.eq r r");
+    const marked = "marked r r\n\n\nmarked : equatable a, a → Bool\nmarked x y =\n    True";
+    const all_int = try wideRecord(testing.allocator, 300, 0, marked);
     defer testing.allocator.free(all_int);
     try w.write("AllInt.beni", all_int);
-    const with_fn = try wideRecord(testing.allocator, 300, 299, "Basics.eq r r");
+    const with_fn = try wideRecord(testing.allocator, 300, 299, marked);
     defer testing.allocator.free(with_fn);
     try w.write("WithFn.beni", with_fn);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const ok = try w.run(&.{ "check", "--no-cache", "AllInt.beni" });
-    const bad = try w.run(&.{ "check", "--no-cache", "WithFn.beni" });
+    const ok = try w.run(&.{ "check", "--no-cache", "--core", "AllInt.beni" });
+    const bad = try w.run(&.{ "check", "--no-cache", "--core", "WithFn.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -69,9 +73,9 @@ test "Basics.eq on a record past the old 256-entry worklist walks all of it: all
     try expectExited(bad, 1);
     try testing.expectEqual(@as(usize, 1), bad.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.not_equatable, bad.diagnostics[0].code);
-    // At the first argument of `Basics.eq`, on the last line.
+    // At the first argument of `marked`, on `same`'s line.
     try testing.expectEqual(@as(u32, 7), bad.diagnostics[0].span.start.line);
-    try testing.expectEqual(@as(u32, 15), bad.diagnostics[0].span.start.col);
+    try testing.expectEqual(@as(u32, 12), bad.diagnostics[0].span.start.col);
 }
 
 /// A program printing `eq` or `ne` for `r == r`, where `r` has `n` fields.

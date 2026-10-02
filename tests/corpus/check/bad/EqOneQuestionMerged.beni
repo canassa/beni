@@ -6,6 +6,11 @@
 -- per flag, and never a clean check: the walk must not accept a variable
 -- inside a structure.
 --
+--
+-- (2026-10-02: `Basics.eq` and `Basics.neq` ask for `eq` through a
+-- `where` clause, as `==` does — static-dispatch-spike.md §3.1, amended —
+-- and no longer through the `equatable` marker. The refusal stands; it is
+-- reached the way a `where` clause's is.)
 h x y =
     t = Basics.eq ( x, y ) ( x, y )
     l = [ x, y ]

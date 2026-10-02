@@ -1,0 +1,11 @@
+-- See Main.beni. A named function: the function cannot be compared, so the
+-- type's own `eq` compares the names. `==` was accepted on it and called
+-- this `eq`; `Basics.eq` was refused, its `equatable` marker seeing the
+-- function inside — a type with a working `eq` that one spelling of
+-- equality could not use.
+pub type Handler
+    = Handler String (Int → Int)
+
+
+pub eq : Handler, Handler → Bool
+eq (Handler a _) (Handler b _) = a == b

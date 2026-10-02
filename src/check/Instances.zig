@@ -71,7 +71,9 @@ pub fn lookup(s: *Solve, id: WantedId, root: Var, flat: TypeStore.Structure, imm
             const w = s.evidence.get(id);
             s.contexts.noteFunction(s);
             // `eq` on a function keeps `not_equatable`, the better message.
-            if (w.method == InternPool.WellKnown.eq.symbol()) {
+            if (Resolve.siblingRefused(s, id)) {
+                // A sibling position said it for the comparison.
+            } else if (w.method == InternPool.WellKnown.eq.symbol()) {
                 try s.report.notEquatable(w.origin, root, .function, .of(w.kind, w.origin));
             } else {
                 try s.report.noMethodsOnShape(w.origin, w.method, root, .function);

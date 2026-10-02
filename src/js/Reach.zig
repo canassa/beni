@@ -54,21 +54,21 @@
 //! fourth leg is added once and both passes are then made to answer for it;
 //! `Edges.zig`'s own test is what pins the three that exist.
 //!
-//! **Two targets §9 calls edgeless are edges, and the spec is corrected
-//! here.** `Edges.zig` yields both as tags and this pass is where they become
-//! nodes. §9 says `primitive` and `err` add none "because each is an
+//! **A target §9 calls edgeless is an edge, and the spec is corrected
+//! here.** `Edges.zig` yields it as a tag and this pass is where it becomes
+//! a node. §9 says `primitive` and `err` add none "because each is an
 //! operator or a poisoned table". That is true of `strict_eq`,
 //! `num_compare` and `char_compare`, which the module synthesises for
 //! itself — but `primitive string_compare` lowers to a CALL of core's
 //! hand-written `String.compare` (`Lower.stringCompare` →
 //! `Lower.coreValue`, §3.2/A.26: `<` on JavaScript strings is UTF-16
 //! code-unit order and `String.compare` is Unicode scalar order, and the
-//! two must agree), and `undetermined` lowers to a call of `Basics.eq`
-//! (`Lower.partEq`'s `undetermined` arm). Both are references to another module's
-//! declaration that no `refs` row and no `top`/`ext` target records, so
-//! without them a program that orders `String`s inside a derived function
-//! ships a call to a name its build never wrote — a `ReferenceError` at
-//! load, which is exactly the failure this pass has to fear.
+//! two must agree). That is a reference to another module's declaration
+//! that no `refs` row and no `top`/`ext` target records, so without it a
+//! program that orders `String`s inside a derived function ships a call to
+//! a name its build never wrote — a `ReferenceError` at load, which is
+//! exactly the failure this pass has to fear. (`undetermined` was a second
+//! such edge, to `Basics.eq`, until 2026-10-02: it lowers to `===` now.)
 //!
 //! **Where it runs.** Between `Emit.findEntry` and `Emit.emitModules`, over
 //! `Bir` and the dispatch table and BEFORE lowering, so an unreachable
@@ -309,7 +309,7 @@ pub const Input = struct {
     }
 
     /// A named value of a core module, as a node: how `Lower.coreValue`
-    /// reaches `String.compare` and `Basics.eq`, resolved once. The
+    /// reaches `String.compare` and `List`'s values, resolved once. The
     /// declaration is found in the module's own `Bir` rather than through
     /// its interface, because `coreValue` takes the local path when the
     /// module being lowered IS that module and both paths name one
@@ -656,11 +656,10 @@ pub const ModuleEdges = struct {
 pub const Builder = struct {
     in: Input,
     scratch: Allocator,
-    /// `core.String`'s `compare` and `core.Basics`' `eq`, the two
-    /// declarations the lowerer names with no target of its own (see the
+    /// `core.String`'s `compare`, the one
+    /// declaration the lowerer names with no target of its own (see the
     /// header).
     string_compare: ?Node = null,
-    basics_eq: ?Node = null,
     /// The `core/List` values `Lower` calls with no reference of the
     /// program's own to them (`backend.md` §7, §8): `unsafeGet` and `view`
     /// for a list pattern, `slice` for a spread with items after it, and
@@ -685,7 +684,7 @@ pub const Builder = struct {
     /// The instruction each edge of `stream` occurs at.
     at: std.ArrayList(u32) = .empty,
 
-    /// The two corrected `primitive`/`err` legs name one declaration each,
+    /// The corrected `primitive` leg names one declaration,
     /// the same one for every module, so they are resolved once here rather
     /// than at every edge.
     pub fn init(in: Input, scratch: Allocator) Builder {
@@ -693,7 +692,6 @@ pub const Builder = struct {
             .in = in,
             .scratch = scratch,
             .string_compare = in.coreDecl(.String, .compare),
-            .basics_eq = in.coreDecl(.Basics, .eq),
             .list_get = in.coreDecl(.List, .unsafeGet),
             .list_view = in.coreDecl(.List, .view),
             .list_base = in.coreDecl(.List, .base),
@@ -1342,14 +1340,15 @@ pub const Builder = struct {
             .ext => |e| try b.extValue(out, e.module, e.value),
             .derived => |index| try out.append(b.scratch, .{ .module = m, .kind = .derived, .index = index }),
             .ext_derived => |use| try b.extDerived(out, use),
-            // `String.compare` and `Basics.eq`: real cross-module calls the
+            // `String.compare`: a real cross-module call the
             // lowerer writes with no target of their own (see the header).
             // The other three primitives are this module's own synthesised
             // comparators and are discovered during lowering.
             .primitive => |prim| if (prim == .string_compare) {
                 if (b.string_compare) |node| try out.append(b.scratch, node);
             },
-            .undetermined => if (b.basics_eq) |node| try out.append(b.scratch, node),
+            // `undetermined` is `===` in place (`Lower.partEq`): no edge.
+            .undetermined => {},
         }
     }
 

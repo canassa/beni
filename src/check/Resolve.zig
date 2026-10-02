@@ -611,6 +611,18 @@ pub fn lineageRoot(s: *const Solve, id: WantedId) WantedId {
     return at;
 }
 
+/// Whether a sibling of `id` — another position of the same derived
+/// answer — was refused already: its lineage root is rejected, so that use
+/// has its message, and `id`'s refusal says nothing more. One comparison,
+/// one `not_equatable`, however many of its positions hold a function: a
+/// `where` clause whose receiver was a shape of unknowns when it was
+/// resolved (`same ( k, Box k ) ( k, Box k )`) derives position by
+/// position, and said it once per position.
+pub fn siblingRefused(s: *const Solve, id: WantedId) bool {
+    const top = lineageRoot(s, id);
+    return top != id and s.evidence.get(top).state.rejected();
+}
+
 fn lineageOrigin(s: *const Solve, id: WantedId) Bir.Inst.Index {
     return s.evidence.get(lineageRoot(s, id)).origin;
 }

@@ -120,8 +120,8 @@ pub const Term = union(enum(u8)) {
     /// `<Module>$<Type>$$<kind>` (§8.5); it has no row here.
     ext_derived: ExtDerivedUse,
     primitive: Primitive,
-    /// §9.4's proven-undetermined default, lowered as the structural answer
-    /// (`Basics.eq`, or `num_compare` for `compare`) (checker-v2.md §13.1).
+    /// §9.4's proven-undetermined default, lowered as the number answer
+    /// (`===`, or `num_compare` for `compare`) (checker-v2.md §13.1).
     undetermined,
     /// A record receiver: a plain field call. A callee only.
     field,

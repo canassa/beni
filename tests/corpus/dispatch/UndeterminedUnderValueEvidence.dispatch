@@ -14,17 +14,17 @@ module UndeterminedUnderValueEvidence
   site 27 callee primitive strict_eq
   site 35 callee ext List eq
     evidence ext List eq
-      ext Basics eq
+      primitive strict_eq
   site 41 callee ext List compare
     evidence ext List compare
       primitive num_compare
   site 47
     evidence ext List eq
-      ext Basics eq
+      primitive strict_eq
   site 63 callee top eq
     evidence top eq
       ext List eq
-        ext Basics eq
+        primitive strict_eq
   site 70 callee ext_derived Maybe.Maybe eq
     arg ext List eq
       ext List eq

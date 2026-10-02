@@ -15,7 +15,7 @@ abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
 abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 8ec75e3bc0a274747bb41457b439afc857343bc4257d64d93aba2e5f96e952a5
 abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 995dc458b7c2a57a4c717e9ff2d4f745c1191d39e3b8c68b0a65d1b0ffa9aec1
-abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 459d1e6a1cb615adb4073c8007ad90c4542455e46368d642f43c39cf63f07f11
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 458f577eb40bb2c81a5dd6dbe7b73165aa316e62e3b56f81f346124242b8afbf
 abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 9040ae2b07870ac86fb10eb19f113a60d7762ed30bdf70722f9e6eabcf4a880e
 blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 f1459beaf5f5fbe539835e2934ad6ff9a85fafb4171a581cc21978a6c597302f
 blackbox_test.test.a constrained value in a part position is handed its own evidence #0 ce613a5414b3926a94a1105c5d59cada6929f16949b1fbe93cd98dc3ff3b5cfa
@@ -29,7 +29,7 @@ blackbox_test.test.a list whose elements have an eq of their own calls it, acros
 blackbox_test.test.a private eq wins inside its module and is private_method from every other #0 728731e9141ed0ce59c87d4e01737f0c61a730ef526c85cc85613f23b3f6b402
 blackbox_test.test.a pub foreign with a where clause takes its evidence in front of its own arguments #0 bc46ab88a392bbd5976e2be56e082253de316f282e4fad08d9a5eec03ca0094d
 blackbox_test.test.a type that is not pub still exports the method another module derives for it #0 04af2c4e4ee430f0425ac8d59c1b8be2dc9ed15cfcf7b51cc5cf1b465ebcfca2
-blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 82f0e3910bcd0042cdd961657bfc519d568187dbfa1289fecfb604eed40d2e3b
+blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 d03a6054b755aeddb2a351802bc1abf06678f5662cea13ebd5248fc69d629ad4
 blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 880b27a402b29656ab12779ee4c71bcfb0384503bc8342a0d74af42ccfd451ab
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 7dba43899e176ec60fd3af56d863ebc115e2c4decd6ec0ef15e79bbeeabbf933
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 f34de9690f99e4408b69fa6ae6c44facb8d19c874cc20c65a283ed6ca4b71dc0
@@ -53,7 +53,7 @@ build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #
 build_test.test.a non-zero exit code from the platform reaches the process #0 533c490b5a938887a187ad5d23548656047650b7681513f04c3895f14f3b54fd
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
-build_test.test.a program computes something and prints the right answer #0 aa2c3b8f8f9e2f41f8349c2479cdfd22125680a324c8ec3efda85f0db6a96bdd
+build_test.test.a program computes something and prints the right answer #0 d8a66025f12660dad6c15fcaf8ad6d0bd7c82a7f2cbb3d147acba5179e4f7370
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 102394ae1ad44102a1cca9ef9e4371eb956a40c435d8c489b326988b77666f47
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
@@ -63,17 +63,17 @@ build_test.test.a sibling export that is also an object key keeps its name and i
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
 build_test.test.a sibling whose names cannot move keeps its own module in a release application #0 f64c0724e0387ddcad17f6f61df152b1b0b91716f072618fc53d621f9ed3f00f
-build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 6d70bf6cabd9d8f5f6af858903418bf47002e80d4485eec69fe4bb560ff29f04
+build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 74e1edcfab43c31fdeeee3a8d99361ecd8a5bafdc3e7cc2a656c327c246116d0
 build_test.test.a view formatted renders the page the view rendered #0 9d8d55f43cd14f7fcb64836de86e5fb0813de872c3e6bc2100c7b08dd71a464a
 build_test.test.a view formatted renders the page the view rendered #1 9aa30b887bb2f3e46fafb9ae5bc3c98ce90da8211f5c57b9b838575f3f30a49e
 build_test.test.an unannotated pub function constant with a constraint builds and runs #0 f6388ce2b78e7c31d52985ea753dcd14eae7d8e0873bb6fbbef4ddad89cd765b
-build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 3695a61220ebf8c8cce7ed3a8c9f1eb7ff284425f25c001320cb03fec2e9b2f4
+build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 725bbddb5b7f7b178b876a57d685eebc6d3180064be67ed1acb481413b98abe8
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 ad4fd962c3a4bb5582e3560052211bfb0bbc1a8623710975594c4e6fed198659
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 4bd2b864bdbfbf0430f5ad06e7d0b6e6932a3e52e4133aff1b86cc7bc97057b1
-build_test.test.core List's loops read and write their arrays in place #0 d8f08fcece12d7b7e204e66573e2b3ac5c46e895623e95b18cdb76485b41d6e5
-build_test.test.every emitted file is .mjs, the hand-written ones included #0 d68111b51bc41ce4e3d3c2b60913a82e6a4c139532418f825e1e0a08824d9953
-build_test.test.modules import each other through ESM, and the program runs #0 7dbc0c3acfbdd5fb32c792083817efc419f304038ffb936021ee24953984ceba
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 7dfda50f4e58b6b1920d99668aa7c0195b74a79c05ce5b28a5e75766987d5e5b
+build_test.test.core List's loops read and write their arrays in place #0 1aefa1bad740ce82e38df4aa016f1389d0b9979a5b617f25d0384c215302b90b
+build_test.test.every emitted file is .mjs, the hand-written ones included #0 ab76a8bfa1cae3bb492ae35ab7af315586eb3e5a071344c1431047fc43d2b4a4
+build_test.test.modules import each other through ESM, and the program runs #0 8f1139c8ba184acb3026b2a8a04526873cdc664816a0109ae475467fed104df8
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 e0cce275743ddad547157bb480cffc28c85b19ca384c89f1608a693961d83f23
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 ff98d4eacc720af853e8a156dec6037745935113b1f942807676ec1d9c8efab5
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 1cfc62cc39af7831a7141325731aa995f28569119939c35145954fb012e17c1f
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 18dd535ec4cc5131bda8b67a0a2494b883faf3c8109ad200a51e1079c34f5144
@@ -113,11 +113,11 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 dd4506b9ed8e4553cdf74de323d1fda7ea332e15f04f512e667b4b25a82161f6
 devloop_test.test.beni new --platform=node writes a program that runs #0 c0f53ca97ced02987353a2b505dbcef9ddf54eac2ccb26c70e8634265f2d98ff
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 aaa16b1b33607bbcfc81808a2709122a1ab97f9235a5dfe9d235d1d2c163e037
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 228075229f898c07b27cf11fbac1c7e2e772f78a6e5f248bba43be157b7ce0c8
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 cc4b50003e7bd1d881c5e600dc439ddf5fa7716a3aef84b434114204bd963346
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 2781f656f0b3dfd1747105f2026bf01f32a03b66b23bd3fdad8673c0d36dc444
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 360b25f77a4701b2c27ea05d922fd17cf5828ceb3f17181bbf7f718c30b4709d
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 8d142c2740e6dddd495e4124bcdffa236e6f84ec8476c54912869b058d8db2b7
-ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 d9dd39addd7f8fd2bf36fcf43cae24060d33b733e507f505d914bf8848d3a672
-ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 36627cb5f13247fce852d893d48c71558f6e941085a819338e7e2e9cad1932cb
+ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 3cfe3eb96628e8d12d5e2055bd1b7d325ef8f2b00a4d401ff9a3319602e5839d
+ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 8211eefff39996e82eb9d3fc454a3793e60caed9b3a6e9a0e96087d4a8a4de39
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

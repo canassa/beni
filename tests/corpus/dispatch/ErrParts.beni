@@ -17,6 +17,12 @@
 -- emits `Basics$eq` at that position. That is only safe while `err` means
 -- one thing, so this golden is where the one thing is written down.
 --
+-- (2026-10-02: `err` is now the `undetermined` leaf, and the leaf and the
+-- evidence for an undetermined element are `===` — `primitive strict_eq` —
+-- and no longer `Basics.eq`, which dispatches like `==` since that day,
+-- `static-dispatch-spike.md` §3.1. The point stands: the answer is right
+-- only because nothing, or only a number, ever reaches the position.)
+--
 -- It is a position the comparison NEVER REACHES: a type variable nothing
 -- constrains. `[] == []` compares two empty lists, so the element type is
 -- free, and `Nothing == Nothing` carries no payload.

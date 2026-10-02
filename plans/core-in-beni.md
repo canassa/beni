@@ -413,6 +413,19 @@ mapping writes its test out now, as the sibling did.
   equalled the same elements in another form (a view, a trie), and a `()` a function returned as
   `undefined` under `--release` never equalled `()` — `run/BasicsEqStructural`, red before in both
   builds. The list half now walks the plain arrays by index.
+  *Superseded the same day (the owner's decision):* `Basics.eq` and `neq` are
+  `a, a → Bool where a.eq : a, a → Bool` with `==`/`≠` as their bodies, so called by name they
+  run the type's own `eq` exactly as the operator does (`static-dispatch-spike.md` §3.1, amended).
+  The structural walk ignored it — two values equal by their type's `eq` were unequal by
+  `Basics.eq`, a silent wrong answer (`run/BasicsEqOwnEq`, red before). The walk is deleted; the
+  one position that called it, the `undetermined` leaf, is `===` (`checker-v2.md` §31).
+  `Basics.compare`, `lt`, `gt`, `le`, `ge` take `number` only and never had the defect. `bench/size.mjs`,
+  master against this, 385 programs: development brotli 2 286 431 → 2 284 375 (−2 056), release
+  492 853 → 490 767 (−2 086); larger only `run/WideRecordEqInts` (+1 031 development, `Basics.eq`
+  on a 300-field record now ships its derived `eq`) and `run/CoreBasicsCalls` (+455, release +7).
+  `bench/primitives`' `eqRecords`/`eqNested`/`eqLong` measure the derived `eq` now, not a walk.
+  The `Dict` example of the defect is not one: `Dict` declares no `eq`, so `==` on two `Dict`s is
+  the derived one over the tree and answers by shape exactly as `Basics.eq` did — both agree.
 - **`Debug`**: `toString`'s printer, `log` and `todo` over `Js`, printing exactly what the
   sibling printed (every `run/` golden unchanged). `todo`'s throw is now a mapped frame in core's
   `Debug.beni`; `Debug` depends on `Basics` and `Js` (`check/good/TypeOwnerEdges`).

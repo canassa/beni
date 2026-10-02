@@ -421,6 +421,31 @@ have to pattern-match back out. See Appendix A.3.
 `Basics.eq`, `neq`, `lt`, `le`, `gt`, `ge` and `compare` stay declared, exported and callable as
 ordinary functions. They are simply no longer what the operators mean.
 
+> **Amended 2026-10-02 (the owner's decision): `Basics.eq` and `Basics.neq` are what `==` and `≠`
+> mean, called by name.** Their signatures are
+>
+>     eq : a, a → Bool
+>         where a.eq : a, a → Bool
+>     neq : a, a → Bool
+>         where a.eq : a, a → Bool
+>
+> and their bodies `a == b` and `a ≠ b`, so called by name, passed as a value or called through
+> another function they use the receiver type's own `eq` — the declaring module's `pub eq`, else
+> the derived one (§3.3) — exactly as the operator does, with the operator's evidence. They were
+> structural, `equatable`-marked walks over the representation (§3.4), which ignored a type's own
+> `eq`: two values equal by it (a bag of numbers its `eq` compares sorted) were unequal by
+> `Basics.eq`, a silent wrong answer, and a type whose `eq` makes it comparable although its
+> representation holds a function was refused by `Basics.eq` and accepted by `==`. A refusal is
+> now the `where` clause's: `missing_where_constraint` on a rigid variable, `not_equatable` naming
+> `Basics.eq` or `Basics.neq` as called (checker-v2.md §31).
+>
+> `lt`, `le`, `gt`, `ge` and `compare` do not have the defect and are unchanged: they take
+> `number` only, whose `compare` is §3.2's `num_compare`, and their bodies are the operators
+> themselves. The code `==` emits is unchanged but for one position nothing inhabits: the
+> `undetermined` leaf (checker-v2.md §13.1), answered by a call of the structural `Basics.eq`
+> until now, is `===` — its `compare` twin was always `num_compare` — and core's structural walk
+> is gone. `run/BasicsEqOwnEq` pins all three spellings agreeing.
+
 `String.compare` likewise stays: it is the method `compare` of `String` under §3.2, and code that
 calls it by name keeps working.
 
@@ -491,6 +516,11 @@ custom `eq`. The dispatch capability may therefore be true while `has_function`
 is also true. The marker retains its independent structural walk and type-argument
 checks. The two mechanisms are not unified by this correction. `not_equatable` survives
 for an actual function and for a function-containing value passed to the marker.
+
+> **Amended 2026-10-02.** `Basics.eq` and `Basics.neq` no longer carry the marker: they take a
+> `where a.eq` clause and call the custom `eq` (§3.1, amended). No shipped function carries it
+> now. The marker, its walk and its diagnostics stay, for core code that writes `equatable a`;
+> the tests that pin the walk check a `--core` project declaring its own marked function.
 
 ---
 
@@ -724,6 +754,7 @@ generic makes `List.sortBy people .name` fail for no reason a reader could state
 Everything stays declared and exported. `eq`, `neq`, `lt`, `gt`, `le`, `ge` and `compare` are no
 longer what `language.md` §6.5's operators mean (§3.1) but remain ordinary callable functions, so
 `compare a b` in a `case` and `List.sortWith xs λa b -> compare b a` keep working unchanged.
+*Amended 2026-10-02:* `eq` and `neq` are the operators again, by dispatch — §3.1's amendment.
 
 ### 5.7 Two deletions
 

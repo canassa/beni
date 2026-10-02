@@ -1,0 +1,9 @@
+-- See Main.beni. A bag of numbers: the order they were put in is not part
+-- of its value, so its own `eq` compares them sorted, where the derived
+-- `eq` would compare the lists as built.
+pub type Bag
+    = Bag (List Int)
+
+
+pub eq : Bag, Bag → Bool
+eq (Bag xs) (Bag ys) = List.sort xs == List.sort ys

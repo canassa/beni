@@ -226,7 +226,7 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
             try Resolve.reject(s, id, false);
             return false;
         },
-        else => try report(s, w.origin, root, w.method, verdict, w.kind),
+        else => if (!Resolve.siblingRefused(s, id)) try report(s, w.origin, root, w.method, verdict, w.kind),
     }
     try Resolve.reject(s, id, true);
     return false;

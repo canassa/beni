@@ -44,8 +44,8 @@
 //! (`Unit.zig`): a DAG of distinct answers, written owners first. An
 //! `undetermined` answer is the `undetermined` leaf only where `Lower` can
 //! tell its method — below a derived ancestor whose kind IS the wanted's
-//! method — and everywhere else the structural function for the wanted's
-//! own method (`Basics.eq`, or `num_compare` for `compare`) — never an `eq`
+//! method — and everywhere else the primitive for the wanted's
+//! own method (`strict_eq`, or `num_compare` for `compare`) — never an `eq`
 //! leaf in a `compare` slot. `derived`
 //! rows are sorted by emitted name text last, and every index is remapped
 //! once.
@@ -615,9 +615,13 @@ fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Er
 
 /// The proven-undetermined answer for `method`: the `undetermined` leaf
 /// where `Lower` will read the right method off the nearest derived
-/// ancestor (`ctx` is that method), the structural function itself
-/// everywhere else, so an `eq` leaf never lands in a `compare` slot; a
-/// method that is not well known has none.
+/// ancestor (`ctx` is that method), the number primitive itself everywhere
+/// else, so an `eq` leaf never lands in a `compare` slot; a method that is
+/// not well known has none. A receiver nothing determines is a `number`
+/// still unresolved, whose answer these are whichever of `Int` and `Float`
+/// it settles on, or a type no value inhabits (checker-v2.md §13.1). The
+/// `eq` answer was `Basics.eq`, a structural walk, until that function
+/// dispatched like `==` (static-dispatch-spike.md §3.1, amended 2026-10-02).
 fn undetermined(e: *Elaborate, method: Symbol, ctx: Ctx) ?Dispatch.Term {
     const is_eq = method == InternPool.WellKnown.eq.symbol();
     if (!is_eq and method != InternPool.WellKnown.compare.symbol()) {
@@ -625,17 +629,7 @@ fn undetermined(e: *Elaborate, method: Symbol, ctx: Ctx) ?Dispatch.Term {
         return null;
     }
     if (ctx == (if (is_eq) Ctx.eq else Ctx.compare)) return .undetermined;
-    if (!is_eq) return .{ .primitive = .num_compare };
-    const cx = e.in.cx;
-    const basics = cx.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse {
-        e.fail(.internal, "`Basics` is not in the graph, so nothing answers a structural `eq`");
-        return null;
-    };
-    const value = cx.iface(basics).findValue(cx.interner, InternPool.WellKnown.eq.symbol()) orelse {
-        e.fail(.internal, "`Basics` exports no `eq`, so nothing answers a structural `eq`");
-        return null;
-    };
-    return .{ .ext = .{ .module = basics, .value = value } };
+    return .{ .primitive = if (is_eq) .strict_eq else .num_compare };
 }
 
 // ---------------------------------------------------------------------------

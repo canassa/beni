@@ -4951,14 +4951,15 @@ pub const Lowerer = struct {
             .derived, .ext_derived => return l.derivedValue(i, p),
             .primitive => |prim| return l.primitiveValue(prim, p),
             // The proven-undetermined default (checker-v2.md §13.1): the
-            // structural answer, as a function of the enclosing method.
+            // number answer, as a function of the enclosing method — `===`
+            // or `num_compare` (see `partEq`'s arm).
             .undetermined => {
                 const k = kind orelse {
                     try l.reportDispatchBug(l.region, undetermined_without_method);
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 };
                 return switch (k) {
-                    .eq => l.coreValue(.Basics, .eq, p),
+                    .eq => l.primitiveValue(.strict_eq, p),
                     .compare => l.primitiveValue(.num_compare, p),
                 };
             },
@@ -6113,12 +6114,16 @@ pub const Lowerer = struct {
             // The proven-undetermined default (checker-v2.md §13.1): a slot
             // nothing ever inhabits, or a `number` still unresolved at
             // generalisation whose `eq` is `===` whichever of `Int` and
-            // `Float` it settles on. `Basics.eq` IS that answer.
+            // `Float` it settles on. `===` IS that answer, as `num_compare`
+            // is `compare`'s. It used to be a call of `Basics.eq`, a
+            // structural walk; since `Basics.eq` dispatches like `==` there
+            // is no structural walk to call (static-dispatch-spike.md §3.1,
+            // amended 2026-10-02).
             //
             // INVARIANT, and it is the CHECKER's to hold: `undetermined`
             // means exactly that and nothing else. What pins which programs
             // make one is `tests/corpus/dispatch/ErrParts`.
-            .undetermined => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
+            .undetermined => return try l.binary(.strict_eq, left, right, p),
             .derived, .ext_derived => {
                 if (!l.derivedBodyExists(t)) {
                     try l.reportDispatchBug(region, derived_body_missing);
@@ -7176,15 +7181,15 @@ pub const Lowerer = struct {
     /// module reaches it — a plain top-level name when the module being
     /// lowered is that module itself, an import otherwise. This is what
     /// `Resolve` does for an `import_value` instruction; it is done by hand
-    /// here because the two values §8 needs have no reference instruction
-    /// at all: `String.compare` behind `primitive string_compare` (§9.1)
-    /// and `Basics.eq` behind `partEq`'s `err` arm, the position nothing
-    /// ever inhabits (A.66).
+    /// here because the values the emitter calls on its own have no reference
+    /// instruction: `String.compare` behind `primitive string_compare` (§9.1)
+    /// and `List`, `Task` values the lowerer writes. (`Basics.eq` was one,
+    /// until it dispatched like `==`, 2026-10-02.)
     ///
     /// Each failure is REPORTED and not silently emitted as `undefined`.
     /// Before the operators stopped referencing `Basics`, a core package
     /// without `eq` failed in `Resolve` with a name error (`--core-root`
-    /// makes that reachable); the reference moved here, so the failure has
+    /// made that reachable); the reference moved here, so the failure has
     /// to be reported here too, or `a == b` compiles to `undefined(a, b)`.
     fn coreValue(l: *Lowerer, comptime owner: InternPool.WellKnown, function: InternPool.WellKnown, p: u32) !Node.Index {
         const spelling = l.interner.slice(function.symbol());
@@ -7225,8 +7230,8 @@ pub const Lowerer = struct {
             \\resolved (`docs/design/static-dispatch-spike.md` §8), or to read, walk or
             \\build a list (`docs/design/backend.md` §4) — so every core package must
             \\declare it. A core package replaced with `--core-root` must declare
-            \\`Basics.eq`, `String.compare`, and `List`'s `unsafeGet`, `view`, `base`,
-            \\`offset` and `close`.
+            \\`String.compare` and `List`'s `unsafeGet`, `view`, `base`, `offset` and
+            \\`close`.
         ,
             .{ owner, spelling, why },
         );

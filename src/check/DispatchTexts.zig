@@ -454,7 +454,16 @@ pub fn missingWhereConstraint(
     }) catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, fn_var, .top) catch return error.OutOfMemory;
     const callee = r.calleeOf(origin);
-    if (from_annotation and callee.kind != .anonymous) {
+    if (from_annotation and basicsWhereCallee(r, origin) == .basics) {
+        // `Basics.eq x y`: "`eq` is required by `eq`" would say nothing.
+        const b = basicsWhereCallee(r, origin).basics;
+        w.print("\n\nbut `{s}` is any type at all. `{s}` is required by `{s}.{s}`.\n", .{
+            v_text,
+            method_text,
+            b.module,
+            b.name,
+        }) catch return error.OutOfMemory;
+    } else if (from_annotation and callee.kind != .anonymous) {
         w.print("\n\nbut `{s}` is any type at all. `{s}` is required by `{s}`.\n", .{
             v_text,
             method_text,
@@ -724,6 +733,13 @@ pub fn eqName(r: *const Reporter, gpa: std.mem.Allocator, use: EqUse) error{OutO
                 if (m.origin.spelling()) |op| return std.fmt.allocPrint(gpa, "`{s}`", .{op});
                 return std.fmt.allocPrint(gpa, "`.{s}`", .{r.env.interner.slice(bir.symbol(m.name))});
             }
+            // `Basics.eq x y` and `Basics.neq x y` ask through their `where`
+            // clause since 2026-10-02 (static-dispatch-spike.md §3.1): named
+            // as the program called them, as `==` is.
+            if (w.kind == .where_clause) {
+                const callee = basicsWhereCallee(r, w.origin);
+                if (callee == .basics) return std.fmt.allocPrint(gpa, "`{s}.{s}`", .{ callee.basics.module, callee.basics.name });
+            }
             return gpa.dupe(u8, switch (w.kind) {
                 .dot_call, .where_clause, .type_dispatch => "`.eq`",
                 .well_known => "`==`",
@@ -746,6 +762,7 @@ pub fn eqRequirer(r: *const Reporter, use: EqUse) ?[]const u8 {
             if (w.kind != .where_clause) return null;
             const bir = r.env.bir;
             if (w.origin.int() >= bir.insts.len or bir.instTag(w.origin) == .method_call) return null;
+            if (basicsWhereCallee(r, w.origin) == .basics) return null;
             const callee = r.calleeOf(w.origin);
             return switch (callee.kind) {
                 .function, .value => callee.name,
@@ -773,7 +790,22 @@ fn markerCallee(r: *const Reporter, call: Bir.Inst.OptionalIndex) MarkerCallee {
     const bir = r.env.bir;
     const at = call.unwrap() orelse return .none;
     if (at.int() >= bir.insts.len or bir.instTag(at) != .call) return .none;
-    const reference: Bir.Inst.Index = @enumFromInt(bir.instData(at).lhs);
+    return referenceCallee(r, @enumFromInt(bir.instData(at).lhs));
+}
+
+/// A `where` clause's requirement raised at `origin` — a call, or the
+/// reference itself — when what was called is `Basics.eq` or `Basics.neq`,
+/// which ask for `eq` through their clause since 2026-10-02.
+fn basicsWhereCallee(r: *const Reporter, origin: Bir.Inst.Index) MarkerCallee {
+    const bir = r.env.bir;
+    if (origin.int() >= bir.insts.len) return .none;
+    const reference: Bir.Inst.Index = if (bir.instTag(origin) == .call) @enumFromInt(bir.instData(origin).lhs) else origin;
+    const callee = referenceCallee(r, reference);
+    return if (callee == .basics) callee else .none;
+}
+
+fn referenceCallee(r: *const Reporter, reference: Bir.Inst.Index) MarkerCallee {
+    const bir = r.env.bir;
     if (reference.int() >= bir.insts.len) return .none;
     if (bir.instTag(reference) == .ext_value) {
         const data = bir.instData(reference);
@@ -848,8 +880,8 @@ pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: Equata
             \\out of stack calling it, so I stop here rather than build a program that may
             \\throw.
             \\
-            \\Hint: `Basics.eq a b` compares records structurally, field by field, with no
-            \\limit on width — it does not call a custom `eq` of a type inside them.
+            \\Hint: give the record a type of its own, `type Wide = Wide {{ … }}`, and its
+            \\module a `pub eq : Wide, Wide → Bool` that compares the fields you need.
             \\
         , .{ max_derived_record_fields, max_derived_record_fields }) catch return error.OutOfMemory,
     }

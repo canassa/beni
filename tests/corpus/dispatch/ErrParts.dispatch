@@ -14,7 +14,7 @@ module ErrParts
     context 0 param=0 method=eq
     context 1 param=1 method=eq
   site 3 callee ext List eq
-    evidence ext Basics eq
+    evidence primitive strict_eq
   site 7 callee ext_derived Maybe.Maybe eq
     arg undetermined
   site 15 callee ext_derived Result.Result eq

@@ -24,10 +24,13 @@
 --! or `ge` — they dispatch on the receiver's type instead — but all seven,
 --! `compare` included, stay declared, exported and callable by name.
 --!
---! `eq` `neq` — structural equality over any representation — and `append`
---! — concatenation over two — ask a value's JavaScript `typeof` with
---! `Js.typeIs`, which writes the type's name in place: a `"string"` of this
---! module's own would be a `String`, and `Basics` is below `String`.
+--! `eq` and `neq` are `==` and `≠` themselves: their `where` clause hands
+--! them the receiver type's own `eq`, so called by name they answer what
+--! the operator answers (`static-dispatch-spike.md` §3.1, amended
+--! 2026-10-02). `append` — concatenation over two representations — asks
+--! a value's JavaScript `typeof` with `Js.typeIs`, which writes the type's
+--! name in place: a `"string"` of this module's own would be a `String`,
+--! and `Basics` is below `String`.
 --!
 --! The operators `add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge` `and`
 --! `or` are beni whose body is the operator itself: `add a b = a + b`. A
@@ -150,79 +153,18 @@ pub pow : number, number → number
 pow a b = a ^ b
 
 
---| Check if two values are equal. Equality is structural: two values of the
---| same type are equal when they are built the same way.
+--| Check if two values are equal, by their type's own `eq`: exactly what
+--| `a == b` asks. A type whose module declares a `pub eq` is compared by
+--| it, and any other type by the `eq` the compiler derives for it, which
+--| compares two values built the same way part by part.
 --|
 --|     eq 1 1 == True
 --|     eq [ 1, 2 ] [ 1, 2 ] == True
 --|
---| The `equatable` marker rules out the one case that cannot be decided:
---| comparing functions is a compile error, not a crash. What `==` desugars to.
-pub eq : equatable a, a → Bool
-eq a b = Js.pure λ() → equal (Js.array [ Js.from a, Js.from b ])
-
-
--- Structural equality over a stack of the pairs still to compare, two
--- values to a pair: a loop, so a long list or a deep value cannot exhaust
--- the stack. The checker has proved both sides equatable, so there is no
--- function to meet and both sides of a pair have one type: when one is a
--- list, so is the other.
-equal : Js.Value → Bool
-equal work =
-    if Js.same (Js.get work "length") (Js.from 0) then
-        True
-    else
-        y = Js.call work "pop" []
-        x = Js.call work "pop" []
-        if Js.same x y then
-            equal work
-        else if Js.isNullish x || Js.isNullish y then
-            -- `()` is `null`, or `undefined` where a function whose result
-            -- is `()` wrote none (`backend.md` §4).
-            if Js.isNullish x && Js.isNullish y then
-                equal work
-            else
-                False
-        else if Js.typeIs x "object" && Js.typeIs y "object" then
-            if isList x then
-                -- A list in any of its forms, element by element.
-                xs = plain x
-                ys = plain y
-                if Js.same (Js.get xs "length") (Js.get ys "length") then
-                    i = Js.ref 0
-                    _ = Js.each xs λelement →
-                        _ = Js.call work "push" [ element, Js.at ys (Js.read i) ]
-                        Js.write i (Js.read i + 1)
-                    equal work
-                else
-                    False
-            else
-                -- A record, a tuple or a constructor, field by field.
-                keys = Js.call (Js.global "Object") "keys" [ x ]
-                others = Js.call (Js.global "Object") "keys" [ y ]
-                if Js.same (Js.get keys "length") (Js.get others "length") then
-                    ok = Js.ref True
-                    _ = Js.each keys λk →
-                        if Js.to (Js.call (Js.global "Object") "hasOwn" [ y, k ]) then
-                            Js.to (Js.call work "push" [ Js.at x k, Js.at y k ])
-                        else
-                            Js.write ok False
-                    if Js.read ok then
-                        equal work
-                    else
-                        False
-                else
-                    False
-        else
-            False
-
-
--- Whether a value is a list: an array, or a view or a trie, which has a
--- `$plain` function and which no other value has (`backend.md` §4, *What a
--- reader of a list may rely on*).
-isList : Js.Value → Bool
-isList v =
-    Js.to (Js.call (Js.global "Array") "isArray" [ v ]) || Js.typeIs (Js.get v "$plain") "function"
+--| A type with no `eq` — a function — is a compile error, not a crash.
+pub eq : a, a → Bool
+    where a.eq : a, a → Bool
+eq a b = a == b
 
 
 -- A list's elements as a plain array, which the caller must not write.
@@ -234,11 +176,13 @@ plain xs =
         Js.call xs "$plain" []
 
 
---| Check if two values are not equal. What `≠` desugars to.
+--| Check if two values are not equal, by their type's own `eq`: exactly
+--| what `a ≠ b` asks.
 --|
 --|     neq 1 2 == True
-pub neq : equatable a, a → Bool
-neq a b = not (eq a b)
+pub neq : a, a → Bool
+    where a.eq : a, a → Bool
+neq a b = a ≠ b
 
 
 --| Check if the first number is less than the second. What `<` desugars to.

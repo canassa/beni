@@ -1,10 +1,11 @@
 -- dispatch: where a proven-undetermined answer is the `undetermined` leaf
--- and where it is the structural function itself (checker-v2.md §12.2,
+-- and where it is the primitive itself (checker-v2.md §12.2,
 -- §13.1). `Lower` reads a leaf's method off its nearest derived ancestor,
 -- so the leaf is written only below one of the same method: under a value's
--- evidence (`List.eq`'s element, a user `eq`'s `where`) it is `ext Basics
--- eq` or `primitive num_compare`, at any depth. `run/UndeterminedUnderValueEvidence`
--- runs these. Elaboration must not write the leaf there.
+-- evidence (`List.eq`'s element, a user `eq`'s `where`) it is `primitive
+-- strict_eq` or `primitive num_compare`, at any depth (`strict_eq` was
+-- `ext Basics eq` until `Basics.eq` dispatched like `==`, 2026-10-02).
+-- `run/UndeterminedUnderValueEvidence` runs these. Elaboration must not write the leaf there.
 pub type Pair a
     = Pair a Int
 

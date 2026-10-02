@@ -3231,28 +3231,14 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try testing.expect(!w.exists("out/Main.mjs"));
 
     // ┌─────────────────────────────────────────┐
-    // │ EXECUTE — the other half of the message │
+    // │ EXECUTE — a slot no use ever pins       │
     // └─────────────────────────────────────────┘
-    // `String.compare` is one of the two values the diagnostic names;
-    // `Basics.eq` is the other, and it is a DIFFERENT path to the same
-    // report. After S6b a type compares through its OWN derived body (§9.4)
-    // and `List a` has a `pub foreign eq` of its own (§5.2), so the ONE
-    // position still answered by `core/Basics.js`'s walk is the one A.66
-    // names: a slot no use ever pins. `n == n` with `n = None` never
-    // inhabits `Opt`'s parameter, so the part is `err`, and `partEq`'s `err`
-    // arm reaches for `Basics.eq` — which a core root without one cannot
-    // supply. Without this half the `Basics` branch of `missingCoreValue` is
-    // unexercised. (Written `None == None` it no longer reaches it: `==`
-    // against a constructor is a tag test, backend.md §4, and calls
-    // nothing.)
-    //
-    // (This used to be `xs == ys` on a `List Int` through A.51's bridge.
-    // That bridge is gone with S6b: a derived target with no body is now a
-    // table bug and says so.)
-    //
-    // Both declarations name `Basics.eq` and neither names `Basics.neq`:
-    // §8.3 makes `a /= b` the NEGATION of the method, `!eq(a, b)`, so the
-    // emitter reaches for one function and not two.
+    // `Basics.eq` was the other value the backend called on its own: the
+    // answer to a slot no use ever pins (A.66), `n == n` with `n = None`,
+    // which never inhabits `Opt`'s parameter. Since `Basics.eq` dispatches
+    // like `==` (static-dispatch-spike.md §3.1, amended 2026-10-02) that
+    // answer is `===`, written in place, so a core root with no `Basics.eq`
+    // builds such a program and the output names no `Basics` value.
     try w.write("Main.beni",
         \\import Prog exposing (Program)
         \\
@@ -3268,15 +3254,9 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\    n == n
         \\
         \\
-        \\pub differ : Bool
-        \\differ =
-        \\    n = None
-        \\    n ≠ n
-        \\
-        \\
         \\main : Program
         \\main =
-        \\    if same then Prog.say 1 else if differ then Prog.say 2 else Prog.say 0
+        \\    if same then Prog.say 1 else Prog.say 0
         \\
     );
     const eq = try w.run(&.{ "build", "--platform=./myplat", "--core-root=mycore", "--out=out", "Main.beni" });
@@ -3284,16 +3264,9 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), eq.exit_code);
-    try testing.expectEqual(@as(usize, 2), eq.diagnostics.len);
-    for (eq.diagnostics) |d| try testing.expectEqual(diagnostic.Code.core_contract_violation, d.code);
-    // Sorted by position, so `same` before `differ` — and both name `eq`.
-    for (eq.diagnostics) |d| try testing.expect(std.mem.indexOf(u8, d.message, "`Basics.eq`") != null);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY STATE                            │
-    // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("out/Main.mjs"));
+    try testing.expectEqualStrings("", eq.stderr);
+    try testing.expectEqual(@as(u8, 0), eq.exit_code);
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/Main.mjs"), "Basics$") == null);
 }
 
 test "a file under --core-root may use foreign without --core" {
@@ -6965,12 +6938,15 @@ test "a payload's equatable requirement survives a derived context, for == and <
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `H.eq`'s body compares the `a`s with `Basics.eq`, so its scheme asks
+    // `H.eq`'s body compares the `a`s with `marked`, so its scheme asks
     // `equatable` of `a` as a FLAG, not as an `a.eq` clause. Reading only
     // open wanteds off a pass's markers would leave `W`'s context empty and
-    // compare two functions. The corpus fixtures
-    // `check/bad/DerivedContextEquatableFlag*` pin the text (they name the
-    // function); this pins the code and place.
+    // compare two functions. The marker is core's alone (`language.md` §3),
+    // and since `Basics.eq` dispatches like `==` (2026-10-02) no shipped
+    // function carries it, so the project is checked as core (`--core`) and
+    // `H` declares its own `marked`. The corpus fixtures
+    // `check/bad/DerivedContextEquatableFlag*` call `Basics.eq`, and pin
+    // the same refusal through its `where` clause now.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const holder_eq =
@@ -6979,7 +6955,12 @@ test "a payload's equatable requirement survives a derived context, for == and <
         \\
         \\
         \\pub eq (Holder x) (Holder y) =
-        \\    Basics.eq x y
+        \\    marked x y
+        \\
+        \\
+        \\marked : equatable a, a → Bool
+        \\marked x y =
+        \\    True
         \\
     ;
     const holder_compare =
@@ -6988,11 +6969,16 @@ test "a payload's equatable requirement survives a derived context, for == and <
         \\
         \\
         \\pub compare (Holder x) (Holder y) =
-        \\    if Basics.eq x y then
+        \\    if marked x y then
         \\        EQ
         \\
         \\    else
         \\        LT
+        \\
+        \\
+        \\marked : equatable a, a → Bool
+        \\marked x y =
+        \\    True
         \\
     ;
     const own = "import H\n\n\ntype W a\n    = W (H.Holder a)\n\n\nf : Int → Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    W (H.Holder f) {s} W (H.Holder f)\n";
@@ -7011,8 +6997,8 @@ test "a payload's equatable requirement survives a derived context, for == and <
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const own_args = [_][]const u8{ "check", "--platform=node", "--no-cache", "H.beni", "Main.beni" };
-        const mid_args = [_][]const u8{ "check", "--platform=node", "--no-cache", "H.beni", "Mid.beni", "Main.beni" };
+        const own_args = [_][]const u8{ "check", "--core", "--no-cache", "H.beni", "Main.beni" };
+        const mid_args = [_][]const u8{ "check", "--core", "--no-cache", "H.beni", "Mid.beni", "Main.beni" };
         const checked = try w.run(if (c.mid) mid_args[0..] else own_args[0..]);
 
         // ┌─────────────────────────────────────┐

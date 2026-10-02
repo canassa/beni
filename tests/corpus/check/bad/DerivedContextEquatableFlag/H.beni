@@ -2,6 +2,11 @@
 -- Main.beni. `H.eq` is unannotated and compares its payloads with
 -- `Basics.eq`, so its `a` is `equatable`: it asks no evidence, but it may
 -- only be given a type the structural walk can compare.
+--
+-- (2026-10-02: `Basics.eq` and `Basics.neq` ask for `eq` through a
+-- `where` clause, as `==` does — static-dispatch-spike.md §3.1, amended —
+-- and no longer through the `equatable` marker. The refusal stands; it is
+-- reached the way a `where` clause's is.)
 pub type Holder a
     = Holder a
 

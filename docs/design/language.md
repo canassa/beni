@@ -730,6 +730,12 @@ working and `"a" < "b"` now compiles. `Basics.eq`, `neq`, `lt`, `gt`, `le`, `ge`
 declared, exported and callable by name; they are simply no longer what the operators mean. Nothing
 in the precedence table above changes. → `static-dispatch-spike.md` §3.
 
+*Amended 2026-10-02 (the owner):* `Basics.eq` and `Basics.neq` called by name **mean exactly what
+`==` and `≠` mean**: `eq : a, a → Bool where a.eq : a, a → Bool`, whose body is `a == b`, so they
+call the receiver type's own `eq` as the operator does. They were a structural walk that ignored a
+type's own `eq` — a silent wrong answer. `lt`, `gt`, `le`, `ge` and `compare` take `number` only
+and agree with the operators already (`static-dispatch-spike.md` §3.1, amended).
+
 ### 6.6 `?`
 
 `e?` where `e : Result x a` yields `a` or returns `Err x` from the enclosing function; where

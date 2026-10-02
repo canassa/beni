@@ -1,6 +1,11 @@
 -- The `compare` side of `DerivedContextEquatableFlag`: see Main.beni. `H.compare`
 -- is unannotated and tests its payloads with `Basics.eq`, so its `a` is
 -- `equatable`.
+--
+-- (2026-10-02: `Basics.eq` and `Basics.neq` ask for `eq` through a
+-- `where` clause, as `==` does — static-dispatch-spike.md §3.1, amended —
+-- and no longer through the `equatable` marker. The refusal stands; it is
+-- reached the way a `where` clause's is.)
 pub type Holder a
     = Holder a
 

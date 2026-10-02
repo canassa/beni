@@ -2851,6 +2851,9 @@ are superseded.
 
 ### 11.4 The `equatable` marker
 
+*(Amended 2026-10-02, §31: `Basics.eq` and `Basics.neq` no longer carry the marker; no shipped
+function does. What follows holds for core code that writes `equatable a`.)*
+
 The marker stays what `static-dispatch-spike.md` §3.4 says: a structural guarantee for explicit
 `Basics.eq` and `Basics.neq`, and **never** an `eq` method. The resolver never consults it, which
 deletes `builtinRigidTarget`'s arm, whose answer ignored the type's `eq`. The `equatable`
@@ -3437,7 +3440,8 @@ pub const Term = union(enum(u8)) {
                                                                // today's structural answer (`Basics$eq`, or
                                                                // `num_compare` for compare). v2 writes it only on
                                                                // proof; v1's converter mapped a legacy `err`
-                                                               // PART to it, preserving today's bytes
+                                                               // PART to it, preserving today's bytes.
+                                                               // `===` since 2026-10-02 (§31)
     field,                                                     // a callee only
 };
 pub const Site = struct {
@@ -3560,7 +3564,8 @@ A violation is `internal` at the site.
   such an ancestor, and only in a slot that asks for that ancestor's method. Everywhere else — a
   site root, an argument of a value's evidence (`List.eq`'s element: `[ [] ] == [ [] ]`), or a
   `compare` slot under an `eq` ancestor — the table names the structural function for the
-  slot's own method: `ext Basics eq` or `primitive num_compare`. P6 carries each node's nearest
+  slot's own method: `ext Basics eq` (`primitive strict_eq` since 2026-10-02, §31) or
+  `primitive num_compare`. P6 carries each node's nearest
   derived kind (`Unit.Ctx`) and writes the leaf only where it matches the wanted's method. The I7
   assert checks the rule (`Dispatch.checkI7`'s placement pass, each `(term, ancestor kind, slot
   method)` once): a slot's method is its owner's `k`th requirement — a declaration's list, an
@@ -5584,3 +5589,30 @@ mention a fresh variable no other constraint touches.
 *(Amended 2026-10-02, the same day: `typeIs`'s second argument is one more such position —
 `boundary.md` §4.2's `typeIs`, which `Basics` needs to ask whether a value is a string with no
 `String` of its own. Generation treats it exactly as the name argument of `get`.)*
+
+## 31. Amendment of 2026-10-02: `Basics.eq` dispatches
+
+*The owner's decision; `static-dispatch-spike.md` §3.1 and §3.4, `language.md` §6.5, amended the
+same day.* `Basics.eq` and `Basics.neq` are `a, a → Bool where a.eq : a, a → Bool`, with `a == b`
+and `a ≠ b` as their bodies. A call of either raises an ordinary `where` requirement (§12.2), so
+it is answered exactly as `==`'s is — the module rule, then derivation — and a type's own `eq` is
+what runs. Three consequences for the checker:
+
+- **The `undetermined` default for `eq` is `primitive strict_eq`.** Where §13.1 named the
+  structural function (`ext Basics eq`) for a slot with no derived ancestor of its method, it
+  names `===` now, as `compare`'s slot always had `num_compare`: the receiver is a `number` still
+  unresolved, whose `eq` is `===` whichever of `Int` and `Float` it settles on, or a type nothing
+  inhabits (§9.4). The backend lowers the leaf to `===` too (`backend.md` §9's edge note,
+  amended), and no core value is needed for it.
+- **Texts.** A `not_equatable` met through the clause of a call of `Basics.eq` or `Basics.neq` is
+  named as called — "I cannot compare these values with `Basics.eq`" — and not as "`.eq`, which
+  `eq` requires"; `missing_where_constraint` there says "`eq` is required by `Basics.eq`"
+  (`DispatchTexts.basicsWhereCallee`). The wide-record hint, which offered `Basics.eq` as the
+  structural escape, offers a type of its own with a `pub eq`.
+- **One comparison, one message.** A requirement resolved while its receiver is a shape of
+  unknowns (`same ( k, Box k ) ( k, Box k )`) derives position by position; a position refused
+  after a sibling of the same lineage was refused says nothing (`Resolve.siblingRefused`), as
+  `refuseDerived` already did for its own refusals. Every `where` clause gains this;
+  `Basics.eq` made it visible (`check/bad/EqOneQuestionPerSite`).
+
+The §11.4 marker is untouched and no shipped function carries it.

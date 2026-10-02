@@ -5,6 +5,11 @@
 -- `fnf` was interned before `flexf`). `flexf` is interned first here — the
 -- first declaration names it; `EqOneQuestionRecordNamesFirst` is the twin
 -- that interns `fnf` first.
+--
+-- (2026-10-02: `Basics.eq` and `Basics.neq` ask for `eq` through a
+-- `where` clause, as `==` does — static-dispatch-spike.md §3.1, amended —
+-- and no longer through the `equatable` marker. The refusal stands; it is
+-- reached the way a `where` clause's is.)
 flexf = 1
 
 

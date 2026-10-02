@@ -1,0 +1,69 @@
+-- run: `Basics.eq` and `Basics.neq` called by name use the type's own `eq`,
+-- exactly as `==` and `≠` do (`static-dispatch-spike.md` §3.1, amended
+-- 2026-10-02). They were structural: two `Bag`s holding the same numbers in
+-- a different order are equal by `Bag.eq`, which `==` called, and unequal
+-- by `Basics.eq`, which walked the lists — a silent wrong answer. Each
+-- line compares one pair three ways: `Basics.eq` by name, `Basics.eq`
+-- passed as a value, and the operator; the `neq` lines likewise.
+--
+-- `Handler` holds a function and compares by its own `eq`: `==` used it,
+-- and `Basics.eq` was a compile error (the last two lines).
+--
+-- `Dict` declares no `eq`, so its `==` is derived over the tree, and two
+-- dictionaries with the same pairs inserted in different orders may differ
+-- in shape; whatever the answer, all three ways must give the same one.
+import Bag exposing (Bag)
+import Dict exposing (Dict)
+import Handler exposing (Handler)
+import Node exposing (Program)
+
+
+apply : (a, a → Bool), a, a → Bool
+apply f x y = f x y
+
+
+show : Bool, Bool, Bool → String
+show byName asValue byOperator =
+    if byName == asValue && asValue == byOperator then
+        if byName then
+            "True"
+        else
+            "False"
+    else
+        "they disagree"
+
+
+ascending : Dict Int String
+ascending = Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ), ( 4, "d" ), ( 5, "e" ), ( 6, "f" ) ]
+
+
+descending : Dict Int String
+descending =
+    Dict.fromList [ ( 6, "f" ), ( 5, "e" ), ( 4, "d" ), ( 3, "c" ), ( 2, "b" ), ( 1, "a" ) ]
+
+
+main : Program
+main =
+    a = Bag [ 1, 2, 3 ]
+    b = Bag [ 3, 1, 2 ]
+    c = Bag [ 1, 2, 4 ]
+    up = Handler "step" λn → n + 1
+    down = Handler "step" λn → n - 1
+    other = Handler "other" λn → n
+    Node.printLines
+        [ show (Basics.eq a b) (apply Basics.eq a b) (a == b)
+        , show (Basics.eq a c) (apply Basics.eq a c) (a == c)
+        , show (Basics.neq a b) (apply Basics.neq a b) (a ≠ b)
+        , show (Basics.neq a c) (apply Basics.neq a c) (a ≠ c)
+        , show (Basics.eq [ a ] [ b ]) (apply Basics.eq [ a ] [ b ]) ([ a ] == [ b ])
+        , show
+            (Basics.eq ascending descending)
+            (apply Basics.eq ascending descending)
+            (ascending == descending)
+        , show
+            (Basics.neq ascending descending)
+            (apply Basics.neq ascending descending)
+            (ascending ≠ descending)
+        , show (Basics.eq up down) (apply Basics.eq up down) (up == down)
+        , show (Basics.neq up other) (apply Basics.neq up other) (up ≠ other)
+        ]
