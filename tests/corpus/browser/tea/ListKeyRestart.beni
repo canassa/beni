@@ -1,0 +1,91 @@
+-- A key is matched by the list it holds, whatever form the list is in
+-- (boundary.md §9.8.3; backend.md §4, *Lists are arrays*: a plain array, a
+-- view, a trie). Each click keys its body with the same list as the click
+-- before, alternately written as a literal (a plain array) and built: the
+-- `rest` of a pattern (a view) for `short`, 1 to 40 by `push` (a trie) for
+-- `long`. Under `Restart` the second body of each pair must cancel the
+-- first: a key compared by the form's fields saw two different keys and
+-- let both finish.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Int
+import List
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Msg
+    = Short
+    | Long
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    key =
+        if Int.mod n 2 == 0 then
+            fresh msg
+        else
+            built msg
+    ( n + 1, Cmd.keyed key Cmd.Restart (work "body ${String.fromInt (n + 1)}" _) )
+
+
+-- The keys as literals, plain arrays.
+fresh : Msg → List Int
+fresh msg =
+    case msg of
+        Short →
+            [ 1, 2 ]
+
+        Long →
+            List.range 1 40
+
+
+-- The same keys in the other forms: a view, then a trie.
+built : Msg → List Int
+built msg =
+    case msg of
+        Short →
+            case [ 0, 1, 2 ] of
+                [ _, …rest ] →
+                    rest
+
+                [] →
+                    []
+
+        Long →
+            List.foldl (List.range 1 40) [] λx acc → List.push acc x
+
+
+work : String, Cmd.Send Msg → ()
+work name _ =
+    Task.bracket
+        (λ() → ())
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    Debug.log "${name} done" ()
+
+                Cancelled →
+                    Debug.log "${name} cancelled" ()
+        )
+        λ_ → Time.sleep (Time.millis 100)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="short" onClick={Short}>short</button>
+        <button id="long" onClick={Long}>long</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

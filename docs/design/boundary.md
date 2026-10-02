@@ -1873,6 +1873,22 @@ keys it with a type the library declares and names every parameter the body depe
 `Time.every` does. Closing this for good needs a key that carries its type's identity — a
 fingerprint the compiler supplies — and is open.
 
+*Amended 2026-10-02 (`static-dispatch-spike.md` §3.5, the audit of what `==` compares).* **"Built
+alike" is about values, not storage.** A `List` is a plain array, a view or a trie (`backend.md` §4,
+*Lists are arrays*), and the walk compared those forms' fields, so `[ 1, 2 ]` written as a literal
+and the same two numbers as a pattern's `rest` were two keys, and a `Restart` keyed by one let a
+body keyed by the other finish (a silent wrong answer). The walk now reads a list in any form as its
+elements (`$plain()`, the one fact a reader outside `core/List.js` may use besides `length` and
+`Array.isArray`); `browser/tea/ListKeyRestart` pins it. **One case is still open, and is the same
+fingerprint's:** a key whose type compares by its own `compare` rather than by its representation —
+a `Dict` or a `Set` (a tree whose shape depends on insertion order), or a program's type with a
+hand-written `compare` — is matched by what it stores, so two equal sets built in different orders
+are two keys. The key's evidence is the type's own order, but evidence is built afresh at each call
+and says nothing of which type it orders, so it cannot be applied to two keys without knowing they
+are of one type; with a fingerprint, keys of one type would be ordered by their evidence. Until
+then, key a command or a subscription by a value whose type derives its `compare` from canonical
+parts (numbers, strings, tuples, records, custom types, lists of them).
+
 #### 9.8.4 Running a command, and the dispatch order (W53)
 
 **The program is a scope.** `Tea.element`'s `init` opens a root scope (`Task.openRoot`), and every

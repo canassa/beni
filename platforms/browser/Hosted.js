@@ -24,11 +24,19 @@ const rank = (v) => {
   }
 };
 
+// A list in any of its forms (backend.md §4, *Lists are arrays*: a plain
+// array, a view, a trie) as a plain array, so that two equal lists are
+// built alike: a view's or a trie's fields are how it is stored, not what
+// it holds. Every other value is itself.
+const plain = (v) => (v != null && typeof v.$plain === "function" ? v.$plain() : v);
+
 // A total order on the values a key can hold, by value alone: two values
 // are equal exactly when they are built alike. Fields are compared in the
 // order of their names, so a record's literal order does not matter.
-const order = (a, b) => {
-  if (a === b) return 0;
+const order = (x, y) => {
+  if (x === y) return 0;
+  const a = plain(x);
+  const b = plain(y);
   const ra = rank(a);
   const rb = rank(b);
   if (ra !== rb) return ra - rb;

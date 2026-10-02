@@ -1,0 +1,8 @@
+click #short
+advance 50
+click #short
+advance 100
+click #long
+advance 50
+click #long
+advance 100

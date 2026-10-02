@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="short">"short"</button>
+    <button id="long">"long"</button>
+  </main>
+</body>
+-- click #short
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- click #short
+console.log: body 1 cancelled: ()
+(the DOM did not change)
+-- advance 100
+console.log: body 2 done: ()
+(the DOM did not change)
+-- click #long
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- click #long
+console.log: body 3 cancelled: ()
+(the DOM did not change)
+-- advance 100
+console.log: body 4 done: ()
+(the DOM did not change)
