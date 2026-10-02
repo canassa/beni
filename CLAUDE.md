@@ -267,11 +267,12 @@ both bits for every function (`src/check/Effects.zig`, `checker-v2.md` §26), an
 `foreign` declares its rung (`foreign pure|impure|suspends`). **The runtime spike has
 landed** (proposal §16, [`research/44`](docs/design/research/44-effects-runtime-spike.md)): a
 function that may suspend is emitted in a suspendable form — a comparison on the fast path, a
-continuation handed to core's fiber runtime (`core/Task.js`) when it parks — with a second body,
+continuation handed to core's fiber runtime (`core/Task.beni`, written in beni over `Js` since 2026-10-02, with `Js.suspending` marking its one parking point; `plans/core-in-beni.md` step 2) when it parks — with a second body,
 `name$s`, for a declaration whose callbacks may or may not suspend; code that cannot suspend is
-emitted byte for byte as before. `Task` has `spawn`, `join`, `scope` and `bracket`; the `node`
-platform's `Io` has `run`, `sleep` and `readFile`. The other primitives, and the browser's, are
-still to come. One
+emitted byte for byte as before. `Task` has `spawn`, `join`, `scope` and `bracket`; the `node` platform's `Io` has `run`, `sleep`
+and `readFile`; a defect closes every root scope (`boundary.md` §9.8.14). **The bar is Effect v4
+parity** (the owner, 2026-10-02): the ledger is [`research/48`](docs/design/research/48-effect-parity-ledger.md),
+the contract `transparent-effects-proposal.md` §17, the slices `plans/effects-plan.md` §8. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
 `where` clause, so their siblings are JavaScript loops calling beni evidence —
 the shape `foldl` was — covered, since a well-known `eq` or `compare` is `sync`
