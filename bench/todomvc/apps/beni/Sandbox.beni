@@ -1,0 +1,196 @@
+-- tests/corpus/browser/tea/TodoMVC.beni with neither persistence nor routing,
+-- as a `Tea.sandbox`: no `Cmd` and no `Sub`. A variant for
+-- bench/todomvc/size.mjs, which prices a feature as the release bytes the
+-- variant without it saves.
+import Html exposing (Html)
+import Tea
+
+
+type Filter
+    = All
+    | Active
+    | Completed
+
+
+type alias Todo =
+    id : Int
+    title : String
+    done : Bool
+
+
+type alias Model =
+    todos : List Todo
+    draft : String
+    filter : Filter
+    nextId : Int
+
+
+type Msg
+    = Typed String
+    | KeyDown Html.Event
+    | Toggle Int
+    | ToggleAll Bool
+    | Destroy Int
+    | ClearCompleted
+    | SetFilter Filter
+
+
+-- ---- The program -----------------------------------------------------------
+
+init : Model
+init =
+    { todos = []
+    , draft = ""
+    , filter = All
+    , nextId = 0
+    }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed text →
+            { model | draft = text }
+
+        KeyDown event →
+            if Html.key event == "Enter" then
+                _ = Html.preventDefault event
+
+                title = String.trim model.draft
+                if String.isEmpty title then
+                    model
+                else
+                    changed
+                        { model | draft = "", nextId = model.nextId + 1 }
+                        (model.todos ++ [ { id = model.nextId, title = title, done = False } ])
+            else
+                model
+
+        Toggle id →
+            changed
+                model
+                (List.map model.todos λt → if t.id == id then { t | done = not t.done } else t)
+
+        ToggleAll done →
+            changed model (List.map model.todos λt → { t | done = done })
+
+        Destroy id →
+            changed model (List.filter model.todos λt → t.id ≠ id)
+
+        ClearCompleted →
+            changed model (List.filter model.todos λt → not t.done)
+
+        SetFilter filter →
+            { model | filter = filter }
+
+
+changed : Model, List Todo → Model
+changed model todos = { model | todos = todos }
+
+
+visible : Filter, Todo → Bool
+visible filter todo =
+    case filter of
+        All →
+            True
+
+        Active →
+            not todo.done
+
+        Completed →
+            todo.done
+
+
+view : Model → Html Msg
+view model =
+    left = List.length (List.filter model.todos λt → not t.done)
+    <section class="todoapp">
+        <header class="header">
+            <h1>todos</h1>
+            <input
+                id="new-todo"
+                class="new-todo"
+                value={model.draft}
+                onInput={Typed}
+                onKeyDown={KeyDown}
+            />
+        </header>
+        <section class="main" hidden={List.isEmpty model.todos}>
+            <input
+                id="toggle-all"
+                class="toggle-all"
+                type="checkbox"
+                checked={left == 0}
+                onCheck={ToggleAll}
+            />
+            <label for="toggle-all">Mark all as complete</label>
+            <ul class="todo-list">
+                <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
+                    {λtodo →
+                        <li class={[ ( "completed", todo.done ) ]}>
+                            <div class="view">
+                                <input
+                                    class="toggle"
+                                    type="checkbox"
+                                    checked={todo.done}
+                                    onCheck={λ_ → Toggle todo.id}
+                                />
+                                <label>{todo.title}</label>
+                                <button class="destroy" onClick={Destroy todo.id} />
+                            </div>
+                        </li>
+                    }
+                </For>
+            </ul>
+        </section>
+        <footer class="footer" hidden={List.isEmpty model.todos}>
+            <span class="todo-count">
+                <strong>{String.fromInt left}</strong>{if left == 1 then
+                                                          " item left"
+                                                       else
+                                                          " items left"
+                                                      }
+            </span>
+            <ul class="filters">
+                <li>
+                    <a
+                        href="#/"
+                        class={[ ( "selected", model.filter == All ) ]}
+                        onClick={SetFilter All}
+                    >
+                        All
+                    </a>
+                </li>
+                <li>
+                    <a
+                        href="#/active"
+                        class={[ ( "selected", model.filter == Active ) ]}
+                        onClick={SetFilter Active}
+                    >
+                        Active
+                    </a>
+                </li>
+                <li>
+                    <a
+                        href="#/completed"
+                        class={[ ( "selected", model.filter == Completed ) ]}
+                        onClick={SetFilter Completed}
+                    >
+                        Completed
+                    </a>
+                </li>
+            </ul>
+            <button
+                id="clear-completed"
+                class="clear-completed"
+                hidden={left == List.length model.todos}
+                onClick={ClearCompleted}
+            >
+                Clear completed
+            </button>
+        </footer>
+    </section>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = init, update = update, view = view }

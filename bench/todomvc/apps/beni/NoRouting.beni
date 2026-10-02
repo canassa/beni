@@ -1,0 +1,243 @@
+-- tests/corpus/browser/tea/TodoMVC.beni with its filter set by clicks on the
+-- filter links rather than read from the address: no `Url`, no
+-- `Browser.Navigation` and no subscription. A variant for
+-- bench/todomvc/size.mjs, which prices a feature as the release bytes the
+-- variant without it saves.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Storage exposing (Local)
+import Sub
+import Tea
+
+
+type Filter
+    = All
+    | Active
+    | Completed
+
+
+type alias Todo =
+    id : Int
+    title : String
+    done : Bool
+
+
+type alias Model =
+    todos : List Todo
+    draft : String
+    filter : Filter
+    nextId : Int
+
+
+type Msg
+    = Typed String
+    | KeyDown Html.Event
+    | Toggle Int
+    | ToggleAll Bool
+    | Destroy Int
+    | ClearCompleted
+    | SetFilter Filter
+
+
+-- ---- Persistence --------------------------------------------------------
+-- One line per todo: "1" or "0" for done, then the title. A title comes
+-- from a one-line input, so it holds no line break.
+
+key : String
+key = "todos-beni"
+
+
+encode : List Todo → String
+encode todos = String.join (List.map todos λt → (if t.done then "1" else "0") ++ t.title) "\n"
+
+
+decode : String → List Todo
+decode text =
+    List.indexedMap (List.filter (String.lines text) λline → not (String.isEmpty line)) λi line →
+        { id = i, title = String.dropLeft line 1, done = String.startsWith line "1" }
+
+
+save : List Todo → Cmd Msg
+save todos = Cmd.do λ() → saved (Storage.set Local key (encode todos))
+
+
+-- A todo list too big for the quota, or storage the browser withholds,
+-- is kept in the page only.
+saved : Result Storage.Error () → ()
+saved _ = ()
+
+
+-- ---- The program -----------------------------------------------------------
+
+init : Model × Cmd Msg
+init =
+    todos =
+        case Storage.get Local key of
+            Just text →
+                decode text
+
+            Nothing →
+                []
+    ( { todos = todos
+      , draft = ""
+      , filter = All
+      , nextId = List.length todos
+      }
+    , Cmd.none
+    )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Typed text →
+            ( { model | draft = text }, Cmd.none )
+
+        KeyDown event →
+            if Html.key event == "Enter" then
+                _ = Html.preventDefault event
+
+                title = String.trim model.draft
+                if String.isEmpty title then
+                    ( model, Cmd.none )
+                else
+                    changed
+                        { model | draft = "", nextId = model.nextId + 1 }
+                        (model.todos ++ [ { id = model.nextId, title = title, done = False } ])
+            else
+                ( model, Cmd.none )
+
+        Toggle id →
+            changed
+                model
+                (List.map model.todos λt → if t.id == id then { t | done = not t.done } else t)
+
+        ToggleAll done →
+            changed model (List.map model.todos λt → { t | done = done })
+
+        Destroy id →
+            changed model (List.filter model.todos λt → t.id ≠ id)
+
+        ClearCompleted →
+            changed model (List.filter model.todos λt → not t.done)
+
+        SetFilter filter →
+            ( { model | filter = filter }, Cmd.none )
+
+
+changed : Model, List Todo → Model × Cmd Msg
+changed model todos = ( { model | todos = todos }, save todos )
+
+
+visible : Filter, Todo → Bool
+visible filter todo =
+    case filter of
+        All →
+            True
+
+        Active →
+            not todo.done
+
+        Completed →
+            todo.done
+
+
+view : Model → Html Msg
+view model =
+    left = List.length (List.filter model.todos λt → not t.done)
+    <section class="todoapp">
+        <header class="header">
+            <h1>todos</h1>
+            <input
+                id="new-todo"
+                class="new-todo"
+                value={model.draft}
+                onInput={Typed}
+                onKeyDown={KeyDown}
+            />
+        </header>
+        <section class="main" hidden={List.isEmpty model.todos}>
+            <input
+                id="toggle-all"
+                class="toggle-all"
+                type="checkbox"
+                checked={left == 0}
+                onCheck={ToggleAll}
+            />
+            <label for="toggle-all">Mark all as complete</label>
+            <ul class="todo-list">
+                <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
+                    {λtodo →
+                        <li class={[ ( "completed", todo.done ) ]}>
+                            <div class="view">
+                                <input
+                                    class="toggle"
+                                    type="checkbox"
+                                    checked={todo.done}
+                                    onCheck={λ_ → Toggle todo.id}
+                                />
+                                <label>{todo.title}</label>
+                                <button class="destroy" onClick={Destroy todo.id} />
+                            </div>
+                        </li>
+                    }
+                </For>
+            </ul>
+        </section>
+        <footer class="footer" hidden={List.isEmpty model.todos}>
+            <span class="todo-count">
+                <strong>{String.fromInt left}</strong>{if left == 1 then
+                                                          " item left"
+                                                       else
+                                                          " items left"
+                                                      }
+            </span>
+            <ul class="filters">
+                <li>
+                    <a
+                        href="#/"
+                        class={[ ( "selected", model.filter == All ) ]}
+                        onClick={SetFilter All}
+                    >
+                        All
+                    </a>
+                </li>
+                <li>
+                    <a
+                        href="#/active"
+                        class={[ ( "selected", model.filter == Active ) ]}
+                        onClick={SetFilter Active}
+                    >
+                        Active
+                    </a>
+                </li>
+                <li>
+                    <a
+                        href="#/completed"
+                        class={[ ( "selected", model.filter == Completed ) ]}
+                        onClick={SetFilter Completed}
+                    >
+                        Completed
+                    </a>
+                </li>
+            </ul>
+            <button
+                id="clear-completed"
+                class="clear-completed"
+                hidden={left == List.length model.todos}
+                onClick={ClearCompleted}
+            >
+                Clear completed
+            </button>
+        </footer>
+    </section>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
