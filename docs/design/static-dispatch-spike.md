@@ -546,7 +546,7 @@ what it holds. Where a type holds something that has no equality — a function,
 | `Maybe`, `Result`, `Task.Exit`, `Schema`'s `Description`, `Definition`, `Shape` and the rest of its plain data, `Url`, `Protocol`, `Url.Builder`'s two types, `Random.Pcg.Seed`, and the platforms' `Http.Error`, `Problem`, `Header`, `Body`, `Part`, `Response`, `Metadata`, `Progress`, `Time.Duration`, `Time.Posix`, `Storage`'s two, `Dom`'s three, `Browser.Navigation.Key` and `Error`, `Browser.Events`' two, `Browser.UrlRequest`, `Io.FileError` | derived | canonical: data built of canonical parts. `Http.Metadata` holds a `Dict`, compared by content since that `Dict` is. A `Url` is its fields: `Url.fromString` normalises as the URL standard does, so two spellings of one address parse to equal records, while a record built by hand is compared as written. An `Http.Header`'s name is compared as written, case and all, because HTTP/1.1 sends it as written |
 | `Schema`'s `Schema`, `Conversion`, `Fields`, `Mapping`, `Variant`, `Injection`, `Value`; `Js.Value`, `Js.Ref`; `Task.Fiber`, `Scope`, `Resume`, `Soon`; `Html`, `Html.Event`; `Hosted`'s `Outlet`, `Job`, `Later`, `Tap`, `Relay`; `Browser.Program`, `Host`; `Node.Program` | none: `==` is `unknown_method` | a `foreign type` with no `eq`. A function or a host object has no value to compare; an identity `eq` could be offered for a handle (no guarantee is at stake either way) and is not, since nothing needs it |
 | `Url.Parser`, `Random.Pcg.Generator`, `Http.Expect`, `Cmd`, `Sub` | none: `==` is `not_equatable` | each holds a function (or a `Hosted` handle) |
-| `Hosted.Key` | its own: a reflective order over what the key holds (`boundary.md` §9.8.3) | a key is matched across types, so its type's `compare` is not what orders it. Since 2026-10-02 a list in any form is read as its elements; a `Dict`, a `Set` or a type with a hand-written `compare` as a key is still matched by its representation, which is open there |
+| `Hosted.Key` | its own: by the key's type identity, then by that type's own `compare` (`boundary.md` §9.8.3, amended 2026-10-02; §8.6 here) | a key is matched across types, so it carries its type's identity. Until later on 2026-10-02 it was a reflective order over what the key held, which matched a `Dict`, a `Set` or a type with a hand-written `compare` by its representation; that walk is gone |
 
 **Types that are not on `master` yet**, and what their `eq` must be when they land (the effects
 plan, `transparent-effects-proposal.md` §17.4–§17.8):
@@ -2090,6 +2090,88 @@ byte-stable.
 show the single separator and the operand names `x` and `y` where the emitter writes `$x` and `$y`.
 They are illustrations of SHAPE and are left as they were written; where one disagrees with the row
 above, the row above is the contract.
+
+### 8.6 Type identities (added 2026-10-02)
+
+*The owner's decision of 2026-10-02 on keys (`boundary.md` §9.8.3, amended): close the hole with a
+compiler-supplied type identity, directly.* Evidence says how to compare two values of a type, and
+nothing of which type it is: it is built afresh at each call, and two types may compare alike. A
+key matched across types needs both, so the compiler supplies the second as one more hidden
+argument, beside the evidence, only where it is needed.
+
+**What an identity is.** A string, written by the checker from the type at the site, that two
+sites write alike exactly when their types are one:
+
+| Type | Identity |
+|---|---|
+| a named type `T` of module `M`, with arguments | `M.T`, `M.T(a,b)` — a root package's module bare, a core one `core:M.T`, a platform's `platform:M.T`, so that a program's module named like a platform's is another type |
+| a tuple, `()` | `(a,b)`, `()` |
+| a record | `{x=a,y=b}`, fields sorted by text, an open end left out |
+| a function | `(a,b->c)` (only a phantom argument can hold one: a key's type has `compare`) |
+| a type variable of the declaration the site is in | that declaration's **identity parameter** for it, concatenated in |
+| a variable no type will ever fill — `checker-v2.md` §12.3's case 3, a receiver no binder reaches | `_`: no value of it exists, so nothing is told apart; except a `number` nothing settled, whose values are its integer literals: `core:Basics.Int`, so `Cmd.keyed 1` and a key of type `Int` are one |
+
+An alias is read through to its expansion. No character of the separators can begin or occur in a
+name, so the text is unambiguous. It is the same text in a development and a release build: renamed
+fields and integer tags (`backend.md` §9, *Item 4*) never reach it.
+
+**Where it lives: an extra argument, the cheapest of the three.** In the evidence it would have to
+ride on every `compare` and `eq` a program passes, and on every generic function that takes one,
+which is every program's bytes and every sort's calls; in the key, a function generic over the key
+cannot write it, since it does not know the type. So a declaration takes one **identity parameter
+per quantifier whose identity its body needs**, after its evidence parameters and numbered on from
+them (`$m$<n>`, `$m$<n+1>`, …), in canonical order — each quantifier is placed at its first
+requirement, and a quantifier with no requirement cannot have one (below). A call passes, after
+the evidence roots, one identity per identity parameter of its callee: a string literal where the
+type is concrete, a concatenation with the caller's own parameter where it is not:
+
+```js
+// Cmd.keyed (Set.fromList xs) Cmd.Restart body, in Main
+Cmd$keyed(Set$compare, "core:Set.Set(core:Basics.Int)", Set$fromList(Basics$compare$prim, xs), Cmd$Restart, body);
+// restart : k, String → Cmd Msg where k.compare … ; restart key name = Cmd.keyed key …
+const Main$restart = ($m$0, $m$1, key, name) => Cmd$keyed($m$0, $m$1, key, Cmd$Restart, …);
+// a key of type `Maybe k` inside it
+Cmd$keyed(…, "core:Maybe.Maybe(" + $m$1 + ")", …);
+```
+
+**Inferred, never written.** A declaration needs the identity of quantifier `q` when a site in its
+body passes a type mentioning `q` to an identity slot: core's `Js.fingerprint` (`boundary.md` §4.2),
+the seed, or a declaration that needs one. The checker computes it per module after P6, to a
+fixpoint over the module's sites (a recursive group's members feed each other), and publishes it in
+the interface as one bit per quantifier, so an importer's calls pass what the exporter takes. A
+`where k.compare` clause written for an ordinary reason is all a generic key function says; the
+user code of `boundary.md` §9.8.3 does not change.
+
+**What is refused** (`type_identity_unknown`, an error, because the alternative is a silent wrong
+answer — two types one key):
+
+- **a type at an identity slot that mentions a variable its declaration has no requirement on**: an
+  annotation's variable with no `where` clause, or an inferred one the body constrains in no way,
+  as `Id a` reaches when `Id`'s derived `compare` never compares an `a`. Adding `where a.compare :
+  a, a → Order` makes it a requirement, and so a slot for its identity;
+- **a declaration that takes identities, used as evidence** — a type's `compare` whose body needs a
+  type's identity: evidence is called as `$m$k(x, y)`, with no room for one. No program has wanted
+  it; it is an error rather than a hole.
+
+**The emitted cost.** A program no site of which reaches `Js.fingerprint` is byte for byte what it
+was: no declaration takes an identity, no call passes one. A `let` function that generalises
+(checker-v2.md §8.4) takes identities as a top-level declaration does, `$l<inst>$<n>`. Under
+`--release`, whole-program specialisation (`backend.md` §9) folds an identity parameter every call
+of which passes one literal, as it folds any other constant argument.
+
+**Why strings, and not small integers under `--release`.** An integer per type needs one numbering
+of the whole build, and a module's output would then depend on which other modules key what —
+against the per-module cache (M4) and rule 5's input-derived ids; a type that is generic at the
+site needs its identity built at run time from its parameter's, which text does by concatenation
+and integers only with an interning table shipped in the runtime; and a hash of the text risks a
+collision, which is a silent wrong answer. A keyed program names a handful of key types, and brotli
+sees each text once.
+
+**Fixtures.** `browser/tea/ValueKeyRestart` (two equal `Set`s, `Dict`s and hand-compared values
+built in different orders are one key), `browser/tea/TypedKeys` (two types built alike, a phantom
+argument, a program's generic wrappers top-level and `let`, and subscriptions),
+`dispatch/core/TypeIdentities` (the parameters and the passed text), and the two refusals,
+`check/bad/core/TypeIdentityUnknown` and `check/bad/core/TypeIdentityAsEvidence`.
 
 ---
 

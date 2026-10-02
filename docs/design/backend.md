@@ -2036,6 +2036,22 @@ JsMaySuspend` (a platform module whose declaration asks, used both ways, through
 declaration, about a function it names itself, and in a discarded position) and `emit/core/
 JsMaySuspend` (only the direct body written, and nothing only the other one names).
 
+### `Js.fingerprint` is its type's identity
+
+*Added 2026-10-02* (`boundary.md` §9.8.3, amended; `static-dispatch-spike.md` §8.6). A saturated
+call of `Js.fingerprint x o` is written as **the identity term its site carries** — the last root
+of its evidence — evaluated as `identity` terms are everywhere: a string literal when every part is
+text, else the parts joined by `+`, a part that is a parameter read by its name (`"core:Maybe.Maybe("
++ $m$1 + ")"`). The arguments are discarded as `Js.maySuspend`'s is, written as statements before
+it only when they may do something (a name or a constructor is dropped). No import of `core/Js.js`
+follows from it, as from every intrinsic written in place. Passed as a value it is the sibling's
+`fingerprint = (compare, type, value, order) => type`, which takes the identity as its hidden
+argument like any declaration that has one.
+
+An identity parameter is an ordinary parameter after the evidence (`$m$<n>`); nothing else in this
+document changes for it. A declaration whose every call passes one literal has the parameter folded
+away under `--release` by whole-program specialisation (§9).
+
 ### `Debug.toString` reads the argument's type
 
 *Added 2026-10-02* (specified with `language.md` Appendix B and `checker-v2.md` §32, before the

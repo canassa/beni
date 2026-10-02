@@ -483,6 +483,19 @@ and `v instanceof C`. Each is written in place as its operator. `rem` answers `N
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
 
+**`fingerprint : k, order → name where k.compare : k, k → order`** (pure, 2026-10-02, the owner's
+decision on keys, §9.8.3) is **the identity of `k`'s type**: a string the compiler writes at the
+call, naming the type with its module, its package and every argument, equal at two calls exactly
+when the two types are one (`static-dispatch-spike.md` §8.6). `name` is a `String` and `order` an
+`Order`, each a type variable because this module names no core type: the second argument is any
+`Order` — `Js.fingerprint k EQ` — and only says what `compare` answers, since a `where` clause may
+name no variable its type does not. Both arguments are evaluated for what they do and their values
+are not read. Where `k` is a type variable of the enclosing declaration, the
+string is built from that declaration's own hidden identity parameter, which its callers supply in
+turn — inferred, never written. It is the one way beni code learns which type a value has, and it
+exists for `Hosted.key`; written in place, the sibling `core/Js.js` answers it only as a value
+(`backend.md` §4, *`Js.fingerprint` is its type's identity*).
+
 **`typeIs : Value, name -> bool`** (pure, 2026-10-02, `plans/core-in-beni.md`; **decided** — the
 owner confirmed it the same day) is `typeof v ===
 "name"`, the name a string literal written in place: `Js.typeIs v "string"` is `typeof v ===
@@ -1929,6 +1942,41 @@ are of one type; with a fingerprint, keys of one type would be ordered by their 
 then, key a command or a subscription by a value whose type derives its `compare` from canonical
 parts (numbers, strings, tuples, records, custom types, lists of them).
 
+*Amended 2026-10-02 (the owner's decision): **a key carries its type's identity, and keys of one
+type are ordered by that type's own `compare`.*** This closes both holes above, and replaces the
+reflective walk.
+
+- **What a key holds.** `Hosted.key k` is three things: the **identity** of `k`'s type — a string
+  the compiler writes at each call, naming the whole type with its arguments
+  (`static-dispatch-spike.md` §8.6) — the type's `compare` (the `where` clause's evidence, the
+  declaring module's own `pub compare` or the derived one, exactly what `<` on `k` calls), and the
+  value. `Hosted.compare` orders two keys **by identity first, then by the evidence of the first
+  key applied to the two values**. Two keys of one identity are of one type, so either key's
+  evidence orders both.
+- **What it guarantees.** Two keys are one key exactly when they are of one type and that type's
+  `compare` says `EQ`: two equal `Set`s or `Dict`s built in different orders are one key (their
+  modules' own `compare`, `static-dispatch-spike.md` §3.5), and so are two values of a program's
+  type with a hand-written `compare` that calls them equal; `Alpha.Key 1` and `Beta.Key 1`, and
+  `Id User` and `Id Post` over one `Int`, are two. `tests/corpus/browser/tea/ValueKeyRestart` and
+  `browser/tea/TypedKeys` pin both, for commands and for subscriptions. The rule of thumb above,
+  and the requirement that a library key `Sub.listen` by a type of its own, are withdrawn as
+  obligations; keying by a type the library declares is still how it keeps its keys apart from a
+  program's.
+- **Nothing changes in user code.** `Cmd.keyed`, `Cmd.cancel`, `Cmd.map`, `Sub.listen` and every
+  keyed API keep `where k.compare : k, k → Order`; the identity is a hidden argument the compiler
+  infers and supplies, never written (`static-dispatch-spike.md` §8.6). A program's function that
+  is generic over a key and calls one of them — `restart key name = Cmd.keyed key Cmd.Restart …`,
+  annotated with `where k.compare` or not — is handed the identity by its own callers the same
+  way. The one program refused is one whose key type mentions a type variable its declaration
+  has no requirement on, `type_identity_unknown` (§8.6).
+- **The order of keys changed for keys of one type**: it is that type's `compare`, so a derived
+  one orders constructors by declaration and records by field name, the same in a development and
+  a release build (renamed fields and integer tags reach neither the identity nor the evidence).
+  `browser/tea/KeyOrder` starts `Zeta` before `Alpha` now, by `Lane`'s declaration order, where
+  the walk compared the tags' text. Keys of two types are ordered by their identities' text.
+- **The cost.** A program that keys nothing is byte for byte what it was. A keyed call passes one
+  string literal more, and a declaration generic over a key one parameter more.
+
 #### 9.8.4 Running a command, and the dispatch order (W53)
 
 **The program is a scope.** `Tea.element`'s `init` opens a root scope (`Task.openRoot`), and every
@@ -2036,6 +2084,10 @@ outlet or a relay, so the host itself is only `{ send, after }`, reached through
 | `Tap msg`, `tap : (Send a -> ()), sync (a -> msg) -> Tap msg`, `mapTap` | `impure` (`mapTap` `pure`) | a subscription's body and tagger, the payload type hidden |
 | `Relay msg`, `relay : Host msg, Tap msg -> Relay msg`, `retap`, `closeRelay` | `impure` | a live subscription's current taggers |
 | `run : Relay msg -> ()` | `suspends` | run the relay's body in the calling fiber |
+
+*Amended 2026-10-02 (§9.8.3, the type's identity):* `key` is beni, `keyOf (Js.fingerprint k EQ) k`
+over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`
+compares by identity, then by its type's `compare` — no longer "by value".
 
 A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
 it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is

@@ -5690,3 +5690,69 @@ not each one tree is a miss.
 `debug <inst> <toString|log> <shape>`, the shape as `_` (unknown), `<function>`, `()`,
 `( a, b )`, `{ x : a }`, and `Module.Type` or `(Module.Type a …)` (`dispatch/DebugShapes`). A
 module whose table holds only debug rows is no longer empty, and prints its `decl` lines.
+
+## 33. Amendment of 2026-10-02: type identities
+
+*`static-dispatch-spike.md` §8.6 and `boundary.md` §9.8.3, specified the same day, before the
+code.* A declaration may take, after its evidence, one hidden **identity** per quantifier whose
+type's identity its body needs; a call passes one string per identity of its callee. This section
+is what the checker computes for it and what crosses to the backend.
+
+**The record (§13.1).**
+
+```zig
+pub const Term = union(enum(u8)) {
+    …,                       // unchanged
+    identity: Range,         // a type's identity: its parts, a run of `args`, each `text` or `param`
+    text: Range,             // literal text: a run of `text` bytes
+};
+pub const DeclInfo = struct { requirements: Range, identities: Range, value_arity: u16, convention: Convention };
+pub const LetInfo = struct { inst: Bir.Inst.Index, requirements: Range, identities: Range };
+identities: []const u32,     // per binder, ascending: the requirement index each identity is placed at
+text: []const u8,
+```
+
+A binder's `identities` are requirement indices — each the FIRST requirement of a quantifier in
+canonical order (§12.1) — so an identity's slot is defined by the list that already exists, and
+identity `i` of a binder is its hidden parameter `requirements.len + i`. A site's `evidence` is its
+callee's roots followed by one `identity` term per identity of the callee, in order; an identity
+term's parts are `text` leaves and `param` leaves naming an enclosing binder's identity parameter
+(`k ≥ requirements.len`). Terms stay acyclic: an identity's parts follow it.
+
+**The one counting function counts them.** `requirementCount` of a `top` or a `let` is its
+requirements plus its identities, of an `ext` its constraints plus its quantifiers' identity bits,
+of an `identity` term its parts; `referenceCount` and `Convention.ofDecl`/`ofLet`/`ofImport` agree,
+so a declaration's parameter list, every call, every eta-expansion, check 4's sibling arity and the
+I7 assert read one number. `slotMethod` names no method past the requirements, so an identity slot
+is no `undetermined` leaf's place.
+
+**The pass (`check/Identity.zig`), after P6.** Elaborate records, for every root of every site
+whose evidence belongs to a value of this module, an import or a `let`, the variable the root's
+wanted was raised on (a group call's: the callee's requirement root), with the site's declaration
+and innermost promoting `let`. The pass then:
+
+1. seeds each slot of an import whose quantifier carries the identity bit, and of core `Js`'s
+   `fingerprint` (whose own `DeclInfo` is given identity 0);
+2. walks a seeded slot's type: a variable that is (after `find`) the root of a requirement of an
+   enclosing binder — the promoting `let`s innermost first, then the declaration — gives that
+   binder the identity of that requirement's quantifier, placed at its first requirement; a
+   binder that gains one seeds every slot of a site that calls it there. A `rigid` variable no
+   requirement roots, or a `flex` one its binders' types reach (`Walk.reachesThroughRequirements`,
+   §12.3's case 3 test), is `type_identity_unknown` at the site; any other `flex` is `_`;
+3. at the fixpoint, writes each seeded slot's identity term (literal runs merged), appends the
+   site's identity terms after its roots, and sets each binder's `identities`;
+4. refuses a `top` or `ext` term with identities anywhere but a site's callee or root
+   (`type_identity_unknown`): evidence has no room for them.
+
+Each slot is walked once, each type once per slot; a module none of whose sites reaches the seed
+does nothing past step 1. The pass is P6's, so it reports in a module that has reported nothing.
+
+**Publication.** `Interface.Quantified`'s flag word gains bit 9, `identity`: the quantifier's
+identity is a hidden parameter of the value (`Schemes.Writer.identities`, set per value by
+`Publish.fill` from the `DeclInfo`). `iface_bytes` `format_version` 11 → 12;
+`cache/dispatch_bytes` `format_version` 10 → 11 (a decl row and a let row grow by a range, two
+columns, `identities` and `text`, and two term tags).
+
+**The dump.** A declaration or `let` with identities prints `identity <i> requirement=<k>` lines
+after its requirement lines; an identity term prints as `identity` with its parts under it, a text
+part as `text "<text>"`. Nothing else moves, so no golden of a module that keys nothing changes.
