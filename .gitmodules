@@ -60,3 +60,27 @@
 	path = references/valibot
 	url = https://github.com/fabian-hiller/valibot.git
 	shallow = true
+[submodule "references/llvm-project"]
+	path = references/llvm-project
+	url = https://github.com/llvm/llvm-project.git
+	shallow = true
+[submodule "references/mlton"]
+	path = references/mlton
+	url = https://github.com/MLton/mlton.git
+	shallow = true
+[submodule "references/closure-compiler"]
+	path = references/closure-compiler
+	url = https://github.com/google/closure-compiler.git
+	shallow = true
+[submodule "references/egg"]
+	path = references/egg
+	url = https://github.com/egraphs-good/egg.git
+	shallow = true
+[submodule "references/graal"]
+	path = references/graal
+	url = https://github.com/oracle/graal.git
+	shallow = true
+[submodule "references/ghc"]
+	path = references/ghc
+	url = https://github.com/ghc/ghc.git
+	shallow = true
