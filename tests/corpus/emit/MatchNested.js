@@ -14,10 +14,7 @@ const MatchNested$Inner$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(MatchNested$Inner$$compare$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
@@ -31,13 +28,11 @@ const MatchNested$Inner$$compare = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
 };
 function* MatchNested$Inner$$compare$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
@@ -54,15 +49,13 @@ function* MatchNested$Inner$$compare$$steps($x, $y) {
         continue;
     }
   }
+  return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
 }
 const MatchNested$Inner$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(MatchNested$Inner$$eq$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return $x.a === $y.a;
@@ -75,13 +68,11 @@ const MatchNested$Inner$$eq = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return false;
 };
 function* MatchNested$Inner$$eq$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return $x.a === $y.a;
@@ -98,6 +89,7 @@ function* MatchNested$Inner$$eq$$steps($x, $y) {
         continue;
     }
   }
+  return false;
 }
 const MatchNested$Shape$$compare = ($x, $y) => {
   const $a = MatchNested$Shape$$order[$x];

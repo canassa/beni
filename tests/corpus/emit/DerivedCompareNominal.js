@@ -88,10 +88,7 @@ const DerivedCompareNominal$Tree$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedCompareNominal$Tree$$compare$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return "EQ";
@@ -105,13 +102,11 @@ const DerivedCompareNominal$Tree$$compare = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
 };
 function* DerivedCompareNominal$Tree$$compare$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return "EQ";
@@ -128,15 +123,13 @@ function* DerivedCompareNominal$Tree$$compare$$steps($x, $y) {
         continue;
     }
   }
+  return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
 }
 const DerivedCompareNominal$Tree$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedCompareNominal$Tree$$eq$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return true;
@@ -149,13 +142,11 @@ const DerivedCompareNominal$Tree$$eq = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return false;
 };
 function* DerivedCompareNominal$Tree$$eq$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return true;
@@ -172,6 +163,7 @@ function* DerivedCompareNominal$Tree$$eq$$steps($x, $y) {
         continue;
     }
   }
+  return false;
 }
 const DerivedCompareNominal$Wrapper$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DerivedCompareNominal$Wrapper$$eq = ($x, $y) => $x.a === $y.a;

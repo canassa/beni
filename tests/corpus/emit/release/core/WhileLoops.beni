@@ -1,12 +1,16 @@
--- emit: a loop whose first statement leaves it is a `while` under
--- `--release` (`backend.md` §9, *Compact statements*, item 6): `gather`'s
--- loop is `while(a.firstChild!==null)b.appendChild(a.firstChild)`, its exit
--- at the end of a function that returns nothing written as nothing. Only
--- such a loop, and only with one statement left: `each` (two statements)
--- and `find` (whose exit returns a value after the loop) stay `for(;;)`,
--- since measured on the release corpus the wider rule cost 415 brotli bytes
--- against the `for(;;){if(` every other loop shares. `k = k + 1` is
--- `k+=1`. `settle`'s exit is not its first statement.
+-- emit: a loop whose first statement leaves it is a `while` (`backend.md`
+-- §8, *The exit test is the loop's header*, and §9, *Compact statements*,
+-- item 6): `gather`'s loop is
+-- `while(a.firstChild!==null)b.appendChild(a.firstChild)`, its exit at the
+-- end of a function that returns nothing written as nothing; `each`, with
+-- two statements, is `while(c!==a.length){a[c]();c++}`; and `find`'s exit,
+-- which returns a value, is written after the loop:
+-- `while(a[b]!==null)b+=2;return b`. `firstDiff` is research 50's
+-- `compare` shape: its exit is the SECOND arm and an `if` of two returns,
+-- so the header is the test as written and the exit one `return c?a:b`
+-- after the loop, and its body, one `if` that splits, is braced. `k = k + 1`
+-- is `k+=1`. `settle`'s exit is not its first statement, so it stays
+-- `for(;;)`.
 import Js
 
 
@@ -45,3 +49,16 @@ settle n end =
         ()
     else
         settle next end
+
+
+pub firstDiff : Js.Value, Js.Value, Int, Int → Int
+firstDiff xs ys n k =
+    if k < n then
+        if Js.same (Js.at xs k) (Js.at ys k) then
+            firstDiff xs ys n (k + 1)
+        else
+            k
+    else if n == 0 then
+        -1
+    else
+        n

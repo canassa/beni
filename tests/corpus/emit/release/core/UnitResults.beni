@@ -1,7 +1,7 @@
 -- emit: a function whose result is `()` writes no result under `--release`
 -- (`backend.md` §4, *A `()` result is not written*). `place`, a `pub`
 -- function annotated `-> ()`, ends in its last statement; `each`'s loop
--- exits with `return;`; the handler `watch` stores on a node — a lambda
+-- is a `while` that ends the function, so its exit writes nothing; the handler `watch` stores on a node — a lambda
 -- whose every tail is a `Js.write` or a call of a `-> ()` declaration —
 -- ends without `return null;`, and so does the local function `tick`.
 -- `count` returns an `Int` and keeps its `return`.

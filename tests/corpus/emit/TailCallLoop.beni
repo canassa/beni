@@ -4,8 +4,10 @@
 --
 -- `countUp` makes no function in its body, so since 2026-10-02 its loop
 -- reassigns its parameters in place (§8, *In place, when nothing
--- captures*): a `for (;;)` with no label, the parameters as the loop's
--- variables, no prologue and no `continue` at the end of the body, and one
+-- captures*): a `while` with no label, its exit test in the header and
+-- its exit value after it (§8, *The exit test is the loop's header*), the
+-- parameters as the loop's variables, no prologue and no `continue` at the
+-- end of the body, and one
 -- LOOP-INVARIANT parameter — `step`, which every self-call passes itself —
 -- assigned nothing. `TailCallInPlace` pins the shape with the copies (the
 -- `$in$<i>` slots and the prologue `const`s) beside this one.

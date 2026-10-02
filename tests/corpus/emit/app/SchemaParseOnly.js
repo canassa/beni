@@ -93,10 +93,7 @@ const SchemaParseOnly$User$$read$4 = (c, d, p, k, n, v) => {
   const $len$14 = v.length;
   const $deep$15 = d >= c.max;
   let $i$17 = 0;
-  for (;;) {
-    if ($i$17 >= $len$14) {
-      break;
-    }
+  while (!($i$17 >= $len$14)) {
     const $x$18 = v[$i$17];
     let $y$19;
     if ($deep$15) {

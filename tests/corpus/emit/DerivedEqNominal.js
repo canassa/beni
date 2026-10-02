@@ -43,10 +43,7 @@ const DerivedEqNominal$Tree$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedEqNominal$Tree$$compare$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return "EQ";
@@ -64,13 +61,11 @@ const DerivedEqNominal$Tree$$compare = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
 };
 function* DerivedEqNominal$Tree$$compare$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return "EQ";
@@ -91,15 +86,13 @@ function* DerivedEqNominal$Tree$$compare$$steps($x, $y) {
         continue;
     }
   }
+  return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
 }
 const DerivedEqNominal$Tree$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedEqNominal$Tree$$eq$$steps($x, $y), $d);
   }
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return true;
@@ -115,13 +108,11 @@ const DerivedEqNominal$Tree$$eq = ($x, $y, $d = 0) => {
         continue;
     }
   }
+  return false;
 };
 function* DerivedEqNominal$Tree$$eq$$steps($x, $y) {
   let $e;
-  for (;;) {
-    if ($x.$ !== $y.$) {
-      return false;
-    }
+  while ($x.$ === $y.$) {
     switch ($x.$) {
       case "Leaf":
         return true;
@@ -141,6 +132,7 @@ function* DerivedEqNominal$Tree$$eq$$steps($x, $y) {
         continue;
     }
   }
+  return false;
 }
 const DerivedEqNominal$eq$prim = ($x, $y) => $x === $y;
 const DerivedEqNominal$sameShape = (a$1, b$2) => DerivedEqNominal$Shape$$eq(a$1, b$2);

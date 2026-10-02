@@ -10,7 +10,7 @@
 --     and checks a `let` at every call); a function's locals are `let`;
 --   * **no indentation at all**, and no space that the syntax does not need —
 --     `let a=1`, `f(x,y)`, `{a:1}`, `(a,b)=>`, `a?b:c`, `if(c){…}else{…}`,
---     `case 1:`, `for(;;)`;
+--     `case 1:`, `while(!(a<=0))`;
 --   * **every semicolon present**, including the last one of every block. §9
 --     rejects eliding it: one byte per block, in exchange for having to know
 --     that a statement beginning `(`, `[`, `` ` ``, `+`, `-` or `/` needs a

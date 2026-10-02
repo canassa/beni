@@ -82,10 +82,7 @@ const SchemaWorkers$Page$$read$1 = (c, d, p, k, n, v, $s0) => {
   const $deep$17 = d >= c.max;
   const $out$18 = [];
   let $i$19 = 0;
-  for (;;) {
-    if ($i$19 >= $len$16) {
-      break;
-    }
+  while (!($i$19 >= $len$16)) {
     const $x$20 = v[$i$19];
     let $y$21;
     if ($deep$17) {
@@ -154,10 +151,7 @@ const SchemaWorkers$Page$$write$1 = (c, d, p, k, n, v, $s0) => {
   const $deep$39 = d >= c.max;
   const $out$40 = [];
   let $i$41 = 0;
-  for (;;) {
-    if ($i$41 >= $len$38) {
-      break;
-    }
+  while (!($i$41 >= $len$38)) {
     const $x$42 = $xs$36[$i$41];
     let $y$43;
     if ($deep$39) {

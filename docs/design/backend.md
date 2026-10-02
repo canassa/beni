@@ -2887,6 +2887,67 @@ lowered, from `Bir`; it is a hint, and the walk over the JavaScript still decide
 `bench/size.mjs`'s release total fell 617 brotli bytes of 244 527 (−0.25 %), and the `bench/ui`
 app, the browser measurement, grew 5 (5 032 → 5 037). §9's finding stands and it was taken out.
 
+### The exit test is the loop's header
+
+*Added 2026-10-02 (research 50 §5.3), amending "`for (;;)` and not `while (true)`" above and §9,
+*Compact statements*, item 6.* A loop whose first statement is an `if` one arm of which leaves it
+is printed with that test as its header and the exit after it, **in both builds**:
+
+```js
+// before                                          // after
+for(;;){if(!(h<d&&h<g))return d===g?"EQ":…;…h++}   while(h<d&&h<g){…h++}return d===g?"EQ":…
+```
+
+**Why.** V8 runs the first form measurably slower when the exit's value is computed inside the
+loop. Research 50 found it in `List.compare` written in beni, 1.16–1.19× slower than the
+hand-written `for(;k<n&&k<m;k++){…}return …`; isolated in Node 24 (one process per variant per
+round, alternating, medians of 5, ranges disjoint), at 1 000 elements:
+
+| `compare`'s loop written as | µs | ÷ |
+|---|--:|--:|
+| `for(;;){if(!(k<n&&k<m))return n===m?"EQ":…;…}` | 2.01 | 1.00 |
+| `while(k<n&&k<m){…}return n===m?"EQ":…` | 1.25 | 0.62 |
+| `for(;;){if(!(k<n&&k<m))break;…}return n===m?"EQ":…` | 1.26 | 0.62 |
+| `for(;;){if(!(k<n&&k<m))return "EQ";…}` (an atom) | 1.25 | 0.62 |
+| `for(;;){if(k>=n||k>=m)return n===m?"EQ":…;…}` | 2.02 | 1.00 |
+
+so the cost is the computed exit inside the loop, not the compound test; a loop whose exit is a
+name or a literal (`eq`'s `return true`, a sum's `return s`) is at parity either way. Moving every
+exit out is the rule, rather than only the computed ones, because it is the robust shape and the
+smaller one (below). Research 50's own benchmark, the prototype's beni `List.compare` built before
+and after this change (7 processes per side): 0.165 → 0.141 µs at 100 elements, 1.48 → 1.28 at
+1 000, 14.9 → 12.5 at 10 000 (0.85×, ranges disjoint), and `compare` of two views 2.28 → 1.49
+(0.65×; this row and the next, 3 processes per side); `==`, `slice`, `concat`, `push`,
+`[ x, …xs ]`, a walk, `sum` and `drop` within ±2 %.
+
+**The rule** (`Print.whileLoop`). An unlabelled loop whose first statement is an `if` with one arm
+an **exit** — a `break` of no label, or a statement that leaves the function on every path and
+does nothing else: a `return`, a `throw`, or an `if` each arm of which is one such statement
+(`Print.exitTree`) — and whose other statements hold no `break` of their own:
+
+- the header is the test, negated when the exit is the first arm (`!(c)`, or `a!==b` for
+  `a===b`) and as written when it is the second (`if(c){…}else return x`, the shape of a source
+  `if` whose `else` ends the loop);
+- the body is the other arm, then the statements after the `if`;
+- the exit follows the loop, unless it is a `break`, or a `return` with nothing to say at the end
+  of the function (§9 item 6's case).
+
+It is exact: the loop leaves only through its header — no `break` remains in the body, and a
+`continue` re-tests the header as it re-ran the `if` — and the exit then runs where it ran
+before, reading the same variables, while it declares nothing and jumps to no loop. A tail
+`return` of a function whose result nothing reads (§4) stays inside, since it is not written as a
+`return` at all. Under `--release` a body that is one `if` `compactIf` would split is braced so
+that it splits: `while(c){if(x)return d;d++}`, not `while(c)if(x)return d;else d++`.
+
+**Size** (`bench/size.mjs`, 373 programs and the browser pages, against the compiler before):
+release brotli 463 967 → 463 531 (−436, 92 programs smaller and 55 larger, the largest growth
+`bench/corpus` +34), release raw 1 341 792 → 1 337 431, development brotli 2 288 443 → 2 285 541.
+Item 6's measured 415-byte cost of the wider rule was a `while` that kept the exit in its first
+arm; the two halves of this rule — the exit in either arm and a whole exit tree, so that a
+derived `compare` is `while(a.$===b.$){…}return …` with no `!(` — are what turned it into a cut.
+Fixtures: `emit/release/core/WhileLoops`, `emit/TailCallLoop`, `emit/TailCallInPlace`,
+`emit/DerivedCompareNominal`; every `run/` program, built both ways, is its differential test.
+
 ### Evidence parameters
 
 The hidden leading parameters of §4 and `static-dispatch-spike.md` §8.1 are **ordinary parameters of
@@ -5925,7 +5986,10 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    after the loop — cost the release corpus 415 brotli bytes (raw −401) against the `for(;;){if(`
    every other loop shares, so it is this narrow. `S` may hold no `break` of its own. Fixture:
    `emit/release/core/WhileLoops`, whose `gather` is research 47's fragment loop,
-   `while(a.firstChild!==null)b.appendChild(a.firstChild)`. The runtime port's `template` is one
+   `while(a.firstChild!==null)b.appendChild(a.firstChild)`. (*Amended 2026-10-02:* superseded by
+   §8, *The exit test is the loop's header*, which writes every such loop as a `while` in both
+   builds, the exit moved after it, for speed — and which, with the exit taken from either arm,
+   is smaller than this narrow rule, not 415 bytes larger.) The runtime port's `template` is one
    function because `Rt.beni` now writes the parse in the cloner, as the hand-written runtime does
    (its cell rewritten step by step), not because of a compiler rule.
 7. **`new`, and an `else if` chain as a value.** `Js.construct c [ … ]` is `new c(…)`

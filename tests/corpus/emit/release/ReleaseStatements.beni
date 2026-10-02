@@ -1,8 +1,10 @@
 -- emit/release: research 47 §6's items 2, 3, 4 and 7 as release bytes
 -- (`backend.md` §4, §6 and §8, amended 2026-10-02).
 --
---   * `sum` is a loop that reassigns its parameters in place: `for(;;)`,
---     no label, no prologue, no `continue`, and `+`/`-` as operators;
+--   * `sum` is a loop that reassigns its parameters in place: a `while`
+--     whose header is the exit test and whose exit value follows it (§8,
+--     *The exit test is the loop's header*), no label, no prologue, no
+--     `continue`, and `+`/`-` as operators;
 --   * `twice`'s `let _ =`s are statements, the discarded `if` is an `if`,
 --     and `say`, a private function whose result nothing reads, ends with
 --     its last statement and no `return`;

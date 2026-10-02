@@ -1229,9 +1229,9 @@ const Printer = struct {
                 }
             },
             .while_true => {
-                if (p.compact and @as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none) {
+                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) == .none) {
                     if (try p.whileLoop(node, level)) return;
-                    if (try p.breakLoop(node, level)) return;
+                    if (p.compact and try p.breakLoop(node, level)) return;
                 }
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.name(@enumFromInt(d.lhs), .binding);
@@ -1347,6 +1347,17 @@ const Printer = struct {
         }
     }
 
+    /// Whether `compactIf` writes `node`, an `if`, as an `if` with no `else`
+    /// and its other arm after it — when it is not itself a single
+    /// statement's body.
+    fn splitsIf(p: *Printer, node: Index) bool {
+        const branches = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+        if (p.returnsBoth(branches)) return false;
+        if (!p.anyLive(branches.thenBody()) or !p.anyLive(branches.elseBody())) return false;
+        return (p.jumps(branches.thenBody()) and p.spliceable(branches.elseBody())) or
+            (p.jumps(branches.elseBody()) and p.spliceable(branches.thenBody()));
+    }
+
     /// An `if` under `--release` (`backend.md` §9, *Compact statements*).
     /// An arm after an arm that always jumps — `return`, `throw`, `break`,
     /// `continue` — is not an `else` but the statements after the `if`:
@@ -1393,12 +1404,15 @@ const Printer = struct {
     }
 
     /// `for(;;){if(c)return x;…}` as `while(!c){…}return x` (`backend.md`
-    /// §9, *Compact statements*, item 6): an unlabelled loop whose first
-    /// statement is an `if` that leaves it — a `break`, or a `return` then
-    /// written after the loop, or not at all where it ends the function and
-    /// returns nothing — and whose other statements hold no `break` of
-    /// their own, which in a `while` would skip that `return`. False,
-    /// printing nothing, for any other loop.
+    /// §8, *The exit test is the loop's header*, and §9, *Compact
+    /// statements*, item 6): an unlabelled loop whose first statement is an
+    /// `if` one arm of which leaves it (`loopExit`) — a `break`, or an exit
+    /// from the function then written after the loop, or not at all where
+    /// it is a `return` that says nothing the function's end does not — and
+    /// whose other statements hold no `break` of their own, which in a
+    /// `while` would skip that exit. In both builds, because V8 runs a loop
+    /// that computes its exit value inside the body measurably slower.
+    /// False, printing nothing, for any other loop.
     fn whileLoop(p: *Printer, node: Index, level: u32) Allocator.Error!bool {
         const body = p.ir.subRange(@enumFromInt(p.ir.data(node).rhs));
         const items = p.ir.extraSlice(body, Index);
@@ -1411,34 +1425,80 @@ const Printer = struct {
         const guard = items[at];
         if (p.ir.tag(guard) != .if_stmt) return false;
         const branches = p.ir.extraData(@enumFromInt(p.ir.data(guard).rhs), JsIr.If);
-        const exit = p.onlyLive(branches.thenBody()) orelse return false;
-        switch (p.ir.tag(exit)) {
-            .break_stmt => if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(exit).lhs)) != .none) return false,
-            .return_stmt => if ((p.discarding and p.isTailReturn(exit)) or !p.returnsAtEnd(node, exit)) return false,
-            else => return false,
-        }
-        // The loop's other statements: the guard's `else` arm, which the
+        // The exit is either arm: `if(!c)return x;…` for an exit the
+        // lowering wrote first, `if(c){…}else return x` for one it wrote
+        // second, the shape of a source `if` whose `else` ends the loop.
+        const exits_then = p.loopExit(branches.thenBody()) != null;
+        const exit = (if (exits_then) p.loopExit(branches.thenBody()) else p.loopExit(branches.elseBody())) orelse return false;
+        // The loop's other statements: the guard's other arm, which the
         // lowering writes the rest of the iteration into, then what follows
         // the guard.
-        const else_body = branches.elseBody();
+        const arm = if (exits_then) branches.elseBody() else branches.thenBody();
         const rest: JsIr.SubRange = .{ .start = @enumFromInt(@intFromEnum(body.start) + @as(u32, @intCast(at + 1))), .end = body.end };
-        for (p.ir.extraSlice(else_body, Index)) |s| if (p.breaksOut(s)) return false;
+        for (p.ir.extraSlice(arm, Index)) |s| if (p.breaksOut(s)) return false;
         for (p.ir.extraSlice(rest, Index)) |s| if (p.breaksOut(s)) return false;
         try p.markLoopTail(body);
-        var live: usize = 0;
-        for (p.ir.extraSlice(else_body, Index)) |s| live += @intFromBool(!p.skipped(s));
-        for (p.ir.extraSlice(rest, Index)) |s| live += @intFromBool(!p.skipped(s));
-        // Only a loop whose rest is one statement: measured on the release
-        // corpus, a `while` with a block cost 415 brotli bytes against the
-        // `for(;;){if(` every other loop shares, and one with a single
-        // statement is where the braces go too.
-        if (live != 1) return false;
-        try p.push("while(");
-        try p.negatedTest(@enumFromInt(p.ir.data(guard).lhs), level);
-        try p.push(")");
-        try p.armBody(if (p.anyLive(rest)) rest else else_body, false, level);
-        if (p.ir.tag(exit) == .return_stmt and !p.returnsAtEnd(node, exit)) try p.statement(exit, level);
+        const test_expr: Index = @enumFromInt(p.ir.data(guard).lhs);
+        if (p.compact) {
+            try p.push("while(");
+            if (exits_then) try p.negatedTest(test_expr, level) else try p.expression(test_expr, 0, level);
+            try p.push(")");
+            // A body that is one `if` `compactIf` would split is braced,
+            // so that it splits: `{if(c)return x;k++}` is shorter than the
+            // unbraced `if(c)return x;else k++`.
+            const one: ?Index = if (!p.anyLive(rest)) p.onlyLive(arm) else if (!p.anyLive(arm)) p.onlyLive(rest) else null;
+            if (one != null and p.ir.tag(one.?) == .if_stmt and p.splitsIf(one.?)) {
+                try p.push("{");
+                try p.statements(arm, level + 1);
+                try p.statements(rest, level + 1);
+                try p.closeBlock();
+            } else try p.loopBody(.{ .guard = guard, .exits_then = exits_then, .arm = arm, .rest = rest }, level);
+        } else {
+            try p.push("while (");
+            if (exits_then) try p.negatedTest(test_expr, level) else try p.expression(test_expr, 0, level);
+            try p.push(") {\n");
+            try p.statements(arm, level + 1);
+            try p.statements(rest, level + 1);
+            try p.indent(level);
+            try p.closeBlock();
+            try p.endLine(level);
+        }
+        switch (p.ir.tag(exit)) {
+            .break_stmt => {},
+            .return_stmt => if (!p.returnsAtEnd(node, exit)) try p.statement(exit, level),
+            else => try p.statement(exit, level),
+        }
         return true;
+    }
+
+    /// The one statement of `range` when it leaves the loop around it as
+    /// `whileLoop` may move it after the loop: a `break` of no label, or a
+    /// tree of exits from the function (`exitTree`).
+    fn loopExit(p: *Printer, range: JsIr.SubRange) ?Index {
+        const exit = p.onlyLive(range) orelse return null;
+        if (p.ir.tag(exit) == .break_stmt) return if (@as(JsIr.NameIndex, @enumFromInt(p.ir.data(exit).lhs)) == .none) exit else null;
+        return if (p.exitTree(exit, 0)) exit else null;
+    }
+
+    /// Whether statement `node` leaves the function on every path and does
+    /// nothing else: a `return` — not the tail `return` of a function whose
+    /// result nothing reads, which is written as its value or not at all
+    /// (`skipped`) and so stays where it is — a `throw`, or an `if` each arm
+    /// of which is one such statement. It declares nothing and jumps to no
+    /// loop, so it means the same after the loop as inside it.
+    fn exitTree(p: *Printer, node: Index, depth: u32) bool {
+        if (depth > 32) return false;
+        return switch (p.ir.tag(node)) {
+            .return_stmt => !(p.discarding and p.isTailReturn(node)),
+            .throw_stmt => true,
+            .if_stmt => blk: {
+                const b = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+                const then_only = p.onlyLive(b.thenBody()) orelse break :blk false;
+                const else_only = p.onlyLive(b.elseBody()) orelse break :blk false;
+                break :blk p.exitTree(then_only, depth + 1) and p.exitTree(else_only, depth + 1);
+            },
+            else => false,
+        };
     }
 
     /// `for(;;){if(c)break;…}` as `while(!c){…}`, and `for(;;){if(c){…}else

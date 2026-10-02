@@ -2,8 +2,10 @@
 -- beside the shape it replaces.
 --
 -- `sum` makes no function in its body, so its loop writes its parameters
--- in place: no `$in$<i>` slots, no prologue `const`, a `for (;;)` with no
--- label, no `continue` at the end of the body, and the assignments ORDERED
+-- in place: no `$in$<i>` slots, no prologue `const`, a `while` with no
+-- label whose header is the exit test and whose exit value is returned
+-- after it (§8, *The exit test is the loop's header*), no `continue` at the
+-- end of the body, and the assignments ORDERED
 -- so that `acc + n` reads `n` before `n - 1` rebinds it, with no temporary.
 -- `swap` is a cycle, and its first argument goes through one temporary.
 -- `logged` has an argument that makes a call, so its arguments run in

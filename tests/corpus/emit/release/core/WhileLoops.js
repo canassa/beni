@@ -1,1 +1,1 @@
-const a=(b,c)=>{while(b.firstChild!==null)c.appendChild(b.firstChild)},b=(a,c)=>{for(;;){if(c===a.length)return;a[c]();c++}},c=(a,b)=>{for(;;){if(a[b]===null)return b;b+=2}},d=(a,b)=>{for(;;){let c=a.nextSibling;a.remove();if(a===b)return;a=c}};export{a,b,c,d};
+const a=(b,c)=>{while(b.firstChild!==null)c.appendChild(b.firstChild)},b=(a,c)=>{while(c!==a.length){a[c]();c++}},c=(a,b)=>{while(a[b]!==null)b+=2;return b},d=(a,b)=>{for(;;){let c=a.nextSibling;a.remove();if(a===b)return;a=c}},e=(a,b,c,d)=>{while(d<c){if(a[d]!==b[d])return d;d++}return c===0?-1:c};export{a,b,c,d,e};
