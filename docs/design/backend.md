@@ -1909,7 +1909,10 @@ folds, compares or copies it as one (`Spec` takes it for an unknown value; `firs
 reads nothing). Passed as a value, `Js.regExp` is the sibling's `new RegExp(pattern, flags)`.
 Fixture: `run/JsOperators` (a literal made once, one made in place, a `/` and a line feed in the
 pattern, a flag, an empty pattern, one built by the sibling), with the operators of `boundary.md`
-§4.2's list — each the `JsIr` operator of its name, `typeOf` the `type_of` unary.
+§4.2's list — each the `JsIr` operator of its name, `typeOf` the `type_of` unary. *(Amended
+2026-10-02:* `Js.typeIs v "name"` is `typeof v === "name"`, the `type_of` unary compared with the
+literal; a name that is not a string literal is refused
+(`internal`). Passed as a value it is the sibling's `typeof v === t`.)
 
 ### `Js.development` is the build's mode
 

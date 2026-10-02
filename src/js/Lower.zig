@@ -7486,6 +7486,17 @@ pub const Lowerer = struct {
     /// what it matches. The flags are any of `d i m s u v`, each once: `g`
     /// and `y` make a literal stateful (`lastIndex`), and a value written
     /// once and read by every caller must not be.
+    /// `Js.typeIs v "name"` (`boundary.md` §4.2): `typeof v === "name"`,
+    /// the name written from its literal.
+    fn typeIsTest(l: *Lowerer, out: *StmtList, args: []const Inst.Index, p: u32) !Node.Index {
+        if (args.len != 2 or l.bir.instTag(args[1]) != .string) {
+            try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.typeIs` takes the type's name as a string literal.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const value = try l.expr(out, args[0]);
+        return l.binary(.strict_eq, try l.unary(.type_of, value, p), try l.stringNode(l.bir.bytes(args[1]), p), p);
+    }
+
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
             try l.report(.internal, if (args.len != 0) args[0] else @enumFromInt(0), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
@@ -7731,6 +7742,7 @@ pub const Lowerer = struct {
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
+        if (which == .typeIs) return l.typeIsTest(out, args, p);
         if (which == .pure and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
@@ -7809,9 +7821,9 @@ pub const Lowerer = struct {
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
             // A saturated `each` is `eachLoop`, a saturated `finally`
-            // `finallyTry`, a `catchIf` `catchTry` and a `regExp`
-            // `regExpLiteral`, above.
-            W.each, W.finally, W.catchIf, W.regExp => l.nullNode(p),
+            // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
+            // `regExpLiteral` and a `typeIs` `typeIsTest`, above.
+            W.each, W.finally, W.catchIf, W.regExp, W.typeIs => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure => l.call(v[0], &.{}, p),

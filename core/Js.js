@@ -24,6 +24,7 @@ export const shiftRight = (a, n) => a >> n;
 export const shiftRightZero = (a, n) => a >>> n;
 export const rem = (a, b) => a % b;
 export const typeOf = (v) => typeof v;
+export const typeIs = (v, t) => typeof v === t;
 export const instanceOf = (v, c) => v instanceof c;
 // A call is always written as the literal (backend.md §4, *`Js.regExp` is a
 // literal*); passed as a value, the two strings make the same expression.

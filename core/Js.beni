@@ -96,6 +96,12 @@ pub foreign pure rem : int, int → int
 pub foreign pure typeOf : Value → Value
 
 
+--| `typeof v === "name"`, the name a string literal: `Js.typeIs v
+--| "string"`. What a module below `String` asks instead of comparing
+--| `typeOf` with a string it may not write (`boundary.md` §4.2).
+pub foreign pure typeIs : Value, name → bool
+
+
 --| `v instanceof C`: what a `catchIf` test asks of what was thrown,
 --| `Js.instanceOf e (Js.global "TypeError")`.
 pub foreign impure instanceOf : Value, Value → bool

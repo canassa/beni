@@ -1383,8 +1383,9 @@ that names it back today — `core:Basics` has no outgoing edge at all in
 
 **The stated exemption** (*amended 2026-10-02*, the owner's S7; `boundary.md` §4.2). A literal that a
 call of core's `Js` writes in place mints no edge: a string literal that is the name argument of
-`Js.global`, `get`, `set` or `call`, either argument of `regExp`, and a list literal that is the
-argument list of `call`, `apply`, `construct` or `array`. Such a literal is not a value of the type
+`Js.global`, `get`, `set` or `call`, either argument of `regExp`, the type name `typeIs` compares
+with (*amended 2026-10-02*, `boundary.md` §4.2), and a list literal that is the argument list of
+`call`, `apply`, `construct` or `array`. Such a literal is not a value of the type
 it would mint — the backend writes it as JavaScript syntax — and the checker types it as a fresh
 variable (`checker-v2.md` §30), so **the invariant above holds unchanged**: no `String` or `List`
 becomes visible through it. `Graph.mintedModules` counts a module's string and list literals and

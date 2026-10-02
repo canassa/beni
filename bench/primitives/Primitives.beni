@@ -141,3 +141,65 @@ math ns = List.foldl ns 0 λn acc →
         + Int.mod n 13
         + Int.rem n 11
         + n // 3
+
+
+type alias Shape =
+    id : Int
+    name : String
+    tags : List Int
+    at : Int × Int
+    kind : Maybe Int
+
+
+shape : Int → Shape
+shape i =
+    { id = i
+    , name = "item-${String.fromInt i}"
+    , tags = [ i, i + 1, i + 2 ]
+    , at = ( i, i * 2 )
+    , kind = Just i
+    }
+
+
+--| `n` pairs of equal records, each side built on its own so that a
+--| comparison walks every field.
+pub records : Int → List (Shape × Shape)
+records n = List.map (List.range 1 n) λi → ( shape i, shape i )
+
+
+--| How many pairs `Basics.eq` finds equal: structural equality on records,
+--| field by field.
+pub eqRecords : List (Shape × Shape) → Int
+eqRecords pairs = List.foldl pairs 0 λ( a, b ) acc → if Basics.eq a b then acc + 1 else acc
+
+
+--| Two equal lists of `n / 10` lists of ten numbers, built apart.
+pub nested : Int → List (List Int) × List (List Int)
+nested n =
+    rows = List.range 1 (n // 10)
+    ( List.map rows λr → List.range r (r + 9), List.map rows λr → List.range r (r + 9) )
+
+
+--| `Basics.eq` on two nested lists.
+pub eqNested : List (List Int) × List (List Int) → Bool
+eqNested ( a, b ) = Basics.eq a b
+
+
+--| Two equal lists of `20 n` numbers, built apart.
+pub long : Int → List Int × List Int
+long n = ( List.range 1 (20 * n), List.range 1 (20 * n) )
+
+
+--| `Basics.eq` on two long lists.
+pub eqLong : List Int × List Int → Bool
+eqLong ( a, b ) = Basics.eq a b
+
+
+--| `++` where the checker does not know the type: `Basics.append` on
+--| strings, once per string.
+pub appends : List String → Int
+appends xs = String.length (joined xs "")
+
+
+joined : List appendable, appendable → appendable
+joined xs acc = List.foldl xs acc λx s → s ++ x

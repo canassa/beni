@@ -37,6 +37,9 @@ pub const Which = enum {
     /// `typeof v` and `v instanceof C`.
     typeOf,
     instanceOf,
+    /// `typeof v === "name"`, the name a string literal written in place
+    /// (`boundary.md` §4.2, amended 2026-10-02).
+    typeIs,
     /// `/pattern/flags`, from two string literals.
     regExp,
     global,
@@ -143,6 +146,7 @@ pub fn inPlaceLiterals(which: Which) u8 {
         .apply, .construct => 0b010,
         .array => 0b001,
         .regExp => 0b011,
+        .typeIs => 0b010,
         else => 0,
     };
 }

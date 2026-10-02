@@ -467,6 +467,15 @@ and `v instanceof C`. Each is written in place as its operator. `rem` answers `N
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
 
+**`typeIs : Value, name -> bool`** (pure, 2026-10-02, `plans/core-in-beni.md`) is `typeof v ===
+"name"`, the name a string literal written in place: `Js.typeIs v "string"` is `typeof v ===
+"string"`. It is `same (typeOf v) …` with the string the comparison needs written by the backend,
+which is what lets a module below `String` ask it: `Basics`' `append` and `eq` ask whether a value
+is a string and whether it is an object, and a `"string"` handed to `Js.from` would be a `String`
+`Basics` may not hold (rule 2 below). The name is not checked against `typeof`'s eight answers;
+one that is none of them is a test that is never true, as the JavaScript is. A name that is not a
+string literal is refused (`internal`), as a non-literal argument list is.
+
 **`regExp : pattern, flags -> Value`** (pure, 2026-10-01) is a regular expression literal,
 `/pattern/flags`, both arguments string literals: `Js.regExp "^\\d+$" ""` is `/^\d+$/`. A `/` and a
 line terminator in the pattern are written as their escapes, and an empty pattern as `(?:)`; the
@@ -498,8 +507,8 @@ close a cycle:
    (`internal`, as before).
 2. **A literal a `Js` call writes in place mints nothing** (`static-dispatch-spike.md` §6.8,
    amended): a string literal that is the name argument of `global`, `get`, `set` or `call`, either
-   argument of `regExp`, and a list literal that is the argument list of `call`, `apply`,
-   `construct` or `array`. The backend writes each as JavaScript syntax — a property name, a
+   argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), and a list literal that
+   is the argument list of `call`, `apply`, `construct` or `array`. The backend writes each as JavaScript syntax — a property name, a
    regular expression literal, an argument list — so no `String` or `List` value exists at run time,
    and the checker types each as a fresh type variable rather than `String` or `List a`
    (`checker-v2.md` §30), so none is visible in the module either. Only those positions, written

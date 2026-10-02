@@ -1,0 +1,76 @@
+-- `Basics.eq` called by name is structural (`language.md` §6.5), and it must
+-- answer the same for every form a value of one type can take:
+--
+--   a list is a plain array, a view (a pattern's `rest`) or a trie (what
+--   `List.push` grows), and two lists with the same elements are equal
+--   whatever their forms (`backend.md` §4, *What a reader of a list may rely
+--   on*). Compared as objects, key by key, a view never equalled the array it
+--   reads and a trie never equalled anything but a trie.
+--
+--   `()` is `null`, or `undefined` where a function whose result is `()`
+--   wrote none — which a release build does (`backend.md` §4, *A `()` result
+--   is not written*). A `()` a function returned equalled `()` in a
+--   development build and not under `--release`.
+--
+-- `==` dispatches to the type's own `eq` and answered all of these right;
+-- the lines that end in `==` are its answers, beside `Basics.eq`'s.
+import Node exposing (Program)
+
+
+rest : List Int → List Int
+rest xs =
+    case xs of
+        [ _, …r ] →
+            r
+
+        [] →
+            []
+
+
+grown : Int, List Int → List Int
+grown n acc =
+    if n == 0 then
+        acc
+    else
+        grown (n - 1) (List.push acc n)
+
+
+nothing : Int → ()
+nothing n =
+    if n > 0 then
+        nothing (n - 1)
+    else
+        ()
+
+
+show : Bool, Bool → String
+show viaBasics viaOperator =
+    if viaBasics == viaOperator then
+        if viaBasics then
+            "True"
+        else
+            "False"
+    else
+        "Basics.eq and == disagree"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Basics.eq (rest [ 1, 2, 3 ]) [ 2, 3 ]) (rest [ 1, 2, 3 ] == [ 2, 3 ])
+        , show
+            (Basics.eq { a = rest [ 1, 2, 3 ] } { a = [ 2, 3 ] })
+            ({ a = rest [ 1, 2, 3 ] } == { a = [ 2, 3 ] })
+        , show
+            (Basics.eq (grown 40 []) (List.reverse (List.range 1 40)))
+            (grown 40 [] == List.reverse (List.range 1 40))
+        , show (Basics.eq (grown 40 []) (grown 40 [])) (grown 40 [] == grown 40 [])
+        , show (Basics.eq (grown 40 []) (grown 39 [])) (grown 40 [] == grown 39 [])
+        , show (Basics.eq (rest [ 1, 2, 3 ]) [ 2, 4 ]) (rest [ 1, 2, 3 ] == [ 2, 4 ])
+        , show (Basics.eq (nothing 1) ()) (nothing 1 == ())
+        , show
+            (Basics.eq (List.map [ 1, 2 ] nothing) [ (), () ])
+            (List.map [ 1, 2 ] nothing == [ (), () ])
+        , show (Basics.eq (Just (nothing 1)) (Just ())) (Just (nothing 1) == Just ())
+        , show (Basics.neq (rest [ 1, 2, 3 ]) [ 2, 3 ]) (rest [ 1, 2, 3 ] ≠ [ 2, 3 ])
+        ]

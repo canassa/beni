@@ -5569,3 +5569,7 @@ well-known type is read for the literal, which is what lets `Basics` and `Char` 
 Nothing reaches the record: the backend writes the literal from `Bir`, not from a type
 (`backend.md` §4's `Js` intrinsics), and no evidence, dispatch row or boundary row (§28) can
 mention a fresh variable no other constraint touches.
+
+*(Amended 2026-10-02, the same day: `typeIs`'s second argument is one more such position —
+`boundary.md` §4.2's `typeIs`, which `Basics` needs to ask whether a value is a string with no
+`String` of its own. Generation treats it exactly as the name argument of `get`.)*

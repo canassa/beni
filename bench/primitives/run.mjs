@@ -77,6 +77,10 @@ const workloads = [
   ["divisions", "ints"],
   ["chars", "strings"],
   ["math", "ints"],
+  ["eqRecords", "records"],
+  ["eqNested", "nested"],
+  ["eqLong", "long"],
+  ["appends", "strings"],
 ].filter(([name]) => !options.only || options.only.split(",").includes(name));
 
 const median = (xs) => {

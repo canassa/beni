@@ -574,7 +574,6 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
     try testing.expectEqualDeep(@as([]const []const u8, &.{
         "Main.mjs",
         "Main.mjs.map",
-        "_core/Basics.foreign.mjs",
         "_core/Basics.mjs",
         "_core/Basics.mjs.map",
         "_main.mjs",
