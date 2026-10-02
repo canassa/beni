@@ -47,6 +47,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
+const Token = @import("../lex/Token.zig");
 const Graph = @import("Graph.zig");
 const Profile = @import("../Profile.zig");
 const Arena = @import("../Arena.zig");
@@ -507,6 +508,12 @@ const Pass = struct {
     quiet: bool = false,
     /// The current module's names, looked up per reference.
     tables: Tables = .{},
+    /// The current module's token columns and text, which `qualifiedRoot`
+    /// reads for every qualified reference: through `Artifacts` and the
+    /// store each ask built two whole `MultiArrayList` slices.
+    spans: Token.Spans = .{ .tags = &.{}, .starts = &.{} },
+    source: [:0]const u8 = "",
+    spans_of: ?Graph.Index = null,
 
     fn report(p: *Pass, item: Item) Allocator.Error!void {
         if (p.quiet) return;
@@ -518,6 +525,9 @@ const Pass = struct {
         p.quiet = p.graph.isPoisoned(m);
         const file = p.graph.moduleFile(m);
         const bir = p.artifacts.birMut(file);
+        p.spans = p.artifacts.spans(file);
+        p.source = p.store.bytes(file);
+        p.spans_of = m;
         try p.buildTables(m, bir);
         try p.checkExposing(m, bir);
         try p.rewriteReferences(m, bir);
@@ -710,14 +720,15 @@ const Pass = struct {
     }
 
     fn qualifiedRoot(p: *Pass, m: Graph.Index, token: u32) ?Symbol {
+        const own = p.spans_of == m;
         const file = p.graph.moduleFile(m);
-        const tokens = p.artifacts.spans(file);
+        const tokens = if (own) p.spans else p.artifacts.spans(file);
         if (token >= tokens.len()) return null;
         const tag = tokens.tags[token];
         // Only a qualified name has a root: an unqualified one is not
         // rescanned for a dot it cannot hold.
         if (tag != .qualified_upper and tag != .qualified_lower) return null;
-        const text = Tokenizer.slice(p.store.bytes(file), tag, tokens.starts[token]);
+        const text = Tokenizer.slice(if (own) p.source else p.store.bytes(file), tag, tokens.starts[token]);
         const dot = std.mem.indexOfScalar(u8, text, '.') orelse return null;
         return p.interner.find(text[0..dot]);
     }
