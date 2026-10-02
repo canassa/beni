@@ -8329,6 +8329,12 @@ pub const Lowerer = struct {
                 if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) dispatched[i] = true;
             }
         }
+        // And `core/List`'s, whose calls the emitter writes in other
+        // modules' code (`emitterCalled`): no BIR here shows them, so a
+        // beni-bodied `close` would otherwise look uncalled.
+        for (0..decls.len) |i| {
+            if (l.emitterCalled(@intCast(i))) dispatched[i] = true;
+        }
         for (decls, 0..) |d, i| {
             const index: u32 = @intCast(i);
             l.unobserved[i] = d.kind == .value and !d.is_pub and !dispatched[i] and

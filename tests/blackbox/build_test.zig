@@ -4509,3 +4509,27 @@ test "a core-private List value the emitter calls is exported when it has a beni
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
 }
+
+test "a core-private List value the emitter calls keeps its result under --release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `--release` writes a private function whose every caller discards
+    // its result without a `return` (§4, *A result nothing reads*). The
+    // emitter's calls of `close` are in no BIR, so a beni-bodied `close`
+    // looked uncalled and returned `undefined`: `Main` then read
+    // `undefined.length`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeCoreWithBeniClose(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "--core-root=mycore", "--release", "Main.beni" }, .{ .stdout = "3,4,99,100\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+}

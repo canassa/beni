@@ -856,7 +856,9 @@ elimination*), so a program with no list pattern imports none of them and the on
 *Amended 2026-10-02:* the five — `unsafeGet`, `view`, `base`, `offset` and `close` (§8's building
 loop's exit) — are exported when they survive **whether `core/List` writes them `foreign` or with a
 beni body**: the importing module cannot tell the two apart, and an export kept to `foreign` ones
-made a beni body a program that fails to load.
+made a beni body a program that fails to load. For the same reason each counts as a value whose
+result is read (*A result nothing reads*): the emitter's calls are in no module's BIR, and a
+beni-bodied `close` written without its `return` handed every building loop `undefined`.
 
 #### Identity: what an operation returns unchanged
 
