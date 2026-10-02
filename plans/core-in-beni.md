@@ -16,7 +16,7 @@ spelling — it is kept minimal, and the step says why.
 |---|---|---|
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
-| 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below |
+| 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below. **The port decided 2026-10-02**: both intrinsics adopted, the growth taken to `hand-minify` first |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js`, `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
@@ -804,6 +804,13 @@ ties the sibling in steady-state wall time except `compare`, 1.16–1.19× — t
 printed exit, not the runtime (research 50 §5.3); release brotli is 1 408 bytes smaller in total,
 44 programs grow by 1–83 bytes and the `effects` page by 28; and `abuse_wide_test`'s release case
 goes over its budget (4 771 against 4 300 million instructions), the wall the port waits on.
+
+**Decided (the owner, 2026-10-02):** `Js.object` and `Js.method` are adopted (research 50 §7 items
+1 and 5), and **hand-minify first**: L7's residue is brought to equal or smaller by `hand-minify`'s
+method on `concat` and the evidence loops and by any general compiler rule that helps, and only the
+growth left after a real effort goes back to the owner, each program with its cause. L1
+(`f7b23233`, `b35b0e49`), L4 (`e37cb7d7`) and L5 (`d656e7dc`, `c2d9393f`: 4 139 million with this
+`List`) are on master; L2, L3, L6 and L7 follow in order.
 
 Each slice is specified before it is built (rule 1), red first (rule 3), and passes
 `zig build gates` before it lands. The `.beni` the prototype wrote predates the Unicode notation:

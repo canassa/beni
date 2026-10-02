@@ -363,3 +363,14 @@ LIST_DIR=<a development --library build of LB2> node <claim-prepend-test with co
    39 % smaller, but the bar is per program. Either the growths are taken to `hand-minify`'s method
    first (`concat`'s three loops, the evidence loops), or the owner accepts a per-program growth of
    at most ~80 bytes against the total, as was weighed for `String.compare` in step 1.
+
+**Decided (the owner, 2026-10-02).** Items 1 and 5 are taken: **`Js.object [ ( "key", v ), … ]`**
+(keys in written order, never renamed) and **`Js.method λself → …`** (a function that reads
+`this`) are adopted as `Js` intrinsics, with §3.1 and §3.2's text as their contract; and the growth
+goes to **`hand-minify` first** — the 44 programs that grew 1–83 bytes are to be brought to equal
+or smaller through `hand-minify`'s method on `concat` and the `eq`/`compare` loops and any general
+compiler rule that helps, and only growth that remains after a real effort comes back to the owner,
+each program listed with its cause. Items 2, 3 and 4 had landed on master before the decision
+(`f7b23233`, `b35b0e49`; `e37cb7d7`; `d656e7dc`, `c2d9393f`, which put `abuse_wide`'s release case
+at 4 139 million instructions with this `List`). The port proceeds as `plans/core-in-beni.md` step
+3's slices.
