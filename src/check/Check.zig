@@ -33,6 +33,7 @@ const SchemaPlan = @import("SchemaPlan.zig");
 const reads = @import("reads.zig");
 const CacheEntry = @import("../cache/Entry.zig");
 const CacheDir = @import("../cache/Dir.zig");
+const CorePack = @import("../cache/Pack.zig");
 const Key = @import("../cache/Key.zig");
 const Digest = @import("../cache/Digest.zig");
 const Driver = @import("Driver.zig");
@@ -233,6 +234,13 @@ pub const Cutoff = struct {
     /// key: one code path, and "was a key computed?" is exactly the kind of
     /// condition a cache bug hides behind.
     dir: ?*const CacheDir = null,
+    /// The checked core the binary carries (`fast-compiler.md` §8, *The
+    /// checked core, embedded*), looked up for a core module before `dir`.
+    /// `empty` when the run reads its core from anywhere else.
+    pack: CorePack.Pack = .empty,
+    /// One slot per module, beside `hit`: whether the hit came from `pack`
+    /// rather than from `dir`.
+    embedded: []bool = &.{},
     /// Read-only, and read-only is the point: a worker re-interns through
     /// `InternPool.Global.find` (`CacheEntry.loadFinding`).
     interner: *const InternPool.Global,

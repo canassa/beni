@@ -93,7 +93,8 @@ pub fn load(
     interner: *InternPool.Global,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
-    return loadWith(gpa, dir, key, .{ .grow = interner }, shell);
+    const bytes = dir.load(gpa, key) orelse return null;
+    return decode(gpa, bytes, key, .{ .grow = interner }, shell);
 }
 
 /// `load`, on a WORKER, re-interning through the non-mutating
@@ -119,7 +120,22 @@ pub fn loadFinding(
     interner: *const InternPool.Global,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
-    return loadWith(gpa, dir, key, .{ .find = interner }, shell);
+    const bytes = dir.load(gpa, key) orelse return null;
+    return decode(gpa, bytes, key, .{ .find = interner }, shell);
+}
+
+/// `loadFinding` over bytes already in memory — the checked core's
+/// (`fast-compiler.md` §8, *The checked core, embedded*), which the binary
+/// carries. They are copied, because a `Loaded` owns its bytes whatever
+/// they came from, and an entry is a few kilobytes.
+pub fn loadFindingBytes(
+    gpa: Allocator,
+    bytes: []const u8,
+    key: Key.Key,
+    interner: *const InternPool.Global,
+    shell: *const Interface,
+) Allocator.Error!?Loaded {
+    return decode(gpa, try gpa.dupe(u8, bytes), key, .{ .find = interner }, shell);
 }
 
 /// Which of the two interning postures a load takes. `iface_bytes`' own
@@ -130,14 +146,14 @@ const Interning = union(enum) {
     find: *const InternPool.Global,
 };
 
-fn loadWith(
+/// Decode `bytes`, which the result owns from here on — freed on a miss.
+fn decode(
     gpa: Allocator,
-    dir: *const Dir,
+    bytes: []u8,
     key: Key.Key,
     interning: Interning,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
-    const bytes = dir.load(gpa, key) orelse return null;
     var out: Loaded = .{ .bytes = bytes, .record = .empty, .sidecar = .empty, .plan = .empty, .diagnostics = &.{} };
     errdefer out.deinit(gpa);
 

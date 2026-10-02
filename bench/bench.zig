@@ -571,7 +571,7 @@ fn coldRun(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, 
     var best: u64 = std.math.maxInt(u64);
     var iteration: u32 = 0;
     while (iteration < iterations + 1) : (iteration += 1) {
-        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true, .informational = true });
         defer session.deinit();
         const start = Io.Timestamp.now(io, .awake);
         _ = session.run(&.{corpus}, phases, &sink.writer) catch continue;
@@ -628,7 +628,12 @@ fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32
     var best: u64 = std.math.maxInt(u64);
     var iteration: u32 = 0;
     while (iteration < iterations + 1) : (iteration += 1) {
-        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+        // Every session here has `beni check`'s options, the informational
+        // warnings included: they are a term of every module key, and a
+        // session without them would miss the checked core the binary
+        // carries and measure a check no command runs
+        // (`fast-compiler.md` §8, *The checked core, embedded*).
+        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true, .informational = true });
         defer session.deinit();
         const start = Io.Timestamp.now(io, .awake);
         _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch continue;
@@ -667,7 +672,7 @@ const EmitMeasurement = struct {
 /// the two lines' difference is what maps cost.
 fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, maps: bool) !EmitMeasurement {
     var sink: Io.Writer.Discarding = .init(&.{});
-    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true, .informational = true });
     defer session.deinit();
     _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch return .{};
 
@@ -824,7 +829,7 @@ fn measureIface(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: 
     var m: IfaceMeasurement = .{};
     var sink: Io.Writer.Discarding = .init(&.{});
 
-    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true, .informational = true });
     defer session.deinit();
     _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch return m;
 
@@ -892,6 +897,7 @@ fn timedCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u3
             .jobs = 1,
             .diagnostics = .json,
             .core_package = true,
+            .informational = true,
             .roundtrip_interfaces = roundtrip,
         });
         defer session.deinit();

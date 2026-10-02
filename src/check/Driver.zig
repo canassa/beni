@@ -453,7 +453,10 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             // needs writing, and the cache profile reports the hit bit.
             loaded.deinit(d.gpa);
             d.options.cached[m.int()] = null;
-            if (d.options.cutoff) |cutoff| cutoff.hit[m.int()] = false;
+            if (d.options.cutoff) |cutoff| {
+                cutoff.hit[m.int()] = false;
+                if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = false;
+            }
         }
     }
     d.counters[m.int()] = try ModuleCheck.check(.{

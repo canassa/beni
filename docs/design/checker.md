@@ -157,7 +157,11 @@ fixtures and records each guard's measured boundary.
 Core is embedded into the binary with `@embedFile` from `build.zig` (one anonymous import per
 file, the list generated from the directory at build time), and parsed on every cold start
 until M4 caches it. `--core-root` reads the directory instead. *Amended 2026-10-01:* only the core
-modules a build reaches are parsed and checked (§4, amended the same day).
+modules a build reaches are parsed and checked (§4, amended the same day). *Amended 2026-10-02:*
+the embedded core is checked once, when beni itself is built, and the binary carries every core
+module's front-end artifact and cache entry beside its sources ([`fast-compiler.md`](fast-compiler.md)
+§8, *The checked core, embedded*): a build reaches the same core modules, and installs them instead of
+parsing and checking them. A core read with `--core-root` is parsed and checked as before.
 
 ## 4. The module graph and resolution
 

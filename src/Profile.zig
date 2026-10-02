@@ -95,6 +95,12 @@ pub const Phase = enum {
     frontend_decode,
     frontend_verify,
     frontend_intern,
+    /// Decoding, verifying, re-interning and installing one core file's
+    /// front-end artifact from the checked core the binary carries
+    /// (`fast-compiler.md` §8, *The checked core, embedded*), on the worker,
+    /// in place of `lex`+`parse`+`lower`. Emitted on a hit only: a miss
+    /// costs a binary search.
+    embedded_load,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.
@@ -213,6 +219,15 @@ pub const Counter = enum {
     /// neither, because nothing was eligible.
     frontend_hits,
     frontend_misses,
+    /// The checked core the binary carries (`fast-compiler.md` §8, *The
+    /// checked core, embedded*): core files whose front-end artifact, and
+    /// core modules whose cache entry, were installed from it. Counted apart
+    /// from `frontend_hits` and `cache_hits`, which are the cache
+    /// directory's: `cache_hits + embedded_modules + modules_checked` is
+    /// every module of the graph, and a build of an ordinary program on the
+    /// embedded core checks no core module at all.
+    embedded_files,
+    embedded_modules,
     /// Bytes of front-end artifact written this run, over the files actually
     /// stored. Zero without `--cache-dir`.
     frontend_bytes,

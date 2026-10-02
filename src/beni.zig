@@ -99,6 +99,7 @@ pub const cache = struct {
     pub const Dir = @import("cache/Dir.zig");
     pub const Digest = @import("cache/Digest.zig");
     pub const Entry = @import("cache/Entry.zig");
+    pub const Pack = @import("cache/Pack.zig");
     pub const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
 };
 pub const check = struct {

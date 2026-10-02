@@ -959,6 +959,13 @@ const Counters = struct {
     /// 0 when every module was installed from the cache, which is the
     /// witness that a cache hit installs the published answer.
     derived: u64 = 0,
+    /// The checked core the binary carries (`fast-compiler.md` §8, *The
+    /// checked core, embedded*): core files and modules installed from it,
+    /// which a cache directory neither reads nor writes.
+    embedded_files: u64 = 0,
+    embedded_modules: u64 = 0,
+    /// Modules in the graph.
+    modules: u64 = 0,
 };
 
 const Run = struct {
@@ -988,6 +995,9 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
             frontend_hits: ?u64 = null,
             frontend_bytes: ?u64 = null,
             derived_context_runs: ?u64 = null,
+            embedded_files: ?u64 = null,
+            embedded_modules: ?u64 = null,
+            modules: ?u64 = null,
         } = .{},
     };
     const text = try w.read(trace);
@@ -1012,6 +1022,9 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
         if (e.args.frontend_hits) |v| counters.frontend_hits = v;
         if (e.args.frontend_bytes) |v| counters.frontend_bytes = v;
         if (e.args.derived_context_runs) |v| counters.derived = v;
+        if (e.args.embedded_files) |v| counters.embedded_files = v;
+        if (e.args.embedded_modules) |v| counters.embedded_modules = v;
+        if (e.args.modules) |v| counters.modules = v;
     }
     return .{ .result = r, .counters = counters };
 }
@@ -1051,12 +1064,16 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // A cold run hits nothing, checks everything, and writes an entry per
-    // cacheable module — the app's three and the core modules it reaches,
-    // which is what makes even an unchanged-tree hit worth having.
+    // A cold run hits nothing, checks every module of the project, and
+    // writes an entry for each of the app's three. The core modules it
+    // reaches come from the checked core the binary carries
+    // (`fast-compiler.md` §8, *The checked core, embedded*), with or without
+    // a cache directory, and the directory is never asked about them.
     try testing.expectEqual(@as(u64, 0), cached.counters.hits);
     try testing.expectEqual(@as(u64, 0), plain.counters.hits);
-    try testing.expect(cached.counters.misses >= 11);
+    try testing.expectEqual(@as(u64, 3), cached.counters.misses);
+    try testing.expect(cached.counters.embedded_modules >= 8);
+    try testing.expectEqual(cached.counters.embedded_modules, plain.counters.embedded_modules);
     try testing.expectEqual(cached.counters.misses, plain.counters.misses);
     try testing.expectEqual(cached.counters.checked, plain.counters.checked);
     try testing.expect(cached.counters.bytes > 0);
@@ -1118,13 +1135,17 @@ test "a cold run lexes, parses and lowers every file and writes one artifact for
     try testing.expectEqualStrings(plain.result.stderr, cold.result.stderr);
     try testing.expectEqualStrings(plain.result.stdout, cold.result.stdout);
 
-    // Every file, on both runs: a cache directory does not change what the
-    // front end does on a cold run, it only makes it write.
+    // Every file, on both runs, but the core files the checked core the
+    // binary carries already holds (`fast-compiler.md` §8, *The checked
+    // core, embedded*): a cache directory does not change what the front end
+    // does on a cold run, it only makes it write.
     for ([_]Run{ plain, cold }) |run| {
         try testing.expect(run.counters.files > 0);
-        try testing.expectEqual(run.counters.files, run.counters.lexed);
-        try testing.expectEqual(run.counters.files, run.counters.parsed);
-        try testing.expectEqual(run.counters.files, run.counters.lowered);
+        try testing.expect(run.counters.embedded_files > 0);
+        const project = run.counters.files - run.counters.embedded_files;
+        try testing.expectEqual(project, run.counters.lexed);
+        try testing.expectEqual(project, run.counters.parsed);
+        try testing.expectEqual(project, run.counters.lowered);
     }
     // A run with no cache directory writes no artifact, whatever it lowered.
     try testing.expectEqual(@as(u64, 0), plain.counters.frontend_bytes);
@@ -1133,10 +1154,10 @@ test "a cold run lexes, parses and lowers every file and writes one artifact for
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // One `.bef` per FILE — more than the `.bec` count, because a file key
-    // is per file and a module key is per module, and core's files are both.
+    // One `.bef` per file the run lowered — none for a core file the
+    // checked core held, which the directory is never asked about.
     const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
-    try testing.expectEqual(@as(usize, @intCast(cold.counters.files)), artifacts.len);
+    try testing.expectEqual(@as(usize, @intCast(cold.counters.lowered)), artifacts.len);
 }
 
 test "a file whose front end failed is never written, and its neighbours are" {
@@ -1165,10 +1186,12 @@ test "a file whose front end failed is never written, and its neighbours are" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), r.result.exit_code);
     const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
-    // Every file but the broken one. The count is the assertion: naming the
-    // absent key would need the file key of a file that does not compile,
-    // and `--frontend-keys` prints those too — so both halves are checked.
-    try testing.expectEqual(@as(usize, @intCast(r.counters.files - 1)), artifacts.len);
+    // Every file the run lowered but the broken one (a core file the
+    // checked core held was not lowered, and is never written). The count
+    // is the assertion: naming the absent key would need the file key of a
+    // file that does not compile, and `--frontend-keys` prints those too —
+    // so both halves are checked.
+    try testing.expectEqual(@as(usize, @intCast(r.counters.lowered - 1)), artifacts.len);
 
     const keys = try fileKeysOfAllowingErrors(&w, arena);
     const broken_digits = lookup(keys, "src/Broken.beni").?;
@@ -1198,7 +1221,7 @@ test "a file whose front end failed is never written, and its neighbours are" {
     const fixed = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "fixed.json");
     try testing.expectEqual(@as(u8, 0), fixed.result.exit_code);
     const after = try artifactsOnly(arena, try w.listFiles("cache"));
-    try testing.expectEqual(@as(usize, @intCast(fixed.counters.files)), after.len);
+    try testing.expectEqual(@as(usize, @intCast(fixed.counters.files - fixed.counters.embedded_files)), after.len);
 }
 
 test "a warm run lexes, parses and lowers NOTHING and says exactly the same thing" {
@@ -1234,9 +1257,10 @@ test "a warm run lexes, parses and lowers NOTHING and says exactly the same thin
     try testing.expectEqual(@as(u64, 0), warm.counters.parsed);
     try testing.expectEqual(@as(u64, 0), warm.counters.lowered);
     try testing.expectEqual(warm.counters.files, cold.counters.files);
-    // Every file hit, and nothing written a second time: the name is the
-    // key, so there is nothing to rewrite.
-    try testing.expectEqual(warm.counters.files, warm.counters.frontend_hits);
+    // Every file hit — the project's in the directory, core's in the
+    // checked core the binary carries — and nothing written a second time:
+    // the name is the key, so there is nothing to rewrite.
+    try testing.expectEqual(warm.counters.files, warm.counters.frontend_hits + warm.counters.embedded_files);
     try testing.expectEqual(@as(u64, 0), warm.counters.frontend_bytes);
     // …and the modules were not re-checked either, which is the module
     // cache still holding with a loaded `Bir` under it.
@@ -1292,7 +1316,7 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     try testing.expectEqual(@as(u64, 1), edited.counters.lexed);
     try testing.expectEqual(@as(u64, 1), edited.counters.parsed);
     try testing.expectEqual(@as(u64, 1), edited.counters.lowered);
-    try testing.expectEqual(edited.counters.files - 1, edited.counters.frontend_hits);
+    try testing.expectEqual(edited.counters.files - 1, edited.counters.frontend_hits + edited.counters.embedded_files);
     // ONE module re-checked — the leaf alone. Were the module key to fold
     // its imports' KEYS it would be 3, since a body edit moves the leaf's;
     // it folds their `(interface hash, dependency digest)` pairs, and an
@@ -2016,6 +2040,118 @@ fn withExtension(arena: std.mem.Allocator, files: []const []const u8, ext: []con
     return out.items;
 }
 
+// ---------------------------------------------------------------------------
+// The checked core the binary carries (`fast-compiler.md` §8, *The checked
+// core, embedded*)
+// ---------------------------------------------------------------------------
+
+/// A program that reaches core well beyond the modules every check keeps.
+const reaches_core =
+    \\import Dict exposing (Dict)
+    \\import Schema
+    \\
+    \\
+    \\pub sizes : Dict String Int
+    \\sizes =
+    \\    Dict.fromList [ ( "a", 1 ), ( "b", 2 ) ]
+    \\
+    \\
+    \\pub parsed : Result (List Schema.Issue) Int
+    \\parsed =
+    \\    Schema.parse Schema.int "3"
+    \\
+;
+
+test "a check on the embedded core lexes, parses, lowers and checks no core module" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The owner's decision of 2026-10-02: core is checked once, when beni
+    // is built, and no build checks an embedded core module again — not
+    // with `--no-cache`, not on a first run. The counters are the claim: a
+    // core module that was checked and a core module that was installed
+    // produce the same output, and only these say which one happened.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Uses.beni", reaches_core);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runCounted(&w, arena, &.{ "check", "--no-cache", "src" }, "trace.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expectEqualStrings("", r.result.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One module of the project, checked; every other module of the graph
+    // — the prelude, `Task`, `Dict`, `Schema` and what they import — is
+    // core, and was installed.
+    try testing.expectEqual(@as(u64, 1), r.counters.checked);
+    try testing.expect(r.counters.embedded_modules >= 10);
+    try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
+    // One file through the front end; every core file installed whole.
+    try testing.expectEqual(@as(u64, 1), r.counters.lexed);
+    try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+    try testing.expectEqual(r.counters.files, r.counters.lowered + r.counters.embedded_files);
+    // `--no-cache` means no cache, and the checked core is not one.
+    try testing.expectEqual(@as(u64, 0), r.counters.hits);
+    try testing.expect(!w.exists(".beni-cache"));
+}
+
+test "a core read with --core-root is checked by the build, as before there was a checked core" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A core read from disk is somebody's core under development, and the
+    // checked core the binary carries says nothing about it — even a copy
+    // whose bytes are the embedded ones. It is lowered and checked, and it
+    // is cached per module in the directory like any other package.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try w.write("src/Uses.beni", reaches_core);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const embedded = try runCounted(&w, arena, &.{ "check", "--no-cache", "src" }, "embedded.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--cache-dir=cache", "--core-root=mycore", "src" }, "cold.json");
+    const warm = try runCounted(&w, arena, &.{ "check", "--cache-dir=cache", "--core-root=mycore", "src" }, "warm.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ embedded, cold, warm }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The same graph, every module of it checked and every file lowered…
+    try testing.expectEqual(embedded.counters.modules, cold.counters.modules);
+    try testing.expectEqual(cold.counters.modules, cold.counters.checked);
+    try testing.expectEqual(@as(u64, 0), cold.counters.embedded_modules);
+    try testing.expectEqual(@as(u64, 0), cold.counters.embedded_files);
+    try testing.expectEqual(cold.counters.files, cold.counters.lowered);
+    // …and cached in the directory, so the second run checks none of it.
+    try testing.expectEqual(cold.counters.modules, warm.counters.hits);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+}
+
 test "--no-cache beside --cache-dir reads nothing and writes nothing" {
     // The flag exists before there is a default so a script written today
     // keeps working the day one arrives (`frontend.md` §1) — which is worth
@@ -2152,13 +2288,16 @@ test "a module with a type error is never written, and its importers are not eit
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Core is clean and still cached, so this is not "nothing was written";
-    // what is absent is exactly the broken module's entry.
+    // Every file's front-end artifact is still written, so this is not
+    // "nothing was written"; what is absent is exactly the broken module's
+    // entry. Core has none either way: it comes from the checked core the
+    // binary carries (`fast-compiler.md` §8, *The checked core, embedded*),
+    // which no cache directory holds.
     const files = try w.listFiles("cache");
     try testing.expect(files.len > 0);
     const keys = try baselineKeysAllowingErrors(&w, arena);
     try expectNoEntry(&w, files, lookup(keys, "app:Leaf").?);
-    try expectEntry(&w, files, lookup(keys, "core:Basics").?);
+    try expectNoEntry(&w, files, lookup(keys, "core:Basics").?);
 
     // And after the fix, the module compiles and is written.
     try w.write("src/Leaf.beni", leaf_source);
@@ -2211,7 +2350,7 @@ test "the members of an import cycle are never written, and the rest of the proj
     try expectNoEntry(&w, files, lookup(keys, "app:Pong").?);
     // The modules outside the cycle are untouched by it.
     try expectEntry(&w, files, lookup(keys, "app:Leaf").?);
-    try expectEntry(&w, files, lookup(keys, "core:Basics").?);
+    try expectEntry(&w, files, lookup(keys, "app:Mid").?);
 }
 
 // ---------------------------------------------------------------------------
@@ -2261,7 +2400,10 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     );
     try testing.expectEqual(@as(u64, 0), warm.counters.misses);
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    try testing.expect(warm.counters.hits >= 11);
+    // The app's three from the directory; the core modules from the checked
+    // core the binary carries, on this run as on the cold one.
+    try testing.expectEqual(@as(u64, 3), warm.counters.hits);
+    try testing.expect(warm.counters.embedded_modules >= 8);
     // Nothing new was written: every entry was already there under its key.
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
 }
@@ -3795,9 +3937,10 @@ fn runEditStep(case: EditCase, from: usize, to: usize) !void {
     // edit that leads to it.
     if (from == 0) try expectOutcome(&w, arena, case, from, first, "first");
     try testing.expectEqual(@as(u64, 0), first.counters.hits);
-    // The check derived the types of `M` and `N` itself: that is what a hit
-    // must not do again.
-    try testing.expect(first.counters.derived > 0);
+    // The check of `M` and `N` ran: that is what a hit must not do again.
+    // (Core's derived contexts come from the checked core the binary
+    // carries, so `derived` counts the project's own, which may be none.)
+    try testing.expect(first.counters.checked >= 2);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3814,9 +3957,9 @@ fn runEditStep(case: EditCase, from: usize, to: usize) !void {
     try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
     try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
     // A version not built before re-checks at least `M`, and something is
-    // always a hit (core).
+    // always installed rather than checked (core, from the checked core).
     try testing.expect(warm.counters.checked >= 1);
-    try testing.expect(warm.counters.hits > 0);
+    try testing.expect(warm.counters.hits + warm.counters.embedded_modules > 0);
     try expectOutcome(&w, arena, case, to, warm, "warm");
 
     // ┌─────────────────────────────────────────┐

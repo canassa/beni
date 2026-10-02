@@ -79,6 +79,17 @@ does not import it, which must not move by a byte.
 | **H-b** | **JSON through schemas**: `expectJson` (and its `Accept`), `jsonBody` (and its `Content-Type`), `BadBody` with issues (H2), `UnprintableBody` | §9.8.12 (a), (b) step 4–7 | `browser/tea/HttpJson`: a record decoded, a body that is not JSON (`ParseFailed`), a body missing a field (`MissingKey` at its path), a 500 with a JSON body (`BadStatus`, not `BadBody`), a request body printed with a renamed key, one holding `NaN` refused before anything is sent (no fetch logged). Measured: the page against `HttpRequestShape`'s, the difference being the schema engine | S |
 | **H-c** | **Multipart and progress**: `multipartBody`, `stringPart`, `MultipartContentType`; the tracker, `Progress`, `fractionSent`, `fractionReceived` | §9.8.12 (b), (e) | `browser/tea/HttpMultipart` (the parts in the fetch log, no `Content-Type` of the program's, the refusal); `browser/tea/HttpProgress` (a `chunks` answer of three chunks with and without `Content-Length`, each `Progress` sent as a message in order with the answer last, a `HEAD` with a `null` body, the fractions shown, a `Content-Length` smaller than the bytes received clamped to 1) | M |
 
+**H-b, parked on its budget (2026-10-02).** `Http` importing `Schema` made every `Http` page check
+`core/Schema`; the checked core (`fast-compiler.md` §8, *The checked core, embedded*) removed that,
+and the other `Http` pages measure 2.9–3.3 billion instructions a case with H-b on them. The two
+JSON pages, whose builds reach the schema engine, measure 4 266 (`HttpJson`) and 4 398
+(`HttpJsonBody`) million with their run hashes recorded and about 600 million more when Node must
+run: over the 4 300 budget. What is left is not checking: a `--release` build of a page that reaches
+`Schema` costs 0.92 billion instructions more than one that does not (emission and the specialiser),
+the development build 0.21 billion more, and the embedded platform modules every build still checks
+about 0.33 billion a build. The slice waits on one of those, rebased and conflict-free, as the branch
+`http-json-rebased`.
+
 **Order.** R0 first (U4–U6 and H-a–H-c need it); U1 → U2 → U3 need nothing of it and can run
 beside it. Then U4 → U5 → U6, and H-a → H-b → H-c, the two chains in parallel worktrees (they touch
 different modules; both touch `browser-tea`'s re-export list, a one-line merge). U7 any time. The

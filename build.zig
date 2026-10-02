@@ -218,7 +218,29 @@ pub fn build(b: *std.Build) void {
     // "which compiler produced this entry". Computed here rather than by
     // hashing the installed binary at run time, which is correct and costs
     // ~2 ms of a 15 ms warm budget.
-    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null, shipped_core, platform_sources));
+    const default_id = compilerBuildId(b, target, optimize, null, shipped_core, platform_sources);
+    beni_mod.addImport("build_options", buildIdOptions(b, default_id));
+    // The hermetic suite's library carries no checked core: its tests build
+    // their own projects, and the pack is the installed compilers' (below).
+    beni_mod.addImport("core_pack", emptyCorePack(b));
+
+    // The installed compiler carries the checked core (`fast-compiler.md`
+    // §8, *The checked core, embedded*), so it is built from a library
+    // module of its own: the same sources and imports as `beni_mod`, and the
+    // pack made for its build id.
+    const exe_beni = b.createModule(.{
+        .root_source_file = b.path("src/beni.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
+    });
+    exe_beni.addImport("core_package", embedCore(b, shipped_core));
+    exe_beni.addImport("platform_packages", embedPlatforms(b, platform_sources));
+    exe_beni.addImport("beni_markup", markup.interface);
+    exe_beni.addImport("markup_lowerings", markup.registry);
+    exe_beni.addImport("markup_entity_table", entityTable(b));
+    exe_beni.addImport("build_options", buildIdOptions(b, default_id));
+    exe_beni.addImport("core_pack", corePack(b, shipped_core, default_id));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -227,7 +249,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "beni", .module = beni_mod },
+                .{ .name = "beni", .module = exe_beni },
                 .{ .name = "diagnostic", .module = diagnostic_mod },
             },
         }),
@@ -1058,7 +1080,9 @@ fn compiler(
     beni.addImport("beni_markup", markup.interface);
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
-    beni.addImport("build_options", buildIdOptions(b, target, mode, backend, core, sources));
+    const id = compilerBuildId(b, target, mode, backend, core, sources);
+    beni.addImport("build_options", buildIdOptions(b, id));
+    beni.addImport("core_pack", corePack(b, core, id));
     const exe = b.addExecutable(.{
         .name = "beni",
         .use_llvm = backend == .llvm,
@@ -1094,20 +1118,105 @@ const DebugInfo = enum {
 /// The `build_options` module, carrying the 16-byte compiler build id of
 /// `docs/design/fast-compiler.md` §8 — the cache key's term for "which
 /// compiler produced this entry" (`src/build_id.zig` has what it is for).
-///
-/// `backend` is null for the `-Doptimize` build, which leaves the choice to
-/// Zig's default for the mode.
-fn buildIdOptions(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    backend: ?Backend,
-    core: Core,
-    sources: []const PlatformSource,
-) *std.Build.Module {
+fn buildIdOptions(b: *std.Build, id: [16]u8) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend, core, sources));
+    options.addOption([16]u8, "build_id", id);
     return options.createModule();
+}
+
+/// The checked core a compiler with build id `id` carries, as the module
+/// `core_pack` (`docs/design/fast-compiler.md` §8, *The checked core,
+/// embedded*; `src/cache/Pack.zig`): `src/core_pack_main.zig` run over
+/// `core`'s files with that id, its output embedded.
+///
+/// **One maker for every compiler, run once per compiler.** The maker is
+/// built once, ReleaseSafe on the self-hosted backend — every safety check
+/// fires while it checks core — and the pack it writes depends on the core
+/// and on the id, never on the maker's own mode: every key is computed with
+/// `id`, and a check's result does not depend on the code generator that
+/// compiled the checker (§10). Each run is a few hundred milliseconds; the
+/// maker's compile is what an edit under `src/` adds to the path of every
+/// compiler, which is why its root reaches the checker and nothing after it.
+fn corePack(b: *std.Build, core: Core, id: [16]u8) *std.Build.Module {
+    const run = b.addRunArtifact(corePackMaker(b));
+    run.setName(b.fmt("check {s} for the compiler {s}", .{ core.dir, &std.fmt.bytesToHex(id, .lower) }));
+    run.addDirectoryArg(coreDirectory(b, core));
+    run.addArg(&std.fmt.bytesToHex(id, .lower));
+    const pack = run.addOutputFileArg("core.pack");
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyFile(pack, "core.pack");
+    const root = wf.add("core_pack.zig",
+        \\//! Generated by build.zig: the checked core (fast-compiler.md §8).
+        \\pub const bytes: []const u8 = @embedFile("core.pack");
+        \\
+    );
+    return b.createModule(.{ .root_source_file = root });
+}
+
+/// A `core_pack` that holds nothing: every core module is then checked by
+/// every build, as before the pack existed. The maker's own, and the
+/// hermetic suite's.
+fn emptyCorePack(b: *std.Build) *std.Build.Module {
+    const wf = b.addWriteFiles();
+    const root = wf.add("core_pack.zig",
+        \\//! Generated by build.zig: no checked core (fast-compiler.md §8).
+        \\pub const bytes: []const u8 = "";
+        \\
+    );
+    return b.createModule(.{ .root_source_file = root });
+}
+
+/// `src/core_pack_main.zig`, built once per `zig build` for the host.
+fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
+    if (core_pack_maker) |exe| return exe;
+    const host = b.graph.host;
+    const mode: std.builtin.OptimizeMode = .ReleaseSafe;
+    const diagnostic = b.createModule(.{
+        .root_source_file = b.path("src/diagnostic.zig"),
+        .target = host,
+        .optimize = mode,
+    });
+    const beni = b.createModule(.{
+        .root_source_file = b.path("src/beni.zig"),
+        .target = host,
+        .optimize = mode,
+        .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
+    });
+    beni.addImport("core_package", embedCore(b, shipped_core));
+    beni.addImport("platform_packages", embedPlatforms(b, &.{}));
+    const markup = markupModules(b, &.{}, null);
+    beni.addImport("beni_markup", markup.interface);
+    beni.addImport("markup_lowerings", markup.registry);
+    beni.addImport("markup_entity_table", entityTable(b));
+    // Its own id is never a key's term: every key it computes takes the id
+    // of the compiler it makes the pack for.
+    beni.addImport("build_options", buildIdOptions(b, compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{})));
+    beni.addImport("core_pack", emptyCorePack(b));
+    const exe = b.addExecutable(.{
+        .name = "core_pack",
+        .use_llvm = false,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/core_pack_main.zig"),
+            .target = host,
+            .optimize = mode,
+            .imports = &.{.{ .name = "beni", .module = beni }},
+        }),
+    });
+    core_pack_maker = exe;
+    return exe;
+}
+
+var core_pack_maker: ?*std.Build.Step.Compile = null;
+
+/// `core`'s files in a directory of their own, for the maker's
+/// `--core-root`: the files `embedCore` embeds, under the same names.
+fn coreDirectory(b: *std.Build, core: Core) std.Build.LazyPath {
+    const wf = b.addWriteFiles();
+    for (coreFiles(b, core)) |file| switch (file.origin) {
+        .disk => |full| _ = wf.addCopyFile(b.path(full), file.rel),
+        .text => |text| _ = wf.add(file.rel, text),
+    };
+    return wf.getDirectory();
 }
 
 /// Bumped whenever the recipe below changes, so that two compilers which

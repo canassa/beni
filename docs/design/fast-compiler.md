@@ -1295,6 +1295,102 @@ path, the daemon, the socket protocol, the memory ceiling, watching and cancella
 **PENDING**); garbage collection and a size cap (the daemon); the `Ast` an LSP will want (M5); the
 declaration-level graph of §8.2 (only if these measurements demand it).
 
+### The checked core, embedded
+
+*Added 2026-10-02, the owner's decision: "check `core/` once when beni itself is built and embed the
+result". It changes not one byte of the interface record, the cache entry, the front-end artifact,
+the module key or the file key; it adds a third place a hit can come from.*
+
+**Why.** Core is part of the compiler (rule 6), and until this step every process lexed, parsed,
+lowered and checked every core module it reached, on every run — the cache directory helped only a
+second run in the same directory, and every test, every CI job and every first build is a first run.
+`Http` importing `Schema` made that the wall it had already been for `String` and `Js`
+(`plans/core-in-beni.md`, *The wall*): every page using `Http` paid for checking all of
+`core/Schema`, twice per case (the development and the release build), and the two JSON pages of
+`plans/http-and-routing.md` slice H-b went over the 4 300-million-instruction test budget on it.
+
+**What.** When `build.zig` builds a compiler, it first builds a small program,
+`src/core_pack_main.zig`, and runs it over that compiler's core directory with that compiler's build
+id. The program checks **every** module of the core — none is left out for want of an import —
+exactly as `beni check` would, with every key computed with the build id of the compiler that will
+carry the result, and writes each core file's front-end artifact and each core module's cache entry
+into **one blob, the checked core** (`src/cache/Pack.zig`): a table of `(kind, key) → bytes` rows
+sorted by kind and key, then the payloads, in the two byte formats the cache directory already
+holds. The compiler embeds the blob as the module `core_pack`.
+
+**A read-only cache directory in the binary, keyed exactly as the directory is.** In a run whose core
+is the embedded one, a core file's file key is looked up in the checked core before the directory,
+and so is a core module's module key: a row that is there is validated, re-interned and installed by
+the code that installs a directory's hit, and `lex`, `parse`, `lower` and the module's whole check
+never run for it. **There is no new correctness argument**, which is the reason for the shape: a key
+is the whole input set of what it names (above), the rows were produced from the same sources by a
+compiler built from the same `src/` and `build.zig`, and every way a row can fail to apply — another
+option string, another `--pattern-budget`, a `dump` (which leaves the informational warnings off), a
+`--cache-build-id` — is a key that is not in the table: a miss, and the module is checked as it
+always was. A malformed blob is the empty one.
+
+**Which runs read it.** Every run that enumerates the embedded core — `check`, `build`, `serve`,
+`dump --stage=interface|raw|types|graph|dispatch` (which miss, being keyed without the informational
+warnings, and check core as before) — **with or without a cache directory, and `--no-cache` does not
+turn it off**: it is part of the compiler, not a cache, and the run is byte-identical either way.
+**A core read with `--core-root` never reads it**, even a copy whose bytes are the embedded ones: it
+is somebody's core under development, and it keeps today's path — lowered and checked by the build,
+cached per module in the directory. A run that makes a pack never reads one.
+
+**What a cache directory does with core now.** Nothing: a core module installed from the checked
+core is never written to the directory, so a warm directory holds the project's modules alone. The
+`--self-profile` counters say which source a module came from — `embedded_files` and
+`embedded_modules` beside `frontend_hits` and `cache_hits` — so `cache_hits + embedded_modules +
+modules_checked` is every module of the graph, and a run over the embedded core reports
+`modules_checked` equal to the project's modules alone (`tests/blackbox/cache_test.zig`, *The checked
+core the binary carries*; the `--core-root` half is the same file's next test).
+
+**One maker, one run per compiler.** The maker is built once per `zig build`, ReleaseSafe on the
+self-hosted backend so every safety check fires while core is checked, for the host; its root reaches
+the front end and the checker and not the backend, the formatter or the development loop, which is
+why it is a program of its own and not a hidden command of `beni`. The pack it writes depends on the
+core and on the build id it is given, not on the maker's own mode: a check's result does not depend
+on the code generator that compiled the checker (§10), and the id is the target compiler's, so one
+maker serves the ReleaseFast, ReleaseSafe, Debug and LLVM compilers alike. **It refuses an incomplete
+pack** — a core module missing from it would be checked by every build and nothing would say so — and
+a core that does not check, failing the build of beni with the diagnostics. Two rows under one key
+are one row.
+
+**What it costs.** The maker's compile is on the path of every compiler after an edit under `src/`,
+and each run checks all of core once. Measured on this machine, quiet, after a one-line edit under
+`src/`: the maker compiles in about 4 s (the ReleaseSafe compiler it precedes takes about 6.5 s, and
+the two do not overlap), and a run over the shipped core costs 650 million instructions, about
+0.7 s of CPU, and writes 850 kB that every compiler then carries. *Rejected: building the
+compiler as a library linked twice — once with an empty pack to make it, once with the pack —
+so the maker would cost a link instead of a compile; it would need the self-hosted backend to
+produce a static archive the rest of the build links, which nothing in the build does today, and a
+`extern` symbol between them. Rejected: a pack beside the binary rather than in it, read at run
+time — the owner asked for the result in the binary, and a file beside it is a cache directory with
+another name, which can be missing or stale.*
+
+**What it does not do.** No platform package is pre-checked: a platform the binary carries is
+lowered and checked by every build that reaches it, as before (*Measured*, below, prices that). No
+emitted byte is in the pack: `emit`, and under `--release` the specialiser, run for every module as
+they always did.
+
+**Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
+user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte
+moved** — every `run/` and `browser/` program's run hash matched, development and release, with no
+program run for want of one, and `bench/size.mjs`'s 386 lines are byte-identical. **A small program**
+(one module importing `Dict` and `Schema`): `beni check` 451 → 101 million (−78 %) on the ReleaseSafe
+compiler, and `zig build bench`'s cold check 240 → 43 million (−82 %) on the ReleaseFast one, its
+best cold check 11.4 → 1.9 ms; `beni build --platform=node` of `run/SchemaDeclKeys` 687 → 371 million
+(−46 %) and with `--release` 1 818 → 1 502 million (−17 %). **The 100k corpus**, whose 653 modules
+hold 9 of core: `beni check` 6 002 → 5 849 million (−2.5 %), the bench's check 3 045 → 2 939 million
+(−3.5 %); its cold check time is inside the load's noise. **The H-b pages**
+(`browser/tea/HttpJson`, `HttpJsonBody`): each build 360 million fewer, so a case 720 million fewer;
+with their run hashes recorded, so that Node does not run, the two cases measure 4 266 and 4 398
+million, and a case whose page Node must verify about 600 million more — still over the budget,
+which is what is left (`plans/http-and-routing.md`, H-b): the platform modules every build still checks (about 330
+million a build on these pages, measured with them warm in a cache directory) and, the larger part,
+the release build of a page that reaches `Schema`, 0.92 billion more than one that does not, which
+is emission and specialisation and not checking.
+
 ## 9. JavaScript backend
 
 ### 9.1 Dead code elimination — copy Elm's mechanism exactly

@@ -189,7 +189,7 @@ fn writeProject(w: *World) !void {
 // Running
 // ---------------------------------------------------------------------------
 
-const Counters = struct { hits: u64 = 0, misses: u64 = 0, checked: u64 = 0 };
+const Counters = struct { hits: u64 = 0, misses: u64 = 0, checked: u64 = 0, embedded: u64 = 0 };
 
 const Run = struct {
     stdout: []const u8,
@@ -221,6 +221,7 @@ fn run(w: *World, arena: std.mem.Allocator, cache: ?[]const u8, trace: []const u
             cache_hits: ?u64 = null,
             cache_misses: ?u64 = null,
             modules_checked: ?u64 = null,
+            embedded_modules: ?u64 = null,
         } = .{},
     };
     const text = try w.read(trace);
@@ -237,6 +238,7 @@ fn run(w: *World, arena: std.mem.Allocator, cache: ?[]const u8, trace: []const u
         if (e.args.cache_hits) |v| counters.hits = v;
         if (e.args.cache_misses) |v| counters.misses = v;
         if (e.args.modules_checked) |v| counters.checked = v;
+        if (e.args.embedded_modules) |v| counters.embedded = v;
     }
     return .{
         .stdout = try arena.dupe(u8, r.stdout),
@@ -311,7 +313,8 @@ const Edit = struct {
     /// count includes the core modules the check reaches — here the eight
     /// it always keeps (the prelude and `Task`) and `Js`, which `String`
     /// imports, since the project imports no other (checker.md §4.1,
-    /// amended 2026-10-01).
+    /// amended 2026-10-01) — which the checked core the binary carries
+    /// installs (`fast-compiler.md` §8, amended 2026-10-02).
     rechecked: u64,
     cut_off: u64,
     /// The warm build's exit code after the edit, for an edit meant to
@@ -407,7 +410,9 @@ fn differential(edit: Edit) !void {
         );
         return error.WrongModulesReChecked;
     }
-    const total = warm1.counters.hits + warm1.counters.misses;
+    // Core's modules are cut off too, by the checked core the binary carries
+    // rather than by the directory (`fast-compiler.md` §8).
+    const total = warm1.counters.hits + warm1.counters.misses + warm1.counters.embedded;
     if (warm1.counters.checked != edit.rechecked or total - warm1.counters.checked != edit.cut_off) {
         std.debug.print(
             "{s}: re-checked {d}, cut off {d}; the test says {d} and {d}\n",

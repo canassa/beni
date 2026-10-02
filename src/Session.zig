@@ -74,6 +74,8 @@ const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
 const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
+const core_pack = @import("core_pack");
+const CorePack = @import("cache/Pack.zig");
 const platform_packages = @import("platform_packages");
 const platform_chain = @import("platform.zig");
 const Manifest = @import("js/Manifest.zig");
@@ -168,6 +170,15 @@ wave: []const SourceStore.Index = &.{},
 /// file but the core modules no wave reached (checker.md §4.1, amended
 /// 2026-10-01); those have empty artifacts and are not modules.
 lowered: []bool = &.{},
+/// The checked core this run reads (`fast-compiler.md` §8, *The checked
+/// core, embedded*): the one the binary carries, or `empty` when the run
+/// reads no core, reads it from `--core-root`, or is making a pack.
+pack: CorePack.Pack = .empty,
+/// Owned, with `Options.pack_out` only: per file, the front-end artifact
+/// its worker wrote for the pack, or null. One writer per slot, the worker
+/// that lowered the file, so the slots need no lock and their order is the
+/// file order whatever `--jobs` was.
+pack_frontend: []?[]u8 = &.{},
 
 pub const DiagnosticsFormat = enum { text, json };
 
@@ -299,6 +310,16 @@ pub const Options = struct {
     /// `--no-cache` produces — the two are one state here on purpose, so
     /// that no code below can behave differently for "off" and "suppressed".
     cache: ?*const CacheDir = null,
+    /// Make the checked core instead of reading it (`fast-compiler.md` §8,
+    /// *The checked core, embedded*; `src/core_pack_main.zig`, which only
+    /// `build.zig` runs): every module of the core package is a root, none
+    /// left out for want of an import, and each core file's front-end
+    /// artifact and each core module's cache entry is added to this writer.
+    /// Never set by a command a user runs.
+    pack_out: ?*CorePack.Writer = null,
+    /// With `pack_out`: the build id of the compiler that will carry the
+    /// pack, which every key is computed with in place of this one's.
+    pack_build_id: ?[16]u8 = null,
     /// Capacity of each worker's profile buffer. Allocated once at session
     /// start and never grown, so a worker records without allocating; a full
     /// buffer counts the drop and the trace says `dropped_events`.
@@ -480,7 +501,12 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
         .workers = &.{},
     };
     errdefer session.interner.deinit(gpa);
-    session.build_id_bytes = compilerBuildId(options.cache_build_id);
+    session.build_id_bytes = keyBuildId(options);
+    // A core read from `--core-root` is not the core the pack was checked
+    // from, and a run that makes a pack must check every module itself.
+    if (options.core_package and options.core_root == null and options.pack_out == null) {
+        session.pack = CorePack.Pack.init(core_pack.bytes);
+    }
     session.profile = try Profile.init(gpa, io, .{
         .enabled = options.self_profile != null,
         .threads = options.jobs,
@@ -505,6 +531,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.file_keys);
     gpa.free(session.file_layers);
     gpa.free(session.lowered);
+    session.freePackFrontend();
     gpa.free(session.iface_hashes);
     gpa.free(session.digests);
     gpa.free(session.compare_keys);
@@ -566,6 +593,11 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     gpa.free(session.file_keys);
     session.file_keys = try gpa.alloc(FileKey.FileKey, session.store.count());
     @memset(session.file_keys, FileKey.none);
+    session.freePackFrontend();
+    if (session.options.pack_out != null) {
+        session.pack_frontend = try gpa.alloc(?[]u8, session.store.count());
+        @memset(session.pack_frontend, null);
+    }
     session.profile.end(0, enumerate_token, .enumerate, Profile.Event.no_file, 0);
 
     // Module-path validation is decided by the path alone, so it is
@@ -740,6 +772,8 @@ fn isLazy(session: *const Session, file: SourceStore.Index) bool {
             // A run that did not enumerate the core package (the hermetic
             // tests' `TestProject`) has none of its own to leave out.
             if (!session.options.core_package) return false;
+            // A pack holds every core module, so making one reaches them all.
+            if (session.options.pack_out != null) return false;
             for (Graph.implicit_core) |w| {
                 if (std.mem.eql(u8, name, @tagName(w))) return false;
             }
@@ -1160,9 +1194,22 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     // already parallel; the one thing that could not stay there is the string
     // table's re-interning, and it does not have to, because a worker has a
     // `Local` pool to hand where the module cache's entry has only `Global`.
-    if (session.wantsFileKeys()) {
+    //
+    // A core file of the embedded core is looked up in the checked core
+    // first (`fast-compiler.md` §8, *The checked core, embedded*), with or
+    // without a cache directory: it is part of the compiler, not a cache.
+    const in_pack = session.pack.count != 0 and session.store.package(file) == .core;
+    if (session.wantsFileKeys() or in_pack) {
         try readSource(session, worker, file);
         session.file_keys[file.int()] = session.fileKey(file);
+        if (in_pack) {
+            if (session.pack.find(.frontend, session.file_keys[file.int()])) |bytes| {
+                if (try installFrontendBytes(session, worker, file, bytes, diagnostics_mark)) {
+                    worker.addCounter(.embedded_files, 1);
+                    return;
+                }
+            }
+        }
         if (session.options.cache) |cache| {
             if (try loadFrontend(session, worker, cache, file, diagnostics_mark)) return;
         }
@@ -1207,6 +1254,68 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
     if (session.options.cache) |cache| try storeFrontend(session, worker, cache, file, diagnostics_mark);
+    if (session.options.pack_out != null and session.store.package(file) == .core) {
+        try packFrontend(session, worker, file, diagnostics_mark);
+    }
+}
+
+/// The checked core's twin of `loadFrontend`: decode, verify, re-intern and
+/// install a front-end artifact the pack holds. False when it does not
+/// validate, which for bytes the build itself made is a bug in the format
+/// and still only a miss: the file is lowered as it always was.
+fn installFrontendBytes(
+    session: *Session,
+    worker: *Worker,
+    file: SourceStore.Index,
+    bytes: []const u8,
+    diagnostics_mark: usize,
+) anyerror!bool {
+    const gpa = session.gpa;
+    const token = session.profile.begin();
+    const key = session.file_keys[file.int()];
+    var loaded = artifact_bytes.read(gpa, bytes, key) catch |err| switch (err) {
+        error.BadArtifact => return false,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    errdefer loaded.deinit(gpa);
+    if (!loaded.bir.verify(@intCast(loaded.spans.len))) {
+        loaded.deinit(gpa);
+        return false;
+    }
+    try loaded.intern(gpa, worker.arena.allocator(), &worker.interner);
+    try installFrontend(session, worker, file, &loaded, diagnostics_mark, .fresh);
+    session.profile.end(worker.index, token, .embedded_load, file.int(), @intCast(bytes.len));
+    return true;
+}
+
+/// Write this core file's front-end artifact into its `pack_frontend` slot,
+/// for the pack `Options.pack_out` is making. A file whose front end
+/// produced an `error` gets none, as `storeFrontend` refuses it a cache
+/// entry; the pack's maker then fails, because a core that does not compile
+/// is not one a compiler can carry.
+fn packFrontend(session: *Session, worker: *Worker, file: SourceStore.Index, diagnostics_mark: usize) anyerror!void {
+    const gpa = session.gpa;
+    const scratch = worker.arena.allocator();
+    var rows: std.ArrayList(artifact_bytes.Diagnostic) = .empty;
+    defer rows.deinit(scratch);
+    try frontendDiagnostics(worker, scratch, diagnostics_mark, &rows);
+    for (rows.items) |row| {
+        if (row.severity == @intFromEnum(diagnostic.Severity.@"error")) return;
+    }
+    session.pack_frontend[file.int()] = try artifact_bytes.write(gpa, scratch, .{
+        .key = session.file_keys[file.int()],
+        .bir = session.artifacts.bir(file),
+        .interner = &worker.interner,
+        .spans = session.artifacts.spans(file),
+        .line_starts = session.store.lineStarts(file),
+        .diagnostics = rows.items,
+    });
+}
+
+fn freePackFrontend(session: *Session) void {
+    for (session.pack_frontend) |slot| if (slot) |bytes| session.gpa.free(bytes);
+    session.gpa.free(session.pack_frontend);
+    session.pack_frontend = &.{};
 }
 
 /// Try to install `file`'s front-end artifact from the cache. True on a hit.
@@ -1353,7 +1462,8 @@ fn storeFrontend(
 pub fn wantsFileKeys(session: *const Session) bool {
     return session.options.cache != null or
         session.options.roundtrip_frontend or
-        session.options.frontend_keys;
+        session.options.frontend_keys or
+        session.options.pack_out != null;
 }
 
 /// `file`'s front-end key (`cache/FileKey.zig`): the compiler build id, the
@@ -1890,9 +2000,15 @@ fn checkSerial(session: *Session) RunError!void {
         @memset(session.compare_keys, Key.none);
     }
 
+    const embedded = try gpa.alloc(bool, n);
+    defer gpa.free(embedded);
+    @memset(embedded, false);
+
     var cutoff: Check.Cutoff = .{
         .keys = &session.keys,
         .dir = session.options.cache,
+        .pack = session.pack,
+        .embedded = embedded,
         .interner = &session.interner,
         .iface_hash = session.iface_hashes,
         .digest = session.digests,
@@ -1911,13 +2027,21 @@ fn checkSerial(session: *Session) RunError!void {
     {
         var hits: u64 = 0;
         var misses: u64 = 0;
+        var from_pack: u64 = 0;
         for (0..n) |i| {
             if (!session.keys.isCacheable(@enumFromInt(i))) continue;
-            if (hit[i]) hits += 1 else misses += 1;
+            if (embedded[i]) {
+                from_pack += 1;
+            } else if (hit[i]) {
+                hits += 1;
+            } else {
+                misses += 1;
+            }
         }
         session.profile.addCounter(.cache_hits, hits);
         session.profile.addCounter(.cache_misses, misses);
-        session.profile.addCounter(.modules_checked, n - hits);
+        session.profile.addCounter(.embedded_modules, from_pack);
+        session.profile.addCounter(.modules_checked, n - hits - from_pack);
     }
     // By name, so a counter added to `Check.Counters` without a matching
     // `Profile.Counter` is a compile error rather than a number that never
@@ -1946,6 +2070,7 @@ fn checkSerial(session: *Session) RunError!void {
 /// (`plans/m4-1.md` decision 9 is about reads; this is where the writes'
 /// cost is measurable). Every failure is silent.
 fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!void {
+    if (session.options.pack_out) |writer| try session.packEntries(writer);
     const cache = session.options.cache orelse return;
     const gpa = session.gpa;
     const token = session.profile.begin();
@@ -1989,6 +2114,35 @@ fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!
     }
     session.profile.addCounter(.cache_bytes, bytes_written);
     session.profile.end(0, token, .cache_store, Profile.Event.no_file, @intCast(@min(bytes_written, std.math.maxInt(u32))));
+}
+
+/// Add every core file's front-end artifact and every core module's entry to
+/// the pack `Options.pack_out` is making (`fast-compiler.md` §8, *The
+/// checked core, embedded*), under the same keys and with the same "produced
+/// by a clean check" rule as `storeEntries`. A module that does not qualify
+/// is simply absent; `core_pack_main.zig` refuses a pack that lacks one.
+fn packEntries(session: *Session, writer: *CorePack.Writer) RunError!void {
+    const gpa = session.gpa;
+    for (session.pack_frontend, 0..) |slot, i| {
+        const bytes = slot orelse continue;
+        try writer.add(gpa, .frontend, session.file_keys[i], bytes);
+    }
+    const count = session.graph.count();
+    const clean = try gpa.alloc(bool, count);
+    defer gpa.free(clean);
+    @memset(clean, true);
+    for (session.checked.diagnostics) |item| {
+        if (item.severity != .@"error") continue;
+        if (item.module.int() < count) clean[item.module.int()] = false;
+    }
+    for (0..count) |i| {
+        const m: Graph.Index = @enumFromInt(i);
+        if (session.graph.modulePackage(m) != .core) continue;
+        if (!session.keys.isCacheable(m) or !clean[i]) continue;
+        const entry = try session.entryBytes(gpa, m);
+        defer gpa.free(entry);
+        try writer.add(gpa, .entry, session.keys.of(m), entry);
+    }
 }
 
 /// One module's entry: the record's bytes verbatim, the dispatch sidecar and
@@ -2081,7 +2235,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.artifacts,
         &session.interner,
         .{
-            .build_id = compilerBuildId(session.options.cache_build_id),
+            .build_id = session.build_id_bytes,
             .informational = session.options.informational,
             .pattern_budget = session.options.pattern_budget,
             .lower_core = lower_core,
@@ -2093,6 +2247,13 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
     );
     worker.arena.reset(.retain_capacity);
     session.profile.end(0, token, .cache_key, Profile.Event.no_file, 0);
+}
+
+/// The build id every key of a run is computed with: the one of the
+/// compiler a pack is being made for (`Options.pack_build_id`), else
+/// `compilerBuildId`'s.
+fn keyBuildId(options: Options) [16]u8 {
+    return options.pack_build_id orelse compilerBuildId(options.cache_build_id);
 }
 
 /// The build id a key is computed with: this compiler's, or the bytes

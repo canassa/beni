@@ -180,6 +180,12 @@ corrupt file — is silent either way. A stale or damaged entry is a miss, never
 `--self-profile`'s `cache_hits`, `cache_misses` and `modules_checked` counters are where a cache that
 is doing nothing says so.
 
+*Amended 2026-10-02:* **the checked core the binary carries is not a cache, and neither flag touches
+it** ([`fast-compiler.md`](fast-compiler.md) §8, *The checked core, embedded*). A run over the
+embedded core installs every core file and module it reaches from the binary, `--no-cache` or not,
+and writes none of them to the directory; `embedded_files` and `embedded_modules` count them, apart
+from `frontend_hits` and `cache_hits`. `--core-root` turns it off for that run.
+
 Three more flags are hidden, like `--roundtrip-interfaces` and `--iface-hash`, and for the same
 reason — they are diagnostic surface, absent from `beni help` and from [`checker.md`](checker.md)
 §2's table. `--cache-build-id=<s>` replaces the compiler build id in the key, so a test can prove

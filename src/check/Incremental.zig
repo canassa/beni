@@ -115,9 +115,28 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
         pairs.items,
     ));
     try d.compareKey(m, scratch);
-    const dir = cutoff.dir orelse return;
     if (!cutoff.keys.isCacheable(m)) return;
     if (m.int() >= d.options.cached.len) return;
+    // The checked core first (`fast-compiler.md` §8, *The checked core,
+    // embedded*): the same key, the same validation, the same install — the
+    // bytes are in the binary instead of in a file.
+    if (cutoff.pack.count != 0 and d.graph.modulePackage(m) == .core) {
+        if (cutoff.pack.find(.entry, cutoff.keys.of(m))) |bytes| {
+            d.options.cached[m.int()] = try CacheEntry.loadFindingBytes(
+                d.gpa,
+                bytes,
+                cutoff.keys.of(m),
+                cutoff.interner,
+                &d.interfaces[m.int()],
+            );
+            if (d.options.cached[m.int()] != null) {
+                cutoff.hit[m.int()] = true;
+                if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = true;
+                return;
+            }
+        }
+    }
+    const dir = cutoff.dir orelse return;
     d.options.cached[m.int()] = try CacheEntry.loadFinding(
         d.gpa,
         dir,
