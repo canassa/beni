@@ -15,6 +15,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 
 const Inst = Bir.Inst;
+const same = @import("Operator.zig").same;
 
 pub const Which = enum {
     null,
@@ -227,7 +228,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const module: Graph.Index = @enumFromInt(d.lhs);
     if (module.int() >= interfaces.len) return null;
     if (graph.modulePackage(module) != .core) return null;
-    if (!std.mem.eql(u8, interner.slice(graph.moduleName(module)), "Js")) return null;
+    if (!same(interner.slice(graph.moduleName(module)), "Js")) return null;
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
     return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));

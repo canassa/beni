@@ -106,6 +106,14 @@ const list = [_]struct { []const u8, Which }{
 
 /// The operator `inst` names, or null. `module` is the module `bir` is;
 /// `interner` is anything with `slice(Symbol) []const u8`.
+/// `std.mem.eql` for the names `of` compares, with the length and the first
+/// byte tested in place first: `of` is asked of every call's callee by
+/// reachability and lowering, and in Zig's own backend, which builds the
+/// tests' compiler, `std.mem.eql` is three calls before its first byte.
+pub inline fn same(a: []const u8, b: []const u8) bool {
+    return a.len == b.len and (a.len == 0 or a[0] == b[0]) and std.mem.eql(u8, a, b);
+}
+
 pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, module: Graph.Index, inst: Inst.Index, interner: anytype) ?Which {
     const d = bir.instData(inst);
     const owner: Graph.Index, const value: []const u8 = switch (bir.instTag(inst)) {
@@ -124,15 +132,15 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, m
     };
     if (graph.modulePackage(owner) != .core) return null;
     const name = interner.slice(graph.moduleName(owner));
-    const table: []const struct { []const u8, Which } = if (std.mem.eql(u8, name, "Basics"))
+    const table: []const struct { []const u8, Which } = if (same(name, "Basics"))
         &basics
-    else if (std.mem.eql(u8, name, "Int32"))
+    else if (same(name, "Int32"))
         &int32
-    else if (std.mem.eql(u8, name, "List"))
+    else if (same(name, "List"))
         &list
     else
         return null;
-    for (table) |row| if (std.mem.eql(u8, row[0], value)) return row[1];
+    for (table) |row| if (same(row[0], value)) return row[1];
     return null;
 }
 
@@ -157,5 +165,5 @@ pub fn isBasicsAppend(graph: *const Graph, interfaces: []const Interface, bir: *
         else => return false,
     };
     if (graph.modulePackage(owner) != .core) return false;
-    return std.mem.eql(u8, interner.slice(graph.moduleName(owner)), "Basics") and std.mem.eql(u8, value, "append");
+    return same(interner.slice(graph.moduleName(owner)), "Basics") and same(value, "append");
 }
