@@ -86,6 +86,35 @@ fn KeyMap(comptime K: type, comptime V: type) type {
     return std.HashMapUnmanaged(K, V, Context, std.hash_map.default_max_load_percentage);
 }
 
+/// The literals' table's keys (`Spec.intern`), hashed by the same kind of
+/// mix as `KeyMap`'s, a byte at a time: the keys are a kind's byte and a
+/// literal's spelling, a few bytes each, and every literal of the program
+/// is looked up once.
+const LitContext = struct {
+    pub fn hash(_: LitContext, k: []const u8) u64 {
+        return litHash(k[0], k[1..]);
+    }
+    pub fn eql(_: LitContext, a: []const u8, b: []const u8) bool {
+        return std.mem.eql(u8, a, b);
+    }
+};
+
+/// A `Lit` looked up in the table without its key being built.
+const LitAdapter = struct {
+    pub fn hash(_: LitAdapter, lit: Lit) u64 {
+        return litHash(@intFromEnum(lit.kind), lit.bytes);
+    }
+    pub fn eql(_: LitAdapter, lit: Lit, k: []const u8) bool {
+        return k[0] == @intFromEnum(lit.kind) and std.mem.eql(u8, k[1..], lit.bytes);
+    }
+};
+
+fn litHash(kind: u8, bytes: []const u8) u64 {
+    var h: u64 = (0x9E3779B97F4A7C15 ^ @as(u64, kind)) *% 0xFF51AFD7ED558CCD;
+    for (bytes) |b| h = (h ^ b) *% 0xFF51AFD7ED558CCD;
+    return h ^ (h >> 29);
+}
+
 /// One lowered module. `ir` is rewritten in place; `global` maps each of its
 /// names to a whole-program id (`none` for a local).
 pub const Module = struct {
@@ -434,8 +463,9 @@ const Spec = struct {
     /// reads keeps its place and the argument.
     arg_effect: std.ArrayList(bool) = .empty,
     lits: std.ArrayList(Lit) = .empty,
-    lit_ids: std.StringHashMapUnmanaged(u32) = .empty,
-    key: std.ArrayList(u8) = .empty,
+    lit_ids: std.HashMapUnmanaged([]const u8, u32, LitContext, std.hash_map.default_max_load_percentage) = .empty,
+    /// Per `Kind`: the id of its literal without bytes, once interned.
+    plain_ids: [@typeInfo(Kind).@"enum".fields.len]u32 = @splat(none),
     /// `countExpr`'s stack, shared by the walks it nests: each owns the
     /// entries above the length it found.
     names: std.ArrayList(Index) = .empty,
@@ -622,7 +652,7 @@ const Spec = struct {
             @memset(m.stamp, 0);
             @memset(m.lit_of, none);
         }
-        const s: Spec = .{
+        var s: Spec = .{
             .gpa = gpa,
             .arena = arena,
             .in = in,
@@ -633,6 +663,14 @@ const Spec = struct {
             .reads = try arena.alloc(u32, in.globals),
             .globals = in.globals,
         };
+        // Room for every literal the program spells: the table is filled
+        // once, and growing it rehashed every key it held.
+        var spelled: u32 = 0;
+        for (mods) |*m| for (m.ir.nodes.items(.tag)) |t| switch (t) {
+            .number, .string => spelled += 1,
+            else => {},
+        };
+        try s.lit_ids.ensureTotalCapacity(arena, spelled + 8);
         return s;
     }
 
@@ -684,17 +722,23 @@ const Spec = struct {
     // ---- Literals -----------------------------------------------------------
 
     fn intern(s: *Spec, lit: Lit) Allocator.Error!u32 {
-        // The key is the kind's byte and the bytes, built in a buffer the
-        // lookups share; only a new literal's key is kept.
-        s.key.clearRetainingCapacity();
-        try s.key.append(s.arena, @intFromEnum(lit.kind));
-        try s.key.appendSlice(s.arena, lit.bytes);
-        if (s.lit_ids.get(s.key.items)) |id| return id;
-        const key = try s.arena.dupe(u8, s.key.items);
-        const id: u32 = @intCast(s.lits.items.len);
-        try s.lits.append(s.arena, .{ .kind = lit.kind, .bytes = key[1..] });
-        try s.lit_ids.put(s.arena, key, id);
-        return id;
+        // A literal without bytes (`true`, `null`, …) is one per kind, and
+        // asked for at every `return` and every test: its id is kept apart.
+        const plain = lit.bytes.len == 0;
+        if (plain) if (s.plain_ids[@intFromEnum(lit.kind)] != none) return s.plain_ids[@intFromEnum(lit.kind)];
+        // One probe, by the literal itself: found, or the slot the new
+        // literal takes, whose key is then made.
+        const gop = try s.lit_ids.getOrPutAdapted(s.arena, lit, LitAdapter{});
+        if (!gop.found_existing) {
+            const key = try s.arena.alloc(u8, 1 + lit.bytes.len);
+            key[0] = @intFromEnum(lit.kind);
+            @memcpy(key[1..], lit.bytes);
+            gop.key_ptr.* = key;
+            gop.value_ptr.* = @intCast(s.lits.items.len);
+            try s.lits.append(s.arena, .{ .kind = lit.kind, .bytes = key[1..] });
+        }
+        if (plain) s.plain_ids[@intFromEnum(lit.kind)] = gop.value_ptr.*;
+        return gop.value_ptr.*;
     }
 
     fn litOf(s: *Spec, v: Lat) Lit {
@@ -1086,6 +1130,12 @@ const Spec = struct {
     /// call's callee: those make a function's parameters ⊤.
     fn countExpr(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
         const ir = m.ir;
+        // A leaf, the most common expression, without the stack.
+        switch (ir.tag(root)) {
+            .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return,
+            .ident => return s.read(m, @enumFromInt(ir.data(root).lhs), false),
+            else => {},
+        }
         const stack = &s.names;
         const base = stack.items.len;
         defer stack.shrinkRetainingCapacity(base);
@@ -1287,6 +1337,14 @@ const Spec = struct {
     /// into `memo`. An arrow's body is walked as the statements it is.
     fn eval(s: *Spec, m: *Mod, mi: u32, root: Index) Allocator.Error!Lat {
         const ir = m.ir;
+        // A leaf, the most common expression, without the stack.
+        switch (ir.tag(root)) {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                m.memo[root.int()] = try s.combine(m, root);
+                return m.memo[root.int()];
+            },
+            else => {},
+        }
         // As `Pts.expr`'s: `post_bit` marks a node whose operands are done.
         const stack = &s.children;
         const base = stack.items.len;
@@ -1992,7 +2050,8 @@ const Spec = struct {
         // by walking it again rather than from the analysis's list: a folded
         // conditional may have become a copy of a call, and the copy is the
         // one that is reached.
-        for (s.mods) |*m| try s.rewriteCalls(m, drop);
+        // None when no parameter went: the walk would change nothing.
+        if (std.mem.indexOfScalar(bool, drop, true) != null) for (s.mods) |*m| try s.rewriteCalls(m, drop);
         return any;
     }
 
@@ -6444,6 +6503,14 @@ const Pts = struct {
         _ = func;
         const ir = p.s.mods[mi].ir;
         const vals = p.vals[mi];
+        // A leaf, the most common expression, without the stack.
+        switch (ir.tag(root)) {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .template_chunk => {
+                vals[root.int()] = try p.combine(mi, root);
+                return vals[root.int()];
+            },
+            else => {},
+        }
         // A node to evaluate, or, with `post_bit` set, one whose operands
         // are evaluated; operands are pushed straight onto the stack.
         const stack = &p.nodes;

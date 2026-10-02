@@ -5969,6 +5969,15 @@ program is not done, on any pass.
   place. `--self-profile`'s `spec_lists_examined` counts the lists still copied, and
   `build_test`'s *list sweeps do not grow* holds it constant between a 64-arm and a 1 024-arm
   `case`.
+- **A walk's cost per statement is cut where it was spent doing nothing.** The literals' table
+  is sized to the literals the program spells before it is filled, and is probed once per
+  literal, by the literal itself, with `KeyMap`'s kind of hash. Before, the key was built in a
+  buffer, hashed twice with Wyhash, and the table rehashed itself as it grew. A literal without
+  bytes keeps its id apart. Name counting, fact 3's walk and the sweeps' evaluation take an
+  expression that is a leaf without their stacks. `rewrite` no longer walks the program for
+  calls to cut when no parameter went. None of this changes an id, an order or a fact. On the
+  16 400-arm build, one round's sweeps fell from 320 to 158 million instructions, fact 3 from 73
+  to 53, `rewrite` from 231 to 159.
 
 Measured with `abuse_wide_test`'s *16 400 literal branches … under `--release`*, in millions of
 instructions against the 4 300 budget, test harness included:
@@ -5977,9 +5986,12 @@ instructions against the 4 300 budget, test harness included:
 |---|--:|--:|
 | before | 3 846 | 4 782 |
 | lists left uncopied | 3 702 | 4 526 |
+| cheaper walks per statement | 3 456 | **4 139** |
 
-Every output is byte for byte as before: `bench/size.mjs`'s 7 101 built files, both builds, and
-every release run hash.
+With `List` in beni the case now fits the budget, 161 million under it, with no re-architecture.
+
+Each step's output is byte for byte as before: every file `bench/size.mjs` builds, in both
+builds, and every release run hash.
 
 ### Compact statements
 
