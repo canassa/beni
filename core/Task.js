@@ -25,13 +25,13 @@ const Y = { waiting: true };
 // that parked and taken by the run loop. Null the rest of the time.
 let pending = null;
 
-export const andThen = (value, next) => {
-  if (value !== Y) return next(value);
+export const andThen = (v, next) => {
+  if (v !== Y) return next(v);
   pending.ks.push(next);
   return Y;
 };
 
-export const isWaiting = (value) => value === Y;
+export const isWaiting = (v) => v === Y;
 
 // ---- Fibers -----------------------------------------------------------------
 
@@ -40,7 +40,7 @@ export const isWaiting = (value) => value === Y;
 // build that makes one — a fiber, or the record of finalisers outside any —
 // has something to tear down, and so keeps the teardown (boundary.md
 // §9.8.14): the two hooks are set here.
-const newFiber = (parent) => {
+const newFiber = (owner) => {
   failure = failed;
   closing = closeAll;
   return {
@@ -50,7 +50,7 @@ const newFiber = (parent) => {
     outcome: null,
     // Functions called with the fiber when it ends.
     observers: null,
-    parent,
+    parent: owner,
     // The fibers `spawn` started from it, still running.
     children: null,
     // What `bracket` and `scope` registered, run last first on cancellation.
@@ -127,13 +127,13 @@ const schedule = (task, a, b, c) => {
   queueMicrotask(drain);
 };
 
-const resumeFiber = (fiber, value, wait) => {
-  if (wait !== null && fiber.parked !== wait) return false;
-  run(fiber, value);
+const resumeFiber = (fiber, v, w) => {
+  if (w !== null && fiber.parked !== w) return false;
+  run(fiber, v);
   return true;
 };
 
-const enqueue = (fiber, value, wait) => schedule(resumeFiber, fiber, value, wait);
+const enqueue = (fiber, v, w) => schedule(resumeFiber, fiber, v, w);
 
 // A fiber that throws is a defect (boundary.md §9.8.10 (c)): the scheduler
 // stops, the platform's hook runs, and the throw goes on to the host; the
@@ -235,16 +235,16 @@ const run = (fiber, start) => {
   const outer = current;
   current = fiber;
   fiber.parked = null;
-  let value = start;
+  let v = start;
   for (;;) {
     if (fiber.interrupted && fiber.masks === 0 && !fiber.unwinding) {
       unwind(fiber);
-      value = null;
+      v = null;
     }
     const next = fiber.stack.pop();
-    value = next(value);
+    v = next(v);
     if (fiber.outcome !== null) break;
-    if (value === Y) {
+    if (v === Y) {
       const p = pending;
       pending = null;
       for (let i = p.ks.length - 1; i >= 0; i--) fiber.stack.push(p.ks[i]);
@@ -253,14 +253,14 @@ const run = (fiber, start) => {
         // interrupt delivered at this suspension point: unwind now,
         // whatever the masks say, since there is no value to go on with.
         unwind(fiber);
-        value = null;
+        v = null;
         continue;
       }
       if (expired && cleaning !== null && cleaning.has(fiber)) {
         // Past the teardown's deadline a finaliser runs only to its first
         // wait, and the fiber goes on to its next (§9.8.14 (f)).
         abandon(fiber, p.wait);
-        value = null;
+        v = null;
         continue;
       }
       fiber.parked = p.wait;
@@ -279,22 +279,22 @@ const suspend = (register) => {
     pending = { ks: [], wait: null, interrupt: true };
     return Y;
   }
-  const wait = { done: false, sync: true, ready: false, value: null, cancel: null };
-  const resume = (value) => {
-    if (wait.done) return;
-    wait.done = true;
-    if (wait.sync) {
-      wait.ready = true;
-      wait.value = value;
+  const w = { done: false, sync: true, ready: false, value: null, cancel: null };
+  const resume = (v) => {
+    if (w.done) return;
+    w.done = true;
+    if (w.sync) {
+      w.ready = true;
+      w.value = v;
       return;
     }
-    enqueue(fiber, value, wait);
+    enqueue(fiber, v, w);
   };
-  const cancel = register(resume);
-  wait.sync = false;
-  if (wait.ready) return wait.value;
-  wait.cancel = cancel;
-  pending = { ks: [], wait, interrupt: false };
+  const stop = register(resume);
+  w.sync = false;
+  if (w.ready) return w.value;
+  w.cancel = stop;
+  pending = { ks: [], wait: w, interrupt: false };
   return Y;
 };
 
@@ -307,19 +307,19 @@ const selfCancel = () => {
 
 // ---- Ending, and interruption (§6.2) ----------------------------------------
 
-const done = (value) => ({ $: "Done", a: value });
+const doneWith = (v) => ({ $: "Done", a: v });
 
-const complete = (fiber, outcome) => {
-  fiber.outcome = outcome;
+const complete = (fiber, o) => {
+  fiber.outcome = o;
   fiber.stack = null;
   live -= 1;
   if (fiber.scope !== null) fiber.scope.children.delete(fiber);
   else if (fiber.parent !== null) {
     if (fiber.parent.children !== null) fiber.parent.children.delete(fiber);
   } else unlist(fiber);
-  const observers = fiber.observers;
+  const os = fiber.observers;
   fiber.observers = null;
-  if (observers !== null) for (const o of observers) o(fiber);
+  if (os !== null) for (const o of os) o(fiber);
   if (live === 0 && phase === 2) allEnded();
 };
 
@@ -337,17 +337,17 @@ const unobserve = (fiber, observer) => {
 // Interrupt `fiber`: resume it at once if it is parked where it may be
 // interrupted — its wait's canceller runs and the wait's later answer is
 // dropped — or latch the interrupt for its next suspension point.
-const interrupt = (fiber) => {
+const halt = (fiber) => {
   if (fiber.outcome !== null || fiber.unwinding) return;
   fiber.interrupted = true;
-  const wait = fiber.parked;
-  if (wait === null || fiber.masks !== 0) return;
+  const w = fiber.parked;
+  if (w === null || fiber.masks !== 0) return;
   fiber.parked = null;
-  wait.done = true;
+  w.done = true;
   // Queued before its canceller runs, so a canceller that throws cannot
   // leave a fiber that never unwinds (boundary.md §9.8.14 (d) step 1).
   enqueue(fiber, null, null);
-  if (wait.cancel !== null) wait.cancel(null);
+  if (w.cancel !== null) w.cancel(null);
 };
 
 // Park until every one of `fibers` has ended; null at once when they have.
@@ -368,33 +368,33 @@ const waitAll = (fibers) => {
 };
 
 // Interrupt `fibers` and wait for them, then go on with `value`.
-const cancelAll = (fibers, value) => {
-  for (const f of fibers) interrupt(f);
+const cancelAll = (fibers, v) => {
+  for (const f of fibers) halt(f);
   const r = waitAll(fibers);
-  if (r !== Y) return value;
-  pending.ks.push(() => value);
+  if (r !== Y) return v;
+  pending.ks.push(() => v);
   return Y;
 };
 
 // The bottom of every fiber's stack: its children are cancelled and waited
 // for, then it is done.
-const finish = (value) => {
+const finish = (v) => {
   const fiber = current;
   fiber.unwinding = true;
   if (fiber.children !== null && fiber.children.size !== 0) {
-    const r = cancelAll([...fiber.children], value);
+    const r = cancelAll([...fiber.children], v);
     if (r === Y) {
       pending.ks.push(finished);
       return Y;
     }
   }
-  complete(fiber, done(value));
-  return value;
+  complete(fiber, doneWith(v));
+  return v;
 };
 
-const finished = (value) => {
-  complete(current, done(value));
-  return value;
+const finished = (v) => {
+  complete(current, doneWith(v));
+  return v;
 };
 
 // Replace `fiber`'s stack with its cancellation: its children first, then
@@ -428,9 +428,9 @@ const cleanups = (fiber) => {
 
 let cleaning = null;
 
-const boundary = (value) => {
+const boundary = (v) => {
   cleaning.delete(current);
-  return value;
+  return v;
 };
 
 // Discard what the finaliser `fiber` is inside left on its stack: it goes
@@ -438,8 +438,8 @@ const boundary = (value) => {
 // one opened and had not yet closed — a `bracket`, a `scope` — is released
 // first, as it would have been had its use been interrupted.
 const cutBack = (fiber) => {
-  const stack = fiber.stack;
-  while (stack.length !== 0 && stack.pop() !== boundary);
+  const st = fiber.stack;
+  while (st.length !== 0 && st.pop() !== boundary);
   cleaning.delete(fiber);
   cleanups(fiber);
 };
@@ -468,17 +468,25 @@ const reap = () => {
 
 // ---- The API ----------------------------------------------------------------
 
-const fork = (parent, work, scope) => {
-  const fiber = newFiber(parent);
+const fork = (owner, work, sc) => {
+  const fiber = newFiber(owner);
   fiber.stack.push(finish, () => work(null));
   live += 1;
-  if (scope !== null) {
-    fiber.scope = scope;
-    scope.children.add(fiber);
-    if (scope.closed) fiber.interrupted = true;
-  } else if (parent !== null) {
-    if (parent.children === null) parent.children = new Set();
-    parent.children.add(fiber);
+  if (sc !== null) {
+    fiber.scope = sc;
+    if (sc.closed) fiber.interrupted = true;
+    // A root is listed when it is first given a fiber, so that a build
+    // which opens one and starts none keeps no registry (boundary.md
+    // §9.8.14 (c)). A nested scope's finaliser is its close; a root's is
+    // null until it is listed, and `false` after.
+    else if (sc.finalizer === null) {
+      sc.finalizer = false;
+      roots.push(sc);
+    }
+    sc.children.add(fiber);
+  } else if (owner !== null) {
+    if (owner.children === null) owner.children = new Set();
+    owner.children.add(fiber);
   } else roots.push(fiber);
   // Started while the runtime stops: cancelled before it runs.
   if (phase !== 0) fiber.interrupted = true;
@@ -488,8 +496,8 @@ const fork = (parent, work, scope) => {
 
 export const callback = (register) =>
   suspend((resume) => {
-    const cancel = register(resume);
-    return typeof cancel === "function" ? cancel : null;
+    const stop = register(resume);
+    return typeof stop === "function" ? stop : null;
   });
 
 // Outside any fiber but inside work `soon` runs, a child belongs to that
@@ -497,19 +505,19 @@ export const callback = (register) =>
 // have cancelled it (boundary.md §9.8.11 (b)). It cannot have run yet: it
 // is queued behind the work.
 const endSoon = (s) => {
-  for (const f of s.kids) interrupt(f);
+  for (const f of s.kids) halt(f);
 };
 
 export const spawn = (work) => {
   if (current !== null) {
-    const parent = current;
-    const child = fork(parent, work, null);
+    const owner = current;
+    const child = fork(owner, work, null);
     // Started by a finaliser of a fiber that is unwinding — after
     // `stopChildren` cancelled its children (A11) — so its end, at the
     // bottom of its stack, cancels and waits for this one too. Effect
     // likewise interrupts a fiber's children once its whole stack has
     // unwound. Here, so that a build that never spawns keeps none of it.
-    if (parent.unwinding) parent.stack[0] = reap;
+    if (owner.unwinding) owner.stack[0] = reap;
     return child;
   }
   if (soonRunning === null) return fork(null, work, null);
@@ -521,7 +529,7 @@ export const spawn = (work) => {
   return child;
 };
 
-export const spawnIn = (scope, work) => fork(current, work, scope);
+export const spawnIn = (sc, work) => fork(current, work, sc);
 
 export const start = (work, report) => {
   const fiber = fork(null, work, null);
@@ -529,7 +537,7 @@ export const start = (work, report) => {
   return null;
 };
 
-const joined = (outcome) => (outcome.$ === "Done" ? outcome.a : selfCancel());
+const joined = (o) => (o.$ === "Done" ? o.a : selfCancel());
 
 const outcomeOf = (fiber) =>
   suspend((resume) => {
@@ -554,7 +562,7 @@ export const wait = (fiber) => {
 export const cancel = (fiber) => {
   if (fiber === current) return selfCancel();
   if (fiber.outcome !== null) return null;
-  interrupt(fiber);
+  halt(fiber);
   const r = waitAll([fiber]);
   return r === Y ? Y : null;
 };
@@ -562,19 +570,19 @@ export const cancel = (fiber) => {
 export const yieldNow = (unit) => {
   const fiber = current;
   if (fiber.interrupted && fiber.masks === 0 && !fiber.unwinding) return selfCancel();
-  const wait = { done: false, sync: false, ready: false, value: null, cancel: null };
-  pending = { ks: [], wait, interrupt: false };
-  enqueue(fiber, null, wait);
+  const w = { done: false, sync: false, ready: false, value: null, cancel: null };
+  pending = { ks: [], wait: w, interrupt: false };
+  enqueue(fiber, null, w);
   return Y;
 };
 
 export const openScope = (unit) => {
-  const scope = { children: new Set(), finalizer: null, closed: false };
-  scope.finalizer = () => shut(scope, null);
+  const sc = { children: new Set(), finalizer: null, closed: false };
+  sc.finalizer = () => shut(sc, null);
   const fiber = here();
   if (fiber.finalizers === null) fiber.finalizers = [];
-  fiber.finalizers.push(scope.finalizer);
-  return scope;
+  fiber.finalizers.push(sc.finalizer);
+  return sc;
 };
 
 const dropFinalizer = (fiber, fin) => {
@@ -588,24 +596,24 @@ const dropFinalizer = (fiber, fin) => {
 // being cancelled — is cancelled before it runs, as in a closed root, and
 // every fiber in it is cancelled and waited for, again until none is left.
 // Then go on with `value`.
-const shut = (scope, value) => {
-  scope.closed = true;
-  if (scope.children.size === 0) return value;
-  if (cancelAll([...scope.children], value) !== Y) return shut(scope, value);
-  pending.ks.push(() => shut(scope, value));
+const shut = (sc, v) => {
+  sc.closed = true;
+  if (sc.children.size === 0) return v;
+  if (cancelAll([...sc.children], v) !== Y) return shut(sc, v);
+  pending.ks.push(() => shut(sc, v));
   return Y;
 };
 
-export const closeScope = (scope, value) => {
+export const closeScope = (sc, v) => {
   const fiber = here();
-  const r = shut(scope, value);
+  const r = shut(sc, v);
   if (r !== Y) {
-    dropFinalizer(fiber, scope.finalizer);
-    return value;
+    dropFinalizer(fiber, sc.finalizer);
+    return v;
   }
   pending.ks.push(() => {
-    dropFinalizer(fiber, scope.finalizer);
-    return value;
+    dropFinalizer(fiber, sc.finalizer);
+    return v;
   });
   return Y;
 };
@@ -644,25 +652,22 @@ export const queued = (s) => s.w !== null;
 
 // A scope that no fiber's finalisers close, for a platform whose program
 // outlives every call: one literal, the shape of `openScope`'s. It is a
-// root until `closeRoot` closes it.
-export const openRoot = (unit) => {
-  const scope = { children: new Set(), finalizer: null, closed: false };
-  roots.push(scope);
-  return scope;
-};
+// root until `closeRoot` closes it, listed from its first fiber (`fork`).
+export const openRoot = (unit) => ({ children: new Set(), finalizer: null, closed: false });
 
-export const closeRoot = (scope) => {
-  unlist(scope);
-  scope.closed = true;
-  for (const f of [...scope.children]) interrupt(f);
+export const closeRoot = (sc) => {
+  unlist(sc);
+  sc.closed = true;
+  for (const f of [...sc.children]) halt(f);
   return null;
 };
 
 // ---- Shutdown (boundary.md §9.8.14) -----------------------------------------
 
-// Every root, in the order it was made: each scope `openRoot` made that
-// `closeRoot` has not closed, and each fiber with neither a parent nor a
-// scope — `start`'s, and `spawn`'s outside any fiber — that has not ended.
+// Every root, in the order it first ran a fiber: each scope `openRoot` made
+// that has been given one and that `closeRoot` has not closed, and each
+// fiber with neither a parent nor a scope — `start`'s, and `spawn`'s
+// outside any fiber — that has not ended.
 const roots = [];
 
 const unlist = (root) => {
@@ -701,7 +706,7 @@ const closeAll = (ms, over) => {
   if (whenDone !== null || phase === 3) return;
   whenDone = over;
   deadline = ms;
-  if (phase === 2) deadlineTimer = globalThis.setTimeout(expire, deadline);
+  if (phase === 2) deadlineTimer = setTimeout(expire, deadline);
   stopping();
 };
 
@@ -715,7 +720,7 @@ const closeAll = (ms, over) => {
 const teardown = () => {
   if (phase === 1) {
     phase = 2;
-    if (whenDone !== null) deadlineTimer = globalThis.setTimeout(expire, deadline);
+    if (whenDone !== null) deadlineTimer = setTimeout(expire, deadline);
     sweeping = [];
     for (const root of roots) {
       if (root.stack !== undefined) sweeping.push(root);
@@ -727,7 +732,7 @@ const teardown = () => {
   }
   let ok = false;
   try {
-    while (swept < sweeping.length) interrupt(sweeping[swept++]);
+    while (swept < sweeping.length) halt(sweeping[swept++]);
     ok = true;
   } finally {
     if (!ok) macrotask(teardown);
@@ -780,11 +785,11 @@ const expire = () => {
   let ok = false;
   try {
     for (const fiber of [...cleaning]) {
-      const wait = fiber.parked;
-      if (wait === null) continue;
+      const w = fiber.parked;
+      if (w === null) continue;
       fiber.parked = null;
       enqueue(fiber, null, null);
-      abandon(fiber, wait);
+      abandon(fiber, w);
     }
     ok = true;
   } finally {
@@ -792,18 +797,18 @@ const expire = () => {
   }
 };
 
-const abandon = (fiber, wait) => {
-  wait.done = true;
+const abandon = (fiber, w) => {
+  w.done = true;
   abandoned += 1;
   cutBack(fiber);
-  if (wait.cancel !== null) wait.cancel(null);
+  if (w.cancel !== null) w.cancel(null);
 };
 
 // Every fiber has ended: the runtime stops for good, and `done` is told how
 // many finalisers the deadline cut short.
 const allEnded = () => {
   phase = 3;
-  if (deadlineTimer !== null) globalThis.clearTimeout(deadlineTimer);
+  if (deadlineTimer !== null) clearTimeout(deadlineTimer);
   deadlineTimer = null;
   const told = whenDone;
   if (told !== null) told(abandoned);
@@ -814,9 +819,9 @@ export const mask = (unit) => {
   return unit;
 };
 
-export const unmask = (value) => {
+export const unmask = (v) => {
   here().masks -= 1;
-  return value;
+  return v;
 };
 
 export const pushFinalizer = (resource, fin) => {
@@ -826,8 +831,8 @@ export const pushFinalizer = (resource, fin) => {
   return resource;
 };
 
-export const popFinalizer = (value) => {
+export const popFinalizer = (v) => {
   const fins = here().finalizers;
   if (fins !== null) fins.pop();
-  return value;
+  return v;
 };

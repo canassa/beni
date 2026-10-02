@@ -3099,6 +3099,11 @@ remembering it. With a registry, **`Tea` changes by nothing**, and so does any o
 program: every root `openRoot` makes is closed, whoever made it. A `Browser.program` page runs no
 fibers and reaches no `Task`; its stop is today's. The registry costs one array in `Task.js` and a
 push and a removal per root, and only a build that keeps `openRoot` or `start` keeps it.
+*(Amended 2026-10-02, the size pass: a root scope is listed when it is first given a fiber, not
+when `openRoot` makes it, so a build that opens a root and starts no fiber — the empty
+`Tea.element` — keeps no registry, and `openRoot` is the one literal it was. A scope never given a
+fiber has nothing to close: a fiber started into it once the runtime stops is cancelled before it
+runs, closed or not ((d) step 5).)*
 
 **Who calls it.** Two paths reach one teardown:
 
@@ -3114,6 +3119,9 @@ push and a removal per root, and only a build that keeps `openRoot` or `start` k
   `host` passes a function that empties the after-render queue and calls `Task.shutdown deadline
   finished`. A page whose mounts are all
   `Browser.program`s fills nothing and ships nothing of `Task`, as now (§9.8.9's measurements).
+  *(Amended 2026-10-02: the function only calls `Task.shutdown`. The after-render queue needs no
+  emptying: only a flush runs it, and no flush runs once `dead` is set, so what it holds is dropped
+  unrun as (a) requires.)*
 
 `deadline` is a constant of the `browser` platform, **1 000 ms** (choice 3 below), as W3's slice
 and budget are the platform's.
@@ -3121,7 +3129,9 @@ and budget are the platform's.
 **(d) The teardown, step by step.** Every step runs in the teardown's macrotask or in the drains
 after it; each is deterministic, ordered by creation and by the scheduler's FIFO.
 
-1. **The sweep.** Every root in the registry, in creation order: a root scope is marked closed and
+1. **The sweep.** Every root in the registry, in creation order *(amended 2026-10-02: in the
+   order each was listed — a root fiber when it starts, a root scope when it is first given a
+   fiber (c); for one program's one root scope the same order)*: a root scope is marked closed and
    each of its fibers interrupted, in the order they were started; a root fiber is interrupted;
    the outside record's children are interrupted. The culprit, if any, is unwound as an
    interrupted fiber is (its continuations discarded, its children cancelled, its finalisers run)
@@ -3163,7 +3173,9 @@ success path, and is not released twice. A root scope closed once is not closed 
 order and then fiber start order. Then each fiber's cleanup in the order the scheduler reaches it:
 the root scopes' fibers in start order, interleaving only where a finaliser suspends; within one
 fiber, its children's cleanup first, then its own finalisers, last registered first. Several
-programs' roots in the order the programs were started (`Browser.programs`' order). This is the
+programs' roots in the order the programs were started (`Browser.programs`' order). *(Amended
+2026-10-02: in the order each program's root first ran a fiber, which is the programs' order
+unless a later program starts work before an earlier one; (d) step 1.)* This is the
 order `Task.closeRoot` and `Task.scope`'s close already use, and Effect's `interruptAll` (children
 interrupted in insertion order, then awaited); a test can therefore pin it with a log.
 
@@ -3331,7 +3343,8 @@ used to fire into a stopped scheduler. Every page also runs under `zig build tes
   through two hooks the fiber record's constructor sets, so a build that makes no fiber and keeps
   no finaliser outside one — a `Tea.element` whose commands never wait — keeps only the state flag:
   `shutdown` there stops the queue and runs nothing, and never calls `done`, there being nothing to
-  end. The registry is still filled by `openRoot`.
+  end. The registry is still filled by `openRoot`. *(Amended 2026-10-02: no longer; (c)'s
+  amendment.)*
 - **The drain's guard tears down on its own.** A fiber's throw schedules the teardown whether or
   not a platform calls `shutdown`; with no call there is no deadline. On Node the process ends first
   (`run/TaskDefectOnNode`), as (k) says.
@@ -3368,6 +3381,24 @@ fiber); `Random.generate` (no fiber) **1 955 → 2 121** (+166); the `Http` + `T
 and its abandonment, finaliser boundaries, the culprit's recovery and the registry). The `bench/ui`
 table app is a `Tea.sandbox` and builds to the same bytes; the fiber benchmark (`bench/fiber`,
 Node) moved within its run-to-run noise.
+
+**The size pass** (2026-10-02; `bench/size.mjs`'s page lines, `--release`, brotli 11, each change
+priced alone). The base is today's compiler with the teardown taken out of `Task.js`, `Rt.beni`
+and `Browser.beni` (so the compiler's own gains since are not counted): element **1 211**, `random`
+**1 956**, `Http` + `Time` **5 813**. Before the pass, with the cut-finaliser fix above: 1 349,
+2 117, 6 526. Each change, as element / `random` / `Http` + `Time`: a root listed at its first
+fiber, `openRoot` back to its literal, −25 / −8 / −2; the host's function calling only
+`Task.shutdown`, −5 / −13 / −4; the kernel's bindings that shared a name with a property
+(`value`, `wait`, `scope`, `interrupt`, …) renamed, so the compactor can shorten them, 0 / −9 / −50;
+the deadline's timers as plain globals, 0 / 0 / −8. After: **1 319, 2 087, 6 470** (+108, +131,
++657 against the base); the three other pages that run fibers fell 21–42. No change adds work at
+run time. **What the element still carries is the wiring, and while the kernel is a sibling it
+cannot go**: `Rt`'s teardown reference and its warning, the host's `onStop` function, and
+`shutdown` with its two cells — each reached from code every hosted page runs, where only a
+build that makes a fiber needs it. Whole-program specialisation drops exactly that (a `Js.Ref`
+nothing writes folds, and the branch behind it goes, as `Browser.program` pages show), but it
+sees only beni: the kernel in beni (`plans/core-in-beni.md` K3) is what can let the element's
+`stop` read a cell only a fiber writes.
 
 #### 9.8.15 Time, the log and a program that cannot wake, per platform (2026-10-02)
 

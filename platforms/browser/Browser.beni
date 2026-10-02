@@ -285,16 +285,12 @@ host p root flushing phase stop onStop =
     _ = Task.onDefect λ() → Js.to (Js.apply stop [])
 
     -- Once the page has stopped, every fiber of every program is cancelled
-    -- and its cleanup run (`boundary.md` §9.8.14): the after-render work
-    -- not yet run is dropped, and core closes every root scope, whoever
-    -- opened it, giving cleanup that waits `deadline` ms. `stopped` is
-    -- told how many it cut short.
-    _ =
-        Js.apply onStop
-            [ Js.from λstopped →
-                _ = Js.write later (Js.array [])
-                Task.shutdown deadline λcut → Js.to (Js.apply stopped [ Js.from cut ])
-            ]
+    -- and its cleanup run (`boundary.md` §9.8.14): core closes every root
+    -- scope, whoever opened it, giving cleanup that waits `deadline` ms,
+    -- and tells `stopped` how many it cut short. The after-render work not
+    -- yet run is dropped with no help: only a flush runs it, and none runs
+    -- once the page has stopped.
+    _ = Js.apply onStop [ Js.from λstopped → Task.shutdown deadline (Js.to stopped) ]
     _ = Js.write setPhase phase
     _ = Js.apply phase [ Js.from afterRender ]
 
