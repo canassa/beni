@@ -416,7 +416,9 @@ Add `-Dllvm` when *Building* says to.
 ### 5. Determinism is a requirement, not an aspiration
 
 Ids are input-derived and assigned **before** any parallel work starts — module
-index comes from sorted path, never completion order. The determinism test runs
+index comes from package, platform layer and the path below the package root
+(`fast-compiler.md` §10, amended 2026-10-02), never completion order and never
+where the project lives on disk. The determinism test runs
 the corpus at `--jobs=1` and `--jobs=8`, twice each, and byte-compares every
 stream and output file. Anything that makes output depend on thread timing is a
 bug, not a trade-off ([`fast-compiler.md`](docs/design/fast-compiler.md) §10).
