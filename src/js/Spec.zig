@@ -530,6 +530,15 @@ const Spec = struct {
     /// with the `Mod.version` each is of.
     assigns_in: KeyMap(NodeRef, KeptNames) = .empty,
     preorders: KeyMap(NodeRef, KeptNodes) = .empty,
+    /// `countTop`'s record of each top-level statement's count, and while
+    /// it counts (`logging`), the names `count` touched and the
+    /// whole-program names it marked escaped or assigned.
+    count_logs: KeyMap(NodeRef, CountLog) = .empty,
+    log_names: std.ArrayList(u32) = .empty,
+    log_escaped: std.ArrayList(u32) = .empty,
+    log_assigned: std.ArrayList(u32) = .empty,
+    logging: bool = false,
+    log_failed: bool = false,
     /// `scanOf`'s answers, per function, with the `Mod.version` each is of.
     body_scans: KeyMap(NodeRef, KeptScan) = .empty,
     /// The worklist of facts 1, 2, 4 and 5 (`walkAll`): every top-level
@@ -549,6 +558,8 @@ const Spec = struct {
     site_seen: []u32 = &.{},
 
     const KeptScan = struct { version: u32, scan: ?*const BodyScan };
+    const CountLog = struct { version: u32, names: []const NameCount, escaped: []const u32, assigned: []const u32 };
+    const NameCount = struct { name: u32, decls: u32, uses: u32, assigned: bool };
     const KeptNames = struct { version: u32, names: []const u32 };
     const KeptNodes = struct { version: u32, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
@@ -1011,12 +1022,18 @@ const Spec = struct {
     }
 
     fn setEscaped(s: *Spec, g: u32) void {
+        if (s.logging) s.log_escaped.append(s.arena, g) catch {
+            s.log_failed = true;
+        };
         if (s.escaped[g]) return;
         s.escaped[g] = true;
         s.nameChanged(g);
     }
 
     fn setAssigned(s: *Spec, g: u32) void {
+        if (s.logging) s.log_assigned.append(s.arena, g) catch {
+            s.log_failed = true;
+        };
         if (s.assigned[g]) return;
         s.assigned[g] = true;
         s.nameChanged(g);
@@ -1045,7 +1062,7 @@ const Spec = struct {
             },
             else => {},
         }
-        try s.count(m, stmt);
+        try s.countTop(m, stmt);
         if (s.top_func) |d| {
             const f = ir.extraData(d.func.?, JsIr.Func);
             for (ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
@@ -1059,6 +1076,9 @@ const Spec = struct {
 
     fn touch(s: *Spec, m: *Mod, i: u32) void {
         if (m.stamp[i] == s.current) return;
+        if (s.logging) s.log_names.append(s.arena, i) catch {
+            s.log_failed = true;
+        };
         m.stamp[i] = s.current;
         m.decls[i] = 0;
         m.uses[i] = 0;
@@ -1140,6 +1160,45 @@ const Spec = struct {
             },
             else => {},
         }
+    }
+
+    /// `count` of top-level statement `stmt`, on a fresh `current`: what a
+    /// count of it did is kept while its module's version stands, and done
+    /// again without the walk — the sweeps after a round's first, and its
+    /// rewrite, count every statement they walk, and the counts cannot
+    /// differ. Not while `counting`, whose reads are counted once each.
+    fn countTop(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!void {
+        const key: NodeRef = .{ .module = m.index, .node = stmt.int() };
+        if (!s.counting) if (s.count_logs.get(key)) |log| if (log.version == m.version) {
+            for (log.names) |c| {
+                m.stamp[c.name] = s.current;
+                m.decls[c.name] = c.decls;
+                m.uses[c.name] = c.uses;
+                m.assigned[c.name] = c.assigned;
+                m.value[c.name] = .top;
+                m.param[c.name] = none;
+            }
+            for (log.escaped) |g| s.setEscaped(g);
+            for (log.assigned) |g| s.setAssigned(g);
+            return;
+        };
+        s.log_names.clearRetainingCapacity();
+        s.log_escaped.clearRetainingCapacity();
+        s.log_assigned.clearRetainingCapacity();
+        s.log_failed = false;
+        s.logging = true;
+        defer s.logging = false;
+        try s.count(m, stmt);
+        s.logging = false;
+        if (s.log_failed) return error.OutOfMemory;
+        const names = try s.arena.alloc(NameCount, s.log_names.items.len);
+        for (names, s.log_names.items) |*c, i| c.* = .{ .name = i, .decls = m.decls[i], .uses = m.uses[i], .assigned = m.assigned[i] };
+        try s.count_logs.put(s.arena, key, .{
+            .version = m.version,
+            .names = names,
+            .escaped = try s.arena.dupe(u32, s.log_escaped.items),
+            .assigned = try s.arena.dupe(u32, s.log_assigned.items),
+        });
     }
 
     fn countList(s: *Spec, m: *Mod, range: JsIr.SubRange) Allocator.Error!void {
@@ -1949,7 +2008,7 @@ const Spec = struct {
             // Counted afresh: the parameters' reads and whether one is
             // assigned.
             s.current += 1;
-            try s.count(m, decl.stmt);
+            try s.countTop(m, decl.stmt);
             // `deadReads`, walked once per function when some parameter
             // asks.
             var dead_walked = false;
