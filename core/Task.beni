@@ -911,7 +911,18 @@ pub join : Fiber a → a
 join fiber =
     f = Js.from fiber
     if Js.isNull (Js.get f "outcome") then
-        joined (outcomeOf f)
+        -- The protocol by hand, as `Task.js` wrote it: the wait is called
+        -- as data, and when it parks `joined` itself goes on the stack, so
+        -- a join that waits makes no continuation of its own — the
+        -- lowering's would be a closure per join (`joined` may suspend, so
+        -- it cannot go to `andThen`, whose argument is `sync`).
+        r = Js.apply (Js.from outcomeOf) [ f ]
+        Js.suspending λ() →
+            if Js.same r sentinel then
+                _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from joined ]
+                Js.to sentinel
+            else
+                Js.to (Js.apply (Js.from joined) [ r ])
     else
         joined (guest (Js.get f "outcome"))
 
