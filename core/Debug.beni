@@ -6,9 +6,15 @@
 --! the use sites named, so "not meant for shipping code" is a rule and not
 --! only advice.
 --!
---! All three declarations are `foreign`, because all three do something the
---! language itself cannot: write to the outside world, stop the program, and
---! look at a value's representation without knowing its type.
+--! All three do something the language itself cannot — write to the outside
+--! world, stop the program, and look at a value's representation without
+--! knowing its type — and all three are beni over `Js` (`boundary.md` §4.2),
+--! with no sibling. `log`'s type, `String, a -> a`, is pure and it writes to
+--! the console, which is the deliberate exception `boundary.md` §4 states
+--! and Elm makes too; it is inferred `impure`, so no optimiser drops it.
+
+import Js
+
 
 --| Print a value to the console, tagged with a label, and return it
 --| unchanged. Because the value comes back out, a `log` can be dropped into
@@ -19,7 +25,10 @@
 --| The label comes first, as in Elm: it is short and the value is often
 --| long, so the label stays beside the word `log` when the call wraps an
 --| expression (`language.md` §12.4). As a statement, `Debug.log "done" ()`.
-pub foreign impure log : String, a → a
+pub log : String, a → a
+log tag value =
+    _ = Js.call (Js.global "console") "log" [ Js.from "${tag}: ${toString value}" ]
+    value
 
 
 --| Say that some code is not done yet, with a message about what is missing.
@@ -28,7 +37,12 @@ pub foreign impure log : String, a → a
 --|
 --|     view model =
 --|         Debug.todo "render the settings page"
-pub foreign impure todo : String → a
+pub todo : String → a
+todo message =
+    -- The one function in core that is allowed to stop the program,
+    -- because saying "this is not written yet" is the whole of what it
+    -- means.
+    Js.throw (Js.construct (Js.global "Error") [ Js.from "TODO: ${message}" ])
 
 
 --| Turn any value into a string for debugging.
@@ -37,4 +51,81 @@ pub foreign impure todo : String → a
 --|
 --| The exact text is not a promise and will change. For output a user reads,
 --| write the conversion yourself.
-pub foreign pure toString : a → String
+pub toString : a → String
+toString value = Js.pure λ() → show (Js.from value) (Js.construct (Js.global "Set") [])
+
+
+-- A value, read by its representation (`backend.md` §4). `seen` holds the
+-- objects being printed, so a value that holds itself prints `<cycle>`
+-- where it would recur.
+show : Js.Value, Js.Value → String
+show value seen =
+    if Js.typeIs value "string" then
+        Js.to (Js.call (Js.global "JSON") "stringify" [ value ])
+    else if Js.typeIs value "number" || Js.typeIs value "boolean" then
+        Js.to (Js.apply (Js.global "String") [ value ])
+    else if Js.isNullish value then
+        -- `()` is `null`, or `undefined` where a function whose result is
+        -- `()` wrote none (`backend.md` §4, *A `()` result is not written*).
+        "()"
+    else if Js.typeIs value "object" then
+        if Js.to (Js.call seen "has" [ value ]) then
+            "<cycle>"
+        else
+            _ = Js.call seen "add" [ value ]
+            Js.finally (λ() → showObject value seen) λ() → Js.to (Js.call seen "delete" [ value ])
+    else
+        Js.to (Js.apply (Js.global "String") [ value ])
+
+
+-- A list, a constructor or a record. A value is a list exactly when it is
+-- an array or has a `$plain` function: no other beni value is an array,
+-- and no record can have a field called `$plain` (`backend.md` §4).
+showObject : Js.Value, Js.Value → String
+showObject value seen =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+        showList value seen
+    else if Js.typeIs (Js.get value "$plain") "function" then
+        showList (Js.call value "$plain" []) seen
+    else
+        keys = Js.call (Js.global "Object") "keys" [ value ]
+        tag = Js.get value "$"
+        if Js.typeIs tag "string" then
+            -- A constructor's arguments, padding (`null`) left out.
+            args = Js.array []
+            _ = Js.each keys λk →
+                if Js.same k (Js.from "$") || Js.isNullish (Js.at value k) then
+                    ()
+                else
+                    Js.to (Js.call args "push" [ Js.from (show (Js.at value k) seen) ])
+            if Js.same (Js.get args "length") (Js.from 0) then
+                Js.to tag
+            else
+                name : String
+                name = Js.to tag
+
+                spaced : String
+                spaced = Js.to (Js.call args "join" [ Js.from " " ])
+                "${name} ${spaced}"
+        else if Js.same (Js.get keys "length") (Js.from 0) then
+            -- Elm prints the empty record as `{}`, not `{  }`.
+            "{}"
+        else
+            fields = Js.array []
+            _ = Js.each keys λk →
+                key : String
+                key = Js.to k
+                Js.to (Js.call fields "push" [ Js.from "${key} = ${show (Js.at value k) seen}" ])
+            listed : String
+            listed = Js.to (Js.call fields "join" [ Js.from ", " ])
+            "{ ${listed} }"
+
+
+-- A list's elements, a plain array.
+showList : Js.Value, Js.Value → String
+showList items seen =
+    parts = Js.array []
+    _ = Js.each items λitem → Js.to (Js.call parts "push" [ Js.from (show item seen) ])
+    listed : String
+    listed = Js.to (Js.call parts "join" [ Js.from "," ])
+    "[${listed}]"

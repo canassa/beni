@@ -3808,6 +3808,8 @@ test "a development build maps a crash in a case arm back to the beni line and c
     // test and a declaration's name each map to the token that wrote them.
     // The source is under `src/` and the output under `out/`, so the map's
     // `sources` climbs out of the output tree to the file itself.
+    // `Debug.todo` is beni (`core/Debug.beni`), so the crash's first frame
+    // is its `throw`, mapped into core's own source.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Main.beni",
@@ -3879,6 +3881,7 @@ test "a development build maps a crash in a case arm back to the beni line and c
         \\(n$1) => -> Main.beni:22:7 twice
         \\n$1 * 2 -> Main.beni:22:5
         \\Main$describe(Main$Stop -> Main.beni:27:41
+        \\frame todo Debug.beni:45:15
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:27:41
         \\exit 1

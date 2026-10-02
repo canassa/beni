@@ -156,7 +156,10 @@ Four checks run at build time, and all four are things Elm does not do:
    compiler has. What the compiler actually checks is the property it *can*: a function, or a value
    of a variable-free type. That still refuses `foreign anything : a` and `foreign xs : List a`,
    and it is weaker than this section originally advertised. The rest is the recipe in §4.1 and
-   review, not a check. `Debug.log` is the one deliberate violation, as it is in Elm.
+   review, not a check. `Debug.log` is the one deliberate violation, as it is in Elm. *(Amended
+   2026-10-02: `Debug` is beni over `Js` now, with no sibling, so the violation is no longer a
+   `foreign`'s: `log`'s type is still pure and it still writes to the console, and its body's
+   `Js.call` makes it inferred `impure`, so no optimiser drops it.)*
 2. **The sibling file must export exactly the declared names** — no more, no fewer.
 3. **The sibling file's references must be covered by its own imports.** §7.1 explains why this is
    what keeps elimination declaration-granular. **This check is lexical and deliberately

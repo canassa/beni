@@ -9,6 +9,8 @@ app:User -> app:Middle
 core:Basics -> core:Js
 core:Char -> core:Basics
 core:Char -> core:Js
+core:Debug -> core:Basics
+core:Debug -> core:Js
 core:Debug -> core:String
 core:List -> core:Basics
 core:List -> core:Maybe

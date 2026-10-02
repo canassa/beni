@@ -163,9 +163,9 @@ test "an exception the page throws fails the case with its message and the step 
         \\Button.beni [dev]: the page failed in happy-dom-20.14.5
         \\click #boom: the page threw an uncaught exception:
         \\Error: TODO: the button broke
-        \\at todo (file:///
+        \\at Debug$todo (file:///
     );
-    try expectReported(r, "/out/_core/Debug.foreign.mjs:");
+    try expectReported(r, "/out/_core/Debug.mjs:");
     try expectReported(r, "--- the page until then ---\n" ++ loaded ++ "-- click #boom\n");
     try expectReported(r, "/corpus/browser/Button.beni: PageFailed\n");
 
