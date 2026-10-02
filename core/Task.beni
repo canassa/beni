@@ -997,9 +997,18 @@ closeScope : Scope, a → a
 closeScope sc value =
     fiber = here ()
     s = Js.from sc
-    _ = shut s
-    _ = dropFinalizer fiber (Js.get s "finalizer")
-    value
+
+    -- The scope's fibers have all ended, as they mostly have: closed at
+    -- once, so the call that may suspend — and the continuation the
+    -- lowering makes for it — is only on the slow path.
+    if Js.to (Js.get (Js.get s "children") "size") == 0 then
+        _ = Js.set s "closed" (Js.from True)
+        _ = dropFinalizer fiber (Js.get s "finalizer")
+        value
+    else
+        _ = shut s
+        _ = dropFinalizer fiber (Js.get s "finalizer")
+        value
 
 
 --| Whether a fiber is still running: `False` once it has ended, either
