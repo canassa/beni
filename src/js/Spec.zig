@@ -526,11 +526,10 @@ const Spec = struct {
     io_scans: []InlineScan = &.{},
     io_refs: []u32 = &.{},
     io_assigned: []u32 = &.{},
-    /// `assignedIn`'s answers, per top-level statement, while
-    /// `assigns_kept`: during one `inlineOne`, whose tries change nothing
-    /// until the one that succeeds, after which it asks no more.
-    assigns_in: KeyMap(NodeRef, []const u32) = .empty,
-    assigns_kept: bool = false,
+    /// `assignedIn`'s and `preorder`'s answers, per top-level statement,
+    /// with the `Mod.version` each is of.
+    assigns_in: KeyMap(NodeRef, KeptNames) = .empty,
+    preorders: KeyMap(NodeRef, KeptNodes) = .empty,
     /// `scanOf`'s answers, per function, with the `Mod.version` each is of.
     body_scans: KeyMap(NodeRef, KeptScan) = .empty,
     /// The worklist of facts 1, 2, 4 and 5 (`walkAll`): every top-level
@@ -550,6 +549,8 @@ const Spec = struct {
     site_seen: []u32 = &.{},
 
     const KeptScan = struct { version: u32, scan: ?*const BodyScan };
+    const KeptNames = struct { version: u32, names: []const u32 };
+    const KeptNodes = struct { version: u32, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
     const Declined = struct { g: u32, lit: Lit };
@@ -3024,17 +3025,12 @@ const Spec = struct {
                 for (t.keep.items) |node| if (node.int() < nodes) kept_set.set(node.int());
                 top_of = try s.arena.alloc(Index, nodes);
                 found = try .initEmpty(s.arena, nodes);
-                var stack = try s.takeStack();
-                defer s.giveStack(&stack);
                 for (m.ir.extraSlice(m.ir.body, Index)) |top| {
-                    stack.clearRetainingCapacity();
-                    try JsIr.pushOperand(s.arena, &stack, top);
-                    while (JsIr.popOperand(&stack)) |node| {
+                    for (try s.preorder(m, top)) |node| {
                         if (node.int() < nodes and kept_set.isSet(node.int())) {
                             top_of[node.int()] = top;
                             found.set(node.int());
                         }
-                        try pushChildren(s.arena, m.ir, node, &stack);
                     }
                 }
             }
@@ -3151,15 +3147,11 @@ const Spec = struct {
                     const r: Index = @enumFromInt(work.items[i + 1]);
                     const re = (@as(Node.OptionalIndex, @enumFromInt(ir.data(r).lhs))).unwrap() orelse break :intoReturn;
                     if (try s.onlyInspected(m, top, x)) break :intoReturn;
-                    if (try declCount(s.arena, ir, top, x) != 1) break :intoReturn;
+                    if (try declCount(s, m, top, x) != 1) break :intoReturn;
                     if (firstUse(ir, re, x, 0) != .found) break :intoReturn;
                     var reads: u32 = 0;
-                    var stack = try s.takeStack();
-                    defer s.giveStack(&stack);
-                    try JsIr.pushOperand(s.arena, &stack, top);
-                    while (JsIr.popOperand(&stack)) |node| {
+                    for (try s.preorder(m, top)) |node| {
                         if (ir.tag(node) == .ident and ir.data(node).lhs == x.int()) reads += 1;
-                        try pushChildren(s.arena, ir, node, &stack);
                     }
                     if (reads != 1) break :intoReturn;
                     var c: Copy = .{
@@ -3296,7 +3288,7 @@ const Spec = struct {
     /// property read, and `top` declares it once and assigns it nowhere.
     fn onlyInspected(s: *Spec, m: *Mod, top: Index, x: NameIndex) Allocator.Error!bool {
         const ir = m.ir;
-        if (try declCount(s.arena, ir, top, x) != 1) return false;
+        if (try declCount(s, m, top, x) != 1) return false;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, top);
@@ -3657,7 +3649,7 @@ const Spec = struct {
                     // A name declared twice in the declaration may mean
                     // another binding where the key is read.
                     .ident => try s.atomArgument(m, v, top, s.assigned) and
-                        (m.globalOf(@enumFromInt(m.ir.data(v).lhs)) != null or try declCount(s.arena, m.ir, top, @enumFromInt(m.ir.data(v).lhs)) <= 1),
+                        (m.globalOf(@enumFromInt(m.ir.data(v).lhs)) != null or try declCount(s, m, top, @enumFromInt(m.ir.data(v).lhs)) <= 1),
                     else => false,
                 };
                 if (atom) {
@@ -3785,30 +3777,24 @@ const Spec = struct {
         var sites: std.ArrayList(Site) = .empty;
         const mentions = try s.arena.alloc(u32, s.globals);
         @memset(mentions, 0);
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (s.mods, 0..) |*m, mi| {
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
-                stack.clearRetainingCapacity();
-                try JsIr.pushOperand(s.arena, &stack, top);
-                while (JsIr.popOperand(&stack)) |node| {
-                    switch (ir.tag(node)) {
-                        .ident => if (m.globalOf(@enumFromInt(ir.data(node).lhs))) |g| if (smalls[g] != null) {
+                for (try s.preorder(m, top)) |node| {
+                    const t = ir.tag(node);
+                    if (t == .ident) {
+                        if (m.globalOf(@enumFromInt(ir.data(node).lhs))) |g| if (smalls[g] != null) {
                             mentions[g] += 1;
-                        },
-                        .expr_stmt => {
-                            const call: Index = @enumFromInt(ir.data(node).lhs);
-                            if (ir.tag(call) == .call) {
-                                const callee: Index = @enumFromInt(ir.data(call).lhs);
-                                if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| if (smalls[g] != null) {
-                                    try sites.append(s.arena, .{ .module = @intCast(mi), .top = top, .stmt = node, .g = g });
-                                };
-                            }
-                        },
-                        else => {},
+                        };
+                    } else if (t == .expr_stmt) {
+                        const call: Index = @enumFromInt(ir.data(node).lhs);
+                        if (ir.tag(call) == .call) {
+                            const callee: Index = @enumFromInt(ir.data(call).lhs);
+                            if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| if (smalls[g] != null) {
+                                try sites.append(s.arena, .{ .module = @intCast(mi), .top = top, .stmt = node, .g = g });
+                            };
+                        }
                     }
-                    try pushChildren(s.arena, ir, node, &stack);
                 }
             }
         }
@@ -4128,15 +4114,11 @@ const Spec = struct {
         @memset(asked, false);
         // Every call of one, in module order.
         var any = false;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (s.mods, 0..) |*m, mi| {
             const ir = m.ir;
             var calls: std.ArrayList(struct { top: Index, call: Index, small: Small }) = .empty;
             for (ir.extraSlice(ir.body, Index)) |top| {
-                stack.clearRetainingCapacity();
-                try JsIr.pushOperand(s.arena, &stack, top);
-                while (JsIr.popOperand(&stack)) |node| {
+                for (try s.preorder(m, top)) |node| {
                     if (ir.tag(node) == .call) {
                         const callee: Index = @enumFromInt(ir.data(node).lhs);
                         if (ir.tag(callee) == .ident) {
@@ -4156,7 +4138,6 @@ const Spec = struct {
                             }
                         }
                     }
-                    try pushChildren(s.arena, ir, node, &stack);
                 }
             }
             for (calls.items) |c| {
@@ -4292,8 +4273,6 @@ const Spec = struct {
             @memset(s.io_assigned, 0);
             @memset(s.io_scans, .{});
         }
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (s.mods, s.io_scans, 0..) |*m, *sc, mi| {
             if (sc.version == m.version) continue;
             if (sc.refs.len == n) {
@@ -4311,29 +4290,22 @@ const Spec = struct {
             @memset(sc.assigned, false);
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
-                stack.clearRetainingCapacity();
-                try JsIr.pushOperand(s.arena, &stack, top);
-                while (JsIr.popOperand(&stack)) |node| {
+                for (try s.preorder(m, top)) |node| {
                     const d = ir.data(node);
-                    switch (ir.tag(node)) {
-                        .ident => if (m.globalOf(@enumFromInt(d.lhs))) |g| {
-                            sc.refs[g] += 1;
-                        },
-                        .call => {
-                            const callee: Index = @enumFromInt(d.lhs);
-                            if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| {
-                                sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = node };
-                            };
-                        },
-                        .assign_stmt => {
-                            const target: Index = @enumFromInt(d.lhs);
-                            if (ir.tag(target) == .ident) if (m.globalOf(@enumFromInt(ir.data(target).lhs))) |g| {
-                                sc.assigned[g] = true;
-                            };
-                        },
-                        else => {},
+                    const t = ir.tag(node);
+                    if (t == .ident) {
+                        if (m.globalOf(@enumFromInt(d.lhs))) |g| sc.refs[g] += 1;
+                    } else if (t == .call) {
+                        const callee: Index = @enumFromInt(d.lhs);
+                        if (ir.tag(callee) == .ident) if (m.globalOf(@enumFromInt(ir.data(callee).lhs))) |g| {
+                            sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = node };
+                        };
+                    } else if (t == .assign_stmt) {
+                        const target: Index = @enumFromInt(d.lhs);
+                        if (ir.tag(target) == .ident) if (m.globalOf(@enumFromInt(ir.data(target).lhs))) |g| {
+                            sc.assigned[g] = true;
+                        };
                     }
-                    try pushChildren(s.arena, ir, node, &stack);
                 }
             }
             for (sc.refs, sc.assigned, 0..) |r, a, g| {
@@ -4347,9 +4319,6 @@ const Spec = struct {
     fn inlineOne(s: *Spec) Allocator.Error!bool {
         const n = s.globals;
         try s.inlineScan();
-        s.assigns_in.clearRetainingCapacity();
-        s.assigns_kept = true;
-        defer s.assigns_kept = false;
         const refs = s.io_refs[0..n];
         // The last call of each name mentioned once: that one mention.
         const sites = try s.arena.alloc(?CallSite, n);
@@ -4611,43 +4580,47 @@ const Spec = struct {
         }
         const n: NameIndex = @enumFromInt(ir.data(a).lhs);
         if (m.globalOf(n)) |g| return !assigned[g];
-        if (s.assigns_kept) {
-            const names = try s.assignedIn(m, top);
-            return std.mem.indexOfScalar(u32, names, n.int()) == null;
-        }
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        try JsIr.pushOperand(s.arena, &stack, top);
-        while (JsIr.popOperand(&stack)) |node| {
-            if (ir.tag(node) == .assign_stmt) {
-                const target: Index = @enumFromInt(ir.data(node).lhs);
-                if (ir.tag(target) == .ident and ir.data(target).lhs == n.int()) return false;
-            }
-            try pushChildren(s.arena, ir, node, &stack);
-        }
-        return true;
+        const names = try s.assignedIn(m, top);
+        return std.mem.indexOfScalar(u32, names, n.int()) == null;
     }
 
-    /// Every name an assignment in top-level statement `top` writes, as
-    /// `atomArgument`'s walk would meet them: one walk per statement while
-    /// `assigns_kept`, where `atomArgument` walked it once per argument.
+    /// Every name an assignment in top-level statement `top` assigns, kept
+    /// while the module's `version` stands: `atomArgument` walked the whole
+    /// statement once per argument it asked about.
     fn assignedIn(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const u32 {
         const gop = try s.assigns_in.getOrPut(s.arena, .{ .module = m.index, .node = top.int() });
-        if (gop.found_existing) return gop.value_ptr.*;
+        if (gop.found_existing and gop.value_ptr.version == m.version) return gop.value_ptr.names;
         const ir = m.ir;
         var names: std.ArrayList(u32) = .empty;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        try JsIr.pushOperand(s.arena, &stack, top);
-        while (JsIr.popOperand(&stack)) |node| {
+        for (try s.preorder(m, top)) |node| {
             if (ir.tag(node) == .assign_stmt) {
                 const target: Index = @enumFromInt(ir.data(node).lhs);
                 if (ir.tag(target) == .ident) try names.append(s.arena, ir.data(target).lhs);
             }
+        }
+        // `preorder` may have grown the table `gop` points into.
+        try s.assigns_in.put(s.arena, .{ .module = m.index, .node = top.int() }, .{ .version = m.version, .names = names.items });
+        return names.items;
+    }
+
+    /// Every node of top-level statement `top` of module `m`, in the order a
+    /// walk from it meets them (`pushChildren`), kept while the module's
+    /// `version` stands: most walks of a statement visit every node of it,
+    /// and the passes walk the same unchanged statements over and over.
+    fn preorder(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const Index {
+        const key: NodeRef = .{ .module = m.index, .node = top.int() };
+        if (s.preorders.get(key)) |kept| if (kept.version == m.version) return kept.nodes;
+        const ir = m.ir;
+        var nodes: std.ArrayList(Index) = .empty;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try JsIr.pushOperand(s.arena, &stack, top);
+        while (JsIr.popOperand(&stack)) |node| {
+            try JsIr.pushOperand(s.arena, &nodes, node);
             try pushChildren(s.arena, ir, node, &stack);
         }
-        gop.value_ptr.* = names.items;
-        return names.items;
+        try s.preorders.put(s.arena, key, .{ .version = m.version, .nodes = nodes.items });
+        return nodes.items;
     }
 
     /// Whether every name inert expression `root` reads outside the
@@ -4696,8 +4669,6 @@ const Spec = struct {
         const ir = m.ir;
         if (m.occ.len < s.globals) m.occ = try s.arena.alloc(u32, s.globals);
         @memset(m.occ, none);
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (ir.extraSlice(ir.body, Index)) |top| {
             switch (ir.tag(top)) {
                 .import_stmt, .export_stmt => continue,
@@ -4709,16 +4680,13 @@ const Spec = struct {
                 },
                 else => {},
             }
-            stack.clearRetainingCapacity();
-            try JsIr.pushOperand(s.arena, &stack, top);
-            while (JsIr.popOperand(&stack)) |node| {
+            for (try s.preorder(m, top)) |node| {
                 if (ir.tag(node) == .ident) {
                     const n: NameIndex = @enumFromInt(ir.data(node).lhs);
                     if (m.globalOf(n)) |g| if (g < m.occ.len and m.occ[g] == none) {
                         m.occ[g] = n.int();
                     };
                 }
-                try pushChildren(s.arena, ir, node, &stack);
             }
         }
         m.occ_version = m.version;
@@ -4745,8 +4713,6 @@ const Spec = struct {
     /// `namedIn` by walking the module until `g` is met.
     fn namedInWalk(s: *Spec, m: *Mod, g: u32) Allocator.Error!?NameIndex {
         const ir = m.ir;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (ir.extraSlice(ir.body, Index)) |top| {
             switch (ir.tag(top)) {
                 .import_stmt, .export_stmt => continue,
@@ -4756,14 +4722,11 @@ const Spec = struct {
                 },
                 else => {},
             }
-            stack.clearRetainingCapacity();
-            try JsIr.pushOperand(s.arena, &stack, top);
-            while (JsIr.popOperand(&stack)) |node| {
+            for (try s.preorder(m, top)) |node| {
                 if (ir.tag(node) == .ident) {
                     const n: NameIndex = @enumFromInt(ir.data(node).lhs);
                     if (m.globalOf(n) == g) return n;
                 }
-                try pushChildren(s.arena, ir, node, &stack);
             }
         }
         return null;
@@ -4776,21 +4739,24 @@ const Spec = struct {
         // A whole-program name: `inlineOne` counted its mentions, of a
         // program nothing has changed since.
         if (g) |want| if (s.io_refs.len == s.globals) return s.io_refs[want] != 0;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
         for (s.mods) |*other| {
             if (g == null and other != m) continue;
             const ir = other.ir;
-            stack.clearRetainingCapacity();
-            if (g == null) try JsIr.pushOperand(s.arena, &stack, top) else try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(ir.body, Index));
-            while (JsIr.popOperand(&stack)) |node| {
-                if (ir.tag(node) == .ident) {
-                    const x: NameIndex = @enumFromInt(ir.data(node).lhs);
-                    if (g) |want| {
-                        if (other.globalOf(x) == want) return true;
-                    } else if (x == n) return true;
+            // A walk of every statement, from the last to the first (a
+            // stack holding the whole body), or of `top` alone: which
+            // statement it meets first changes nothing but how soon it ends.
+            const tops = if (g == null) &[_]Index{top} else ir.extraSlice(ir.body, Index);
+            var i = tops.len;
+            while (i > 0) {
+                i -= 1;
+                for (try s.preorder(other, tops[i])) |node| {
+                    if (ir.tag(node) == .ident) {
+                        const x: NameIndex = @enumFromInt(ir.data(node).lhs);
+                        if (g) |want| {
+                            if (other.globalOf(x) == want) return true;
+                        } else if (x == n) return true;
+                    }
                 }
-                try pushChildren(s.arena, ir, node, &stack);
             }
         }
         return false;
@@ -7177,27 +7143,21 @@ fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayL
 
 /// How many times `top` declares name `n`: a `const`, `let`, `function` or
 /// `for…of` binding, or a parameter of a function in it.
-fn declCount(gpa: Allocator, ir: *const JsIr, top: Index, n: NameIndex) Allocator.Error!u32 {
+fn declCount(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!u32 {
+    const ir = m.ir;
     var count: u32 = 0;
-    var stack: std.ArrayList(Index) = .empty;
-    defer stack.deinit(gpa);
-    try JsIr.pushOperand(gpa, &stack, top);
-    while (JsIr.popOperand(&stack)) |node| {
+    for (try s.preorder(m, top)) |node| {
         const d = ir.data(node);
-        switch (ir.tag(node)) {
-            .const_decl, .let_decl, .for_of => if (d.lhs == n.int()) {
+        const t = ir.tag(node);
+        if (t == .const_decl or t == .let_decl or t == .for_of) {
+            if (d.lhs == n.int()) count += 1;
+        } else if (t == .func_decl or t == .gen_decl or t == .arrow) {
+            if (t != .arrow and d.lhs == n.int()) count += 1;
+            const record: ExtraIndex = @enumFromInt(if (t == .arrow) d.lhs else d.rhs);
+            for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| if (p == n) {
                 count += 1;
-            },
-            .func_decl, .gen_decl, .arrow => {
-                if (ir.tag(node) != .arrow and d.lhs == n.int()) count += 1;
-                const record: ExtraIndex = @enumFromInt(if (ir.tag(node) == .arrow) d.lhs else d.rhs);
-                for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| if (p == n) {
-                    count += 1;
-                };
-            },
-            else => {},
+            };
         }
-        try pushChildren(gpa, ir, node, &stack);
     }
     return count;
 }
