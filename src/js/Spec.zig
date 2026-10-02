@@ -526,6 +526,13 @@ const Spec = struct {
     io_scans: []InlineScan = &.{},
     io_refs: []u32 = &.{},
     io_assigned: []u32 = &.{},
+    /// `assignedIn`'s answers, per top-level statement, while
+    /// `assigns_kept`: during one `inlineOne`, whose tries change nothing
+    /// until the one that succeeds, after which it asks no more.
+    assigns_in: KeyMap(NodeRef, []const u32) = .empty,
+    assigns_kept: bool = false,
+    /// `scanOf`'s answers, per function, with the `Mod.version` each is of.
+    body_scans: KeyMap(NodeRef, KeptScan) = .empty,
     /// The worklist of facts 1, 2, 4 and 5 (`walkAll`): every top-level
     /// statement in order; those a change woke; the one being walked
     /// (`none` outside a sweep) and that walk's number; and per
@@ -542,6 +549,7 @@ const Spec = struct {
     site_deps: []u32 = &.{},
     site_seen: []u32 = &.{},
 
+    const KeptScan = struct { version: u32, scan: ?*const BodyScan };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
     const Declined = struct { g: u32, lit: Lit };
@@ -4339,6 +4347,9 @@ const Spec = struct {
     fn inlineOne(s: *Spec) Allocator.Error!bool {
         const n = s.globals;
         try s.inlineScan();
+        s.assigns_in.clearRetainingCapacity();
+        s.assigns_kept = true;
+        defer s.assigns_kept = false;
         const refs = s.io_refs[0..n];
         // The last call of each name mentioned once: that one mention.
         const sites = try s.arena.alloc(?CallSite, n);
@@ -4422,6 +4433,22 @@ const Spec = struct {
         final_return: bool = false,
         ok: bool = true,
     };
+
+    /// `scanBody` of function `value` of module `fm`, kept while nothing a
+    /// walk of the module meets has changed (`Mod.version`, which
+    /// `inlineScan` keeps its counts by too): `inlineOne` tries every
+    /// candidate again after each function it writes, and most callees are
+    /// where they were. Null when the body is too big or too deep.
+    fn scanOf(s: *Spec, fm: *Mod, value: Index, f: JsIr.Func) Allocator.Error!?*const BodyScan {
+        const gop = try s.body_scans.getOrPut(s.arena, .{ .module = fm.index, .node = value.int() });
+        if (!gop.found_existing or gop.value_ptr.version != fm.version) {
+            const scan = try s.arena.create(BodyScan);
+            scan.* = .{};
+            const ok = try s.scanBody(fm, f, scan);
+            gop.value_ptr.* = .{ .version = fm.version, .scan = if (ok) scan else null };
+        }
+        return gop.value_ptr.scan;
+    }
 
     /// Walk the callee's body once; false when it is too big or too deep to
     /// copy by recursion.
@@ -4584,6 +4611,10 @@ const Spec = struct {
         }
         const n: NameIndex = @enumFromInt(ir.data(a).lhs);
         if (m.globalOf(n)) |g| return !assigned[g];
+        if (s.assigns_kept) {
+            const names = try s.assignedIn(m, top);
+            return std.mem.indexOfScalar(u32, names, n.int()) == null;
+        }
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, top);
@@ -4595,6 +4626,28 @@ const Spec = struct {
             try pushChildren(s.arena, ir, node, &stack);
         }
         return true;
+    }
+
+    /// Every name an assignment in top-level statement `top` writes, as
+    /// `atomArgument`'s walk would meet them: one walk per statement while
+    /// `assigns_kept`, where `atomArgument` walked it once per argument.
+    fn assignedIn(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const u32 {
+        const gop = try s.assigns_in.getOrPut(s.arena, .{ .module = m.index, .node = top.int() });
+        if (gop.found_existing) return gop.value_ptr.*;
+        const ir = m.ir;
+        var names: std.ArrayList(u32) = .empty;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try JsIr.pushOperand(s.arena, &stack, top);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (ir.tag(node) == .assign_stmt) {
+                const target: Index = @enumFromInt(ir.data(node).lhs);
+                if (ir.tag(target) == .ident) try names.append(s.arena, ir.data(target).lhs);
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        gop.value_ptr.* = names.items;
+        return names.items;
     }
 
     /// Whether every name inert expression `root` reads outside the
@@ -4874,8 +4927,7 @@ const Spec = struct {
         const args = try s.arena.dupe(Index, cm.ir.extraSlice(cm.ir.subRange(@enumFromInt(cm.ir.data(site.call).rhs)), Index));
         if (args.len != params.len) return false;
 
-        var scan: BodyScan = .{};
-        if (!try s.scanBody(fm, f, &scan)) return false;
+        const scan = try s.scanOf(fm, value, f) orelse return false;
         // A parameter declared again inside is not one name to substitute.
         for (params) |p| if (p.unwrap()) |i| if (scan.counts[i] > 1) return false;
         // Another module's function names nothing but its own locals and
