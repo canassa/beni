@@ -792,7 +792,7 @@ with "the remaining bindings and the body" read as "the remaining items".
 
 ```elm
 scope ← Task.scope
-conn ← Task.bracket (λ() → Db.open url) Db.close
+conn ← Task.bracket (λ⊤ → Db.open url) Db.close
 h ← Result.andThen (readHeader s)
 render scope conn h
 ```
@@ -2341,7 +2341,7 @@ the body alone" no longer allows: there is no body apart from the items.
 ```elm
 render url s =
     scope ← Task.scope
-    conn ← Task.bracket (λ() → Db.open url) Db.close
+    conn ← Task.bracket (λ⊤ → Db.open url) Db.close
     h ← Result.andThen (readHeader s)
     draw scope conn h
 ```

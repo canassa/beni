@@ -5314,7 +5314,7 @@ test "lambdas stay n-ary and an accessor becomes a one-parameter lambda around a
 test "records, record update, field access, tuple index, lists and unit stay nodes" {
     try expectDecls(
         \\f r t =
-        \\    ( { a = 1, b = r.x.y }, { r | a = t.0 }, [ () ], {} )
+        \\    ( { a = 1, b = r.x.y }, { r | a = t.0 }, [ ⊤ ], {} )
         \\
     ,
         \\decl 0: value f
@@ -5346,7 +5346,7 @@ test "every pattern kind lowers, binding its variables as locals of the right ki
     try expectDecls(
         \\f p =
         \\    case p of
-        \\        ( Just [ x, …rest ] as whole, { a, b }, [ 1, -2, 'c', "s", () ], _ ) →
+        \\        ( Just [ x, …rest ] as whole, { a, b }, [ 1, -2, 'c', "s", ⊤ ], _ ) →
         \\            x
         \\
         \\        _ →

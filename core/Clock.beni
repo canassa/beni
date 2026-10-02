@@ -10,7 +10,7 @@
 --! waiting:
 --!
 --!     clock = Clock.virtual 0
---!     worker = Task.spawn λ() → Clock.run clock λ() →
+--!     worker = Task.spawn λ⊤ → Clock.run clock λ⊤ →
 --!         _ = Task.sleep (Duration.seconds 30)
 --!         Log.info "half a minute later"
 --!     _ = Clock.adjust clock (Duration.seconds 30)

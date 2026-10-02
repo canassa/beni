@@ -15,7 +15,7 @@
 --! one to place.
 --!
 --! Insert, remove and query take *O(log n)* time. A `Set` is a `Dict` whose
---! values are all `()`, which is how Elm builds it too.
+--! values are all `⊤`, which is how Elm builds it too.
 --!
 --! Nothing here is `foreign`.
 

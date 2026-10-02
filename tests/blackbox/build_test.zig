@@ -4653,8 +4653,8 @@ test "a program that suspends keeps Task.andThen, which core writes in beni" {
         \\
         \\
         \\main : Program
-        \\main = Io.run λ() →
-        \\    _ = Task.yieldNow ()
+        \\main = Io.run λ⊤ →
+        \\    _ = Task.yieldNow ⊤
         \\    Node.print "yielded"
         \\
     );

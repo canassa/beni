@@ -133,7 +133,7 @@ cancelAll = Cmd [ CancelAll [] ]
 --| A child component's commands in its parent: their keys under
 --| `segment`, which names this instance of the child, and every message
 --| they send passed through `tag`. There is no `map` without a segment:
---| a singleton child passes `()`.
+--| a singleton child passes `⊤`.
 --|
 --|     RowMsg id m →
 --|         ( row, cmd ) = Row.update m (rowOf model id)

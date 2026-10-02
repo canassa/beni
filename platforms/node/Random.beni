@@ -4,8 +4,8 @@
 --! randomness. `value` runs a generator on the process's own seed, anywhere
 --! a function may be impure:
 --!
---!     roll : () → Int
---!     roll () =
+--!     roll : ⊤ → Int
+--!     roll ⊤ =
 --!         Random.value (Random.int 1 6)
 --!
 --! `step` runs a generator on a `Seed` you hold instead, purely: the same

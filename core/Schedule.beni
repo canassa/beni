@@ -59,8 +59,8 @@ step (Schedule f) metadata = f metadata
 --| A schedule of one's own, from its step function.
 --|
 --|     -- no delay, and stop at the first input that is not busy
---|     untilNotBusy () = Schedule.fromStep λm →
---|         if isBusy m.input then Schedule.Continue Duration.zero (untilNotBusy ()) else Schedule.Stop
+--|     untilNotBusy ⊤ = Schedule.fromStep λm →
+--|         if isBusy m.input then Schedule.Continue Duration.zero (untilNotBusy ⊤) else Schedule.Stop
 pub fromStep : (Metadata i → Step i) → Schedule i
 fromStep f = Schedule f
 
@@ -70,7 +70,7 @@ fromStep f = Schedule f
 --| answer the delays until it stops or the inputs run out.
 --|
 --|     -- [ 100, 200, 400 ] ms
---|     Schedule.delays (Schedule.exponential (Duration.millis 100) 2.0) [ (), (), () ]
+--|     Schedule.delays (Schedule.exponential (Duration.millis 100) 2.0) [ ⊤, ⊤, ⊤ ]
 pub delays : Schedule i, List i → List Duration
 delays schedule inputs = delaysFrom schedule inputs 1 Duration.zero []
 

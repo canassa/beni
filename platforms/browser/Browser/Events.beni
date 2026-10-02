@@ -71,7 +71,7 @@ keys name send = Listen.on "document" name event send
 
 --| Call `f` with the window's new size each time it is resized.
 --|
---|     Task.spawn λ() → Browser.Events.eachResize λsize → Log.info (String.fromInt size.width)
+--|     Task.spawn λ⊤ → Browser.Events.eachResize λsize → Log.info (String.fromInt size.width)
 pub eachResize : (Size → ⊤) → ⊤
 eachResize f = Listen.each resizes f
 

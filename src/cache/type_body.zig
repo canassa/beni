@@ -640,7 +640,7 @@ test "an alias body encodes as its shape, with every name spelled out" {
         \\
         \\
         \\type alias Pack a b =
-        \\    a × Pair b × ()
+        \\    a × Pair b × ⊤
         \\
         \\
         \\type alias Fn a =

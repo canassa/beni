@@ -134,7 +134,7 @@ Primitive operations are `foreign` values with effectful types, declared in the 
 
 ```elm
 foreign httpSend : Request -> Response ! {Net}
-foreign now : () -> Time ! {Clock}
+foreign now : ⊤ -> Time ! {Clock}
 ```
 
 ### 3.3 Calls
@@ -268,10 +268,10 @@ and that ports stay asynchronous. Under this proposal:
 - The platform **exports the combinators**, all effect-polymorphic over thunks:
 
   ```elm
-  Task.par2   : (() -> a ! e), (() -> b ! e) -> (a, b) ! e
-  Task.parAll : List (() -> a ! e) -> List a ! e
-  Task.retry  : Int, (() -> Result x a ! e) -> Result x a ! e
-  Task.timeout : Int, (() -> a ! e) -> Maybe a ! {Clock | e}
+  Task.par2   : (⊤ -> a ! e), (⊤ -> b ! e) -> (a, b) ! e
+  Task.parAll : List (⊤ -> a ! e) -> List a ! e
+  Task.retry  : Int, (⊤ -> Result x a ! e) -> Result x a ! e
+  Task.timeout : Int, (⊤ -> a ! e) -> Maybe a ! {Clock | e}
   Task.scope  : (Scope -> a ! e) -> a ! e            -- structured cancellation
   ```
 
@@ -284,10 +284,10 @@ and that ports stay asynchronous. Under this proposal:
   with `! {}`. A command is a thunk plus a message constructor:
 
   ```elm
-  Cmd.run : (() -> a ! e), (a -> msg) -> Cmd msg
+  Cmd.run : (⊤ -> a ! e), (a -> msg) -> Cmd msg
   update msg model =
       case msg of
-          Load id -> ( model, Cmd.run (\() -> fetchSummary id!) GotSummary )
+          Load id -> ( model, Cmd.run (\⊤ -> fetchSummary id!) GotSummary )
   ```
 
   The runtime runs the thunk as a fiber and delivers `GotSummary summary` to `update`. Tests of

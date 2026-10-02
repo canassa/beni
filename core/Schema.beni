@@ -4,7 +4,7 @@
 --!
 --! The builders below make a `Schema`, and the runners at the end run one.
 --! A `schema` declaration is the same thing written as syntax (§2): its
---! `schema ()` is built of these builders, and its `parse` and `print` are
+--! `schema ⊤` is built of these builders, and its `parse` and `print` are
 --! specialised code that calls the core-private values near the end (§6).
 --!
 --! **The engine owns the traversal.** A builder takes ordinary values and
@@ -14,11 +14,11 @@
 --! policy are threaded by the engine through every step, and no function a
 --! builder was given can drop them (§5, *Context contract*).
 --!
---!     toUser ( ( (), userId ), nickname ) =
+--!     toUser ( ( ⊤, userId ), nickname ) =
 --!         { userId = userId, nickname = nickname }
 --!
 --!     fromUser u =
---!         ( ( (), u.userId ), u.nickname )
+--!         ( ( ⊤, u.userId ), u.nickname )
 --!
 --!     user =
 --!         Schema.record
@@ -136,7 +136,7 @@ pub foreign type Conversion b a
 
 --| The fields of a record schema being built, as two products: `pe` holds
 --| the fields' Encoded values and `pa` their Type values, each a tuple
---| nested to the left, `( ( ( (), first ), second ), third )`.
+--| nested to the left, `( ( ( ⊤, first ), second ), third )`.
 pub foreign type Fields pe pa
 
 
@@ -1656,7 +1656,7 @@ claims c fs k i n =
 
 
 -- A typed record's field values, first field first, from the product its
--- mapping takes it apart into: `( ( ( (), a ), b ), c )` is `[a, b, c]`.
+-- mapping takes it apart into: `( ( ( ⊤, a ), b ), c )` is `[a, b, c]`.
 valuesOf : Context, Int, Maps, Js.Value → Js.Value
 valuesOf c n maps v =
     values = Js.construct (Js.global "Array") [ Js.from n ]

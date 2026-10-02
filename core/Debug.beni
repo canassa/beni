@@ -24,7 +24,7 @@ import Js
 --|
 --| The label comes first, as in Elm: it is short and the value is often
 --| long, so the label stays beside the word `log` when the call wraps an
---| expression (`language.md` §12.4). As a statement, `Debug.log "done" ()`.
+--| expression (`language.md` §12.4). As a statement, `Debug.log "done" ⊤`.
 pub log : String, a → a
 log tag value = logAs (Js.from untyped) tag value
 
@@ -169,7 +169,7 @@ bindArgs t env =
 
 -- A value of a `type` whose constructors `def` lists. An all-nullary type
 -- is its tag; any other is `{$: tag, a, b, …}`, padded, so the arity is
--- the definition's and a `()` argument prints.
+-- the definition's and a `⊤` argument prints.
 showType : Js.Value, Js.Value, Js.Value, Js.Value → String
 showType def env defs value =
     if Js.typeIs value "string" then
@@ -248,8 +248,8 @@ untypedValue value seen =
     else if Js.typeIs value "boolean" then
         if Js.to value then "True" else "False"
     else if Js.isNullish value then
-        -- `()` is `null`, or `undefined` where a function whose result is
-        -- `()` wrote none (`backend.md` §4, *A `()` result is not written*).
+        -- `⊤` is `null`, or `undefined` where a function whose result is
+        -- `⊤` wrote none (`backend.md` §4, *A `⊤` result is not written*).
         "()"
     else if Js.typeIs value "function" then
         "<function>"
@@ -280,7 +280,7 @@ untypedObject value seen =
         tag = Js.get value "$"
         if Js.typeIs tag "string" then
             -- A constructor's arguments, padding (`null`) left out: with no
-            -- type, padding and a `()` argument are one representation.
+            -- type, padding and a `⊤` argument are one representation.
             parts = Js.array [ tag ]
             Js.each keys λk →
                 if Js.same k (Js.from "$") || Js.isNullish (Js.at value k) then

@@ -801,8 +801,8 @@ that thunk is wrapped in is this package's business, and none of it needs a lang
 ```elm
 type Policy = Restart | Ignore | Queue | Concurrent
 
-Cmd.run    : (() → a), (a → msg) → Cmd msg               -- fire and forget
-Cmd.keyed  : k, Policy, (() → a), (a → msg) → Cmd msg    -- k equatable
+Cmd.run    : (⊤ → a), (a → msg) → Cmd msg               -- fire and forget
+Cmd.keyed  : k, Policy, (⊤ → a), (a → msg) → Cmd msg    -- k equatable
 Cmd.cancel : k → Cmd msg
 ```
 
@@ -822,7 +822,7 @@ later. Cancelling runs the fiber's finalisers, so a cancelled command releases w
 ```elm
 update msg model =
     case msg of
-        Typed q       → ( { model | q = q }, Cmd.keyed "search" Restart (λ() → search q) GotHits )
+        Typed q       → ( { model | q = q }, Cmd.keyed "search" Restart (λ⊤ → search q) GotHits )
         NavigatedAway → ( model, Cmd.cancel "search" )
 ```
 
@@ -1866,19 +1866,19 @@ the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` a
 #### 9.8.2 The command API and the four policies
 
 ```elm
-pub type alias Send msg = msg → ()
+pub type alias Send msg = msg → ⊤
 pub type Policy = Restart | Ignore | Queue | Concurrent
 
 pub none : Cmd msg
 pub batch : List (Cmd msg) → Cmd msg
-pub perform : (Send msg → ()) → Cmd msg                        -- a fiber in the program's scope
-pub keyed : k, Policy, (Send msg → ()) → Cmd msg               where k.compare : k, k → Order
+pub perform : (Send msg → ⊤) → Cmd msg                        -- a fiber in the program's scope
+pub keyed : k, Policy, (Send msg → ⊤) → Cmd msg               where k.compare : k, k → Order
 pub cancel : k → Cmd msg                                         where k.compare : k, k → Order
 pub cancelAll : Cmd msg                                           -- every keyed body at this path and below
 pub map : Cmd a, k, (a → msg) → Cmd msg                         where k.compare : k, k → Order
-pub afterRender : (Send msg → ()) → Cmd msg                     -- §9.8.6
-pub task : (() → a), (a → msg) → Cmd msg                       -- perform λsend -> send (tag (work ()))
-pub do : (() → ()) → Cmd msg                                    -- perform λ_ -> work ()
+pub afterRender : (Send msg → ⊤) → Cmd msg                     -- §9.8.6
+pub task : (⊤ → a), (a → msg) → Cmd msg                       -- perform λsend -> send (tag (work ()))
+pub do : (⊤ → ⊤) → Cmd msg                                    -- perform λ_ -> work ()
 ```
 
 A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,
@@ -2016,7 +2016,7 @@ pub type Sub msg
 pub none : Sub msg
 pub batch : List (Sub msg) → Sub msg
 pub map : Sub a, (a → msg) → Sub msg
-pub listen : k, (Send a → ()), (a → msg) → Sub msg          where k.compare : k, k → Order
+pub listen : k, (Send a → ⊤), (a → msg) → Sub msg          where k.compare : k, k → Order
 ```
 
 `listen key body tag`: while `key` is in the set, one fiber runs `body`, and each value it sends
@@ -2045,8 +2045,8 @@ whole fiber kernel — 2 905 of TodoMVC's 9 895 bytes (research 51 §0.2). Now a
 of two kinds, chosen by the function that makes it:
 
 ```elm
-pub listen : k, (Send a → ()), (a → msg) → Sub msg                   where k.compare : k, k → Order
-pub on : k, sync (sync (a → ()) → (() → ())), (a → msg) → Sub msg    where k.compare : k, k → Order
+pub listen : k, (Send a → ⊤), (a → msg) → Sub msg                   where k.compare : k, k → Order
+pub on : k, sync (sync (a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg    where k.compare : k, k → Order
 ```
 
 - **`Sub.listen key body tag`** is unchanged: one fiber runs `body` while `key` is in the set. A
@@ -2170,8 +2170,8 @@ pub foreign pure hosted :
     , view : sync (model → Html msg)
     }
     → Program
-pub foreign impure flush : () → ()
-pub foreign impure onRendered : Resume () → (() → ())     -- `Dom.rendered` is `Task.callback` over it
+pub foreign impure flush : ⊤ → ⊤
+pub foreign impure onRendered : Resume ⊤ → (⊤ → ⊤)     -- `Dom.rendered` is `Task.callback` over it
 ```
 
 `init` is called once, at mount, with the program's `Host`; `update` for each message; `settle` once
@@ -2676,7 +2676,7 @@ pub stringPart : String, String → Part           -- the field's name, then its
 pub type Expect x a            -- opaque: how the answer is read
 pub expectString : Expect Error String
 pub expectJson : Schema e a → Expect Error a
-pub expectWhatever : Expect Error ()
+pub expectWhatever : Expect Error ⊤
 pub expectStringResponse : (Response String → Result x a) → Expect x a
 
 pub type Response body
@@ -2706,7 +2706,7 @@ pub request :
       , body : Body
       , expect : Expect x a
       , timeout : Maybe Duration          -- `Time.Duration`
-      , tracker : Maybe (Progress → ())
+      , tracker : Maybe (Progress → ⊤)
       }
     → Result x a                                                       -- suspends
 pub riskyRequest : <the same record> -> Result x a                      -- suspends
@@ -3035,22 +3035,22 @@ back the segments it was built from. `custom`'s fragment is written as given.
 ```elm
 -- module Browser.Navigation (browser), re-exported by browser-tea
 pub type Key                                                    -- opaque, equatable: a model may hold it
-pub key : () → Key                                             -- impure: the page's key
+pub key : ⊤ → Key                                             -- impure: the page's key
 pub type Error = BadUrl String | CrossOrigin String | Throttled
 
-pub pushUrl : Key, String → Result Error ()                    -- impure
-pub replaceUrl : Key, String → Result Error ()                 -- impure
-pub back : Key, Int → Result Error ()                          -- impure
-pub forward : Key, Int → Result Error ()                       -- impure
-pub load : String → Result Error ()                            -- impure
-pub reload : () → ()                                           -- impure
+pub pushUrl : Key, String → Result Error ⊤                    -- impure
+pub replaceUrl : Key, String → Result Error ⊤                 -- impure
+pub back : Key, Int → Result Error ⊤                          -- impure
+pub forward : Key, Int → Result Error ⊤                       -- impure
+pub load : String → Result Error ⊤                            -- impure
+pub reload : ⊤ → ⊤                                           -- impure
 
 -- §9.8.10 (b), kept
-pub currentUrl : () → Maybe Url
-pub eachUrlChange : (Url → ()) → ()                           -- suspends
+pub currentUrl : ⊤ → Maybe Url
+pub eachUrlChange : (Url → ⊤) → ⊤                           -- suspends
 pub onUrlChange : (Url → msg) → Sub msg
 -- new
-pub eachUrlRequest : (Browser.UrlRequest → ()) → ()           -- suspends
+pub eachUrlRequest : (Browser.UrlRequest → ⊤) → ⊤           -- suspends
 pub onUrlRequest : (Browser.UrlRequest → msg) → Sub msg
 
 -- module Browser (browser)
@@ -3183,10 +3183,10 @@ the render that renders the body, so the title and the body never disagree after
 update msg model =
     case msg of
         ClickedLink (Browser.Internal url) →
-            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Pushed )
+            ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Pushed )
 
         ClickedLink (Browser.External href) →
-            ( model, Cmd.task (λ() → Navigation.load href) Pushed )
+            ( model, Cmd.task (λ⊤ → Navigation.load href) Pushed )
 
         UrlChanged url →
             ( { model | route = toRoute url }, Cmd.none )
@@ -3304,7 +3304,7 @@ work outside any fiber. One new kernel operation closes them all:
 --| work, and start nothing new. Cleanup that suspends is given `deadline` milliseconds from the
 --| call; `done` is called once every fiber has ended, with how many cleanups were cut short.
 --| What a platform calls when its program stops; a program never does.
-pub foreign impure shutdown : Int, sync (Int → ()) → ()
+pub foreign impure shutdown : Int, sync (Int → ⊤) → ⊤
 ```
 
 **`shutdown` itself does only phase 1's part**: it enters *stopping* and schedules the teardown's

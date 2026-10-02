@@ -5107,7 +5107,7 @@ test "lists, records and tuples: one line when they fit and were written so, emp
         \\xs=[1,2,3]
         \\r={a=1,b=2}
         \\p=(1,(2,3))
-        \\e=([ ],{  },(  ))
+        \\e=([ ],{  },⊤)
         \\u m = {m|count=m.count+1,
         \\  name=""}
         \\names = [ "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo" ]
@@ -5125,7 +5125,7 @@ test "lists, records and tuples: one line when they fit and were written so, emp
         \\p = ( 1, ( 2, 3 ) )
         \\
         \\
-        \\e = ( [], {}, () )
+        \\e = ( [], {}, ⊤ )
         \\
         \\
         \\u m =
@@ -5272,7 +5272,7 @@ test "`_` is an ordinary argument, and `←` bindings print on one line and are 
         \\partial xs = List.map (add    1    _) xs
         \\pipeline r =
         \\  scope ← Task.scope
-        \\  conn   ←   Task.bracket (λ() → Db.open r.url) Db.close
+        \\  conn   ←   Task.bracket (λ⊤ → Db.open r.url) Db.close
         \\  a = 1
         \\  h ← Result.andThen (readHeader r)
         \\  render scope conn a h
@@ -5283,7 +5283,7 @@ test "`_` is an ordinary argument, and `←` bindings print on one line and are 
         \\
         \\pipeline r =
         \\    scope ← Task.scope
-        \\    conn ← Task.bracket (λ() → Db.open r.url) Db.close
+        \\    conn ← Task.bracket (λ⊤ → Db.open r.url) Db.close
         \\    a = 1
         \\    h ← Result.andThen (readHeader r)
         \\    render scope conn a h
@@ -5727,7 +5727,7 @@ test "every pattern form with canonical spacing" {
         \\  Maybe.Just 'c' → 1
         \\  ( -1 ) → 2
         \\  "s" → 3
-        \\  () → 4
+        \\  ⊤ → 4
         \\  _ → 0
         \\g p =
         \\  (a,b)=p
@@ -5752,7 +5752,7 @@ test "every pattern form with canonical spacing" {
         \\            2
         \\        "s" →
         \\            3
-        \\        () →
+        \\        ⊤ →
         \\            4
         \\        _ →
         \\            0
@@ -5842,7 +5842,7 @@ test "every type form; annotations broken at every arrow when they do not fit; r
     try check(
         \\h : (Int→Int)→List Int→List Int
         \\h fn xs = List.map fn xs
-        \\ext : { r | x : Int, y : Int } → ( ) → a × Maybe.Maybe b → {}
+        \\ext : { r | x : Int, y : Int } → ⊤ → a × Maybe.Maybe b → {}
         \\ext _ _ _ = {}
         \\pub update : Msg → { host : String, port : Int, retries : Int, onError : String → Msg } → Model × List String
         \\update msg config = ( config, [] )
@@ -5856,7 +5856,7 @@ test "every type form; annotations broken at every arrow when they do not fit; r
         \\h fn xs = List.map fn xs
         \\
         \\
-        \\ext : { r | x : Int, y : Int } → () → a × Maybe.Maybe b → {}
+        \\ext : { r | x : Int, y : Int } → ⊤ → a × Maybe.Maybe b → {}
         \\ext _ _ _ = {}
         \\
         \\

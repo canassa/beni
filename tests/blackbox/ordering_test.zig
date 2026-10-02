@@ -457,11 +457,11 @@ test "a derived eq whose pass is refused a nested check says so at the compariso
         \\
         \\
         \\pub eq : Holder a, Holder a → Bool
-        \\    where a.key : a, () → Int
+        \\    where a.key : a, ⊤ → Int
         \\eq l r =
         \\    case ( l, r ) of
         \\        ( Holder x, Holder y ) →
-        \\            x.key () == y.key ()
+        \\            x.key ⊤ == y.key ⊤
         \\
     );
     const n = 600;

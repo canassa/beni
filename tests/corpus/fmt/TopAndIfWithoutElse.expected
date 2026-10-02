@@ -1,8 +1,7 @@
 -- The formatter prints `⊤` and `⊥` as one column each, and an `if`
 -- without `else` as an `if` with one less its `else` half: on one line
 -- only when written there, else `if c then` and the body below
--- (language.md §12.10). `( )` prints as `()` until
--- the enforce step.
+-- (language.md §12.10).
 f : ⊤, ⊥ → ⊤
 f ⊤ v = never v
 

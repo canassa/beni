@@ -261,13 +261,13 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
             try text.print(arena,
                 \\
                 \\
-                \\pub docExample_{d} : () → Bool
+                \\pub docExample_{d} : ⊤ → Bool
                 \\docExample_{d} _ =
                 \\    ({s}) == ({s})
                 \\
             , .{ e.line, e.line, e.left.?, e.right });
             e.temp_end = @intCast(std.mem.count(u8, text.items, "\n"));
-            try main.print(arena, "{s} \"core/{s}.beni:{d}\", {s}.docExample_{d} () )\n", .{
+            try main.print(arena, "{s} \"core/{s}.beni:{d}\", {s}.docExample_{d} ⊤ )\n", .{
                 if (checked == 0) "\n\nentries : List (String × Bool)\nentries =\n    [ (" else "    , (",
                 e.module,
                 e.line,

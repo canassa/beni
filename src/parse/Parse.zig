@@ -4653,7 +4653,7 @@ test "every declaration kind with visibility, docs and type parameters" {
     try expectClean(
         \\--! doc
         \\--| Doc.
-        \\pub type alias P a b = { a | x : Int, y : a × b, z : (), w : {} }
+        \\pub type alias P a b = { a | x : Int, y : a × b, z : ⊤, w : {} }
         \\pub opaque type T a = | A | B (List a) { r : a }
         \\type U = C
         \\foreign pure f : Int → Int
@@ -4782,7 +4782,7 @@ test "types: the comma is the parameter separator and the arrow right-associates
 
 test "every atom: literals, names, brackets, operator functions, strings, multiline" {
     try expectClean(
-        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", λa b → a, if a then b else c )
+        \\v = ( (+), (++), (^), ⊤, (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", λa b → a, if a then b else c )
         \\m =
         \\    \\a
         \\    \\b
@@ -5710,7 +5710,7 @@ test "every pattern form, `as` binding loosest, a spread before, between and aft
         \\  -1 → 0
         \\  'c' → 0
         \\  "s" → 0
-        \\  () → 0
+        \\  ⊤ → 0
         \\  (a) → 0
         \\  (a, b) → 0
         \\  [] → 0

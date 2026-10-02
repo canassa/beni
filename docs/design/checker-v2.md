@@ -2110,7 +2110,7 @@ method needs at least one argument besides its receiver, because `x.m` alone is 
 
 ```elm
 type Box a = Box a
-f u = let g x = (Box x).size () in ( g 1, g "s" )
+f u = let g x = (Box x).size ⊤ in ( g 1, g "s" )
 pub size (Box _) u = 1          -- unannotated, written after f
 ```
 

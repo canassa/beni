@@ -21,7 +21,7 @@ const browser_main =
     \\import Html exposing (Html)
     \\
     \\
-    \\view : Int → Html ()
+    \\view : Int → Html ⊤
     \\view n =
     \\    <p>{n}</p>
     \\

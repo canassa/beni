@@ -838,7 +838,7 @@ fork : V, V, V, V → V
 fork parent work sc from =
     -- `work` is the stack's first continuation as it is: the run loop calls
     -- it with the value the fiber starts with, null, which a function of
-    -- `()` takes as its argument.
+    -- `⊤` takes as its argument.
     fiber = newFiber parent (Js.array [ Js.from finish, work ])
     if Js.read slotted then Js.set fiber "slots" (slotsOf from)
     Js.write live (Js.read live + 1)
@@ -1032,13 +1032,13 @@ yieldNow ⊤ =
 --| own coordination — a gate, a mailbox — over `callback` and a `Ref`.
 --|
 --|     gate = Ref.make Nothing
---|     opened = Task.spawn λ() → Task.callback λr →
+--|     opened = Task.spawn λ⊤ → Task.callback λr →
 --|         _ = Ref.set gate (Just r)
---|         λ() → Ref.set gate Nothing
+--|         λ⊤ → Ref.set gate Nothing
 --|     -- later, from another fiber:
 --|     case Ref.get gate of
 --|         Just r → Task.resume r "open"
---|         Nothing → ()
+--|         Nothing → ⊤
 pub resume : Resume a, a → ⊤
 resume r value = Js.to (Js.apply (Js.from r) [ Js.from value ])
 
@@ -1280,17 +1280,17 @@ cleanupFiber fins =
 
 --| Run `finally` when `scope` closes — after every fiber started in it has
 --| been cancelled and has ended — where cancellation cannot reach it, the
---| last one added first. It is told `Done ()` when the scope's function
+--| last one added first. It is told `Done ⊤` when the scope's function
 --| returned, and `Cancelled` when the fiber running that function was
 --| cancelled. Added to a scope that has already closed, it runs at once,
 --| told `Cancelled`. Effect's `Scope.addFinalizer`.
 --|
 --|     Task.scope λs →
---|         conn = connect ()
+--|         conn = connect ⊤
 --|         _ = Task.defer s λ_ → disconnect conn
 --|         serve s conn
 --|
---| A root scope's run when `closeRoot` closes it, told `Done ()`, in a
+--| A root scope's run when `closeRoot` closes it, told `Done ⊤`, in a
 --| fiber of their own that `closeRoot` does not wait for; or when the
 --| program stops, told `Cancelled`, with the rest of its cleanup.
 pub defer : Scope, (Exit ⊤ → ⊤) → ⊤
@@ -1548,7 +1548,7 @@ teardown ⊤ =
 -- once its fibers have ended, told `exit`, in one fiber started for them
 -- all, as the finalisers outside any fiber are — the roots in list order,
 -- so each goes in front of those before it. What `closeRoot` (with its one
--- root, told `Done ()`) and the program's stop (with every root, told
+-- root, told `Done ⊤`) and the program's stop (with every root, told
 -- `Cancelled`) call, through `deferral`.
 deferRoots : V, V → ⊤
 deferRoots list exit =
@@ -1699,8 +1699,8 @@ pub foreign type Restore
 --| follows it cannot — a permit taken and then always given back:
 --|
 --|     Task.uninterruptibleMask λtoken →
---|         permit = Task.restore token λ() → waitForPermit ()
---|         Task.onExit (λ() → Task.restore token use) λ_ → giveBack permit
+--|         permit = Task.restore token λ⊤ → waitForPermit ⊤
+--|         Task.onExit (λ⊤ → Task.restore token use) λ_ → giveBack permit
 --|
 --| Effect's `uninterruptibleMask`. A cancellation that arrives while
 --| masked is delivered at the next point where the fiber may suspend
@@ -1748,7 +1748,7 @@ remask fiber masks value =
 --| `Done` with the use's value, or `Cancelled` when the fiber was cancelled
 --| during the use. Acquire and release cannot be interrupted.
 --|
---|     Task.bracket (λ() → open path) (λfile _ → close file) λfile → read file
+--|     Task.bracket (λ⊤ → open path) (λfile _ → close file) λfile → read file
 pub bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a
 bracket acquire release use =
     resource = uninterruptible acquire
@@ -1765,7 +1765,7 @@ after _ value = value
 --| cancellation cannot reach it, and answer `work`'s value. `bracket` with
 --| no resource; Effect's `onExit`.
 --|
---|     Task.onExit (λ() → fetch url) λexit →
+--|     Task.onExit (λ⊤ → fetch url) λexit →
 --|         case exit of
 --|             Done _ → Log.info "fetched"
 --|             Cancelled → Log.warn "gave up"
@@ -2395,7 +2395,7 @@ errorOf o =
 --| of suspension first. A `zero` duration answers `Nothing` without
 --| starting `work`. Effect's `timeoutOption`.
 --|
---|     Task.timeout (Duration.seconds 5) (λ() → Http.get url)
+--|     Task.timeout (Duration.seconds 5) (λ⊤ → Http.get url)
 --|         ▷ Maybe.withDefault (Err Http.Timeout)
 pub timeout : Duration, (⊤ → a) → Maybe a
 timeout duration work =

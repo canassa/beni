@@ -4,8 +4,8 @@
 --! randomness. `value` runs a generator on the page's own seed, anywhere a
 --! function may be impure, and `generate` is the same as a command:
 --!
---!     roll : () → Int
---!     roll () =
+--!     roll : ⊤ → Int
+--!     roll ⊤ =
 --!         Random.value (Random.int 1 6)
 --!
 --!     update msg model =

@@ -88,12 +88,13 @@ pub type Order
     | GT
 
 
---| A type with no values at all. It is impossible to build one — the only
---| constructor demands one to begin with — so a `Never` in a type says that
---| branch of the program cannot happen, and `never` turns that promise into
---| whatever value you need.
+--| A type with no values at all, written `⊥` (language.md §12.10): `Never` is
+--| its declaration's name, which only this module writes. It is impossible to
+--| build one — the only constructor demands one to begin with — so a `⊥` in a
+--| type says that branch of the program cannot happen, and `never` turns that
+--| promise into whatever value you need.
 pub type Never
-    = JustOneMore Never
+    = JustOneMore ⊥
 
 
 --| Add two numbers. The `number` type variable means both `Int` and `Float`
@@ -487,9 +488,9 @@ always a _ = a
 
 
 --| A function that can never be called, turned into any type you like. If you
---| hold a `Never` you are in a branch that cannot happen, and this is how you
+--| hold a `⊥` you are in a branch that cannot happen, and this is how you
 --| tell the type checker so.
-pub never : Never → a
+pub never : ⊥ → a
 never (JustOneMore nvr) = never nvr
 
 

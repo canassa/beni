@@ -9,7 +9,7 @@
 --!
 --!     save todos =
 --!         case Storage.set Storage.Local "todos" (encode todos) of
---!             Ok () → Saved
+--!             Ok ⊤ → Saved
 --!             Err Storage.QuotaExceeded → TooMuch
 --!             Err Storage.Unavailable → NotSaved
 --!

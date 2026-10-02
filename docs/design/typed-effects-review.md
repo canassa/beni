@@ -398,7 +398,7 @@ enough?" and the answer is plainly no: without a release hook there is no way to
 across a `!`, which is the second thing anyone writes.
 
 ```elm
-Task.bracket : (() -> r ! e), (r -> () ! e), (r -> a ! e) -> a ! e
+Task.bracket : (⊤ -> r ! e), (r -> ⊤ ! e), (r -> a ! e) -> a ! e
 ```
 
 The runtime owns the fiber, so it *can* run `release` on cancellation. That is the thing Rust
@@ -562,9 +562,9 @@ reviewer is being asked to judge. Fix the example rather than the rule.
 Consider any effect-polymorphic function that calls its own parameter:
 
 ```elm
-twice : (() -> a ! e) -> (a, a) ! e
+twice : (⊤ -> a ! e) -> (a, a) ! e
 twice f =
-    ( f()!, f()! )
+    ( f⊤!, f⊤! )
 ```
 
 `e` may be instantiated to `{}`. So `bang_on_pure` cannot fire on a set that is merely *unknown*;
@@ -603,7 +603,7 @@ widening happens nowhere else. That breaks on the proposal's own platform API an
 data:
 
 ```elm
-Task.par2 (\() -> fetchUser id!) (\() -> logIt!)   -- two literal lambdas: widens, fine
+Task.par2 (\⊤ -> fetchUser id!) (\⊤ -> logIt!)   -- two literal lambdas: widens, fine
 Task.par2 fetchThunk logThunk                      -- two named thunks: no widening, type error
 { onClick = alwaysPure }                           -- field typed (() -> () ! {Dom}): no widening
 ```
@@ -618,8 +618,8 @@ diagnostic that suggests it. Either way §4.3 as written does not typecheck §6.
 Can a type abstract over an effect?
 
 ```elm
-type alias Handler e = () -> () ! e
-type alias Task e a = () -> a ! e
+type alias Handler e = ⊤ -> ⊤ ! e
+type alias Task e a = ⊤ -> a ! e
 ```
 
 This needs effect parameters on type constructors, which means a kind distinction between type
@@ -719,7 +719,7 @@ the `foreign`-writing restriction.
 There is a cheap repair that costs nothing and preserves the whole document:
 
 ```elm
-type alias Task e a = () -> a ! e
+type alias Task e a = ⊤ -> a ! e
 ```
 
 A thunk *is* a `Task`. §10's "`Task` as an inspectable value" is lost is overstated — what is lost
@@ -966,7 +966,7 @@ the sets are not a sandbox. `{Payments}` without user handlers looks like this, 
 language support:
 
 ```elm
-type alias Payments = { charge : Cents -> Receipt ! {Net}, refund : ReceiptId -> () ! {Net} }
+type alias Payments = { charge : Cents -> Receipt ! {Net}, refund : ReceiptId -> ⊤ ! {Net} }
 ```
 
 A capability record of platform-effectful functions, taken as an argument, unforgeable because
@@ -987,7 +987,7 @@ report 16 §1.4 ("nothing runs on the way out; a killed process leaks whatever i
 primitive:
 
 ```elm
-Task.bracket : (() -> r ! e), (r -> () ! e), (r -> a ! e) -> a ! e
+Task.bracket : (⊤ -> r ! e), (r -> ⊤ ! e), (r -> a ! e) -> a ! e
 ```
 
 The runtime owns the fiber, so it can run `release` on cancellation — which is the thing Rust

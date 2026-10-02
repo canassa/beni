@@ -198,7 +198,7 @@ Effect      := 'pure' | 'impure' | 'suspends'
 
 ```elm
 foreign pure     cons     : a, List a → List a
-foreign impure   now      : () → Time
+foreign impure   now      : ⊤ → Time
 foreign impure   random   : Seed → Int × Seed
 foreign suspends httpSend : Request → Response
 ```
@@ -433,8 +433,8 @@ and a resource bracket sit flat at the top of a block instead of indenting every
 ```elm
 let
     scope ← Task.scope
-    conn  ← Task.bracket (λ() → Db.open url) Db.close
-    (user, prefs) = Task.par2 (λ() → getUser id) λ() → getPrefs id
+    conn  ← Task.bracket (λ⊤ → Db.open url) Db.close
+    (user, prefs) = Task.par2 (λ⊤ → getUser id) λ⊤ → getPrefs id
     Log.info "loaded"
 in
 Dashboard user prefs
@@ -639,21 +639,21 @@ frame *is* the stack; *"under shape T it comes back, and CE3's split `conts: Byt
 Eleven, typed as `research/16` §5.3 types them, all bit-polymorphic over thunks:
 
 ```elm
-Task.spawn       : (() → a) → Fiber a
+Task.spawn       : (⊤ → a) → Fiber a
 Fiber.join       : Fiber a → Result Cancelled a
-Fiber.cancel     : Fiber a → ()
+Fiber.cancel     : Fiber a → ⊤
 Task.scope       : (Scope → a) → a
-Scope.spawn      : Scope, (() → b) → Fiber b
-Task.bracket     : (() → r), (r → ()), (r → a) → a
-Task.par2        : (() → a), (() → b) → a × b
-Task.parAll      : Int, List (() → a) → List a        -- bounded concurrency
-Task.race        : List (() → a) → a                  -- losers cancelled, finalisers run
-Task.timeout     : Int, (() → a) → Maybe a
-Task.retry       : Int, (() → Result x a) → Result x a
-Semaphore.with   : Semaphore, (() → a) → a
+Scope.spawn      : Scope, (⊤ → b) → Fiber b
+Task.bracket     : (⊤ → r), (r → ⊤), (r → a) → a
+Task.par2        : (⊤ → a), (⊤ → b) → a × b
+Task.parAll      : Int, List (⊤ → a) → List a        -- bounded concurrency
+Task.race        : List (⊤ → a) → a                  -- losers cancelled, finalisers run
+Task.timeout     : Int, (⊤ → a) → Maybe a
+Task.retry       : Int, (⊤ → Result x a) → Result x a
+Semaphore.with   : Semaphore, (⊤ → a) → a
 Queue.take       : Queue a → a
-Queue.put        : Queue a, a → ()
-RateLimiter.with : RateLimiter, (() → a) → a
+Queue.put        : Queue a, a → ⊤
+RateLimiter.with : RateLimiter, (⊤ → a) → a
 ```
 
 *Amended 2026-10-02 (the owner's adoption of research 48's decisions; §17 is the contract):* **the
@@ -1034,7 +1034,7 @@ This is now the thing in the document most likely to be wrong, and it is no long
   passed as an argument, which needs no language support:
 
   ```elm
-  type alias Payments = { charge : Cents → Receipt, refund : ReceiptId → () }
+  type alias Payments = { charge : Cents → Receipt, refund : ReceiptId → ⊤ }
   ```
 
 - **Sandboxing.** Same as P1, which also disclaimed it.
@@ -1834,17 +1834,17 @@ pub foreign type Fiber a
 pub foreign type Scope
 pub foreign type Resume a
 
-pub foreign suspends callback : sync (Resume a → (() → ())) → a  -- the suspension primitive
-pub foreign impure spawn : (() → a) → Fiber a                     -- a child of the current fiber
+pub foreign suspends callback : sync (Resume a → (⊤ → ⊤)) → a  -- the suspension primitive
+pub foreign impure spawn : (⊤ → a) → Fiber a                     -- a child of the current fiber
 pub foreign suspends join : Fiber a → a                            -- a cancelled child cancels the joiner
 pub foreign suspends wait : Fiber a → Exit a                       -- observes, never propagates (`await` is reserved in JavaScript)
-pub foreign suspends cancel : Fiber a → ()                         -- interrupts, then waits for cleanup
-pub foreign suspends yieldNow : () → ()
+pub foreign suspends cancel : Fiber a → ⊤                         -- interrupts, then waits for cleanup
+pub foreign suspends yieldNow : ⊤ → ⊤
 pub scope : (Scope → a) → a                                       -- its children are cancelled when it ends
-pub foreign impure spawnIn : Scope, (() → a) → Fiber a
-pub bracket : (() → r), (r, Exit a → ()), (r → a) → a           -- the owner's A3: the release sees the outcome
-pub uninterruptible : (() → a) → a
-pub foreign impure start : (() → a), sync (Exit a → ()) → ()     -- a root fiber, for a platform's entry
+pub foreign impure spawnIn : Scope, (⊤ → a) → Fiber a
+pub bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a           -- the owner's A3: the release sees the outcome
+pub uninterruptible : (⊤ → a) → a
+pub foreign impure start : (⊤ → a), sync (Exit a → ⊤) → ⊤     -- a root fiber, for a platform's entry
 ```
 
 `scope`, `bracket` and `uninterruptible` are beni over first-order kernel operations (report 43
@@ -1858,11 +1858,11 @@ A platform writes a suspending primitive in beni over `callback` and an `impure`
 registers the host's callback and returns its canceller:
 
 ```elm
-pub sleep : Int → ()
+pub sleep : Int → ⊤
 sleep ms =
     Task.callback λresume → startTimer ms resume
 
-foreign impure startTimer : Int, Resume () → (() → ())
+foreign impure startTimer : Int, Resume ⊤ → (⊤ → ⊤)
 ```
 
 The `node` platform gains a module of its own, **`Io`**, so that no file an existing program is
@@ -2067,7 +2067,7 @@ needs **no change to the language or the checker**; it is that rule, used where 
 ```elm
 --| Replace the value with what `f` makes of it. `f` must not suspend: no other
 --| fiber runs between the read and the write, so no update is lost.
-pub update : Ref a, sync (a → a) → ()
+pub update : Ref a, sync (a → a) → ⊤
 update ref f = set ref (f (get ref))
 
 --| Like `update`, and also return something computed from the old value.
@@ -2124,17 +2124,17 @@ function as a parameter: the demand published on, the error at the wrapper's cal
 
 ```elm
 -- core/Task.beni — additions
-pub resume : Resume a, a → ()                                   -- K
-pub never : () → a
+pub resume : Resume a, a → ⊤                                   -- K
+pub never : ⊤ → a
 pub poll : Fiber a → Maybe (Exit a)                             -- K
 pub joinAll : List (Fiber a) → List a
-pub cancelAll : List (Fiber a) → ()
-pub spawnDetached : (() → a) → Fiber a                          -- K
+pub cancelAll : List (Fiber a) → ⊤
+pub spawnDetached : (⊤ → a) → Fiber a                          -- K
 pub foreign type Restore                                        -- K: opaque, as `Fiber` is
 pub uninterruptibleMask : (Restore → a) → a                     -- K
-pub restore : Restore, (() → b) → b                             -- K
-pub onExit : (() → a), (Exit a → ()) → a
-pub defer : Scope, (Exit () → ()) → ()                          -- K
+pub restore : Restore, (⊤ → b) → b                             -- K
+pub onExit : (⊤ → a), (Exit a → ⊤) → a
+pub defer : Scope, (Exit ⊤ → ⊤) → ⊤                          -- K
 ```
 
 **`resume r value`** — rung `impure`. Hands `value` to the fiber waiting on `r` (the `Resume` a
@@ -2222,13 +2222,13 @@ in the registry, so the teardown finds it.
 pub opaque type Ref a
 pub make : a → Ref a                     -- impure: a new cell
 pub get : Ref a → a                      -- impure
-pub set : Ref a, a → ()                  -- impure
-pub update : Ref a, sync (a → a) → ()
+pub set : Ref a, a → ⊤                  -- impure
+pub update : Ref a, sync (a → a) → ⊤
 pub modify : Ref a, sync (a → b × a) → b
 
 -- core/Deferred.beni
 pub opaque type Deferred a
-pub make : () → Deferred a               -- impure
+pub make : ⊤ → Deferred a               -- impure
 pub wait : Deferred a → a                -- parks until completed
 pub complete : Deferred a, a → Bool      -- impure: True if this call completed it
 pub poll : Deferred a → Maybe a          -- impure
@@ -2334,14 +2334,14 @@ pub sum : Duration, Duration → Duration
 pub times : Duration, Float → Duration
 
 -- core/Task.beni
-pub sleep : Duration → ()                                        -- K: through the clock slot
+pub sleep : Duration → ⊤                                        -- K: through the clock slot
 
 -- core/Clock.beni
-pub now : () → Int                       -- impure: epoch milliseconds, through the clock slot
+pub now : ⊤ → Int                       -- impure: epoch milliseconds, through the clock slot
 pub opaque type Virtual
 pub virtual : Int → Virtual              -- impure: a new clock reading these epoch milliseconds
-pub run : Virtual, (() → a) → a
-pub adjust : Virtual, Duration → ()
+pub run : Virtual, (⊤ → a) → a
+pub adjust : Virtual, Duration → ⊤
 ```
 
 **`Duration`** is a length of time in **whole milliseconds, never negative**: `millis`, `seconds`,
@@ -2406,9 +2406,9 @@ order they began to sleep — Effect's `TestClock` (`testing/TestClock.ts:201`, 
 ```elm
 -- Three fibers sleeping 30, 10 and 20 ms wake in time order, with no wall time:
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
-    sleeper = λms → λ() → Clock.run clock λ() →
+    sleeper = λms → λ⊤ → Clock.run clock λ⊤ →
         _ = Task.sleep (Duration.millis ms)
         Debug.log "woke" ms
     fibers = List.map [ 30, 10, 20 ] λms → Task.spawn (sleeper ms)
@@ -2454,15 +2454,15 @@ the first slot write, so it is what turns on `fork`'s copy of the slots (§17.5'
 
 ```elm
 -- core/Task.beni
-pub par : (() → a), (() → b) → a × b
-pub par3 : (() → a), (() → b), (() → c) → a × b × c
-pub parOk : (() → Result e a), (() → Result e b) → Result e (a × b)
+pub par : (⊤ → a), (⊤ → b) → a × b
+pub par3 : (⊤ → a), (⊤ → b), (⊤ → c) → a × b × c
+pub parOk : (⊤ → Result e a), (⊤ → Result e b) → Result e (a × b)
 pub forEach : List a, Int, (a → b) → List b
 pub forEachOk : List a, Int, (a → Result e b) → Result e (List b)
-pub race : (() → a), (() → a) → a
-pub raceAll : (() → a), List (() → a) → a
-pub raceOk : List (() → Result e a) → Result (List e) a
-pub timeout : Duration, (() → a) → Maybe a
+pub race : (⊤ → a), (⊤ → a) → a
+pub raceAll : (⊤ → a), List (⊤ → a) → a
+pub raceOk : List (⊤ → Result e a) → Result (List e) a
+pub timeout : Duration, (⊤ → a) → Maybe a
 ```
 
 All nine are beni over `scope`, `spawnIn`, `wait`, `cancel` and `Deferred` (report 43 §11 item 9).
@@ -2614,8 +2614,8 @@ pub concat : Schedule i, Schedule i → Schedule i
 pub modifyDelay : Schedule i, (Metadata i, Duration → Duration) → Schedule i
 
 -- core/Task.beni
-pub retry : Schedule e, (() → Result e a) → Result e a
-pub repeat : Schedule a, (() → a) → a
+pub retry : Schedule e, (⊤ → Result e a) → Result e a
+pub repeat : Schedule a, (⊤ → a) → a
 ```
 
 **The representation** (decision 7, A4's sub-question). A schedule is a function from one step's
@@ -2690,18 +2690,18 @@ service failing twice; `advance` through the backoff).
 -- core/Semaphore.beni
 pub opaque type Semaphore
 pub make : Int → Semaphore                                   -- impure
-pub withPermits : Semaphore, Int, (() → a) → a
-pub withPermit : Semaphore, (() → a) → a
-pub tryWithPermits : Semaphore, Int, (() → a) → Maybe a
+pub withPermits : Semaphore, Int, (⊤ → a) → a
+pub withPermit : Semaphore, (⊤ → a) → a
+pub tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a
 pub available : Semaphore → Int                              -- impure
-pub resize : Semaphore, Int → ()                             -- impure
+pub resize : Semaphore, Int → ⊤                             -- impure
 
 -- core/Queue.beni
 pub opaque type Queue a
 pub bounded : Int → Queue a                                  -- impure, and the three below
 pub dropping : Int → Queue a
 pub sliding : Int → Queue a
-pub unbounded : () → Queue a
+pub unbounded : ⊤ → Queue a
 pub offer : Queue a, a → Bool
 pub offerAll : Queue a, List a → List a
 pub take : Queue a → Maybe a
@@ -2709,15 +2709,15 @@ pub takeAll : Queue a → List a
 pub takeN : Queue a, Int → List a
 pub poll : Queue a → Maybe a                                 -- impure
 pub size : Queue a → Int                                     -- impure
-pub end : Queue a → ()                                       -- impure
+pub end : Queue a → ⊤                                       -- impure
 
 -- core/Latch.beni
 pub opaque type Latch
 pub make : Bool → Latch                                      -- impure: open or closed
-pub open : Latch → ()                                        -- impure
-pub close : Latch → ()                                       -- impure
-pub release : Latch → ()                                     -- impure
-pub wait : Latch → ()
+pub open : Latch → ⊤                                        -- impure
+pub close : Latch → ⊤                                       -- impure
+pub release : Latch → ⊤                                     -- impure
+pub wait : Latch → ⊤
 pub isOpen : Latch → Bool                                    -- impure
 ```
 
@@ -2833,23 +2833,23 @@ pub type Level
     | Info
     | Warn
     | Error
-pub trace : String → ()                  -- impure, as are debug, info, warn, error and log
-pub debug : String → ()
-pub info : String → ()
-pub warn : String → ()
-pub error : String → ()
-pub log : Level, String → ()
-pub annotate : String, String, (() → a) → a
-pub span : String, (() → a) → a
-pub minimum : Level, (() → a) → a
+pub trace : String → ⊤                  -- impure, as are debug, info, warn, error and log
+pub debug : String → ⊤
+pub info : String → ⊤
+pub warn : String → ⊤
+pub error : String → ⊤
+pub log : Level, String → ⊤
+pub annotate : String, String, (⊤ → a) → a
+pub span : String, (⊤ → a) → a
+pub minimum : Level, (⊤ → a) → a
 pub type alias Entry =
     level : Level
     message : String
     annotations : List (String × String)     -- outermost first
     spans : List (String × Int)              -- label, milliseconds since it began
     time : Int                               -- epoch milliseconds, from the fiber's clock
-pub withSink : sync (Entry → ()), (() → a) → a
-pub setSink : sync (Entry → ()) → ()     -- impure; for a platform
+pub withSink : sync (Entry → ⊤), (⊤ → a) → a
+pub setSink : sync (Entry → ⊤) → ⊤     -- impure; for a platform
 pub logfmt : Entry → String
 
 -- core/Trace.beni
@@ -2860,11 +2860,11 @@ pub type alias Span =
     start : Int
     end : Int
     annotations : List (String × String)
-    exit : Exit ()
-pub span : String, (() → a) → a
-pub annotate : String, String → ()       -- impure
-pub withExporter : sync (Span → ()), (() → a) → a
-pub toLog : Span → ()                    -- impure: an exporter that logs the span at Debug
+    exit : Exit ⊤
+pub span : String, (⊤ → a) → a
+pub annotate : String, String → ⊤       -- impure
+pub withExporter : sync (Span → ⊤), (⊤ → a) → a
+pub toLog : Span → ⊤                    -- impure: an exporter that logs the span at Debug
 ```
 
 **Levels.** Five, ordered `Trace < Debug < Info < Warn < Error` by the derived `compare` (constructor

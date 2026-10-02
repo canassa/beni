@@ -10,7 +10,7 @@
 --! is `Cmd.task` over a function:
 --!
 --!     ClickedLink (Browser.Internal url) →
---!         ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Pushed )
+--!         ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Pushed )
 
 import Browser
 import Js
@@ -43,7 +43,7 @@ pub type Error
 --| one (a page opened from a file).
 --|
 --|     init =
---|         case Browser.Navigation.currentUrl () of
+--|         case Browser.Navigation.currentUrl ⊤ of
 --|             Just url → filterOf url.fragment
 --|             Nothing → All
 pub currentUrl : ⊤ → Maybe Url

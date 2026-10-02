@@ -205,7 +205,7 @@ pub foreign impure write : Ref a, a → ⊤
 --| `try { body() } finally { cleanup() }`: the body's value, and the
 --| cleanup run after the body however it ends — when it returns, and when
 --| it throws, before the throw goes on. Written with lambdas,
---| `Js.finally (λ() → …) λ() → …`, each lambda's body is its block and
+--| `Js.finally (λ⊤ → …) λ⊤ → …`, each lambda's body is its block and
 --| no function is made. Both are `sync`: a body that suspended would leave
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
@@ -231,7 +231,7 @@ pub foreign impure catchIf : sync (⊤ → a), sync (Value → bool), sync (Valu
 --| reads and calls the checker otherwise takes for `impure` (`String.length`
 --| is `Js.get` of `Array.from`'s `length`, and pure). Unchecked, like every
 --| `Js` declaration: the caller answers for it. Written with a lambda,
---| `Js.pure λ() → …` is the lambda's body and no function is made
+--| `Js.pure λ⊤ → …` is the lambda's body and no function is made
 --| (`backend.md` §4, *`Js.pure` is its body*).
 pub foreign pure pure : sync (⊤ → a) → a
 
@@ -241,7 +241,7 @@ pub foreign pure pure : sync (⊤ → a) → a
 --| written nor reached, so a declaration only it names costs the other
 --| build nothing — a development crash screen ships in no release build
 --| (`backend.md` §4, *`Js.development` is the build's mode*). A function
---| of `()` because a `foreign` value that is not one may not be
+--| of `⊤` because a `foreign` value that is not one may not be
 --| polymorphic, and this module names no `Bool`.
 pub foreign pure development : ⊤ → bool
 
@@ -274,7 +274,7 @@ pub foreign pure fingerprint : k, order → name
 --| the fiber runtime's sentinel, so a call of it may suspend. What `Task`
 --| returns its sentinel with, written in beni; nothing else needs it.
 --| Unchecked, like every `Js` declaration. Written with a lambda,
---| `Js.suspending λ() → …` is the lambda's body and a suspension point
+--| `Js.suspending λ⊤ → …` is the lambda's body and a suspension point
 --| where it is not in tail position (`backend.md` §4, *`Js.suspending` is
 --| its body*).
 pub foreign suspends suspending : sync (⊤ → a) → a

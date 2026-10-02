@@ -936,10 +936,10 @@ test "exhaustiveness: tuples, unit and records are products with one shape" {
     );
     // `()` has exactly one value, and a record pattern always matches.
     try expectCodes(&.{},
-        \\pub f : () → Int
+        \\pub f : ⊤ → Int
         \\f u =
         \\    case u of
-        \\        () →
+        \\        ⊤ →
         \\            1
         \\
     );

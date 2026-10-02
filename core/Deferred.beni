@@ -1,8 +1,8 @@
 --! A value that is completed once and waited for by any number of fibers
 --! (`transparent-effects-proposal.md` §17.4): Effect's `Deferred`.
 --!
---!     ready = Deferred.make ()
---!     _ = Task.spawn λ() → Deferred.complete ready (load ())
+--!     ready = Deferred.make ⊤
+--!     _ = Task.spawn λ⊤ → Deferred.complete ready (load ⊤)
 --!     config = Deferred.wait ready
 --!
 --! **The first completion wins.** `complete` gives the value to every fiber

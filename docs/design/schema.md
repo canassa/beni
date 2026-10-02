@@ -679,11 +679,11 @@ is what makes the library the semantics of a declaration:
 
 ```elm
 -- §2's `User`, built: Encoded and Type are both { userId : Int, nickname : Presence (Nullable String) }.
-toUser ( ( (), userId ), nickname ) =
+toUser ( ( ⊤, userId ), nickname ) =
     { userId = userId, nickname = nickname }
 
 fromUser u =
-    ( ( (), u.userId ), u.nickname )
+    ( ( ⊤, u.userId ), u.nickname )
 
 user =
     Schema.record
@@ -1252,7 +1252,7 @@ pub schema Settings =
     theme : String default "light" when missing or null
     retries : String via decimalInt default encoded "3"
     locale : String as "lang" default "en" when missing or invalid omitted
-    createdAt : Int initial (Clock.now ())
+    createdAt : Int initial (Clock.now ⊤)
 ```
 
 The formatter keeps the written order of words inside one modifier. It never adds a `when` that
@@ -1574,12 +1574,12 @@ format from a Type"). A.8 is the owner's reversal of it.
 `core/Json` is a new core module, not in the prelude, so a program writes `import Json`:
 
 ```elm
-decode      : String → Result (List Issue) a                 where a.codec : () → Codec a
-encode      : a → Result (List Issue) String                 where a.codec : () → Codec a
-decodeWith  : Options, String → Result (List Issue) a        where a.codec : () → Codec a
-encodeWith  : Options, a → Result (List Issue) String        where a.codec : () → Codec a
-decodeValue : Value → Result (List Issue) a                  where a.codec : () → Codec a
-encodeValue : a → Result (List Issue) Value                  where a.codec : () → Codec a
+decode      : String → Result (List Issue) a                 where a.codec : ⊤ → Codec a
+encode      : a → Result (List Issue) String                 where a.codec : ⊤ → Codec a
+decodeWith  : Options, String → Result (List Issue) a        where a.codec : ⊤ → Codec a
+encodeWith  : Options, a → Result (List Issue) String        where a.codec : ⊤ → Codec a
+decodeValue : Value → Result (List Issue) a                  where a.codec : ⊤ → Codec a
+encodeValue : a → Result (List Issue) Value                  where a.codec : ⊤ → Codec a
 ```
 
 `Schema.derived : () -> Codec a where a.codec : () -> Codec a` hands the derived schema to ordinary

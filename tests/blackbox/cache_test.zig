@@ -3803,7 +3803,7 @@ fn writeDerivedProject(w: *World, holder: []const u8) !void {
         \\    = Keyed Int String
         \\
         \\
-        \\pub key : Keyed, () → Int
+        \\pub key : Keyed, ⊤ → Int
         \\key k u =
         \\    case k of
         \\        Keyed n _ →
@@ -3861,9 +3861,9 @@ const holder_by_key =
     \\
     \\
     \\pub eq : Holder a, Holder a → Bool
-    \\    where a.key : a, () → Int
+    \\    where a.key : a, ⊤ → Int
     \\eq (Holder x) (Holder y) =
-    \\    x.key () == y.key ()
+    \\    x.key ⊤ == y.key ⊤
     \\
 ;
 

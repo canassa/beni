@@ -3838,7 +3838,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\later =
-        \\    λ() → logged 4
+        \\    λ⊤ → logged 4
         \\
         \\
         \\each f xs =

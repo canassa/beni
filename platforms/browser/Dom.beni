@@ -11,7 +11,7 @@
 --!
 --!     focusEditor id send =
 --!         case Dom.focus "edit-${id}" of
---!             Ok () → ()
+--!             Ok ⊤ → ⊤
 --!             Err why → send (FocusFailed why)
 
 import Browser
@@ -67,7 +67,7 @@ pub foreign impure viewport : ⊤ → Viewport
 --| queued, otherwise until the after-render phase of the flush that is.
 --|
 --|     _ = send (Opened id)
---|     Dom.rendered ()
+--|     Dom.rendered ⊤
 --|     Dom.focus "edit-${id}"
 pub rendered : ⊤ → ⊤
 rendered ⊤ = Task.callback λresume → Browser.onRendered resume
