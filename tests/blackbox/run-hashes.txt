@@ -9,7 +9,7 @@ abuse_wide_test.test.== on a record builds and runs at the widest positional evi
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 57a5f7ebf9f534f843d7c1cad8ae262c822da8bcc527bedc29677f8db9556fb2
 abuse_wide_test.test.a 2 000-element list builds and runs #0 ce41a6ac24478d202125168b2141ae9b57086448f84070651df7a1812e182bff
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 2c101cf8c216b1e04a429b0cec16c3a3ea14436cd3d6f9927ab7ec325f6c3e51
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 dbd023c647d042b66be57a7f5281bc8f19d420188ddecf9b6d95d736b2759cb5
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 af0c47d60f21f88b21024505f2992e5792bfcf5fb7f86a6dd929fb0f0f35afa0
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 2e6495861b0f1a3dc734ba89224e15fd21698eb4b5fc3d8eb27c318106ed6f17
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
@@ -35,9 +35,9 @@ build_id_test.test.a core read with --core-root and the embedded core share a ca
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 f34de9690f99e4408b69fa6ae6c44facb8d19c874cc20c65a283ed6ca4b71dc0
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 04842a9a4815a31bc494fe5cf203aae62b83da41a442a7afdc81449cf5fed420
 build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 dbff31043c346d679447e0360f357c0c480729c2b08d6cbd7136914865b3447a
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 110599ef3150ab965c61e2a8a29aacfaaa094395687c11317f5e54a79fbdf9b0
-build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 2f8bd46c49a014c5ebf55cf137f4c72ce9884c681199447113bab8039578dcbd
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 0d494badfb3adb1ba442abe80eab6312f1e3de287a62eab7f39420039173e63b
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 b1b0afde43376271eb4c581368af39ce5324563049d663e985bd0d8a7b4d854c
+build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 0d87da7f7e3b4318d2107c6c953e073a00036806bde53bff7179d4abc4fa3eda
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 96fb9ca4a46b57caa1670315078d73bb7b4d01bed85fe4aa414f579401ce9da7
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 28de5e2993ef98950c050250eac107eaadfa88a944c575f1b3fa9ea2a0e154fb
@@ -54,6 +54,7 @@ build_test.test.a non-zero exit code from the platform reaches the process #0 53
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
 build_test.test.a program computes something and prints the right answer #0 c7b8158a1bd5f50693cbb15da3fc1f52d2090e37c87e0aed08a1d7db1ee16acc
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 7c15d8eb6b76934c0ff272915ec84d9d682d0f43b4826a4dbab0c3cff2bc8585
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 102394ae1ad44102a1cca9ef9e4371eb956a40c435d8c489b326988b77666f47
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
@@ -113,7 +114,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 dd4506b9ed8e4553cdf74de323d1fda7ea332e15f04f512e667b4b25a82161f6
 devloop_test.test.beni new --platform=node writes a program that runs #0 c0f53ca97ced02987353a2b505dbcef9ddf54eac2ccb26c70e8634265f2d98ff
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 aaa16b1b33607bbcfc81808a2709122a1ab97f9235a5dfe9d235d1d2c163e037
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 d8be3a96e72f0f2b48af0d4fe60245c286891223861f42d28b45e6c443766347
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 54d63c28d2af8d4ad714e5b52f5e9d525db5b7dc7819bef933d672f245ea1259
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 2781f656f0b3dfd1747105f2026bf01f32a03b66b23bd3fdad8673c0d36dc444
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 7f1bdbfd43979171bfba76802ea8ff709f6202175c1c74e1c019d47d4501b745
