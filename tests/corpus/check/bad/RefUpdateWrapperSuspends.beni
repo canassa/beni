@@ -1,0 +1,22 @@
+-- check/bad: the same demand through a program's own wrapper
+-- (transparent-effects-proposal.md §17.2, §15.3). `adjust` hands its
+-- parameter to `Ref.update`, so its summary publishes the parameter `sync`
+-- with nothing written; `slowly` passes it a function that may suspend and
+-- is refused at that argument, not inside `adjust`. `quickly` passes one
+-- that cannot, and checks.
+import Ref exposing (Ref)
+import Task
+
+
+adjust : Ref Int, (Int → Int) → ()
+adjust cell f = Ref.update cell f
+
+
+pub quickly : Ref Int → ()
+quickly cell = adjust cell λn → n + 1
+
+
+pub slowly : Ref Int → ()
+slowly cell = adjust cell λn →
+    _ = Task.yieldNow ()
+    n + 1

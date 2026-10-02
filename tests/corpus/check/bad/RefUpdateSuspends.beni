@@ -1,0 +1,13 @@
+-- check/bad: a function that may suspend, handed to `Ref.update`
+-- (transparent-effects-proposal.md §17.2). `update`'s signature in core
+-- marks its function `sync`, so the argument is `sync_boundary`, and the
+-- chain names `Task.yieldNow`: a suspension between the read and the write
+-- would let another fiber's update be lost.
+import Ref exposing (Ref)
+import Task
+
+
+pub bump : Ref Int → ()
+bump cell = Ref.update cell λn →
+    _ = Task.yieldNow ()
+    n + 1

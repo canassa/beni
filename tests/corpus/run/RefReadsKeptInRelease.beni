@@ -1,0 +1,21 @@
+-- run: two `Ref.get`s around a `Ref.set` read two values, in both builds
+-- (transparent-effects-proposal.md §17.4). `get` is `impure`, so
+-- `--release` may neither share one read between the two nor move either
+-- across the write, and a `set` whose result nobody reads is kept.
+import Node exposing (Program)
+import Ref exposing (Ref)
+
+
+readTwice : Ref Int → Int × Int
+readTwice cell =
+    before = Ref.get cell
+    _ = Ref.set cell (before + 1)
+    after = Ref.get cell
+    ( before, after )
+
+
+main : Program
+main =
+    cell = Ref.make 41
+    ( before, after ) = readTwice cell
+    Node.print "before ${String.fromInt before}, after ${String.fromInt after}"

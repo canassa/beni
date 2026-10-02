@@ -1,0 +1,20 @@
+-- run: two `Ref.make 0` in one function are two cells, in both builds
+-- (transparent-effects-proposal.md §17.4). `make` is `impure`, so
+-- `--release` may not merge the two identical calls into one cell: a write
+-- to the first is not seen through the second.
+import Node exposing (Program)
+import Ref exposing (Ref)
+
+
+pair : () → Ref Int × Ref Int
+pair () =
+    a = Ref.make 0
+    b = Ref.make 0
+    ( a, b )
+
+
+main : Program
+main =
+    ( a, b ) = pair ()
+    _ = Ref.set a 1
+    Node.print "a ${String.fromInt (Ref.get a)}, b ${String.fromInt (Ref.get b)}"

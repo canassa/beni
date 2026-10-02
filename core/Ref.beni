@@ -1,0 +1,63 @@
+--! A mutable cell any fiber may read and write
+--! (`transparent-effects-proposal.md` §17.4): Effect's `Ref`, offered to
+--! every program.
+--!
+--!     counter = Ref.make 0
+--!     _ = Ref.update counter λn → n + 1
+--!     Ref.get counter
+--!
+--! Every operation is `impure`, so `--release` keeps each one where it is
+--! written: two cells made by two calls are two cells, and two reads around
+--! a write read two values.
+--!
+--! **No update is lost.** Only one fiber runs at a time, and the runtime
+--! switches fibers only where one may suspend. The function `update` and
+--! `modify` are given is marked `sync` — the checker refuses one that may
+--! suspend — so it runs from the read to the write with no other fiber in
+--! between. An update that must itself wait, a read and a request and then
+--! the write, needs a lock around it instead.
+--!
+--! There is no `getAndSet`, `updateAndGet` and the like: each is a `modify`.
+--!
+--! Nothing here is `foreign`.
+
+import Js
+
+
+--| A mutable cell holding an `a`.
+pub opaque type Ref a
+    = Ref Js.Value
+
+
+--| A new cell holding `value`. Each call makes a new one.
+pub make : a → Ref a
+make value = Ref (Js.array [ Js.from value ])
+
+
+--| What the cell holds now.
+pub get : Ref a → a
+get (Ref cell) = Js.to (Js.at cell 0)
+
+
+--| Make the cell hold `value`.
+pub set : Ref a, a → ()
+set (Ref cell) value = Js.setAt cell 0 (Js.from value)
+
+
+--| Replace the value with what `f` makes of it. `f` must not suspend: no
+--| other fiber runs between the read and the write, so no update is lost.
+--| `f` may write the cell itself; then this write, which comes last, wins.
+pub update : Ref a, sync (a → a) → ()
+update ref f = set ref (f (get ref))
+
+
+--| Like `update`, and also return something computed from the old value:
+--| `f` answers the result and the new value.
+--|
+--|     -- the old value, and the cell now holds 0
+--|     Ref.modify counter λn → ( n, 0 )
+pub modify : Ref a, sync (a → b × a) → b
+modify ref f =
+    ( result, next ) = f (get ref)
+    _ = set ref next
+    result

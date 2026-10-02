@@ -1,0 +1,53 @@
+-- run: no update is lost (transparent-effects-proposal.md §17.2, §17.4).
+-- Two fibers each `Ref.update` one cell 1 000 times, yielding between
+-- updates so that they take turns: 2 000, every time, because the function
+-- `update` is given cannot suspend and no other fiber runs between its read
+-- and its write. The same work written as a read, a yield and a write —
+-- which `update` refuses to be — loses every other increment; with the
+-- scheduler's FIFO the count is exactly 1 000, so the line is deterministic.
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+bump : Ref Int, Int → ()
+bump cell n =
+    if n == 0 then
+        ()
+    else
+        _ = Ref.update cell λk → k + 1
+        _ = Task.yieldNow ()
+        bump cell (n - 1)
+
+
+bumpRacily : Ref Int, Int → ()
+bumpRacily cell n =
+    if n == 0 then
+        ()
+    else
+        k = Ref.get cell
+        _ = Task.yieldNow ()
+        _ = Ref.set cell (k + 1)
+        bumpRacily cell (n - 1)
+
+
+twice : (Ref Int, Int → ()) → Int
+twice work =
+    cell = Ref.make 0
+    a = Task.spawn λ() → work cell 1000
+    b = Task.spawn λ() → work cell 1000
+    _ = Task.join a
+    _ = Task.join b
+    Ref.get cell
+
+
+main : Program
+main = Io.run λ() →
+    updated = twice bump
+    racy = twice bumpRacily
+
+    Node.printLines
+        [ "update: ${String.fromInt updated}"
+        , "read, yield, write: ${String.fromInt racy}"
+        ]

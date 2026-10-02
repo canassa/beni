@@ -1,0 +1,24 @@
+-- check/good: `sync` refuses suspension, not impurity
+-- (transparent-effects-proposal.md §17.2). A function handed to
+-- `Ref.update` may itself be `impure` — here it writes another cell, a log
+-- of what it did — and is accepted. Each `Ref` operation publishes the
+-- `impure` rung it infers.
+import Ref exposing (Ref)
+
+
+pub bumpAndLog : Ref Int, Ref (List Int) → ()
+bumpAndLog cell log = Ref.update cell λn →
+    _ = Ref.update log λseen → List.push seen n
+    n + 1
+
+
+pub swapOut : Ref Int → Int
+swapOut cell = Ref.modify cell λn → ( n, 0 )
+
+
+pub fresh : () → Ref Int
+fresh () = Ref.make 0
+
+
+pub peek : Ref Int → Int
+peek cell = Ref.get cell
