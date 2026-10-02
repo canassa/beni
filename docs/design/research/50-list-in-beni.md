@@ -374,3 +374,11 @@ each program listed with its cause. Items 2, 3 and 4 had landed on master before
 (`f7b23233`, `b35b0e49`; `e37cb7d7`; `d656e7dc`, `c2d9393f`, which put `abuse_wide`'s release case
 at 4 139 million instructions with this `List`). The port proceeds as `plans/core-in-beni.md` step
 3's slices.
+
+**Landed (2026-10-02).** The port is on master, with the two intrinsics specified and built, and
+`hand-minify`'s pass on the runtime (each walk written once, `concat` recounted, `eq`/`compare`
+walking two bases to their ends): release brotli 492 855 → 486 010 over every program and page,
+166 smaller and 3 larger (`NestingEvidence` +34, `ListElementEq` +6, `ConsPatterns` +1), every
+measured operation within noise, `compare` at 1.01–1.02. `plans/core-in-beni.md` step 3, *Landed:
+L2, L3, L6 and L7*, has the ledger, the speed table, the two compiler defects the port found and
+the budget wall left.

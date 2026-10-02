@@ -16,7 +16,7 @@ spelling — it is kept minimal, and the step says why.
 |---|---|---|
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
-| 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below. **The port decided 2026-10-02**: both intrinsics adopted, the growth taken to `hand-minify` first |
+| 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below. **The port decided 2026-10-02**: both intrinsics adopted, the growth taken to `hand-minify` first. **Landed 2026-10-02**, below (*Landed: L2, L3, L6 and L7*): release brotli −6 845 over every program, 3 programs larger by 1–34, every operation within noise |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js`, `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
@@ -825,3 +825,71 @@ Each slice is specified before it is built (rule 1), red first (rule 3), and pas
 | L5 | **The budget** | find what `abuse_wide_test`'s *16 400 literal branches … under `--release`* spends on a beni `List` (profile first; the guess is the release passes over the runtime in every program) and fix it in the compiler | the case under 4 300 million with the prototype's `List` in core |
 | L6 | **The port** | `core/List.beni` holds the runtime, the sibling only `length`, `at`, `put`, `identical`, `kept`, `half` for a value of one; `backend.md` §4 *The runtime: `core/List.js`* rewritten to name `List.beni` | gates green; goldens re-blessed with a note each (`SuspendShapes`' `d(i)`, the graph's `core:List -> core:Js`, `build_test`'s sibling file); `test-run-hashes` recorded; the claim sweep against the compiled core added to `bench/arrays/lists/` |
 | L7 | **The bar** | `bench/size.mjs` both ways: no program larger, or the owner's call on the residue (research 50 §7 item 5) after `hand-minify` on `concat` and the evidence loops; research 50's speed table re-run on a quiet machine; the `bench/ui` app against Solid 1 and 2 | every row within noise or better; a reproducible loss is reported, never answered with JavaScript |
+
+### Landed (2026-10-02): L2, L3, L6 and L7
+
+**L2, `Js.object`** (`boundary.md` §4.2, `backend.md` §4 *`Js.object` is an object literal*): keys
+in written order, never renamed; values made in written order; the list, pairs and keys mint no
+edge; a malformed field list is the checker's `invalid_js_object` (a key that is no identifier,
+`__proto__`, a key twice, a field that is not a pair, fields not written as a list). Red first:
+`Js does not expose object`.
+
+**L3, `Js.method`** (`backend.md` §4 *`Js.method` is a `function`*): `function(){const self=this;…}`
+in both printers. Building `run/JsMethod` found a defect the prototype had not met: the release
+specialiser scalar-replaced an object holding a method, dropping the fields the method reads
+through `this` and calling the methods with no receiver. An object one of whose keys may hold a
+method now escapes, and scalar replacement never splits one, nor an object with a key read as a
+call's callee unless that key's value is an arrow written in place.
+
+**L6, the port.** `core/List.js` keeps `length`, `at`, `put`, `identical`, `kept` and `half`; the
+rest is `core/List.beni`. One more defect on the way: a hoisted release build printed every
+module, also one its one file does not hold — `core/List` when every list comparison of the
+program went to `_derived` — whose names were never numbered, an `internal` error the moment
+`List` referred to a top-level value (eight `run/` programs, red before the fix in `Emit`).
+
+**L7, the bar — hand-minify first** (the owner's decision above), each change priced on the 160
+programs research 50 found growing or shrinking, through `--core-root`:
+
+| step | change | Σ release brotli of the 160 |
+|---|---|--:|
+| 0 | the prototype, Unicode-migrated | 201 874 → 200 260 |
+| 1 | `isPlain` a value, `Array.isArray` itself, not an arrow around it | 200 064 |
+| 2 | `base`, `offset`, `unsafeGet` test `o` in place, no `isView` | 199 679 |
+| 3 | `eqFrom` with `compareFrom`'s parameter order | 199 641 |
+| 4 | `concat`: count, then the first non-empty list, then copy (was find-sole, count, copy) | 199 259 |
+| 5 | one chunking loop for the leaves and every level above them | 198 729 |
+| 6 | `triePushed` slices to `i + 32`: the pushed elements end where their base does | 198 617 |
+| 7 | one copy loop for a leaf and the tail of a trie's `$plain` | 196 949 |
+| 8 | `eq`/`compare` walk both bases to their ends, two indexes, no count | 196 845 |
+
+Rejected: `eq` as an `if` (+51). **`bench/size.mjs`, master's `List.js` against the port, one
+compiler** (master at `435c3186`): release brotli **492 855 → 486 010 (−6 845, −1.4 %)**; 166
+programs smaller, 223 equal, **3 larger**: `run/NestingEvidence` +34 (729 → 763), `run/ListElementEq`
++6 (802 → 808), `run/ConsPatterns` +1 (822 → 823). Every page equal or smaller (`Tea.element`
+1 349 → 1 330, effects 6 587 → 6 547), `bench/corpus` 19 544 → 19 297, the floor 184 both.
+Development output 2 271 954 → 1 347 272 brotli (−41 %). What is left, for the owner: the three
+grow where `eq` (and in `NestingEvidence` `compare`) on a list is all the program uses of `List`.
+The hand-written pair shared its text with the derived-comparison engine's own `for` loops, which
+the beni loops, printed `while(i<a.length){…;i++;j++}`, do not; priced by hand, printing such a
+loop `for(;c;i++,j++)…` takes 11 of `NestingEvidence`'s 34 bytes — a general rule of `backend.md`
+§9's *Compact statements*, not built here because it moves every loop golden.
+
+**Speed** (research 50's `bench/list-in-beni`, `--library --release` of `LB2.beni`, alternating
+processes on core 20, 7–11 per side, µs per call at 1 000, master ÷ port, the machine shared and
+re-run at load 3–9): every operation within noise — flatten a pushed trie 0.98, a headed trie
+0.94, views 0.92–0.99; `push` 0.96–1.03; `[ x, …xs ]` onto a trie 1.01–1.04; `pop` 1.00; `set`
+0.99–1.00; `append` 0.87–1.02; `get` 0.99–1.03; `drop` 0.98–1.04; walks 1.00–1.01; `sum` 1.00;
+`slice` 1.00–1.02; `swap` 0.94–1.03; `concat` 1.01; `eq` on plain lists 1.00–1.06 with
+overlapping ranges, on tries 0.83; **`compare` 1.01–1.02 (the prototype's 1.16–1.19 gone with the
+exit-first `while`)**, on views 0.86. Research 46's harness (`bench/arrays`, `node all.mjs`) agrees
+on every check for both `beni` candidates; its timings were not usable here — two alternating
+quick runs at load 9–50 disagreed with each other by up to 8× per row (it also builds without
+`--release`). The claim sweep against the compiled core: 3 028 791 checks, all versions intact,
+the counts the sibling gave.
+
+**Budgets.** `abuse_wide_test`'s release case 3 451 → 3 913 million (under 4 300). The
+`browser/tea` pages compile the beni `List` twice per case: with their run hashes recorded,
+`TodoMVC` 3 595 → 3 756 million; **when a hash is stale and Node runs, `TodoMVC`, `Router` and
+`HttpFailures` exceed 4 300** (4 358–4 462; master's `TodoMVC` is 4 273 then). The gates pass
+with hashes recorded, as committed, but any change that re-runs those pages before
+`test-run-hashes` will trip the budget: a wall, reported, not worked around (rule 10).
