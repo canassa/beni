@@ -162,7 +162,7 @@ here () =
     if Js.isNull c then
         o = Js.read outside
         if Js.isNull o then
-            f = newFiber Js.null
+            f = newFiber Js.null (Js.array [])
             _ = Js.write outside f
             f
         else
@@ -363,8 +363,8 @@ soonQueued = Js.ref False
 -- — has something to tear down, and so keeps the teardown (`boundary.md`
 -- §9.8.14): `fibered` is set here, so a build that makes none keeps none of
 -- it.
-newFiber : V → V
-newFiber parent =
+newFiber : V, V → V
+newFiber parent stack =
     _ = Js.write fibered True
     Js.from
         { children = Js.null
@@ -376,7 +376,7 @@ newFiber parent =
         , parent = parent
         , parked = Js.null
         , scope = Js.null
-        , stack = Js.array []
+        , stack = stack
         , unwinding = False
         }
 
@@ -437,10 +437,10 @@ drainFrom count =
         a = Js.at queue (h + 1)
         b = Js.at queue (h + 2)
         c = Js.at queue (h + 3)
-        _ = Js.setAt queue h Js.undefined
-        _ = Js.setAt queue (h + 1) Js.undefined
-        _ = Js.setAt queue (h + 2) Js.undefined
-        _ = Js.setAt queue (h + 3) Js.undefined
+        _ = Js.setAt queue h Js.null
+        _ = Js.setAt queue (h + 1) Js.null
+        _ = Js.setAt queue (h + 2) Js.null
+        _ = Js.setAt queue (h + 3) Js.null
         _ = Js.write head (h + 4)
         drainFrom (if Js.to (Js.apply task [ a, b, c ]) then count + 1 else count)
 
@@ -545,7 +545,7 @@ pushBack stack ks i =
 
 
 -- Park the current fiber until `register`'s resume is called, or answer at
--- once when it is called before `register` returns. `register` returns a
+-- once when it is called before `register` returns: `done` then. `register` returns a
 -- canceller, or null.
 suspend : sync (V → V) → a
 suspend register =
@@ -553,7 +553,7 @@ suspend register =
     if deliverable fiber then
         park Js.null True
     else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = True, value = Js.null }
+        w = Js.from { cancel = Js.null, done = False, sync = True, value = Js.null }
 
         wake =
             λvalue →
@@ -562,13 +562,12 @@ suspend register =
                 else
                     _ = Js.set w "done" (Js.from True)
                     if Js.to (Js.get w "sync") then
-                        _ = Js.set w "ready" (Js.from True)
                         Js.set w "value" value
                     else
                         enqueue fiber value w
         canceller = register (Js.from wake)
         _ = Js.set w "sync" (Js.from False)
-        if Js.to (Js.get w "ready") then
+        if Js.to (Js.get w "done") then
             Js.to (Js.get w "value")
         else
             _ = Js.set w "cancel" canceller
@@ -590,12 +589,12 @@ complete fiber outcome =
     _ = Js.set fiber "stack" Js.null
     _ = Js.write live (Js.read live - 1)
     sc = Js.get fiber "scope"
-    parent = Js.get fiber "parent"
 
     _ =
         if not (Js.isNull sc) then
             Js.to (Js.call (Js.get sc "children") "delete" [ fiber ])
-        else if Js.read spawning && not (Js.isNull parent) then
+        else if Js.read spawning && not (Js.isNull (Js.get fiber "parent")) then
+            parent = Js.get fiber "parent"
             if Js.isNull (Js.get parent "children") then
                 ()
             else
@@ -811,11 +810,11 @@ reap _ =
 -- `from` is what the new fiber copies its slots from (`slotsOf`).
 fork : V, V, V, V → V
 fork parent work sc from =
-    fiber = newFiber parent
+    -- `work` is the stack's first continuation as it is: the run loop calls
+    -- it with the value the fiber starts with, null, which a function of
+    -- `()` takes as its argument.
+    fiber = newFiber parent (Js.array [ Js.from finish, work ])
     _ = if Js.read slotted then Js.set fiber "slots" (slotsOf from) else ()
-    _ =
-        Js.call (Js.get fiber "stack") "push"
-            [ Js.from finish, Js.from λ_ → Js.apply work [ Js.null ] ]
     _ = Js.write live (Js.read live + 1)
 
     _ =
@@ -903,7 +902,7 @@ spawn work =
         Js.to (fork Js.null (Js.from work) Js.null Js.null)
     else
         child = fork Js.null (Js.from work) Js.null Js.null
-        _ = if Js.isNull (Js.get s "kids") then Js.set s "kids" (Js.array []) else ()
+        _ = if Js.isNullish (Js.get s "kids") then Js.set s "kids" (Js.array []) else ()
         _ = Js.call (Js.get s "kids") "push" [ child ]
         _ = Js.set s "end" (Js.from endSoon)
         Js.to child
@@ -1000,7 +999,7 @@ yieldNow () =
     if deliverable fiber then
         selfCancel ()
     else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = False, value = Js.null }
+        w = Js.from { cancel = Js.null, done = False, sync = False, value = Js.null }
         _ = enqueue fiber Js.null w
         park w False
 
@@ -1254,7 +1253,7 @@ runEach fins exit =
 -- teardown waits for it, as for every fiber.
 cleanupFiber : V → ()
 cleanupFiber fins =
-    fiber = newFiber Js.null
+    fiber = newFiber Js.null (Js.array [])
     _ = Js.write live (Js.read live + 1)
     _ = Js.write finalising True
     _ = Js.set fiber "finalizers" fins
@@ -1338,7 +1337,7 @@ runSoon s =
         _ =
             if Js.read spawning then
                 end = Js.get s "end"
-                if Js.isNull end then () else Js.to (Js.apply end [ s ])
+                if Js.isNullish end then () else Js.to (Js.apply end [ s ])
             else
                 ()
         True
@@ -1356,7 +1355,7 @@ runSoon s =
 pub soon : sync (() → ()) → Soon
 soon work =
     _ = Js.write soonQueued True
-    s = Js.from { end = Js.null, kids = Js.null, w = Js.from work }
+    s = Js.from { w = Js.from work }
     _ = schedule (Js.from runSoon) s Js.null Js.null
     Js.to s
 
@@ -1539,7 +1538,7 @@ teardown () =
         if not (Js.read finalising) || Js.isNull o || none (Js.get o "finalizers") then
             ()
         else
-            fiber = newFiber Js.null
+            fiber = newFiber Js.null (Js.array [])
             _ = Js.write live (Js.read live + 1)
             _ = Js.set fiber "finalizers" (Js.get o "finalizers")
             _ = Js.set o "finalizers" Js.null
@@ -2450,7 +2449,7 @@ begin h work arg =
     fiber =
         if Js.isNull probe then
             parent = Js.read current
-            made = newFiber parent
+            made = newFiber parent (Js.array [])
             _ = if Js.read slotted then Js.set made "slots" (slotsOf parent) else ()
             made
         else
