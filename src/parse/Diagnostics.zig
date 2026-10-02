@@ -609,7 +609,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\not an application. To pass `a?` as one argument among others, write `f (a?) b`.
         , .{text}),
         .non_associative_chain => {
-            if (std.mem.eql(u8, text, "<|") or std.mem.eql(u8, text, "|>")) {
+            if (isPipe(text)) {
                 try w.writeAll(
                     \\I found `<|` and `|>` mixed in one chain.
                     \\
@@ -1033,6 +1033,16 @@ fn writeSpaced(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
         space = false;
         try w.writeByte(c);
     }
+}
+
+/// Whether `text` is a pipe in any spelling the parser reads as one: `▷`,
+/// `◁`, the old `|>` and `<|`, or a lookalike of either (language.md §12.7).
+fn isPipe(text: []const u8) bool {
+    for ([_]Token.Tag{ .op_pipe_right, .op_pipe_left }) |tag| {
+        if (std.mem.eql(u8, text, Token.lexeme(tag).?) or std.mem.eql(u8, text, Token.lexeme(tag.ascii().?).?)) return true;
+    }
+    const look = Token.lookalikeAt(text, 0) orelse return false;
+    return look.bytes.len == text.len and (look.tag == .op_pipe_right or look.tag == .op_pipe_left);
 }
 
 fn isBlockStart(text: []const u8) bool {

@@ -1,0 +1,9 @@
+-- `◁` and `▷` mixed in one chain without parentheses (language.md §6.5,
+-- §12.7): non_associative_chain, its message naming the two pipes as it does
+-- for `<|` and `|>` (5:11); a lookalike `▶` is reported and counts as `▷` (9:11).
+f g x y =
+    x ▷ g ◁ y
+
+
+h g x y =
+    g ◁ x ▶ y
