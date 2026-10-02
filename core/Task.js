@@ -407,6 +407,13 @@ const unwind = (fiber) => {
   fiber.parked = null;
   fiber.stack.length = 0;
   fiber.stack.push(ended);
+  cleanups(fiber);
+  fiber.stack.push(stopChildren);
+};
+
+// Move `fiber`'s finalisers onto its stack, each above a boundary, to run
+// last first.
+const cleanups = (fiber) => {
   const fins = fiber.finalizers;
   fiber.finalizers = null;
   if (fins !== null) {
@@ -417,7 +424,6 @@ const unwind = (fiber) => {
       });
     }
   }
-  fiber.stack.push(stopChildren);
 };
 
 let cleaning = null;
@@ -428,11 +434,14 @@ const boundary = (value) => {
 };
 
 // Discard what the finaliser `fiber` is inside left on its stack: it goes
-// on to its next finaliser, the one it was in counting as run.
+// on to its next finaliser, the one it was in counting as run. What that
+// one opened and had not yet closed — a `bracket`, a `scope` — is released
+// first, as it would have been had its use been interrupted.
 const cutBack = (fiber) => {
   const stack = fiber.stack;
   while (stack.length !== 0 && stack.pop() !== boundary);
   cleaning.delete(fiber);
+  cleanups(fiber);
 };
 
 const stopChildren = () => {

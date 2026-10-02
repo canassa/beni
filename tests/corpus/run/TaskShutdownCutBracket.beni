@@ -1,0 +1,50 @@
+-- run: a `bracket` opened inside a release that the teardown's deadline
+-- cuts short still has its own release run (boundary.md §9.8.14 (f)).
+--
+--   - The fiber's release `middle` opens a bracket and waits in its use
+--     past the deadline (50 ms). The cut abandons the rest of `middle`, but
+--     what `middle` acquired is still released, once, told `Cancelled` —
+--     as Effect, which has no deadline, would release it when the use is
+--     interrupted — and before `outer`, which was registered before it.
+--   - `done` counts `middle` as the one release cut short.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+guarded : String, (() → a) → a
+guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ()
+
+
+main : Program
+main = Io.run λ() →
+    root = Task.openRoot ()
+
+    _ = Task.spawnIn root λ() →
+        guarded "outer" λ() →
+            Task.bracket
+                (λ() → ())
+                (λ_ _ →
+                    _ = say "middle releasing"
+                    guarded "opened in middle" λ() → Io.sleep 100000
+                )
+                λ_ → Io.sleep 100000
+
+    _ = Task.yieldNow ()
+    _ = Task.shutdown 50 λcut → say "done, ${String.fromInt cut} cut short"
+    Node.done

@@ -3349,11 +3349,15 @@ used to fire into a stopped scheduler. Every page also runs under `zig build tes
   on the kernel alone (a fiber's or `soon` work's throw); the four of the synchronous path were red
   until the wiring. Every page passes `zig build test-browser` in Chrome.
 
-**Against Effect, where it still falls short.** One gap that (l) does not choose: a `bracket` opened
-*inside* a finaliser that the deadline then cuts short loses its own release, since the cut
-discards that finaliser's continuations whole, where Effect, having no deadline, would run it. A
-fiber parked inside an uninterruptible acquire that never answers keeps the teardown from ending
-(`done` is never called), as it would keep an Effect scope from closing.
+**Against Effect, where it still falls short.** A fiber parked inside an uninterruptible acquire
+that never answers keeps the teardown from ending (`done` is never called), as it would keep an
+Effect scope from closing. *(Amended 2026-10-02: a second gap, a `bracket` opened inside a
+finaliser that the deadline — or a throw, (g) — then cuts short losing its own release, is closed.
+The cut discards that finaliser's continuations, and then moves what it had registered and not yet
+released — a `bracket`'s release, a nested `scope`'s close — onto the fiber's stack, each above a
+boundary of its own, last first, ahead of the finalisers registered before it: what Effect, which
+has no deadline, runs when the use is interrupted. Past the deadline each runs to its first wait,
+as every finaliser does. `run/TaskShutdownCutBracket`.)*
 
 **Measured** (`bench/size.mjs`, `--release`, brotli 11, against `master` before the slices): the
 empty `browser` page **446 → 446** and the empty `Tea.sandbox` **446 → 446**, byte for byte the
