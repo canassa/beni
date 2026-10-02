@@ -1824,7 +1824,11 @@ const Spec = struct {
             const id = s.pts.propId(m.index, @enumFromInt(ir.data(callee).rhs));
             const host = id != none and std.mem.indexOfScalar(u32, s.in.node_makers, id) != null;
             const receiver = s.pts.vals[m.index][ir.data(callee).lhs];
-            if (host and receiver.sites.len == 0 and !receiver.prim) return .nonnull;
+            // No object of the program: a host object, whose method makes a
+            // node or throws, or a primitive, `null` or `undefined`, which
+            // has no such method and throws — never `null`, whatever else
+            // fact 3 says the receiver may be (`Pts.Val.top_val`).
+            if (host and receiver.sites.len == 0) return .nonnull;
         }
         if (vc.top or vc.prim or vc.sites.len == 0) return .top;
         var out: Lat = .bot;
@@ -3041,8 +3045,12 @@ const Spec = struct {
         }
         const v = m.memo[r.int()];
         if (v.state != .lit or s.litOf(v).kind != .null_lit) return;
+        // No object of the program. A primitive, `null` or `undefined` has
+        // neither method, and both calls throw a `TypeError` there, as they
+        // already did for `null`: fact 3 says what a host value may be
+        // beside a node (`Pts.Val.top_val`), not that it is one.
         const receiver = s.pts.vals[m.index][ir.data(callee).lhs];
-        if (receiver.sites.len != 0 or receiver.prim) return;
+        if (receiver.sites.len != 0) return;
         // The module's name for `appendChild` (every plain name is in the
         // session's pool by now), made when it has none; the callee is
         // rewritten in place, so no node is added while the facts' tables
@@ -6040,6 +6048,10 @@ const Pts = struct {
     ones: []u32 = &.{},
     /// This sweep walks every unit: the fixpoint's first.
     full: bool = false,
+    /// The order a sweep walks the top-level statements in, by their index
+    /// in `stmts`; empty for program order. Only a safety build's check
+    /// sets one (`fixpoint`).
+    order: []const u32 = &.{},
 
     const StmtRef = struct { module: u32, top: Index };
     const Dep = struct { stmt: u32, next: u32 };
@@ -6102,7 +6114,14 @@ const Pts = struct {
         undef: bool = false,
         sites: []const u32 = &.{},
 
-        const top_val: Val = .{ .top = true };
+        /// What the program did not make, or cannot follow, may be anything:
+        /// a host object, a primitive, `null` or `undefined` (research 52
+        /// §3.3, TAJS's product). `top` is one component beside the other
+        /// three and implies them, so that a read through a value that went
+        /// `top` gives at least what the same read gave before it did — a
+        /// read, and every other transfer function, is monotone, and the
+        /// fixpoint is the same whatever order the units are walked in.
+        const top_val: Val = .{ .top = true, .prim = true, .nul = true, .undef = true };
         const prim_val: Val = .{ .prim = true };
         const nul_val: Val = .{ .nul = true };
         const undef_val: Val = .{ .undef = true };
@@ -6266,7 +6285,11 @@ const Pts = struct {
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
         const set = &p.vars.items[v];
         if (set.top) return;
+        // `top` implies the other three (`Val.top_val`).
         set.top = true;
+        set.prim = true;
+        set.nul = true;
+        set.undef = true;
         p.varChanged(v);
         const held = set.sites;
         set.sites = &.{};
@@ -6463,12 +6486,15 @@ const Pts = struct {
     /// `undefined` object throws, and gives nothing; a property the
     /// object's literal lacks may be `undefined` (slice 4).
     fn read(p: *Pts, obj: Val, id: u32, mark: bool) Allocator.Error!Val {
-        var out: Val = .{ .top = obj.top or obj.prim };
+        // A property of a value the program did not make, of a primitive,
+        // of an object something unseen holds, or under a key the pass does
+        // not know, is anything (`Val.top_val`).
+        var out: Val = if (obj.top or obj.prim) Val.top_val else .{};
         for (obj.sites) |site| {
             try p.seeSite(site);
             const st = &p.sites.items[site];
             if (st.kind != .object or st.escaped or id == none) {
-                out.top = true;
+                out = try p.unionOf(out, Val.top_val);
                 continue;
             }
             if (mark) {
@@ -6490,13 +6516,13 @@ const Pts = struct {
 
     /// Every property of every object `obj` may be, read.
     fn readAll(p: *Pts, obj: Val) Allocator.Error!Val {
-        var out: Val = .{ .top = obj.top or obj.prim };
+        var out: Val = if (obj.top or obj.prim) Val.top_val else .{};
         for (obj.sites) |site| {
             try p.seeSite(site);
             try p.seeProps(site);
             const st = &p.sites.items[site];
             if (st.kind == .func or st.escaped) {
-                out.top = true;
+                out = try p.unionOf(out, Val.top_val);
                 continue;
             }
             if (!st.all_read) {
@@ -6613,93 +6639,133 @@ const Pts = struct {
         }
     }
 
-    /// How many nodes a program may have for a safety build to check the
-    /// worklist against walking every unit every sweep (`fixpoint`).
+    /// How many nodes a program may have for a safety build to check its
+    /// fixpoint against another order's (`fixpoint`).
     const max_checked_nodes = 1500;
 
     /// Fact 3 to its fixpoint. In a safety build a small program's fixpoint
-    /// is computed twice — every unit walked every sweep, then by the
-    /// worklist — and the two must agree on every fact.
+    /// is computed twice: first walking every unit every sweep, the
+    /// top-level statements in a shuffled order, then by the worklist in
+    /// program order. Every transfer function is monotone (`Val.top_val`),
+    /// so both reach the one least fixpoint (research 52 §2.3), and the two
+    /// must agree on every fact, up to the numbering of sites, which
+    /// follows the walk. That checks the order does not matter, and that
+    /// the worklist skips only walks that would change nothing.
     fn fixpoint(p: *Pts) Allocator.Error!void {
         if (std.debug.runtime_safety) {
             var nodes: usize = 0;
-            for (p.s.mods) |*m| nodes += m.ir.nodes.len;
+            var statements: u32 = 0;
+            for (p.s.mods) |*m| {
+                nodes += m.ir.nodes.len;
+                statements += m.ir.body.len();
+            }
             if (nodes <= max_checked_nodes) {
                 var ref_tmp: std.heap.ArenaAllocator = .init(p.s.gpa);
                 defer ref_tmp.deinit();
                 std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
+                const order = try p.arena().alloc(u32, statements);
+                for (order, 0..) |*o, i| o.* = @intCast(i);
+                // A fixed seed: the check, like the build, is a function of
+                // the program.
+                var prng: std.Random.DefaultPrng = .init(0x5EC5_0B1A ^ @as(u64, statements));
+                prng.random().shuffle(u32, order);
+                p.order = order;
                 try p.fixpointWith(true);
+                p.order = &.{};
                 const ref = p.*;
                 std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
                 try p.fixpointWith(false);
-                p.expectSame(&ref);
+                try p.expectSame(&ref);
                 return;
             }
         }
         try p.fixpointWith(false);
     }
 
-    /// Panic unless the facts in `p` are the facts in `ref`.
-    fn expectSame(p: *const Pts, ref: *const Pts) void {
-        const eq = std.mem.eql;
+    /// Panic unless the facts in `p` are the facts in `ref`, each site of
+    /// `p` taken for the site of `ref` its node made. Nothing is compared
+    /// when either did not converge: under `max_pts_sweeps` whether a
+    /// fixpoint is reached may depend on the order, and short of one no
+    /// fact is read.
+    fn expectSame(p: *const Pts, ref: *const Pts) Allocator.Error!void {
+        if (!p.ok or !ref.ok) return;
         const Check = struct {
+            x: *const Pts,
+            y: *const Pts,
+            /// Per site of `x`, the site of `y` its node made.
+            map: []const u32,
+
             fn fail(what: []const u8, at: usize) noreturn {
-                std.debug.panic("specialisation: the worklist's fact 3 differs from a sweep of everything: {s} {d}", .{ what, at });
+                std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
             }
-            fn sameVal(a: Val, b: Val) bool {
-                return a.top == b.top and a.prim == b.prim and a.nul == b.nul and a.undef == b.undef and eq(u32, a.sites, b.sites);
+            fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
+                if (a.len != b.len) return false;
+                for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
+                return true;
             }
-            fn sameVar(x: *const Pts, y: *const Pts, a: VarId, b: VarId) bool {
-                const va = x.vars.items[a];
-                const vb = y.vars.items[b];
-                return va.top == vb.top and va.prim == vb.prim and va.nul == vb.nul and va.undef == vb.undef and eq(u32, va.sites, vb.sites);
+            fn sameVal(c: @This(), a: Val, b: Val) bool {
+                return a.top == b.top and a.prim == b.prim and a.nul == b.nul and a.undef == b.undef and c.sameSites(a.sites, b.sites);
+            }
+            fn sameVar(c: @This(), a: VarId, b: VarId) bool {
+                const va = c.x.vars.items[a];
+                const vb = c.y.vars.items[b];
+                return va.top == vb.top and va.prim == vb.prim and va.nul == vb.nul and va.undef == vb.undef and c.sameSites(va.sites, vb.sites);
             }
             fn sameSet(a: []const u32, b: []const u32) bool {
                 if (a.len != b.len) return false;
-                for (a) |x| if (std.mem.indexOfScalar(u32, b, x) == null) return false;
+                for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
                 return true;
             }
         };
-        if (p.ok != ref.ok) Check.fail("converged", 0);
-        if (p.sweeps != ref.sweeps) Check.fail("sweeps", p.sweeps);
-        // Short of the fixpoint no fact is read.
-        if (!p.ok) return;
+        if (p.sites.items.len != ref.sites.items.len) Check.fail("sites", 0);
+        const map = try p.s.arena.alloc(u32, p.sites.items.len);
+        for (p.sites.items, map, 0..) |a, *to, i| to.* = ref.siteAt(a.module, a.node) orelse Check.fail("site", i);
+        const c: Check = .{ .x = p, .y = ref, .map = map };
         if (p.unknown_any != ref.unknown_any) Check.fail("unknown_any", 0);
         if (!Check.sameSet(p.unknown_props.items, ref.unknown_props.items)) Check.fail("unknown_props", 0);
-        for (p.globals, ref.globals, 0..) |a, b, g| if (!Check.sameVar(p, ref, a, b)) Check.fail("global", g);
+        for (p.globals, ref.globals, 0..) |a, b, g| if (!c.sameVar(a, b)) Check.fail("global", g);
         if (p.locals.count() != ref.locals.count()) Check.fail("locals", 0);
         var it = ref.locals.iterator();
         while (it.next()) |kv| {
             const mine = p.locals.get(kv.key_ptr.*) orelse Check.fail("local", kv.key_ptr.name);
-            if (!Check.sameVar(p, ref, mine, kv.value_ptr.*)) Check.fail("local", kv.key_ptr.name);
+            if (!c.sameVar(mine, kv.value_ptr.*)) Check.fail("local", kv.key_ptr.name);
         }
-        if (p.sites.items.len != ref.sites.items.len) Check.fail("sites", 0);
-        for (p.sites.items, ref.sites.items, 0..) |a, b, i| {
-            if (a.kind != b.kind or a.module != b.module or a.node != b.node or a.once != b.once or
-                a.escaped != b.escaped or a.all_read != b.all_read or a.any_written != b.any_written or
-                a.fresh_fn != b.fresh_fn or a.odd_caller != b.odd_caller or a.prog_any != b.prog_any)
+        for (p.sites.items, map, 0..) |a, j, i| {
+            const b = ref.sites.items[j];
+            const fresh = if (a.fresh_fn == none) none else map[a.fresh_fn];
+            if (a.kind != b.kind or a.once != b.once or a.escaped != b.escaped or fresh != b.fresh_fn) Check.fail("site", i);
+            if (a.kind == .func) {
+                if (!c.sameVar(a.ret, b.ret)) Check.fail("site ret", i);
+                for (a.params, b.params) |x, y| if (!c.sameVar(x, y)) Check.fail("site param", i);
+            }
+            // An escaped site is ⊤: every property read and written with
+            // anything, and no fact read of it but its tag's, which a
+            // write through an unknown value refuses (`unknown_props`)
+            // whichever way it was recorded. What else it gathered depends
+            // on how much was walked before it escaped — a read marks a
+            // property, a call records itself, only while the site is still
+            // in view — and is no fact.
+            if (a.escaped) continue;
+            if (a.all_read != b.all_read or a.any_written != b.any_written or a.odd_caller != b.odd_caller or
+                a.prog_any != b.prog_any)
                 Check.fail("site", i);
             if (!Check.sameSet(a.prog_props.items, b.prog_props.items)) Check.fail("site prog_props", i);
             if (a.callers.items.len != b.callers.items.len) Check.fail("site callers", i);
-            for (a.callers.items) |c| {
-                for (b.callers.items) |d| {
-                    if (c.module == d.module and c.node == d.node) break;
+            for (a.callers.items) |k| {
+                for (b.callers.items) |l| {
+                    if (k.module == l.module and k.node == l.node) break;
                 } else Check.fail("site caller", i);
             }
-            if (!Check.sameVar(p, ref, a.any, b.any)) Check.fail("site any", i);
-            if (a.kind == .func) {
-                if (!Check.sameVar(p, ref, a.ret, b.ret)) Check.fail("site ret", i);
-                for (a.params, b.params) |x, y| if (!Check.sameVar(p, ref, x, y)) Check.fail("site param", i);
-            }
+            if (!c.sameVar(a.any, b.any)) Check.fail("site any", i);
             if (a.props.items.len != b.props.items.len) Check.fail("site props", i);
             for (a.props.items) |pa| {
-                const pb = ref.findProp(@intCast(i), pa.id) orelse Check.fail("site prop", i);
+                const pb = ref.findProp(j, pa.id) orelse Check.fail("site prop", i);
                 if (pa.read != pb.read or pa.written != pb.written or pa.init != pb.init) Check.fail("site prop flags", i);
-                if (!Check.sameVar(p, ref, pa.vals, pb.vals)) Check.fail("site prop value", i);
+                if (!c.sameVar(pa.vals, pb.vals)) Check.fail("site prop value", i);
             }
         }
         for (p.vals, ref.vals, 0..) |a, b, mi| {
-            for (a, b, 0..) |x, y, node| if (!Check.sameVal(x, y)) Check.fail("node value", mi * 1_000_000 + node);
+            for (a, b, 0..) |x, y, node| if (!c.sameVal(x, y)) Check.fail("node value", mi * 1_000_000 + node);
         }
     }
 
@@ -6785,11 +6851,14 @@ const Pts = struct {
     }
 
     /// One sweep's units: every one in the first sweep, else those a change
-    /// woke (`wake`), in the order a walk of everything reaches them.
+    /// woke (`wake`), in the order a walk of everything reaches them — or,
+    /// for a safety build's check, in `order`.
     fn walkStatements(p: *Pts) Allocator.Error!void {
         defer p.cur = none;
         const full = p.full;
-        for (p.stmts.items, 0..) |st, t| {
+        for (0..p.stmts.items.len) |k| {
+            const t = if (p.order.len == p.stmts.items.len) p.order[k] else k;
+            const st = p.stmts.items[t];
             if (!full and !p.pending.isSet(t)) continue;
             p.pending.unset(t);
             p.cur = @intCast(t);
@@ -7337,7 +7406,7 @@ const Pts = struct {
         if (unknown) {
             for (args) |a| try p.escape(vals[a.int()]);
             if (ir.tag(callee) == .member) try p.escape(vals[ir.data(callee).lhs]);
-            out.top = true;
+            out = try p.unionOf(out, Val.top_val);
         }
         return out;
     }

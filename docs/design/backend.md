@@ -6379,6 +6379,55 @@ With `List` in beni the case now fits the budget, 161 million under it, with no 
 Each step's output is byte for byte as before: every file `bench/size.mjs` builds, in both
 builds, and every release run hash.
 
+**Amended 2026-10-02 — fact 3 is order-free** (research 52 §3.3 and §4.5, slices 0–2; this
+corrects the worklist note's *the order is kept on purpose* and its *Checked* bullet).
+
+- **A value never borrows a var's storage.** A var's set of sites is a sorted slice that is
+  never changed in place: a join that adds a site makes a new slice and leaves the old one. A
+  walk holds the values of an expression's earlier operands while it evaluates the later ones,
+  and a call among those can join a site into the very parameter an earlier operand read; the
+  set used to grow in place under the earlier value, which then read shifted memory or, once
+  the list moved, freed memory (research 52's E5: four `browser/tea` pages read `0xAAAAAAAA` as
+  a site with the passes' cap raised). The unit test *a value read from a var keeps its sites
+  when a later join adds one* is the smallest input that reaches it.
+- **`top` implies the other three components.** A value is TAJS's product (`Pts.Val`): `top`,
+  `prim`, `null`, `undefined` and a set of sites, each joined on its own, and `top` — what the
+  program did not make or cannot follow — may be a primitive, `null` or `undefined` too. So a
+  read through a value that went `top` (a host value, an escaped object, an unknown key) gives
+  at least what the same read gave before it did, where it used to give `top` alone and drop
+  the other bits. With that, every transfer function of fact 3 is monotone, and it has one
+  least fixpoint whatever order its units are walked in: the bits a `top` var gathered no
+  longer depend on what transient values it was joined with first. The two consumers that read
+  `prim` beside `top` now ask only that the receiver is no object of the program: the
+  node-maker fact (a primitive, `null` or `undefined` receiver has no such method and throws)
+  and `appendChild` (both calls throw the same `TypeError` there, as they already did for
+  `null`).
+- **An escaped site is ⊤.** Which of its properties a read marked, which calls it recorded,
+  what it was written under — those depend on how much was walked before it escaped, and no
+  fact is read of them (definite initialisation, `neverRead`, `keyUnread` and the call graph
+  all refuse an escaped site; its tag is refused through `unknown_props` whichever way a write
+  was recorded). They are not facts, and the check below does not compare them.
+- **Checked by another order.** A safety build computes each fact-3 fixpoint of a program of at
+  most 1 500 nodes twice: walking every unit every sweep with the top-level statements in a
+  shuffled order (a fixed seed), then by the worklist in program order; the two must agree on
+  every fact, each site taken for the one its node made (the numbering follows the walk).
+  That tests rule 5's property itself, and still tests that the worklist skips only walks that
+  change nothing. Put back the old `top`, and 18 `run/` and `emit/` programs stop at it. Facts
+  1, 2, 4 and 5 keep the worklist-against-every-unit check until they move into the same
+  solver.
+
+Every output is byte for byte as before — the `emit/release/` goldens, every release run hash,
+and all 411 release builds of research 52's E3 set compared file by file — so nothing in the
+corpus depended on the order the bits were gathered in. **`--self-profile`** counts the pass's
+work and every cap it hits (`spec_analyses`, `spec_sweeps`, `spec_points_to_runs`,
+`spec_points_to_sweeps`, `spec_passes`, and `spec_analyses_declined`,
+`spec_points_to_declined`, `spec_rounds_capped`, `spec_passes_capped`, `spec_init_capped`,
+`spec_inline_capped`), so that a size regression is traced to the cap behind it;
+`build_test`'s *counts a call chain deeper than its sweeps as a declined analysis* pins the
+first. `emit/release/app/SpecDeepChain` (24 levels of pass-through: nothing specialised) and
+`SpecSelfGuard` (a flag a dead branch hides from itself) pin what rounds cannot do, and move
+when the combined solver lands (research 52 §4).
+
 ### Compact statements
 
 ### Compact statements
