@@ -553,7 +553,7 @@ suspend register =
     if deliverable fiber then
         park Js.null True
     else
-        w = Js.from { cancel = Js.null, done = False, sync = True, value = Js.null }
+        w = Js.from { cancel = Js.null, done = False, ready = False, sync = True, value = Js.null }
 
         wake =
             λvalue →
@@ -562,12 +562,13 @@ suspend register =
                 else
                     _ = Js.set w "done" (Js.from True)
                     if Js.to (Js.get w "sync") then
+                        _ = Js.set w "ready" (Js.from True)
                         Js.set w "value" value
                     else
                         enqueue fiber value w
         canceller = register (Js.from wake)
         _ = Js.set w "sync" (Js.from False)
-        if Js.to (Js.get w "done") then
+        if Js.to (Js.get w "ready") then
             Js.to (Js.get w "value")
         else
             _ = Js.set w "cancel" canceller
@@ -999,7 +1000,7 @@ yieldNow () =
     if deliverable fiber then
         selfCancel ()
     else
-        w = Js.from { cancel = Js.null, done = False, sync = False, value = Js.null }
+        w = Js.from { cancel = Js.null, done = False, ready = False, sync = False, value = Js.null }
         _ = enqueue fiber Js.null w
         park w False
 
