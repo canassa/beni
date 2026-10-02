@@ -594,3 +594,62 @@ fixture unless it says otherwise, per CLAUDE.md rule 3 and `backend.md` §12.
   operand that may not be evaluated. Raised by report 17 §2.2, still unanalysed.
 - **`Debug.todo`.** Neither `impure` nor `suspends` is totality, and `todo` throws. Report 17 §2.5
   raised it; nothing has decided what rung it sits on.
+
+---
+
+## 8. Reaching Effect parity — the slice plan (2026-10-02)
+
+**Why.** The owner, 2026-10-02: *"The fiber/async runtime needs feature/quality parity with
+effect."* [`research/48`](../docs/design/research/48-effect-parity-ledger.md) is the ledger — one
+row per Effect v4 capability, read from its source, with beni's status and proposed shape — and
+its §5 holds the eighteen choices these slices assume, each taken as recommended until the owner
+says otherwise. This section orders the work. It reopens none of §5's decisions above or the
+decision sheet's answered ones (A1–A3, A5–A11).
+
+**Discipline**, as §4: each slice writes its contract into P2 first — a new dated section after
+§16, no section renumbered — then fixtures red first, then the code, the gates, a read-only review,
+and a measurement against Effect v4 in `bench/fiber` (Node and headless Chrome, report 44's harness
+and method: median of 9 after 3 warm-ups; bytes brotli of a `--release` build beside esbuild's
+tree-shaken Effect bundle of the same program). Every slice holds two bars: **no operation slower
+than Effect's equivalent**, and **code that does not use the slice moves by zero bytes and zero
+instructions** (every `emit/` golden and run hash outside the slice unchanged). Library code is
+beni over the kernel (report 43 §11 item 9), never a new sibling unless the slice names the reason.
+
+**Timing fixtures never sleep for real.** A `run/` fixture prints an order, never a duration
+(report 23 §0.3), and from P2 on it runs its timers on `Clock.virtual`. A page fixture under
+`tests/corpus/browser/tea/` uses the driver's virtual clock and its `advance` step, and its
+`timers` and `listeners` steps (`boundary.md` §9.8.14 (n)), to show that a cancelled wait released
+its host resource.
+
+**Order.** App-blocking first: P1–P5 are what an application needs to call a flaky service with a
+deadline and a backoff, fan work out under a bound, and coordinate fibers; P6 makes a failure
+readable. P7–P9 are quality and batteries. The defect teardown (`boundary.md` §9.8.14) has landed,
+so `spawnDetached` can join its registry of roots, and `run/TaskShutdown` gains a `Deferred` waiter
+with P1. P1's and P2's kernel touches are **coordinated with `plans/core-in-beni.md` step 2**
+(`core/Task.js` in beni) so the kernel is written once (research 48 §4.3). HTTP v2 (§9.8.12) has
+landed too; P2's `Duration` move reaches it only through the `Time.Duration` alias (research 48
+§4.2).
+
+| Slice | Contract (P2, new section) | What lands | Fail-first fixtures | Measure against Effect v4 |
+|---|---|---|---|---|
+| **P0 — the adoption spec** | a dated amendment to §6.5 marking its superseded signatures (`Fiber.join … Result Cancelled a`, `Int` timeouts and retries, `parAll`) and pointing to the new section; the new section's skeleton with research 48 §5's eighteen choices written in as taken | docs only | — | review only |
+| **P1 — the kernel's last pieces** | `Task.resume`, `never`, `poll`, `joinAll`, `cancelAll`, `spawnDetached`, `uninterruptibleMask`/`restore`, `onExit`, `defer`; `core/Ref`, `core/Deferred`; the Node quiescence report (research 48 finding 3) | `core/Task.beni` (with `Task.js`, or its beni successor, for `resume`, `spawnDetached` and the mask token), `core/Ref.beni` (with `Ref.js` for `update`/`modify`, choice 10), `core/Deferred.beni`, `platforms/node/Io.beni`/`Io.js` | `run/MainParkedForever` (`.crash`: exits 1 with the report — **red today**: it exits 0 silently, research 48 §6); `run/ResumeOneShot` (report 23 row 3); `run/CancelReentrant` (row 8); `run/UninterruptibleLatch`, `run/UninterruptibleMaskRestore` (rows 11, 13); `run/SpawnDetached` (row 24: it still runs after its parent ends); `run/DeferredWaitComplete`; `run/DeferredWaiterCancelled` (a cancelled waiter is removed; the next `complete` reaches the live one); `run/RefModify`; `run/RefReadsKeptInRelease` (two `Ref.get`s around a `set` are not merged by `--release`); `check/bad/core/RefUpdateSuspends` (`sync_boundary`); `run/OnExitSeesOutcome`; `run/ScopeDeferLifo` | `Deferred.complete` + `wait` (Effect `Deferred.succeed` + `await`); `Ref.update` (Effect `Ref.update`); `spawnDetached` + `join` (Effect `forkDetach` + `Fiber.join`); bytes |
+| **P2 — time** | `core/Duration`; `Task.sleep` over the clock slot (A7's slot, inherited at spawn); `core/Clock` with `now`, `virtual`, `adjust`, `run`; `Time.Duration` an alias, `Time.sleep` and `Io.sleep` calls of `Task.sleep` | `core/Duration.beni`, `core/Clock.beni`, `core/Task.*`; `platforms/browser/Time.beni`, `platforms/node/Io.beni` | `run/VirtualClockSleepOrder` (three fibers sleeping 30/10/20 ms on a virtual clock wake 10, 20, 30, with no wall time); `run/VirtualClockInherited` (a child reads its parent's virtual clock); `run/VirtualClockNow`; every existing `browser/tea/` page unchanged (the driver's clock still governs `Time.every`) | `Task.sleep (Duration.millis 0)` (Effect `Effect.sleep(0)`); a ten-hour exponential schedule on the virtual clock, in wall time (Effect's `TestClock`: under 200 ms, report 23 case 5.5) |
+| **P3 — structured combinators** | `par`, `par3`, `parOk`, `forEach`, `forEachOk`, `race`, `raceAll`, `raceOk`, `timeout`; losers and siblings cancelled and **waited for** before return (A10); results in input order; a combinator whose thunks all answer on the fast path forks no fiber (Effect's fast case in `iterateConcurrentImpl`, `effect.ts:4981`) | `core/Task.beni`, beni over `spawnIn`, `wait`, `cancel` | report 23 rows 25–33 under these names: `run/ParBoth`, `run/ParOkFailCancelsSibling`, `run/ForEachOrder`, `run/ForEachBounded` (peak concurrency never above the bound), `run/ForEachOkFailFast`, `run/RaceLosersCancelled` (the loser's release logs **before** the winner's value), `run/RaceOkOneSideFails`, `run/RaceOkAllFail`, `run/TimeoutAwaitsCleanup`, `run/TimeoutUninterruptible`; `run/ParentFinalizerOrder` (row 23: children first, A11); pages `browser/tea/TimeoutAroundRequest` (a request to the faked slow service under `timeout` 500: after `advance 500`, `Nothing`, and `timers` 0) and `browser/tea/RaceTwoServices` | `forEach` over 10 000 items, bound 16 (Effect `forEach`, `concurrency: 16`); `race` of two parked fibers; `timeout` around a body that answers on the fast path (should fork nothing); `par` of two fast-path thunks; bytes |
+| **P4 — `Schedule`, `retry`, `repeat`** | `core/Schedule`, pure and closure-encoded (choice 7); `Task.retry`, `Task.repeat`; a cancelled attempt is never retried | `core/Schedule.beni`, `core/Task.beni` | `run/ScheduleDelays` (pure: `delays` of `exponential`, `fibonacci`, `spaced`, `upTo`, `max`, `min`, `andThen`, and `jittered` with fixed draws — no clock at all); `run/RetryBackoff` (row 34, on the virtual clock: attempts at 0, 100, 300, 700 ms, then `Ok`); `run/RetryNotOnCancel` (row 35); `run/RepeatWhile`; page `browser/tea/RetryRequest` (a faked service failing twice; `advance` through the backoff) | per-attempt overhead of `retry` with `recurs 0`; P2's ten-hour schedule; bytes against Effect's `Schedule` + `retry` bundle |
+| **P5 — coordination** | `Semaphore` (FIFO, choice 8), `Queue` (bounded, dropping, sliding, unbounded, `end`, choice 9), `Latch`; every waiter removed by its canceller | `core/Semaphore.beni`, `core/Queue.beni`, `core/Latch.beni` | report 23 rows 36–38: `run/QueueTakerCancelled`, `run/QueueBoundedBackpressure`, `run/SemaphorePermitsNotLeaked`; `run/QueueEndDrains` (takers see every value, then `Nothing`); `run/QueueSlidingDropping`; `run/SemaphoreFifo` (a request for 3 permits is not overtaken by later requests for 1); `run/LatchRelease` | 1 000 000 values ping-ponged through a bounded `Queue` (Effect `Queue`); uncontended `withPermit`; 1 000 fibers contending for `Semaphore.make 4`; retained bytes after 100 000 cancelled waits on each primitive (the heap where it started) |
+| **P6 — readable defects** | development builds only: a fiber's throw reports its pending continuations and its spawn ancestry through the source maps (P2 §7.4); a release build records nothing | `core/Task.js` (a spawn-site reference, development only), the Node and browser reporters | `run/DefectAfterPark` (`.crash`: the report names the `.beni` line that suspended and the one that spawned); `run/DefectInChildFiber`; `browser/tea/DefectInFiber`'s development golden gains the trace; every `emit/release/` golden unchanged | 0 bytes and 0 instructions in release; development cost per park and per spawn, against Effect's 7.2 µs per traced call (report 21 §9.6) |
+| **P7 — logging** | `core/Log`: levels, `annotate`, `span`, `minimum` in the log-context slot; the platform's sink; the browser's `Log` moves into core with its signatures (research 48 §4.2) | `core/Log.beni`; `platforms/browser/Log.beni` removed; a Node sink | `run/LogLevels`; `run/LogAnnotationsInherited` (a spawned child's lines carry its parent's annotations); `run/LogMinimumLevel`; `run/LogSpanLabel` (on the virtual clock, so the span's milliseconds are fixed); the release pass prints the same lines; one page fixture | a line below the minimum and an emitted one, against `Effect.logDebug` under a higher minimum; bytes |
+| **P8 — tracing** | `core/Trace`: `span`, `annotate`, parented through the fiber; a platform exporter hook and a console exporter | `core/Trace.beni`, the platforms' exporters | `run/TraceSpansNested` (parent and child span names and order across fibers; ids deterministic) | `Trace.span` against `Effect.withSpan`; bytes |
+| **P9 — batteries** | `Task.once`; `FiberMap`/`FiberSet`; `PubSub` (`subscribe` scoped by a function); `Cache` with a TTL on the fiber's clock; `Batch` (request batching); `Pool`; `Ref.Locked`; `Result.combine`/`partition`; `Random.withSeed` (choice 13) | core modules, each beni | report 23 §7.7–§7.12 as fixtures: `run/PubSubUnsubscribeByScope`, `run/FiberSetAutoRemove`, `run/CacheOneLookup` (N concurrent `get`s, one lookup), `run/PoolReuse`, `run/OnceShared`, `run/LockedRefUpdateSuspends`; `run/BatchCollectsWindow`; `run/RandomWithSeed` | each against its Effect module on the same program; bytes |
+| **P10 — deliberately not now** | `Stream`/`Sink`/`Channel` (decision sheet C1: after `Queue.end`, with report 23 §8's six cases as acceptance), STM (C2), `Metric` (platform work), `Layer`/`Context` (A7: records of functions) | — | — | — |
+
+**What the slices leave as they found it.** `Exit a = Done a | Cancelled` (A1); `Tea`'s command
+table and policies (`boundary.md` §9.8.2), which keep working unchanged and may later be written
+over `FiberMap`; the yield budget of 64 (report 44 §3); the `sync` check, which P1's `Ref.update`
+and P3's combinators only use.
+
+**Parity, stated as a test.** After P5 the ledger's nine app-blocking rows are `have`, and report
+23's conformance rows 1–38, renamed as above, are green. After P8 every row of the ledger is
+`have`, `n/a` with its reason, or a P9/P10 battery. The owner's bar — feature and quality parity —
+is met when that holds and every slice's measurement shows no operation slower than Effect's.
