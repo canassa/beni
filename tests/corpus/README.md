@@ -254,7 +254,15 @@ development crash screen) shows it in both DOMs.
 **Which DOM.** The gates run the page in Node under happy-dom,
 `tests/browser/happy-dom.mjs`: one vendored, checksummed file that
 `tests/browser/vendor.sh` regenerates from pinned versions, so the gates
-need neither a browser nor the network. `zig build test-browser` runs the
+need neither a browser nor the network. Compiling it costs about 100
+million instructions, so the driver keeps V8's code cache in the
+checkout's `zig-out/browser-driver-cache/` — never in `/tmp`, where every
+worktree's copy of happy-dom was an entry of its own and the cache once
+filled the disk. Node keys an entry by the file's path, and each page
+program is compiled from a directory no later run repeats, so the driver
+prunes the cache as it starts: once it holds more than 1 024 entries,
+those older than an hour go. Deleting the directory is always safe; a
+missing entry is compiled again. `zig build test-browser` runs the
 same fixtures in one headless Chrome (a fresh target per page) against the
 same goldens; Chrome comes from `-Dchrome=` or `PATH` (`nix develop
 .#browser`). `tests/blackbox/browser.zig` has the measurements behind the
