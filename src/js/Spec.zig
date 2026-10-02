@@ -990,9 +990,12 @@ const Spec = struct {
     }
 
     fn addWorkDep(s: *Spec, head: u32) Allocator.Error!u32 {
-        const at: u32 = @intCast(s.w_deps.items.len);
-        try s.w_deps.append(s.arena, .{ .stmt = s.w_cur, .next = head });
-        return at;
+        const at = s.w_deps.items.len;
+        // `append`, written out: Zig's own backend inlines none of its calls.
+        if (s.w_deps.capacity == at) try s.w_deps.ensureUnusedCapacity(s.arena, 1);
+        s.w_deps.items.len = at + 1;
+        s.w_deps.items.ptr[at] = .{ .stmt = s.w_cur, .next = head };
+        return @intCast(at);
     }
 
     /// Every statement on list `head` is walked again.
@@ -5707,6 +5710,15 @@ const Pts = struct {
         live: bool = true,
     };
 
+    /// What `combine` makes of each leaf but `ident`: its tag alone says.
+    const literal_vals: [@typeInfo(Node.Tag).@"enum".fields.len]Val = blk: {
+        var table: [@typeInfo(Node.Tag).@"enum".fields.len]Val = @splat(Val.top_val);
+        for ([_]Node.Tag{ .number, .string, .template_chunk, .true_lit, .false_lit }) |t| table[@intFromEnum(t)] = Val.prim_val;
+        table[@intFromEnum(Node.Tag.null_lit)] = Val.nul_val;
+        table[@intFromEnum(Node.Tag.undefined_lit)] = Val.undef_val;
+        break :blk table;
+    };
+
     const VarId = u32;
     const LocalKey = struct { module: u32, top: u32, name: u32 };
     const NodeKey = struct { module: u32, node: u32 };
@@ -5841,9 +5853,12 @@ const Pts = struct {
 
     /// A dependency of the unit being walked, pushed on list `head`.
     fn addDep(p: *Pts, head: u32) Allocator.Error!u32 {
-        const at: u32 = @intCast(p.deps.items.len);
-        try p.deps.append(p.arena(), .{ .stmt = p.cur, .next = head });
-        return at;
+        const at = p.deps.items.len;
+        // `append`, written out: Zig's own backend inlines none of its calls.
+        if (p.deps.capacity == at) try p.deps.ensureUnusedCapacity(p.arena(), 1);
+        p.deps.items.len = at + 1;
+        p.deps.items.ptr[at] = .{ .stmt = p.cur, .next = head };
+        return @intCast(at);
     }
 
     /// Every unit on dependency list `head` is walked again.
@@ -6770,7 +6785,8 @@ const Pts = struct {
                 }
                 // A leaf has no operands to wait for.
                 if (isValueLeaf(t)) {
-                    vals[raw] = try p.combine(mi, node);
+                    // A literal's value is its tag's (`combine`), without the call.
+                    vals[raw] = if (t == .ident) try p.combine(mi, node) else literal_vals[@intFromEnum(t)];
                     continue;
                 }
                 try JsIr.pushOperand(p.arena(), stack, @enumFromInt(raw | post_bit));
