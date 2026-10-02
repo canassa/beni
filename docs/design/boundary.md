@@ -2104,14 +2104,14 @@ and each point below follows from it.
    which every program that drains would pay for. So after a defect every listener is gone
    (`DefectReleasesHost`'s `listeners` steps read 0, as before).
 
-**The architecture.** `Sub`'s list carries `Key × Hosted.Watch msg`, `type Watch msg = Waits (Tap
-msg) | Hears (Tap msg)` — a `Tap` built by `Hosted.tap body tag` or `Hosted.hook start tag` — and
-`Tea`'s live set keeps `Fibered fiber relay` or `Heard relay` per key; the first declaration of a
-key decides its kind. Every step that spawns or cancels a fiber is in a `Waits` or `Fibered` arm, so
-a program whose subscriptions all listen reaches no fiber through them (`backend.md` §9, *A `case`
-arm on a constructor nothing builds*). `Hosted.hear relay` runs a listener as 1–3 say,
-`closeRelay` removes it; `Hosted.runHeard relay` runs the same listener under `Listen.each` in a
-fiber.
+**The architecture.** `Sub`'s list carries `Key × Hosted.Kind × Tap msg`, `type Kind = Waits |
+Hears` — the tap built by `Hosted.tap body tag` or `Hosted.hook start tag` — and `Tea`'s live set
+keeps `{ relay, stop }` per key, `stop` what the key's leaving runs; the first declaration of a key
+decides its kind. Every step that spawns or cancels a fiber is in the `Waits` arm, so a program
+whose subscriptions all listen reaches no fiber through them (`backend.md` §9, *A `case` arm on a
+constructor nothing builds*). `Hosted.hear relay` runs a listener as 1–3 say, `Hosted.unhear`
+closes its relay and removes it; `Hosted.runHeard relay` runs the same listener under
+`Listen.each` in a fiber.
 
 **The proof is the existing pages, run both ways.** A development build carries a test hook: when
 the page's `globalThis.__beniFiberSubscriptions` is `true` before the program loads, `Tea` runs
@@ -2123,7 +2123,18 @@ before this amendment. A release build has no hook (`Js.development`). The corpu
 `LinkGuard`, `UrlAddress`, `ApiAndRoutes`, `TodoMVC`, the `Defect…` pages and the rest — shows one
 transcript under both paths, and their goldens did not change. `browser/tea/ListenerOrder` pins
 point 2 against commands and fibers, point 1 against after-render work, and point 3's same-task
-arrival and departure.
+arrival and departure (the driver's `flush` takes several selectors, each clicked and flushed in
+one task); each of the three fails against a listener that adds itself or sends at once, or that
+starts after its key left.
+
+*As built* (`platforms/browser/`: `Listen.beni`, `Hosted.beni`, `Hosted.js`, `Sub.beni`,
+`Browser/Events.beni`, `Browser/Navigation.beni`; `platforms/browser-tea/Tea.beni`;
+`core/Task.beni`'s `onShutdown`; `tests/browser/driver.mjs`'s `--fiber-page`), as specified.
+A page whose subscriptions all wait pays a little for the split (`bench/size.mjs`'s `every`, a
+`Time.every` alone, +38 brotli: the kind beside each tap and the stopper per key). Measured
+(`--release`, brotli 11): TodoMVC **9 895 → 8 316**; `bench/size.mjs`'s `navigation`, `links` and
+`application` pages 5 659 / 5 355 / 5 738 → 4 022 / 3 815 / 4 181, and no page that subscribes
+to nothing moves.
 
 #### 9.8.6 After render, the DOM capabilities, `Browser.flush` (W49, W50)
 
@@ -2175,10 +2186,10 @@ outlet or a relay, so the host itself is only `{ send, after }`, reached through
 | `run : Relay msg -> ()` | `suspends` | run the relay's body in the calling fiber |
 
 *Amended 2026-10-02 (§9.8.5's amendment):* `Hosted` gains `hook : sync ((a → ()) → (() → ())),
-sync (a → msg) → Tap msg` (`impure`), a listener's tap; `type Watch msg = Waits (Tap msg) | Hears
-(Tap msg)`, what `Sub`'s list carries, with `mapWatch` and `tapOf`; `hear : Relay msg → ()`, a
-listener run with no fiber, and `runHeard`, the same in the calling fiber (`suspends`), for the
-test hook `fibered`. `closeRelay` also removes a listener `hear` added.
+sync (a → msg) → Tap msg` (`impure`), a listener's tap; `type Kind = Waits | Hears`, which `Sub`'s
+list carries beside each key and tap; `hear : Relay msg → ()`, a listener run with no fiber, and
+`unhear`, which closes its relay and removes it; and `runHeard`, the same listener in the calling
+fiber (`suspends`), for the test hook `fibered`.
 
 *Amended 2026-10-02 (§9.8.3, the type's identity):* `key` is beni, `keyOf (Js.fingerprint k EQ) k`
 over a `pure` `foreign keyOf : String, k → Key where k.compare : k, k → Order`, and a `Key`

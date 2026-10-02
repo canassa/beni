@@ -382,3 +382,31 @@ node bench/todomvc/size.mjs --no-build # measure what bench/todomvc/out/ holds
 node bench/todomvc/size.mjs --json     # one JSON line per row
 node bench/todomvc/parity.mjs          # §3, after size.mjs
 ```
+
+## 8. What was taken (added 2026-10-02)
+
+The owner approved row 1 and the zero-cost rows; row 2 was declined. Each row taken is its own
+commit, priced after brotli across `bench/size.mjs` and every `browser/` corpus page, and kept only
+when smaller overall. `node bench/todomvc/size.mjs` afterwards, on `master` plus those commits:
+
+| subject | brotli 11 |
+|---|--:|
+| **beni** (the corpus page) | **7 894** (9 722 on `master` before them; 10 053 when this report was written) |
+| beni-full | 8 529 (10 369) |
+| Svelte 4 (full / parity) | 4 565 / 4 246 |
+| Solid 1 (full / parity) | 5 717 / 5 481 |
+| Svelte 5 (full / parity) | 14 488 / 13 346 |
+| Solid 2 (full / parity) | 21 517 / 21 291 |
+
+| row | taken | where | TodoMVC |
+|--:|---|---|--:|
+| 1 | yes: `Sub.on`, listener subscriptions with no fiber (`boundary.md` §9.8.5's amendment) | `browser`, `browser-tea`, `core/Task.onShutdown` | −1 579 |
+| 5 | yes: `String.join` is the array's `join` (−32 648 across `bench/size.mjs`) | `core/String` | −178 |
+| 12 | yes: `startsWith`/`endsWith` are the string's own | `core/String` | −54 |
+| 9 | yes: a literal URL attribute checked by the lowering and baked into the template | `dom.zig` | −74 |
+| 10 | yes: a `case` arm no value takes is left out of the decision tree | `Lower.zig` | −35 |
+| 4 | gone already: keys carry their type's identity and compare by its own `compare` | — | — |
+| 8 | no: a block's kind mounting through its patch, under the rows' conditions, grew 49 of 86 pages (+294 in all; TodoMVC +23); the page kind's own form needs class lists, stateful properties and slots written through the patch, and a `bench/ui` timing | — | — |
+| 6 | no: the `For` kind's fields do not fold because fact 3 loses the markup values — the slot's instance is ⊤, so every values array and row kind escapes; index-precise array reads alone do not reach it | `Spec.zig` | — |
+| 7 | no: the `Url` escapes into `Hosted.js`'s relay at a type variable, which may walk it; its unread fields could go only if the relay were beni and fact 3 read a program array's `push` | — | — |
+| 3, 11 | not attempted: 3 is a design decision the owner has not taken; 11 needs a platform hook whose bytes eat its 15 | — | — |
