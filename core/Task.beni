@@ -261,12 +261,6 @@ spawning : Js.Ref Bool
 spawning = Js.ref False
 
 
--- The children `spawn` gave `fiber`: null when it has none, and always in a
--- build that never spawns.
-childrenOf : V → V
-childrenOf fiber = if Js.read spawning then Js.get fiber "children" else Js.null
-
-
 -- Whether a field holding a set or an array holds nothing.
 none : V → Bool
 none set = Js.isNull set || Js.to (Js.get set "size") == 0
@@ -538,7 +532,7 @@ loop fiber first =
             -- whatever the masks say, since there is no value to go on with.
             _ = unwind fiber
             loop fiber Js.null
-        else if Js.read expired && inCleanup fiber then
+        else if Js.read finalising && Js.read expired && inCleanup fiber then
             -- Past the teardown's deadline a finaliser runs only to its
             -- first wait, and the fiber goes on to its next (§9.8.14 (f)).
             _ = abandon fiber (Js.get p "wait")
@@ -694,12 +688,15 @@ finish : V → V
 finish value =
     fiber = Js.read current
     _ = Js.set fiber "unwinding" (Js.from True)
-    children = childrenOf fiber
-    if none children then
+    if not (Js.read spawning) then
         finished value
     else
-        _ = cancelEvery (copy children)
-        finished value
+        children = Js.get fiber "children"
+        if none children then
+            finished value
+        else
+            _ = cancelEvery (copy children)
+            finished value
 
 
 finished : V → V
@@ -720,7 +717,7 @@ unwind fiber =
     stack = Js.get fiber "stack"
     _ = Js.set stack "length" (Js.from 0)
     _ = Js.call stack "push" [ Js.from ended ]
-    _ = cleanups fiber
+    _ = if Js.read finalising then cleanups fiber else ()
     if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ]) else ()
 
 
@@ -1115,14 +1112,29 @@ openScope () =
         Js.from
             { children = Js.construct (Js.global "Set") [], closed = False, finalizer = Js.null }
     _ = Js.set sc "finalizer" (Js.from λ_ → shutAll sc)
-    fiber = here ()
-    _ =
-        if Js.isNull (Js.get fiber "finalizers") then
-            Js.set fiber "finalizers" (Js.array [])
-        else
-            ()
-    _ = Js.call (Js.get fiber "finalizers") "push" [ Js.get sc "finalizer" ]
+    _ = addFinalizer (here ()) (Js.get sc "finalizer")
     Js.to sc
+
+
+-- Whether a finaliser has ever been registered (here, or by the fiber
+-- `cleanupFiber` starts): until one has, no fiber holds one, and none can be
+-- inside one when the teardown's deadline passes. A build that registers
+-- none — a page whose fibers only wait — folds this to `False` and keeps
+-- none of the finaliser walk or its boundaries.
+finalising : Js.Ref Bool
+finalising = Js.ref False
+
+
+-- Put `fin` on `fiber`'s finalisers, last.
+addFinalizer : V, V → ()
+addFinalizer fiber fin =
+    _ = Js.write finalising True
+    fins = Js.get fiber "finalizers"
+
+    if Js.isNull fins then
+        Js.set fiber "finalizers" (Js.array [ fin ])
+    else
+        Js.to (Js.call fins "push" [ fin ])
 
 
 dropFinalizer : V, V → ()
@@ -1252,6 +1264,7 @@ cleanupFiber : V → ()
 cleanupFiber fins =
     fiber = newFiber Js.null
     _ = Js.write live (Js.read live + 1)
+    _ = Js.write finalising True
     _ = Js.set fiber "finalizers" fins
     _ = unwind fiber
     enqueue fiber Js.null Js.null
@@ -1532,7 +1545,7 @@ teardown () =
     o = Js.read outside
 
     _ =
-        if Js.isNull o || none (Js.get o "finalizers") then
+        if not (Js.read finalising) || Js.isNull o || none (Js.get o "finalizers") then
             ()
         else
             fiber = newFiber Js.null
@@ -1581,7 +1594,7 @@ recover fiber =
     _ = Js.set fiber "interrupted" (Js.from True)
     _ = Js.set fiber "parked" Js.null
     _ = Js.set fiber "masks" (Js.from 0)
-    if inCleanup fiber then
+    if Js.read finalising && inCleanup fiber then
         cutBack fiber
     else if not (Js.to (Js.get fiber "unwinding")) then
         unwind fiber
@@ -1605,7 +1618,7 @@ expire () =
     _ = Js.write deadlineTimer Js.null
     _ = Js.write expired True
     c = Js.read cleaning
-    if Js.isNull c then
+    if not (Js.read finalising) || Js.isNull c then
         ()
     else
         ok = Js.ref False
@@ -1662,13 +1675,7 @@ unmask value =
 
 pushFinalizer : r, (() → ()) → r
 pushFinalizer resource fin =
-    fiber = here ()
-    _ =
-        if Js.isNull (Js.get fiber "finalizers") then
-            Js.set fiber "finalizers" (Js.array [])
-        else
-            ()
-    _ = Js.call (Js.get fiber "finalizers") "push" [ Js.from fin ]
+    _ = addFinalizer (here ()) (Js.from fin)
     resource
 
 
@@ -2488,7 +2495,7 @@ begin h work arg =
                     Js.set fiber "parked" (Js.get p "wait")
             _ = Js.write started fiber
             Js.null
-        else if none (childrenOf fiber) then
+        else if not (Js.read spawning) || none (Js.get fiber "children") then
             _ = Js.set h "probe" fiber
             _ = Js.write started Js.null
             r
