@@ -1,0 +1,39 @@
+--! A test platform whose JavaScript reads and builds values of
+--! one-constructor, one-field types (`boundary.md` §4, *What JavaScript may
+--! read of a beni value*): a type a `foreign` annotation names and one used
+--! at `Js.from` keep their object, tag and field under `--release`; a value
+--! handed through a type variable is opaque, and its type is its field
+--! (`backend.md` §9, *A type of one constructor with one field is its
+--! field*).
+
+import Js
+
+
+--| A length a sibling reads and builds as `{ $: "Meters", a }`.
+pub type Meters
+    = Meters Float
+
+
+--| A label read through `Js.from`, by its tag and its field.
+pub type Label
+    = Label String
+
+
+--| The sibling doubles a `Meters`, or answers `null` for anything that is
+--| not one.
+pub foreign pure double : Meters → Meters
+
+
+--| Whatever it is handed, handed back.
+pub foreign pure keep : a → a
+
+
+--| The label's tag and text, read by name.
+pub labelText : Label → String
+labelText l =
+    v = Js.from l
+    tag : String
+    tag = Js.to (Js.get v "$")
+    text : String
+    text = Js.to (Js.get v "a")
+    "${tag}: ${text}"

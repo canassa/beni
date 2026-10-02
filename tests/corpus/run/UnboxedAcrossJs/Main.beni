@@ -1,0 +1,34 @@
+-- A one-constructor, one-field type JavaScript can see keeps its object,
+-- tag and field under `--release`, and one it cannot see is its field
+-- (backend.md §9, *A type of one constructor with one field is its
+-- field*): a `Meters` a sibling doubles by reading `.$` and `.a`, a
+-- `Label` read by name through `Js.from`, and the program's own `Count`
+-- handed through a type variable and matched afterwards. Both builds print
+-- the same lines.
+import Node
+import Wrap exposing (Label, Meters)
+
+
+type Count
+    = Count Int
+
+
+meters : Meters → String
+meters (Wrap.Meters m) = String.fromFloat m
+
+
+count : Count → String
+count c =
+    case c of
+        Count n →
+            String.fromInt n
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ meters (Wrap.double (Wrap.Meters 1.25))
+        , Wrap.labelText (Wrap.Label "kept")
+        , count (Wrap.keep (Count 3))
+        , if Wrap.keep (Count 4) == Count 4 then "equal" else "different"
+        ]

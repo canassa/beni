@@ -332,7 +332,9 @@ fields and gives constructors integer tags wherever no JavaScript can see the di
 "where can JavaScript see it" is now part of this contract. **JavaScript sees the representation
 of exactly the types a `foreign` annotation names, and of the type a `Js.from` or `Js.to` is
 used at** — written records, named types and their bodies, transitively. Those keep their source
-field names and string tags in every build.
+field names and string tags in every build, and a type of one constructor with one field keeps
+its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
+`backend.md` §9, *A type of one constructor with one field is its field*).
 
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may

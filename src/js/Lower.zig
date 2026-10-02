@@ -472,6 +472,11 @@ const CtorRep = union(enum) {
     /// it reads the fields by name (`argMember`). Where the names come from
     /// is `RecordRep`'s.
     record: RecordRep,
+    /// Under `--release`, the one constructor, of one field, of a type with
+    /// integer tags: the value IS its field — no object, no tag, and every
+    /// test of it holds (`backend.md` §9, *A type of one constructor with
+    /// one field is its field*).
+    unboxed,
 
     /// A constructor's declaration index when its type's tags are
     /// integers, else null and the tag is its name.
@@ -481,7 +486,7 @@ const CtorRep = union(enum) {
         return switch (rep) {
             .bare_tag => |t| t,
             .tagged => |t| t.int,
-            .boolean, .record => null,
+            .boolean, .record, .unboxed => null,
         };
     }
 };
@@ -1150,6 +1155,7 @@ pub const Lowerer = struct {
         const rep, const tag, _, _ = (try l.coreCtorByText(owner, ctor, p)) orelse return l.add(.false_lit, p, Node.Data.unused, Node.Data.unused);
         const subject = switch (rep) {
             .tagged => try l.member(x, l.well.tag, p),
+            .unboxed => return l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             else => x,
         };
         return l.binary(.strict_eq, subject, try l.tagLiteral(rep, tag, p), p);
@@ -3601,6 +3607,7 @@ pub const Lowerer = struct {
         }
         if (owner.kind == .type_alias) return .{ .record = .{ .local = c.decl.int() } };
         const int: CtorRep.Tag = if (l.integerTags(l.in.types.ofDecl(l.in.module, c.decl))) ctor_index - owner.ctors_start else null;
+        if (int != null and max == 1 and owner.ctors_end - owner.ctors_start == 1) return .unboxed;
         if (max == 0) return .{ .bare_tag = int };
         return .{ .tagged = .{ .fields = max, .int = int } };
     }
@@ -3691,6 +3698,8 @@ pub const Lowerer = struct {
                     const names = try l.recordNames(r);
                     if (i < names.len) return l.fieldMember(target, names[i], p);
                 },
+                // The value is its one field.
+                .unboxed => return target,
                 else => {},
             };
         }
@@ -3716,6 +3725,7 @@ pub const Lowerer = struct {
         // The interface lists a type's constructors in declaration order,
         // so the index is the one the declaring module writes.
         const int: CtorRep.Tag = if (l.integerTags(l.in.types.ofInterface(module, c.type))) ctor_index - owner.ctors_start else null;
+        if (int != null and max == 1 and owner.ctors_end - owner.ctors_start == 1) return .unboxed;
         if (max == 0) return .{ .bare_tag = int };
         return .{ .tagged = .{ .fields = max, .int = int } };
     }
@@ -3754,6 +3764,7 @@ pub const Lowerer = struct {
         switch (rep) {
             .boolean => |value| return l.add(if (value) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
             .bare_tag => return l.tagLiteral(rep, tag, p),
+            .unboxed => return if (args.len == 1) args[0] else l.nullNode(p),
             .tagged => |t| {
                 var properties: std.ArrayList(Node.Index) = .empty;
                 try properties.append(l.scratch, try l.property(l.well.tag, try l.tagLiteral(rep, tag, p), p));
@@ -4433,8 +4444,8 @@ pub const Lowerer = struct {
             else
                 try l.unary(.not, subject, p),
             // `Nothing` and `Err` are constructors of `type`s in the
-            // embedded core, never of a record alias.
-            .record => unreachable,
+            // embedded core, never of a record alias, and each type has two.
+            .record, .unboxed => unreachable,
         };
         try l.ifStatement(out, failed, &.{try l.returnStmt(subject, p)}, p);
         return l.member(subject, try l.slotName(0), p);
@@ -6000,6 +6011,9 @@ pub const Lowerer = struct {
             return try l.derivedFunction(params, stmts.items, p);
         }
 
+        // A type that is its one field (`CtorRep.unboxed`): the two values
+        // ARE the two fields, compared by the field's own evidence.
+        const unboxed = ctors.len == 1 and widest == 1 and l.integerTags(id);
         var cursor: usize = 0;
         var counter: u32 = 0;
         var arms: std.ArrayList(Node.Index) = .empty;
@@ -6045,11 +6059,12 @@ pub const Lowerer = struct {
                     return null;
                 }
                 const part = parts[cursor];
-                const loops_here = loops[cursor];
+                // Unboxed, a loop would step from a value to itself.
+                const loops_here = loops[cursor] and !unboxed;
                 cursor += 1;
                 const slot = try l.slotName(arg);
-                const left = try l.member(try l.ident(x, p), slot, p);
-                const right = try l.member(try l.ident(y, p), slot, p);
+                const left = if (unboxed) try l.ident(x, p) else try l.member(try l.ident(x, p), slot, p);
+                const right = if (unboxed) try l.ident(y, p) else try l.member(try l.ident(y, p), slot, p);
                 if (loops_here) {
                     // `if (!a) return false; …` for what came before, then
                     // `$x = $x.b; $y = $y.b; continue;`.
@@ -7050,9 +7065,10 @@ pub const Lowerer = struct {
     fn ctorTest(l: *Lowerer, subject: Node.Index, t_index: Dispatch.TermIndex, inst: Inst.Index, leaves: []const Node.Index, cursor: *usize, p: u32) !Node.Index {
         const app = l.ctorApplication(inst).?;
         const rep, const tag = l.ctorRepOf(app.ctor).?;
-        var acc = try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.tagLiteral(rep, tag, p), p);
+        // A value of a type that is its one field has no tag to test.
+        var acc: ?Node.Index = if (rep == .unboxed) null else try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.tagLiteral(rep, tag, p), p);
         for (app.args, 0..) |arg, j| {
-            const field = try l.member(subject, try l.slotName(@intCast(j)), p);
+            const field = if (rep == .unboxed) subject else try l.member(subject, try l.slotName(@intCast(j)), p);
             const one = switch (l.fieldEq(t_index, app.ctor, j)) {
                 .nested => |n| try l.ctorTest(field, n, arg, leaves, cursor, p),
                 else => blk: {
@@ -7061,9 +7077,9 @@ pub const Lowerer = struct {
                     break :blk try l.binary(.strict_eq, field, leaf, p);
                 },
             };
-            acc = try l.binary(.logical_and, acc, one, p);
+            acc = if (acc) |before| try l.binary(.logical_and, before, one, p) else one;
         }
-        return acc;
+        return acc orelse l.add(.true_lit, p, Node.Data.unused, Node.Data.unused);
     }
 
     /// `left == right` (or `/=`) as a tag and field test, when one side is
@@ -10193,7 +10209,8 @@ pub const Lowerer = struct {
                     .tagged => try l.member(subject, l.well.tag, c.p),
                     // `.record`: a record alias has ONE constructor, so it
                     // never fans out and nothing reads this for it.
-                    .boolean, .bare_tag, .record => subject,
+                    // `.unboxed`: one constructor too.
+                    .boolean, .bare_tag, .record, .unboxed => subject,
                 };
             },
             .int, .char, .string => return subject,
@@ -10220,6 +10237,8 @@ pub const Lowerer = struct {
                 if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
                     // `True` and `False` are the alternative itself.
                     .boolean => |value| return if (value) subject else try l.unary(.not, subject, p),
+                    // The one constructor there is: every value is it.
+                    .unboxed => return l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
                     else => {},
                 };
             }
@@ -10677,6 +10696,8 @@ pub const Lowerer = struct {
                 // is an object and so no key (backend.md §15.5).
                 const ctor = probe.ctor.unwrap() orelse return l.markupInput(probe.input, p);
                 const rep, const tag = l.ctorRepOf(ctor) orelse return l.markupInput(probe.input, p);
+                // Every value is the constructor, and the value its field.
+                if (rep == .unboxed) return l.markupInput(probe.input, p);
                 const tested = try l.binary(.strict_eq, try l.member(try l.markupInput(probe.input, p), l.well.tag, p), try l.tagLiteral(rep, tag, p), p);
                 const field = try l.member(try l.markupInput(probe.input, p), try l.slotName(0), p);
                 return l.condOf(tested, field, try l.markupInput(probe.input, p), p);

@@ -1,0 +1,47 @@
+-- emit: under `--release` a type of one constructor with one field, whose
+-- values no JavaScript sees, is its field (`backend.md` §9, *A type of one
+-- constructor with one field is its field*):
+--
+--   * `Meters 1.5` is `1.5`, and `add`'s parameter patterns read the two
+--     numbers themselves — no object is built, no `.a` is read;
+--   * `show`'s `case` has no test: the one constructor is every value;
+--   * the derived `compare` of `Meters` compares the two numbers by the
+--     field's own `compare`, with no tag to look at;
+--   * `Meters` passed as a function is the identity;
+--   * a record holding a `Meters` holds the number, and `{ trip | name }`
+--     copies it as it copies every other field — the record is still a
+--     new object and the field still the same value.
+import Node exposing (Program)
+
+
+type Meters
+    = Meters Float
+
+
+type alias Trip =
+    name : String
+    length : Meters
+
+
+add : Meters, Meters → Meters
+add (Meters a) (Meters b) = Meters (a + b)
+
+
+show : Meters → String
+show m =
+    case m of
+        Meters x →
+            "${String.fromFloat x} m"
+
+
+main : Program
+main =
+    trip : Trip
+    trip = { name = "walk", length = Meters 2.5 }
+
+    renamed = { trip | name = "stroll" }
+
+    lengths = List.map [ 1.0, 3.0 ] Meters
+
+    longest = List.foldl lengths (Meters 0.0) λm best → if best < m then m else best
+    Node.printLines [ show (add renamed.length longest), renamed.name ]

@@ -5012,6 +5012,68 @@ modules, a record passed through a test platform's `foreign` and read by its sib
 golden of the artifact; the whole `run/` and `browser/` corpus's release pass is the differential
 test, and the determinism test runs `--release` at `--jobs=1` and `--jobs=8`.
 
+#### A type of one constructor with one field is its field
+
+*Added 2026-10-02.* `Duration` is `Duration Int`, `Dict` is `Dict (Tree k v)`, `Cmd` is `Cmd (List
+(Item msg))`: a type of one constructor with one field, whose object is an allocation and whose
+every read is a `.a`, to carry a number of milliseconds, a tree, a list. **Under `--release`, a
+type with integer tags (above) that has exactly one constructor, and that constructor exactly one
+field, is represented by its field**: `Duration 5` is `5`, the pattern `(Duration n)` binds `n` to
+the value itself, a `case` on it tests nothing, and the constructor used as a function is `x =>
+x`. Opaque or not makes no difference; what decides is the integer-tag bit, so everything that
+keeps a type's string tags keeps its object:
+
+- **What JavaScript sees keeps its shape.** A type in the boundary — named by a live `foreign`'s
+  annotation, or reached by a `Js.from`/`Js.to` instantiation, transitively — is boxed as in
+  development, `{$: "Meters", a}`: a sibling reads `.$` and `.a`, and builds the object. A value
+  handed through a type variable is opaque (`boundary.md` §4, *What JavaScript may read of a beni
+  value*), so its type may be unboxed; JavaScript may store it, hand it back and compare it with
+  `===`, none of which reads the object. A type a reflective order compares (`Hosted.key`) is in
+  the boundary already.
+- **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
+- **Markup.** A selector probe (§15.5) of such a type is the value itself, which is the field the
+  probe would have read; nothing else a lowering writes reads a beni constructor.
+- **`==` and `compare` mean what they meant.** The derived `eq` and `compare` of such a type are
+  its field's, applied to the two values: no tag, no `.a`, and the self-loop a derived function
+  takes through its last field is not written (an unboxed value would step to itself; such a type —
+  `Never` — has no values). `==` against a constructor (§4, *`==` against a constructor is a tag
+  and field test*) is the field test alone, so `Reach` and `Lower` still agree on which sites call a
+  derived `eq`. A reflective walk (`Basics.eq`) compares the field where it compared an object
+  holding it, and answers the same.
+- **Identity** (`CLAUDE.md` rule 8). A record holding such a value holds the field; `{ r | f = x }`
+  copies it as it copies every field, so the record is a new object and each untouched field the
+  same value, as before. What moves is that two constructions over one field are now one value —
+  `Box xs` and `Box xs` are `===` where they were two objects — so a markup hole's reference check
+  skips work it used to do, never the reverse, with one exception that costs only work: a `Float`
+  field that is `NaN` is not `===` itself, where the object holding it was, so a hole holding one
+  patches on every render.
+
+Every place `Lower` writes or reads a constructor answers it (`CtorRep.unboxed`): the value, a
+parameter or `case` pattern's field read (`argMember`), a test (`edgeTest`, `coreCtorTest`), a
+`switch` discriminant, `==` against a constructor (`ctorTest`), the selector probe, and the
+derived `eq` and `compare` (`nominalArrow`). Whole-program specialisation needed nothing: it sees
+the field where it saw an object.
+
+**Measured** (2026-10-02; `bench/size.mjs`, release brotli, against the build before): total 749 997
+→ **748 721** (−1 276); 76 programs smaller, 10 larger, 363 equal. The largest:
+`run/CoreSetRest` 2 726 → 2 635, `run/DictSetEquality` 3 647 → 3 589, `run/UrlParser` 3 649 → 3 597,
+`run/DurationArithmetic` 488 → 454, the `browser-tea` effects page 6 222 → **6 162**, random 1 985 →
+1 966, navigation 5 658 → 5 635, links 5 347 → 5 327, application 5 733 → 5 716. Larger: the
+`element` page 1 199 → 1 210 (+8 raw bytes: `Cmd.items Cmd.none` is specialised to a function of
+no parameter in `Cmd` before it is written into `Tea`, which then names a `Cmd` binding `Tea` does
+not, and the cross-module rule of *Once the whole program is in view* keeps the call — where
+`none.a` had been written in place), and nine programs by at most 14 brotli bytes, each fewer raw
+bytes or within 1. A program inserting 200 000 keys into a `Dict`, looking each up, building a
+`Set` of 200 001 and summing 200 000 `Duration`s (`node --single-threaded`, the whole process,
+three runs each): **2 700 → 2 255 million instructions** (−16.5 %), 0.29 → 0.28 s, peak memory
+233 → 225 MB. Fixtures: `emit/release/app/Unboxed` (a value, parameter patterns, a `case`, a
+derived `compare`, the constructor as a function, a record and its update) — red against the
+build before; `run/UnboxedTypes` (the same and a nested one, `==` against a constructor, a
+polymorphic one, `Duration`, `Dict` and `Set`, in both builds); `run/UnboxedAcrossJs` (a type a
+`foreign` annotation names and one used at `Js.from` keep `$` and `a` for their sibling, the
+program's own handed through a type variable is unboxed and matched after); the whole `run/` and
+`browser/` corpus's release pass.
+
 ### Hand-written JavaScript under `--release`
 
 *Added 2026-09-29.* **Under `--release` a hand-written file — a `foreign` sibling, a platform's
