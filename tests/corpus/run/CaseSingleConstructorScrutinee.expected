@@ -1,4 +1,4 @@
-nullary: "Inc"
+nullary: Inc
 boundField: Box 3 "c"
 letPattern: Box 4 "d"
 tupleElement: 0

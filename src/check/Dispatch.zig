@@ -318,6 +318,46 @@ pub const Boundary = struct {
     pub const Kind = enum(u8) { field, type };
 };
 
+/// A use of core's `Debug.toString` or `Debug.log` whose printed value has
+/// a type the checker solved to more than a bare variable
+/// (checker-v2.md §32): the backend hands that type to the printer, so a
+/// tuple prints as a tuple and a `Char` as a `Char` (`backend.md` §4,
+/// *`Debug.toString` reads the argument's type*).
+pub const DebugSite = struct {
+    /// The `ext_value` reference of `toString` or `log`.
+    inst: Bir.Inst.Index,
+    which: Which,
+    /// The type's nodes, in `debug_nodes`, in pre-order.
+    shape: Range,
+
+    pub const Which = enum(u8) { toString, log };
+};
+
+/// One node of a `DebugSite`'s type, pre-order: `count` nodes follow as its
+/// children, each with its own subtree.
+pub const DebugNode = struct {
+    kind: Kind,
+    /// Children: a tuple's elements, a record's `field` nodes, a named
+    /// type's arguments; 1 for a `field`, 0 otherwise.
+    count: u32 = 0,
+    /// `field`: the field's `Symbol`. `named`: the `TypeId`. Else 0.
+    value: u32 = 0,
+
+    pub const Kind = enum(u8) {
+        /// A type variable, a poisoned type, or a subtree past the cap.
+        unknown,
+        function,
+        unit,
+        tuple,
+        /// Its fields, sorted by name text.
+        record,
+        field,
+        /// A `type`, `foreign type` or core's own (`Int`, `List`, …);
+        /// never an alias, which the walk reads through.
+        named,
+    };
+};
+
 terms: []const Term = &.{},
 /// Term indices: every `args`, `Site.evidence` and `Derived.body` range
 /// points in here.
@@ -357,6 +397,11 @@ effect_decls: []const EffectDecl = &.{},
 /// Sorted by `decl`, then kind, then the field's text or the type's
 /// `(package, module, name)`; no row twice (checker-v2.md §28).
 boundary: []const Boundary = &.{},
+/// Ascending by instruction, at most one per instruction (checker-v2.md
+/// §32).
+debug: []const DebugSite = &.{},
+/// What every `DebugSite.shape` ranges over.
+debug_nodes: []const DebugNode = &.{},
 
 pub const empty: Dispatch = .{};
 
@@ -376,7 +421,28 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.effect_sites);
     gpa.free(d.effect_decls);
     gpa.free(d.boundary);
+    gpa.free(d.debug);
+    gpa.free(d.debug_nodes);
     d.* = .empty;
+}
+
+/// The `debug` row of the reference at `inst`, if it has one. One binary
+/// search.
+pub fn debugAt(d: *const Dispatch, inst: Bir.Inst.Index) ?DebugSite {
+    var lo: usize = 0;
+    var hi: usize = d.debug.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = d.debug[mid].inst;
+        if (at == inst) return d.debug[mid];
+        if (at.int() < inst.int()) lo = mid + 1 else hi = mid;
+    }
+    return null;
+}
+
+/// A `debug` row's nodes.
+pub fn debugShape(d: *const Dispatch, site: DebugSite) []const DebugNode {
+    return d.debug_nodes[site.shape.start..][0..site.shape.len];
 }
 
 /// The effect answers of one instruction (§16.2): `no` twice when it has
@@ -424,7 +490,7 @@ pub fn effectsIn(d: *const Dispatch, start: u32, end: u32) []const EffectSite {
 /// Whether the table holds anything at all. A module with no dispatch prints
 /// its `module` line and nothing else.
 pub fn isEmpty(d: *const Dispatch) bool {
-    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0 and d.boundary.len == 0;
+    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0 and d.boundary.len == 0 and d.debug.len == 0;
 }
 
 /// Whether the `++` at `inst` is on lists (`appends`). One binary search.

@@ -87,6 +87,7 @@ const Print = @import("Print.zig");
 const SourceMap = @import("SourceMap.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
+const DebugShape = @import("DebugShape.zig");
 const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
@@ -358,6 +359,8 @@ pub fn run(
         if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
     }
 
+    try e.openDebugContext();
+
     // Everything is produced into `pending` first and written afterwards.
     // A diagnostic can still appear here — `?` is not compiled yet
     // (backend.md §1) and says so — and a build that wrote half its modules
@@ -470,6 +473,10 @@ const Emitter = struct {
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
     /// Null renames no field and gives no type integer tags.
     boundary: ?Fields.Boundary = null,
+    /// What a typed `Debug.toString` reads its type's constructors from
+    /// (§4, *`Debug.toString` reads the argument's type*): set before
+    /// lowering when some module has a debug row, null otherwise.
+    debug_context: ?DebugShape.Context = null,
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
@@ -1975,6 +1982,21 @@ const Emitter = struct {
         });
     }
 
+    /// §4, *`Debug.toString` reads the argument's type*: every module's
+    /// `Bir`, for the typed printer's descriptors, when any module has a
+    /// debug row (checker-v2.md §32). Read-only, so the lowering workers
+    /// share it.
+    fn openDebugContext(e: *Emitter) !void {
+        const count = e.graph().count();
+        const any = for (0..count) |i| {
+            if (e.dispatchOf(@enumFromInt(@as(u32, @intCast(i)))).debug.len != 0) break true;
+        } else false;
+        if (!any) return;
+        const birs = try e.scratch.alloc(*const Bir, count);
+        for (birs, 0..) |*b, i| b.* = e.bir(@enumFromInt(@as(u32, @intCast(i))));
+        e.debug_context = .{ .birs = birs, .types = &e.session.checked.types, .interner = &e.session.interner };
+    }
+
     /// Whether any declaration of core's `Debug` survived elimination.
     fn reachesDebug(e: *Emitter) bool {
         const debug = e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol()) orelse return false;
@@ -2566,6 +2588,7 @@ const Emitter = struct {
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,
                 .core_private = e.core_private,
+                .debug = if (e.debug_context) |*cx| cx else null,
             });
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;

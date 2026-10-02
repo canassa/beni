@@ -2,7 +2,7 @@
 -- as amended, checker-v2.md §11.3): a private `eq`
 -- answers dispatch inside its own module, directly (`inside`) and through a
 -- derived shape the module compares (`insideTuple`), so both compare modulo
--- 10 and print `true` (`Debug.toString`). The outside half, where every such comparison from
+-- 10 and print `True` (`Debug.toString`). The outside half, where every such comparison from
 -- another module is `private_method`, is
 -- `check/bad/PrivateEqThroughThirdModule`.
 pub type T

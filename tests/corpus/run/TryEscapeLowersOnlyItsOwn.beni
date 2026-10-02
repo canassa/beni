@@ -5,8 +5,8 @@
 -- two types, while `u` and `v` go down with the escaping target (`g`'s
 -- result is `k`'s) and the `?` is decided as `Maybe` by the `case` after the
 -- `let`.
--- Expected `Just { a = { a = 1, b = 1 }, b = { a = "s", b = "s" } }` (how
--- `Debug.toString` prints a pair of pairs) and `7`.
+-- Expected `Just ((1,1),("s","s"))` (how `Debug.toString` prints a pair
+-- of pairs) and `7`.
 --
 -- Oracle twin: this file with `f : (( ( Int, Int ), (
 -- String, String ) ) -> Maybe ( ( Int, Int ), ( String, String ) )) -> (

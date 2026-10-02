@@ -55,6 +55,7 @@ const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
 const Fields = @import("Fields.zig");
+const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
 const stamped = @import("../stamped.zig");
@@ -232,6 +233,11 @@ pub const Input = struct {
     /// the one it lacks, rather than importing a name `core/List` does not
     /// export.
     core_private: CorePrivate = @splat(true),
+    /// What a `Debug.toString` or `Debug.log` the checker gave a row
+    /// writes its type's descriptor from (`backend.md` §4, *`Debug.toString`
+    /// reads the argument's type*). Null: every such use is the plain
+    /// call, which reads the value by representation.
+    debug: ?*const DebugShape.Context = null,
 };
 
 /// `core/List`'s core-private values the emitter calls from other modules
@@ -4518,6 +4524,10 @@ pub const Lowerer = struct {
             if (arity == 0) return l.ctorValue(rep, tag, &.{}, p);
             return l.ctorLambda(rep, tag, arity, p);
         }
+        // `Debug.toString` as a value, its type known: the typed printer
+        // with the descriptor bound (§4, *`Debug.toString` reads the
+        // argument's type*).
+        if (try l.debugTyped(inst, p)) |typed| return l.etaExpand(typed.callee, &.{typed.descriptor}, typed.arity, p);
         const value = try l.referenceName(inst);
         const site = l.in.dispatch.siteOf(inst) orelse return value;
         const roots = l.in.dispatch.argsAt(site.evidence);
@@ -7211,6 +7221,33 @@ pub const Lowerer = struct {
         return l.ident(try l.externalName(module, @intFromEnum(index)), p);
     }
 
+    /// A use of `Debug.toString` or `Debug.log` the checker gave a type
+    /// (checker-v2.md §32), as the typed printer it calls: `Debug.toStringAs`
+    /// or `Debug.logAs`, the descriptor (`DebugShape.text`) as a string
+    /// literal, and how many arguments follow it (§4, *`Debug.toString`
+    /// reads the argument's type*).
+    const DebugTyped = struct { callee: Node.Index, descriptor: Node.Index, arity: u32 };
+
+    fn debugTyped(l: *Lowerer, inst: Inst.Index, p: u32) !?DebugTyped {
+        const cx = l.in.debug orelse return null;
+        if (l.bir.instTag(inst) != .ext_value) return null;
+        const site = l.in.dispatch.debugAt(inst) orelse return null;
+        const spelling: []const u8, const arity: u32 = switch (site.which) {
+            .toString => .{ "toStringAs", 1 },
+            .log => .{ "logAs", 2 },
+        };
+        const module: Graph.Index = @enumFromInt(l.bir.instData(inst).lhs);
+        if (module.int() >= l.in.interfaces.len) return null;
+        const symbol = l.interner.global.find(spelling) orelse
+            return .{ .callee = try l.missingCoreValue(p, "Debug", spelling, "that module does not expose it"), .descriptor = try l.nullNode(p), .arity = arity };
+        const index = l.in.interfaces[module.int()].findValue(l.interner.global, symbol) orelse
+            return .{ .callee = try l.missingCoreValue(p, "Debug", spelling, "that module does not expose it"), .descriptor = try l.nullNode(p), .arity = arity };
+        try l.need(module, @intFromEnum(index));
+        const callee = try l.ident(try l.externalName(module, @intFromEnum(index)), p);
+        const descriptor = try DebugShape.text(l.scratch, cx, l.in.dispatch.debugShape(site));
+        return .{ .callee = callee, .descriptor = try l.stringNode(descriptor, p), .arity = arity };
+    }
+
     /// The one failure `coreValue` and `corePrivate` can hit: a core package
     /// that does not hold a value the emitter calls on its own.
     /// `core_contract_violation`, because a complete core package always
@@ -7349,6 +7386,18 @@ pub const Lowerer = struct {
         // statements would need a temporary assigned in each arm, which
         // costs more than the call it replaces.
         if (l.inlineTarget(inst)) |index| if (!l.inline_loops[index] and l.isExpressionBody(index) and l.atomArguments(inst)) return l.inlineExpr(out, inst, index);
+
+        // A `Debug.toString` or `Debug.log` whose type the checker knows
+        // calls the typed printer, the descriptor first (§4, *`Debug.toString`
+        // reads the argument's type*). The reference itself has nothing to
+        // evaluate, so dropping it changes no order.
+        if (roots.len == 0) if (try l.debugTyped(callee_inst, p)) |typed| if (typed.arity == arg_insts.len) {
+            const values = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            const args = try l.scratch.alloc(Node.Index, values.len + 1);
+            args[0] = typed.descriptor;
+            @memcpy(args[1..], values);
+            return l.suspension(out, inst, try l.call(typed.callee, args, p));
+        };
 
         // Everything else is one direct n-ary call (`backend.md` §6). The
         // callee and the arguments are ONE sequence, because JavaScript

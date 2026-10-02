@@ -11,7 +11,7 @@ a😀
 a😀
 3
 a|😀|b
-Just { a = "😀", b = "b" }
+Just ('😀',"b")
 .😀.
 a!b
 b😀a

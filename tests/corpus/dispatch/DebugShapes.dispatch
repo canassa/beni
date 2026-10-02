@@ -1,0 +1,9 @@
+module DebugShapes
+  decl describe evidence=0 arity=1 convention=plain
+  decl item evidence=0 arity=0 convention=plain
+  decl shown evidence=0 arity=0 convention=plain
+  debug 26 toString ( Char.Char, Basics.Bool, () )
+  debug 32 toString { label : String.String, value : (Maybe.Maybe (List.List Basics.Float)) }
+  debug 35 toString <function>
+  debug 46 log String.String
+  debug 48 toString (Result.Result _ Char.Char)

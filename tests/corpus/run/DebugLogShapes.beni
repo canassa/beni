@@ -1,0 +1,28 @@
+-- run: `Debug.log` prints its value by the type solved at the call, as
+-- `Debug.toString` does, and `Debug.toString` passed as a value prints by
+-- the type it was instantiated at. Under a type variable the compiler
+-- knows nothing, and the value is read by its representation: a `Bool`
+-- still prints `True`, but a tuple there cannot be told from a record
+-- whose fields are `a` and `b`, nor a `Char` from a `String`
+-- (language.md Appendix B, *What `Debug.toString` prints*).
+import List
+import Node exposing (Program)
+
+
+describe : a → String
+describe value = Debug.toString value
+
+
+pairs : List (Int × Bool) → List String
+pairs xs = List.map xs Debug.toString
+
+
+main : Program
+main =
+    _ = Debug.log "pair" ( 1, True )
+    _ = Debug.log "char" 'z'
+    shown = Debug.log "list" [ Just ( 'a', () ) ]
+    Node.printLines
+        (List.append (pairs [ ( 1, True ), ( 2, False ) ])
+            [ describe True, describe ( 1, 2 ), describe [ Just 'c' ], Debug.toString shown ]
+        )

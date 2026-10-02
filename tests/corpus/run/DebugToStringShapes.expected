@@ -1,0 +1,37 @@
+True
+[True,False]
+(1,"x")
+(1,'c',False)
+()
+{ a = 1, b = 2 }
+Red
+[Red,Green]
+Just (1,2)
+Just (Just (-1))
+Mark ()
+Hue Green
+Pair (3,4)
+Labeled "a b" (Circle 1.5)
+Rect (-1) 2
+'x'
+'\''
+"q\"uo\\te\n\${x} $"
+1.0
+1.5
+NaN
+Infinity
+-Infinity
+-0.0
+-3
+Dict.fromList [(1,"a"),(2,"b")]
+Set.fromList ['a','b']
+Just (Dict.fromList [(1,True)])
+Dict.fromList [("k",(1,2))]
+<function>
+{ f = <function>, n = 1 }
+{ p = { x = 1, y = (1,2) } }
+[(1,True)]
+Ok (1,2)
+Err 'e'
+[['a']]
+LT

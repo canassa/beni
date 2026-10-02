@@ -156,6 +156,71 @@ pub fn write(
             } else try w.print("  boundary {s} type ?\n", .{decl}),
         }
     }
+    // The type each `Debug.toString` and `Debug.log` prints
+    // (checker-v2.md §32), by instruction.
+    for (dispatch.debug) |s| {
+        try w.print("  debug {d} {s} ", .{ s.inst.int(), @tagName(s.which) });
+        try writeDebugShape(gpa, w, dispatch.debugShape(s), types, interner);
+        try w.writeByte('\n');
+    }
+}
+
+/// A debug row's pre-order nodes as one line: `_` for an unknown,
+/// `<function>`, `()`, `( a, b )`, `{ x : a }`, and a named type as
+/// `Module.Type` or `(Module.Type a)`. Written without recursion: a row
+/// holds up to `DebugShape.max_nodes` nodes, nested as deep.
+fn writeDebugShape(
+    gpa: Allocator,
+    w: *std.Io.Writer,
+    nodes: []const Dispatch.DebugNode,
+    types: *const Types,
+    interner: *const InternPool.Global,
+) Error!void {
+    const Frame = struct { kind: Dispatch.DebugNode.Kind, left: u32, first: bool };
+    var frames: std.ArrayList(Frame) = .empty;
+    defer frames.deinit(gpa);
+    for (nodes) |n| {
+        if (frames.items.len != 0) {
+            const top = &frames.items[frames.items.len - 1];
+            if (!top.first) try w.writeAll(switch (top.kind) {
+                .named => " ",
+                else => ", ",
+            });
+            top.first = false;
+        }
+        switch (n.kind) {
+            .unknown => try w.writeAll("_"),
+            .function => try w.writeAll("<function>"),
+            .unit => try w.writeAll("()"),
+            .tuple => try w.writeAll(if (n.count == 0) "( )" else "( "),
+            .record => try w.writeAll(if (n.count == 0) "{}" else "{ "),
+            .field => try w.print("{s} : ", .{interner.slice(@enumFromInt(n.value))}),
+            .named => {
+                if (n.count != 0) try w.writeAll("(");
+                if (types.named(@enumFromInt(n.value))) |named| {
+                    try w.print("{s}.{s}", .{ interner.slice(named.module), interner.slice(named.name) });
+                } else try w.writeAll("?");
+                if (n.count != 0) try w.writeAll(" ");
+            },
+        }
+        if (n.count != 0) {
+            try frames.append(gpa, .{ .kind = n.kind, .left = n.count, .first = true });
+            continue;
+        }
+        // A complete node: close every container it completes.
+        while (frames.items.len != 0) {
+            const top = &frames.items[frames.items.len - 1];
+            top.left -= 1;
+            if (top.left != 0) break;
+            try w.writeAll(switch (top.kind) {
+                .tuple => " )",
+                .record => " }",
+                .named => ")",
+                else => "",
+            });
+            _ = frames.pop();
+        }
+    }
 }
 
 /// What the lowering reads of the effect bits

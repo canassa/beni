@@ -1,0 +1,27 @@
+-- The types `Main` prints: a recursive type whose constructor takes an
+-- alias applied to one of its parameters, an opaque type holding a record
+-- alias and a `()`, both declared here and printed from another module.
+pub type alias Pair a b =
+    a × b
+
+
+pub type alias Point =
+    x : Float
+    label : Char
+
+
+pub type Tree a
+    = Leaf
+    | Node (Tree a) (Pair a Char) (Tree a)
+
+
+pub opaque type Secret
+    = Secret (List Point) ()
+
+
+pub secret : Secret
+secret = Secret [ { x = 1.0, label = 'p' } ] ()
+
+
+pub sample : Tree Bool
+sample = Node Leaf ( True, 'a' ) (Node Leaf ( False, 'b' ) Leaf)

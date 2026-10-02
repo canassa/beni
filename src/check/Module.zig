@@ -35,6 +35,7 @@ const Cycles = @import("Cycles.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Dispatch = @import("Dispatch.zig");
 const Boundary = @import("Boundary.zig");
+const DebugShape = @import("DebugShape.zig");
 const Exhaustive = @import("Exhaustive.zig");
 const Scc = @import("Scc.zig");
 const Schema = @import("Schema.zig");
@@ -743,8 +744,15 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     // for the same reason (checker-v2.md §28).
     const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items);
     errdefer gpa.free(boundary);
+    // The type each `Debug.toString` and `Debug.log` prints, read here for
+    // the same reason (checker-v2.md §32).
+    const debug = try DebugShape.rows(gpa, store, solver.cx.interner, solver.debugs.items);
+    errdefer gpa.free(debug.sites);
+    errdefer gpa.free(debug.nodes);
     in.dispatch.* = .{
         .boundary = boundary,
+        .debug = debug.sites,
+        .debug_nodes = debug.nodes,
         .decls = decls,
         .tries = sorted,
         .appends = try appends.toOwnedSlice(gpa),

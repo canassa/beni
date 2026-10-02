@@ -1,0 +1,26 @@
+-- dispatch: the `debug` rows (checker-v2.md §32): the type each
+-- `Debug.toString` and `Debug.log` prints, as the solver left it. A record
+-- lists its fields by name, an alias is read through, a named type keeps
+-- its arguments, and a type variable is `_`. Under a bare type variable
+-- there is no row at all: `describe`'s call has none.
+type alias Labelled a =
+    label : String
+    value : a
+
+
+describe : a → String
+describe value = Debug.toString value
+
+
+item : Labelled (Maybe (List Float))
+item = { label = "n", value = Just [ 1.5 ] }
+
+
+shown : List String
+shown =
+    [ Debug.toString ( 'c', True, () )
+    , Debug.toString item
+    , Debug.toString λx → x + 1
+    , describe 1
+    , Debug.log "pair" (Debug.toString (Ok 'x'))
+    ]

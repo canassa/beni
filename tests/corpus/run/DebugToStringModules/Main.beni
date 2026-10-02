@@ -1,0 +1,21 @@
+-- run: `Debug.toString` of types another module declares (language.md
+-- Appendix B, *What `Debug.toString` prints*; backend.md §4,
+-- *`Debug.toString` reads the argument's type*). The descriptor reads
+-- each type's constructors from its declaration, so a recursive type is
+-- written once, an alias in a constructor's argument is read through with
+-- the type's own parameter in it, and an opaque type's hidden constructor
+-- prints as Elm prints one. A `foreign type` is `<internals>`.
+import Node exposing (Program)
+import Schema
+import Shapes
+
+
+main : Program
+main =
+    Node.printLines
+        [ Debug.toString Shapes.sample
+        , Debug.toString Shapes.secret
+        , Debug.toString (Shapes.Node Shapes.Leaf ( 'x', 'y' ) Shapes.Leaf)
+        , Debug.toString Schema.int
+        , Debug.toString (Just Schema.int)
+        ]

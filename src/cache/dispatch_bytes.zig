@@ -31,6 +31,10 @@
 //! `effect_decls` (transparent-effects-proposal.md §16.2). Version 9 adds
 //! `boundary` (checker-v2.md §28): 12 bytes a row, the declaration, the
 //! kind, and a string offset (a field) or a `type_refs` index (a type).
+//! Version 10 adds `debug` and `debug_nodes` (checker-v2.md §32): 16 bytes a
+//! site — its instruction, `which`, and its range of nodes — and 12 bytes a
+//! node — its kind, its child count, and a string offset (a field) or a
+//! `type_refs` index (a named type).
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -79,8 +83,8 @@ const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
 /// 8 since the `appends` column (`Dispatch.appends`, a `++` on lists); 9
-/// since `boundary` (checker-v2.md §28).
-pub const format_version: u32 = 9;
+/// since `boundary` (checker-v2.md §28); 10 since `debug` (§32).
+pub const format_version: u32 = 10;
 
 pub const Column = enum(u32) {
     terms,
@@ -97,6 +101,8 @@ pub const Column = enum(u32) {
     effect_sites,
     effect_decls,
     boundary,
+    debug,
+    debug_nodes,
     symbols,
     module_refs,
     type_refs,
@@ -122,6 +128,8 @@ pub const Column = enum(u32) {
             .effect_sites => 8,
             .effect_decls => 4,
             .boundary => 12,
+            .debug => 16,
+            .debug_nodes => 12,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -321,6 +329,29 @@ pub fn write(
         };
         std.mem.writeInt(u32, row[8..12], value, .little);
     }
+    const debug = try gpa.alloc(u8, d.debug.len * Column.debug.width());
+    defer gpa.free(debug);
+    @memset(debug, 0);
+    for (d.debug, 0..) |s, i| {
+        const row = debug[i * 16 ..][0..16];
+        std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
+        row[4] = @intFromEnum(s.which);
+        writeRange(row[8..16], s.shape);
+    }
+    const debug_nodes = try gpa.alloc(u8, d.debug_nodes.len * Column.debug_nodes.width());
+    defer gpa.free(debug_nodes);
+    @memset(debug_nodes, 0);
+    for (d.debug_nodes, 0..) |n, i| {
+        const row = debug_nodes[i * 12 ..][0..12];
+        row[0] = @intFromEnum(n.kind);
+        std.mem.writeInt(u32, row[4..8], n.count, .little);
+        const value = switch (n.kind) {
+            .field => try w.string(@enumFromInt(n.value)),
+            .named => try w.typeRef(@enumFromInt(n.value)),
+            else => 0,
+        };
+        std.mem.writeInt(u32, row[8..12], value, .little);
+    }
 
     // The two reference tables are complete only now, because writing a
     // term or a shape is what appends to them.
@@ -357,6 +388,8 @@ pub fn write(
         effect_sites,
         effect_decls,
         boundary,
+        debug,
+        debug_nodes,
         symbols,
         module_refs,
         type_refs,
@@ -377,6 +410,8 @@ pub fn write(
         @intCast(d.effect_sites.len),
         @intCast(d.effect_decls.len),
         @intCast(d.boundary.len),
+        @intCast(d.debug.len),
+        @intCast(d.debug_nodes.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -826,6 +861,39 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             };
         }
     }
+    {
+        const in_bytes = col(bytes, offsets, .debug);
+        const sites = try gpa.alloc(Dispatch.DebugSite, lengths[@intFromEnum(Column.debug)]);
+        out.table.debug = sites;
+        for (sites, 0..) |*s, i| {
+            const row = in_bytes[i * 16 ..][0..16];
+            s.* = .{
+                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .which = std.enums.fromInt(Dispatch.DebugSite.Which, row[4]) orelse return error.BadSidecar,
+                .shape = readRange(row[8..16]),
+            };
+        }
+    }
+    {
+        // A named node's value is a `type_refs` index until `resolve`.
+        const in_bytes = col(bytes, offsets, .debug_nodes);
+        const nodes = try gpa.alloc(Dispatch.DebugNode, lengths[@intFromEnum(Column.debug_nodes)]);
+        out.table.debug_nodes = nodes;
+        for (nodes, 0..) |*n, i| {
+            const row = in_bytes[i * 12 ..][0..12];
+            const kind = std.enums.fromInt(Dispatch.DebugNode.Kind, row[0]) orelse return error.BadSidecar;
+            const raw = std.mem.readInt(u32, row[8..12], .little);
+            n.* = .{
+                .kind = kind,
+                .count = std.mem.readInt(u32, row[4..8], .little),
+                .value = switch (kind) {
+                    .field => @intFromEnum(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
+                    .named => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
+                    else => if (raw != 0) return error.BadSidecar else 0,
+                },
+            };
+        }
+    }
 
     if (!verify(&out)) return error.BadSidecar;
     return out;
@@ -984,6 +1052,20 @@ pub fn verify(l: *const Loaded) bool {
     for (d.boundary) |b| {
         if (b.decl >= d.decls.len) return false;
     }
+    // Debug rows are found by binary search, so they ascend; each one's
+    // nodes are exactly one pre-order tree, so a walker that trusts the
+    // counts never leaves the range.
+    for (d.debug, 0..) |s, i| {
+        if (i != 0 and d.debug[i - 1].inst.int() >= s.inst.int()) return false;
+        if (!rangeOk(s.shape, d.debug_nodes.len) or s.shape.len == 0) return false;
+        var owed: u64 = 1;
+        for (d.debugShape(s)) |n| {
+            if (owed == 0) return false;
+            owed = owed - 1 + n.count;
+            if (n.kind == .field and n.count != 1) return false;
+        }
+        if (owed != 0) return false;
+    }
     return true;
 }
 
@@ -1022,6 +1104,9 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     }
     for (@constCast(l.table.boundary)) |*b| {
         if (b.kind == .type) b.value = resolveType(l, graph, types, b.value, type_count).int();
+    }
+    for (@constCast(l.table.debug_nodes)) |*n| {
+        if (n.kind == .named) n.value = resolveType(l, graph, types, n.value, type_count).int();
     }
 }
 
@@ -1102,6 +1187,17 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqual(a.symbols.len, b.symbols.len);
     for (a.symbols, b.symbols) |x, y| {
         try testing.expectEqualStrings(interner.slice(x), interner.slice(y));
+    }
+    try testing.expectEqualSlices(Dispatch.DebugSite, a.debug, b.debug);
+    try testing.expectEqual(a.debug_nodes.len, b.debug_nodes.len);
+    for (a.debug_nodes, b.debug_nodes) |x, y| {
+        try testing.expectEqual(x.kind, y.kind);
+        try testing.expectEqual(x.count, y.count);
+        if (x.kind == .field) {
+            try testing.expectEqualStrings(interner.slice(@enumFromInt(x.value)), interner.slice(@enumFromInt(y.value)));
+        } else {
+            try testing.expectEqual(x.value, y.value);
+        }
     }
 }
 
@@ -1240,6 +1336,41 @@ test "the appends column round-trips" {
     try testing.expectEqualSlices(Bir.Inst.Index, table.appends, loaded.table.appends);
     try testing.expect(loaded.table.isListAppend(@enumFromInt(17)));
     try testing.expect(!loaded.table.isListAppend(@enumFromInt(4)));
+}
+
+test "the debug columns round-trip, and a node range that is not one tree is a miss" {
+    // `Debug.toString { x = ( (), f ) }`'s row, written by hand: a record,
+    // its field, a tuple of a unit and a function.
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const x = try global.getOrPut(gpa, "x");
+    const nodes = [_]Dispatch.DebugNode{
+        .{ .kind = .record, .count = 1 },
+        .{ .kind = .field, .count = 1, .value = @intFromEnum(x) },
+        .{ .kind = .tuple, .count = 2 },
+        .{ .kind = .unit },
+        .{ .kind = .function },
+    };
+    const sites = [_]Dispatch.DebugSite{.{ .inst = @enumFromInt(9), .which = .log, .shape = .{ .start = 0, .len = 5 } }};
+    const table: Dispatch = .{ .debug = &sites, .debug_nodes = &nodes };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try testing.expectEqualSlices(Dispatch.DebugSite, table.debug, loaded.table.debug);
+    try testing.expectEqualSlices(Dispatch.DebugNode, table.debug_nodes, loaded.table.debug_nodes);
+    try testing.expect(loaded.table.debugAt(@enumFromInt(9)) != null);
+    try testing.expect(loaded.table.debugAt(@enumFromInt(8)) == null);
+
+    // One node short of the tuple's second element: not a tree.
+    const short = [_]Dispatch.DebugSite{.{ .inst = @enumFromInt(9), .which = .log, .shape = .{ .start = 0, .len = 4 } }};
+    const broken: Dispatch = .{ .debug = &short, .debug_nodes = &nodes };
+    const bad = try write(gpa, &broken, &graph, &types, &global);
+    defer gpa.free(bad);
+    try testing.expectError(error.BadSidecar, read(gpa, bad, &global));
 }
 
 test "a string the session never interned is UnknownSymbol, not a miss" {

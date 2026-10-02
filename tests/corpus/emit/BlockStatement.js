@@ -1,7 +1,7 @@
-import { Debug$log } from "./_core/Debug.mjs";
+import { Debug$logAs } from "./_core/Debug.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const BlockStatement$say = (s$1) => {
-  Debug$log("say", s$1);
+  Debug$logAs("[\"s\",[]]", "say", s$1);
 };
 const BlockStatement$statement = (c$1) => {
   BlockStatement$say("a");

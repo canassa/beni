@@ -9,7 +9,7 @@
 --! All three do something the language itself cannot — write to the outside
 --! world, stop the program, and look at a value's representation without
 --! knowing its type — and all three are beni over `Js` (`boundary.md` §4.2),
---! with no sibling. `log`'s type, `String, a -> a`, is pure and it writes to
+--! with no sibling. `log`'s type, `String, a → a`, is pure and it writes to
 --! the console, which is the deliberate exception `boundary.md` §4 states
 --! and Elm makes too; it is inferred `impure`, so no optimiser drops it.
 
@@ -26,9 +26,7 @@ import Js
 --| long, so the label stays beside the word `log` when the call wraps an
 --| expression (`language.md` §12.4). As a statement, `Debug.log "done" ()`.
 pub log : String, a → a
-log tag value =
-    _ = Js.call (Js.global "console") "log" [ Js.from "${tag}: ${toString value}" ]
-    value
+log tag value = logAs (Js.from untyped) tag value
 
 
 --| Say that some code is not done yet, with a message about what is missing.
@@ -45,87 +43,395 @@ todo message =
     Js.throw (Js.construct (Js.global "Error") [ Js.from "TODO: ${message}" ])
 
 
---| Turn any value into a string for debugging.
+--| Turn any value into a string for debugging, written as beni source
+--| writes it.
 --|
 --|     Debug.toString [ 1, 2 ] == "[1,2]"
 --|
 --| The exact text is not a promise and will change. For output a user reads,
 --| write the conversion yourself.
+--|
+--| What a value prints as is `language.md` Appendix B: beni source, as
+--| Elm's `Debug.toString` prints Elm. Where the representation alone cannot
+--| say — a tuple and a record whose fields are `a` and `b` are both
+--| `{a, b}`, a `Char` is a string — the compiler says: a call whose
+--| argument's type it knows is compiled to `toStringAs` with that type's
+--| descriptor (`backend.md` §4, *`Debug.toString` reads the argument's
+--| type*). Under a type variable nobody knows, and the value is read by its
+--| representation alone.
 pub toString : a → String
-toString value = Js.pure λ() → show (Js.from value) (Js.construct (Js.global "Set") [])
+toString value = toStringAs (Js.from untyped) value
 
 
--- A value, read by its representation (`backend.md` §4). `seen` holds the
--- objects being printed, so a value that holds itself prints `<cycle>`
--- where it would recur.
-show : Js.Value, Js.Value → String
-show value seen =
-    if Js.typeIs value "string" then
-        Js.to (Js.call (Js.global "JSON") "stringify" [ value ])
-    else if Js.typeIs value "number" || Js.typeIs value "boolean" then
+--| `log`, with the descriptor of the value's type. The compiler's: a call
+--| of `log` whose argument's type it knows is compiled to this (`backend.md`
+--| §4, *`Debug.toString` reads the argument's type*), and a program cannot
+--| make a `Js.Value`.
+pub logAs : Js.Value, String, a → a
+logAs descriptor tag value =
+    _ = Js.call (Js.global "console") "log" [ Js.from "${tag}: ${toStringAs descriptor value}" ]
+    value
+
+
+--| `toString`, with the descriptor of the value's type: the compiler's, as
+--| `logAs` is.
+pub toStringAs : Js.Value, a → String
+toStringAs descriptor value = Js.pure λ() →
+    parsed = Js.call (Js.global "JSON") "parse" [ descriptor ]
+    show (Js.at parsed 0) (Js.at parsed 1) (Js.array []) (Js.from value)
+
+
+-- The descriptor of a type nothing is known about.
+untyped : String
+untyped = "[\"?\",[]]"
+
+
+-- A value of type `t` (`backend.md` §4's descriptor grammar). `defs` holds
+-- the definitions an `["n", k, …]` names; `env` the types a definition's
+-- parameters stand for, each a pair of a type and the `env` it is read in.
+show : Js.Value, Js.Value, Js.Value, Js.Value → String
+show t defs env value =
+    if Js.typeIs t "number" then
+        bound = Js.at env t
+        show (Js.at bound 0) defs (Js.at bound 1) value
+    else if Js.typeIs t "string" then
+        showCode t defs env value
+    else if Js.to (Js.call (Js.global "Array") "isArray" [ t ]) then
+        showApplied t defs env value
+    else
+        showRecord t defs env value
+
+
+-- A type written as one letter.
+showCode : Js.Value, Js.Value, Js.Value, Js.Value → String
+showCode t defs env value =
+    if Js.same t (Js.from "i") then
         Js.to (Js.apply (Js.global "String") [ value ])
+    else if Js.same t (Js.from "f") then
+        showFloat value
+    else if Js.same t (Js.from "s") then
+        quoted (Js.to value) "\""
+    else if Js.same t (Js.from "c") then
+        quoted (Js.to value) "'"
+    else if Js.same t (Js.from "b") then
+        if Js.to value then "True" else "False"
+    else if Js.same t (Js.from "u") then
+        "()"
+    else if Js.same t (Js.from "F") then
+        "<function>"
+    else if Js.same t (Js.from "x") then
+        "<internals>"
+    else
+        untypedValue value (Js.construct (Js.global "Set") [])
+
+
+-- A tuple, a list, a `Dict`, a `Set` or a `type`, by the descriptor's
+-- first element.
+showApplied : Js.Value, Js.Value, Js.Value, Js.Value → String
+showApplied t defs env value =
+    head = Js.at t 0
+    if Js.same head (Js.from "t") then
+        parts = Js.array []
+        n : Int
+        n = Js.to (Js.get t "length")
+        _ = eachIndex 1 n λi → push parts (show (Js.at t i) defs env (Js.at value (slot (i - 1))))
+        "(${commas parts})"
+    else if Js.same head (Js.from "l") then
+        "[${commas (listItems (Js.at t 1) defs env value)}]"
+    else if Js.same head (Js.from "D") then
+        pairs = Js.array []
+        _ = dictPairs (Js.at t 1) (Js.at t 2) defs env (Js.get value "a") pairs
+        "Dict.fromList [${commas pairs}]"
+    else if Js.same head (Js.from "S") then
+        keys = Js.array []
+        _ = dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get (Js.get value "a") "a") keys
+        "Set.fromList [${commas keys}]"
+    else
+        showType (Js.at defs (Js.at t 1)) (bindArgs t env) defs value
+
+
+-- The types `["n", k, a, …]` applies its definition to, each read in
+-- `env`: a parameter of the enclosing definition is the pair it stands
+-- for already.
+bindArgs : Js.Value, Js.Value → Js.Value
+bindArgs t env =
+    bound = Js.array []
+    n : Int
+    n = Js.to (Js.get t "length")
+    _ = eachIndex 2 n λi →
+        arg = Js.at t i
+        if Js.typeIs arg "number" then
+            Js.to (Js.call bound "push" [ Js.at env arg ])
+        else
+            Js.to (Js.call bound "push" [ Js.array [ arg, env ] ])
+    bound
+
+
+-- A value of a `type` whose constructors `def` lists. An all-nullary type
+-- is its tag; any other is `{$: tag, a, b, …}`, padded, so the arity is
+-- the definition's and a `()` argument prints.
+showType : Js.Value, Js.Value, Js.Value, Js.Value → String
+showType def env defs value =
+    if Js.typeIs value "string" then
+        Js.to value
+    else
+        tag = Js.get value "$"
+        if Js.to (Js.call (Js.global "Object") "hasOwn" [ def, tag ]) then
+            args = Js.at def tag
+            parts = Js.array [ tag ]
+            n : Int
+            n = Js.to (Js.get args "length")
+            _ = eachIndex 0 n λi →
+                push parts (parenthesised (show (Js.at args i) defs env (Js.at value (slot i))))
+            joined parts " "
+        else
+            untypedValue value (Js.construct (Js.global "Set") [])
+
+
+-- A record, each field by its type when the descriptor has it.
+showRecord : Js.Value, Js.Value, Js.Value, Js.Value → String
+showRecord t defs env value =
+    keys = Js.call (Js.global "Object") "keys" [ value ]
+    if Js.same (Js.get keys "length") (Js.from 0) then
+        -- Elm prints the empty record as `{}`, not `{  }`.
+        "{}"
+    else
+        fields = Js.array []
+        _ = Js.each keys λk →
+            key : String
+            key = Js.to k
+            field =
+                if Js.to (Js.call (Js.global "Object") "hasOwn" [ t, k ]) then
+                    show (Js.at t k) defs env (Js.at value k)
+                else
+                    untypedValue (Js.at value k) (Js.construct (Js.global "Set") [])
+            push fields "${key} = ${field}"
+        "{ ${fieldList fields} }"
+
+
+-- A list's elements, each printed: the list is an array, or answers one
+-- (`backend.md` §4, *Lists are arrays*).
+listItems : Js.Value, Js.Value, Js.Value, Js.Value → Js.Value
+listItems t defs env value =
+    parts = Js.array []
+    _ = Js.each (plain value) λitem → push parts (show t defs env item)
+    parts
+
+
+-- A `Dict`'s tree in key order, `(k,v)` pushed onto `out` for each node;
+-- the key alone when `v` is `"?"`, which is how a `Set` is read. Core's
+-- `Dict` is `Dict (Tree k v)`, and a tree node is `Node color key value
+-- left right` or `Leaf` (`core/Dict.beni`).
+dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → ()
+dictPairs k v defs env tree out =
+    if Js.same (Js.get tree "$") (Js.from "Node") then
+        _ = dictPairs k v defs env (Js.get tree "d") out
+        key = show k defs env (Js.get tree "b")
+        entry =
+            if Js.same v (Js.from "?") then
+                key
+            else
+                "(${key},${show v defs env (Js.get tree (slot 2))})"
+        _ = push out entry
+        dictPairs k v defs env (Js.get tree "e") out
+    else
+        ()
+
+
+-- A value read by its representation alone (`backend.md` §4). `seen` holds
+-- the objects being printed, so a value that holds itself prints `<cycle>`
+-- where it would recur.
+untypedValue : Js.Value, Js.Value → String
+untypedValue value seen =
+    if Js.typeIs value "string" then
+        quoted (Js.to value) "\""
+    else if Js.typeIs value "number" then
+        Js.to (Js.apply (Js.global "String") [ value ])
+    else if Js.typeIs value "boolean" then
+        if Js.to value then "True" else "False"
     else if Js.isNullish value then
         -- `()` is `null`, or `undefined` where a function whose result is
         -- `()` wrote none (`backend.md` §4, *A `()` result is not written*).
         "()"
+    else if Js.typeIs value "function" then
+        "<function>"
     else if Js.typeIs value "object" then
         if Js.to (Js.call seen "has" [ value ]) then
             "<cycle>"
         else
             _ = Js.call seen "add" [ value ]
-            Js.finally (λ() → showObject value seen) λ() → Js.to (Js.call seen "delete" [ value ])
+            Js.finally (λ() → untypedObject value seen) λ() →
+                Js.to (Js.call seen "delete" [ value ])
     else
-        Js.to (Js.apply (Js.global "String") [ value ])
+        "<internals>"
 
 
 -- A list, a constructor or a record. A value is a list exactly when it is
 -- an array or has a `$plain` function: no other beni value is an array,
 -- and no record can have a field called `$plain` (`backend.md` §4).
-showObject : Js.Value, Js.Value → String
-showObject value seen =
-    if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
-        showList value seen
-    else if Js.typeIs (Js.get value "$plain") "function" then
-        showList (Js.call value "$plain" []) seen
+untypedObject : Js.Value, Js.Value → String
+untypedObject value seen =
+    if
+        Js.to (Js.call (Js.global "Array") "isArray" [ value ])
+            || Js.typeIs (Js.get value "$plain") "function"
+    then
+        parts = Js.array []
+        _ = Js.each (plain value) λitem → push parts (untypedValue item seen)
+        "[${commas parts}]"
     else
         keys = Js.call (Js.global "Object") "keys" [ value ]
         tag = Js.get value "$"
         if Js.typeIs tag "string" then
-            -- A constructor's arguments, padding (`null`) left out.
-            args = Js.array []
+            -- A constructor's arguments, padding (`null`) left out: with no
+            -- type, padding and a `()` argument are one representation.
+            parts = Js.array [ tag ]
             _ = Js.each keys λk →
                 if Js.same k (Js.from "$") || Js.isNullish (Js.at value k) then
                     ()
                 else
-                    Js.to (Js.call args "push" [ Js.from (show (Js.at value k) seen) ])
-            if Js.same (Js.get args "length") (Js.from 0) then
-                Js.to tag
-            else
-                name : String
-                name = Js.to tag
-
-                spaced : String
-                spaced = Js.to (Js.call args "join" [ Js.from " " ])
-                "${name} ${spaced}"
+                    push parts (parenthesised (untypedValue (Js.at value k) seen))
+            joined parts " "
         else if Js.same (Js.get keys "length") (Js.from 0) then
-            -- Elm prints the empty record as `{}`, not `{  }`.
             "{}"
         else
             fields = Js.array []
             _ = Js.each keys λk →
                 key : String
                 key = Js.to k
-                Js.to (Js.call fields "push" [ Js.from "${key} = ${show (Js.at value k) seen}" ])
-            listed : String
-            listed = Js.to (Js.call fields "join" [ Js.from ", " ])
-            "{ ${listed} }"
+                push fields "${key} = ${untypedValue (Js.at value k) seen}"
+            "{ ${fieldList fields} }"
 
 
--- A list's elements, a plain array.
-showList : Js.Value, Js.Value → String
-showList items seen =
+-- A `Float` as beni source writes one: a whole number with its point, so
+-- `1.0` and not `1`, and `-0.0` for negative zero; `NaN`, `Infinity` and
+-- `-Infinity` as JavaScript spells them.
+showFloat : Js.Value → String
+showFloat value =
+    text : String
+    text = Js.to (Js.apply (Js.global "String") [ value ])
+    if Js.to (Js.call (Js.global "Object") "is" [ value, Js.from (-0.0) ]) then
+        "-0.0"
+    else if
+        Js.to (Js.call (Js.global "Number") "isInteger" [ value ])
+            && not (Js.to (Js.call (Js.from text) "includes" [ Js.from "e" ]))
+    then
+        "${text}.0"
+    else
+        text
+
+
+-- `s` between `quote`s, escaped as a beni literal writes it: the quote, a
+-- backslash, `\n`, `\r`, `\t`, `\${` in a string, and any other control
+-- character as `\u{…}` (`language.md` §2's escapes).
+quoted : String, String → String
+quoted s quote =
     parts = Js.array []
-    _ = Js.each items λitem → Js.to (Js.call parts "push" [ Js.from (show item seen) ])
-    listed : String
-    listed = Js.to (Js.call parts "join" [ Js.from "," ])
-    "[${listed}]"
+    _ = Js.each (Js.call (Js.global "Array") "from" [ Js.from s ]) λch →
+        text : String
+        text = Js.to ch
+        code : Int
+        code = Js.to (Js.call ch "codePointAt" [ Js.from 0 ])
+        escaped : String
+        escaped =
+            if text == quote || text == "\\" then
+                "\\${text}"
+            else if text == "\n" then
+                "\\n"
+            else if text == "\r" then
+                "\\r"
+            else if text == "\t" then
+                "\\t"
+            else if code < 32 || code == 127 then
+                hex : String
+                hex =
+                    Js.to
+                        (Js.call (Js.call (Js.from code) "toString" [ Js.from 16 ]) "toUpperCase" []
+                        )
+                "\\u{${hex}}"
+            else
+                text
+        push parts escaped
+    body = joined parts ""
+    -- A `$` before `{` would begin an interpolation: escaped after the
+    -- rest, which writes neither character.
+    unbraced : String
+    unbraced =
+        if quote == "\"" then
+            Js.to
+                (Js.call (Js.call (Js.from body) "split" [ Js.from "\${" ]) "join"
+                    [ Js.from "\\\${" ]
+                )
+        else
+            body
+    "${quote}${unbraced}${quote}"
+
+
+-- A constructor's argument as source writes it: in parentheses when it is
+-- more than one word or begins with a minus sign, so `Just (Just 1)` and
+-- `Just (-1)`, but `Just [1]`, `Just "a b"` and `Just { a = 1 }`.
+parenthesised : String → String
+parenthesised s =
+    first = Js.at (Js.from s) 0
+    bracketed =
+        Js.same first (Js.from "(")
+            || Js.same first (Js.from "[")
+            || Js.same first (Js.from "{")
+            || Js.same first (Js.from "\"")
+            || Js.same first (Js.from "'")
+            || Js.same first (Js.from "<")
+    if
+        Js.same first (Js.from "-")
+            || (not bracketed && Js.to (Js.call (Js.from s) "includes" [ Js.from " " ]))
+    then
+        "(${s})"
+    else
+        s
+
+
+-- A list's elements as one array.
+plain : Js.Value → Js.Value
+plain value =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+        value
+    else
+        Js.call value "$plain" []
+
+
+-- The strings of `parts` joined by `separator`.
+joined : Js.Value, String → String
+joined parts separator = Js.to (Js.call parts "join" [ Js.from separator ])
+
+
+-- `text` pushed onto the array `parts`.
+push : Js.Value, String → ()
+push parts text = Js.to (Js.call parts "push" [ Js.from text ])
+
+
+-- A list's or a tuple's printed elements, as Elm writes them: `1,2`.
+commas : Js.Value → String
+commas parts = joined parts ","
+
+
+-- A record's printed fields: `a = 1, b = 2`.
+fieldList : Js.Value → String
+fieldList fields = joined fields ", "
+
+
+-- The `a`, `b`, `c`… a constructor's or a tuple's `i`th slot is written as
+-- (`backend.md` §4): the letters, then `a26`, `a27`, ….
+slot : Int → String
+slot i =
+    if i < 26 then
+        Js.to (Js.call (Js.global "String") "fromCharCode" [ Js.from (97 + i) ])
+    else
+        "a${String.fromInt i}"
+
+
+-- `f` of each of `i … n - 1`, in order.
+eachIndex : Int, Int, (Int → ()) → ()
+eachIndex i n f =
+    if i < n then
+        _ = f i
+        eachIndex (i + 1) n f
+    else
+        ()

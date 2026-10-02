@@ -2886,3 +2886,44 @@ module rule makes a type's methods its declaring module's `pub` values. Both sta
 so every module still names them unqualified and no module gains an import; what changes is where
 the conditional prelude *edge* points, and which module a string or character literal mints its type
 from. → `static-dispatch-spike.md` §5.1.
+
+## Appendix B. What `Debug.toString` prints
+
+*Added 2026-10-02* (the owner's report that a tuple printed as a record and a `Bool` as `true`;
+`backend.md` §4, *`Debug.toString` reads the argument's type*, and `checker-v2.md` §32 say how).
+`Debug.toString` — and `Debug.log`, which prints `label: ` and the same text — writes a value **as
+beni source writes it**, as Elm's writes Elm, with Elm's spacing:
+
+| value | prints |
+|---|---|
+| `Bool` | `True`, `False` |
+| `Int` | `42`, `-3` |
+| `Float` | `1.5`, `1.0` (a whole number keeps its point, as `String.fromFloat` writes it), `-0.0`, `NaN`, `Infinity`, `-Infinity` |
+| `Char` | `'a'`, `'\''`, `'\n'` |
+| `String` | `"a b"`, with `\"`, `\\`, `\n`, `\r`, `\t`, `\${` and `\u{…}` for any other control character — §2's escapes, so the text is a literal that reads back as the value |
+| `()` | `()` |
+| tuple | `(1,"x")`, `(1,'c',False)` |
+| list | `[1,2,3]`, `[]` |
+| record | `{ a = 1, b = "x" }`, `{}` |
+| constructor | `Nothing`, `Just 1`, `Labeled "a b" (Circle 1.5)`: an argument in parentheses when it is more than one word or begins with `-` — `Just (-1)`, `Rect (-1) 2` — as source must write it; `Mark ()` keeps its `()` |
+| `Dict` | `Dict.fromList [(1,"a"),(2,"b")]`, in key order |
+| `Set` | `Set.fromList ['a','b']` |
+| function | `<function>` |
+| `foreign type` | `<internals>` |
+
+An opaque type prints its constructor, as Elm's does: `Debug` is for the developer who can read
+the module anyway. The exact text is not a promise (the module's own doc says so), but it is
+pinned by `run/DebugToStringShapes`, `run/DebugLogShapes` and `run/DebugToStringModules`.
+
+**Printing is directed by the type at the call.** The representation alone cannot tell a tuple
+from a record whose fields are `a` and `b`, a `Char` from a `String`, an all-nullary
+constructor from a string, or a `()` argument from padding, so the compiler hands the printer the
+type the checker solved at each `Debug.toString` and `Debug.log`, in a call or passed as a value.
+**Under a type variable** — `describe v = Debug.toString v`, with `describe : a → String` — nothing is
+known at the call, the type is not passed through `describe`'s callers (that would make every
+polymorphic function that logs grow a hidden parameter, or a `where` clause, for a development
+aid), and the value is read by its representation: a `Bool` is still `True`, a number prints as
+an `Int` would, a constructor with a tag prints with its arguments, but a tuple prints as the
+record `{ a = 1, b = 2 }`, a `Char` as a one-character `String`, an all-nullary constructor as a
+quoted string, and a `()` argument is dropped with the padding. The positions a type leaves open
+— `List a`'s elements — are read the same way while the rest of the value prints by its type.

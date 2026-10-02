@@ -5616,3 +5616,58 @@ what runs. Three consequences for the checker:
   `Basics.eq` made it visible (`check/bad/EqOneQuestionPerSite`).
 
 The §11.4 marker is untouched and no shipped function carries it.
+
+## 32. Amendment of 2026-10-02: the debug rows
+
+*`language.md` Appendix B and `backend.md` §4, *`Debug.toString` reads the argument's type*,
+specified the same day, before the code.* `Debug.toString : a → String` prints a value as beni
+source writes it, and the runtime representation cannot say what a tuple, a `Char`, an all-nullary
+constructor or a `()` argument is. The type at the call can. This section adds to §13.1's record
+the one fact the backend needs for that and cannot work out: **the type each use of core's
+`Debug.toString` or `Debug.log` prints.**
+
+**The rows.** `Dispatch.debug: []const DebugSite` and `Dispatch.debug_nodes: []const DebugNode`,
+where
+
+```zig
+pub const DebugSite = struct { inst: Bir.Inst.Index, which: enum(u8) { toString, log }, shape: Range };
+pub const DebugNode = struct {
+    kind: enum(u8) { unknown, function, unit, tuple, record, field, named },
+    count: u32,                    // children: elements, `field` nodes, arguments; 1 for a field
+    value: u32,                    // field: a Symbol; named: a Types.TypeId; else 0
+};
+```
+
+one site per `ext_value` reference of `toString` or `log`, ascending by instruction, its `shape`
+a range of nodes that is exactly one pre-order tree. The type is `toString`'s parameter, or
+`log`'s second. The walk reads through every alias to its expansion; writes a record's whole row,
+its fields sorted by TEXT and an open end left out; writes an application as `named` with its
+arguments; and stops at a `flex`, a `rigid` and an `err`, each `unknown` — a polymorphic
+function's value may be anything, and the printer reads it by representation. It does not open a
+named type's constructors: their bodies are declarations, and the backend reads them from `Bir`,
+as it does a boundary row's (§28), so a module's cached row cannot go stale when the declaring
+module's private constructors change. A use whose whole type is one `unknown` has no row.
+
+**The cap.** A type is a DAG in the store and a tree here, and `( x, x )` nested n deep is 2ⁿ
+nodes, so a row holds at most 4 096 nodes (`DebugShape.max_nodes`) before every subtree still to
+be written is `unknown`. Printed types are a few dozen nodes; the cap bounds only the
+pathological ones, and what it cuts prints by representation.
+
+**Where it is made.** `Solve` notes every `reference` constraint whose instruction is an
+`ext_value` of core's `Debug` named `toString` or `log` — keyed on the core package and the
+module and value names, as §28's casts are — with the variable the copy was unified into. P6
+walks each once every type is final, beside the boundary rows (`check/DebugShape.zig`), so no
+order of solving can change a row. A `Debug.toString` inside `core/Debug` is a `top` reference
+and has none.
+
+**The cache.** The rows are a product of the module's source and of its imports' interfaces,
+which the entry's key already pins. They ride in the dispatch sidecar as two columns, `debug`
+(16 bytes a site: the instruction, `which`, the node range) and `debug_nodes` (12 bytes a node:
+the kind, the count, and a string offset for a field or a `type_refs` index for a named type);
+`cache/dispatch_bytes.zig`'s `format_version` goes 9 → 10, and a sidecar whose node ranges are
+not each one tree is a miss.
+
+**The dump.** `dump --stage=dispatch` prints one line per site after the boundary lines:
+`debug <inst> <toString|log> <shape>`, the shape as `_` (unknown), `<function>`, `()`,
+`( a, b )`, `{ x : a }`, and `Module.Type` or `(Module.Type a …)` (`dispatch/DebugShapes`). A
+module whose table holds only debug rows is no longer empty, and prints its `decl` lines.

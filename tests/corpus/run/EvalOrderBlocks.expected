@@ -6,22 +6,22 @@ tuple.scrutinee.0: Tri 1 2
 tuple.scrutinee.1: 7
 if.condition: 1
 if.then: 10
-and.short.left: false
-and.both.left: true
-and.both.right: false
-or.short.left: true
-or.both.left: false
-or.both.right: true
-and.stmt.short.left: false
-and.stmt.both.left: true
+and.short.left: False
+and.both.left: True
+and.both.right: False
+or.short.left: True
+or.both.left: False
+or.both.right: True
+and.stmt.short.left: False
+and.stmt.both.left: True
 and.stmt.both.right: Tri 1 2
 6
 3
 3
 10
-false
-false
-true
-true
-false
-true
+False
+False
+True
+True
+False
+True

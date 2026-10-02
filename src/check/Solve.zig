@@ -104,6 +104,10 @@ pub const Cast = struct { inst: Bir.Inst.Index, copy: Var, decl: u32, which: Whi
 /// `from`'s parameter or `to`'s result is what JavaScript holds.
 pub const Which = enum { from, to };
 
+/// A use of core's `Debug.toString` or `Debug.log` and the variable its
+/// copy was unified into (`debugs`, checker-v2.md §32).
+pub const DebugUse = struct { inst: Bir.Inst.Index, copy: Var, which: Dispatch.DebugSite.Which };
+
 cx: *const Context,
 report: *Report,
 /// The worker's lists, which this module borrows (`init`, `deinit`).
@@ -129,6 +133,10 @@ appends: std.ArrayList(Append) = .empty,
 /// instantiated at into the dispatch table's `boundary` rows, once every
 /// type is final (checker-v2.md §28).
 casts: std.ArrayList(Cast) = .empty,
+/// Every use of core's `Debug.toString` and `Debug.log`: P6 walks the type
+/// each prints into the dispatch table's `debug` rows, once every type is
+/// final (checker-v2.md §32).
+debugs: std.ArrayList(DebugUse) = .empty,
 /// What each markup obligation was decided as (checker-v2.md §25.7), by the
 /// record it is about: P9 builds the table's markup section from it.
 markup_decisions: std.ArrayList(MarkupDecide.Decision) = .empty,
@@ -240,6 +248,7 @@ pub fn deinit(s: *Solve) void {
     s.tries.deinit(gpa);
     s.appends.deinit(gpa);
     s.casts.deinit(gpa);
+    s.debugs.deinit(gpa);
     s.markup_decisions.deinit(gpa);
     s.carriers.deinit(gpa);
     for (s.queues.items) |*q| q.deinit(gpa);
@@ -400,6 +409,11 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                         .inst = node.region,
                         .copy = copy,
                         .decl = s.instantiate.decl orelse std.math.maxInt(u32),
+                        .which = which,
+                    });
+                    if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
+                        .inst = node.region,
+                        .copy = copy,
                         .which = which,
                     });
                 } else try s.poison(target);
@@ -682,6 +696,23 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
     return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
+}
+
+/// Whether the reference at `inst` is core's `Debug.toString` or
+/// `Debug.log`, whose printed value's type the backend hands to the printer
+/// (checker-v2.md §32). Keyed on the core package, the module's name and
+/// the value's, as `jsCast` is.
+fn debugUse(s: *Solve, inst: Bir.Inst.Index) ?Dispatch.DebugSite.Which {
+    const bir = s.cx.bir;
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .ext_value) return null;
+    const d = bir.instData(inst);
+    const module: Graph.Index = @enumFromInt(d.lhs);
+    if (module.int() >= s.cx.graph.count()) return null;
+    if (s.cx.graph.module(module).package != .core) return null;
+    if (s.cx.graph.moduleName(module) != InternPool.WellKnown.Debug.symbol()) return null;
+    const iface = s.cx.iface(module);
+    if (d.rhs >= iface.values.len) return null;
+    return std.meta.stringToEnum(Dispatch.DebugSite.Which, s.cx.interner.slice(iface.symbols[@intFromEnum(iface.values[d.rhs].name)]));
 }
 
 /// Whether the call at `inst` is of core's `Js.maySuspend`, whose answer is

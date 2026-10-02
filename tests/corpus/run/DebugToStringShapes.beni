@@ -1,0 +1,68 @@
+-- run: `Debug.toString` prints a value as beni source writes it, read by
+-- the type the checker solved at the call (language.md Appendix B, *What
+-- `Debug.toString` prints*; backend.md §4, *`Debug.toString` reads the
+-- argument's type*). The representation alone cannot tell a tuple from a
+-- record whose fields are `a` and `b`, a `Bool` from what prints as
+-- `true`, a `Char` from a `String`, a constructor of an all-nullary type
+-- from a string, or a `()` argument from padding: each line here is one
+-- of those, at the top and inside a payload.
+import Dict
+import Node exposing (Program)
+import Set
+
+
+type Color
+    = Red
+    | Green
+
+
+type Shape
+    = Circle Float
+    | Rect Int Int
+    | Labeled String Shape
+    | Pair (Int × Int)
+    | Mark ()
+    | Hue Color
+
+
+main : Program
+main =
+    Node.printLines
+        [ Debug.toString True
+        , Debug.toString [ True, False ]
+        , Debug.toString ( 1, "x" )
+        , Debug.toString ( 1, 'c', False )
+        , Debug.toString ()
+        , Debug.toString { a = 1, b = 2 }
+        , Debug.toString Red
+        , Debug.toString [ Red, Green ]
+        , Debug.toString (Just ( 1, 2 ))
+        , Debug.toString (Just (Just (-1)))
+        , Debug.toString (Mark ())
+        , Debug.toString (Hue Green)
+        , Debug.toString (Pair ( 3, 4 ))
+        , Debug.toString (Labeled "a b" (Circle 1.5))
+        , Debug.toString (Rect (-1) 2)
+        , Debug.toString 'x'
+        , Debug.toString '\''
+        , Debug.toString "q\"uo\\te\n\${x} \$"
+        , Debug.toString 1.0
+        , Debug.toString 1.5
+        , Debug.toString (0.0 / 0.0)
+        , Debug.toString (1.0 / 0.0)
+        , Debug.toString (-1.0 / 0.0)
+        , Debug.toString (-0.0)
+        , Debug.toString (-3)
+        , Debug.toString (Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ])
+        , Debug.toString (Set.fromList [ 'b', 'a' ])
+        , Debug.toString (Just (Dict.fromList [ ( 1, True ) ]))
+        , Debug.toString (Dict.singleton "k" ( 1, 2 ))
+        , Debug.toString λx → x + 1
+        , Debug.toString { f = λx → x + 1, n = 1 }
+        , Debug.toString { p = { x = 1, y = ( 1, 2 ) } }
+        , Debug.toString [ ( 1, True ) ]
+        , Debug.toString (Ok ( 1, 2 ))
+        , Debug.toString (Err 'e')
+        , Debug.toString [ [ 'a' ] ]
+        , Debug.toString LT
+        ]

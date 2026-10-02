@@ -38,7 +38,7 @@ True
 1,4,7,10
 []
 The truth is out there
-Just { a = "a", b = "bc" }
+Just ('a',"bc")
 Nothing
 [  1  ]
 [  1 ]

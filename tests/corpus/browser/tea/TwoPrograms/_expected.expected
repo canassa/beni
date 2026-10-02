@@ -28,8 +28,8 @@
 </body>
 -- click #inc
 console.log: inner counted: 1
-console.log: outer got: "Tapped"
-console.log: outer got: "Framed"
+console.log: outer got: Tapped
+console.log: outer got: Framed
 <body>
   <main>
     <button id="bump">"bump"</button>
@@ -58,7 +58,7 @@ console.log: outer got: "Framed"
   </main>
 </body>
 -- click #bump
-console.log: outer got: "Bump"
+console.log: outer got: Bump
 <body>
   <main>
     <button id="bump">"bump"</button>

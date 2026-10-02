@@ -10,7 +10,7 @@ Nothing
 Just 2
 Nothing
 Nothing
-Ok 2
+Ok 2.0
 2.0
 Err "bad input"
 Ok 7

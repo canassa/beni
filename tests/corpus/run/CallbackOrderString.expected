@@ -1,19 +1,19 @@
-String.map: "a"
-String.map: "b"
-String.map: "c"
-String.filter: "a"
-String.filter: "b"
-String.filter: "c"
-String.foldl: "a"
-String.foldl: "b"
-String.foldl: "c"
-String.any: "a"
-String.any: "b"
-String.all: "a"
-String.all: "b"
-String.all: "c"
+String.map: 'a'
+String.map: 'b'
+String.map: 'c'
+String.filter: 'a'
+String.filter: 'b'
+String.filter: 'c'
+String.foldl: 'a'
+String.foldl: 'b'
+String.foldl: 'c'
+String.any: 'a'
+String.any: 'b'
+String.all: 'a'
+String.all: 'b'
+String.all: 'c'
 abc
 ac
 294
-true
-false
+True
+False

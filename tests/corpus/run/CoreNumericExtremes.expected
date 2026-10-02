@@ -29,7 +29,7 @@ NaN
 9007199254740994
 Nothing
 Nothing
-Just -7
+Just (-7)
 Just 7
 Nothing
 Just Infinity

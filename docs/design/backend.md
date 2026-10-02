@@ -2002,6 +2002,62 @@ JsMaySuspend` (a platform module whose declaration asks, used both ways, through
 declaration, about a function it names itself, and in a discarded position) and `emit/core/
 JsMaySuspend` (only the direct body written, and nothing only the other one names).
 
+### `Debug.toString` reads the argument's type
+
+*Added 2026-10-02* (specified with `language.md` Appendix B and `checker-v2.md` §32, before the
+code). `Debug.toString` used to read a value by its representation alone, and the representation
+above does not say enough: a tuple and a record whose fields are `a` and `b` are both `{a, b}`, a
+`Char` is a one-scalar string, an all-nullary type's constructor is a bare string, and a `()`
+argument is the `null` a padded constructor's missing fields also are. So `( 1, 'c' )` printed
+`{ a = 1, b = "c" }`, `LT` printed `"LT"` and `Just ()` printed `Just`. Changing the
+representation to say more — a tag on every tuple, a box on every `Char` — would cost every
+program at run time for a development aid; the type at the call already says all of it, and the
+checker has it.
+
+**What crosses.** The checker gives every `Debug.toString` and `Debug.log` reference whose
+printed value's type is more than a bare variable a `debug` row: that type, pre-order, with
+named types as `TypeId`s and their arguments (`checker-v2.md` §32). The backend does not read
+types (§3); it reads the row, as it reads a `?`'s shape, and the named types' constructors from
+their declarations in `Bir`, as `Fields.close` reads a boundary type's.
+
+**What the call becomes.** A saturated call of a reference with a row calls a sibling of the
+`pub` value it names, with one leading argument, the type's **descriptor** as a string literal:
+
+```js
+Debug$toStringAs("[[\"t\",\"i\",\"c\"],[]]", x)       // Debug.toString ( n, c )
+Debug$logAs("[\"s\",[]]", "say", s)                     // Debug.log "say" s
+```
+
+`Debug.toString` in value position with a row is the same call over a fresh parameter, `(p) =>
+Debug$toStringAs("…", p)`. A reference with no row — under a type variable, or `Debug.toString`
+inside `core/Debug` itself — is the plain call, whose own body is `toStringAs` with the
+descriptor `["?",[]]`, so reachability keeps the typed sibling whenever the plain one survives
+and nothing in §9's walk changes. `toStringAs : Js.Value, a → String` and `logAs : Js.Value,
+String, a → a` are `pub` because the emitter imports them by interface, and harmless because no
+program outside core and a platform can make a `Js.Value`.
+
+**The descriptor** is one JSON text, `[root, defs]`, written by `src/js/DebugShape.zig`. A type
+is `"i"` (an `Int`, or an `Int32`, which is a number too), `"f"` a `Float`, `"s"` a `String`,
+`"c"` a `Char`, `"b"` a `Bool`, `"u"` `()`, `"F"` a function, `"x"` a `foreign type`, `"?"`
+unknown; `["t", a, …]` a tuple, `["l", a]` a `List`, `["D", k, v]` a `Dict`, `["S", a]` a
+`Set`; `{"x": a, …}` a record; `["n", k, a, …]` a `type` applied to its arguments, where `defs[k]`
+is its constructors, `{"Tag": [arg, …], …}`, and inside a definition a number is the type's own
+parameter. A named type is defined once per descriptor, in first-use order, however often it
+recurs, so a recursive type is a finite text; an alias is written as its expansion. Everything is
+keyed by declaration and first use, so `--jobs` cannot move a byte.
+
+**What it costs.** Nothing in a program that does not reach `Debug`, and nothing under
+`--release`, which refuses a build that does (§9, *`Debug` is refused, not pinned*); the harness's
+`--allow-debug` builds the same calls. A development build pays one string per typed call, the
+descriptor parsed once per call, and the printer in `core/Debug.beni`.
+
+Fixtures: `run/DebugToStringShapes` (every shape the representation could not tell, at the top
+and inside a payload), `run/DebugLogShapes` (`Debug.log`, `Debug.toString` as a value, and the
+representation fallback under a type variable), `run/DebugToStringModules` (another module's
+recursive, aliased and opaque types, and a `foreign type`), `dispatch/DebugShapes` (the rows), and
+`emit/BlockStatement` and `emit/DiscardedStatements`, whose `Debug.log` calls became
+`Debug$logAs`.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
