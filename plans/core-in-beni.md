@@ -933,4 +933,5 @@ program grows **+424** (91 smaller, 113 larger, worst `bench/corpus` +45, `Schem
 `for(;d<e;b++,d++)c[d]=a[b]` matches nothing. It only pays where the file's other loops are
 `for` loops already (`_derived`'s), which the printer cannot see per module. Not built: the
 spec amendment stays unwritten, and `NestingEvidence` +34, `ListElementEq` +6 and
-`ConsPatterns` +1 stand as the residue for the owner.
+`ConsPatterns` +1 stand as the residue for the owner. *Accepted by the owner, 2026-10-02*
+("merge them"): the port landed with these three, against a release total of −6 845 B brotli.
