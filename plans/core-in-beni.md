@@ -15,7 +15,7 @@ spelling — it is kept minimal, and the step says why.
 | # | Piece | State |
 |---|---|---|
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
-| 2 | **`core/Task.js`**: the fiber runtime | to come |
+| 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
 | 3 | **`core/List.js`**: the array-backed list and its views | to come; needs `Js`'s list positions loosened as step 1 loosened its names (*What step 1 leaves*) |
 | 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` (**all but the operators, `append` and `eq`, 2026-10-02**), `Debug.js`, `Js.js`'s value-passing half, the browser platform's `Hosted.js`, `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
@@ -652,3 +652,36 @@ wrong type — are within that noise; the largest median differences, +2 and +3 
 cells, came back at +0.75 and +0.5 % when repeated. One thing to know: a `--library` build keeps
 string tags, so in those benches `prim` now switches on `"StringKind"`… rather than on `0`…; a
 shipped program's tags are integers, and the instruction counts show no cost either way.
+
+## Step 2 — the fiber runtime: the plan (2026-10-02)
+
+**Studied, not landed.** [Research 49](../docs/design/research/49-task-kernel-in-beni.md) built
+`core/Task.js` (as it stood at `84a49831`, before the defect teardown) in beni on a scratch branch
+and measured it. The answer to the step's question — can the kernel be written in the language
+whose suspension it implements — is yes: the compiler's suspendable-form lowering touches only
+calls whose callee may suspend, so the kernel's state machinery compiles as plain code and the few
+functions that compose suspending kernel functions get the protocol written for them. What it
+needs is **one intrinsic, `Js.suspending`** (the body's value, with a `suspends` rung: how `park`
+returns the sentinel), and **a one-line fix in `Reach`** (keep `Task.andThen`/`Task.isWaiting` for
+any declaration kind). With them the prototype passes `test-blackbox` but the module-graph golden,
+makes every fiber program 182–279 brotli bytes smaller (total −4 161, none larger) and matches the
+sibling within ±2 % of instructions on every kernel workload (single-threaded V8; research 49 §4).
+
+**After the defect teardown.** The teardown of `boundary.md` §9.8.14 has landed in `Task.js`
+(`8063245c`, `12c4333c`, `d6cb1a73`), so the port is of the 790-line file, not the 526 the
+prototype ported; research 49 §5 reads each teardown piece into `Js` and finds nothing beyond the
+intrinsic. Each slice is specified before it is built (rule 1), red first (rule 3), and passes
+`zig build gates` before it lands.
+
+| # | Slice | What | Done when |
+|---|---|---|---|
+| K1 | **`Js.suspending` and the `Reach` edge** | `boundary.md` §4.2 and `backend.md` §4 (*`Js.suspending` is its body*) as research 49 §3.1 drafts them; `transparent-effects-proposal.md` §16.1's sentence; `JsIntrinsic.suspending`, `Lower` (tail, value **and discarded** positions — the prototype did the first two), `core/Js.beni` and `Js.js`; `Reach.effectEdges` without its `foreign_value` test | `emit/core/JsSuspending` (a park in tail, value and discarded position, both builds); a `--core-root` `check_test` whose `Task` writes `andThen` in beni and whose user module only `yieldNow`s — red before the `Reach` fix (`andThen` dropped) |
+| K2 | **The kernel's own defect first** | `run/` fixture: a fiber whose `bracket` release spawns a child, cancelled; the child must not outlive it (research 49 §6 item 1). Fixed in `Task.js` as it stands — `ended` and `finished` cancel and wait for children that appeared after `stopChildren` — so the port starts from a kernel without it | the fixture red on master, green after, both builds |
+| K3 | **The port** | `core/Task.beni` holds the whole kernel over `Js`, teardown included; `core/Task.js` deleted. The prototype's disciplines: records as `Js.Value`s read by name, one literal each; every beni function the kernel runs held as a `Js.Value` and called with `Js.apply` (no `$s` twin of any kernel function — check the dump); `Exit` crossing at a type variable; `Task.js`'s hand-written elimination (`failure`/`closing` bound in `newFiber`) as `Js.Ref`s written there | gates green but the graph golden, re-blessed (`core:Task -> core:Js`); `test-run-hashes` recorded; `emit/` goldens that show `Task`'s output re-blessed with a side-by-side note |
+| K4 | **The bar, measured** | `bench/size.mjs` both ways (no program larger, research 49 §4.2's twenty smaller); the kernel workloads of research 49 §7 in instructions, single-threaded and with threads, and in wall time on a quiet machine (load under 2), the scope workload re-run before anything is concluded from it; `bench/fiber`'s research 44 workloads | every workload within noise or better; a reproducible loss is a wall reported to the owner (rule 10), never a reason to bring JavaScript back |
+| K5 | **What the beni kernel makes cheap** (research 48's kernel list, each specified in `transparent-effects-proposal.md` first) | `Task.resume`; `Task.interruptible` inside a masked region; `spawnDetached` (a root in the registry); `poll`; `waitAny` and `race` over the private observers; the fiber slots (clock, log context, seed) as fields of the one literal, copied in `fork`; a development-only spawn site for logical stack traces (`Js.development`) | each with its `run/` fixture, written in `Task.beni` with no new `foreign` |
+
+**Not required by the step, and kept out of it** (research 49 §3.3, §3.4): a lowering that writes a
+small non-tail continuation twice so the fast path allocates nothing, and `Opt` dropping the dead
+branch behind a `Js.Ref` specialisation folded. Either is a general compiler change, priced on its
+own when someone wants it.
