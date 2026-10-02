@@ -152,6 +152,15 @@ fn encodeMappings(
                     continue;
                 }
             }
+            // Eight at a time in one word where the vectors would loop.
+            if (!use_blocks and target - at >= word) {
+                const x = loadWord(in.generated, at);
+                if (x & highs == 0 and !hasByte(x, '\n') and !hasByte(x, '\r')) {
+                    at += word;
+                    column += word;
+                    continue;
+                }
+            }
             const c = in.generated[at];
             if (c < 0x80) {
                 at += 1;
@@ -208,6 +217,32 @@ const Block = @Vector(block, u8);
 /// same bytes; only how fast they skip the ones that need nothing differs.
 const use_blocks = builtin.zig_backend == .stage2_llvm;
 
+// Where it does not, the scans skip eight bytes at a time in one `u64`
+// instead: a few integer operations decide whether any of the eight is one
+// the scan must look at, exactly — the tests below are the classic
+// zero-byte tests, which never answer yes for a word with no such byte and
+// never no for one with one.
+const word = 8;
+const ones: u64 = 0x0101010101010101;
+const highs: u64 = 0x8080808080808080;
+
+/// The eight bytes at `at`, in one load.
+inline fn loadWord(bytes: []const u8, at: usize) u64 {
+    return @as(*align(1) const u64, @ptrCast(bytes[at..][0..word])).*;
+}
+
+/// Whether some byte of `x` is `b`.
+inline fn hasByte(x: u64, comptime b: u8) bool {
+    const y = x ^ (ones * b);
+    return (y -% ones) & ~y & highs != 0;
+}
+
+/// Whether some byte of `x` is below `n`, which is at most 128.
+inline fn hasBelow(x: u64, comptime n: u8) bool {
+    comptime std.debug.assert(n <= 128);
+    return (x -% ones * n) & ~x & highs != 0;
+}
+
 /// UTF-16 code units for a UTF-8 lead byte: two for a four-byte sequence,
 /// none for a continuation byte, one otherwise.
 inline fn utf16Units(c: u8) u32 {
@@ -234,37 +269,75 @@ const SourceLines = struct {
     /// units they make. A running total can dip below zero inside a
     /// four-byte sequence, whose lead byte makes two units.
     shrink: []const i32,
+    /// `line_wide[l]`: the first `wide` at or past `line_starts[l]`, and
+    /// `wide.len` last — so a column's search is over its line's few.
+    line_wide: []const u32,
     /// The line of the last offset asked about.
     hint: usize = 0,
 
     fn init(scratch: Allocator, source: []const u8, line_starts: []const u32) Allocator.Error!SourceLines {
         var count: usize = 0;
-        for (source) |c| count += @intFromBool(c >= 0x80);
+        var i: usize = 0;
+        while (i < source.len) {
+            if (source.len - i >= word and loadWord(source, i) & highs == 0) {
+                i += word;
+                continue;
+            }
+            count += @intFromBool(source[i] >= 0x80);
+            i += 1;
+        }
         const wide = try scratch.alloc(u32, count);
         const shrink = try scratch.alloc(i32, count);
         var k: usize = 0;
         var total: i32 = 0;
-        for (source, 0..) |c, i| {
-            if (c < 0x80) continue;
-            total += 1 - @as(i32, @intCast(utf16Units(c)));
-            wide[k] = @intCast(i);
-            shrink[k] = total;
-            k += 1;
+        i = 0;
+        while (i < source.len) {
+            if (source.len - i >= word and loadWord(source, i) & highs == 0) {
+                i += word;
+                continue;
+            }
+            const c = source[i];
+            if (c >= 0x80) {
+                total += 1 - @as(i32, @intCast(utf16Units(c)));
+                wide[k] = @intCast(i);
+                shrink[k] = total;
+                k += 1;
+            }
+            i += 1;
         }
-        return .{ .source = source, .line_starts = line_starts, .wide = wide, .shrink = shrink };
+        // Each line's first, by a walk alongside `wide` while the lines
+        // ascend, as the lexer makes them; a search where one does not.
+        const line_wide = try scratch.alloc(u32, line_starts.len + 1);
+        var at: usize = 0;
+        for (line_starts, 0..) |start, l| {
+            if (l != 0 and start < line_starts[l - 1]) at = lowerBound(wide, 0, wide.len, start) else {
+                while (at < wide.len and wide[at] < start) at += 1;
+            }
+            line_wide[l] = @intCast(at);
+        }
+        line_wide[line_starts.len] = @intCast(wide.len);
+        return .{ .source = source, .line_starts = line_starts, .wide = wide, .shrink = shrink, .line_wide = line_wide };
     }
 
-    /// What the bytes past ASCII before `offset` take back from a column.
-    fn shrinkBefore(s: *const SourceLines, offset: usize) i64 {
-        // `std.sort.lowerBound`, written out: the first `wide` at or past
-        // `offset`. Twice per mark, and the generic search's comparator is a
-        // call per step where Zig's own backend compiles the compiler.
-        var lo: usize = 0;
-        var hi: usize = s.wide.len;
+    /// `std.sort.lowerBound` over `wide[lo..hi]`, written out: the first at
+    /// or past `offset`. The generic search's comparator is a call per step
+    /// where Zig's own backend compiles the compiler.
+    fn lowerBound(wide: []const u32, from: usize, to: usize, offset: usize) usize {
+        var lo = from;
+        var hi = to;
         while (lo < hi) {
             const mid = lo + (hi - lo) / 2;
-            if (s.wide[mid] < offset) lo = mid + 1 else hi = mid;
+            if (wide[mid] < offset) lo = mid + 1 else hi = mid;
         }
+        return lo;
+    }
+
+    /// What the bytes past ASCII before `offset` take back from a column,
+    /// `offset` on 0-based line `line` or clamped to the source's end: the
+    /// first `wide` at or past it is among the line's (`line_wide`), the
+    /// search over every one narrowed to them.
+    fn shrinkBefore(s: *const SourceLines, line: usize, offset: usize) i64 {
+        const lo = lowerBound(s.wide, s.line_wide[line], s.line_wide[line + 1], offset);
         return if (lo == 0) 0 else s.shrink[lo - 1];
     }
 
@@ -295,7 +368,7 @@ const SourceLines = struct {
         const end = @max(start, @min(@as(usize, offset), s.source.len));
         const bytes: i64 = @intCast(end - start);
         if (s.wide.len == 0) return .{ .line = @intCast(lo), .column = bytes };
-        return .{ .line = @intCast(lo), .column = bytes - (s.shrinkBefore(end) - s.shrinkBefore(start)) };
+        return .{ .line = @intCast(lo), .column = bytes - (s.shrinkBefore(lo, end) - s.shrinkBefore(lo, start)) };
     }
 };
 
@@ -313,15 +386,32 @@ const max_vlq_digits = 13;
 
 fn vlqAssumeCapacity(out: *std.ArrayList(u8), value: i64) void {
     var v: u64 = if (value < 0) (@as(u64, @intCast(-value)) << 1) | 1 else @as(u64, @intCast(value)) << 1;
+    // The digits are written in place: `appendAssumeCapacity` is two calls
+    // where Zig's own backend compiles the compiler.
+    std.debug.assert(out.capacity - out.items.len >= max_vlq_digits);
+    var len = out.items.len;
+    defer out.items.len = len;
     // The common case, a delta under 16 either way: one digit.
-    if (v < 32) return out.appendAssumeCapacity(base64[@intCast(v)]);
+    if (v < 32) {
+        out.items.ptr[len] = base64[@intCast(v)];
+        len += 1;
+        return;
+    }
     while (true) {
         var digit: u8 = @intCast(v & 31);
         v >>= 5;
         if (v != 0) digit |= 32;
-        out.appendAssumeCapacity(base64[digit]);
+        out.items.ptr[len] = base64[digit];
+        len += 1;
         if (v == 0) return;
     }
+}
+
+/// `ArrayList.appendSliceAssumeCapacity`, without its calls.
+inline fn appendAssumeCapacity(out: *std.ArrayList(u8), bytes: []const u8) void {
+    const len = out.items.len;
+    out.items.len = len + bytes.len;
+    @memcpy(out.items[len..][0..bytes.len], bytes);
 }
 
 /// `text` as a JSON string: `"`, `\` and the control characters escaped,
@@ -338,20 +428,29 @@ fn jsonString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) All
             if (@reduce(.Or, special)) break;
             i += block;
         }
+        // Eight at a time in one word where the vectors would loop.
+        while (!use_blocks and text.len - i >= word) {
+            const x = loadWord(text, i);
+            if (hasBelow(x, 0x20) or hasByte(x, '"') or hasByte(x, '\\')) break;
+            i += word;
+        }
         if (i == text.len) break;
         const c = text[i];
         if (c >= 0x20 and c != '"' and c != '\\') continue;
-        try out.appendSlice(scratch, text[run..i]);
+        // The run before the escape and the escape, in one reservation and
+        // two copies: a source's every line ends in one.
+        try out.ensureUnusedCapacity(scratch, i - run + 6);
+        appendAssumeCapacity(out, text[run..i]);
         run = i + 1;
         switch (c) {
-            '"' => try out.appendSlice(scratch, "\\\""),
-            '\\' => try out.appendSlice(scratch, "\\\\"),
-            '\n' => try out.appendSlice(scratch, "\\n"),
-            '\r' => try out.appendSlice(scratch, "\\r"),
-            '\t' => try out.appendSlice(scratch, "\\t"),
+            '"' => appendAssumeCapacity(out, "\\\""),
+            '\\' => appendAssumeCapacity(out, "\\\\"),
+            '\n' => appendAssumeCapacity(out, "\\n"),
+            '\r' => appendAssumeCapacity(out, "\\r"),
+            '\t' => appendAssumeCapacity(out, "\\t"),
             else => {
                 var buf: [6]u8 = undefined;
-                try out.appendSlice(scratch, std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch unreachable);
+                appendAssumeCapacity(out, std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch unreachable);
             },
         }
     }
@@ -438,6 +537,30 @@ test "a VLQ digit carries five bits and the sign rides in the lowest" {
     try expectVlq("hB", -16);
     try expectVlq("2H", 123);
     try expectVlq("+8D", 1999);
+}
+
+test "the word tests find a byte exactly when one of the eight is it" {
+    // Every byte value in every lane, among neighbours that are and are not
+    // special themselves, against a byte at a time.
+    var prng: std.Random.DefaultPrng = .init(0x5eed);
+    const random = prng.random();
+    for (0..word) |lane| for (0..256) |value| for (0..8) |_| {
+        var bytes: [word]u8 = undefined;
+        random.bytes(&bytes);
+        bytes[lane] = @intCast(value);
+        const x = loadWord(&bytes, 0);
+        var nl = false;
+        var quote = false;
+        var low = false;
+        for (bytes) |b| {
+            nl = nl or b == '\n';
+            quote = quote or b == '"';
+            low = low or b < 0x20;
+        }
+        try testing.expectEqual(nl, hasByte(x, '\n'));
+        try testing.expectEqual(quote, hasByte(x, '"'));
+        try testing.expectEqual(low, hasBelow(x, 0x20));
+    };
 }
 
 test "a source URL is relative to the map's directory" {
