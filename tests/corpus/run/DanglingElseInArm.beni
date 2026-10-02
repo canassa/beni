@@ -1,0 +1,29 @@
+-- An `if` whose `then` arm is an `if` with nothing in its `else` keeps its
+-- own `else` under `--release` (backend.md §9, *Compact statements*): the
+-- inner one is a discarded conditional, which the release printer writes
+-- as `if(b)f()`, and written bare before the outer `else` it took that
+-- `else` as its own — `if(a)if(b)f();else{…}` — so `step True False` ran
+-- the outer `else` and `step False …` ran nothing. Each line below is one
+-- call's, in order; the release build must print the same.
+import Node exposing (Program)
+
+
+step : ( Bool, Bool, Bool ) -> ()
+step ( a, b, c ) =
+    if a then
+        if b then
+            Debug.log "inner" ()
+        else
+            ()
+    else
+        _ = Debug.log "outer" ()
+        if c then
+            Debug.log "outer c" ()
+        else
+            Debug.log "outer not c" ()
+
+
+main : Program
+main =
+    _ = List.map [ ( True, False, True ), ( False, False, False ), ( True, True, False ) ] step
+    Node.printLines [ "done" ]

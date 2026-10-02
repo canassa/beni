@@ -1626,7 +1626,11 @@ const Printer = struct {
     fn armBody(p: *Printer, range: JsIr.SubRange, else_follows: bool, level: u32) Allocator.Error!void {
         if (p.onlyLive(range)) |only| {
             const bare = switch (p.ir.tag(only)) {
-                .return_stmt, .continue_stmt, .break_stmt, .throw_stmt, .expr_stmt, .assign_stmt => true,
+                .continue_stmt, .break_stmt, .throw_stmt, .assign_stmt => true,
+                // A discarded conditional prints as an `if` too
+                // (`discardedValue`), whose missing `else` would take this
+                // arm's.
+                .return_stmt, .expr_stmt => !else_follows or !p.printsAsIf(only),
                 .if_stmt => !else_follows,
                 else => false,
             };
@@ -2504,6 +2508,28 @@ const Printer = struct {
             }
         }
         return p.statementExpression(node, level);
+    }
+
+    /// Whether the statement `node` prints as an `if` with no `else`: an
+    /// expression statement, or the tail `return` of a function whose
+    /// result nothing reads, whose value `discardedValue` writes as one.
+    fn printsAsIf(p: *Printer, node: Index) bool {
+        if (!p.compact) return false;
+        const value: Index = switch (p.ir.tag(node)) {
+            .expr_stmt => @enumFromInt(p.ir.data(node).lhs),
+            .return_stmt => blk: {
+                if (!(p.discarding and p.isTailReturn(node))) return false;
+                break :blk (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).lhs)).unwrap() orelse return false);
+            },
+            else => return false,
+        };
+        const n = p.resolve(value);
+        if (p.ir.tag(n) != .cond) return false;
+        // Asked without writing: an error can only come from writing, and
+        // braces are the safe answer.
+        if (p.optionalCall(n, 0, false) catch false) return false;
+        const c = p.ir.extraData(@enumFromInt(p.ir.data(n).rhs), JsIr.Cond);
+        return p.inertValue(c.alternate) or p.inertValue(c.consequent);
     }
 
     /// Whether evaluating `node` does nothing at all: a literal or a name.
