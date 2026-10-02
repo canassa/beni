@@ -1,0 +1,28 @@
+-- Two macrotasks posted before either runs both run, on a host with no
+-- `setImmediate` — a browser's — where core's scheduler escapes through a
+-- `MessageChannel` (`core/Task.beni`, `macrotask`). The test platform takes
+-- `setImmediate` away. When `Io.run`'s fiber ends, the program stops: the
+-- teardown is posted, and the drain, which has the spinner's next turn
+-- still queued, posts itself after it. With one slot for the task, the
+-- second post overwrote the first: the teardown never ran, the spinner's
+-- release with it, and the second message called nothing and threw.
+import Host
+import Io
+import Node
+import Task
+
+
+spin : () → ()
+spin () =
+    _ = Task.yieldNow ()
+    spin ()
+
+
+main : Node.Program
+main = Io.run λ() →
+    _ = Host.withoutImmediate ()
+
+    _ = Task.spawnDetached λ() →
+        Task.bracket (λ() → ()) (λ_ _ → Debug.log "spinner released" ()) λ_ → spin ()
+    _ = Task.yieldNow ()
+    Node.print "body ended"

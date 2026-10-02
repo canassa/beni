@@ -1,0 +1,1 @@
+{ "platform": true, "name": "browser-host", "platforms": ["node"], "reexports": ["Node", "Io"] }

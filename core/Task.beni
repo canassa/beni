@@ -242,12 +242,16 @@ scheduled : Js.Ref Bool
 scheduled = Js.ref False
 
 
+-- Where a host with no `setImmediate` — a browser — escapes to a
+-- macrotask: one `MessageChannel`'s sending port, made at the first, and
+-- the tasks posted to it and not yet run, first posted first. Each message
+-- runs the oldest, so two posted before either runs both run, in order.
 port : Js.Ref V
 port = Js.ref Js.null
 
 
-portTask : Js.Ref V
-portTask = Js.ref Js.null
+portTasks : V
+portTasks = Js.array []
 
 
 macrotask : V → ()
@@ -264,15 +268,11 @@ macrotask task =
                     Js.set
                         (Js.get channel "port1")
                         "onmessage"
-                        (Js.from λ_ →
-                            t = Js.read portTask
-                            _ = Js.write portTask Js.null
-                            Js.to (Js.apply t [])
-                        )
+                        (Js.from λ_ → Js.to (Js.apply (Js.call portTasks "shift" []) []))
                 Js.write port (Js.get channel "port2")
             else
                 ()
-        _ = Js.write portTask task
+        _ = Js.call portTasks "push" [ task ]
         Js.to (Js.call (Js.read port) "postMessage" [ Js.null ])
 
 

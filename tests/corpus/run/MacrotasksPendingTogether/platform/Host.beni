@@ -1,0 +1,8 @@
+--! A test platform's one capability: make Node look like a browser to
+--! core's scheduler, which then escapes to a macrotask the way it does in a
+--! page — through a `MessageChannel`, since a browser has no
+--! `setImmediate`.
+
+--| Remove `setImmediate`. A `MessageChannel` made afterwards does not keep
+--| Node running by itself, as nothing a page holds keeps a page open.
+pub foreign impure withoutImmediate : () → ()

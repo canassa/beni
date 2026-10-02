@@ -2100,9 +2100,13 @@ and each point below follows from it.
    as §9.8.14 (b) requires of anything that can throw, and before the teardown's sweep — and
    `Hosted` registers one, on the first listener it adds, that removes every listener still added.
    A microtask, not the teardown's macrotask: removing a listener runs no program code and waits
-   for nothing, and a second pending macrotask would need `macrotask`'s one slot to become a queue,
-   which every program that drains would pay for. So after a defect every listener is gone
-   (`DefectReleasesHost`'s `listeners` steps read 0, as before).
+   for nothing, so it has no reason to wait for the host's next task. So after a defect every
+   listener is gone (`DefectReleasesHost`'s `listeners` steps read 0, as before). *(Amended
+   2026-10-02: `macrotask` keeps a queue, not one slot. Two macrotasks were already pending at
+   once — a stop posts the teardown and the drain it interrupted posts itself after it — and in a
+   browser, where the escape is a `MessageChannel`, the second overwrote the first: the teardown
+   never ran and the second message called nothing. `run/MacrotasksPendingTogether`. The queue
+   is one array; the release output became 12 bytes smaller.)*
 
 **The architecture.** `Sub`'s list carries `Key × Hosted.Kind × Tap msg`, `type Kind = Waits |
 Hears` — the tap built by `Hosted.tap body tag` or `Hosted.hook start tag` — and `Tea`'s live set
