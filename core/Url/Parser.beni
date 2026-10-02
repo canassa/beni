@@ -169,8 +169,7 @@ pub map7 :
       Parser (a -> b -> d -> e -> g -> h -> i -> r) r
     , (a, b, d, e, g, h, i -> r)
     -> Parser (r -> c) c
-map7 parser f = map parser λxa ->
-    λxb -> λxd -> λxe -> λxg -> λxh -> λxi -> f xa xb xd xe xg xh xi
+map7 parser f = map parser λxa -> λxb -> λxd -> λxe -> λxg -> λxh -> λxi -> f xa xb xd xe xg xh xi
 
 
 --| Eight captured values handed to `f`.

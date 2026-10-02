@@ -52,8 +52,7 @@ update msg model =
         Relabel ->
             { model
                 | rows =
-                    List.map model.rows λrow ->
-                        if row.id == 2 then { row | label = "two" } else row
+                    List.map model.rows λrow -> if row.id == 2 then { row | label = "two" } else row
             }
 
         Duplicate ->

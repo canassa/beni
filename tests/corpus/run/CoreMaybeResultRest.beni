@@ -24,12 +24,10 @@ main =
         , Debug.toString
             (Maybe.map4 (Just 1) (Just 2) (Just 3) Nothing λa b c d -> a + b + c + d)
         , Debug.toString
-            (Maybe.map5 (Just 1) (Just 2) (Just 3) (Just 4) (Just 5) λa b c d f ->
-                a + b + c + d + f
+            (Maybe.map5 (Just 1) (Just 2) (Just 3) (Just 4) (Just 5) λa b c d f -> a + b + c + d + f
             )
         , Debug.toString
-            (Maybe.map5 (Just 1) Nothing (Just 3) (Just 4) (Just 5) λa b c d f -> a + b + c + d + f
-            )
+            (Maybe.map5 (Just 1) Nothing (Just 3) (Just 4) (Just 5) λa b c d f -> a + b + c + d + f)
         , Debug.toString (Maybe.andThen (Just 1) λx -> Just (x + 1))
         , Debug.toString (Maybe.andThen Nothing λx -> Just (x + 1))
         , Debug.toString (Maybe.andThen (Just 1) λ_ -> Nothing)

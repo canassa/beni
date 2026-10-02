@@ -30,8 +30,9 @@
 //! description; §9 wins where they disagree):
 //!
 //! - "Fits" means the whole line, from column 1 to the last character, is at
-//!   most 100 bytes wide. Bytes, not code points: columns are bytes
-//!   everywhere else in the front end (language.md §2.1).
+//!   most 100 columns wide, a column being a code point, as it is
+//!   everywhere else in the front end (language.md §12.7, *columns*, and
+//!   §12.9, *width*): `λ` and `→` are one column each.
 //! - elm-format's rule for every multi-element construct — lists, records,
 //!   record updates, tuples, record types, applications, constructor and
 //!   type-constructor argument lists, arrow chains, operator chains: it is
@@ -402,12 +403,10 @@ pub const LambdaProblem = struct {
 /// `lambda` node is rewritten, so a multiline string's `\\` and a string's
 /// or a character's escapes, which are not that token, are never touched.
 ///
-/// `λ` is two bytes where `\` was one, so every later token on its line
-/// moves one column right. Layout compares the columns of tokens that begin
-/// a line, which the rewrite never moves, except for a `case` whose first
-/// branch shares the `of` line (language.md §12.1, *columns*): the output
-/// is therefore lexed and parsed again, and when it does not parse cleanly
-/// the file is written unchanged and the problem returned for the caller to
+/// `λ` is two bytes where `\` was one, but one column, as `\` is: a column
+/// counts code points (language.md §12.7), so no token moves. The output is
+/// still lexed and parsed again, and when it does not parse cleanly the
+/// file is written unchanged and the problem returned for the caller to
 /// name. A file with any syntax error but `backslash_lambda_removed` is left
 /// alone. One run reaches the fixed point.
 pub fn migrateLambda(
@@ -1042,8 +1041,9 @@ const Measurer = struct {
         return m.source[m.starts[t]..m.endOf(t)];
     }
 
+    /// Token `t`'s width in columns: its code points.
     fn tokenWidth(m: *const Measurer, t: TokenIndex) u32 {
-        return Tokenizer.tokenEnd(m.source, m.tags[t], m.starts[t]) - m.starts[t];
+        return diagnostic.codePoints(m.source[m.starts[t]..Tokenizer.tokenEnd(m.source, m.tags[t], m.starts[t])]);
     }
 
     fn w(m: *const Measurer, n: Index) u32 {
@@ -1399,7 +1399,7 @@ const Measurer = struct {
             .string, .pat_string => {
                 if (tag == .string) for (tree.children(n)) |part| try m.measure(part);
                 const end = m.stringEnd(main);
-                const width = Tokenizer.tokenEnd(m.source, m.tags[end], m.starts[end]) - m.starts[main];
+                const width = diagnostic.codePoints(m.source[m.starts[main]..Tokenizer.tokenEnd(m.source, m.tags[end], m.starts[end])]);
                 m.set(n, width, main, end);
             },
             .interp => {
@@ -1444,7 +1444,7 @@ const Measurer = struct {
             },
             .lambda => {
                 const l = tree.fullLambda(n);
-                var width: u32 = m.tokenWidth(main); // `λ` is two bytes (language.md §12.1)
+                var width: u32 = m.tokenWidth(main);
                 for (l.params, 0..) |p, i| {
                     try m.measure(p);
                     width +|= m.w(p) +| @as(u32, if (i == 0) 0 else 1);
@@ -1909,7 +1909,7 @@ const Printer = struct {
         }
         try p.flush();
         try p.w.writeAll(bytes);
-        p.col += @intCast(bytes.len);
+        p.col += diagnostic.codePoints(bytes);
         p.wrote_anything = true;
     }
 
@@ -2991,7 +2991,7 @@ const Printer = struct {
     /// `λparams ->`'s width.
     fn lambdaHeadWidth(p: *const Printer, lambda: Index) u32 {
         const l = p.tree.fullLambda(lambda);
-        var width: u32 = @intCast(p.text(l.head).len + 3);
+        var width: u32 = diagnostic.codePoints(p.text(l.head)) + 3;
         for (l.params, 0..) |param, i| width +|= p.widths[param.int()] +| @as(u32, if (i == 0) 0 else 1);
         return width;
     }
@@ -3338,7 +3338,7 @@ const Printer = struct {
     /// it fits, the author broke no line inside it, and no comment is in it.
     fn openTagFits(p: *const Printer, mk: Ast.full.Markup, col: u32) bool {
         const open_end = mk.open_end.?;
-        var width: u32 = 1 + (if (mk.name) |t| @as(u32, @intCast(p.text(t).len)) else 0);
+        var width: u32 = 1 + (if (mk.name) |t| diagnostic.codePoints(p.text(t)) else 0);
         var prev: TokenIndex = mk.name orelse mk.open;
         for (mk.attrs) |a| {
             const w = p.widths[a.int()];
@@ -5152,25 +5152,22 @@ test "migrating lambdas reaches markup holes and attribute values" {
     );
 }
 
-test "migrating lambdas leaves a file alone when the rewrite moves a `case` branch off its column" {
-    // language.md §12.1, *columns*: `λ` is a byte wider than `\`, so a first
-    // branch on the `of` line after a lambda moves right of the branches
-    // aligned under it. The re-parse catches it, the file is written as it
-    // was, and the problem points at the misaligned branch's line.
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    const source =
+test "migrating lambdas keeps a `case` branch on the `of` line after a lambda on its column" {
+    // language.md §12.7, *columns*: a column counts code points, so `λ` is
+    // as wide as the `\` it replaces and the first branch, which shares the
+    // `of` line, stays on the column of the branches aligned under it. By
+    // bytes it moved one right, and the migration had to leave the file.
+    try expectLambdaMigrated(
         \\f m =
         \\    case g (\x -> x) of Just y -> y
         \\                        Nothing -> 0
         \\
-    ;
-    const result = try lambdaOnce(a, source);
-    try testing.expectEqualStrings(source, result.text);
-    const problem = result.problem orelse return error.TestExpectedProblem;
-    try testing.expectEqual(diagnostic.Code.unexpected_token, problem.code);
-    try testing.expectEqual(std.mem.indexOf(u8, source, "Nothing").?, problem.start);
+    ,
+        \\f m =
+        \\    case g (λx -> x) of Just y -> y
+        \\                        Nothing -> 0
+        \\
+    );
 }
 
 test "migrating lambdas leaves a file with a syntax error alone" {

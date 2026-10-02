@@ -252,7 +252,7 @@ fn tagName(text: []const u8) []const u8 {
 pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
     const text = source[item.start..item.end];
     const at_eof = item.start >= source.len or item.end == item.start and item.code != .doc_comment_unattached and item.code != .module_doc_not_at_top;
-    const col = diagnostic.position(line_starts, item.start).col;
+    const col = diagnostic.position(line_starts, source, item.start).col;
     const head = source[item.head_start..item.head_end];
     switch (item.code) {
         .expected_declaration => {
@@ -498,7 +498,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\closes this `{s}`.
                 , .{ contextText(item.context), closer, text });
             } else {
-                const head_col = diagnostic.position(line_starts, item.head_start).col;
+                const head_col = diagnostic.position(line_starts, source, item.head_start).col;
                 try w.print(
                     \\I was parsing {s} and ran into `{s}` on column {d} before finding the `{s}` that
                     \\closes this `{s}`.
@@ -560,7 +560,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\            n
                 );
             } else {
-                const head_col = diagnostic.position(line_starts, item.head_start).col;
+                const head_col = diagnostic.position(line_starts, source, item.head_start).col;
                 try w.print(
                     \\I was parsing the branches of this `case` and ran into `{s}`, which is indented to
                     \\column {d}. Branches must be indented more than the block the `case` is in, whose
@@ -727,7 +727,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\finding the `</{s}>` that closes it.
                 , .{ name, name });
             } else {
-                const head_col = diagnostic.position(line_starts, item.head_start).col;
+                const head_col = diagnostic.position(line_starts, source, item.head_start).col;
                 try w.print(
                     \\I was parsing the children of this `<{s}>` and ran into `{s}` on column {d} before
                     \\finding the `</{s}>` that closes it.
@@ -864,7 +864,7 @@ fn writeBlockLines(w: *std.Io.Writer, source: []const u8, line_starts: []const u
     const text = std.mem.trim(u8, source[from..to], " \t\r\n");
     if (text.len == 0) return;
     const start: u32 = @intCast(@intFromPtr(text.ptr) - @intFromPtr(source.ptr));
-    const shift = diagnostic.position(line_starts, start).col - 1;
+    const shift = diagnostic.position(line_starts, source, start).col - 1;
     var lines = std.mem.splitScalar(u8, text, '\n');
     var first = true;
     while (lines.next()) |raw| {

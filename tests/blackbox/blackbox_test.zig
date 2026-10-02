@@ -1571,6 +1571,37 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
     );
 }
 
+test "a column counts code points, so the caret after a λ stands under the character it names" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // language.md §12.7, *columns*: `λ` is two bytes and one column. The
+    // `é` is the eleventh character of its line and one column wide; by
+    // bytes it was the twelfth, two wide, and the caret stood one place
+    // right of it, under nothing, with two carets.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "f = λa -> é\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const json = try w.run(&.{ "check", "Main.beni" });
+    const text = try w.runWith(&.{ "check", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), json.exit_code);
+    try testing.expectEqual(@as(usize, 1), json.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.invalid_character, json.diagnostics[0].code);
+    try testing.expectEqualDeep(diagnostic.Span{ .file = "Main.beni", .start = .{ .line = 1, .col = 11 }, .end = .{ .line = 1, .col = 12 } }, json.diagnostics[0].span);
+    try testing.expectEqual(@as(u8, 1), text.exit_code);
+    try testing.expect(std.mem.indexOf(u8, text.stderr, " Main.beni:1:11\n") != null);
+    try testing.expect(std.mem.endsWith(u8, text.stderr, "\n1|f = λa -> é\n" ++
+        "            ^\n"));
+}
+
 test "dump --stage=ast on a broken file prints placeholders in the tree, the errors on stderr, and exits 1" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1793,12 +1824,12 @@ test "fmt --migrate-lambda writes every lambda's head as λ in place and restyle
     try testing.expectEqualStrings("y   =   λa -> [ λ() -> a ]\nz =\n    \\\\raw \\x\nq = \"\\\\x\"\n", try w.read("Main.beni"));
 }
 
-test "fmt --migrate-lambda names a file whose rewrite would not parse and leaves it alone" {
+test "fmt --migrate-lambda migrates a case whose first branch shares the of line after a lambda" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // language.md §12.1, *columns*: `λ` is one byte wider than `\`, so the
-    // first branch on the `of` line moves off the column `Nothing` is at.
+    // language.md §12.7, *columns*: `λ` is one column, as `\` was, so the
+    // first branch on the `of` line stays on the column `Nothing` is at.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const source = "f m =\n    case g (\\x -> x) of Just y -> y\n                        Nothing -> 0\n";
@@ -1812,14 +1843,13 @@ test "fmt --migrate-lambda names a file whose rewrite would not parse and leaves
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), r.exit_code);
-    try testing.expect(std.mem.indexOf(u8, r.stderr, "\"file\":\"Main.beni\",\"start\":{\"line\":3,\"col\":25}") != null);
-    try testing.expect(std.mem.indexOf(u8, r.stderr, "left this file alone") != null);
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(source, try w.read("Main.beni"));
+    try testing.expectEqualStrings("f m =\n    case g (λx -> x) of Just y -> y\n                        Nothing -> 0\n", try w.read("Main.beni"));
 }
 
 test "fmt --migrate-names rewrites each form of a removed name in place and restyles nothing" {

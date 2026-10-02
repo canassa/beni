@@ -109,7 +109,7 @@ const Dumper = struct {
 
     fn position(d: *Dumper, token: Ast.TokenIndex) !void {
         if (!d.positions) return;
-        const pos = diagnostic.position(d.line_starts, d.starts[token]);
+        const pos = diagnostic.position(d.line_starts, d.source, d.starts[token]);
         try d.w.print("@{d}:{d}", .{ pos.line, pos.col });
     }
 

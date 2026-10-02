@@ -52,8 +52,7 @@ insertWith dict key value combine = Dict.update dict key λexisting ->
 
 
 pub fromListWith : List ( String, v ), (v, v -> v) -> Dict String v
-fromListWith pairs combine = List.foldl pairs Dict.empty λ( k, v ) acc ->
-    insertWith acc k v combine
+fromListWith pairs combine = List.foldl pairs Dict.empty λ( k, v ) acc -> insertWith acc k v combine
 
 
 pub unionWith : Dict String v, Dict String v, (v, v -> v) -> Dict String v

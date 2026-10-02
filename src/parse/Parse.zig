@@ -77,6 +77,10 @@ payloads: []const u32,
 comments: []const Token.Comment,
 line_starts: []const u32,
 lex_diagnostics: []const LexDiagnostics.Item,
+/// Every token's 1-based column in code points (language.md §12.7,
+/// *columns*), or empty when the file is all ASCII and a column is the
+/// byte offset from the line start (`col`).
+cols: []const u32 = &.{},
 
 /// Next unconsumed token. Never past the final `eof`.
 tok_i: TokenIndex = 0,
@@ -240,6 +244,8 @@ pub fn parse(
     defer p.scratch.deinit(scratch);
     defer p.brackets.deinit(scratch);
     defer p.markup_open.deinit(scratch);
+    p.cols = try codePointColumns(scratch, source, p.starts, p.lines, line_starts);
+    defer scratch.free(p.cols);
     try p.nodes.setCapacity(gpa, estimatedNodeCount(tokens.len));
     try p.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(tokens.len));
 
@@ -269,8 +275,46 @@ pub fn parse(
 // Tokens and layout
 // ---------------------------------------------------------------------------
 
+/// Token `i`'s 1-based column, counted in code points (language.md §12.7,
+/// *columns*): `λ` and `→` are one column each, as an editor shows them.
 inline fn col(p: *const Parse, i: TokenIndex) u32 {
+    if (p.cols.len != 0) return p.cols[i];
     return p.starts[i] - p.line_starts[p.lines[i]] + 1;
+}
+
+/// Every token's column in code points, or empty when `source` has no
+/// byte past ASCII (the common case before the Unicode notation, and every
+/// generated file), where `col` subtracts offsets instead. Each token's
+/// column continues from the one before it on its line, so the whole file
+/// costs one pass over its bytes.
+fn codePointColumns(
+    scratch: Allocator,
+    source: []const u8,
+    starts: []const u32,
+    lines: []const u32,
+    line_starts: []const u32,
+) Allocator.Error![]const u32 {
+    if (isAscii(source)) return &.{};
+    const cols = try scratch.alloc(u32, starts.len);
+    for (cols, starts, lines, 0..) |*c, start, line, i| {
+        const line_start = line_starts[line];
+        c.* = if (i > 0 and lines[i - 1] == line and starts[i - 1] >= line_start and starts[i - 1] <= start)
+            cols[i - 1] + diagnostic.codePoints(source[starts[i - 1]..@min(start, source.len)])
+        else
+            diagnostic.column(source, line_start, start);
+    }
+    return cols;
+}
+
+fn isAscii(bytes: []const u8) bool {
+    const V = @Vector(32, u8);
+    var i: usize = 0;
+    while (i + 32 <= bytes.len) : (i += 32) {
+        const v: V = bytes[i..][0..32].*;
+        if (@reduce(.Or, v) & 0x80 != 0) return false;
+    }
+    for (bytes[i..]) |b| if (b & 0x80 != 0) return false;
+    return true;
 }
 
 inline fn inBlock(p: *const Parse, i: TokenIndex) bool {
@@ -4150,13 +4194,13 @@ fn expectTree(source: [:0]const u8, expected: []const u8, expected_errors: []con
 
     var mismatch = r.tree.errors.len != expected_errors.len;
     if (!mismatch) for (r.tree.errors, expected_errors) |got, want| {
-        const pos = diagnostic.position(r.out.line_starts.items, got.start);
+        const pos = diagnostic.position(r.out.line_starts.items, source, got.start);
         if (got.code != want.code or pos.line != want.line or pos.col != want.col) mismatch = true;
     };
     if (mismatch) {
         std.debug.print("errors differ; got:\n", .{});
         for (r.tree.errors) |got| {
-            const pos = diagnostic.position(r.out.line_starts.items, got.start);
+            const pos = diagnostic.position(r.out.line_starts.items, source, got.start);
             std.debug.print("  {t} at {d}:{d}\n", .{ got.code, pos.line, pos.col });
         }
         return error.TestExpectedEqual;
@@ -5915,7 +5959,7 @@ test "recovery: broken imports, records, interpolations and lambdas keep their s
         \\      (pat_var y)
         \\      (error unexpected_token))))
         \\
-    , &.{ .{ .code = .unexpected_token, .line = 1, .col = 8 }, .{ .code = .expected_token, .line = 2, .col = 10 } });
+    , &.{ .{ .code = .unexpected_token, .line = 1, .col = 7 }, .{ .code = .expected_token, .line = 2, .col = 9 } });
 }
 
 test "the soft declaration errors: annotation without definition, pub on definition, opaque misuse, import order" {

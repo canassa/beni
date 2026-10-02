@@ -146,8 +146,7 @@ main =
         , String.fromInt (List.sum (countdown 100000))
         , String.fromInt (List.sum (withLet big))
         , String.join
-            (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) λc ->
-                String.join (List.map c String.fromInt) "+"
+            (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) λc -> String.join (List.map c String.fromInt) "+"
             )
             ","
         , String.fromInt (List.length (chunks big 3))

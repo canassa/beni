@@ -32,8 +32,7 @@ outcome exit =
 
 guarded : String, (() -> a) -> a
 guarded name body =
-    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ ->
-        body ()
+    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ -> body ()
 
 
 update : Msg, String -> ( String, Cmd Msg )

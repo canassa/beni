@@ -40,8 +40,7 @@ guarded name body =
 main : Program
 main = Io.run λ() ->
     root = Task.openRoot ()
-    _ = Task.spawnIn root λ() ->
-        guarded "a outer" λ() -> guarded "a inner" λ() -> Io.sleep 100000
+    _ = Task.spawnIn root λ() -> guarded "a outer" λ() -> guarded "a inner" λ() -> Io.sleep 100000
     _ = Task.spawnIn root λ() -> guarded "b" λ() -> Io.sleep 100000
 
     _ = Task.spawnIn root λ() ->

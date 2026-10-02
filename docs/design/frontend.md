@@ -323,9 +323,10 @@ IR, offsets not slices, arena per phase per worker, no `HashMap` keyed by a dens
 `SourceStore` holds, per file index: the path (owned), the module name, the bytes as
 `[:0]const u8` (sentinel so the tokenizer needs no bounds check at EOF), and `line_starts:
 []u32` filled in by the tokenizer. Column of offset `o` on line `l` is `o - line_starts[l] + 1`.
-*Amended 2026-10-01 (§11.8, specified, not built):* from the Unicode teach step it is one plus
-the number of code points in `source[line_starts[l]..o]` — the bytes that are not UTF-8
-continuation bytes (`10xxxxxx`) — so a symbol is one column; `line_starts` does not change.
+*Amended 2026-10-01 (§11.8), built 2026-10-02:* it is one plus the number of code points in
+`source[line_starts[l]..o]` — a well-formed UTF-8 sequence counts one, each byte of an
+ill-formed one counts one on its own (`diagnostic.column`) — so a symbol is one column;
+`line_starts` does not change.
 
 `line_starts` is the only thing the lexer leaves in the store, and **it is a cached artifact**
 (`fast-compiler.md` §8): four reporters turn an offset into a `diagnostic.Position` through it, so a

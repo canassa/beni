@@ -141,7 +141,9 @@ fn lineAt(text: []const u8, file: []const u8, line_number: u32, cursor: *Cursor)
 
 /// `3|     view = 1` and, under it, a caret run covering the span on its
 /// first line. A span that ends on a later line, or an empty one, gets a
-/// single caret.
+/// single caret. A span's columns count code points (language.md §12.7,
+/// *columns*), and so do the padding and the carets, so a caret after a
+/// `λ` or a `→` stands under the character it names.
 fn renderExcerpt(writer: *std.Io.Writer, span: diagnostic.Span, line: []const u8) std.Io.Writer.Error!void {
     var number_buf: [16]u8 = undefined;
     const number = std.fmt.bufPrint(&number_buf, "{d}", .{span.start.line}) catch unreachable;
@@ -150,7 +152,11 @@ fn renderExcerpt(writer: *std.Io.Writer, span: diagnostic.Span, line: []const u8
         span.end.col - span.start.col
     else
         1;
-    const w = window(line, col, width);
+    // The span in bytes; columns past the end of the line stay columns.
+    const start = diagnostic.codePointOffset(line, col - 1);
+    const past_end = col - 1 - diagnostic.codePoints(line[0..start]);
+    const end = diagnostic.codePointOffset(line[start..], width) + start;
+    const w = window(line, start, end);
 
     try writer.writeAll(number);
     try writer.writeByte('|');
@@ -159,9 +165,10 @@ fn renderExcerpt(writer: *std.Io.Writer, span: diagnostic.Span, line: []const u8
     if (w.cut_right) try writer.writeAll(ellipsis);
     try writer.writeByte('\n');
 
-    const left_pad = number.len + 1 + (if (w.cut_left) ellipsis.len else 0) + w.caret_col - 1;
+    const before = diagnostic.codePoints(w.text[0..w.span_start]);
+    const left_pad = number.len + 1 + @intFromBool(w.cut_left) + before + past_end;
     try writer.splatByteAll(' ', left_pad);
-    try writer.splatByteAll('^', @min(width, w.text.len - (w.caret_col - 1) + 1));
+    try writer.splatByteAll('^', @min(width, diagnostic.codePoints(w.text[w.span_start..]) + 1));
     try writer.writeByte('\n');
 }
 
@@ -169,27 +176,31 @@ const ellipsis = "…";
 
 const Window = struct {
     text: []const u8,
-    /// 1-based column of the span's start WITHIN `text`.
-    caret_col: usize,
+    /// Byte offset of the span's start WITHIN `text`.
+    span_start: usize,
     cut_left: bool,
     cut_right: bool,
 };
 
-/// At most `max_excerpt_bytes` of `line` around the span at `col` (1-based,
-/// `width` bytes). Whole lines shorter than the limit are returned as they
-/// are, so ordinary code is unaffected; a long line is cut on either side
-/// and the cut end marked.
-fn window(line: []const u8, col: usize, width: usize) Window {
-    if (line.len <= max_excerpt_bytes) return .{ .text = line, .caret_col = col, .cut_left = false, .cut_right = false };
+/// At most `max_excerpt_bytes` of `line` around the span `[start, end)`
+/// (byte offsets). Whole lines shorter than the limit are returned as they
+/// are, so ordinary code is unaffected; a long line is cut on either side,
+/// never inside a character, and the cut end marked.
+fn window(line: []const u8, span_start: usize, span_end: usize) Window {
+    if (line.len <= max_excerpt_bytes) return .{ .text = line, .span_start = span_start, .cut_left = false, .cut_right = false };
     // Keep the span, and as much context around it as the budget allows.
-    const span_start = @min(col - 1, line.len);
-    const span_end = @min(span_start + width, line.len);
     const context = (max_excerpt_bytes -| (span_end - span_start)) / 2;
-    const start = span_start -| context;
-    const end = @min(line.len, @max(span_end + context, start + max_excerpt_bytes));
+    var start = span_start -| context;
+    var end = @min(line.len, @max(span_end + context, start + max_excerpt_bytes));
+    // At most three steps each way: a sequence is at most four bytes, and a
+    // line of stray continuation bytes must not widen the window.
+    var steps: u8 = 0;
+    while (steps < 3 and start > 0 and line[start] & 0xC0 == 0x80) : (steps += 1) start -= 1;
+    steps = 0;
+    while (steps < 3 and end < line.len and line[end] & 0xC0 == 0x80) : (steps += 1) end += 1;
     return .{
         .text = line[start..end],
-        .caret_col = span_start - start + 1,
+        .span_start = span_start - start,
         .cut_left = start > 0,
         .cut_right = end < line.len,
     };
@@ -228,7 +239,9 @@ test "a long line is windowed around the span instead of dumped whole" {
     try std.testing.expect(std.mem.endsWith(u8, excerpt, ellipsis));
     const caret_line = out.written()[excerpt_end + 1 ..];
     const caret = std.mem.indexOfScalar(u8, caret_line, '^').?;
-    try std.testing.expectEqual(@as(u8, '@'), out.written()[excerpt_start + caret - 2]);
+    // The caret line pads `1|` and the one-column `…` (three bytes on the
+    // excerpt line), so the caret's column is the `@`'s byte past `1|`.
+    try std.testing.expectEqual(@as(u8, '@'), out.written()[excerpt_start + caret]);
 }
 
 test "excerpts for many diagnostics in one file are found by resuming, not rescanning" {

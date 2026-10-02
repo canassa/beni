@@ -39,4 +39,4 @@ piped url = Task.attempt (Http.get url) <| λr -> r
 notLast xs = List.foldl (λx acc -> x + acc) 0 xs
 
 
-long xs = List.map xs (λx -> someVeryLongFunctionName x anotherArgument yetAnotherArgument andOneMore)
+long xs = List.map xs (λx -> someVeryLongFunctionName x anotherArgument yetAnotherArgument andOneMoreArg)

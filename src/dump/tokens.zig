@@ -34,7 +34,7 @@ pub fn write(
 ) std.Io.Writer.Error!void {
     const s = tokens.slice();
     for (s.items(.tag), s.items(.start), s.items(.line)) |tag, start, line| {
-        const col = start - line_starts[line] + 1;
+        const col = diagnostic.column(source, line_starts[line], start);
         const text = Tokenizer.slice(source, tag, start);
         try w.print("{d}:{d} {t}", .{ line + 1, col, tag });
         if (tag == .markup_text) {
@@ -48,7 +48,7 @@ pub fn write(
     }
     try w.writeAll("-- comments\n");
     for (comments) |comment| {
-        const pos = diagnostic.position(line_starts, comment.start);
+        const pos = diagnostic.position(line_starts, source, comment.start);
         const end = Tokenizer.tokenEnd(source, .multiline_line, comment.start); // to end of line, like a raw line
         try w.print("{d}:{d} {t} {s}\n", .{ pos.line, pos.col, comment.kind, source[comment.start..end] });
     }

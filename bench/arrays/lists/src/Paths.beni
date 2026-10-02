@@ -19,8 +19,7 @@ chainPaths n = List.foldl (List.range 1 n) [] λi paths ->
 --| Every path's elements summed, for the differential test (quadratic, and
 --| not timed).
 pub checksum : List (List Int) -> Int
-checksum paths = List.foldl paths 0 λp acc ->
-    List.foldl p acc λx s -> Int.mod (s * 31 + x) 1000003
+checksum paths = List.foldl paths 0 λp acc -> List.foldl p acc λx s -> Int.mod (s * 31 + x) 1000003
 
 
 --| An editing session of `n` steps (added for research/38 §17): every fourth

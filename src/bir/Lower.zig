@@ -4500,6 +4500,7 @@ const Lowered = struct {
     out: Tokenizer.Output,
     tree: Ast,
     bir: Bir,
+    source: [:0]const u8,
 
     fn deinit(r: *Lowered) void {
         r.bir.deinit(testing.allocator);
@@ -4523,7 +4524,7 @@ fn lowerSource(interner: *InternPool.Local, source: [:0]const u8, options: TestO
         .core = options.core,
         .module_name = options.module_name,
     });
-    return .{ .out = out, .tree = tree, .bir = bir };
+    return .{ .out = out, .tree = tree, .bir = bir, .source = source };
 }
 
 const ExpectedError = struct { code: diagnostic.Code, line: u32, col: u32 };
@@ -4541,7 +4542,7 @@ fn expectErrorList(r: *const Lowered, expected: []const ExpectedError) !void {
     }.lessThan);
     var ok = sorted.len == expected.len;
     if (ok) for (sorted, expected) |item, want| {
-        const pos = diagnostic.position(r.out.line_starts.items, item.start);
+        const pos = diagnostic.position(r.out.line_starts.items, r.source, item.start);
         if (item.code != want.code or pos.line != want.line or pos.col != want.col) ok = false;
     };
     if (!ok) {
@@ -4549,7 +4550,7 @@ fn expectErrorList(r: *const Lowered, expected: []const ExpectedError) !void {
         for (expected) |want| std.debug.print("  {t} at {d}:{d}\n", .{ want.code, want.line, want.col });
         std.debug.print("found {d}:\n", .{sorted.len});
         for (sorted) |item| {
-            const pos = diagnostic.position(r.out.line_starts.items, item.start);
+            const pos = diagnostic.position(r.out.line_starts.items, r.source, item.start);
             std.debug.print("  {t} at {d}:{d}\n", .{ item.code, pos.line, pos.col });
         }
         return error.TestExpectedEqual;
@@ -5173,8 +5174,8 @@ test "`?` under a lambda is question_in_lambda, whatever encloses the lambda" {
         \\    λy -> y?
         \\
     , .{}, &.{
-        .{ .code = .question_in_lambda, .line = 2, .col = 14 },
-        .{ .code = .question_in_lambda, .line = 6, .col = 13 },
+        .{ .code = .question_in_lambda, .line = 2, .col = 13 },
+        .{ .code = .question_in_lambda, .line = 6, .col = 12 },
     });
 }
 
@@ -5607,7 +5608,7 @@ test "sibling scopes may reuse a name; nested ones may not" {
         \\            n
         \\
     , .{}, &.{
-        .{ .code = .shadowing, .line = 6, .col = 14 },
+        .{ .code = .shadowing, .line = 6, .col = 12 },
     });
 }
 
@@ -5677,7 +5678,7 @@ test "a name bound twice in one pattern set is duplicate_pattern_variable, not s
         .{ .code = .duplicate_pattern_variable, .line = 1, .col = 5 },
         .{ .code = .duplicate_pattern_variable, .line = 3, .col = 16 },
         .{ .code = .duplicate_pattern_variable, .line = 3, .col = 26 },
-        .{ .code = .duplicate_pattern_variable, .line = 8, .col = 12 },
+        .{ .code = .duplicate_pattern_variable, .line = 8, .col = 11 },
     });
 }
 

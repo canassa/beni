@@ -1,7 +1,0 @@
--- fmt: `λ` is two bytes, and a line's width is counted in bytes (language.md
--- §2.1, §12.1), so this line — 100 columns were the `λ` one byte, 101 as it
--- is — does not fit and the application breaks.
-isInfinite x =
-    run
-        (λ() -> Js.same (Js.call (Js.global "Math") "abs" [ Js.from x ]) (Js.global "Infinity"))
-        xxx

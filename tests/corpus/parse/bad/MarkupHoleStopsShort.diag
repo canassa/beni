@@ -1,1 +1,1 @@
-[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/MarkupHoleStopsShort.beni","start":{"line":7,"col":31},"end":{"line":7,"col":32}},"title":"EXPECTED TOKEN","message":"I was parsing this lambda and ran into `,`, but I was expecting `->` here."}]
+[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/MarkupHoleStopsShort.beni","start":{"line":7,"col":30},"end":{"line":7,"col":31}},"title":"EXPECTED TOKEN","message":"I was parsing this lambda and ran into `,`, but I was expecting `->` here."}]

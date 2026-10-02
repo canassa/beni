@@ -95,7 +95,7 @@ pub const Item = struct {
 /// Write the Elm-style prose for `item`. No trailing newline.
 pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
     const text = source[item.start..item.end];
-    const other_line = diagnostic.position(line_starts, item.other_start).line;
+    const other_line = diagnostic.lineOf(line_starts, item.other_start);
     // The second range as TEXT: the annotated type a `where` clause is
     // about (§10.6). Empty for every other code.
     const other = source[item.other_start..item.other_end];
@@ -554,7 +554,7 @@ fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Write
 fn writeBlock(w: *std.Io.Writer, source: []const u8, text: []const u8, indent: []const u8) std.Io.Writer.Error!void {
     const start = @intFromPtr(text.ptr) - @intFromPtr(source.ptr);
     const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..start], '\n')) |n| n + 1 else 0;
-    const first_column = start - line_start;
+    const first_column: usize = diagnostic.codePoints(source[line_start..start]);
     var base = first_column;
     var lines = std.mem.splitScalar(u8, text, '\n');
     _ = lines.next();

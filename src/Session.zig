@@ -1074,8 +1074,8 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
             session,
             file,
             item.code,
-            diagnostic.position(line_starts, item.start),
-            diagnostic.position(line_starts, item.end),
+            diagnostic.position(line_starts, text, item.start),
+            diagnostic.position(line_starts, text, item.end),
             message.written(),
         );
     }
@@ -1127,8 +1127,8 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
             session,
             file,
             item.code,
-            diagnostic.position(line_starts, item.start),
-            diagnostic.position(line_starts, item.end),
+            diagnostic.position(line_starts, text, item.start),
+            diagnostic.position(line_starts, text, item.end),
             message.written(),
         );
     }
@@ -1192,8 +1192,8 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
             session,
             file,
             item.code,
-            diagnostic.position(line_starts, item.start),
-            diagnostic.position(line_starts, item.end),
+            diagnostic.position(line_starts, text, item.start),
+            diagnostic.position(line_starts, text, item.end),
             message.written(),
         );
     }
@@ -1541,7 +1541,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         const line_starts = session.store.lineStarts(file);
         if (problem) |found| {
             out.deinit();
-            const at = diagnostic.position(line_starts, found.start);
+            const at = diagnostic.position(line_starts, text, found.start);
             var message: Io.Writer.Allocating = .init(gpa);
             defer message.deinit();
             try message.writer.print(
@@ -1553,7 +1553,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
         }
         var left_alone = false;
         for (notes.items) |note| {
-            const at = diagnostic.position(line_starts, note.start);
+            const at = diagnostic.position(line_starts, text, note.start);
             var message: Io.Writer.Allocating = .init(gpa);
             defer message.deinit();
             switch (note.kind) {
@@ -1595,11 +1595,11 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             // left alone and named, with where the re-parse stopped.
             out.deinit();
             const line_starts = session.store.lineStarts(file);
-            const at = diagnostic.position(line_starts, found.start);
+            const at = diagnostic.position(line_starts, text, found.start);
             var message: Io.Writer.Allocating = .init(gpa);
             defer message.deinit();
             try message.writer.print(
-                "`beni fmt --migrate-lambda` left this file alone: with its lambdas written `λ` it does not parse ({t} here). `λ` is two bytes where `\\` was one, so the rest of a lambda's line moves one column right; a `case` whose first branch shares the `of` line after a lambda is the usual cause. Put that branch on a line of its own, or rewrite the lambda by hand.",
+                "`beni fmt --migrate-lambda` left this file alone: with its lambdas written `λ` it does not parse ({t} here). Rewrite its lambdas by hand.",
                 .{found.code},
             );
             try worker.report(session, file, found.code, at, at, message.written());
@@ -2196,7 +2196,7 @@ fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struc
         .multiline_line => multilineLiteralEnd(source, tags, starts, line_starts, token),
         else => Tokenizer.tokenEnd(source, tags[token], start),
     };
-    return .{ diagnostic.position(line_starts, start), diagnostic.position(line_starts, end) };
+    return .{ diagnostic.position(line_starts, source, start), diagnostic.position(line_starts, source, end) };
 }
 
 /// Where the multiline literal whose first line is the `multiline_line` at
@@ -2205,10 +2205,10 @@ fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struc
 /// ends it).
 fn multilineLiteralEnd(source: [:0]const u8, tags: []const Token.Tag, starts: []const u32, line_starts: []const u32, first: u32) u32 {
     var last = first;
-    var line = diagnostic.position(line_starts, starts[first]).line;
+    var line = diagnostic.lineOf(line_starts, starts[first]);
     var i = first + 1;
     while (i < tags.len and tags[i] == .multiline_line) : (i += 1) {
-        const next = diagnostic.position(line_starts, starts[i]).line;
+        const next = diagnostic.lineOf(line_starts, starts[i]);
         if (next != line + 1) break;
         last = i;
         line = next;

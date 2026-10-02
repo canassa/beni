@@ -550,10 +550,6 @@ pub fn sort(diagnostics: []Diagnostic) void {
     std.mem.sort(Diagnostic, diagnostics, {}, lessThan);
 }
 
-/// 1-based line and byte column of `offset` (frontend.md §3.1: column is
-/// `offset - line_starts[line] + 1`). `line_starts` is the tokenizer's table:
-/// `line_starts[0] == 0`, one entry per newline, ascending. An offset at or
-/// past the end of the file lands on the last line.
 /// The code `raw` names, or null when no version of this compiler defines
 /// one. A cached diagnostic stores its code as an integer, which is
 /// meaningful only for the build the key names — and a value the enum does
@@ -570,16 +566,87 @@ pub fn severityFromInt(raw: u8) ?Severity {
     return @enumFromInt(raw);
 }
 
-pub fn position(line_starts: []const u32, offset: u32) Position {
+/// 1-based line and column of `offset` in `source` (frontend.md §3.1). A
+/// column counts code points from the line start, not bytes (language.md
+/// §12.7, *columns*), so `→` or `λ` is one column, as an editor shows it.
+/// `line_starts` is the tokenizer's table: `line_starts[0] == 0`, one entry
+/// per newline, ascending. An offset at or past the end of the file lands
+/// on the last line, one column per byte past the end.
+pub fn position(line_starts: []const u32, source: []const u8, offset: u32) Position {
+    const l = lineIndex(line_starts, offset);
+    return .{ .line = @intCast(l + 1), .col = column(source, line_starts[l], offset) };
+}
+
+/// 1-based line of `offset`: `position`'s line, for a caller that needs no
+/// column and so no source.
+pub fn lineOf(line_starts: []const u32, offset: u32) u32 {
+    return @intCast(lineIndex(line_starts, offset) + 1);
+}
+
+/// 0-based index of the line holding `offset`: the largest `l` with
+/// `line_starts[l] <= offset`.
+fn lineIndex(line_starts: []const u32, offset: u32) usize {
     std.debug.assert(line_starts.len > 0);
-    // Largest `l` with `line_starts[l] <= offset`.
     var lo: usize = 0;
     var hi: usize = line_starts.len;
     while (hi - lo > 1) {
         const mid = lo + (hi - lo) / 2;
         if (line_starts[mid] <= offset) lo = mid else hi = mid;
     }
-    return .{ .line = @intCast(lo + 1), .col = offset - line_starts[lo] + 1 };
+    return lo;
+}
+
+/// 1-based column of `offset` on the line that begins at `line_start`:
+/// one more than the code points between them. Bytes past the end of
+/// `source` count one each.
+pub fn column(source: []const u8, line_start: u32, offset: u32) u32 {
+    const end = @min(offset, source.len);
+    const start = @min(line_start, end);
+    return codePoints(source[start..end]) + (offset - @max(end, line_start)) + 1;
+}
+
+/// The code points in `bytes`: a well-formed UTF-8 sequence counts one,
+/// and every byte of an ill-formed one counts one on its own, as an editor
+/// shows each as a replacement character.
+pub fn codePoints(bytes: []const u8) u32 {
+    var n: u32 = 0;
+    var i: usize = 0;
+    while (i < bytes.len) : (n += 1) i += codePointLength(bytes, i);
+    return n;
+}
+
+/// The byte offset in `bytes` of its code point number `n` (0-based, as
+/// `codePoints` counts them), or `bytes.len` when it has fewer.
+pub fn codePointOffset(bytes: []const u8, n: usize) usize {
+    var i: usize = 0;
+    var seen: usize = 0;
+    while (i < bytes.len and seen < n) : (seen += 1) i += codePointLength(bytes, i);
+    return @min(i, bytes.len);
+}
+
+/// The length of the code point at `bytes[i]`: its sequence's when that is
+/// well-formed, else 1.
+fn codePointLength(bytes: []const u8, i: usize) usize {
+    if (bytes[i] < 0x80) return 1;
+    const len: usize = switch (bytes[i]) {
+        0xC2...0xDF => 2,
+        0xE0...0xEF => 3,
+        0xF0...0xF4 => 4,
+        else => return 1,
+    };
+    if (i + len > bytes.len) return 1;
+    for (bytes[i + 1 .. i + len]) |b| if (b & 0xC0 != 0x80) return 1;
+    return len;
+}
+
+test "codePoints: a sequence counts one, a stray byte one of its own" {
+    try std.testing.expectEqual(@as(u32, 0), codePoints(""));
+    try std.testing.expectEqual(@as(u32, 3), codePoints("a→b"));
+    try std.testing.expectEqual(@as(u32, 2), codePoints("λ×"));
+    try std.testing.expectEqual(@as(u32, 1), codePoints("😀"));
+    // A continuation byte with no lead, a lead cut short, and 0xFF.
+    try std.testing.expectEqual(@as(u32, 3), codePoints("\x80\xE2\x86"));
+    try std.testing.expectEqual(@as(u32, 2), codePoints("\xFFa"));
 }
 
 test "every code has a non-empty title" {
@@ -620,12 +687,26 @@ test "JSON round trip preserves the whole struct" {
 
 test "position: binary search over the line table, including the last line" {
     const starts = [_]u32{ 0, 3, 4, 10 };
-    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 1 }, position(&starts, 0));
-    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 3 }, position(&starts, 2));
-    try std.testing.expectEqualDeep(Position{ .line = 2, .col = 1 }, position(&starts, 3));
-    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 1 }, position(&starts, 4));
-    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 6 }, position(&starts, 9));
-    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 1 }, position(&starts, 10));
-    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 91 }, position(&starts, 100));
-    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 8 }, position(&.{0}, 7));
+    const source = "ab\n\nabcde\n";
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 1 }, position(&starts, source, 0));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 3 }, position(&starts, source, 2));
+    try std.testing.expectEqualDeep(Position{ .line = 2, .col = 1 }, position(&starts, source, 3));
+    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 1 }, position(&starts, source, 4));
+    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 6 }, position(&starts, source, 9));
+    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 1 }, position(&starts, source, 10));
+    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 91 }, position(&starts, source, 100));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 8 }, position(&.{0}, "", 7));
+}
+
+test "position: a column counts code points, not bytes" {
+    // language.md §12.7, *columns*: `λ` is two bytes and `→` three, one
+    // column each, so `x` after `λa → ` is at column 6.
+    const source = "λa → x\nb";
+    const starts = [_]u32{ 0, 10 };
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 2 }, position(&starts, source, 2));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 4 }, position(&starts, source, 4));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 6 }, position(&starts, source, 8));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 7 }, position(&starts, source, 9));
+    try std.testing.expectEqualDeep(Position{ .line = 2, .col = 1 }, position(&starts, source, 10));
+    try std.testing.expectEqual(@as(u32, 2), lineOf(&starts, 10));
 }

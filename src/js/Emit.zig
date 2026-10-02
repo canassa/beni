@@ -639,7 +639,7 @@ const Emitter = struct {
         if (line_starts.len == 0) return .{ .line = 1, .col = 1 };
         const tokens = e.session.artifacts.spans(file);
         if (token >= tokens.len()) return .{ .line = 1, .col = 1 };
-        return diagnostic.position(line_starts, tokens.starts[token]);
+        return diagnostic.position(line_starts, e.session.store.bytes(file), tokens.starts[token]);
     }
 
     fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
@@ -683,7 +683,8 @@ const Emitter = struct {
         };
     }
 
-    /// 1-based line and byte column of `offset` in `text`.
+    /// 1-based line and column (in code points, language.md §12.7) of
+    /// `offset` in `text`.
     ///
     /// A sibling `.js` has no token list and no line table — it is not beni
     /// source and nothing but a diagnostic ever asks it for a position — so
@@ -699,7 +700,7 @@ const Emitter = struct {
             line_start = nl + 1;
             at = nl + 1;
         }
-        return .{ .line = line, .col = @intCast(end - line_start + 1) };
+        return .{ .line = line, .col = diagnostic.column(text, @intCast(line_start), offset) };
     }
 
     // ---- boundary.md §4, check 1: the two-shape type rule -----------------
