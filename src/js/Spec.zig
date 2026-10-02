@@ -6188,10 +6188,17 @@ const Pts = struct {
         while (i < p.sites.items.len) : (i += 1) {
             if (!p.sites.items[i].escaped) continue;
             const st = &p.sites.items[i];
-            if (!st.all_read or !st.any_written) {
+            if (!st.all_read) {
                 st.all_read = true;
-                st.any_written = true;
                 p.changed = true;
+            }
+            // A walk reads `any_written` (a spread copies it), so the
+            // units that saw it unset are walked again, as `writeAnyOne`
+            // wakes them: setting it here alone left a unit walked earlier
+            // in the sweep the site escaped in never to see it.
+            if (!st.any_written) {
+                st.any_written = true;
+                p.siteChanged(@intCast(i));
             }
             for (p.sites.items[i].props.items) |pr| try p.escape(try p.view(pr.vals));
             try p.escape(try p.view(p.sites.items[i].any));

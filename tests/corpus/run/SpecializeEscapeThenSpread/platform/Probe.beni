@@ -1,0 +1,31 @@
+--! A record handed to the host by `leak`, which the walk reaches before
+--! `update`, whose record update spreads it. Neither has an argument until
+--! `demo`'s calls are walked, so both bodies are walked again in the same
+--! later sweep: `leak`'s first, where the record escapes.
+
+import Js
+
+
+type alias R =
+    a : String
+    b : String
+
+
+leak : R → ()
+leak r = Js.set (Js.global "globalThis") "leaked" (Js.from r)
+
+
+update : R → R
+update r = { r | a = "updated" }
+
+
+base : R
+base = { a = "a", b = "b" }
+
+
+pub demo : () → List String
+demo () =
+    _ = leak base
+    _ = Js.set (Js.get (Js.global "globalThis") "leaked") "extra" (Js.from "added")
+    u = update base
+    [ u.a, u.b, Js.to (Js.get (Js.from u) "extra") ]

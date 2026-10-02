@@ -1,0 +1,13 @@
+-- Fact 3 of whole-program specialisation (`backend.md` §9) when a record
+-- escapes in a unit the worklist walks before a function that spreads it
+-- (`{ r | a = … }`), in the same sweep: the escape makes every key of the
+-- record one the program cannot see written, and the spread must copy that
+-- to the new record. Walked by the worklist, the spreading body never saw
+-- it, and a safety build's comparison with a sweep of everything panicked.
+-- Both builds print the key the host added.
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.printLines (Probe.demo ())
