@@ -79,7 +79,19 @@ does not import it, which must not move by a byte.
 | **H-b** | **JSON through schemas**: `expectJson` (and its `Accept`), `jsonBody` (and its `Content-Type`), `BadBody` with issues (H2), `UnprintableBody` | §9.8.12 (a), (b) step 4–7 | `browser/tea/HttpJson`: a record decoded, a body that is not JSON (`ParseFailed`), a body missing a field (`MissingKey` at its path), a 500 with a JSON body (`BadStatus`, not `BadBody`), a request body printed with a renamed key, one holding `NaN` refused before anything is sent (no fetch logged). Measured: the page against `HttpRequestShape`'s, the difference being the schema engine | S |
 | **H-c** | **Multipart and progress**: `multipartBody`, `stringPart`, `MultipartContentType`; the tracker, `Progress`, `fractionSent`, `fractionReceived` | §9.8.12 (b), (e) | `browser/tea/HttpMultipart` (the parts in the fetch log, no `Content-Type` of the program's, the refusal); `browser/tea/HttpProgress` (a `chunks` answer of three chunks with and without `Content-Length`, each `Progress` sent as a message in order with the answer last, a `HEAD` with a `null` body, the fractions shown, a `Content-Length` smaller than the bytes received clamped to 1) | M |
 
-**H-b, parked on its budget (2026-10-02).** `Http` importing `Schema` made every `Http` page check
+**H-b landed (2026-10-02)**, once the compiler carried the embedded platforms checked
+(`fast-compiler.md` §8, *The checked core, embedded*, amended) and emitted a page more cheaply: the
+two JSON pages measure 2 986 (`HttpJson`) and 3 088 (`HttpJsonBody`) million instructions a case
+with their run hashes recorded, 3 618 and 3 708 when Node must run, the other `Http` pages 1.7–2.1
+billion. **`ApiAndRoutes` waits**: written to the plan (an `application` that posts credentials with
+`jsonBody`, reads a token with `expectJson`, pushes `/items` and lists them with a bearer `request`
+read as a JSON list), it measures 3 886 million with its run hash and 4 621 when Node runs — over
+the budget, and the release build's specialiser (`src/js/Spec.zig`) is 1.9 of its 3.1 billion. It
+also found a checker defect: a schema's `Type` written as a constructor's argument (`Got (List
+Item.Type)`) is an unreported `<error>` — `Got [ 1, 2 ]` checks, and `dump --stage=types` trips
+`checker-v2.md` §12.2's assertion — so the page (branch `api-and-routes`) keeps a plain record alias.
+
+*The note it replaces:* `Http` importing `Schema` made every `Http` page check
 `core/Schema`; the checked core (`fast-compiler.md` §8, *The checked core, embedded*) removed that,
 and the other `Http` pages measure 2.9–3.3 billion instructions a case with H-b on them. The two
 JSON pages, whose builds reach the schema engine, measure 4 266 (`HttpJson`) and 4 398

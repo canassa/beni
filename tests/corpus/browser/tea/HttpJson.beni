@@ -1,0 +1,94 @@
+-- `expectJson` reads the answer with a schema (boundary.md §9.8.12 (a),
+-- (b)): it sends `Accept: application/json` and parses a 2xx body — a
+-- record decoded, a renamed key read; a body that is not JSON is `BadBody`
+-- with a `ParseFailed` issue, one missing a field `BadBody` with
+-- `MissingKey` at its path, and a 500 with a JSON body `BadStatus`, not
+-- `BadBody`. Sending JSON is `HttpJsonBody`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+schema Note =
+    title : String as "note-title"
+    stars : Float
+
+
+type Msg
+    = Run String
+    | Got String String
+
+
+issue : Schema.Issue → String
+issue i =
+    path = String.join (List.map i.path segment) "."
+    code =
+        case i.code of
+            Schema.ParseFailed →
+                "ParseFailed"
+
+            Schema.MissingKey →
+                "MissingKey"
+
+            _ →
+                "another code"
+    "${code} at [${path}]"
+
+
+segment : Schema.PathSegment → String
+segment s =
+    case s of
+        Schema.Field name →
+            name
+
+        Schema.Index n →
+            String.fromInt n
+
+
+shown : Result Http.Error Note.Type → String
+shown result =
+    case result of
+        Ok note →
+            "ok ${note.title} ${String.fromFloat note.stars}"
+
+        Err (Http.BadBody list) →
+            "BadBody (" ++ String.join (List.map list issue) "; " ++ ")"
+
+        Err (Http.BadStatus code) →
+            "BadStatus ${String.fromInt code}"
+
+        Err _ →
+            "another error"
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Run name →
+            ( lines
+            , Cmd.task
+                (λ() → Http.get { url = "/${name}", expect = Http.expectJson (Note.schema ()) })
+                λr → Got name (shown r)
+            )
+
+        Got label line →
+            ( lines ++ [ "${label}: ${line}" ], Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <For each={[ "good", "garbled", "partial", "broken" ]} keyed={False}>
+            {λname → <button id={name} onClick={Run name}>{name}</button>}
+        </For>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -15,6 +15,7 @@
 
 import Dict exposing (Dict)
 import Js
+import Schema exposing (Schema)
 import Task exposing (Resume)
 import Time exposing (Duration)
 
@@ -23,13 +24,15 @@ import Time exposing (Duration)
 --| name or password), a request the host would refuse, found before
 --| anything is sent, the request's own timeout, no answer at all (the
 --| network, DNS, a refused connection, CORS, a body cut off), or an answer
---| whose status is not 2xx.
+--| whose status is not 2xx, or a 2xx body the schema of `expectJson` does
+--| not parse, with its issues.
 pub type Error
     = BadUrl String
     | BadRequest Problem
     | Timeout
     | NetworkError
     | BadStatus Int
+    | BadBody (List Schema.Issue)
 
 
 --| Why a request was refused before it was sent.
@@ -40,6 +43,7 @@ pub type Problem
     | ForbiddenHeader String
     | BodyNotAllowed String
     | MultipartContentType
+    | UnprintableBody (List Schema.Issue)
 
 
 --| A request header: its name and its value.
@@ -60,6 +64,7 @@ pub opaque type Body
     = Empty
     | Text String String
     | Multipart (List Part)
+    | Unprintable (List Schema.Issue)
 
 
 --| A part of a `multipartBody`.
@@ -96,6 +101,23 @@ pub stringPart : String, String → Part
 stringPart name value = StringPart name value
 
 
+--| A value printed as JSON by its schema (`Schema.print`), sent as
+--| `application/json` unless a header names another type. A value the
+--| schema does not print — a `Float` that is not finite, a refinement it
+--| breaks — is refused before anything is sent: `BadRequest
+--| (UnprintableBody issues)`.
+--|
+--|     Http.post { url = "/api/notes", body = Http.jsonBody noteSchema note, expect = Http.expectWhatever }
+pub jsonBody : Schema e a, a → Body
+jsonBody schema value =
+    case Schema.print schema value of
+        Ok text →
+            Text "application/json" text
+
+        Err issues →
+            Unprintable issues
+
+
 --| How the answer is read: what it is turned into, with which errors.
 pub opaque type Expect x a
     = Expect String (Response String → Result x a)
@@ -104,6 +126,18 @@ pub opaque type Expect x a
 --| The body as text; a status that is not 2xx is `BadStatus`.
 pub expectString : Expect Error String
 expectString = Expect "" λresponse → answered response
+
+
+--| The body parsed as JSON by the schema (`Schema.parse`), with `Accept:
+--| application/json` sent unless a header names another type. A 2xx body
+--| the schema does not parse — text that is not JSON, a field missing — is
+--| `BadBody` with the schema's issues, each with its path; a status that
+--| is not 2xx is `BadStatus`, whatever its body.
+--|
+--|     Http.get { url = "/api/notes", expect = Http.expectJson (Schema.list noteSchema) }
+pub expectJson : Schema e a → Expect Error a
+expectJson schema = Expect "application/json" λresponse →
+    Result.andThen (answered response) λtext → Result.mapError (Schema.parse schema text) BadBody
 
 
 --| Nothing of the body; a status that is not 2xx is `BadStatus`.
@@ -468,6 +502,9 @@ bodyProblem upper headers body =
                         else
                             Nothing
 
+                    Unprintable issues →
+                        Just (UnprintableBody issues)
+
                     _ →
                         Nothing
 
@@ -545,6 +582,9 @@ payload body =
                 Js.to (Js.call form "append" [ Js.from name, Js.from value ])
             form
 
+        Unprintable _ →
+            Js.undefined
+
 
 -- The body's length in UTF-8 bytes, which the tracker's `Sending` reports:
 -- a multipart body's is its parts' names and values.
@@ -559,6 +599,9 @@ size body =
 
         Multipart parts →
             List.foldl parts 0 λ(StringPart name value) n → n + utf8 name + utf8 value
+
+        Unprintable _ →
+            0
 
 
 utf8 : String → Int

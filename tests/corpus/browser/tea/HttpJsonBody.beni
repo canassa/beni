@@ -1,0 +1,94 @@
+-- `jsonBody` sends a value printed by its schema (boundary.md §9.8.12
+-- (a), (b)): the renamed key as the schema writes it, sent as
+-- `application/json`; a value the schema does not print — a `NaN` — is
+-- `BadRequest (UnprintableBody …)` with the issue at its path, and nothing
+-- is sent: the fetch log shows no request for it. Reading JSON is
+-- `HttpJson`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+schema Note =
+    title : String as "note-title"
+    stars : Float
+
+
+type Msg
+    = Save String Float
+    | Got String String
+
+
+shown : Result Http.Error () → String
+shown result =
+    case result of
+        Ok () →
+            "ok"
+
+        Err (Http.BadRequest (Http.UnprintableBody issues)) →
+            "UnprintableBody (" ++ String.join (List.map issues issue) "; " ++ ")"
+
+        Err _ →
+            "another error"
+
+
+issue : Schema.Issue → String
+issue i =
+    path =
+        String.join
+            (List.map i.path λs →
+                case s of
+                    Schema.Field name →
+                        name
+
+                    Schema.Index n →
+                        String.fromInt n
+            )
+            "."
+
+    code =
+        case i.code of
+            Schema.PrintFailed →
+                "PrintFailed"
+
+            _ →
+                "another code"
+    "${code} at [${path}]"
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Save title stars →
+            ( lines
+            , Cmd.task
+                (λ() →
+                    Http.post
+                        { url = "/notes"
+                        , body = Http.jsonBody (Note.schema ()) { title = title, stars = stars }
+                        , expect = Http.expectWhatever
+                        }
+                )
+                λr → Got title (shown r)
+            )
+
+        Got label line →
+            ( lines ++ [ "${label}: ${line}" ], Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <button id="save" onClick={Save "beni" 4.5}>save</button>
+        <button id="nan" onClick={Save "odd" (0 / 0)}>nan</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

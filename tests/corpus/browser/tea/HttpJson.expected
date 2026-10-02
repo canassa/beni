@@ -1,0 +1,76 @@
+-- load
+<body>
+  <main>
+    <button id="good">"good"</button>
+    <button id="garbled">"garbled"</button>
+    <button id="partial">"partial"</button>
+    <button id="broken">"broken"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #good
+(fetch 1: GET /good {"accept":"application/json"})
+(the DOM did not change)
+-- respond 1 200 "{\"note-title\":\"first\",\"stars\":3}" Content-Type: "application/json"
+<body>
+  <main>
+    <button id="good">"good"</button>
+    <button id="garbled">"garbled"</button>
+    <button id="partial">"partial"</button>
+    <button id="broken">"broken"</button>
+    <ol>
+      <li>"good: ok first 3.0"</li>
+    </ol>
+  </main>
+</body>
+-- click #garbled
+(fetch 2: GET /garbled {"accept":"application/json"})
+(the DOM did not change)
+-- respond 2 200 "{not json"
+<body>
+  <main>
+    <button id="good">"good"</button>
+    <button id="garbled">"garbled"</button>
+    <button id="partial">"partial"</button>
+    <button id="broken">"broken"</button>
+    <ol>
+      <li>"good: ok first 3.0"</li>
+      <li>"garbled: BadBody (ParseFailed at [])"</li>
+    </ol>
+  </main>
+</body>
+-- click #partial
+(fetch 3: GET /partial {"accept":"application/json"})
+(the DOM did not change)
+-- respond 3 200 "{\"note-title\":\"half\"}"
+<body>
+  <main>
+    <button id="good">"good"</button>
+    <button id="garbled">"garbled"</button>
+    <button id="partial">"partial"</button>
+    <button id="broken">"broken"</button>
+    <ol>
+      <li>"good: ok first 3.0"</li>
+      <li>"garbled: BadBody (ParseFailed at [])"</li>
+      <li>"partial: BadBody (MissingKey at [stars])"</li>
+    </ol>
+  </main>
+</body>
+-- click #broken
+(fetch 4: GET /broken {"accept":"application/json"})
+(the DOM did not change)
+-- respond 4 500 "{\"error\":\"boom\"}"
+<body>
+  <main>
+    <button id="good">"good"</button>
+    <button id="garbled">"garbled"</button>
+    <button id="partial">"partial"</button>
+    <button id="broken">"broken"</button>
+    <ol>
+      <li>"good: ok first 3.0"</li>
+      <li>"garbled: BadBody (ParseFailed at [])"</li>
+      <li>"partial: BadBody (MissingKey at [stars])"</li>
+      <li>"broken: BadStatus 500"</li>
+    </ol>
+  </main>
+</body>
