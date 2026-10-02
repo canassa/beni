@@ -31,8 +31,11 @@
 //                               those modifiers held and that `button`
 //                               (default 0); one whose default a handler or a
 //                               listener prevented logs `(click's default
-//                               prevented)` when its dispatch returns
-//   click <selector> <n>        `n` of them in one task, then the line
+//                               prevented)` when its dispatch returns; one on a
+//                               link nothing prevented is stopped by the
+//                               driver after every listener of the page and
+//                               logs `(the host follows the link to "<href>")`
+//   click <selector> <n>       `n` of them in one task, then the line
 //                               `(the step's task ended)` in the transcript
 //   flush <selector>            a click, then the program runtime's `flush`
 //                               export in the same task, then the line
@@ -467,8 +470,24 @@ function step(s) {
   switch (s.command) {
     case "click":
       for (let n = 0; n < (s.count ?? 1); n++) {
+        // A link nothing prevented would take Chrome off the page (happy-dom
+        // follows none): the driver's own listener, added after every
+        // listener of the page, stops it and logs that the host would have
+        // followed it.
+        let followed = null;
+        const stop = (event) => {
+          if (event.defaultPrevented) return;
+          const link = event.composedPath().find((node) => node instanceof HTMLAnchorElement && node.hasAttribute("href"));
+          if (link === undefined) return;
+          followed = link.getAttribute("href");
+          event.preventDefault();
+        };
+        addEventListener("click", stop);
         const click = new MouseEvent("click", { ...init, button: s.button ?? 0, detail: 1, ...s.modifiers });
-        if (!target.dispatchEvent(click)) globalThis.__beniHarness.log.push("(click's default prevented)");
+        target.dispatchEvent(click);
+        removeEventListener("click", stop);
+        if (followed !== null) globalThis.__beniHarness.log.push(`(the host follows the link to ${JSON.stringify(followed)})`);
+        else if (click.defaultPrevented) globalThis.__beniHarness.log.push("(click's default prevented)");
       }
       if (s.count !== undefined) globalThis.__beniHarness.log.push("(the step's task ended)");
       return null;

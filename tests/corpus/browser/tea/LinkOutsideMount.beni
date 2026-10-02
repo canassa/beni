@@ -1,0 +1,53 @@
+-- The link guard covers the whole document (boundary.md §9.8.13 (c)): a
+-- program mounted with `Browser.mountAt` hears a click on a link in
+-- markup outside its mount — here another program's, as a server's page
+-- around it would be — as well as one on its own.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+shell : Tea.Program
+shell =
+    Tea.sandbox
+        { init = ()
+        , update = λ_ m -> m
+        , view =
+            λ_ ->
+                <main>
+                    <a id="outside" href="/outside">outside</a>
+                    <div id="app" />
+                </main>
+        }
+
+
+mounted : Tea.Program
+mounted =
+    Tea.element
+        { init = ( [], Cmd.none )
+        , update = λr lines -> ( lines ++ [ describe r ], Cmd.none )
+        , view =
+            λlines ->
+                <section>
+                    <a id="inside" href="/inside">inside</a>
+                    <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+                </section>
+        , subscriptions = λ_ -> Navigation.onUrlRequest λr -> r
+        }
+
+
+describe : Browser.UrlRequest -> String
+describe r =
+    case r of
+        Browser.Internal url ->
+            "Internal ${url.path}"
+
+        Browser.External href ->
+            "External ${href}"
+
+
+main : Tea.Program
+main = Browser.programs [ shell, Browser.mountAt mounted "app" ]

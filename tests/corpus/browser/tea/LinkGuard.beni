@@ -1,0 +1,83 @@
+-- Link requests (boundary.md §9.8.13 (c)): `onUrlRequest` hears a plain
+-- click — the main button, no modifier, its default not prevented — on an
+-- `<a href>` with no `download` and an empty or `_self` target, prevents
+-- the host from following it, and sends `Internal` for the page's own
+-- protocol, host and port (a relative link, which resolves to an absolute one on the page's
+-- origin, and a fragment; the port of the page differs between the two
+-- DOMs, so no link writes it) and `External` with the `href` for any other —
+-- another host, another port, another scheme. A click inside a `<span>`
+-- in a link is the link's. Every other click is left to the host, which
+-- the driver shows as `(the host follows the link …)`: `_blank`,
+-- `download`, each modifier, the middle button, and a link whose own
+-- handler prevented the default, which logs `(click's default
+-- prevented)` and sends nothing. The address is shown before the click
+-- inside the `<span>`, which happy-dom follows before the window hears it
+-- (tests/corpus/README.md, the known differences).
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Event, Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Requested Browser.UrlRequest
+    | Handled
+
+
+shown : Browser.UrlRequest -> String
+shown r =
+    case r of
+        Browser.Internal url ->
+            query = Maybe.withDefault (Maybe.map url.query λq -> "?" ++ q) ""
+            fragment = Maybe.withDefault (Maybe.map url.fragment λf -> "#" ++ f) ""
+            "Internal ${url.host} ${url.path}${query}${fragment}"
+
+        Browser.External href ->
+            "External ${href}"
+
+
+update : Msg, List String -> ( List String, Cmd Msg )
+update msg lines =
+    case msg of
+        Requested r ->
+            ( lines ++ [ shown r ], Cmd.none )
+
+        Handled ->
+            ( lines ++ [ "handled by the link" ], Cmd.none )
+
+
+handle : Event -> Msg
+handle event =
+    _ = Html.preventDefault event
+    Handled
+
+
+view : List String -> Html Msg
+view lines =
+    <main>
+        <a id="relative" href="/blog/42?x=1#c">relative</a>
+        <a id="fragment" href="#top">fragment</a>
+        <a id="host" href="http://example.com/x">host</a>
+        <a id="port" href="http://127.0.0.1:1/x">port</a>
+        <a id="https" href="https://127.0.0.1:8000/x">https</a>
+        <a id="mail" href="mailto:a@example.com">mail</a>
+        <a id="blank" href="/b" target="_blank">blank</a>
+        <a id="self" href="/s" target="_SELF">self</a>
+        <a id="download" href="/d" download="">download</a>
+        <a id="nested" href="/n"><span id="inner">inner</span></a>
+        <a id="handled" href="/h" onClick={handle}>handled</a>
+        <a id="nohref">no href</a>
+        <ol><For each={lines} keyed={False}>{λline -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Navigation.onUrlRequest Requested
+        }

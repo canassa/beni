@@ -105,8 +105,105 @@ pub reload : () -> ()
 reload () = Js.to (Js.call (Js.global "location") "reload" [])
 
 
+-- The subscriptions' keys, one type each, so a page that follows only the
+-- address compares no key of the other.
 type Follow
     = UrlChange
+
+
+type Requests
+    = LinkClick
+
+
+--| Call `f` with each click on a link the page should handle itself, for
+--| as long as the calling fiber runs: the direct form of `onUrlRequest`.
+--| One listener on the window decides, while the click is dispatched and
+--| after every handler on the page has run, and prevents the host from
+--| following the link when it is a request: a plain click (the main
+--| button, no Ctrl, Meta, Shift or Alt) whose default nothing prevented,
+--| on an `<a href>` with no `download` and a `target` that is empty or
+--| `_self`. Any other click is the host's. It covers the whole document,
+--| markup outside a program's mount included. It never returns.
+pub eachUrlRequest : (Browser.UrlRequest -> ()) -> ()
+eachUrlRequest f = Listen.each "window" "click" request λr -> sendRequest f r
+
+
+--| Each click on a link the page should handle itself, as `eachUrlRequest`
+--| decides it: `Internal` with its `Url` for a link to the page's own
+--| protocol, host and port, `External` with its `href` for any other.
+pub onUrlRequest : (Browser.UrlRequest -> msg) -> Sub msg
+onUrlRequest tag = Sub.listen LinkClick (eachUrlRequest _) tag
+
+
+sendRequest : Send Browser.UrlRequest, Maybe Browser.UrlRequest -> ()
+sendRequest send r =
+    case r of
+        Just u ->
+            send u
+
+        Nothing ->
+            ()
+
+
+-- Elm's guard, made precise (`boundary.md` §9.8.13 (c)), decided while the
+-- click is dispatched: a default already prevented has been handled, a
+-- modified or non-main click is the user asking the host, and so is a link
+-- that downloads or opens elsewhere.
+request : Js.Value -> Maybe Browser.UrlRequest
+request event =
+    if
+        Js.to (Js.get event "defaultPrevented")
+            || not (Js.same (Js.get event "button") (Js.from 0))
+            || Js.to (Js.get event "ctrlKey")
+            || Js.to (Js.get event "metaKey")
+            || Js.to (Js.get event "shiftKey")
+            || Js.to (Js.get event "altKey")
+    then
+        Nothing
+    else
+        a = anchorOf event
+        if
+            Js.isNull a
+                || not (Js.to (Js.call a "hasAttribute" [ Js.from "href" ]))
+                || Js.to (Js.call a "hasAttribute" [ Js.from "download" ])
+                || not (sameContext (Js.call (Js.get a "target") "toLowerCase" []))
+        then
+            Nothing
+        else
+            _ = Js.call event "preventDefault" []
+            href : String
+            href = Js.to (Js.get a "href")
+            location = Js.global "location"
+            case Url.fromString href of
+                Just url ->
+                    if
+                        Js.same (Js.get a "protocol") (Js.get location "protocol")
+                            && Js.same (Js.get a "host") (Js.get location "host")
+                    then
+                        Just (Browser.Internal url)
+                    else
+                        Just (Browser.External href)
+
+                Nothing ->
+                    Just (Browser.External href)
+
+
+sameContext : Js.Value -> Bool
+sameContext target = Js.same target (Js.from "") || Js.same target (Js.from "_self")
+
+
+-- The nearest `<a>` at or above the click's target, along its composed
+-- path, or null.
+anchorOf : Js.Value -> Js.Value
+anchorOf event =
+    found = Js.ref Js.null
+    anchor = Js.global "HTMLAnchorElement"
+    _ = Js.each (Js.call event "composedPath" []) λnode ->
+        if Js.isNull (Js.read found) && Js.instanceOf node anchor then
+            Js.write found node
+        else
+            ()
+    Js.read found
 
 
 --| Call `f` with the page's new address each time it changes, for as long

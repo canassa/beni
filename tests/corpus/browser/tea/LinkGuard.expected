@@ -1,0 +1,289 @@
+-- load
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol></ol>
+  </main>
+</body>
+-- click #relative
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+    </ol>
+  </main>
+</body>
+-- click #fragment
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+    </ol>
+  </main>
+</body>
+-- click #host
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+    </ol>
+  </main>
+</body>
+-- click #port
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+    </ol>
+  </main>
+</body>
+-- click #https
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+      <li>"External https://127.0.0.1:8000/x"</li>
+    </ol>
+  </main>
+</body>
+-- click #mail
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+      <li>"External https://127.0.0.1:8000/x"</li>
+      <li>"External mailto:a@example.com"</li>
+    </ol>
+  </main>
+</body>
+-- click #blank
+(the host follows the link to "/b")
+(the DOM did not change)
+-- click #self
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+      <li>"External https://127.0.0.1:8000/x"</li>
+      <li>"External mailto:a@example.com"</li>
+      <li>"Internal 127.0.0.1 /s"</li>
+    </ol>
+  </main>
+</body>
+-- click #download
+(the host follows the link to "/d")
+(the DOM did not change)
+-- location
+(location: /_page.html)
+(the DOM did not change)
+-- click #inner
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+      <li>"External https://127.0.0.1:8000/x"</li>
+      <li>"External mailto:a@example.com"</li>
+      <li>"Internal 127.0.0.1 /s"</li>
+      <li>"Internal 127.0.0.1 /n"</li>
+    </ol>
+  </main>
+</body>
+-- click #handled
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="port" href="http://127.0.0.1:1/x">"port"</a>
+    <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" target="_blank" href="/b">"blank"</a>
+    <a id="self" target="_SELF" href="/s">"self"</a>
+    <a id="download" download="" href="/d">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <ol>
+      <li>"Internal 127.0.0.1 /blog/42?x=1#c"</li>
+      <li>"Internal 127.0.0.1 /_page.html#top"</li>
+      <li>"External http://example.com/x"</li>
+      <li>"External http://127.0.0.1:1/x"</li>
+      <li>"External https://127.0.0.1:8000/x"</li>
+      <li>"External mailto:a@example.com"</li>
+      <li>"Internal 127.0.0.1 /s"</li>
+      <li>"Internal 127.0.0.1 /n"</li>
+      <li>"handled by the link"</li>
+    </ol>
+  </main>
+</body>
+-- click #nohref
+(the DOM did not change)
+-- click #relative ctrl
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative meta
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative shift
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative alt
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)
+-- click #relative button:1
+(the host follows the link to "/blog/42?x=1#c")
+(the DOM did not change)

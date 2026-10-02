@@ -99,7 +99,11 @@ project) against it, one step per line, `#` for a comment:
                                 a bubbling `click` with those modifiers held
                                 and that `button` (default 0); one whose
                                 default a handler prevented logs `(click's
-                                default prevented)`
+                                default prevented)`; a click on a link that
+                                nothing prevented is stopped by the driver,
+                                after every listener of the page, and logs
+                                `(the host follows the link to "<href>")`,
+                                so neither DOM leaves the page
     click <selector> <n>        `n` clicks in one task, then `(the step's task ended)`
     flush <selector>            a click, then the program runtime's `flush()`
                                 in the same task, then `(flushed)`
@@ -246,6 +250,12 @@ compares instead of `.expected`. The differences known today:
 - `Headers`: happy-dom iterates names as they were written, where the Fetch
   standard and Chrome lower-case them, so a fixture that shows headers
   lower-cases them itself (the fetch log does);
+- a link followed: happy-dom follows an `<a href>` when the click bubbles
+  through it, before the window's listeners run, so a window listener that
+  prevents the default (the link guard of `Browser.Navigation`) is too late
+  for a click on an element inside the link; Chrome follows it after the
+  dispatch, as the standard says. happy-dom then changes the address without
+  loading anything, so a fixture shows the address before such a click;
 - `history.back()`: happy-dom fires the `popstate` at once, in the step's
   task, Chrome in a later one; the `back` and `forward` steps wait for it.
 

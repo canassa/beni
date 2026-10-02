@@ -12,10 +12,20 @@
 import Html exposing (Html)
 import Js
 import Task
+import Url exposing (Url)
 
 
 --| What `main` is: the programs of a page, and where each mounts.
 pub foreign type Program
+
+
+--| A click on a link the page should handle itself (`boundary.md` §9.8.13
+--| (c)): `Internal` for one on the page's own protocol, host and port,
+--| `External` for any other, with its `href`. What
+--| `Browser.Navigation.onUrlRequest` sends.
+pub type UrlRequest
+    = Internal Url
+    | External String
 
 
 --| A page with a model: `init` is rendered first, and every message a
