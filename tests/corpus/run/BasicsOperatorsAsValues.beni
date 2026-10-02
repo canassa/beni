@@ -1,0 +1,44 @@
+-- `Basics`' operators passed as values. Each is beni now, `add a b = a + b`:
+-- inside `Basics` the body's `+` is `add` calling itself by name in tail
+-- position, and only *Arithmetic is an operator* (`backend.md` §4) makes it
+-- `a + b` and not a call. The tail-call loop (§8) and the inliner must not
+-- take that call for a self-call: when they did, `add`'s body was an empty
+-- `for (;;) {}` and the first line below never printed. A saturated call
+-- is written in place and never reaches the declaration, so a function
+-- handed to `apply` is the only way any of these bodies runs.
+import Node exposing (Program)
+
+
+apply : (a, a → b), a, a → b
+apply f x y = f x y
+
+
+showBool : Bool → String
+showBool b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+comparisons : number, number → String
+comparisons x y =
+    String.join
+        (List.map [ Basics.lt, Basics.gt, Basics.le, Basics.ge ] λf → showBool (apply f x y))
+        ","
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (apply Basics.add 7 3)
+        , String.fromFloat (apply Basics.add 0.5 0.25)
+        , String.fromInt (apply Basics.sub 7 3)
+        , String.fromInt (apply Basics.mul 7 3)
+        , String.fromFloat (apply Basics.fdiv 7 2)
+        , String.fromInt (apply Basics.pow 2 10)
+        , comparisons 2 2
+        , comparisons 1.5 2
+        , showBool (apply Basics.and True False)
+        , showBool (apply Basics.or False True)
+        ]

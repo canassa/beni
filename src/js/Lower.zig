@@ -3104,7 +3104,7 @@ pub const Lowerer = struct {
             .top => |decl| l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == decl,
             .local => |index| l.bir.instTag(callee) == .local and l.bir.instData(callee).lhs == index,
         };
-        if (!named) return false;
+        if (!named or l.callsOperator(inst)) return false;
         if (l.bir.subRange(@enumFromInt(d.rhs)).len() != loop.slots.len - loop.evidence) return false;
         return l.rootsOf(inst).len == loop.evidence;
     }
@@ -7872,6 +7872,17 @@ pub const Lowerer = struct {
         return Operator.of(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.interner);
     }
 
+    /// Whether `site`, a call instruction, calls an `Operator` and is
+    /// therefore written in place: no call of the declaration it names is
+    /// made. Inside `Basics`, `add a b = a + b` is `add` calling itself in
+    /// tail position by name, and what it computes is `a + b` — so neither
+    /// the tail-call loop (§8) nor the inliner may take it for a call.
+    fn callsOperator(l: *Lowerer, site: Inst.Index) bool {
+        const d = l.bir.instData(site);
+        const which = l.operatorOf(@enumFromInt(d.lhs)) orelse return false;
+        return which.arity() == l.bir.subRange(@enumFromInt(d.rhs)).len() and l.rootsOf(site).len == 0;
+    }
+
     /// A saturated call of an `Operator` as the JavaScript it computes. The
     /// operands are evaluated once each, in written order (`orderedExprs`),
     /// which is the order the call evaluated them in.
@@ -8520,7 +8531,7 @@ pub const Lowerer = struct {
             },
             .call => {
                 const callee: Inst.Index = @enumFromInt(d.lhs);
-                return @intFromBool(l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index);
+                return @intFromBool(l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index and !l.callsOperator(inst));
             },
             else => return 0,
         }
@@ -8574,7 +8585,7 @@ pub const Lowerer = struct {
     fn inlineTarget(l: *Lowerer, site: Inst.Index) ?u32 {
         if (l.inline_candidate.len == 0) return null;
         const callee: Inst.Index = @enumFromInt(l.bir.instData(site).lhs);
-        if (l.bir.instTag(callee) != .top) return null;
+        if (l.bir.instTag(callee) != .top or l.callsOperator(site)) return null;
         const index = l.bir.instData(callee).lhs;
         if (index >= l.inline_candidate.len or !l.inline_candidate[index]) return null;
         if (std.mem.indexOfScalar(u32, l.inline_stack.items, index) != null) return null;
@@ -8775,7 +8786,7 @@ pub const Lowerer = struct {
             },
             .call => {
                 const callee: Inst.Index = @enumFromInt(d.lhs);
-                return l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index;
+                return l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == index and !l.callsOperator(inst);
             },
             .tuple => return Bir.inlineRange(d).len() == arity,
             else => return false,
@@ -9025,7 +9036,7 @@ pub const Lowerer = struct {
     fn tailCallee(l: *Lowerer, inst: Inst.Index) ?u32 {
         if (l.bir.instTag(inst) != .call) return null;
         const callee: Inst.Index = @enumFromInt(l.bir.instData(inst).lhs);
-        if (l.bir.instTag(callee) != .top) return null;
+        if (l.bir.instTag(callee) != .top or l.callsOperator(inst)) return null;
         const index = l.bir.instData(callee).lhs;
         return if (index < l.bir.decls.len) index else null;
     }

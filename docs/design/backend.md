@@ -1617,7 +1617,11 @@ not built):* `modBy` and `remainderBy` become `Int.mod` and `Int.rem`, and stay 
 `modBy` and `remainderBy` had — so a call emits what the old one did, under the new module's
 import. *(Amended 2026-10-01: `Int32`'s declarations are
 beni over `Js` now, `plans/core-in-beni.md`; the table still writes a saturated call, and the beni
-body, the same operator, is what a function passed as a value is.)*
+body, the same operator, is what a function passed as a value is.)* *(Amended 2026-10-02: so are
+`Basics`' — `add a b = a + b`, `and a b = a && b` — and inside `Basics` the body's `+` is `add`
+calling itself by name in tail position. A call this table writes in place calls nothing, so it is
+never a self-call to §8's tail-call loop nor a site for the inliner (`Lower.callsOperator`); when it
+was taken for one, `add`'s body was an empty `for (;;) {}`. `run/BasicsOperatorsAsValues`.)*
 
 **Evaluation order is the call's**: the operands are evaluated once each, left to right, with the
 same pinning a call's arguments get (`orderedExprs`), which is `language.md` §6's *binary

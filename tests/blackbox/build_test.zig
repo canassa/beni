@@ -84,7 +84,6 @@ test "a program computes something and prints the right answer" {
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
-        "out/_core/Basics.foreign.mjs",
         "out/_core/List.mjs",
         "out/_core/List.foreign.mjs",
         "out/_platform/Node.mjs",

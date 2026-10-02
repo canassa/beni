@@ -23,17 +23,18 @@
 --! — they dispatch on the receiver's type instead — but all seven, `compare`
 --! included, stay declared, exported and callable by name:
 --!
---!   - `add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge` — the operators.
---!     A saturated call of each is written in place as its JavaScript
---!     operator (`backend.md` §4, *Arithmetic is an operator*), and a beni
---!     body would be that same call of itself; the sibling is what a
---!     function passed as a value is.
---!   - `and` `or` — short-circuiting: a beni definition takes both sides as
---!     arguments, so both would be evaluated.
 --!   - `eq` `neq` — structural equality over any representation, and
 --!     `append` — concatenation over two: each asks a value's JavaScript
 --!     `typeof`, whose answer is a string this module cannot write, being
 --!     below `String` (`plans/core-in-beni.md`).
+--!
+--! The operators `add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge` `and`
+--! `or` are beni whose body is the operator itself: `add a b = a + b`. A
+--! saturated call of each is written in place as its JavaScript operator
+--! (`backend.md` §4, *Arithmetic is an operator*), the body's own `+`
+--! included, so the body is `(a, b) => a + b` and calls nothing; it is what
+--! a function passed as a value is. `and` and `or` short-circuit wherever
+--! they are called; passed as a value, both arguments already exist.
 --!
 --! The conversions and the floating-point library — `toFloat` `round`
 --! `floor` `ceiling` `truncate` `idiv` `sqrt` `e` `pi` and the
@@ -97,25 +98,29 @@ pub type Never
 --|     add 3 4 == 7
 --|
 --| This is what `+` desugars to.
-pub foreign pure add : number, number → number
+pub add : number, number → number
+add a b = a + b
 
 
 --| Subtract the second number from the first. What `-` desugars to.
 --|
 --|     sub 4 3 == 1
-pub foreign pure sub : number, number → number
+pub sub : number, number → number
+sub a b = a - b
 
 
 --| Multiply two numbers. What `*` desugars to.
 --|
 --|     mul 2 3 == 6
-pub foreign pure mul : number, number → number
+pub mul : number, number → number
+mul a b = a * b
 
 
 --| Floating-point division. What `/` desugars to.
 --|
 --|     fdiv 3 2 == 1.5
-pub foreign pure fdiv : Float, Float → Float
+pub fdiv : Float, Float → Float
+fdiv a b = a / b
 
 
 --| Integer division, truncated towards zero. What `//` desugars to.
@@ -140,7 +145,8 @@ idiv a b =
 --| Exponentiation. What `^` desugars to.
 --|
 --|     pow 3 2 == 9
-pub foreign pure pow : number, number → number
+pub pow : number, number → number
+pow a b = a ^ b
 
 
 --| Check if two values are equal. Equality is structural: two values of the
@@ -165,41 +171,47 @@ pub foreign pure neq : equatable a, a → Bool
 --|     lt 1 2 == True
 --|
 --| Numbers only. `String.compare` orders text.
-pub foreign pure lt : number, number → Bool
+pub lt : number, number → Bool
+lt a b = a < b
 
 
 --| Check if the first number is greater than the second. What `>` desugars to.
 --|
 --|     gt 2 1 == True
-pub foreign pure gt : number, number → Bool
+pub gt : number, number → Bool
+gt a b = a > b
 
 
 --| Check if the first number is less than or equal to the second. What `≤`
 --| desugars to.
 --|
 --|     le 1 1 == True
-pub foreign pure le : number, number → Bool
+pub le : number, number → Bool
+le a b = a ≤ b
 
 
 --| Check if the first number is greater than or equal to the second. What `≥`
 --| desugars to.
 --|
 --|     ge 1 1 == True
-pub foreign pure ge : number, number → Bool
+pub ge : number, number → Bool
+ge a b = a ≥ b
 
 
 --| The logical AND, short-circuiting: the second argument is evaluated only
 --| when the first is `True`. What `&&` desugars to.
 --|
 --|     and True False == False
-pub foreign pure and : Bool, Bool → Bool
+pub and : Bool, Bool → Bool
+and a b = a && b
 
 
 --| The logical OR, short-circuiting: the second argument is evaluated only
 --| when the first is `False`. What `||` desugars to.
 --|
 --|     or True False == True
-pub foreign pure or : Bool, Bool → Bool
+pub or : Bool, Bool → Bool
+or a b = a || b
 
 
 --| Put two appendable values together. `appendable` is `String` or `List a`.

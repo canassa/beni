@@ -4,7 +4,7 @@
 // Every function here is n-ary, with n the number of parameters its beni
 // annotation lists before the `->`. That is the calling convention of
 // fast-compiler.md §9.3: a saturated call at statically known arity is a
-// DIRECT call, so `a + b` reaches `add(a, b)` with no adapter. Function
+// DIRECT call, so `a ++ b` reaches `append(a, b)` with no adapter. Function
 // types are n-ary throughout, so a function passed as a value is the same
 // n-ary function and nothing here has to know about currying.
 //
@@ -24,26 +24,6 @@
 // there is no `try`/`catch` to write: the one operation that can throw on
 // its own is arithmetic on a value of the wrong type, which the type
 // checker has already ruled out.
-
-export const add = (a, b) => a + b;
-export const sub = (a, b) => a - b;
-export const mul = (a, b) => a * b;
-export const fdiv = (a, b) => a / b;
-
-export const pow = (a, b) => a ** b;
-
-export const lt = (a, b) => a < b;
-export const gt = (a, b) => a > b;
-export const le = (a, b) => a <= b;
-export const ge = (a, b) => a >= b;
-
-// Short-circuiting is the reason these are `foreign` at all (Basics.beni's
-// header): a beni definition would take both sides as arguments. The
-// emitter recognises a saturated call of either and emits `&&` / `||`
-// directly, so these two are reached only when the function is passed as a
-// value — where both arguments already exist and eagerness costs nothing.
-export const and = (a, b) => a && b;
-export const or = (a, b) => a || b;
 
 // `++` over the two appendable representations. One definition over both is
 // the other reason Basics.beni lists it as foreign. A `++` the checker
