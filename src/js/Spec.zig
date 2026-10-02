@@ -2425,25 +2425,24 @@ const Spec = struct {
         while (JsIr.popOperand(&stack)) |node| {
             const ir = m.ir;
             const d = ir.data(node);
-            switch (ir.tag(node)) {
-                .ident => if (m.globalOf(@enumFromInt(d.lhs))) |g| if (!referenced[g]) {
+            // Tested with `==`, not a `switch` with an `else` prong
+            // (`TagSet`).
+            const t = ir.tag(node);
+            if (t == .ident) {
+                if (m.globalOf(@enumFromInt(d.lhs))) |g| if (!referenced[g]) {
                     referenced[g] = true;
                     try work.append(s.arena, g);
-                },
-                .arrow => {
-                    const f = ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
-                },
-                .assign_stmt => {
-                    try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.lhs));
-                    try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.rhs));
-                },
-                .import_stmt, .export_stmt => {},
-                else => if (ir.tag(node).isStatement())
-                    try s.pushStmtExprs(m, node, &stack)
-                else
-                    try ir.pushOperands(s.arena, &stack, node),
-            }
+                };
+            } else if (t == .arrow) {
+                const f = ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
+                for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
+            } else if (t == .assign_stmt) {
+                try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.lhs));
+                try JsIr.pushOperand(s.arena, &stack, @enumFromInt(d.rhs));
+            } else if (t == .import_stmt or t == .export_stmt) {} else if (t.isStatement())
+                try s.pushStmtExprs(m, node, &stack)
+            else
+                try ir.pushOperands(s.arena, &stack, node);
         }
     }
 
@@ -2517,19 +2516,17 @@ const Spec = struct {
                 try s.pushStmtExprs(m, node, &stack);
                 continue;
             }
-            switch (tag) {
-                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => continue,
-                .arrow => {
-                    const f = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
-                    continue;
-                },
-                // Fact 3: a key no reachable read reaches goes from its
-                // literal, when its value does nothing.
-                .object => _ = try s.dropKeys(m, node),
-                .call => try s.appendChild(m, node),
-                else => {},
+            // Tested with a table and `==`, not a `switch` with an `else`
+            // prong (`TagSet`).
+            if (patch_leaves[@intFromEnum(tag)]) continue;
+            if (tag == .arrow) {
+                const f = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Func);
+                for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
+                continue;
             }
+            // Fact 3: a key no reachable read reaches goes from its
+            // literal, when its value does nothing.
+            if (tag == .object) _ = try s.dropKeys(m, node) else if (tag == .call) try s.appendChild(m, node);
             // What this reports is whether the program SHRANK in a way the
             // next round's facts can see: a branch or a read gone. A name or
             // an operator written as its value takes no call site, no
@@ -2537,14 +2534,10 @@ const Spec = struct {
             // reference go) — but for the reads of whole-program names
             // below it, which `rewrite` weighs on its own (`folded_reads`).
             const was = ir.tag(node);
-            const shrinks = switch (was) {
-                .member, .cond => true,
-                .binary => switch (@as(JsIr.BinaryOp, @enumFromInt(ir.data(node).rhs))) {
-                    .logical_and, .logical_or => true,
-                    else => false,
-                },
+            const shrinks = was == .member or was == .cond or (was == .binary and switch (@as(JsIr.BinaryOp, @enumFromInt(ir.data(node).rhs))) {
+                .logical_and, .logical_or => true,
                 else => false,
-            };
+            });
             const v = m.memo[node.int()];
             if (v.state == .lit) {
                 // The whole-program names read below `node`, which a fold
@@ -2563,56 +2556,53 @@ const Spec = struct {
             }
             // A conditional or a logical operator whose left side decides.
             const d = ir.data(node);
-            switch (tag) {
-                .member, .index_get => if (!m.objects.isSet(d.lhs)) {
+            if (tag == .member or tag == .index_get) {
+                if (!m.objects.isSet(d.lhs)) {
                     m.objects.set(d.lhs);
                     try marked.append(s.arena, d.lhs);
-                },
-                .cond => {
-                    // Fact 5's second case: the branch the test takes is the
-                    // read it tested.
-                    if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
+                }
+            } else if (tag == .cond) {
+                // Fact 5's second case: the branch the test takes is the
+                // read it tested.
+                if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
+                    m.copyNode(node, b);
+                    m.memo[node.int()] = m.memo[b.int()];
+                    try JsIr.pushOperand(s.arena, &stack, node);
+                    any = true;
+                    continue;
+                }
+                const t = m.memo[d.lhs];
+                if (t.state == .lit) {
+                    const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
+                    const taken: ?Index = switch (s.truthy(s.litOf(t))) {
+                        .yes => c.consequent,
+                        .no => c.alternate,
+                        .unknown => null,
+                    };
+                    if (taken) |b| {
                         m.copyNode(node, b);
                         m.memo[node.int()] = m.memo[b.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
                         continue;
                     }
-                    const t = m.memo[d.lhs];
-                    if (t.state == .lit) {
-                        const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                        const taken: ?Index = switch (s.truthy(s.litOf(t))) {
-                            .yes => c.consequent,
-                            .no => c.alternate,
-                            .unknown => null,
-                        };
-                        if (taken) |b| {
-                            m.copyNode(node, b);
-                            m.memo[node.int()] = m.memo[b.int()];
+                }
+            } else if (tag == .binary) {
+                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                if (op == .logical_and or op == .logical_or) {
+                    const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    const l = m.memo[b.left.int()];
+                    if (l.state == .lit) {
+                        const t = s.truthy(s.litOf(l));
+                        if (t != .unknown and (op == .logical_and) == (t == .yes)) {
+                            m.copyNode(node, b.right);
+                            m.memo[node.int()] = m.memo[b.right.int()];
                             try JsIr.pushOperand(s.arena, &stack, node);
                             any = true;
                             continue;
                         }
                     }
-                },
-                .binary => {
-                    const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
-                    if (op == .logical_and or op == .logical_or) {
-                        const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                        const l = m.memo[b.left.int()];
-                        if (l.state == .lit) {
-                            const t = s.truthy(s.litOf(l));
-                            if (t != .unknown and (op == .logical_and) == (t == .yes)) {
-                                m.copyNode(node, b.right);
-                                m.memo[node.int()] = m.memo[b.right.int()];
-                                try JsIr.pushOperand(s.arena, &stack, node);
-                                any = true;
-                                continue;
-                            }
-                        }
-                    }
-                },
-                else => {},
+                }
             }
             try ir.pushOperands(s.arena, &stack, node);
         }
@@ -5566,6 +5556,9 @@ const value_leaves = TagSet(&.{ .ident, .number, .string, .true_lit, .false_lit,
 inline fn isValueLeaf(t: Node.Tag) bool {
     return value_leaves[@intFromEnum(t)];
 }
+
+/// The leaves `Spec.patchStmt` has nothing to patch in.
+const patch_leaves = TagSet(&.{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
 
 /// The leaves `Spec.countExpr` has nothing to count in: none is a name.
 const count_leaves = TagSet(&.{ .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
