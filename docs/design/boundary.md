@@ -2575,6 +2575,20 @@ after each chunk with the bytes received so far. **`fetch` reports no upload pro
 `fractionReceived` clamps to 1, as Elm's does. A tracker that suspends holds the next chunk back,
 and a tracker that throws is a defect.
 
+*As built, 2026-10-02* (`plans/http-and-routing.md`, the request, multipart and progress slices):
+
+- **A header value holding a character above U+00FF is `InvalidHeader` too** (step 3): `Headers`
+  holds byte strings and throws a `TypeError` for one, a failure the standard documents, so it is
+  found by testing the value like NUL, CR and LF.
+- **`get` checks no method or header and `post` only its body**: their method is a standard one and
+  they take no headers, so a program that only gets and posts ships none of step 2's and 3's tests.
+- **A multipart body's `size`** is the UTF-8 length of its parts' names and values together.
+- **A zero or negative timeout sends nothing**: the request is `Timeout` before `fetch` is called.
+- **The JSON pieces of (a) and (b)** — `expectJson`, `jsonBody`, `BadBody`, `UnprintableBody` — are
+  not built yet: importing `Schema` into `Http` makes every page that uses `Http` check
+  `core/Schema`, and that alone puts each `Http` page fixture over the test budget. Reported as the
+  defect to fix (rule 10); the slice waits on the branch `http-json-blocked`.
+
 **(f) What the page sees of the answer.** `Metadata.headers` holds what `response.headers`
 iterates: names lower-cased, a header sent twice once with its values joined by `", "`, and — for a
 cross-origin answer — only the CORS-safelisted response headers plus those the server lists in
