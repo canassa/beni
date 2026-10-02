@@ -330,6 +330,11 @@ test "serve answers from the output directory, falls back to index.html, and cou
     // against `/todos/3` as a browser resolves it, is the program.
     const nested_script = try get(&w, port, try resolveAgainst(&w, "/todos/3", try scriptSrc(route.body)));
     const missing = try get(&w, port, "/missing.mjs");
+    // A route whose last segment has a `.` is a page when a browser
+    // navigates to it, which says so in `Accept`; a fetch of it is not.
+    const navigated = try getWith(&w, port, "/users/jane.doe", "accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.8\r\n");
+    const fetched = try get(&w, port, "/users/jane.doe");
+    const missing_navigated = try getWith(&w, port, "/missing.mjs", "accept: */*\r\n");
     const escape = try get(&w, port, "/%2e%2e/beni.json");
     const before = try get(&w, port, "/_beni/build");
     try w.write("src/Main.beni", browser_main ++ "\n\nunused : Int\nunused =\n    2\n");
@@ -354,6 +359,10 @@ test "serve answers from the output directory, falls back to index.html, and cou
     try testing.expectEqualStrings("text/javascript; charset=utf-8", nested_script.content_type);
     try testing.expectEqualStrings(module.body, nested_script.body);
     try testing.expectEqual(@as(u16, 404), missing.status);
+    try testing.expectEqual(@as(u16, 200), navigated.status);
+    try testing.expectEqualStrings(root.body, navigated.body);
+    try testing.expectEqual(@as(u16, 404), fetched.status);
+    try testing.expectEqual(@as(u16, 404), missing_navigated.status);
     try testing.expectEqual(@as(u16, 400), escape.status);
     try testing.expectEqualStrings("1", before.body);
     try testing.expectEqualStrings("2", after.body);
@@ -481,6 +490,11 @@ const Response = struct { status: u16, content_type: []const u8, body: []const u
 
 /// One `GET` over a fresh connection that the request asks to close.
 fn get(w: *World, port: u16, target: []const u8) !Response {
+    return getWith(w, port, target, "");
+}
+
+/// `get` with more header lines, each ending in `\r\n`.
+fn getWith(w: *World, port: u16, target: []const u8, headers: []const u8) !Response {
     const io = w.io;
     const arena = w.arena.allocator();
     const address = try Io.net.IpAddress.parse("127.0.0.1", port);
@@ -488,7 +502,7 @@ fn get(w: *World, port: u16, target: []const u8) !Response {
     defer stream.close(io);
     var send_buffer: [1024]u8 = undefined;
     var writer = stream.writer(io, &send_buffer);
-    try writer.interface.print("GET {s} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n", .{target});
+    try writer.interface.print("GET {s} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n{s}\r\n", .{ target, headers });
     try writer.interface.flush();
     var recv_buffer: [4096]u8 = undefined;
     var reader = stream.reader(io, &recv_buffer);

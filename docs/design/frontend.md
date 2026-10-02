@@ -1338,7 +1338,7 @@ When the project's `"base"` is an absolute path other than `/`, a request path u
 taken off first, so `/app/_main.mjs` is `<out>/_main.mjs` and the page behaves as it will when
 deployed under `/app/`; a path outside it is served as it is.
 
-*Amended 2026-10-01* (`boundary.md` §9.8.13 (e), `plans/http-and-routing.md` H9; not built): a
+*Amended 2026-10-01* (`boundary.md` §9.8.13 (e), `plans/http-and-routing.md` H9; built 2026-10-02): a
 `GET` for a path that names no file is also answered with `index.html`, status 200, when the
 request's `Accept` header lists `text/html` — what a browser sends when it navigates — whatever
 its last segment, so a client-side route such as `/users/jane.doe` survives a reload. A request

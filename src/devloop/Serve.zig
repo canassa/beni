@@ -148,7 +148,7 @@ fn respond(shared: *Shared, request: *http.Server.Request) !void {
     var arena_state: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const found = try locate(arena, shared, rel) orelse return notFound(request);
+    const found = try locate(arena, shared, rel, acceptsHtml(request)) orelse return notFound(request);
     const bytes = fs_read.readFileAlloc(shared.io, Io.Dir.cwd(), found, arena, .limited(max_file_bytes)) catch
         return notFound(request);
     const mime = mimeType(found);
@@ -166,11 +166,27 @@ fn notFound(request: *http.Server.Request) !void {
     return request.respond("not found\n", .{ .status = .not_found, .extra_headers = &.{ text_plain, no_store } });
 }
 
+/// Whether the request's `Accept` lists `text/html`: what a browser sends
+/// when it navigates to an address, and a module or a `fetch` does not.
+fn acceptsHtml(request: *const http.Server.Request) bool {
+    var it = request.iterateHeaders();
+    while (it.next()) |header| {
+        if (!std.ascii.eqlIgnoreCase(header.name, "accept")) continue;
+        var types = std.mem.splitScalar(u8, header.value, ',');
+        while (types.next()) |item| {
+            const media = std.mem.trim(u8, item[0 .. std.mem.indexOfScalar(u8, item, ';') orelse item.len], " \t");
+            if (std.ascii.eqlIgnoreCase(media, "text/html")) return true;
+        }
+    }
+    return false;
+}
+
 /// The file under `--out` that answers `rel`, or null for a 404: the file
 /// itself, a directory's `index.html`, or — for a path that names nothing
-/// and whose last segment has no `.` — the root `index.html` (§10.4's
-/// single-page-application fallback).
-fn locate(arena: Allocator, shared: *Shared, rel: []const u8) !?[]const u8 {
+/// and whose last segment has no `.`, or any such path when the request
+/// accepts HTML — the root `index.html` (§10.4's single-page-application
+/// fallback, as amended for a route like `/users/jane.doe`).
+fn locate(arena: Allocator, shared: *Shared, rel: []const u8, html: bool) !?[]const u8 {
     const io = shared.io;
     const cwd = Io.Dir.cwd();
     const full = if (rel.len == 0)
@@ -187,7 +203,7 @@ fn locate(arena: Allocator, shared: *Shared, rel: []const u8) !?[]const u8 {
         else => return null,
     } else |_| {}
     const last = if (std.mem.lastIndexOfScalar(u8, rel, '/')) |i| rel[i + 1 ..] else rel;
-    if (std.mem.indexOfScalar(u8, last, '.') != null) return null;
+    if (!html and std.mem.indexOfScalar(u8, last, '.') != null) return null;
     const index = try std.fmt.allocPrint(arena, "{s}/index.html", .{shared.out});
     const s = cwd.statFile(io, index, .{}) catch return null;
     return if (s.kind == .file) index else null;
