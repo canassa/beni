@@ -16,6 +16,10 @@ new intrinsic and one compiler fix (§3). §2 is the per-piece table, §3 the mi
 proposed spec text, §4 the measurements, §5 the teardown that landed since, §6 the Effect parity of
 the kernel's semantics, §7 how to re-run. The slice plan is appended to `plans/core-in-beni.md`.
 
+**Decided** (the owner, 2026-10-02): §3.1's `Js.suspending` is adopted as the port's one new
+intrinsic, and §6's shortfalls are closed after the port (`plans/core-in-beni.md`, K5), in
+`Task.beni`, not in `Task.js` first.
+
 ---
 
 ## 0. Findings

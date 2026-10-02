@@ -748,6 +748,15 @@ prototype ported; research 49 §5 reads each teardown piece into `Js` and finds 
 intrinsic. Each slice is specified before it is built (rule 1), red first (rule 3), and passes
 `zig build gates` before it lands.
 
+**Decided** (the owner, 2026-10-02): **`Js.suspending : sync (() → a) → a`, declared
+`foreign suspends`, is the port's one new intrinsic** (K1), as research 49 §3.1 drafts it; and
+**the kernel's Effect gaps — research 49 §6's shortfalls and report 48's kernel list — are closed
+after the port, in K5, in `Task.beni`**, not in `Task.js` first. Before K1, the defect teardown
+gets its size pass in `Task.js`, `Rt.beni` and `Browser.beni` (`boundary.md` §9.8.14's *As built*
+note: the empty `Tea.element` grew, and the `Http` + `Time` page grew past (m)'s estimate), and
+the one gap that note records against Effect — a `bracket` opened inside a finaliser the deadline
+cuts loses its release — is closed there, so that the port starts from it.
+
 | # | Slice | What | Done when |
 |---|---|---|---|
 | K1 | **`Js.suspending` and the `Reach` edge** | `boundary.md` §4.2 and `backend.md` §4 (*`Js.suspending` is its body*) as research 49 §3.1 drafts them; `transparent-effects-proposal.md` §16.1's sentence; `JsIntrinsic.suspending`, `Lower` (tail, value **and discarded** positions — the prototype did the first two), `core/Js.beni` and `Js.js`; `Reach.effectEdges` without its `foreign_value` test | `emit/core/JsSuspending` (a park in tail, value and discarded position, both builds); a `--core-root` `check_test` whose `Task` writes `andThen` in beni and whose user module only `yieldNow`s — red before the `Reach` fix (`andThen` dropped) |
