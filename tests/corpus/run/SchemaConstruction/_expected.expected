@@ -22,3 +22,7 @@ Ok built
 Err decoding Encoded InvalidSchema / the recursive schema Loop refers to itself without reading into the value
 Ok built
 Err decoding Encoded InvalidSchema /0 the recursive schema Loop refers to itself without reading into the value
+-- which failure is reported first
+Err decoding Encoded InvalidSchema / two fields are named b
+Err decoding Encoded InvalidSchema / the payload of the variant A is not a record schema
+Err decoding Encoded InvalidSchema / two variants have the tag "x"

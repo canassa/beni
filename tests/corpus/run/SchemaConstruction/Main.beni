@@ -8,6 +8,8 @@
 -- root and reads nothing — so even input that is not JSON is never parsed —
 -- and `describe` shows where. A reference entered again without reading
 -- anything is refused where it happens, and the rest of the value is fine.
+-- Of several failures, the one reported is fixed: a variant that could not
+-- be built, then tags, then names, each the first that occurs again.
 import Node
 import Schema exposing (Conversion, Schema)
 import Show
@@ -132,6 +134,55 @@ empty : Schema T T
 empty = Schema.tagged "k" []
 
 
+four ( ( ( ( (), p ), q ), r ), s ) = { p = p, q = q, r = r, s = s }
+
+
+unFour x = ( ( ( ( (), x.p ), x.q ), x.r ), x.s )
+
+
+-- `b` and `a` are both named twice; `b` is the first name that occurs again.
+twoTwice : Schema { p : Int, q : Int, r : Int, s : Int } { p : Int, q : Int, r : Int, s : Int }
+twoTwice =
+    Schema.record
+        (Schema.fields
+            |> Schema.field "b" Schema.int
+            |> Schema.field "a" Schema.int
+            |> Schema.field "a" Schema.int
+            |> Schema.field "b" Schema.int
+        )
+        (Schema.mapping four unFour)
+        (Schema.mapping four unFour)
+
+
+-- A variant that could not be built is reported before a tag used twice
+-- by the variants in front of it.
+brokenLast : Schema T T
+brokenLast =
+    Schema.tagged "k"
+        [ Schema.nullary "B" "x" injB injB
+        , Schema.nullary "C" "x" injB injB
+        , Schema.variant
+            "A"
+            "a"
+            (Schema.converted Schema.int (Schema.conversion (λn -> Ok { a = n }) λr -> Ok r.a))
+            intA
+            injA
+        ]
+
+
+-- Tags are compared before names, and the first tag that occurs again is
+-- the one reported: `y` is used twice, and so are the name `B` and the tag
+-- `x`, which comes first.
+tagsFirst : Schema T T
+tagsFirst =
+    Schema.tagged "k"
+        [ Schema.nullary "B" "x" injB injB
+        , Schema.nullary "B" "y" injB injB
+        , Schema.nullary "C" "y" injB injB
+        , Schema.nullary "D" "x" injB injB
+        ]
+
+
 -- The body runs the schema it is building, and keeps what that answered as
 -- its conversion's failure.
 early : Schema Int Int
@@ -216,6 +267,10 @@ main =
         , issues (Schema.parse loop "1")
         , issues (Schema.parse (Schema.list loop) "[]")
         , issues (Schema.parse (Schema.list loop) "[1]")
+        , "-- which failure is reported first"
+        , issues (Schema.parse twoTwice "{}")
+        , issues (Schema.parse brokenLast "{}")
+        , issues (Schema.parse tagsFirst "{}")
         ]
 
 
