@@ -5533,6 +5533,19 @@ that its three values are not folded away.
 - **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
   in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
   declaration — so a program with nothing to specialise pays one round.
+  *Amended 2026-10-02: two more reasons, so the result does not depend on module order.* A
+  rewrite patches modules in module order, and two of its decisions read facts the same rewrite
+  then changes. **A module-level constant whose initialiser has just become a literal** reaches
+  its readers in later statements (they are walked again before they are patched) but not in
+  earlier ones, so another round follows when an earlier statement read it. **A read refused by
+  the substitution rule's count** — the reads `reads` counted before the rewrite — repeats the
+  round when the folds of the expressions around its other reads (`x + 1` written `-2147483647`)
+  took enough of them for the rule to allow it. Without these, whether the fold came before the
+  refusal decided whether `const c=-2147483648` stayed: `run/Int32Bits` was 782 bytes with the
+  project after `core/` and 778 before it, until module numbering stopped depending on where the
+  project lives. `build_test`'s *a release build writes a constant where it is read whichever
+  module comes first* builds one program with the constant's module named before and after
+  `Main`.
 
 Measured: `EmptyPage` 856 → **838** brotli — a slot is `{cx:null,i:null,m:null,p:a}`, its list
 fields gone. The program description the runtime reads `h` of is `Browser.program`'s, which is

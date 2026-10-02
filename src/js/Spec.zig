@@ -503,6 +503,15 @@ const Spec = struct {
     only_fewer: bool = false,
     /// Counts the rewrites, from 1 (`Mod.occ_rewrite`).
     rewrite_epoch: u32 = 0,
+    /// What `rewrite` saw that the next round's facts would spend, which
+    /// the round's own facts could not (`again`): the reads of a
+    /// whole-program name `substitutes` refused, by the count `reads` took
+    /// before the rewrite; and per whole-program name, how many of its
+    /// reads a fold of an expression around them took out of the program.
+    declined: std.ArrayList(Declined) = .empty,
+    folded_reads: []u32 = &.{},
+    /// `globalReads`' answer, above the length the caller found.
+    fold_reads: std.ArrayList(u32) = .empty,
     /// The locals a guard the walk has passed proves are neither `null` nor
     /// `undefined` (`guardNames`), for the rest of the statement list that
     /// holds the guard.
@@ -535,6 +544,7 @@ const Spec = struct {
 
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
+    const Declined = struct { g: u32, lit: Lit };
     const SiteProp = struct { site: u32, prop: u32 };
     const NodeRef = struct { module: u32, node: u32 };
 
@@ -1905,6 +1915,9 @@ const Spec = struct {
         s.only_fewer = true;
         s.rewrite_epoch += 1;
         defer s.only_fewer = false;
+        s.declined.clearRetainingCapacity();
+        if (s.folded_reads.len < s.globals) s.folded_reads = try s.arena.alloc(u32, s.globals);
+        @memset(s.folded_reads, 0);
         // Which parameters go: a constant the substitution rule allows.
         const drop = try s.arena.alloc(bool, s.params.items.len);
         @memset(drop, false);
@@ -2011,14 +2024,36 @@ const Spec = struct {
                     const same = if (v.unwrap()) |root| m.ir.tag(root) == b.tag and
                         m.ir.data(root).lhs == b.data.lhs and m.ir.data(root).rhs == b.data.rhs else false;
                     if (!same and b.g < s.g_deps.len) {
-                        // Whatever read it reads something else now.
+                        // Whatever read it reads something else now. A
+                        // reader later in the program is walked again
+                        // before it is patched; one already patched read
+                        // the initialiser as it was, and when that has
+                        // just become a literal, which `nameValue` hands
+                        // its readers, only another round lets them see
+                        // it — else whether they do would depend on
+                        // whether their module comes before this one.
+                        const now_literal = !isLiteralTag(b.tag) and if (v.unwrap()) |root| isLiteralTag(m.ir.tag(root)) else false;
                         var d = s.g_deps[b.g];
                         while (d != none) : (d = s.w_deps.items[d].next) {
                             const reader = s.w_deps.items[d].stmt;
                             if (reader < stale.bit_length) stale.set(reader);
+                            if (now_literal and reader < index) any = true;
                         }
                     }
                 }
+            }
+        }
+        // A read `substitutes` refused for the count the round began with,
+        // when folds have since taken enough of the others for it to be
+        // allowed: the next round writes the literal. Without it, whether
+        // the fold or the refusal came first — which module comes first —
+        // decided whether the name stayed.
+        for (s.declined.items) |d| {
+            if (d.g < s.folded_reads.len and s.folded_reads[d.g] != 0 and
+                substitutes(d.lit, s.reads[d.g] -| s.folded_reads[d.g]))
+            {
+                any = true;
+                break;
             }
         }
         for (dead_inits.items) |dead| {
@@ -2426,7 +2461,8 @@ const Spec = struct {
             // next round's facts can see: a branch or a read gone. A name or
             // an operator written as its value takes no call site, no
             // assignment and no read with it (`prune` sees the name's
-            // reference go).
+            // reference go) — but for the reads of whole-program names
+            // below it, which `rewrite` weighs on its own (`folded_reads`).
             const was = ir.tag(node);
             const shrinks = switch (was) {
                 .member, .cond => true,
@@ -2437,9 +2473,20 @@ const Spec = struct {
                 else => false,
             };
             const v = m.memo[node.int()];
-            if (v.state == .lit and try s.patchLiteral(m, node, v, m.objects.isSet(node.int()))) {
-                if (shrinks) any = true;
-                continue;
+            if (v.state == .lit) {
+                // The whole-program names read below `node`, which a fold
+                // takes out of the program with it (`again`).
+                const reads_at = s.fold_reads.items.len;
+                if (tag != .ident) try s.globalReads(m, node);
+                if (try s.patchLiteral(m, node, v, m.objects.isSet(node.int()))) {
+                    for (s.fold_reads.items[reads_at..]) |g| if (g < s.folded_reads.len) {
+                        s.folded_reads[g] += 1;
+                    };
+                    s.fold_reads.shrinkRetainingCapacity(reads_at);
+                    if (shrinks) any = true;
+                    continue;
+                }
+                s.fold_reads.shrinkRetainingCapacity(reads_at);
             }
             // A conditional or a logical operator whose left side decides.
             const d = ir.data(node);
@@ -2497,6 +2544,22 @@ const Spec = struct {
             try ir.pushOperands(s.arena, &stack, node);
         }
         return any;
+    }
+
+    /// Append to `fold_reads` the whole-program id of every name read in
+    /// the expression `root`, short of a function's body (which no fold
+    /// reaches: a function is not a literal).
+    fn globalReads(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try stack.append(s.arena, root);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (m.ir.tag(node) == .ident) {
+                if (m.globalOf(@enumFromInt(m.ir.data(node).lhs))) |g| try s.fold_reads.append(s.arena, g);
+                continue;
+            }
+            try m.ir.pushOperands(s.arena, &stack, node);
+        }
     }
 
     /// The expressions a statement evaluates, and its nested statements,
@@ -2563,8 +2626,12 @@ const Spec = struct {
         }
         if (ir.tag(node) == .ident) {
             const n: NameIndex = @enumFromInt(ir.data(node).lhs);
-            const uses: u32 = if (m.globalOf(n)) |g| s.reads[g] else if (n.unwrap()) |i| (if (i < m.stamp.len and m.stamp[i] == s.current) m.uses[i] else 2) else 2;
-            if (!substitutes(lit, uses)) return false;
+            const global = m.globalOf(n);
+            const uses: u32 = if (global) |g| s.reads[g] else if (n.unwrap()) |i| (if (i < m.stamp.len and m.stamp[i] == s.current) m.uses[i] else 2) else 2;
+            if (!substitutes(lit, uses)) {
+                if (global) |g| try s.declined.append(s.arena, .{ .g = g, .lit = lit });
+                return false;
+            }
         }
         switch (lit.kind) {
             .number, .string => {
@@ -5358,6 +5425,14 @@ fn growSlice(arena: Allocator, comptime T: type, old: []T, len: usize, fill: T) 
     @memcpy(out[0..old.len], old);
     @memset(out[old.len..], fill);
     return out;
+}
+
+/// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
+fn isLiteralTag(tag: Node.Tag) bool {
+    return switch (tag) {
+        .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        else => false,
+    };
 }
 
 /// The printed length of a literal node, for slice 5's substitution rule.

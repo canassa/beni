@@ -384,6 +384,70 @@ test "a build is byte-identical wherever the project lives" {
     try testing.expect((try w.read("aaa/app/out/Text/Pad.mjs.map")).len > 0);
 }
 
+test "a release build writes a constant where it is read whichever module comes first" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *Whole-program specialisation*: one program twice,
+    // its constant's module named `Aaa` (numbered before `Main`) and `Zzz`
+    // (after it), so the specialiser patches the constant before its
+    // reader in one and after it in the other. The constant folds to a
+    // literal too long to write at more than one read; the second read
+    // folds away with `+ 1`, leaving one. Before, the first order kept
+    // `const c=-2147483648` (a refusal by the count before the fold), and
+    // the second wrote `c+1` (the reader patched before the constant was a
+    // literal, and no round after). Both must write the literal at the
+    // read and fold the sum, as the facts at their fixpoint allow.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const names = [_][]const u8{ "Aaa", "Zzz" };
+    for (names) |name| {
+        const arena = w.arena.allocator();
+        try w.write(try std.fmt.allocPrint(arena, "{s}/{s}.beni", .{ name, name }),
+            \\pub big : Int
+            \\big = 0 - 2147483648
+            \\
+        );
+        try w.write(try std.fmt.allocPrint(arena, "{s}/Main.beni", .{name}), try std.fmt.allocPrint(arena,
+            \\import {s}
+            \\import Node exposing (Program)
+            \\import String
+            \\
+            \\
+            \\twice : Int → Int
+            \\twice n = n * 2 + 1
+            \\
+            \\
+            \\main : Program
+            \\main =
+            \\    Node.printLines
+            \\        [ String.fromInt (twice 3)
+            \\        , String.fromInt (twice 5)
+            \\        , String.fromInt (twice {s}.big)
+            \\        , String.fromInt ({s}.big + 1)
+            \\        ]
+            \\
+        , .{ name, name, name }));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    for (names) |name| {
+        const arena = w.arena.allocator();
+        try expectBuilt(try w.runWith(&.{ "build", "--platform=node", "--release", try std.fmt.allocPrint(arena, "--out={s}/rel", .{name}), name }, .{ .raw_diagnostics = true }));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const first = try w.read("Aaa/rel/_main.mjs");
+    try testing.expectEqualStrings(first, try w.read("Zzz/rel/_main.mjs"));
+    try testing.expect(std.mem.indexOf(u8, first, "(-2147483648)") != null);
+    try testing.expect(std.mem.indexOf(u8, first, "(-2147483647)") != null);
+    try testing.expect(std.mem.indexOf(u8, first, "=-2147483648") == null);
+}
+
 /// A view module and the program that renders it through the `ssr`
 /// lowering: a component in the other module, a `For` compiled in place,
 /// a `Show`, and holes and attributes of several kinds — enough roots,
