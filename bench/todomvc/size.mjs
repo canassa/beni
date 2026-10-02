@@ -20,13 +20,15 @@
 // filters with hash routing, localStorage persistence):
 //
 //   beni        tests/corpus/browser/tea/TodoMVC.beni, `--release
-//               --platform=browser-tea`: everything but editing
-//   beni-full   apps/beni/Full.beni: the same plus editing (the whole spec)
+//               --platform=browser-tea`: the whole spec, and the one beni
+//               TodoMVC there is
+//   beni-noediting  apps/beni/NoEditing.beni, the same without editing:
+//               the `-parity` subjects' features
 //   solid1-full solidjs/solid-todomvc's src/index.tsx, verbatim, through
 //               its own Rollup config (babel-preset-solid, terser defaults):
 //               the whole spec but the filter read at start
-//   solid1-parity  the same cut to beni's features (no editing; the filter
-//               read at start)
+//   solid1-parity  the same without editing and with the filter read at
+//               start: beni-noediting's features
 //   solid2-*    the official Solid 1 app ported to Solid 2.0.0-rc.9 (there
 //               is no official Solid 2 TodoMVC), Vite with Vite's defaults
 //   svelte5-asis   tastejs/todomvc's examples/svelte (Svelte 5), verbatim
@@ -48,7 +50,12 @@
 //   without that group's bytes — the bytes the rest does not explain).
 // - **By feature.** Release builds of apps/beni's variants, each the
 //   TodoMVC with one capability taken out, priced against the TodoMVC:
-//   exact release bytes, not a proxy.
+//   exact release bytes, not a proxy. Each variant is
+//   tests/corpus/browser/tea/TodoMVC.beni with that one capability taken
+//   out by hand (its header says which), so a `diff` against the corpus
+//   page shows exactly what is priced; when the page changes, derive them
+//   from it again the same way. Sandbox is NoRouting and NoStorage
+//   together, as a `Tea.sandbox`.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -132,18 +139,18 @@ const terse = async (text) => (await minify(text, { module: true, compress: { pa
 
 const beniVersion = spawnSync(beni, ["version"], { encoding: "utf8" }).stdout.trim();
 const subjects = [
-  ["beni", `beni (${beniVersion})`, "beni", "no edit"],
-  ["beni-full", `beni (${beniVersion})`, "beni-full", "whole spec"],
+  ["beni", `beni (${beniVersion})`, "beni", "whole spec"],
+  ["beni-noediting", `beni (${beniVersion})`, "beni-noediting", "whole spec but editing"],
   ["solid1-full", `Solid ${version("solid1", "solid-js")}`, "solid1-full", "official; whole spec but the filter at start"],
-  ["solid1-parity", `Solid ${version("solid1", "solid-js")}`, "solid1-parity", "beni's features"],
+  ["solid1-parity", `Solid ${version("solid1", "solid-js")}`, "solid1-parity", "whole spec but editing"],
   ["solid2-full", `Solid ${version("solid2", "solid-js")}`, "solid2-full", "port of the official; whole spec"],
-  ["solid2-parity", `Solid ${version("solid2", "solid-js")}`, "solid2-parity", "beni's features"],
+  ["solid2-parity", `Solid ${version("solid2", "solid-js")}`, "solid2-parity", "whole spec but editing"],
   ["svelte5-asis", `Svelte ${version("svelte5", "svelte")}`, "svelte5-asis", "official; no persistence, no filter at start"],
   ["svelte5-full", `Svelte ${version("svelte5", "svelte")}`, "svelte5-full", "whole spec"],
-  ["svelte5-parity", `Svelte ${version("svelte5", "svelte")}`, "svelte5-parity", "beni's features"],
+  ["svelte5-parity", `Svelte ${version("svelte5", "svelte")}`, "svelte5-parity", "whole spec but editing"],
   ["svelte4-asis", `Svelte ${version("svelte4", "svelte")}`, "svelte4-asis", "official; no persistence, no filter at start"],
   ["svelte4-full", `Svelte ${version("svelte4", "svelte")}`, "svelte4-full", "whole spec"],
-  ["svelte4-parity", `Svelte ${version("svelte4", "svelte")}`, "svelte4-parity", "beni's features"],
+  ["svelte4-parity", `Svelte ${version("svelte4", "svelte")}`, "svelte4-parity", "whole spec but editing"],
 ];
 
 const rows = [];
@@ -176,6 +183,7 @@ const groups = [
   ["Dict", /_core\/Dict\.mjs$/],
   ["String", /_core\/String\.mjs$/],
   ["Storage", /_browser\/Storage\.mjs$/],
+  ["Dom (focus)", /_browser\/Dom(\.foreign)?\.mjs$/],
   ["Url and Browser.Navigation", /(_core\/Url|Browser\/Navigation)\.mjs$/],
   ["Html (event readers)", /_html\/Html(\.foreign)?\.mjs$/],
   ["Basics, Maybe", /_core\/(Basics|Maybe)\.mjs$/],
@@ -221,12 +229,10 @@ byModule.sort((a, b) => b.raw - a.raw);
 // ---- beni by feature -----------------------------------------------------------
 
 const base = rows.find((r) => r.id === "beni");
-const features = beniVariants
-  .filter((v) => v !== "Full")
-  .map((v) => {
-    const t = walk(join(out, `beni-${v.toLowerCase()}`)).map((f) => readFileSync(f, "utf8")).join("\n");
-    return { variant: v, raw: raw(t), brotli: br(t), delta_brotli: br(t) - base.brotli };
-  });
+const features = beniVariants.map((v) => {
+  const t = walk(join(out, `beni-${v.toLowerCase()}`)).map((f) => readFileSync(f, "utf8")).join("\n");
+  return { variant: v, raw: raw(t), brotli: br(t), delta_brotli: br(t) - base.brotli };
+});
 
 // ---- Candidate reductions, hand-applied --------------------------------------
 
@@ -247,7 +253,8 @@ const replaceAll = (t, pairs) => {
   }
   return t;
 };
-const urlPart = release.slice(release.indexOf("const Mc={$:1,a:null},Nc="), release.indexOf("const Qc="));
+const urlFrom = release.indexOf("const Mc={$:1,a:null},Nc="), urlTo = release.indexOf("const Qc=");
+const urlPart = urlFrom < 0 || urlTo < urlFrom ? null : release.slice(urlFrom, urlTo);
 const noRouting = walk(join(out, "beni-norouting")).map((f) => readFileSync(f, "utf8")).join("\n");
 const candidates = [
   [
@@ -331,9 +338,11 @@ const candidates = [
   [
     "routing as a plain `popstate` listener: no subscription fiber, table or relay (an estimate)",
     () =>
-      noRouting +
-      urlPart +
-      'const Uc=()=>Pc(location.href),Vc=a=>{let b=()=>{let c=Uc();if(c.$===0)a(c.a)};addEventListener("popstate",b);addEventListener("beni:navigate",b)};Vc(a=>a);',
+      urlPart === null
+        ? null
+        : noRouting +
+          urlPart +
+          'const Uc=()=>Pc(location.href),Vc=a=>{let b=()=>{let c=Uc();if(c.$===0)a(c.a)};addEventListener("popstate",b);addEventListener("beni:navigate",b)};Vc(a=>a);',
   ],
   [
     "information, not a candidate: `++` on lists without the 32-way trie (the decided representation)",

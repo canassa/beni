@@ -1,7 +1,9 @@
 -- tests/corpus/browser/tea/TodoMVC.beni with neither persistence nor routing,
--- as a `Tea.sandbox`: no `Cmd` and no `Sub`. A variant for
--- bench/todomvc/size.mjs, which prices a feature as the release bytes the
--- variant without it saves.
+-- as a `Tea.sandbox`: no `Cmd` and no `Sub`, so nothing is focused after a
+-- render either (the new-todo field keeps its `autofocus`, the edit field
+-- is not focused when it opens); everything else is the same. A variant
+-- for bench/todomvc/size.mjs, which prices a feature as the release bytes
+-- the variant without it saves.
 import Html exposing (Html)
 import Tea
 
@@ -15,7 +17,12 @@ type Filter
 type alias Todo =
     id : Int
     title : String
-    done : Bool
+    completed : Bool
+
+
+type alias Editing =
+    id : Int
+    draft : String
 
 
 type alias Model =
@@ -23,6 +30,7 @@ type alias Model =
     draft : String
     filter : Filter
     nextId : Int
+    editing : Maybe Editing
 
 
 type Msg
@@ -33,6 +41,10 @@ type Msg
     | Destroy Int
     | ClearCompleted
     | SetFilter Filter
+    | StartEdit Int String
+    | EditTyped String
+    | EditKey Html.Event
+    | EditDone
 
 
 -- ---- The program -----------------------------------------------------------
@@ -43,6 +55,7 @@ init =
     , draft = ""
     , filter = All
     , nextId = 0
+    , editing = Nothing
     }
 
 
@@ -62,26 +75,67 @@ update msg model =
                 else
                     changed
                         { model | draft = "", nextId = model.nextId + 1 }
-                        (model.todos ++ [ { id = model.nextId, title = title, done = False } ])
+                        (model.todos ++ [ { id = model.nextId, title = title, completed = False } ])
             else
                 model
 
         Toggle id →
             changed
                 model
-                (List.map model.todos λt → if t.id == id then { t | done = not t.done } else t)
+                (List.map model.todos λt →
+                    if t.id == id then { t | completed = not t.completed } else t
+                )
 
-        ToggleAll done →
-            changed model (List.map model.todos λt → { t | done = done })
+        ToggleAll completed →
+            changed model (List.map model.todos λt → { t | completed = completed })
 
         Destroy id →
             changed model (List.filter model.todos λt → t.id ≠ id)
 
         ClearCompleted →
-            changed model (List.filter model.todos λt → not t.done)
+            changed model (List.filter model.todos λt → not t.completed)
 
         SetFilter filter →
             { model | filter = filter }
+
+        StartEdit id title →
+            { model | editing = Just { id = id, draft = title } }
+
+        EditTyped text →
+            { model | editing = Maybe.map model.editing λed → { ed | draft = text } }
+
+        EditKey event →
+            case Html.key event of
+                "Enter" →
+                    commit model
+
+                "Escape" →
+                    { model | editing = Nothing }
+
+                _ →
+                    model
+
+        EditDone →
+            commit model
+
+
+-- Enter and leaving the field both save; the second of the two, when Enter
+-- has already closed the field, finds nothing open and does nothing.
+commit : Model → Model
+commit model =
+    case model.editing of
+        Nothing →
+            model
+
+        Just ed →
+            title = String.trim ed.draft
+            closed = { model | editing = Nothing }
+            if String.isEmpty title then
+                changed closed (List.filter model.todos λt → t.id ≠ ed.id)
+            else
+                changed
+                    closed
+                    (List.map model.todos λt → if t.id == ed.id then { t | title = title } else t)
 
 
 changed : Model, List Todo → Model
@@ -95,21 +149,61 @@ visible filter todo =
             True
 
         Active →
-            not todo.done
+            not todo.completed
 
         Completed →
-            todo.done
+            todo.completed
+
+
+-- The draft of the todo being edited, when it is this one.
+editingDraft : Maybe Editing, Int → Maybe String
+editingDraft editing id =
+    case editing of
+        Just ed →
+            if ed.id == id then Just ed.draft else Nothing
+
+        Nothing →
+            Nothing
+
+
+isEditing : Maybe Editing, Int → Bool
+isEditing editing id =
+    case editingDraft editing id of
+        Just _ →
+            True
+
+        Nothing →
+            False
+
+
+editor : Maybe String → Html Msg
+editor editing =
+    case editing of
+        Just draft →
+            <input
+                id="edit"
+                class="edit"
+                value={draft}
+                onInput={EditTyped}
+                onKeyDown={EditKey}
+                onBlur={λ_ → EditDone}
+            />
+
+        Nothing →
+            <></>
 
 
 view : Model → Html Msg
 view model =
-    left = List.length (List.filter model.todos λt → not t.done)
+    left = List.length (List.filter model.todos λt → not t.completed)
     <section class="todoapp">
         <header class="header">
             <h1>todos</h1>
             <input
                 id="new-todo"
                 class="new-todo"
+                placeholder="What needs to be done?"
+                autofocus
                 value={model.draft}
                 onInput={Typed}
                 onKeyDown={KeyDown}
@@ -120,24 +214,32 @@ view model =
                 id="toggle-all"
                 class="toggle-all"
                 type="checkbox"
-                checked={left == 0}
+                checked={left == 0 && not (List.isEmpty model.todos)}
                 onCheck={ToggleAll}
             />
             <label for="toggle-all">Mark all as complete</label>
             <ul class="todo-list">
                 <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
                     {λtodo →
-                        <li class={[ ( "completed", todo.done ) ]}>
+                        <li
+                            class={[ ( "completed", todo.completed )
+                                   , ( "editing", isEditing model.editing todo.id )
+                                   ]
+                                  }
+                        >
                             <div class="view">
                                 <input
                                     class="toggle"
                                     type="checkbox"
-                                    checked={todo.done}
+                                    checked={todo.completed}
                                     onCheck={λ_ → Toggle todo.id}
                                 />
-                                <label>{todo.title}</label>
+                                <label onDblClick={StartEdit todo.id todo.title}>
+                                    {todo.title}
+                                </label>
                                 <button class="destroy" onClick={Destroy todo.id} />
                             </div>
+                            {editor (editingDraft model.editing todo.id)}
                         </li>
                     }
                 </For>

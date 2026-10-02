@@ -14,7 +14,9 @@ Measured on `master` at `f356f23e`, Node 24.19, brotli 11 and gzip −9 of every
 page loads; CSS is excluded for every subject, and so is todomvc-common's `base.js`, which tastejs's
 pages load beside every app. **Nothing here changes the compiler, core or a platform.**
 
-**Read §0, then §5.**
+**Read §0, then §5.** The figures below are this report's commit; §8 has what was taken and §9
+(2026-10-02) the current table, after the corpus page became the whole specification and
+`Full.beni` was deleted.
 
 ---
 
@@ -410,3 +412,62 @@ when smaller overall. `node bench/todomvc/size.mjs` afterwards, on `master` plus
 | 6 | no: the `For` kind's fields do not fold because fact 3 loses the markup values — the slot's instance is ⊤, so every values array and row kind escapes; index-precise array reads alone do not reach it | `Spec.zig` | — |
 | 7 | no: the `Url` escapes into `Hosted.js`'s relay at a type variable, which may walk it; its unread fields could go only if the relay were beni and fact 3 read a program array's `push` | — | — |
 | 3, 11 | not attempted: 3 is a design decision the owner has not taken; 11 needs a platform hook whose bytes eat its 15 | — | — |
+
+## 9. One TodoMVC (added 2026-10-02)
+
+The owner: there is exactly one beni TodoMVC, and it is complete. `tests/corpus/browser/tea/TodoMVC.beni`
+is now the whole todomvc.com specification (`app-spec.md`) — `Full.beni`'s editing plus what both
+lacked: the new-todo field's `placeholder` and `autofocus`, the field focused at load by an
+after-render `Dom.focus` (happy-dom does not honour `autofocus` on markup a script inserts), and a
+toggle-all box that is unchecked once the list is empty (it read `left == 0`, so it was checked
+under a cleared list). Its steps drive every behaviour of the spec, editing included (the page
+driver gained `dblclick` and `blur`), and the same golden passes in happy-dom and in Chrome
+(`zig build test-browser`). With Node running, the fixture costs 2 980 M instructions of its 4 300 M
+budget.
+
+`bench/todomvc/apps/beni/Full.beni` is deleted and `size.mjs` builds the corpus page as `beni`. The
+variants are the corpus page with one capability taken out by hand, each header saying which, so a
+`diff` against the page shows what is priced: `NoEditing` (new: the old corpus page's features,
+which are the `-parity` subjects'), `NoRouting`, `NoStorage`, and `Sandbox` (both, as a
+`Tea.sandbox`, which has no command to focus with). They carry editing now, so their deltas price
+routing and persistence in the complete app. Every row of §5's candidate table prints n/a: the
+rewrites match the release file of `f356f23e`, and the routing estimate now says so too instead of
+pricing a slice the file no longer has.
+
+`node bench/todomvc/size.mjs` on `master` at `6cc3a260` plus this change:
+
+| subject | features | raw | gzip −9 | **brotli 11** | each file through terser, brotli |
+|---|---|--:|--:|--:|--:|
+| **beni** (the corpus page) | whole spec | 23 242 | 9 600 | **8 575** | 8 093 |
+| beni-noediting | whole spec but editing | 21 428 | 9 019 | **8 095** | 7 555 |
+| solid1-full | official; whole spec but the filter at start | 16 248 | 6 309 | **5 717** | 5 694 |
+| solid1-parity | whole spec but editing | 15 592 | 6 070 | **5 481** | 5 500 |
+| solid2-full | port of the official; whole spec | 66 033 | 23 810 | **21 517** | 21 330 |
+| solid2-parity | whole spec but editing | 65 328 | 23 562 | **21 291** | 21 110 |
+| svelte5-asis | official; no persistence, no filter at start | 41 484 | 15 960 | **14 437** | 14 008 |
+| svelte5-full | whole spec | 41 606 | 16 008 | **14 488** | 14 055 |
+| svelte5-parity | whole spec but editing | 37 859 | 14 751 | **13 346** | 13 048 |
+| svelte4-asis | official; no persistence, no filter at start | 12 183 | 5 044 | **4 524** | 4 344 |
+| svelte4-full | whole spec | 12 306 | 5 096 | **4 565** | 4 401 |
+| svelte4-parity | whole spec but editing | 11 295 | 4 730 | **4 246** | 4 090 |
+
+The complete page is 8 575, against `Full.beni`'s 8 529 in §8: +46 for the placeholder, the
+`autofocus` attribute, the focus at load and the toggle-all condition. Without editing it is 8 095,
+against the old corpus page's 7 894 (+201: the same four, of which the focus at load reaches
+`Cmd.afterRender` and `Dom` that the old page did not). The order is unchanged: Svelte 4 4 565,
+Solid 1 5 717, **beni 8 575**, Svelte 5 14 488, Solid 2 21 517 — beni is 1.50× Solid 1's and 0.59×
+Svelte 5's.
+
+By feature, release builds against the 8 575:
+
+| variant | raw | brotli | Δ brotli |
+|---|--:|--:|--:|
+| NoEditing | 21 428 | 8 095 | −480 |
+| NoRouting | 19 402 | 7 180 | −1 395 |
+| NoStorage | 21 913 | 8 090 | −485 |
+| Sandbox | 15 373 | 5 734 | −2 841 |
+
+By module (the proxy, 32 495 raw and 11 275 brotli), leave-one-out: the DOM runtime 3 366, the app
+2 078, the fiber kernel 1 891, `List` 980, the program host 758, `TEA` 451, `Dict` 381, `Url` and
+`Browser.Navigation` 312, `String` 191, `Storage` 153, `Dom` 17. `parity.mjs` agrees with every
+features cell above: `beni` has all nine features, `beni-noediting` all but editing.

@@ -1,8 +1,10 @@
 -- tests/corpus/browser/tea/TodoMVC.beni without its persistence: no
--- `Storage` and no `Cmd.do`. A variant for bench/todomvc/size.mjs, which
--- prices a feature as the release bytes the variant without it saves.
+-- `Storage` and no `Cmd.do`; everything else is the same. A variant for
+-- bench/todomvc/size.mjs, which prices a feature as the release bytes the
+-- variant without it saves.
 import Browser.Navigation
 import Cmd exposing (Cmd)
+import Dom
 import Html exposing (Html)
 import Tea
 import Url exposing (Url)
@@ -17,7 +19,12 @@ type Filter
 type alias Todo =
     id : Int
     title : String
-    done : Bool
+    completed : Bool
+
+
+type alias Editing =
+    id : Int
+    draft : String
 
 
 type alias Model =
@@ -25,6 +32,7 @@ type alias Model =
     draft : String
     filter : Filter
     nextId : Int
+    editing : Maybe Editing
 
 
 type Msg
@@ -35,6 +43,10 @@ type Msg
     | Destroy Int
     | ClearCompleted
     | UrlChanged Url
+    | StartEdit Int String
+    | EditTyped String
+    | EditKey Html.Event
+    | EditDone
 
 
 -- ---- The filter, from the address ----------------------------------------
@@ -60,8 +72,9 @@ init =
       , draft = ""
       , filter = filterOf (Browser.Navigation.currentUrl ())
       , nextId = 0
+      , editing = Nothing
       }
-    , Cmd.none
+    , Cmd.afterRender (focus "new-todo" _)
     )
 
 
@@ -81,26 +94,81 @@ update msg model =
                 else
                     changed
                         { model | draft = "", nextId = model.nextId + 1 }
-                        (model.todos ++ [ { id = model.nextId, title = title, done = False } ])
+                        (model.todos ++ [ { id = model.nextId, title = title, completed = False } ])
             else
                 ( model, Cmd.none )
 
         Toggle id →
             changed
                 model
-                (List.map model.todos λt → if t.id == id then { t | done = not t.done } else t)
+                (List.map model.todos λt →
+                    if t.id == id then { t | completed = not t.completed } else t
+                )
 
-        ToggleAll done →
-            changed model (List.map model.todos λt → { t | done = done })
+        ToggleAll completed →
+            changed model (List.map model.todos λt → { t | completed = completed })
 
         Destroy id →
             changed model (List.filter model.todos λt → t.id ≠ id)
 
         ClearCompleted →
-            changed model (List.filter model.todos λt → not t.done)
+            changed model (List.filter model.todos λt → not t.completed)
 
         UrlChanged url →
             ( { model | filter = filterOf (Just url) }, Cmd.none )
+
+        StartEdit id title →
+            ( { model | editing = Just { id = id, draft = title } }
+            , Cmd.afterRender (focus "edit" _)
+            )
+
+        EditTyped text →
+            ( { model | editing = Maybe.map model.editing λed → { ed | draft = text } }, Cmd.none )
+
+        EditKey event →
+            case Html.key event of
+                "Enter" →
+                    commit model
+
+                "Escape" →
+                    ( { model | editing = Nothing }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+        EditDone →
+            commit model
+
+
+-- Focus the element with this id once the render the update queued has
+-- run: the new-todo field at load, which its `autofocus` asks for but not
+-- every DOM honours for markup a script inserts (happy-dom does not), and
+-- the edit field, which the update that opens it renders. Only one edit
+-- field is open at a time, so it has a fixed id.
+focus : String, Cmd.Send Msg → ()
+focus id _ =
+    case Dom.focus id of
+        _ →
+            ()
+
+
+-- Enter and leaving the field both save; the second of the two, when Enter
+-- has already closed the field, finds nothing open and does nothing.
+commit : Model → Model × Cmd Msg
+commit model =
+    case model.editing of
+        Nothing →
+            ( model, Cmd.none )
+
+        Just ed →
+            title = String.trim ed.draft
+            closed = { model | editing = Nothing }
+            if String.isEmpty title then
+                changed closed (List.filter model.todos λt → t.id ≠ ed.id)
+            else
+                changed
+                    closed
+                    (List.map model.todos λt → if t.id == ed.id then { t | title = title } else t)
 
 
 changed : Model, List Todo → Model × Cmd Msg
@@ -114,21 +182,61 @@ visible filter todo =
             True
 
         Active →
-            not todo.done
+            not todo.completed
 
         Completed →
-            todo.done
+            todo.completed
+
+
+-- The draft of the todo being edited, when it is this one.
+editingDraft : Maybe Editing, Int → Maybe String
+editingDraft editing id =
+    case editing of
+        Just ed →
+            if ed.id == id then Just ed.draft else Nothing
+
+        Nothing →
+            Nothing
+
+
+isEditing : Maybe Editing, Int → Bool
+isEditing editing id =
+    case editingDraft editing id of
+        Just _ →
+            True
+
+        Nothing →
+            False
+
+
+editor : Maybe String → Html Msg
+editor editing =
+    case editing of
+        Just draft →
+            <input
+                id="edit"
+                class="edit"
+                value={draft}
+                onInput={EditTyped}
+                onKeyDown={EditKey}
+                onBlur={λ_ → EditDone}
+            />
+
+        Nothing →
+            <></>
 
 
 view : Model → Html Msg
 view model =
-    left = List.length (List.filter model.todos λt → not t.done)
+    left = List.length (List.filter model.todos λt → not t.completed)
     <section class="todoapp">
         <header class="header">
             <h1>todos</h1>
             <input
                 id="new-todo"
                 class="new-todo"
+                placeholder="What needs to be done?"
+                autofocus
                 value={model.draft}
                 onInput={Typed}
                 onKeyDown={KeyDown}
@@ -139,24 +247,32 @@ view model =
                 id="toggle-all"
                 class="toggle-all"
                 type="checkbox"
-                checked={left == 0}
+                checked={left == 0 && not (List.isEmpty model.todos)}
                 onCheck={ToggleAll}
             />
             <label for="toggle-all">Mark all as complete</label>
             <ul class="todo-list">
                 <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
                     {λtodo →
-                        <li class={[ ( "completed", todo.done ) ]}>
+                        <li
+                            class={[ ( "completed", todo.completed )
+                                   , ( "editing", isEditing model.editing todo.id )
+                                   ]
+                                  }
+                        >
                             <div class="view">
                                 <input
                                     class="toggle"
                                     type="checkbox"
-                                    checked={todo.done}
+                                    checked={todo.completed}
                                     onCheck={λ_ → Toggle todo.id}
                                 />
-                                <label>{todo.title}</label>
+                                <label onDblClick={StartEdit todo.id todo.title}>
+                                    {todo.title}
+                                </label>
                                 <button class="destroy" onClick={Destroy todo.id} />
                             </div>
+                            {editor (editingDraft model.editing todo.id)}
                         </li>
                     }
                 </For>
