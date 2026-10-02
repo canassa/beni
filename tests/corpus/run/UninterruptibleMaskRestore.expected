@@ -1,0 +1,8 @@
+open: masked: ()
+open: still masked: ()
+open: restored: ()
+open released: Cancelled: ()
+nested: masked: ()
+nested: restored part ran to its end: ()
+nested released: Cancelled: ()
+both cancelled

@@ -2205,6 +2205,16 @@ in the calling fiber, told `Cancelled` — Effect's rule for a finaliser added t
 closes it, in one fiber `closeRoot` starts for them (it does not wait, as it waits for nothing
 else), and at a teardown with the root's other cleanup.
 
+*Amended 2026-10-02, as K5 built it (`plans/core-in-beni.md` K5's note).* Two points the text above
+left open. **What a root's deferred finalisers are told:** `Done ()` when `closeRoot` closes the
+root — the root ended as its owner asked, which is a normal close, though its fibers were cancelled
+— and `Cancelled` at a teardown, each root's after that root's fibers have ended, the roots in the
+order they were listed. **When a scope counts as closed for `defer`:** from the moment it starts to
+close — its fibers being cancelled — not only once it has, as Effect marks a scope `Closed` before
+running its finalisers (`Scope.ts`); so a finaliser a child's release defers on its own closing
+scope runs at once, told `Cancelled`. A `defer` on a root that has never run a fiber lists the root
+in the registry, so the teardown finds it.
+
 ### 17.4 `Ref` and `Deferred` (P1)
 
 ```elm

@@ -1,0 +1,69 @@
+-- run: `Task.uninterruptibleMask` and `Task.restore`
+-- (transparent-effects-proposal.md §17.3; report 23 row 13).
+--
+--   - `open`: a mask entered from interruptible code. Cancelled while the
+--     masked part waits, the child goes on — the cancellation is latched —
+--     and enters `restore`, which makes it interruptible again: at its
+--     first wait there the cancellation is delivered, so neither the rest
+--     of the restored part nor the rest of the mask runs, and the release
+--     sees `Cancelled`.
+--   - `nested`: the same mask entered inside an `uninterruptible` region.
+--     `restore` brings back what held where the mask was entered — which
+--     was uninterruptible — so the restored part runs to its end, and the
+--     cancellation is delivered only after the outer region.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+open : () → ()
+open () = Task.bracket (λ() → ()) (λ_ exit → say "open released: ${outcome exit}") λ_ →
+    Task.uninterruptibleMask λtoken →
+        _ = say "open: masked"
+        _ = Task.yieldNow ()
+        _ = say "open: still masked"
+
+        _ = Task.restore token λ() →
+            _ = say "open: restored"
+            _ = Task.yieldNow ()
+            say "open: never after the restored wait"
+        say "open: never after restore"
+
+
+nested : () → ()
+nested () = Task.bracket (λ() → ()) (λ_ exit → say "nested released: ${outcome exit}") λ_ →
+    _ = Task.uninterruptible λ() →
+        Task.uninterruptibleMask λtoken →
+            _ = say "nested: masked"
+            _ = Task.yieldNow ()
+
+            Task.restore token λ() →
+                _ = Task.yieldNow ()
+                say "nested: restored part ran to its end"
+    _ = Task.yieldNow ()
+    say "nested: never after the region"
+
+
+main : Program
+main = Io.run λ() →
+    a = Task.spawn open
+    _ = Task.yieldNow ()
+    _ = Task.cancel a
+    b = Task.spawn nested
+    _ = Task.yieldNow ()
+    _ = Task.cancel b
+    Node.print "both cancelled"

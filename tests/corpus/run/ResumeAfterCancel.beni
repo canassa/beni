@@ -1,0 +1,48 @@
+-- run: a `Task.resume` after the waiting fiber was cancelled does nothing
+-- (transparent-effects-proposal.md §17.3). Cancelling the waiter runs its
+-- wait's canceller and unwinds it; the `Resume` the program kept is then
+-- called, and nothing happens: the waiter's line after the wait never
+-- prints, its release ran once, and it stays `Cancelled`.
+import Io
+import Node exposing (Program)
+import Ref
+import Task exposing (Cancelled, Done, Exit)
+
+
+describe : Maybe (Exit Int) → String
+describe exit =
+    case exit of
+        Just (Done n) →
+            "done ${String.fromInt n}"
+
+        Just Cancelled →
+            "cancelled"
+
+        Nothing →
+            "running"
+
+
+main : Program
+main = Io.run λ() →
+    slot = Ref.make Nothing
+
+    waiter = Task.spawn λ() →
+        Task.bracket (λ() → ()) (λ_ _ → Debug.log "waiter released" ()) λ_ →
+            v = Task.callback λr →
+                _ = Ref.set slot (Just r)
+                λ() → Debug.log "canceller ran" ()
+            Debug.log "waiter woke with" v
+    _ = Task.yieldNow ()
+    _ = Task.cancel waiter
+    _ = Debug.log "after cancel" (describe (Task.poll waiter))
+
+    _ =
+        case Ref.get slot of
+            Just r →
+                Task.resume r 7
+
+            Nothing →
+                Debug.log "never registered" ()
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    Node.print (describe (Task.poll waiter))

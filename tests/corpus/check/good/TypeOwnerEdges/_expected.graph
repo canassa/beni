@@ -24,3 +24,5 @@ core:String -> core:List
 core:String -> core:Maybe
 core:Task -> core:Basics
 core:Task -> core:Js
+core:Task -> core:List
+core:Task -> core:Maybe

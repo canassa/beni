@@ -1,0 +1,8 @@
+closeRoot returned: ()
+closed child released: Cancelled: ()
+closed: second deferred: Done: ()
+closed: first deferred: Done: ()
+main done
+open child released: Cancelled: ()
+open: deferred: Cancelled: ()
+idle: deferred: Cancelled: ()

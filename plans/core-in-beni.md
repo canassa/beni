@@ -783,6 +783,41 @@ random seed — copied by reference in `fork`; and §17.6's `Task.sleep` over th
 `waitAny`/`race` are no longer kernel work: §17.7's combinators are library beni over `scope`,
 `spawnIn`, `wait`, `cancel` and `Deferred`. The development-only spawn site stays with P6.
 
+*K5 as built (2026-10-02):* `core/Task.beni` gains §17.3's `resume`, `never`, `poll`, `joinAll`,
+`cancelAll`, `spawnDetached` (a root, listed in the registry the teardown sweeps), the `Restore`
+token with `uninterruptibleMask`/`restore` (the token records the fiber, the mask count where the
+mask was entered, and whether the mask is still open; a dead or foreign token restores nothing),
+`onExit` (`bracket`'s finaliser machinery with no resource) and `defer`, and §17.5's four slots as
+fields of the one fiber literal, copied by reference in `fork` from the starting fiber, the record
+outside any, or an empty `defaults` record (so a default slot reads `undefined`). No new `foreign`.
+`defer` stores its finalisers on the scope record, which gains the field only when a program
+defers; every check of them is behind a `Js.Ref` that only `defer` writes, so a build that never
+defers folds them away (`ScopeChildren` and every other scope program unchanged but for the
+slots). Deferred finalisers run with the protocol written by hand (`runEach`, as `join`'s slow
+path), last first, masked. A root's run in a fiber of its own at `closeRoot` (told `Done ()`) or
+at the teardown (told `Cancelled`, the roots in the order listed); a `defer` on a root lists it,
+so one that never ran a fiber is still found. Fixtures: `run/ResumeOneShot`,
+`run/ResumeAfterCancel`, `run/CancelReentrant`, `run/UninterruptibleLatch`,
+`run/UninterruptibleMaskRestore`, `run/RestoreOutsideMask`, `run/SpawnDetached`, `run/PollFiber`,
+`run/JoinAllCancelAll`, `run/OnExitSeesOutcome`, `run/ScopeDeferLifo`, `run/ScopeDeferAfterClose`,
+`run/RootScopeDefer`, both builds. **Measured** (`bench/size.mjs`, release brotli, against
+`911865f3`): 371 programs byte for byte the same, every program and page that runs no fiber among
+them; the 27 fiber programs +18 to +90 B (+1 425 in all), the `browser-tea` page 5 927 → 5 991.
+Research 49's kernel workloads, instructions per operation (`node --single-threaded`,
+`(I(12) − I(0)) / 12·ops`, three rounds, base / K5): fan-out of 10 000 spawned and joined,
+release 5 888–5 992 / 6 137–6 158 (**+3.5 %**), development 5 689–5 756 / 5 817–5 877 (+2 %);
+a cancellation through a bracket, release 8 878–8 976 / 9 293–9 304 (**+4.5 %**), development
+9 432–9 550 / 9 234–9 408 (−2 %); a scope with a bracket, a spawn and a join 9 931–10 009 /
+9 438–9 474 (release, −5 %) and 10 104–10 170 / 9 422–9 449 (development, −7 %); `yieldNow` and
+the fast path unchanged. **The slots' cost is the wall §17.5 asked to have reported** (rule 10):
+the four copies in `fork` cost every spawn, and the two release losses reproduce. One alternative
+was measured and not adopted, since §17.5 says four fields: the four slots as one immutable record
+in one field, `slots`, copied once (a change of a slot makes a new record). Fan-out then matches
+the base (release 5 959–5 988 against 5 963–6 025 in the same run) and a fiber program grows
++35 B instead of +66 (`SpawnJoin`); the release cancellation is +3–7 % in both shapes, so that
+loss is not the copies alone (an inlining shift like K4's, cause not found). Which shape to keep
+is the owner's.
+
 **Not required by the step, and kept out of it** (research 49 §3.3, §3.4): a lowering that writes a
 small non-tail continuation twice so the fast path allocates nothing, and `Opt` dropping the dead
 branch behind a `Js.Ref` specialisation folded. Either is a general compiler change, priced on its

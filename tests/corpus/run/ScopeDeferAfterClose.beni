@@ -1,0 +1,29 @@
+-- run: a finaliser deferred on a scope that has already closed runs at
+-- once, in the calling fiber, told `Cancelled` (transparent-effects-proposal.md
+-- §17.3; Effect's rule for a finaliser added to a closed scope). The scope
+-- leaves its function as the function's value; `defer` on it afterwards
+-- runs its finaliser before it returns, so its line comes before the next.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+main : Program
+main = Io.run λ() →
+    closed = Task.scope λs → s
+    _ = Task.defer closed λexit → say "deferred on a closed scope: ${outcome exit}"
+    Node.print "after defer"

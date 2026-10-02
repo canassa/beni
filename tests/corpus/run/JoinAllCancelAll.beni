@@ -1,0 +1,65 @@
+-- run: `Task.joinAll` and `Task.cancelAll` (transparent-effects-proposal.md
+-- §17.3).
+--
+--   - `joinAll` answers the values in list order, whatever order the fibers
+--     ended in, and a fiber named twice gives its value twice.
+--   - When one of them was cancelled, the fiber that joins is cancelled
+--     too — but only after every fiber in the list has ended, so the slow
+--     one's line comes first.
+--   - `cancelAll` cancels in list order, and returns once every release
+--     has run.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+after : Int, a → a
+after yields value =
+    if yields == 0 then
+        value
+    else
+        _ = Task.yieldNow ()
+        after (yields - 1) value
+
+
+held : String → ()
+held name = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    Task.never ()
+
+
+main : Program
+main = Io.run λ() →
+    a = Task.spawn λ() → after 3 "a"
+    b = Task.spawn λ() → after 1 "b"
+    c = Task.spawn λ() → after 2 "c"
+    _ = Debug.log "joinAll" (Task.joinAll [ a, b, c, b ])
+
+    joiner = Task.spawn λ() →
+        doomed = Task.spawn λ() → Task.never ()
+        slow = Task.spawn λ() → after 4 (Debug.log "slow ended" ())
+        _ = Task.yieldNow ()
+        _ = Task.cancel doomed
+        _ = Task.joinAll [ doomed, slow ]
+        Debug.log "joiner went on" ()
+    _ = Debug.log "joiner" (outcome (Task.wait joiner))
+
+    x = Task.spawn λ() → held "x"
+    y = Task.spawn λ() → held "y"
+    z = Task.spawn λ() → held "z"
+    _ = Task.yieldNow ()
+    _ = Task.cancelAll [ z, x, y ]
+    Node.print "cancelAll returned"

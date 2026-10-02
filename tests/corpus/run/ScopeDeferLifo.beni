@@ -1,0 +1,56 @@
+-- run: `Task.defer` (transparent-effects-proposal.md §17.3). A scope's
+-- deferred finalisers run when it closes:
+--
+--   - after the fibers started in it have been cancelled and have run
+--     their own cleanup, so the child's release comes first;
+--   - the last one added first, each to its end even when it waits;
+--   - told `Done ()` when the scope's function returned, and `Cancelled`
+--     when the fiber running it was cancelled — then the bracket around
+--     the scope releases after them.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+deferring : String, Task.Scope → ()
+deferring prefix s =
+    _ = Task.spawnIn s λ() →
+        Task.bracket (λ() → ()) (λ_ exit → say "${prefix} child released: ${outcome exit}") λ_ →
+            Task.never ()
+    _ = Task.defer s λexit → say "${prefix} first deferred: ${outcome exit}"
+
+    Task.defer s λexit →
+        _ = Task.yieldNow ()
+        say "${prefix} second deferred, after a wait: ${outcome exit}"
+
+
+main : Program
+main = Io.run λ() →
+    _ = Task.scope λs →
+        _ = deferring "returned:" s
+        Task.yieldNow ()
+    _ = Debug.log "scope returned" ()
+
+    cancelled = Task.spawn λ() →
+        Task.bracket (λ() → ()) (λ_ exit → say "around the scope released: ${outcome exit}") λ_ →
+            Task.scope λs →
+                _ = deferring "cancelled:" s
+                Task.never ()
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel cancelled
+    Node.print "done"

@@ -1,0 +1,63 @@
+-- run: a `Restore` used where it cannot mean anything restores nothing
+-- (transparent-effects-proposal.md §17.3).
+--
+--   - `late`: the token is kept past the end of its mask and used inside a
+--     later `uninterruptible` region. It does not unmask that region: the
+--     cancellation that arrives during it is latched, the region runs to its
+--     end, and it is delivered only after.
+--   - `stranger`: a token handed to another fiber, used there inside that
+--     fiber's own `uninterruptible` region. It does not unmask someone
+--     else's region either.
+import Io
+import Node exposing (Program)
+import Ref
+import Task
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+main : Program
+main = Io.run λ() →
+    kept = Ref.make Nothing
+
+    late = Task.spawn λ() →
+        _ = Task.uninterruptibleMask λtoken → Ref.set kept (Just token)
+        _ = Task.uninterruptible λ() →
+            case Ref.get kept of
+                Just token →
+                    Task.restore token λ() →
+                        _ = Task.yieldNow ()
+                        say "late: the region was not unmasked"
+
+                Nothing →
+                    ()
+        _ = Task.yieldNow ()
+        say "late: never"
+    _ = Task.yieldNow ()
+    _ = Task.cancel late
+
+    handed = Ref.make Nothing
+
+    stranger = Task.spawn λ() →
+        _ = Task.yieldNow ()
+
+        _ = Task.uninterruptible λ() →
+            case Ref.get handed of
+                Just token →
+                    Task.restore token λ() →
+                        _ = Task.yieldNow ()
+                        say "stranger: the region was not unmasked"
+
+                Nothing →
+                    ()
+        _ = Task.yieldNow ()
+        say "stranger: never"
+
+    Task.uninterruptibleMask λtoken →
+        _ = Ref.set handed (Just token)
+        _ = Task.yieldNow ()
+        _ = Task.yieldNow ()
+        _ = Task.cancel stranger
+        Node.print "done"

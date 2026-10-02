@@ -1,0 +1,5 @@
+resumed twice: ()
+waiter woke with: 1
+answered at once: 3
+another fiber ran: ()
+joined 1

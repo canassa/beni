@@ -1,0 +1,46 @@
+-- run: `Task.spawnDetached` (transparent-effects-proposal.md §17.3; report
+-- 23 row 24). A fiber started detached belongs to no other: its parent
+-- ends — and a parent's end cancels the children `spawn` gave it, as the
+-- attached sibling shows — while the detached fiber goes on and ticks.
+-- Then `Io.run`'s fiber ends, and the program with it: its output is
+-- written, and the detached fiber, parked forever, is cancelled and its
+-- release run, so it does not keep the process alive (§17.10).
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+main : Program
+main = Io.run λ() →
+    parent = Task.spawn λ() →
+        _ = Task.spawn λ() →
+            Task.bracket (λ() → ()) (λ_ exit → say "attached released: ${outcome exit}") λ_ →
+                Task.never ()
+
+        _ = Task.spawnDetached λ() →
+            _ = Task.yieldNow ()
+            _ = Task.yieldNow ()
+            _ = Debug.log "detached tick" ()
+            Task.bracket (λ() → ()) (λ_ exit → say "detached released: ${outcome exit}") λ_ →
+                Task.never ()
+        _ = Task.yieldNow ()
+        Debug.log "parent done" ()
+    _ = Task.join parent
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    Node.print "main done"

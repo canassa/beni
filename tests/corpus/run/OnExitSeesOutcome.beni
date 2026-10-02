@@ -1,0 +1,36 @@
+-- run: `Task.onExit` (transparent-effects-proposal.md §17.3) runs its
+-- function after the work however the work ends, told how: `Done` with
+-- the value when it returned — which `onExit` then answers — and
+-- `Cancelled` when the fiber was cancelled during it. The function runs
+-- where cancellation cannot reach it, so one that waits finishes.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+describe : Exit Int → String
+describe exit =
+    case exit of
+        Done n →
+            "Done ${String.fromInt n}"
+
+        Cancelled →
+            "Cancelled"
+
+
+main : Program
+main = Io.run λ() →
+    v = Task.onExit (λ() → 41 + 1) λexit → say "returned: ${describe exit}"
+    _ = Debug.log "answered" v
+
+    child = Task.spawn λ() →
+        Task.onExit (λ() → Task.never ()) λexit →
+            _ = Task.yieldNow ()
+            say "cancelled: ${describe exit}"
+    _ = Task.yieldNow ()
+    _ = Task.cancel child
+    Node.print "done"

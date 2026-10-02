@@ -1,0 +1,52 @@
+-- run: a fiber that cancels itself from inside its own code runs each of
+-- its finalisers once (transparent-effects-proposal.md §17.4; report 23
+-- row 8). The fiber reads its own `Fiber` from a `Ref` the parent filled,
+-- and inside two brackets calls `Task.cancel` on it: there is no value to
+-- go on with, so it unwinds there — the line after the cancel never runs,
+-- the inner release runs before the outer, each once, told `Cancelled` —
+-- and whoever waits on it sees `Cancelled`.
+import Io
+import Node exposing (Program)
+import Ref
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+guarded : String, (() → a) → a
+guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ()
+
+
+main : Program
+main = Io.run λ() →
+    self = Ref.make Nothing
+
+    fiber = Task.spawn λ() →
+        guarded "outer" λ() →
+            guarded "inner" λ() →
+                _ = Task.yieldNow ()
+
+                _ =
+                    case Ref.get self of
+                        Just me →
+                            Task.cancel me
+
+                        Nothing →
+                            ()
+                Debug.log "after the cancel" ()
+    _ = Ref.set self (Just fiber)
+    exit = Task.wait fiber
+    Node.print "waited: ${outcome exit}"

@@ -1,0 +1,53 @@
+-- run: `Task.defer` on a root scope (transparent-effects-proposal.md §17.3).
+--
+--   - `closeRoot` cancels the root's fibers without waiting, and returns at
+--     once; the deferred finalisers run in a fiber of their own once those
+--     fibers have run their cleanup, last added first, told `Done ()`.
+--   - A root that is still open when the program stops — on Node, when
+--     `Io.run`'s fiber ends — has its deferred finalisers run with the rest
+--     of the program's cleanup, after its fibers', told `Cancelled`. One
+--     deferred on a root that never ran a fiber runs too.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ()
+say line = Debug.log line ()
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+held : String → ()
+held name = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    Task.never ()
+
+
+main : Program
+main = Io.run λ() →
+    closed = Task.openRoot ()
+    _ = Task.spawnIn closed λ() → held "closed child"
+    _ = Task.defer closed λexit → say "closed: first deferred: ${outcome exit}"
+    _ = Task.defer closed λexit → say "closed: second deferred: ${outcome exit}"
+    _ = Task.yieldNow ()
+    _ = Task.closeRoot closed
+    _ = Debug.log "closeRoot returned" ()
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+
+    open = Task.openRoot ()
+    _ = Task.spawnIn open λ() → held "open child"
+    _ = Task.defer open λexit → say "open: deferred: ${outcome exit}"
+    idle = Task.openRoot ()
+    _ = Task.defer idle λexit → say "idle: deferred: ${outcome exit}"
+    _ = Task.yieldNow ()
+    Node.print "main done"

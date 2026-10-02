@@ -1,0 +1,25 @@
+-- run: a cancellation that arrives inside an uninterruptible region is
+-- latched (transparent-effects-proposal.md §17.4; report 23 row 11). The
+-- child is cancelled while the region waits; the region goes on to its
+-- end, and the cancellation is delivered at the first point after it
+-- where the child may suspend — so `after region` never prints, the
+-- child's release runs, and `cancel` returns only then.
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ() →
+    child = Task.spawn λ() →
+        Task.bracket (λ() → ()) (λ_ _ → Debug.log "child released" ()) λ_ →
+            _ = Task.uninterruptible λ() →
+                _ = Debug.log "region start" ()
+                _ = Task.yieldNow ()
+                _ = Task.yieldNow ()
+                Debug.log "region end" ()
+            _ = Task.yieldNow ()
+            Debug.log "after region" ()
+    _ = Task.yieldNow ()
+    _ = Task.cancel child
+    Node.print "cancelled"

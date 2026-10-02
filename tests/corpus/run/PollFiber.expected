@@ -1,0 +1,6 @@
+quick, started: Nothing
+quick, returned: Just (Done 42)
+slow, cleaning up: Nothing
+slow released: ()
+slow, cancelled: Just Cancelled
+done
