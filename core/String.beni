@@ -547,14 +547,17 @@ contains str sub =
 
 
 --| See if a string starts with a given prefix. Every string starts with the
---| empty one, which is what Elm's kernel says as well.
+--| empty one, which is what Elm's kernel says as well. The string's own
+--| `startsWith`, as Elm's: the same answer as comparing the first
+--| `length prefix` characters for any string that holds no half of a
+--| surrogate pair on its own.
 --|
 --|     startsWith "theory" "the" == True
 --|     startsWith "theory" "ory" == False
 --|     startsWith "abc" "" == True
 --|     startsWith "" "" == True
 pub startsWith : String, String → Bool
-startsWith str prefix = left str (length prefix) == prefix
+startsWith str prefix = Js.pure λ() → Js.to (Js.call (Js.from str) "startsWith" [ Js.from prefix ])
 
 
 --| See if a string ends with a given suffix. Every string ends with the
@@ -565,7 +568,7 @@ startsWith str prefix = left str (length prefix) == prefix
 --|     endsWith "abc" "" == True
 --|     endsWith "" "" == True
 pub endsWith : String, String → Bool
-endsWith str suffix = right str (length suffix) == suffix
+endsWith str suffix = Js.pure λ() → Js.to (Js.call (Js.from str) "endsWith" [ Js.from suffix ])
 
 
 --| Get all of the indexes for a substring. An alias of `indexes`, kept
