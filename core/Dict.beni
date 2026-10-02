@@ -577,3 +577,123 @@ toList dict = foldl dict [] λkey value list → List.push list ( key, value )
 pub fromList : List (k × v) → Dict k v
     where k.compare : k, k → Order
 fromList assocs = List.foldl assocs empty λ( key, value ) dict → insert dict key value
+
+
+--| Whether two dictionaries hold the same pairs: the same keys, by the key
+--| type's `compare`, each with an equal value, by the value type's own `eq`.
+--| This is what `==` and `≠` on a dictionary mean (`static-dispatch-spike.md`
+--| §3.3), and it stays callable by name.
+--|
+--|     eq (fromList [ ( 1, "a" ), ( 2, "b" ) ]) (fromList [ ( 2, "b" ), ( 1, "a" ) ]) == True
+--|
+--| It is written here because the derived `eq` would compare the TREES, and
+--| two dictionaries holding the same pairs are not always the same tree: the
+--| shape depends on the order the keys went in. The two are walked together
+--| in key order, and the first pair that differs ends the walk. O(n).
+pub eq : Dict k v, Dict k v → Bool
+    where
+        k.compare : k, k → Order
+        , v.eq : v, v → Bool
+eq (Dict left) (Dict right) = eqCursor (descend left End) (descend right End)
+
+
+--| Order two dictionaries as their `toList`s are ordered: pair by pair in
+--| key order, a key by its type's `compare` and then its value by the value
+--| type's own `compare`; the first pair that differs decides, and if one
+--| runs out first while everything before matched, it is `LT`. This is what
+--| `<`, `≤`, `>` and `≥` on a dictionary mean, and what makes a dictionary
+--| a `Dict` key or a `Set` member. Like `eq` it never looks at the tree's
+--| shape, so it agrees with `eq`: `compare a b == EQ` exactly when `a == b`
+--| (given value types whose own `eq` and `compare` agree).
+--|
+--|     compare (fromList [ ( 1, "a" ) ]) (fromList [ ( 1, "a" ), ( 2, "b" ) ]) == LT
+pub compare : Dict k v, Dict k v → Order
+    where
+        k.compare : k, k → Order
+        , v.compare : v, v → Order
+compare (Dict left) (Dict right) = compareCursor (descend left End) (descend right End)
+
+
+-- A walk of a tree in key order, one pair at a time: the next pair, the
+-- right subtree still to visit after it, and the rest of the walk. Built
+-- by `descend`, so a step costs O(1) amortised, and the walk holds at most
+-- one step per level of the tree: no list of the pairs is ever made.
+type Cursor k v
+    = Step k v (Tree k v) (Cursor k v)
+    | End
+
+
+-- Push the left spine of `tree` onto the walk: its leftmost pair ends up
+-- first.
+descend : Tree k v, Cursor k v → Cursor k v
+descend tree rest =
+    case tree of
+        Leaf →
+            rest
+
+        Node _ key value left right →
+            descend left (Step key value right rest)
+
+
+eqCursor : Cursor k v, Cursor k v → Bool
+    where
+        k.compare : k, k → Order
+        , v.eq : v, v → Bool
+eqCursor left right =
+    case left of
+        End →
+            case right of
+                End →
+                    True
+
+                Step _ _ _ _ →
+                    False
+
+        Step lKey lValue lTree lRest →
+            case right of
+                End →
+                    False
+
+                Step rKey rValue rTree rRest →
+                    case lKey.compare rKey of
+                        EQ →
+                            if lValue == rValue then
+                                eqCursor (descend lTree lRest) (descend rTree rRest)
+                            else
+                                False
+
+                        _ →
+                            False
+
+
+compareCursor : Cursor k v, Cursor k v → Order
+    where
+        k.compare : k, k → Order
+        , v.compare : v, v → Order
+compareCursor left right =
+    case left of
+        End →
+            case right of
+                End →
+                    EQ
+
+                Step _ _ _ _ →
+                    LT
+
+        Step lKey lValue lTree lRest →
+            case right of
+                End →
+                    GT
+
+                Step rKey rValue rTree rRest →
+                    case lKey.compare rKey of
+                        EQ →
+                            case lValue.compare rValue of
+                                EQ →
+                                    compareCursor (descend lTree lRest) (descend rTree rRest)
+
+                                order →
+                                    order
+
+                        order →
+                            order

@@ -9,9 +9,10 @@
 -- `Handler` holds a function and compares by its own `eq`: `==` used it,
 -- and `Basics.eq` was a compile error (the last two lines).
 --
--- `Dict` declares no `eq`, so its `==` is derived over the tree, and two
--- dictionaries with the same pairs inserted in different orders may differ
--- in shape; whatever the answer, all three ways must give the same one.
+-- Two dictionaries with the same pairs inserted in different orders are
+-- different trees. `Dict` declares its own `eq` (since 2026-10-02), which
+-- compares the pairs, so all three ways say they are equal; before it, all
+-- three had to give the same answer, which was `False`.
 import Bag exposing (Bag)
 import Dict exposing (Dict)
 import Handler exposing (Handler)

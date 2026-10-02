@@ -1,0 +1,144 @@
+-- run: `==`, `≠` and `compare` on a `Dict` and a `Set` compare what they
+-- hold, never the red-black tree underneath (`static-dispatch-spike.md`
+-- §5.3, amended 2026-10-02). `forwards` and `backwards` hold the same six
+-- pairs inserted in opposite orders, which builds two different trees;
+-- `removed` reaches the same pairs through an insert and a remove. The
+-- derived `eq` walked the trees and answered `False`: a silent wrong
+-- answer, and a `Dict` or `Set` used as a key was stored twice.
+--
+-- Every spelling must agree: the operators, `Basics.eq` and `Basics.neq` by
+-- name and passed as values, the module's own `Dict.eq`, and a derived
+-- `eq` or `compare` of a record, a `Maybe` and a list holding one. Then
+-- the unequal cases (a different value, a different key, a longer
+-- dictionary), the order (pair by pair, a prefix first), the value's own
+-- `eq` (bags of the same numbers in a different order are equal), and a
+-- dictionary or a set as a key and as a member.
+import Bag exposing (Bag)
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import Set exposing (Set)
+
+
+apply : (a, a → b), a, a → b
+apply f x y = f x y
+
+
+yes : Bool → String
+yes b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+order : Order → String
+order o =
+    case o of
+        LT →
+            "LT"
+
+        EQ →
+            "EQ"
+
+        GT →
+            "GT"
+
+
+forwards : Dict Int String
+forwards = Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ), ( 4, "d" ), ( 5, "e" ), ( 6, "f" ) ]
+
+
+backwards : Dict Int String
+backwards = Dict.fromList [ ( 6, "f" ), ( 5, "e" ), ( 4, "d" ), ( 3, "c" ), ( 2, "b" ), ( 1, "a" ) ]
+
+
+removed : Dict Int String
+removed = Dict.remove (Dict.insert backwards 0 "z") 0
+
+
+up : Set Int
+up = Set.fromList [ 1, 2, 3, 4, 5, 6 ]
+
+
+down : Set Int
+down = Set.fromList [ 6, 5, 4, 3, 2, 1 ]
+
+
+main : Program
+main =
+    bags = Dict.fromList [ ( 1, Bag [ 1, 2, 3 ] ), ( 2, Bag [ 4, 5 ] ) ]
+    shuffled = Dict.fromList [ ( 2, Bag [ 5, 4 ] ), ( 1, Bag [ 3, 1, 2 ] ) ]
+    keyedByDict = Dict.fromList [ ( forwards, "first" ), ( backwards, "second" ) ]
+    keyedBySet = Dict.fromList [ ( up, 1 ), ( down, 2 ) ]
+    Node.printLines
+        [ "dict == " ++ yes (forwards == backwards) ++ " " ++ yes (forwards == removed)
+        , "dict ≠ " ++ yes (forwards ≠ backwards)
+        , "Basics.eq "
+            ++ yes (Basics.eq forwards backwards)
+            ++ " "
+            ++ yes (apply Basics.eq forwards backwards)
+        , "Basics.neq "
+            ++ yes (Basics.neq forwards backwards)
+            ++ " "
+            ++ yes (apply Basics.neq forwards backwards)
+        , "(==) "
+            ++ yes (apply (==) forwards backwards)
+            ++ " Dict.eq "
+            ++ yes (Dict.eq forwards backwards)
+        , "record " ++ yes ({ d = forwards, n = 1 } == { d = backwards, n = 1 })
+        , "maybe " ++ yes (Just forwards == Just backwards)
+        , "list " ++ yes ([ forwards, backwards ] == [ backwards, forwards ])
+        , "value " ++ yes (Dict.insert forwards 3 "x" == backwards)
+        , "key " ++ yes (Dict.insert (Dict.remove forwards 3) 7 "c" == backwards)
+        , "longer "
+            ++ yes (Dict.insert forwards 7 "g" == backwards)
+            ++ " "
+            ++ yes (backwards == Dict.insert forwards 7 "g")
+        , "empty " ++ yes (Dict.empty == Dict.remove (Dict.singleton 1 "a") 1)
+        , "compare "
+            ++ order (Dict.compare forwards backwards)
+            ++ " "
+            ++ order (Dict.compare forwards (Dict.insert backwards 7 "g"))
+            ++ " "
+            ++ order (Dict.compare (Dict.insert forwards 3 "x") backwards)
+            ++ " "
+            ++ order (Dict.compare Dict.empty forwards)
+        , "ordered "
+            ++ yes (forwards < Dict.insert backwards 0 "z")
+            ++ " "
+            ++ yes (forwards ≤ backwards)
+        , "record compare " ++ yes (( forwards, 2 ) < ( backwards, 3 ))
+        , "own eq " ++ yes (bags == shuffled) ++ " " ++ order (Dict.compare bags shuffled)
+        , "dict key "
+            ++ String.fromInt (Dict.size keyedByDict)
+            ++ " "
+            ++ Maybe.withDefault (Dict.get keyedByDict removed) "none"
+        , "set == "
+            ++ yes (up == down)
+            ++ " ≠ "
+            ++ yes (up ≠ down)
+            ++ " Basics.eq "
+            ++ yes (apply Basics.eq up down)
+        , "set record " ++ yes ({ s = up } == { s = down })
+        , "set unequal " ++ yes (Set.insert up 7 == down) ++ " " ++ yes (Set.remove up 1 == down)
+        , "set compare "
+            ++ order (Set.compare up down)
+            ++ " "
+            ++ order (Set.compare (Set.fromList [ 1, 2 ]) (Set.fromList [ 1, 3 ]))
+            ++ " "
+            ++ order (Set.compare (Set.fromList [ 1, 2 ]) (Set.fromList [ 1, 2, 3 ]))
+            ++ " "
+            ++ order (Set.compare (Set.fromList [ 2 ]) (Set.fromList [ 1, 5 ]))
+        , "set key "
+            ++ String.fromInt (Dict.size keyedBySet)
+            ++ " "
+            ++ String.fromInt (Set.size (Set.fromList [ up, down ]))
+        , "sorted sets "
+            ++ String.join
+                (List.map
+                    (List.sort [ Set.fromList [ 3 ], Set.fromList [ 1, 9 ], Set.fromList [ 1, 2 ] ])
+                    λs → String.join (List.map (Set.toList s) String.fromInt) ","
+                )
+                " "
+        ]

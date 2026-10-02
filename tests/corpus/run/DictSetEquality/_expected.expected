@@ -1,0 +1,23 @@
+dict == True True
+dict ≠ False
+Basics.eq True True
+Basics.neq False False
+(==) True Dict.eq True
+record True
+maybe True
+list True
+value False
+key False
+longer False False
+empty True
+compare EQ LT GT LT
+ordered False True
+record compare True
+own eq True EQ
+dict key 1 second
+set == True ≠ False Basics.eq True
+set record True
+set unequal False False
+set compare EQ LT LT GT
+set key 1 1
+sorted sets 1,2 1,9 3

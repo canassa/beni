@@ -1,0 +1,13 @@
+-- See Main.beni. A bag of numbers whose own `eq` and `compare` ignore the
+-- order the numbers were put in, so a dictionary holding bags must compare
+-- them by these and not by the lists inside.
+pub type Bag
+    = Bag (List Int)
+
+
+pub eq : Bag, Bag → Bool
+eq (Bag xs) (Bag ys) = List.sort xs == List.sort ys
+
+
+pub compare : Bag, Bag → Order
+compare (Bag xs) (Bag ys) = List.compare (List.sort xs) (List.sort ys)

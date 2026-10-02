@@ -522,6 +522,50 @@ for an actual function and for a function-containing value passed to the marker.
 > now. The marker, its walk and its diagnostics stay, for core code that writes `equatable a`;
 > the tests that pin the walk check a `--core` project declaring its own marked function.
 
+### 3.5 What `==` compares, type by type (added 2026-10-02)
+
+*The owner's order, 2026-10-02, after `Dict.fromList [ ( 1, "a" ), … ] == Dict.fromList [ …, ( 1,
+"a" ) ]` answered `False`.* **`==` on a type compares values, never representations.** Derivation
+(§3.3) compares a type's constructors and payloads, which is the value exactly when the
+representation is canonical: when two values no program can tell apart through the type's API are
+always built alike. Where they need not be — a balanced tree whose shape depends on insertion
+order, a list in one of three forms, a cache — the derived `eq` is a silent wrong answer, and so is
+the derived `compare` (inconsistent with the content's `eq`, so a `Dict` keyed by it stores one key
+twice). Such a type's module declares `pub eq`, and `pub compare` when the type is ordered, over
+what it holds. Where a type holds something that has no equality — a function, a host handle —
+`==` is a compile error, which derivation already gives (`not_equatable` through a function,
+`unknown_method` at a `foreign type` with no `eq`). Every core and platform type, audited:
+
+| Type | `eq` / `compare` | Why that is the value |
+|---|---|---|
+| `Int`, `Float`, `Char`, `String`, `Bool`, `Order`, `Never` | the table, §3.2 | primitive. A `String` is its sequence of scalar values; no Unicode normalisation, as `String.compare` |
+| `Int32` | its own (`toInt`) | `fromInt` is `\| 0`, so the representation is canonical anyway |
+| `List a` | its own, `foreign` (§5.2) | over each list's base array and offset, so a plain array, a view and a trie holding the same elements are equal (`backend.md` §4, *Lists are arrays*; `run/ListForms`) |
+| **`Dict k v`** | **its own since 2026-10-02** (§5.3, amended) | the pairs in key order, never the tree; `run/DictSetEquality` |
+| **`Set t`** | **its own since 2026-10-02** (§5.4, amended) | `Dict.eq` / `Dict.compare` of its dictionaries |
+| `Maybe`, `Result`, `Task.Exit`, `Schema`'s `Description`, `Definition`, `Shape` and the rest of its plain data, `Url`, `Protocol`, `Url.Builder`'s two types, `Random.Pcg.Seed`, and the platforms' `Http.Error`, `Problem`, `Header`, `Body`, `Part`, `Response`, `Metadata`, `Progress`, `Time.Duration`, `Time.Posix`, `Storage`'s two, `Dom`'s three, `Browser.Navigation.Key` and `Error`, `Browser.Events`' two, `Browser.UrlRequest`, `Io.FileError` | derived | canonical: data built of canonical parts. `Http.Metadata` holds a `Dict`, compared by content since that `Dict` is. A `Url` is its fields: `Url.fromString` normalises as the URL standard does, so two spellings of one address parse to equal records, while a record built by hand is compared as written. An `Http.Header`'s name is compared as written, case and all, because HTTP/1.1 sends it as written |
+| `Schema`'s `Schema`, `Conversion`, `Fields`, `Mapping`, `Variant`, `Injection`, `Value`; `Js.Value`, `Js.Ref`; `Task.Fiber`, `Scope`, `Resume`, `Soon`; `Html`, `Html.Event`; `Hosted`'s `Outlet`, `Job`, `Later`, `Tap`, `Relay`; `Browser.Program`, `Host`; `Node.Program` | none: `==` is `unknown_method` | a `foreign type` with no `eq`. A function or a host object has no value to compare; an identity `eq` could be offered for a handle (no guarantee is at stake either way) and is not, since nothing needs it |
+| `Url.Parser`, `Random.Pcg.Generator`, `Http.Expect`, `Cmd`, `Sub` | none: `==` is `not_equatable` | each holds a function (or a `Hosted` handle) |
+| `Hosted.Key` | its own: a reflective order over what the key holds (`boundary.md` §9.8.3) | a key is matched across types, so its type's `compare` is not what orders it. Since 2026-10-02 a list in any form is read as its elements; a `Dict`, a `Set` or a type with a hand-written `compare` as a key is still matched by its representation, which is open there |
+
+**Types that are not on `master` yet**, and what their `eq` must be when they land (the effects
+plan, `transparent-effects-proposal.md` §17.4–§17.8):
+
+- **`core/Duration`**: derived, which is right only while the representation stays one canonical
+  non-negative whole `Int` of milliseconds — every constructor and `times` must round and clamp
+  into it. A representation with two parts (seconds and nanoseconds, say) needs a `pub eq` and a
+  `pub compare` over the length.
+- **`core/Schedule`**: a closure, so `==` is `not_equatable`, and must stay so: two schedules have
+  no comparable value.
+- **`core/Ref`, `core/Deferred`, `Clock.Virtual`**: a mutable cell or a host handle, so `==` is a
+  compile error, as `Js.Ref` is; the derived walk reaches the `foreign type` and stops. An
+  identity `eq` would be a later, separate decision.
+
+The rule for a new type in `core/` or a platform: if two values the API cannot tell apart can be
+stored differently, the module declares `pub eq` (and `pub compare`, if ordered) over the contents,
+and a `run/` fixture builds two such values and compares them by `==`, `≠`, `Basics.eq` by name and
+as a value, and inside a derived record.
+
 ---
 
 ## 4. Return-type dispatch
@@ -722,6 +766,35 @@ thread the comparator — `getHelp :85`, `insertHelp :165`, `removeHelp :227`, `
 anything. The plan's `Dict.empty : () -> Dict k v` was a precaution against a constrained constant
 becoming a function (§8.1), and `empty` is not constrained, so the `()` is not needed. Appendix A.8.
 
+> **Amended 2026-10-02 (the owner's order; §3.5): `Dict` declares `eq` and `compare`.**
+>
+>     pub eq : Dict k v, Dict k v → Bool
+>         where k.compare : k, k → Order, v.eq : v, v → Bool
+>     pub compare : Dict k v, Dict k v → Order
+>         where k.compare : k, k → Order, v.compare : v, v → Order
+>
+> Both walk the two trees together in key order, one pair at a time, with a stack of left spines
+> (a private `Cursor`, at most one entry per level), and stop at the first pair that differs.
+> - **`eq`** is true when the two hold the same keys, each with an equal value. A key is matched by
+>   the key type's `compare` answering `EQ`, not by its `eq`: that is the question the dictionary
+>   itself asks, so two dictionaries are equal exactly when every lookup in one answers as in the
+>   other. A value is compared by its type's own `eq`. There is no size test first, because `size`
+>   is a walk of the tree too; the walk in step notices a longer dictionary at its end. There is no
+>   identity shortcut either, as `List.eq` has none: a dictionary holding a NaN is not equal to
+>   itself, as a record holding one is not.
+> - **`compare`** is the order of the `toList`s, without making them: pair by pair, a key by
+>   `compare`, then its value by the value type's `compare`; the first that differs decides, and a
+>   dictionary that runs out first is `LT` — `List.compare`'s rule over the pairs, and Haskell's
+>   `Ord (Map k v)`. It agrees with `eq` whenever the value type's own `eq` and `compare` do.
+>
+> Elm agrees on `eq` and differs on `compare`. Its kernel equality special-cases the two types and
+> compares their `toList`s (`references/elm-core/src/Elm/Kernel/Utils.js:47-64`, `_Utils_eqHelp`),
+> so `==` on an Elm `Dict` was always content equality, and beni's derived walk was the regression;
+> a `Dict` is not `comparable` in Elm. Refusing `compare` was the other choice; it buys
+> no guarantee (the content order is total and agrees with `eq`), and a set of sets or a dictionary
+> keyed by dictionaries is a program somebody writes, so rule 7 keeps it. The derived functions
+> are gone with it: `Dict` answers both names at step 1 of §3.3, so nothing derives over `Tree`.
+
 ### 5.4 `Set`
 
 `core/Set.beni:29` is unchanged (`pub opaque type Set t = Set (Dict t ())`); the comparator
@@ -735,6 +808,10 @@ parameter leaves four signatures and the constraint arrives on nine.
 | `pub map : Set a, (b, b -> Order), (a -> b) -> Set b` | `pub map : Set a, (a -> b) -> Set b where b.compare : b, b -> Order` — the ordering argument goes, the callback stays last |
 | `pub insert`, `remove`, `member`, `union`, `intersect`, `diff`, `filter`, `partition` | `… where t.compare : t, t -> Order` |
 | `pub isEmpty`, `size`, `toList`, `foldl`, `foldr` | unchanged |
+
+> **Amended 2026-10-02 (§3.5): `Set` declares `eq` and `compare`**, both `where t.compare : t, t
+> → Order`, and both `Dict`'s over the set's dictionary (§5.3, amended): two sets are equal when
+> they hold the same values by `t`'s `compare`, and ordered as their `toList`s are.
 
 ### 5.5 `List`
 
@@ -3391,6 +3468,11 @@ their own is out of the spike's scope (the `core/` rewrite's decision O-5); `tes
 prints the answer so that the finding is a fact rather than an argument, and report 19 is where it
 goes.
 
+> **Closed 2026-10-02.** `Dict` and `Set` declare `pub eq` and `pub compare` over their contents
+> (§5.3 and §5.4, amended; §3.5 audits every other type for the same defect). Neither derives any
+> more, so the two paragraphs above describe what was. `run/DictStructuralEquality` now prints
+> `True` on its third line, and `run/DictSetEquality` covers every spelling.
+
 ### Stretch, only after the measurement
 
 1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not
@@ -4190,7 +4272,8 @@ language's standard library promises rather than to static dispatch, and the spi
 latter. The derived answer — a walk of the red-black tree, insertion order and all — is left in
 place and printed by `tests/corpus/run/DictStructuralEquality.beni`, so the adoption decision is
 made against a number rather than against a guess. §11 carries the row and report 19 is where it
-goes.
+goes. *Superseded 2026-10-02 by the owner's order:* both types declare `eq` and `compare` over
+their contents (§5.3 and §5.4, amended; §3.5).
 
 **A.75 — a rebuilt constraint set REDIRECTS the indices it superseded** (§6.2, §6.3, A.57).
 A set is a half-open range of an append-only table and is never edited (§6.1 invariant 2), so Rule

@@ -156,3 +156,29 @@ pub partition : Set t, (t → Bool) → Set t × Set t
 partition (Set dict) isGood =
     ( trues, falses ) = Dict.partition dict λkey _ → isGood key
     ( Set trues, Set falses )
+
+
+--| Whether two sets hold the same values, by the value type's `compare`.
+--| This is what `==` and `≠` on a set mean (`static-dispatch-spike.md`
+--| §3.3), and it stays callable by name.
+--|
+--|     eq (fromList [ 1, 2, 3 ]) (fromList [ 3, 2, 1 ]) == True
+--|
+--| It is written here because the derived `eq` would compare the trees
+--| underneath, and two sets holding the same values are not always the same
+--| tree. It is `Dict.eq` on the dictionaries. O(n).
+pub eq : Set t, Set t → Bool
+    where t.compare : t, t → Order
+eq (Set left) (Set right) = Dict.eq left right
+
+
+--| Order two sets as their `toList`s are ordered: value by value from the
+--| lowest, the first that differs deciding, and a set that runs out first
+--| while everything before matched is `LT`. This is what `<`, `≤`, `>` and
+--| `≥` on a set mean, and what makes a set a `Dict` key or a `Set` member.
+--| It agrees with `eq`.
+--|
+--|     compare (fromList [ 1, 2 ]) (fromList [ 1, 3 ]) == LT
+pub compare : Set t, Set t → Order
+    where t.compare : t, t → Order
+compare (Set left) (Set right) = Dict.compare left right
