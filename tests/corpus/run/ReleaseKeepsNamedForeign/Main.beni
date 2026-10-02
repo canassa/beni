@@ -34,24 +34,24 @@ import Task
 
 announce : String → Int
 announce text =
-    _ = Say.say text
+    Say.say text
     String.length text
 
 
-applyTo : (String → ()), String → Int
+applyTo : (String → ⊤), String → Int
 applyTo f text =
     viaCallback = f ("callback " ++ text)
     String.length text
 
 
-applySync : (String → ()), String → Int
+applySync : (String → ⊤), String → Int
 applySync k text =
     viaSync = k ("sync " ++ text)
-    _ = Task.andThen ("then " ++ text) k
+    Task.andThen ("then " ++ text) k
     String.length text
 
 
-unitText : () → String
+unitText : ⊤ → String
 unitText _ = ""
 
 
@@ -62,8 +62,6 @@ report n =
     branch =
         if n > 0 then
             Say.say "branch"
-        else
-            ()
     ( left, right ) = ( Say.say "tuple", n )
     viaHelper = announce "helper"
     quiet = n * 1000

@@ -21,4 +21,4 @@ apply u =
 
 
 main : Program
-main = Node.printLines [ String.fromInt (g ()), String.fromInt (apply ()) ]
+main = Node.printLines [ String.fromInt (g ⊤), String.fromInt (apply ⊤) ]

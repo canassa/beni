@@ -8,26 +8,26 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    quick = Task.spawn λ() →
-        _ = Task.yieldNow ()
+main = Io.run λ⊤ →
+    quick = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
         42
     _ = Debug.log "quick, started" (Task.poll quick)
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
     _ = Debug.log "quick, returned" (Task.poll quick)
 
-    slow = Task.spawn λ() →
+    slow = Task.spawn λ⊤ →
         Task.bracket
-            (λ() → ())
+            (λ⊤ → ⊤)
             (λ_ _ →
-                _ = Task.yieldNow ()
-                Debug.log "slow released" ()
+                Task.yieldNow ⊤
+                Debug.log "slow released" ⊤
             )
-            λ_ → Task.never ()
-    _ = Task.yieldNow ()
-    watcher = Task.spawn λ() → Debug.log "slow, cleaning up" (Task.poll slow)
-    _ = Task.cancel slow
+            λ_ → Task.never ⊤
+    Task.yieldNow ⊤
+    watcher = Task.spawn λ⊤ → Debug.log "slow, cleaning up" (Task.poll slow)
+    Task.cancel slow
     _ = Task.join watcher
     _ = Debug.log "slow, cancelled" (Task.poll slow)
     Node.print "done"

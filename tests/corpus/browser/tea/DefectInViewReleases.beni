@@ -25,7 +25,7 @@ update msg broken =
             ( broken
             , Cmd.perform λsend →
                 Task.bracket
-                    (λ() → ())
+                    (λ⊤ → ⊤)
                     (λ_ exit →
                         case exit of
                             Done _ →
@@ -35,7 +35,7 @@ update msg broken =
                                 Log.info "released: Cancelled"
                     )
                     λ_ →
-                        _ = Time.sleep (Time.millis 100)
+                        Time.sleep (Time.millis 100)
                         send Woke
             )
 

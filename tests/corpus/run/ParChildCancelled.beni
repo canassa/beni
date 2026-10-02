@@ -12,21 +12,21 @@ import Task exposing (Cancelled, Done)
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
-    doomed = Task.spawn λ() → Task.never ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel doomed
+    doomed = Task.spawn λ⊤ → Task.never ⊤
+    Task.yieldNow ⊤
+    Task.cancel doomed
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             Task.par
-                (λ() →
-                    Task.bracket (λ() → ()) (λ_ _ → Debug.log "sibling released" ()) λ_ →
-                        _ = Task.sleep (Duration.seconds 10)
-                        Debug.log "sibling finished" ()
+                (λ⊤ →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "sibling released" ⊤) λ_ →
+                        Task.sleep (Duration.seconds 10)
+                        Debug.log "sibling finished" ⊤
                 )
-                λ() → Task.join doomed
+                λ⊤ → Task.join doomed
 
     case Task.wait caller of
         Cancelled →

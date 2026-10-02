@@ -12,8 +12,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -26,28 +26,28 @@ outcome exit =
             "Cancelled"
 
 
-held : String → ()
-held name = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
-    Task.never ()
+held : String → ⊤
+held name = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    Task.never ⊤
 
 
 main : Program
-main = Io.run λ() →
-    closed = Task.openRoot ()
-    _ = Task.spawnIn closed λ() → held "closed child"
-    _ = Task.defer closed λexit → say "closed: first deferred: ${outcome exit}"
-    _ = Task.defer closed λexit → say "closed: second deferred: ${outcome exit}"
-    _ = Task.yieldNow ()
-    _ = Task.closeRoot closed
-    _ = Debug.log "closeRoot returned" ()
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
+main = Io.run λ⊤ →
+    closed = Task.openRoot ⊤
+    _ = Task.spawnIn closed λ⊤ → held "closed child"
+    Task.defer closed λexit → say "closed: first deferred: ${outcome exit}"
+    Task.defer closed λexit → say "closed: second deferred: ${outcome exit}"
+    Task.yieldNow ⊤
+    Task.closeRoot closed
+    Debug.log "closeRoot returned" ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
 
-    open = Task.openRoot ()
-    _ = Task.spawnIn open λ() → held "open child"
-    _ = Task.defer open λexit → say "open: deferred: ${outcome exit}"
-    idle = Task.openRoot ()
-    _ = Task.defer idle λexit → say "idle: deferred: ${outcome exit}"
-    _ = Task.yieldNow ()
+    open = Task.openRoot ⊤
+    _ = Task.spawnIn open λ⊤ → held "open child"
+    Task.defer open λexit → say "open: deferred: ${outcome exit}"
+    idle = Task.openRoot ⊤
+    Task.defer idle λexit → say "idle: deferred: ${outcome exit}"
+    Task.yieldNow ⊤
     Node.print "main done"

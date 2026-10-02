@@ -16,7 +16,7 @@ import Task
 
 depth : Int → Int
 depth n =
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     if n == 0 then
         0
     else
@@ -25,7 +25,7 @@ depth n =
 
 countdown : Int, Int → Int
 countdown n acc =
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     if n == 0 then
         acc
     else
@@ -33,5 +33,5 @@ countdown n acc =
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     Node.printLines [ String.fromInt (depth 200000), String.fromInt (countdown 200000 0) ]

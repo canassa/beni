@@ -10,16 +10,16 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    child = Task.spawn λ() →
-        Task.bracket (λ() → ()) (λ_ _ → Debug.log "child released" ()) λ_ →
-            _ = Task.uninterruptible λ() →
-                _ = Debug.log "region start" ()
-                _ = Task.yieldNow ()
-                _ = Task.yieldNow ()
-                Debug.log "region end" ()
-            _ = Task.yieldNow ()
-            Debug.log "after region" ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel child
+main = Io.run λ⊤ →
+    child = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "child released" ⊤) λ_ →
+            Task.uninterruptible λ⊤ →
+                Debug.log "region start" ⊤
+                Task.yieldNow ⊤
+                Task.yieldNow ⊤
+                Debug.log "region end" ⊤
+            Task.yieldNow ⊤
+            Debug.log "after region" ⊤
+    Task.yieldNow ⊤
+    Task.cancel child
     Node.print "cancelled"

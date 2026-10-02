@@ -29,16 +29,13 @@ ends xs =
 
 
 main : Program
-main = Io.run λ() →
-    one = Task.spawn λ() → 1
-    _ = Io.sleep 1
+main = Io.run λ⊤ →
+    one = Task.spawn λ⊤ → 1
+    Io.sleep 1
     cells = List.range 1 100000
     slow n =
-        _ =
-            if Int.mod n 1000 == 0 then
-                Task.yieldNow ()
-            else
-                ()
+        if Int.mod n 1000 == 0 then
+            Task.yieldNow ⊤
         n
     Node.printLines
         [ ends (List.map cells λn → n * Task.join one)

@@ -27,8 +27,8 @@ pub ordered : Js.Value, Js.Value → Js.Value
 ordered f g = Js.object [ ( "z", Js.apply f [] ), ( "a", Js.apply g [] ) ]
 
 
-pub empty : () → Js.Value
-empty () = Js.object []
+pub empty : ⊤ → Js.Value
+empty ⊤ = Js.object []
 
 
 pub point : Int → Point

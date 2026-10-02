@@ -6,4 +6,4 @@ import Task
 
 
 plain : Js.Value
-plain = Js.method λself → Task.yieldNow ()
+plain = Js.method λself → Task.yieldNow ⊤

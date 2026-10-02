@@ -19,7 +19,7 @@ type Box a
 
 outer u =
     f a =
-        g x = (Box x).size ()
+        g x = (Box x).size ⊤
         ( g a, g "s" )
     f u
 

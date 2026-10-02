@@ -141,8 +141,8 @@ expectJson schema = Expect "application/json" λresponse →
 
 
 --| Nothing of the body; a status that is not 2xx is `BadStatus`.
-pub expectWhatever : Expect Error ()
-expectWhatever = Expect "" λresponse → Result.map (answered response) λ_ → ()
+pub expectWhatever : Expect Error ⊤
+expectWhatever = Expect "" λresponse → Result.map (answered response) λ_ → ⊤
 
 
 --| The whole answer, as `f` reads it: every failure, and the status, the
@@ -232,7 +232,7 @@ pub request :
       , body : Body
       , expect : Expect x a
       , timeout : Maybe Duration
-      , tracker : Maybe (Progress → ())
+      , tracker : Maybe (Progress → ⊤)
       }
     → Result x a
 request r =
@@ -257,7 +257,7 @@ pub riskyRequest :
       , body : Body
       , expect : Expect x a
       , timeout : Maybe Duration
-      , tracker : Maybe (Progress → ())
+      , tracker : Maybe (Progress → ⊤)
       }
     → Result x a
 riskyRequest r =
@@ -299,10 +299,10 @@ type Timer
 -- `Tracked`, so a program that never tracks ships no chunked read.
 type Reading
     = Plain
-    | Tracked (Progress → ())
+    | Tracked (Progress → ⊤)
 
 
-readingOf : Maybe (Progress → ()) → Reading
+readingOf : Maybe (Progress → ⊤) → Reading
 readingOf tracker =
     case tracker of
         Just f →
@@ -381,7 +381,7 @@ resolve url =
     base = Js.get (Js.global "document") "baseURI"
     if Js.isUndefined (Js.get constructor "parse") then
         Js.catchIf
-            (λ() → Js.construct constructor [ Js.from url, base ])
+            (λ⊤ → Js.construct constructor [ Js.from url, base ])
             (λerror → Js.instanceOf error (Js.global "TypeError"))
             λ_ → Js.null
     else
@@ -532,7 +532,7 @@ sent credentials method headers target body accept timer reading =
             if ms ≤ 0 then
                 Timeout_
             else
-                _ = start flight ms
+                start flight ms
                 answer flight (Js.get target "href") init body reading
 
         NoTimer →
@@ -542,27 +542,25 @@ sent credentials method headers target body accept timer reading =
 headersOf : List Header, Body, String → Js.Value
 headersOf headers body accept =
     all = Js.construct (Js.global "Headers") []
-    _ = List.foldl headers () λ(Header name value) _ →
+    List.foldl headers ⊤ λ(Header name value) _ →
         Js.to (Js.call all "append" [ Js.from name, Js.from value ])
-    _ =
-        case body of
-            Text mime _ →
-                defaultHeader all "content-type" mime
+    case body of
+        Text mime _ →
+            defaultHeader all "content-type" mime
 
-            _ →
-                ()
-    _ =
-        if accept == "" then
-            ()
-        else
-            defaultHeader all "accept" accept
+        _ →
+            ⊤
+    if accept == "" then
+        ⊤
+    else
+        defaultHeader all "accept" accept
     all
 
 
-defaultHeader : Js.Value, String, String → ()
+defaultHeader : Js.Value, String, String → ⊤
 defaultHeader all name value =
     if Js.to (Js.call all "has" [ Js.from name ]) then
-        ()
+        ⊤
     else
         Js.to (Js.call all "set" [ Js.from name, Js.from value ])
 
@@ -578,7 +576,7 @@ payload body =
 
         Multipart parts →
             form = Js.construct (Js.global "FormData") []
-            _ = List.foldl parts () λ(StringPart name value) _ →
+            List.foldl parts ⊤ λ(StringPart name value) _ →
                 Js.to (Js.call form "append" [ Js.from name, Js.from value ])
             form
 
@@ -616,23 +614,23 @@ utf8 text =
 -- The request's timer: when it fires, the request is aborted with a
 -- `TimeoutError` of its own, which is how its rejection is told from any
 -- other. A flight is `[ controller, timer, reason ]`.
-start : Js.Value, Int → ()
+start : Js.Value, Int → ⊤
 start flight ms =
     reason =
         Js.construct (Js.global "DOMException")
             [ Js.from "The request timed out.", Js.from "TimeoutError" ]
-    _ = Js.setAt flight 2 reason
+    Js.setAt flight 2 reason
     timer =
         Js.apply (Js.global "setTimeout")
-            [ Js.from λ() → Js.to (Js.call (Js.at flight 0) "abort" [ reason ]), Js.from ms ]
+            [ Js.from λ⊤ → Js.to (Js.call (Js.at flight 0) "abort" [ reason ]), Js.from ms ]
     Js.setAt flight 1 timer
 
 
 -- Stop the timer, if there is one.
-settled : Js.Value → ()
+settled : Js.Value → ⊤
 settled flight =
     if Js.isNull (Js.at flight 1) then
-        ()
+        ⊤
     else
         Js.to (Js.apply (Js.global "clearTimeout") [ Js.at flight 1 ])
 
@@ -648,20 +646,19 @@ type Step
 -- is told the body is unsent before `fetch` is called.
 answer : Js.Value, Js.Value, Js.Value, Body, Reading → Response String
 answer flight href init body reading =
-    _ =
-        case reading of
-            Tracked f →
-                f (Sending { sent = 0, size = size body })
+    case reading of
+        Tracked f →
+            f (Sending { sent = 0, size = size body })
 
-            Plain →
-                ()
-    case wait flight λ() → Js.apply (Js.global "fetch") [ href, init ] of
+        Plain →
+            ⊤
+    case wait flight λ⊤ → Js.apply (Js.global "fetch") [ href, init ] of
         Got response →
             case reading of
                 Plain →
-                    case wait flight λ() → Js.call response "text" [] of
+                    case wait flight λ⊤ → Js.call response "text" [] of
                         Got text →
-                            _ = settled flight
+                            settled flight
                             received response (Js.to text)
 
                         Failed failure →
@@ -683,23 +680,23 @@ answer flight href init body reading =
 -- The body read chunk by chunk, the tracker told after each (§9.8.12 (e)):
 -- the bytes decoded as `text()` decodes them, UTF-8 in streaming mode with
 -- a leading BOM dropped. A `null` body (`HEAD`, a 204) is the empty text.
-tracked : Js.Value, Js.Value, Int, (Progress → ()) → Response String
+tracked : Js.Value, Js.Value, Int, (Progress → ⊤) → Response String
 tracked flight response bytes f =
-    _ = f (Sending { sent = bytes, size = bytes })
+    f (Sending { sent = bytes, size = bytes })
     length =
         String.toInt
             (orEmpty (Js.call (Js.get response "headers") "get" [ Js.from "content-length" ]))
-    _ = f (Receiving { received = 0, size = length })
+    f (Receiving { received = 0, size = length })
     stream = Js.get response "body"
     if Js.isNull stream then
-        _ = settled flight
+        settled flight
         received response ""
     else
         reader = Js.call stream "getReader" []
         decoder = Js.construct (Js.global "TextDecoder") []
         case chunks flight reader decoder f length 0 "" of
             Ok text →
-                _ = settled flight
+                settled flight
                 received response text
 
             Err failure →
@@ -719,13 +716,13 @@ chunks :
       Js.Value
     , Js.Value
     , Js.Value
-    , (Progress → ())
+    , (Progress → ⊤)
     , Maybe Int
     , Int
     , String
     → Result (Response String) String
 chunks flight reader decoder f length count text =
-    case wait flight λ() → Js.call reader "read" [] of
+    case wait flight λ⊤ → Js.call reader "read" [] of
         Got chunk →
             if Js.to (Js.get chunk "done") then
                 Ok (text ++ Js.to (Js.call decoder "decode" []))
@@ -733,7 +730,7 @@ chunks flight reader decoder f length count text =
                 value = Js.get chunk "value"
                 n = count + Js.to (Js.get value "length")
                 more = text ++ Js.to (Js.call decoder "decode" [ value, Js.from { stream = True } ])
-                _ = f (Receiving { received = n, size = length })
+                f (Receiving { received = n, size = length })
                 chunks flight reader decoder f length n more
 
         Failed failure →
@@ -750,19 +747,19 @@ chunks flight reader decoder f length count text =
 -- `TypeError`, the Fetch standard's network error, and anything else, a
 -- defect thrown in the waiting fiber. Cancelling the fiber aborts the
 -- request and stops its timer.
-wait : Js.Value, (() → Js.Value) → Step
+wait : Js.Value, (⊤ → Js.Value) → Step
 wait flight promise = Task.callback λresume →
     _ =
-        Js.call (promise ()) "then"
+        Js.call (promise ⊤) "then"
             [ Js.from λvalue → resumeWith resume (Got value)
             , Js.from λerror → rejected flight resume error
             ]
-    λ() →
-        _ = settled flight
+    λ⊤ →
+        settled flight
         Js.to (Js.call (Js.at flight 0) "abort" [])
 
 
-rejected : Js.Value, Resume Step, Js.Value → ()
+rejected : Js.Value, Resume Step, Js.Value → ⊤
 rejected flight resume error =
     signal = Js.get (Js.at flight 0) "signal"
     -- Aborted by this request itself: by its timer, whose reason is its
@@ -773,16 +770,16 @@ rejected flight resume error =
         if Js.same (Js.get signal "reason") (Js.at flight 2) then
             resumeWith resume (Failed Timeout_)
         else
-            ()
+            ⊤
     else
-        _ = settled flight
+        settled flight
         if Js.instanceOf error (Js.global "TypeError") then
             resumeWith resume (Failed NetworkError_)
         else
             resumeWith resume (Defect error)
 
 
-resumeWith : Resume a, a → ()
+resumeWith : Resume a, a → ⊤
 resumeWith resume value = Js.to (Js.apply (Js.from resume) [ Js.from value ])
 
 
@@ -806,7 +803,7 @@ received response text =
 headersFrom : Js.Value → Dict String String
 headersFrom headers =
     all = Js.ref Dict.empty
-    _ = Js.each headers λpair →
+    Js.each headers λpair →
         name : String
         name = Js.to (Js.call (Js.at pair 0) "toLowerCase" [])
         value : String

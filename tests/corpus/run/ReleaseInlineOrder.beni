@@ -59,7 +59,7 @@ insideLambda p =
     v = log "inline.lambda" p.x
 
     f = λ_ → v + 1
-    f () + f ()
+    f ⊤ + f ⊤
 
 
 -- Hazard 3: the single use is inside a loop the binding sits outside of.

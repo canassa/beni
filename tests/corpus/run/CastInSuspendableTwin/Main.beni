@@ -10,4 +10,4 @@ import Probe
 
 
 main : Program
-main = Io.run λ() → Node.printLines [ Probe.stringify λ() → Io.sleep 0 ]
+main = Io.run λ⊤ → Node.printLines [ Probe.stringify λ⊤ → Io.sleep 0 ]

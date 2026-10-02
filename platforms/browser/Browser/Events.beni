@@ -34,16 +34,16 @@ type Key
 
 
 --| The window's inner size, now.
-pub foreign impure size : () → Size
+pub foreign impure size : ⊤ → Size
 
 
-foreign impure hidden : () → Bool
+foreign impure hidden : ⊤ → Bool
 
 
 --| Whether the page can be seen, now.
-pub visibility : () → Visibility
-visibility () =
-    if hidden () then
+pub visibility : ⊤ → Visibility
+visibility ⊤ =
+    if hidden ⊤ then
         Hidden
     else
         Visible
@@ -51,15 +51,15 @@ visibility () =
 
 -- ---- The listeners ------------------------------------------------------------
 
-resizes : sync (Size → ()) → (() → ())
-resizes send = Listen.on "window" "resize" (λ_ → size ()) send
+resizes : sync (Size → ⊤) → (⊤ → ⊤)
+resizes send = Listen.on "window" "resize" (λ_ → size ⊤) send
 
 
-visibilities : sync (Visibility → ()) → (() → ())
-visibilities send = Listen.on "document" "visibilitychange" (λ_ → visibility ()) send
+visibilities : sync (Visibility → ⊤) → (⊤ → ⊤)
+visibilities send = Listen.on "document" "visibilitychange" (λ_ → visibility ⊤) send
 
 
-keys : String, sync (Html.Event → ()) → (() → ())
+keys : String, sync (Html.Event → ⊤) → (⊤ → ⊤)
 keys name send = Listen.on "document" name event send
 
 
@@ -72,29 +72,29 @@ keys name send = Listen.on "document" name event send
 --| Call `f` with the window's new size each time it is resized.
 --|
 --|     Task.spawn λ() → Browser.Events.eachResize λsize → Log.info (String.fromInt size.width)
-pub eachResize : (Size → ()) → ()
+pub eachResize : (Size → ⊤) → ⊤
 eachResize f = Listen.each resizes f
 
 
 --| Call `f` with whether the page can be seen each time that changes.
-pub eachVisibilityChange : (Visibility → ()) → ()
+pub eachVisibilityChange : (Visibility → ⊤) → ⊤
 eachVisibilityChange f = Listen.each visibilities f
 
 
 --| Call `f` with each key pressed anywhere in the page, in order. No key
 --| is lost or merged; `f` runs one fiber turn after the event, so it cannot
 --| prevent the key's default.
-pub eachKeyDown : (Html.Event → ()) → ()
+pub eachKeyDown : (Html.Event → ⊤) → ⊤
 eachKeyDown f = Listen.each (keys "keydown" _) f
 
 
 --| Call `f` with each key released anywhere in the page, in order.
-pub eachKeyUp : (Html.Event → ()) → ()
+pub eachKeyUp : (Html.Event → ⊤) → ⊤
 eachKeyUp f = Listen.each (keys "keyup" _) f
 
 
 --| Call `f` with each `keypress` of the page, in order.
-pub eachKeyPress : (Html.Event → ()) → ()
+pub eachKeyPress : (Html.Event → ⊤) → ⊤
 eachKeyPress f = Listen.each (keys "keypress" _) f
 
 

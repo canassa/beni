@@ -26,7 +26,7 @@ import List
 --| Represents a set of unique values. So `Set Int` is a set of integers and
 --| `Set String` is a set of strings.
 pub opaque type Set t
-    = Set (Dict t ())
+    = Set (Dict t ⊤)
 
 
 --| The empty set. It compares nothing, so it needs no `compare` and is a
@@ -42,7 +42,7 @@ empty = Set Dict.empty
 --|
 --|     Set.singleton "Tom"
 pub singleton : t → Set t
-singleton value = Set (Dict.singleton value ())
+singleton value = Set (Dict.singleton value ⊤)
 
 
 --| Insert a value into a set.
@@ -50,7 +50,7 @@ singleton value = Set (Dict.singleton value ())
 --|     Set.insert Set.empty "Tom"
 pub insert : Set t, t → Set t
     where t.compare : t, t → Order
-insert (Set dict) value = Set (Dict.insert dict value ())
+insert (Set dict) value = Set (Dict.insert dict value ⊤)
 
 
 --| Remove a value from a set. If the value is not found, no changes are made.

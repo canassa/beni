@@ -30,21 +30,20 @@ classify n =
         "plus " ++ s ++ "/" ++ s
 
 
-pub settle : Js.Value → ()
+pub settle : Js.Value → ⊤
 settle o =
-    _ =
-        if Js.isNull (Js.get o "v") then
-            _ = Js.set o "v" (Js.from 1)
-            Js.set o "n" (Js.from 0)
-        else
-            Js.throw (Js.from "set twice")
+    if Js.isNull (Js.get o "v") then
+        Js.set o "v" (Js.from 1)
+        Js.set o "n" (Js.from 0)
+    else
+        Js.throw (Js.from "set twice")
     Js.set o "done" (Js.from True)
 
 
-pub describe : Js.Value → ()
+pub describe : Js.Value → ⊤
 describe o =
     if Js.isNull o then
-        ()
+        ⊤
     else if Js.isUndefined (Js.get o "a") then
         Js.set o "a" (Js.from 1)
     else

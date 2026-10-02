@@ -34,7 +34,7 @@ describe name event =
 
 prevented : Event → Msg
 prevented event =
-    _ = Html.preventDefault event
+    Html.preventDefault event
     describe "prevented" event
 
 

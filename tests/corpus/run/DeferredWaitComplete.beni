@@ -11,20 +11,20 @@ import Task exposing (Fiber)
 
 
 waiter : Deferred Int, String → Fiber Int
-waiter d name = Task.spawn λ() → Debug.log "${name} got" (Deferred.wait d)
+waiter d name = Task.spawn λ⊤ → Debug.log "${name} got" (Deferred.wait d)
 
 
 main : Program
-main = Io.run λ() →
-    d = Deferred.make ()
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
     b = waiter d "b"
     a = waiter d "a"
     c = waiter d "c"
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     _ = Debug.log "before: poll" (Deferred.poll d)
     _ = Debug.log "before: isDone" (Deferred.isDone d)
     _ = Debug.log "complete" (Deferred.complete d 7)
-    _ = Debug.log "completed" ()
+    Debug.log "completed" ⊤
     _ = Task.joinAll [ a, b, c ]
     _ = Debug.log "after: poll" (Deferred.poll d)
     _ = Debug.log "after: isDone" (Deferred.isDone d)

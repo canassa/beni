@@ -8,9 +8,9 @@
 import T exposing (T)
 
 
-f : a, () → Int
-    where a.foo : a, () → Int
-f x _ = x.foo ()
+f : a, ⊤ → Int
+    where a.foo : a, ⊤ → Int
+f x _ = x.foo ⊤
 
 
-q z = ( [ "a", f z () ], z.foo (), [ z, T.T 1 ] )
+q z = ( [ "a", f z ⊤ ], z.foo ⊤, [ z, T.T 1 ] )

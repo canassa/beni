@@ -33,7 +33,7 @@ third : Int
 third = 10
 
 
-deferred : () → Int
+deferred : ⊤ → Int
 deferred = λ_ → scale * 3
 
 
@@ -69,7 +69,7 @@ main : Program
 main =
     Node.printLines
         [ String.fromInt first
-        , String.fromInt (deferred ())
+        , String.fromInt (deferred ⊤)
         , String.fromInt (shift 5)
         , Debug.toString (isEven 4)
         , Debug.toString (isOdd 4)

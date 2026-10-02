@@ -7,7 +7,7 @@
 -- `( x.foo (), x == Just x )`,
 -- the wanted is resolved on `Maybe a'` before the cycle closes, so its
 -- `unknown_method` is honest then and both messages are given.
-n x = ( [ x, Just x ], x.foo () )
+n x = ( [ x, Just x ], x.foo ⊤ )
 
 
 m x = ( [ x, Just x ], x == x )

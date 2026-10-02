@@ -103,7 +103,7 @@ view lines =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( [ describe (Browser.Navigation.currentUrl ()) ], Cmd.none )
+        { init = ( [ describe (Browser.Navigation.currentUrl ⊤) ], Cmd.none )
         , update = λ(Changed url) lines → ( lines ++ [ describe (Just url) ], Cmd.none )
         , view = view
         , subscriptions = λ_ → Browser.Navigation.onUrlChange Changed

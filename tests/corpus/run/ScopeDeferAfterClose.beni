@@ -8,8 +8,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -23,7 +23,7 @@ outcome exit =
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     closed = Task.scope λs → s
-    _ = Task.defer closed λexit → say "deferred on a closed scope: ${outcome exit}"
+    Task.defer closed λexit → say "deferred on a closed scope: ${outcome exit}"
     Node.print "after defer"

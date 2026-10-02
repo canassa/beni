@@ -9,7 +9,7 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    _ = Debug.log "waiting forever" ()
-    _ = Task.never ()
+main = Io.run λ⊤ →
+    Debug.log "waiting forever" ⊤
+    _ = Task.never ⊤
     Node.print "not reached"

@@ -45,7 +45,7 @@ pub sameMixed : Char × String, Char × String → Bool
 sameMixed a b = a == b
 
 
-pub sameUnit : (), () → Bool
+pub sameUnit : ⊤, ⊤ → Bool
 sameUnit a b = a == b
 
 

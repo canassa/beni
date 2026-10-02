@@ -29,13 +29,10 @@ parentOf h =
 -- nothing reads `m`.
 mount : V → String
 mount root =
-    _ =
-        if Js.isNull root || not (Js.isUndefined (Js.get root "taken")) then
-            Js.throw (Js.construct (Js.global "Error") [ Js.from "no root" ])
-        else
-            ()
+    if Js.isNull root || not (Js.isUndefined (Js.get root "taken")) then
+        Js.throw (Js.construct (Js.global "Error") [ Js.from "no root" ])
     Js.to (Js.get (parentOf (holder root (Js.get (Js.global "globalThis") "probeMarker"))) "name")
 
 
-pub demo : () → List String
-demo () = [ mount (Js.get (Js.global "globalThis") "probeRoot") ]
+pub demo : ⊤ → List String
+demo ⊤ = [ mount (Js.get (Js.global "globalThis") "probeRoot") ]

@@ -37,8 +37,8 @@ main =
                 , Ops.shiftRightZero (0 - 16) 28
                 ]
         , "values " ++ ints (Ops.viaValues (0 - 7) 2)
-        , "typeof " ++ String.join (Ops.kinds ()) " "
-        , "instanceof " ++ bools (Ops.arrays ())
+        , "typeof " ++ String.join (Ops.kinds ⊤) " "
+        , "instanceof " ++ bools (Ops.arrays ⊤)
         , "strings " ++ bools [ Ops.isString "x", Ops.isString 1 ]
         , "integral " ++ bools [ Ops.integral "-12", Ops.integral "1.5", Ops.integral "" ]
         , "fields " ++ String.join (Ops.fields "a  b\tc") ","

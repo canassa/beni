@@ -6,9 +6,9 @@
 import Ref exposing (Ref)
 
 
-pub bumpAndLog : Ref Int, Ref (List Int) → ()
+pub bumpAndLog : Ref Int, Ref (List Int) → ⊤
 bumpAndLog cell log = Ref.update cell λn →
-    _ = Ref.update log λseen → List.push seen n
+    Ref.update log λseen → List.push seen n
     n + 1
 
 
@@ -16,8 +16,8 @@ pub swapOut : Ref Int → Int
 swapOut cell = Ref.modify cell λn → ( n, 0 )
 
 
-pub fresh : () → Ref Int
-fresh () = Ref.make 0
+pub fresh : ⊤ → Ref Int
+fresh ⊤ = Ref.make 0
 
 
 pub peek : Ref Int → Int

@@ -22,45 +22,45 @@ flag = Js.ref False
 
 
 -- Called twice, as statements: written where it is called, and gone.
-stop : () → ()
-stop () = Js.write dead True
+stop : ⊤ → ⊤
+stop ⊤ = Js.write dead True
 
 
 -- With a parameter, called with literals: each call is the assignment of
 -- its argument.
-set : Int → ()
+set : Int → ⊤
 set n = Js.write count n
 
 
 -- Called nine times: nine `noise = true` would be larger than nine calls
 -- and the function, so every call stays.
-bump : () → ()
-bump () = Js.write noise True
+bump : ⊤ → ⊤
+bump ⊤ = Js.write noise True
 
 
 -- Called as a statement once and also stored where the host can call it:
 -- the function must stay, so its call does too.
-raise : () → ()
-raise () = Js.write flag True
+raise : ⊤ → ⊤
+raise ⊤ = Js.write flag True
 
 
-pub demo : () → List String
-demo () =
-    _ = stop ()
-    _ = set 3
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = bump ()
-    _ = Js.set (Js.global "globalThis") "raise" (Js.from raise)
-    _ = raise ()
-    _ = set 4
-    _ = stop ()
+pub demo : ⊤ → List String
+demo ⊤ =
+    stop ⊤
+    set 3
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    bump ⊤
+    Js.set (Js.global "globalThis") "raise" (Js.from raise)
+    raise ⊤
+    set 4
+    stop ⊤
     [ if Js.read dead then "dead" else "alive"
     , String.fromInt (Js.read count)
     , if Js.read noise then "noisy" else "quiet"

@@ -12,8 +12,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -26,25 +26,25 @@ outcome exit =
             "Cancelled"
 
 
-guarded : String, (() → a) → a
-guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
-    body ()
+guarded : String, (⊤ → a) → a
+guarded name body = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ⊤
 
 
 main : Program
-main = Io.run λ() →
-    root = Task.openRoot ()
+main = Io.run λ⊤ →
+    root = Task.openRoot ⊤
 
-    _ = Task.spawnIn root λ() →
-        guarded "outer" λ() →
+    _ = Task.spawnIn root λ⊤ →
+        guarded "outer" λ⊤ →
             Task.bracket
-                (λ() → ())
+                (λ⊤ → ⊤)
                 (λ_ _ →
-                    _ = say "middle releasing"
-                    guarded "opened in middle" λ() → Io.sleep 100000
+                    say "middle releasing"
+                    guarded "opened in middle" λ⊤ → Io.sleep 100000
                 )
                 λ_ → Io.sleep 100000
 
-    _ = Task.yieldNow ()
-    _ = Task.shutdown 50 λcut → say "done, ${String.fromInt cut} cut short"
+    Task.yieldNow ⊤
+    Task.shutdown 50 λcut → say "done, ${String.fromInt cut} cut short"
     Node.done

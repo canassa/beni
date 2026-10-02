@@ -33,5 +33,5 @@ inside : List Int → List Int
 inside xs =
     List.push xs "a"
     _ = List.push xs 5
-    ()
+    ⊤
     xs

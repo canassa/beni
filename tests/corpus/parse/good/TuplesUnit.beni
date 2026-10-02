@@ -18,19 +18,19 @@ nestedTuple =
 
 
 unit =
-    ()
+    ⊤
 
 
 unitWithSpace =
-    (  )
+    ⊤
 
 
 grouping x =
     (x)
 
 
-unitParam () =
-    ()
+unitParam ⊤ =
+    ⊤
 
 
 spread =

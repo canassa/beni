@@ -27,13 +27,13 @@ type alias Model =
 call : Ref Int → Result String String
 call calls =
     n = Ref.modify calls λk → ( k + 1, k + 1 )
-    _ = Debug.log "call ${String.fromInt n} at" (Time.toMillis (Time.now ()))
-    _ = Time.sleep (Time.millis 50)
+    _ = Debug.log "call ${String.fromInt n} at" (Time.toMillis (Time.now ⊤))
+    Time.sleep (Time.millis 50)
     if n < 3 then Err "unavailable" else Ok "data"
 
 
 fetch : Ref Int → Result String String
-fetch calls = Task.retry (Schedule.exponential (Duration.millis 100) 2.0) λ() → call calls
+fetch calls = Task.retry (Schedule.exponential (Duration.millis 100) 2.0) λ⊤ → call calls
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -53,7 +53,7 @@ view model = <p>{model.answer}</p>
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { answer = "waiting" }, Cmd.task (λ() → fetch (Ref.make 0)) Got )
+        { init = ( { answer = "waiting" }, Cmd.task (λ⊤ → fetch (Ref.make 0)) Got )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

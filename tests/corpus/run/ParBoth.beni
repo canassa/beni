@@ -11,18 +11,18 @@ import Task
 
 after : Int, String → String
 after ms name =
-    _ = Task.sleep (Duration.millis ms)
+    Task.sleep (Duration.millis ms)
     Debug.log "finished" name
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    both = Task.spawn λ() →
-        Clock.run clock λ() →
-            pair = Task.par (λ() → after 20 "a") λ() → after 10 "b"
-            triple = Task.par3 (λ() → after 5 "x") (λ() → after 15 "y") λ() → after 1 "z"
+    both = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            pair = Task.par (λ⊤ → after 20 "a") λ⊤ → after 10 "b"
+            triple = Task.par3 (λ⊤ → after 5 "x") (λ⊤ → after 15 "y") λ⊤ → after 1 "z"
             ( pair, triple )
-    _ = Clock.adjust clock (Duration.millis 100)
+    Clock.adjust clock (Duration.millis 100)
     Node.print (Debug.toString (Task.join both))

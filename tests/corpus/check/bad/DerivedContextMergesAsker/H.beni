@@ -12,5 +12,5 @@ pub type Holder a
 
 
 pub eq : Holder a, Holder a → Bool
-    where a.key : a, () → Int
-eq (Holder x) (Holder y) = x.key () == y.key ()
+    where a.key : a, ⊤ → Int
+eq (Holder x) (Holder y) = x.key ⊤ == y.key ⊤

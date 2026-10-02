@@ -24,8 +24,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -38,52 +38,52 @@ outcome exit =
             "Cancelled"
 
 
-guarded : String, (() → a) → a
-guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
-    body ()
+guarded : String, (⊤ → a) → a
+guarded name body = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ⊤
 
 
 main : Program
-main = Io.run λ() →
-    root = Task.openRoot ()
-    _ = Task.spawnIn root λ() → guarded "a outer" λ() → guarded "a inner" λ() → Io.sleep 100000
-    _ = Task.spawnIn root λ() → guarded "b" λ() → Io.sleep 100000
+main = Io.run λ⊤ →
+    root = Task.openRoot ⊤
+    _ = Task.spawnIn root λ⊤ → guarded "a outer" λ⊤ → guarded "a inner" λ⊤ → Io.sleep 100000
+    _ = Task.spawnIn root λ⊤ → guarded "b" λ⊤ → Io.sleep 100000
 
-    _ = Task.spawnIn root λ() →
+    _ = Task.spawnIn root λ⊤ →
         Task.bracket
-            (λ() → ())
+            (λ⊤ → ⊤)
             (λ_ _ →
-                _ = Io.sleep 1
+                Io.sleep 1
                 say "c released after a wait"
             )
             λ_ → Io.sleep 100000
 
-    _ = Task.spawnIn root λ() →
-        guarded "d first" λ() →
+    _ = Task.spawnIn root λ⊤ →
+        guarded "d first" λ⊤ →
             Task.bracket
-                (λ() → ())
+                (λ⊤ → ⊤)
                 (λ_ _ →
-                    _ = Io.sleep 100000
+                    Io.sleep 100000
                     say "d stuck released"
                 )
                 λ_ → Io.sleep 100000
 
-    _ = Task.spawnIn root λ() →
-        guarded "e parent" λ() →
-            _ = Task.spawn λ() → guarded "e child" λ() → Io.sleep 100000
+    _ = Task.spawnIn root λ⊤ →
+        guarded "e parent" λ⊤ →
+            _ = Task.spawn λ⊤ → guarded "e child" λ⊤ → Io.sleep 100000
             Io.sleep 100000
 
-    unanswered = Deferred.make ()
-    _ = Task.spawnIn root λ() → guarded "f, waiting on a Deferred," λ() → Deferred.wait unanswered
+    unanswered = Deferred.make ⊤
+    _ = Task.spawnIn root λ⊤ → guarded "f, waiting on a Deferred," λ⊤ → Deferred.wait unanswered
 
     -- Twice: the first lets every fiber start, the second lets the child
     -- `e` started start too.
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = Task.soon λ() → say "queued before runs"
-    _ = Task.shutdown 250 λcut → say "done, ${String.fromInt cut} cut short"
-    _ = Task.shutdown 5 λ_ → say "the second call's done"
-    _ = Task.spawnIn root λ() → say "late runs"
-    _ = Task.soon λ() → say "queued after runs"
-    _ = say "shutdown returned"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    _ = Task.soon λ⊤ → say "queued before runs"
+    Task.shutdown 250 λcut → say "done, ${String.fromInt cut} cut short"
+    Task.shutdown 5 λ_ → say "the second call's done"
+    _ = Task.spawnIn root λ⊤ → say "late runs"
+    _ = Task.soon λ⊤ → say "queued after runs"
+    say "shutdown returned"
     Node.done

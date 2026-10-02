@@ -13,7 +13,7 @@ import Html exposing (Html)
 import Requests
 
 
-view : () → Html String
+view : ⊤ → Html String
 view _ =
     <main>
         <For
@@ -26,4 +26,4 @@ view _ =
 
 
 main : Browser.Program
-main = Browser.program { init = (), update = λname _ → Requests.go name, view = view }
+main = Browser.program { init = ⊤, update = λname _ → Requests.go name, view = view }

@@ -9,8 +9,8 @@ import Node
 main : Node.Program
 main =
     Node.printLines
-        [ Mode.describe ()
+        [ Mode.describe ⊤
         , String.fromInt (Mode.check 10)
         , if Mode.flag then "flag: True" else "flag: False"
-        , String.fromInt (Mode.note ())
+        , String.fromInt (Mode.note ⊤)
         ]

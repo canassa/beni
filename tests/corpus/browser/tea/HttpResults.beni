@@ -36,13 +36,13 @@ update msg lines =
             ( lines
             , Cmd.batch
                 [ Cmd.task
-                    (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                    (λ⊤ → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
                     (Got "text" _)
                 , Cmd.task
-                    (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectWhatever })
-                    λr → Got "whatever" (Result.map r λ() → "()")
+                    (λ⊤ → Http.get { url = "data:text/plain,hello", expect = Http.expectWhatever })
+                    λr → Got "whatever" (Result.map r λ⊤ → "()")
                 , Cmd.task
-                    (λ() → Http.get { url = "http://[::1", expect = Http.expectString })
+                    (λ⊤ → Http.get { url = "http://[::1", expect = Http.expectString })
                     (Got "bad url" _)
                 ]
             )

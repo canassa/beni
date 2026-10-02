@@ -14,28 +14,27 @@ import Task
 counted : Ref Int, Ref Int, Int → Int
 counted inside peak n =
     now = Ref.modify inside λk → ( k + 1, k + 1 )
-    _ = Ref.update peak λp → Basics.max p now
+    Ref.update peak λp → Basics.max p now
     _ = Debug.log "start" n
-    _ = Task.sleep (Duration.millis (10 + Int.mod n 3))
-    _ = Ref.update inside λk → k - 1
+    Task.sleep (Duration.millis (10 + Int.mod n 3))
+    Ref.update inside λk → k - 1
     n * 10
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
     inside = Ref.make 0
     peak = Ref.make 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() → Task.forEach (List.range 1 10) 3 λn → counted inside peak n
-    _ = Clock.adjust clock (Duration.seconds 1)
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ → Task.forEach (List.range 1 10) 3 λn → counted inside peak n
+    Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "answer" (Task.join caller)
     _ = Debug.log "peak" (Ref.get peak)
-    _ = Ref.set peak 0
+    Ref.set peak 0
 
-    one = Task.spawn λ() →
-        Clock.run clock λ() → Task.forEach [ 1, 2, 3 ] 0 λn → counted inside peak n
-    _ = Clock.adjust clock (Duration.seconds 1)
+    one = Task.spawn λ⊤ → Clock.run clock λ⊤ → Task.forEach [ 1, 2, 3 ] 0 λn → counted inside peak n
+    Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "bound 0: answer" (Task.join one)
     Node.print "bound 0: peak ${String.fromInt (Ref.get peak)}"

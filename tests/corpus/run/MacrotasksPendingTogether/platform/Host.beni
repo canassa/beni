@@ -5,4 +5,4 @@
 
 --| Remove `setImmediate`. A `MessageChannel` made afterwards does not keep
 --| Node running by itself, as nothing a page holds keeps a page open.
-pub foreign impure withoutImmediate : () → ()
+pub foreign impure withoutImmediate : ⊤ → ⊤

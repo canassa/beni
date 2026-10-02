@@ -41,10 +41,10 @@ type alias Item a =
     label : String
 
 
-toItem ( ( (), id ), label ) = { id = id, label = label }
+toItem ( ( ⊤, id ), label ) = { id = id, label = label }
 
 
-fromItem r = ( ( (), r.id ), r.label )
+fromItem r = ( ( ⊤, r.id ), r.label )
 
 
 item : Schema (Item String) (Item Int)
@@ -63,10 +63,10 @@ type alias Point =
     x : Int
 
 
-toPoint ( (), x ) = { x = x }
+toPoint ( ⊤, x ) = { x = x }
 
 
-fromPoint p = ( (), p.x )
+fromPoint p = ( ⊤, p.x )
 
 
 point : Schema Point Point

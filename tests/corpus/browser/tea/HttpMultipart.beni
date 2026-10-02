@@ -34,7 +34,7 @@ update msg lines =
         Send headers →
             ( lines
             , Cmd.task
-                (λ() →
+                (λ⊤ →
                     Http.request
                         { method = "POST"
                         , headers = headers

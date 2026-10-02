@@ -33,9 +33,9 @@ update msg model =
             ( { model | send = Just send }, Cmd.none )
 
         Twice →
-            _ = Debug.log "twice begins" ()
-            _ = Maybe.withDefault (Maybe.map model.send λsend → send (Echo 1)) ()
-            _ = Debug.log "twice ends" ()
+            Debug.log "twice begins" ⊤
+            Maybe.withDefault (Maybe.map model.send λsend → send (Echo 1)) ⊤
+            Debug.log "twice ends" ⊤
             ( model, Cmd.none )
 
         After →
@@ -45,11 +45,11 @@ update msg model =
             ( { model | echoes = Debug.log "echo" (model.echoes + n) }, Cmd.none )
 
 
-afterWork : Cmd.Send Msg → ()
+afterWork : Cmd.Send Msg → ⊤
 afterWork send =
-    _ = Debug.log "after-render sends" ()
-    _ = send (Echo 2)
-    Debug.log "after-render ends" ()
+    Debug.log "after-render sends" ⊤
+    send (Echo 2)
+    Debug.log "after-render ends" ⊤
 
 
 view : Model → Html Msg

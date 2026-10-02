@@ -8,21 +8,21 @@ import Task exposing (Cancelled, Done)
 
 
 main : Program
-main = Io.run λ() →
-    doomed = Task.spawn λ() → Task.never ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel doomed
+main = Io.run λ⊤ →
+    doomed = Task.spawn λ⊤ → Task.never ⊤
+    Task.yieldNow ⊤
+    Task.cancel doomed
 
     winner =
-        Task.raceAll (λ() → Task.join doomed)
-            [ λ() →
-                _ = Task.yieldNow ()
-                _ = Task.yieldNow ()
+        Task.raceAll (λ⊤ → Task.join doomed)
+            [ λ⊤ →
+                Task.yieldNow ⊤
+                Task.yieldNow ⊤
                 "the one that returned"
             ]
     _ = Debug.log "winner" winner
 
-    loser = Task.spawn λ() → Task.raceAll (λ() → Task.join doomed) [ λ() → Task.join doomed ]
+    loser = Task.spawn λ⊤ → Task.raceAll (λ⊤ → Task.join doomed) [ λ⊤ → Task.join doomed ]
 
     case Task.wait loser of
         Cancelled →

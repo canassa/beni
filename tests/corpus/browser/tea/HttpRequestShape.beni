@@ -40,14 +40,14 @@ plain method url headers body =
         }
 
 
-work : String → (() → Result Http.Error String)
+work : String → (⊤ → Result Http.Error String)
 work name =
     case name of
         "get" →
-            λ() → Http.get { url = "/items?page=2", expect = Http.expectString }
+            λ⊤ → Http.get { url = "/items?page=2", expect = Http.expectString }
 
         "headers" →
-            λ() →
+            λ⊤ →
                 plain
                     "GET"
                     "/headers"
@@ -55,7 +55,7 @@ work name =
                     Http.emptyBody
 
         "post" →
-            λ() →
+            λ⊤ →
                 Http.post
                     { url = "/notes"
                     , body = Http.stringBody "text/plain" "hello"
@@ -63,7 +63,7 @@ work name =
                     }
 
         "typed" →
-            λ() →
+            λ⊤ →
                 plain
                     "PUT"
                     "/notes/1"
@@ -71,13 +71,13 @@ work name =
                     (Http.stringBody "text/plain" "hi")
 
         "patch" →
-            λ() → plain "patch" "/notes/1" [] (Http.stringBody "text/plain" "p")
+            λ⊤ → plain "patch" "/notes/1" [] (Http.stringBody "text/plain" "p")
 
         "delete" →
-            λ() → plain "DELETE" "/notes/1" [] Http.emptyBody
+            λ⊤ → plain "DELETE" "/notes/1" [] Http.emptyBody
 
         _ →
-            λ() →
+            λ⊤ →
                 Http.riskyRequest
                     { method = "GET"
                     , headers = []

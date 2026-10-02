@@ -21,17 +21,17 @@ count xs =
 
     last = Js.ref (Js.get xs "first")
 
-    _ = Js.each xs λx →
-        _ = Js.write n (Js.read n + 1)
+    Js.each xs λx →
+        Js.write n (Js.read n + 1)
         Js.write last x
 
-    _ = Js.write total (Js.read total + Js.read n)
+    Js.write total (Js.read total + Js.read n)
 
-    _ = Js.write busy False
+    Js.write busy False
     Js.read n
 
 
 -- Read here, so its write above stays (`backend.md` §9, *A variable nothing
 -- reads*).
-pub isBusy : () → Bool
-isBusy () = Js.read busy
+pub isBusy : ⊤ → Bool
+isBusy ⊤ = Js.read busy

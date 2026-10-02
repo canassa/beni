@@ -23,20 +23,20 @@ update msg n =
             ( n, Cmd.perform flushing )
 
         FromUpdate →
-            _ = Browser.flush ()
-            _ = Debug.log "update flushed" ()
+            Browser.flush ⊤
+            Debug.log "update flushed" ⊤
             ( n + 1, Cmd.none )
 
         Bump →
             ( n + 1, Cmd.none )
 
 
-flushing : Cmd.Send Msg → ()
+flushing : Cmd.Send Msg → ⊤
 flushing send =
-    _ = send Bump
-    _ = Debug.log "sent" ()
-    _ = Browser.flush ()
-    Debug.log "flushed" ()
+    send Bump
+    Debug.log "sent" ⊤
+    Browser.flush ⊤
+    Debug.log "flushed" ⊤
 
 
 view : Int → Html Msg

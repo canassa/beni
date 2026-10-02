@@ -51,7 +51,7 @@ toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
 type Msg
     = ClickedLink Browser.UrlRequest
     | UrlChanged Url
-    | Navigated (Result Navigation.Error ())
+    | Navigated (Result Navigation.Error ⊤)
     | SignIn
     | GotToken (Result Http.Error String)
     | GotItems (Result Http.Error (List Item.Type))
@@ -75,13 +75,13 @@ init url key =
 loadItems : String → Cmd Msg
 loadItems token =
     Cmd.task
-        (λ() →
+        (λ⊤ →
             Http.request
                 { method = "GET"
                 , headers = [ Http.header "Authorization" "Bearer ${token}" ]
                 , url = "/api/items"
                 , body = Http.emptyBody
-                , expect = Http.expectJson (Schema.list (Item.schema ()))
+                , expect = Http.expectJson (Schema.list (Item.schema ⊤))
                 , timeout = Nothing
                 , tracker = Nothing
                 }
@@ -106,7 +106,7 @@ update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
         ClickedLink (Browser.Internal url) →
-            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Navigated )
+            ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Navigated )
 
         ClickedLink (Browser.External href) →
             ( { model | log = model.log ++ [ "external ${href}" ] }, Cmd.none )
@@ -119,7 +119,7 @@ update msg model =
                 ( r, _ ) →
                     ( { model | route = r }, Cmd.none )
 
-        Navigated (Ok ()) →
+        Navigated (Ok ⊤) →
             ( model, Cmd.none )
 
         Navigated (Err _) →
@@ -128,14 +128,14 @@ update msg model =
         SignIn →
             ( model
             , Cmd.task
-                (λ() →
+                (λ⊤ →
                     Result.map
                         (Http.post
                             { url = "/api/login"
                             , body =
-                                Http.jsonBody (Credentials.schema ())
+                                Http.jsonBody (Credentials.schema ⊤)
                                     { user = "ada", password = "lovelace" }
-                            , expect = Http.expectJson (Session.schema ())
+                            , expect = Http.expectJson (Session.schema ⊤)
                             }
                         )
                         .token
@@ -145,7 +145,7 @@ update msg model =
 
         GotToken (Ok token) →
             ( { model | token = Just token, log = model.log ++ [ "signed in" ] }
-            , Cmd.task (λ() → Navigation.pushUrl model.key "/items") Navigated
+            , Cmd.task (λ⊤ → Navigation.pushUrl model.key "/items") Navigated
             )
 
         GotToken (Err problem) →

@@ -58,7 +58,7 @@ pub tripleBefore : Int × Char × String, Int × Char × String → Bool
 tripleBefore a b = a < b
 
 
-pub unitAtMost : (), () → Bool
+pub unitAtMost : ⊤, ⊤ → Bool
 unitAtMost a b = a ≤ b
 
 

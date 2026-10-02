@@ -12,7 +12,7 @@ import Task exposing (Exit)
 
 --| The runtime's entry, for the harness: `work` in a root fiber, `done`
 --| with how it ended.
-pub start : (() → a), (Exit a → ()) → ()
+pub start : (⊤ → a), (Exit a → ⊤) → ⊤
 start work done = Task.start work done
 
 
@@ -27,7 +27,7 @@ inc n = n + 1
 pub incS : Int → Int
 incS n =
     if n < 0 then
-        _ = Task.yieldNow ()
+        Task.yieldNow ⊤
         n
     else
         n + 1
@@ -77,7 +77,7 @@ loopYielding n acc =
     if n == 0 then
         acc
     else
-        _ = Task.yieldNow ()
+        Task.yieldNow ⊤
         loopYielding (n - 1) (acc + 1)
 
 
@@ -85,13 +85,13 @@ loopYielding n acc =
 --| and summed.
 pub fanOut : Int → Int
 fanOut n =
-    fibers = List.map (List.range 1 n) λi → Task.spawn λ() → worker i
+    fibers = List.map (List.range 1 n) λi → Task.spawn λ⊤ → worker i
     List.foldl fibers 0 λf acc → acc + Task.join f
 
 
 worker : Int → Int
 worker i =
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     i
 
 
@@ -99,8 +99,8 @@ worker i =
 --| that uses them ships: a scope, a bracket, a spawn and a join.
 pub together : Int → Int
 together n = Task.scope λs →
-    Task.bracket (λ() → n) (λ_ _ → ()) λr →
-        f = Task.spawnIn s λ() → worker r
+    Task.bracket (λ⊤ → n) (λ_ _ → ⊤) λr →
+        f = Task.spawnIn s λ⊤ → worker r
         Task.join f
 
 
@@ -111,9 +111,9 @@ deferredHandoff n acc =
     if n == 0 then
         acc
     else
-        d = Deferred.make ()
-        f = Task.spawn λ() → Deferred.wait d
-        _ = Task.yieldNow ()
+        d = Deferred.make ⊤
+        f = Task.spawn λ⊤ → Deferred.wait d
+        Task.yieldNow ⊤
         _ = Deferred.complete d 1
         deferredHandoff (n - 1) (acc + Task.join f)
 
@@ -125,7 +125,7 @@ deferredReady n acc =
     if n == 0 then
         acc
     else
-        d = Deferred.make ()
+        d = Deferred.make ⊤
         _ = Deferred.complete d 1
         deferredReady (n - 1) (acc + Deferred.wait d)
 
@@ -134,16 +134,16 @@ deferredReady n acc =
 pub refUpdates : Int → Int
 refUpdates n =
     r = Ref.make 0
-    _ = updateTimes r n
+    updateTimes r n
     Ref.get r
 
 
-updateTimes : Ref Int, Int → ()
+updateTimes : Ref Int, Int → ⊤
 updateTimes r n =
     if n == 0 then
-        ()
+        ⊤
     else
-        _ = Ref.update r λx → x + 1
+        Ref.update r λx → x + 1
         updateTimes r (n - 1)
 
 
@@ -153,7 +153,7 @@ detachJoin n acc =
     if n == 0 then
         acc
     else
-        f = Task.spawnDetached λ() → 1
+        f = Task.spawnDetached λ⊤ → 1
         detachJoin (n - 1) (acc + Task.join f)
 
 
@@ -164,24 +164,24 @@ sleepZero n acc =
     if n == 0 then
         acc
     else
-        _ = Task.sleep Duration.zero
+        Task.sleep Duration.zero
         sleepZero (n - 1) (acc + 1)
 
 
 --| Report 23 case 5.5: work that fails three times, retried on an
 --| exponential schedule of one hour, driven ten hours on a virtual clock.
 --| Answers the number of attempts.
-pub tenHours : () → Int
-tenHours () =
+pub tenHours : ⊤ → Int
+tenHours ⊤ =
     clock = Clock.virtual 0
     attempts = Ref.make 0
 
-    retrying = Task.spawn λ() →
-        Clock.run clock λ() →
-            Task.retry (Schedule.exponential (Duration.hours 1) 2.0) λ() →
+    retrying = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.retry (Schedule.exponential (Duration.hours 1) 2.0) λ⊤ →
                 n = Ref.modify attempts λk → ( k + 1, k + 1 )
-                if n < 4 then Err () else Ok n
-    _ = Clock.adjust clock (Duration.hours 10)
+                if n < 4 then Err ⊤ else Ok n
+    Clock.adjust clock (Duration.hours 10)
     _ = Task.join retrying
     Ref.get attempts
 
@@ -198,7 +198,7 @@ parFast n acc =
     if n == 0 then
         acc
     else
-        ( a, b ) = Task.par (λ() → 1) λ() → 1
+        ( a, b ) = Task.par (λ⊤ → 1) λ⊤ → 1
         parFast (n - 1) (acc + a + b - 1)
 
 
@@ -208,7 +208,7 @@ raceParked n acc =
     if n == 0 then
         acc
     else
-        winner = Task.race (λ() → worker 1) λ() → worker 1
+        winner = Task.race (λ⊤ → worker 1) λ⊤ → worker 1
         raceParked (n - 1) (acc + winner)
 
 
@@ -218,5 +218,5 @@ timeoutFast n acc =
     if n == 0 then
         acc
     else
-        got = Task.timeout (Duration.minutes 1) λ() → 1
+        got = Task.timeout (Duration.minutes 1) λ⊤ → 1
         timeoutFast (n - 1) (acc + Maybe.withDefault got 0)

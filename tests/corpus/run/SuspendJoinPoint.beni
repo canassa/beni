@@ -16,7 +16,7 @@ import Task
 
 slow : Int → Int
 slow n =
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     n
 
 
@@ -60,7 +60,7 @@ loop n acc =
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     Node.printLines
         [ classify 3
         , classify 4

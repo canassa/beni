@@ -13,7 +13,7 @@ import Tea
 shell : Tea.Program
 shell =
     Tea.sandbox
-        { init = ()
+        { init = ⊤
         , update = λ_ m → m
         , view =
             λ_ →

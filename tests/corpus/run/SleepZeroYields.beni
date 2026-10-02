@@ -12,16 +12,16 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    other = Task.spawn λ() → Debug.log "other ran" ()
-    _ = Task.sleep Duration.zero
-    _ = Debug.log "after the real zero sleep" ()
-    _ = Task.join other
+main = Io.run λ⊤ →
+    other = Task.spawn λ⊤ → Debug.log "other ran" ⊤
+    Task.sleep Duration.zero
+    Debug.log "after the real zero sleep" ⊤
+    Task.join other
     clock = Clock.virtual 0
-    other2 = Task.spawn λ() → Debug.log "other2 ran" ()
+    other2 = Task.spawn λ⊤ → Debug.log "other2 ran" ⊤
 
-    _ = Clock.run clock λ() →
-        _ = Task.sleep Duration.zero
-        Debug.log "after the virtual zero sleep" ()
-    _ = Task.join other2
+    Clock.run clock λ⊤ →
+        Task.sleep Duration.zero
+        Debug.log "after the virtual zero sleep" ⊤
+    Task.join other2
     Node.print "done"

@@ -16,7 +16,7 @@ counter start =
           , Js.method λself →
               n : Int
               n = Js.to (Js.get self "n")
-              _ = Js.set self "n" (Js.from (n + 1))
+              Js.set self "n" (Js.from (n + 1))
               n + 1
           )
         ]
@@ -35,8 +35,8 @@ nested k =
             [ ( "k", Js.from k )
             , ( "twice"
               , Js.method λself →
-                  read = λ() → Js.to (Js.get self "k")
-                  read () + read ()
+                  read = λ⊤ → Js.to (Js.get self "k")
+                  read ⊤ + read ⊤
               )
             ]
     Js.to (Js.call o "twice" [])
@@ -44,8 +44,8 @@ nested k =
 
 --| A method that makes an object with a method of its own: the inner
 --| method's receiver is the inner object, the outer's the outer one.
-pub inner : () → String
-inner () =
+pub inner : ⊤ → String
+inner ⊤ =
     outer =
         Js.object
             [ ( "name", Js.from "outer" )
@@ -67,8 +67,8 @@ inner () =
 
 
 --| A method that caches what it computes on its receiver, written once.
-pub cached : () → String
-cached () =
+pub cached : ⊤ → String
+cached ⊤ =
     o =
         Js.object
             [ ( "p", Js.null )
@@ -79,9 +79,9 @@ cached () =
                   if Js.isNull p then
                       before : Int
                       before = Js.to (Js.get self "runs")
-                      _ = Js.set self "runs" (Js.from (before + 1))
+                      Js.set self "runs" (Js.from (before + 1))
                       made = Js.from "made"
-                      _ = Js.set self "p" made
+                      Js.set self "p" made
                       made
                   else
                       p

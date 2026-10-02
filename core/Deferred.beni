@@ -30,8 +30,8 @@ pub opaque type Deferred a
 
 
 --| A new `Deferred`, not completed. Each call makes a new one.
-pub make : () → Deferred a
-make () = Deferred (Js.from { done = False, value = Js.null, waiters = Js.array [] })
+pub make : ⊤ → Deferred a
+make ⊤ = Deferred (Js.from { done = False, value = Js.null, waiters = Js.array [] })
 
 
 --| The value, once the `Deferred` is completed: at once when it already is,
@@ -47,10 +47,10 @@ wait (Deferred d) =
             waiters = Js.get d "waiters"
             _ = Js.call waiters "push" [ waiter ]
 
-            λ() →
+            λ⊤ →
                 i : Int
                 i = Js.to (Js.call waiters "indexOf" [ waiter ])
-                if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ]) else ()
+                if i ≥ 0 then Js.to (Js.call waiters "splice" [ Js.from i, Js.from 1 ])
 
 
 --| Complete the `Deferred` with `value`, and answer `True`: every fiber
@@ -62,11 +62,11 @@ complete (Deferred d) value =
     if Js.to (Js.get d "done") then
         False
     else
-        _ = Js.set d "done" (Js.from True)
-        _ = Js.set d "value" (Js.from value)
+        Js.set d "done" (Js.from True)
+        Js.set d "value" (Js.from value)
         waiters = Js.get d "waiters"
-        _ = Js.set d "waiters" (Js.array [])
-        _ = Js.each waiters λw → Task.resume (Js.to w) value
+        Js.set d "waiters" (Js.array [])
+        Js.each waiters λw → Task.resume (Js.to w) value
         True
 
 

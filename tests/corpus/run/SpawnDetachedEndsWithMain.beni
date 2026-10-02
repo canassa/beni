@@ -20,9 +20,9 @@ outcome exit =
 
 
 main : Program
-main = Io.run λ() →
-    _ = Task.spawnDetached λ() →
-        Task.bracket (λ() → ()) (λ_ exit → Debug.log "detached released: ${outcome exit}" ()) λ_ →
+main = Io.run λ⊤ →
+    _ = Task.spawnDetached λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ exit → Debug.log "detached released: ${outcome exit}" ⊤) λ_ →
             Io.sleep 100000
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     Node.print "main done"

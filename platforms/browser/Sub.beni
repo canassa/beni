@@ -85,7 +85,7 @@ map sub tag =
 --|
 --|     every interval tag =
 --|         Sub.listen (Every interval) (ticks interval _) tag
-pub listen : k, (Browser.Send a → ()), (a → msg) → Sub msg
+pub listen : k, (Browser.Send a → ⊤), (a → msg) → Sub msg
     where k.compare : k, k → Order
 listen k body tag = Listen [ ( Hosted.key k, Hosted.Waits, Hosted.tap body tag ) ]
 
@@ -99,6 +99,6 @@ listen k body tag = Listen [ ( Hosted.key k, Hosted.Waits, Hosted.tap body tag )
 --|
 --|     onKeyDown tag =
 --|         Sub.on KeyDown (Listen.on "document" "keydown" Js.to _) tag
-pub on : k, sync ((a → ()) → (() → ())), (a → msg) → Sub msg
+pub on : k, sync ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg
     where k.compare : k, k → Order
 on k start tag = Listen [ ( Hosted.key k, Hosted.Hears, Hosted.hook start tag ) ]

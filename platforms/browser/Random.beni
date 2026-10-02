@@ -44,9 +44,9 @@ pub type alias Generator a =
 --|     Random.value (Random.int 1 6)
 pub value : Generator a → a
 value generator =
-    case Pcg.step generator (pageSeed ()) of
+    case Pcg.step generator (pageSeed ⊤) of
         ( v, after ) →
-            _ = Js.write seed (Just after)
+            Js.write seed (Just after)
             v
 
 
@@ -54,7 +54,7 @@ value generator =
 --| `Random.generate`, the generator first. It is `Cmd.task` over `value`,
 --| and never waits, so it runs with no fiber.
 pub generate : Generator a, (a → msg) → Cmd msg
-generate generator tag = Cmd.task (λ() → value generator) tag
+generate generator tag = Cmd.task (λ⊤ → value generator) tag
 
 
 -- The page's seed, once something has drawn from it.
@@ -62,21 +62,21 @@ seed : Js.Ref (Maybe Seed)
 seed = Js.ref Nothing
 
 
-pageSeed : () → Seed
-pageSeed () =
+pageSeed : ⊤ → Seed
+pageSeed ⊤ =
     case Js.read seed of
         Just s →
             s
 
         Nothing →
-            Pcg.initialSeed (entropy ())
+            Pcg.initialSeed (entropy ⊤)
 
 
 -- 32 bits from the host's cryptographic generator. `getRandomValues` throws
 -- only for an array that is not of integers or longer than 65 536 bytes,
 -- and this one is neither.
-entropy : () → Int
-entropy () =
+entropy : ⊤ → Int
+entropy ⊤ =
     words =
         Js.call (Js.global "crypto") "getRandomValues"
             [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
@@ -168,5 +168,5 @@ andThen = Pcg.andThen
 
 
 --| A generator made only when it is run: for one that refers to itself.
-pub lazy : (() → Generator a) → Generator a
+pub lazy : (⊤ → Generator a) → Generator a
 lazy = Pcg.lazy

@@ -79,10 +79,10 @@ heads ms =
             0
 
 
-unwrap : () × (Int × Int) → Int
+unwrap : ⊤ × (Int × Int) → Int
 unwrap pair =
     case pair of
-        ( (), ( a, b ) ) →
+        ( ⊤, ( a, b ) ) →
             a + b
 
 

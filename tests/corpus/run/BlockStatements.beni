@@ -7,8 +7,8 @@ import Node exposing (Program)
 import String
 
 
-trace : String → ()
-trace label = Debug.log label ()
+trace : String → ⊤
+trace label = Debug.log label ⊤
 
 
 steps : Int → Int

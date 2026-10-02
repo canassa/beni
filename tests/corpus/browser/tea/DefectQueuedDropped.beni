@@ -32,15 +32,15 @@ outcome exit =
             "Cancelled"
 
 
-waiter : Cmd.Send Msg → ()
-waiter send = Task.bracket (λ() → ()) (λ_ exit → Log.info "waiter released: ${outcome exit}") λ_ →
-    _ = send Ping
-    Dom.rendered ()
+waiter : Cmd.Send Msg → ⊤
+waiter send = Task.bracket (λ⊤ → ⊤) (λ_ exit → Log.info "waiter released: ${outcome exit}") λ_ →
+    send Ping
+    Dom.rendered ⊤
 
 
-thrower : Cmd.Send Msg → ()
+thrower : Cmd.Send Msg → ⊤
 thrower send =
-    _ = send Then
+    send Then
     Debug.todo "body threw"
 
 
@@ -57,7 +57,7 @@ update msg n =
             ( n + 10
             , Cmd.batch
                 [ Cmd.afterRender λ_ → Log.info "after-render work ran"
-                , Cmd.do λ() → Log.info "queued body ran"
+                , Cmd.do λ⊤ → Log.info "queued body ran"
                 ]
             )
 

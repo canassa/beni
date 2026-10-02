@@ -11,8 +11,8 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
-    _ = Debug.log "sleeping on a clock nobody moves" ()
-    _ = Clock.run clock λ() → Task.sleep (Duration.seconds 1)
+    Debug.log "sleeping on a clock nobody moves" ⊤
+    Clock.run clock λ⊤ → Task.sleep (Duration.seconds 1)
     Node.print "not reached"

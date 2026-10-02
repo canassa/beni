@@ -8,8 +8,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 describe : Exit Int → String
@@ -23,14 +23,14 @@ describe exit =
 
 
 main : Program
-main = Io.run λ() →
-    v = Task.onExit (λ() → 41 + 1) λexit → say "returned: ${describe exit}"
+main = Io.run λ⊤ →
+    v = Task.onExit (λ⊤ → 41 + 1) λexit → say "returned: ${describe exit}"
     _ = Debug.log "answered" v
 
-    child = Task.spawn λ() →
-        Task.onExit (λ() → Task.never ()) λexit →
-            _ = Task.yieldNow ()
+    child = Task.spawn λ⊤ →
+        Task.onExit (λ⊤ → Task.never ⊤) λexit →
+            Task.yieldNow ⊤
             say "cancelled: ${describe exit}"
-    _ = Task.yieldNow ()
-    _ = Task.cancel child
+    Task.yieldNow ⊤
+    Task.cancel child
     Node.print "done"

@@ -12,18 +12,18 @@ main : Program
 main =
     counter = Ref.make 10
     first = Ref.get counter
-    _ = Ref.set counter 20
+    Ref.set counter 20
     afterSet = Ref.get counter
-    _ = Ref.update counter λn → n + 1
+    Ref.update counter λn → n + 1
     afterUpdate = Ref.get counter
     old = Ref.modify counter λn → ( n * 100, 0 )
     afterModify = Ref.get counter
-    _ = Ref.update counter λn →
-        _ = Ref.set counter 99
+    Ref.update counter λn →
+        Ref.set counter 99
         n + 5
     afterSelfWrite = Ref.get counter
     names = Ref.make [ "a" ]
-    _ = Ref.update names λns → List.push ns "b"
+    Ref.update names λns → List.push ns "b"
     joined = String.join (Ref.get names) ","
 
     Node.printLines

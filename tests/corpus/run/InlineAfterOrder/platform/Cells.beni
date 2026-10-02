@@ -6,11 +6,11 @@ import Js
 
 --| A counter: a closure over a cell. Called once, at the top level of
 --| `Main`, whose top level then holds the cell.
-pub counter : Int → (() → Int)
+pub counter : Int → (⊤ → Int)
 counter start =
     n = Js.ref start
-    λ() →
-        _ = Js.write n (Js.read n + 1)
+    λ⊤ →
+        Js.write n (Js.read n + 1)
         Js.read n
 
 

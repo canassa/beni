@@ -22,12 +22,12 @@ outcome exit =
 
 
 main : Program
-main = Io.run λ() →
-    root = Task.openRoot ()
+main = Io.run λ⊤ →
+    root = Task.openRoot ⊤
 
-    _ = Task.spawnIn root λ() →
-        Task.bracket (λ() → ()) (λ_ exit → Debug.log "sleeper released: ${outcome exit}" ()) λ_ →
+    _ = Task.spawnIn root λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ exit → Debug.log "sleeper released: ${outcome exit}" ⊤) λ_ →
             Io.sleep 5000
 
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     Node.print "answered"

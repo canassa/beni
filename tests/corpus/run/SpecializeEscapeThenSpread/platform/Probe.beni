@@ -11,7 +11,7 @@ type alias R =
     b : String
 
 
-leak : R → ()
+leak : R → ⊤
 leak r = Js.set (Js.global "globalThis") "leaked" (Js.from r)
 
 
@@ -23,9 +23,9 @@ base : R
 base = { a = "a", b = "b" }
 
 
-pub demo : () → List String
-demo () =
-    _ = leak base
-    _ = Js.set (Js.get (Js.global "globalThis") "leaked") "extra" (Js.from "added")
+pub demo : ⊤ → List String
+demo ⊤ =
+    leak base
+    Js.set (Js.get (Js.global "globalThis") "leaked") "extra" (Js.from "added")
     u = update base
     [ u.a, u.b, Js.to (Js.get (Js.from u) "extra") ]

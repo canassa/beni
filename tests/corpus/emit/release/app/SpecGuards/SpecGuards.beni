@@ -10,4 +10,4 @@ import Node
 
 
 main : Node.Program
-main = Node.printLines (Guards.demo ())
+main = Node.printLines (Guards.demo ⊤)

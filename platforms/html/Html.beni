@@ -98,7 +98,7 @@ metaKey event = boolProp event "metaKey"
 --|             Indent
 --|         else
 --|             Ignored}
-pub preventDefault : Event → ()
+pub preventDefault : Event → ⊤
 preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 

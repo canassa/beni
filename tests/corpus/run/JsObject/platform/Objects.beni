@@ -11,7 +11,7 @@ counter = Js.ref 0
 
 next : String → String
 next tag =
-    _ = Js.write counter (Js.read counter + 1)
+    Js.write counter (Js.read counter + 1)
     "${tag}${String.fromInt (Js.read counter)}"
 
 
@@ -21,8 +21,8 @@ keys o = Js.to (Js.call (Js.global "Object") "keys" [ o ])
 
 
 --| An object whose values are made in written order: `z` before `a`.
-pub ordered : () → String
-ordered () =
+pub ordered : ⊤ → String
+ordered ⊤ =
     o = Js.object [ ( "z", next "z" ), ( "a", next "a" ), ( "$plain", next "p" ) ]
     z : String
     z = Js.to (Js.get o "z")
@@ -46,8 +46,8 @@ called n =
 
 
 --| Values of several types in one object, and the empty object.
-pub mixed : () → String
-mixed () =
+pub mixed : ⊤ → String
+mixed ⊤ =
     o =
         Js.object
             [ ( "n", Js.from 1 )

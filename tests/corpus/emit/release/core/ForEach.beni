@@ -6,19 +6,19 @@
 import Js
 
 
-pub flush : Js.Value → ()
+pub flush : Js.Value → ⊤
 flush queue = Js.each queue λrender → Js.to (Js.apply render [])
 
 
-start : Js.Value → ()
+start : Js.Value → ⊤
 start m =
     root = Js.get m "root"
     Js.set root "started" (Js.from True)
 
 
-pub run : Js.Value → ()
+pub run : Js.Value → ⊤
 run programs = Js.each programs λm → start m
 
 
-pub notify : Js.Value, (Js.Value → ()) → ()
+pub notify : Js.Value, (Js.Value → ⊤) → ⊤
 notify xs f = Js.each xs f

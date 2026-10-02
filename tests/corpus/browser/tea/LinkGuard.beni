@@ -50,7 +50,7 @@ update msg lines =
 
 handle : Event → Msg
 handle event =
-    _ = Html.preventDefault event
+    Html.preventDefault event
     Handled
 
 

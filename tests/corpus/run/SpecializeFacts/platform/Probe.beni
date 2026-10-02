@@ -53,8 +53,8 @@ same a b =
         "other"
 
 
-made : () → V
-made () = Js.from { t = "kind" }
+made : ⊤ → V
+made ⊤ = Js.from { t = "kind" }
 
 
 -- A property no literal has is `undefined`, not `null`.
@@ -68,20 +68,19 @@ missing r =
         "something"
 
 
-pub demo : () → List String
-demo () =
-    _ =
-        Js.set
-            (Js.global "globalThis")
-            "probeNode"
-            (Js.from { cloneNode = λ_ → Js.from { name = "cloned" } })
+pub demo : ⊤ → List String
+demo ⊤ =
+    Js.set
+        (Js.global "globalThis")
+        "probeNode"
+        (Js.from { cloneNode = λ_ → Js.from { name = "cloned" } })
 
     proto = Js.get (Js.global "globalThis") "probeNode"
     [ firstNode (node proto)
     , firstSlot (slot True proto)
     , firstSlot (slot False proto)
     , same block block
-    , same (made ()) block
-    , same (made ()) (made ())
+    , same (made ⊤) block
+    , same (made ⊤) (made ⊤)
     , missing (Js.from { t = "kind" })
     ]

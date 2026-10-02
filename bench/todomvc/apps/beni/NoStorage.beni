@@ -70,7 +70,7 @@ init : Model × Cmd Msg
 init =
     ( { todos = []
       , draft = ""
-      , filter = filterOf (Browser.Navigation.currentUrl ())
+      , filter = filterOf (Browser.Navigation.currentUrl ⊤)
       , nextId = 0
       , editing = Nothing
       }
@@ -86,7 +86,7 @@ update msg model =
 
         KeyDown event →
             if Html.key event == "Enter" then
-                _ = Html.preventDefault event
+                Html.preventDefault event
 
                 title = String.trim model.draft
                 if String.isEmpty title then
@@ -145,11 +145,11 @@ update msg model =
 -- every DOM honours for markup a script inserts (happy-dom does not), and
 -- the edit field, which the update that opens it renders. Only one edit
 -- field is open at a time, so it has a fixed id.
-focus : String, Cmd.Send Msg → ()
+focus : String, Cmd.Send Msg → ⊤
 focus id _ =
     case Dom.focus id of
         _ →
-            ()
+            ⊤
 
 
 -- Enter and leaving the field both save; the second of the two, when Enter

@@ -21,7 +21,7 @@ main : Program
 main =
     _ = Debug.log "pair" ( 1, True )
     _ = Debug.log "char" 'z'
-    shown = Debug.log "list" [ Just ( 'a', () ) ]
+    shown = Debug.log "list" [ Just ( 'a', ⊤ ) ]
     Node.printLines
         (List.append (pairs [ ( 1, True ), ( 2, False ) ])
             [ describe True, describe ( 1, 2 ), describe [ Just 'c' ], Debug.toString shown ]

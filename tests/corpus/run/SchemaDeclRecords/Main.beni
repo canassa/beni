@@ -154,9 +154,8 @@ main =
             )
             λs → s
         , "-- the description, through the library"
-        , Show.result (Schema.decode (Friend.schema ()) { name = "Di", best = True }) λf → f.name
-        , Show.value (Schema.write (Friend.schema ()) { name = "Di", best = True })
-        , Show.result
-            (Schema.read (Friend.schema ()) (Show.host "{\"name\":\"Ed\",\"best\":false}"))
-            λf → f.name
+        , Show.result (Schema.decode (Friend.schema ⊤) { name = "Di", best = True }) λf → f.name
+        , Show.value (Schema.write (Friend.schema ⊤) { name = "Di", best = True })
+        , Show.result (Schema.read (Friend.schema ⊤) (Show.host "{\"name\":\"Ed\",\"best\":false}")) λf →
+            f.name
         ]

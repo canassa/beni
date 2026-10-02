@@ -9,7 +9,7 @@ import Ref exposing (Ref)
 readTwice : Ref Int → Int × Int
 readTwice cell =
     before = Ref.get cell
-    _ = Ref.set cell (before + 1)
+    Ref.set cell (before + 1)
     after = Ref.get cell
     ( before, after )
 

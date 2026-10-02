@@ -55,18 +55,18 @@ template16 =
     </button>
 
 
-pub template17 : Html ()
+pub template17 : Html ⊤
 template17 =
-    <button class={[ ( "a", True ), ( "b", True ), ( "c", True ) ]} onClick={()}>
+    <button class={[ ( "a", True ), ( "b", True ), ( "c", True ) ]} onClick={⊤}>
         Hi
     </button>
 
 
-pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } → Html ()
+pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } → Html ⊤
 template20 r =
     <div>
-        <input value={r.s} min={r.min} max={r.max} onInput={λ_ → ()} readonly />
-        <input checked={r.s2} min={r.min} max={r.max} onInput={λ_ → ()} readonly={r.value} />
+        <input value={r.s} min={r.min} max={r.max} onInput={λ_ → ⊤} readonly />
+        <input checked={r.s2} min={r.min} max={r.max} onInput={λ_ → ⊤} readonly={r.value} />
     </div>
 
 

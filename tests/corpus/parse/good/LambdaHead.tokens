@@ -35,10 +35,9 @@
 15:1 lower_ident thunk
 15:7 equal =
 15:9 lambda λ
-15:10 l_paren (
-15:11 r_paren )
-15:13 arrow →
-15:15 int 0
+15:10 top ⊤
+15:12 arrow →
+15:14 int 0
 18:1 lower_ident both
 18:6 equal =
 18:8 lambda λ

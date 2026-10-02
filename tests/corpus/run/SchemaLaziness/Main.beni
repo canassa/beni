@@ -31,10 +31,10 @@ type alias Three =
     z : String
 
 
-toThree ( ( ( (), x ), y ), z ) = { x = x, y = y, z = z }
+toThree ( ( ( ⊤, x ), y ), z ) = { x = x, y = y, z = z }
 
 
-fromThree t = ( ( ( (), t.x ), t.y ), t.z )
+fromThree t = ( ( ( ⊤, t.x ), t.y ), t.z )
 
 
 three : Schema Three Three

@@ -30,9 +30,8 @@ update msg _ =
             ( "failed", Cmd.none )
 
 
-fetch : () → Maybe (Result Http.Error String)
-fetch () = Task.timeout (Time.millis 500) λ() →
-    Http.get { url = "/slow", expect = Http.expectString }
+fetch : ⊤ → Maybe (Result Http.Error String)
+fetch ⊤ = Task.timeout (Time.millis 500) λ⊤ → Http.get { url = "/slow", expect = Http.expectString }
 
 
 view : String → Html Msg

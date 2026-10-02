@@ -36,5 +36,5 @@ main =
     loud = { small | mode = "loud" }
     Node.printLines
         ([ describe (shape 2), describe small, describe loud, Debug.toString small ]
-            ++ Probe.demo ()
+            ++ Probe.demo ⊤
         )

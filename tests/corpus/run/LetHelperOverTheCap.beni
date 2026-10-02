@@ -149,7 +149,7 @@ check u =
 main : Program
 main =
     Node.printLines
-        [ if check () then
+        [ if check ⊤ then
             "True"
           else
             "False"

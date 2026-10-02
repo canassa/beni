@@ -51,13 +51,13 @@ fromMillis n = Posix n
 
 
 --| What the calling fiber's clock says now: `Clock.now`.
-pub now : () → Posix
-now () = Posix (Clock.now ())
+pub now : ⊤ → Posix
+now ⊤ = Posix (Clock.now ⊤)
 
 
 --| Wait for `duration` on the calling fiber's clock: `Task.sleep`. Only
 --| the calling fiber waits.
-pub sleep : Duration → ()
+pub sleep : Duration → ⊤
 sleep duration = Task.sleep duration
 
 
@@ -75,8 +75,8 @@ every interval tag =
     Sub.listen (Every ms) (ticks ms _) tag
 
 
-ticks : Int, Browser.Send Posix → ()
+ticks : Int, Browser.Send Posix → ⊤
 ticks ms emit =
-    _ = sleep (Duration.millis ms)
-    _ = emit (now ())
+    sleep (Duration.millis ms)
+    emit (now ⊤)
     ticks ms emit

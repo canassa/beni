@@ -101,7 +101,7 @@ pub schema Tree tagged "kind" of
 
 -- This use precedes the private schema declaration and must resolve through
 -- the source-order schema skeleton rather than a checker pass boundary.
-privateDescription = Private.schema ()
+privateDescription = Private.schema ⊤
 
 
 schema Private =

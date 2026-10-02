@@ -20,5 +20,5 @@ main =
         )
 
 
-pub key : T, () → Int
+pub key : T, ⊤ → Int
 key (T x) _ = x

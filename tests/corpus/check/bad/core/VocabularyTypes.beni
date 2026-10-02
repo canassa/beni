@@ -22,7 +22,7 @@ pub attribute "count" : List Int
 pub attribute "class" classes : Bool
 
 
-pub event "onClick" : ()
+pub event "onClick" : ⊤
 
 
 pub event "onInput" via plain : String

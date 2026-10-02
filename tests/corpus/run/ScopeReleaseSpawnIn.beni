@@ -15,8 +15,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit, Scope)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -30,34 +30,34 @@ outcome exit =
 
 
 -- A child of `s` whose release starts another fiber in `s`.
-child : String, Scope → Task.Fiber ()
-child name s = Task.spawnIn s λ() →
+child : String, Scope → Task.Fiber ⊤
+child name s = Task.spawnIn s λ⊤ →
     Task.bracket
-        (λ() → ())
+        (λ⊤ → ⊤)
         (λ_ exit →
-            _ = say "${name} released: ${outcome exit}"
-            _ = Task.spawnIn s λ() →
-                _ = say "${name} straggler started"
-                _ = Io.sleep 50
+            say "${name} released: ${outcome exit}"
+            _ = Task.spawnIn s λ⊤ →
+                say "${name} straggler started"
+                Io.sleep 50
                 say "${name} straggler still running"
-            ()
+            ⊤
         )
         λ_ → Io.sleep 100000
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     answer = Task.scope λs →
         _ = child "returned" s
-        _ = Task.yieldNow ()
+        Task.yieldNow ⊤
         42
-    _ = say "scope returned ${String.fromInt answer}"
-    owner = Task.spawn λ() →
+    say "scope returned ${String.fromInt answer}"
+    owner = Task.spawn λ⊤ →
         Task.scope λs →
             _ = child "owner" s
             Io.sleep 100000
-    _ = Io.sleep 1
-    _ = Task.cancel owner
-    _ = say "cancel returned"
-    _ = Io.sleep 100
+    Io.sleep 1
+    Task.cancel owner
+    say "cancel returned"
+    Io.sleep 100
     Node.print "end"

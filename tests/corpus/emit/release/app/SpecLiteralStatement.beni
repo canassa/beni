@@ -7,12 +7,10 @@ import Node
 import Random
 
 
-roll : Bool → ()
+roll : Bool → ⊤
 roll on =
     if on then
-        after (Random.value (Random.int 1 6)) ()
-    else
-        ()
+        after (Random.value (Random.int 1 6)) ⊤
 
 
 after : Int, a → a
@@ -22,5 +20,5 @@ after _ value = value
 main : Node.Program
 main =
     n = String.length (String.repeat "ab" 2)
-    _ = if n > 3 then roll False else ()
+    if n > 3 then roll False
     Node.print (String.fromInt n)

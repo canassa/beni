@@ -13,7 +13,7 @@ pub type Parser a
 
 
 pub type Stream
-    = Stream (() → Int × Stream)
+    = Stream (⊤ → Int × Stream)
 
 
 pub type Box a
@@ -43,7 +43,7 @@ pub nth : Stream, Int → Int
 nth stream n =
     case stream of
         Stream next →
-            case next () of
+            case next ⊤ of
                 ( value, rest ) →
                     if n == 0 then
                         value

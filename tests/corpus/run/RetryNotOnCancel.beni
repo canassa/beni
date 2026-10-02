@@ -12,16 +12,16 @@ import Task exposing (Cancelled, Done)
 
 
 main : Program
-main = Io.run λ() →
-    gate = Deferred.make ()
+main = Io.run λ⊤ →
+    gate = Deferred.make ⊤
 
-    worker = Task.spawn λ() →
-        Task.bracket (λ() → ()) (λ_ _ → Debug.log "released" ()) λ_ →
-            Task.retry Schedule.forever λ() →
-                _ = Debug.log "attempt" ()
+    worker = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "released" ⊤) λ_ →
+            Task.retry Schedule.forever λ⊤ →
+                Debug.log "attempt" ⊤
                 Deferred.wait gate
-    _ = Task.yieldNow ()
-    _ = Task.cancel worker
+    Task.yieldNow ⊤
+    Task.cancel worker
 
     case Task.poll worker of
         Just Cancelled →

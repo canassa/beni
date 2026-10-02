@@ -6,11 +6,11 @@ import Js
 
 
 --| A counter whose cell is captured by the closure it returns: a `let`.
-pub counter : Int → (() → Int)
+pub counter : Int → (⊤ → Int)
 counter start =
     n = Js.ref start
-    λ() →
-        _ = Js.write n (Js.read n + 1)
+    λ⊤ →
+        Js.write n (Js.read n + 1)
         Js.read n
 
 
@@ -20,19 +20,19 @@ calls = Js.ref 0
 
 
 --| How many times it has been called, counting this one.
-pub tick : () → Int
-tick () =
-    _ = Js.write calls (Js.read calls + 1)
+pub tick : ⊤ → Int
+tick ⊤ =
+    Js.write calls (Js.read calls + 1)
     Js.read calls
 
 
 --| One step of a loop that counts in a cell.
-countDown : Js.Ref Int, Int → ()
+countDown : Js.Ref Int, Int → ⊤
 countDown total k =
     if k == 0 then
-        ()
+        ⊤
     else
-        _ = Js.write total (Js.read total + k)
+        Js.write total (Js.read total + k)
         countDown total (k - 1)
 
 
@@ -42,11 +42,11 @@ pub sumTo : Int → Int
 sumTo n =
     total = Js.ref 0
 
-    _ = countDown total n
+    countDown total n
     Js.read total
 
 
-pair : Int, () → String
+pair : Int, ⊤ → String
 pair a _ = String.fromInt a
 
 
@@ -64,20 +64,20 @@ snapshot =
 
     seen = Js.read r
 
-    _ = Js.write r "after"
+    Js.write r "after"
     "${seen} ${Js.read r}"
 
 
 --| A cell made and returned escapes; each call makes a new one.
-pub fresh : () → Js.Ref Int
-fresh () = Js.ref 0
+pub fresh : ⊤ → Js.Ref Int
+fresh ⊤ = Js.ref 0
 
 
 pub freshAreDistinct : Bool
 freshAreDistinct =
-    a = fresh ()
+    a = fresh ⊤
 
-    b = fresh ()
+    b = fresh ⊤
 
-    _ = Js.write a 5
+    Js.write a 5
     Js.read b == 0 && Js.read a == 5

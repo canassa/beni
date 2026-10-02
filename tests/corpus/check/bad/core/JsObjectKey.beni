@@ -16,21 +16,21 @@ named : String → Js.Value
 named k = Js.object [ ( k, 1 ) ]
 
 
-dashed : () → Js.Value
-dashed () = Js.object [ ( "a-b", 1 ) ]
+dashed : ⊤ → Js.Value
+dashed ⊤ = Js.object [ ( "a-b", 1 ) ]
 
 
-proto : () → Js.Value
-proto () = Js.object [ ( "__proto__", Js.null ) ]
+proto : ⊤ → Js.Value
+proto ⊤ = Js.object [ ( "__proto__", Js.null ) ]
 
 
-twice : () → Js.Value
-twice () = Js.object [ ( "a", 1 ), ( "b", 2 ), ( "a", 3 ) ]
+twice : ⊤ → Js.Value
+twice ⊤ = Js.object [ ( "a", 1 ), ( "b", 2 ), ( "a", 3 ) ]
 
 
-triple : () → Js.Value
-triple () = Js.object [ ( "a", 1, 2 ) ]
+triple : ⊤ → Js.Value
+triple ⊤ = Js.object [ ( "a", 1, 2 ) ]
 
 
-passed : () → Js.Value
-passed () = Js.object fields
+passed : ⊤ → Js.Value
+passed ⊤ = Js.object fields

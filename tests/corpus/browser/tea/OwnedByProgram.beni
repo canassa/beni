@@ -15,37 +15,37 @@ type Msg
     | Kick
 
 
-update : Msg, () → () × Cmd Msg
-update msg () =
+update : Msg, ⊤ → ⊤ × Cmd Msg
+update msg ⊤ =
     case msg of
         Go →
-            ( (), Cmd.keyed "sender" Cmd.Restart sender )
+            ( ⊤, Cmd.keyed "sender" Cmd.Restart sender )
 
         Kick →
-            ( (), Cmd.keyed "worker" Cmd.Concurrent worker )
+            ( ⊤, Cmd.keyed "worker" Cmd.Concurrent worker )
 
 
-sender : Cmd.Send Msg → ()
+sender : Cmd.Send Msg → ⊤
 sender send =
-    _ = send Kick
+    send Kick
     Time.sleep (Time.millis 1000)
 
 
-worker : Cmd.Send Msg → ()
+worker : Cmd.Send Msg → ⊤
 worker _ =
-    _ = Debug.log "worker starts" ()
-    _ = Time.sleep (Time.millis 100)
-    Debug.log "worker ends" ()
+    Debug.log "worker starts" ⊤
+    Time.sleep (Time.millis 100)
+    Debug.log "worker ends" ⊤
 
 
-view : () → Html Msg
-view () = <button id="go" onClick={Go}>go</button>
+view : ⊤ → Html Msg
+view ⊤ = <button id="go" onClick={Go}>go</button>
 
 
 main : Tea.Program
 main =
     Tea.element
-        { init = ( (), Cmd.none )
+        { init = ( ⊤, Cmd.none )
         , update = update
         , view = view
         , subscriptions = λ_ → Sub.none

@@ -134,8 +134,8 @@ isWaiting value = Js.same (Js.from value) sentinel
 -- runtime suspends (`boundary.md` §4.2, `Js.suspending`). `w` is the wait
 -- parked on, or null; `intr` that there is no value to go on with.
 park : V, Bool → a
-park w intr = Js.suspending λ() →
-    _ = Js.write pending (Js.from { interrupt = intr, ks = Js.array [], wait = w })
+park w intr = Js.suspending λ⊤ →
+    Js.write pending (Js.from { interrupt = intr, ks = Js.array [], wait = w })
     Js.to sentinel
 
 
@@ -156,14 +156,14 @@ outside : Js.Ref V
 outside = Js.ref Js.null
 
 
-here : () → V
-here () =
+here : ⊤ → V
+here ⊤ =
     c = Js.read current
     if Js.isNull c then
         o = Js.read outside
         if Js.isNull o then
             f = newFiber Js.null (Js.array [])
-            _ = Js.write outside f
+            Js.write outside f
             f
         else
             o
@@ -254,35 +254,31 @@ portTasks : V
 portTasks = Js.array []
 
 
-macrotask : V → ()
+macrotask : V → ⊤
 macrotask task =
     immediate = Js.global "setImmediate"
     if Js.typeIs immediate "function" then
         Js.to (Js.apply immediate [ task ])
     else
-        _ =
-            if Js.isNull (Js.read port) then
-                channel = Js.construct (Js.global "MessageChannel") []
+        if Js.isNull (Js.read port) then
+            channel = Js.construct (Js.global "MessageChannel") []
 
-                _ =
-                    Js.set
-                        (Js.get channel "port1")
-                        "onmessage"
-                        (Js.from λ_ → Js.to (Js.apply (Js.call portTasks "shift" []) []))
-                Js.write port (Js.get channel "port2")
-            else
-                ()
+            Js.set
+                (Js.get channel "port1")
+                "onmessage"
+                (Js.from λ_ → Js.to (Js.apply (Js.call portTasks "shift" []) []))
+            Js.write port (Js.get channel "port2")
         _ = Js.call portTasks "push" [ task ]
         Js.to (Js.call (Js.read port) "postMessage" [ Js.null ])
 
 
-schedule : V, V, V, V → ()
+schedule : V, V, V, V → ⊤
 schedule task a b c =
     _ = Js.call queue "push" [ task, a, b, c ]
     if Js.read scheduled then
-        ()
+        ⊤
     else
-        _ = Js.write scheduled True
+        Js.write scheduled True
         Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from drain ])
 
 
@@ -291,11 +287,11 @@ resumeFiber fiber value w =
     if not (Js.isNull w) && not (Js.same (Js.get fiber "parked") w) then
         False
     else
-        _ = run fiber value
+        run fiber value
         True
 
 
-enqueue : V, V, V → ()
+enqueue : V, V, V → ⊤
 enqueue fiber value w = schedule (Js.from resumeFiber) fiber value w
 
 
@@ -312,7 +308,7 @@ defect = Js.ref Js.null
 --| program — the browser stops the page — and the throw goes on to the
 --| host; then every fiber is cancelled and its cleanup run, as `shutdown`
 --| does (§9.8.14). The last one given is the one called.
-pub onDefect : (() → ()) → ()
+pub onDefect : (⊤ → ⊤) → ⊤
 onDefect f = Js.write defect (Js.from f)
 
 
@@ -365,7 +361,7 @@ soonQueued = Js.ref False
 -- it.
 newFiber : V, V → V
 newFiber parent stack =
-    _ = Js.write fibered True
+    Js.write fibered True
     Js.from
         { children = Js.null
         , finalizers = Js.null
@@ -393,13 +389,13 @@ releases : V
 releases = Js.array []
 
 
-releaseAll : () → ()
-releaseAll () =
+releaseAll : ⊤ → ⊤
+releaseAll ⊤ =
     if Js.to (Js.get releases "length") == 0 then
-        ()
+        ⊤
     else
         _ = Js.apply (Js.call releases "shift" []) [ Js.null ]
-        releaseAll ()
+        releaseAll ⊤
 
 
 --| Call `f` once, when the runtime stops (`shutdown`): in a microtask
@@ -408,49 +404,47 @@ releaseAll () =
 --| called first. What a platform releases a host resource no fiber
 --| holds with — a listener a subscription added with no fiber
 --| (`boundary.md` §9.8.5); a program never needs it.
-pub onShutdown : sync (() → ()) → ()
+pub onShutdown : sync (⊤ → ⊤) → ⊤
 onShutdown f =
-    _ = Js.write releasing True
+    Js.write releasing True
     Js.to (Js.call releases "push" [ Js.from f ])
 
 
 -- Queued work is dropped from now on (`runSoon`).
-stopQueue : () → ()
-stopQueue () = if Js.read phase == 0 then Js.write phase 1 else ()
+stopQueue : ⊤ → ⊤
+stopQueue ⊤ = if Js.read phase == 0 then Js.write phase 1
 
 
-drain : () → ()
-drain () =
+drain : ⊤ → ⊤
+drain ⊤ =
     if Js.bitAnd (Js.read phase) 1 ≠ 0 then
-        ()
+        ⊤
     else
         ok = Js.ref False
 
         emptied =
             Js.finally
-                (λ() →
+                (λ⊤ →
                     r = drainFrom 0
-                    _ = Js.write ok True
+                    Js.write ok True
                     r
                 )
-                λ() → if Js.read ok then () else guard ()
+                λ⊤ → if Js.read ok then ⊤ else guard ⊤
         if emptied then
-            _ = Js.set queue "length" (Js.from 0)
-            _ = Js.write head 0
+            Js.set queue "length" (Js.from 0)
+            Js.write head 0
             Js.write scheduled False
-        else
-            ()
 
 
 -- The drain saw a throw, which goes on to the host once its cleanup ends.
-guard : () → ()
-guard () =
+guard : ⊤ → ⊤
+guard ⊤ =
     if Js.read fibered then
-        failed ()
+        failed ⊤
     else
-        _ = Js.write phase 1
+        Js.write phase 1
         d = Js.read defect
-        if Js.isNull d then () else Js.to (Js.apply d [ Js.null ])
+        if Js.isNull d then ⊤ else Js.to (Js.apply d [ Js.null ])
 
 
 -- Run ready work until the queue is empty (`True`), or until 64
@@ -463,18 +457,18 @@ drainFrom count =
     if h ≥ Js.to (Js.get queue "length") then
         True
     else if count == 64 || Js.read phase == 1 then
-        _ = macrotask (Js.from drain)
+        macrotask (Js.from drain)
         False
     else
         task = Js.at queue h
         a = Js.at queue (h + 1)
         b = Js.at queue (h + 2)
         c = Js.at queue (h + 3)
-        _ = Js.setAt queue h Js.null
-        _ = Js.setAt queue (h + 1) Js.null
-        _ = Js.setAt queue (h + 2) Js.null
-        _ = Js.setAt queue (h + 3) Js.null
-        _ = Js.write head (h + 4)
+        Js.setAt queue h Js.null
+        Js.setAt queue (h + 1) Js.null
+        Js.setAt queue (h + 2) Js.null
+        Js.setAt queue (h + 3) Js.null
+        Js.write head (h + 4)
         drainFrom (if Js.to (Js.apply task [ a, b, c ]) then count + 1 else count)
 
 
@@ -485,16 +479,13 @@ drainFrom count =
 --| platform calls when its program stops (`boundary.md` §9.8.14); a
 --| program never does. It returns at once — the cleanup runs in a later
 --| task — and a second call does nothing.
-pub shutdown : Int, sync (Int → ()) → ()
+pub shutdown : Int, sync (Int → ⊤) → ⊤
 shutdown ms over =
-    _ = if Js.read soonQueued then stopQueue () else ()
+    if Js.read soonQueued then stopQueue ⊤
 
-    _ =
-        if Js.read releasing then
-            Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from releaseAll ])
-        else
-            ()
-    if Js.read fibered then closeAll ms (Js.from over) else ()
+    if Js.read releasing then
+        Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from releaseAll ])
+    if Js.read fibered then closeAll ms (Js.from over)
 
 
 -- The drain's guard saw a throw, which goes on to the host once this
@@ -503,70 +494,67 @@ shutdown ms over =
 -- fiber that threw (the culprit) noted for it, and the platform's hook
 -- stops the page. One while tearing down is a cleanup's (§9.8.14 (g)): the
 -- fiber goes on to its next finaliser, the drain in a new macrotask.
-failed : () → ()
-failed () =
+failed : ⊤ → ⊤
+failed ⊤ =
     fiber = Js.read current
-    _ = Js.write current Js.null
-    _ = Js.write pending Js.null
-    _ = Js.write soonRunning Js.null
+    Js.write current Js.null
+    Js.write pending Js.null
+    Js.write soonRunning Js.null
     o = Js.read outside
-    _ = if Js.isNull o then () else Js.set o "masks" (Js.from 0)
+    if Js.isNull o then ⊤ else Js.set o "masks" (Js.from 0)
 
     -- A throw that stopped the page on its way here — an `update` a body's
     -- send ran — has already made the runtime stop: it is still the defect.
     if Js.read phase < 2 then
-        _ = Js.write culprit fiber
-        _ = stopping ()
+        Js.write culprit fiber
+        stopping ⊤
         d = Js.read defect
-        if Js.isNull d then () else Js.to (Js.apply d [ Js.null ])
+        if Js.isNull d then ⊤ else Js.to (Js.apply d [ Js.null ])
     else
-        _ =
-            if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
-                _ = recover fiber
-                enqueue fiber Js.null Js.null
-            else
-                ()
+        if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
+            recover fiber
+            enqueue fiber Js.null Js.null
         macrotask (Js.from drain)
 
 
 -- ---- The run loop ----------------------------------------------------------
 
-run : V, V → ()
+run : V, V → ⊤
 run fiber first =
     outer = Js.read current
-    _ = Js.write current fiber
-    _ = Js.set fiber "parked" Js.null
-    _ = loop fiber first
+    Js.write current fiber
+    Js.set fiber "parked" Js.null
+    loop fiber first
     Js.write current outer
 
 
-loop : V, V → ()
+loop : V, V → ⊤
 loop fiber first =
     value =
         if deliverable fiber then
-            _ = unwind fiber
+            unwind fiber
             Js.null
         else
             first
     next = Js.call (Js.get fiber "stack") "pop" []
     result = Js.apply next [ value ]
     if not (Js.isNull (Js.get fiber "outcome")) then
-        ()
+        ⊤
     else if Js.same result sentinel then
         p = Js.read pending
-        _ = Js.write pending Js.null
+        Js.write pending Js.null
         ks = Js.get p "ks"
-        _ = pushBack (Js.get fiber "stack") ks (Js.to (Js.get ks "length") - 1)
+        pushBack (Js.get fiber "stack") ks (Js.to (Js.get ks "length") - 1)
         if Js.to (Js.get p "interrupt") then
             -- Cancelled by itself (a joined fiber that was cancelled), or
             -- an interrupt delivered at this suspension point: unwind now,
             -- whatever the masks say, since there is no value to go on with.
-            _ = unwind fiber
+            unwind fiber
             loop fiber Js.null
         else if Js.read finalising && Js.read expired && inCleanup fiber then
             -- Past the teardown's deadline a finaliser runs only to its
             -- first wait, and the fiber goes on to its next (§9.8.14 (f)).
-            _ = abandon fiber (Js.get p "wait")
+            abandon fiber (Js.get p "wait")
             loop fiber Js.null
         else
             Js.set fiber "parked" (Js.get p "wait")
@@ -574,10 +562,10 @@ loop fiber first =
         loop fiber result
 
 
-pushBack : V, V, Int → ()
+pushBack : V, V, Int → ⊤
 pushBack stack ks i =
     if i < 0 then
-        ()
+        ⊤
     else
         _ = Js.call stack "push" [ Js.at ks i ]
         pushBack stack ks (i - 1)
@@ -597,57 +585,56 @@ suspend register =
         wake =
             λvalue →
                 if Js.to (Js.get w "done") then
-                    ()
+                    ⊤
                 else
-                    _ = Js.set w "done" (Js.from True)
+                    Js.set w "done" (Js.from True)
                     if Js.to (Js.get w "sync") then
-                        _ = Js.set w "ready" (Js.from True)
+                        Js.set w "ready" (Js.from True)
                         Js.set w "value" value
                     else
                         enqueue fiber value w
         canceller = register (Js.from wake)
-        _ = Js.set w "sync" (Js.from False)
+        Js.set w "sync" (Js.from False)
         if Js.to (Js.get w "ready") then
             Js.to (Js.get w "value")
         else
-            _ = Js.set w "cancel" canceller
+            Js.set w "cancel" canceller
             park w False
 
 
 -- The current fiber cancels itself: there is no value to return.
-selfCancel : () → a
-selfCancel () =
-    _ = Js.set (Js.read current) "interrupted" (Js.from True)
+selfCancel : ⊤ → a
+selfCancel ⊤ =
+    Js.set (Js.read current) "interrupted" (Js.from True)
     park Js.null True
 
 
 -- ---- Ending, and interruption (§6.2) ---------------------------------------
 
-complete : V, V → ()
+complete : V, V → ⊤
 complete fiber outcome =
-    _ = Js.set fiber "outcome" outcome
-    _ = Js.set fiber "stack" Js.null
-    _ = Js.write live (Js.read live - 1)
+    Js.set fiber "outcome" outcome
+    Js.set fiber "stack" Js.null
+    Js.write live (Js.read live - 1)
     sc = Js.get fiber "scope"
 
-    _ =
-        if not (Js.isNull sc) then
-            Js.to (Js.call (Js.get sc "children") "delete" [ fiber ])
-        else if Js.read spawning && not (Js.isNull (Js.get fiber "parent")) then
-            parent = Js.get fiber "parent"
-            if Js.isNull (Js.get parent "children") then
-                ()
-            else
-                Js.to (Js.call (Js.get parent "children") "delete" [ fiber ])
+    if not (Js.isNull sc) then
+        Js.to (Js.call (Js.get sc "children") "delete" [ fiber ])
+    else if Js.read spawning && not (Js.isNull (Js.get fiber "parent")) then
+        parent = Js.get fiber "parent"
+        if Js.isNull (Js.get parent "children") then
+            ⊤
         else
-            unlist fiber
+            Js.to (Js.call (Js.get parent "children") "delete" [ fiber ])
+    else
+        unlist fiber
     observers = Js.get fiber "observers"
-    _ = Js.set fiber "observers" Js.null
-    _ = if Js.isNull observers then () else Js.each observers λo → Js.to (Js.apply o [ fiber ])
-    if Js.read live == 0 && Js.read phase == 2 then allEnded () else ()
+    Js.set fiber "observers" Js.null
+    if Js.isNull observers then ⊤ else Js.each observers λo → Js.to (Js.apply o [ fiber ])
+    if Js.read live == 0 && Js.read phase == 2 then allEnded ⊤
 
 
-observe : V, V → ()
+observe : V, V → ⊤
 observe fiber observer =
     if Js.isNull (Js.get fiber "observers") then
         Js.set fiber "observers" (Js.array [ observer ])
@@ -655,61 +642,60 @@ observe fiber observer =
         Js.to (Js.call (Js.get fiber "observers") "push" [ observer ])
 
 
-unobserve : V, V → ()
+unobserve : V, V → ⊤
 unobserve fiber observer =
     os = Js.get fiber "observers"
     if Js.isNull os then
-        ()
+        ⊤
     else
         i : Int
         i = Js.to (Js.call os "indexOf" [ observer ])
-        if i ≥ 0 then Js.to (Js.call os "splice" [ Js.from i, Js.from 1 ]) else ()
+        if i ≥ 0 then Js.to (Js.call os "splice" [ Js.from i, Js.from 1 ])
 
 
 -- Interrupt `fiber`: resume it at once if it is parked where it may be
 -- interrupted — its wait's canceller runs and the wait's later answer is
 -- dropped — or latch the interrupt for its next suspension point.
-halt : V → ()
+halt : V → ⊤
 halt fiber =
     if not (Js.isNull (Js.get fiber "outcome")) || Js.to (Js.get fiber "unwinding") then
-        ()
+        ⊤
     else
-        _ = Js.set fiber "interrupted" (Js.from True)
+        Js.set fiber "interrupted" (Js.from True)
         w = Js.get fiber "parked"
         if Js.isNull w || Js.to (Js.get fiber "masks") ≠ 0 then
-            ()
+            ⊤
         else
-            _ = Js.set fiber "parked" Js.null
-            _ = Js.set w "done" (Js.from True)
+            Js.set fiber "parked" Js.null
+            Js.set w "done" (Js.from True)
 
             -- Queued before its canceller runs, so a canceller that throws
             -- cannot leave a fiber that never unwinds (§9.8.14 (d) step 1).
-            _ = enqueue fiber Js.null Js.null
+            enqueue fiber Js.null Js.null
             canceller = Js.get w "cancel"
-            if Js.isNull canceller then () else Js.to (Js.apply canceller [ Js.null ])
+            if Js.isNull canceller then ⊤ else Js.to (Js.apply canceller [ Js.null ])
 
 
 -- Park until every one of `fibers` has ended; at once when they have.
-waitAll : V → ()
+waitAll : V → ⊤
 waitAll fibers =
     left = Js.ref 0
-    _ = Js.each fibers λf →
-        if Js.isNull (Js.get f "outcome") then Js.write left (Js.read left + 1) else ()
+    Js.each fibers λf → if Js.isNull (Js.get f "outcome") then Js.write left (Js.read left + 1)
     if Js.read left == 0 then
-        ()
+        ⊤
     else
         suspend λwake →
             each = Js.from λ_ →
-                _ = Js.write left (Js.read left - 1)
-                if Js.read left == 0 then Js.to (Js.apply wake [ Js.null ]) else ()
-            _ = Js.each fibers λf → if Js.isNull (Js.get f "outcome") then observe f each else ()
+                Js.write left (Js.read left - 1)
+                if Js.read left == 0 then Js.to (Js.apply wake [ Js.null ])
+            Js.each fibers λf → if Js.isNull (Js.get f "outcome") then observe f each
             Js.from λ_ → Js.each fibers λf → unobserve f each
 
 
 -- Interrupt `fibers` and wait for them.
-cancelEvery : V → ()
+cancelEvery : V → ⊤
 cancelEvery fibers =
-    _ = Js.each fibers λf → halt f
+    Js.each fibers λf → halt f
     waitAll fibers
 
 
@@ -718,7 +704,7 @@ cancelEvery fibers =
 finish : V → V
 finish value =
     fiber = Js.read current
-    _ = Js.set fiber "unwinding" (Js.from True)
+    Js.set fiber "unwinding" (Js.from True)
     if not (Js.read spawning) then
         finished value
     else
@@ -726,13 +712,13 @@ finish value =
         if none children then
             finished value
         else
-            _ = cancelEvery (copy children)
+            cancelEvery (copy children)
             finished value
 
 
 finished : V → V
 finished value =
-    _ = complete (Js.read current) (host (Done value))
+    complete (Js.read current) (host (Done value))
     value
 
 
@@ -741,33 +727,33 @@ finished value =
 -- finaliser runs above a boundary, so a teardown can cut what it left on
 -- the stack back to the next one (`boundary.md` §9.8.14 (d) step 3); the
 -- fibers inside one are `cleaning`.
-unwind : V → ()
+unwind : V → ⊤
 unwind fiber =
-    _ = Js.set fiber "unwinding" (Js.from True)
-    _ = Js.set fiber "parked" Js.null
+    Js.set fiber "unwinding" (Js.from True)
+    Js.set fiber "parked" Js.null
     stack = Js.get fiber "stack"
-    _ = Js.set stack "length" (Js.from 0)
+    Js.set stack "length" (Js.from 0)
     _ = Js.call stack "push" [ Js.from ended ]
-    _ = if Js.read finalising then cleanups fiber else ()
-    if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ]) else ()
+    if Js.read finalising then cleanups fiber
+    if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ])
 
 
 -- Move `fiber`'s finalisers onto its stack, each above a boundary, to run
 -- last first.
-cleanups : V → ()
+cleanups : V → ⊤
 cleanups fiber =
     fins = Js.get fiber "finalizers"
-    _ = Js.set fiber "finalizers" Js.null
+    Js.set fiber "finalizers" Js.null
     stack = Js.get fiber "stack"
     if Js.isNull fins then
-        ()
+        ⊤
     else
         Js.each fins λfin →
             Js.to
                 (Js.call stack "push"
                     [ Js.from boundary
                     , Js.from λ_ →
-                        _ = Js.call (cleaningSet ()) "add" [ Js.read current ]
+                        _ = Js.call (cleaningSet ⊤) "add" [ Js.read current ]
                         Js.apply fin [ Js.null ]
                     ]
                 )
@@ -778,12 +764,12 @@ cleaning : Js.Ref V
 cleaning = Js.ref Js.null
 
 
-cleaningSet : () → V
-cleaningSet () =
+cleaningSet : ⊤ → V
+cleaningSet ⊤ =
     c = Js.read cleaning
     if Js.isNull c then
         s = Js.construct (Js.global "Set") []
-        _ = Js.write cleaning s
+        Js.write cleaning s
         s
     else
         c
@@ -805,43 +791,43 @@ boundary value =
 -- on to its next finaliser, the one it was in counting as run. What that
 -- one opened and had not yet closed — a `bracket`, a `scope` — is released
 -- first, as it would have been had its use been interrupted.
-cutBack : V → ()
+cutBack : V → ⊤
 cutBack fiber =
-    _ = popTo (Js.get fiber "stack")
+    popTo (Js.get fiber "stack")
     _ = Js.call (Js.read cleaning) "delete" [ fiber ]
     cleanups fiber
 
 
-popTo : V → ()
+popTo : V → ⊤
 popTo stack =
     if Js.to (Js.get stack "length") == 0 then
-        ()
+        ⊤
     else if Js.same (Js.call stack "pop" []) (Js.from boundary) then
-        ()
+        ⊤
     else
         popTo stack
 
 
-stopChildren : V → ()
+stopChildren : V → ⊤
 stopChildren _ =
     children = Js.get (Js.read current) "children"
-    if none children then () else cancelEvery (copy children)
+    if none children then ⊤ else cancelEvery (copy children)
 
 
-ended : V → ()
+ended : V → ⊤
 ended _ = complete (Js.read current) cancelled
 
 
 -- `ended` for a fiber whose finalisers started children (`spawn`): those
 -- are cancelled and waited for first, so that nothing a fiber starts
 -- outlives it; looked at again after the wait.
-reap : V → ()
+reap : V → ⊤
 reap _ =
     children = Js.get (Js.read current) "children"
     if none children then
         ended Js.null
     else
-        _ = cancelEvery (copy children)
+        cancelEvery (copy children)
         reap Js.null
 
 
@@ -854,40 +840,34 @@ fork parent work sc from =
     -- it with the value the fiber starts with, null, which a function of
     -- `()` takes as its argument.
     fiber = newFiber parent (Js.array [ Js.from finish, work ])
-    _ = if Js.read slotted then Js.set fiber "slots" (slotsOf from) else ()
-    _ = Js.write live (Js.read live + 1)
+    if Js.read slotted then Js.set fiber "slots" (slotsOf from)
+    Js.write live (Js.read live + 1)
 
     _ =
         if not (Js.isNull sc) then
-            _ = Js.set fiber "scope" sc
+            Js.set fiber "scope" sc
 
-            _ =
-                if Js.to (Js.get sc "closed") then
-                    Js.set fiber "interrupted" (Js.from True)
-                else if Js.isNull (Js.get sc "finalizer") then
-                    -- A root is listed when it is first given a fiber, so
-                    -- that a build which opens one and starts none keeps no
-                    -- registry (§9.8.14 (c)). A nested scope's finaliser is
-                    -- its close; a root's is null until it is listed, and
-                    -- `false` after.
-                    _ = Js.set sc "finalizer" (Js.from False)
-                    Js.to (Js.call roots "push" [ sc ])
-                else
-                    ()
+            if Js.to (Js.get sc "closed") then
+                Js.set fiber "interrupted" (Js.from True)
+            else if Js.isNull (Js.get sc "finalizer") then
+                -- A root is listed when it is first given a fiber, so
+                -- that a build which opens one and starts none keeps no
+                -- registry (§9.8.14 (c)). A nested scope's finaliser is
+                -- its close; a root's is null until it is listed, and
+                -- `false` after.
+                Js.set sc "finalizer" (Js.from False)
+                Js.to (Js.call roots "push" [ sc ])
             Js.to (Js.call (Js.get sc "children") "add" [ fiber ])
         else if Js.read spawning && not (Js.isNull parent) then
-            _ =
-                if Js.isNull (Js.get parent "children") then
-                    Js.set parent "children" (Js.construct (Js.global "Set") [])
-                else
-                    ()
+            if Js.isNull (Js.get parent "children") then
+                Js.set parent "children" (Js.construct (Js.global "Set") [])
             Js.to (Js.call (Js.get parent "children") "add" [ fiber ])
         else
             Js.to (Js.call roots "push" [ fiber ])
 
     -- Started while the runtime stops: cancelled before it runs.
-    _ = if Js.read phase ≠ 0 then Js.set fiber "interrupted" (Js.from True) else ()
-    _ = enqueue fiber Js.null Js.null
+    if Js.read phase ≠ 0 then Js.set fiber "interrupted" (Js.from True)
+    enqueue fiber Js.null Js.null
     fiber
 
 
@@ -898,7 +878,7 @@ fork parent work sc from =
 --|
 --|     sleep ms =
 --|         Task.callback λresume → startTimer ms resume
-pub callback : sync (Resume a → (() → ())) → a
+pub callback : sync (Resume a → (⊤ → ⊤)) → a
 callback register = suspend λwake →
     canceller = Js.from (register (Js.to wake))
     if Js.typeIs canceller "function" then canceller else Js.null
@@ -913,15 +893,15 @@ soonRunning = Js.ref Js.null
 -- work and is cancelled when it returns — where a fiber's `finish` would
 -- have cancelled it (`boundary.md` §9.8.11 (b)). It cannot have run yet: it
 -- is queued behind the work.
-endSoon : V → ()
+endSoon : V → ⊤
 endSoon s = Js.each (Js.get s "kids") λf → halt f
 
 
 --| Start `work` in a new fiber, a child of the current one, and return at
 --| once. The child is cancelled when the current fiber ends.
-pub spawn : (() → a) → Fiber a
+pub spawn : (⊤ → a) → Fiber a
 spawn work =
-    _ = Js.write spawning True
+    Js.write spawning True
     parent = Js.read current
     s = Js.read soonRunning
     if not (Js.isNull parent) then
@@ -932,24 +912,21 @@ spawn work =
         -- bottom of its stack, cancels and waits for this one too. Effect
         -- likewise interrupts a fiber's children once its whole stack has
         -- unwound.
-        _ =
-            if Js.to (Js.get parent "unwinding") then
-                Js.setAt (Js.get parent "stack") 0 (Js.from reap)
-            else
-                ()
+        if Js.to (Js.get parent "unwinding") then
+            Js.setAt (Js.get parent "stack") 0 (Js.from reap)
         Js.to child
     else if Js.isNull s then
         Js.to (fork Js.null (Js.from work) Js.null Js.null)
     else
         child = fork Js.null (Js.from work) Js.null Js.null
-        _ = if Js.isNullish (Js.get s "kids") then Js.set s "kids" (Js.array []) else ()
+        if Js.isNullish (Js.get s "kids") then Js.set s "kids" (Js.array [])
         _ = Js.call (Js.get s "kids") "push" [ child ]
-        _ = Js.set s "end" (Js.from endSoon)
+        Js.set s "end" (Js.from endSoon)
         Js.to child
 
 
 --| Start `work` in a new fiber that belongs to `scope`.
-pub spawnIn : Scope, (() → a) → Fiber a
+pub spawnIn : Scope, (⊤ → a) → Fiber a
 spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (Js.read current))
 
 
@@ -957,13 +934,13 @@ spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (Js.
 --| made, when `shutdown` cancels fibers and calls its `done`. What a
 --| platform asks to know whether more reports may follow its program's
 --| stop (`boundary.md` §9.8.14 (g)).
-pub cleansUp : () → Bool
-cleansUp () = Js.read fibered
+pub cleansUp : ⊤ → Bool
+cleansUp ⊤ = Js.read fibered
 
 
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
 --| platform's entry point uses; a program asks its platform instead.
-pub start : (() → a), sync (Exit a → ()) → ()
+pub start : (⊤ → a), sync (Exit a → ⊤) → ⊤
 start work report =
     fiber = fork Js.null (Js.from work) Js.null Js.undefined
     observe fiber (Js.from λf → report (guest (Js.get f "outcome")))
@@ -976,13 +953,13 @@ joined outcome =
             a
 
         Cancelled →
-            selfCancel ()
+            selfCancel ⊤
 
 
 outcomeOf : V → Exit a
 outcomeOf fiber = suspend λwake →
     o = Js.from λf → Js.apply wake [ Js.get f "outcome" ]
-    _ = observe fiber o
+    observe fiber o
     Js.from λ_ → unobserve fiber o
 
 
@@ -998,7 +975,7 @@ join fiber =
         -- lowering's would be a closure per join (`joined` may suspend, so
         -- it cannot go to `andThen`, whose argument is `sync`).
         r = Js.apply (Js.from outcomeOf) [ f ]
-        Js.suspending λ() →
+        Js.suspending λ⊤ →
             if Js.same r sentinel then
                 _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from joined ]
                 Js.to sentinel
@@ -1020,27 +997,27 @@ wait fiber =
 
 --| Cancel a fiber and wait until its cleanup has run. Cancelling a fiber
 --| that has ended does nothing.
-pub cancel : Fiber a → ()
+pub cancel : Fiber a → ⊤
 cancel fiber =
     f = Js.from fiber
     if Js.same f (Js.read current) then
-        selfCancel ()
+        selfCancel ⊤
     else if not (Js.isNull (Js.get f "outcome")) then
-        ()
+        ⊤
     else
-        _ = halt f
+        halt f
         waitAll (Js.array [ f ])
 
 
 --| Let every other fiber that is ready run first.
-pub yieldNow : () → ()
-yieldNow () =
+pub yieldNow : ⊤ → ⊤
+yieldNow ⊤ =
     fiber = Js.read current
     if deliverable fiber then
-        selfCancel ()
+        selfCancel ⊤
     else
         w = Js.from { cancel = Js.null, done = False, ready = False, sync = False, value = Js.null }
-        _ = enqueue fiber Js.null w
+        enqueue fiber Js.null w
         park w False
 
 
@@ -1062,13 +1039,13 @@ yieldNow () =
 --|     case Ref.get gate of
 --|         Just r → Task.resume r "open"
 --|         Nothing → ()
-pub resume : Resume a, a → ()
+pub resume : Resume a, a → ⊤
 resume r value = Js.to (Js.apply (Js.from r) [ Js.from value ])
 
 
 --| Wait forever. Only cancelling the fiber ends the wait. Effect's `never`.
-pub never : () → a
-never () = callback λ_ → λ() → ()
+pub never : ⊤ → a
+never ⊤ = callback λ_ → λ⊤ → ⊤
 
 
 --| How a fiber ended, `Just` once it has and `Nothing` while it runs,
@@ -1110,20 +1087,20 @@ values fibers = List.foldr fibers (Just []) λf acc →
 --| A fiber named twice is waited for once and its value given twice.
 pub joinAll : List (Fiber a) → List a
 joinAll fibers =
-    _ = waitAll (fiberArray fibers)
+    waitAll (fiberArray fibers)
 
     case values fibers of
         Just vs →
             vs
 
         Nothing →
-            selfCancel ()
+            selfCancel ⊤
 
 
 --| Cancel every fiber in the list, in list order, and wait until all of
 --| them have ended and run their cleanup. A fiber that has ended is left
 --| as it is; a fiber that belongs to a scope still belongs to it.
-pub cancelAll : List (Fiber a) → ()
+pub cancelAll : List (Fiber a) → ⊤
 cancelAll fibers = cancelEvery (fiberArray fibers)
 
 
@@ -1133,17 +1110,17 @@ cancelAll fibers = cancelEvery (fiberArray fibers)
 --| Node the end of `Io.run`'s fiber, cancels it and runs its cleanup with
 --| every other fiber's. It sees what the fiber that started it sees — its
 --| clock, its log context. Effect's `forkDetach`.
-pub spawnDetached : (() → a) → Fiber a
+pub spawnDetached : (⊤ → a) → Fiber a
 spawnDetached work = Js.to (fork Js.null (Js.from work) Js.null (Js.read current))
 
 
-openScope : () → Scope
-openScope () =
+openScope : ⊤ → Scope
+openScope ⊤ =
     sc =
         Js.from
             { children = Js.construct (Js.global "Set") [], closed = False, finalizer = Js.null }
-    _ = Js.set sc "finalizer" (Js.from λ_ → shutAll sc)
-    _ = addFinalizer (here ()) (Js.get sc "finalizer")
+    Js.set sc "finalizer" (Js.from λ_ → shutAll sc)
+    addFinalizer (here ⊤) (Js.get sc "finalizer")
     Js.to sc
 
 
@@ -1157,9 +1134,9 @@ finalising = Js.ref False
 
 
 -- Put `fin` on `fiber`'s finalisers, last.
-addFinalizer : V, V → ()
+addFinalizer : V, V → ⊤
 addFinalizer fiber fin =
-    _ = Js.write finalising True
+    Js.write finalising True
     fins = Js.get fiber "finalizers"
 
     if Js.isNull fins then
@@ -1168,47 +1145,47 @@ addFinalizer fiber fin =
         Js.to (Js.call fins "push" [ fin ])
 
 
-dropFinalizer : V, V → ()
+dropFinalizer : V, V → ⊤
 dropFinalizer fiber fin =
     fins = Js.get fiber "finalizers"
     if Js.isNull fins then
-        ()
+        ⊤
     else
         i : Int
         i = Js.to (Js.call fins "lastIndexOf" [ fin ])
-        if i ≥ 0 then Js.to (Js.call fins "splice" [ Js.from i, Js.from 1 ]) else ()
+        if i ≥ 0 then Js.to (Js.call fins "splice" [ Js.from i, Js.from 1 ])
 
 
 -- Close `sc`: a fiber started in it from now on — by the release of one
 -- being cancelled — is cancelled before it runs, as in a closed root, and
 -- every fiber in it is cancelled and waited for, again until none is left.
-shut : V → ()
+shut : V → ⊤
 shut sc =
-    _ = Js.set sc "closed" (Js.from True)
+    Js.set sc "closed" (Js.from True)
     children = Js.get sc "children"
     if Js.to (Js.get children "size") == 0 then
-        ()
+        ⊤
     else
-        _ = cancelEvery (copy children)
+        cancelEvery (copy children)
         shut sc
 
 
 closeScope : Scope, a → a
 closeScope sc value =
-    fiber = here ()
+    fiber = here ⊤
     s = Js.from sc
 
     -- The scope's fibers have all ended, as they mostly have: closed at
     -- once, so the call that may suspend — and the continuation the
     -- lowering makes for it — is only on the slow path.
     if Js.to (Js.get (Js.get s "children") "size") == 0 then
-        _ = Js.set s "closed" (Js.from True)
-        _ = dropFinalizer fiber (Js.get s "finalizer")
-        if Js.read deferring then afterDeferred s (host (Done ())) value else value
+        Js.set s "closed" (Js.from True)
+        dropFinalizer fiber (Js.get s "finalizer")
+        if Js.read deferring then afterDeferred s (host (Done ⊤)) value else value
     else
-        _ = shut s
-        _ = dropFinalizer fiber (Js.get s "finalizer")
-        if Js.read deferring then afterDeferred s (host (Done ())) value else value
+        shut s
+        dropFinalizer fiber (Js.get s "finalizer")
+        if Js.read deferring then afterDeferred s (host (Done ⊤)) value else value
 
 
 -- ---- Deferred finalisers (§17.3, `defer`) -----------------------------------
@@ -1232,7 +1209,7 @@ afterDeferred : V, V, a → a
 afterDeferred s exit value =
     r = Js.apply (Js.get (Js.read deferral) "run") [ s, exit ]
 
-    Js.suspending λ() →
+    Js.suspending λ⊤ →
         if Js.same r sentinel then
             _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from λ_ → Js.from value ]
             Js.to sentinel
@@ -1243,42 +1220,42 @@ afterDeferred s exit value =
 -- A scope's finaliser on its fiber's list: run when that fiber is cancelled
 -- inside the scope's function, so the deferred finalisers are told
 -- `Cancelled`.
-shutAll : V → ()
+shutAll : V → ⊤
 shutAll sc = if Js.read deferring then shutWith sc cancelled else shut sc
 
 
 -- Close `sc`, then run its deferred finalisers, told `exit`.
-shutWith : V, V → ()
+shutWith : V, V → ⊤
 shutWith sc exit =
-    _ = shut sc
-    afterDeferred sc exit ()
+    shut sc
+    afterDeferred sc exit ⊤
 
 
 -- Run the deferred finalisers of the scope `s`, last added first, where
 -- cancellation cannot reach them, each told `exit`. Taken off the scope
 -- first, so that they run once.
-runDeferred : V, V → ()
+runDeferred : V, V → ⊤
 runDeferred s exit =
     d = Js.get s "deferred"
 
     if Js.isNullish d then
-        ()
+        ⊤
     else
-        _ = Js.set s "deferred" Js.null
-        uninterruptible λ() → runEach d exit
+        Js.set s "deferred" Js.null
+        uninterruptible λ⊤ → runEach d exit
 
 
 -- Call the functions in `fins`, last first, with `exit`, each one ended
 -- before the next starts. The protocol by hand, as `join` writes it: a
 -- function that parks has the rest of the list pushed after it.
-runEach : V, V → ()
+runEach : V, V → ⊤
 runEach fins exit =
     if Js.to (Js.get fins "length") == 0 then
-        ()
+        ⊤
     else
         r = Js.apply (Js.call fins "pop" []) [ exit ]
 
-        Js.suspending λ() →
+        Js.suspending λ⊤ →
             if Js.same r sentinel then
                 _ =
                     Js.call (Js.get (Js.read pending) "ks") "push"
@@ -1291,13 +1268,13 @@ runEach fins exit =
 -- A fiber of its own for finalisers that belong to no running fiber: it
 -- runs `fins`, last first, where nothing can interrupt them, and ends. The
 -- teardown waits for it, as for every fiber.
-cleanupFiber : V → ()
+cleanupFiber : V → ⊤
 cleanupFiber fins =
     fiber = newFiber Js.null (Js.array [])
-    _ = Js.write live (Js.read live + 1)
-    _ = Js.write finalising True
-    _ = Js.set fiber "finalizers" fins
-    _ = unwind fiber
+    Js.write live (Js.read live + 1)
+    Js.write finalising True
+    Js.set fiber "finalizers" fins
+    unwind fiber
     enqueue fiber Js.null Js.null
 
 
@@ -1316,31 +1293,25 @@ cleanupFiber fins =
 --| A root scope's run when `closeRoot` closes it, told `Done ()`, in a
 --| fiber of their own that `closeRoot` does not wait for; or when the
 --| program stops, told `Cancelled`, with the rest of its cleanup.
-pub defer : Scope, (Exit () → ()) → ()
+pub defer : Scope, (Exit ⊤ → ⊤) → ⊤
 defer sc cleanup =
     s = Js.from sc
 
     if Js.to (Js.get s "closed") then
-        uninterruptible λ() → cleanup Cancelled
+        uninterruptible λ⊤ → cleanup Cancelled
     else
-        _ = Js.write deferring True
-        _ = Js.write deferral (Js.from { roots = Js.from deferRoots, run = Js.from runDeferred })
-        _ = Js.write fibered True
+        Js.write deferring True
+        Js.write deferral (Js.from { roots = Js.from deferRoots, run = Js.from runDeferred })
+        Js.write fibered True
 
-        _ =
-            if Js.isNullish (Js.get s "deferred") then
-                Js.set s "deferred" (Js.array [])
-            else
-                ()
+        if Js.isNullish (Js.get s "deferred") then
+            Js.set s "deferred" (Js.array [])
 
         -- A root that has run no fiber is listed now, so that the program's
         -- stop finds it (`fork`).
-        _ =
-            if Js.isNull (Js.get s "finalizer") then
-                _ = Js.set s "finalizer" (Js.from False)
-                Js.to (Js.call roots "push" [ s ])
-            else
-                ()
+        if Js.isNull (Js.get s "finalizer") then
+            Js.set s "finalizer" (Js.from False)
+            Js.to (Js.call roots "push" [ s ])
         Js.to (Js.call (Js.get s "deferred") "push" [ Js.from cleanup ])
 
 
@@ -1361,25 +1332,22 @@ running fiber = Js.isNull (Js.get (Js.from fiber) "outcome")
 runSoon : V → Bool
 runSoon s =
     w = Js.get s "w"
-    _ = Js.set s "w" Js.null
+    Js.set s "w" Js.null
 
     -- Program code, which no longer runs once the runtime stops: dropped.
     if Js.read phase ≠ 0 then
         False
     else
         outer = Js.read soonRunning
-        _ = Js.write soonRunning s
+        Js.write soonRunning s
         _ = Js.apply w [ Js.null ]
-        _ = Js.write soonRunning outer
+        Js.write soonRunning outer
 
         -- Only a `spawn` sets `end`, and the work may have been the first
         -- to spawn: `spawning` is read after it.
-        _ =
-            if Js.read spawning then
-                end = Js.get s "end"
-                if Js.isNullish end then () else Js.to (Js.apply end [ s ])
-            else
-                ()
+        if Js.read spawning then
+            end = Js.get s "end"
+            if Js.isNullish end then ⊤ else Js.to (Js.apply end [ s ])
         True
 
 
@@ -1392,11 +1360,11 @@ runSoon s =
 --| as a fiber's children do, and is cancelled when it returns. Nothing stops it: a fiber that has not started
 --| runs until it first suspends before anything can cancel it, and work
 --| that never suspends runs to its end.
-pub soon : sync (() → ()) → Soon
+pub soon : sync (⊤ → ⊤) → Soon
 soon work =
-    _ = Js.write soonQueued True
+    Js.write soonQueued True
     s = Js.from { w = Js.from work }
-    _ = schedule (Js.from runSoon) s Js.null Js.null
+    schedule (Js.from runSoon) s Js.null Js.null
     Js.to s
 
 
@@ -1408,8 +1376,8 @@ queued s = not (Js.isNull (Js.get (Js.from s) "w"))
 --| A scope that no function brackets, for a platform whose program
 --| outlives every call: a page program's commands and subscriptions run
 --| in one. `closeRoot` ends it; nothing else does.
-pub openRoot : () → Scope
-openRoot () =
+pub openRoot : ⊤ → Scope
+openRoot ⊤ =
     Js.to
         (Js.from
             { children = Js.construct (Js.global "Set") [], closed = False, finalizer = Js.null }
@@ -1420,17 +1388,15 @@ openRoot () =
 --| their cleanup, which runs as each is resumed. A fiber started in the
 --| scope afterwards is cancelled before it runs. What `defer` added to it
 --| runs once those fibers have ended, in a fiber of its own.
-pub closeRoot : Scope → ()
+pub closeRoot : Scope → ⊤
 closeRoot sc =
     s = Js.from sc
-    _ = unlist s
-    _ = Js.set s "closed" (Js.from True)
-    _ = Js.each (copy (Js.get s "children")) λf → halt f
+    unlist s
+    Js.set s "closed" (Js.from True)
+    Js.each (copy (Js.get s "children")) λf → halt f
 
     if Js.read deferring then
-        Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ()) ])
-    else
-        ()
+        Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ⊤) ])
 
 
 -- ---- Shutdown (`boundary.md` §9.8.14) --------------------------------------
@@ -1443,11 +1409,11 @@ roots : V
 roots = Js.array []
 
 
-unlist : V → ()
+unlist : V → ⊤
 unlist root =
     i : Int
     i = Js.to (Js.call roots "indexOf" [ root ])
-    if i ≥ 0 then Js.to (Js.call roots "splice" [ Js.from i, Js.from 1 ]) else ()
+    if i ≥ 0 then Js.to (Js.call roots "splice" [ Js.from i, Js.from 1 ])
 
 
 -- The fibers that have not ended, so the teardown knows when it is over.
@@ -1496,32 +1462,32 @@ torn = Js.ref False
 
 
 -- Stop, and schedule the teardown once.
-stopping : () → ()
-stopping () =
-    _ = if Js.read phase == 0 then Js.write phase 1 else ()
-    _ = Js.write scheduled True
+stopping : ⊤ → ⊤
+stopping ⊤ =
+    if Js.read phase == 0 then Js.write phase 1
+    Js.write scheduled True
     if Js.read torn then
-        ()
+        ⊤
     else
-        _ = Js.write torn True
+        Js.write torn True
         macrotask (Js.from teardown)
 
 
 -- `shutdown`'s part here: the first call's deadline and `done`; a second
 -- call does nothing.
-closeAll : Int, V → ()
+closeAll : Int, V → ⊤
 closeAll ms over =
     if not (Js.isNull (Js.read whenDone)) || Js.read phase == 3 then
-        ()
+        ⊤
     else
-        _ = Js.write whenDone over
-        _ = Js.write deadline ms
-        _ = if Js.read phase == 2 then arm () else ()
-        stopping ()
+        Js.write whenDone over
+        Js.write deadline ms
+        if Js.read phase == 2 then arm ⊤
+        stopping ⊤
 
 
-arm : () → ()
-arm () =
+arm : ⊤ → ⊤
+arm ⊤ =
     Js.write deadlineTimer
         (Js.apply (Js.global "setTimeout") [ Js.from expire, Js.from (Js.read deadline) ])
 
@@ -1533,59 +1499,49 @@ arm () =
 -- finalisers a throw left outside any fiber. A canceller that throws is
 -- reported by the host; the sweep goes on at the next fiber, in a new
 -- macrotask. Then the drain unwinds them all.
-teardown : () → ()
-teardown () =
-    _ =
-        if Js.read phase == 1 then
-            _ = Js.write phase 2
-            _ = if Js.isNull (Js.read whenDone) then () else arm ()
-            _ = Js.each roots λroot →
-                if Js.isUndefined (Js.get root "stack") then
-                    _ = Js.set root "closed" (Js.from True)
-                    Js.each (Js.get root "children") λf → Js.to (Js.call sweeping "push" [ f ])
-                else
-                    Js.to (Js.call sweeping "push" [ root ])
-            if Js.read deferring then
-                Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ roots, cancelled ])
+teardown : ⊤ → ⊤
+teardown ⊤ =
+    if Js.read phase == 1 then
+        Js.write phase 2
+        if Js.isNull (Js.read whenDone) then ⊤ else arm ⊤
+        Js.each roots λroot →
+            if Js.isUndefined (Js.get root "stack") then
+                Js.set root "closed" (Js.from True)
+                Js.each (Js.get root "children") λf → Js.to (Js.call sweeping "push" [ f ])
             else
-                ()
-        else
-            ()
+                Js.to (Js.call sweeping "push" [ root ])
+        if Js.read deferring then
+            Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ roots, cancelled ])
     ok = Js.ref False
 
-    _ =
-        Js.finally
-            (λ() →
-                _ = sweep ()
-                Js.write ok True
-            )
-            λ() → if Js.read ok then () else macrotask (Js.from teardown)
+    Js.finally
+        (λ⊤ →
+            sweep ⊤
+            Js.write ok True
+        )
+        λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from teardown)
     c = Js.read culprit
 
-    _ =
-        if Js.isNull c then
-            ()
-        else
-            _ = Js.write culprit Js.null
-            if Js.isNull (Js.get c "outcome") then
-                _ = recover c
-                enqueue c Js.null Js.null
-            else
-                ()
+    if Js.isNull c then
+        ⊤
+    else
+        Js.write culprit Js.null
+        if Js.isNull (Js.get c "outcome") then
+            recover c
+            enqueue c Js.null Js.null
     o = Js.read outside
 
-    _ =
-        if not (Js.read finalising) || Js.isNull o || none (Js.get o "finalizers") then
-            ()
-        else
-            fiber = newFiber Js.null (Js.array [])
-            _ = Js.write live (Js.read live + 1)
-            _ = Js.set fiber "finalizers" (Js.get o "finalizers")
-            _ = Js.set o "finalizers" Js.null
-            _ = Js.set o "masks" (Js.from 0)
-            _ = unwind fiber
-            enqueue fiber Js.null Js.null
-    if Js.read live == 0 then allEnded () else drain ()
+    if not (Js.read finalising) || Js.isNull o || none (Js.get o "finalizers") then
+        ⊤
+    else
+        fiber = newFiber Js.null (Js.array [])
+        Js.write live (Js.read live + 1)
+        Js.set fiber "finalizers" (Js.get o "finalizers")
+        Js.set o "finalizers" Js.null
+        Js.set o "masks" (Js.from 0)
+        unwind fiber
+        enqueue fiber Js.null Js.null
+    if Js.read live == 0 then allEnded ⊤ else drain ⊤
 
 
 -- The deferred finalisers of the root scopes among `list`: each root's run
@@ -1594,36 +1550,32 @@ teardown () =
 -- so each goes in front of those before it. What `closeRoot` (with its one
 -- root, told `Done ()`) and the program's stop (with every root, told
 -- `Cancelled`) call, through `deferral`.
-deferRoots : V, V → ()
+deferRoots : V, V → ⊤
 deferRoots list exit =
     fins = Js.array []
 
-    _ = Js.each list λroot →
+    Js.each list λroot →
         if Js.isUndefined (Js.get root "stack") && not (Js.isNullish (Js.get root "deferred")) then
             Js.to (Js.call fins "unshift" [ Js.from λ_ → shutWith root exit ])
-        else
-            ()
-    if Js.to (Js.get fins "length") == 0 then () else cleanupFiber fins
+    if Js.to (Js.get fins "length") == 0 then ⊤ else cleanupFiber fins
 
 
-sweep : () → ()
-sweep () =
+sweep : ⊤ → ⊤
+sweep ⊤ =
     i = Js.read swept
     if i < Js.to (Js.get sweeping "length") then
-        _ = Js.write swept (i + 1)
-        _ = halt (Js.at sweeping i)
-        sweep ()
-    else
-        ()
+        Js.write swept (i + 1)
+        halt (Js.at sweeping i)
+        sweep ⊤
 
 
 -- Put a fiber whose code threw back on the road to its end: out of the
 -- finaliser it was in, to the next; or, if it was not unwinding, unwound.
-recover : V → ()
+recover : V → ⊤
 recover fiber =
-    _ = Js.set fiber "interrupted" (Js.from True)
-    _ = Js.set fiber "parked" Js.null
-    _ = Js.set fiber "masks" (Js.from 0)
+    Js.set fiber "interrupted" (Js.from True)
+    Js.set fiber "parked" Js.null
+    Js.set fiber "masks" (Js.from 0)
     if Js.read finalising && inCleanup fiber then
         cutBack fiber
     else if not (Js.to (Js.get fiber "unwinding")) then
@@ -1636,83 +1588,83 @@ recover fiber =
                 Js.call stack "push" [ Js.from ended ]
             else
                 Js.null
-        if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ]) else ()
+        if Js.read spawning then Js.to (Js.call stack "push" [ Js.from stopChildren ])
 
 
 -- The deadline (§9.8.14 (f)): each fiber waiting inside a finaliser stops
 -- waiting and goes on to its next, and from now on a finaliser runs only to
 -- its first wait. A canceller that throws is reported by the host; the rest
 -- go on in a new macrotask.
-expire : () → ()
-expire () =
-    _ = Js.write deadlineTimer Js.null
-    _ = Js.write expired True
+expire : ⊤ → ⊤
+expire ⊤ =
+    Js.write deadlineTimer Js.null
+    Js.write expired True
     c = Js.read cleaning
     if not (Js.read finalising) || Js.isNull c then
-        ()
+        ⊤
     else
         ok = Js.ref False
         Js.finally
-            (λ() →
-                _ = Js.each (copy c) λfiber →
+            (λ⊤ →
+                Js.each (copy c) λfiber →
                     w = Js.get fiber "parked"
                     if Js.isNull w then
-                        ()
+                        ⊤
                     else
-                        _ = Js.set fiber "parked" Js.null
-                        _ = enqueue fiber Js.null Js.null
+                        Js.set fiber "parked" Js.null
+                        enqueue fiber Js.null Js.null
                         abandon fiber w
                 Js.write ok True
             )
-            λ() → if Js.read ok then () else macrotask (Js.from expire)
+            λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from expire)
 
 
-abandon : V, V → ()
+abandon : V, V → ⊤
 abandon fiber w =
-    _ = Js.set w "done" (Js.from True)
-    _ = Js.write abandoned (Js.read abandoned + 1)
-    _ = cutBack fiber
+    Js.set w "done" (Js.from True)
+    Js.write abandoned (Js.read abandoned + 1)
+    cutBack fiber
     canceller = Js.get w "cancel"
-    if Js.isNull canceller then () else Js.to (Js.apply canceller [ Js.null ])
+    if Js.isNull canceller then ⊤ else Js.to (Js.apply canceller [ Js.null ])
 
 
 -- Every fiber has ended: the runtime stops for good, and `done` is told how
 -- many finalisers the deadline cut short.
-allEnded : () → ()
-allEnded () =
-    _ = Js.write phase 3
+allEnded : ⊤ → ⊤
+allEnded ⊤ =
+    Js.write phase 3
     t = Js.read deadlineTimer
-    _ = if Js.isNull t then () else Js.to (Js.apply (Js.global "clearTimeout") [ t ])
-    _ = Js.write deadlineTimer Js.null
+    if Js.isNull t then ⊤ else Js.to (Js.apply (Js.global "clearTimeout") [ t ])
+    Js.write deadlineTimer Js.null
     told = Js.read whenDone
-    if Js.isNull told then () else Js.to (Js.apply told [ Js.from (Js.read abandoned) ])
+    if Js.isNull told then ⊤ else Js.to (Js.apply told [ Js.from (Js.read abandoned) ])
 
 
 -- ---- Masks and finalisers --------------------------------------------------
 
-mask : () → ()
-mask () =
-    f = here ()
+mask : ⊤ → ⊤
+mask ⊤ =
+    f = here ⊤
     Js.set f "masks" (Js.from (Js.to (Js.get f "masks") + 1))
 
 
 unmask : a → a
 unmask value =
-    f = here ()
-    _ = Js.set f "masks" (Js.from (Js.to (Js.get f "masks") - 1))
+    f = here ⊤
+    Js.set f "masks" (Js.from (Js.to (Js.get f "masks") - 1))
     value
 
 
-pushFinalizer : r, (() → ()) → r
+pushFinalizer : r, (⊤ → ⊤) → r
 pushFinalizer resource fin =
-    _ = addFinalizer (here ()) (Js.from fin)
+    addFinalizer (here ⊤) (Js.from fin)
     resource
 
 
 popFinalizer : a → a
 popFinalizer value =
-    fins = Js.get (here ()) "finalizers"
-    _ = if Js.isNull fins then () else Js.to (Js.call fins "pop" [])
+    fins = Js.get (here ⊤) "finalizers"
+    if Js.isNull fins then ⊤ else Js.to (Js.call fins "pop" [])
     value
 
 
@@ -1725,14 +1677,14 @@ popFinalizer value =
 --|         ( Task.join x, Task.join y )
 pub scope : (Scope → a) → a
 scope body =
-    s = openScope ()
+    s = openScope ⊤
     closeScope s (body s)
 
 
 --| Run `work` where cancellation cannot reach it. A cancellation that
 --| arrives meanwhile is delivered at the fiber's next suspension after it.
-pub uninterruptible : (() → a) → a
-uninterruptible work = unmask (work (mask ()))
+pub uninterruptible : (⊤ → a) → a
+uninterruptible work = unmask (work (mask ⊤))
 
 
 --| What `restore` is handed: a way back, inside an `uninterruptibleMask`,
@@ -1755,15 +1707,15 @@ pub foreign type Restore
 --| inside a restored part, or after the mask.
 pub uninterruptibleMask : (Restore → a) → a
 uninterruptibleMask work =
-    f = here ()
+    f = here ⊤
     token = Js.from { depth = Js.get f "masks", fiber = f, live = True }
-    _ = Js.set f "masks" (Js.from (Js.to (Js.get f "masks") + 1))
+    Js.set f "masks" (Js.from (Js.to (Js.get f "masks") + 1))
     endMask token (work (Js.to token))
 
 
 endMask : V, a → a
 endMask token value =
-    _ = Js.set token "live" (Js.from False)
+    Js.set token "live" (Js.from False)
     unmask value
 
 
@@ -1773,22 +1725,22 @@ endMask token value =
 --| put the mask back when `work` ends. A token used after its mask has
 --| returned, or by a fiber other than the one that entered it, restores
 --| nothing: `work` runs as the code around it does.
-pub restore : Restore, (() → b) → b
+pub restore : Restore, (⊤ → b) → b
 restore token work =
     t = Js.from token
-    f = here ()
+    f = here ⊤
 
     if Js.to (Js.get t "live") && Js.same (Js.get t "fiber") f then
         masks = Js.get f "masks"
-        _ = Js.set f "masks" (Js.get t "depth")
-        remask f masks (work ())
+        Js.set f "masks" (Js.get t "depth")
+        remask f masks (work ⊤)
     else
-        work ()
+        work ⊤
 
 
 remask : V, V, a → a
 remask fiber masks value =
-    _ = Js.set fiber "masks" masks
+    Js.set fiber "masks" masks
     value
 
 
@@ -1797,14 +1749,14 @@ remask fiber masks value =
 --| during the use. Acquire and release cannot be interrupted.
 --|
 --|     Task.bracket (λ() → open path) (λfile _ → close file) λfile → read file
-pub bracket : (() → r), (r, Exit a → ()), (r → a) → a
+pub bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a
 bracket acquire release use =
     resource = uninterruptible acquire
-    result = use (pushFinalizer resource λ() → release resource Cancelled)
-    uninterruptible λ() → after (release resource (Done (popFinalizer result))) result
+    result = use (pushFinalizer resource λ⊤ → release resource Cancelled)
+    uninterruptible λ⊤ → after (release resource (Done (popFinalizer result))) result
 
 
-after : (), a → a
+after : ⊤, a → a
 after _ value = value
 
 
@@ -1817,10 +1769,10 @@ after _ value = value
 --|         case exit of
 --|             Done _ → Log.info "fetched"
 --|             Cancelled → Log.warn "gave up"
-pub onExit : (() → a), (Exit a → ()) → a
+pub onExit : (⊤ → a), (Exit a → ⊤) → a
 onExit work cleanup =
-    result = work (pushFinalizer () λ() → cleanup Cancelled)
-    uninterruptible λ() → after (cleanup (Done (popFinalizer result))) result
+    result = work (pushFinalizer ⊤ λ⊤ → cleanup Cancelled)
+    uninterruptible λ⊤ → after (cleanup (Done (popFinalizer result))) result
 
 
 -- ---- Time (§17.6) ----------------------------------------------------------
@@ -1834,15 +1786,15 @@ onExit work cleanup =
 --| `sleep(0)`. Inside `Clock.run` the clock is a virtual one: the fiber
 --| waits until `Clock.adjust` moves that clock past the wake time, and a
 --| `zero` wait returns at once.
-pub sleep : Duration → ()
+pub sleep : Duration → ⊤
 sleep duration =
     ms = Duration.toMillis duration
-    clock = if Js.read slotted then currentClock () else Js.undefined
+    clock = if Js.read slotted then currentClock ⊤ else Js.undefined
 
     if Js.isUndefined clock then
-        if ms == 0 then yieldNow () else realSleep ms
+        if ms == 0 then yieldNow ⊤ else realSleep ms
     else if ms == 0 then
-        ()
+        ⊤
     else
         virtualSleep clock ms
 
@@ -1852,23 +1804,23 @@ timerLimit : Int
 timerLimit = 2147483647
 
 
-realSleep : Int → ()
+realSleep : Int → ⊤
 realSleep ms =
     _ = callback λwake →
         timer =
             Js.apply (Js.global "setTimeout")
-                [ Js.from λ() → Js.apply (Js.from wake) [ Js.null ]
+                [ Js.from λ⊤ → Js.apply (Js.from wake) [ Js.null ]
                 , Js.from (Basics.min ms timerLimit)
                 ]
-        λ() → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
+        λ⊤ → Js.to (Js.apply (Js.global "clearTimeout") [ timer ])
 
-    if ms > timerLimit then realSleep (ms - timerLimit) else ()
+    if ms > timerLimit then realSleep (ms - timerLimit)
 
 
 -- The slot record of the current fiber, or of the record outside any:
 -- undefined when there is none.
-slotRecord : () → V
-slotRecord () =
+slotRecord : ⊤ → V
+slotRecord ⊤ =
     c = Js.read current
     src = if Js.isNull c then Js.read outside else c
     if Js.isNull src then Js.undefined else Js.get src "slots"
@@ -1877,10 +1829,10 @@ slotRecord () =
 --| The calling fiber's clock slot (§17.5): undefined for the real clock, or
 --| a clock `virtualClock` made. For core's `Clock`, which is what a program
 --| calls; the `Js.Value` it answers is of no use anywhere else.
-pub currentClock : () → Js.Value
-currentClock () =
+pub currentClock : ⊤ → Js.Value
+currentClock ⊤ =
     if Js.read slotted then
-        r = slotRecord ()
+        r = slotRecord ⊤
         if Js.isNullish r then Js.undefined else Js.get r "clock"
     else
         Js.undefined
@@ -1890,21 +1842,21 @@ currentClock () =
 --| the old one back when `work` ends, returned or cancelled. Fibers `work`
 --| starts copy it. For core's `Clock.run`: a program has no `Js.Value` to
 --| give it.
-pub withClock : Js.Value, (() → a) → a
+pub withClock : Js.Value, (⊤ → a) → a
 withClock clock work =
-    _ = Js.write slotted True
-    fiber = here ()
+    Js.write slotted True
+    fiber = here ⊤
     old = Js.get fiber "slots"
     next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
-    _ = Js.set next "clock" clock
-    _ = Js.set fiber "slots" next
-    putSlots fiber old (work (pushFinalizer () λ() → Js.set fiber "slots" old))
+    Js.set next "clock" clock
+    Js.set fiber "slots" next
+    putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
 
 
 putSlots : V, V, a → a
 putSlots fiber old value =
-    _ = popFinalizer ()
-    _ = Js.set fiber "slots" old
+    popFinalizer ⊤
+    Js.set fiber "slots" old
     value
 
 
@@ -1919,7 +1871,7 @@ virtualClock epoch = Js.from { now = epoch, sleepers = Js.array [] }
 -- Wait on the virtual clock `clock` until it reads `ms` later than now.
 -- Sleepers are kept ordered by wake time, and by the order they began to
 -- sleep among equal times; a cancelled one is taken out.
-virtualSleep : V, Int → ()
+virtualSleep : V, Int → ⊤
 virtualSleep clock ms = callback λwake →
     at : Int
     at = Js.to (Js.get clock "now") + ms
@@ -1927,10 +1879,10 @@ virtualSleep clock ms = callback λwake →
     sleepers = Js.get clock "sleepers"
     _ = Js.call sleepers "splice" [ Js.from (insertAt sleepers at 0), Js.from 0, entry ]
 
-    λ() →
+    λ⊤ →
         i : Int
         i = Js.to (Js.call sleepers "indexOf" [ entry ])
-        if i ≥ 0 then Js.to (Js.call sleepers "splice" [ Js.from i, Js.from 1 ]) else ()
+        if i ≥ 0 then Js.to (Js.call sleepers "splice" [ Js.from i, Js.from 1 ])
 
 
 -- Where a sleeper waking at `at` goes: after every one waking at or before.
@@ -1951,52 +1903,48 @@ insertAt sleepers at i =
 --| to its wake time, wakes every sleeper due then, in the order they began
 --| to sleep, and settles again — so a sleeper the woken code registers is
 --| woken too if it is due by the target. Last, the reading is the target.
-pub adjustClock : Js.Value, Js.Value → ()
+pub adjustClock : Js.Value, Js.Value → ⊤
 adjustClock clock ms =
     by : Int
     by = Js.to ms
 
     if by ≤ 0 then
-        ()
+        ⊤
     else
-        _ = settle ()
+        settle ⊤
         advance clock (Js.to (Js.get clock "now") + by)
 
 
-advance : V, Int → ()
+advance : V, Int → ⊤
 advance clock target =
     sleepers = Js.get clock "sleepers"
 
     if Js.to (Js.get sleepers "length") > 0 && Js.to (Js.get (Js.at sleepers 0) "at") ≤ target then
         at : Int
         at = Js.to (Js.get (Js.at sleepers 0) "at")
-        _ = Js.set clock "now" (Js.from at)
-        _ = wakeDue sleepers at
-        _ = settle ()
+        Js.set clock "now" (Js.from at)
+        wakeDue sleepers at
+        settle ⊤
         advance clock target
     else
         Js.set clock "now" (Js.from target)
 
 
-wakeDue : V, Int → ()
+wakeDue : V, Int → ⊤
 wakeDue sleepers at =
     if Js.to (Js.get sleepers "length") > 0 && Js.to (Js.get (Js.at sleepers 0) "at") == at then
         entry = Js.call sleepers "shift" []
         _ = Js.apply (Js.get entry "wake") [ Js.null ]
         wakeDue sleepers at
-    else
-        ()
 
 
 -- Let every other fiber that is ready run, again and again, until none is:
 -- the scheduler's queue holds nothing but what the caller left there.
-settle : () → ()
-settle () =
+settle : ⊤ → ⊤
+settle ⊤ =
     if Js.to (Js.get queue "length") > Js.read head then
-        _ = yieldNow ()
-        settle ()
-    else
-        ()
+        yieldNow ⊤
+        settle ⊤
 
 
 -- ---- Retrying and repeating (§17.8) ----------------------------------------
@@ -2009,13 +1957,13 @@ settle () =
 --|
 --|     -- at most four runs, 100, 200 and 400 ms apart
 --|     Task.retry (Schedule.max (Schedule.exponential (Duration.millis 100) 2.0) (Schedule.recurs 3)) fetch
-pub retry : Schedule e, (() → Result e a) → Result e a
-retry policy work = retryFrom policy work (clockMillis ()) 1
+pub retry : Schedule e, (⊤ → Result e a) → Result e a
+retry policy work = retryFrom policy work (clockMillis ⊤) 1
 
 
-retryFrom : Schedule e, (() → Result e a), Int, Int → Result e a
+retryFrom : Schedule e, (⊤ → Result e a), Int, Int → Result e a
 retryFrom policy work began attempt =
-    case work () of
+    case work ⊤ of
         Ok value →
             Ok value
 
@@ -2025,27 +1973,27 @@ retryFrom policy work began attempt =
                     Err problem
 
                 Schedule.Continue delay next →
-                    _ = sleep delay
+                    sleep delay
                     retryFrom next work began (attempt + 1)
 
 
 --| Run `work`, step `policy` with its value, and while it continues
 --| sleep its delay and run `work` again; the last value is the answer.
 --| `repeat (Schedule.recurs 2)` runs `work` three times. Effect's `repeat`.
-pub repeat : Schedule a, (() → a) → a
-repeat policy work = repeatFrom policy work (clockMillis ()) 1
+pub repeat : Schedule a, (⊤ → a) → a
+repeat policy work = repeatFrom policy work (clockMillis ⊤) 1
 
 
-repeatFrom : Schedule a, (() → a), Int, Int → a
+repeatFrom : Schedule a, (⊤ → a), Int, Int → a
 repeatFrom policy work began attempt =
-    value = work ()
+    value = work ⊤
 
     case Schedule.step policy (metadata value attempt began) of
         Schedule.Stop →
             value
 
         Schedule.Continue delay next →
-            _ = sleep delay
+            sleep delay
             repeatFrom next work began (attempt + 1)
 
 
@@ -2056,15 +2004,15 @@ metadata : i, Int, Int → Schedule.Metadata i
 metadata input attempt began =
     { input = input
     , attempt = attempt
-    , elapsed = Duration.millis (clockMillis () - began)
+    , elapsed = Duration.millis (clockMillis ⊤ - began)
     , random = Js.to (Js.call (Js.global "Math") "random" [])
     }
 
 
 -- The epoch milliseconds of the calling fiber's clock (core's `Clock.now`).
-clockMillis : () → Int
-clockMillis () =
-    clock = if Js.read slotted then currentClock () else Js.undefined
+clockMillis : ⊤ → Int
+clockMillis ⊤ =
+    clock = if Js.read slotted then currentClock ⊤ else Js.undefined
 
     if Js.isUndefined clock then
         Js.to (Js.call (Js.global "Date") "now" [])
@@ -2096,23 +2044,20 @@ firstOf fibers stop =
 
         got = suspend λwake →
             left = Js.ref 0
-            _ = Js.each fibers λf →
-                if Js.isNull (Js.get f "outcome") then Js.write left (Js.read left + 1) else ()
+            Js.each fibers λf →
+                if Js.isNull (Js.get f "outcome") then Js.write left (Js.read left + 1)
 
             observer = Js.from λf →
-                _ = Js.write left (Js.read left - 1)
+                Js.write left (Js.read left - 1)
 
                 if stop (Js.get f "outcome") then
                     Js.to (Js.apply wake [ f ])
                 else if Js.read left == 0 then
                     Js.to (Js.apply wake [ Js.null ])
-                else
-                    ()
-            _ = Js.write each observer
-            _ = Js.each fibers λf →
-                if Js.isNull (Js.get f "outcome") then observe f observer else ()
+            Js.write each observer
+            Js.each fibers λf → if Js.isNull (Js.get f "outcome") then observe f observer
             Js.from λ_ → Js.each fibers λf → unobserve f observer
-        _ = Js.each fibers λf → unobserve f (Js.read each)
+        Js.each fibers λf → unobserve f (Js.read each)
         got
 
 
@@ -2186,42 +2131,42 @@ valueOf f =
             v
 
         Cancelled →
-            selfCancel ()
+            selfCancel ⊤
 
 
 -- Wait for `fibers` to end, or for one to end `Cancelled` by itself — when
 -- the caller is cancelled too, and the scope cancels and awaits the rest.
-allOrCancel : V → ()
+allOrCancel : V → ⊤
 allOrCancel fibers =
     stopped = firstOf fibers wasCancelled
-    if Js.isNull stopped then () else selfCancel ()
+    if Js.isNull stopped then ⊤ else selfCancel ⊤
 
 
 --| Run both concurrently, and answer both values, in argument order. If
 --| one of them is cancelled — it joined a cancelled fiber — the other is
 --| cancelled and waited for, and so is the caller. Effect's `all` of two.
-pub par : (() → a), (() → b) → a × b
+pub par : (⊤ → a), (⊤ → b) → a × b
 par a b = within λs →
     fa = startIn s a
     fb = startIn s b
-    _ = allOrCancel (Js.array [ fa, fb ])
+    allOrCancel (Js.array [ fa, fb ])
     ( valueOf fa, valueOf fb )
 
 
 --| `par` of three.
-pub par3 : (() → a), (() → b), (() → c) → a × b × c
+pub par3 : (⊤ → a), (⊤ → b), (⊤ → c) → a × b × c
 par3 a b c = within λs →
     fa = startIn s a
     fb = startIn s b
     fc = startIn s c
-    _ = allOrCancel (Js.array [ fa, fb, fc ])
+    allOrCancel (Js.array [ fa, fb, fc ])
     ( valueOf fa, valueOf fb, valueOf fc )
 
 
 --| Run both concurrently; the first `Err` to arrive cancels the other,
 --| waits for its cleanup, and is the answer. `Ok` of both values, in
 --| argument order, otherwise. Effect's `all`, which fails fast.
-pub parOk : (() → Result e a), (() → Result e b) → Result e (a × b)
+pub parOk : (⊤ → Result e a), (⊤ → Result e b) → Result e (a × b)
 parOk a b = within λs →
     fa = startIn s a
     fb = startIn s b
@@ -2243,7 +2188,7 @@ parOk a b = within λs →
                 Err why
 
             Ok _ →
-                selfCancel ()
+                selfCancel ⊤
 
 
 -- The elements of a list, as a JavaScript array.
@@ -2270,7 +2215,7 @@ forEach xs bound f =
     if Js.isNull stopped then
         List.initialize (Js.to (Js.get items "length")) λi → Js.to (Js.at results i)
     else
-        selfCancel ()
+        selfCancel ⊤
 
 
 --| `forEach` for a function that answers a `Result`: on the first `Err`,
@@ -2293,7 +2238,7 @@ forEachOk xs bound f =
                 Err why
 
             Ok _ →
-                selfCancel ()
+                selfCancel ⊤
 
 
 -- Whether a call's value is an `Err`.
@@ -2342,7 +2287,7 @@ boundedFrom h items results bound call stopsAt ends next inFlight slots =
         else if stopsAt r then
             Js.from { outcome = host (Done (guest r)) }
         else
-            _ = Js.setAt results next r
+            Js.setAt results next r
             boundedFrom h items results bound call stopsAt ends (next + 1) inFlight slots
     else if Js.to (Js.get inFlight "length") == 0 then
         Js.null
@@ -2371,7 +2316,7 @@ harvest inFlight slots results ends i =
         else if ends o then
             f
         else
-            _ = Js.setAt results (Js.to (Js.at slots i)) (doneValue o)
+            Js.setAt results (Js.to (Js.at slots i)) (doneValue o)
             _ = Js.call inFlight "splice" [ Js.from i, Js.from 1 ]
             _ = Js.call slots "splice" [ Js.from i, Js.from 1 ]
             harvest inFlight slots results ends i
@@ -2392,18 +2337,18 @@ doneValue o =
 --| is cancelled and waited for — its cleanup has run — before it is
 --| returned. A branch cancelled by itself never wins; if both are, the
 --| caller is cancelled. Effect's `raceFirst`.
-pub race : (() → a), (() → a) → a
+pub race : (⊤ → a), (⊤ → a) → a
 race a b = raceAll a [ b ]
 
 
 --| `race` of any number of branches, `first` and then `rest`: the first to
 --| return wins, and every other branch is cancelled and waited for before
 --| the answer is returned. Effect's `raceAllFirst`.
-pub raceAll : (() → a), List (() → a) → a
+pub raceAll : (⊤ → a), List (⊤ → a) → a
 raceAll first rest = within λs →
     fibers = arrayOf (List.map [ first, …rest ] λt → startIn s t)
     winner = firstOf fibers wasDone
-    if Js.isNull winner then selfCancel () else valueOf winner
+    if Js.isNull winner then selfCancel ⊤ else valueOf winner
 
 
 --| The first branch to answer `Ok` wins, and the rest are cancelled and
@@ -2411,7 +2356,7 @@ raceAll first rest = within λs →
 --| `Ok`, the answer is `Err` of every branch's error, in argument order —
 --| a branch cancelled by itself gives none, and if every branch was, the
 --| caller is cancelled. No branches at all is `Err []`. Effect's `race`.
-pub raceOk : List (() → Result e a) → Result (List e) a
+pub raceOk : List (⊤ → Result e a) → Result (List e) a
 raceOk thunks =
     if List.isEmpty thunks then
         Err []
@@ -2422,14 +2367,14 @@ raceOk thunks =
 
             if Js.isNull winner then
                 errors = List.filterMap fibers λf → errorOf (Js.get (Js.from f) "outcome")
-                if List.isEmpty errors then selfCancel () else Err errors
+                if List.isEmpty errors then selfCancel ⊤ else Err errors
             else
                 case valueOf winner of
                     Ok v →
                         Ok v
 
                     Err _ →
-                        selfCancel ()
+                        selfCancel ⊤
 
 
 errorOf : V → Maybe e
@@ -2452,7 +2397,7 @@ errorOf o =
 --|
 --|     Task.timeout (Duration.seconds 5) (λ() → Http.get url)
 --|         ▷ Maybe.withDefault (Err Http.Timeout)
-pub timeout : Duration, (() → a) → Maybe a
+pub timeout : Duration, (⊤ → a) → Maybe a
 timeout duration work =
     if Duration.toMillis duration == 0 then
         Nothing
@@ -2464,7 +2409,7 @@ timeout duration work =
             if not (Js.isNull (Js.get child "outcome")) then
                 Just (valueOf child)
             else
-                timer = startIn s λ() → sleep duration
+                timer = startIn s λ⊤ → sleep duration
                 first = firstOf (Js.array [ child, timer ]) λ_ → True
                 if Js.same first child then Just (valueOf child) else Nothing
 
@@ -2490,56 +2435,55 @@ begin h work arg =
         if Js.isNull probe then
             parent = Js.read current
             made = newFiber parent (Js.array [])
-            _ = if Js.read slotted then Js.set made "slots" (slotsOf parent) else ()
+            if Js.read slotted then Js.set made "slots" (slotsOf parent)
             made
         else
             probe
 
     if Js.read phase ≠ 0 then
         -- Cancelled before it runs, as `spawnIn` would.
-        _ = Js.set h "probe" Js.null
+        Js.set h "probe" Js.null
         _ =
             Js.call (Js.get fiber "stack") "push"
                 [ Js.from finish, Js.from λ_ → Js.apply work [ arg ] ]
-        _ = enlist h fiber
-        _ = Js.set fiber "interrupted" (Js.from True)
-        _ = enqueue fiber Js.null Js.null
-        _ = Js.write started fiber
+        enlist h fiber
+        Js.set fiber "interrupted" (Js.from True)
+        enqueue fiber Js.null Js.null
+        Js.write started fiber
         Js.null
     else
         r = callAs fiber h work arg
 
         if Js.same r sentinel then
             -- It suspended: what the run loop does when a resumption parks.
-            _ = Js.set h "probe" Js.null
-            _ = enlist h fiber
+            Js.set h "probe" Js.null
+            enlist h fiber
             p = Js.read pending
-            _ = Js.write pending Js.null
+            Js.write pending Js.null
             stack = Js.get fiber "stack"
             _ = Js.call stack "push" [ Js.from finish ]
             ks = Js.get p "ks"
-            _ = takeOn stack ks (Js.to (Js.get ks "length") - 1)
+            takeOn stack ks (Js.to (Js.get ks "length") - 1)
 
-            _ =
-                if Js.to (Js.get p "interrupt") then
-                    _ = unwind fiber
-                    enqueue fiber Js.null Js.null
-                else
-                    Js.set fiber "parked" (Js.get p "wait")
-            _ = Js.write started fiber
+            if Js.to (Js.get p "interrupt") then
+                unwind fiber
+                enqueue fiber Js.null Js.null
+            else
+                Js.set fiber "parked" (Js.get p "wait")
+            Js.write started fiber
             Js.null
         else if not (Js.read spawning) || none (Js.get fiber "children") then
-            _ = Js.set h "probe" fiber
-            _ = Js.write started Js.null
+            Js.set h "probe" fiber
+            Js.write started Js.null
             r
         else
             -- It started children of its own, still running: its end
             -- cancels and waits for them, in a fiber like any other.
-            _ = Js.set h "probe" Js.null
-            _ = enlist h fiber
+            Js.set h "probe" Js.null
+            enlist h fiber
             _ = Js.call (Js.get fiber "stack") "push" [ Js.from finish, Js.from λ_ → r ]
-            _ = enqueue fiber Js.null Js.null
-            _ = Js.write started fiber
+            enqueue fiber Js.null Js.null
+            Js.write started fiber
             Js.null
 
 
@@ -2552,7 +2496,7 @@ started = Js.ref Js.null
 -- `begin` of a thunk, answering a fiber either way: the running one, or a
 -- record of the ended one's outcome, which is all a combinator reads of a
 -- child that has ended.
-startIn : V, (() → a) → V
+startIn : V, (⊤ → a) → V
 startIn h work =
     r = begin h (Js.from work) Js.null
     f = Js.read started
@@ -2561,19 +2505,19 @@ startIn h work =
 
 -- List `fiber`, still running, in the scope the holder `h` keeps — opened
 -- now, on the current fiber, if this is the first child that needs one.
-enlist : V, V → ()
+enlist : V, V → ⊤
 enlist h fiber =
     known = Js.get h "sc"
 
     s =
         if Js.isNull known then
-            opened = Js.from (openScope ())
-            _ = Js.set h "sc" opened
+            opened = Js.from (openScope ⊤)
+            Js.set h "sc" opened
             opened
         else
             known
-    _ = Js.write live (Js.read live + 1)
-    _ = Js.set fiber "scope" s
+    Js.write live (Js.read live + 1)
+    Js.set fiber "scope" s
     Js.to (Js.call (Js.get s "children") "add" [ fiber ])
 
 
@@ -2604,26 +2548,26 @@ closeHeld h value =
 callAs : V, V, V, V → V
 callAs fiber h work arg =
     outer = Js.read current
-    _ = Js.write current fiber
+    Js.write current fiber
     ok = Js.ref False
 
     r =
         Js.finally
-            (λ() →
+            (λ⊤ →
                 v = Js.apply work [ arg ]
-                _ = Js.write ok True
+                Js.write ok True
                 v
             )
-            λ() →
-                _ = Js.write current outer
+            λ⊤ →
+                Js.write current outer
 
                 if Js.read ok then
-                    ()
+                    ⊤
                 else
-                    _ = Js.write pending Js.null
-                    _ = Js.set h "probe" Js.null
-                    _ = enlist h fiber
-                    _ = recover fiber
+                    Js.write pending Js.null
+                    Js.set h "probe" Js.null
+                    enlist h fiber
+                    recover fiber
                     enqueue fiber Js.null Js.null
     r
 
@@ -2634,10 +2578,10 @@ callAs fiber h work arg =
 -- (`backend.md` §9, *A function called once …*, amended 2026-10-02, has
 -- the measurements). A build that reaches no combinator writes the same
 -- bytes either way.
-takeOn : V, V, Int → ()
+takeOn : V, V, Int → ⊤
 takeOn stack ks i =
     if i < 0 then
-        ()
+        ⊤
     else
         _ = Js.call stack "push" [ Js.at ks i ]
         takeOn stack ks (i - 1)

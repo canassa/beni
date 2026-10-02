@@ -31,17 +31,17 @@ update msg n =
             )
 
 
-work : String, Cmd.Send Msg → ()
+work : String, Cmd.Send Msg → ⊤
 work name _ =
     Task.bracket
-        (λ() → ())
+        (λ⊤ → ⊤)
         (λ_ exit →
             case exit of
                 Done _ →
-                    Debug.log "${name} done" ()
+                    Debug.log "${name} done" ⊤
 
                 Cancelled →
-                    Debug.log "${name} cancelled" ()
+                    Debug.log "${name} cancelled" ⊤
         )
         λ_ → Time.sleep (Time.millis 100)
 

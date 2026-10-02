@@ -6,10 +6,10 @@
 import Node exposing (Program)
 
 
-note : Int → ()
+note : Int → ⊤
 note n =
     _ = Debug.log "note" n
-    ()
+    ⊤
 
 
 main : Program
@@ -23,6 +23,6 @@ main =
         [ Debug.toString u
         , Debug.toString m
         , Debug.toString xs
-        , if u == () then "equal" else "different"
+        , if u == ⊤ then "equal" else "different"
         , String.fromInt (List.length xs)
         ]

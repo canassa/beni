@@ -15,7 +15,7 @@ viewPlain = Js.method λself →
     p = Js.get self "p"
     if Js.isNull p then
         c = Js.call (Js.get self "b") "slice" [ Js.get self "o" ]
-        _ = Js.set self "p" c
+        Js.set self "p" c
         c
     else
         p
@@ -26,4 +26,4 @@ size = Js.method λself → Js.get self "length"
 
 
 pub later : Js.Value
-later = Js.method λself → Js.from λ() → Js.get self "length"
+later = Js.method λself → Js.from λ⊤ → Js.get self "length"

@@ -6,9 +6,9 @@
 -- `deferred`. Without the lambda rule this would be two mutually recursive
 -- values and equally refused; with it, the report still fires, and the
 -- message names `deferred` as the step in between.
-pub deferred : () → Int
+pub deferred : ⊤ → Int
 deferred = λ_ → seed + 1
 
 
 pub seed : Int
-seed = deferred ()
+seed = deferred ⊤

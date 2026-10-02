@@ -37,9 +37,9 @@ main =
     p : Point
     p = { x = 3, label = "p" }
 
-    o = Probe.origin ()
+    o = Probe.origin ⊤
 
-    made = Probe.fromJs ()
+    made = Probe.fromJs ⊤
 
     item : Item
     item = Probe.keep { label = "kept", weight = 7 }

@@ -18,7 +18,7 @@ twice f x = f (f x)
 
 slowInc : Int → Int
 slowInc n =
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     n + 1
 
 
@@ -27,7 +27,7 @@ atLoad = twice (λn → n * 3) 2
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     pure = List.map [ 1, 2, 3 ] λn → n * 10
     waited = List.map [ 1, 2, 3 ] slowInc
     both = twice slowInc 5 + twice (λn → n + 100) 0

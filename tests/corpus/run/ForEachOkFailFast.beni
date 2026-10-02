@@ -15,19 +15,19 @@ check : Int → Result String Int
 check n =
     _ = Debug.log "start" n
 
-    Task.bracket (λ() → ()) (λ_ _ → Debug.log "released ${String.fromInt n}" ()) λ_ →
-        _ = Task.sleep (Duration.millis (if n == 2 then 5 else 20))
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "released ${String.fromInt n}" ⊤) λ_ →
+        Task.sleep (Duration.millis (if n == 2 then 5 else 20))
         if n == 2 then Err "two is bad" else Ok (n * 10)
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             failing = Task.forEachOk [ 1, 2, 3, 4, 5 ] 2 check
             _ = Debug.log "answer" failing
             Task.forEachOk [ 1, 3 ] 2 check
-    _ = Clock.adjust clock (Duration.seconds 1)
+    Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

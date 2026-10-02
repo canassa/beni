@@ -5,16 +5,16 @@ import Js
 
 
 --| A fresh empty object.
-object : () → Js.Value
+object : ⊤ → Js.Value
 object _ = Js.apply (Js.global "Object") []
 
 
 --| Count to `n` in a property of an object, one tail call per step.
 pub countTo : Int → Int
 countTo n =
-    o = object ()
+    o = object ⊤
 
-    _ = Js.set o "n" (Js.from 0)
+    Js.set o "n" (Js.from 0)
     step o n
 
 
@@ -25,7 +25,7 @@ step o n =
     if k == n then
         k
     else
-        _ = Js.set o "n" (Js.from (k + 1))
+        Js.set o "n" (Js.from (k + 1))
         step o n
 
 
@@ -37,22 +37,22 @@ joined = Js.to (Js.call (Js.array [ Js.from "a", Js.from "b", Js.from "c" ]) "jo
 --| A property whose name is not an identifier is read by index.
 pub dashed : String
 dashed =
-    o = object ()
+    o = object ⊤
 
-    _ = Js.set o "x-y" (Js.from "dashed")
+    Js.set o "x-y" (Js.from "dashed")
     Js.to (Js.get o "x-y")
 
 
 --| The tests on `null` and `undefined`, and identity.
 pub tests : List Bool
 tests =
-    o = object ()
+    o = object ⊤
     [ Js.isNull Js.null
     , Js.isNullish Js.undefined
     , Js.isUndefined (Js.get o "missing")
     , Js.isNull (Js.get o "missing")
     , Js.same o o
-    , Js.same o (object ())
+    , Js.same o (object ⊤)
     ]
 
 
@@ -65,15 +65,15 @@ bits = Js.bitAnd 6 3
 --| is `"1"`.
 pub readThenWrite : String
 readThenWrite =
-    o = object ()
+    o = object ⊤
 
-    _ = Js.set o "v" (Js.from 1)
+    Js.set o "v" (Js.from 1)
     Js.to (Js.apply (Js.global "String") [ Js.get o "v", Js.from (Js.set o "v" (Js.from 2)) ])
 
 
 bump : Js.Value → Int
 bump o =
-    _ = Js.set o "v" (Js.from 2)
+    Js.set o "v" (Js.from 2)
     0
 
 
@@ -84,8 +84,8 @@ second _ b = String.fromInt b
 --| A property read bound before a call that writes the property keeps what
 --| it read: `1`, not the `2` the call writes. The release optimiser may not
 --| fold the read into the call's arguments, after the call.
-pub readBeforeCall : () → String
-readBeforeCall () =
+pub readBeforeCall : ⊤ → String
+readBeforeCall ⊤ =
     o = Js.apply (Js.global "Object") [ Js.from { v = 1 } ]
 
     v : Int

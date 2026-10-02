@@ -3,4 +3,4 @@
 --! program can arrange by itself (`boundary.md` §4.1, §9.8.10 (c)).
 
 --| From now on, every `fetch` rejects with a `RangeError`.
-pub foreign impure breakFetch : () → ()
+pub foreign impure breakFetch : ⊤ → ⊤

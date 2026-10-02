@@ -13,7 +13,7 @@ import Js
 pub decodes : String → Maybe String
 decodes text =
     Js.catchIf
-        (λ() → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
+        (λ⊤ → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from text ])))
         (λerr → Js.instanceOf err (Js.global "URIError"))
         λ_ → Nothing
 
@@ -23,7 +23,7 @@ stored area key value =
     code : Int
     code =
         Js.catchIf
-            (λ() →
+            (λ⊤ →
                 _ = Js.call area "setItem" [ Js.from key, Js.from value ]
                 0
             )
@@ -35,13 +35,13 @@ stored area key value =
     code + 1
 
 
-pub drop : Js.Value → ()
+pub drop : Js.Value → ⊤
 drop f =
-    Js.catchIf (λ() → Js.to (Js.apply f [])) (λerr → Js.instanceOf err (Js.global "TypeError")) λ_ →
-        ()
+    Js.catchIf (λ⊤ → Js.to (Js.apply f [])) (λerr → Js.instanceOf err (Js.global "TypeError")) λ_ →
+        ⊤
 
 
-pub passed : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
+pub passed : (⊤ → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 passed f t h = Js.catchIf f t h
 
 

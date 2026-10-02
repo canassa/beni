@@ -49,7 +49,7 @@ pub type Protocol
 --|     -- Just { protocol = Https, host = "example.com", port_ = Nothing,
 --|     --        path = "/caps", query = Just "q=top%20hat", fragment = Nothing }
 pub fromString : String → Maybe Url
-fromString str = Js.pure λ() →
+fromString str = Js.pure λ⊤ →
     url = parse str
     if
         Js.isNull url
@@ -73,7 +73,7 @@ parse str =
     url = Js.global "URL"
     if Js.isUndefined (Js.get url "parse") then
         Js.catchIf
-            (λ() → Js.construct url [ Js.from str ])
+            (λ⊤ → Js.construct url [ Js.from str ])
             (λerror → Js.instanceOf error (Js.global "TypeError"))
             λ_ → Js.null
     else
@@ -185,6 +185,6 @@ percentDecode str =
     -- is not percent-encoded UTF-8: that is `Nothing`, and anything else is
     -- thrown on (CLAUDE.md rule 9).
     Js.catchIf
-        (λ() → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
+        (λ⊤ → Just (Js.to (Js.apply (Js.global "decodeURIComponent") [ Js.from str ])))
         (λerror → Js.instanceOf error (Js.global "URIError"))
         λ_ → Nothing

@@ -47,7 +47,7 @@ main =
             isEven (k - 1)
     Node.printLines
         [ String.fromInt callsLater
-        , String.fromInt (deferred ())
+        , String.fromInt (deferred ⊤)
         , String.fromInt usesEarlier
         , Debug.toString (isEven 4)
         , Debug.toString (isOdd 4)

@@ -142,9 +142,9 @@ main =
             )
         , "-- both families"
         , Show.result
-            (Schema.decode (Shape.schema ()) (Shape.Encoded.Circle { radius = 2 }))
+            (Schema.decode (Shape.schema ⊤) (Shape.Encoded.Circle { radius = 2 }))
             showShape
-        , Show.result (Schema.encode (Shape.schema ()) Shape.Dot) showEncoded
+        , Show.result (Schema.encode (Shape.schema ⊤) Shape.Dot) showEncoded
         , if Shape.Circle { radius = 1 } == Shape.Circle { radius = 1 } then
             "equal"
           else

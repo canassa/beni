@@ -17,8 +17,8 @@ c : Dict.Dict Int String
 c = Dict.empty
 
 
-d : ()
-d = ()
+d : ⊤
+d = ⊤
 
 
 e2 : (Int → Int) → Int

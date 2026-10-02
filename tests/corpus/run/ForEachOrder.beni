@@ -11,14 +11,14 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             Task.forEach [ 30, 10, 20 ] 3 λms →
-                _ = Task.sleep (Duration.millis ms)
+                Task.sleep (Duration.millis ms)
                 Debug.log "ended" ms
-    _ = Clock.adjust clock (Duration.millis 100)
+    Clock.adjust clock (Duration.millis 100)
     _ = Debug.log "answer" (Task.join caller)
     Node.print (Debug.toString (Task.forEach [] 3 λn → Debug.log "never" n))

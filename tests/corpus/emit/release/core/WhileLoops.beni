@@ -14,19 +14,19 @@
 import Js
 
 
-pub gather : Js.Value, Js.Value → ()
+pub gather : Js.Value, Js.Value → ⊤
 gather from into =
     if Js.isNull (Js.get from "firstChild") then
-        ()
+        ⊤
     else
         _ = Js.call into "appendChild" [ Js.get from "firstChild" ]
         gather from into
 
 
-pub each : Js.Value, Int → ()
+pub each : Js.Value, Int → ⊤
 each fs k =
     if k == Js.to (Js.get fs "length") then
-        ()
+        ⊤
     else
         _ = Js.apply (Js.at fs k) []
         each fs (k + 1)
@@ -40,13 +40,13 @@ find xs k =
         find xs (k + 2)
 
 
-pub settle : Js.Value, Js.Value → ()
+pub settle : Js.Value, Js.Value → ⊤
 settle n end =
     next = Js.get n "nextSibling"
 
     _ = Js.call n "remove" []
     if Js.same n end then
-        ()
+        ⊤
     else
         settle next end
 

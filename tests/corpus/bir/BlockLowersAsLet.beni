@@ -22,7 +22,7 @@ withBlock n =
     f c
 
 
-statement : () → Int
+statement : ⊤ → Int
 statement u =
     u
     1

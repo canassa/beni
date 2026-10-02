@@ -76,7 +76,7 @@ logAs descriptor tag value =
 --| `toString`, with the descriptor of the value's type: the compiler's, as
 --| `logAs` is.
 pub toStringAs : Js.Value, a → String
-toStringAs descriptor value = Js.pure λ() →
+toStringAs descriptor value = Js.pure λ⊤ →
     parsed = Js.call (Js.global "JSON") "parse" [ descriptor ]
     show (Js.at parsed 0) (Js.at parsed 1) (Js.array []) (Js.from value)
 
@@ -134,17 +134,17 @@ showApplied t defs env value =
         parts = Js.array []
         n : Int
         n = Js.to (Js.get t "length")
-        _ = eachIndex 1 n λi → push parts (show (Js.at t i) defs env (Js.at value (slot (i - 1))))
+        eachIndex 1 n λi → push parts (show (Js.at t i) defs env (Js.at value (slot (i - 1))))
         "(${commas parts})"
     else if Js.same head (Js.from "l") then
         "[${commas (listItems (Js.at t 1) defs env value)}]"
     else if Js.same head (Js.from "D") then
         pairs = Js.array []
-        _ = dictPairs (Js.at t 1) (Js.at t 2) defs env (Js.get value "a") pairs
+        dictPairs (Js.at t 1) (Js.at t 2) defs env (Js.get value "a") pairs
         "Dict.fromList [${commas pairs}]"
     else if Js.same head (Js.from "S") then
         keys = Js.array []
-        _ = dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get (Js.get value "a") "a") keys
+        dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get (Js.get value "a") "a") keys
         "Set.fromList [${commas keys}]"
     else
         showType (Js.at defs (Js.at t 1)) (bindArgs t env) defs value
@@ -158,7 +158,7 @@ bindArgs t env =
     bound = Js.array []
     n : Int
     n = Js.to (Js.get t "length")
-    _ = eachIndex 2 n λi →
+    eachIndex 2 n λi →
         arg = Js.at t i
         if Js.typeIs arg "number" then
             Js.to (Js.call bound "push" [ Js.at env arg ])
@@ -181,7 +181,7 @@ showType def env defs value =
             parts = Js.array [ tag ]
             n : Int
             n = Js.to (Js.get args "length")
-            _ = eachIndex 0 n λi →
+            eachIndex 0 n λi →
                 push parts (parenthesised (show (Js.at args i) defs env (Js.at value (slot i))))
             joined parts " "
         else
@@ -197,7 +197,7 @@ showRecord t defs env value =
         "{}"
     else
         fields = Js.array []
-        _ = Js.each keys λk →
+        Js.each keys λk →
             key : String
             key = Js.to k
             field =
@@ -214,7 +214,7 @@ showRecord t defs env value =
 listItems : Js.Value, Js.Value, Js.Value, Js.Value → Js.Value
 listItems t defs env value =
     parts = Js.array []
-    _ = Js.each (plain value) λitem → push parts (show t defs env item)
+    Js.each (plain value) λitem → push parts (show t defs env item)
     parts
 
 
@@ -222,20 +222,18 @@ listItems t defs env value =
 -- the key alone when `v` is `"?"`, which is how a `Set` is read. Core's
 -- `Dict` is `Dict (Tree k v)`, and a tree node is `Node color key value
 -- left right` or `Leaf` (`core/Dict.beni`).
-dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → ()
+dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → ⊤
 dictPairs k v defs env tree out =
     if Js.same (Js.get tree "$") (Js.from "Node") then
-        _ = dictPairs k v defs env (Js.get tree "d") out
+        dictPairs k v defs env (Js.get tree "d") out
         key = show k defs env (Js.get tree "b")
         entry =
             if Js.same v (Js.from "?") then
                 key
             else
                 "(${key},${show v defs env (Js.get tree (slot 2))})"
-        _ = push out entry
+        push out entry
         dictPairs k v defs env (Js.get tree "e") out
-    else
-        ()
 
 
 -- A value read by its representation alone (`backend.md` §4). `seen` holds
@@ -260,8 +258,7 @@ untypedValue value seen =
             "<cycle>"
         else
             _ = Js.call seen "add" [ value ]
-            Js.finally (λ() → untypedObject value seen) λ() →
-                Js.to (Js.call seen "delete" [ value ])
+            Js.finally (λ⊤ → untypedObject value seen) λ⊤ → Js.to (Js.call seen "delete" [ value ])
     else
         "<internals>"
 
@@ -276,7 +273,7 @@ untypedObject value seen =
             || Js.typeIs (Js.get value "$plain") "function"
     then
         parts = Js.array []
-        _ = Js.each (plain value) λitem → push parts (untypedValue item seen)
+        Js.each (plain value) λitem → push parts (untypedValue item seen)
         "[${commas parts}]"
     else
         keys = Js.call (Js.global "Object") "keys" [ value ]
@@ -285,9 +282,9 @@ untypedObject value seen =
             -- A constructor's arguments, padding (`null`) left out: with no
             -- type, padding and a `()` argument are one representation.
             parts = Js.array [ tag ]
-            _ = Js.each keys λk →
+            Js.each keys λk →
                 if Js.same k (Js.from "$") || Js.isNullish (Js.at value k) then
-                    ()
+                    ⊤
                 else
                     push parts (parenthesised (untypedValue (Js.at value k) seen))
             joined parts " "
@@ -295,7 +292,7 @@ untypedObject value seen =
             "{}"
         else
             fields = Js.array []
-            _ = Js.each keys λk →
+            Js.each keys λk →
                 key : String
                 key = Js.to k
                 push fields "${key} = ${untypedValue (Js.at value k) seen}"
@@ -326,7 +323,7 @@ showFloat value =
 quoted : String, String → String
 quoted s quote =
     parts = Js.array []
-    _ = Js.each (Js.call (Js.global "Array") "from" [ Js.from s ]) λch →
+    Js.each (Js.call (Js.global "Array") "from" [ Js.from s ]) λch →
         text : String
         text = Js.to ch
         code : Int
@@ -403,7 +400,7 @@ joined parts separator = Js.to (Js.call parts "join" [ Js.from separator ])
 
 
 -- `text` pushed onto the array `parts`.
-push : Js.Value, String → ()
+push : Js.Value, String → ⊤
 push parts text = Js.to (Js.call parts "push" [ Js.from text ])
 
 
@@ -428,10 +425,8 @@ slot i =
 
 
 -- `f` of each of `i … n - 1`, in order.
-eachIndex : Int, Int, (Int → ()) → ()
+eachIndex : Int, Int, (Int → ⊤) → ⊤
 eachIndex i n f =
     if i < n then
-        _ = f i
+        f i
         eachIndex (i + 1) n f
-    else
-        ()

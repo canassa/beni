@@ -33,16 +33,16 @@ show : List Duration → String
 show ds = Debug.toString (List.map ds Duration.toMillis)
 
 
-units : Int → List ()
-units n = List.repeat () n
+units : Int → List ⊤
+units n = List.repeat ⊤ n
 
 
-at : Int, Int, Float → Metadata ()
-at attempt elapsed random = { input = (), attempt = attempt, elapsed = ms elapsed, random = random }
+at : Int, Int, Float → Metadata ⊤
+at attempt elapsed random = { input = ⊤, attempt = attempt, elapsed = ms elapsed, random = random }
 
 
 -- One step's delay, or "stop".
-once : Schedule (), Metadata () → String
+once : Schedule ⊤, Metadata ⊤ → String
 once schedule metadata =
     case Schedule.step schedule metadata of
         Continue d _ →
@@ -53,7 +53,7 @@ once schedule metadata =
 
 
 -- The second step's delay, after a first one at `first`.
-second : Schedule (), Metadata (), Metadata () → String
+second : Schedule ⊤, Metadata ⊤, Metadata ⊤ → String
 second schedule first later =
     case Schedule.step schedule first of
         Continue _ next →

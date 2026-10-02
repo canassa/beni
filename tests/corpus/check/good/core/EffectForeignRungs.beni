@@ -12,16 +12,16 @@
 pub foreign pure double : Int → Int
 
 
-pub foreign impure now : () → Int
+pub foreign impure now : ⊤ → Int
 
 
 pub foreign suspends get : Int → Int
 
 
-pub foreign impure makeClock : () → (() → Int)
+pub foreign impure makeClock : ⊤ → (⊤ → Int)
 
 
-pub foreign impure later : (() → Int) → ()
+pub foreign impure later : (⊤ → Int) → ⊤
 
 
 pub foreign pure compareAll : List a, List a → Bool
@@ -32,7 +32,7 @@ pub quiet : Int → Int
 quiet n = double n
 
 
-pub tick : () → Int
+pub tick : ⊤ → Int
 tick u = now u
 
 
@@ -41,12 +41,12 @@ fetch id = get id
 
 
 pub both : Int → Int
-both id = get (now ())
+both id = get (now ⊤)
 
 
-pub schedule : () → ()
-schedule u = later λ() → get 1
+pub schedule : ⊤ → ⊤
+schedule u = later λ⊤ → get 1
 
 
-pub reading : () → Int
-reading u = (makeClock ()) ()
+pub reading : ⊤ → Int
+reading u = (makeClock ⊤) ⊤

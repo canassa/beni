@@ -27,7 +27,7 @@ type Msg
     | Unfollow
     | Order
     | Note String
-    | Pushed String (Result Navigation.Error ())
+    | Pushed String (Result Navigation.Error ⊤)
     | Changed Url
 
 
@@ -48,7 +48,7 @@ fragment url =
 
 
 push : Key, String → Cmd Msg
-push key url = Cmd.task (λ() → Navigation.pushUrl key url) (Pushed url _)
+push key url = Cmd.task (λ⊤ → Navigation.pushUrl key url) (Pushed url _)
 
 
 note : Model, String → Model
@@ -80,7 +80,7 @@ update msg model =
         Note line →
             ( note model line, Cmd.none )
 
-        Pushed url (Ok ()) →
+        Pushed url (Ok ⊤) →
             ( note model "pushed ${url}", Cmd.none )
 
         Pushed url (Err _) →
@@ -113,7 +113,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { key = Navigation.key (), following = False, lines = [] }, Cmd.none )
+        { init = ( { key = Navigation.key ⊤, following = False, lines = [] }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = subscriptions

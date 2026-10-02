@@ -25,10 +25,10 @@ report area key =
             "${key} unset"
 
 
-written : Result Storage.Error () → String
+written : Result Storage.Error ⊤ → String
 written result =
     case result of
-        Ok () →
+        Ok ⊤ →
             "written"
 
         Err Storage.QuotaExceeded →
@@ -47,7 +47,7 @@ update msg lines =
             )
 
         Forget →
-            _ = Storage.remove Local "todos"
+            Storage.remove Local "todos"
             ( lines ++ [ report Local "todos", "keys " ++ String.join (Storage.keys Local) "," ]
             , Cmd.none
             )

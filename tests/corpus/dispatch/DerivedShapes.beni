@@ -14,7 +14,7 @@
 -- round. A table that printed request order would pass with the wrong
 -- numbering and `derived 0` would name a different function than the
 -- emitter's first (A.15, A.29).
-pub sameUnit : (), () → Bool
+pub sameUnit : ⊤, ⊤ → Bool
 sameUnit a b = a == b
 
 

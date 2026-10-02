@@ -13,19 +13,19 @@ import String
 
 
 type T
-    = A () Int
+    = A ⊤ Int
     | B
 
 
 type Wrap
-    = Wrap ()
+    = Wrap ⊤
 
 
 -- `Maybe ()`: the unit is the payload of a real choice.
-maybeUnit : Maybe () → Int
+maybeUnit : Maybe ⊤ → Int
 maybeUnit m =
     case m of
-        Just () →
+        Just ⊤ →
             1
 
         Nothing →
@@ -33,10 +33,10 @@ maybeUnit m =
 
 
 -- `Result String ()`: the "did it succeed" shape.
-resultUnit : Result String () → Int
+resultUnit : Result String ⊤ → Int
 resultUnit r =
     case r of
-        Ok () →
+        Ok ⊤ →
             1
 
         Err _ →
@@ -44,10 +44,10 @@ resultUnit r =
 
 
 -- A unit inside a tuple inside a constructor.
-tupleUnit : Maybe (() × Int) → Int
+tupleUnit : Maybe (⊤ × Int) → Int
 tupleUnit m =
     case m of
-        Just ( (), n ) →
+        Just ( ⊤, n ) →
             n
 
         Nothing →
@@ -58,7 +58,7 @@ tupleUnit m =
 userCtor : T → Int
 userCtor v =
     case v of
-        A () n →
+        A ⊤ n →
             n
 
         B →
@@ -66,10 +66,10 @@ userCtor v =
 
 
 -- Nested twice.
-twice : Maybe (Maybe ()) → Int
+twice : Maybe (Maybe ⊤) → Int
 twice m =
     case m of
-        Just (Just ()) →
+        Just (Just ⊤) →
             2
 
         Just Nothing →
@@ -80,23 +80,23 @@ twice m =
 
 
 -- A unit inside a list pattern, both spellings.
-listUnit : List () → Int
+listUnit : List ⊤ → Int
 listUnit xs =
     case xs of
         [] →
             0
 
-        [ () ] →
+        [ ⊤ ] →
             1
 
-        [ (), …_ ] →
+        [ ⊤, …_ ] →
             2
 
 
 -- An irrefutable PARAMETER: `Wrap` is the only constructor of its type, so
 -- `Wrap ()` matches every value of it (`language.md` §7).
 unwrap : Wrap, Int → Int
-unwrap (Wrap ()) n = n
+unwrap (Wrap ⊤) n = n
 
 
 -- A lookup table, so the `Flat` fast path of `checker.md` §6 rather than
@@ -105,39 +105,39 @@ unwrap (Wrap ()) n = n
 table : Wrap, Bool → Int
 table w b =
     case ( w, b ) of
-        ( Wrap (), True ) →
+        ( Wrap ⊤, True ) →
             1
 
-        ( Wrap (), False ) →
+        ( Wrap ⊤, False ) →
             0
 
 
 -- The same pattern as a lambda parameter, and as a `let` pattern.
 lambdaAndLet : Int
 lambdaAndLet =
-    (Wrap ()) = Wrap ()
-    (λ(Wrap ()) → 9) (Wrap ())
+    (Wrap ⊤) = Wrap ⊤
+    (λ(Wrap ⊤) → 9) (Wrap ⊤)
 
 
 main : Program
 main =
     Node.printLines
-        [ String.fromInt (maybeUnit (Just ()))
+        [ String.fromInt (maybeUnit (Just ⊤))
         , String.fromInt (maybeUnit Nothing)
-        , String.fromInt (resultUnit (Ok ()))
+        , String.fromInt (resultUnit (Ok ⊤))
         , String.fromInt (resultUnit (Err "no"))
-        , String.fromInt (tupleUnit (Just ( (), 42 )))
+        , String.fromInt (tupleUnit (Just ( ⊤, 42 )))
         , String.fromInt (tupleUnit Nothing)
-        , String.fromInt (userCtor (A () 7))
+        , String.fromInt (userCtor (A ⊤ 7))
         , String.fromInt (userCtor B)
-        , String.fromInt (twice (Just (Just ())))
+        , String.fromInt (twice (Just (Just ⊤)))
         , String.fromInt (twice (Just Nothing))
         , String.fromInt (twice Nothing)
         , String.fromInt (listUnit [])
-        , String.fromInt (listUnit [ () ])
-        , String.fromInt (listUnit [ (), () ])
-        , String.fromInt (unwrap (Wrap ()) 5)
-        , String.fromInt (table (Wrap ()) True)
-        , String.fromInt (table (Wrap ()) False)
+        , String.fromInt (listUnit [ ⊤ ])
+        , String.fromInt (listUnit [ ⊤, ⊤ ])
+        , String.fromInt (unwrap (Wrap ⊤) 5)
+        , String.fromInt (table (Wrap ⊤) True)
+        , String.fromInt (table (Wrap ⊤) False)
         , String.fromInt lambdaAndLet
         ]

@@ -15,13 +15,13 @@ type Msg
     = Boom
 
 
-start : () → Int
-start () =
-    root = Task.openRoot ()
+start : ⊤ → Int
+start ⊤ =
+    root = Task.openRoot ⊤
 
-    _ = Task.spawnIn root λ() →
+    _ = Task.spawnIn root λ⊤ →
         Task.bracket
-            (λ() → ())
+            (λ⊤ → ⊤)
             (λ_ exit →
                 case exit of
                     Done _ →
@@ -37,7 +37,7 @@ start () =
 main : Browser.Program
 main =
     Browser.hosted
-        { init = λ_ → start ()
+        { init = λ_ → start ⊤
         , update = λ_ Boom _ → Debug.todo "update threw"
         , settle = λ_ n → n
         , view = λ_ → <button id="boom" onClick={Boom}>boom</button>

@@ -13,6 +13,6 @@ main =
         [ String.fromInt (Methods.bump c)
         , String.fromInt (Methods.bump c)
         , String.fromInt (Methods.nested 21)
-        , Methods.inner ()
-        , Methods.cached ()
+        , Methods.inner ⊤
+        , Methods.cached ⊤
         ]

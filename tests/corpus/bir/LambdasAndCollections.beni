@@ -9,5 +9,5 @@ pairs : List (Int × Int) → List Int
 pairs xs = List.map xs λ( a, b ) → a + b
 
 
-collections : List Int × (Int × Int × Int) × ()
-collections = ( [ 1, 2, 3 ], ( 1, 2, 3 ), () )
+collections : List Int × (Int × Int × Int) × ⊤
+collections = ( [ 1, 2, 3 ], ( 1, 2, 3 ), ⊤ )

@@ -9,7 +9,7 @@ import K exposing (K)
 
 
 badShow : String
-badShow = (Box.Box (K.K 1)).show ()
+badShow = (Box.Box (K.K 1)).show ⊤
 
 
 badEq : Bool

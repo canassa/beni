@@ -21,8 +21,8 @@ update msg _ =
             ( "woke", Cmd.none )
 
 
-nap : () → ()
-nap () = Time.sleep (Time.millis 2147483653)
+nap : ⊤ → ⊤
+nap ⊤ = Time.sleep (Time.millis 2147483653)
 
 
 view : String → Html Msg

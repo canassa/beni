@@ -15,16 +15,16 @@ import Schema exposing (Conversion, Schema)
 import Show
 
 
-one ( (), a ) = { a = a }
+one ( ⊤, a ) = { a = a }
 
 
-unOne r = ( (), r.a )
+unOne r = ( ⊤, r.a )
 
 
-two ( ( (), a ), b ) = { a = a, b = b }
+two ( ( ⊤, a ), b ) = { a = a, b = b }
 
 
-unTwo r = ( ( (), r.a ), r.b )
+unTwo r = ( ( ⊤, r.a ), r.b )
 
 
 pair :
@@ -84,11 +84,11 @@ injA = Schema.injection A λt →
             Nothing
 
 
-injB : Schema.Injection () T
-injB = Schema.injection (λ() → B) λt →
+injB : Schema.Injection ⊤ T
+injB = Schema.injection (λ⊤ → B) λt →
     case t of
         B →
-            Just ()
+            Just ⊤
 
         A _ →
             Nothing
@@ -134,10 +134,10 @@ empty : Schema T T
 empty = Schema.tagged "k" []
 
 
-four ( ( ( ( (), p ), q ), r ), s ) = { p = p, q = q, r = r, s = s }
+four ( ( ( ( ⊤, p ), q ), r ), s ) = { p = p, q = q, r = r, s = s }
 
 
-unFour x = ( ( ( ( (), x.p ), x.q ), x.r ), x.s )
+unFour x = ( ( ( ( ⊤, x.p ), x.q ), x.r ), x.s )
 
 
 -- `b` and `a` are both named twice; `b` is the first name that occurs again.

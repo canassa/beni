@@ -8,19 +8,19 @@
 import Node exposing (Program)
 
 
-step : Bool × Bool × Bool → ()
+step : Bool × Bool × Bool → ⊤
 step ( a, b, c ) =
     if a then
         if b then
-            Debug.log "inner" ()
+            Debug.log "inner" ⊤
         else
-            ()
+            ⊤
     else
-        _ = Debug.log "outer" ()
+        Debug.log "outer" ⊤
         if c then
-            Debug.log "outer c" ()
+            Debug.log "outer c" ⊤
         else
-            Debug.log "outer not c" ()
+            Debug.log "outer not c" ⊤
 
 
 main : Program

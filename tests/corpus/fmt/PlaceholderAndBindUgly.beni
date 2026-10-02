@@ -7,7 +7,7 @@ partial   xs =   List.map xs (   add 1 _   )
 
 pipeline r =
       scope ← Task.scope
-      conn     ←     Task.bracket (λ() → Db.open r.url) Db.close
+      conn     ←     Task.bracket (λ⊤ → Db.open r.url) Db.close
       count = 1
       h ← Result.andThen (readHeader r)
       render scope conn count h

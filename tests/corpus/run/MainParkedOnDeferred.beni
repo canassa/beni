@@ -11,9 +11,9 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    d = Deferred.make ()
-    helper = Task.spawn λ() → Debug.log "the helper ends without completing" ()
-    _ = Task.join helper
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
+    helper = Task.spawn λ⊤ → Debug.log "the helper ends without completing" ⊤
+    Task.join helper
     v = Deferred.wait d
     Node.print "not reached ${String.fromInt v}"

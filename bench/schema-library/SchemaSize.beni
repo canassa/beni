@@ -17,7 +17,7 @@ type alias User =
     nickname : Presence String
 
 
-toUser ( ( ( ( ( ( ( ( (), userId ), displayName ), email ), age ), active ), score ), role ), nickname ) =
+toUser ( ( ( ( ( ( ( ( ⊤, userId ), displayName ), email ), age ), active ), score ), role ), nickname ) =
     { userId = userId
     , displayName = displayName
     , email = email
@@ -30,7 +30,7 @@ toUser ( ( ( ( ( ( ( ( (), userId ), displayName ), email ), age ), active ), sc
 
 
 fromUser u =
-    ( ( ( ( ( ( ( ( (), u.userId ), u.displayName ), u.email ), u.age ), u.active ), u.score )
+    ( ( ( ( ( ( ( ( ⊤, u.userId ), u.displayName ), u.email ), u.age ), u.active ), u.score )
       , u.role
       )
     , u.nickname

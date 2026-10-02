@@ -10,20 +10,20 @@ import Js
 
 
 pub park : Js.Value → Int
-park v = Js.suspending λ() → Js.to v
+park v = Js.suspending λ⊤ → Js.to v
 
 
 pub inValue : Js.Value → Int
 inValue v =
-    n = Js.suspending λ() → Js.to v
+    n = Js.suspending λ⊤ → Js.to v
     n + 1
 
 
 pub discarded : Js.Value → Int
 discarded v =
-    _ = Js.suspending λ() → Js.to v
+    _ = Js.suspending λ⊤ → Js.to v
     4
 
 
-pub passed : () → (sync (() → Int) → Int)
-passed () = Js.suspending
+pub passed : ⊤ → (sync (⊤ → Int) → Int)
+passed ⊤ = Js.suspending

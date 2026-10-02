@@ -86,7 +86,7 @@ items (Cmd list) = list
 --| Run `body` in a fiber of its own — or, when it never waits, with no
 --| fiber, where that fiber would have started. Nothing can cancel it but
 --| the program's end.
-pub perform : (Send msg → ()) → Cmd msg
+pub perform : (Send msg → ⊤) → Cmd msg
 perform body =
     if Js.maySuspend body then
         Cmd [ Perform (Hosted.job body) ]
@@ -107,7 +107,7 @@ perform body =
 --|
 --| A body that waits first is debounced by `Restart`; one that waits last
 --| is throttled by `Ignore`.
-pub keyed : k, Policy, (Send msg → ()) → Cmd msg
+pub keyed : k, Policy, (Send msg → ⊤) → Cmd msg
     where k.compare : k, k → Order
 keyed k policy body =
     if Js.maySuspend body then
@@ -174,16 +174,16 @@ mapItem item segment tag =
 --| update's model: after every write of the render, before the next
 --| message, synchronously, so the nodes it rendered exist and a focus or
 --| a measurement costs no frame. It must not wait.
-pub afterRender : (Send msg → ()) → Cmd msg
+pub afterRender : (Send msg → ⊤) → Cmd msg
 afterRender body = Cmd [ After (Hosted.later body) ]
 
 
 --| Run `work`, as `perform` runs a body, and send what it returns through
 --| `tag`: the command form of calling `work` directly.
-pub task : (() → a), (a → msg) → Cmd msg
-task work tag = perform λsend → send (tag (work ()))
+pub task : (⊤ → a), (a → msg) → Cmd msg
+task work tag = perform λsend → send (tag (work ⊤))
 
 
 --| Run `work`, as `perform` runs a body, for what it does.
-pub do : (() → ()) → Cmd msg
-do work = perform λ_ → work ()
+pub do : (⊤ → ⊤) → Cmd msg
+do work = perform λ_ → work ⊤

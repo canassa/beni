@@ -15,31 +15,30 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     slot = Ref.make Nothing
 
-    waiter = Task.spawn λ() →
+    waiter = Task.spawn λ⊤ →
         v = Task.callback λr →
-            _ = Ref.set slot (Just r)
-            λ() → ()
+            Ref.set slot (Just r)
+            λ⊤ → ⊤
         Debug.log "waiter woke with" v
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
 
-    _ =
-        case Ref.get slot of
-            Just r →
-                _ = Task.resume r 1
-                Task.resume r 2
+    case Ref.get slot of
+        Just r →
+            Task.resume r 1
+            Task.resume r 2
 
-            Nothing →
-                Debug.log "never registered" ()
-    _ = Debug.log "resumed twice" ()
+        Nothing →
+            Debug.log "never registered" ⊤
+    Debug.log "resumed twice" ⊤
     first = Task.join waiter
-    other = Task.spawn λ() → Debug.log "another fiber ran" ()
+    other = Task.spawn λ⊤ → Debug.log "another fiber ran" ⊤
 
     now = Task.callback λr →
-        _ = Task.resume r 3
-        λ() → ()
+        Task.resume r 3
+        λ⊤ → ⊤
     _ = Debug.log "answered at once" now
-    _ = Task.join other
+    Task.join other
     Node.print "joined ${String.fromInt first}"

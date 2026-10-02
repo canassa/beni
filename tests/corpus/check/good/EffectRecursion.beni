@@ -33,14 +33,14 @@ pub ping n =
 pub pong n = Debug.log "pong" (ping n)
 
 
-pub walk : List a, (a → ()) → ()
+pub walk : List a, (a → ⊤) → ⊤
 walk xs visit =
     case xs of
         [] →
-            ()
+            ⊤
 
         [ x, …rest ] →
-            () = visit x
+            ⊤ = visit x
             walk rest visit
 
 

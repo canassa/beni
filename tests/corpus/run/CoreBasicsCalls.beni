@@ -25,7 +25,7 @@ import String
 
 
 type Impossible
-    = Impossible Never
+    = Impossible ⊥
 
 
 drain : Impossible → Int

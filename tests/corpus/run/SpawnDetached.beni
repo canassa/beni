@@ -10,8 +10,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -25,22 +25,22 @@ outcome exit =
 
 
 main : Program
-main = Io.run λ() →
-    parent = Task.spawn λ() →
-        _ = Task.spawn λ() →
-            Task.bracket (λ() → ()) (λ_ exit → say "attached released: ${outcome exit}") λ_ →
-                Task.never ()
+main = Io.run λ⊤ →
+    parent = Task.spawn λ⊤ →
+        _ = Task.spawn λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ exit → say "attached released: ${outcome exit}") λ_ →
+                Task.never ⊤
 
-        _ = Task.spawnDetached λ() →
-            _ = Task.yieldNow ()
-            _ = Task.yieldNow ()
-            _ = Debug.log "detached tick" ()
-            Task.bracket (λ() → ()) (λ_ exit → say "detached released: ${outcome exit}") λ_ →
-                Task.never ()
-        _ = Task.yieldNow ()
-        Debug.log "parent done" ()
-    _ = Task.join parent
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
+        _ = Task.spawnDetached λ⊤ →
+            Task.yieldNow ⊤
+            Task.yieldNow ⊤
+            Debug.log "detached tick" ⊤
+            Task.bracket (λ⊤ → ⊤) (λ_ exit → say "detached released: ${outcome exit}") λ_ →
+                Task.never ⊤
+        Task.yieldNow ⊤
+        Debug.log "parent done" ⊤
+    Task.join parent
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
     Node.print "main done"

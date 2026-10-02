@@ -25,7 +25,7 @@ pub foreign pure describe : Point → String
 
 
 --| The sibling builds `{ label, x }`.
-pub foreign pure origin : () → Point
+pub foreign pure origin : ⊤ → Point
 
 
 --| The sibling switches on `s.$`, a tag spelled `"Circle"` or `"Square"`.
@@ -38,12 +38,12 @@ pub foreign pure keep : a → a
 
 
 --| The sibling builds a plain object; `Js.to` reads it as a record.
-foreign pure made : () → Js.Value
+foreign pure made : ⊤ → Js.Value
 
 
 --| A record that crosses by `Js.to`.
-pub fromJs : () → { kind : String, count : Int }
-fromJs () = Js.to (made ())
+pub fromJs : ⊤ → { kind : String, count : Int }
+fromJs ⊤ = Js.to (made ⊤)
 
 
 --| A record that crosses by `Js.from` and is read back by name.

@@ -36,9 +36,9 @@ pub type alias Generator a =
 --|     Random.value (Random.int 1 6)
 pub value : Generator a → a
 value generator =
-    case Pcg.step generator (processSeed ()) of
+    case Pcg.step generator (processSeed ⊤) of
         ( v, after ) →
-            _ = Js.write seed (Just after)
+            Js.write seed (Just after)
             v
 
 
@@ -47,21 +47,21 @@ seed : Js.Ref (Maybe Seed)
 seed = Js.ref Nothing
 
 
-processSeed : () → Seed
-processSeed () =
+processSeed : ⊤ → Seed
+processSeed ⊤ =
     case Js.read seed of
         Just s →
             s
 
         Nothing →
-            Pcg.initialSeed (entropy ())
+            Pcg.initialSeed (entropy ⊤)
 
 
 -- 32 bits from Node's Web Crypto (`globalThis.crypto`, Node 19 and later).
 -- `getRandomValues` throws only for an array that is not of integers or
 -- longer than 65 536 bytes, and this one is neither.
-entropy : () → Int
-entropy () =
+entropy : ⊤ → Int
+entropy ⊤ =
     words =
         Js.call (Js.global "crypto") "getRandomValues"
             [ Js.construct (Js.global "Uint32Array") [ Js.from 1 ] ]
@@ -153,5 +153,5 @@ andThen = Pcg.andThen
 
 
 --| A generator made only when it is run: for one that refers to itself.
-pub lazy : (() → Generator a) → Generator a
+pub lazy : (⊤ → Generator a) → Generator a
 lazy = Pcg.lazy

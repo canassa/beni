@@ -125,7 +125,7 @@ pub foreign impure get : Value, name → Value
 
 
 --| `o.name = v`, a statement.
-pub foreign impure set : Value, name, Value → ()
+pub foreign impure set : Value, name, Value → ⊤
 
 
 --| `o.name(a, b)`: the arguments are written as a list literal, one
@@ -166,7 +166,7 @@ pub foreign pure method : sync (Value → a) → Value
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
 --| order. Written with a lambda, `Js.each xs λx → …`, the lambda's body
 --| is the loop's body.
-pub foreign impure each : Value, (Value → ()) → ()
+pub foreign impure each : Value, (Value → ⊤) → ⊤
 
 
 --| `o[k]`: an element of an array, or of anything indexed by number.
@@ -174,7 +174,7 @@ pub foreign impure at : Value, index → Value
 
 
 --| `o[k] = v`, a statement: an element of an array written.
-pub foreign impure setAt : Value, index, Value → ()
+pub foreign impure setAt : Value, index, Value → ⊤
 
 
 --| `throw v`, a statement. Nothing after it runs.
@@ -199,7 +199,7 @@ pub foreign impure read : Ref a → a
 
 
 --| Make the cell hold `v`, a statement.
-pub foreign impure write : Ref a, a → ()
+pub foreign impure write : Ref a, a → ⊤
 
 
 --| `try { body() } finally { cleanup() }`: the body's value, and the
@@ -209,7 +209,7 @@ pub foreign impure write : Ref a, a → ()
 --| no function is made. Both are `sync`: a body that suspended would leave
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
-pub foreign impure finally : sync (() → a), sync (() → ()) → a
+pub foreign impure finally : sync (⊤ → a), sync (⊤ → ⊤) → a
 
 
 --| `try { return body() } catch (e) { if (!test(e)) throw e; return
@@ -222,7 +222,7 @@ pub foreign impure finally : sync (() → a), sync (() → ()) → a
 --| handler are the `catch` block, and no function is made. All three are
 --| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
 --| is `try … catch`*).
-pub foreign impure catchIf : sync (() → a), sync (Value → bool), sync (Value → a) → a
+pub foreign impure catchIf : sync (⊤ → a), sync (Value → bool), sync (Value → a) → a
 
 
 --| The body's value, and a promise: that computing it is total, throws
@@ -233,7 +233,7 @@ pub foreign impure catchIf : sync (() → a), sync (Value → bool), sync (Value
 --| `Js` declaration: the caller answers for it. Written with a lambda,
 --| `Js.pure λ() → …` is the lambda's body and no function is made
 --| (`backend.md` §4, *`Js.pure` is its body*).
-pub foreign pure pure : sync (() → a) → a
+pub foreign pure pure : sync (⊤ → a) → a
 
 
 --| `True` in a development build and `False` under `--release`. An `if`
@@ -243,7 +243,7 @@ pub foreign pure pure : sync (() → a) → a
 --| (`backend.md` §4, *`Js.development` is the build's mode*). A function
 --| of `()` because a `foreign` value that is not one may not be
 --| polymorphic, and this module names no `Bool`.
-pub foreign pure development : () → bool
+pub foreign pure development : ⊤ → bool
 
 
 --| Whether `f`, a function, may suspend: the answer the checker infers for
@@ -277,4 +277,4 @@ pub foreign pure fingerprint : k, order → name
 --| `Js.suspending λ() → …` is the lambda's body and a suspension point
 --| where it is not in tail position (`backend.md` §4, *`Js.suspending` is
 --| its body*).
-pub foreign suspends suspending : sync (() → a) → a
+pub foreign suspends suspending : sync (⊤ → a) → a

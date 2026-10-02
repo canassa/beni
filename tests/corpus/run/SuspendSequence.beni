@@ -20,7 +20,7 @@ import Task
 slow : String → Int
 slow label =
     _ = Debug.log "before sleep" label
-    _ = Io.sleep 1
+    Io.sleep 1
     _ = Debug.log "after sleep" label
     String.length label
 
@@ -38,9 +38,9 @@ pair a b = a * 100 + b
 
 
 main : Program
-main = Io.run λ() →
-    done = Task.spawn λ() → 7
-    _ = Io.sleep 1
+main = Io.run λ⊤ →
+    done = Task.spawn λ⊤ → 7
+    Io.sleep 1
     a = pair (Debug.log "first argument" 1) (slow "second argument")
     b = fast done "joined"
     r = { x = Debug.log "field x" 2, y = slow "field y" }

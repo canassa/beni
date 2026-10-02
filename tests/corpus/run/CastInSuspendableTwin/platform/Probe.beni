@@ -6,7 +6,7 @@ import Js
 
 
 --| `JSON.stringify` of a record, once `wait` has returned.
-pub stringify : (() → ()) → String
+pub stringify : (⊤ → ⊤) → String
 stringify wait =
-    _ = wait ()
+    wait ⊤
     Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from { alpha = 1, beta = "two" } ])

@@ -78,7 +78,7 @@ foreign type Builder a
 --| `xs` was prepended onto before, and a list of 32 or more that nothing has
 --| written to is converted once, O(n) (`backend.md` §4, *The claimable head*).
 pub cons : a, List a → List a
-cons x xs = Js.pure λ() →
+cons x xs = Js.pure λ⊤ →
     t = Js.from xs
     if isTrie t then
         Js.to (triePrepend t (Js.from x))
@@ -117,7 +117,7 @@ pushFrom b i c =
 --| `[ …xs, x ]` costs what `push xs x` does. Otherwise the result is a
 --| fresh list, O(length of both).
 pub append : List a, List a → List a
-append xs ys = Js.pure λ() →
+append xs ys = Js.pure λ⊤ →
     n = length xs
     m = length ys
     if m == 0 then
@@ -227,7 +227,7 @@ compareFrom a i b j =
 --| A copy up to 256 elements; above, near O(1) after one O(n) conversion
 --| per list.
 pub set : List a, Int, a → List a
-set xs i v = Js.pure λ() →
+set xs i v = Js.pure λ⊤ →
     n = length xs
     if i < 0 || i ≥ n then
         xs
@@ -242,7 +242,7 @@ set xs i v = Js.pure λ() →
             Js.to (trieSet (fromPlain (Js.from b) o) i (Js.from v))
         else
             c = Js.call (Js.from b) "slice" [ Js.from o ]
-            _ = Js.setAt c i (Js.from v)
+            Js.setAt c i (Js.from v)
             Js.to c
 
 
@@ -255,7 +255,7 @@ set xs i v = Js.pure λ() →
 --| 31 elements, never the list. A loop that builds a list with `push` keeps
 --| the order the elements arrived in, so it needs no `reverse`.
 pub push : List a, a → List a
-push xs v = Js.pure λ() →
+push xs v = Js.pure λ⊤ →
     if isTrie (Js.from xs) then
         Js.to (triePush (Js.from xs) (Js.from v))
     else
@@ -275,7 +275,7 @@ push xs v = Js.pure λ() →
 --|
 --| The cost of `set`.
 pub pop : List a → List a
-pop xs = Js.pure λ() →
+pop xs = Js.pure λ⊤ →
     n = length xs
     if n == 0 then
         xs
@@ -318,16 +318,16 @@ slice xs from to =
 clampIndex : Int, Int → Int
 clampIndex i n =
     if i < 0 then
-        Js.pure λ() → Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
+        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "max" [ Js.from 0, Js.from (n + i) ])
     else
-        Js.pure λ() → Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
+        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "min" [ Js.from i, Js.from n ])
 
 
 --| Elements `from` up to `to` of `xs`, a fresh plain array.
 sliceOf : List a, Int, Int → List a
 sliceOf xs from to =
     o = offset xs
-    Js.pure λ() →
+    Js.pure λ⊤ →
         Js.to (Js.call (Js.from (base xs)) "slice" [ Js.from (o + from), Js.from (o + to) ])
 
 
@@ -347,7 +347,7 @@ insertAt xs i v =
     else
         b = Js.from (base xs)
         o = offset xs
-        Js.pure λ() →
+        Js.pure λ⊤ →
             Js.to
                 (Js.call (Js.call b "slice" [ Js.from o, Js.from (o + i) ]) "concat"
                     [ Js.array [ Js.from v ]
@@ -370,7 +370,7 @@ removeAt xs i =
     else
         b = Js.from (base xs)
         o = offset xs
-        Js.pure λ() →
+        Js.pure λ⊤ →
             Js.to
                 (Js.call (Js.call b "slice" [ Js.from o, Js.from (o + i) ]) "concat"
                     [ Js.call b "slice" [ Js.from (o + i + 1), Js.from (o + n) ] ]
@@ -399,7 +399,7 @@ swap xs i j =
 --| it is not `pub` (`backend.md` §4). The code generator imports it for a
 --| list pattern's elements.
 unsafeGet : List a, Int → a
-unsafeGet xs i = Js.pure λ() →
+unsafeGet xs i = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v then
         Js.to (Js.at v i)
@@ -413,7 +413,7 @@ unsafeGet xs i = Js.pure λ() →
 --| itself at 0, `[]` at the end, O(1) otherwise. What a pattern's
 --| `[ x, …rest ]` binds `rest` to; the code generator imports it.
 view : List a, Int → List a
-view xs k = Js.pure λ() →
+view xs k = Js.pure λ⊤ →
     if k == 0 then
         xs
     else if k ≥ length xs then
@@ -429,7 +429,7 @@ view xs k = Js.pure λ() →
 --| backing array and offset, a trie's plain copy (made once) and 0. Every
 --| loop below reads its list through these two and `at`.
 base : List a → List a
-base xs = Js.pure λ() →
+base xs = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v then
         xs
@@ -440,7 +440,7 @@ base xs = Js.pure λ() →
 
 
 offset : List a → Int
-offset xs = Js.pure λ() →
+offset xs = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v || Js.isUndefined (Js.get v "o") then
         0
@@ -461,7 +461,7 @@ foreign pure at : List a, Int → a
 --| time pushing takes at 100 000 elements, where an array grown by `push`
 --| is copied as it grows.
 builder : Int → Builder a
-builder n = Js.pure λ() →
+builder n = Js.pure λ⊤ →
     Js.to (Js.construct (Js.global "Array") [ Js.from (if n > 0 then n else 0) ])
 
 
@@ -474,13 +474,12 @@ foreign pure put : Builder a, Int, a → Builder a
 --| how many a loop `put`, so a builder made with more room
 --| than it needed — `filter`'s — is cut to what it holds.
 done : Builder a, Int → List a
-done b n = Js.pure λ() →
+done b n = Js.pure λ⊤ →
     v = Js.from b
-    _ =
-        if Js.to (Js.get v "length") == n then
-            ()
-        else
-            Js.set v "length" (Js.from n)
+    if Js.to (Js.get v "length") == n then
+        ⊤
+    else
+        Js.set v "length" (Js.from n)
     Js.to v
 
 
@@ -529,7 +528,7 @@ viewPlain = Js.method λv →
     cached = Js.get v "p"
     if Js.isNull cached then
         copy = Js.call (Js.get v "b") "slice" [ Js.get v "o" ]
-        _ = Js.set v "p" copy
+        Js.set v "p" copy
         copy
     else
         cached
@@ -548,7 +547,7 @@ triePlain = Js.method λa →
         j = flatHead (Js.get a "h") (Js.to (Js.get a "hc") - 1) b 0
         k = flatTree (Js.get tr "r") (Js.to (Js.get tr "s")) off (off + Js.to (Js.get tr "tc")) b j
         _ = copyTo (Js.get a "t") 0 b k n
-        _ = Js.set a "p" b
+        Js.set a "p" b
         b
     else
         cached
@@ -557,7 +556,7 @@ triePlain = Js.method λa →
 flatHead : Js.Value, Int, Js.Value, Int → Int
 flatHead h i b j =
     if i ≥ 0 then
-        _ = Js.setAt b j (Js.at h i)
+        Js.setAt b j (Js.at h i)
         flatHead h (i - 1) b (j + 1)
     else
         j
@@ -576,7 +575,7 @@ flatTree r s i stop b j =
 copyTo : Js.Value, Int, Js.Value, Int, Int → Int
 copyTo x i b j stop =
     if j < stop then
-        _ = Js.setAt b j (Js.at x i)
+        Js.setAt b j (Js.at x i)
         copyTo x (i + 1) b (j + 1) stop
     else
         j
@@ -624,7 +623,7 @@ treeOf r s off tc = Js.object [ ( "r", r ), ( "s", s ), ( "off", off ), ( "tc", 
 
 
 noTree : Js.Value
-noTree = Js.pure λ() → Js.object [ ( "r", Js.array [] ), ( "s", 5 ), ( "off", 0 ), ( "tc", 0 ) ]
+noTree = Js.pure λ⊤ → Js.object [ ( "r", Js.array [] ), ( "s", 5 ), ( "off", 0 ), ( "tc", 0 ) ]
 
 
 --| The leaf holding radix position `i` of a root `r` at shift `s`.
@@ -690,32 +689,29 @@ putLeaf x s i leaf =
         else
             Js.call x "slice" []
     j = Js.bitAnd (Js.shiftRightZero i s) 31
-    _ = padNull c j
-    _ =
-        Js.setAt c j
-            (if s == 5 then
+    padNull c j
+    Js.setAt c j
+        (if s == 5 then
+            leaf
+         else
+            putLeaf
+                (if j < Js.to (Js.get c "length") then
+                    Js.at c j
+                 else
+                    Js.null
+                )
+                (s - 5)
+                i
                 leaf
-             else
-                putLeaf
-                    (if j < Js.to (Js.get c "length") then
-                        Js.at c j
-                     else
-                        Js.null
-                    )
-                    (s - 5)
-                    i
-                    leaf
-            )
+        )
     c
 
 
-padNull : Js.Value, Int → ()
+padNull : Js.Value, Int → ⊤
 padNull c j =
     if Js.to (Js.get c "length") < j then
         _ = Js.call c "push" [ Js.null ]
         padNull c j
-    else
-        ()
 
 
 --| A copy of node `x` without the leaf at radix position `i` and
@@ -731,7 +727,7 @@ popLeaf x s i =
             prefixOrNull x j
         else
             y = Js.call x "slice" []
-            _ = Js.setAt y j c
+            Js.setAt y j c
             y
 
 
@@ -809,7 +805,7 @@ claim b c v =
 changed : Js.Value, Int, Int, Js.Value → Js.Value
 changed b c k v =
     copy = Js.call b "slice" [ Js.from 0, Js.from c ]
-    _ = Js.setAt copy k v
+    Js.setAt copy k v
     copy
 
 

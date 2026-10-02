@@ -69,14 +69,14 @@ dropWhile xs keep =
             xs
 
 
-pub capture : List Int, List (() → Int) → List (() → Int)
+pub capture : List Int, List (⊤ → Int) → List (⊤ → Int)
 capture xs acc =
     case xs of
         [] →
             acc
 
         [ _, …rest ] →
-            capture rest (List.push acc λ() → List.length rest)
+            capture rest (List.push acc λ⊤ → List.length rest)
 
 
 pub pairwise : List Int → List (Int × Int)

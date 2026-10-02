@@ -35,10 +35,10 @@ type alias Mixed b =
     c : Int
 
 
-toMixed ( ( ( (), a ), b ), c ) = { a = a, b = b, c = c }
+toMixed ( ( ( ⊤, a ), b ), c ) = { a = a, b = b, c = c }
 
 
-fromMixed m = ( ( ( (), m.a ), m.b ), m.c )
+fromMixed m = ( ( ( ⊤, m.a ), m.b ), m.c )
 
 
 mixed : Schema (Mixed String) (Mixed Int)
@@ -86,10 +86,10 @@ type alias Box =
     items : List Int
 
 
-toBox ( (), items ) = { items = items }
+toBox ( ⊤, items ) = { items = items }
 
 
-fromBox b = ( (), b.items )
+fromBox b = ( ⊤, b.items )
 
 
 box : Schema Box Box
@@ -104,10 +104,10 @@ type alias Wrapper a =
     inner : a
 
 
-toWrapper ( (), inner ) = { inner = inner }
+toWrapper ( ⊤, inner ) = { inner = inner }
 
 
-fromWrapper w = ( (), w.inner )
+fromWrapper w = ( ⊤, w.inner )
 
 
 wrapper : Schema (Wrapper (List Int)) (Wrapper Int)

@@ -12,31 +12,31 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done)
 
 
-held : String, (() → a) → a
+held : String, (⊤ → a) → a
 held name work =
     Task.bracket
-        (λ() → Debug.log "acquired" name)
+        (λ⊤ → Debug.log "acquired" name)
         (λ_ exit →
             case exit of
                 Done _ →
-                    Debug.log (name ++ " released: done") ()
+                    Debug.log (name ++ " released: done") ⊤
 
                 Cancelled →
-                    Debug.log (name ++ " released: cancelled") ()
+                    Debug.log (name ++ " released: cancelled") ⊤
         )
-        λ_ → work ()
+        λ_ → work ⊤
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     answer = Task.scope λs →
-        _ = Task.spawnIn s λ() → held "slowChild" λ() → Io.sleep 100000
-        quick = Task.spawnIn s λ() → held "quickChild" λ() → 42
+        _ = Task.spawnIn s λ⊤ → held "slowChild" λ⊤ → Io.sleep 100000
+        quick = Task.spawnIn s λ⊤ → held "quickChild" λ⊤ → 42
         Task.join quick
     _ = Debug.log "scope returned" answer
-    parent = Task.spawn λ() →
-        _ = Task.spawn λ() → held "orphan" λ() → Io.sleep 100000
-        _ = Io.sleep 1
+    parent = Task.spawn λ⊤ →
+        _ = Task.spawn λ⊤ → held "orphan" λ⊤ → Io.sleep 100000
+        Io.sleep 1
         "parent done"
     said = Task.join parent
     Node.print said

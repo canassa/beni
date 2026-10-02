@@ -2,11 +2,11 @@ import Html exposing (Html)
 
 
 type alias Rec =
-    h : Html ()
+    h : Html ⊤
 
 
 type Wrap
-    = W (Html ())
+    = W (Html ⊤)
 
 
 type Tree
@@ -18,7 +18,7 @@ type Plain
     = Plain (List Plain) Int
 
 
-pub foreign pure inRecord : { h : Html () } → String
+pub foreign pure inRecord : { h : Html ⊤ } → String
 
 
 pub foreign pure inAlias : Rec → String
@@ -36,7 +36,7 @@ pub foreign pure plain : Int → String
 pub foreign pure recursive : Plain → String
 
 
-pub foreign pure inWide : Html () × W13 → String
+pub foreign pure inWide : Html ⊤ × W13 → String
 
 
 type alias W0 =

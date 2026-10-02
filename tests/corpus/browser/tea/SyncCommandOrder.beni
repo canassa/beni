@@ -31,16 +31,16 @@ update : Msg, Int → Int × Cmd Msg
 update msg n =
     case msg of
         Run fibers →
-            _ = Log.info "update: run"
+            Log.info "update: run"
             ( n
             , if fibers then
-                bodies True λ() → pause False
+                bodies True λ⊤ → pause False
               else
-                bodies False λ() → ()
+                bodies False λ⊤ → ⊤
             )
 
         Sent fibers what →
-            _ = Log.info "update: ${what}"
+            Log.info "update: ${what}"
             ( n + 1
             , if what == "first" then
                 more fibers
@@ -51,15 +51,13 @@ update msg n =
 
 -- Waits only when asked to, which no run does: what makes a body that
 -- calls it one that may wait.
-pause : Bool → ()
+pause : Bool → ⊤
 pause yes =
     if yes then
-        Task.yieldNow ()
-    else
-        ()
+        Task.yieldNow ⊤
 
 
-bodies : Bool, (() → ()) → Cmd Msg
+bodies : Bool, (⊤ → ⊤) → Cmd Msg
 bodies fibers hold =
     Cmd.batch
         [ Cmd.perform λsend → say send fibers hold "first"
@@ -71,29 +69,29 @@ bodies fibers hold =
 more : Bool → Cmd Msg
 more fibers =
     if fibers then
-        Cmd.perform λsend → say send fibers (λ() → pause False) "more"
+        Cmd.perform λsend → say send fibers (λ⊤ → pause False) "more"
     else
-        Cmd.perform λsend → say send fibers (λ() → ()) "more"
+        Cmd.perform λsend → say send fibers (λ⊤ → ⊤) "more"
 
 
-say : Cmd.Send Msg, Bool, (() → ()), String → ()
+say : Cmd.Send Msg, Bool, (⊤ → ⊤), String → ⊤
 say send fibers hold what =
-    _ = hold ()
-    _ = Log.info "body: ${what}"
+    hold ⊤
+    Log.info "body: ${what}"
     send (Sent fibers what)
 
 
-waiting : Cmd.Send Msg, Bool → ()
+waiting : Cmd.Send Msg, Bool → ⊤
 waiting send fibers =
-    _ = Log.info "body: second starts"
-    _ = Task.yieldNow ()
-    _ = Log.info "body: second resumes"
+    Log.info "body: second starts"
+    Task.yieldNow ⊤
+    Log.info "body: second resumes"
     send (Sent fibers "second")
 
 
 view : Int → Html Msg
 view n =
-    _ = Log.info "view"
+    Log.info "view"
     <main>
         <button id="direct" onClick={Run False}>direct</button>
         <button id="fibers" onClick={Run True}>fibers</button>

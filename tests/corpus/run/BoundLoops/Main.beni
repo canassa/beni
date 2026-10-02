@@ -11,7 +11,7 @@ main : Node.Program
 main =
     Node.printLines
         [ String.fromInt (Loops.firstNull 0)
-        , String.fromInt (Loops.ticks ())
+        , String.fromInt (Loops.ticks ⊤)
         , Loops.mirror [ 1, 2, 3, 2, 1 ]
         , Loops.mirror [ 1, 2 ]
         , String.join (List.map (Loops.squares 4) String.fromInt) ","

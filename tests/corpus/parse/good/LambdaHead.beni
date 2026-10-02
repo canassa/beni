@@ -12,7 +12,7 @@ pairs xs = List.map xs λ( a, b ) → a + b
 nested = λa → λb → a + b
 
 
-thunk = λ() → 0
+thunk = λ⊤ → 0
 
 
 both = λ{ name } _ → name

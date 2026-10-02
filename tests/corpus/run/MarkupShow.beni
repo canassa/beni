@@ -18,7 +18,7 @@ viewUser : User → Html msg
 viewUser user = <b>{user.name}</b>
 
 
-view : Maybe String, Maybe User, Maybe () → Html msg
+view : Maybe String, Maybe User, Maybe ⊤ → Html msg
 view title user unit =
     <div>
         <Show when={title} keyed>{λt → <h1>{t}</h1>}</Show>
@@ -33,7 +33,7 @@ view title user unit =
 main : Node.Program
 main =
     Node.printLines
-        [ Ssr.render (view (Just "Hi & bye") (Just { id = 2, name = "Ada" }) (Just ()))
+        [ Ssr.render (view (Just "Hi & bye") (Just { id = 2, name = "Ada" }) (Just ⊤))
         , Ssr.render (view Nothing Nothing Nothing)
         , Ssr.render (view Nothing (Just { id = 1, name = "Bo" }) Nothing)
         ]

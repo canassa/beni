@@ -7,11 +7,11 @@ seed : Conversion Int String
 seed = Debug.todo "checker-only conversion"
 
 
-conversion () =
-    case Cyclic.schema () of
+conversion ⊤ =
+    case Cyclic.schema ⊤ of
         _ →
             seed
 
 
 pub schema Cyclic =
-    Int via (conversion ())
+    Int via (conversion ⊤)

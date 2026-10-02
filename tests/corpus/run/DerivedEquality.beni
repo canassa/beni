@@ -59,7 +59,7 @@ left = Node (Node Leaf 1 Leaf) 2 Leaf
 main : Program
 main =
     Node.printLines
-        [ show (() == ())
+        [ show (⊤ == ⊤)
         , show (( 1, "a" ) == ( 1, "a" ))
         , show (( 1, "a" ) == ( 1, "b" ))
         , show ({ x = 1, y = 'c' } == { x = 1, y = 'c' })

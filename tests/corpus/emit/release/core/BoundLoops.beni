@@ -30,14 +30,14 @@ upTo xs m k =
 
 pub fill : Js.Value, Int → Int
 fill xs n =
-    _ = fillFrom xs n 0
+    fillFrom xs n 0
     n
 
 
-fillFrom : Js.Value, Int, Int → ()
+fillFrom : Js.Value, Int, Int → ⊤
 fillFrom xs n k =
     if k == n then
-        ()
+        ⊤
     else
         _ = Js.call xs "push" [ Js.from k ]
         fillFrom xs n (k + 1)

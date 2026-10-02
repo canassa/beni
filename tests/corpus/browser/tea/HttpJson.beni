@@ -70,7 +70,7 @@ update msg lines =
         Run name →
             ( lines
             , Cmd.task
-                (λ() → Http.get { url = "/${name}", expect = Http.expectJson (Note.schema ()) })
+                (λ⊤ → Http.get { url = "/${name}", expect = Http.expectJson (Note.schema ⊤) })
                 λr → Got name (shown r)
             )
 

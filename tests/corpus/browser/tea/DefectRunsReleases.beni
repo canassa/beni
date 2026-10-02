@@ -30,9 +30,9 @@ outcome exit =
             "Cancelled"
 
 
-guarded : String, (() → a) → a
+guarded : String, (⊤ → a) → a
 guarded name body =
-    Task.bracket (λ() → ()) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ → body ()
+    Task.bracket (λ⊤ → ⊤) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ → body ⊤
 
 
 update : Msg, String → String × Cmd Msg
@@ -42,17 +42,17 @@ update msg shown =
             ( "going"
             , Cmd.batch
                 [ Cmd.perform λsend →
-                    guarded "first outer" λ() →
-                        guarded "first inner" λ() →
-                            _ = Time.sleep (Time.millis 100)
+                    guarded "first outer" λ⊤ →
+                        guarded "first inner" λ⊤ →
+                            Time.sleep (Time.millis 100)
                             send (Late "first")
                 , Cmd.perform λsend →
-                    guarded "second" λ() →
-                        _ = Time.sleep (Time.millis 100)
+                    guarded "second" λ⊤ →
+                        Time.sleep (Time.millis 100)
                         send (Late "second")
                 , Cmd.perform λ_ →
-                    guarded "thrower" λ() →
-                        _ = Time.sleep (Time.millis 10)
+                    guarded "thrower" λ⊤ →
+                        Time.sleep (Time.millis 10)
                         Debug.todo "body threw"
                 ]
             )

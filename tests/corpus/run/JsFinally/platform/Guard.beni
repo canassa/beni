@@ -11,20 +11,20 @@ log = Js.ref ""
 
 
 --| Record one effect.
-pub note : String → ()
+pub note : String → ⊤
 note s = Js.write log "${Js.read log}${s}; "
 
 
 --| What was recorded since the last `take`, and a fresh record.
-pub take : () → String
-take () =
+pub take : ⊤ → String
+take ⊤ =
     seen = Js.read log
-    _ = Js.write log ""
+    Js.write log ""
     seen
 
 
 --| `f ()`, or what it threw: a test's only way to watch a throw go past.
-pub foreign impure attempt : (() → String) → String
+pub foreign impure attempt : (⊤ → String) → String
 
 
 fail : String → a
@@ -35,11 +35,11 @@ fail m = Js.throw (Js.construct (Js.global "Error") [ Js.from m ])
 pub tail : Int → Int
 tail x =
     Js.finally
-        (λ() →
-            _ = note "body"
+        (λ⊤ →
+            note "body"
             x + 1
         )
-        λ() → note "cleanup"
+        λ⊤ → note "cleanup"
 
 
 --| As a value: bound, then used after the cleanup ran.
@@ -47,115 +47,115 @@ pub valued : Int → String
 valued x =
     v =
         Js.finally
-            (λ() →
-                _ = note "body"
+            (λ⊤ →
+                note "body"
                 x * 2
             )
-            λ() → note "cleanup"
+            λ⊤ → note "cleanup"
 
-    _ = note "after"
+    note "after"
     String.fromInt v
 
 
 --| Discarded: the body's statements, then the cleanup's.
-pub discarded : () → String
-discarded () =
-    _ = Js.finally (λ() → note "body") λ() → note "cleanup"
-    _ = note "after"
+pub discarded : ⊤ → String
+discarded ⊤ =
+    Js.finally (λ⊤ → note "body") λ⊤ → note "cleanup"
+    note "after"
     "done"
 
 
 --| The body throws in tail position: the cleanup runs, the throw goes on.
-pub throwsTail : () → String
-throwsTail () =
+pub throwsTail : ⊤ → String
+throwsTail ⊤ =
     Js.finally
-        (λ() →
-            _ = note "body"
+        (λ⊤ →
+            note "body"
             fail "boom"
         )
-        λ() → note "cleanup"
+        λ⊤ → note "cleanup"
 
 
 --| The body throws where its value is bound: nothing after it runs.
-pub throwsValued : () → String
-throwsValued () =
+pub throwsValued : ⊤ → String
+throwsValued ⊤ =
     v : String
     v =
         Js.finally
-            (λ() →
-                _ = note "body"
+            (λ⊤ →
+                note "body"
                 fail "bang"
             )
-            λ() → note "cleanup"
+            λ⊤ → note "cleanup"
 
-    _ = note "unreached"
+    note "unreached"
     v
 
 
 --| The body throws where its value is discarded.
-pub throwsDiscarded : () → String
-throwsDiscarded () =
-    _ = Js.finally (λ() → fail "crash") λ() → note "cleanup"
-    _ = note "unreached"
+pub throwsDiscarded : ⊤ → String
+throwsDiscarded ⊤ =
+    _ = Js.finally (λ⊤ → fail "crash") λ⊤ → note "cleanup"
+    note "unreached"
     "unreached"
 
 
 --| Nested guards unwind innermost first.
-pub nested : () → String
-nested () =
+pub nested : ⊤ → String
+nested ⊤ =
     Js.finally
-        (λ() →
+        (λ⊤ →
             Js.finally
-                (λ() →
-                    _ = note "inner"
+                (λ⊤ →
+                    note "inner"
                     fail "deep"
                 )
-                λ() → note "inner cleanup"
+                λ⊤ → note "inner cleanup"
         )
-        λ() → note "outer cleanup"
+        λ⊤ → note "outer cleanup"
 
 
 --| A function made by a call that records it.
-make : String, Int → (() → Int)
+make : String, Int → (⊤ → Int)
 make s v =
-    _ = note "make ${s}"
-    λ() →
-        _ = note s
+    note "make ${s}"
+    λ⊤ →
+        note s
         v
 
 
-cleanupOf : String → (() → ())
+cleanupOf : String → (⊤ → ⊤)
 cleanupOf s =
-    _ = note "make ${s}"
-    λ() → note s
+    note "make ${s}"
+    λ⊤ → note s
 
 
 --| Arguments that are not lambdas are evaluated first, in order, and
 --| called in their blocks.
-pub ordered : () → Int
-ordered () = Js.finally (make "body" 7) (cleanupOf "cleanup")
+pub ordered : ⊤ → Int
+ordered ⊤ = Js.finally (make "body" 7) (cleanupOf "cleanup")
 
 
 --| Functions passed in.
-pub passed : (() → Int), (() → ()) → Int
+pub passed : (⊤ → Int), (⊤ → ⊤) → Int
 passed f g = Js.finally f g
 
 
 --| `Js.finally` itself passed as a value: the sibling's function.
-pub asValue : (() → Int), (() → ()) → Int
+pub asValue : (⊤ → Int), (⊤ → ⊤) → Int
 asValue f g = apply Js.finally f g
 
 
-apply : ((() → Int), (() → ()) → Int), (() → Int), (() → ()) → Int
+apply : ((⊤ → Int), (⊤ → ⊤) → Int), (⊤ → Int), (⊤ → ⊤) → Int
 apply h f g = h f g
 
 
 --| `f` under a latch, called from one place in another module: a release
 --| build writes its body, `try` and all, where that call is.
-pub latched : (() → ()) → ()
+pub latched : (⊤ → ⊤) → ⊤
 latched f =
-    _ = note "lock"
-    _ = Js.finally f λ() → note "unlock"
+    note "lock"
+    Js.finally f λ⊤ → note "unlock"
     note "unlocked"
 
 
@@ -164,6 +164,6 @@ latched f =
 pub sumTo : Int, Int → Int
 sumTo n acc =
     if n == 0 then
-        Js.finally (λ() → acc) λ() → note "summed"
+        Js.finally (λ⊤ → acc) λ⊤ → note "summed"
     else
         sumTo (n - 1) (acc + n)

@@ -212,5 +212,5 @@ andThen (Generator generator) f = Generator λseed →
 
 
 --| A generator made only when it is run: for one that refers to itself.
-pub lazy : (() → Generator a) → Generator a
-lazy make = Generator λseed → step (make ()) seed
+pub lazy : (⊤ → Generator a) → Generator a
+lazy make = Generator λseed → step (make ⊤) seed

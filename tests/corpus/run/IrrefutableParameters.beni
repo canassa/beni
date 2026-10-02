@@ -45,8 +45,8 @@ ignore : Int, Int → Int
 ignore _ n = n
 
 
-fromUnit : () → Int
-fromUnit () = 7
+fromUnit : ⊤ → Int
+fromUnit ⊤ = 7
 
 
 fullName : { firstName : String, lastName : String } → String
@@ -125,7 +125,7 @@ main =
     Node.printLines
         [ String.fromInt (addPair ( 1, 2 ))
         , String.fromInt (ignore 1 2)
-        , String.fromInt (fromUnit ())
+        , String.fromInt (fromUnit ⊤)
         , fullName { firstName = "Ada", lastName = "Lovelace" }
         , String.fromInt (rebuild ( 10, 20 ))
         , String.fromInt (deep ( ( 1, 2 ), { c = 3 } ))

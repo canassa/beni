@@ -7,21 +7,21 @@
 import Js
 
 
-pub describe : () → String
-describe () = if Js.development () then devOnly () else releaseOnly ()
+pub describe : ⊤ → String
+describe ⊤ = if Js.development ⊤ then devOnly ⊤ else releaseOnly ⊤
 
 
-devOnly : () → String
-devOnly () = "a development build"
+devOnly : ⊤ → String
+devOnly ⊤ = "a development build"
 
 
-releaseOnly : () → String
-releaseOnly () = "a release build"
+releaseOnly : ⊤ → String
+releaseOnly ⊤ = "a release build"
 
 
 pub check : Int → Int
 check n =
-    case Js.development () of
+    case Js.development ⊤ of
         False →
             n * 2
 
@@ -30,16 +30,16 @@ check n =
 
 
 pub flag : Bool
-flag = Js.development ()
+flag = Js.development ⊤
 
 
 -- In a discarded position, the arm the build does not take is not written
 -- either: a release build has no `noted`.
-pub note : () → Int
-note () =
-    _ = if Js.development () then noted () else ()
+pub note : ⊤ → Int
+note ⊤ =
+    if Js.development ⊤ then noted ⊤
     1
 
 
-noted : () → ()
-noted () = Js.to (Js.call (Js.global "console") "log" [ Js.from "noted in a development build" ])
+noted : ⊤ → ⊤
+noted ⊤ = Js.to (Js.call (Js.global "console") "log" [ Js.from "noted in a development build" ])

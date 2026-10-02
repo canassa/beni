@@ -26,5 +26,5 @@ main =
         , String.join (List.map Probe.tests show) " "
         , String.fromInt Probe.bits
         , Probe.readThenWrite
-        , Probe.readBeforeCall ()
+        , Probe.readBeforeCall ⊤
         ]

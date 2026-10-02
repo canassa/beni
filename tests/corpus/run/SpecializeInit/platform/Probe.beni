@@ -22,9 +22,9 @@ unit : V → V
 unit b =
     i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
-    _ = Js.set i "t" (Js.get b "t")
+    Js.set i "t" (Js.get b "t")
 
-    _ = Js.set i "b" b
+    Js.set i "b" b
     i
 
 
@@ -37,15 +37,15 @@ patch i b =
 
 
 -- One call writes `b`, the other does not: a read may be `undefined`.
-bare : () → V
-bare () = Js.from { s = Js.from "node" }
+bare : ⊤ → V
+bare ⊤ = Js.from { s = Js.from "node" }
 
 
-marked : () → V
-marked () =
-    i = bare ()
+marked : ⊤ → V
+marked ⊤ =
+    i = bare ⊤
 
-    _ = Js.set i "b" block
+    Js.set i "b" block
     i
 
 
@@ -73,19 +73,19 @@ describe i =
         "set"
 
 
-described : () → V
-described () =
+described : ⊤ → V
+described ⊤ =
     i = Js.call other "m" [ Js.from 0 ]
 
-    _ = Js.set i "c" (Js.from (describe i))
+    Js.set i "c" (Js.from (describe i))
     i
 
 
-pub demo : () → List String
-demo () =
+pub demo : ⊤ → List String
+demo ⊤ =
     [ patch (unit block) block
-    , shown (marked ())
-    , shown (bare ())
-    , Js.to (Js.get (described ()) "c")
+    , shown (marked ⊤)
+    , shown (bare ⊤)
+    , Js.to (Js.get (described ⊤) "c")
     , describe (Js.from { c = "given" })
     ]

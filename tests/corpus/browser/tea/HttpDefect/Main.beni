@@ -39,15 +39,15 @@ update msg lines =
         Fetch →
             ( lines
             , Cmd.task
-                (λ() → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
+                (λ⊤ → Http.get { url = "data:text/plain,hello", expect = Http.expectString })
                 Got
             )
 
         Break →
             ( lines
             , Cmd.task
-                (λ() →
-                    _ = Fault.breakFetch ()
+                (λ⊤ →
+                    Fault.breakFetch ⊤
                     Http.get { url = "data:text/plain,hello", expect = Http.expectString }
                 )
                 Got

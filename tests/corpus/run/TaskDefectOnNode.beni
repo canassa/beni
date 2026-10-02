@@ -9,23 +9,23 @@ import Node exposing (Program)
 import Task
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 main : Program
-main = Io.run λ() →
-    root = Task.openRoot ()
+main = Io.run λ⊤ →
+    root = Task.openRoot ⊤
 
-    _ = Task.spawnIn root λ() →
-        Task.bracket (λ() → ()) (λ_ _ → say "sleeper released") λ_ → Io.sleep 100000
+    _ = Task.spawnIn root λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → say "sleeper released") λ_ → Io.sleep 100000
 
-    _ = Task.spawnIn root λ() →
-        Task.bracket (λ() → ()) (λ_ _ → say "thrower released") λ_ →
-            _ = say "about to throw"
+    _ = Task.spawnIn root λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → say "thrower released") λ_ →
+            say "about to throw"
             Debug.todo "the fiber threw"
 
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = say "not reached"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    say "not reached"
     Node.done

@@ -11,8 +11,8 @@ import Ref
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -25,28 +25,27 @@ outcome exit =
             "Cancelled"
 
 
-guarded : String, (() → a) → a
-guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
-    body ()
+guarded : String, (⊤ → a) → a
+guarded name body = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ⊤
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     self = Ref.make Nothing
 
-    fiber = Task.spawn λ() →
-        guarded "outer" λ() →
-            guarded "inner" λ() →
-                _ = Task.yieldNow ()
+    fiber = Task.spawn λ⊤ →
+        guarded "outer" λ⊤ →
+            guarded "inner" λ⊤ →
+                Task.yieldNow ⊤
 
-                _ =
-                    case Ref.get self of
-                        Just me →
-                            Task.cancel me
+                case Ref.get self of
+                    Just me →
+                        Task.cancel me
 
-                        Nothing →
-                            ()
-                Debug.log "after the cancel" ()
-    _ = Ref.set self (Just fiber)
+                    Nothing →
+                        ⊤
+                Debug.log "after the cancel" ⊤
+    Ref.set self (Just fiber)
     exit = Task.wait fiber
     Node.print "waited: ${outcome exit}"

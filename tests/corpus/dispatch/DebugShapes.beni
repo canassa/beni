@@ -18,7 +18,7 @@ item = { label = "n", value = Just [ 1.5 ] }
 
 shown : List String
 shown =
-    [ Debug.toString ( 'c', True, () )
+    [ Debug.toString ( 'c', True, ⊤ )
     , Debug.toString item
     , Debug.toString λx → x + 1
     , describe 1

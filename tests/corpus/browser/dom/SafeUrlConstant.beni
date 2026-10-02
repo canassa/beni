@@ -11,7 +11,7 @@ import Browser
 import Html exposing (Html)
 
 
-view : () → Html ()
+view : ⊤ → Html ⊤
 view _ =
     <main>
         <a id="plain" href="javascript:alert(1)">plain</a>
@@ -29,4 +29,4 @@ view _ =
 
 
 main : Browser.Program
-main = Browser.program { init = (), update = λ_ m → m, view = view }
+main = Browser.program { init = ⊤, update = λ_ m → m, view = view }

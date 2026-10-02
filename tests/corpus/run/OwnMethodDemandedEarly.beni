@@ -24,18 +24,18 @@ type Box a
 
 
 pair u =
-    g x = (Box x).size ()
+    g x = (Box x).size ⊤
     ( g 1, g "s" )
 
 
 pairAnnotated u =
     g : a → Int
-    g y = (Box y).size ()
+    g y = (Box y).size ⊤
     ( g 1, g "s" )
 
 
 boxes u =
-    case (K u).makeBox () of
+    case (K u).makeBox ⊤ of
         o →
             g h = o.map2 h
             ( g λx → x + 1, g String.fromInt )

@@ -19,10 +19,10 @@ type Chain
     | Link { next : Chain }
 
 
-toNext ( (), next ) = { next = next }
+toNext ( ⊤, next ) = { next = next }
 
 
-fromNext r = ( (), r.next )
+fromNext r = ( ⊤, r.next )
 
 
 chain : Schema Chain Chain
@@ -35,10 +35,10 @@ chain = Schema.recursive "Chain" λself →
             End →
                 Nothing
 
-    end = Schema.injection (λ() → End) λc →
+    end = Schema.injection (λ⊤ → End) λc →
         case c of
             End →
-                Just ()
+                Just ⊤
 
             Link _ →
                 Nothing

@@ -16,14 +16,14 @@ import Url exposing (Url)
 
 type Msg
     = Try
-    | Done String (Result Navigation.Error ())
+    | Done String (Result Navigation.Error ⊤)
     | Changed Url
 
 
-shown : Result Navigation.Error () → String
+shown : Result Navigation.Error ⊤ → String
 shown result =
     case result of
-        Ok () →
+        Ok ⊤ →
             "ok"
 
         Err (Navigation.BadUrl url) →
@@ -36,7 +36,7 @@ shown result =
             "Throttled"
 
 
-attempt : String, (() → Result Navigation.Error ()) → Cmd Msg
+attempt : String, (⊤ → Result Navigation.Error ⊤) → Cmd Msg
 attempt label work = Cmd.task work (Done label _)
 
 
@@ -44,17 +44,17 @@ update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
         Try →
-            key = Navigation.key ()
+            key = Navigation.key ⊤
             ( lines
             , Cmd.batch
-                [ attempt "push" λ() → Navigation.pushUrl key "http://["
-                , attempt "push" λ() → Navigation.pushUrl key "https://example.com/x"
-                , attempt "push" λ() → Navigation.pushUrl key "http://127.0.0.1:1/x"
-                , attempt "replace" λ() → Navigation.replaceUrl key "//elsewhere.test/y"
-                , attempt "replace" λ() → Navigation.replaceUrl key "ftp://127.0.0.1/z"
-                , attempt "load" λ() → Navigation.load "javascript:alert(1)"
-                , attempt "load" λ() → Navigation.load "JavaScript:void 0"
-                , attempt "load" λ() → Navigation.load "http://["
+                [ attempt "push" λ⊤ → Navigation.pushUrl key "http://["
+                , attempt "push" λ⊤ → Navigation.pushUrl key "https://example.com/x"
+                , attempt "push" λ⊤ → Navigation.pushUrl key "http://127.0.0.1:1/x"
+                , attempt "replace" λ⊤ → Navigation.replaceUrl key "//elsewhere.test/y"
+                , attempt "replace" λ⊤ → Navigation.replaceUrl key "ftp://127.0.0.1/z"
+                , attempt "load" λ⊤ → Navigation.load "javascript:alert(1)"
+                , attempt "load" λ⊤ → Navigation.load "JavaScript:void 0"
+                , attempt "load" λ⊤ → Navigation.load "http://["
                 ]
             )
 

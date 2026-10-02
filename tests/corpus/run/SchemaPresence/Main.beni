@@ -17,11 +17,11 @@ type alias P =
     both : Presence (Nullable Int)
 
 
-toP ( ( ( ( (), required ), nullish ), maybe ), both ) =
+toP ( ( ( ( ⊤, required ), nullish ), maybe ), both ) =
     { required = required, nullish = nullish, maybe = maybe, both = both }
 
 
-fromP r = ( ( ( ( (), r.required ), r.nullish ), r.maybe ), r.both )
+fromP r = ( ( ( ( ⊤, r.required ), r.nullish ), r.maybe ), r.both )
 
 
 p : Schema P P
@@ -41,10 +41,10 @@ type alias Flag =
     on : Presence Bool
 
 
-toFlag ( (), on ) = { on = on }
+toFlag ( ⊤, on ) = { on = on }
 
 
-fromFlag f = ( (), f.on )
+fromFlag f = ( ⊤, f.on )
 
 
 flag : Schema Flag Flag

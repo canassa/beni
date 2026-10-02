@@ -11,21 +11,21 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    doomed = Task.spawn λ() →
-        Clock.run clock λ() →
-            Task.bracket (λ() → ()) (λ_ _ → Debug.log "doomed released" ()) λ_ →
-                _ = Task.sleep (Duration.millis 10)
-                Debug.log "doomed woke" ()
+    doomed = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "doomed released" ⊤) λ_ →
+                Task.sleep (Duration.millis 10)
+                Debug.log "doomed woke" ⊤
 
-    live = Task.spawn λ() →
-        Clock.run clock λ() →
-            _ = Task.sleep (Duration.millis 10)
-            Debug.log "live woke at" (Clock.now ())
-    _ = Task.yieldNow ()
-    _ = Task.cancel doomed
-    _ = Clock.adjust clock (Duration.millis 10)
+    live = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 10)
+            Debug.log "live woke at" (Clock.now ⊤)
+    Task.yieldNow ⊤
+    Task.cancel doomed
+    Clock.adjust clock (Duration.millis 10)
     _ = Task.join live
     Node.print "done"

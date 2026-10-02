@@ -16,10 +16,10 @@ type alias Reading =
     value : Float
 
 
-toReading ( (), v ) = { value = v }
+toReading ( ⊤, v ) = { value = v }
 
 
-fromReading r = ( (), r.value )
+fromReading r = ( ⊤, r.value )
 
 
 reading : Schema Reading Reading

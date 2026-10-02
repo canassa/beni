@@ -27,9 +27,9 @@ pub show (K n) u =
 
 pub eq : Box a, Box a → Bool
 eq (Box a) (Box b) =
-    _ = λw → (K 0).show ()
+    _ = λw → (K 0).show ⊤
     True
 
 
 main : Program
-main = Node.printLines [ (K 0).show (), (K 1).show () ]
+main = Node.printLines [ (K 0).show ⊤, (K 1).show ⊤ ]

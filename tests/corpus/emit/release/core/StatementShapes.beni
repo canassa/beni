@@ -8,38 +8,38 @@
 import Js
 
 
-later : Js.Ref Bool → ()
+later : Js.Ref Bool → ⊤
 later scheduled =
     Js.to
         (Js.apply (Js.global "queueMicrotask")
-            [ Js.from λ() → if Js.read scheduled then tick () else () ]
+            [ Js.from λ⊤ → if Js.read scheduled then tick ⊤ ]
         )
 
 
-tick : () → ()
-tick () = Js.set (Js.global "document") "title" (Js.from "tick")
+tick : ⊤ → ⊤
+tick ⊤ = Js.set (Js.global "document") "title" (Js.from "tick")
 
 
 -- The flag is the caller's: with `Js.ref True` here, whole-program
 -- specialisation, which a `--library` build runs too (`backend.md` §9,
 -- amended 2026-10-02), would see the cell nothing writes and fold the test.
-pub start : Bool → ()
+pub start : Bool → ⊤
 start flag =
     scheduled = Js.ref flag
     later scheduled
 
 
-pub runPhase : Js.Value → ()
+pub runPhase : Js.Value → ⊤
 runPhase phase =
     if Js.isNullish phase then
-        ()
+        ⊤
     else
         Js.to (Js.apply phase [])
 
 
-pub notify : Js.Value → ()
+pub notify : Js.Value → ⊤
 notify target =
     if Js.isNullish target then
-        ()
+        ⊤
     else
         Js.to (Js.call target "dispatch" [ Js.from 1 ])

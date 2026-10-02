@@ -6,10 +6,10 @@ pub type Holder a
 
 
 pub eq : Holder a, Holder a → Bool
-    where a.key : a, () → Int
+    where a.key : a, ⊤ → Int
 eq left right =
     case left of
         Holder l →
             case right of
                 Holder r →
-                    l.key () == r.key ()
+                    l.key ⊤ == r.key ⊤

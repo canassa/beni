@@ -13,17 +13,14 @@
 import Js
 
 
-pub template : String → (() → Js.Value)
+pub template : String → (⊤ → Js.Value)
 template html =
     node = Js.ref Js.null
-    λ() →
-        _ =
-            if Js.isNull (Js.read node) then
-                t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
-                _ = Js.set t "innerHTML" (Js.from html)
-                Js.write node (Js.get (Js.get t "content") "firstChild")
-            else
-                ()
+    λ⊤ →
+        if Js.isNull (Js.read node) then
+            t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+            Js.set t "innerHTML" (Js.from html)
+            Js.write node (Js.get (Js.get t "content") "firstChild")
         Js.call (Js.read node) "cloneNode" [ Js.from True ]
 
 
@@ -31,38 +28,36 @@ scheduled : Js.Ref Bool
 scheduled = Js.ref False
 
 
-pub flush : () → ()
-flush () = Js.write scheduled False
+pub flush : ⊤ → ⊤
+flush ⊤ = Js.write scheduled False
 
 
-pub schedule : () → ()
-schedule () =
+pub schedule : ⊤ → ⊤
+schedule ⊤ =
     if Js.read scheduled then
-        ()
+        ⊤
     else
-        _ = Js.write scheduled True
+        Js.write scheduled True
 
         _ =
             Js.apply (Js.global "queueMicrotask")
-                [ Js.from λ() →
+                [ Js.from λ⊤ →
                     if Js.read scheduled then
-                        flush ()
-                    else
-                        ()
+                        flush ⊤
                 ]
-        ()
+        ⊤
 
 
 pub cell : Int → Js.Ref Int
 cell n = Js.ref n
 
 
-pub bump : Js.Ref Int → ()
+pub bump : Js.Ref Int → ⊤
 bump r = Js.write r (Js.read r + 1)
 
 
 pub counted : Int → Int
 counted n =
     r = cell n
-    _ = bump r
+    bump r
     Js.read r

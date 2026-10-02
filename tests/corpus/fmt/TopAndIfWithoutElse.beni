@@ -3,7 +3,7 @@
 -- only when written there, else `if c then` and the body below
 -- (language.md §12.10). `( )` prints as `()` until
 -- the enforce step.
-f : ⊤,⊥ → ( )
+f : ⊤,⊥ → ⊤
 f ⊤ v =   never v
 
 

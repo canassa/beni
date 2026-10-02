@@ -4,5 +4,5 @@ pub type Key
     = Key Int
 
 
-pub key : Key, () → String
+pub key : Key, ⊤ → String
 key k u = "k"

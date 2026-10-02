@@ -82,13 +82,13 @@ decode text =
 
 
 save : List Todo → Cmd Msg
-save todos = Cmd.do λ() → saved (Storage.set Local key (encode todos))
+save todos = Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))
 
 
 -- A todo list too big for the quota, or storage the browser withholds,
 -- is kept in the page only.
-saved : Result Storage.Error () → ()
-saved _ = ()
+saved : Result Storage.Error ⊤ → ⊤
+saved _ = ⊤
 
 
 -- ---- The filter, from the address ----------------------------------------
@@ -119,7 +119,7 @@ init =
                 []
     ( { todos = todos
       , draft = ""
-      , filter = filterOf (Browser.Navigation.currentUrl ())
+      , filter = filterOf (Browser.Navigation.currentUrl ⊤)
       , nextId = List.length todos
       , editing = Nothing
       }
@@ -135,7 +135,7 @@ update msg model =
 
         KeyDown event →
             if Html.key event == "Enter" then
-                _ = Html.preventDefault event
+                Html.preventDefault event
 
                 title = String.trim model.draft
                 if String.isEmpty title then
@@ -194,11 +194,11 @@ update msg model =
 -- every DOM honours for markup a script inserts (happy-dom does not), and
 -- the edit field, which the update that opens it renders. Only one edit
 -- field is open at a time, so it has a fixed id.
-focus : String, Cmd.Send Msg → ()
+focus : String, Cmd.Send Msg → ⊤
 focus id _ =
     case Dom.focus id of
         _ →
-            ()
+            ⊤
 
 
 -- Enter and leaving the field both save; the second of the two, when Enter

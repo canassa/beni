@@ -4,6 +4,6 @@
 f=λ x→x+1
 g = λ a b →
       a+b
-thunk = λ ( )→0
+thunk = λ ⊤→0
 k = List.map [ 1, 2 ] (λx→
   x*2)

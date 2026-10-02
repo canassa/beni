@@ -34,16 +34,16 @@ import Task exposing (Exit, Resume)
 --| for something nothing can ever answer, so that Node would simply stop,
 --| the program says so on standard error and exits 1 — never a silent exit
 --| 0 (`boundary.md` §9.8.15 (c)).
-pub run : (() → Program) → Program
+pub run : (⊤ → Program) → Program
 run body =
     ended = Js.ref False
 
     _ = Js.call (Js.global "process") "on" [ Js.from "beforeExit", Js.from λ_ → stranded ended ]
 
-    _ = Task.start (λ() → begin body) λexit →
-        _ = Js.write ended True
-        _ = finish exit
-        Task.shutdown 1000 λ_ → ()
+    Task.start (λ⊤ → begin body) λexit →
+        Js.write ended True
+        finish exit
+        Task.shutdown 1000 λ_ → ⊤
 
     Node.done
 
@@ -51,25 +51,25 @@ run body =
 -- The fiber's first act: until it ends, a process that leaves by any route
 -- the platform did not foresee leaves 1. `main` has returned by now, so
 -- nothing writes the code after this but the fiber's end.
-begin : (() → Program) → Program
+begin : (⊤ → Program) → Program
 begin body =
-    _ = Js.set (Js.global "process") "exitCode" (Js.from 1)
-    body ()
+    Js.set (Js.global "process") "exitCode" (Js.from 1)
+    body ⊤
 
 
 -- Node's loop is about to empty: no timer, socket or other handle can run
 -- anything again. If `run`'s fiber has not ended it never will, so say so
 -- and leave the exit code at 1. Nothing is scheduled — work queued here
 -- would run the loop again — and no cleanup is run.
-stranded : Js.Ref Bool → ()
+stranded : Js.Ref Bool → ⊤
 stranded ended =
     if Js.read ended then
-        ()
+        ⊤
     else
-        _ = Js.write ended True
-        _ = Js.set (Js.global "process") "exitCode" (Js.from 1)
+        Js.write ended True
+        Js.set (Js.global "process") "exitCode" (Js.from 1)
         _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from stuck ]
-        ()
+        ⊤
 
 
 stuck : String
@@ -77,13 +77,13 @@ stuck =
     "beni: the program cannot go on: every fiber is waiting for something that can never happen.\n"
 
 
-foreign impure finish : Exit Program → ()
+foreign impure finish : Exit Program → ⊤
 
 
 --| Wait `ms` milliseconds on the calling fiber's clock: `Task.sleep`. Only
 --| the fiber that sleeps waits; the others run. `0` lets every other ready
 --| fiber run first.
-pub sleep : Int → ()
+pub sleep : Int → ⊤
 sleep ms = Task.sleep (Duration.millis ms)
 
 
@@ -121,4 +121,4 @@ pub readFile : String → Result FileError String
 readFile path = Task.callback λresume → startRead path resume
 
 
-foreign impure startRead : String, Resume (Result FileError String) → (() → ())
+foreign impure startRead : String, Resume (Result FileError String) → (⊤ → ⊤)

@@ -11,21 +11,21 @@ import Node exposing (Program)
 import Task exposing (Fiber)
 
 
-sleeper : Clock.Virtual, String, Int → Fiber ()
-sleeper clock name ms = Task.spawn λ() →
-    Clock.run clock λ() →
-        _ = Task.sleep (Duration.millis ms)
-        _ = Debug.log "${name} woke at" (Clock.now ())
-        ()
+sleeper : Clock.Virtual, String, Int → Fiber ⊤
+sleeper clock name ms = Task.spawn λ⊤ →
+    Clock.run clock λ⊤ →
+        Task.sleep (Duration.millis ms)
+        _ = Debug.log "${name} woke at" (Clock.now ⊤)
+        ⊤
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 1000
     a = sleeper clock "a" 30
     b = sleeper clock "b" 10
     c = sleeper clock "c" 20
     d = sleeper clock "d" 20
-    _ = Clock.adjust clock (Duration.millis 30)
+    Clock.adjust clock (Duration.millis 30)
     _ = Task.joinAll [ a, b, c, d ]
     Node.print "done"

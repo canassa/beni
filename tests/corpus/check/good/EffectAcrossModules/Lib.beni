@@ -10,7 +10,7 @@ pub type alias Handler =
 
 
 pub type alias Api =
-    log : String → ()
+    log : String → ⊤
     size : Int
 
 
@@ -27,7 +27,7 @@ runHandler h x = h x
 
 pub callApi : Api → Int
 callApi api =
-    () = api.log "called"
+    ⊤ = api.log "called"
     api.size
 
 

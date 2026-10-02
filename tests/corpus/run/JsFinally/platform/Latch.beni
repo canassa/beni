@@ -9,5 +9,5 @@ import Guard
 --| Work under the latch, then what was recorded.
 pub run : String → String
 run what =
-    _ = Guard.latched λ() → Guard.note what
-    Guard.take ()
+    Guard.latched λ⊤ → Guard.note what
+    Guard.take ⊤

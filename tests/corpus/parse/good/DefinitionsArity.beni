@@ -11,7 +11,7 @@ one x = x
 many a b c d = a + b + c + d
 
 
-ignore _ _ = ()
+ignore _ _ = ⊤
 
 
 unpack ( a, b ) { name } (Wrapped first) = ( a, b, name, first )

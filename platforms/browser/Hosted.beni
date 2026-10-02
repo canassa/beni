@@ -32,7 +32,7 @@ guest v = Js.to v
 
 
 -- A message to a program, through its host's `send`.
-send : V, V → ()
+send : V, V → ⊤
 send h msg = Js.to (Js.call h "send" [ msg ])
 
 
@@ -84,14 +84,14 @@ outlet h = guest (Js.array [ host h, Js.from True ])
 --| Send a message through an outlet: its program's `update` runs, now or,
 --| during another message's `update`, right after it. Once the outlet is
 --| closed, nothing happens.
-pub emit : Outlet msg, msg → ()
+pub emit : Outlet msg, msg → ⊤
 emit o msg =
     v = host o
-    if Js.to (Js.at v 1) then send (Js.at v 0) (host msg) else ()
+    if Js.to (Js.at v 1) then send (Js.at v 0) (host msg)
 
 
 --| Close an outlet: from now on what is sent through it is dropped.
-pub close : Outlet msg → ()
+pub close : Outlet msg → ⊤
 close o = Js.setAt (host o) 1 (Js.from False)
 
 
@@ -105,7 +105,7 @@ pub foreign type Job msg
 
 
 --| A body as a job: the body itself, a function of its `send`.
-pub job : (Browser.Send msg → ()) → Job msg
+pub job : (Browser.Send msg → ⊤) → Job msg
 job body = guest (host body)
 
 
@@ -119,13 +119,13 @@ mapJob j tag =
 --| Run a job in the calling fiber, handed `send`, until it returns: the
 --| body's own value, or the fiber runtime's sentinel when it parked, which
 --| this call's caller receives either way.
-pub runJob : Job msg, Browser.Send msg → ()
-runJob j s = Js.suspending λ() → Js.to (Js.apply (host j) [ host s ])
+pub runJob : Job msg, Browser.Send msg → ⊤
+runJob j s = Js.suspending λ⊤ → Js.to (Js.apply (host j) [ host s ])
 
 
 --| Run a job that cannot suspend, handed `send`: what `Cmd` made of a body
 --| whose every use says it never waits.
-pub callJob : Job msg, Browser.Send msg → ()
+pub callJob : Job msg, Browser.Send msg → ⊤
 callJob j s = Js.to (Js.apply (host j) [ host s ])
 
 
@@ -136,7 +136,7 @@ pub foreign type Later msg
 --| After-render work: `body` runs synchronously in the after-render phase
 --| of the flush that follows, handed a function that sends to the program.
 --| `[ f, t ]`: the body, and the tagger its messages go through or null.
-pub later : sync (Browser.Send msg → ()) → Later msg
+pub later : sync (Browser.Send msg → ⊤) → Later msg
 later body = guest (Js.array [ host body, Js.null ])
 
 
@@ -155,7 +155,7 @@ mapLater l tag =
 
 
 --| Queue after-render work into the program's next flush.
-pub afterRender : Host msg, Later msg → ()
+pub afterRender : Host msg, Later msg → ⊤
 afterRender h l =
     v = host l
     tag = Js.at v 1
@@ -163,7 +163,7 @@ afterRender h l =
 
     Js.to
         (Js.call p "after"
-            [ Js.from λ() →
+            [ Js.from λ⊤ →
                 Js.apply (Js.at v 0)
                     [ Js.from λm → send p (if Js.isNull tag then m else Js.apply tag [ m ]) ]
             ]
@@ -178,14 +178,14 @@ pub foreign type Tap msg
 --| The body a subscription runs in a fiber, and its tagger. The body is
 --| handed a function that sends values of type `a`. `[ b, t ]`: the body
 --| or the listener, and the tagger of what it sends.
-pub tap : (Browser.Send a → ()), sync (a → msg) → Tap msg
+pub tap : (Browser.Send a → ⊤), sync (a → msg) → Tap msg
 tap body tag = guest (Js.array [ host body, host tag ])
 
 
 --| A listener a subscription adds with no fiber, and its tagger
 --| (`boundary.md` §9.8.5): handed a function that sends values of type
 --| `a`, `start` adds the host's listener and returns what removes it.
-pub hook : sync ((a → ()) → (() → ())), sync (a → msg) → Tap msg
+pub hook : sync ((a → ⊤) → (⊤ → ⊤)), sync (a → msg) → Tap msg
 hook start tag = guest (Js.array [ host start, host tag ])
 
 
@@ -234,28 +234,27 @@ relay h tp =
 
 
 -- One value, through the tagger of every current tap of an open relay.
-tagged : V, V → ()
-tagged r value =
-    if Js.to (Js.get r "open") then through (Js.get r "h") (guest (Js.get r "t")) value else ()
+tagged : V, V → ⊤
+tagged r value = if Js.to (Js.get r "open") then through (Js.get r "h") (guest (Js.get r "t")) value
 
 
-through : V, List V, V → ()
+through : V, List V, V → ⊤
 through h taps value =
     case taps of
         [] →
-            ()
+            ⊤
 
         [ tp, …rest ] →
-            _ = send h (Js.apply (Js.at tp 1) [ value ])
+            send h (Js.apply (Js.at tp 1) [ value ])
             through h rest value
 
 
 --| Run the relay's body, in the current fiber, until it returns: the
 --| body's own value, or the fiber runtime's sentinel when it parked.
-pub run : Relay msg → ()
+pub run : Relay msg → ⊤
 run rl =
     r = host rl
-    Js.suspending λ() → Js.to (Js.apply (Js.get r "b") [ Js.from λvalue → tagged r value ])
+    Js.suspending λ⊤ → Js.to (Js.apply (Js.get r "b") [ Js.from λvalue → tagged r value ])
 
 
 -- The relays whose listener is added, which the program's stop removes,
@@ -274,56 +273,53 @@ released = Js.ref False
 --| land, and removed by `unhear` or when the program stops. The first
 --| value sent queues one delivery; values sent before it runs, or while it
 --| sends, join it, and it sends them all in order.
-pub hear : Relay msg → ()
+pub hear : Relay msg → ⊤
 hear rl =
     r = host rl
 
-    queue λ() →
+    queue λ⊤ →
         if Js.to (Js.get r "open") then
-            _ =
-                if Js.read released then
-                    ()
-                else
-                    _ = Js.write released True
-                    Task.onShutdown λ() →
-                        _ = Js.each heard λx → Js.to (Js.apply (Js.get x "x") [ Js.null ])
-                        Js.to (Js.call heard "clear" [])
+            if Js.read released then
+                ⊤
+            else
+                Js.write released True
+                Task.onShutdown λ⊤ →
+                    Js.each heard λx → Js.to (Js.apply (Js.get x "x") [ Js.null ])
+                    Js.to (Js.call heard "clear" [])
             _ = Js.call heard "add" [ r ]
             Js.set r "x" (Js.apply (Js.get r "b") [ Js.from λvalue → arrive r value ])
-        else
-            ()
 
 
-arrive : V, V → ()
+arrive : V, V → ⊤
 arrive r value =
     q = Js.get r "q"
     if Js.isNull q then
-        _ = Js.set r "q" (Js.array [ value ])
-        queue λ() → deliverQueued r 0
+        Js.set r "q" (Js.array [ value ])
+        queue λ⊤ → deliverQueued r 0
     else
         Js.to (Js.call q "push" [ value ])
 
 
-deliverQueued : V, Int → ()
+deliverQueued : V, Int → ⊤
 deliverQueued r i =
     q = Js.get r "q"
     if i < Js.to (Js.get q "length") then
-        _ = tagged r (Js.at q i)
+        tagged r (Js.at q i)
         deliverQueued r (i + 1)
     else
         Js.set r "q" Js.null
 
 
-queue : sync (() → ()) → ()
+queue : sync (⊤ → ⊤) → ⊤
 queue work =
     _ = Task.soon work
-    ()
+    ⊤
 
 
 --| Run a relay's listener in the current fiber, as `Listen.each` runs one,
 --| until the fiber is cancelled: how every listener subscription ran
 --| before `Sub.on` ran with none, kept for the test hook `fibered`.
-pub runHeard : Relay msg → ()
+pub runHeard : Relay msg → ⊤
 runHeard rl =
     r = host rl
     Listen.each (Js.to (Js.get r "b")) λvalue → tagged r value
@@ -333,43 +329,43 @@ runHeard rl =
 --| page asked, before the program loaded, for every listener subscription
 --| to run in a fiber through `runHeard`. Read only under
 --| `Js.development`, so no release build carries it.
-pub fibered : () → Bool
-fibered () = Js.same (Js.global "__beniFiberSubscriptions") (Js.from True)
+pub fibered : ⊤ → Bool
+fibered ⊤ = Js.same (Js.global "__beniFiberSubscriptions") (Js.from True)
 
 
 --| Replace the relay's taggers with those of `taps`, in order: each value
 --| the body sends becomes one message per tap. Every tap must be one that
 --| sends what the relay's first did — which is what equal keys promise.
-pub retap : Relay msg, List (Tap msg) → ()
+pub retap : Relay msg, List (Tap msg) → ⊤
 retap r taps = Js.set (host r) "t" (host taps)
 
 
 --| Close a relay: what its body sends from now on is dropped.
-pub closeRelay : Relay msg → ()
+pub closeRelay : Relay msg → ⊤
 closeRelay r = Js.set (host r) "open" (Js.from False)
 
 
 --| Close a relay `hear` runs, and remove its listener now.
-pub unhear : Relay msg → ()
+pub unhear : Relay msg → ⊤
 unhear rl =
     r = host rl
-    _ = Js.set r "open" (Js.from False)
+    Js.set r "open" (Js.from False)
     x = Js.get r "x"
     if Js.isNull x then
-        ()
+        ⊤
     else
-        _ = Js.set r "x" Js.null
+        Js.set r "x" Js.null
         _ = Js.call heard "delete" [ r ]
         Js.to (Js.apply x [ Js.null ])
 
 
 --| Write the page's title when it differs from `title`: what a document
 --| program's render does, so the title and the body never disagree.
-pub title : String → ()
+pub title : String → ⊤
 title text =
     document = Js.global "document"
     if Js.same (Js.get document "title") (Js.from text) then
-        ()
+        ⊤
     else
         Js.set document "title" (Js.from text)
 

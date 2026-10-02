@@ -16,10 +16,10 @@ type alias Odd =
     text : Presence String
 
 
-toOdd ( ( ( (), proto ), ctor ), text ) = { proto = proto, ctor = ctor, text = text }
+toOdd ( ( ( ⊤, proto ), ctor ), text ) = { proto = proto, ctor = ctor, text = text }
 
 
-fromOdd o = ( ( ( (), o.proto ), o.ctor ), o.text )
+fromOdd o = ( ( ( ⊤, o.proto ), o.ctor ), o.text )
 
 
 odd : Schema Odd Odd
@@ -41,10 +41,10 @@ type alias Plain =
     a : Int
 
 
-toPlain ( (), a ) = { a = a }
+toPlain ( ⊤, a ) = { a = a }
 
 
-fromPlain p = ( (), p.a )
+fromPlain p = ( ⊤, p.a )
 
 
 plain : Schema Plain Plain

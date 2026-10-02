@@ -12,8 +12,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -26,31 +26,31 @@ outcome exit =
             "Cancelled"
 
 
-deferring : String, Task.Scope → ()
+deferring : String, Task.Scope → ⊤
 deferring prefix s =
-    _ = Task.spawnIn s λ() →
-        Task.bracket (λ() → ()) (λ_ exit → say "${prefix} child released: ${outcome exit}") λ_ →
-            Task.never ()
-    _ = Task.defer s λexit → say "${prefix} first deferred: ${outcome exit}"
+    _ = Task.spawnIn s λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${prefix} child released: ${outcome exit}") λ_ →
+            Task.never ⊤
+    Task.defer s λexit → say "${prefix} first deferred: ${outcome exit}"
 
     Task.defer s λexit →
-        _ = Task.yieldNow ()
+        Task.yieldNow ⊤
         say "${prefix} second deferred, after a wait: ${outcome exit}"
 
 
 main : Program
-main = Io.run λ() →
-    _ = Task.scope λs →
-        _ = deferring "returned:" s
-        Task.yieldNow ()
-    _ = Debug.log "scope returned" ()
+main = Io.run λ⊤ →
+    Task.scope λs →
+        deferring "returned:" s
+        Task.yieldNow ⊤
+    Debug.log "scope returned" ⊤
 
-    cancelled = Task.spawn λ() →
-        Task.bracket (λ() → ()) (λ_ exit → say "around the scope released: ${outcome exit}") λ_ →
+    cancelled = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ exit → say "around the scope released: ${outcome exit}") λ_ →
             Task.scope λs →
-                _ = deferring "cancelled:" s
-                Task.never ()
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel cancelled
+                deferring "cancelled:" s
+                Task.never ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.cancel cancelled
     Node.print "done"

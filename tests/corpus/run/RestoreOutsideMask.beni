@@ -14,50 +14,50 @@ import Ref
 import Task
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     kept = Ref.make Nothing
 
-    late = Task.spawn λ() →
-        _ = Task.uninterruptibleMask λtoken → Ref.set kept (Just token)
-        _ = Task.uninterruptible λ() →
+    late = Task.spawn λ⊤ →
+        Task.uninterruptibleMask λtoken → Ref.set kept (Just token)
+        Task.uninterruptible λ⊤ →
             case Ref.get kept of
                 Just token →
-                    Task.restore token λ() →
-                        _ = Task.yieldNow ()
+                    Task.restore token λ⊤ →
+                        Task.yieldNow ⊤
                         say "late: the region was not unmasked"
 
                 Nothing →
-                    ()
-        _ = Task.yieldNow ()
+                    ⊤
+        Task.yieldNow ⊤
         say "late: never"
-    _ = Task.yieldNow ()
-    _ = Task.cancel late
+    Task.yieldNow ⊤
+    Task.cancel late
 
     handed = Ref.make Nothing
 
-    stranger = Task.spawn λ() →
-        _ = Task.yieldNow ()
+    stranger = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
 
-        _ = Task.uninterruptible λ() →
+        Task.uninterruptible λ⊤ →
             case Ref.get handed of
                 Just token →
-                    Task.restore token λ() →
-                        _ = Task.yieldNow ()
+                    Task.restore token λ⊤ →
+                        Task.yieldNow ⊤
                         say "stranger: the region was not unmasked"
 
                 Nothing →
-                    ()
-        _ = Task.yieldNow ()
+                    ⊤
+        Task.yieldNow ⊤
         say "stranger: never"
 
     Task.uninterruptibleMask λtoken →
-        _ = Ref.set handed (Just token)
-        _ = Task.yieldNow ()
-        _ = Task.yieldNow ()
-        _ = Task.cancel stranger
+        Ref.set handed (Just token)
+        Task.yieldNow ⊤
+        Task.yieldNow ⊤
+        Task.cancel stranger
         Node.print "done"

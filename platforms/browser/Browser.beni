@@ -80,7 +80,7 @@ programs list =
         else
             Js.call (Js.from list) "$plain" []
 
-    _ = Js.each items λp → Js.each p λm → Js.to (Js.call mounts "push" [ m ])
+    Js.each items λp → Js.each p λm → Js.to (Js.call mounts "push" [ m ])
     Js.to mounts
 
 
@@ -88,7 +88,7 @@ programs list =
 --| or a subscription's body is handed. Calling it runs `update` and never
 --| waits.
 pub type alias Send msg =
-    msg → ()
+    msg → ⊤
 
 
 --| A running program, as a `hosted` program's `init`, `update` and
@@ -128,10 +128,10 @@ hosted p =
 --| messages. During a message's `update` or a render it does nothing more
 --| than the flush already queued, so no render ever sees a half-handled
 --| message.
-pub flush : () → ()
-flush () =
+pub flush : ⊤ → ⊤
+flush ⊤ =
     if Js.isNull (Js.read loop) || Js.read busy || Js.read dispatching then
-        ()
+        ⊤
     else
         Js.to (Js.apply (Js.read loop) [])
 
@@ -139,7 +139,7 @@ flush () =
 --| How `Dom.rendered` waits: `resume` is called at the start of the
 --| after-render phase of the flush the page has queued, or at once when
 --| none is queued. Returns what stops the wait.
-pub onRendered : Task.Resume () → (() → ())
+pub onRendered : Task.Resume ⊤ → (⊤ → ⊤)
 onRendered resume =
     if
         Js.isNull (Js.read loop)
@@ -151,13 +151,11 @@ onRendered resume =
     else
         _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
         _ = Js.apply (Js.read nudge) []
-        λ() →
+        λ⊤ →
             i : Int
             i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
             if i ≥ 0 then
                 Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
-            else
-                ()
 
 
 -- ---- The hosted loop (`boundary.md` §9.8; `backend.md` §15.11) -----------
@@ -223,30 +221,28 @@ inbox = Js.ref (Js.array [])
 -- waited, then the work queued before this flush began runs, first queued
 -- first, each at once. Work queued, or a message sent, while it runs is the
 -- next flush's.
-afterRender : () → ()
-afterRender () =
+afterRender : ⊤ → ⊤
+afterRender ⊤ =
     resumes = Js.read waiters
     work = Js.read later
-    _ = Js.write waiters (Js.array [])
-    _ = Js.write later (Js.array [])
-    _ = Js.write busy True
+    Js.write waiters (Js.array [])
+    Js.write later (Js.array [])
+    Js.write busy True
     Js.finally
-        (λ() →
-            _ = Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
+        (λ⊤ →
+            Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
             Js.each work λf → Js.to (Js.apply f [])
         )
-        λ() → Js.write busy False
+        λ⊤ → Js.write busy False
 
 
 -- Apply every message the inbox holds from `i` on, in the order they were
 -- sent; one applied may send more, which land after them.
-drain : Int → ()
+drain : Int → ⊤
 drain i =
     if i < Js.to (Js.get (Js.read inbox) "length") then
         _ = Js.apply (Js.at (Js.read inbox) i) [ Js.at (Js.read inbox) (i + 1) ]
         drain (i + 2)
-    else
-        ()
 
 
 -- A hosted mount, as the runtime reads one: `{ init, update, view }` whose
@@ -268,23 +264,23 @@ host :
     , Js.Value
     → Js.Value
 host p root flushing phase stop =
-    _ = Js.write loop flushing
+    Js.write loop flushing
 
     -- A fiber that throws stops the page, as a handler that throws does.
     -- Once the page has stopped, `stop` cancels every fiber of every
     -- program (`boundary.md` §9.8.14). The after-render work not yet run is
     -- dropped with no help: only a flush runs it, and none runs once the
     -- page has stopped.
-    _ = Task.onDefect λ() → Js.to (Js.apply stop [])
-    _ = Js.write setPhase phase
+    Task.onDefect λ⊤ → Js.to (Js.apply stop [])
+    Js.write setPhase phase
     _ = Js.apply phase [ Js.from afterRender ]
 
     send =
         λmsg →
             _ = Js.call root "$$root" [ msg ]
-            ()
+            ⊤
 
-    _ = Js.write nudge (Js.from λ() → send skip)
+    Js.write nudge (Js.from λ⊤ → send skip)
     model = Js.ref (Js.to Js.null)
     started = Js.ref False
     dirty = Js.ref False
@@ -303,45 +299,45 @@ host p root flushing phase stop =
 
     apply =
         λmsg →
-            _ = Js.write dirty True
+            Js.write dirty True
             Js.write model (p.update self (Js.to msg) (Js.read model))
     Js.from
         { init = Js.null
         , update =
             λmsg →
                 if Js.same msg skip then
-                    ()
+                    ⊤
                 else if Js.read dispatching then
                     _ = Js.call (Js.read inbox) "push" [ Js.from apply, msg ]
-                    ()
+                    ⊤
                 else
-                    _ = Js.write dispatching True
+                    Js.write dispatching True
                     Js.finally
-                        (λ() →
-                            _ = apply msg
-                            _ = drain 0
-                            ()
+                        (λ⊤ →
+                            apply msg
+                            drain 0
+                            ⊤
                         )
-                        λ() →
-                            _ = Js.write inbox (Js.array [])
+                        λ⊤ →
+                            Js.write inbox (Js.array [])
                             Js.write dispatching False
         , view =
-            λ() →
+            λ⊤ →
                 if not (Js.read started) then
-                    _ = Js.write started True
-                    _ = Js.write model (p.settle self (p.init self))
-                    _ = Js.write shown (p.view (Js.read model))
+                    Js.write started True
+                    Js.write model (p.settle self (p.init self))
+                    Js.write shown (p.view (Js.read model))
                     Js.read shown
                 else if not (Js.read dirty) then
                     Js.read shown
                 else
-                    _ = Js.write dirty False
-                    _ = Js.write busy True
+                    Js.write dirty False
+                    Js.write busy True
                     Js.finally
-                        (λ() →
-                            _ = Js.write model (p.settle self (Js.read model))
-                            _ = Js.write shown (p.view (Js.read model))
+                        (λ⊤ →
+                            Js.write model (p.settle self (Js.read model))
+                            Js.write shown (p.view (Js.read model))
                             Js.read shown
                         )
-                        λ() → Js.write busy False
+                        λ⊤ → Js.write busy False
         }

@@ -12,4 +12,4 @@ import Node
 
 
 main : Node.Program
-main = Node.printLines (Cells.demo ())
+main = Node.printLines (Cells.demo ⊤)

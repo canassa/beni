@@ -9,10 +9,10 @@ import Node
 main : Node.Program
 main =
     next = Cells.counter 10
-    a = next ()
-    b = next ()
-    t1 = Cells.tick ()
-    t2 = Cells.tick ()
+    a = next ⊤
+    b = next ⊤
+    t1 = Cells.tick ⊤
+    t2 = Cells.tick ⊤
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b}"
         , "${String.fromInt t1} ${String.fromInt t2}"

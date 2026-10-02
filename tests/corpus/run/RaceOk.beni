@@ -16,43 +16,43 @@ import Task
 
 after : Int, Result String String → Result String String
 after ms answer =
-    _ = Task.sleep (Duration.millis ms)
+    Task.sleep (Duration.millis ms)
     answer
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
-    doomed = Task.spawn λ() → Task.never ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel doomed
+    doomed = Task.spawn λ⊤ → Task.never ⊤
+    Task.yieldNow ⊤
+    Task.cancel doomed
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             _ =
                 Debug.log
                     "one side fails"
                     (Task.raceOk
-                        [ λ() → after 5 (Err "fast failed"), λ() → after 20 (Ok "slow won") ]
+                        [ λ⊤ → after 5 (Err "fast failed"), λ⊤ → after 20 (Ok "slow won") ]
                     )
 
             _ =
                 Debug.log
                     "every side fails"
                     (Task.raceOk
-                        [ λ() → after 30 (Err "first")
-                        , λ() → Task.join doomed
-                        , λ() → after 10 (Err "third")
+                        [ λ⊤ → after 30 (Err "first")
+                        , λ⊤ → Task.join doomed
+                        , λ⊤ → after 10 (Err "third")
                         ]
                     )
 
             _ = Debug.log "no branches" (Task.raceOk [])
 
             Task.raceOk
-                [ λ() →
-                    Task.bracket (λ() → ()) (λ_ _ → Debug.log "slower released" ()) λ_ →
+                [ λ⊤ →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "slower released" ⊤) λ_ →
                         after 50 (Ok "slower")
-                , λ() → after 1 (Ok "first Ok")
+                , λ⊤ → after 1 (Ok "first Ok")
                 ]
-    _ = Clock.adjust clock (Duration.seconds 1)
+    Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

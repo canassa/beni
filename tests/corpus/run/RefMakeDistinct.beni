@@ -6,8 +6,8 @@ import Node exposing (Program)
 import Ref exposing (Ref)
 
 
-pair : () → Ref Int × Ref Int
-pair () =
+pair : ⊤ → Ref Int × Ref Int
+pair ⊤ =
     a = Ref.make 0
     b = Ref.make 0
     ( a, b )
@@ -15,6 +15,6 @@ pair () =
 
 main : Program
 main =
-    ( a, b ) = pair ()
-    _ = Ref.set a 1
+    ( a, b ) = pair ⊤
+    Ref.set a 1
     Node.print "a ${String.fromInt (Ref.get a)}, b ${String.fromInt (Ref.get b)}"

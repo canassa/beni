@@ -11,19 +11,19 @@ import Task exposing (Fiber)
 
 
 waiter : Deferred Int, String → Fiber Int
-waiter d name = Task.spawn λ() →
-    Task.bracket (λ() → ()) (λ_ _ → Debug.log "${name} released" ()) λ_ →
+waiter d name = Task.spawn λ⊤ →
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "${name} released" ⊤) λ_ →
         Debug.log "${name} got" (Deferred.wait d)
 
 
 main : Program
-main = Io.run λ() →
-    d = Deferred.make ()
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
     first = waiter d "first"
     middle = waiter d "middle"
     last = waiter d "last"
-    _ = Task.yieldNow ()
-    _ = Task.cancel middle
+    Task.yieldNow ⊤
+    Task.cancel middle
     _ = Debug.log "complete" (Deferred.complete d 1)
     _ = Task.join first
     _ = Task.join last

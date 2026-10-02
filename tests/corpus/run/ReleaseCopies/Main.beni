@@ -8,4 +8,4 @@ import Node
 
 
 main : Node.Program
-main = Node.printLines (Copies.demo ())
+main = Node.printLines (Copies.demo ⊤)

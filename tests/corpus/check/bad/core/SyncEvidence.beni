@@ -23,8 +23,8 @@ pub probe : Item → Bool
 probe (Item n) = get n
 
 
-count : () → Int
-count () = countWhere [ Item 1 ]
+count : ⊤ → Int
+count ⊤ = countWhere [ Item 1 ]
 
 
 pub type Check
@@ -35,9 +35,9 @@ pub eq : Check, Check → Bool
 eq (Check f) (Check g) = f 0 == g 0
 
 
-same : () → Bool
-same () = Check (λn → get n) == Check λn → n > 0
+same : ⊤ → Bool
+same ⊤ = Check (λn → get n) == Check λn → n > 0
 
 
-fine : () → Bool
-fine () = Check (λn → n < 0) == Check λn → n > 0
+fine : ⊤ → Bool
+fine ⊤ = Check (λn → n < 0) == Check λn → n > 0

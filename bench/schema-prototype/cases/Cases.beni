@@ -116,7 +116,7 @@ messageEncodedEndpoint =
         }
         readEncodedMessage
         writeEncodedMessage
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 messageProgramEndpoint : Schema.Endpoint MessageProgram.Message
@@ -133,7 +133,7 @@ messageProgramEndpoint =
         }
         readProgramMessage
         writeProgramMessage
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 messageSchema : Schema.Schema MessageEncoded.Message MessageProgram.Message
@@ -196,15 +196,15 @@ writeProgramMessage _ message =
             Ok (Object [ ( "kind", Text "count" ), ( "value", Number (toFloat payload.value) ) ])
 
 
-wireNodeEndpoint : () → Schema.Endpoint WireNode
-wireNodeEndpoint () =
+wireNodeEndpoint : ⊤ → Schema.Endpoint WireNode
+wireNodeEndpoint ⊤ =
     Schema.recursiveEndpoint "WireNode"
         (Schema.ObjectShape
             [ ( "value", Schema.StringShape )
             , ( "children", Schema.ListShape (Schema.ReferenceShape "WireNode") )
             ]
         )
-        λ() →
+        λ⊤ →
             Schema.object2Endpoint "wire node"
                 (Schema.requiredField "value" Schema.stringEndpoint)
                 (Schema.requiredField
@@ -216,15 +216,15 @@ wireNodeEndpoint () =
                 λ(WireNode node) → node.children
 
 
-programNodeEndpoint : () → Schema.Endpoint ProgramNode
-programNodeEndpoint () =
+programNodeEndpoint : ⊤ → Schema.Endpoint ProgramNode
+programNodeEndpoint ⊤ =
     Schema.recursiveEndpoint "ProgramNode"
         (Schema.ObjectShape
             [ ( "value", Schema.NumberShape )
             , ( "children", Schema.ListShape (Schema.ReferenceShape "ProgramNode") )
             ]
         )
-        λ() →
+        λ⊤ →
             Schema.object2Endpoint "program node"
                 (Schema.requiredField "value" Schema.int.decoded)
                 (Schema.requiredField
@@ -237,22 +237,22 @@ programNodeEndpoint () =
 
 
 nodeSchema : Schema.Schema WireNode ProgramNode
-nodeSchema = Schema.make (wireNodeEndpoint ()) (programNodeEndpoint ()) decodeNode encodeNode
+nodeSchema = Schema.make (wireNodeEndpoint ⊤) (programNodeEndpoint ⊤) decodeNode encodeNode
 
 
 -- A recursive endpoint nested inside another recursive endpoint. The outer
 -- wrapper currently publishes only its own definition, not the inner one's.
-nestedNodeEndpoint : () → Schema.Endpoint NestedNode
-nestedNodeEndpoint () =
+nestedNodeEndpoint : ⊤ → Schema.Endpoint NestedNode
+nestedNodeEndpoint ⊤ =
     Schema.recursiveEndpoint "NestedNode"
         (Schema.ObjectShape
             [ ( "inner", Schema.ReferenceShape "WireNode" )
             , ( "children", Schema.ListShape (Schema.ReferenceShape "NestedNode") )
             ]
         )
-        λ() →
+        λ⊤ →
             Schema.object2Endpoint "nested node"
-                (Schema.requiredField "inner" (wireNodeEndpoint ()))
+                (Schema.requiredField "inner" (wireNodeEndpoint ⊤))
                 (Schema.requiredField
                     "children"
                     (Schema.listEndpoint (Schema.deferEndpoint "NestedNode" nestedNodeEndpoint))
@@ -310,7 +310,7 @@ badConversionEndpoint =
                     Err [ Schema.issue context (Expected "string") "expected string" ]
         )
         (λ_ text → Ok (Text text))
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 adverseEndpoint : Schema.Endpoint Pair
@@ -574,7 +574,7 @@ results =
                     )
                   ]
               }
-          Schema.describe (Schema.fromEndpoint (nestedNodeEndpoint ()))
+          Schema.describe (Schema.fromEndpoint (nestedNodeEndpoint ⊤))
               == { encoded = observedDescription, decoded = observedDescription }
       )
       )

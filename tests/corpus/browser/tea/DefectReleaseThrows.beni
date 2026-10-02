@@ -19,9 +19,9 @@ type Msg
     | Boom
 
 
-sleepIn : (() → ()) → Cmd Msg
+sleepIn : (⊤ → ⊤) → Cmd Msg
 sleepIn release = Cmd.perform λ_ →
-    Task.bracket (λ() → ()) (λ_ _ → release ()) λ_ → Time.sleep (Time.seconds 60)
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → release ⊤) λ_ → Time.sleep (Time.seconds 60)
 
 
 update : Msg, Int → Int × Cmd Msg
@@ -30,9 +30,9 @@ update msg n =
         Start →
             ( n
             , Cmd.batch
-                [ sleepIn λ() → Log.info "first released"
-                , sleepIn λ() → Debug.todo "the second release threw"
-                , sleepIn λ() → Log.info "third released"
+                [ sleepIn λ⊤ → Log.info "first released"
+                , sleepIn λ⊤ → Debug.todo "the second release threw"
+                , sleepIn λ⊤ → Log.info "third released"
                 ]
             )
 

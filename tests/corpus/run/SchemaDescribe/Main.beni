@@ -18,16 +18,16 @@ loud : Conversion String Int
 loud = Schema.conversion (λ_ → Ok 0) λn → Ok (String.fromInt n)
 
 
-one ( (), a ) = { a = a }
+one ( ⊤, a ) = { a = a }
 
 
-unOne r = ( (), r.a )
+unOne r = ( ⊤, r.a )
 
 
-two ( ( (), a ), b ) = { a = a, b = b }
+two ( ( ⊤, a ), b ) = { a = a, b = b }
 
 
-unTwo r = ( ( (), r.a ), r.b )
+unTwo r = ( ( ⊤, r.a ), r.b )
 
 
 type alias Flat e =
@@ -36,10 +36,10 @@ type alias Flat e =
     note : Schema.Presence (Schema.Nullable Float)
 
 
-toFlat ( ( ( (), id ), tags ), note ) = { id = id, tags = tags, note = note }
+toFlat ( ( ( ⊤, id ), tags ), note ) = { id = id, tags = tags, note = note }
 
 
-fromFlat r = ( ( ( (), r.id ), r.tags ), r.note )
+fromFlat r = ( ( ( ⊤, r.id ), r.tags ), r.note )
 
 
 flat : Schema (Flat String) (Flat Int)
@@ -62,10 +62,10 @@ type Shape2
 
 shape2 : Schema Shape2 Shape2
 shape2 =
-    dot = Schema.injection (λ() → Dot) λs →
+    dot = Schema.injection (λ⊤ → Dot) λs →
         case s of
             Dot →
-                Just ()
+                Just ⊤
 
             _ →
                 Nothing

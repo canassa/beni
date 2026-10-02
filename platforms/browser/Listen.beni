@@ -19,24 +19,24 @@ import Task
 --| Add a listener for every event named `name` on `target` (`"window"` or
 --| `"document"`) that calls `send (read event)` while the event is
 --| dispatched, and return what removes it.
-pub on : String, String, sync (Js.Value → a), sync (a → ()) → (() → ())
+pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
 on target name read send =
     host = Js.global target
     handler = Js.from λevent → send (read event)
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    λ() → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
 
 
 --| The same over the events of two names on one target: one listener, so
 --| an event of one name never overtakes an earlier one of the other.
-pub on2 : String, String, String, sync (Js.Value → a), sync (a → ()) → (() → ())
+pub on2 : String, String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
 on2 target name other read send =
     host = Js.global target
     handler = Js.from λevent → send (read event)
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     _ = Js.call host "addEventListener" [ Js.from other, handler ]
 
-    λ() →
+    λ⊤ →
         _ = Js.call host "removeEventListener" [ Js.from name, handler ]
         Js.to (Js.call host "removeEventListener" [ Js.from other, handler ])
 
@@ -46,11 +46,11 @@ on2 target name other read send =
 --| removed however it ends. Values sent while `f` runs, or before the
 --| fiber takes them, are queued, so none is lost and none overtakes
 --| another.
-pub each : sync ((a → ()) → (() → ())), (a → ()) → ()
-each listener f = Task.bracket (λ() → open listener) (λl _ → close l) λl → pump l f
+pub each : sync ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤
+each listener f = Task.bracket (λ⊤ → open listener) (λl _ → close l) λl → pump l f
 
 
-open : sync ((a → ()) → (() → ())) → Js.Value
+open : sync ((a → ⊤) → (⊤ → ⊤)) → Js.Value
 open listener =
     l = Js.array [ Js.array [], Js.null, Js.null ]
 
@@ -60,19 +60,19 @@ open listener =
             if Js.isNull waiting then
                 Js.to (Js.call (Js.at l 0) "push" [ Js.from v ])
             else
-                _ = Js.setAt l 1 Js.null
+                Js.setAt l 1 Js.null
                 Js.to (Js.apply waiting [ Js.from v ])
-    _ = Js.setAt l 2 (Js.from (listener handler))
+    Js.setAt l 2 (Js.from (listener handler))
     l
 
 
-close : Js.Value → ()
+close : Js.Value → ⊤
 close l = Js.to (Js.apply (Js.at l 2) [ Js.null ])
 
 
-pump : Js.Value, (a → ()) → ()
+pump : Js.Value, (a → ⊤) → ⊤
 pump l f =
-    _ = f (next l)
+    f (next l)
     pump l f
 
 
@@ -81,12 +81,12 @@ next : Js.Value → a
 next l = Task.callback λresume → take l resume
 
 
-take : Js.Value, Task.Resume a → (() → ())
+take : Js.Value, Task.Resume a → (⊤ → ⊤)
 take l resume =
     queue = Js.at l 0
     if Js.to (Js.get queue "length") > 0 then
         _ = Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
         Js.to Js.null
     else
-        _ = Js.setAt l 1 (Js.from resume)
-        λ() → Js.setAt l 1 Js.null
+        Js.setAt l 1 (Js.from resume)
+        λ⊤ → Js.setAt l 1 Js.null

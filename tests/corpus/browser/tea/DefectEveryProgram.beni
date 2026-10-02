@@ -26,7 +26,7 @@ outcome exit =
 
 sleeper : String → Cmd msg
 sleeper name = Cmd.perform λ_ →
-    Task.bracket (λ() → ()) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ →
+    Task.bracket (λ⊤ → ⊤) (λ_ exit → Log.info "${name} released: ${outcome exit}") λ_ →
         Time.sleep (Time.millis 1000)
 
 

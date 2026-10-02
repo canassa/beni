@@ -8,7 +8,7 @@ import Objects
 main : Node.Program
 main =
     Node.printLines
-        [ Objects.ordered ()
+        [ Objects.ordered ⊤
         , String.fromInt (Objects.called 21)
-        , Objects.mixed ()
+        , Objects.mixed ⊤
         ]

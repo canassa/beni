@@ -13,7 +13,7 @@ import Cells
 import Node
 
 
-next : () → Int
+next : ⊤ → Int
 next = Cells.counter 5
 
 
@@ -37,9 +37,9 @@ main =
     _ = Debug.log "before" 0
     x = logged seed
     _ = Debug.log "after" x
-    a = next ()
-    b = next ()
-    c = next ()
+    a = next ⊤
+    b = next ⊤
+    c = next ⊤
     later = λw → shout w
     Node.printLines
         [ "${String.fromInt a} ${String.fromInt b} ${String.fromInt c}"

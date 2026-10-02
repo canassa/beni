@@ -30,10 +30,9 @@ first : Int, Int → Int
 first a unread = a
 
 
-run : () → Int
-run () =
-    pick (Debug.log "first" 1) (Debug.log "second" 2) + total 3 + first 0 (Debug.log "unread" 4)
+run : ⊤ → Int
+run ⊤ = pick (Debug.log "first" 1) (Debug.log "second" 2) + total 3 + first 0 (Debug.log "unread" 4)
 
 
 main : Program
-main = Node.print (String.fromInt (run ()))
+main = Node.print (String.fromInt (run ⊤))

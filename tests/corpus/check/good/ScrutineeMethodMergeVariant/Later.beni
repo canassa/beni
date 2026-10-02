@@ -25,7 +25,7 @@ type Box a
 
 
 pub f (K n) u =
-    case ( (λy → y.h ()) (K n), (Box 1).g (), (Box "s").g () ) of
+    case ( (λy → y.h ⊤) (K n), (Box 1).g ⊤, (Box "s").g ⊤ ) of
         ( _, _, _ ) →
             ( 1, 2 )
 
@@ -34,7 +34,7 @@ pub g (Box a) u = 0
 
 
 pub h (K m) u =
-    _ = λw → (K 0).f ()
+    _ = λw → (K 0).f ⊤
     Box m
 
 

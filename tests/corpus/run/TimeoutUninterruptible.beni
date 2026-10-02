@@ -12,18 +12,18 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
-            answer = Task.timeout (Duration.millis 10) λ() →
-                _ = Task.uninterruptible λ() →
-                    _ = Task.sleep (Duration.millis 40)
-                    Debug.log "region finished at ${String.fromInt (Clock.now ())}" ()
-                _ = Task.yieldNow ()
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            answer = Task.timeout (Duration.millis 10) λ⊤ →
+                Task.uninterruptible λ⊤ →
+                    Task.sleep (Duration.millis 40)
+                    Debug.log "region finished at ${String.fromInt (Clock.now ⊤)}" ⊤
+                Task.yieldNow ⊤
                 Debug.log "after the region" "late"
-            Debug.log "answer at ${String.fromInt (Clock.now ())}" answer
-    _ = Clock.adjust clock (Duration.seconds 1)
+            Debug.log "answer at ${String.fromInt (Clock.now ⊤)}" answer
+    Clock.adjust clock (Duration.seconds 1)
     _ = Task.join caller
     Node.print "done"

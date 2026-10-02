@@ -128,7 +128,7 @@ application app =
                 , Navigation.onUrlChange app.onUrlChange
                 ]
     Browser.hosted
-        { init = λhost → start host (app.init (address ()) (Navigation.key ()))
+        { init = λhost → start host (app.init (address ⊤) (Navigation.key ⊤))
         , update = λhost msg state → step host (app.update msg state.model) state
         , settle = λhost state → settle host (subscriptions state.model) state
         , view = λstate → titled (app.view state.model)
@@ -136,9 +136,9 @@ application app =
 
 
 -- The page's address, or the defect of an application that has none.
-address : () → Url
-address () =
-    case Navigation.currentUrl () of
+address : ⊤ → Url
+address ⊤ =
+    case Navigation.currentUrl ⊤ of
         Just url →
             url
 
@@ -149,7 +149,7 @@ address () =
 
 titled : Document msg → Html msg
 titled page =
-    _ = Hosted.title page.title
+    Hosted.title page.title
     page.body
 
 
@@ -177,7 +177,7 @@ type Lives msg
 -- keyed bodies never wait reaches none of what waits for or cancels a
 -- fiber: every such step is in an `InFiber` arm.
 type Run msg
-    = InFiber (Fiber ()) (Outlet msg)
+    = InFiber (Fiber ⊤) (Outlet msg)
     | Queued Soon (Outlet msg)
 
 
@@ -188,12 +188,12 @@ type Run msg
 -- listen cancels no fiber.
 type alias Live msg =
     relay : Relay msg
-    stop : Scope → ()
+    stop : Scope → ⊤
 
 
 start : Host msg, model × Cmd msg → State model msg
 start host ( model, cmd ) =
-    perform host cmd { model = model, scope = Task.openRoot (), jobs = Dict.empty, live = Idle }
+    perform host cmd { model = model, scope = Task.openRoot ⊤, jobs = Dict.empty, live = Idle }
 
 
 step : Host msg, model × Cmd msg, State model msg → State model msg
@@ -229,7 +229,7 @@ item host it state =
             { state | jobs = stopped state.scope (List.concat (Dict.values gone)) kept }
 
         After work →
-            _ = Hosted.afterRender host work
+            Hosted.afterRender host work
             state
 
 
@@ -242,13 +242,13 @@ keyed host path policy job state =
             put state path [ spawn host state.scope job ]
 
         ( Restart, _ ) →
-            closing old (put state path [ spawnAfter host state.scope (λ() → stop old) job ])
+            closing old (put state path [ spawnAfter host state.scope (λ⊤ → stop old) job ])
 
         ( Ignore, _ ) →
             state
 
         ( Queue, _ ) →
-            put state path [ spawnAfter host state.scope (λ() → waitFor old) job ]
+            put state path [ spawnAfter host state.scope (λ⊤ → waitFor old) job ]
 
         ( Concurrent, _ ) →
             put state path [ spawn host state.scope job, …old ]
@@ -295,13 +295,13 @@ startAfter :
 startAfter policy old r otherwise =
     case r of
         InFiber _ _ →
-            λhost scope job → spawnAfter host scope (λ() → settleFirst policy old) job
+            λhost scope job → spawnAfter host scope (λ⊤ → settleFirst policy old) job
 
         Queued _ _ →
             otherwise
 
 
-settleFirst : Policy, List (Run msg) → ()
+settleFirst : Policy, List (Run msg) → ⊤
 settleFirst policy old =
     case policy of
         Restart →
@@ -316,13 +316,13 @@ settleFirst policy old =
 spawn : Host msg, Scope, Job msg → Run msg
 spawn host scope job =
     o = Hosted.outlet host
-    InFiber (Task.spawnIn scope λ() → Hosted.runJob job (Hosted.emit o _)) o
+    InFiber (Task.spawnIn scope λ⊤ → Hosted.runJob job (Hosted.emit o _)) o
 
 
 -- The same, once `first` has returned.
-spawnAfter : Host msg, Scope, (() → ()), Job msg → Run msg
+spawnAfter : Host msg, Scope, (⊤ → ⊤), Job msg → Run msg
 spawnAfter host scope first job =
-    spawn host scope (Hosted.job λsend → after (first ()) (Hosted.runJob job send))
+    spawn host scope (Hosted.job λsend → after (first ⊤) (Hosted.runJob job send))
 
 
 -- Queue a body that never waits where a fiber spawned now would first
@@ -330,7 +330,7 @@ spawnAfter host scope first job =
 queue : Host msg, Job msg → Run msg
 queue host job =
     o = Hosted.outlet host
-    Queued (Task.soon λ() → Hosted.callJob job (Hosted.emit o _)) o
+    Queued (Task.soon λ⊤ → Hosted.callJob job (Hosted.emit o _)) o
 
 
 running : Run msg → Bool
@@ -357,23 +357,23 @@ put state path runs = { state | jobs = Dict.insert state.jobs path runs }
 -- wait before its cancellation can reach it.
 stopped : Scope, List (Run msg), a → a
 stopped scope runs value =
-    _ = closing runs ()
-    _ = (cancelling runs) scope
+    closing runs ⊤
+    (cancelling runs) scope
     value
 
 
 -- What cancels the fibers of `runs`: nothing when none is a fiber.
-cancelling : List (Run msg) → (Scope → ())
-cancelling runs = List.foldl runs (λ_ → ()) λr k → canceller runs r k
+cancelling : List (Run msg) → (Scope → ⊤)
+cancelling runs = List.foldl runs (λ_ → ⊤) λr k → canceller runs r k
 
 
-canceller : List (Run msg), Run msg, (Scope → ()) → (Scope → ())
+canceller : List (Run msg), Run msg, (Scope → ⊤) → (Scope → ⊤)
 canceller runs r k =
     case r of
         InFiber _ _ →
             λscope →
-                _ = Task.spawnIn scope λ() → stop runs
-                ()
+                _ = Task.spawnIn scope λ⊤ → stop runs
+                ⊤
 
         Queued _ _ →
             k
@@ -383,7 +383,7 @@ closing : List (Run msg), a → a
 closing runs value = List.foldl runs value λr v → after (close r) v
 
 
-close : Run msg → ()
+close : Run msg → ⊤
 close r =
     case r of
         InFiber _ o →
@@ -394,41 +394,41 @@ close r =
 
 
 -- Cancel each fiber and wait for its cleanup.
-stop : List (Run msg) → ()
-stop runs = List.foldl runs () λr _ → stopOne r
+stop : List (Run msg) → ⊤
+stop runs = List.foldl runs ⊤ λr _ → stopOne r
 
 
-stopOne : Run msg → ()
+stopOne : Run msg → ⊤
 stopOne r =
     case r of
         InFiber fiber _ →
             Task.cancel fiber
 
         Queued _ _ →
-            ()
+            ⊤
 
 
 -- Wait for each fiber to end. Work queued before the fiber that waits runs
 -- before it.
-waitFor : List (Run msg) → ()
-waitFor runs = List.foldl runs () λr _ → waitOne r
+waitFor : List (Run msg) → ⊤
+waitFor runs = List.foldl runs ⊤ λr _ → waitOne r
 
 
-waitOne : Run msg → ()
+waitOne : Run msg → ⊤
 waitOne r =
     case r of
         InFiber fiber _ →
             ended (Task.wait fiber)
 
         Queued _ _ →
-            ()
+            ⊤
 
 
-ended : Exit a → ()
-ended _ = ()
+ended : Exit a → ⊤
+ended _ = ⊤
 
 
-after : (), a → a
+after : ⊤, a → a
 after _ value = value
 
 
@@ -500,11 +500,11 @@ keep : Scope, Wanted msg, Key, Live msg, Dict Key (Live msg) → Dict Key (Live 
 keep scope wanted k l d =
     case Dict.get wanted k of
         Just ( _, taps ) →
-            _ = Hosted.retap l.relay taps
+            Hosted.retap l.relay taps
             Dict.insert d k l
 
         Nothing →
-            _ = l.stop scope
+            l.stop scope
             d
 
 
@@ -513,7 +513,7 @@ arrive host scope k kind taps d =
     case ( Dict.member d k, taps ) of
         ( False, [ first, …_ ] ) →
             r = Hosted.relay host first
-            _ = Hosted.retap r taps
+            Hosted.retap r taps
             Dict.insert d k { relay = r, stop = begin scope r kind }
 
         _ →
@@ -524,16 +524,16 @@ arrive host scope k kind taps d =
 -- with none — unless a development build's page asked, through the test
 -- hook, for every listener to run in a fiber as it did before
 -- (`boundary.md` §9.8.5).
-begin : Scope, Relay msg, Kind → (Scope → ())
+begin : Scope, Relay msg, Kind → (Scope → ⊤)
 begin scope r kind =
     case kind of
         Waits →
-            inFiber scope r λ() → Hosted.run r
+            inFiber scope r λ⊤ → Hosted.run r
 
         Hears →
-            if Js.development () then
-                if Hosted.fibered () then
-                    inFiber scope r λ() → Hosted.runHeard r
+            if Js.development ⊤ then
+                if Hosted.fibered ⊤ then
+                    inFiber scope r λ⊤ → Hosted.runHeard r
                 else
                     hear r
             else
@@ -543,18 +543,18 @@ begin scope r kind =
 -- When the key leaves, the relay is closed at once, so nothing the body
 -- sends after lands, and the fiber is cancelled from one of the scope's
 -- own.
-inFiber : Scope, Relay msg, (() → ()) → (Scope → ())
+inFiber : Scope, Relay msg, (⊤ → ⊤) → (Scope → ⊤)
 inFiber scope r body =
     fiber = Task.spawnIn scope body
 
     λs →
-        _ = Hosted.closeRelay r
-        _ = Task.spawnIn s λ() → Task.cancel fiber
-        ()
+        Hosted.closeRelay r
+        _ = Task.spawnIn s λ⊤ → Task.cancel fiber
+        ⊤
 
 
 -- When the key leaves, the listener is removed at once.
-hear : Relay msg → (Scope → ())
+hear : Relay msg → (Scope → ⊤)
 hear r =
-    _ = Hosted.hear r
+    Hosted.hear r
     λ_ → Hosted.unhear r

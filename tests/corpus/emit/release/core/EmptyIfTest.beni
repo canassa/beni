@@ -17,43 +17,43 @@ dead : Js.Ref Bool
 dead = Js.ref False
 
 
-quit : () → ()
-quit () =
+quit : ⊤ → ⊤
+quit ⊤ =
     h = Js.read hook
-    if Js.isNull h then () else Js.to (Js.apply h [])
+    if Js.isNull h then ⊤ else Js.to (Js.apply h [])
 
 
-quitRead : () → ()
-quitRead () =
+quitRead : ⊤ → ⊤
+quitRead ⊤ =
     h = Js.read hook
-    if Js.isNull h then () else Js.to (Js.apply h [])
+    if Js.isNull h then ⊤ else Js.to (Js.apply h [])
 
 
-quitCalling : () → ()
-quitCalling () =
+quitCalling : ⊤ → ⊤
+quitCalling ⊤ =
     h = Js.read hook
-    if Js.isNull h then () else Js.to (Js.apply h [])
+    if Js.isNull h then ⊤ else Js.to (Js.apply h [])
 
 
-pub stop : Js.Value → ()
+pub stop : Js.Value → ⊤
 stop v =
-    _ = if Js.isNull v then () else quit ()
+    if Js.isNull v then ⊤ else quit ⊤
     Js.write dead True
 
 
-pub stopRead : Js.Value → ()
+pub stopRead : Js.Value → ⊤
 stopRead v =
-    _ = if Js.to v then () else quitRead ()
+    if Js.to v then ⊤ else quitRead ⊤
     Js.write dead True
 
 
-pub stopCalling : Js.Value → ()
+pub stopCalling : Js.Value → ⊤
 stopCalling v =
-    _ = if Js.to (Js.apply v []) then () else quitCalling ()
+    if Js.to (Js.apply v []) then ⊤ else quitCalling ⊤
     Js.write dead True
 
 
 -- Read here, so the writes above stay (`backend.md` §9, *A variable nothing
 -- reads*).
-pub isDead : () → Bool
-isDead () = Js.read dead
+pub isDead : ⊤ → Bool
+isDead ⊤ = Js.read dead

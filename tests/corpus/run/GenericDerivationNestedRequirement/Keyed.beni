@@ -3,7 +3,7 @@ pub type Keyed
     = Keyed Int String
 
 
-pub key : Keyed, () → Int
+pub key : Keyed, ⊤ → Int
 key k u =
     case k of
         Keyed n _ →

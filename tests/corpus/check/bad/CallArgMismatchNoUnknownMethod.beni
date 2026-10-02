@@ -8,7 +8,7 @@ type T
     = T Int
 
 
-key : T, () → Int
+key : T, ⊤ → Int
 key t u =
     case t of
         T n →
@@ -16,8 +16,8 @@ key t u =
 
 
 same : List a, a → Bool
-    where a.key : a, () → Int
-same xs z = List.all xs λx → x.key () == z.key ()
+    where a.key : a, ⊤ → Int
+same xs z = List.all xs λx → x.key ⊤ == z.key ⊤
 
 
 wrongFirst : Bool

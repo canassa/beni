@@ -28,9 +28,9 @@ unit : V → V
 unit b =
     i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
 
-    _ = Js.set i "t" (Js.get b "t")
+    Js.set i "t" (Js.get b "t")
 
-    _ = Js.set i "b" b
+    Js.set i "b" b
     i
 
 
@@ -43,15 +43,15 @@ patch i b =
 
 
 -- Made fresh, but one of its two calls never writes `b`.
-bare : () → V
-bare () = Js.from { s = Js.from "node" }
+bare : ⊤ → V
+bare ⊤ = Js.from { s = Js.from "node" }
 
 
-marked : () → V
-marked () =
-    i = bare ()
+marked : ⊤ → V
+marked ⊤ =
+    i = bare ⊤
 
-    _ = Js.set i "b" block
+    Js.set i "b" block
     i
 
 
@@ -63,9 +63,9 @@ shows i b =
         "shows another"
 
 
-pub demo : () → List String
-demo () =
+pub demo : ⊤ → List String
+demo ⊤ =
     [ patch (unit (view 1)) (view 2)
-    , shows (marked ()) (view 3)
-    , shows (bare ()) (view 4)
+    , shows (marked ⊤) (view 3)
+    , shows (bare ⊤) (view 4)
     ]

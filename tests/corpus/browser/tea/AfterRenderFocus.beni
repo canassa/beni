@@ -29,11 +29,11 @@ type alias Model =
     failure : String
 
 
-focus : String, Cmd.Send Msg → ()
+focus : String, Cmd.Send Msg → ⊤
 focus id send =
     case Dom.focus id of
-        Ok () →
-            Debug.log "focused ${id}" ()
+        Ok ⊤ →
+            Debug.log "focused ${id}" ⊤
 
         Err why →
             send (Failed why)
@@ -58,11 +58,11 @@ update msg model =
             ( { model | failure = "not found: ${id}" }, Cmd.none )
 
 
-openThenFocus : Cmd.Send Msg → ()
+openThenFocus : Cmd.Send Msg → ⊤
 openThenFocus send =
-    _ = send Opened
-    _ = Debug.log "waiting for the render" ()
-    _ = Dom.rendered ()
+    send Opened
+    Debug.log "waiting for the render" ⊤
+    Dom.rendered ⊤
     focus "second" send
 
 

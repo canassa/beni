@@ -13,7 +13,7 @@ fullName { firstName, lastName } = "${firstName} ${lastName}"
 constant _ = 0
 
 
-fromUnit () = 1
+fromUnit ⊤ = 1
 
 
 unbox (Box inner) = inner

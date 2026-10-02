@@ -20,10 +20,10 @@ type Msg
     | Boom
 
 
-slowly : String, Int → ()
+slowly : String, Int → ⊤
 slowly name ms =
-    _ = Log.info "${name} release starts"
-    _ = Time.sleep (Time.millis ms)
+    Log.info "${name} release starts"
+    Time.sleep (Time.millis ms)
     Log.info "${name} release ends"
 
 
@@ -34,11 +34,11 @@ update msg n =
             ( n
             , Cmd.batch
                 [ Cmd.perform λ_ →
-                    Task.bracket (λ() → ()) (λ_ _ → slowly "first" 200) λ_ →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → slowly "first" 200) λ_ →
                         Time.sleep (Time.seconds 60)
                 , Cmd.perform λ_ →
-                    Task.bracket (λ() → ()) (λ_ _ → Log.info "second outer released") λ_ →
-                        Task.bracket (λ() → ()) (λ_ _ → slowly "second inner" 5000) λ_ →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "second outer released") λ_ →
+                        Task.bracket (λ⊤ → ⊤) (λ_ _ → slowly "second inner" 5000) λ_ →
                             Time.sleep (Time.seconds 60)
                 ]
             )

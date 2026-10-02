@@ -4,8 +4,8 @@ pub type Holder a
 
 
 pub eq : Holder a, Holder a → Bool
-    where a.key : a, () → Int
+    where a.key : a, ⊤ → Int
 eq x y =
     case ( x, y ) of
         ( Holder p, Holder q ) →
-            p.key () == q.key ()
+            p.key ⊤ == q.key ⊤

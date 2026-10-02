@@ -10,13 +10,13 @@
 pub foreign suspends get : Int → String
 
 
-pub foreign impure log : String → ()
+pub foreign impure log : String → ⊤
 
 
 pub foreign pure onEvent : sync (Int → String) → Int
 
 
-pub foreign impure spawn : (() → String) → Int
+pub foreign impure spawn : (⊤ → String) → Int
 
 
 pub onType : (Int → String) → Int
@@ -33,18 +33,18 @@ plain = onType String.fromInt
 
 pub logged : Int
 logged = onEvent λn →
-    () = log "event"
+    ⊤ = log "event"
     String.fromInt n
 
 
 pub later : Int
 later = onEvent λn →
-    fetch = λ() → get n
+    fetch = λ⊤ → get n
     "later"
 
 
 pub spawned : Int
-spawned = spawn λ() → get 1
+spawned = spawn λ⊤ → get 1
 
 
 pub type Key
@@ -53,5 +53,5 @@ pub type Key
 
 pub eq : Key, Key → Bool
 eq (Key a) (Key b) =
-    () = log "compared"
+    ⊤ = log "compared"
     a == b

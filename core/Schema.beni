@@ -451,10 +451,10 @@ lengthOf xs = Js.to (Js.get xs "length")
 
 
 -- `x` pushed onto the host array `xs`.
-push : Js.Value, Js.Value → ()
+push : Js.Value, Js.Value → ⊤
 push xs x =
     _ = Js.call xs "push" [ x ]
-    ()
+    ⊤
 
 
 -- A fresh host array: `xs` and then `x`.
@@ -516,7 +516,7 @@ finiteFloat = box (NPrim FiniteFloatKind)
 
 
 --| JSON's `null`, whose one value is `Null`.
-pub null : Schema (Nullable Never) (Nullable Never)
+pub null : Schema (Nullable ⊥) (Nullable ⊥)
 null = box (NPrim NullKind)
 
 
@@ -540,7 +540,7 @@ nullable child = box (NNullable (nodeOf child))
 -- ---- Records -------------------------------------------------------------
 
 --| No fields yet.
-pub fields : Fields () ()
+pub fields : Fields ⊤ ⊤
 fields = fieldsBox (toHost []) Nothing
 
 
@@ -563,7 +563,7 @@ fieldNode name k renamed isOptional n =
 withField : Fields pe pa, String, Schema e a, Bool → Fields qe qa
 withField fs name s isOptional =
     b = fieldsOf fs
-    Js.pure λ() →
+    Js.pure λ⊤ →
         fieldsBox
             (appended b.fields (toHost (fieldNode name name False isOptional (nodeOf s))))
             b.problem
@@ -603,7 +603,7 @@ firstProblem problem message =
 pub key : Fields pe pa, String → Fields pe pa
 key fs external =
     b = fieldsOf fs
-    Js.pure λ() →
+    Js.pure λ⊤ →
         n = lengthOf b.fields
         if n == 0 then
             fieldsBox
@@ -646,7 +646,7 @@ record fs encoded typed =
     encodedMaps = cast encoded
     typedMaps : Pair
     typedMaps = cast typed
-    Js.pure λ() →
+    Js.pure λ⊤ →
         case b.problem of
             Just problem →
                 box (NBroken problem)
@@ -722,7 +722,7 @@ variant name tag payload injectE injectA =
 
 
 --| A variant with no payload: only the discriminator is written.
-pub nullary : String, String, Injection () e, Injection () a → Variant e a
+pub nullary : String, String, Injection ⊤ e, Injection ⊤ a → Variant e a
 nullary name tag injectE injectA =
     variantNode name tag Nothing (cast injectE) (cast injectA) Nothing
 
@@ -731,7 +731,7 @@ nullary name tag injectE injectA =
 --| object whose discriminator holds one variant's tag and whose other keys
 --| are that variant's payload.
 pub tagged : String, List (Variant e a) → Schema e a
-tagged discriminator variants = Js.pure λ() →
+tagged discriminator variants = Js.pure λ⊤ →
     vs = plain (toHost variants)
     broken =
         Js.call vs "find"
@@ -863,12 +863,12 @@ resolve cell =
             Nothing
 
         _ →
-            _ = Js.write cell.state 1
+            Js.write cell.state 1
             built : Schema Js.Value Js.Value
             built = fromHost (Js.apply cell.build [ toHost (box (NRef cell)) ])
             n = nodeOf built
-            _ = Js.write cell.body (Just n)
-            _ = Js.write cell.state 2
+            Js.write cell.body (Just n)
+            Js.write cell.state 2
             Just n
 
 
@@ -1059,7 +1059,7 @@ analyse b =
             typeOpaque = opaqueIn b.node typeSide seen
             z : Analysis
             z = { problem = problem, encodedOpaque = encodedOpaque, typeOpaque = typeOpaque }
-            _ = Js.write b.analysis (Just z)
+            Js.write b.analysis (Just z)
             z
 
 
@@ -1142,15 +1142,15 @@ isActive cell active =
 pathArray : Path, Bool → Js.Value
 pathArray path output =
     out = Js.array []
-    _ = collect path output out
+    collect path output out
     _ = Js.call out "reverse" []
     out
 
 
-collect : Path, Bool, Js.Value → ()
+collect : Path, Bool, Js.Value → ⊤
 collect path output out =
     if Js.isNull path then
-        ()
+        ⊤
     else
         s : Step
         s = fromHost path
@@ -1323,13 +1323,12 @@ type alias Owner =
 newObject : Maybe Owner → Js.Value
 newObject owner =
     o = Js.call (Js.global "Object") "create" [ Js.null ]
-    _ =
-        case owner of
-            Just w →
-                Js.set o w.discriminator (Js.from w.variant.tag)
+    case owner of
+        Just w →
+            Js.set o w.discriminator (Js.from w.variant.tag)
 
-            Nothing →
-                ()
+        Nothing →
+            ⊤
     o
 
 
@@ -1662,17 +1661,17 @@ valuesOf : Context, Int, Maps, Js.Value → Js.Value
 valuesOf c n maps v =
     values = Js.construct (Js.global "Array") [ Js.from n ]
     product = Js.apply (if c.src == encodedSide then maps.fromE else maps.fromA) [ v ]
-    _ = unpack product (n - 1) values
+    unpack product (n - 1) values
     values
 
 
-unpack : Js.Value, Int, Js.Value → ()
+unpack : Js.Value, Int, Js.Value → ⊤
 unpack product i values =
     if i < 0 then
-        ()
+        ⊤
     else
         ( rest, x ) = pairOf product
-        _ = Js.setAt values i x
+        Js.setAt values i x
         unpack rest (i - 1) values
 
 
@@ -1680,7 +1679,7 @@ unpack product i values =
 -- from their product — in its variant's constructor, for a payload.
 made : Context, Maps, Maybe Owner, Js.Value → Js.Value
 made c maps owner out =
-    product = productOf out 0 (lengthOf out) (toHost ())
+    product = productOf out 0 (lengthOf out) (toHost ⊤)
     built = Js.apply (if c.dst == encodedSide then maps.toE else maps.toA) [ product ]
     case owner of
         Nothing →
@@ -1761,18 +1760,17 @@ fieldsFrom c fs i n depth path v values out =
             else
                 True
         else
-            _ =
-                if not c.dh then
-                    Js.to (Js.call out "push" [ x ])
-                else if not f.optional then
-                    Js.set out outName x
-                else
-                    case presenceOf x of
-                        Present a →
-                            Js.set out outName a
+            if not c.dh then
+                Js.to (Js.call out "push" [ x ])
+            else if not f.optional then
+                Js.set out outName x
+            else
+                case presenceOf x of
+                    Present a →
+                        Js.set out outName a
 
-                        Missing →
-                            ()
+                    Missing →
+                        ⊤
             fieldsFrom c fs (i + 1) n depth path v values out
 
 
@@ -1896,7 +1894,7 @@ nullaryOf c discriminator x path v =
     else if c.dh then
         newObject (Just { discriminator = discriminator, variant = x })
     else
-        Js.apply (if c.dst == encodedSide then x.injE.there else x.injA.there) [ toHost () ]
+        Js.apply (if c.dst == encodedSide then x.injE.there else x.injA.there) [ toHost ⊤ ]
 
 
 -- A conversion's own answer. Its issues are moved to where the value is:
@@ -1909,14 +1907,14 @@ call c path fn v =
             a
 
         Err given →
-            _ = moved c (pathArray path False) v given
+            moved c (pathArray path False) v given
             c.fail
 
 
 -- A conversion's issues, `given`, each pushed onto the context's with the
 -- engine's path in front of its own; an `Err` with none is one of the
 -- engine's.
-moved : Context, Js.Value, Js.Value, Js.Value → ()
+moved : Context, Js.Value, Js.Value, Js.Value → ⊤
 moved c prefix v given =
     issues = plain given
     Js.each
@@ -2010,7 +2008,7 @@ parseWith s o text =
         Nothing →
             case
                 Js.catchIf
-                    (λ() → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                    (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
                     (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
                     λthrown → Err (stringOf (Js.get thrown "message"))
             of
@@ -2079,7 +2077,7 @@ compiledParse o args worker text =
         Nothing →
             case
                 Js.catchIf
-                    (λ() → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                    (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
                     (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
                     λthrown → Err (stringOf (Js.get thrown "message"))
             of
@@ -2231,7 +2229,7 @@ conversionAnswer answer c parent input output v =
             a
 
         Err given →
-            _ = moved c (pathArray (pathAt parent input output) False) v given
+            moved c (pathArray (pathAt parent input output) False) v given
             c.fail
 
 
@@ -2330,7 +2328,7 @@ shapeOf ids definitions n =
                             shapeOf ids definitions body
                 definition : Definition
                 definition = { id = id, name = cell.name, shape = shape }
-                _ = push definitions (toHost definition)
+                push definitions (toHost definition)
                 Reference id
 
         NBroken problem →

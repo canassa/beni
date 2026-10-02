@@ -8,15 +8,15 @@ import Ref exposing (Ref)
 import Task
 
 
-adjust : Ref Int, (Int → Int) → ()
+adjust : Ref Int, (Int → Int) → ⊤
 adjust cell f = Ref.update cell f
 
 
-pub quickly : Ref Int → ()
+pub quickly : Ref Int → ⊤
 quickly cell = adjust cell λn → n + 1
 
 
-pub slowly : Ref Int → ()
+pub slowly : Ref Int → ⊤
 slowly cell = adjust cell λn →
-    _ = Task.yieldNow ()
+    _ = Task.yieldNow ⊤
     n + 1

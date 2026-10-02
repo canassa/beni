@@ -40,11 +40,11 @@ pub type alias Viewport =
 
 
 --| Focus the element with this id.
-pub foreign impure focus : String → Result Error ()
+pub foreign impure focus : String → Result Error ⊤
 
 
 --| Take the focus away from the element with this id.
-pub foreign impure blur : String → Result Error ()
+pub foreign impure blur : String → Result Error ⊤
 
 
 --| The box of the element with this id (`getBoundingClientRect`).
@@ -52,15 +52,15 @@ pub foreign impure box : String → Result Error Box
 
 
 --| Scroll the element with this id to `x` and `y`.
-pub foreign impure scrollTo : String, Float, Float → Result Error ()
+pub foreign impure scrollTo : String, Float, Float → Result Error ⊤
 
 
 --| Scroll the page until the element with this id is in view.
-pub foreign impure scrollIntoView : String → Result Error ()
+pub foreign impure scrollIntoView : String → Result Error ⊤
 
 
 --| The viewport now.
-pub foreign impure viewport : () → Viewport
+pub foreign impure viewport : ⊤ → Viewport
 
 
 --| Wait until what has been sent is on the page: at once when no render is
@@ -69,5 +69,5 @@ pub foreign impure viewport : () → Viewport
 --|     _ = send (Opened id)
 --|     Dom.rendered ()
 --|     Dom.focus "edit-${id}"
-pub rendered : () → ()
-rendered () = Task.callback λresume → Browser.onRendered resume
+pub rendered : ⊤ → ⊤
+rendered ⊤ = Task.callback λresume → Browser.onRendered resume

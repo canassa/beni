@@ -16,11 +16,11 @@ type Msg
     | Got (Result (List Http.Error) String)
 
 
-mirrors : () → Result (List Http.Error) String
-mirrors () =
+mirrors : ⊤ → Result (List Http.Error) String
+mirrors ⊤ =
     Task.raceOk
-        [ λ() → Http.get { url = "/a/data", expect = Http.expectString }
-        , λ() → Http.get { url = "/b/data", expect = Http.expectString }
+        [ λ⊤ → Http.get { url = "/a/data", expect = Http.expectString }
+        , λ⊤ → Http.get { url = "/b/data", expect = Http.expectString }
         ]
 
 

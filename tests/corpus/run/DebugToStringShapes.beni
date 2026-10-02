@@ -21,7 +21,7 @@ type Shape
     | Rect Int Int
     | Labeled String Shape
     | Pair (Int × Int)
-    | Mark ()
+    | Mark ⊤
     | Hue Color
 
 
@@ -32,13 +32,13 @@ main =
         , Debug.toString [ True, False ]
         , Debug.toString ( 1, "x" )
         , Debug.toString ( 1, 'c', False )
-        , Debug.toString ()
+        , Debug.toString ⊤
         , Debug.toString { a = 1, b = 2 }
         , Debug.toString Red
         , Debug.toString [ Red, Green ]
         , Debug.toString (Just ( 1, 2 ))
         , Debug.toString (Just (Just (-1)))
-        , Debug.toString (Mark ())
+        , Debug.toString (Mark ⊤)
         , Debug.toString (Hue Green)
         , Debug.toString (Pair ( 3, 4 ))
         , Debug.toString (Labeled "a b" (Circle 1.5))

@@ -33,15 +33,15 @@ pulses : (Int → msg) → Sub msg
 pulses tag = Sub.listen Pulse (beat 1 _) tag
 
 
-beat : Int, Cmd.Send Int → ()
-beat n send = Task.bracket (λ() → Debug.log "acquire" ()) (λ_ _ → Debug.log "release" ()) λ_ →
+beat : Int, Cmd.Send Int → ⊤
+beat n send = Task.bracket (λ⊤ → Debug.log "acquire" ⊤) (λ_ _ → Debug.log "release" ⊤) λ_ →
     loop n send
 
 
-loop : Int, Cmd.Send Int → ()
+loop : Int, Cmd.Send Int → ⊤
 loop n send =
-    _ = Time.sleep (Time.millis 100)
-    _ = send n
+    Time.sleep (Time.millis 100)
+    send n
     loop (n + 1) send
 
 

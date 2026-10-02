@@ -18,7 +18,7 @@ type Msg
     | Replace String
     | PushTwo
     | BackNone
-    | Done String (Result Navigation.Error ())
+    | Done String (Result Navigation.Error ⊤)
     | Changed Url
 
 
@@ -27,10 +27,10 @@ type alias Model =
     lines : List String
 
 
-shown : Result Navigation.Error () → String
+shown : Result Navigation.Error ⊤ → String
 shown result =
     case result of
-        Ok () →
+        Ok ⊤ →
             "ok"
 
         Err (Navigation.BadUrl url) →
@@ -64,7 +64,7 @@ address url =
 
 
 push : Key, String → Cmd Msg
-push key url = Cmd.task (λ() → Navigation.pushUrl key url) (Done "push ${url}" _)
+push key url = Cmd.task (λ⊤ → Navigation.pushUrl key url) (Done "push ${url}" _)
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -75,14 +75,14 @@ update msg model =
 
         Replace url →
             ( model
-            , Cmd.task (λ() → Navigation.replaceUrl model.key url) (Done "replace ${url}" _)
+            , Cmd.task (λ⊤ → Navigation.replaceUrl model.key url) (Done "replace ${url}" _)
             )
 
         PushTwo →
             ( model, Cmd.batch [ push model.key "/c", push model.key "/d" ] )
 
         BackNone →
-            ( model, Cmd.task (λ() → Navigation.back model.key 0) (Done "back 0" _) )
+            ( model, Cmd.task (λ⊤ → Navigation.back model.key 0) (Done "back 0" _) )
 
         Done label result →
             ( { model | lines = model.lines ++ [ "${label}: ${shown result}" ] }, Cmd.none )
@@ -106,7 +106,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( { key = Navigation.key (), lines = [] }, Cmd.none )
+        { init = ( { key = Navigation.key ⊤, lines = [] }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = λ_ → Navigation.onUrlChange Changed

@@ -8,13 +8,13 @@ import Probe
 
 
 main : Node.Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     Node.printLines
-        [ Probe.start λ() → ()
-        , Probe.start λ() → Io.sleep 1
-        , Probe.forward λ() → ()
-        , Probe.forward λ() → Io.sleep 1
-        , Probe.fixed ()
-        , String.fromInt (Probe.count λ() → ())
-        , String.fromInt (Probe.count λ() → Io.sleep 1)
+        [ Probe.start λ⊤ → ⊤
+        , Probe.start λ⊤ → Io.sleep 1
+        , Probe.forward λ⊤ → ⊤
+        , Probe.forward λ⊤ → Io.sleep 1
+        , Probe.fixed ⊤
+        , String.fromInt (Probe.count λ⊤ → ⊤)
+        , String.fromInt (Probe.count λ⊤ → Io.sleep 1)
         ]

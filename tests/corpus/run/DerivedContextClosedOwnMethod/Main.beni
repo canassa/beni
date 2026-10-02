@@ -13,7 +13,7 @@ pub type W
 
 
 pub key (T x) u =
-    if u == () then
+    if u == ⊤ then
         x
     else
         0

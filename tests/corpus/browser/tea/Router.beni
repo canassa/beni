@@ -42,7 +42,7 @@ toRoute url = Maybe.withDefault (Url.Parser.parse route url) NotFound
 type Msg
     = ClickedLink Browser.UrlRequest
     | UrlChanged Url
-    | Navigated (Result Navigation.Error ())
+    | Navigated (Result Navigation.Error ⊤)
 
 
 type alias Model =
@@ -59,17 +59,17 @@ update : Msg, Model → Model × Cmd Msg
 update msg model =
     case msg of
         ClickedLink (Browser.Internal url) →
-            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Navigated )
+            ( model, Cmd.task (λ⊤ → Navigation.pushUrl model.key (Url.toString url)) Navigated )
 
         ClickedLink (Browser.External href) →
             ( { model | log = model.log ++ [ "load ${href}" ] }
-            , Cmd.task (λ() → Navigation.load href) Navigated
+            , Cmd.task (λ⊤ → Navigation.load href) Navigated
             )
 
         UrlChanged url →
             ( { model | route = toRoute url }, Cmd.none )
 
-        Navigated (Ok ()) →
+        Navigated (Ok ⊤) →
             ( model, Cmd.none )
 
         Navigated (Err _) →

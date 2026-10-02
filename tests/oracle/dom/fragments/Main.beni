@@ -5,7 +5,7 @@ import Html exposing (Html)
 
 
 type alias State =
-    { first : String, last : String, inserted : Html () }
+    { first : String, last : String, inserted : Html ⊤ }
 
 
 pub multiStatic : Html msg
@@ -16,7 +16,7 @@ multiStatic =
     </>
 
 
-pub multiExpression : Html () → Html ()
+pub multiExpression : Html ⊤ → Html ⊤
 multiExpression inserted =
     <>
         <div>First</div>
@@ -26,7 +26,7 @@ multiExpression inserted =
     </>
 
 
-pub multiDynamic : State → Html ()
+pub multiDynamic : State → Html ⊤
 multiDynamic state =
     <>
         <div id={state.first}>First</div>
@@ -36,12 +36,12 @@ multiDynamic state =
     </>
 
 
-pub singleExpression : Html () → Html ()
+pub singleExpression : Html ⊤ → Html ⊤
 singleExpression inserted =
     <>{inserted}</>
 
 
-pub firstStatic : Html () → Html ()
+pub firstStatic : Html ⊤ → Html ⊤
 firstStatic inserted =
     <>
         {inserted}
@@ -57,7 +57,7 @@ firstComponent =
     </>
 
 
-pub lastStatic : Html () → Html ()
+pub lastStatic : Html ⊤ → Html ⊤
 lastStatic inserted =
     <>
         <div />

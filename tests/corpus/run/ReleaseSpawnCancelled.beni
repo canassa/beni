@@ -20,8 +20,8 @@ import Node exposing (Program)
 import Task exposing (Cancelled, Done, Exit)
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
 outcome : Exit a → String
@@ -34,32 +34,32 @@ outcome exit =
             "Cancelled"
 
 
-guarded : String, (() → a) → a
-guarded name body = Task.bracket (λ() → ()) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
-    body ()
+guarded : String, (⊤ → a) → a
+guarded name body = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "${name} released: ${outcome exit}") λ_ →
+    body ⊤
 
 
 main : Program
-main = Io.run λ() →
-    parent = Task.spawn λ() →
-        _ = Task.spawn λ() → guarded "early" λ() → Io.sleep 100000
+main = Io.run λ⊤ →
+    parent = Task.spawn λ⊤ →
+        _ = Task.spawn λ⊤ → guarded "early" λ⊤ → Io.sleep 100000
 
         Task.bracket
-            (λ() → ())
+            (λ⊤ → ⊤)
             (λ_ exit →
-                _ = say "parent released: ${outcome exit}"
-                _ = Task.spawn λ() →
-                    guarded "late" λ() →
-                        _ = Io.sleep 50
+                say "parent released: ${outcome exit}"
+                _ = Task.spawn λ⊤ →
+                    guarded "late" λ⊤ →
+                        Io.sleep 50
                         say "late still running"
-                _ = Io.sleep 1
-                _ = Task.spawn λ() → say "unstarted runs"
-                ()
+                Io.sleep 1
+                _ = Task.spawn λ⊤ → say "unstarted runs"
+                ⊤
             )
             λ_ → Io.sleep 100000
 
-    _ = Io.sleep 1
-    _ = Task.cancel parent
-    _ = say "cancel returned"
-    _ = Io.sleep 100
+    Io.sleep 1
+    Task.cancel parent
+    say "cancel returned"
+    Io.sleep 100
     Node.print "end"

@@ -87,24 +87,24 @@ ask method url headers body timeout =
         }
 
 
-refused : List (String × (() → Result Http.Error String))
+refused : List (String × (⊤ → Result Http.Error String))
 refused =
-    [ ( "bad url", λ() → ask "GET" "http://[" [] Http.emptyBody Nothing )
-    , ( "user info", λ() → ask "GET" "http://u:p@example.com/" [] Http.emptyBody Nothing )
-    , ( "method", λ() → ask "GE T" "/x" [] Http.emptyBody Nothing )
-    , ( "connect", λ() → ask "connect" "/x" [] Http.emptyBody Nothing )
-    , ( "name", λ() → ask "GET" "/x" [ Http.header "Bad Name" "v" ] Http.emptyBody Nothing )
-    , ( "newline", λ() → ask "GET" "/x" [ Http.header "X-Ok" "a\nb" ] Http.emptyBody Nothing )
-    , ( "euro", λ() → ask "GET" "/x" [ Http.header "X-Price" "5 €" ] Http.emptyBody Nothing )
-    , ( "cookie", λ() → ask "GET" "/x" [ Http.header "Cookie" "a=1" ] Http.emptyBody Nothing )
+    [ ( "bad url", λ⊤ → ask "GET" "http://[" [] Http.emptyBody Nothing )
+    , ( "user info", λ⊤ → ask "GET" "http://u:p@example.com/" [] Http.emptyBody Nothing )
+    , ( "method", λ⊤ → ask "GE T" "/x" [] Http.emptyBody Nothing )
+    , ( "connect", λ⊤ → ask "connect" "/x" [] Http.emptyBody Nothing )
+    , ( "name", λ⊤ → ask "GET" "/x" [ Http.header "Bad Name" "v" ] Http.emptyBody Nothing )
+    , ( "newline", λ⊤ → ask "GET" "/x" [ Http.header "X-Ok" "a\nb" ] Http.emptyBody Nothing )
+    , ( "euro", λ⊤ → ask "GET" "/x" [ Http.header "X-Price" "5 €" ] Http.emptyBody Nothing )
+    , ( "cookie", λ⊤ → ask "GET" "/x" [ Http.header "Cookie" "a=1" ] Http.emptyBody Nothing )
     , ( "sec"
-      , λ() → ask "GET" "/x" [ Http.header "Sec-Fetch-Mode" "cors" ] Http.emptyBody Nothing
+      , λ⊤ → ask "GET" "/x" [ Http.header "Sec-Fetch-Mode" "cors" ] Http.emptyBody Nothing
       )
     , ( "proxy"
-      , λ() → ask "GET" "/x" [ Http.header "Proxy-Authorization" "x" ] Http.emptyBody Nothing
+      , λ⊤ → ask "GET" "/x" [ Http.header "Proxy-Authorization" "x" ] Http.emptyBody Nothing
       )
     , ( "override"
-      , λ() →
+      , λ⊤ →
           ask
               "POST"
               "/x"
@@ -112,25 +112,25 @@ refused =
               Http.emptyBody
               Nothing
       )
-    , ( "get body", λ() → ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
-    , ( "zero", λ() → ask "GET" "/x" [] Http.emptyBody (Just 0) )
+    , ( "get body", λ⊤ → ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
+    , ( "zero", λ⊤ → ask "GET" "/x" [] Http.emptyBody (Just 0) )
     ]
 
 
-sentLater : String → (() → Result Http.Error String)
+sentLater : String → (⊤ → Result Http.Error String)
 sentLater name =
     case name of
         "down" →
-            λ() → Http.get { url = "/down", expect = Http.expectString }
+            λ⊤ → Http.get { url = "/down", expect = Http.expectString }
 
         "missing" →
-            λ() → Http.get { url = "/missing", expect = Http.expectString }
+            λ⊤ → Http.get { url = "/missing", expect = Http.expectString }
 
         "slow" →
-            λ() → ask "GET" "/slow" [] Http.emptyBody (Just 500)
+            λ⊤ → ask "GET" "/slow" [] Http.emptyBody (Just 500)
 
         _ →
-            λ() → ask "GET" "/stall" [] Http.emptyBody (Just 500)
+            λ⊤ → ask "GET" "/stall" [] Http.emptyBody (Just 500)
 
 
 update : Msg, List String → List String × Cmd Msg

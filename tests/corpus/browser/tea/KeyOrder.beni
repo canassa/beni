@@ -34,7 +34,7 @@ spotName s =
     "spot ${String.fromInt s.first}${String.fromInt s.second}${String.fromInt (s.second - s.second)}"
 
 
-hello : String, Cmd.Send String → ()
+hello : String, Cmd.Send String → ⊤
 hello name send = send name
 
 

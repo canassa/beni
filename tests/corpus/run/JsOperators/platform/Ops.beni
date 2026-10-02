@@ -38,12 +38,12 @@ viaValues a b =
 
 --| `typeof` of a string, a number, a list (an array, so `"object"`) and a
 --| function.
-pub kinds : () → List String
-kinds () =
+pub kinds : ⊤ → List String
+kinds ⊤ =
     [ Js.to (Js.typeOf (Js.from "s"))
     , Js.to (Js.typeOf (Js.from 1))
     , Js.to (Js.typeOf (Js.from [ 1 ]))
-    , Js.to (Js.typeOf (Js.from λ() → ()))
+    , Js.to (Js.typeOf (Js.from λ⊤ → ⊤))
     ]
 
 
@@ -53,8 +53,8 @@ isString v = Js.same (Js.typeOf (Js.from v)) (Js.from "string")
 
 
 --| A list is an `Array`, a string is not.
-pub arrays : () → List Bool
-arrays () =
+pub arrays : ⊤ → List Bool
+arrays ⊤ =
     [ Js.instanceOf (Js.from [ 1 ]) (Js.global "Array")
     , Js.instanceOf (Js.from "s") (Js.global "Array")
     ]

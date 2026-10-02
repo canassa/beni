@@ -9,5 +9,5 @@ value : Int
 value =
     get u = n + 1
 
-    n = get ()
+    n = get ⊤
     n

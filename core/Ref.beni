@@ -40,14 +40,14 @@ get (Ref cell) = Js.to (Js.at cell 0)
 
 
 --| Make the cell hold `value`.
-pub set : Ref a, a → ()
+pub set : Ref a, a → ⊤
 set (Ref cell) value = Js.setAt cell 0 (Js.from value)
 
 
 --| Replace the value with what `f` makes of it. `f` must not suspend: no
 --| other fiber runs between the read and the write, so no update is lost.
 --| `f` may write the cell itself; then this write, which comes last, wins.
-pub update : Ref a, sync (a → a) → ()
+pub update : Ref a, sync (a → a) → ⊤
 update ref f = set ref (f (get ref))
 
 
@@ -59,5 +59,5 @@ update ref f = set ref (f (get ref))
 pub modify : Ref a, sync (a → b × a) → b
 modify ref f =
     ( result, next ) = f (get ref)
-    _ = set ref next
+    set ref next
     result

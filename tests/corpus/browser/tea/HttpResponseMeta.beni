@@ -40,8 +40,8 @@ metadata meta body =
     "${String.fromInt meta.statusCode} [${meta.statusText}] ${path} {${headers}} ${body}"
 
 
-ask : String → (() → Result String String)
-ask url = λ() → Http.get { url = url, expect = Http.expectStringResponse describe }
+ask : String → (⊤ → Result String String)
+ask url = λ⊤ → Http.get { url = url, expect = Http.expectStringResponse describe }
 
 
 update : Msg, List String → List String × Cmd Msg

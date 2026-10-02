@@ -20,7 +20,7 @@ schema Tree tagged "kind" of
 main : Program
 main =
     Node.printLines
-        [ case (Schema.describe (Tree.schema ())).root of
+        [ case (Schema.describe (Tree.schema ⊤)).root of
             Schema.Reference _ →
                 "a reference"
 

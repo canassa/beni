@@ -80,16 +80,16 @@ ints xs = String.join (List.map xs String.fromInt) ","
 
 main : Program
 main =
-    ( a, b ) = tallies ()
+    ( a, b ) = tallies ⊤
 
-    ( c, d ) = loops ()
+    ( c, d ) = loops ⊤
 
-    ( g, h ) = mutual ()
+    ( g, h ) = mutual ⊤
     Node.printLines
         [ ints a
         , ints b
-        , String.join (List.map (nested ()) text) ","
+        , String.join (List.map (nested ⊤) text) ","
         , String.fromInt c ++ " " ++ String.fromInt d
         , text g ++ " " ++ text h
-        , String.join (List.map (values ()) text) ","
+        , String.join (List.map (values ⊤) text) ","
         ]

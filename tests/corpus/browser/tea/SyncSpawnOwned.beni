@@ -19,38 +19,36 @@ type Msg
     | Joined
 
 
-update : Msg, () → () × Cmd Msg
+update : Msg, ⊤ → ⊤ × Cmd Msg
 update msg model =
     case msg of
         Run fibers →
             if fibers then
-                ( model, Cmd.do λ() → spawning λ() → pause False )
+                ( model, Cmd.do λ⊤ → spawning λ⊤ → pause False )
             else
-                ( model, Cmd.do λ() → spawning λ() → () )
+                ( model, Cmd.do λ⊤ → spawning λ⊤ → ⊤ )
 
         Joined →
             ( model
-            , Cmd.do λ() → Task.join (Task.spawn λ() → Log.info "joined child runs")
+            , Cmd.do λ⊤ → Task.join (Task.spawn λ⊤ → Log.info "joined child runs")
             )
 
 
 -- Waits only when asked to, which no run does.
-pause : Bool → ()
+pause : Bool → ⊤
 pause yes =
     if yes then
-        Task.yieldNow ()
-    else
-        ()
+        Task.yieldNow ⊤
 
 
-spawning : (() → ()) → ()
+spawning : (⊤ → ⊤) → ⊤
 spawning hold =
-    _ = hold ()
-    _ = Task.spawn λ() → Log.info "child runs"
+    hold ⊤
+    _ = Task.spawn λ⊤ → Log.info "child runs"
     Log.info "body returns"
 
 
-view : () → Html Msg
+view : ⊤ → Html Msg
 view _ =
     <main>
         <button id="direct" onClick={Run False}>direct</button>
@@ -62,4 +60,4 @@ view _ =
 main : Tea.Program
 main =
     Tea.element
-        { init = ( (), Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
+        { init = ( ⊤, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

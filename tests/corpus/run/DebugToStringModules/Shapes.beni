@@ -16,11 +16,11 @@ pub type Tree a
 
 
 pub opaque type Secret
-    = Secret (List Point) ()
+    = Secret (List Point) ⊤
 
 
 pub secret : Secret
-secret = Secret [ { x = 1.0, label = 'p' } ] ()
+secret = Secret [ { x = 1.0, label = 'p' } ] ⊤
 
 
 pub sample : Tree Bool

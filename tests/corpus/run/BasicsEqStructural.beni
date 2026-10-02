@@ -35,12 +35,10 @@ grown n acc =
         grown (n - 1) (List.push acc n)
 
 
-nothing : Int → ()
+nothing : Int → ⊤
 nothing n =
     if n > 0 then
         nothing (n - 1)
-    else
-        ()
 
 
 show : Bool, Bool → String
@@ -67,10 +65,10 @@ main =
         , show (Basics.eq (grown 40 []) (grown 40 [])) (grown 40 [] == grown 40 [])
         , show (Basics.eq (grown 40 []) (grown 39 [])) (grown 40 [] == grown 39 [])
         , show (Basics.eq (rest [ 1, 2, 3 ]) [ 2, 4 ]) (rest [ 1, 2, 3 ] == [ 2, 4 ])
-        , show (Basics.eq (nothing 1) ()) (nothing 1 == ())
+        , show (Basics.eq (nothing 1) ⊤) (nothing 1 == ⊤)
         , show
-            (Basics.eq (List.map [ 1, 2 ] nothing) [ (), () ])
-            (List.map [ 1, 2 ] nothing == [ (), () ])
-        , show (Basics.eq (Just (nothing 1)) (Just ())) (Just (nothing 1) == Just ())
+            (Basics.eq (List.map [ 1, 2 ] nothing) [ ⊤, ⊤ ])
+            (List.map [ 1, 2 ] nothing == [ ⊤, ⊤ ])
+        , show (Basics.eq (Just (nothing 1)) (Just ⊤)) (Just (nothing 1) == Just ⊤)
         , show (Basics.neq (rest [ 1, 2, 3 ]) [ 2, 3 ]) (rest [ 1, 2, 3 ] ≠ [ 2, 3 ])
         ]

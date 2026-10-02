@@ -11,12 +11,12 @@ import Task
 
 
 -- A wait nobody can answer: the registration drops its `Resume`.
-park : () → ()
-park () = Task.callback λ_ → λ() → ()
+park : ⊤ → ⊤
+park ⊤ = Task.callback λ_ → λ⊤ → ⊤
 
 
 main : Program
-main = Io.run λ() →
-    _ = Debug.log "waiting" ()
-    _ = park ()
+main = Io.run λ⊤ →
+    Debug.log "waiting" ⊤
+    park ⊤
     Node.print "not reached"

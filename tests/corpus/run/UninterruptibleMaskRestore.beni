@@ -26,44 +26,44 @@ outcome exit =
             "Cancelled"
 
 
-say : String → ()
-say line = Debug.log line ()
+say : String → ⊤
+say line = Debug.log line ⊤
 
 
-open : () → ()
-open () = Task.bracket (λ() → ()) (λ_ exit → say "open released: ${outcome exit}") λ_ →
+open : ⊤ → ⊤
+open ⊤ = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "open released: ${outcome exit}") λ_ →
     Task.uninterruptibleMask λtoken →
-        _ = say "open: masked"
-        _ = Task.yieldNow ()
-        _ = say "open: still masked"
+        say "open: masked"
+        Task.yieldNow ⊤
+        say "open: still masked"
 
-        _ = Task.restore token λ() →
-            _ = say "open: restored"
-            _ = Task.yieldNow ()
+        Task.restore token λ⊤ →
+            say "open: restored"
+            Task.yieldNow ⊤
             say "open: never after the restored wait"
         say "open: never after restore"
 
 
-nested : () → ()
-nested () = Task.bracket (λ() → ()) (λ_ exit → say "nested released: ${outcome exit}") λ_ →
-    _ = Task.uninterruptible λ() →
+nested : ⊤ → ⊤
+nested ⊤ = Task.bracket (λ⊤ → ⊤) (λ_ exit → say "nested released: ${outcome exit}") λ_ →
+    Task.uninterruptible λ⊤ →
         Task.uninterruptibleMask λtoken →
-            _ = say "nested: masked"
-            _ = Task.yieldNow ()
+            say "nested: masked"
+            Task.yieldNow ⊤
 
-            Task.restore token λ() →
-                _ = Task.yieldNow ()
+            Task.restore token λ⊤ →
+                Task.yieldNow ⊤
                 say "nested: restored part ran to its end"
-    _ = Task.yieldNow ()
+    Task.yieldNow ⊤
     say "nested: never after the region"
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     a = Task.spawn open
-    _ = Task.yieldNow ()
-    _ = Task.cancel a
+    Task.yieldNow ⊤
+    Task.cancel a
     b = Task.spawn nested
-    _ = Task.yieldNow ()
-    _ = Task.cancel b
+    Task.yieldNow ⊤
+    Task.cancel b
     Node.print "both cancelled"

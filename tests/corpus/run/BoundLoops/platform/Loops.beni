@@ -14,25 +14,25 @@ calls = Js.ref 0
 --| Count a call, and answer `n`.
 pub tick : Int → Int
 tick n =
-    _ = Js.write calls (Js.read calls + 1)
+    Js.write calls (Js.read calls + 1)
     n
 
 
 --| How many calls `tick` has had.
-pub ticks : () → Int
-ticks () = Js.read calls
+pub ticks : ⊤ → Int
+ticks ⊤ = Js.read calls
 
 
 -- A name bound to a loop's variable: the variable is read after the loop.
 -- `[1, 2, null, 4]`.
-sample : () → Js.Value
-sample () = Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
+sample : ⊤ → Js.Value
+sample ⊤ = Js.array [ Js.from 1, Js.from 2, Js.null, Js.from 4 ]
 
 
 --| The first `null` of the sample from `from`, times ten.
 pub firstNull : Int → Int
 firstNull from =
-    xs = sample ()
+    xs = sample ⊤
 
     k = upToNull xs (tick from)
     k * 10
@@ -70,24 +70,22 @@ pub squares : Int → List Int
 squares n =
     xs = Js.array []
 
-    _ = fillSquares xs n 0
+    fillSquares xs n 0
     Js.to xs
 
 
-fillSquares : Js.Value, Int, Int → ()
+fillSquares : Js.Value, Int, Int → ⊤
 fillSquares xs n k =
     if k < n then
-        _ = Js.setAt xs k (Js.from (k * k))
+        Js.setAt xs k (Js.from (k * k))
         fillSquares xs n (k + 1)
-    else
-        ()
 
 
 -- A loop inside another loop's body, its value bound there.
 --| The sum, over rows, of each row's length up to its first `null`: of
 --| the sample, `[1, null]` and `[]`.
 pub widths : Int
-widths = sumRows (Js.array [ sample (), Js.array [ Js.from 1, Js.null ], Js.array [] ]) 0 0
+widths = sumRows (Js.array [ sample ⊤, Js.array [ Js.from 1, Js.null ], Js.array [] ]) 0 0
 
 
 sumRows : Js.Value, Int, Int → Int

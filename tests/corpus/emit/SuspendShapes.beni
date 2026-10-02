@@ -29,7 +29,7 @@ import Task
 
 pub fetch : Int → Int
 fetch n =
-    _ = Io.sleep n
+    Io.sleep n
     n + 1
 
 

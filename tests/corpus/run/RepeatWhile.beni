@@ -13,25 +13,25 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
     count = Ref.make 0
 
     counting =
-        λ() →
+        λ⊤ →
             n = Ref.modify count λk → ( k + 1, k + 1 )
-            Debug.log "run ${String.fromInt n} at" (Clock.now ())
+            Debug.log "run ${String.fromInt n} at" (Clock.now ⊤)
 
-    worker = Task.spawn λ() →
-        Clock.run clock λ() →
-            Task.repeat (Schedule.while (Schedule.spaced (Duration.millis 10)) λm → m.input < 3) λ() →
-                _ = counting ()
+    worker = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.repeat (Schedule.while (Schedule.spaced (Duration.millis 10)) λm → m.input < 3) λ⊤ →
+                _ = counting ⊤
                 Ref.get count
-    _ = Clock.adjust clock (Duration.seconds 1)
+    Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "while: answer" (Task.join worker)
-    _ = Ref.set count 0
+    Ref.set count 0
     _ =
         Debug.log
             "recurs 2: answer"
-            (Task.repeat (Schedule.recurs 2) λ() → Ref.modify count λk → ( k + 1, k + 1 ))
+            (Task.repeat (Schedule.recurs 2) λ⊤ → Ref.modify count λk → ( k + 1, k + 1 ))
     Node.print "done"

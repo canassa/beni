@@ -2,8 +2,8 @@ pub type Keyed
     = Keyed Int (Int → Int)
 
 
-pub key : Keyed, () → Int
-key value () =
+pub key : Keyed, ⊤ → Int
+key value ⊤ =
     case value of
         Keyed number _ →
             number

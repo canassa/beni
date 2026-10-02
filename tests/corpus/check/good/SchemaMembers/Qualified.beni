@@ -8,7 +8,7 @@ user = { id = 1, email = Missing, nickname = Missing }
 
 
 pub description : Schema Models.User.Encoded Models.User.Type
-description = Models.User.schema ()
+description = Models.User.schema ⊤
 
 
 pub parsed = Models.User.parse "{}"

@@ -26,10 +26,10 @@ update msg n =
             ( n + 1
             , Cmd.keyed "work" Cmd.Restart λ_ →
                 Task.bracket
-                    (λ() → Log.info "body ${String.fromInt (n + 1)} starts")
+                    (λ⊤ → Log.info "body ${String.fromInt (n + 1)} starts")
                     (λ_ _ →
-                        _ = Log.info "body ${String.fromInt (n + 1)} release starts"
-                        _ = Time.sleep (Time.millis 300)
+                        Log.info "body ${String.fromInt (n + 1)} release starts"
+                        Time.sleep (Time.millis 300)
                         Log.info "body ${String.fromInt (n + 1)} release ends"
                     )
                     λ_ → Time.sleep (Time.seconds 60)

@@ -19,5 +19,5 @@ pub keep : Int → Int
 keep n =
     quiet = n * 1000
     measured = String.length (String.fromInt n)
-    started = Task.spawn λ() → n
+    started = Task.spawn λ⊤ → n
     n

@@ -85,7 +85,7 @@ main =
             )
             λs → s
         , Show.result
-            (Page.parse (User.schema ()) "{\"items\":[{\"name\":\"d\",\"age\":\"z\"}],\"total\":1}")
+            (Page.parse (User.schema ⊤) "{\"items\":[{\"name\":\"d\",\"age\":\"z\"}],\"total\":1}")
             λp → String.fromInt p.total
         , if Tree.Leaf { value = 1 } == Tree.Leaf { value = 1 } then "equal" else "different"
         , if Tree.Leaf { value = 1 } == Tree.Branch { children = [] } then "equal" else "different"

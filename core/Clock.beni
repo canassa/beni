@@ -36,9 +36,9 @@ pub opaque type Virtual
 --| The milliseconds since the Unix epoch, on the calling fiber's clock: the
 --| host's `Date.now()` on the real clock, the reading of a virtual one
 --| inside `run`.
-pub now : () → Int
-now () =
-    clock = Task.currentClock ()
+pub now : ⊤ → Int
+now ⊤ =
+    clock = Task.currentClock ⊤
 
     if Js.isUndefined clock then
         Js.to (Js.call (Js.global "Date") "now" [])
@@ -55,7 +55,7 @@ virtual epoch = Virtual (Task.virtualClock (Js.from epoch))
 --| Run `work` on the virtual clock: `work`, and every fiber it starts —
 --| and every fiber those start — sleep on it and read it. A fiber started
 --| inside keeps it after `run` returns.
-pub run : Virtual, (() → a) → a
+pub run : Virtual, (⊤ → a) → a
 run (Virtual clock) work = Task.withClock clock work
 
 
@@ -68,5 +68,5 @@ run (Virtual clock) work = Task.withClock clock work
 --|
 --| Called from the fiber that drives the test, outside `run`: it waits for
 --| the others.
-pub adjust : Virtual, Duration → ()
+pub adjust : Virtual, Duration → ⊤
 adjust (Virtual clock) duration = Task.adjustClock clock (Js.from (Duration.toMillis duration))

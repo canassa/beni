@@ -38,11 +38,11 @@ smallest x y =
         y
 
 
-nothing : Maybe Never
+nothing : Maybe ⊥
 nothing = Nothing
 
 
-empty : Maybe2 Never
+empty : Maybe2 ⊥
 empty = Empty
 
 

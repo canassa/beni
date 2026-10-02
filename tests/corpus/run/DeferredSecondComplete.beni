@@ -9,10 +9,10 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
-    d = Deferred.make ()
-    waiter = Task.spawn λ() → Deferred.wait d
-    _ = Task.yieldNow ()
+main = Io.run λ⊤ →
+    d = Deferred.make ⊤
+    waiter = Task.spawn λ⊤ → Deferred.wait d
+    Task.yieldNow ⊤
     _ = Debug.log "first complete" (Deferred.complete d "first")
     _ = Debug.log "second complete" (Deferred.complete d "second")
     _ = Debug.log "waiter got" (Task.join waiter)

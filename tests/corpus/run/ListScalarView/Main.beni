@@ -114,14 +114,14 @@ dropTwo xs n =
                 []
 
 
-thunks : List Int, List (() → Int) → List (() → Int)
+thunks : List Int, List (⊤ → Int) → List (⊤ → Int)
 thunks xs acc =
     case xs of
         [] →
             acc
 
         [ _, …rest ] →
-            thunks rest (List.push acc λ() → List.sum rest)
+            thunks rest (List.push acc λ⊤ → List.sum rest)
 
 
 lengths : List Int, List Int → List Int
@@ -248,7 +248,7 @@ report ( name, xs ) =
     , name ++ " countDown " ++ String.fromInt (countDown xs 1 0)
     , name ++ " dropWhile " ++ ints (dropWhile xs λx → x < 35)
     , name ++ " dropTwo " ++ ints (dropTwo xs 18)
-    , name ++ " thunks " ++ ints (List.map (thunks (List.take xs 4) []) λt → t ())
+    , name ++ " thunks " ++ ints (List.map (thunks (List.take xs 4) []) λt → t ⊤)
     , name ++ " lengths " ++ ints (List.take (lengths xs []) 3)
     , name ++ " whole " ++ ints (whole xs [])
     , name ++ " nested " ++ String.fromInt (nested xs 0)

@@ -10,9 +10,9 @@ import Node exposing (Program)
 
 
 main : Program
-main = Io.run λ() →
-    _ = Fault.breakReads ()
-    _ = Debug.log "before the read" ()
+main = Io.run λ⊤ →
+    Fault.breakReads ⊤
+    Debug.log "before the read" ⊤
     case Io.readFile "anything.txt" of
         Ok _ →
             Node.print "read it"

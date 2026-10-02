@@ -6,7 +6,7 @@ split : Int × (String × Bool), { name : String, age : Int } → String
 split input person =
     ( n, ( s, flag ) ) = input
     { name, age } = person
-    () = ()
+    ⊤ = ⊤
     (( a, b ) as pair) = ( n, age )
     total : Int
     total = n + a + b + pair.0

@@ -21,5 +21,5 @@ total : Int
 total = twice 1 + 2
 
 
-later : () → Int
-later = λ() → fetch 1
+later : ⊤ → Int
+later = λ⊤ → fetch 1

@@ -18,6 +18,6 @@ main =
         , update = λ_ m → ( m, Cmd.none )
         , view = λpath → { title = path, body = <p>{path}</p> }
         , subscriptions = λ_ → Sub.none
-        , onUrlRequest = λ_ → ()
-        , onUrlChange = λ_ → ()
+        , onUrlRequest = λ_ → ⊤
+        , onUrlChange = λ_ → ⊤
         }

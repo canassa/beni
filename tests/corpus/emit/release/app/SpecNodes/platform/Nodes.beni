@@ -63,17 +63,17 @@ fresh b =
 
 -- Put `n` at the end of `parent`, a host value: inserting before `null`
 -- is appending.
-append : V, V → ()
+append : V, V → ⊤
 append parent n = Js.to (Js.call parent "insertBefore" [ n, Js.null ])
 
 
-pub demo : () → List String
-demo () =
+pub demo : ⊤ → List String
+demo ⊤ =
     proto = Js.get (Js.global "globalThis") "probeNode"
 
     i = instance proto
 
-    _ = append (Js.get (Js.global "globalThis") "probeParent") (first i)
+    append (Js.get (Js.global "globalThis") "probeParent") (first i)
     [ Js.to (Js.get (first i) "name")
     , Js.to (Js.get (last i) "tag")
     , patch (view 1) (view 2)

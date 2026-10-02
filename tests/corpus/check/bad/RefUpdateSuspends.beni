@@ -7,7 +7,7 @@ import Ref exposing (Ref)
 import Task
 
 
-pub bump : Ref Int → ()
+pub bump : Ref Int → ⊤
 bump cell = Ref.update cell λn →
-    _ = Task.yieldNow ()
+    _ = Task.yieldNow ⊤
     n + 1

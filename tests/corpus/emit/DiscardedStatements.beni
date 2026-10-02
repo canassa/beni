@@ -17,36 +17,32 @@
 import Node exposing (Program)
 
 
-say : String → ()
+say : String → ⊤
 say s =
     _ = Debug.log "say" s
-    ()
+    ⊤
 
 
-twice : Bool → ()
+twice : Bool → ⊤
 twice c =
-    _ = say "a"
+    say "a"
 
-    _ =
-        if c then
-            say "b"
-        else
-            ()
+    if c then
+        say "b"
 
-    _ =
-        if c then
-            ()
-        else
-            say "d"
+    if c then
+        ⊤
+    else
+        say "d"
 
     _ = c
     say "c"
 
 
-pub kept : Bool → ()
+pub kept : Bool → ⊤
 kept c =
-    _ = twice c
-    ()
+    twice c
+    ⊤
 
 
 pub pureDiscard : Int → Int

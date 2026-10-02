@@ -20,17 +20,17 @@ count : Js.Ref Int
 count = Js.ref 0
 
 
-expire : () → ()
-expire () = Js.write expired True
+expire : ⊤ → ⊤
+expire ⊤ = Js.write expired True
 
 
 pub tick : String → Int
 tick label =
-    _ = expire ()
-    _ = Js.write last (Debug.log "last" label)
-    _ = Js.write count (Js.read count + String.length label)
+    expire ⊤
+    Js.write last (Debug.log "last" label)
+    Js.write count (Js.read count + String.length label)
 
     -- A cell of its own that nothing reads, written with a value that logs.
     scratch = Js.ref 0
-    _ = Js.write scratch (Debug.log "scratch" (String.length label))
+    Js.write scratch (Debug.log "scratch" (String.length label))
     Js.read count

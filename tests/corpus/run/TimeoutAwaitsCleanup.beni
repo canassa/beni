@@ -14,27 +14,27 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
-            quick = Task.timeout (Duration.millis 50) λ() →
-                _ = Task.sleep (Duration.millis 10)
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            quick = Task.timeout (Duration.millis 50) λ⊤ →
+                Task.sleep (Duration.millis 10)
                 "quick"
-            _ = Debug.log "in time at ${String.fromInt (Clock.now ())}" quick
+            _ = Debug.log "in time at ${String.fromInt (Clock.now ⊤)}" quick
 
-            slow = Task.timeout (Duration.millis 50) λ() →
+            slow = Task.timeout (Duration.millis 50) λ⊤ →
                 Task.bracket
-                    (λ() → ())
+                    (λ⊤ → ⊤)
                     (λ_ _ →
-                        _ = Task.sleep (Duration.millis 30)
-                        Debug.log "cleanup done at ${String.fromInt (Clock.now ())}" ()
+                        Task.sleep (Duration.millis 30)
+                        Debug.log "cleanup done at ${String.fromInt (Clock.now ⊤)}" ⊤
                     )
                     λ_ →
-                        _ = Task.sleep (Duration.seconds 10)
+                        Task.sleep (Duration.seconds 10)
                         "slow"
-            _ = Debug.log "timed out at ${String.fromInt (Clock.now ())}" slow
-            Task.timeout Duration.zero λ() → Debug.log "never started" "zero"
-    _ = Clock.adjust clock (Duration.seconds 1)
+            _ = Debug.log "timed out at ${String.fromInt (Clock.now ⊤)}" slow
+            Task.timeout Duration.zero λ⊤ → Debug.log "never started" "zero"
+    Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

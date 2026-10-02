@@ -10,27 +10,27 @@ import Node exposing (Program)
 import Task
 
 
-slowOk : () → Result String Int
-slowOk () = Task.bracket (λ() → ()) (λ_ _ → Debug.log "slow released" ()) λ_ →
-    _ = Task.sleep (Duration.millis 50)
-    _ = Debug.log "slow finished" ()
+slowOk : ⊤ → Result String Int
+slowOk ⊤ = Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "slow released" ⊤) λ_ →
+    Task.sleep (Duration.millis 50)
+    Debug.log "slow finished" ⊤
     Ok 1
 
 
-fastErr : () → Result String Int
-fastErr () =
-    _ = Task.sleep (Duration.millis 10)
+fastErr : ⊤ → Result String Int
+fastErr ⊤ =
+    Task.sleep (Duration.millis 10)
     Debug.log "fast failed" (Err "boom")
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             failing = Task.parOk slowOk fastErr
             _ = Debug.log "answer" failing
-            Task.parOk (λ() → Ok "a") λ() → Ok "b"
-    _ = Clock.adjust clock (Duration.millis 100)
+            Task.parOk (λ⊤ → Ok "a") λ⊤ → Ok "b"
+    Clock.adjust clock (Duration.millis 100)
     Node.print (Debug.toString (Task.join caller))

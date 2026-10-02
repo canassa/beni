@@ -13,27 +13,27 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    busy = Task.spawn λ() →
-        Clock.run clock λ() →
-            _ = Task.sleep (Duration.millis 10)
-            _ = Debug.log "busy woke at" (Clock.now ())
-            _ = Task.yieldNow ()
+    busy = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 10)
+            _ = Debug.log "busy woke at" (Clock.now ⊤)
+            Task.yieldNow ⊤
             _ = Debug.log "busy step" 1
-            _ = Task.yieldNow ()
+            Task.yieldNow ⊤
             _ = Debug.log "busy step" 2
-            _ = Task.yieldNow ()
+            Task.yieldNow ⊤
             _ = Debug.log "busy step" 3
-            _ = Task.sleep (Duration.millis 15)
-            Debug.log "busy woke again at" (Clock.now ())
+            Task.sleep (Duration.millis 15)
+            Debug.log "busy woke again at" (Clock.now ⊤)
 
-    late = Task.spawn λ() →
-        Clock.run clock λ() →
-            _ = Task.sleep (Duration.millis 20)
-            Debug.log "late woke at" (Clock.now ())
-    _ = Clock.adjust clock (Duration.millis 30)
+    late = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 20)
+            Debug.log "late woke at" (Clock.now ⊤)
+    Clock.adjust clock (Duration.millis 30)
     _ = Debug.log "adjust returned at" (Clock.run clock Clock.now)
     _ = Task.joinAll [ busy, late ]
     Node.print "done"

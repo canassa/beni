@@ -34,5 +34,5 @@ shape : Shape → Js.Value
 shape s = Js.from (Just s)
 
 
-callback : ({ when : Int } → ()) → Js.Value
+callback : ({ when : Int } → ⊤) → Js.Value
 callback f = Js.from f

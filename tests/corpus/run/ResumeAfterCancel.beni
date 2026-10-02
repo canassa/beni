@@ -23,26 +23,25 @@ describe exit =
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     slot = Ref.make Nothing
 
-    waiter = Task.spawn λ() →
-        Task.bracket (λ() → ()) (λ_ _ → Debug.log "waiter released" ()) λ_ →
+    waiter = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "waiter released" ⊤) λ_ →
             v = Task.callback λr →
-                _ = Ref.set slot (Just r)
-                λ() → Debug.log "canceller ran" ()
+                Ref.set slot (Just r)
+                λ⊤ → Debug.log "canceller ran" ⊤
             Debug.log "waiter woke with" v
-    _ = Task.yieldNow ()
-    _ = Task.cancel waiter
+    Task.yieldNow ⊤
+    Task.cancel waiter
     _ = Debug.log "after cancel" (describe (Task.poll waiter))
 
-    _ =
-        case Ref.get slot of
-            Just r →
-                Task.resume r 7
+    case Ref.get slot of
+        Just r →
+            Task.resume r 7
 
-            Nothing →
-                Debug.log "never registered" ()
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
+        Nothing →
+            Debug.log "never registered" ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
     Node.print (describe (Task.poll waiter))

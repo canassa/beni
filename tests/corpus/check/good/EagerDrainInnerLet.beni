@@ -17,7 +17,7 @@ type K
     = K Int
 
 
-pub unbox : Box a, () → a
+pub unbox : Box a, ⊤ → a
 unbox (Box v) _ = v
 
 
@@ -25,12 +25,12 @@ pub combine : Box a, z → a
 combine (Box a) z = a
 
 
-pub h : K, () → Box Int
+pub h : K, ⊤ → Box Int
 h (K m) u = Box m
 
 
 pub inner b =
-    u = b.unbox ()
+    u = b.unbox ⊤
 
     w =
         z = [ b, Box 3 ]
@@ -39,7 +39,7 @@ pub inner b =
 
 
 pub pair n =
-    case (λy → y.h ()) (K n) of
+    case (λy → y.h ⊤) (K n) of
         r →
             q z = r.combine z
             ( q 1, q "s" )

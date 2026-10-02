@@ -153,7 +153,7 @@ sub a b = fromInt (toInt a - toInt b)
 --|     toInt (mul (fromInt 123456789) (fromInt 987654321)) == -67153019
 --|     mul minValue (fromInt (-1)) == minValue
 pub mul : Int32, Int32 → Int32
-mul a b = Js.pure λ() → Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ])
+mul a b = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "imul" [ Js.from a, Js.from b ])
 
 
 --| Integer division, truncated towards zero. **Division by zero is `zero`**,

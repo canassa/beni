@@ -8,16 +8,16 @@ import Node exposing (Program)
 import Task
 
 
-held : String → ()
-held name = Task.bracket (λ() → ()) (λ_ _ → Debug.log "${name} released" ()) λ_ → Task.never ()
+held : String → ⊤
+held name = Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "${name} released" ⊤) λ_ → Task.never ⊤
 
 
 main : Program
-main = Io.run λ() →
-    parent = Task.spawn λ() →
-        Task.bracket (λ() → ()) (λ_ _ → Debug.log "parent released" ()) λ_ →
-            Task.par (λ() → held "child a") λ() → held "child b"
-    _ = Task.yieldNow ()
-    _ = Task.yieldNow ()
-    _ = Task.cancel parent
+main = Io.run λ⊤ →
+    parent = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "parent released" ⊤) λ_ →
+            Task.par (λ⊤ → held "child a") λ⊤ → held "child b"
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    Task.cancel parent
     Node.print "done"

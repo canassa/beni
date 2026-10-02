@@ -12,17 +12,17 @@ import Node
 import Task
 
 
-spin : () → ()
-spin () =
-    _ = Task.yieldNow ()
-    spin ()
+spin : ⊤ → ⊤
+spin ⊤ =
+    Task.yieldNow ⊤
+    spin ⊤
 
 
 main : Node.Program
-main = Io.run λ() →
-    _ = Host.withoutImmediate ()
+main = Io.run λ⊤ →
+    Host.withoutImmediate ⊤
 
-    _ = Task.spawnDetached λ() →
-        Task.bracket (λ() → ()) (λ_ _ → Debug.log "spinner released" ()) λ_ → spin ()
-    _ = Task.yieldNow ()
+    _ = Task.spawnDetached λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "spinner released" ⊤) λ_ → spin ⊤
+    Task.yieldNow ⊤
     Node.print "body ended"

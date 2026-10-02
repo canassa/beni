@@ -6,15 +6,15 @@ import Html exposing (Html)
 
 
 type alias State =
-    { children : Html () }
+    { children : Html ⊤ }
 
 
-pub template20 : Html () → Html ()
+pub template20 : Html ⊤ → Html ⊤
 template20 kids =
     <module>{kids}</module>
 
 
-pub template22 : State → Html ()
+pub template22 : State → Html ⊤
 template22 state =
     <module>{state.children}</module>
 
@@ -29,7 +29,7 @@ template25 =
     <div>{tiles}</div>
 
 
-pub double : Html () → Html ()
+pub double : Html ⊤ → Html ⊤
 double kids =
     <div>{kids}</div>
 

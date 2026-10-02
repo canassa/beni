@@ -10,27 +10,27 @@ import Node exposing (Program)
 import Task
 
 
-onClock : String → ()
+onClock : String → ⊤
 onClock who =
-    _ = Debug.log "${who} reads" (Clock.now () < 1000000)
-    ()
+    _ = Debug.log "${who} reads" (Clock.now ⊤ < 1000000)
+    ⊤
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
-    before = Task.spawn λ() → onClock "before run, the real clock: small?"
+    before = Task.spawn λ⊤ → onClock "before run, the real clock: small?"
 
-    child = Clock.run clock λ() →
-        Task.spawn λ() →
-            _ = onClock "child, the virtual clock: small?"
+    child = Clock.run clock λ⊤ →
+        Task.spawn λ⊤ →
+            onClock "child, the virtual clock: small?"
 
-            grandchild = Task.spawn λ() →
-                _ = Task.sleep (Duration.minutes 1)
-                Debug.log "grandchild woke at" (Clock.now ())
+            grandchild = Task.spawn λ⊤ →
+                Task.sleep (Duration.minutes 1)
+                Debug.log "grandchild woke at" (Clock.now ⊤)
             Task.join grandchild
-    after = Task.spawn λ() → onClock "after run, the real clock: small?"
+    after = Task.spawn λ⊤ → onClock "after run, the real clock: small?"
     _ = Task.joinAll [ before, after ]
-    _ = Clock.adjust clock (Duration.minutes 1)
+    Clock.adjust clock (Duration.minutes 1)
     _ = Task.join child
     Node.print "done"

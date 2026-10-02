@@ -12,28 +12,28 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
 
-    caller = Task.spawn λ() →
-        Clock.run clock λ() →
+    caller = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
             winner =
                 Task.race
-                    (λ() →
+                    (λ⊤ →
                         Task.bracket
-                            (λ() → ())
+                            (λ⊤ → ⊤)
                             (λ_ _ →
-                                _ = Task.sleep (Duration.millis 5)
-                                Debug.log "loser released at ${String.fromInt (Clock.now ())}" ()
+                                Task.sleep (Duration.millis 5)
+                                Debug.log "loser released at ${String.fromInt (Clock.now ⊤)}" ⊤
                             )
                             λ_ →
-                                _ = Task.sleep (Duration.millis 50)
+                                Task.sleep (Duration.millis 50)
                                 Debug.log "loser finished" "slow"
                     )
-                    λ() →
-                        _ = Task.sleep (Duration.millis 10)
+                    λ⊤ →
+                        Task.sleep (Duration.millis 10)
                         "fast"
-            Debug.log "winner at ${String.fromInt (Clock.now ())}" winner
-    _ = Clock.adjust clock (Duration.millis 100)
+            Debug.log "winner at ${String.fromInt (Clock.now ⊤)}" winner
+    Clock.adjust clock (Duration.millis 100)
     _ = Task.join caller
     Node.print "done"

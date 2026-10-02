@@ -31,7 +31,7 @@ service : Service
 service =
     { get =
         λpath →
-            _ = Time.sleep (Time.millis 500)
+            Time.sleep (Time.millis 500)
             "answer to ${path}"
     }
 
@@ -48,7 +48,7 @@ update msg model =
             ( { model | on = True }
             , Cmd.batch
                 [ Cmd.perform λsend →
-                    _ = Time.sleep (Time.millis 300)
+                    Time.sleep (Time.millis 300)
                     send Slept
                 , Cmd.keyed "search" Cmd.Restart λsend → send (Answered (service.get "/search"))
                 ]

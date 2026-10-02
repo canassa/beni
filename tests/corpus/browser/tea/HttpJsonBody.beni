@@ -22,10 +22,10 @@ type Msg
     | Got String String
 
 
-shown : Result Http.Error () → String
+shown : Result Http.Error ⊤ → String
 shown result =
     case result of
-        Ok () →
+        Ok ⊤ →
             "ok"
 
         Err (Http.BadRequest (Http.UnprintableBody issues)) →
@@ -65,10 +65,10 @@ update msg lines =
         Save title stars →
             ( lines
             , Cmd.task
-                (λ() →
+                (λ⊤ →
                     Http.post
                         { url = "/notes"
-                        , body = Http.jsonBody (Note.schema ()) { title = title, stars = stars }
+                        , body = Http.jsonBody (Note.schema ⊤) { title = title, stars = stars }
                         , expect = Http.expectWhatever
                         }
                 )

@@ -78,7 +78,7 @@ pub type alias Endpoint a =
     description : Description
     readValue : Context, Value → Result (List Issue) a
     writeValue : Context, a → Result (List Issue) Value
-    validate : Context, a → Result (List Issue) ()
+    validate : Context, a → Result (List Issue) ⊤
 
 
 pub type alias Schema e a =
@@ -104,7 +104,7 @@ pub type alias Field a =
     definitions : List (String × Shape)
     readField : Context, List (String × Value) → Result (List Issue) a
     writeField : Context, a → Result (List Issue) (List (String × Value))
-    validateField : Context, a → Result (List Issue) ()
+    validateField : Context, a → Result (List Issue) ⊤
 
 
 pub defaultOptions : Options
@@ -123,7 +123,7 @@ pub endpoint :
       Description
     , (Context, Value → Result (List Issue) a)
     , (Context, a → Result (List Issue) Value)
-    , (Context, a → Result (List Issue) ())
+    , (Context, a → Result (List Issue) ⊤)
     → Endpoint a
 endpoint description readValue writeValue validate =
     { description = description
@@ -274,7 +274,7 @@ refine base message predicate =
         λcontext value →
             _ ← Result.andThen (base.validate context value)
             if predicate value then
-                Ok ()
+                Ok ⊤
             else
                 Err [ issue context (Invalid "refinement") message ]
 
@@ -294,7 +294,7 @@ stringEndpoint =
                     expected context "string"
         )
         (λ_ text → Ok (Wire.Text text))
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 pub string : Schema String String
@@ -312,28 +312,28 @@ boolEndpoint =
                     expected context "boolean"
         )
         (λ_ flag → Ok (Wire.Flag flag))
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 pub bool : Schema Bool Bool
 bool = fromEndpoint boolEndpoint
 
 
-pub nullEndpoint : Endpoint ()
+pub nullEndpoint : Endpoint ⊤
 nullEndpoint =
     endpoint (plain NullShape)
         (λcontext value →
             case value of
                 Wire.Null →
-                    Ok ()
+                    Ok ⊤
                 _ →
                     expected context "null"
         )
         (λ_ _ → Ok Wire.Null)
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
-pub null : Schema () ()
+pub null : Schema ⊤ ⊤
 null = fromEndpoint nullEndpoint
 
 
@@ -370,7 +370,7 @@ numberEndpoint =
             else
                 Ok (Wire.Number number)
         )
-        λ_ _ → Ok ()
+        λ_ _ → Ok ⊤
 
 
 intEndpoint : Endpoint Int
@@ -395,7 +395,7 @@ intEndpoint =
         )
         λcontext value →
             if isSafeWhole (toFloat value) then
-                Ok ()
+                Ok ⊤
             else
                 Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
 
@@ -434,7 +434,7 @@ listEndpoint item =
         )
         λcontext values →
             nested ← Result.andThen (enter context)
-            Result.map (traverse nested values item.validate) λ_ → ()
+            Result.map (traverse nested values item.validate) λ_ → ⊤
 
 
 pub nullable : Schema e a → Schema (Nullable e) (Nullable a)
@@ -478,7 +478,7 @@ nullableEndpoint item =
         λcontext value →
             case value of
                 Null →
-                    Ok ()
+                    Ok ⊤
                 NonNull inner →
                     item.validate context inner
 
@@ -531,7 +531,7 @@ optionalField key item =
         λcontext value →
             case value of
                 Missing →
-                    Ok ()
+                    Ok ⊤
                 Present inner →
                     item.validate (atKey context key) inner
     }
@@ -607,23 +607,23 @@ object2Endpoint name first second build getFirst getSecond =
             combineValidations nested.options.errors firstResult secondResult
 
 
-pub deferEndpoint : String, (() → Endpoint a) → Endpoint a
+pub deferEndpoint : String, (⊤ → Endpoint a) → Endpoint a
 deferEndpoint name get =
     endpoint (plain (ReferenceShape name))
         (λcontext value →
-            target = get ()
+            target = get ⊤
             target.readValue context value
         )
         (λcontext value →
-            target = get ()
+            target = get ⊤
             target.writeValue context value
         )
         λcontext value →
-            target = get ()
+            target = get ⊤
             target.validate context value
 
 
-pub recursiveEndpoint : String, Shape, (() → Endpoint a) → Endpoint a
+pub recursiveEndpoint : String, Shape, (⊤ → Endpoint a) → Endpoint a
 recursiveEndpoint name definition getBody =
     deferred = deferEndpoint name getBody
     { deferred
@@ -680,11 +680,11 @@ lookup target fields =
                 lookup target rest
 
 
-unknown : Context, List String, List (String × Value) → Result (List Issue) ()
+unknown : Context, List String, List (String × Value) → Result (List Issue) ⊤
 unknown context known fields =
     case context.options.unknownFields of
         IgnoreUnknown →
-            Ok ()
+            Ok ⊤
         RejectUnknown →
             issues = List.foldl fields [] λ( key, _ ) found →
                 if List.member known key then
@@ -703,7 +703,7 @@ unknown context known fields =
                             , …found
                             ]
             if issues == [] then
-                Ok ()
+                Ok ⊤
             else
                 Err (List.reverse issues)
 
@@ -747,7 +747,7 @@ traverseHelp context values func index results issues =
 
 combineObject2 :
       ErrorMode
-    , Result (List Issue) ()
+    , Result (List Issue) ⊤
     , Result (List Issue) a
     , Result (List Issue) b
     , (a, b → record)
@@ -766,7 +766,7 @@ combineObject2 mode unknownResult first second build =
 
 combineObject1 :
       ErrorMode
-    , Result (List Issue) ()
+    , Result (List Issue) ⊤
     , Result (List Issue) a
     , (a → record)
     → Result (List Issue) record
@@ -845,9 +845,9 @@ combineFields mode first second =
 
 combineValidations :
       ErrorMode
-    , Result (List Issue) ()
-    , Result (List Issue) ()
-    → Result (List Issue) ()
+    , Result (List Issue) ⊤
+    , Result (List Issue) ⊤
+    → Result (List Issue) ⊤
 combineValidations mode first second =
     case first of
         Err firstIssues →

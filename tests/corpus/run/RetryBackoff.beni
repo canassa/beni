@@ -14,17 +14,17 @@ import Task
 
 
 main : Program
-main = Io.run λ() →
+main = Io.run λ⊤ →
     clock = Clock.virtual 0
     attempts = Ref.make 0
 
     flaky =
-        λ() →
+        λ⊤ →
             n = Ref.modify attempts λk → ( k + 1, k + 1 )
-            _ = Debug.log "attempt ${String.fromInt n} at" (Clock.now ())
+            _ = Debug.log "attempt ${String.fromInt n} at" (Clock.now ⊤)
             if n < 4 then Err "busy" else Ok n
 
-    worker = Task.spawn λ() →
-        Clock.run clock λ() → Task.retry (Schedule.exponential (Duration.millis 100) 2.0) flaky
-    _ = Clock.adjust clock (Duration.seconds 1)
+    worker = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ → Task.retry (Schedule.exponential (Duration.millis 100) 2.0) flaky
+    Clock.adjust clock (Duration.seconds 1)
     Node.print "answer: ${Debug.toString (Task.join worker)}"

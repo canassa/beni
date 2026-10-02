@@ -13,15 +13,15 @@ log = Js.ref ""
 
 
 --| Record one effect.
-pub note : String → ()
+pub note : String → ⊤
 note s = Js.write log "${Js.read log}${s}; "
 
 
 --| What was recorded since the last `take`, and a fresh record.
-pub take : () → String
-take () =
+pub take : ⊤ → String
+take ⊤ =
     seen = Js.read log
-    _ = Js.write log ""
+    Js.write log ""
     seen
 
 
@@ -42,8 +42,8 @@ message err = Js.to (Js.get err "message")
 pub tail : Bool → String
 tail throws =
     Js.catchIf
-        (λ() →
-            _ = note "body"
+        (λ⊤ →
+            note "body"
             if throws then
                 fail "TypeError" "bad"
             else
@@ -58,7 +58,7 @@ pub valued : Bool → String
 valued throws =
     v =
         Js.catchIf
-            (λ() →
+            (λ⊤ →
                 if throws then
                     fail "TypeError" "bound"
                 else
@@ -67,37 +67,36 @@ valued throws =
             (λerr → isType err)
             λ_ → 2
 
-    _ = note "after"
+    note "after"
     String.fromInt v
 
 
 --| Discarded: the body's statements, or the handler's.
 pub discarded : Bool → String
 discarded throws =
-    _ =
-        Js.catchIf
-            (λ() →
-                if throws then
-                    fail "TypeError" "dropped"
-                else
-                    note "body"
-            )
-            (λerr → isType err)
-            λerr → note "caught ${message err}"
+    Js.catchIf
+        (λ⊤ →
+            if throws then
+                fail "TypeError" "dropped"
+            else
+                note "body"
+        )
+        (λerr → isType err)
+        λerr → note "caught ${message err}"
 
-    _ = note "after"
+    note "after"
     "done"
 
 
 --| Thrown on: the inner test does not hold of a `RangeError`, which leaves
 --| the inner `try` unchanged and is taken by the outer one, which names it.
-pub rethrown : () → String
-rethrown () =
+pub rethrown : ⊤ → String
+rethrown ⊤ =
     Js.catchIf
-        (λ() →
+        (λ⊤ →
             Js.catchIf
-                (λ() →
-                    _ = note "inner"
+                (λ⊤ →
+                    note "inner"
                     fail "RangeError" "far"
                 )
                 (λerr → isType err)
@@ -113,9 +112,9 @@ rethrown () =
 pub named : String → String
 named name =
     Js.catchIf
-        (λ() →
+        (λ⊤ →
             Js.catchIf
-                (λ() →
+                (λ⊤ →
                     Js.throw (Js.construct (Js.global "DOMException") [ Js.from "m", Js.from name ])
                 )
                 (λerr →
@@ -133,33 +132,33 @@ nameOf err = Js.to (Js.get err "name")
 
 
 --| The test and the handler name the caught value differently.
-pub renamed : () → String
-renamed () = Js.catchIf (λ() → fail "TypeError" "two names") (λfirst → isType first) λsecond →
+pub renamed : ⊤ → String
+renamed ⊤ = Js.catchIf (λ⊤ → fail "TypeError" "two names") (λfirst → isType first) λsecond →
     message second
 
 
 --| A function made by a call that records it.
-make : String, a → (() → a)
+make : String, a → (⊤ → a)
 make s v =
-    _ = note "make ${s}"
-    λ() →
-        _ = note s
+    note "make ${s}"
+    λ⊤ →
+        note s
         v
 
 
 testOf : String → (Js.Value → Bool)
 testOf s =
-    _ = note "make ${s}"
+    note "make ${s}"
     λerr →
-        _ = note s
+        note s
         isType err
 
 
 handlerOf : String → (Js.Value → Int)
 handlerOf s =
-    _ = note "make ${s}"
+    note "make ${s}"
     λ_ →
-        _ = note s
+        note s
         9
 
 
@@ -169,7 +168,7 @@ pub ordered : Bool → Int
 ordered throws =
     Js.catchIf
         (if throws then
-            λ() → fail "TypeError" "made"
+            λ⊤ → fail "TypeError" "made"
          else
             make "body" 7
         )
@@ -178,18 +177,18 @@ ordered throws =
 
 
 --| Functions passed in.
-pub passed : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
+pub passed : (⊤ → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 passed f t h = Js.catchIf f t h
 
 
 --| `Js.catchIf` itself passed as a value: the sibling's function.
-pub asValue : (() → Int), (Js.Value → Bool), (Js.Value → Int) → Int
+pub asValue : (⊤ → Int), (Js.Value → Bool), (Js.Value → Int) → Int
 asValue f t h = apply Js.catchIf f t h
 
 
 apply :
-      ((() → Int), (Js.Value → Bool), (Js.Value → Int) → Int)
-    , (() → Int)
+      ((⊤ → Int), (Js.Value → Bool), (Js.Value → Int) → Int)
+    , (⊤ → Int)
     , (Js.Value → Bool)
     , (Js.Value → Int)
     → Int
@@ -201,7 +200,7 @@ apply k f t h = k f t h
 pub sumTo : Int, Int → Int
 sumTo n acc =
     if n == 0 then
-        Js.catchIf (λ() → acc) (λerr → isType err) λ_ → 0
+        Js.catchIf (λ⊤ → acc) (λerr → isType err) λ_ → 0
     else
         sumTo (n - 1) (acc + n)
 

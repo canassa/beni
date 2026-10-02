@@ -37,10 +37,10 @@ decimalInt =
         λn → Ok (String.fromInt n)
 
 
-toValue ( (), v ) = { value = v }
+toValue ( ⊤, v ) = { value = v }
 
 
-fromValue r = ( (), r.value )
+fromValue r = ( ⊤, r.value )
 
 
 payload : Schema e a → Schema { value : e } { value : a }
@@ -97,18 +97,18 @@ message =
         , Schema.nullary
             "Ping"
             "ping"
-            (Schema.injection (λ() → WirePing) λw →
+            (Schema.injection (λ⊤ → WirePing) λw →
                 case w of
                     WirePing →
-                        Just ()
+                        Just ⊤
 
                     _ →
                         Nothing
             )
-            (Schema.injection (λ() → Ping) λm →
+            (Schema.injection (λ⊤ → Ping) λm →
                 case m of
                     Ping →
-                        Just ()
+                        Just ⊤
 
                     _ →
                         Nothing
@@ -147,10 +147,10 @@ type Tree
     | Branch { children : List Tree }
 
 
-toChildren ( (), c ) = { children = c }
+toChildren ( ⊤, c ) = { children = c }
 
 
-fromChildren r = ( (), r.children )
+fromChildren r = ( ⊤, r.children )
 
 
 tree : Schema Tree Tree
