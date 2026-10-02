@@ -1,0 +1,67 @@
+-- A throw in `view` closes the program's scope as a fiber's throw does
+-- (boundary.md §9.8.14 (c)): the synchronous path, through the render
+-- loop's guard, `Rt`'s `stop` calling the teardown the hosted mount handed
+-- over. A body sleeps inside a `bracket`; `Break` makes the next render
+-- throw, and the body's release runs, told `Cancelled`, its timer cleared.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Break
+    | Woke
+
+
+update : Msg, Bool -> ( Bool, Cmd Msg )
+update msg broken =
+    case msg of
+        Start ->
+            ( broken
+            , Cmd.perform λsend ->
+                Task.bracket
+                    (λ() -> ())
+                    (λ_ exit ->
+                        case exit of
+                            Done _ ->
+                                Log.info "released: Done"
+
+                            Cancelled ->
+                                Log.info "released: Cancelled"
+                    )
+                    λ_ ->
+                        _ = Time.sleep (Time.millis 100)
+                        send Woke
+            )
+
+        Break ->
+            ( True, Cmd.none )
+
+        Woke ->
+            ( broken, Cmd.none )
+
+
+view : Bool -> Html Msg
+view broken =
+    if broken then
+        Debug.todo "view threw"
+    else
+        <main>
+            <button id="start" onClick={Start}>start</button>
+            <button id="break" onClick={Break}>break</button>
+        </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( False, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Sub.none
+        }

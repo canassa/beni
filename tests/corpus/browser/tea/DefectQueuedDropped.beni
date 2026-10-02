@@ -1,0 +1,77 @@
+-- Work queued when a defect strikes is dropped unrun, and a fiber waiting
+-- for a render is released (boundary.md §9.8.14 (a), (d) step 2, (h)).
+-- `Go` starts two bodies. The first, in a fiber, sends `Ping` — which
+-- queues a render — and waits in `Dom.rendered` inside a `bracket`. The
+-- second cannot wait, so it runs with no fiber: it sends `Then`, whose
+-- `update` queues after-render work and another body that cannot wait,
+-- and then throws. Neither the after-render work nor the queued body
+-- runs, the render never comes, and the waiting fiber's release runs,
+-- told `Cancelled`.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task exposing (Cancelled, Done, Exit)
+import Tea
+
+
+type Msg
+    = Go
+    | Ping
+    | Then
+
+
+outcome : Exit a -> String
+outcome exit =
+    case exit of
+        Done _ ->
+            "Done"
+
+        Cancelled ->
+            "Cancelled"
+
+
+waiter : Cmd.Send Msg -> ()
+waiter send =
+    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "waiter released: ${outcome exit}") λ_ ->
+        _ = send Ping
+        Dom.rendered ()
+
+
+thrower : Cmd.Send Msg -> ()
+thrower send =
+    _ = send Then
+    Debug.todo "body threw"
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        Go ->
+            ( n, Cmd.batch [ Cmd.perform waiter, Cmd.perform thrower ] )
+
+        Ping ->
+            ( n + 1, Cmd.none )
+
+        Then ->
+            ( n + 10
+            , Cmd.batch
+                [ Cmd.afterRender λ_ -> Log.info "after-render work ran"
+                , Cmd.do λ() -> Log.info "queued body ran"
+                ]
+            )
+
+
+view : Int -> Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

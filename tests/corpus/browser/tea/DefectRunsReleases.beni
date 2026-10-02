@@ -1,0 +1,80 @@
+-- A defect closes the program's scope (boundary.md §9.8.14 (a), (d), (e)).
+-- Three command bodies run in fibers, each inside `bracket`s: the first
+-- inside two, the second and the third inside one. The first two sleep;
+-- the third sleeps less and then throws. After the throw every release
+-- runs once, told `Cancelled`: the first body's inner one before its outer
+-- one, the first body's before the second's, and the thrower's own too.
+-- Every timer is cleared, and nothing the bodies would have sent after
+-- their sleep arrives. The release build adds no crash screen.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task exposing (Cancelled, Done, Exit)
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Late String
+
+
+outcome : Exit a -> String
+outcome exit =
+    case exit of
+        Done _ ->
+            "Done"
+
+        Cancelled ->
+            "Cancelled"
+
+
+guarded : String, (() -> a) -> a
+guarded name body =
+    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ ->
+        body ()
+
+
+update : Msg, String -> ( String, Cmd Msg )
+update msg shown =
+    case msg of
+        Go ->
+            ( "going"
+            , Cmd.batch
+                [ Cmd.perform λsend ->
+                    guarded "first outer" λ() ->
+                        guarded "first inner" λ() ->
+                            _ = Time.sleep (Time.millis 100)
+                            send (Late "first")
+                , Cmd.perform λsend ->
+                    guarded "second" λ() ->
+                        _ = Time.sleep (Time.millis 100)
+                        send (Late "second")
+                , Cmd.perform λ_ ->
+                    guarded "thrower" λ() ->
+                        _ = Time.sleep (Time.millis 10)
+                        Debug.todo "body threw"
+                ]
+            )
+
+        Late who ->
+            ( "${who} arrived", Cmd.none )
+
+
+view : String -> Html Msg
+view shown =
+    <main>
+        <p id="shown">{shown}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( "idle", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ -> Sub.none
+        }

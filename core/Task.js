@@ -196,12 +196,9 @@ const drain = () => {
 // throw out of the drain. Nothing runs from now on but the teardown, which
 // starts in a macrotask, after the host has reported a throw in flight
 // (§9.8.14 (b)); in a build with no fiber there is none.
-export const shutdown = (ms, done) => {
-  if (phase === 0) {
-    phase = 1;
-    scheduled = true;
-  }
-  if (closing !== null) closing(ms, done);
+export const shutdown = (ms, over) => {
+  if (phase === 0) phase = 1;
+  if (closing !== null) closing(ms, over);
   return null;
 };
 
@@ -657,9 +654,9 @@ const stopping = () => {
 
 // `shutdown`'s part here: the first call's deadline and `done`; a second
 // call does nothing.
-const closeAll = (ms, done) => {
+const closeAll = (ms, over) => {
   if (whenDone !== null || phase === 3) return;
-  whenDone = done;
+  whenDone = over;
   deadline = ms;
   if (phase === 2) deadlineTimer = globalThis.setTimeout(expire, deadline);
   stopping();

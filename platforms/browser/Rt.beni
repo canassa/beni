@@ -268,21 +268,91 @@ dead : Js.Ref Bool
 dead = Js.ref False
 
 
+-- What closes the program's scope once the page has stopped
+-- (`boundary.md` §9.8.14 (c)): null until a hosted mount hands one over
+-- (`startOne`'s fifth argument), and so in a page of `Browser.program`s
+-- alone. Called with `stopped`, which it calls when every fiber has ended,
+-- with the number of cleanups the deadline cut short.
+teardown : Js.Ref V
+teardown = Js.ref Js.null
+
+
 stop : () -> ()
 stop () =
     -- Once: two guards may see one throw, an inner one and the one
-    -- around it.
+    -- around it. The teardown only stops the runtime here and runs
+    -- nothing, so the throw in flight stays the one the host reports. In a
+    -- page with no hosted mount a release build knows the teardown is null,
+    -- and `stop` is only the write, as it was before there was one.
     _ =
         if Js.development () then
             if Js.read dead then () else crashScreen ()
         else
             ()
+    _ = if Js.isNull (Js.read teardown) then () else closeScope ()
     Js.write dead True
+
+
+-- Close the program's scope, the first time the page stops (`dead` is set
+-- just after, and the teardown reads nothing of the page).
+closeScope : () -> ()
+closeScope () =
+    if Js.read dead then
+        ()
+    else
+        Js.to (Js.apply (Js.read teardown) [ Js.from stopped ])
+
+
+-- Every fiber has ended. Cleanups the deadline cut short are a line of the
+-- log in both builds and of the crash screen in development; the screen
+-- stops listening for throws.
+stopped : Int -> ()
+stopped cut =
+    line = "Cleanups cut short while stopping:"
+
+    _ =
+        if cut == 0 then
+            ()
+        else
+            Js.to (Js.call (Js.global "console") "warn" [ Js.from line, Js.from cut ])
+
+    if Js.development () then
+        _ =
+            if cut == 0 then
+                ()
+            else
+                Js.to
+                    (Js.apply (Js.read screenLine)
+                        [ Js.from
+                            ("\n\n${line} "
+                                ++ Js.to (Js.apply (Js.global "String") [ Js.from cut ])
+                            )
+                        ]
+                    )
+
+        Js.to
+            (Js.call (Js.global "window") "removeEventListener"
+                [ Js.from "error", Js.read screenReport ]
+            )
+    else
+        ()
+
+
+-- The crash screen's: what adds a line to it, and its `error` listener.
+screenLine : Js.Ref V
+screenLine = Js.ref Js.null
+
+
+screenReport : Js.Ref V
+screenReport = Js.ref Js.null
 
 
 -- An overlay above the page, which it leaves in place to inspect. The
 -- error's text arrives with the host's report of the throw, which reaches
--- the window after the cleanup that called `stop`.
+-- the window after the cleanup that called `stop`. Each later throw — a
+-- cleanup's, while the program's scope closes (`boundary.md` §9.8.14 (g))
+-- — is listed beneath it, until the teardown ends; a page with no
+-- teardown listens for the first throw only.
 crashScreen : () -> ()
 crashScreen () =
     document = Js.global "document"
@@ -305,6 +375,14 @@ crashScreen () =
 
     _ = Js.call (Js.get document "body") "appendChild" [ screen ]
 
+    add =
+        λmore ->
+            shown : String
+            shown = Js.to (Js.get screen "textContent")
+            Js.set screen "textContent" (Js.from (shown ++ more))
+
+    seen = Js.ref 0
+
     report =
         λevent ->
             error = Js.get event "error"
@@ -315,12 +393,26 @@ crashScreen () =
                         [ if Js.isNullish error then Js.get event "message" else error ]
                     )
 
-            shown : String
-            shown = Js.to (Js.get screen "textContent")
-            Js.set screen "textContent" (Js.from (shown ++ message))
+            n = Js.read seen
+            _ = Js.write seen (n + 1)
+
+            add
+                (if n == 0 then
+                    message
+                 else if n == 1 then
+                    "\n\nWhile stopping, cleanup also threw:\n" ++ message
+                 else
+                    "\n" ++ message
+                )
+
+    _ = Js.write screenLine (Js.from add)
+    _ = Js.write screenReport (Js.from report)
     Js.to
         (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "error", Js.from report, Js.from { once = True } ]
+            [ Js.from "error"
+            , Js.from report
+            , Js.from { once = Js.isNull (Js.read teardown) }
+            ]
         )
 
 
@@ -396,7 +488,12 @@ startOne m =
     else
         mount
             (Js.apply (Js.get m "h")
-                [ root, Js.from flush, Js.from λf -> setPhase f, Js.from stop ]
+                [ root
+                , Js.from flush
+                , Js.from λf -> setPhase f
+                , Js.from stop
+                , Js.from λf -> Js.write teardown f
+                ]
             )
             root
 

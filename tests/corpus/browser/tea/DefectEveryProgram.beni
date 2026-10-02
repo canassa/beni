@@ -1,0 +1,67 @@
+-- One program's defect stops every program of the page and closes every
+-- root scope (boundary.md §9.8.14 (i), choice 2). Two `Tea.element`s, the
+-- second mounted inside the first, each start a body at `init` that sleeps
+-- inside a `bracket`. A defect in the first's `update` runs both releases,
+-- the first program's before the second's — the order the programs were
+-- started in — and a click on the second does nothing.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task exposing (Cancelled, Done, Exit)
+import Tea
+import Time
+
+
+outcome : Exit a -> String
+outcome exit =
+    case exit of
+        Done _ ->
+            "Done"
+
+        Cancelled ->
+            "Cancelled"
+
+
+sleeper : String -> Cmd msg
+sleeper name = Cmd.perform λ_ ->
+    Task.bracket (λ() -> ()) (λ_ exit -> Log.info "${name} released: ${outcome exit}") λ_ ->
+        Time.sleep (Time.millis 1000)
+
+
+type FirstMsg
+    = Boom
+
+
+first : Tea.Program
+first =
+    Tea.element
+        { init = ( 0, sleeper "first" )
+        , update = λBoom _ -> Debug.todo "the first program's update threw"
+        , view =
+            λ_ ->
+                <main>
+                    <button id="boom" onClick={Boom}>boom</button>
+                    <section id="second" />
+                </main>
+        , subscriptions = λ_ -> Sub.none
+        }
+
+
+type SecondMsg
+    = Inc
+
+
+second : Tea.Program
+second =
+    Tea.element
+        { init = ( 0, sleeper "second" )
+        , update = λInc n -> ( n + 1, Cmd.none )
+        , view = λn -> <button id="inc" onClick={Inc}>{String.fromInt n}</button>
+        , subscriptions = λ_ -> Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ first, Browser.mountAt second "second" ]

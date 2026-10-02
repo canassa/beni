@@ -103,12 +103,15 @@ pub hosted :
 hosted p =
     -- One mount, `{ h, n }`: no element id, and the function the runtime
     -- turns into the record it mounts, handed the mount node, the render
-    -- loop's `flush`, what sets the after-render phase, and what stops
-    -- the page when a fiber throws (`boundary.md` §9.8.10 (c)).
+    -- loop's `flush`, what sets the after-render phase, what stops the page
+    -- when a fiber throws (`boundary.md` §9.8.10 (c)), and what takes the
+    -- function that closes the program's scope once it has (§9.8.14 (c)).
     Js.to
         (Js.array
             [ Js.from
-                { h = λroot flushing phase stop -> host p root flushing phase stop, n = Js.null }
+                { h = λroot flushing phase stop onStop -> host p root flushing phase stop onStop
+                , n = Js.null
+                }
             ]
         )
 
@@ -180,6 +183,13 @@ nudge = Js.ref Js.null
 -- queues shows what the program showed.
 skip : Js.Value
 skip = Js.array []
+
+
+-- How long cleanup that waits may take once the page has stopped, in
+-- milliseconds (`boundary.md` §9.8.14 (f), choice 3): what is still waiting
+-- then is cut short.
+deadline : Int
+deadline = 1000
 
 
 -- After-render work queued since the last flush, and the resumes of the
@@ -256,12 +266,25 @@ host :
     , Js.Value
     , Js.Value
     , Js.Value
+    , Js.Value
     -> Js.Value
-host p root flushing phase stop =
+host p root flushing phase stop onStop =
     _ = Js.write loop flushing
 
     -- A fiber that throws stops the page, as a handler that throws does.
     _ = Task.onDefect λ() -> Js.to (Js.apply stop [])
+
+    -- Once the page has stopped, every fiber of every program is cancelled
+    -- and its cleanup run (`boundary.md` §9.8.14): the after-render work
+    -- not yet run is dropped, and core closes every root scope, whoever
+    -- opened it, giving cleanup that waits `deadline` ms. `stopped` is
+    -- told how many it cut short.
+    _ =
+        Js.apply onStop
+            [ Js.from λstopped ->
+                _ = Js.write later (Js.array [])
+                Task.shutdown deadline λcut -> Js.to (Js.apply stopped [ Js.from cut ])
+            ]
     _ = Js.write setPhase phase
     _ = Js.apply phase [ Js.from afterRender ]
 

@@ -1,0 +1,44 @@
+-- The teardown reaches a root scope no platform was told of (boundary.md
+-- §9.8.14 (c), choice 6). A program written straight on `Browser.hosted`
+-- opens a root scope of its own at `init`, keeps it to itself, and starts
+-- a fiber in it that sleeps inside a `bracket`. A defect in `update` stops
+-- the page, and core, which keeps every root, closes that one too: the
+-- fiber's release runs, told `Cancelled`, and its timer is cleared.
+import Browser
+import Html exposing (Html)
+import Log
+import Task exposing (Cancelled, Done)
+import Time
+
+
+type Msg
+    = Boom
+
+
+start : () -> Int
+start () =
+    root = Task.openRoot ()
+
+    _ = Task.spawnIn root λ() ->
+        Task.bracket
+            (λ() -> ())
+            (λ_ exit ->
+                case exit of
+                    Done _ ->
+                        Log.info "released: Done"
+
+                    Cancelled ->
+                        Log.info "released: Cancelled"
+            )
+            λ_ -> Time.sleep (Time.millis 1000)
+    0
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ -> start ()
+        , update = λ_ Boom _ -> Debug.todo "update threw"
+        , settle = λ_ n -> n
+        , view = λ_ -> <button id="boom" onClick={Boom}>boom</button>
+        }

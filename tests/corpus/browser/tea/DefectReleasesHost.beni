@@ -1,0 +1,98 @@
+-- A defect releases what the program holds of the host (boundary.md
+-- §9.8.14 (a), (d) step 1; R45 §8 item 8). Started, the program holds a
+-- body sleeping, a keyed request to a service faked on the page's clock
+-- (§9.8.9, W55), a `Time.every` and an `onResize` subscription: three
+-- timers and one window listener. A defect in `update` stops the page, and
+-- the teardown cancels every fiber: no timer and no listener is left, and
+-- moving the clock on sends nothing.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Boom
+    | Slept
+    | Answered String
+    | Ticked
+    | Resized
+
+
+-- The service: a request answered after half a second on the page's clock.
+type alias Service =
+    get : String -> String
+
+
+service : Service
+service =
+    { get =
+        λpath ->
+            _ = Time.sleep (Time.millis 500)
+            "answer to ${path}"
+    }
+
+
+type alias Model =
+    on : Bool
+    seen : List String
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Start ->
+            ( { model | on = True }
+            , Cmd.batch
+                [ Cmd.perform λsend ->
+                    _ = Time.sleep (Time.millis 300)
+                    send Slept
+                , Cmd.keyed "search" Cmd.Restart λsend -> send (Answered (service.get "/search"))
+                ]
+            )
+
+        Boom ->
+            Debug.todo "update threw"
+
+        Slept ->
+            ( { model | seen = model.seen ++ [ "slept" ] }, Cmd.none )
+
+        Answered text ->
+            ( { model | seen = model.seen ++ [ text ] }, Cmd.none )
+
+        Ticked ->
+            ( { model | seen = model.seen ++ [ "tick" ] }, Cmd.none )
+
+        Resized ->
+            ( { model | seen = model.seen ++ [ "resized" ] }, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch
+            [ Time.every (Time.millis 200) λ_ -> Ticked, Browser.Events.onResize λ_ -> Resized ]
+    else
+        Sub.none
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="start" onClick={Start}>start</button>
+        <button id="boom" onClick={Boom}>boom</button>
+        <ul><For each={model.seen} keyed={False}>{λs -> <li>{s}</li>}</For></ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { on = False, seen = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

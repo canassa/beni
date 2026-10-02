@@ -1,0 +1,11 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- throws click #go
+console.info: waiter released: Cancelled
+(threw: Error: TODO: body threw)
+(the DOM did not change)

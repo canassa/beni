@@ -1,0 +1,14 @@
+-- load
+<body>
+  <button id="boom">"boom"</button>
+</body>
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- throws click #boom
+console.info: released: Cancelled
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
