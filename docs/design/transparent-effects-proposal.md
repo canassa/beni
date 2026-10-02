@@ -2301,6 +2301,24 @@ keeps what it copied, after the function has returned. There is no `set` for a s
 join against research 49 §4.3's figures; a reproducible loss is a wall reported to the owner, never
 a reason to drop a slot (`CLAUDE.md` rule 10).
 
+*Amended 2026-10-02 (the owner, after K5's measurement).* **The four slots are one field, `slots`,
+holding one immutable record** `{ clock, scheduler, logContext, seed }`, not four fields. K5 built
+four and measured them: copying four fields on every start cost the release fan-out of research
+49's workloads +3.5 % instructions per spawned fiber, the release cancellation +4.5 %, and every
+fiber program 18–90 brotli bytes. One field copied by reference brought fan-out back but still cost
+the cancellation about +1 %, and that remainder was the field itself: the same kernel without it
+measured equal to the base. So **the field is not in the fiber literal**: `fork` adds it — copying
+its starter's — only once some slot has been set anywhere in the program, behind a cell that only
+the slot-setting functions write. A program that never sets a slot (every program on `master`)
+folds that check away, and its fibers are byte for byte and instruction for instruction what they
+were; this is §17.1 item 6 applied to the slots too, and the exception it names is withdrawn. A
+program that sets one pays the copy on every start after the first set, and its fibers made before
+it carry no field — which reads as every slot at its default, as an undefined record or field does.
+Nothing else changes in meaning: inheritance is the copy of that one reference, a scoped change —
+`Clock.run`, `Log.annotate` and the rest — sets the field to a **new** record with the one slot
+changed and puts the old record back when its function ends, and reading a slot is two loads, paid
+only where a slot is read.
+
 ### 17.6 Time: `Duration`, `Task.sleep`, `Clock` (P2)
 
 ```elm

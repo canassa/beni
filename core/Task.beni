@@ -150,44 +150,36 @@ park w intr = Js.suspending λ() →
 -- cancelling or finishing, when interrupts are ignored; `parked` the wait it
 -- is parked on; `scope` the scope that started it.
 --
--- And the four slots of `transparent-effects-proposal.md` §17.5, copied by
--- reference from `from` — the fiber, or the record outside any, that
--- started this one, or `defaults` when there is none: `clock` (null is the
--- real clock), `scheduler` (reserved: nothing writes it yet), `logContext`
--- and `seed`. Each value is immutable, so sharing one is safe.
+-- And the four slots of `transparent-effects-proposal.md` §17.5, as one
+-- immutable record `{ clock, scheduler, logContext, seed }` in a field
+-- `slots` that `fork` adds only once a slot has been set anywhere
+-- (`slotted`), so a program that sets none pays nothing (§17.5's
+-- amendment). Undefined, or a field of the record undefined, is that slot
+-- at its default (`clock`: the real clock; `scheduler`: reserved, nothing
+-- writes it yet). Changing a slot makes a new record, so sharing one is
+-- safe.
 --
 -- A build that makes one — a fiber, or the record of finalisers outside any
 -- — has something to tear down, and so keeps the teardown (`boundary.md`
 -- §9.8.14): the two hooks are set here, so a build that makes none keeps
 -- none of it.
-newFiber : V, V → V
-newFiber parent from =
+newFiber : V → V
+newFiber parent =
     _ = Js.write failure (Js.from failed)
     _ = Js.write closing (Js.from closeAll)
     Js.from
         { children = Js.null
-        , clock = Js.get from "clock"
         , finalizers = Js.null
         , interrupted = False
-        , logContext = Js.get from "logContext"
         , masks = 0
         , observers = Js.null
         , outcome = Js.null
         , parent = parent
         , parked = Js.null
-        , scheduler = Js.get from "scheduler"
         , scope = Js.null
-        , seed = Js.get from "seed"
         , stack = Js.array []
         , unwinding = False
         }
-
-
--- What a fiber no fiber started copies its slots from — a platform's root,
--- the record outside any fiber, a fiber the teardown starts: nothing, so
--- each slot is undefined, the default.
-defaults : V
-defaults = Js.from {}
 
 
 cancelled : V
@@ -213,7 +205,7 @@ here () =
     if Js.isNull c then
         o = Js.read outside
         if Js.isNull o then
-            f = newFiber Js.null defaults
+            f = newFiber Js.null
             _ = Js.write outside f
             f
         else
@@ -222,18 +214,27 @@ here () =
         c
 
 
--- Where a fiber started now copies its four slots from (§17.5): the
--- current fiber, or the record outside any, or `defaults` when neither
--- exists yet.
-starter : () → V
-starter () =
-    c = Js.read current
+-- ---- The fiber's slots (§17.5) ---------------------------------------------
 
-    if Js.isNull c then
-        o = Js.read outside
-        if Js.isNull o then defaults else o
+-- Whether any slot has ever been set. Until one has, every fiber's slots
+-- are the defaults and nothing is copied; a build that never sets one —
+-- every program that uses no clock, log context or seed — folds this to
+-- `False`, and its fibers carry no slots and pay nothing for them.
+slotted : Js.Ref Bool
+slotted = Js.ref False
+
+
+-- The slots a fiber started from `from` copies: `from`'s own when it is a
+-- fiber, the record outside any fiber's when it is null (started outside
+-- any), and undefined — every slot at its default — when it is undefined
+-- (a platform's root) or there is no such record yet.
+slotsOf : V → V
+slotsOf from =
+    if Js.isUndefined from then
+        Js.undefined
     else
-        c
+        src = if Js.isNull from then Js.read outside else from
+        if Js.isNull src then Js.undefined else Js.get src "slots"
 
 
 -- An interrupt is to be delivered now.
@@ -801,9 +802,11 @@ reap _ =
 
 -- ---- The API ---------------------------------------------------------------
 
+-- `from` is what the new fiber copies its slots from (`slotsOf`).
 fork : V, V, V, V → V
 fork parent work sc from =
-    fiber = newFiber parent from
+    fiber = newFiber parent
+    _ = if Js.read slotted then Js.set fiber "slots" (slotsOf from) else ()
     _ =
         Js.call (Js.get fiber "stack") "push"
             [ Js.from finish, Js.from λ_ → Js.apply work [ Js.null ] ]
@@ -890,9 +893,9 @@ spawn work =
                 ()
         Js.to child
     else if Js.isNull s then
-        Js.to (fork Js.null (Js.from work) Js.null (starter ()))
+        Js.to (fork Js.null (Js.from work) Js.null Js.null)
     else
-        child = fork Js.null (Js.from work) Js.null (starter ())
+        child = fork Js.null (Js.from work) Js.null Js.null
         _ = if Js.isNull (Js.get s "kids") then Js.set s "kids" (Js.array []) else ()
         _ = Js.call (Js.get s "kids") "push" [ child ]
         _ = Js.set s "end" (Js.from endSoon)
@@ -901,7 +904,7 @@ spawn work =
 
 --| Start `work` in a new fiber that belongs to `scope`.
 pub spawnIn : Scope, (() → a) → Fiber a
-spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (starter ()))
+spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (Js.read current))
 
 
 --| Whether stopping will have cleanup to run: `True` once a fiber has been
@@ -916,7 +919,7 @@ cleansUp () = not (Js.isNull (Js.read closing))
 --| platform's entry point uses; a program asks its platform instead.
 pub start : (() → a), sync (Exit a → ()) → ()
 start work report =
-    fiber = fork Js.null (Js.from work) Js.null defaults
+    fiber = fork Js.null (Js.from work) Js.null Js.undefined
     observe fiber (Js.from λf → report (guest (Js.get f "outcome")))
 
 
@@ -1085,7 +1088,7 @@ cancelAll fibers = cancelEvery (fiberArray fibers)
 --| every other fiber's. It sees what the fiber that started it sees — its
 --| clock, its log context. Effect's `forkDetach`.
 pub spawnDetached : (() → a) → Fiber a
-spawnDetached work = Js.to (fork Js.null (Js.from work) Js.null (starter ()))
+spawnDetached work = Js.to (fork Js.null (Js.from work) Js.null (Js.read current))
 
 
 openScope : () → Scope
@@ -1140,11 +1143,11 @@ closeScope sc value =
     if Js.to (Js.get (Js.get s "children") "size") == 0 then
         _ = Js.set s "closed" (Js.from True)
         _ = dropFinalizer fiber (Js.get s "finalizer")
-        if Js.read deferring then deferredThen s (host (Done ())) value else value
+        if Js.read deferring then afterDeferred s (host (Done ())) value else value
     else
         _ = shut s
         _ = dropFinalizer fiber (Js.get s "finalizer")
-        if Js.read deferring then deferredThen s (host (Done ())) value else value
+        if Js.read deferring then afterDeferred s (host (Done ())) value else value
 
 
 -- ---- Deferred finalisers (§17.3, `defer`) -----------------------------------
@@ -1153,6 +1156,27 @@ closeScope sc value =
 -- then, so a build that never defers keeps none of this.
 deferring : Js.Ref Bool
 deferring = Js.ref False
+
+
+-- What runs them, `{ roots, run }`, set by `defer`: the scope code above
+-- reaches it only through this cell, so what it needs is kept — and placed
+-- in the output — only in a build that defers.
+deferral : Js.Ref V
+deferral = Js.ref Js.null
+
+
+-- Run the deferred finalisers of `s`, told `exit`, then answer `value`:
+-- `deferral`'s `run`, with the protocol by hand, as `join` writes it.
+afterDeferred : V, V, a → a
+afterDeferred s exit value =
+    r = Js.apply (Js.get (Js.read deferral) "run") [ s, exit ]
+
+    Js.suspending λ() →
+        if Js.same r sentinel then
+            _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from λ_ → Js.from value ]
+            Js.to sentinel
+        else
+            value
 
 
 -- A scope's finaliser on its fiber's list: run when that fiber is cancelled
@@ -1166,22 +1190,21 @@ shutAll sc = if Js.read deferring then shutWith sc cancelled else shut sc
 shutWith : V, V → ()
 shutWith sc exit =
     _ = shut sc
-    deferredThen sc exit ()
+    afterDeferred sc exit ()
 
 
 -- Run the deferred finalisers of the scope `s`, last added first, where
--- cancellation cannot reach them, each told `exit`; then answer `value`.
--- Taken off the scope first, so that they run once.
-deferredThen : V, V, a → a
-deferredThen s exit value =
+-- cancellation cannot reach them, each told `exit`. Taken off the scope
+-- first, so that they run once.
+runDeferred : V, V → ()
+runDeferred s exit =
     d = Js.get s "deferred"
 
     if Js.isNullish d then
-        value
+        ()
     else
         _ = Js.set s "deferred" Js.null
-        _ = uninterruptible λ() → runEach d exit
-        value
+        uninterruptible λ() → runEach d exit
 
 
 -- Call the functions in `fins`, last first, with `exit`, each one ended
@@ -1209,7 +1232,7 @@ runEach fins exit =
 -- teardown waits for it, as for every fiber.
 cleanupFiber : V → ()
 cleanupFiber fins =
-    fiber = newFiber Js.null defaults
+    fiber = newFiber Js.null
     _ = Js.write live (Js.read live + 1)
     _ = Js.set fiber "finalizers" fins
     _ = unwind fiber
@@ -1239,6 +1262,7 @@ defer sc cleanup =
         uninterruptible λ() → cleanup Cancelled
     else
         _ = Js.write deferring True
+        _ = Js.write deferral (Js.from { roots = Js.from deferRoots, run = Js.from runDeferred })
         _ = Js.write failure (Js.from failed)
         _ = Js.write closing (Js.from closeAll)
 
@@ -1335,8 +1359,8 @@ closeRoot sc =
     _ = Js.set s "closed" (Js.from True)
     _ = Js.each (copy (Js.get s "children")) λf → halt f
 
-    if Js.read deferring && not (Js.isNullish (Js.get s "deferred")) then
-        cleanupFiber (Js.array [ Js.from λ_ → shutWith s (host (Done ())) ])
+    if Js.read deferring then
+        Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ()) ])
     else
         ()
 
@@ -1453,7 +1477,10 @@ teardown () =
                     Js.each (Js.get root "children") λf → Js.to (Js.call sweeping "push" [ f ])
                 else
                     Js.to (Js.call sweeping "push" [ root ])
-            if Js.read deferring then deferRoots () else ()
+            if Js.read deferring then
+                Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ roots, cancelled ])
+            else
+                ()
         else
             ()
     ok = Js.ref False
@@ -1483,7 +1510,7 @@ teardown () =
         if Js.isNull o || none (Js.get o "finalizers") then
             ()
         else
-            fiber = newFiber Js.null defaults
+            fiber = newFiber Js.null
             _ = Js.write live (Js.read live + 1)
             _ = Js.set fiber "finalizers" (Js.get o "finalizers")
             _ = Js.set o "finalizers" Js.null
@@ -1493,17 +1520,19 @@ teardown () =
     if Js.read live == 0 then allEnded () else drain ()
 
 
--- The root scopes' deferred finalisers, at the program's stop: each root's
--- run once its fibers have ended, told `Cancelled`, in one fiber started
--- for them all, as the finalisers outside any fiber are: the roots in the
--- order they were listed, so each goes in front of those before it.
-deferRoots : () → ()
-deferRoots () =
+-- The deferred finalisers of the root scopes among `list`: each root's run
+-- once its fibers have ended, told `exit`, in one fiber started for them
+-- all, as the finalisers outside any fiber are — the roots in list order,
+-- so each goes in front of those before it. What `closeRoot` (with its one
+-- root, told `Done ()`) and the program's stop (with every root, told
+-- `Cancelled`) call, through `deferral`.
+deferRoots : V, V → ()
+deferRoots list exit =
     fins = Js.array []
 
-    _ = Js.each roots λroot →
+    _ = Js.each list λroot →
         if Js.isUndefined (Js.get root "stack") && not (Js.isNullish (Js.get root "deferred")) then
-            Js.to (Js.call fins "unshift" [ Js.from λ_ → shutWith root cancelled ])
+            Js.to (Js.call fins "unshift" [ Js.from λ_ → shutWith root exit ])
         else
             ()
     if Js.to (Js.get fins "length") == 0 then () else cleanupFiber fins

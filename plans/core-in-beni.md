@@ -818,6 +818,29 @@ the base (release 5 959–5 988 against 5 963–6 025 in the same run) and a fib
 loss is not the copies alone (an inlining shift like K4's, cause not found). Which shape to keep
 is the owner's.
 
+*K5 re-measured, the losses closed (2026-10-02).* The owner took the one-field shape (§17.5's
+amendment). Counted with research 49's longer window, `(I(30) − I(0)) / 30·ops`, four rounds, the
+one-field kernel still lost about 1 % on the release cancellation (9 003–9 059 against 8 959–8 994)
+and 0.3 % on fan-out — and the same kernel **without** the field measured equal to the base, so
+the field itself was the cost, and a statement-by-statement diff of the emitted `Task.mjs` showed
+nothing else on the path: the cancel path was the base's but for the field, `fork`'s extra
+argument, and four functions (`shut`, `here`, `mask`, `uninterruptible`) placed earlier in the
+file because the folded-away `defer` code still referenced them. Two changes close it. **The field
+is added by `fork` only once a slot has been set** (`slotted`, a `Js.Ref` only the slot-setting
+functions will write; none does in K5), so a program that sets no slot folds the copy away and its
+fiber literal is the base's. **`defer`'s code is reached only through a cell `defer` fills**
+(`deferral`, holding `runDeferred` and `deferRoots`), so `closeScope`, the scope finaliser,
+`closeRoot` and the teardown name nothing but that cell and `afterDeferred`, and a build that never
+defers places every function where it was. Now: the release `KBench` build's `Task.mjs` is **byte
+for byte the base's**; `bench/size.mjs`'s release column is equal on all 398 programs and pages
+that existed before (the one exception, `TaskShutdown`, is a changed program: it gained a
+`Deferred` waiter); release instructions per operation, base / K5 — cancellation 8 959–8 986 /
+8 962–8 992, fan-out 5 385–5 410 / 5 370–5 397, scope 9 271–9 278 / 9 246–9 280 (one base outlier
+at 9 973), `yieldNow` 1 100–1 101 / 1 099–1 101, the fast path 81 / 81. Development, which does
+not fold the cells, is within 0.5 % (cancellation 9 050–9 070 / 9 042–9 196, fan-out 5 944–5 972 /
+5 974–6 024) and its unminified output carries the unreached `defer` and slot code (+130 to +320
+brotli bytes on fiber programs).
+
 **Not required by the step, and kept out of it** (research 49 §3.3, §3.4): a lowering that writes a
 small non-tail continuation twice so the fast path allocates nothing, and `Opt` dropping the dead
 branch behind a `Js.Ref` specialisation folded. Either is a general compiler change, priced on its
