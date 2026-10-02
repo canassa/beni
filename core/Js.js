@@ -91,3 +91,8 @@ export const development = (unit) => true;
 // value it cannot know what it is asked about, and a function that may
 // suspend is the safe answer.
 export const maySuspend = (f) => true;
+
+// Written in place as its body, like `pure` (backend.md §4,
+// *`Js.suspending` is its body*); passed as a value, it calls what it is
+// given.
+export const suspending = (body) => body();

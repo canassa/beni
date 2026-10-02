@@ -466,6 +466,16 @@ assume*). The argument is a function handed to the intrinsic, so it joins nothin
 caller answers for the promise. Written with a lambda, it is the lambda's body (`backend.md` §4,
 *`Js.pure` is its body*).
 
+**`suspending : sync (() -> a) -> a`** (suspends, 2026-10-02, `plans/core-in-beni.md` step 2;
+**decided** by the owner the same day) is the body's value, and the opposite promise to `pure`'s:
+that the value may be the fiber runtime's sentinel, so a call of it may suspend. It is how
+`core/Task.beni` parks a fiber — its `park` sets the pending suspension and returns the sentinel
+through it — and it is the one way beni code acquires the `suspends` rung without calling
+something that already has it. The argument is `sync`: what computes the value cannot itself
+suspend. Unchecked, like every `Js` declaration: a body that returns an ordinary value through it
+costs its callers a comparison and nothing else, and only `Task` holds the sentinel. Written with a
+lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*).
+
 **The operators core's arithmetic is written over** (2026-10-01): `bitOr`, `bitXor`, `shiftLeft`,
 `shiftRight`, `shiftRightZero` and `rem` — `|`, `^`, `<<`, `>>`, `>>>` and `%` on two `Int`s, as
 `bitAnd` is `&` — and `typeOf : Value -> Value` and `instanceOf : Value, Value -> Bool`, `typeof v`

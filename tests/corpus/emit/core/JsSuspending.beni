@@ -1,0 +1,28 @@
+-- emit: `Js.suspending λ() → body` is its body (`backend.md` §4,
+-- *`Js.suspending` is its body*), and a call of it may suspend. In tail
+-- position (`park`) the body's value is returned as it is, with no
+-- comparison. In a value position (`inValue`) and a discarded one
+-- (`discarded`) it is a suspension point: the rest of the function is its
+-- continuation, handed to `Task.andThen`. Passed as a value (`passed`) it
+-- is the sibling's function, called with the lambda.
+import Js
+
+
+pub park : () → Int
+park () = Js.suspending λ() → 1
+
+
+pub inValue : () → Int
+inValue () =
+    n = Js.suspending λ() → 2
+    n + 1
+
+
+pub discarded : () → Int
+discarded () =
+    _ = Js.suspending λ() → 3
+    4
+
+
+pub passed : () → (sync (() → Int) → Int)
+passed () = Js.suspending

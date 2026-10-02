@@ -1668,7 +1668,9 @@ backend does (`14/koka` §4.2), and the fast path is a comparison:
   loop splices that list on top of what remains.
 - A call whose callee answered with a value — the synchronous fast path of §7.2 — continues in
   place. **`$Y` is never a beni value**: it exists only between a `return` and the comparison that
-  consumes it.
+  consumes it. *(Amended 2026-10-02:* with the kernel in beni (`plans/core-in-beni.md` step 2), the
+  sentinel is returned by `core/Task.beni`'s `park` through `Js.suspending` (`boundary.md` §4.2);
+  the module's other parking operations are beni over it.)
 
 The code generator writes two operations of core's `Task` module and nothing else:
 

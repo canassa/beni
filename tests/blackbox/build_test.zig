@@ -4516,6 +4516,75 @@ test "a schema program's issues get short fields and integer tags under --releas
 /// `foreign`, which hid that `Lower` treated a beni-bodied one as a value
 /// nobody calls. The body is an `if` so that `--release` keeps it a
 /// function of its own rather than writing it into its one caller.
+/// A copy of core whose `Task.andThen` and `Task.isWaiting` are written in
+/// beni over the sibling's functions, and a program whose own code suspends
+/// (`yieldNow`) but which calls no kernel function that calls `andThen`.
+fn writeCoreWithBeniAndThen(w: *World) !void {
+    try w.copyTreeInto("core", "mycore", "_");
+    const arena = w.arena.allocator();
+    const beni = try w.read("mycore/Task.beni");
+    const foreign_and_then = "pub foreign impure andThen : a, sync (a → b) → b\n";
+    const foreign_is_waiting = "pub foreign pure isWaiting : a → Bool\n";
+    if (std.mem.count(u8, beni, foreign_and_then) != 1 or std.mem.count(u8, beni, foreign_is_waiting) != 1) return error.CoreChanged;
+    const with_and_then = try std.mem.replaceOwned(u8, arena, beni, foreign_and_then,
+        \\foreign impure andThenJs : a, sync (a → b) → b
+        \\
+        \\
+        \\pub andThen : a, sync (a → b) → b
+        \\andThen value next = andThenJs value next
+        \\
+    );
+    try w.write("mycore/Task.beni", try std.mem.replaceOwned(u8, arena, with_and_then, foreign_is_waiting,
+        \\foreign pure isWaitingJs : a → Bool
+        \\
+        \\
+        \\pub isWaiting : a → Bool
+        \\isWaiting value = isWaitingJs value
+        \\
+    ));
+    const js = try w.read("mycore/Task.js");
+    const export_and_then = "export const andThen = ";
+    const export_is_waiting = "export const isWaiting = ";
+    if (std.mem.count(u8, js, export_and_then) != 1 or std.mem.count(u8, js, export_is_waiting) != 1) return error.CoreChanged;
+    const renamed = try std.mem.replaceOwned(u8, arena, js, export_and_then, "export const andThenJs = ");
+    try w.write("mycore/Task.js", try std.mem.replaceOwned(u8, arena, renamed, export_is_waiting, "export const isWaitingJs = "));
+    try w.write("Main.beni",
+        \\import Io
+        \\import Node exposing (Program)
+        \\import Task
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ() →
+        \\    _ = Task.yieldNow ()
+        \\    Node.print "yielded"
+        \\
+    );
+}
+
+test "a program that suspends keeps Task.andThen when core writes it in beni" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Reach` added the edge from a body that may suspend to `Task.andThen`
+    // only when it was a `foreign` declaration (`backend.md` §4,
+    // *`Js.suspending` is its body*): written in beni, it was dropped, and
+    // `Main` imported a name the build never wrote.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeCoreWithBeniAndThen(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "--core-root=mycore", "Main.beni" }, .{ .stdout = "yielded\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+}
+
 fn writeCoreWithBeniClose(w: *World) !void {
     try w.copyTreeInto("core", "mycore", "_");
     const arena = w.arena.allocator();

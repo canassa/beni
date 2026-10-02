@@ -3258,8 +3258,11 @@ pub const Lowerer = struct {
                     _ = try l.catchTry(out, ca[0], ca[1], ca[2], .tail, l.pos(inst));
                     return;
                 };
-                // `Js.pure`'s body is in tail position itself.
+                // `Js.pure`'s body is in tail position itself, and so is
+                // `Js.suspending`'s: its value goes back as it is, whatever
+                // it is, the caller's comparison deciding.
                 if (l.pureBody(inst)) |body| return l.tailStmts(out, body, loop);
+                if (l.suspendingBody(inst)) |body| return l.tailStmts(out, body, loop);
             },
             else => {},
         }
@@ -7355,6 +7358,10 @@ pub const Lowerer = struct {
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
                 return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             }
+            // `Js.suspending`'s body is a suspension point where it is not
+            // in tail position (`backend.md` §4, *`Js.suspending` is its
+            // body*); a tail returns it before this is reached.
+            if (which == .suspending) return l.suspension(out, inst, try l.jsIntrinsicCall(out, which, arg_insts, p));
             return l.jsIntrinsicCall(out, which, arg_insts, p);
         }
 
@@ -7668,9 +7675,22 @@ pub const Lowerer = struct {
     /// stands — a value, a tail, a discarded position — the body stands
     /// there instead, lowered as it would be.
     fn pureBody(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        return l.inPlaceBody(inst, .pure);
+    }
+
+    /// The body of `Js.suspending (\() -> body)` (`backend.md` §4,
+    /// *`Js.suspending` is its body*), as `pureBody` finds `Js.pure`'s.
+    /// Only a tail takes it directly: elsewhere the call is a suspension
+    /// point, lowered through `jsIntrinsicCall`, so a discarded one is not
+    /// dropped with its value.
+    fn suspendingBody(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        return l.inPlaceBody(inst, .suspending);
+    }
+
+    fn inPlaceBody(l: *Lowerer, inst: Inst.Index, which: JsIntrinsic.Which) ?Inst.Index {
         if (l.bir.instTag(inst) != .call) return null;
         const d = l.bir.instData(inst);
-        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != .pure) return null;
+        if ((l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse return null) != which) return null;
         const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
         if (args.len != 1) return null;
         return l.thunkBody(args[0]);
@@ -7855,7 +7875,7 @@ pub const Lowerer = struct {
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
         if (which == .typeIs) return l.typeIsTest(out, args, p);
-        if (which == .pure and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
+        if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -7938,7 +7958,7 @@ pub const Lowerer = struct {
             W.each, W.finally, W.catchIf, W.regExp, W.typeIs => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
-            W.pure => l.call(v[0], &.{}, p),
+            W.pure, W.suspending => l.call(v[0], &.{}, p),
             W.construct => blk: {
                 const range = try l.b.addRange(rest);
                 const record = try l.b.addRecord(range);
@@ -10212,7 +10232,7 @@ pub const Lowerer = struct {
                         // (`tailStmts`), and `Js.pure`'s body is in tail
                         // position itself.
                         if (loop == null and l.join == .none and (l.finallyArgs(body) != null or l.catchArgs(body) != null)) return false;
-                        if (l.pureBody(body) != null) return false;
+                        if (l.pureBody(body) != null or l.suspendingBody(body) != null) return false;
                     },
                     // A loop written where its value is discarded.
                     .discard => if (l.inlineTarget(body)) |index| {

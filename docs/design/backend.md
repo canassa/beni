@@ -1914,6 +1914,23 @@ argument it is a call of it. What it changes is the checker's answer, not a byte
 `pure` however many `Js.get`s it makes. `core/String.beni`'s functions are written so; without it
 `String.length` would publish `!impure`, and every function that measured a string with it.
 
+### `Js.suspending` is its body
+
+*Added 2026-10-02 (`plans/core-in-beni.md` step 2, K1; research 49 §3.1).* `Js.suspending λ() ->
+body` (`boundary.md` §4.2) is lowered as `Js.pure`'s is — wherever the call stands, the body stands
+there instead — and is a **suspension point** wherever it is not in tail position: in a value or a
+discarded position the body's value is bound to a temporary behind a marker and the rest of the
+function becomes its continuation, as for any call whose callee may suspend
+(`transparent-effects-proposal.md` §16.3); in tail position it is returned as it is, the caller's
+own comparison deciding. With any other argument it is a call of it, which `Js.js` answers with
+the argument's value. Fixture: `emit/core/JsSuspending` and its release twin (a park in tail, value
+and discarded position).
+
+**`Reach` keeps `Task.andThen` and `Task.isWaiting` whatever kind of declaration they are.** A body
+that may suspend adds an edge to the two (§9, `Reach.effectEdges`), whether `Task` declares them
+`foreign` or writes them in beni: a program whose own code suspends but that reaches no kernel
+function calling `andThen` still needs it.
+
 ### `Js.regExp` is a literal
 
 *Added 2026-10-01.* `Js.regExp pattern flags`, both string literals (`boundary.md` §4.2), is a

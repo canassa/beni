@@ -1269,8 +1269,9 @@ pub const Builder = struct {
         if (protocol == .no) return;
         const task = b.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) orelse return;
         const task_bir = b.in.birOf(task);
+        // `foreign` or written in beni alike (`backend.md` §4,
+        // *`Js.suspending` is its body*).
         for (task_bir.decls, 0..) |td, i| {
-            if (td.kind != .foreign_value) continue;
             const name = task_bir.symbol(td.name);
             if (name != InternPool.WellKnown.andThen.symbol() and name != InternPool.WellKnown.isWaiting.symbol()) continue;
             const target: Target = .{ .node = .{ .module = task, .kind = .decl, .index = @intCast(i) } };

@@ -240,3 +240,13 @@ pub foreign pure development : () → bool
 --| needs costs a program that never takes it nothing (`backend.md` §4,
 --| *`Js.maySuspend` is the body's answer*).
 pub foreign pure maySuspend : f → bool
+
+
+--| The body's value, and the opposite promise to `pure`'s: that it may be
+--| the fiber runtime's sentinel, so a call of it may suspend. What `Task`
+--| returns its sentinel with, written in beni; nothing else needs it.
+--| Unchecked, like every `Js` declaration. Written with a lambda,
+--| `Js.suspending λ() → …` is the lambda's body and a suspension point
+--| where it is not in tail position (`backend.md` §4, *`Js.suspending` is
+--| its body*).
+pub foreign suspends suspending : sync (() → a) → a

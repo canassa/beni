@@ -60,6 +60,10 @@ pub const Which = enum {
     /// The body of `Js.pure (\() -> body)`, declared pure (`backend.md` §4,
     /// *`Js.pure` is its body*).
     pure,
+    /// The body of `Js.suspending (\() -> body)`, whose call may suspend:
+    /// how the fiber runtime returns its sentinel from beni (`backend.md`
+    /// §4, *`Js.suspending` is its body*).
+    suspending,
     ref,
     read,
     write,
