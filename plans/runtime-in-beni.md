@@ -22,6 +22,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback`, and `childList` and `Elements` with them | **landed 2026-10-02**, below, with the compiler features it needed |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
+| 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys stay |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -847,3 +848,34 @@ the cloner called once, one program's render queue as a flag).
 
 `runtime.js` is deleted (`boundary.md` §5.2, amended): the manifest's `"runtime"` is optional when
 the runtime module is the whole runtime, which `browser`'s now is.
+
+## Step 7 — `Hosted.js` (2026-10-02)
+
+**What moved.** Every `Hosted` value but the keys is beni over `Js`, written as `core/Task` is:
+outlets, a tap and after-render work are two-element arrays, a relay the object it was, every
+function they hold a `Js.Value` called with `Js.apply`, and each value and message crosses in at a
+type variable. Two changes of shape: a relay holds its taps — the `List (Tap msg)` `Tea` passes —
+instead of an array of taggers, so `retap` is one assignment per key per render where it built an
+array, and a delivery walks the list by its base and offset; and `listen`'s three arguments are
+gone, `hear` calling `Task.soon` and `Task.onShutdown` itself.
+
+**What stayed, and why.** `keyOf` and `compareKeys`: keys of two types are ordered by their
+identities' text, and in beni `<` on two `String`s is `String.compare`'s code-point walk, which
+a page that compares no strings otherwise never ships. Written so, 12 of the 54 `tea/` pages grew
+(`DirectEvents` +50, the TodoMVC of the time +12). The identities are ASCII, where
+JavaScript's `<` orders them alike, but `Js` has no operator for it: a `Js` comparison is what
+moving the keys waits for.
+
+**Sizes** (`--release`, brotli 11, the whole bundle): TodoMVC **8 515 → 8 416**; `bench/size.mjs`'s
+pages `navigation` 3 905 → 3 836, `links` 3 742 → 3 699, `application` 4 129 → 4 065, `effects`
+5 753 → 5 660, `http` 3 754 → 3 722, `every` 4 400 → 4 354, `random` 1 857 → 1 831, every other
+line byte-identical; of the 88 `browser/` pages, 53 smaller (−2 864 in all) and 35 identical.
+
+**Speed.** A delivery is the hand-written loop's work plus the list's base and offset reads: in a
+Node micro-benchmark, one process per variant, both took 7–30 ns per delivery on this machine,
+with more spread between runs than between the two; `retap` went from 30–40 ns to 1 ns.
+
+**Not gained: research 51's row 7.** The `Url` a navigation listener sends is still built whole,
+every field TodoMVC never reads included: the relay is beni now, but the value still waits in the
+relay's queue — a program array's `push` — and reaches the tagger through `Js.apply` of a function
+read out of an array, neither of which fact 3 follows.

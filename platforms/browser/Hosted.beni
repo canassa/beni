@@ -7,10 +7,33 @@
 --! Every function here that sends is `impure`, and so is every function a
 --! body is handed to send with, so a release build never drops a send.
 
+-- Written over `Js`, as `core/Task` is: each piece is a JavaScript array or
+-- object read and written by position or name, every function it holds is
+-- a `Js.Value` called with `Js.apply`, and a value or a message crosses
+-- into one at a type variable, so it pins no field name and no tag.
+
 import Browser exposing (Host)
 import Js
 import Listen
 import Task
+
+
+type alias V =
+    Js.Value
+
+
+-- A beni value seen as a JavaScript one, and back, at a type variable.
+host : a → V
+host x = Js.from x
+
+
+guest : V → a
+guest v = Js.to v
+
+
+-- A message to a program, through its host's `send`.
+send : V, V → ()
+send h msg = Js.to (Js.call h "send" [ msg ])
 
 
 --| A command's or subscription's key, whatever its type: its type's
@@ -28,6 +51,9 @@ pub key : k → Key
 key k = keyOf (Js.fingerprint k EQ) k
 
 
+-- Hand-written: a beni `<` on the identities is `String.compare`'s
+-- code-point order, which ships that function to a page that had none,
+-- where JavaScript's `<`, which `Js` cannot write, orders them alike.
 foreign pure keyOf : String, k → Key
     where k.compare : k, k → Order
 
@@ -50,18 +76,23 @@ eq a b = compareKeys a b == EQ
 pub foreign type Outlet msg
 
 
---| A new open outlet into the program.
-pub foreign impure outlet : Host msg → Outlet msg
+--| A new open outlet into the program: `[ h, open ]`.
+pub outlet : Host msg → Outlet msg
+outlet h = guest (Js.array [ host h, Js.from True ])
 
 
 --| Send a message through an outlet: its program's `update` runs, now or,
 --| during another message's `update`, right after it. Once the outlet is
 --| closed, nothing happens.
-pub foreign impure emit : Outlet msg, msg → ()
+pub emit : Outlet msg, msg → ()
+emit o msg =
+    v = host o
+    if Js.to (Js.at v 1) then send (Js.at v 0) (host msg) else ()
 
 
 --| Close an outlet: from now on what is sent through it is dropped.
-pub foreign impure close : Outlet msg → ()
+pub close : Outlet msg → ()
+close o = Js.setAt (host o) 1 (Js.from False)
 
 
 --| A command's body, as `Cmd` carries it (`boundary.md` §9.8.11). Held
@@ -73,21 +104,29 @@ pub foreign impure close : Outlet msg → ()
 pub foreign type Job msg
 
 
---| A body as a job.
-pub foreign pure job : (Browser.Send msg → ()) → Job msg
+--| A body as a job: the body itself, a function of its `send`.
+pub job : (Browser.Send msg → ()) → Job msg
+job body = guest (host body)
 
 
 --| The same job, its messages passed through `tag`.
-pub foreign pure mapJob : Job a, sync (a → b) → Job b
+pub mapJob : Job a, sync (a → b) → Job b
+mapJob j tag =
+    guest
+        (Js.from λs → Js.apply (host j) [ Js.from λm → Js.apply s [ host (tag (guest m)) ] ])
 
 
---| Run a job in the calling fiber, handed `send`, until it returns.
-pub foreign suspends runJob : Job msg, Browser.Send msg → ()
+--| Run a job in the calling fiber, handed `send`, until it returns: the
+--| body's own value, or the fiber runtime's sentinel when it parked, which
+--| this call's caller receives either way.
+pub runJob : Job msg, Browser.Send msg → ()
+runJob j s = Js.suspending λ() → Js.to (Js.apply (host j) [ host s ])
 
 
 --| Run a job that cannot suspend, handed `send`: what `Cmd` made of a body
 --| whose every use says it never waits.
-pub foreign impure callJob : Job msg, Browser.Send msg → ()
+pub callJob : Job msg, Browser.Send msg → ()
+callJob j s = Js.to (Js.apply (host j) [ host s ])
 
 
 --| Work to run after a render, and the function its messages go through.
@@ -96,15 +135,39 @@ pub foreign type Later msg
 
 --| After-render work: `body` runs synchronously in the after-render phase
 --| of the flush that follows, handed a function that sends to the program.
-pub foreign impure later : sync (Browser.Send msg → ()) → Later msg
+--| `[ f, t ]`: the body, and the tagger its messages go through or null.
+pub later : sync (Browser.Send msg → ()) → Later msg
+later body = guest (Js.array [ host body, Js.null ])
 
 
 --| The same work, its messages passed through `tag`.
-pub foreign pure mapLater : Later a, sync (a → b) → Later b
+pub mapLater : Later a, sync (a → b) → Later b
+mapLater l tag =
+    v = host l
+    inner = Js.at v 1
+
+    outer =
+        if Js.isNull inner then
+            host tag
+        else
+            Js.from λm → Js.apply (host tag) [ Js.apply inner [ m ] ]
+    guest (Js.array [ Js.at v 0, outer ])
 
 
 --| Queue after-render work into the program's next flush.
-pub foreign impure afterRender : Host msg, Later msg → ()
+pub afterRender : Host msg, Later msg → ()
+afterRender h l =
+    v = host l
+    tag = Js.at v 1
+    p = host h
+
+    Js.to
+        (Js.call p "after"
+            [ Js.from λ() →
+                Js.apply (Js.at v 0)
+                    [ Js.from λm → send p (if Js.isNull tag then m else Js.apply tag [ m ]) ]
+            ]
+        )
 
 
 --| A subscription's body or listener, and the function each value it
@@ -113,18 +176,25 @@ pub foreign type Tap msg
 
 
 --| The body a subscription runs in a fiber, and its tagger. The body is
---| handed a function that sends values of type `a`.
-pub foreign impure tap : (Browser.Send a → ()), sync (a → msg) → Tap msg
+--| handed a function that sends values of type `a`. `[ b, t ]`: the body
+--| or the listener, and the tagger of what it sends.
+pub tap : (Browser.Send a → ()), sync (a → msg) → Tap msg
+tap body tag = guest (Js.array [ host body, host tag ])
 
 
 --| A listener a subscription adds with no fiber, and its tagger
 --| (`boundary.md` §9.8.5): handed a function that sends values of type
 --| `a`, `start` adds the host's listener and returns what removes it.
-pub foreign impure hook : sync ((a → ()) → (() → ())), sync (a → msg) → Tap msg
+pub hook : sync ((a → ()) → (() → ())), sync (a → msg) → Tap msg
+hook start tag = guest (Js.array [ host start, host tag ])
 
 
 --| The same subscription, its messages passed through `tag`.
-pub foreign pure mapTap : Tap a, sync (a → b) → Tap b
+pub mapTap : Tap a, sync (a → b) → Tap b
+mapTap tp f =
+    v = host tp
+    inner = Js.at v 1
+    guest (Js.array [ Js.at v 0, Js.from λx → Js.apply (host f) [ Js.apply inner [ x ] ] ])
 
 
 --| How a subscription's tap runs while its key is in the set: a body in a
@@ -144,20 +214,104 @@ pub foreign type Relay msg
 
 
 --| A relay into the program for `tap`'s body or listener, with `tap`'s
---| tagger.
-pub foreign impure relay : Host msg, Tap msg → Relay msg
+--| tagger. `{ b, h, open, q, t, x }`: the tap's body or listener, the
+--| program, whether it is open, the values a listener with no fiber sent
+--| and that are not yet delivered (null while no delivery is queued), the
+--| current taps, whose taggers each value goes through, and what removes
+--| that listener once it is added.
+pub relay : Host msg, Tap msg → Relay msg
+relay h tp =
+    guest
+        (Js.from
+            { b = Js.at (host tp) 0
+            , h = host h
+            , open = True
+            , q = Js.null
+            , t = host [ tp ]
+            , x = Js.null
+            }
+        )
 
 
---| Run the relay's body, in the current fiber, until it returns.
-pub foreign suspends run : Relay msg → ()
+-- One value, through the tagger of every current tap of an open relay.
+tagged : V, V → ()
+tagged r value =
+    if Js.to (Js.get r "open") then through (Js.get r "h") (guest (Js.get r "t")) value else ()
+
+
+through : V, List V, V → ()
+through h taps value =
+    case taps of
+        [] →
+            ()
+
+        [ tp, …rest ] →
+            _ = send h (Js.apply (Js.at tp 1) [ value ])
+            through h rest value
+
+
+--| Run the relay's body, in the current fiber, until it returns: the
+--| body's own value, or the fiber runtime's sentinel when it parked.
+pub run : Relay msg → ()
+run rl =
+    r = host rl
+    Js.suspending λ() → Js.to (Js.apply (Js.get r "b") [ Js.from λvalue → tagged r value ])
+
+
+-- The relays whose listener is added, which the program's stop removes,
+-- and whether that removal is registered.
+heard : V
+heard = Js.construct (Js.global "Set") []
+
+
+released : Js.Ref Bool
+released = Js.ref False
 
 
 --| Run a relay's listener with no fiber (`boundary.md` §9.8.5): added by
 --| work queued where a fiber spawned now would first run, each value it
 --| sends delivered by work queued where that fiber's resumption would
---| land, and removed by `unhear` or when the program stops.
+--| land, and removed by `unhear` or when the program stops. The first
+--| value sent queues one delivery; values sent before it runs, or while it
+--| sends, join it, and it sends them all in order.
 pub hear : Relay msg → ()
-hear r = listen r queue Task.onShutdown
+hear rl =
+    r = host rl
+
+    queue λ() →
+        if Js.to (Js.get r "open") then
+            _ =
+                if Js.read released then
+                    ()
+                else
+                    _ = Js.write released True
+                    Task.onShutdown λ() →
+                        _ = Js.each heard λx → Js.to (Js.apply (Js.get x "x") [ Js.null ])
+                        Js.to (Js.call heard "clear" [])
+            _ = Js.call heard "add" [ r ]
+            Js.set r "x" (Js.apply (Js.get r "b") [ Js.from λvalue → arrive r value ])
+        else
+            ()
+
+
+arrive : V, V → ()
+arrive r value =
+    q = Js.get r "q"
+    if Js.isNull q then
+        _ = Js.set r "q" (Js.array [ value ])
+        queue λ() → deliverQueued r 0
+    else
+        Js.to (Js.call q "push" [ value ])
+
+
+deliverQueued : V, Int → ()
+deliverQueued r i =
+    q = Js.get r "q"
+    if i < Js.to (Js.get q "length") then
+        _ = tagged r (Js.at q i)
+        deliverQueued r (i + 1)
+    else
+        Js.set r "q" Js.null
 
 
 queue : sync (() → ()) → ()
@@ -166,20 +320,13 @@ queue work =
     ()
 
 
-foreign impure listen : Relay msg, sync ((() → ()) → ()), sync ((() → ()) → ()) → ()
-
-
 --| Run a relay's listener in the current fiber, as `Listen.each` runs one,
 --| until the fiber is cancelled: how every listener subscription ran
 --| before `Sub.on` ran with none, kept for the test hook `fibered`.
 pub runHeard : Relay msg → ()
-runHeard r = Listen.each (starter r) (deliver r _)
-
-
-foreign impure starter : Relay msg → ((Js.Value → ()) → (() → ()))
-
-
-foreign impure deliver : Relay msg, Js.Value → ()
+runHeard rl =
+    r = host rl
+    Listen.each (Js.to (Js.get r "b")) λvalue → tagged r value
 
 
 --| The development build's test hook (`boundary.md` §9.8.5): whether the
@@ -193,15 +340,27 @@ fibered () = Js.same (Js.global "__beniFiberSubscriptions") (Js.from True)
 --| Replace the relay's taggers with those of `taps`, in order: each value
 --| the body sends becomes one message per tap. Every tap must be one that
 --| sends what the relay's first did — which is what equal keys promise.
-pub foreign impure retap : Relay msg, List (Tap msg) → ()
+pub retap : Relay msg, List (Tap msg) → ()
+retap r taps = Js.set (host r) "t" (host taps)
 
 
 --| Close a relay: what its body sends from now on is dropped.
-pub foreign impure closeRelay : Relay msg → ()
+pub closeRelay : Relay msg → ()
+closeRelay r = Js.set (host r) "open" (Js.from False)
 
 
 --| Close a relay `hear` runs, and remove its listener now.
-pub foreign impure unhear : Relay msg → ()
+pub unhear : Relay msg → ()
+unhear rl =
+    r = host rl
+    _ = Js.set r "open" (Js.from False)
+    x = Js.get r "x"
+    if Js.isNull x then
+        ()
+    else
+        _ = Js.set r "x" Js.null
+        _ = Js.call heard "delete" [ r ]
+        Js.to (Js.apply x [ Js.null ])
 
 
 --| Write the page's title when it differs from `title`: what a document
