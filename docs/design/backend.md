@@ -6197,6 +6197,40 @@ its writes) — red against the build before; `run/SpecializeUnreadWrites` (the 
 `emit/release/core/EmptyIfTest` and `LetRuns` wrote a cell only to show a shape around the write,
 and now also read it, so that the write they pin stays.
 
+**A function called where it is made** (*amended 2026-10-02*). Slice 5 writes a function called
+once where it is called, with each argument in place of its parameter; when the argument is a
+lambda the body calls, what is left is a call of a function where it is made. The fiber runtime's
+`callback register = suspend λwake → …` was `f=(b=>{let c=a(b);return typeof c==="function"?c:
+null})(d)` in `callback` once `suspend` was written there, on a page whose only waits are
+`callback`'s: a wrapper made and called once per wait. Once the passes are done, one sweep of every statement list in a function (the one
+*Amended 2026-10-03*'s `x = x` takes) writes such a call, of an ordinary arrow (no default, not a
+`function`), as its body, two ways:
+
+- **In an expression**, when the body is one `return e` — slice 8's shape, `smallOf` — and the
+  arguments pass slice 8's rule: each an atom, or one read once and first. The call is `e`, its
+  parameters the arguments. No size model applies, since the arrow's own text goes with the call,
+  and the body may name what the function around it names: it is written where it was made.
+- **As statements**, when the call is a `const` or `let`'s initialiser, a `return`'s value or a
+  statement of its own, and the body is statements ending in `return e`: `const p = a;` for each
+  parameter in order (a `let` when the body assigns it), then the body's statements, then the
+  statement with `e` for its value. The arguments are evaluated once and before the body, as the
+  call evaluated them; an arrow binds no `this` and no `arguments`, so its body means the same in
+  the list. Taken only when nothing in the list can come to mean something else: every parameter
+  and every name the body declares at its own level is declared once in the declaration
+  (`declCount`) and by no `catch`, no `return` but the last leaves the body, and the body holds no
+  label, which the list could already hold. A body of one `return e` is the first way's: as
+  statements it is bindings and a block, larger than the call.
+
+A call whose body reads a parameter twice and whose argument is not a name stays: writing the body
+would evaluate the argument twice, or move it. Measured (release, brotli, the whole bundle,
+against the build before): the `browser-tea http` page 3 805 → 3 801 (raw −21, `callback`'s
+wrapper), the Node `sleep` 1 786 → 1 783; `bench/size.mjs`'s lines −149 in all (raw −857), 26
+smaller, 4 larger by at most 16 brotli bytes with fewer raw bytes each. Fixtures:
+`emit/release/app/SpecCalledWhereMade` (a lambda written in an expression, one written as a
+binding's statements, one whose argument is read twice and stays) — red against the build
+before; `run/SpecializeCalledWhereMade` (the same with `Debug.log` in the arguments and the
+bodies: both builds log the same lines in the same order).
+
 **Measured again over field renaming** (*added 2026-10-03*; *Item 4, taken up* landed while slices
 6–9 were built, and moved every baseline). Release, brotli, the whole bundle, `bench/size.mjs`'s
 pages and the `bench/ui` app, each slice's compiler in turn:

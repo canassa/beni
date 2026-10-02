@@ -1,0 +1,55 @@
+-- emit: a function called where it is made is its body (`backend.md` §9,
+-- *A function called where it is made*). `verbose` is `False`, so `wrap`,
+-- `frame` and `twice` are each called from one place once the facts have
+-- folded `show`, and each is written there with its lambda in place of
+-- `f`, which it calls:
+--
+--   * `wrap`'s `f n`, inside a concatenation, is the lambda's expression
+--     with `show`'s `n` for its parameter;
+--   * `frame`'s `s = f n`, a binding read twice, is the lambda's block
+--     written in the list: its `x` a binding of `show`, `s` its result;
+--   * `twice`'s `f (n * 2)` stays a call: the lambda reads its parameter
+--     twice, and its argument is no name, so writing the body would
+--     evaluate `n * 2` twice, or move it.
+import Node
+
+
+verbose : Bool
+verbose = False
+
+
+wrap : (Int → String), Int → String
+wrap f n = "<" ++ f n ++ ">"
+
+
+frame : (Int → String), Int → String
+frame f n =
+    s = f n
+    "[" ++ s ++ "|" ++ s ++ "]"
+
+
+twice : (Int → String), Int → String
+twice f n = "(" ++ f (n * 2) ++ ")"
+
+
+show : Int → String
+show n =
+    if verbose then
+        wrap String.fromInt n ++ frame String.fromInt n ++ twice String.fromInt n
+    else
+        framed =
+            frame
+                (λk →
+                    x = String.repeat "c" k
+                    x ++ x
+                )
+                n
+
+        wrap (λk → String.repeat "ab" k ++ String.fromInt (k + 1)) n
+            ++ framed
+            ++ framed
+            ++ twice (λk → String.fromInt k ++ String.fromInt k) n
+
+
+main : Node.Program
+main = Node.printLines [ show 1, show 2 ]

@@ -1,0 +1,12 @@
+before: 1
+x: "c"
+arg: 2
+k: 2
+k: 2
+before: 2
+x: "cc"
+arg: 4
+k: 4
+k: 4
+<ab2>[cc|cc](22)
+<abab3>[cccc|cccc](44)

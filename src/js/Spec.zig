@@ -350,6 +350,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     }
     s.list_mode = .self_assign;
     _ = try s.eachFunctionList();
+    // A function a pass above wrote where it was called, whose argument was
+    // a function that is now called where it is made (`betaReduce`).
+    s.list_mode = .iife;
+    _ = try s.eachFunctionList();
     // A binding no longer kept may have held a parameter's last read
     // (`deadReads`): the facts once more, so that the parameter goes.
     if (try s.releaseKeeps()) {
@@ -627,7 +631,7 @@ const Spec = struct {
     /// holds the guard.
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
-    list_mode: enum { scalars, constructors, self_assign } = .scalars,
+    list_mode: enum { scalars, constructors, self_assign, iife } = .scalars,
     stats: Stats = .{},
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
@@ -3665,7 +3669,7 @@ const Spec = struct {
         while (k < @intFromEnum(range.end)) : (k += 1) {
             if (try s.srBelow(m, @enumFromInt(m.extra.items[k]), top, depth + 1)) any = true;
         }
-        if (!s.listActs(m, range)) return any;
+        if (!try s.listActs(m, range)) return any;
         s.stats.lists_examined += 1;
         const items = try s.arena.dupe(u32, m.ir.extraSlice(range, u32));
         var out: std.ArrayList(u32) = .empty;
@@ -3692,6 +3696,14 @@ const Spec = struct {
                 }
                 try out.append(s.arena, raw);
             },
+            .iife => for (items) |raw| {
+                if (try s.betaReduce(m, @enumFromInt(raw), top, &out)) {
+                    changed = true;
+                    continue;
+                }
+                if (try s.inlineIifesIn(m, top, @enumFromInt(raw))) any = true;
+                try out.append(s.arena, raw);
+            },
         }
         if (!changed) return any;
         const start = try m.append(s.gpa, out.items);
@@ -3708,7 +3720,7 @@ const Spec = struct {
     /// `return` of a call (a fold writes statements in only where one of
     /// these was, so a list without one gains none), and the self-assign
     /// mode only on an assignment.
-    fn listActs(s: *Spec, m: *Mod, range: JsIr.SubRange) bool {
+    fn listActs(s: *Spec, m: *Mod, range: JsIr.SubRange) Allocator.Error!bool {
         const ir = m.ir;
         for (ir.extraSlice(range, Index)) |st| {
             const d = ir.data(st);
@@ -3727,9 +3739,140 @@ const Spec = struct {
                     else => {},
                 },
                 .self_assign => if (ir.tag(st) == .assign_stmt) return true,
+                .iife => if (iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
             }
         }
         return false;
+    }
+
+    /// Every call in statement `stmt`'s own expressions — short of the
+    /// functions in them, whose lists `srList` reaches on its own — that
+    /// makes the function it calls, written as that function's body where
+    /// it is small (`smallOf`), its arguments atoms or one read first
+    /// (`inlineSmallAt`): `((a) => f(a, a + 1))(b)` is `f(b, b + 1)`. A
+    /// body may name what the function around it names, since it is
+    /// written where it was made. True when any was; with no `top`, only
+    /// whether there is such a call to look at.
+    fn inlineIifesIn(s: *Spec, m: *Mod, top: ?Index, stmt: Index) Allocator.Error!bool {
+        var any = false;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try operandsOf(s.arena, m.ir, stmt, &stack);
+        var budget: u32 = 1 << 16;
+        while (JsIr.popOperand(&stack)) |node| {
+            if (budget == 0) break;
+            budget -= 1;
+            const ir = m.ir;
+            const t = ir.tag(node);
+            if (t == .arrow) continue;
+            if (t == .call) {
+                const callee: Index = @enumFromInt(ir.data(node).lhs);
+                if (ir.tag(callee) == .arrow and ir.data(callee).rhs == Node.arrow_plain) {
+                    const at = top orelse return true;
+                    if (try s.smallOf(m.index, callee, null, true)) |small| {
+                        if (try s.inlineSmallAt(m, m.index, at, node, small, true)) {
+                            any = true;
+                            // What it became may make another.
+                            try JsIr.pushOperand(s.arena, &stack, node);
+                            continue;
+                        }
+                    }
+                }
+            }
+            try ir.pushOperands(s.arena, &stack, node);
+        }
+        return any;
+    }
+
+    /// `backend.md` §9, *A function called where it is made*: a statement
+    /// whose value is `((p…) => { S; return e })(a…)` — a `const` or `let`
+    /// initialised by it, a `return` of it, or the call alone — is the
+    /// arrow's body written in the list: `const p = a;` for each
+    /// parameter, in order, then `S`, then the statement with `e` for its
+    /// value. Each argument is evaluated once and before the body, as the
+    /// call evaluated it, and an arrow binds no `this` and no `arguments`,
+    /// so the body means what it meant. Taken only when nothing can come to
+    /// mean something else: every parameter and every name `S` declares at
+    /// its own level is declared once in the declaration (`declCount`), no
+    /// `return` but the last leaves the body, and the body holds no label,
+    /// which its new place could already hold. Onto `out`; false, with
+    /// nothing changed, otherwise.
+    fn betaReduce(s: *Spec, m: *Mod, stmt: Index, top: Index, out: *std.ArrayList(u32)) Allocator.Error!bool {
+        const call = iifeOf(m.ir, stmt) orelse return false;
+        const ir = m.ir;
+        const arrow: Index = @enumFromInt(ir.data(call).lhs);
+        const f = ir.extraData(@enumFromInt(ir.data(arrow).lhs), JsIr.Func);
+        const params = try s.arena.dupe(NameIndex, ir.extraSlice(f.params(), NameIndex));
+        const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(ir.data(call).rhs)), Index));
+        if (params.len != args.len) return false;
+        const body = try s.arena.dupe(Index, ir.extraSlice(f.body(), Index));
+        // A body that is one `return e` is `inlineIifesIn`'s, written as `e`
+        // where its arguments allow; as statements it is bindings and a
+        // block, larger than the call it replaces.
+        if (body.len < 2 or ir.tag(body[body.len - 1]) != .return_stmt) return false;
+        const value = (@as(Node.OptionalIndex, @enumFromInt(ir.data(body[body.len - 1]).lhs))).unwrap() orelse return false;
+        for (params) |p| {
+            if (p == .none or m.globalOf(p) != null) return false;
+            if (try declCount(s, m, top, p) != 1) return false;
+        }
+        // What `S` may not hold, outside the functions in it: a `return`
+        // (it would now leave the caller), a label.
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (body[0 .. body.len - 1]) |st| {
+            switch (ir.tag(st)) {
+                .const_decl, .let_decl, .func_decl, .gen_decl => {
+                    const n: NameIndex = @enumFromInt(ir.data(st).lhs);
+                    if (n == .none or m.globalOf(n) != null) return false;
+                    if (try declCount(s, m, top, n) != 1) return false;
+                },
+                else => {},
+            }
+            try JsIr.pushOperand(s.arena, &stack, st);
+        }
+        while (JsIr.popOperand(&stack)) |node| {
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .return_stmt => return false,
+                .while_true, .block_stmt => if (@as(NameIndex, @enumFromInt(d.lhs)) != .none) return false,
+                .arrow, .func_decl, .gen_decl => continue,
+                else => {},
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        // Which parameters the body assigns: those are `let`s. And no
+        // `catch` binds a name the list would now declare.
+        const assigned = try s.arena.alloc(bool, params.len);
+        @memset(assigned, false);
+        for (try s.preorder(m, top)) |node| {
+            if (ir.tag(node) == .try_stmt) {
+                const n = ir.extraData(@enumFromInt(ir.data(node).rhs), JsIr.Try).catch_name;
+                if (n != .none) {
+                    if (std.mem.indexOfScalar(NameIndex, params, n) != null) return false;
+                    for (body[0 .. body.len - 1]) |st| switch (ir.tag(st)) {
+                        .const_decl, .let_decl, .func_decl, .gen_decl => if (ir.data(st).lhs == n.int()) return false,
+                        else => {},
+                    };
+                }
+            }
+            if (ir.tag(node) != .assign_stmt) continue;
+            const target: Index = @enumFromInt(ir.data(node).lhs);
+            if (ir.tag(target) != .ident) continue;
+            if (std.mem.indexOfScalar(NameIndex, params, @enumFromInt(ir.data(target).lhs))) |i| assigned[i] = true;
+        }
+        for (params, args, assigned) |p, a, re| {
+            const decl = try m.addNode(s.gpa, if (re) .let_decl else .const_decl, ir.pos(a), p.int(), a.int());
+            try out.append(s.arena, decl.int());
+            if (!inert(m.ir, a)) if (m.tables) |tb| try tb.keep.append(s.arena, decl);
+        }
+        for (body[0 .. body.len - 1]) |st| try out.append(s.arena, st.int());
+        switch (m.ir.tag(stmt)) {
+            .const_decl, .let_decl => m.setData(stmt, m.ir.data(stmt).lhs, value.int()),
+            .return_stmt, .expr_stmt => m.setData(stmt, value.int(), 0),
+            else => unreachable,
+        }
+        try out.append(s.arena, stmt.int());
+        return true;
     }
 
     /// When `stmt` declares an object that can be replaced by its keys, its
@@ -4177,7 +4320,10 @@ const Spec = struct {
     /// `return e`, `e` small, holding no function and no `yield`, naming
     /// nothing but its parameters and whole-program names — and not `self`,
     /// the name it is declared by, when it has one.
-    fn smallOf(s: *Spec, module: u32, value: Index, self: ?u32) Allocator.Error!?Small {
+    /// `iife`: `value` is the callee of a call that makes it
+    /// (`inlineIifes`), so the body is written where it was made, and a
+    /// name of a function around it means there what it meant here.
+    fn smallOf(s: *Spec, module: u32, value: Index, self: ?u32, iife: bool) Allocator.Error!?Small {
         const fm = &s.mods[module];
         if (fm.ir.tag(value) != .arrow or fm.ir.data(value).rhs != Node.arrow_plain) return null;
         const f = fm.ir.extraData(@enumFromInt(fm.ir.data(value).lhs), JsIr.Func);
@@ -4214,7 +4360,7 @@ const Spec = struct {
                     } else if (fm.globalOf(x)) |h| {
                         // Itself: a recursion is no expression.
                         if (self != null and h == self.?) return null;
-                    } else return null;
+                    } else if (!iife) return null;
                 },
                 .unary => if (@as(JsIr.UnaryOp, @enumFromInt(fm.ir.data(node).rhs)) == .yield) return null,
                 else => {},
@@ -4308,7 +4454,7 @@ const Spec = struct {
             const fm = &s.mods[decl.module];
             if (fm.ir.tag(decl.stmt) != .const_decl) continue;
             if (std.mem.indexOfScalar(Index, fm.ir.extraSlice(fm.ir.body, Index), decl.stmt) == null) continue;
-            smalls[g] = try s.smallOf(decl.module, @enumFromInt(fm.ir.data(decl.stmt).rhs), g);
+            smalls[g] = try s.smallOf(decl.module, @enumFromInt(fm.ir.data(decl.stmt).rhs), g, false);
         }
         return smalls;
     }
@@ -4341,7 +4487,7 @@ const Spec = struct {
                                 const site = v.sites[0];
                                 const st = s.pts.sites.items[site];
                                 if (st.kind == .func and !st.escaped and try s.pts.safeChain(@intCast(mi), top, callee) != null) {
-                                    if (!asked[site]) by_site[site] = try s.smallOf(st.module, st.node, null);
+                                    if (!asked[site]) by_site[site] = try s.smallOf(st.module, st.node, null, false);
                                     asked[site] = true;
                                     if (by_site[site]) |small| try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
                                 }
@@ -4352,13 +4498,16 @@ const Spec = struct {
             }
             for (calls.items) |c| {
                 if (m.ir.tag(c.call) != .call) continue;
-                if (try s.inlineSmallAt(m, @intCast(mi), c.top, c.call, c.small)) any = true;
+                if (try s.inlineSmallAt(m, @intCast(mi), c.top, c.call, c.small, false)) any = true;
             }
         }
         return any;
     }
 
-    fn inlineSmallAt(s: *Spec, m: *Mod, mi: u32, top: Index, call: Index, small: Small) Allocator.Error!bool {
+    /// `iife`: the callee is the function the call makes, written in the
+    /// same statement, so no size model applies — the function's own text
+    /// goes with the call — and nothing is copied out of another statement.
+    fn inlineSmallAt(s: *Spec, m: *Mod, mi: u32, top: Index, call: Index, small: Small, iife: bool) Allocator.Error!bool {
         const fm = &s.mods[small.module];
         const args = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@enumFromInt(m.ir.data(call).rhs)), Index));
         if (args.len != small.params.len) return false;
@@ -4394,8 +4543,10 @@ const Spec = struct {
                 else => return false,
             }
         };
-        if (inlined > call_cost) return false;
-        s.noteCopy(small.module, small.owner);
+        if (!iife) {
+            if (inlined > call_cost) return false;
+            s.noteCopy(small.module, small.owner);
+        }
 
         // Names the body mentions of the whole program, as the caller
         // module spells them.
@@ -7508,6 +7659,23 @@ fn fallsThrough(ir: *const JsIr, range: JsIr.SubRange) bool {
 /// else — a call, a property read (a getter), an operator (`valueOf`), a
 /// spread — may, and a declaration it initialises is kept.
 /// Whether `stmt` is an expression statement of a literal alone.
+/// The call `((p…) => …)(a…)` that is statement `stmt`'s value — a `const`
+/// or `let`'s initialiser, a `return`'s value, or the statement itself — of
+/// an ordinary arrow (`arrow_plain`: no default, not a method); or null.
+fn iifeOf(ir: *const JsIr, stmt: Index) ?Index {
+    const d = ir.data(stmt);
+    const value: Index = switch (ir.tag(stmt)) {
+        .const_decl, .let_decl => (@as(Node.OptionalIndex, @enumFromInt(d.rhs))).unwrap() orelse return null,
+        .return_stmt => (@as(Node.OptionalIndex, @enumFromInt(d.lhs))).unwrap() orelse return null,
+        .expr_stmt => @enumFromInt(d.lhs),
+        else => return null,
+    };
+    if (ir.tag(value) != .call) return null;
+    const callee: Index = @enumFromInt(ir.data(value).lhs);
+    if (ir.tag(callee) != .arrow or ir.data(callee).rhs != Node.arrow_plain) return null;
+    return value;
+}
+
 fn literalStmt(ir: *const JsIr, stmt: Index) bool {
     if (ir.tag(stmt) != .expr_stmt) return false;
     return switch (ir.tag(@enumFromInt(ir.data(stmt).lhs))) {

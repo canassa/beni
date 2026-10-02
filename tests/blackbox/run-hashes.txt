@@ -48,7 +48,7 @@ build_test.test.a core-private List value the emitter calls is exported when it 
 build_test.test.a core-private List value the emitter calls keeps its result under --release #0 42fa2a8733453060dae711d4ca5a89db9d8efd13c27a5fd102d910814dfea7fe
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 3514abd3d42607a978ece9e63fcbdcf353e6582f851ee0f42b23b26d1c585b4e
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 ea6f7c4764a8aec010932085eff921294fc1ea1b79c454b2efbaab2fd85e53b2
-build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 2cbf4bc0fbf3d4f096fa4e4ffcc0f9171d7efe75500e3b0795cab8f37dcb539b
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 fd4882170b35538b3a3ded6034b3a55d94274659957fa195831815d50172fcb8
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 d04fa0a44a4b3df896e14822edfffc97d7ed9aaac5896ba1531a8f78625a3c16
 build_test.test.a non-zero exit code from the platform reaches the process #0 533c490b5a938887a187ad5d23548656047650b7681513f04c3895f14f3b54fd
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef

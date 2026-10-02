@@ -1,0 +1,49 @@
+-- A function called where it is made is its body in a release build
+-- (`backend.md` §9, *A function called where it is made*), and what it does
+-- happens in the order the call made it happen: both builds log `before`,
+-- then the block's `x`, then `arg`, then `k` twice, for each line, and
+-- print the same lines (the shapes are
+-- `emit/release/app/SpecCalledWhereMade`).
+import Node
+
+
+verbose : Bool
+verbose = False
+
+
+wrap : (Int → String), Int → String
+wrap f n = "<" ++ f n ++ ">"
+
+
+frame : (Int → String), Int → String
+frame f n =
+    s = f n
+    "[" ++ s ++ "|" ++ s ++ "]"
+
+
+twice : (Int → String), Int → String
+twice f n = "(" ++ f (Debug.log "arg" (n * 2)) ++ ")"
+
+
+show : Int → String
+show n =
+    if verbose then
+        wrap String.fromInt n ++ frame String.fromInt n ++ twice String.fromInt n
+    else
+        _ = Debug.log "before" n
+
+        framed =
+            frame
+                (λk →
+                    x = Debug.log "x" (String.repeat "c" k)
+                    x ++ x
+                )
+                n
+
+        wrap (λk → String.repeat "ab" k ++ String.fromInt (k + 1)) n
+            ++ framed
+            ++ twice (λk → String.fromInt (Debug.log "k" k) ++ String.fromInt (Debug.log "k" k)) n
+
+
+main : Node.Program
+main = Node.printLines [ show 1, show 2 ]
