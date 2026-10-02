@@ -7,9 +7,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -28,9 +28,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -51,9 +51,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -75,9 +75,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -100,9 +100,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -126,9 +126,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -153,9 +153,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -184,9 +184,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -219,9 +219,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
@@ -249,9 +249,9 @@
     <a id="port" href="http://127.0.0.1:1/x">"port"</a>
     <a id="https" href="https://127.0.0.1:8000/x">"https"</a>
     <a id="mail" href="mailto:a@example.com">"mail"</a>
-    <a id="blank" target="_blank" href="/b">"blank"</a>
-    <a id="self" target="_SELF" href="/s">"self"</a>
-    <a id="download" download="" href="/d">"download"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>

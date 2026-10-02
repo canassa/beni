@@ -7004,7 +7004,7 @@ written in source order, attributes and events interleaved (`language.md` §11.5
 | attribute, `maybe_string` | absent on `Nothing`, through `cx.maybe` | guarded |
 | attribute, fact `property` | `el[prop] = v` | guarded |
 | attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `if (el[prop] !== v) el[prop] = v;`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field |
-| attribute, fact `url`; an escape the markup section records `url` (*amended 2026-09-29*, `language.md` §11.5) | through the runtime's `safeUrl` | guarded |
+| attribute, fact `url`; an escape the markup section records `url` (*amended 2026-09-29*, `language.md` §11.5) | through the runtime's `safeUrl`; a literal checked by the lowering instead, by the same pattern, and baked into the template — `""` for a script URL — unless its answer turns on a character outside ASCII (*amended 2026-10-02*, research 51 §5) | guarded |
 | attribute, fact `raw` | through the runtime's `rawHtml` | guarded |
 | attribute, `svg` namespace prefix (`xlink:href`) | `setAttributeNS` through the runtime | guarded |
 | attribute, `class_list`, entries in place | a constant `True` entry baked into the template's `class`, a constant `False` dropped, a dynamic one `el.classList.toggle(name, f)` — Solid's split of a class object literal (`c/shared/attr_plan.rs:824-895`, `c/dom/set_attr.rs:80-101`) — when the literal names are distinct and hold no whitespace; otherwise as the next row | each dynamic entry guarded on its flag |

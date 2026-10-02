@@ -5,3 +5,7 @@
 const beni_markup = @import("beni_markup");
 
 pub const lowerings = [_]beni_markup.Lowering{@import("dom.zig").lowering};
+
+test {
+    _ = @import("dom.zig");
+}

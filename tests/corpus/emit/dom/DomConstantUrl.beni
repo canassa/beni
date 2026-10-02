@@ -1,0 +1,16 @@
+-- A URL attribute written as a literal is checked when it is compiled, as
+-- the runtime's `safeUrl` would check it at the mount, and baked into the
+-- template like any other constant attribute: a plain URL as it is, a
+-- script URL as an empty attribute. A literal whose answer turns on a
+-- character outside ASCII (a no-break space, which `\s` may match) is
+-- still written at the mount through `safeUrl`.
+import Html exposing (Html)
+
+
+pub links : Html msg
+links =
+    <nav>
+        <a href="#/">All</a>
+        <a href="javascript:void(0)">none</a>
+        <a href="\u{00A0}javascript:x">nbsp</a>
+    </nav>

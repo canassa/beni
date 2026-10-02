@@ -913,14 +913,23 @@ const Gen = struct {
         switch (it.value.kind) {
             .constant => {
                 const c = it.value.constant;
-                const coded = raw or it.url or (facts != null and facts.?.property != null);
+                // A constant URL is checked here, as the runtime's `safeUrl`
+                // would check it at the mount, and written into the template
+                // — what `safeUrl` writes, `""` for a script URL — unless
+                // the check cannot be decided without Unicode's whitespace.
+                const script: ?bool = if (!it.url) false else switch (c.kind) {
+                    .string => scriptUrl(g.tree.string(c.text)),
+                    .number => false,
+                    else => null,
+                };
+                const coded = raw or script == null or (facts != null and facts.?.property != null);
                 if (coded) {
                     const value = try b.operand(g.a(), .{ .constant = c });
                     try b.ops.append(g.a(), .{ .node = .none, .what = .{ .attribute = .{ .t = t, .item = it, .value = value, .constant = true } } });
                     return raw;
                 }
                 switch (c.kind) {
-                    .string, .number => try bakeAttribute(g.a(), &b.html, name, g.tree.string(c.text)),
+                    .string, .number => try bakeAttribute(g.a(), &b.html, name, if (script.?) "" else g.tree.string(c.text)),
                     .bool => if (c.bool) try bakeAttribute(g.a(), &b.html, name, ""),
                     else => {},
                 }
@@ -1655,7 +1664,10 @@ fn bakeAttribute(a: Allocator, out: *std.ArrayList(u8), name: []const u8, value:
     try out.appendSlice(a, name);
     if (value.len == 0) return;
     try out.append(a, '=');
-    const quoted = for (value) |c| {
+    // A value that ends in `/` is quoted too: `href=#/>` is `#/` to the
+    // HTML standard's parser, and `#` to happy-dom's, which reads the `/>`
+    // as a self-closing tag.
+    const quoted = value[value.len - 1] == '/' or for (value) |c| {
         switch (c) {
             ' ', '\t', '\n', '\r', '"', '\'', '`', '=', '<', '>' => break true,
             else => {},
@@ -1672,6 +1684,66 @@ fn bakeAttribute(a: Allocator, out: *std.ArrayList(u8), name: []const u8, value:
     if (quoted) try out.append(a, '"');
 }
 
+/// Whether the runtime's `safeUrl` (`Rt.beni`) refuses `url` — its pattern,
+/// `^[\s\x00-\x20]*(j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:|d\s*a\s*t\s*a
+/// \s*:\s*t\s*e\s*x\s*t\s*/\s*h\s*t\s*m\s*l\s*[,;])` with `i` — or null when
+/// the answer turns on a character outside ASCII, which `\s` may match
+/// (a no-break space, U+2028, …): such a URL is left to the runtime.
+fn scriptUrl(url: []const u8) ?bool {
+    var i: usize = 0;
+    while (i < url.len and url[i] <= 0x20) i += 1;
+    if (i < url.len and url[i] >= 0x80) return null;
+    const javascript = scriptPrefix(url, i, "javascript:");
+    if (javascript == null) return null;
+    if (javascript.?) return true;
+    return scriptPrefix(url, i, "data:text/html");
+}
+
+/// Whether `url` from `start` is `word`, letters in any case, with ASCII
+/// whitespace between any two characters — and, for `data:text/html`, one
+/// of `,` `;` after it; null at a character outside ASCII before that is
+/// known.
+fn scriptPrefix(url: []const u8, start: usize, word: []const u8) ?bool {
+    var i = start;
+    const html = word[word.len - 1] == 'l';
+    for (word, 0..) |w, n| {
+        if (n != 0) {
+            while (i < url.len and isSpace(url[i])) i += 1;
+        }
+        if (i == url.len) return false;
+        if (url[i] >= 0x80) return null;
+        if (std.ascii.toLower(url[i]) != w) return false;
+        i += 1;
+    }
+    if (!html) return true;
+    while (i < url.len and isSpace(url[i])) i += 1;
+    if (i == url.len) return false;
+    if (url[i] >= 0x80) return null;
+    return url[i] == ',' or url[i] == ';';
+}
+
+/// `\s` in ASCII: tab, line feed, vertical tab, form feed, carriage return
+/// and space.
+fn isSpace(c: u8) bool {
+    return (c >= 0x09 and c <= 0x0D) or c == ' ';
+}
+
+test "a constant URL is checked as the runtime's safeUrl checks it" {
+    const t = std.testing;
+    try t.expectEqual(@as(?bool, false), scriptUrl("#/active"));
+    try t.expectEqual(@as(?bool, true), scriptUrl("javascript:alert(1)"));
+    try t.expectEqual(@as(?bool, true), scriptUrl(" \x01\tJaVa\nscript :x"));
+    try t.expectEqual(@as(?bool, true), scriptUrl("DATA: text / html ;base64,eA=="));
+    try t.expectEqual(@as(?bool, false), scriptUrl("data:image/png,x"));
+    try t.expectEqual(@as(?bool, false), scriptUrl("javascript.html"));
+    try t.expectEqual(@as(?bool, false), scriptUrl("data:text/htm"));
+    try t.expectEqual(@as(?bool, false), scriptUrl(""));
+    // A no-break space may be `\s`: the runtime decides.
+    try t.expectEqual(@as(?bool, null), scriptUrl("\xc2\xa0javascript:x"));
+    try t.expectEqual(@as(?bool, null), scriptUrl("java\xc2\xa0script:x"));
+    try t.expectEqual(@as(?bool, false), scriptUrl("/caf\xc3\xa9"));
+}
+
 test "constant attributes are written as dom-expressions writes them" {
     const t = std.testing;
     var out: std.ArrayList(u8) = .empty;
@@ -1681,7 +1753,8 @@ test "constant attributes are written as dom-expressions writes them" {
     try bakeAttribute(t.allocator, &out, "aria-hidden", "true");
     try bakeAttribute(t.allocator, &out, "hidden", "");
     try bakeAttribute(t.allocator, &out, "title", "a&b<c");
-    try t.expectEqualStrings("<span class=\"glyphicon glyphicon-remove\"aria-hidden=true hidden title=a&amp;b&lt;c", out.items);
+    try bakeAttribute(t.allocator, &out, "href", "#/");
+    try t.expectEqualStrings("<span class=\"glyphicon glyphicon-remove\"aria-hidden=true hidden title=\"a&amp;b&lt;c\"href=\"#/\"", out.items);
 }
 
 test "text is escaped as the parser reads it back" {

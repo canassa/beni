@@ -1,0 +1,32 @@
+-- A URL attribute written as a literal is checked when the page is
+-- compiled, as the runtime's `safeUrl` would check it at the mount
+-- (backend.md §15.3, Elm's rule), and written into the template: what the
+-- page shows is `SafeUrl`'s first render, the same URLs as literals. A
+-- `javascript:` or `data:text/html` URL, in any case and with whitespace or
+-- a control character where a browser ignores one, is written as nothing;
+-- any other is written as it is. A URL whose answer turns on a character
+-- outside ASCII — a no-break space, which `\s` matches — is left to the
+-- runtime, and refused there.
+import Browser
+import Html exposing (Html)
+
+
+view : () → Html ()
+view _ =
+    <main>
+        <a id="plain" href="javascript:alert(1)">plain</a>
+        <a id="cased" href="JaVaScRiPt:alert(1)">cased</a>
+        <a id="spaced" href=" \u{0001}\tjava\nscript :x">spaced</a>
+        <a id="html" href="data:text/html,<b>x</b>">html</a>
+        <a id="html64" href="DATA: text / html ;base64,eA==">html64</a>
+        <a id="image" href="data:image/png,x">image</a>
+        <a id="path" href="javascript.html">path</a>
+        <a id="fragment" href="#/active">fragment</a>
+        <a id="nbsp" href="\u{00A0}javascript:x">nbsp</a>
+        <a id="cafe" href="/café">cafe</a>
+        <form id="form" action="\tjavascript:x" />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = (), update = λ_ m → m, view = view }
