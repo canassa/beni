@@ -6035,12 +6035,20 @@ const Pts = struct {
     /// `prim` is a primitive that is neither `null` nor `undefined`; `nul`
     /// and `undef` are those two (slice 4). Reading a property of either
     /// throws, so it contributes nothing to what the read may be.
+    ///
+    /// `sites` is a sorted set that is never changed in place: a join that
+    /// adds a site makes a new slice in the arena and leaves the old one as
+    /// it was, so a `Val` that `view` handed out — a node's value in `vals`,
+    /// an operand a walk holds while it evaluates the next — keeps the set
+    /// it was read as. Growing the set in place shifted, moved or freed the
+    /// memory such a value still pointed into: a call in a later operand
+    /// joins a site into the very parameter an earlier operand read.
     const VSet = struct {
         top: bool = false,
         prim: bool = false,
         nul: bool = false,
         undef: bool = false,
-        sites: std.ArrayList(u32) = .empty,
+        sites: []const u32 = &.{},
         /// The units that read the var (`view`), and the walk that last
         /// added one.
         deps: u32 = none,
@@ -6135,7 +6143,7 @@ const Pts = struct {
             set.seen = p.walk;
             set.deps = try p.addDep(set.deps);
         }
-        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites.items };
+        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites };
     }
 
     /// The unit being walked depends on whether site `site` escaped and
@@ -6202,11 +6210,17 @@ const Pts = struct {
             try p.escapeSite(site);
             return;
         }
-        const at = std.sort.lowerBound(u32, set.sites.items, site, orderU32);
-        if (at < set.sites.items.len and set.sites.items[at] == site) return;
-        try set.sites.insert(p.arena(), at, site);
+        const old = set.sites;
+        const at = std.sort.lowerBound(u32, old, site, orderU32);
+        if (at < old.len and old[at] == site) return;
+        // A new set, never the old one grown (`VSet`).
+        const grown = try p.arena().alloc(u32, old.len + 1);
+        @memcpy(grown[0..at], old[0..at]);
+        grown[at] = site;
+        @memcpy(grown[at + 1 ..], old[at..]);
+        p.vars.items[v].sites = grown;
         p.varChanged(v);
-        if (set.sites.items.len > max_sites) try p.makeTop(v);
+        if (grown.len > max_sites) try p.makeTop(v);
     }
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
@@ -6214,8 +6228,9 @@ const Pts = struct {
         if (set.top) return;
         set.top = true;
         p.varChanged(v);
-        for (set.sites.items) |site| try p.escapeSite(site);
-        set.sites.clearRetainingCapacity();
+        const held = set.sites;
+        set.sites = &.{};
+        for (held) |site| try p.escapeSite(site);
     }
 
     fn join(p: *Pts, v: VarId, val: Val) Allocator.Error!void {
@@ -6585,7 +6600,7 @@ const Pts = struct {
             fn sameVar(x: *const Pts, y: *const Pts, a: VarId, b: VarId) bool {
                 const va = x.vars.items[a];
                 const vb = y.vars.items[b];
-                return va.top == vb.top and va.prim == vb.prim and va.nul == vb.nul and va.undef == vb.undef and eq(u32, va.sites.items, vb.sites.items);
+                return va.top == vb.top and va.prim == vb.prim and va.nul == vb.nul and va.undef == vb.undef and eq(u32, va.sites, vb.sites);
             }
             fn sameSet(a: []const u32, b: []const u32) bool {
                 if (a.len != b.len) return false;
@@ -7782,4 +7797,48 @@ fn strictEquals(x: Lit, y: Lit) ?bool {
         .true_lit, .false_lit => x.kind == y.kind,
         .null_lit, .undefined_lit => true,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+/// What a whole-program pass over no modules sets up, for a test of `Pts`
+/// alone.
+fn emptySpec(gpa: Allocator, arena: Allocator) Allocator.Error!Spec {
+    return Spec.init(gpa, arena, .{ .modules = &.{}, .globals = 0, .escaping = &.{} });
+}
+
+// Research 52's E5: with the inlining passes' cap raised, four `browser/tea`
+// pages read `0xAAAAAAAA` as a site in `Pts.escapeSite`. A walk holds the
+// values of an expression's earlier operands while it evaluates the later
+// ones, and a call among those joined a site into the very var an earlier
+// operand had read — whose set the earlier value still pointed into, and
+// which the join shifted, or moved and freed. No corpus program reaches it
+// under the passes' cap, so the smallest input is the var itself: a value
+// read from it must stay what it was read as when a join grows it, both
+// where the new site goes in front of the others (a shift) and past the
+// set's first allocation (a move).
+test "a value read from a var keeps its sites when a later join adds one" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    var want: std.ArrayList(u32) = .empty;
+    for (0..Pts.max_sites - 1) |i| {
+        const read = try p.view(v);
+        const before = try arena.dupe(u32, read.sites);
+        // In front: every site already there moves up one.
+        const site: u32 = @intCast(2 * (Pts.max_sites - i));
+        try p.addSite(v, site);
+        try testing.expectEqualSlices(u32, before, read.sites);
+        try want.insert(arena, 0, site);
+    }
+    try testing.expectEqualSlices(u32, want.items, (try p.view(v)).sites);
 }
