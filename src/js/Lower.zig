@@ -9723,12 +9723,27 @@ pub const Lowerer = struct {
             }
             rows[i] = .{ .branch = @intCast(i), .pats = slots };
         }
+        // **A row no value takes is left out of the tree** (`backend.md` §9,
+        // *A `case` arm on a constructor nothing builds*): its pattern names
+        // a constructor nothing builds, so no value the scrutinee can hold
+        // matches it, and every value matches the same row with or without
+        // it. Without it, a fan whose other constructors are all of that
+        // kind has one alternative and tests nothing, and an exhaustive one
+        // writes its last live alternative as the `else` — where the row was
+        // an arm that returned `undefined`. When every row is such, the tree
+        // keeps them all: the arms are what is written.
+        var live: usize = 0;
+        for (rows) |row| {
+            if (l.deadArm(@enumFromInt(l.bir.instData(branches[row.branch]).rhs))) continue;
+            rows[live] = row;
+            live += 1;
+        }
 
         const tree = try Decision.build(
             l.scratch,
             .{ .bir = l.bir, .interfaces = l.in.interfaces },
             @intCast(roots),
-            rows,
+            if (live == 0) rows else rows[0..live],
             @intCast(branches.len),
         );
 

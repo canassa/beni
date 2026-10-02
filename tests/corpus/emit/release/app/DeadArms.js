@@ -1,0 +1,1 @@
+import process from"node:process";const g=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};const h=b=>(Array.isArray(b)?b:b.$plain());const a=d=>{let c=h(d);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}};const b={$:2},c={$:0},d=()=>"now",e=a=>a.$===0?"stop":"go",f=a([d(),e(c),e(b)]);g(f);

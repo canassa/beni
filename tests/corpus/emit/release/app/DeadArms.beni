@@ -1,0 +1,49 @@
+-- A `case` arm whose pattern names a constructor nothing builds is left
+-- out of the decision tree (backend.md §9, *A `case` arm on a constructor
+-- nothing builds*): no value the scrutinee can hold matches it. `Job` is
+-- only ever `Now`, so `run` tests nothing and binds its field; `Light`
+-- is never `Amber`, so `says` tests `Red` and writes `Green` as the else,
+-- where each dropped arm was a `return undefined` and a test of its own.
+import Node
+
+
+type Job
+    = Later Int
+    | Now String
+    | Never
+
+
+type Light
+    = Red
+    | Amber Int
+    | Green
+
+
+run : Job → String
+run job =
+    case job of
+        Later n →
+            "later ${String.fromInt n}"
+
+        Now text →
+            text
+
+        Never →
+            "never"
+
+
+says : Light → String
+says light =
+    case light of
+        Red →
+            "stop"
+
+        Amber n →
+            "wait ${String.fromInt n}"
+
+        Green →
+            "go"
+
+
+main : Node.Program
+main = Node.printLines [ run (Now "now"), says Red, says Green ]

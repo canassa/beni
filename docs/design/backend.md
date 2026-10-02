@@ -4008,7 +4008,12 @@ is reached, and not before.
   did not reach is lowered with `undefined` for its body — its test and its bindings stay, and it is
   never taken — so the emitted code names nothing elimination dropped. Every edge the walk left
   unfollowed is inside such an arm, its own or an enclosing one, so the wall (`Lower.requireLive`)
-  still holds and still checks it.
+  still holds and still checks it. *(Amended 2026-10-02, research 51 §5: **the arm is left out of
+  the decision tree** (§7) — no value matches it, so every value matches the same row with or
+  without it. A fan whose other constructors are all of that kind then has one alternative and
+  tests nothing, and an exhaustive one writes its last live alternative as the `else`, where each
+  such arm was a test and a `return undefined`; a `case` every arm of which is such keeps them all.
+  `emit/release/app/DeadArms`.)*
 - **Cost.** One bitset per module over its constructors, a chain of guards per guarded position,
   and a waiting list per constructor that some edge is blocked on: linear in the edges, times the
   four-deep cap.
