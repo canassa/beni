@@ -335,6 +335,18 @@ closing : Js.Ref V
 closing = Js.ref Js.null
 
 
+-- `shutdown`'s part when the only work is `soon`'s: set by `soon`, so that
+-- a build with neither a fiber nor `soon` work keeps nothing of
+-- `shutdown` — and a platform's call of it is nothing at all there.
+quitting : Js.Ref V
+quitting = Js.ref Js.null
+
+
+-- Queued work is dropped from now on (`runSoon`).
+stopQueue : () → ()
+stopQueue () = if Js.read phase == 0 then Js.write phase 1 else ()
+
+
 drain : () → ()
 drain () =
     if Js.bitAnd (Js.read phase) 1 ≠ 0 then
@@ -404,7 +416,8 @@ drainFrom count =
 --| task — and a second call does nothing.
 pub shutdown : Int, sync (Int → ()) → ()
 shutdown ms over =
-    _ = if Js.read phase == 0 then Js.write phase 1 else ()
+    q = Js.read quitting
+    _ = if Js.isNull q then () else Js.to (Js.apply q [])
     c = Js.read closing
     if Js.isNull c then () else Js.to (Js.apply c [ Js.from ms, Js.from over ])
 
@@ -859,6 +872,14 @@ pub spawnIn : Scope, (() → a) → Fiber a
 spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc))
 
 
+--| Whether stopping will have cleanup to run: `True` once a fiber has been
+--| made, when `shutdown` cancels fibers and calls its `done`. What a
+--| platform asks to know whether more reports may follow its program's
+--| stop (`boundary.md` §9.8.14 (g)).
+pub cleansUp : () → Bool
+cleansUp () = not (Js.isNull (Js.read closing))
+
+
 --| Run `work` in a root fiber, and call `done` with how it ended. What a
 --| platform's entry point uses; a program asks its platform instead.
 pub start : (() → a), sync (Exit a → ()) → ()
@@ -1024,6 +1045,7 @@ runSoon s =
 --| that never suspends runs to its end.
 pub soon : sync (() → ()) → Soon
 soon work =
+    _ = Js.write quitting (Js.from stopQueue)
     s = Js.from { end = Js.null, kids = Js.null, w = Js.from work }
     _ = schedule (Js.from runSoon) s Js.null Js.null
     Js.to s

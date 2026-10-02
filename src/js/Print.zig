@@ -1189,6 +1189,9 @@ const Printer = struct {
                 const then_live = p.anyLive(branches.thenBody());
                 const else_live = p.anyLive(branches.elseBody());
                 if (!then_live and !else_live) {
+                    // And under `--release` a test that only compares what
+                    // it reads is nothing (§9, *Compact statements*, item 9).
+                    if (p.compact and p.testReadsOnly(test_expr)) return;
                     try p.statementExpression(test_expr, level);
                     try p.terminate();
                     try p.endLine(level);
@@ -2493,6 +2496,35 @@ const Printer = struct {
             .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
             .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return true,
             else => return false,
+        };
+    }
+
+    /// Whether evaluating test `node` does nothing but read: `readsOnly`,
+    /// or `!`, `===` or `!==` of such, or `==` of such with a `null` or
+    /// `undefined` side — none of which converts an operand, so none can
+    /// call a `valueOf`.
+    fn testReadsOnly(p: *Printer, node: Index) bool {
+        const n = p.resolve(node);
+        const d = p.ir.data(n);
+        switch (p.ir.tag(n)) {
+            .unary => return @as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not and p.testReadsOnly(@enumFromInt(d.lhs)),
+            .binary => {
+                const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                if (!p.readsOnly(b.left) or !p.readsOnly(b.right)) return false;
+                return switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+                    .strict_eq, .strict_ne => true,
+                    .loose_eq => p.isNullish(b.left) or p.isNullish(b.right),
+                    else => false,
+                };
+            },
+            else => return p.readsOnly(n),
+        }
+    }
+
+    fn isNullish(p: *Printer, node: Index) bool {
+        return switch (p.ir.tag(p.resolve(node))) {
+            .null_lit, .undefined_lit => true,
+            else => false,
         };
     }
 

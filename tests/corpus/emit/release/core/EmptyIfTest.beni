@@ -1,0 +1,53 @@
+-- emit: an `if` with nothing left to print in either arm is its test as a
+-- statement, and under `--release` a test that only compares what it reads
+-- is nothing (`backend.md` §9, *Compact statements*, item 9). Each `quit`
+-- reads a cell nothing writes, so specialisation folds its body away, and
+-- each is called once, so it is written where it is called: the `else`
+-- arms are left empty. `stop`'s test compares a parameter with `null` and
+-- `stopRead`'s reads one, so each function is its write alone;
+-- `stopCalling`'s test calls, so it stays, as a statement.
+import Js
+
+
+hook : Js.Ref Js.Value
+hook = Js.ref Js.null
+
+
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+quit : () → ()
+quit () =
+    h = Js.read hook
+    if Js.isNull h then () else Js.to (Js.apply h [])
+
+
+quitRead : () → ()
+quitRead () =
+    h = Js.read hook
+    if Js.isNull h then () else Js.to (Js.apply h [])
+
+
+quitCalling : () → ()
+quitCalling () =
+    h = Js.read hook
+    if Js.isNull h then () else Js.to (Js.apply h [])
+
+
+pub stop : Js.Value → ()
+stop v =
+    _ = if Js.isNull v then () else quit ()
+    Js.write dead True
+
+
+pub stopRead : Js.Value → ()
+stopRead v =
+    _ = if Js.to v then () else quitRead ()
+    Js.write dead True
+
+
+pub stopCalling : Js.Value → ()
+stopCalling v =
+    _ = if Js.to (Js.apply v []) then () else quitCalling ()
+    Js.write dead True

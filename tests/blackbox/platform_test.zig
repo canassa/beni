@@ -576,6 +576,10 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
         "Main.mjs.map",
         "_core/Basics.mjs",
         "_core/Basics.mjs.map",
+        // `Rt`'s `stop` names `Task.shutdown` behind a test a release
+        // build folds (`boundary.md` §9.8.14, the size pass's amendment).
+        "_core/Task.mjs",
+        "_core/Task.mjs.map",
         "_main.mjs",
         "_manifest.txt",
         "_platform/Browser.mjs",

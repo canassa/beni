@@ -3410,6 +3410,20 @@ nothing writes folds, and the branch behind it goes, as `Browser.program` pages 
 sees only beni: the kernel in beni (`plans/core-in-beni.md` K3) is what can let the element's
 `stop` read a cell only a fiber writes.
 
+*Amended 2026-10-02, with the kernel in beni:* so it does. **The wiring of (c) is replaced.**
+`Rt`'s `stop` calls `Task.shutdown deadline stopped` itself, behind `Rt`'s after-render `phase`
+cell — which only a hosted mount sets, so a page of `Browser.program`s never calls it — and a
+second call does nothing; the hosted mount takes four arguments again, `Browser.beni`'s `host` hands
+nothing over, and `deadline` is `Rt`'s. In the kernel `shutdown` calls two hooks, `closing` (set by
+`newFiber`: the teardown) and `quitting` (set by `soon`: the queue stops), so in a build that makes
+no fiber and queues no `soon` work both cells fold to null and `stop` is the write it was before the
+teardown. The crash screen's `error` listener asks `Task.cleansUp ()` whether a teardown may report
+more. Measured as above: the empty `Tea.element` **1 211 = 1 211** (not the same bytes: the beni
+`openRoot` is a literal of one key, specialisation having dropped the two nothing reads, and the
+file is 45 bytes shorter raw), the `Browser.program` and `Tea.sandbox` pages and `url` byte for byte
+the same, `random` **1 989** (+33: `soon`'s work is dropped when the page stops), the `Http` + `Time`
+page **6 218** (+405 against the base, against (m)'s 250–350); the other fiber pages 5 530–5 944.
+
 #### 9.8.15 Time, the log and a program that cannot wake, per platform (2026-10-02)
 
 *Added 2026-10-02*, with the owner's adoption of research 48's decisions. The APIs are core's and

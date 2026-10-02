@@ -6160,6 +6160,13 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    a `case` whose value is wanted may have a nested `case` for an arm and still be a conditional
    (`Lower.condChainPossible`): `c?"a":d?"b":"c"`, not a temporary each arm assigns. Fixture:
    `emit/release/core/ThrowError`.
+9. **An `if` with nothing left in either arm, whose test only reads, is nothing**
+   (`Print.testReadsOnly`; *added 2026-10-02*). Both builds write such an `if` as its test, as a
+   statement; a release build writes nothing when the test is a read (a name, a literal, a field
+   of one), `!` of such a test, `===` or `!==` of two reads, or `==` of two reads one of which is
+   `null` or `undefined` — none of which converts an operand, so none can run code. It is what a
+   guard leaves when specialisation folds away what it guarded: `Rt`'s `stop` in a page that runs
+   no fiber (`boundary.md` §9.8.14, the size pass). Fixture: `emit/release/core/EmptyIfTest`.
 
 And under all of them:
 

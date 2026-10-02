@@ -22,6 +22,7 @@
 --! called once is written where it is called*).
 
 import Js
+import Task
 
 
 type alias V =
@@ -268,39 +269,34 @@ dead : Js.Ref Bool
 dead = Js.ref False
 
 
--- What closes the program's scope once the page has stopped
--- (`boundary.md` §9.8.14 (c)): null until a hosted mount hands one over
--- (`startOne`'s fifth argument), and so in a page of `Browser.program`s
--- alone. Called with `stopped`, which it calls when every fiber has ended,
--- with the number of cleanups the deadline cut short.
-teardown : Js.Ref V
-teardown = Js.ref Js.null
+-- How long cleanup that waits may take once the page has stopped, in
+-- milliseconds (`boundary.md` §9.8.14 (f), choice 3): what is still waiting
+-- then is cut short.
+deadline : Int
+deadline = 1000
 
 
 stop : () → ()
 stop () =
     -- Once: two guards may see one throw, an inner one and the one
-    -- around it. The teardown only stops the runtime here and runs
-    -- nothing, so the throw in flight stays the one the host reports. In a
-    -- page with no hosted mount a release build knows the teardown is null,
-    -- and `stop` is only the write, as it was before there was one.
+    -- around it. Every fiber of every program is cancelled and its cleanup
+    -- run (`boundary.md` §9.8.14): core closes every root scope, whoever
+    -- opened it, giving cleanup that waits `deadline` ms, and tells
+    -- `stopped` how many it cut short; a second call does nothing.
+    -- `shutdown` only stops the runtime here and runs nothing, so the throw
+    -- in flight stays the one the host reports. In a build that makes no
+    -- fiber and queues no `soon` work it is nothing at all, so a release
+    -- build's `stop` is only the write, as it was before the teardown.
     _ =
         if Js.development () then
             if Js.read dead then () else crashScreen ()
         else
             ()
-    _ = if Js.isNull (Js.read teardown) then () else closeScope ()
+    -- Only a hosted mount runs fibers, and one sets the after-render
+    -- `phase` when it mounts: a page of `Browser.program`s never calls
+    -- `shutdown`, and its release build knows it.
+    _ = if Js.isNull (Js.read phase) then () else Task.shutdown deadline stopped
     Js.write dead True
-
-
--- Close the program's scope, the first time the page stops (`dead` is set
--- just after, and the teardown reads nothing of the page).
-closeScope : () → ()
-closeScope () =
-    if Js.read dead then
-        ()
-    else
-        Js.to (Js.apply (Js.read teardown) [ Js.from stopped ])
 
 
 -- Every fiber has ended. Cleanups the deadline cut short are a line of the
@@ -411,7 +407,7 @@ crashScreen () =
         (Js.call (Js.global "window") "addEventListener"
             [ Js.from "error"
             , Js.from report
-            , Js.from { once = Js.isNull (Js.read teardown) }
+            , Js.from { once = not (Task.cleansUp ()) }
             ]
         )
 
@@ -492,7 +488,6 @@ startOne m =
                 , Js.from flush
                 , Js.from λf → setPhase f
                 , Js.from stop
-                , Js.from λf → Js.write teardown f
                 ]
             )
             root
