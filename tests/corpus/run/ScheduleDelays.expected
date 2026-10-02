@@ -1,0 +1,27 @@
+recurs 2: [0,0]
+recurs 0: []
+recurs -1: []
+spaced 50: [50,50,50]
+forever: [0,0,0]
+fixed 100: [100,100,100]
+fixed 0: [0,0,0]
+fixed 100, run ends 30 ms in: 70
+fixed 100, far behind: 0
+exponential 100 2.0: [100,200,400,800]
+exponential 10 1.5: [10,15,23,34]
+fibonacci 10: [10,20,30,50,80]
+during 250 at 100: [100,100,100]
+upTo 250 at 100: [100,100,100]
+while input < 3: [5,5]
+max exponential recurs 3: [100,200,400]
+max spaced 30 spaced 20: [30,30]
+min spaced 30 spaced 20: [20,20]
+min recurs 1 spaced 20: [0,20,20]
+min recurs 1 recurs 2: [0,0]
+concat (recurs 2) (recurs 1 spaced 7): [0,0,7]
+concat (recurs 1) (exponential 10 2.0): [0,10,20,40]
+modifyDelay attempt × 3: [4,7,10]
+jittered 1000 at 0: 800
+jittered 1000 at 0.5: 1000
+jittered 1000 at 0.99: 1196
+jittered recurs 1, step 2: stop

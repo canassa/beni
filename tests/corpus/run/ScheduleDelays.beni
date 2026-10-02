@@ -1,0 +1,96 @@
+-- run: core's `Schedule`, run purely (transparent-effects-proposal.md
+-- §17.8): `delays` of every constructor and combinator of the table there,
+-- each against Effect v4's meaning, and `jittered` and `modifyDelay`
+-- through `step` with chosen draws — no clock at all.
+--
+--   - `recurs 2` allows two steps; `recurs 0` and `recurs -1` none.
+--   - `fixed 100` waits to the next multiple of 100 ms from its first
+--     step; `delays` takes no time per run, so every wait is the whole
+--     interval. Through `step`, a run that ends 30 ms into an interval
+--     waits the 70 left, and one more than a whole interval late is
+--     followed at once.
+--   - `exponential 100 2.0` doubles from 100; `fibonacci 10` is Effect's
+--     sequence, 10 20 30 50 80.
+--   - `during 250` with 100 ms spacing under `max`: the step at 300 ms
+--     stops it.
+--   - `upTo` stops once more than its limit has elapsed; `while` reads the
+--     step's input.
+--   - `max` waits the longer delay and stops when either stops; `min`
+--     waits the shorter and goes on while either does.
+--   - `concat` counts the second schedule's attempts from 1.
+--   - `jittered` multiplies by 0.8 at a draw of 0, 1.0 at 0.5, and just
+--     under 1.2 at 0.99.
+import Duration exposing (Duration)
+import Node exposing (Program)
+import Schedule exposing (Continue, Metadata, Schedule, Stop)
+
+
+ms : Int → Duration
+ms n = Duration.millis n
+
+
+show : List Duration → String
+show ds = Debug.toString (List.map ds Duration.toMillis)
+
+
+units : Int → List ()
+units n = List.repeat () n
+
+
+at : Int, Int, Float → Metadata ()
+at attempt elapsed random = { input = (), attempt = attempt, elapsed = ms elapsed, random = random }
+
+
+-- One step's delay, or "stop".
+once : Schedule (), Metadata () → String
+once schedule metadata =
+    case Schedule.step schedule metadata of
+        Continue d _ →
+            String.fromInt (Duration.toMillis d)
+
+        Stop →
+            "stop"
+
+
+-- The second step's delay, after a first one at `first`.
+second : Schedule (), Metadata (), Metadata () → String
+second schedule first later =
+    case Schedule.step schedule first of
+        Continue _ next →
+            once next later
+
+        Stop →
+            "stopped first"
+
+
+main : Program
+main =
+    Node.printLines
+        [ "recurs 2: ${show (Schedule.delays (Schedule.recurs 2) (units 5))}"
+        , "recurs 0: ${show (Schedule.delays (Schedule.recurs 0) (units 5))}"
+        , "recurs -1: ${show (Schedule.delays (Schedule.recurs (-1)) (units 5))}"
+        , "spaced 50: ${show (Schedule.delays (Schedule.spaced (ms 50)) (units 3))}"
+        , "forever: ${show (Schedule.delays Schedule.forever (units 3))}"
+        , "fixed 100: ${show (Schedule.delays (Schedule.fixed (ms 100)) (units 3))}"
+        , "fixed 0: ${show (Schedule.delays (Schedule.fixed Duration.zero) (units 3))}"
+        , "fixed 100, run ends 30 ms in: ${second (Schedule.fixed (ms 100)) (at 1 0 0.5) (at 2 130 0.5)}"
+        , "fixed 100, far behind: ${second (Schedule.fixed (ms 100)) (at 1 0 0.5) (at 2 350 0.5)}"
+        , "exponential 100 2.0: ${show (Schedule.delays (Schedule.exponential (ms 100) 2.0) (units 4))}"
+        , "exponential 10 1.5: ${show (Schedule.delays (Schedule.exponential (ms 10) 1.5) (units 4))}"
+        , "fibonacci 10: ${show (Schedule.delays (Schedule.fibonacci (ms 10)) (units 5))}"
+        , "during 250 at 100: ${show (Schedule.delays (Schedule.max (Schedule.during (ms 250)) (Schedule.spaced (ms 100))) (units 6))}"
+        , "upTo 250 at 100: ${show (Schedule.delays (Schedule.upTo (Schedule.spaced (ms 100)) (ms 250)) (units 6))}"
+        , "while input < 3: ${show (Schedule.delays (Schedule.while (Schedule.spaced (ms 5)) λm → m.input < 3) [ 1, 2, 3, 4 ])}"
+        , "max exponential recurs 3: ${show (Schedule.delays (Schedule.max (Schedule.exponential (ms 100) 2.0) (Schedule.recurs 3)) (units 6))}"
+        , "max spaced 30 spaced 20: ${show (Schedule.delays (Schedule.max (Schedule.spaced (ms 30)) (Schedule.spaced (ms 20))) (units 2))}"
+        , "min spaced 30 spaced 20: ${show (Schedule.delays (Schedule.min (Schedule.spaced (ms 30)) (Schedule.spaced (ms 20))) (units 2))}"
+        , "min recurs 1 spaced 20: ${show (Schedule.delays (Schedule.min (Schedule.recurs 1) (Schedule.spaced (ms 20))) (units 3))}"
+        , "min recurs 1 recurs 2: ${show (Schedule.delays (Schedule.min (Schedule.recurs 1) (Schedule.recurs 2)) (units 5))}"
+        , "concat (recurs 2) (recurs 1 spaced 7): ${show (Schedule.delays (Schedule.concat (Schedule.recurs 2) (Schedule.max (Schedule.recurs 1) (Schedule.spaced (ms 7)))) (units 6))}"
+        , "concat (recurs 1) (exponential 10 2.0): ${show (Schedule.delays (Schedule.concat (Schedule.recurs 1) (Schedule.exponential (ms 10) 2.0)) (units 4))}"
+        , "modifyDelay attempt × 3: ${show (Schedule.delays (Schedule.modifyDelay (Schedule.spaced (ms 1)) λm d → Duration.sum d (ms (m.attempt * 3))) (units 3))}"
+        , "jittered 1000 at 0: ${once (Schedule.jittered (Schedule.spaced (ms 1000))) (at 1 0 0.0)}"
+        , "jittered 1000 at 0.5: ${once (Schedule.jittered (Schedule.spaced (ms 1000))) (at 1 0 0.5)}"
+        , "jittered 1000 at 0.99: ${once (Schedule.jittered (Schedule.spaced (ms 1000))) (at 1 0 0.99)}"
+        , "jittered recurs 1, step 2: ${once (Schedule.jittered (Schedule.recurs 1)) (at 2 0 0.5)}"
+        ]

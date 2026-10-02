@@ -1,0 +1,261 @@
+--! When to try again, and when to give up: a policy for retrying work that
+--! failed or repeating work that succeeded
+--! (`transparent-effects-proposal.md` §17.8).
+--!
+--!     -- 100, 200, 400 ms between attempts, then give up
+--!     Schedule.max (Schedule.exponential (Duration.millis 100) 2.0) (Schedule.recurs 3)
+--!
+--! A schedule is a function of one **step**: given what happened — the
+--! input (the error being retried, or the value being repeated), which
+--! attempt this is, how long it has all taken, and a random draw — it says
+--! `Stop`, or `Continue` with how long to wait and **the schedule to use for
+--! the step after**. Whatever a schedule has to remember, the next schedule
+--! carries; every schedule is an immutable value, and stepping one changes
+--! nothing. So `step` is a pure function, and `delays` runs a schedule with
+--! no clock at all — which is how a schedule is tested.
+--!
+--! The names and meanings are Effect's v4 `Schedule`. A module of one's own
+--! writes a schedule with `fromStep`.
+--!
+--! Nothing here is `foreign`.
+
+import Duration exposing (Duration)
+import List
+
+
+--| A policy for running something again: a function from one step's
+--| `Metadata` to a `Step`.
+pub opaque type Schedule i
+    = Schedule (Metadata i → Step i)
+
+
+--| What one step of a schedule decides: wait `Continue`'s duration and then
+--| run again, stepping its schedule next time; or `Stop`.
+pub type Step i
+    = Continue Duration (Schedule i)
+    | Stop
+
+
+--| What a step is told.
+--|
+--| - `input`: what the run that just ended gave — the error `retry` is
+--|   retrying, the value `repeat` is repeating.
+--| - `attempt`: counts from 1, the step after the first run.
+--| - `elapsed`: the time from the start of the first run to now.
+--| - `random`: one draw in [0, 1), made for every step whether or not the
+--|   schedule reads it.
+pub type alias Metadata i =
+    input : i
+    attempt : Int
+    elapsed : Duration
+    random : Float
+
+
+--| Apply a schedule to one step's metadata.
+pub step : Schedule i, Metadata i → Step i
+step (Schedule f) metadata = f metadata
+
+
+--| A schedule of one's own, from its step function.
+--|
+--|     -- no delay, and stop at the first input that is not busy
+--|     untilNotBusy () = Schedule.fromStep λm →
+--|         if isBusy m.input then Schedule.Continue Duration.zero (untilNotBusy ()) else Schedule.Stop
+pub fromStep : (Metadata i → Step i) → Schedule i
+fromStep f = Schedule f
+
+
+--| Run a schedule purely: each input in turn, as if each run took no time
+--| (`elapsed` is the sum of the delays so far) and every draw were 0.5, and
+--| answer the delays until it stops or the inputs run out.
+--|
+--|     -- [ 100, 200, 400 ] ms
+--|     Schedule.delays (Schedule.exponential (Duration.millis 100) 2.0) [ (), (), () ]
+pub delays : Schedule i, List i → List Duration
+delays schedule inputs = delaysFrom schedule inputs 1 Duration.zero []
+
+
+delaysFrom : Schedule i, List i, Int, Duration, List Duration → List Duration
+delaysFrom schedule inputs attempt elapsed found =
+    case inputs of
+        [] →
+            found
+
+        [ input, …rest ] →
+            case
+                step schedule { input = input, attempt = attempt, elapsed = elapsed, random = 0.5 }
+            of
+                Stop →
+                    found
+
+                Continue delay next →
+                    delaysFrom
+                        next
+                        rest
+                        (attempt + 1)
+                        (Duration.sum elapsed delay)
+                        (List.push found delay)
+
+
+--| No delay, and stop after `n` steps: `retry (recurs 2)` runs the work at
+--| most three times. Stops at once when `n` is below 1.
+pub recurs : Int → Schedule i
+recurs n = fromStep λm → if m.attempt ≤ n then Continue Duration.zero (recurs n) else Stop
+
+
+--| Wait `delay` after each run; never stop.
+pub spaced : Duration → Schedule i
+spaced delay = fromStep λ_ → Continue delay (spaced delay)
+
+
+--| No delay; never stop.
+pub forever : Schedule i
+forever = spaced Duration.zero
+
+
+--| Run at a fixed rate: wait until the next multiple of `interval` from the
+--| first step. A run that takes longer than a whole interval is followed
+--| at once, and the intervals it missed are not made up.
+pub fixed : Duration → Schedule i
+fixed interval =
+    window = Duration.toMillis interval
+
+    if window == 0 then
+        forever
+    else
+        fromStep λm →
+            now = Duration.toMillis m.elapsed
+            Continue interval (fixedFrom window now (now + window))
+
+
+-- After the first step: `start` is when it was, `lastRun` when the run
+-- this schedule last asked for was due.
+fixedFrom : Int, Int, Int → Schedule i
+fixedFrom window start lastRun = fromStep λm →
+    now = Duration.toMillis m.elapsed
+    runningBehind = now > lastRun + window
+    boundary = window - Int.rem (now - start) window
+    delay = if runningBehind then 0 else if boundary == 0 then window else boundary
+    Continue
+        (Duration.millis delay)
+        (fixedFrom window start (if runningBehind then now else now + delay))
+
+
+--| `base × factor ^ (attempt − 1)` after each run; never stop.
+--| `exponential (Duration.millis 100) 2.0` waits 100, 200, 400 ms, ….
+pub exponential : Duration, Float → Schedule i
+exponential base factor = fromStep λm →
+    Continue (Duration.times base (factor ^ toFloat (m.attempt - 1))) (exponential base factor)
+
+
+--| `one`, `2 × one`, `3 × one`, `5 × one`, `8 × one`, … — the Fibonacci
+--| sequence from `one` — after each run; never stop.
+pub fibonacci : Duration → Schedule i
+fibonacci one = fibonacciFrom Duration.zero one
+
+
+fibonacciFrom : Duration, Duration → Schedule i
+fibonacciFrom before last = fromStep λ_ →
+    next = Duration.sum before last
+    Continue next (fibonacciFrom last next)
+
+
+--| No delay; stop once more than `limit` has elapsed.
+pub during : Duration → Schedule i
+during limit = fromStep λm →
+    if m.elapsed > limit then Stop else Continue Duration.zero (during limit)
+
+
+--| `schedule`'s delays, each multiplied by a random factor in [0.8, 1.2),
+--| so that many clients retrying at once spread out.
+pub jittered : Schedule i → Schedule i
+jittered schedule = modifyDelay schedule λm delay →
+    Duration.times delay (0.8 * (1 - m.random) + 1.2 * m.random)
+
+
+--| `schedule`, but stop once more than `limit` has elapsed.
+pub upTo : Schedule i, Duration → Schedule i
+upTo schedule limit = while schedule λm → m.elapsed ≤ limit
+
+
+--| `schedule`, but stop at the first step `continues` does not hold of:
+--| `while (exponential …) λm → isTransient m.input`.
+pub while : Schedule i, (Metadata i → Bool) → Schedule i
+while schedule continues = fromStep λm →
+    case step schedule m of
+        Stop →
+            Stop
+
+        Continue delay next →
+            if continues m then Continue delay (while next continues) else Stop
+
+
+--| Continue while **both** continue, waiting the **longer** of their delays.
+pub max : Schedule i, Schedule i → Schedule i
+max a b = fromStep λm →
+    case step a m of
+        Stop →
+            Stop
+
+        Continue delayA nextA →
+            case step b m of
+                Stop →
+                    Stop
+
+                Continue delayB nextB →
+                    Continue (if delayA ≥ delayB then delayA else delayB) (max nextA nextB)
+
+
+--| Continue while **either** continues, waiting the **shorter** delay of
+--| those that do.
+pub min : Schedule i, Schedule i → Schedule i
+min a b = fromStep λm →
+    case step a m of
+        Stop →
+            step b m
+
+        Continue delayA nextA →
+            case step b m of
+                Stop →
+                    Continue delayA nextA
+
+                Continue delayB nextB →
+                    Continue (if delayA ≤ delayB then delayA else delayB) (min nextA nextB)
+
+
+--| `first` until it stops, then `second`, whose steps count their own
+--| attempts from 1 and their own time from its first step.
+pub concat : Schedule i, Schedule i → Schedule i
+concat first second = fromStep λm →
+    case step first m of
+        Continue delay next →
+            Continue delay (concat next second)
+
+        Stop →
+            step (shifted second (m.attempt - 1) m.elapsed) m
+
+
+-- `schedule`, told attempts `attempts` fewer and `elapsed` less time than
+-- its steps are.
+shifted : Schedule i, Int, Duration → Schedule i
+shifted schedule attempts elapsed = fromStep λm →
+    since = Duration.millis (Duration.toMillis m.elapsed - Duration.toMillis elapsed)
+
+    case step schedule { m | attempt = m.attempt - attempts, elapsed = since } of
+        Stop →
+            Stop
+
+        Continue delay next →
+            Continue delay (shifted next attempts elapsed)
+
+
+--| `schedule`, its every delay replaced by what `f` makes of the step's
+--| metadata and that delay.
+pub modifyDelay : Schedule i, (Metadata i, Duration → Duration) → Schedule i
+modifyDelay schedule f = fromStep λm →
+    case step schedule m of
+        Stop →
+            Stop
+
+        Continue delay next →
+            Continue (f m delay) (modifyDelay next f)
