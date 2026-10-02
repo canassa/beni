@@ -126,9 +126,22 @@ project) against it, one step per line, `#` for a comment:
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key
+    timers                      log `(timers: <n>)`, the virtual clock's
+                                timers that have neither fired nor been
+                                cleared
+    listeners <window|document> [<name>]
+                                log `(listeners: <n>)`, the listeners the
+                                page added to that target (for that event)
+                                and has not removed — what a program still
+                                holds of the host, seen without its code
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
+
+`listeners` counts a registration as the DOM does — its event, its
+listener and its capture flag — so adding one twice is one; a `once`
+listener stops counting when it fires and one with a `signal` when the
+signal aborts. The driver's own `error` listeners are not counted.
 
 **Steps before the program loads.** The `url` and `store` steps a script
 begins with run before the program's modules are imported, each a heading

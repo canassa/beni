@@ -1,3 +1,6 @@
 throws click #go
+# The timer the other body waits on is still held: nothing closes the
+# program's scope yet.
+timers
 click #inc
 advance 50

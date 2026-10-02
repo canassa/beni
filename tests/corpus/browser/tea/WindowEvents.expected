@@ -12,6 +12,12 @@
     </p>
   </main>
 </body>
+-- listeners window resize
+(listeners: 1)
+(the DOM did not change)
+-- listeners document visibilitychange
+(listeners: 1)
+(the DOM did not change)
 -- event window resize
 <body>
   <main>
@@ -41,6 +47,12 @@
   </main>
 </body>
 -- click #toggle
+(the DOM did not change)
+-- listeners window resize
+(listeners: 0)
+(the DOM did not change)
+-- listeners document visibilitychange
+(listeners: 0)
 (the DOM did not change)
 -- event window resize
 (the DOM did not change)

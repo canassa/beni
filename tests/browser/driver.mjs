@@ -61,7 +61,13 @@
 //   store <local|session> "<key>" "<value>"
 //                               `setItem` on that storage
 //   storage <local|session>     log `(localStorage: {…})`, every item by key
-//   throws <step>               any step above, which must make the page
+//   timers                      log `(timers: <n>)`, the timers the virtual
+//                               clock holds that have not fired or been cleared
+//   listeners <window|document> [<name>]
+//                               log `(listeners: <n>)`, the listeners the page
+//                               added to that target (for that event) and has
+//                               not removed
+//   throws <step>              any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
 //                               end of the run, and none is a failure
@@ -165,6 +171,40 @@ function prelude() {
   record.describe = describe;
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
+  // Every listener the page adds to the window or the document from here
+  // on, and has not removed, by target: a registration is its type, its
+  // listener and its capture flag, as the DOM's own, so adding one twice
+  // is one and removing it ends it; a `once` listener ends when it fires,
+  // and one with a `signal` when the signal aborts. Only counted: each
+  // call goes on to the DOM's own method unchanged.
+  const listening = { window: new Map(), document: new Map() };
+  record.listening = listening;
+  const capture = (options) => (typeof options === "boolean" ? options : Boolean(options?.capture));
+  for (const [name, target] of [["window", globalThis], ["document", document]]) {
+    const live = listening[name];
+    const add = target.addEventListener.bind(target);
+    const remove = target.removeEventListener.bind(target);
+    const keyOf = (type, listener, options) => `${type}\u0000${capture(options)}`;
+    const ends = (type, listener, options) => {
+      const ofKey = live.get(keyOf(type, listener, options));
+      if (ofKey !== undefined) ofKey.delete(listener);
+    };
+    target.addEventListener = (type, listener, options) => {
+      add(type, listener, options);
+      if (listener === null || listener === undefined || options?.signal?.aborted) return;
+      const key = keyOf(type, listener, options);
+      if (!live.has(key)) live.set(key, new Set());
+      if (live.get(key).has(listener)) return;
+      live.get(key).add(listener);
+      const end = () => ends(type, listener, options);
+      if (typeof options === "object" && options?.once) add(type, end, { once: true, capture: capture(options) });
+      if (typeof options === "object" && options?.signal) options.signal.addEventListener("abort", end, { once: true });
+    };
+    target.removeEventListener = (type, listener, options) => {
+      remove(type, listener, options);
+      ends(type, listener, options);
+    };
+  }
 }
 
 // Import the program's entry file; an exception while its modules evaluate
@@ -234,6 +274,18 @@ function step(s) {
     for (let i = 0; i < area.length; i++) keys.push(area.key(i));
     for (const k of keys.sort()) entries[k] = area.getItem(k);
     globalThis.__beniHarness.log.push(`(${s.selector}Storage: ${JSON.stringify(entries)})`);
+    return null;
+  }
+  if (s.command === "timers") {
+    globalThis.__beniHarness.log.push(`(timers: ${globalThis.__beniHarness.clock.timers.length})`);
+    return null;
+  }
+  if (s.command === "listeners") {
+    let n = 0;
+    for (const [key, set] of globalThis.__beniHarness.listening[s.selector]) {
+      if (s.name === undefined || key.split("\u0000")[0] === s.name) n += set.size;
+    }
+    globalThis.__beniHarness.log.push(`(listeners: ${n})`);
     return null;
   }
   if (s.command === "event") {
@@ -381,6 +433,7 @@ if (stepsPath !== undefined) {
     const where = `${stepsPath}:${i + 1}`;
     const throws = written.startsWith("throws ");
     const line = throws ? written.slice("throws ".length).trim() : written;
+    if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     const m = line.match(/^(\S+)\s+(\S+)(?:\s+(.*))?$/);
     if (!m) usage(`${where}: \`${line}\` is not \`<command> <selector> [<argument>]\``);
     const [, command, selector, argument] = m;
@@ -404,6 +457,13 @@ if (stepsPath !== undefined) {
       s.value = JSON.parse(kv[2]);
     } else if (command === "storage") {
       if ((selector !== "local" && selector !== "session") || argument !== undefined) usage(`${where}: \`storage\` takes \`local\` or \`session\``);
+    } else if (command === "timers") {
+      usage(`${where}: \`timers\` takes nothing`);
+    } else if (command === "listeners") {
+      if ((selector !== "window" && selector !== "document") || (argument !== undefined && !/^[a-z]+$/.test(argument))) {
+        usage(`${where}: \`listeners\` takes \`window\` or \`document\` and at most an event name`);
+      }
+      s.name = argument;
     } else if (command === "event") {
       const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
       if ((selector !== "window" && selector !== "document") || e === null) {
