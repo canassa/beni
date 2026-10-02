@@ -75,7 +75,10 @@ the kernel's semantics, §7 how to re-run. The slice plan is appended to `plans/
    release `spawn`s keeps running after its parent ended `Cancelled` — contrary to `Task.beni`'s own
    "nothing a fiber starts outlives what started it". Reproduced (§6, item 1); Effect does not leak
    here, because `interruptChildren` runs after the whole stack has unwound. Not fixed: rule 3 wants
-   its red fixture first, and `Task.js` is not to be touched by this study.
+   its red fixture first, and `Task.js` is not to be touched by this study. *(Fixed 2026-10-02,
+   `7bcb1721`: `run/ReleaseSpawnCancelled` and `run/ScopeReleaseSpawnIn`; a fiber spawned from an
+   unwinding parent's finaliser replaces its end with a `reap` that cancels and waits for the
+   remaining children, and a closing scope is marked closed and drained until empty.)*
 8. **The teardown that landed since (§9.8.14) is expressible the same way** (§5): phases as an
    `Int` and `Js.bitAnd`, the root registry and `live` counter as module `Js.Ref`s, the deadline on
    `Js.global "setTimeout"`, finaliser boundaries compared by identity, and `Task.js`'s
