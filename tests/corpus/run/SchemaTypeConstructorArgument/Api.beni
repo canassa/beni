@@ -1,0 +1,20 @@
+--! A public schema and a public type whose constructor carries its
+--! endpoint, built and matched by the importer through this interface.
+
+import Schema
+
+
+pub schema Item =
+    name : String
+    count : Int
+
+
+pub type Batch
+    = Batch (List Item.Type)
+
+
+pub total : Batch → Int
+total batch =
+    case batch of
+        Batch items →
+            List.foldl items 0 λi acc → acc + i.count

@@ -1,0 +1,36 @@
+-- check/good: a schema endpoint as a constructor's argument, directly and
+-- through a `type alias` (checker-v2.md §11.5). `wrap` and `wrapAll` are
+-- unannotated, so their published schemes are what the constructors' argument
+-- types infer to; `Wrap`'s argument terms are published for importers. Each
+-- argument used to read as an unreported `err`, so `wrap` checked as
+-- `<error> → Wrap` and the interface carried no argument terms for `Wrap`.
+import Schema
+
+
+pub schema Item =
+    name : String
+
+
+pub type alias Items =
+    List Item.Type
+
+
+pub type Wrap
+    = Wrap (List Item.Type)
+    | WrapAll Items
+
+
+pub wrap x = Wrap x
+
+
+pub wrapAll x = WrapAll x
+
+
+pub names : Wrap → List String
+names w =
+    case w of
+        Wrap items →
+            List.map items λi → i.name
+
+        WrapAll items →
+            List.map items λi → "${i.name}"

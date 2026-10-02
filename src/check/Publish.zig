@@ -48,8 +48,9 @@ pub const Input = struct {
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
-/// type references for dependents.
-pub fn fill(in: Input) Error!void {
+/// type references for dependents. Returns how many types it withheld for
+/// an `err` inside them (`Publisher.poisoned`).
+pub fn fill(in: Input) Error!u32 {
     const cx = in.cx;
     const gpa = cx.gpa;
     const iface = in.iface;
@@ -122,6 +123,7 @@ pub fn fill(in: Input) Error!void {
     gpa.free(ref_ids.*);
     ref_ids.* = &.{};
     ref_ids.* = try in.types.resolveRefs(gpa, iface, cx.graph);
+    return p.poisoned;
 }
 
 /// The vocabulary tables (§25.8): each row whose declaration checked, with
@@ -174,6 +176,13 @@ const Publisher = struct {
     cx: *const Context,
     stacks: *Walk.Stacks,
     writer: *Schemes.Writer,
+    /// Every type withheld for an `err` inside it: a scheme published as
+    /// `<error>`, a constructor left without argument terms. Each is meant
+    /// to be the program's error, with its message, so in a module that
+    /// reported none — and whose dependencies reported none — it is an
+    /// unreported `err` reaching the interface: `fill` returns the count and
+    /// `Module.assertErrorsReported` panics on it (checker-v2.md §12.2).
+    poisoned: u32 = 0,
 
     /// `root`'s scheme, or `<error>`: for no type, a poisoned one, or one
     /// too deep to write — the last two reported as `nesting_too_deep` at
@@ -193,7 +202,10 @@ const Publisher = struct {
     fn clean(p: *Publisher, v: Var, decl: ?Bir.DeclIndex) Error!bool {
         switch (try Walk.hasError(p.cx.store, p.stacks, p.cx.gpa, v)) {
             .clean => return true,
-            .poisoned => return false,
+            .poisoned => {
+                p.poisoned += 1;
+                return false;
+            },
             .unknown => {
                 try p.cx.noteDeepDecl(decl);
                 return false;
@@ -233,7 +245,9 @@ fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
         const bc = bir.ctors[bir_index];
         const owner = bir.decl(bc.decl);
         const params = bir.declTypeParams(owner);
-        var b: Types.Builder = .init(cx.store, cx.types, cx.graph, cx.artifacts, cx.module, bir, .flex, TypeStore.generalized, scratch, cx.interner);
+        // Read as `Instantiate.ownCtor` reads it, schema endpoints included
+        // (checker-v2.md §11.5).
+        var b = cx.builder(.flex, TypeStore.generalized);
         defer b.deinit();
         const param_vars = try scratch.alloc(Var, params.len);
         defer scratch.free(param_vars);

@@ -3098,6 +3098,18 @@ a `pub` alias names (the first proposal) — an interface version bump to carry 
 already carries; and refusing the alias — a valid program rejected, which buys no guarantee
 (rule 7).
 
+*Amended 2026-10-02.* **A constructor's argument is read as an annotation is.** The two readers
+of a constructor's written arguments — the type a use of an own constructor is built from
+(`Instantiate.ownCtor`) and the argument terms P8 publishes (`Publish.ctorTerms`) — each made a
+bare `Types.Builder` with no schema lookup and no interfaces, so an endpoint there (`Got (List
+Item.Type)`, the same through `type alias Items = List Item.Type`, or `Api.Item.Type`) was a
+silent `err`: `Got [ 1, 2 ]` checked, an unannotated `mk x = Got x` tripped §12.2's assertion,
+and an exposed constructor published no argument terms. Both now take the module's reader
+(`Context.builder`, `lookupOpaque`), the one P2 reads annotations with. And §12.2's assertion
+covers the interface too: publishing counts every type it withholds for an `err` inside it (a
+scheme written `<error>`, a constructor left without terms), and in a module that reported
+nothing that count must be zero.
+
 The read is `types_alias_body` (`reads.zig`), and the digest covers
 it: `type_body` now spells a schema endpoint head as the named type it is and collects a local
 one into the digest's type set, whose worklist already writes an endpoint's expansion from the

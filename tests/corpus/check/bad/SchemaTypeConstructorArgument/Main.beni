@@ -1,0 +1,38 @@
+-- check/bad: a schema endpoint written as a constructor's argument is the
+-- endpoint, exactly as in an annotation (checker-v2.md §11.5), so every
+-- wrong-typed argument below is a TYPE MISMATCH. Each argument used to read
+-- as a silent `err`, which accepted anything: this module's schema, the same
+-- through a `type alias`, another module's schema, and another module's
+-- constructor, whose interface published no argument terms.
+import Api
+import Schema
+
+
+schema Item =
+    name : String
+
+
+type alias Items =
+    List Item.Type
+
+
+type Msg
+    = Got (List Item.Type)
+    | GotAliased Items
+    | GotRemote (List Api.Item.Type)
+
+
+local : Msg
+local = Got [ 1, 2 ]
+
+
+aliased : Msg
+aliased = GotAliased [ "x" ]
+
+
+remote : Msg
+remote = GotRemote [ True ]
+
+
+imported : Api.Wrap
+imported = Api.Wrap [ 3 ]

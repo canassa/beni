@@ -3601,6 +3601,42 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
+test "dump --stage=types prints the schema endpoint a constructor's argument names" {
+    // checker-v2.md §11.5, §12.2: `Got`'s argument is the endpoint, as in an
+    // annotation. It used to read as an `err` no message stood behind, so
+    // `mk` inferred `<error> → Msg` and the safety build panicked on the
+    // "every `err` has a message" assertion instead of printing.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Schema
+        \\
+        \\
+        \\schema Item =
+        \\    name : String
+        \\
+        \\
+        \\type Msg
+        \\    = Got (List Item.Type)
+        \\
+        \\
+        \\mk x =
+        \\    Got x
+        \\
+    );
+
+    const r = try w.runWith(&.{ "dump", "--stage=types", "src/Main.beni" }, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  mk : List Item.Type → Msg
+        \\    x : List Item.Type
+        \\
+    , r.stdout);
+}
+
 test "dump --stage=types prints a declaration's effect classes, its locals', and a value's evaluation" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

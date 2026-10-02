@@ -346,7 +346,7 @@ pub fn check(in: Input) Error!Check.Counters {
 
     // P8.
     const p8_token = if (in.profile) |p| p.begin() else null;
-    try Publish.fill(.{
+    const withheld = try Publish.fill(.{
         .cx = &cx,
         .report = &report,
         .stacks = &solver.stacks,
@@ -368,7 +368,7 @@ pub fn check(in: Input) Error!Check.Counters {
         try report.flush();
         // Last, so every error the module has gates it.
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
-        if (std.debug.runtime_safety and report.errors == 0 and !in.dependency_errors) try assertErrorsReported(store, scratch, p6, &.{ decl_scheme, decl_display, local_type });
+        if (std.debug.runtime_safety and report.errors == 0 and !in.dependency_errors) try assertErrorsReported(store, scratch, p6, withheld, &.{ decl_scheme, decl_display, local_type });
     }
     // Gated on NO error in the module, after the last pass that can report
     // one.
@@ -779,7 +779,9 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
 /// **Every `err` has a message** (§12.2), checked: in
 /// a module that reported no error, and whose dependencies reported none
 /// (`Input.dependency_errors`), no declaration's or local's type reaches an
-/// `err`, and no wanted is `poisoned`. `err` means "a message was written
+/// `err`, no wanted is `poisoned`, and publishing withheld no type of the
+/// interface — a scheme or a constructor's arguments — for an `err` inside
+/// it (`Publish.Publisher.poisoned`). `err` means "a message was written
 /// for this"; a producer that makes one without it turns a wrong program
 /// into a silent hole and
 /// a `poisoned` wanted into an INTERNAL ERROR at `build`. Only the types the
@@ -788,7 +790,7 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
 /// which it discards, and that rejection is an answer ("not derivable"), not
 /// a hole. Safety builds only, as the evidence check's panic is (§13.1):
 /// one walk over those types, each node once.
-fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, tables: []const []const Var.Optional) Error!void {
+fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, withheld: u32, tables: []const []const Var.Optional) Error!void {
     const seen = store.nextMark();
     var stack: std.ArrayList(Var) = .empty;
     defer stack.deinit(scratch);
@@ -802,9 +804,9 @@ fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, tab
         var n: u32 = 0;
         while (Walk.child(store, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
     }
-    if (errs != 0 or p6.poisoned.len != 0) std.debug.panic(
-        "an `err` without a message: {d} in the types of declarations and locals, and {d} poisoned instruction(s), in a module that reported no error and whose dependencies reported none (checker-v2.md §12.2)",
-        .{ errs, p6.poisoned.len },
+    if (errs != 0 or p6.poisoned.len != 0 or withheld != 0) std.debug.panic(
+        "an `err` without a message: {d} in the types of declarations and locals, {d} poisoned instruction(s), and {d} interface type(s) withheld for an `err`, in a module that reported no error and whose dependencies reported none (checker-v2.md §12.2)",
+        .{ errs, p6.poisoned.len, withheld },
     );
 }
 

@@ -1,0 +1,12 @@
+--! A public schema, and a public type whose constructor carries its
+--! endpoint: the importer reads `Wrap`'s argument from this interface.
+
+import Schema
+
+
+pub schema Item =
+    name : String
+
+
+pub type Wrap
+    = Wrap (List Item.Type)

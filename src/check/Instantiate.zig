@@ -454,7 +454,10 @@ fn ownCtor(in: *Instantiate, index: u32, region: Bir.Inst.Index) Error!?Var {
     const rank = in.frame().rank;
 
     const mark = cx.store.count();
-    var b: Types.Builder = .init(cx.store, cx.types, cx.graph, cx.artifacts, cx.module, bir, .flex, rank, cx.scratch, cx.interner);
+    // The module's reader, with its schema lookup and the interfaces: an
+    // argument that names a schema endpoint is that endpoint, exactly as in
+    // an annotation (checker-v2.md §11.5), never an unreported `err`.
+    var b = cx.builder(.flex, rank);
     defer b.deinit();
     const params = bir.declTypeParams(owner);
     const param_vars = try cx.scratch.alloc(Var, params.len);

@@ -1,0 +1,72 @@
+-- A schema endpoint as a constructor's argument and as a record field, end
+-- to end (checker-v2.md §11.5): an `update` takes a parsed `Item.Type` out of
+-- a `Msg` and stores it in its model, whose fields are read back as the
+-- record they are. The same through a `type alias`, through another module's
+-- schema, and through another module's constructor. Each argument used to
+-- read as a silent `err`, which made `${item.name}` ambiguous.
+import Api
+import Node
+import Schema
+
+
+schema Item =
+    name : String
+
+
+type alias Items =
+    List Item.Type
+
+
+type Msg
+    = Got (List Item.Type)
+    | GotAliased Items
+    | GotRemote (List Api.Item.Type)
+
+
+type alias Model =
+    items : List Item.Type
+    remote : List Api.Item.Type
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Got items →
+            { model | items = items }
+
+        GotAliased items →
+            { model | items = model.items ++ items }
+
+        GotRemote remote →
+            { model | remote = remote }
+
+
+row : Item.Type → String
+row item = "${item.name}"
+
+
+remoteRow : Api.Item.Type → String
+remoteRow item = "${item.name}×${item.count}"
+
+
+parsed : String → List Item.Type
+parsed text =
+    case Item.parse text of
+        Ok item →
+            [ item ]
+
+        Err _ →
+            []
+
+
+main : Node.Program
+main =
+    first = update (Got (parsed "{\"name\":\"first\"}")) { items = [], remote = [] }
+    second = update (GotAliased [ { name = "second" } ]) first
+    model = update (GotRemote [ { name = "third", count = 3 } ]) second
+    Node.printLines
+        [ String.join (List.map model.items row) ","
+        , String.join (List.map model.remote remoteRow) ","
+        , String.fromInt
+            (Api.total (Api.Batch [ { name = "a", count = 2 }, { name = "b", count = 5 } ]))
+        ]
