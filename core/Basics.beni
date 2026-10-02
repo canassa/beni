@@ -4,17 +4,17 @@
 --! name listed there is declared here, so a module that imports nothing still
 --! sees `Int`, `Bool`, `max` and the rest. It is also where the functions the
 --! operators of §6.5 desugar to live: `a + b` is `add a b`, `a == b` is
---! `eq a b`, and likewise `-` `*` `/` `//` `^` `/=` `<` `>` `<=` `>=` `&&`
+--! `eq a b`, and likewise `-` `*` `/` `//` `^` `≠` `<` `>` `≤` `≥` `&&`
 --! `||` and `++`, with the prefix `-` desugaring to `negate`. Those are all
---! of them: a list's spread is `List.cons` and `List.append`, and `|>` and
---! `<|` are pure syntax with no function behind them — `x |> f a` rewrites to the direct call
---! `f x a`, and `f <| x` to `f x` (§6.5, §6.7). The operators are syntax, so
+--! of them: a list's spread is `List.cons` and `List.append`, and `▷` and
+--! `◁` are pure syntax with no function behind them — `x ▷ f a` rewrites to the direct call
+--! `f x a`, and `f ◁ x` to `f x` (§6.5, §6.7). The operators are syntax, so
 --! these names are never written by hand — but they are what the checker
 --! types and what the code generator emits.
 --!
 --! Two things Elm has are gone (`fast-compiler.md` §3.1): `comparable` and
---! `compappend`. What replaced them is the `compare` method: `<`, `>`, `<=`
---! and `>=` call the `compare` of whatever type they are given, so they
+--! `compappend`. What replaced them is the `compare` method: `<`, `>`, `≤`
+--! and `≥` call the `compare` of whatever type they are given, so they
 --! order a `String`, a record or a list as readily as a number, and `==`
 --! calls that type's `eq` the same way.
 --!
@@ -154,7 +154,7 @@ pub foreign pure pow : number, number → number
 pub foreign pure eq : equatable a, a → Bool
 
 
---| Check if two values are not equal. What `/=` desugars to.
+--| Check if two values are not equal. What `≠` desugars to.
 --|
 --|     neq 1 2 == True
 pub foreign pure neq : equatable a, a → Bool
@@ -174,14 +174,14 @@ pub foreign pure lt : number, number → Bool
 pub foreign pure gt : number, number → Bool
 
 
---| Check if the first number is less than or equal to the second. What `<=`
+--| Check if the first number is less than or equal to the second. What `≤`
 --| desugars to.
 --|
 --|     le 1 1 == True
 pub foreign pure le : number, number → Bool
 
 
---| Check if the first number is greater than or equal to the second. What `>=`
+--| Check if the first number is greater than or equal to the second. What `≥`
 --| desugars to.
 --|
 --|     ge 1 1 == True

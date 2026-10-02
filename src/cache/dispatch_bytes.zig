@@ -1159,7 +1159,7 @@ test "every table of a project round-trips: sites, evidence, derived, tries and 
         \\    = Pair a a
         \\
         \\
-        \\pub wrap : a -> Pair a
+        \\pub wrap : a → Pair a
         \\wrap x =
         \\    Pair x x
         \\
@@ -1168,28 +1168,28 @@ test "every table of a project round-trips: sites, evidence, derived, tries and 
         \\import Shapes exposing (Tag, Pair)
         \\
         \\
-        \\pub sameTag : Tag, Tag -> Bool
+        \\pub sameTag : Tag, Tag → Bool
         \\sameTag a b =
         \\    a == b
         \\
         \\
-        \\pub samePair : Pair Int, Pair Int -> Bool
+        \\pub samePair : Pair Int, Pair Int → Bool
         \\samePair a b =
         \\    a == b
         \\
         \\
-        \\pub sameRecord : { x : Int, y : String }, { x : Int, y : String } -> Bool
+        \\pub sameRecord : { x : Int, y : String }, { x : Int, y : String } → Bool
         \\sameRecord a b =
         \\    a == b
         \\
         \\
-        \\pub sameTuple : ( Int, Int ), ( Int, Int ) -> Bool
+        \\pub sameTuple : Int × Int, Int × Int → Bool
         \\sameTuple a b =
         \\    a == b
         \\
         \\
-        \\pub bigger : a, a -> a
-        \\    where a.compare : a, a -> Order
+        \\pub bigger : a, a → a
+        \\    where a.compare : a, a → Order
         \\bigger a b =
         \\    if a < b then b else a
         \\
@@ -1306,18 +1306,18 @@ const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
     \\    | Node (Tree a) a (Tree a)
     \\
     \\
-    \\pub sameTree : Tree Int, Tree Int -> Bool
+    \\pub sameTree : Tree Int, Tree Int → Bool
     \\sameTree a b =
     \\    a == b
     \\
     \\
-    \\pub sameRecord : { name : String, value : Int }, { name : String, value : Int } -> Bool
+    \\pub sameRecord : { name : String, value : Int }, { name : String, value : Int } → Bool
     \\sameRecord a b =
     \\    a == b
     \\
     \\
-    \\pub bigger : a, a -> a
-    \\    where a.compare : a, a -> Order
+    \\pub bigger : a, a → a
+    \\    where a.compare : a, a → Order
     \\bigger a b =
     \\    if a < b then b else a
     \\

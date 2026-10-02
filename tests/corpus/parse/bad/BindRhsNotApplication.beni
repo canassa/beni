@@ -1,16 +1,16 @@
--- bind_rhs_not_application at 5:14 (the `+`) and 10:10 (the `case`): the
+-- bind_rhs_not_application at 5:13 (the `+`) and 10:9 (the `case`): the
 -- right of `<-` is the call that receives the rest of the block (§6.7), so
 -- an arithmetic expression and a block form have no reading there.
 arithmetic f =
-    x <- f 1 + 2
+    x ← f 1 + 2
     x
 
 
 block f m =
-    x <- case m of
-        Just v ->
+    x ← case m of
+        Just v →
             f v
 
-        Nothing ->
+        Nothing →
             f 0
     x

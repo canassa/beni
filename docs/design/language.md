@@ -612,7 +612,7 @@ string primitives, the list representation — are declared without a body, impl
 
 ```elm
 --| Add two numbers.
-pub foreign pure add : number, number -> number
+pub foreign pure add : number, number → number
 
 pub foreign type List a
 ```
@@ -782,9 +782,9 @@ every item after it; a bind is never the last item (`block_ends_in_binding`). Th
 with "the remaining bindings and the body" read as "the remaining items".
 
 ```elm
-scope <- Task.scope
-conn <- Task.bracket (λ() -> Db.open url) Db.close
-h <- Result.andThen (readHeader s)
+scope ← Task.scope
+conn ← Task.bracket (λ() → Db.open url) Db.close
+h ← Result.andThen (readHeader s)
 render scope conn h
 ```
 
@@ -1780,7 +1780,7 @@ not done (research 36 question 7, accepted: identity first, measured before anyt
 ```elm
 <table>
     <For each={model.rows} keyed={.id}>
-        {λrow -> <tr class={rowClass model row}><td>{row.label}</td></tr>}
+        {λrow → <tr class={rowClass model row}><td>{row.label}</td></tr>}
     </For>
 </table>
 ```
@@ -2116,7 +2116,7 @@ codes for the markup runtime.
 
 ```elm
 <Show when={model.editing} keyed fallback={<p>Pick a user</p>}>
-    {λuser -> <UserEditor user={user} />}
+    {λuser → <UserEditor user={user} />}
 </Show>
 ```
 
@@ -2231,13 +2231,13 @@ expression run for its effect — is written at all.
 ```elm
 update msg model =
     case msg of
-        Add ->
+        Add →
             title = String.trim model.draft
             Log.info "adding ${title}"
             if String.isEmpty title then
                 model
             else
-                { model | todos = [ ...model.todos, newTodo model.nextId title ] }
+                { model | todos = [ …model.todos, newTodo model.nextId title ] }
 ```
 
 **Grammar** (§3's notation; it replaces §3's `Definition`, `LetBinding`, the four `Expr` forms and
@@ -2325,9 +2325,9 @@ the body alone" no longer allows: there is no body apart from the items.
 
 ```elm
 render url s =
-    scope <- Task.scope
-    conn <- Task.bracket (λ() -> Db.open url) Db.close
-    h <- Result.andThen (readHeader s)
+    scope ← Task.scope
+    conn ← Task.bracket (λ() → Db.open url) Db.close
+    h ← Result.andThen (readHeader s)
     draw scope conn h
 ```
 
@@ -2617,38 +2617,38 @@ hash s =
 … and after it, as a programmer writes it now:
 
 ```elm
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Add ->
+        Add →
             title = String.trim model.draft
             if String.isEmpty title then
                 model
             else
                 { model
-                    | todos = [ ...model.todos, { id = model.nextId, title = title, done = False } ]
+                    | todos = [ …model.todos, { id = model.nextId, title = title, done = False } ]
                     , nextId = model.nextId + 1
                     , draft = ""
                 }
 
-        Toggle id ->
-            todos = List.map model.todos λt ->
+        Toggle id →
+            todos = List.map model.todos λt →
                 if t.id == id then { t | done = not t.done } else t
             { model | todos = todos }
 
-        ClearDone ->
+        ClearDone →
             _ = Debug.log "todos before" (List.length model.todos)
             Log.info "clearing"
-            { model | todos = List.filter model.todos λt -> not t.done }
+            { model | todos = List.filter model.todos λt → not t.done }
 
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
-    left = List.length (List.filter model.todos λt -> not t.done)
+    left = List.length (List.filter model.todos λt → not t.done)
     <section class="todoapp">
         <ul class="todo-list">
             <For each={model.todos} keyed={.id}>
-                {λt i ->
+                {λt i →
                     stripe = if Int.mod i 2 == 0 then "even" else "odd"
                     <li class={stripe} onClick={Toggle t.id}>{t.title}</li>}
             </For>
@@ -2657,8 +2657,8 @@ view model =
     </section>
 
 
-hash : String -> Int
-hash s = String.foldl s 5381 λc h -> Int.mod (h * 33 + Char.toCode c) 4294967296
+hash : String → Int
+hash s = String.foldl s 5381 λc h → Int.mod (h * 33 + Char.toCode c) 4294967296
 ```
 
 What each change is: the `let`s are blocks (§12.2), and `Log.info "clearing"`, a `()`, is a

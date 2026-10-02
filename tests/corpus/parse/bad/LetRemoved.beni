@@ -3,12 +3,12 @@
 -- bindings become — the bindings, then the body, moved to one column — and
 -- nothing else: the `let` is parsed on, so a nested one is reported too and
 -- the rest of the file still parses and checks.
-count : List Int -> Int
+count : List Int → Int
 count xs =
     List.length xs
 
 
-total : List Int -> Int
+total : List Int → Int
 total xs =
     let
         n = count xs
@@ -25,5 +25,5 @@ total xs =
         0
 
 
-inline : Int -> Int
+inline : Int → Int
 inline n = let m = n + 1 in m * m

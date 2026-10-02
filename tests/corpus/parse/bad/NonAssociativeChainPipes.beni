@@ -1,13 +1,13 @@
--- non_associative_chain at 5:12 (the `<|`): mixing `|>` and `<|` at
--- precedence 0 without parentheses (§6.5). Second at 9:12 in the other
+-- non_associative_chain at 5:11 (the `<|`): mixing `|>` and `<|` at
+-- precedence 0 without parentheses (§6.5). Second at 9:11 in the other
 -- order. `ok` on line 12 is valid.
 f g x y =
-    x |> g <| y
+    x ▷ g ◁ y
 
 
 h g x y =
-    g <| x |> y
+    g ◁ x ▷ y
 
 
 ok g x y =
-    (x |> g) <| y
+    (x ▷ g) ◁ y

@@ -4,16 +4,16 @@
 --! randomness. `value` runs a generator on the page's own seed, anywhere a
 --! function may be impure, and `generate` is the same as a command:
 --!
---!     roll : () -> Int
+--!     roll : () → Int
 --!     roll () =
 --!         Random.value (Random.int 1 6)
 --!
 --!     update msg model =
 --!         case msg of
---!             Roll ->
+--!             Roll →
 --!                 ( model, Random.generate (Random.int 1 6) Rolled )
 --!
---!             Rolled n ->
+--!             Rolled n →
 --!                 ( { model | face = n }, Cmd.none )
 --!
 --! `step` runs a generator on a `Seed` you hold instead, purely: the same

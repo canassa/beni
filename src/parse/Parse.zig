@@ -4548,12 +4548,12 @@ test "every declaration kind with visibility, docs and type parameters" {
     try expectClean(
         \\--! doc
         \\--| Doc.
-        \\pub type alias P a b = { a | x : Int, y : ( a, b ), z : (), w : {} }
+        \\pub type alias P a b = { a | x : Int, y : a × b, z : (), w : {} }
         \\pub opaque type T a = | A | B (List a) { r : a }
         \\type U = C
-        \\foreign pure f : Int -> Int
+        \\foreign pure f : Int → Int
         \\pub foreign type L a
-        \\f : (a -> b), List a -> List b
+        \\f : (a → b), List a → List b
         \\f g xs = xs
         \\pub answer = 42
         \\
@@ -4676,7 +4676,7 @@ test "types: the comma is the parameter separator and the arrow right-associates
 
 test "every atom: literals, names, brackets, operator functions, strings, multiline" {
     try expectClean(
-        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", λa b -> a, if a then b else c )
+        \\v = ( (+), (++), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", λa b → a, if a then b else c )
         \\m =
         \\    \\a
         \\    \\b
@@ -5187,10 +5187,10 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
     // `<|` is unaffected and still carries a block, which the chain test
     // below covers; here only `|>` and the two operator-function forms.
     try expectClean(
-        \\p1 xs f = xs |> f
-        \\p2 xs f = xs |> f 1
-        \\p3 xs f = xs |> (f 1)
-        \\p4 xs f g = xs |> f 1 |> g
+        \\p1 xs f = xs ▷ f
+        \\p2 xs f = xs ▷ f 1
+        \\p3 xs f = xs ▷ (f 1)
+        \\p4 xs f g = xs ▷ f 1 ▷ g
         \\
     ,
         \\(module
@@ -5284,13 +5284,13 @@ test "`|>` takes only an application, and neither pipe has a parenthesised form 
 
 test "block expressions as the last operand of a chain, and a lambda as the last argument" {
     try expectTree(
-        \\b1 f = f <| λx -> x + 1
-        \\b2 xs = xs |> List.map (λx -> x)
-        \\b3 t a b c = text <| if a then b else c
+        \\b1 f = f ◁ λx → x + 1
+        \\b2 xs = xs ▷ List.map (λx → x)
+        \\b3 t a b c = text ◁ if a then b else c
         \\b5 x = x + case x of
-        \\  1 -> 2
-        \\  _ -> 3
-        \\b6 f = f λx -> x
+        \\  1 → 2
+        \\  _ → 3
+        \\b6 f = f λx → x
         \\
     ,
         \\(module
@@ -5388,13 +5388,13 @@ test "layout: the worked example of §4, verbatim" {
     try expectClean(
         \\view model =
         \\    case model.page of
-        \\        Home ->
+        \\        Home →
         \\            title = "Hi"
         \\            body =
         \\                text title
         \\            div [] [ body ]
         \\
-        \\        About ->
+        \\        About →
         \\            text "about"
         \\
     ,
@@ -5431,15 +5431,15 @@ test "layout: the worked example of §4, verbatim" {
 
 test "layout: a branch list ends at a token its body cannot consume, and nested cases" {
     try expectClean(
-        \\f x = (case x of A -> y)
-        \\g x = [ case x of A -> y, 2 ]
+        \\f x = (case x of A → y)
+        \\g x = [ case x of A → y, 2 ]
         \\h a b =
         \\    case a of
-        \\        Just x ->
+        \\        Just x →
         \\            case b of
-        \\                Just y -> x
-        \\                Nothing -> x
-        \\        Nothing -> 0
+        \\                Just y → x
+        \\                Nothing → x
+        \\        Nothing → 0
         \\
     ,
         \\(module
@@ -5492,17 +5492,17 @@ test "layout: brackets do not suspend it, operators and keywords may lead a line
         \\ ]
         \\call =
         \\    List.map
-        \\      (λx -> x)
+        \\      (λx → x)
         \\     [ 1 ]
         \\branch m =
         \\    case
         \\        m
         \\    of
         \\        Just x
-        \\            ->
+        \\            →
         \\                x
         \\        Nothing
-        \\            -> 0
+        \\            → 0
         \\pick flag a b =
         \\    if flag
         \\    then a
@@ -5595,27 +5595,27 @@ test "layout errors: a continuation on column 1, misaligned case branches" {
 test "every pattern form, `as` binding loosest, a spread before, between and after items" {
     try expectClean(
         \\p1 x = case x of
-        \\  _ -> 0
-        \\  y -> 0
-        \\  Just z -> 0
-        \\  Maybe.Just z -> 0
-        \\  Nothing -> 0
-        \\  1 -> 0
-        \\  -1 -> 0
-        \\  'c' -> 0
-        \\  "s" -> 0
-        \\  () -> 0
-        \\  (a) -> 0
-        \\  (a, b) -> 0
-        \\  [] -> 0
-        \\  [a, b] -> 0
-        \\  { a, b } -> 0
-        \\  [a, b, ...c] -> 0
-        \\  Just x as m -> 0
-        \\  [x, ...xs] as all -> 0
-        \\  [...init, _] -> 0
-        \\  [a, ..._, z] -> 0
-        \\  Node (Leaf) _ (Leaf) -> 0
+        \\  _ → 0
+        \\  y → 0
+        \\  Just z → 0
+        \\  Maybe.Just z → 0
+        \\  Nothing → 0
+        \\  1 → 0
+        \\  -1 → 0
+        \\  'c' → 0
+        \\  "s" → 0
+        \\  () → 0
+        \\  (a) → 0
+        \\  (a, b) → 0
+        \\  [] → 0
+        \\  [a, b] → 0
+        \\  { a, b } → 0
+        \\  [a, b, …c] → 0
+        \\  Just x as m → 0
+        \\  [x, …xs] as all → 0
+        \\  […init, _] → 0
+        \\  [a, …_, z] → 0
+        \\  Node (Leaf) _ (Leaf) → 0
         \\
     ,
         \\(module
@@ -6224,14 +6224,14 @@ const fragment_pieces = [_][]const u8{
     "pub opaque type Q = Q Int\n",
     "foreign pure h : Int\n",
     "--| doc\n",
-    "v =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
+    "v =\n    case m of\n        Just n →\n            n\n\n        Nothing →\n            0\n",
     "w =\n    a = 1\n    b = 2\n    a + b\n",
     "u x = if x then 1 else 2\n",
     "l = [ 1, 2, 3 ]\n",
     "r = { a = 1, b = \"${x}\" }\n",
-    "s = λa b -> a\n",
+    "s = λa b → a\n",
     "t = f <| g <| x |> h\n",
-    "q s = parse s? |> f\n",
+    "q s = parse s? ▷ f\n",
     "m =\n    \\\\a\n    \\\\b\n",
     "p (Just x) { a } ( b, c ) = -x\n",
     "n xs = List.map (add 1 _) xs\n",
@@ -6240,12 +6240,12 @@ const fragment_pieces = [_][]const u8{
     "schema Page item = { items : List item via (convert item) }\n",
     "schema Message tagged \"kind\" of Count Int as \"count\" | Reset\n",
     "v =\n    <div class=\"a\" id={x} hidden>Hi {x}!<br /><></></div>\n",
-    "w = (<For each={xs} keyed={.id}>{λx -> <li>{x}</li>}</For>)\n",
-    "c = <Card {...d} title=\"t\">{-- n\n    }</Card>\n",
+    "w = (<For each={xs} keyed={.id}>{λx → <li>{x}</li>}</For>)\n",
+    "c = <Card {…d} title=\"t\">{-- n\n    }</Card>\n",
     "pub element \"input\" void\n",
     "pub event \"onInput\" on \"input\" via value : String\n",
     "schema LayoutMessage tagged \"kind\" of\n    Count as \"count\"\n        value : Int\n    Reset\n",
-    "o f =\n    x <- f 1\n    y = 2\n    x + y\n",
+    "o f =\n    x ← f 1\n    y = 2\n    x + y\n",
 };
 
 // PRNG-driven stand-in for the fuzzer (the toolchain's fuzz mode does not

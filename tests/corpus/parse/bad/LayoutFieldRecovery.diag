@@ -1,1 +1,1 @@
-[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/LayoutFieldRecovery.beni","start":{"line":4,"col":17},"end":{"line":4,"col":19}},"title":"UNEXPECTED TOKEN","message":"I was parsing a record and ran into `->`. I was expecting a type."}]
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/LayoutFieldRecovery.beni","start":{"line":4,"col":17},"end":{"line":4,"col":18}},"title":"UNEXPECTED TOKEN","message":"I was parsing a record and ran into `→`. I was expecting a type."}]

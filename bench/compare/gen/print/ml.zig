@@ -168,7 +168,21 @@ pub const P = struct {
             .pair => {
                 const parts = s.pairParts(t);
                 switch (p.lang) {
-                    .beni, .elm => {
+                    // `a × b` (language.md §12.8): an element that is a
+                    // product or a function takes parentheses, and so does
+                    // the product where an atom must stand.
+                    .beni => {
+                        if (parens) try p.out("(");
+                        for (parts, 0..) |part, i| {
+                            if (i > 0) try p.out(" × ");
+                            const wrap = s.tag(part) == .pair or s.tag(part) == .func;
+                            if (wrap) try p.out("(");
+                            try p.ty(part, false);
+                            if (wrap) try p.out(")");
+                        }
+                        if (parens) try p.out(")");
+                    },
+                    .elm => {
                         try p.out("( ");
                         try p.ty(parts[0], false);
                         try p.out(", ");
@@ -241,7 +255,7 @@ pub const P = struct {
                             if (i > 0) try p.out(", ");
                             try p.ty(x, true);
                         }
-                        try p.out(" -> ");
+                        try p.out(if (p.lang == .beni) " → " else " -> ");
                         try p.ty(ret, true);
                         if (parens) try p.out(")");
                     },
@@ -437,7 +451,11 @@ pub const P = struct {
                 }
             },
             .pipe => {
-                const op = if (p.lang == .purescript) " # " else " |> ";
+                const op = switch (p.lang) {
+                    .purescript => " # ",
+                    .beni => " ▷ ",
+                    else => " |> ",
+                };
                 try p.group(x.a, ind);
                 const saved = p.followed;
                 const stages = t.extraList(x.b);
@@ -562,7 +580,7 @@ pub const P = struct {
                         p.annotations += 1;
                     } else try p.binder(l);
                 }
-                try p.out(" ->");
+                try p.out(if (p.lang == .beni) " →" else " ->");
             },
             .gleam => {
                 try p.out("fn(");
@@ -770,7 +788,11 @@ pub const P = struct {
             } else if (p.lang == .gleam and t.expr(x.a).tag == .pair) {
                 try p.out("_, _");
             } else try p.pat(xs[k], false);
-            try p.out(if (p.lang == .roc) " =>" else " ->");
+            try p.out(switch (p.lang) {
+                .roc => " =>",
+                .beni => " →",
+                else => " ->",
+            });
             try p.branchBody(xs[k + 1], ind + 4);
         }
         if (p.lang == .gleam or p.lang == .roc) {
@@ -1177,7 +1199,7 @@ pub const P = struct {
                     if (i > 0) try p.out(", ");
                     try p.ty(t.locals.items[l].ty, true);
                 }
-                try p.out(" -> ");
+                try p.out(if (p.lang == .beni) " → " else " -> ");
                 try p.ty(f.ret, p.store().tag(f.ret) == .func);
             },
             else => {

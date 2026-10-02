@@ -32,7 +32,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign pure twice : Int -> Int
+    \\pub foreign pure twice : Int → Int
     \\
     \\
     \\pub one : Int
@@ -393,7 +393,7 @@ test "the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
     const base = try baselineKeys(&w, arena);
     const iface_before = try ifaceHashes(&w, arena);
     try w.write("src/Leaf.beni",
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub one : Int
@@ -421,7 +421,7 @@ test "a pub signature in Leaf moves Leaf, Mid and Top, and its interface too" {
     const base = try baselineKeys(&w, arena);
     const iface_before = try ifaceHashes(&w, arena);
     try w.write("src/Leaf.beni",
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub one : Float
@@ -1267,7 +1267,7 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
 
     _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     try w.write(leaf_file,
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub one : Int
@@ -1326,7 +1326,7 @@ const schema_consumer =
     \\import Models
     \\
     \\
-    \\pub keep : Models.User.Type -> Models.User.Type
+    \\pub keep : Models.User.Type → Models.User.Type
     \\keep value =
     \\    value
     \\
@@ -1395,7 +1395,7 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Lib.beni",
-        \\pub step : Int -> Int
+        \\pub step : Int → Int
         \\step n =
         \\    n + 1
         \\
@@ -1404,7 +1404,7 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
         \\import Lib
         \\
         \\
-        \\pub run : Int -> Int
+        \\pub run : Int → Int
         \\run n =
         \\    Lib.step (Lib.step n)
         \\
@@ -1417,7 +1417,7 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     try w.write("src/Lib.beni",
-        \\pub step : Int -> Int
+        \\pub step : Int → Int
         \\step n =
         \\    Debug.log "step" (n + 1)
         \\
@@ -1452,14 +1452,14 @@ test "a dependency that comes to suspend makes its importer's sync error appear 
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Plat.beni",
-        \\pub foreign suspends get : Int -> String
+        \\pub foreign suspends get : Int → String
         \\
         \\
-        \\pub foreign pure onEvent : sync (Int -> String) -> Int
+        \\pub foreign pure onEvent : sync (Int → String) → Int
         \\
     );
     const pure_lib =
-        \\pub name : Int -> String
+        \\pub name : Int → String
         \\name n =
         \\    String.fromInt n
         \\
@@ -1486,7 +1486,7 @@ test "a dependency that comes to suspend makes its importer's sync error appear 
         \\import Plat
         \\
         \\
-        \\pub name : Int -> String
+        \\pub name : Int → String
         \\name n =
         \\    Plat.get n
         \\
@@ -1554,14 +1554,14 @@ test "a public schema's field renamed crosses the interface firewall" {
 
 const method_inner =
     \\pub type Inner
-    \\    = Inner String (Int -> Int)
+    \\    = Inner String (Int → Int)
     \\
     \\
     \\pub eq left right =
     \\    case left of
-    \\        Inner labelLeft _ ->
+    \\        Inner labelLeft _ →
     \\            case right of
-    \\                Inner labelRight _ ->
+    \\                Inner labelRight _ →
     \\                    labelLeft == labelRight
     \\
 ;
@@ -1671,10 +1671,10 @@ const schema_person =
     \\main =
     \\    Node.printLines
     \\        [ case Person.parse "{\"age\":1}" of
-    \\            Ok p ->
+    \\            Ok p →
     \\                String.fromInt p.age
     \\
-    \\            Err _ ->
+    \\            Err _ →
     \\                "failed"
     \\        ]
     \\
@@ -1759,8 +1759,8 @@ test "a custom eq made private invalidates and rejects the importer that derives
 // byte-compared with a `--no-cache` build and RUN.
 
 const convention_leaf =
-    \\pub maxOf : a, a -> a
-    \\    where a.compare : a, a -> Order
+    \\pub maxOf : a, a → a
+    \\    where a.compare : a, a → Order
     \\maxOf a b =
     \\    if a < b then
     \\        b
@@ -1769,14 +1769,14 @@ const convention_leaf =
     \\        a
     \\
     \\
-    \\pub h : a, a -> a
-    \\    where a.compare : a, a -> Order
+    \\pub h : a, a → a
+    \\    where a.compare : a, a → Order
     \\h =
     \\    maxOf
     \\
     \\
     \\pub blank : List a
-    \\    where a.eq : a, a -> Bool
+    \\    where a.eq : a, a → Bool
     \\blank =
     \\    []
     \\
@@ -1787,8 +1787,8 @@ const convention_top =
     \\import Node exposing (Program)
     \\
     \\
-    \\mine : a, a -> a
-    \\    where a.compare : a, a -> Order
+    \\mine : a, a → a
+    \\    where a.compare : a, a → Order
     \\mine =
     \\    Leaf.h
     \\
@@ -1852,7 +1852,7 @@ test "a constrained function constant rewritten with parameters keeps its import
 }
 
 test "a constrained function constant rewritten as a lambda keeps its importer's cached calling convention" {
-    try expectConventionEdit("h =\n    λa b -> maxOf a b\n");
+    try expectConventionEdit("h =\n    λa b → maxOf a b\n");
 }
 
 test "a constrained function constant rewritten as a block keeps its importer's cached calling convention" {
@@ -2125,7 +2125,7 @@ test "a module with a type error is never written, and its importers are not eit
     defer w.deinit();
     try writeProject(&w);
     try w.write("src/Leaf.beni",
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub one : Int
@@ -2331,23 +2331,23 @@ test "a warm build emits byte-identical JavaScript, and it runs" {
         \\    | Rect Int Int
         \\
         \\
-        \\pub area : Shape -> Int
+        \\pub area : Shape → Int
         \\area s =
         \\    case s of
-        \\        Circle r ->
+        \\        Circle r →
         \\            r * r
         \\
-        \\        Rect x y ->
+        \\        Rect x y →
         \\            x * y
         \\
         \\
-        \\pub same : Shape, Shape -> Bool
+        \\pub same : Shape, Shape → Bool
         \\same a b =
         \\    a == b
         \\
         \\
-        \\pub bigger : a, a -> a
-        \\    where a.compare : a, a -> Order
+        \\pub bigger : a, a → a
+        \\    where a.compare : a, a → Order
         \\bigger a b =
         \\    if a < b then b else a
         \\
@@ -2430,10 +2430,10 @@ test "an importer re-checked against cached records reads their aliases as a col
         \\
         \\
         \\pub type alias Pred a =
-        \\    a -> Bool
+        \\    a → Bool
         \\
         \\
-        \\pub box : a -> Box a
+        \\pub box : a → Box a
         \\box x =
         \\    { inner = { v = x, w = 1 }, tag = "box" }
         \\
@@ -2972,7 +2972,7 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     defer w.deinit();
     try writeProject(&w);
     try w.write("src/Noisy.beni",
-        \\pub shout : Int -> Int
+        \\pub shout : Int → Int
         \\shout n =
         \\    Debug.log "shouting" n
         \\
@@ -3357,7 +3357,7 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
     const rows = [_]Row{
         // A body edit.
         .{ .what = "a body edit", .source =
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub one : Int
@@ -3540,10 +3540,10 @@ fn writeDerivedProject(w: *World, holder: []const u8) !void {
         \\    = Keyed Int String
         \\
         \\
-        \\pub key : Keyed, () -> Int
+        \\pub key : Keyed, () → Int
         \\key k u =
         \\    case k of
-        \\        Keyed n _ ->
+        \\        Keyed n _ →
         \\            n
         \\
     );
@@ -3561,7 +3561,7 @@ fn writeDerivedProject(w: *World, holder: []const u8) !void {
         \\    = Hidden (Outer a)
         \\
         \\
-        \\pub make : a -> Hidden a
+        \\pub make : a → Hidden a
         \\make x =
         \\    Hidden (Outer (H.Holder x))
         \\
@@ -3573,7 +3573,7 @@ fn writeDerivedProject(w: *World, holder: []const u8) !void {
         \\import Outer
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show value =
         \\    if value then
         \\        "True"
@@ -3597,8 +3597,8 @@ const holder_by_key =
     \\    = Holder a
     \\
     \\
-    \\pub eq : Holder a, Holder a -> Bool
-    \\    where a.key : a, () -> Int
+    \\pub eq : Holder a, Holder a → Bool
+    \\    where a.key : a, () → Int
     \\eq (Holder x) (Holder y) =
     \\    x.key () == y.key ()
     \\
@@ -3609,8 +3609,8 @@ const holder_by_eq =
     \\    = Holder a
     \\
     \\
-    \\pub eq : Holder a, Holder a -> Bool
-    \\    where a.eq : a, a -> Bool
+    \\pub eq : Holder a, Holder a → Bool
+    \\    where a.eq : a, a → Bool
     \\eq (Holder x) (Holder y) =
     \\    x == y
     \\
@@ -3845,11 +3845,11 @@ test "a warm build of a markup program after a view's markup is edited writes wh
         \\import Html exposing (Html)
         \\
         \\
-        \\pub card : { title : String, items : List String } -> Html msg
+        \\pub card : { title : String, items : List String } → Html msg
         \\card props =
         \\    <section class={[ ( "card", True ), ( "empty", props.items == [] ) ]}>
         \\        <h2>{props.title}</h2>
-        \\        <ul><For each={props.items}>{λitem -> <li>{item}</li>}</For></ul>
+        \\        <ul><For each={props.items}>{λitem → <li>{item}</li>}</For></ul>
         \\    </section>
         \\
     ;
@@ -4067,7 +4067,7 @@ const k_cases = [_]EditCase{
         \\
         \\pub type W = W T
         \\
-        \\pub same : T, T -> Bool
+        \\pub same : T, T → Bool
         \\same a b = W a == W b
         \\
         ,
@@ -4076,7 +4076,7 @@ const k_cases = [_]EditCase{
         \\import M exposing (T)
         \\import N exposing (W)
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then "T" else "F"
         \\
@@ -4097,12 +4097,12 @@ const k_cases = [_]EditCase{
                 .m =
                 \\pub type T = T Int
                 \\
-                \\pub eq : T, T -> Bool
+                \\pub eq : T, T → Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) -> Int.mod x 10 == Int.mod y 10
+                \\        ( T x, T y ) → Int.mod x 10 == Int.mod y 10
                 \\
-                \\pub compare : T, T -> Order
+                \\pub compare : T, T → Order
                 \\compare a b = EQ
                 \\
                 ,
@@ -4117,7 +4117,7 @@ const k_cases = [_]EditCase{
         \\
         \\pub type W = W T
         \\
-        \\pub same : T, T -> Bool
+        \\pub same : T, T → Bool
         \\same a b = W a == W b
         \\
         ,
@@ -4126,7 +4126,7 @@ const k_cases = [_]EditCase{
         \\import M exposing (T)
         \\import N exposing (W)
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then "T" else "F"
         \\
@@ -4140,12 +4140,12 @@ const k_cases = [_]EditCase{
                 .m =
                 \\pub type T = T Int
                 \\
-                \\pub eq : T, T -> Bool
+                \\pub eq : T, T → Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) -> Int.mod x 10 == Int.mod y 10
+                \\        ( T x, T y ) → Int.mod x 10 == Int.mod y 10
                 \\
-                \\pub compare : T, T -> Order
+                \\pub compare : T, T → Order
                 \\compare a b = EQ
                 \\
                 ,
@@ -4260,7 +4260,7 @@ const k_cases = [_]EditCase{
             },
             .{
                 .m =
-                \\pub type C = C Int | F (Int -> Int)
+                \\pub type C = C Int | F (Int → Int)
                 \\
                 ,
                 .expect = .{ .codes = &.{"not_equatable"} },
@@ -4291,7 +4291,7 @@ const k_cases = [_]EditCase{
                 .m =
                 \\pub type alias R = { name : String, n : Int }
                 \\
-                \\pub describe : R -> String
+                \\pub describe : R → String
                 \\describe r = r.name
                 \\
                 ,
@@ -4301,7 +4301,7 @@ const k_cases = [_]EditCase{
                 .m =
                 \\pub type alias R = { name : String, n : Int, extra : Bool }
                 \\
-                \\pub describe : R -> String
+                \\pub describe : R → String
                 \\describe r = if r.extra then r.name else "no"
                 \\
                 ,
@@ -4379,7 +4379,7 @@ const k_cases = [_]EditCase{
         .states = &.{
             .{
                 .m =
-                \\pub label : String -> String
+                \\pub label : String → String
                 \\label s = s
                 \\
                 ,
@@ -4387,7 +4387,7 @@ const k_cases = [_]EditCase{
             },
             .{
                 .m =
-                \\pub label : Int -> String
+                \\pub label : Int → String
                 \\label s = String.fromInt s
                 \\
                 ,
@@ -4408,7 +4408,7 @@ const evidence_cases = [_]EditCase{
         \\    = W (M.Box a)
         \\
         \\
-        \\pub same : W Int, W Int -> Bool
+        \\pub same : W Int, W Int → Bool
         \\same x y =
         \\    x == y
         \\
@@ -4419,7 +4419,7 @@ const evidence_cases = [_]EditCase{
         \\import N
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then "T" else "F"
         \\
@@ -4442,7 +4442,7 @@ const evidence_cases = [_]EditCase{
                 .m =
                 \\pub type Box a
                 \\    = Box a
-                \\    | Fn (Int -> Int)
+                \\    | Fn (Int → Int)
                 \\
                 ,
                 .expect = .{ .codes = &.{ "not_equatable", "not_equatable", "not_equatable" } },
@@ -4459,7 +4459,7 @@ const evidence_cases = [_]EditCase{
                 .m =
                 \\pub type Box a
                 \\    = Box a
-                \\    | Fn (a -> Int)
+                \\    | Fn (a → Int)
                 \\
                 ,
                 .expect = .{ .codes = &.{ "not_equatable", "not_equatable", "not_equatable" } },
@@ -4482,7 +4482,7 @@ const evidence_cases = [_]EditCase{
         \\import N
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then "T" else "F"
         \\
@@ -4499,8 +4499,8 @@ const evidence_cases = [_]EditCase{
                 \\    = Holder a
                 \\
                 \\
-                \\pub eq : Holder a, Holder a -> Bool
-                \\    where a.eq : a, a -> Bool
+                \\pub eq : Holder a, Holder a → Bool
+                \\    where a.eq : a, a → Bool
                 \\eq (Holder x) (Holder y) =
                 \\    x == y
                 \\
@@ -4513,8 +4513,8 @@ const evidence_cases = [_]EditCase{
                 \\    = Holder a
                 \\
                 \\
-                \\pub eq : Holder a, Holder a -> Bool
-                \\    where a.compare : a, a -> Order
+                \\pub eq : Holder a, Holder a → Bool
+                \\    where a.compare : a, a → Order
                 \\eq (Holder x) (Holder y) =
                 \\    x < y
                 \\
@@ -4527,7 +4527,7 @@ const evidence_cases = [_]EditCase{
                 \\    = Holder a
                 \\
                 \\
-                \\pub eq : Holder a, Holder a -> Bool
+                \\pub eq : Holder a, Holder a → Bool
                 \\eq x y =
                 \\    True
                 \\
@@ -4552,7 +4552,7 @@ const evidence_cases = [_]EditCase{
         \\import N
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then "T" else "F"
         \\
@@ -4569,10 +4569,10 @@ const evidence_cases = [_]EditCase{
                 \\    = T Int
                 \\
                 \\
-                \\pub eq : T, T -> Bool
+                \\pub eq : T, T → Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) ->
+                \\        ( T x, T y ) →
                 \\            Int.mod 10 x == Int.mod 10 y
                 \\
                 ,
@@ -4584,10 +4584,10 @@ const evidence_cases = [_]EditCase{
                 \\    = T Int
                 \\
                 \\
-                \\eq : T, T -> Bool
+                \\eq : T, T → Bool
                 \\eq a b =
                 \\    case ( a, b ) of
-                \\        ( T x, T y ) ->
+                \\        ( T x, T y ) →
                 \\            Int.mod 10 x == Int.mod 10 y
                 \\
                 ,
@@ -4607,7 +4607,7 @@ const evidence_cases = [_]EditCase{
                 \\    = T Int
                 \\
                 \\
-                \\compare : T, T -> Order
+                \\compare : T, T → Order
                 \\compare a b =
                 \\    EQ
                 \\
@@ -4622,7 +4622,7 @@ const evidence_cases = [_]EditCase{
         \\import M
         \\
         \\
-        \\pub same : M.S.Type, M.S.Type -> Bool
+        \\pub same : M.S.Type, M.S.Type → Bool
         \\same a b =
         \\    a == b
         \\
@@ -4661,7 +4661,7 @@ const evidence_cases = [_]EditCase{
                 \\
                 \\type Target
                 \\    = Target Int
-                \\    | Fn (Int -> Int)
+                \\    | Fn (Int → Int)
                 \\
                 \\
                 \\pub schema S tagged "kind" of
@@ -4685,7 +4685,7 @@ const evidence_cases = [_]EditCase{
                 \\    = Target Int
                 \\
                 \\
-                \\eq : Target, Target -> Bool
+                \\eq : Target, Target → Bool
                 \\eq a b =
                 \\    True
                 \\
@@ -4721,7 +4721,7 @@ test "a view module re-checked against the cached vocabulary module reads it as 
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : String -> Html msg
+        \\pub view : String → Html msg
         \\view s =
         \\    Html.text s
         \\
@@ -4732,7 +4732,7 @@ test "a view module re-checked against the cached vocabulary module reads it as 
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : String -> Html msg
+        \\pub view : String → Html msg
         \\view s =
         \\    Html.map (Html.text s) identity
         \\
@@ -4780,11 +4780,11 @@ fn writeMarkupProject(w: *World, card_class: []const u8) !void {
         \\    = Picked Int
         \\
         \\
-        \\pub view : List { id : Int, label : String } -> Html Msg
+        \\pub view : List { id : Int, label : String } → Html Msg
         \\view rows =
         \\    <ul>
         \\        <Card title="Rows" />
-        \\        <For each={rows}>{λr -> <li onClick={Picked r.id}>{r.label}</li>}</For>
+        \\        <For each={rows}>{λr → <li onClick={Picked r.id}>{r.label}</li>}</For>
         \\    </ul>
         \\
     );

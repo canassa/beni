@@ -370,7 +370,7 @@ test "one own method's messages print the same in every declaration order" {
     defer s.deinit();
     const t = "type T\n    = T Int\n\n\n";
     const v = "type V\n    = V Int\n\n\n";
-    const eq = "pub eq : T, Int -> Bool\neq (T a) b =\n    a == b\n\n\n";
+    const eq = "pub eq : T, Int → Bool\neq (T a) b =\n    a == b\n\n\n";
     const one = "one =\n    T 1 == T 1\n\n\n";
     const two = "two =\n    V 2 == V 2\n\n\n";
     // One module name in both orders (a message names `Main.eq`): each order
@@ -456,11 +456,11 @@ test "a derived eq whose pass is refused a nested check says so at the compariso
         \\    = Holder a
         \\
         \\
-        \\pub eq : Holder a, Holder a -> Bool
-        \\    where a.key : a, () -> Int
+        \\pub eq : Holder a, Holder a → Bool
+        \\    where a.key : a, () → Int
         \\eq l r =
         \\    case ( l, r ) of
-        \\        ( Holder x, Holder y ) ->
+        \\        ( Holder x, Holder y ) →
         \\            x.key () == y.key ()
         \\
     );

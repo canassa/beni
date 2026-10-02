@@ -37,10 +37,10 @@ repeat() {
 annotation() {
     printf -- '-- check/depth: %s\n' "$2"
     printf 'pub f : '
-    repeat "$1" '( '
+    repeat "$(($1 - 1))" '('
     printf 'Int'
-    repeat "$1" ', Int )'
-    printf ' -> Int\nf _ =\n    1\n'
+    repeat "$(($1 - 1))" ' × Int)'
+    printf ' × Int → Int\nf _ =\n    1\n'
 }
 annotation 510 'one level under Types.Builder.max_depth: the checker reads it all.' \
     > "$dir/AnnotationOk.beni"
@@ -59,7 +59,7 @@ alias_chain() {
         printf 'type alias A%d =\n    A%d\n\n\n' "$i" "$((i + 1))"
         i=$((i + 1))
     done
-    printf 'type alias A%d =\n    Int\n\n\npub f : A0 -> Int\nf _ =\n    1\n' "$1"
+    printf 'type alias A%d =\n    Int\n\n\npub f : A0 → Int\nf _ =\n    1\n' "$1"
 }
 alias_chain 509 'one under the limit, reached by expanding aliases rather than nesting.' \
     > "$dir/AliasChainOk.beni"
@@ -93,7 +93,7 @@ inferred 512 'one over: the scheme is `<error>` AND there is a message.' \
 # answer wrongly at exit 0.
 # The `Deep` fixture here IS that program.
 #
-# The trailing `_ ->` is what makes the shallow one exhaustive, so its clean
+# The trailing `_ →` is what makes the shallow one exhaustive, so its clean
 # exit means "decided and complete" rather than "too deep to judge".
 # Measured: 512 levels check clean, 513 report.
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ pattern_nest() {
     repeat "$1" 'Just ('
     printf 'x'
     repeat "$1" ')'
-    printf ' ->\n            x\n\n        _ ->\n            0\n'
+    printf ' →\n            x\n\n        _ →\n            0\n'
 }
 pattern_nest 512 'one under Exhaustive.max_depth: the `case` is decided, and complete.' \
     > "$dir/PatternNestOk.beni"
@@ -157,7 +157,7 @@ type_parens() {
     repeat "$1" '('
     printf 'Int'
     repeat "$1" ')'
-    printf ' -> Int\nf _ =\n    1\n'
+    printf ' → Int\nf _ =\n    1\n'
 }
 type_parens 4095 'one under Parse.max_depth, reached through a TYPE: it parses and checks.' \
     > "$dir/TypeParensOk.beni"
@@ -174,10 +174,10 @@ type_parens 4096 'one over, in a type: a parenthesised type charges a level like
     printf -- '-- check/depth: a type printed past Render.max_depth truncates to `…`.\n'
     printf -- '-- The diagnostic is unaffected: only how much of the type it shows.\n'
     printf 'pub f : '
-    repeat 30 '( '
+    repeat 29 '('
     printf 'Int'
-    repeat 30 ', Int )'
-    printf ' -> Int\nf _ =\n    1\n\n\npub g : Int\ng =\n    f 1\n'
+    repeat 29 ' × Int)'
+    printf ' × Int → Int\nf _ =\n    1\n\n\npub g : Int\ng =\n    f 1\n'
 } > "$dir/RenderTruncatedDeep.beni"
 
 # ---------------------------------------------------------------------------

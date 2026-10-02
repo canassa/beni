@@ -3,12 +3,12 @@
 -- §14.1). `pur` is none of them. The words stay ordinary identifiers
 -- everywhere else, so a value named `pure` (line 12) is still fine, and the
 -- declaration is read as written: `pure` checks against `add` and `log`.
-pub foreign pur add : Int, Int -> Int
+pub foreign pur add : Int, Int → Int
 
 
-pub foreign impure log : Int -> Int
+pub foreign impure log : Int → Int
 
 
-pure : Int -> Int
+pure : Int → Int
 pure n =
     log (add n n)

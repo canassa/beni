@@ -230,7 +230,7 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
         \\    | Blue
         \\
         \\
-        \\pub rank : Colour, Colour -> Bool
+        \\pub rank : Colour, Colour → Bool
         \\rank a b =
         \\    a < b
         \\
@@ -245,7 +245,7 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
         \\import String
         \\
         \\
-        \\pub eq : Int, Int -> Bool
+        \\pub eq : Int, Int → Bool
         \\eq x y =
         \\    x == y
         \\
@@ -335,7 +335,7 @@ test "bench/size.mjs builds a root that declares no main behind a synthesised en
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Alpha.beni",
-        \\pub double : Int -> Int
+        \\pub double : Int → Int
         \\double n =
         \\    n * 2
         \\

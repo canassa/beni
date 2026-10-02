@@ -30,14 +30,14 @@ const button =
     \\    = Pressed
     \\
     \\
-    \\update : Msg, Int -> Int
+    \\update : Msg, Int → Int
     \\update msg count =
     \\    case msg of
-    \\        Pressed ->
+    \\        Pressed →
     \\            Debug.todo "the button broke"
     \\
     \\
-    \\view : Int -> Node Msg
+    \\view : Int → Node Msg
     \\view count =
     \\    Page.element "button" [ Page.attribute "id" "boom", Page.onClick Pressed ] [ Page.text (String.fromInt count) ]
     \\
@@ -369,14 +369,14 @@ test "a library build's page delivers the events its markup delegates, with no p
         \\import Html exposing (Html)
         \\
         \\
-        \\view : Int -> Html Int
+        \\view : Int → Html Int
         \\view count =
         \\    <button id="inc" onClick={count + 1}>{count}</button>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = λn _ -> n, view = view }
+        \\    Browser.program { init = 0, update = λn _ → n, view = view }
         \\
     );
     try w.write("page.steps", "click #inc\nclick #inc\n");

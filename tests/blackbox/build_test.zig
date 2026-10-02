@@ -29,7 +29,7 @@ fn writeUserPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -122,7 +122,7 @@ test "a module in a subdirectory comes out in a subdirectory of out/" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Util/Math.beni",
-        \\pub double : Int -> Int
+        \\pub double : Int → Int
         \\double n =
         \\    n * 2
         \\
@@ -256,13 +256,13 @@ test "a build is byte-identical at every --jobs" {
         \\    | Blue
         \\
         \\
-        \\name : Colour -> String
+        \\name : Colour → String
         \\name c =
         \\    case c of
-        \\        Red ->
+        \\        Red →
         \\            "red"
         \\
-        \\        Blue ->
+        \\        Blue →
         \\            "blue"
         \\
         \\
@@ -321,7 +321,7 @@ fn writeMarkupProject(w: *World) !void {
         \\    { id : Int, label : String }
         \\
         \\
-        \\pub row : { item : Row, selected : Int } -> Html msg
+        \\pub row : { item : Row, selected : Int } → Html msg
         \\row props =
         \\    <tr class={[ ( "row", True ), ( "danger", props.item.id == props.selected ) ]}><td>{props.item.id}</td><td>{props.item.label}</td></tr>
         \\
@@ -333,13 +333,13 @@ fn writeMarkupProject(w: *World) !void {
         \\import View
         \\
         \\
-        \\page : List View.Row, Maybe String -> Html msg
+        \\page : List View.Row, Maybe String → Html msg
         \\page rows title =
         \\    <main>
-        \\        <Show when={title} keyed fallback={<h1>Untitled</h1>}>{λt -> <h1 title={t}>{t} &amp; co</h1>}</Show>
+        \\        <Show when={title} keyed fallback={<h1>Untitled</h1>}>{λt → <h1 title={t}>{t} &amp; co</h1>}</Show>
         \\        <table>
         \\            <tbody>
-        \\                <For each={rows} keyed={.id}>{λr -> <View.row item={r} selected={2} />}</For>
+        \\                <For each={rows} keyed={.id}>{λr → <View.row item={r} selected={2} />}</For>
         \\            </tbody>
         \\        </table>
         \\    </main>
@@ -411,7 +411,7 @@ test "a view formatted renders the page the view rendered" {
         \\import Ssr
         \\
         \\
-        \\view : String -> Html msg
+        \\view : String → Html msg
         \\view name =
         \\    <div class="card" id="main-card" title="A title long enough to push these attributes past the line"><p>Hello,   <b>{name}</b> <i>and</i>
         \\          welcome&nbsp;back</p><ul>
@@ -505,10 +505,10 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
         \\    = Metre Int
         \\
         \\
-        \\pub scale : Metre, Int -> Metre
+        \\pub scale : Metre, Int → Metre
         \\scale m factor =
         \\    case m of
-        \\        Metre n ->
+        \\        Metre n →
         \\            Metre (n * factor)
         \\
     );
@@ -517,11 +517,11 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
         \\    = Box a
         \\
         \\
-        \\pub scale : Box a, Int -> Box a
-        \\    where a.scale : a, Int -> a
+        \\pub scale : Box a, Int → Box a
+        \\    where a.scale : a, Int → a
         \\scale b factor =
         \\    case b of
-        \\        Box inner ->
+        \\        Box inner →
         \\            Box (inner.scale factor)
         \\
     );
@@ -532,23 +532,23 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
         \\import String
         \\
         \\
-        \\twice : a, Int -> a
-        \\    where a.scale : a, Int -> a
+        \\twice : a, Int → a
+        \\    where a.scale : a, Int → a
         \\twice x factor =
         \\    (x.scale factor).scale factor
         \\
         \\
-        \\grow : Box Metre -> Box Metre
+        \\grow : Box Metre → Box Metre
         \\grow b =
         \\    twice b 2
         \\
         \\
-        \\width : Box Metre -> Int
+        \\width : Box Metre → Int
         \\width b =
         \\    case b of
-        \\        Boxes.Box m ->
+        \\        Boxes.Box m →
         \\            case m of
-        \\                Metres.Metre n ->
+        \\                Metres.Metre n →
         \\                    n
         \\
         \\
@@ -635,12 +635,12 @@ test "names several emit workers invent for one type agree, and the build is byt
         \\import Shapes exposing (Point, Shape, Dot, Line)
         \\
         \\
-        \\pub same : Shape, Shape -> Bool
+        \\pub same : Shape, Shape → Bool
         \\same a b =
         \\    a == b
         \\
         \\
-        \\pub before : Shape, Shape -> Bool
+        \\pub before : Shape, Shape → Bool
         \\before a b =
         \\    a < b
         \\
@@ -655,7 +655,7 @@ test "names several emit workers invent for one type agree, and the build is byt
         \\import String
         \\
         \\
-        \\flag : Bool -> String
+        \\flag : Bool → String
         \\flag b =
         \\    if b then
         \\        "y"
@@ -743,12 +743,12 @@ test "a saturated n-ary call emits a direct JavaScript call" {
         \\import String
         \\
         \\
-        \\add : Int, Int -> Int
+        \\add : Int, Int → Int
         \\add a b =
         \\    a + b
         \\
         \\
-        \\apply : (Int, Int -> Int), Int, Int -> Int
+        \\apply : (Int, Int → Int), Int, Int → Int
         \\apply f a b =
         \\    f a b
         \\
@@ -796,10 +796,10 @@ test "modules import each other through ESM, and the program runs" {
         \\    = Square Int
         \\
         \\
-        \\pub areaOf : Shape -> Int
+        \\pub areaOf : Shape → Int
         \\areaOf shape =
         \\    case shape of
-        \\        Square side ->
+        \\        Square side →
         \\            abs (side * side)
         \\
     );
@@ -881,13 +881,13 @@ test "a user module may be called `Core.List` or `Platform.Node`, because the re
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Core/List.beni",
-        \\pub twice : Int -> Int
+        \\pub twice : Int → Int
         \\twice n =
         \\    n * 2
         \\
     );
     try w.write("src/Platform/Node.beni",
-        \\pub thrice : Int -> Int
+        \\pub thrice : Int → Int
         \\thrice n =
         \\    n * 3
         \\
@@ -1043,7 +1043,7 @@ test "an app package may declare itself a platform, and then `foreign` is legal 
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Prim.beni", "pub foreign pure double : Int -> Int\n");
+    try w.write("Prim.beni", "pub foreign pure double : Int → Int\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1096,10 +1096,10 @@ test "check 2: the sibling file must export exactly the declared names" {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure shout : String -> Program
+        \\pub foreign pure shout : String → Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1227,7 +1227,7 @@ test "a fault in a PACKAGE sibling names that package's file, with its own excer
     try w.write("mycore/Basics.js", "export {};\n");
     try w.write("mycore/String.beni", "pub equatable foreign type String\n");
     try w.write("mycore/String.js", "export {};\n");
-    try w.write("mycore/List.beni", "pub equatable foreign type List a\n\n\npub foreign pure length : List a -> Int\n");
+    try w.write("mycore/List.beni", "pub equatable foreign type List a\n\n\npub foreign pure length : List a → Int\n");
     try w.write("mycore/List.js", "export const length = (xs) => xs.length + process.pid;\n");
     try writeUserPlatform(&w);
     try w.write("Main.beni", "pub x : Int\nx =\n    1\n");
@@ -1359,7 +1359,7 @@ test "the sibling file must exist at all" {
     try w.write("beni.json",
         \\{ "platform": true }
     );
-    try w.write("Extra.beni", "pub foreign pure helper : Int -> Int\n");
+    try w.write("Extra.beni", "pub foreign pure helper : Int → Int\n");
     try w.write("Main.beni",
         \\import Extra
         \\import Prog exposing (Program)
@@ -1482,11 +1482,11 @@ test "check 4: a constrained foreign whose sibling forgot the evidence parameter
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure allEq : List a, List a -> Bool
-        \\    where a.eq : a, a -> Bool
+        \\pub foreign pure allEq : List a, List a → Bool
+        \\    where a.eq : a, a → Bool
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1554,10 +1554,10 @@ test "check 4: a foreign typed through an alias counts the alias's parameters, a
         \\
         \\
         \\pub type alias IntPred =
-        \\    Int -> Bool
+        \\    Int → Bool
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
         \\pub foreign pure isPos : IntPred
@@ -1624,7 +1624,7 @@ test "check 4: a plain arity mismatch is the same defect and the same diagnostic
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String, String -> Program
+        \\pub foreign pure say : String, String → Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1716,10 +1716,10 @@ test "check 4: a parameter list that is not at the export is refused" {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure shout : String -> Program
+        \\pub foreign pure shout : String → Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1777,26 +1777,26 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
         \\pub foreign pure zero : Int
         \\
         \\
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
-        \\pub foreign pure plus : Int, Int -> Int
+        \\pub foreign pure plus : Int, Int → Int
         \\
         \\
-        \\pub foreign pure pick : Int -> Int
+        \\pub foreign pure pick : Int → Int
         \\
         \\
-        \\pub foreign pure thrice : Int -> Int
+        \\pub foreign pure thrice : Int → Int
         \\
         \\
-        \\pub foreign pure allEq : List a, List a -> Bool
-        \\    where a.eq : a, a -> Bool
+        \\pub foreign pure allEq : List a, List a → Bool
+        \\    where a.eq : a, a → Bool
         \\
     );
     try w.write("myplat/Prog.js",
@@ -1885,28 +1885,28 @@ test "a constrained `foreign` in value position inside its own module keeps its 
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
         \\pub type Bag a
         \\    = Bag (List a)
         \\
         \\
-        \\pub foreign pure eq : Bag a, Bag a -> Bool
-        \\    where a.eq : a, a -> Bool
+        \\pub foreign pure eq : Bag a, Bag a → Bool
+        \\    where a.eq : a, a → Bool
         \\
         \\
-        \\apply : Bag Int, Bag Int, (Bag Int, Bag Int -> Bool) -> Bool
+        \\apply : Bag Int, Bag Int, (Bag Int, Bag Int → Bool) → Bool
         \\apply left right f =
         \\    f left right
         \\
         \\
-        \\pub asEvidence : List Int, List Int -> Bool
+        \\pub asEvidence : List Int, List Int → Bool
         \\asEvidence xs ys =
         \\    (Just (Bag xs)) == (Just (Bag ys))
         \\
         \\
-        \\pub asValue : List Int, List Int -> Bool
+        \\pub asValue : List Int, List Int → Bool
         \\asValue xs ys =
         \\    apply (Bag xs) (Bag ys) eq
         \\
@@ -1928,7 +1928,7 @@ test "a constrained `foreign` in value position inside its own module keeps its 
         \\import String
         \\
         \\
-        \\yn : Bool -> String
+        \\yn : Bool → String
         \\yn b =
         \\    if b then
         \\        "T"
@@ -1999,25 +1999,25 @@ test "an unconstrained `foreign` in value position inside its own module is the 
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         \\
         \\pub type Box
         \\    = Box Int
         \\
         \\
-        \\pub foreign pure eq : Box, Box -> Bool
+        \\pub foreign pure eq : Box, Box → Bool
         \\
         \\
-        \\pub doubled : List Int -> List Int
+        \\pub doubled : List Int → List Int
         \\doubled xs =
         \\    List.map xs twice
         \\
         \\
-        \\pub boxed : Int, Int -> Bool
+        \\pub boxed : Int, Int → Bool
         \\boxed left right =
         \\    (Just (Box left)) == (Just (Box right))
         \\
@@ -2034,7 +2034,7 @@ test "an unconstrained `foreign` in value position inside its own module is the 
         \\import String
         \\
         \\
-        \\yn : Bool -> String
+        \\yn : Bool → String
         \\yn b =
         \\    if b then
         \\        "T"
@@ -2102,17 +2102,17 @@ test "--library needs no main, writes no entry file, and roots at the exported s
         \\import String
         \\
         \\
-        \\helper : Int -> Int
+        \\helper : Int → Int
         \\helper n =
         \\    n + 1
         \\
         \\
-        \\pub exported : Int -> String
+        \\pub exported : Int → String
         \\exported n =
         \\    String.fromInt (helper n)
         \\
         \\
-        \\private : Int -> Int
+        \\private : Int → Int
         \\private n =
         \\    n * 2
         \\
@@ -2313,7 +2313,7 @@ test "a `?` nothing reaches is not lowered, so nothing it needs is emitted" {
         \\import String
         \\
         \\
-        \\pub parse : String -> Maybe Int
+        \\pub parse : String → Maybe Int
         \\parse text =
         \\    Just (String.toInt text? + 1)
         \\
@@ -2396,8 +2396,8 @@ test "a rebuild into the same --out holds exactly a fresh build's files, and a u
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("src/Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
-    try w.write("src/Deep/Half.beni", "pub quarter : Int -> Int\nquarter n =\n    n // 4\n");
+    try w.write("src/Half.beni", "pub half : Int → Int\nhalf n =\n    n // 2\n");
+    try w.write("src/Deep/Half.beni", "pub quarter : Int → Int\nquarter n =\n    n // 4\n");
     try w.write("src/Main.beni", "import Node exposing (Program)\nimport Dict\nimport Half\nimport Deep.Half\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Deep.Half.quarter (Half.half (Dict.size (Dict.singleton 1 2)))) ]\n");
     const first = try w.run(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" });
     try testing.expectEqual(@as(u8, 0), first.exit_code);
@@ -2455,7 +2455,7 @@ test "a file beni wrote and the user then edited, or a record line leaving --out
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try w.write("Half.beni", "pub half : Int → Int\nhalf n =\n    n // 2\n");
     try w.write("Main.beni", "import Node exposing (Program)\nimport Half\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Half.half 4) ]\n");
     const first = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni", "Half.beni" });
     try testing.expectEqual(@as(u8, 0), first.exit_code);
@@ -2492,7 +2492,7 @@ test "a refused build removes nothing and leaves the record as it was" {
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try w.write("Half.beni", "pub half : Int → Int\nhalf n =\n    n // 2\n");
     try w.write("Main.beni", "import Node exposing (Program)\nimport Half\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Half.half 4) ]\n");
     const first = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni", "Half.beni" });
     try testing.expectEqual(@as(u8, 0), first.exit_code);
@@ -2894,12 +2894,12 @@ test "a release application is one file with no import or export; --library keep
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Twice.beni",
-        \\pub inc : Int -> Int
+        \\pub inc : Int → Int
         \\inc n =
         \\    n + 1
         \\
         \\
-        \\pub twice : Int -> Int
+        \\pub twice : Int → Int
         \\twice n =
         \\    inc (inc n)
         \\
@@ -2958,10 +2958,10 @@ fn writeHandPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure shout : String -> Program
+        \\pub foreign pure shout : String → Program
         \\
     );
     try w.write("hand/Hand.js", hand_sibling);
@@ -3202,14 +3202,14 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\import Html exposing (Html)
         \\
         \\
-        \\view : List Int -> Html msg
+        \\view : List Int → Html msg
         \\view xs =
-        \\    <ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>
+        \\    <ul><For each={xs}>{λx → <li>{x}</li>}</For></ul>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = λmsg model -> model, view = view }
+        \\    Browser.program { init = [ 1, 2 ], update = λmsg model → model, view = view }
         \\
     ;
     try w.write("plain/Main.beni", page);
@@ -3218,14 +3218,14 @@ test "a release page ships the browser runtime's map only when it maps" {
         \\import Html exposing (Html)
         \\
         \\
-        \\view : List Int -> Html msg
+        \\view : List Int → Html msg
         \\view xs =
-        \\    Html.map (<ul><For each={xs}>{λx -> <li>{x}</li>}</For></ul>) λmsg -> msg
+        \\    Html.map (<ul><For each={xs}>{λx → <li>{x}</li>}</For></ul>) λmsg → msg
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = [ 1, 2 ], update = λmsg model -> model, view = view }
+        \\    Browser.program { init = [ 1, 2 ], update = λmsg model → model, view = view }
         \\
     );
 
@@ -3265,14 +3265,14 @@ test "a release page ships the hosted program's loop only when it mounts one" {
         \\import Html exposing (Html)
         \\
         \\
-        \\view : Int -> Html msg
+        \\view : Int → Html msg
         \\view _ =
         \\    <></>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = λmsg model -> model, view = view }
+        \\    Browser.program { init = 0, update = λmsg model → model, view = view }
         \\
     );
     try w.write("hosted/Main.beni",
@@ -3280,14 +3280,14 @@ test "a release page ships the hosted program's loop only when it mounts one" {
         \\import Html exposing (Html)
         \\
         \\
-        \\view : Int -> Html msg
+        \\view : Int → Html msg
         \\view _ =
         \\    <></>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.hosted { init = λhost -> 0, update = λhost msg model -> model, settle = λhost model -> model, view = view }
+        \\    Browser.hosted { init = λhost → 0, update = λhost msg model → model, settle = λhost model → model, view = view }
         \\
     );
 
@@ -3340,7 +3340,7 @@ test "a page with no delegated event calls no start and ships no listener" {
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = 0, update = λmsg model -> model + 1, view = view }
+        \\    Browser.program { init = 0, update = λmsg model → model + 1, view = view }
         \\
     ;
     try w.write("quiet/Main.beni", head ++ "    <p>still</p>" ++ tail);
@@ -3490,7 +3490,7 @@ test "--release refuses a build that reaches Debug; the same program builds and 
         \\import String
         \\
         \\
-        \\report : Int -> Int
+        \\report : Int → Int
         \\report n =
         \\    Debug.log "report" (n + 1)
         \\
@@ -3567,7 +3567,7 @@ test "a Debug call that reachability drops does not refuse the release build" {
         \\import Node exposing (Program)
         \\
         \\
-        \\unused : Int -> Int
+        \\unused : Int → Int
         \\unused n =
         \\    Debug.log "unused" n
         \\
@@ -3611,18 +3611,18 @@ test "--release --library refuses Debug reachable from the exported surface, and
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Lib.beni",
-        \\pub exported : Int -> String
+        \\pub exported : Int → String
         \\exported n =
         \\    Debug.toString n
         \\
     );
     try w.write("Quiet.beni",
-        \\private : Int -> String
+        \\private : Int → String
         \\private n =
         \\    Debug.toString n
         \\
         \\
-        \\pub exported : Int -> Int
+        \\pub exported : Int → Int
         \\exported n =
         \\    n + 1
         \\
@@ -3679,7 +3679,7 @@ test "the debug_in_release site list does not depend on thread count or argument
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Aid.beni",
-        \\pub help : Int -> String
+        \\pub help : Int → String
         \\help n =
         \\    Debug.toString (Debug.log "help" n)
         \\
@@ -3821,17 +3821,17 @@ test "a development build maps a crash in a case arm back to the beni line and c
         \\    | Stop
         \\
         \\
-        \\describe : Step -> String
+        \\describe : Step → String
         \\describe step =
         \\    case step of
-        \\        Go n ->
+        \\        Go n →
         \\            String.fromInt (twice n)
         \\
-        \\        Stop ->
+        \\        Stop →
         \\            Debug.todo "stop is not done"
         \\
         \\
-        \\twice : Int -> Int
+        \\twice : Int → Int
         \\twice n =
         \\    n * 2
         \\
@@ -3965,7 +3965,7 @@ test "Debug.todo compiles as anything and crashes with its message when reached"
         \\import String
         \\
         \\
-        \\unfinished : Int -> String
+        \\unfinished : Int → String
         \\unfinished n =
         \\    if n > 0 then
         \\        String.fromInt n
@@ -4175,8 +4175,8 @@ test "an unannotated pub function constant with a constraint builds and runs" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("M.beni",
-        \\maxOf : a, a -> a
-        \\    where a.compare : a, a -> Order
+        \\maxOf : a, a → a
+        \\    where a.compare : a, a → Order
         \\maxOf a b =
         \\    if a < b then
         \\        b
@@ -4190,7 +4190,7 @@ test "an unannotated pub function constant with a constraint builds and runs" {
         \\
         \\
         \\pub eqs =
-        \\    λa b -> a == b
+        \\    λa b → a == b
         \\
         \\
         \\pub bigger =
@@ -4202,7 +4202,7 @@ test "an unannotated pub function constant with a constraint builds and runs" {
         \\import Node exposing (Program)
         \\
         \\
-        \\tf : Bool -> String
+        \\tf : Bool → String
         \\tf b =
         \\    if b then
         \\        "t"
@@ -4338,10 +4338,10 @@ test "core List's loops read and write their arrays in place" {
         \\        List.range 1 10
         \\
         \\    kept =
-        \\        List.map xs λx -> x
+        \\        List.map xs λx → x
         \\
         \\    sorted =
-        \\        List.sortWith (List.filter xs λx -> x > 2) λa b -> Basics.compare b a
+        \\        List.sortWith (List.filter xs λx → x > 2) λa b → Basics.compare b a
         \\    Node.print (String.join (List.map (List.map2 kept sorted (+)) String.fromInt) "," ++ " " ++ String.fromInt (List.length xs))
         \\
     );
@@ -4397,17 +4397,17 @@ test "a schema program's issues get short fields and integer tags under --releas
         \\positive =
         \\    Schema.converted
         \\        Schema.int
-        \\        (Schema.conversion (λn -> if n > 0 then Ok n else Err []) λn -> Ok n)
+        \\        (Schema.conversion (λn → if n > 0 then Ok n else Err []) λn → Ok n)
         \\
         \\
         \\main : Program
         \\main =
         \\    case Schema.parse positive "0" of
-        \\        Ok n ->
+        \\        Ok n →
         \\            Node.print (String.fromInt n)
         \\
-        \\        Err issues ->
-        \\            Node.print (String.join (List.map issues λi -> i.message) ",")
+        \\        Err issues →
+        \\            Node.print (String.join (List.map issues λi → i.message) ",")
         \\
     );
 

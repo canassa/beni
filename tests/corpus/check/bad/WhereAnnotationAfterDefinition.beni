@@ -8,4 +8,4 @@ less x y =
     x < y
 
 
-less : a, a -> Bool where a.compare : a, a -> Order
+less : a, a → Bool where a.compare : a, a → Order

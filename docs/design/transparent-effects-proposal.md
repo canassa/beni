@@ -150,7 +150,7 @@ choice; this is not.
 What P1's example becomes:
 
 ```elm
-fetchSummary : UserId -> Summary
+fetchSummary : UserId → Summary
 fetchSummary id =
     user = getUser id
     perms = getPermissions user
@@ -159,9 +159,9 @@ fetchSummary id =
     else
         Summary user perms Nothing
 
-fetchAll : List UserId -> List User
+fetchAll : List UserId → List User
 fetchAll ids =
-    List.map ids λid -> getUser id
+    List.map ids λid → getUser id
 ```
 
 Both are ordinary beni. Note that `fetchAll` is the line P1 could not actually write: under P1's
@@ -190,10 +190,10 @@ Effect      := 'pure' | 'impure' | 'suspends'
 ```
 
 ```elm
-foreign pure     cons     : a, List a -> List a
-foreign impure   now      : () -> Time
-foreign impure   random   : Seed -> (Int, Seed)
-foreign suspends httpSend : Request -> Response
+foreign pure     cons     : a, List a → List a
+foreign impure   now      : () → Time
+foreign impure   random   : Seed → Int × Seed
+foreign suspends httpSend : Request → Response
 ```
 
 **One keyword with three values, not two independent flags, and never omitted.** The states are a
@@ -326,14 +326,14 @@ the parser makes the same decision it already makes to tell `f x y = body` from 
 **Everything written today still parses**, since every existing binding has an `=` or a `<-`.
 
 ```elm
-fetchActive : List UserId -> Result HttpError (List User)
+fetchActive : List UserId → Result HttpError (List User)
 fetchActive ids =
     let
         Log.info "fetching"
         users = Result.combine (List.map ids getUser)?
         Log.info ("got " ++ String.fromInt (List.length users))
     in
-    List.filter users λu -> u.isActive
+    List.filter users λu → u.isActive
 ```
 
 **Separable.** This is useful without any of the rest of this document — it is what `Debug.log`
@@ -425,9 +425,9 @@ and a resource bracket sit flat at the top of a block instead of indenting every
 
 ```elm
 let
-    scope <- Task.scope
-    conn  <- Task.bracket (λ() -> Db.open url) Db.close
-    (user, prefs) = Task.par2 (λ() -> getUser id) λ() -> getPrefs id
+    scope ← Task.scope
+    conn  ← Task.bracket (λ() → Db.open url) Db.close
+    (user, prefs) = Task.par2 (λ() → getUser id) λ() → getPrefs id
     Log.info "loaded"
 in
 Dashboard user prefs
@@ -632,21 +632,21 @@ frame *is* the stack; *"under shape T it comes back, and CE3's split `conts: Byt
 Eleven, typed as `research/16` §5.3 types them, all bit-polymorphic over thunks:
 
 ```elm
-Task.spawn       : (() -> a) -> Fiber a
-Fiber.join       : Fiber a -> Result Cancelled a
-Fiber.cancel     : Fiber a -> ()
-Task.scope       : (Scope -> a) -> a
-Scope.spawn      : Scope, (() -> b) -> Fiber b
-Task.bracket     : (() -> r), (r -> ()), (r -> a) -> a
-Task.par2        : (() -> a), (() -> b) -> (a, b)
-Task.parAll      : Int, List (() -> a) -> List a        -- bounded concurrency
-Task.race        : List (() -> a) -> a                  -- losers cancelled, finalisers run
-Task.timeout     : Int, (() -> a) -> Maybe a
-Task.retry       : Int, (() -> Result x a) -> Result x a
-Semaphore.with   : Semaphore, (() -> a) -> a
-Queue.take       : Queue a -> a
-Queue.put        : Queue a, a -> ()
-RateLimiter.with : RateLimiter, (() -> a) -> a
+Task.spawn       : (() → a) → Fiber a
+Fiber.join       : Fiber a → Result Cancelled a
+Fiber.cancel     : Fiber a → ()
+Task.scope       : (Scope → a) → a
+Scope.spawn      : Scope, (() → b) → Fiber b
+Task.bracket     : (() → r), (r → ()), (r → a) → a
+Task.par2        : (() → a), (() → b) → a × b
+Task.parAll      : Int, List (() → a) → List a        -- bounded concurrency
+Task.race        : List (() → a) → a                  -- losers cancelled, finalisers run
+Task.timeout     : Int, (() → a) → Maybe a
+Task.retry       : Int, (() → Result x a) → Result x a
+Semaphore.with   : Semaphore, (() → a) → a
+Queue.take       : Queue a → a
+Queue.put        : Queue a, a → ()
+RateLimiter.with : RateLimiter, (() → a) → a
 ```
 
 **All eleven are available, and that is the point of the decision.** `research/16` §5.6: seven of
@@ -1006,7 +1006,7 @@ This is now the thing in the document most likely to be wrong, and it is no long
   passed as an argument, which needs no language support:
 
   ```elm
-  type alias Payments = { charge : Cents -> Receipt, refund : ReceiptId -> () }
+  type alias Payments = { charge : Cents → Receipt, refund : ReceiptId → () }
   ```
 
 - **Sandboxing.** Same as P1, which also disclaimed it.
@@ -1456,8 +1456,8 @@ Six places, each a boundary where a beni function is called by something that ca
    ```
 
    ```elm
-   pub foreign pure onInput : sync (String -> msg) -> Attribute msg
-   pub foreign pure program : { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) } -> Program
+   pub foreign pure onInput : sync (String → msg) → Attribute msg
+   pub foreign pure program : { init : model, update : sync (msg, model → model), view : sync (model → Html msg) } → Program
    ```
 
    The word is **contextual**, like the rung: it is the marker only in a `foreign` value's
@@ -1637,8 +1637,8 @@ backend does (`14/koka` §4.2), and the fast path is a comparison:
 The code generator writes two operations of core's `Task` module and nothing else:
 
 ```elm
-pub foreign pure andThen : a, sync (a -> b) -> b   -- `$Y`? hand `k` over and return `$Y`; else `k a`
-pub foreign pure isWaiting : a -> Bool              -- `a` is `$Y`
+pub foreign pure andThen : a, sync (a → b) → b   -- `$Y`? hand `k` over and return `$Y`; else `k a`
+pub foreign pure isWaiting : a → Bool              -- `a` is `$Y`
 ```
 
 Both are `pub` because the emitted code of every module imports them as it imports any value; both
@@ -1791,17 +1791,17 @@ pub foreign type Fiber a
 pub foreign type Scope
 pub foreign type Resume a
 
-pub foreign suspends callback : sync (Resume a -> (() -> ())) -> a  -- the suspension primitive
-pub foreign impure spawn : (() -> a) -> Fiber a                     -- a child of the current fiber
-pub foreign suspends join : Fiber a -> a                            -- a cancelled child cancels the joiner
-pub foreign suspends wait : Fiber a -> Exit a                       -- observes, never propagates (`await` is reserved in JavaScript)
-pub foreign suspends cancel : Fiber a -> ()                         -- interrupts, then waits for cleanup
-pub foreign suspends yieldNow : () -> ()
-pub scope : (Scope -> a) -> a                                       -- its children are cancelled when it ends
-pub foreign impure spawnIn : Scope, (() -> a) -> Fiber a
-pub bracket : (() -> r), (r, Exit a -> ()), (r -> a) -> a           -- the owner's A3: the release sees the outcome
-pub uninterruptible : (() -> a) -> a
-pub foreign impure start : (() -> a), sync (Exit a -> ()) -> ()     -- a root fiber, for a platform's entry
+pub foreign suspends callback : sync (Resume a → (() → ())) → a  -- the suspension primitive
+pub foreign impure spawn : (() → a) → Fiber a                     -- a child of the current fiber
+pub foreign suspends join : Fiber a → a                            -- a cancelled child cancels the joiner
+pub foreign suspends wait : Fiber a → Exit a                       -- observes, never propagates (`await` is reserved in JavaScript)
+pub foreign suspends cancel : Fiber a → ()                         -- interrupts, then waits for cleanup
+pub foreign suspends yieldNow : () → ()
+pub scope : (Scope → a) → a                                       -- its children are cancelled when it ends
+pub foreign impure spawnIn : Scope, (() → a) → Fiber a
+pub bracket : (() → r), (r, Exit a → ()), (r → a) → a           -- the owner's A3: the release sees the outcome
+pub uninterruptible : (() → a) → a
+pub foreign impure start : (() → a), sync (Exit a → ()) → ()     -- a root fiber, for a platform's entry
 ```
 
 `scope`, `bracket` and `uninterruptible` are beni over first-order kernel operations (report 43
@@ -1815,11 +1815,11 @@ A platform writes a suspending primitive in beni over `callback` and an `impure`
 registers the host's callback and returns its canceller:
 
 ```elm
-pub sleep : Int -> ()
+pub sleep : Int → ()
 sleep ms =
-    Task.callback λresume -> startTimer ms resume
+    Task.callback λresume → startTimer ms resume
 
-foreign impure startTimer : Int, Resume () -> (() -> ())
+foreign impure startTimer : Int, Resume () → (() → ())
 ```
 
 The `node` platform gains a module of its own, **`Io`**, so that no file an existing program is

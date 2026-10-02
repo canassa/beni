@@ -6,7 +6,7 @@
 -- `b` became the next field; with it confined to the clause, the field's
 -- type runs on and the `.c` that cannot continue a type is the error.
 -- where_variable_unbound at 10:28, expected_token at 10:29.
-pub render : a -> Int
-    where a.m : { x : Int, b.c : Int } -> Int
+pub render : a → Int
+    where a.m : { x : Int, b.c : Int } → Int
 render v =
     1

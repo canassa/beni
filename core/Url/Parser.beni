@@ -1,17 +1,17 @@
 --! Turning a URL into a route (`docs/design/boundary.md` §9.8.13 (b)):
 --! elm/url's `Url.Parser`, with no currying. A `Parser a b` threads a
---! continuation, as Elm's does: `Parser (Int -> a) a` is a parser that
+--! continuation, as Elm's does: `Parser (Int → a) a` is a parser that
 --! hands an `Int` on. Elm's `</>` and `<?>` are `slash` and
 --! `questionMark`, its own names for them, `map` is subject first, and
 --! `map2`…`map8` hand on a constructor of several fields.
 --!
---!     route : Parser (Route -> a) a
+--!     route : Parser (Route → a) a
 --!     route =
 --!         oneOf
 --!             [ map top Home
---!             , s "blog" |> slash int |> map Blog
---!             , s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
---!             , s "search" |> questionMark (Query.string "q") |> map Search
+--!             , s "blog" ▷ slash int ▷ map Blog
+--!             , s "user" ▷ slash string ▷ slash (s "comment") ▷ slash int ▷ map2 Comment
+--!             , s "search" ▷ questionMark (Query.string "q") ▷ map Search
 --!             ]
 --!
 --! Two answers differ from Elm's, each a silent wrong one there: a path
@@ -57,7 +57,7 @@ int = custom "NUMBER" String.toInt
 
 --| One path segment that is exactly `str`, once decoded.
 --|
---|     -- /blog/42  with  s "blog" |> slash int  ==>  Just 42
+--|     -- /blog/42  with  s "blog" ▷ slash int  ==>  Just 42
 pub s : String → Parser a a
 s str = Parser λstate →
     case state.unvisited of
@@ -80,8 +80,8 @@ s str = Parser λstate →
 --| no match when it gives `Nothing`. The first argument names the kind of
 --| segment, as Elm's does, and is not read.
 --|
---|     css : Parser (String -> a) a
---|     css = custom "CSS_FILE" λsegment ->
+--|     css : Parser (String → a) a
+--|     css = custom "CSS_FILE" λsegment →
 --|         if String.endsWith segment ".css" then Just segment else Nothing
 pub custom : String, (String → Maybe a) → Parser (a → b) b
 custom _ stringToSomething = Parser λstate →
@@ -105,8 +105,8 @@ custom _ stringToSomething = Parser λstate →
 
 --| `before`, then `after`: Elm's `</>`.
 --|
---|     blog : Parser (Int -> a) a
---|     blog = s "blog" |> slash int
+--|     blog : Parser (Int → a) a
+--|     blog = s "blog" ▷ slash int
 pub slash : Parser a b, Parser b c → Parser a c
 slash (Parser parseBefore) (Parser parseAfter) = Parser λstate →
     List.concatMap (parseBefore state) parseAfter
@@ -114,7 +114,7 @@ slash (Parser parseBefore) (Parser parseAfter) = Parser λstate →
 
 --| What `parser` captures, handed to `subValue`: a value for a parser that
 --| captures nothing (`map top Home`), a function of one parameter for a
---| parser that captures one (`map (s "blog" |> slash int) Blog`).
+--| parser that captures one (`map (s "blog" ▷ slash int) Blog`).
 pub map : Parser a b, a → Parser (b → c) c
 map (Parser parseArg) subValue = Parser λstate →
     List.map
@@ -136,7 +136,7 @@ map (Parser parseArg) subValue = Parser λstate →
 --| What `parser` captures, two values, handed to `f`: a constructor of
 --| two fields.
 --|
---|     s "user" |> slash string |> slash (s "comment") |> slash int |> map2 Comment
+--|     s "user" ▷ slash string ▷ slash (s "comment") ▷ slash int ▷ map2 Comment
 pub map2 : Parser (a → b → r) r, (a, b → r) → Parser (r → c) c
 map2 parser f = map parser λxa → λxb → f xa xb
 
@@ -193,7 +193,7 @@ top = Parser λstate → [ state ]
 --| `parser`, then the query read by `queryParser`: Elm's `<?>`. It never
 --| fails; a missing parameter is the query parser's `Nothing`.
 --|
---|     s "search" |> questionMark (Query.string "q") |> map Search
+--|     s "search" ▷ questionMark (Query.string "q") ▷ map Search
 pub questionMark : Parser a (query → b), QueryParser query → Parser a b
 questionMark parser queryParser = slash parser (query queryParser)
 
@@ -223,7 +223,7 @@ fragment toFrag = Parser λstate →
 --| Run `parser` on the URL: the value of the first way it matches the
 --| whole path, or `Nothing`. A trailing `/` left over still matches.
 --|
---|     toRoute : Url -> Route
+--|     toRoute : Url → Route
 --|     toRoute url = Maybe.withDefault (parse route url) NotFound
 pub parse : Parser (a → a) a, Url → Maybe a
 parse (Parser parser) url =

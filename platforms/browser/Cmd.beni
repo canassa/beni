@@ -13,9 +13,9 @@
 --!
 --!     update msg model =
 --!         case msg of
---!             Typed q ->
+--!             Typed q →
 --!                 ( { model | query = q }, Cmd.keyed Search Cmd.Restart (search q _) )
---!             Got hits ->
+--!             Got hits →
 --!                 ( { model | hits = hits }, Cmd.none )
 --!
 --!     search q send =
@@ -135,7 +135,7 @@ cancelAll = Cmd [ CancelAll [] ]
 --| they send passed through `tag`. There is no `map` without a segment:
 --| a singleton child passes `()`.
 --|
---|     RowMsg id m ->
+--|     RowMsg id m →
 --|         ( row, cmd ) = Row.update m (rowOf model id)
 --|         ( setRow model id row, Cmd.map cmd id (RowMsg id _) )
 pub map : Cmd a, k, (a → msg) → Cmd msg

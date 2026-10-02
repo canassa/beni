@@ -18,14 +18,14 @@
 --!
 --! **`Int32` is not in the prelude** (`language.md` Appendix A). Write
 --! `import Int32` and either qualify the names or call them as methods:
---! `Int32.add a b`, `a.add b` and `a |> Int32.add b` are the same call.
+--! `Int32.add a b`, `a.add b` and `a ▷ Int32.add b` are the same call.
 --!
 --! **The arithmetic operators do not work on it, and that is the point.**
 --! `+`, `-`, `*`, `/`, `//` and `^` are `number`-kinded — `Int` and
 --! `Float` — and `Int32` is neither, so `a + b` on two of them does not
 --! compile. Write `add a b`. An operator that read like `Int`'s would hide
 --! the one thing this type exists to say, which is that its arithmetic
---! wraps. `==`, `/=`, `<`, `<=`, `>` and `>=` DO work: `eq` and `compare`
+--! wraps. `==`, `≠`, `<`, `≤`, `>` and `≥` DO work: `eq` and `compare`
 --! below are this module's own well-known methods
 --! (`static-dispatch-spike.md` §3.3), so an `Int32` is also a `Dict` key, a
 --! `Set` member and sortable by `List.sort`, and a record or custom type
@@ -37,7 +37,7 @@
 --! literal past `maxValue` is its low 32 bits and never an error.
 --!
 --! Argument order is subject first, so `x.shiftLeft 5` and
---! `x |> Int32.shiftLeft 5` both read as "shift x left by 5".
+--! `x ▷ Int32.shiftLeft 5` both read as "shift x left by 5".
 --!
 --! The machine operations and the two boundaries are written over `Js`
 --! (`boundary.md` §4.2, `plans/core-in-beni.md`), and nothing here is
@@ -345,7 +345,7 @@ rotateRight n count = or (shiftRightZero n count) (shiftLeft n (32 - count))
 
 
 --| Whether two `Int32`s are the same 32-bit value. This is what `==` and
---| `/=` on them mean (`static-dispatch-spike.md` §3.3), and it stays
+--| `≠` on them mean (`static-dispatch-spike.md` §3.3), and it stays
 --| callable by name.
 --|
 --|     eq (fromInt 5) (fromInt 5) == True
@@ -355,8 +355,8 @@ pub eq : Int32, Int32 → Bool
 eq a b = toInt a == toInt b
 
 
---| Compare two `Int32`s as SIGNED integers. This is what `<`, `<=`, `>` and
---| `>=` on them mean, and it is what makes an `Int32` a `Dict` key, a `Set`
+--| Compare two `Int32`s as SIGNED integers. This is what `<`, `≤`, `>` and
+--| `≥` on them mean, and it is what makes an `Int32` a `Dict` key, a `Set`
 --| member and sortable.
 --|
 --|     compare (fromInt 1) (fromInt 2) == LT

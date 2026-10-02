@@ -60,7 +60,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign pure twice : Int -> Int
+    \\pub foreign pure twice : Int → Int
     \\
     \\
     \\type Hidden
@@ -73,7 +73,7 @@ const leaf_source =
     \\
     \\
     \\pub type alias Coord =
-    \\    ( Int, Int )
+    \\    Int × Int
     \\
     \\
     \\pub type Tag
@@ -89,12 +89,12 @@ const leaf_source =
     \\    { inner : Inner }
     \\
     \\
-    \\pub keep : Outer -> Outer
+    \\pub keep : Outer → Outer
     \\keep o =
     \\    o
     \\
     \\
-    \\pub make : Int -> Hidden
+    \\pub make : Int → Hidden
     \\make x =
     \\    H x
     \\
@@ -114,32 +114,32 @@ const mid_source =
     \\import Leaf exposing (Blue, Coord, Pair, Red, Tag)
     \\
     \\
-    \\pub same : Int, Int -> Bool
+    \\pub same : Int, Int → Bool
     \\same x y =
     \\    Leaf.make x == Leaf.make y
     \\
     \\
-    \\pub firstOf : Pair -> Int
+    \\pub firstOf : Pair → Int
     \\firstOf p =
     \\    p.a
     \\
     \\
-    \\pub name : Tag -> Int
+    \\pub name : Tag → Int
     \\name t =
     \\    case t of
-    \\        Red ->
+    \\        Red →
     \\            0
     \\
-    \\        Blue ->
+    \\        Blue →
     \\            1
     \\
     \\
-    \\pub passThrough : Pair -> Pair
+    \\pub passThrough : Pair → Pair
     \\passThrough p =
     \\    p
     \\
     \\
-    \\pub column : Coord -> Int
+    \\pub column : Coord → Int
     \\column ( x, y ) =
     \\    x
     \\
@@ -343,7 +343,7 @@ test "an alias body no scheme names moves only Leaf's digest, and Mid is re-chec
         .what = "change an alias body no scheme names",
         .rechecked = 4,
         .cut_off = 9,
-        .source = replace(leaf_source, "pub type alias Coord =\n    ( Int, Int )", "pub type alias Coord =\n    ( Float, Int )"),
+        .source = replace(leaf_source, "pub type alias Coord =\n    Int × Int", "pub type alias Coord =\n    Float × Int"),
         .exit_code = 1,
     });
 }

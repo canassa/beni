@@ -41,18 +41,18 @@ type Msg
     = Bump
 
 
-update : Msg, Model -> Model
+update : Msg, Model → Model
 update msg model =
     case msg of
-        Bump ->
+        Bump →
             bump model
 
 
-bump : Model -> Model
+bump : Model → Model
 bump model =
     case modBy model.tick ${SECTIONS} of
 ${range(SECTIONS)
-  .map((k) => `        ${k === SECTIONS - 1 ? "_" : k} ->\n            { model | tick = model.tick + 1, v${k} = model.v${k} + 1 }`)
+  .map((k) => `        ${k === SECTIONS - 1 ? "_" : k} →\n            { model | tick = model.tick + 1, v${k} = model.v${k} + 1 }`)
   .join("\n\n")}
 
 
@@ -87,7 +87,7 @@ write(
   "apps/micro/beni/Inline/Main.beni",
   `${beniHeader("written as one view")}${beniModel()}
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="bump" onClick={Bump}>bump</button>
@@ -96,19 +96,19 @@ ${range(SECTIONS).map(inlineSection).join("\n")}
 `,
 );
 
-const beniHelpers = (msg) => `item : String -> Html ${msg}
+const beniHelpers = (msg) => `item : String → Html ${msg}
 item label = <li><a href="#">{label}</a> <em>note</em></li>
 
 
-heading : Int, Int -> Html ${msg}
+heading : Int, Int → Html ${msg}
 heading index value = <h2>Section {index} <span>{value}</span></h2>
 
 
-para : Int -> Html ${msg}
+para : Int → Html ${msg}
 para index = <p>The static text of section {index}, which no message changes.</p>
 
 
-section : Int, Int -> Html ${msg}
+section : Int, Int → Html ${msg}
 section index value =
     <section class="s">
         {heading index value}
@@ -125,7 +125,7 @@ write(
 
 ${beniHelpers("Msg")}
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="bump" onClick={Bump}>bump</button>
@@ -141,14 +141,14 @@ write(
 import Html exposing (Html)
 
 
-${beniHelpers("msg").replace(/section : Int, Int -> Html msg\nsection index value =/, "pub section : { index : Int, value : Int } -> Html msg\nsection props =").replace("{heading index value}", "{heading props.index props.value}").replace("{para index}", "{para props.index}")}`,
+${beniHelpers("msg").replace(/section : Int, Int → Html msg\nsection index value =/, "pub section : { index : Int, value : Int } → Html msg\nsection props =").replace("{heading index value}", "{heading props.index props.value}").replace("{para index}", "{para props.index}")}`,
 );
 
 write(
   "apps/micro/beni/Components/Main.beni",
   `${beniHeader("one component per section", ["Card"])}${beniModel()}
 
-view : Model -> Html Msg
+view : Model → Html Msg
 view model =
     <main>
         <button id="bump" onClick={Bump}>bump</button>

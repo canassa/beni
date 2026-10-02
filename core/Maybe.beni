@@ -3,9 +3,9 @@
 --! discovered at run time; there is no null.
 --!
 --! Every function here takes the `Maybe` as its first argument and the
---! function it applies, if any, as its last. That is what lets `|>` feed a
---! `Maybe` in at the front — `maybe |> map toString` is `map maybe toString` —
---! and lets `x <- andThen maybe` bind the rest of the block as the
+--! function it applies, if any, as its last. That is what lets `▷` feed a
+--! `Maybe` in at the front — `maybe ▷ map toString` is `map maybe toString` —
+--! and lets `x ← andThen maybe` bind the rest of the block as the
 --! callback.
 --!
 --! Everything here is ordinary beni — no `foreign` declarations.
@@ -45,7 +45,7 @@ withDefault maybe default =
 --|
 --| The `Maybe` comes first, so this reads well in a pipeline:
 --|
---|     (Just 9 |> map sqrt) == Just 3
+--|     (Just 9 ▷ map sqrt) == Just 3
 pub map : Maybe a, (a → b) → Maybe b
 map maybe func =
     case maybe of
@@ -77,8 +77,8 @@ map2 ma mb func =
 
 --| Apply a function if all three `Maybe` values are `Just` a value.
 --|
---|     map3 (Just 1) (Just 2) (Just 3) (λa b c -> a + b + c) == Just 6
---|     map3 (Just 1) Nothing (Just 3) (λa b c -> a + b + c) == Nothing
+--|     map3 (Just 1) (Just 2) (Just 3) (λa b c → a + b + c) == Just 6
+--|     map3 (Just 1) Nothing (Just 3) (λa b c → a + b + c) == Nothing
 pub map3 : Maybe a, Maybe b, Maybe c, (a, b, c → value) → Maybe value
 map3 ma mb mc func =
     case ma of
@@ -171,10 +171,10 @@ map5 ma mb mc md me func =
 
 --| Chain together many computations that may fail.
 --|
---|     andThen (Just 1) (λx -> Just (x + 1)) == Just 2
---|     andThen Nothing (λx -> Just (x + 1)) == Nothing
+--|     andThen (Just 1) (λx → Just (x + 1)) == Just 2
+--|     andThen Nothing (λx → Just (x + 1)) == Nothing
 --|
---| The callback comes last, so `x <- andThen maybe` binds the rest of the
+--| The callback comes last, so `x ← andThen maybe` binds the rest of the
 --| block as the callback. The `?` operator does the same thing with less
 --| punctuation: `head xs?` is the value, or an early return of `Nothing` from
 --| the enclosing function.

@@ -1,14 +1,14 @@
 -- A pattern spread's operand is a name or `_` (language.md §6.8): a list
 -- after `...` is unexpected_token with the message that says to write the
--- items into the outer brackets (7:17), and a bare `...` wants `..._`
--- (10:18). Each pattern is read on past the mistake.
+-- items into the outer brackets (7:15), and a bare `...` wants `..._`
+-- (10:16). Each pattern is read on past the mistake.
 tail xs =
     case xs of
-        [ x, ...[ y, z ] ] ->
+        [ x, …[ y, z ] ] →
             x
 
-        [ x, ... ] ->
+        [ x, … ] →
             x
 
-        _ ->
+        _ →
             0

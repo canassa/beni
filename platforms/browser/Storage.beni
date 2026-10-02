@@ -9,9 +9,9 @@
 --!
 --!     save todos =
 --!         case Storage.set Storage.Local "todos" (encode todos) of
---!             Ok () -> Saved
---!             Err Storage.QuotaExceeded -> TooMuch
---!             Err Storage.Unavailable -> NotSaved
+--!             Ok () → Saved
+--!             Err Storage.QuotaExceeded → TooMuch
+--!             Err Storage.Unavailable → NotSaved
 --!
 --! The standard documents two failures, and each is caught by its name and
 --! nothing broader (CLAUDE.md rule 9): reading `localStorage` or

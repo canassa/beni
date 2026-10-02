@@ -2,10 +2,10 @@
 -- parameters belong to a declaration and a `let` binding is not one, so the
 -- clause is `unexpected_token` at the `where` itself (8:9) and not a code
 -- of its own.
-pub run : Int -> Int
+pub run : Int → Int
 run n =
-    helper : Int -> Int
-        where a.eq : a, a -> Bool
+    helper : Int → Int
+        where a.eq : a, a → Bool
     helper x =
         x
     helper n

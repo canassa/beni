@@ -203,7 +203,7 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8, comptime comparisons:
         \\        build (n - 1) last (cell (if n == 1000 then last else n) acc)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -268,13 +268,13 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
         \\    = Box a
         \\
         \\
-        \\pub eq : Box a, Box a -> Bool
-        \\    where a.eq : a, a -> Bool
+        \\pub eq : Box a, Box a → Bool
+        \\    where a.eq : a, a → Bool
         \\eq left right =
         \\    case left of
-        \\        Box x ->
+        \\        Box x →
         \\            case right of
-        \\                Box y ->
+        \\                Box y →
         \\                    x == y
         \\
     );
@@ -885,7 +885,7 @@ test "a wide project with a chain of imports checks identically at one worker an
         var body: std.Io.Writer.Allocating = .init(testing.allocator);
         defer body.deinit();
         if (i == 0) {
-            try body.writer.writeAll("pub step0 : Int -> Int\nstep0 n =\n    n + 1\n");
+            try body.writer.writeAll("pub step0 : Int → Int\nstep0 n =\n    n + 1\n");
         } else {
             try body.writer.print(
                 "import Chain.C{d} exposing (step{d})\n\n\npub step{d} : Int -> Int\nstep{d} n =\n    step{d} n\n",
@@ -1057,8 +1057,8 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const sources = [_][]const u8{
-        "type alias A =\n    ( A, A )\n\n\nf : A -> Int\nf p =\n    0\n",
-        "type alias A =\n    ( B, B )\n\n\ntype alias B =\n    { p : A }\n\n\nf : A -> Int\nf p =\n    0\n",
+        "type alias A =\n    A × A\n\n\nf : A → Int\nf p =\n    0\n",
+        "type alias A =\n    B × B\n\n\ntype alias B =\n    { p : A }\n\n\nf : A → Int\nf p =\n    0\n",
     };
     for (sources) |source| {
         try w.write("Main.beni", source);
@@ -1103,7 +1103,7 @@ test "a wide alias DAG checks on a safety build without re-walking its graph per
     defer w.deinit();
     var source: std.ArrayList(u8) = .empty;
     const arena = w.arena.allocator();
-    try source.appendSlice(arena, "type alias A0 a b =\n    ( a, b )\n\n\n");
+    try source.appendSlice(arena, "type alias A0 a b =\n    a × b\n\n\n");
     const depth = 24;
     for (1..depth + 1) |i| {
         try source.print(arena, "type alias A{d} a b =\n    ( A{d} a b, A{d} (List a) b, A{d} a (List b) )\n\n\n", .{ i, i - 1, i - 1, i - 1 });

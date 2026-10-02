@@ -1637,7 +1637,7 @@ test "types carry arity, kind, opacity and the equatable marker" {
         \\
         \\
         \\pub type alias Pair a =
-        \\    ( a, a )
+        \\    a × a
         \\
         \\
         \\pub type Shape a b
@@ -1666,10 +1666,10 @@ test "a foreign value is marked, and an unexported type contributes nothing" {
         \\    = Hidden
         \\
         \\
-        \\pub foreign pure add : Int -> Int -> Int
+        \\pub foreign pure add : Int → Int → Int
         \\
         \\
-        \\pub twice : Int -> Int
+        \\pub twice : Int → Int
         \\twice n =
         \\    add n n
         \\

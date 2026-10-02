@@ -10,11 +10,11 @@
 import Schema exposing (Direction(..))
 
 
-flip : Direction -> Direction
+flip : Direction → Direction
 flip d =
     case d of
-        Decoding ->
+        Decoding →
             Encoding
 
-        Encoding ->
+        Encoding →
             Decoding

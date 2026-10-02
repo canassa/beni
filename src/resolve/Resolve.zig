@@ -1415,7 +1415,7 @@ test "a value, a type and a constructor of another module all resolve" {
         \\    | Green
         \\
         \\
-        \\pub name : Colour -> Colour
+        \\pub name : Colour → Colour
         \\name c =
         \\    c
         \\
@@ -1542,7 +1542,7 @@ test "a qualified name whose module does not exist is unknown_module_alias" {
     // graph's to know, and here the core package is switched off.
     var p = try TestProject.init(testing.allocator, &.{.{
         .path = "M.beni",
-        .source = "pub shout : String -> String\nshout s =\n    Char.toUpper s\n",
+        .source = "pub shout : String → String\nshout s =\n    Char.toUpper s\n",
     }});
     defer p.deinit();
     const codes = try p.codes(testing.allocator);
@@ -1599,10 +1599,10 @@ test "a module's own names resolve to its own declarations, not through an inter
         \\pub foreign type Int
         \\
         \\
-        \\foreign pure add : Int -> Int -> Int
+        \\foreign pure add : Int → Int → Int
         \\
         \\
-        \\pub twice : Int -> Int
+        \\pub twice : Int → Int
         \\twice n =
         \\    n + n
         \\

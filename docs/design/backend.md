@@ -1436,8 +1436,8 @@ type's recursion passes THROUGH one, every level is native frames again, and dee
 
 ```elm
 -- Box.beni: written by hand
-pub eq : Box a, Box a -> Bool
-    where a.eq : a, a -> Bool
+pub eq : Box a, Box a → Bool
+    where a.eq : a, a → Bool
 
 -- Main.beni
 type T = T (Box T) | E    -- `build 100000 E == build 100000 E` throws RangeError
@@ -2790,7 +2790,7 @@ This is the defect the design above exists to make impossible, and it exits 0.
 
 ```elm
 build n acc =
-    if n <= 0 then acc else build (n - 1) ((λx -> x + n) :: acc)
+    if n ≤ 0 then acc else build (n - 1) ((λx → x + n) :: acc)
 ```
 
 Each iteration conses a closure over `n`. Reassign `n` in place and every closure reads the last
@@ -2916,13 +2916,13 @@ cannot park when its beni callback suspends. **They land in the same commit as t
 is compiled into the binary, so a beni `foldl` without the loop is a stack bomb in core itself.
 
 ```elm
-pub foldl : List a, b, (a, b -> b) -> b
+pub foldl : List a, b, (a, b → b) → b
 foldl xs acc func =
     case xs of
-        [] -> acc
-        x :: rest -> foldl rest (func x acc) func
+        [] → acc
+        x :: rest → foldl rest (func x acc) func
 
-pub foldr : List a, b, (a, b -> b) -> b
+pub foldr : List a, b, (a, b → b) → b
 foldr xs acc func =
     foldl (reverse xs) acc func
 ```
@@ -2985,8 +2985,8 @@ rather than the whole return value:
 ```elm
 mapRec xs f =
     case xs of
-        [] -> []
-        x :: rest -> f x :: mapRec rest f
+        [] → []
+        x :: rest → f x :: mapRec rest f
 ```
 
 [Report 38 §16.4](research/38-immutable-array-representations.md) compiled eight such shapes

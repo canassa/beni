@@ -49,33 +49,33 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign pure add : number, number -> number
+    \\pub foreign pure add : number, number → number
     \\
     \\
-    \\pub foreign pure sub : number, number -> number
+    \\pub foreign pure sub : number, number → number
     \\
     \\
-    \\pub foreign pure mul : number, number -> number
+    \\pub foreign pure mul : number, number → number
     \\
     \\
-    \\pub foreign pure lt : number, number -> Bool
+    \\pub foreign pure lt : number, number → Bool
     \\
     \\
-    \\pub foreign pure eq : equatable a, a -> Bool
+    \\pub foreign pure eq : equatable a, a → Bool
     \\
     \\
-    \\pub foreign pure append : appendable, appendable -> appendable
+    \\pub foreign pure append : appendable, appendable → appendable
     \\
     \\
-    \\pub foreign pure toFloat : Int -> Float
+    \\pub foreign pure toFloat : Int → Float
     \\
     \\
-    \\pub identity : a -> a
+    \\pub identity : a → a
     \\identity a =
     \\    a
     \\
     \\
-    \\pub max : number, number -> number
+    \\pub max : number, number → number
     \\max x y =
     \\    x
     \\
@@ -84,16 +84,16 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign pure cons : a, List a -> List a
+    \\pub foreign pure cons : a, List a → List a
     \\
     \\
-    \\pub foreign pure map : (a -> b), List a -> List b
+    \\pub foreign pure map : (a → b), List a → List b
     \\
     \\
-    \\pub foreign pure foldl : (a, b -> b), b, List a -> b
+    \\pub foreign pure foldl : (a, b → b), b, List a → b
     \\
     \\
-    \\pub foreign pure length : List a -> Int
+    \\pub foreign pure length : List a → Int
     \\
     },
     .{ .path = "Maybe.beni", .package = .core, .source =
@@ -112,14 +112,14 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type String
     \\
     \\
-    \\pub foreign pure length : String -> Int
+    \\pub foreign pure length : String → Int
     \\
     \\
-    \\pub foreign pure fromInt : Int -> String
+    \\pub foreign pure fromInt : Int → String
     \\
     },
-    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char -> Bool\n" },
-    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String -> a\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char → Bool\n" },
+    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String → a\n" },
 };
 
 /// Run the checker over `source` as the module `M`, and compare
@@ -286,13 +286,13 @@ test "sharing: instantiating a scheme with an internal repeat keeps it one varia
 
 test "annotations: rigid variables hold the body to the promise" {
     try expectCodes(&.{.rigid_mismatch},
-        \\pub wrong : a -> Int
+        \\pub wrong : a → Int
         \\wrong value =
         \\    value
         \\
     );
     try expectCodes(&.{},
-        \\pub right : a -> a
+        \\pub right : a → a
         \\right value =
         \\    value
         \\
@@ -418,7 +418,7 @@ test "annotations print aliases by name, and a parameter that met the record sho
         \\    { x = 0, y = 0 }
         \\
         \\
-        \\pub shift : Point -> Point
+        \\pub shift : Point → Point
         \\shift p =
         \\    { p | x = p.x + 1 }
         \\
@@ -457,13 +457,13 @@ test "the occurs check fires once, at the binding" {
 
 test "obligations: equatable, interpolatable and tuple_index" {
     try expectCodes(&.{.not_equatable},
-        \\pub same : (Int -> Int), (Int -> Int) -> Bool
+        \\pub same : (Int → Int), (Int → Int) → Bool
         \\same f g =
         \\    f == g
         \\
     );
     try expectCodes(&.{.not_interpolatable},
-        \\pub show : List Int -> String
+        \\pub show : List Int → String
         \\show xs =
         \\    "xs: ${xs}"
         \\
@@ -479,7 +479,7 @@ test "obligations: equatable, interpolatable and tuple_index" {
         \\
     );
     try expectCodes(&.{.tuple_index_out_of_range},
-        \\pub third : ( Int, Int ) -> Int
+        \\pub third : Int × Int → Int
         \\third t =
         \\    t.2
         \\
@@ -488,12 +488,12 @@ test "obligations: equatable, interpolatable and tuple_index" {
     // `number` interpolation needs no annotation: `Int` and `Float` are
     // both on the list.
     try expectCodes(&.{},
-        \\pub same : Int, Int -> Bool
+        \\pub same : Int, Int → Bool
         \\same a b =
         \\    a == b
         \\
         \\
-        \\pub show : Int -> String
+        \\pub show : Int → String
         \\show n =
         \\    "n: ${n}"
         \\
@@ -533,7 +533,7 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
         \\    v : Int
         \\
     ,
-        \\pub step : Result String Int -> Result String Int
+        \\pub step : Result String Int → Result String Int
         \\step r =
         \\    v =
         \\        r?
@@ -547,7 +547,7 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
         \\    v : Int
         \\
     ,
-        \\pub step : Maybe Int -> Maybe Int
+        \\pub step : Maybe Int → Maybe Int
         \\step m =
         \\    v =
         \\        m?
@@ -555,7 +555,7 @@ test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
         \\
     );
     try expectCodes(&.{.try_shape},
-        \\pub step : Int -> Result String Int
+        \\pub step : Int → Result String Int
         \\step n =
         \\    Ok (n? + 1)
         \\
@@ -591,15 +591,15 @@ test "the arity rule of §8.3 fires before the generic mismatch" {
     // message is about the lambda rather than about the list two arguments
     // later.
     try expectCodes(&.{.type_mismatch},
-        \\pub total : List Int -> Int
+        \\pub total : List Int → Int
         \\total xs =
-        \\    List.foldl (λx -> x) 0 xs
+        \\    List.foldl (λx → x) 0 xs
         \\
     );
     // `_` is how a call leaves one argument open, and it is not an arity
     // mistake.
     try expectCodes(&.{},
-        \\pub bump : List Int -> List Int
+        \\pub bump : List Int → List Int
         \\bump xs =
         \\    List.map (max 1 _) xs
         \\
@@ -616,7 +616,7 @@ test "a module with a type error still produces an interface" {
     // dependents were promised (checker.md §6.1). `<error>` is for the case
     // where there is nothing else to say.
     try modules.append(gpa, .{ .path = "M.beni", .source =
-        \\pub good : Int -> Int
+        \\pub good : Int → Int
         \\good n =
         \\    n
         \\
@@ -727,12 +727,12 @@ test "a local index is relative to its declaration, in every consumer" {
     // declaration saw another declaration's names. In a record pattern
     // that is not cosmetic — the name IS the field being matched.
     try expectCodes(&.{},
-        \\pub first : Int -> Int
+        \\pub first : Int → Int
         \\first zzz =
         \\    zzz
         \\
         \\
-        \\pub second : { name : Int, other : Int } -> Int
+        \\pub second : { name : Int, other : Int } → Int
         \\second rec =
         \\    { name } =
         \\        rec
@@ -747,33 +747,33 @@ test "a local index is relative to its declaration, in every consumer" {
 
 test "exhaustiveness: a constructor with no branch is reported, one with a branch is not" {
     try expectCodes(&.{.missing_patterns},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
     );
     try expectCodes(&.{},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            0
         \\
     );
     // A variable covers the rest, exactly as a wildcard does.
     try expectCodes(&.{},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        other ->
+        \\        other →
         \\            0
         \\
     );
@@ -784,7 +784,7 @@ test "exhaustiveness: `if` lowers to a `case` on Bool and must not be reported" 
     // those two ARE every constructor of `Bool`. A spurious `missing_patterns`
     // on every `if` in the language is the failure mode this test exists for.
     try expectCodes(&.{},
-        \\pub sign : Int -> Int
+        \\pub sign : Int → Int
         \\sign n =
         \\    if n < 0 then
         \\        0 - 1
@@ -794,10 +794,10 @@ test "exhaustiveness: `if` lowers to a `case` on Bool and must not be reported" 
     );
     // And a written `case` on `Bool` behaves the same way.
     try expectCodes(&.{.missing_patterns},
-        \\pub yes : Bool -> Int
+        \\pub yes : Bool → Int
         \\yes b =
         \\    case b of
-        \\        True ->
+        \\        True →
         \\            1
         \\
     );
@@ -805,56 +805,56 @@ test "exhaustiveness: `if` lowers to a `case` on Bool and must not be reported" 
 
 test "exhaustiveness: literals are infinite, so a wildcard is the only way to cover them" {
     try expectCodes(&.{.missing_patterns},
-        \\pub f : Int -> Int
+        \\pub f : Int → Int
         \\f n =
         \\    case n of
-        \\        1 ->
+        \\        1 →
         \\            1
         \\
-        \\        2 ->
+        \\        2 →
         \\            2
         \\
     );
     try expectCodes(&.{},
-        \\pub f : Int -> Int
+        \\pub f : Int → Int
         \\f n =
         \\    case n of
-        \\        1 ->
+        \\        1 →
         \\            1
         \\
-        \\        _ ->
+        \\        _ →
         \\            0
         \\
     );
     try expectCodes(&.{.missing_patterns},
-        \\pub f : String -> Int
+        \\pub f : String → Int
         \\f s =
         \\    case s of
-        \\        "a" ->
+        \\        "a" →
         \\            1
         \\
     );
     try expectCodes(&.{.missing_patterns},
-        \\pub f : Char -> Int
+        \\pub f : Char → Int
         \\f c =
         \\    case c of
-        \\        'a' ->
+        \\        'a' →
         \\            1
         \\
     );
     // The same VALUE spelled two ways is one pattern, so the second branch
     // is dead: `0x10` and `16` are the same integer.
     try expectCodes(&.{.redundant_pattern},
-        \\pub f : Int -> Int
+        \\pub f : Int → Int
         \\f n =
         \\    case n of
-        \\        0x10 ->
+        \\        0x10 →
         \\            1
         \\
-        \\        16 ->
+        \\        16 →
         \\            2
         \\
-        \\        _ ->
+        \\        _ →
         \\            0
         \\
     );
@@ -869,34 +869,34 @@ test "exhaustiveness: a list column is split by length" {
     try expectCodes(&.{.missing_patterns}, listCase("[ ...init, 0 ]", "[]"));
     // `[]`, `[ x ]` and `[ x2, y, ...rest ]` between them are every list.
     try expectCodes(&.{},
-        \\pub f : List Int -> Int
+        \\pub f : List Int → Int
         \\f xs =
         \\    case xs of
-        \\        [] ->
+        \\        [] →
         \\            0
         \\
-        \\        [ x ] ->
+        \\        [ x ] →
         \\            x
         \\
-        \\        [ x2, y, ...rest ] ->
+        \\        [ x2, y, …rest ] →
         \\            y
         \\
     );
     // …and a fourth branch for a non-empty list is therefore dead.
     try expectCodes(&.{.redundant_pattern},
-        \\pub f : List Int -> Int
+        \\pub f : List Int → Int
         \\f xs =
         \\    case xs of
-        \\        [] ->
+        \\        [] →
         \\            0
         \\
-        \\        [ x ] ->
+        \\        [ x ] →
         \\            x
         \\
-        \\        [ x2, y, ...rest ] ->
+        \\        [ x2, y, …rest ] →
         \\            y
         \\
-        \\        [ ...more, z ] ->
+        \\        [ …more, z ] →
         \\            z
         \\
     );
@@ -913,41 +913,41 @@ test "exhaustiveness: tuples, unit and records are products with one shape" {
     // A tuple has one constructor, so what is missing is a COMBINATION —
     // and the example names it in source syntax.
     try expectCodes(&.{.missing_patterns},
-        \\pub f : ( Bool, Bool ) -> Int
+        \\pub f : Bool × Bool → Int
         \\f p =
         \\    case p of
-        \\        ( True, True ) ->
+        \\        ( True, True ) →
         \\            1
         \\
-        \\        ( False, False ) ->
+        \\        ( False, False ) →
         \\            2
         \\
     );
     try expectCodes(&.{},
-        \\pub f : ( Bool, Bool ) -> Int
+        \\pub f : Bool × Bool → Int
         \\f p =
         \\    case p of
-        \\        ( True, b ) ->
+        \\        ( True, b ) →
         \\            1
         \\
-        \\        ( False, b2 ) ->
+        \\        ( False, b2 ) →
         \\            2
         \\
     );
     // `()` has exactly one value, and a record pattern always matches.
     try expectCodes(&.{},
-        \\pub f : () -> Int
+        \\pub f : () → Int
         \\f u =
         \\    case u of
-        \\        () ->
+        \\        () →
         \\            1
         \\
     );
     try expectCodes(&.{},
-        \\pub f : { name : Int } -> Int
+        \\pub f : { name : Int } → Int
         \\f r =
         \\    case r of
-        \\        { name } ->
+        \\        { name } →
         \\            name
         \\
     );
@@ -955,36 +955,36 @@ test "exhaustiveness: tuples, unit and records are products with one shape" {
 
 test "exhaustiveness: nesting" {
     try expectCodes(&.{.missing_patterns},
-        \\pub f : Maybe (Maybe Int) -> Int
+        \\pub f : Maybe (Maybe Int) → Int
         \\f m =
         \\    case m of
-        \\        Just (Just n) ->
+        \\        Just (Just n) →
         \\            n
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            0
         \\
     );
     try expectCodes(&.{},
-        \\pub f : Maybe (Maybe Int) -> Int
+        \\pub f : Maybe (Maybe Int) → Int
         \\f m =
         \\    case m of
-        \\        Just (Just n) ->
+        \\        Just (Just n) →
         \\            n
         \\
-        \\        Just Nothing ->
+        \\        Just Nothing →
         \\            1
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            0
         \\
     );
     // A `Result` of a `Maybe`, with three of the four combinations missing.
     try expectCodes(&.{.missing_patterns},
-        \\pub f : Result String (Maybe Int) -> Int
+        \\pub f : Result String (Maybe Int) → Int
         \\f r =
         \\    case r of
-        \\        Ok (Just n) ->
+        \\        Ok (Just n) →
         \\            n
         \\
     );
@@ -992,13 +992,13 @@ test "exhaustiveness: nesting" {
 
 test "exhaustiveness: a branch under a wildcard can never run" {
     try expectCodes(&.{.redundant_pattern},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        other ->
+        \\        other →
         \\            0
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            1
         \\
     );
@@ -1006,16 +1006,16 @@ test "exhaustiveness: a branch under a wildcard can never run" {
     // pattern search does not also run: the matrix past a dead row is not
     // what the author meant (Elm's `toNonRedundantRows` stops the same way).
     try expectCodes(&.{.redundant_pattern},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        Just q ->
+        \\        Just q →
         \\            q
         \\
-        \\        Just z ->
+        \\        Just z →
         \\            z
         \\
     );
@@ -1026,26 +1026,26 @@ test "exhaustiveness: a declaration with a type error is not judged twice" {
     // and saying so would be a second complaint about a declaration whose
     // types are already unknown (checker.md §6.6).
     try expectCodes(&.{.type_mismatch},
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            "not an int"
         \\
     );
     // A GOOD declaration in the same module is still checked, though.
     try expectCodes(&.{ .type_mismatch, .missing_patterns },
-        \\pub bad : Maybe Int -> Int
+        \\pub bad : Maybe Int → Int
         \\bad m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            "not an int"
         \\
         \\
-        \\pub good : Maybe Int -> Int
+        \\pub good : Maybe Int → Int
         \\good m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
     );
@@ -1072,10 +1072,10 @@ test "exhaustiveness: a case on an opaque imported type needs a variable, and th
         \\import Token exposing (Token, make)
         \\
         \\
-        \\pub size : Token -> Int
+        \\pub size : Token → Int
         \\size t =
         \\    case t of
-        \\        anything ->
+        \\        anything →
         \\            1
         \\
         },
@@ -1098,13 +1098,13 @@ test "exhaustiveness: an imported type's constructors come from its interface" {
         \\import Shape exposing (Shape, Circle, Square)
         \\
         \\
-        \\pub area : Shape -> Int
+        \\pub area : Shape → Int
         \\area s =
         \\    case s of
-        \\        Circle r ->
+        \\        Circle r →
         \\            r
         \\
-        \\        Square w ->
+        \\        Square w →
         \\            w
         \\
         },
@@ -1123,10 +1123,10 @@ test "the usefulness budget: an analysis that would cost too much is refused, no
     // its last edge and answer wrongly at exit 0. An analysis that gave up
     // SAYS it gave up.
     const source =
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
     ;
@@ -1141,13 +1141,13 @@ test "the usefulness budget: exhaustion reports ONE code, not a partial answer" 
     // reports neither, because a half-searched matrix proves nothing at all
     // — only `pattern_budget_exhausted`, once.
     const source =
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        Just k ->
+        \\        Just k →
         \\            k
         \\
     ;
@@ -1172,7 +1172,7 @@ test "the usefulness budget: an irrefutable position refuses instead of going si
         \\    = Boxed Int
         \\
         \\
-        \\pub f : Boxed -> Int
+        \\pub f : Boxed → Int
         \\f (Boxed n) =
         \\    n
         \\

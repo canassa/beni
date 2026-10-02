@@ -7,7 +7,7 @@
 --! changes — it is still a `Node.Program`.
 --!
 --!     main : Program
---!     main = Io.run λ() ->
+--!     main = Io.run λ() →
 --!         Io.sleep 10
 --!         Node.print "later"
 --!

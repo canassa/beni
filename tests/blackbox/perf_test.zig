@@ -161,7 +161,7 @@ test "a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("Cyclic.beni",
-        \\f : Int -> Int
+        \\f : Int → Int
         \\f z =
         \\    k y =
         \\        ( y, y ) == y
@@ -383,11 +383,11 @@ test "== across alternating method boundaries on a doubling DAG is linear in its
 const alternating_a =
     \\pub type A a = A a
     \\
-    \\pub eq : A a, A a -> Bool
-    \\    where a.compare : a, a -> Order
+    \\pub eq : A a, A a → Bool
+    \\    where a.compare : a, a → Order
     \\eq l r =
     \\    case ( l, r ) of
-    \\        ( A x, A y ) ->
+    \\        ( A x, A y ) →
     \\            x.compare y == EQ
     \\
 ;
@@ -395,11 +395,11 @@ const alternating_a =
 const alternating_b =
     \\pub type B a = B a
     \\
-    \\pub compare : B a, B a -> Order
-    \\    where a.eq : a, a -> Bool
+    \\pub compare : B a, B a → Order
+    \\    where a.eq : a, a → Bool
     \\compare l r =
     \\    case ( l, r ) of
-    \\        ( B x, B y ) ->
+    \\        ( B x, B y ) →
     \\            if x.eq y then EQ else LT
     \\
 ;
@@ -838,7 +838,7 @@ fn viaRing(arena: std.mem.Allocator, n: usize) ![]const u8 {
             try out.print(arena, "type M{d}\n    = M{d} Int\n    | B{d} S.Type\n\n\n", .{ i, i, i });
         }
     }
-    try out.appendSlice(arena, "pub schema S tagged \"kind\" of\n    A as \"a\"\n        p : Int via conv\n\n\nsame : M0, M0 -> Bool\nsame a b =\n    a == b\n\n\ncmp : S.Type, S.Type -> Bool\ncmp a b =\n    a < b\n");
+    try out.appendSlice(arena, "pub schema S tagged \"kind\" of\n    A as \"a\"\n        p : Int via conv\n\n\nsame : M0, M0 → Bool\nsame a b =\n    a == b\n\n\ncmp : S.Type, S.Type → Bool\ncmp a b =\n    a < b\n");
     return out.items;
 }
 
@@ -878,7 +878,7 @@ fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
     try g.appendSlice(arena, " t u =\n    ");
     for (0..262) |i| try g.print(arena, "(a{d} == b{d}) && ", .{ i, i });
     try g.appendSlice(arena, "(t == u)\n\n\n");
-    const h = "h : T, T -> Bool\nh t u =\n    t == u\n\n\n";
+    const h = "h : T, T → Bool\nh t u =\n    t == u\n\n\n";
     if (g_first) {
         try out.appendSlice(arena, g.items);
         try out.appendSlice(arena, h);

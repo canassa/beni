@@ -3,9 +3,9 @@
 --! `String.toInt`, where the failure has something to say.
 --!
 --! Every function here takes the `Result` as its first argument and the
---! function it applies, if any, as its last. That is what lets `|>` feed a
---! `Result` in at the front — `result |> map toString` is
---! `map result toString` — and lets `x <- andThen result` bind the rest of
+--! function it applies, if any, as its last. That is what lets `▷` feed a
+--! `Result` in at the front — `result ▷ map toString` is
+--! `map result toString` — and lets `x ← andThen result` bind the rest of
 --! the block as the callback. `fromMaybe` follows the same rule with the
 --! `Maybe` as its subject.
 --!
@@ -14,9 +14,9 @@
 --| A `Result` is either `Ok`, meaning the computation succeeded, or it is an
 --| `Err`, meaning there was some failure.
 --|
---|     toValidMonth : Int -> Result String Int
+--|     toValidMonth : Int → Result String Int
 --|     toValidMonth month =
---|         if month >= 1 && month <= 12 then
+--|         if month ≥ 1 && month ≤ 12 then
 --|             Ok month
 --|         else
 --|             Err "months must be between 1 and 12"
@@ -48,7 +48,7 @@ withDefault result default =
 --|
 --| The `Result` comes first, so this reads well in a pipeline:
 --|
---|     (Ok 4.0 |> map sqrt) == Ok 2.0
+--|     (Ok 4.0 ▷ map sqrt) == Ok 2.0
 pub map : Result x a, (a → value) → Result x value
 map result func =
     case result of
@@ -81,8 +81,8 @@ map2 ra rb func =
 
 --| Apply a function if all three results are `Ok`.
 --|
---|     map3 (Ok 1) (Ok 2) (Ok 3) (λa b c -> a + b + c) == Ok 6
---|     map3 (Ok 1) (Err "no") (Ok 3) (λa b c -> a + b + c) == Err "no"
+--|     map3 (Ok 1) (Ok 2) (Ok 3) (λa b c → a + b + c) == Ok 6
+--|     map3 (Ok 1) (Err "no") (Ok 3) (λa b c → a + b + c) == Err "no"
 pub map3 : Result x a, Result x b, Result x c, (a, b, c → value) → Result x value
 map3 ra rb rc func =
     case ra of
@@ -175,10 +175,10 @@ map5 ra rb rc rd re func =
 
 --| Chain together a sequence of computations that may fail.
 --|
---|     andThen (Ok 1) (λx -> Ok (x + 1)) == Ok 2
---|     andThen (Err "no") (λx -> Ok (x + 1)) == Err "no"
+--|     andThen (Ok 1) (λx → Ok (x + 1)) == Ok 2
+--|     andThen (Err "no") (λx → Ok (x + 1)) == Err "no"
 --|
---| The callback comes last, so `x <- andThen result` binds the rest of the
+--| The callback comes last, so `x ← andThen result` binds the rest of the
 --| block as the callback. The `?` operator does the same thing with less
 --| punctuation: `toInt s?` is the number, or an early return of the `Err` from
 --| the enclosing function.

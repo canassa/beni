@@ -143,7 +143,7 @@ pub foreign impure array : elements → Value
 
 
 --| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
---| order. Written with a lambda, `Js.each xs λx -> …`, the lambda's body
+--| order. Written with a lambda, `Js.each xs λx → …`, the lambda's body
 --| is the loop's body.
 pub foreign impure each : Value, (Value → ()) → ()
 
@@ -184,7 +184,7 @@ pub foreign impure write : Ref a, a → ()
 --| `try { body() } finally { cleanup() }`: the body's value, and the
 --| cleanup run after the body however it ends — when it returns, and when
 --| it throws, before the throw goes on. Written with lambdas,
---| `Js.finally (λ() -> …) λ() -> …`, each lambda's body is its block and
+--| `Js.finally (λ() → …) λ() → …`, each lambda's body is its block and
 --| no function is made. Both are `sync`: a body that suspended would leave
 --| the guard before its rest ran (`backend.md` §4, *`Js.finally` is `try …
 --| finally`*).
@@ -195,8 +195,8 @@ pub foreign impure finally : sync (() → a), sync (() → ()) → a
 --| handler(e) }`: the body's value, or — when it throws something `test`
 --| holds of — the handler's. Anything `test` does not hold of is thrown on
 --| unchanged, so a wrapper catches exactly the failures its host API
---| documents and nothing else (`CLAUDE.md` rule 9): `Js.catchIf (λ() ->
---| …) (λe -> Js.instanceOf e (Js.global "URIError")) λ_ -> Nothing`.
+--| documents and nothing else (`CLAUDE.md` rule 9): `Js.catchIf (λ() →
+--| …) (λe → Js.instanceOf e (Js.global "URIError")) λ_ → Nothing`.
 --| Written with lambdas, the body is the `try` block, the test and the
 --| handler are the `catch` block, and no function is made. All three are
 --| `sync`, as `finally`'s arguments are (`backend.md` §4, *`Js.catchIf`
@@ -210,7 +210,7 @@ pub foreign impure catchIf : sync (() → a), sync (Value → bool), sync (Value
 --| reads and calls the checker otherwise takes for `impure` (`String.length`
 --| is `Js.get` of `Array.from`'s `length`, and pure). Unchecked, like every
 --| `Js` declaration: the caller answers for it. Written with a lambda,
---| `Js.pure λ() -> …` is the lambda's body and no function is made
+--| `Js.pure λ() → …` is the lambda's body and no function is made
 --| (`backend.md` §4, *`Js.pure` is its body*).
 pub foreign pure pure : sync (() → a) → a
 

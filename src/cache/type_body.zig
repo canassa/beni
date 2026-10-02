@@ -640,11 +640,11 @@ test "an alias body encodes as its shape, with every name spelled out" {
         \\
         \\
         \\type alias Pack a b =
-        \\    ( a, Pair b, () )
+        \\    a × Pair b × ()
         \\
         \\
         \\type alias Fn a =
-        \\    a, a -> Pair a
+        \\    a, a → Pair a
         \\
     );
     defer p.deinit();
@@ -695,11 +695,11 @@ test "a parameter is its INDEX, so renaming one does not move the bytes" {
     // spelling of a type variable is the author's business and not a
     // dependent's.
     const gpa = testing.allocator;
-    var a = try project(gpa, "type alias Pair a b =\n    ( a, b )\n");
+    var a = try project(gpa, "type alias Pair a b =\n    a × b\n");
     defer a.deinit();
-    var b = try project(gpa, "type alias Pair x y =\n    ( x, y )\n");
+    var b = try project(gpa, "type alias Pair x y =\n    x × y\n");
     defer b.deinit();
-    var swapped = try project(gpa, "type alias Pair a b =\n    ( b, a )\n");
+    var swapped = try project(gpa, "type alias Pair a b =\n    b × a\n");
     defer swapped.deinit();
 
     const one = try aliasBodies(gpa, &a, "L");

@@ -11039,31 +11039,31 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign pure add : number, number -> number
+    \\pub foreign pure add : number, number → number
     \\
     \\
-    \\pub foreign pure sub : number, number -> number
+    \\pub foreign pure sub : number, number → number
     \\
     \\
-    \\pub foreign pure mul : number, number -> number
+    \\pub foreign pure mul : number, number → number
     \\
     \\
-    \\pub foreign pure lt : number, number -> Bool
+    \\pub foreign pure lt : number, number → Bool
     \\
     \\
-    \\pub foreign pure eq : equatable a, a -> Bool
+    \\pub foreign pure eq : equatable a, a → Bool
     \\
     \\
-    \\pub foreign pure and : Bool, Bool -> Bool
+    \\pub foreign pure and : Bool, Bool → Bool
     \\
     \\
-    \\pub foreign pure or : Bool, Bool -> Bool
+    \\pub foreign pure or : Bool, Bool → Bool
     \\
     \\
-    \\pub foreign pure append : appendable, appendable -> appendable
+    \\pub foreign pure append : appendable, appendable → appendable
     \\
     \\
-    \\pub identity : a -> a
+    \\pub identity : a → a
     \\identity a =
     \\    a
     \\
@@ -11072,10 +11072,10 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign pure cons : a, List a -> List a
+    \\pub foreign pure cons : a, List a → List a
     \\
     \\
-    \\pub foreign pure foldl : (a, b -> b), b, List a -> b
+    \\pub foreign pure foldl : (a, b → b), b, List a → b
     \\
     },
     .{ .path = "Maybe.beni", .package = .core, .source =
@@ -11090,9 +11090,9 @@ const test_core = [_]TestProject.Module{
     \\    | Err x
     \\
     },
-    .{ .path = "String.beni", .package = .core, .source = "pub equatable foreign type String\n\n\npub foreign pure fromInt : Int -> String\n" },
-    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char -> Bool\n" },
-    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String -> a\n" },
+    .{ .path = "String.beni", .package = .core, .source = "pub equatable foreign type String\n\n\npub foreign pure fromInt : Int → String\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign pure isDigit : Char → Bool\n" },
+    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign pure todo : String → a\n" },
 };
 
 /// Lower `source` as the module `M` and return the printed JavaScript.
@@ -11166,7 +11166,7 @@ test "a top-level constant and a top-level function" {
         \\    1
         \\
         \\
-        \\pub plus : Int, Int -> Int
+        \\pub plus : Int, Int → Int
         \\plus a b =
         \\    a + b
         \\
@@ -11186,7 +11186,7 @@ test "every call is a direct n-ary call and a function value is the binding itse
         \\export { M$plus, M$six, M$addTwo, M$asValue };
         \\
     ,
-        \\pub plus : Int, Int -> Int
+        \\pub plus : Int, Int → Int
         \\plus a b =
         \\    a + b
         \\
@@ -11196,12 +11196,12 @@ test "every call is a direct n-ary call and a function value is the binding itse
         \\    plus 2 4
         \\
         \\
-        \\pub addTwo : Int -> Int
+        \\pub addTwo : Int → Int
         \\addTwo =
         \\    plus 2 _
         \\
         \\
-        \\pub asValue : Int, Int -> Int
+        \\pub asValue : Int, Int → Int
         \\asValue =
         \\    plus
         \\
@@ -11220,7 +11220,7 @@ test "if becomes a conditional expression and `&&` becomes `&&`" {
         \\export { M$pick };
         \\
     ,
-        \\pub pick : Bool, Bool -> Int
+        \\pub pick : Bool, Bool → Int
         \\pick a b =
         \\    if a && b then
         \\        1
@@ -11288,13 +11288,13 @@ test "a constructor of a payload-carrying type is padded to one shape" {
         \\    None
         \\
         \\
-        \\pub unwrap : Box -> Int
+        \\pub unwrap : Box → Int
         \\unwrap v =
         \\    case v of
-        \\        Some n ->
+        \\        Some n →
         \\            n
         \\
-        \\        None ->
+        \\        None →
         \\            0
         \\
     );
@@ -11325,13 +11325,13 @@ test "a type whose constructors are all nullary is a bare tag, and Bool is a Jav
         \\    Red
         \\
         \\
-        \\pub isRed : Colour -> Bool
+        \\pub isRed : Colour → Bool
         \\isRed c =
         \\    case c of
-        \\        Red ->
+        \\        Red →
         \\            True
         \\
-        \\        Green ->
+        \\        Green →
         \\            False
         \\
         \\
@@ -11385,7 +11385,7 @@ test "let bindings become const, and a let binding with parameters becomes a hoi
         \\export { M$f };
         \\
     ,
-        \\pub f : Int -> Int
+        \\pub f : Int → Int
         \\f n =
         \\    doubled =
         \\        n * 2
@@ -11405,19 +11405,19 @@ test "a lambda is an n-ary function expression, of exactly its parameters" {
         \\export { M$apply, M$answer, M$twice };
         \\
     ,
-        \\pub apply : (Int -> Int), Int -> Int
+        \\pub apply : (Int → Int), Int → Int
         \\apply f x =
         \\    f x
         \\
         \\
         \\pub answer : Int
         \\answer =
-        \\    apply (λa -> a + 1) 1
+        \\    apply (λa → a + 1) 1
         \\
         \\
         \\pub twice : Int
         \\twice =
-        \\    apply (λb -> b * 2) 21
+        \\    apply (λb → b * 2) 21
         \\
     );
 }
@@ -11432,7 +11432,7 @@ test "string interpolation becomes a template literal" {
         \\import String
         \\
         \\
-        \\pub label : Int -> String
+        \\pub label : Int → String
         \\label n =
         \\    "n is ${String.fromInt n}!"
         \\
@@ -11480,7 +11480,7 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\export { M$outer };
         \\
     ,
-        \\pub outer : Int, Int -> Int
+        \\pub outer : Int, Int → Int
         \\outer n acc =
         \\    if n < 1 then
         \\        acc
@@ -11491,7 +11491,7 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\                total
         \\
         \\            else
-        \\                inner (i - 1) ((λx -> x + i) total)
+        \\                inner (i - 1) ((λx → x + i) total)
         \\        outer (n - 1) (inner 3 acc)
         \\
     );
@@ -11509,7 +11509,7 @@ test "a foreign value is imported from the sibling file under its bare name" {
         \\pub foreign pure now : Float
         \\
         \\
-        \\pub foreign pure twice : Int -> Int
+        \\pub foreign pure twice : Int → Int
         \\
         ,
     });
@@ -11538,7 +11538,7 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     defer modules.deinit(gpa);
     try modules.appendSlice(gpa, &test_core);
     try modules.append(gpa, .{ .path = "M.beni", .source =
-        \\pub unwrap : Maybe Int -> Maybe Int
+        \\pub unwrap : Maybe Int → Maybe Int
         \\unwrap m =
         \\    Just (m? + 1)
         \\

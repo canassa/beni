@@ -55,7 +55,7 @@ pub foreign impure targetChecked : Event → Bool
 --| types (`"a"`, `"A"`, `" "`) or the key's name (`"Enter"`, `"Escape"`,
 --| `"ArrowUp"`, `"Backspace"`). `""` for any other event.
 --|
---|     onKeyDown={λevent -> if Html.key event == "Enter" then Add else Ignored}
+--|     onKeyDown={λevent → if Html.key event == "Enter" then Add else Ignored}
 pub key : Event → String
 key event = stringProp event "key"
 
@@ -92,7 +92,7 @@ metaKey event = boolProp event "metaKey"
 --| while its event is dispatched, so calling this in one takes effect; a
 --| subscription's value arrives later, when it is too late.
 --|
---|     onKeyDown={λevent ->
+--|     onKeyDown={λevent →
 --|         if Html.key event == "Tab" then
 --|             Html.preventDefault event
 --|             Indent

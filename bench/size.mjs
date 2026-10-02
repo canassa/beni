@@ -450,60 +450,60 @@ function measureFloor(options, beni, work) {
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
 const pages = [
-  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = λ_ m -> m, view = view }" },
-  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m -> m, view = view }" },
+  { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = {}, update = λ_ m → m, view = view }" },
+  { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = {}, update = λ_ m → m, view = view }" },
   {
     name: "browser-tea element",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Sub\n`,
-    main: "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.none ), view = view, subscriptions = λ_ -> Sub.none }",
+    main: "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }",
   },
   {
     name: "browser-tea effects",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Http\nimport Sub\nimport Time\n`,
     main:
-      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m -> ( m, Cmd.keyed () Cmd.Restart (λsend -> send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ -> Time.every (Time.seconds 1) (λ_ -> Ok \"tick\") }",
-    view: "view : {} -> Html (Result Http.Error String)",
+      "Tea.element { init = ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.keyed () Cmd.Restart (λsend → send (Http.get { url = \"/x\", expect = Http.expectString })) ), view = view, subscriptions = λ_ → Time.every (Time.seconds 1) (λ_ → Ok \"tick\") }",
+    view: "view : {} → Html (Result Http.Error String)",
   },
   {
     name: "browser-tea random",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Random\nimport Sub\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = λn _ -> ( n, Random.generate (Random.int 1 6) (λk -> k) ), view = view, subscriptions = λ_ -> Sub.none }",
-    view: "view : Int -> Html Int",
+      "Tea.element { init = ( 0, Cmd.none ), update = λn _ → ( n, Random.generate (Random.int 1 6) (λk → k) ), view = view, subscriptions = λ_ → Sub.none }",
+    view: "view : Int → Html Int",
   },
   {
     name: "browser-tea url",
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation\nimport Url exposing (Url)\n`,
-    main: "Tea.sandbox { init = Browser.Navigation.currentUrl (), update = λ_ m -> m, view = view }",
-    view: "view : Maybe Url -> Html {}",
+    main: "Tea.sandbox { init = Browser.Navigation.currentUrl (), update = λ_ m → m, view = view }",
+    view: "view : Maybe Url → Html {}",
   },
   {
     name: "browser-tea navigation",
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\nimport Url exposing (Url)\n`,
     main:
-      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ -> ( m, Cmd.task (λ() -> Navigation.pushUrl (Navigation.key ()) m) (λ_ -> \"\") ), view = view, subscriptions = λ_ -> Navigation.onUrlChange Url.toString }",
-    view: "view : String -> Html String",
+      "Tea.element { init = ( \"\", Cmd.none ), update = λm _ → ( m, Cmd.task (λ() → Navigation.pushUrl (Navigation.key ()) m) (λ_ → \"\") ), view = view, subscriptions = λ_ → Navigation.onUrlChange Url.toString }",
+    view: "view : String → Html String",
   },
   {
     name: "browser-tea links",
     platform: "browser-tea",
     imports: `${teaImports}import Browser.Navigation as Navigation\nimport Cmd\nimport Sub\n`,
     main:
-      "Tea.element { init = ( 0, Cmd.none ), update = λ_ n -> ( n + 1, Cmd.none ), view = view, subscriptions = λ_ -> Navigation.onUrlRequest λ_ -> 1 }",
-    view: "view : Int -> Html Int",
+      "Tea.element { init = ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = view, subscriptions = λ_ → Navigation.onUrlRequest λ_ → 1 }",
+    view: "view : Int → Html Int",
   },
   {
     name: "browser-tea application",
     platform: "browser-tea",
     imports: `${teaImports}import Cmd\nimport Sub\nimport Url\n`,
     main:
-      "Tea.application { init = λ_ _ -> ( 0, Cmd.none ), update = λ_ n -> ( n + 1, Cmd.none ), view = λn -> { title = \"\", body = view n }, subscriptions = λ_ -> Sub.none, onUrlRequest = λ_ -> 1, onUrlChange = λ_ -> 2 }",
-    view: "view : Int -> Html Int",
+      "Tea.application { init = λ_ _ → ( 0, Cmd.none ), update = λ_ n → ( n + 1, Cmd.none ), view = λn → { title = \"\", body = view n }, subscriptions = λ_ → Sub.none, onUrlRequest = λ_ → 1, onUrlChange = λ_ → 2 }",
+    view: "view : Int → Html Int",
   },
 ];
 
@@ -511,7 +511,7 @@ function measurePage(options, beni, work, page) {
   const platform = page.platform;
   const projectDir = join(work, `__page_${page.name.replace(/[^\w]/g, "_")}`);
   mkdirSync(projectDir, { recursive: true });
-  const viewType = page.view ?? "view : {} -> Html {}";
+  const viewType = page.view ?? "view : {} → Html {}";
   writeFileSync(
     join(projectDir, "Page.beni"),
     `${page.imports}\n\n${viewType}\nview _ =\n    <></>\n\n\nmain : Browser.Program\nmain =\n    ${page.main}\n`,

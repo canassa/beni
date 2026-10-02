@@ -2,8 +2,8 @@
 import M exposing (Box(..))
 
 
-unbox : Box -> Int
+unbox : Box → Int
 unbox b =
     case b of
-        Box n ->
+        Box n →
             n

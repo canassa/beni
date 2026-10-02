@@ -4842,7 +4842,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
 test "operators become calls of their core functions, `(+)` the function itself, `-x` a negate call" {
     try expectDecls(
         \\f a b =
-        \\    ( a + b, a // b, [ a, ...[] ], (+), -a )
+        \\    ( a + b, a // b, [ a, …[] ], (+), -a )
         \\
     ,
         \\decl 0: value f
@@ -4886,7 +4886,7 @@ test "every binary operator maps to the §6.5 core function, except the six comp
     // declared and callable, they are simply no longer what `==` means.
     try expectDecls(
         \\f a b =
-        \\    [ a - b, a * b, a / b, a ^ b, a ++ b, a == b, a /= b, a < b, a > b, a <= b, a >= b, a && b, a || b ]
+        \\    [ a - b, a * b, a / b, a ^ b, a ++ b, a == b, a ≠ b, a < b, a > b, a ≤ b, a ≥ b, a && b, a || b ]
         \\
     ,
         \\decl 0: value f
@@ -4964,7 +4964,7 @@ test "a leading element and a spread desugar to List.cons, not Basics.cons" {
     // noticed, because name resolution against interfaces came later.
     try expectDecls(
         \\f x xs =
-        \\    [ x, ...xs ]
+        \\    [ x, …xs ]
         \\
     ,
         \\decl 0: value f
@@ -5007,7 +5007,7 @@ test "the operator table gives every operator a home module, Basics" {
 test "`|>` inserts at the FIRST argument, `<|` at the last, through grouping parentheses" {
     try expectDecls(
         \\f g x =
-        \\    ( x |> g 1, g <| x, x |> (g 1) |> g, g <| g <| x )
+        \\    ( x ▷ g 1, g ◁ x, x ▷ (g 1) ▷ g, g ◁ g ◁ x )
         \\
     ,
         \\decl 0: value f
@@ -5090,7 +5090,7 @@ test "`<-` binds the rest of the block as the call's last argument (§6.7)" {
         \\f s =
         \\    n = 1
         \\
-        \\    h <- Result.andThen s
+        \\    h ← Result.andThen s
         \\    t = h
         \\    max t n
         \\
@@ -5178,15 +5178,15 @@ test "`?` in a top-level constant, even under let constants, is question_outside
 test "`?` under a lambda is question_in_lambda, whatever encloses the lambda" {
     try expectErrors(
         \\f x =
-        \\    (λy -> y?) x
+        \\    (λy → y?) x
         \\
         \\
         \\g =
-        \\    λy -> y?
+        \\    λy → y?
         \\
     , .{}, &.{
-        .{ .code = .question_in_lambda, .line = 2, .col = 13 },
-        .{ .code = .question_in_lambda, .line = 6, .col = 12 },
+        .{ .code = .question_in_lambda, .line = 2, .col = 12 },
+        .{ .code = .question_in_lambda, .line = 6, .col = 11 },
     });
 }
 
@@ -5270,7 +5270,7 @@ test "`if` becomes a two-branch case on the prelude Bool constructors" {
 test "lambdas stay n-ary and an accessor becomes a one-parameter lambda around a field access" {
     try expectDecls(
         \\f =
-        \\    ( λa b -> a, .name )
+        \\    ( λa b → a, .name )
         \\
     ,
         \\decl 0: value f
@@ -5328,10 +5328,10 @@ test "every pattern kind lowers, binding its variables as locals of the right ki
     try expectDecls(
         \\f p =
         \\    case p of
-        \\        ( Just [ x, ...rest ] as whole, { a, b }, [ 1, -2, 'c', "s", () ], _ ) ->
+        \\        ( Just [ x, …rest ] as whole, { a, b }, [ 1, -2, 'c', "s", () ], _ ) →
         \\            x
         \\
-        \\        _ ->
+        \\        _ →
         \\            0
         \\
     ,
@@ -5452,7 +5452,7 @@ test "every resolution form: local, top, ctor, import_value, import_ctor, qualif
         \\    1
         \\
         \\
-        \\t : ( T, Dict Int Int, E.Value, Maybe a, Http.Error )
+        \\t : T × Dict Int Int × E.Value × Maybe a × Http.Error
         \\t =
         \\    t
         \\
@@ -5585,7 +5585,7 @@ test "unbound names in every namespace, and an unknown module alias" {
         \\
         \\f m =
         \\    case m of
-        \\        Bar ->
+        \\        Bar →
         \\            1
         \\
     , .{}, &.{
@@ -5603,23 +5603,23 @@ test "unbound names in every namespace, and an unknown module alias" {
 test "sibling scopes may reuse a name; nested ones may not" {
     try expectErrors(
         \\ok =
-        \\    ( λk -> k, λk -> k )
+        \\    ( λk → k, λk → k )
         \\
         \\
         \\bad =
-        \\    λk -> λk -> k
+        \\    λk → λk → k
         \\
         \\
         \\branches m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        Err n ->
+        \\        Err n →
         \\            n
         \\
     , .{}, &.{
-        .{ .code = .shadowing, .line = 6, .col = 12 },
+        .{ .code = .shadowing, .line = 6, .col = 11 },
     });
 }
 
@@ -5678,12 +5678,12 @@ test "a name bound twice in one pattern set is duplicate_pattern_variable, not s
     try expectErrors(
         \\f a a =
         \\    case a of
-        \\        ( b, ( b, c ) as c ) ->
+        \\        ( b, ( b, c ) as c ) →
         \\            b
         \\
         \\
         \\g =
-        \\    λ{ x, x } -> x
+        \\    λ{ x, x } → x
         \\
     , .{}, &.{
         .{ .code = .duplicate_pattern_variable, .line = 1, .col = 5 },
@@ -5824,7 +5824,7 @@ test "type variables must be parameters in type bodies, and are free in annotati
         \\    { r | x : c }
         \\
         \\
-        \\f : d -> d
+        \\f : d → d
         \\f x =
         \\    x
         \\
@@ -5838,7 +5838,7 @@ test "type variables must be parameters in type bodies, and are free in annotati
 test "foreign declarations are rejected without --core and accepted with it" {
     const source =
         \\--| Doc.
-        \\pub foreign pure add : Int, Int -> Int
+        \\pub foreign pure add : Int, Int → Int
         \\
         \\
         \\foreign type Handle

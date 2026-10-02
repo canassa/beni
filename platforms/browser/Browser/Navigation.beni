@@ -9,8 +9,8 @@
 --! it, so no program falls out of step with the address. The command form
 --! is `Cmd.task` over a function:
 --!
---!     ClickedLink (Browser.Internal url) ->
---!         ( model, Cmd.task (λ() -> Navigation.pushUrl model.key (Url.toString url)) Pushed )
+--!     ClickedLink (Browser.Internal url) →
+--!         ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Pushed )
 
 import Browser exposing (Send)
 import Js
@@ -44,8 +44,8 @@ pub type Error
 --|
 --|     init =
 --|         case Browser.Navigation.currentUrl () of
---|             Just url -> filterOf url.fragment
---|             Nothing -> All
+--|             Just url → filterOf url.fragment
+--|             Nothing → All
 pub currentUrl : () → Maybe Url
 currentUrl () = Url.fromString (Js.to (Js.get (Js.global "location") "href"))
 

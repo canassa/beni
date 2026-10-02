@@ -1126,14 +1126,14 @@ test "every record of a project round-trips, with schemes, ctors and where claus
         \\
         \\
         \\pub type alias Pair a =
-        \\    ( a, a )
+        \\    a × a
         \\
         \\
         \\pub type alias Point =
         \\    { y : Int, x : Int }
         \\
         \\
-        \\pub twice : a -> a
+        \\pub twice : a → a
         \\twice x =
         \\    x
         \\
@@ -1142,7 +1142,7 @@ test "every record of a project round-trips, with schemes, ctors and where claus
         \\    r.width
         \\
         \\
-        \\pub pack : a, a -> Pair a
+        \\pub pack : a, a → Pair a
         \\pack x y =
         \\    ( x, y )
         \\
@@ -1151,13 +1151,13 @@ test "every record of a project round-trips, with schemes, ctors and where claus
         \\import A
         \\
         \\
-        \\pub use : A.Shape Int -> A.Pair Int
+        \\pub use : A.Shape Int → A.Pair Int
         \\use s =
         \\    case s of
-        \\        A.Box a b ->
+        \\        A.Box a b →
         \\            A.pack a b
         \\
-        \\        A.Empty ->
+        \\        A.Empty →
         \\            A.pack 0 0
         \\
         \\
@@ -1600,7 +1600,7 @@ const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
     \\    { name : String, value : a }
     \\
     \\
-    \\pub wrap : a -> Named a
+    \\pub wrap : a → Named a
     \\wrap v =
     \\    { name = "x", value = v }
     \\
@@ -1609,7 +1609,7 @@ const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
     \\    a < b
     \\
     \\
-    \\pub pairUp : a, b -> ( a, b )
+    \\pub pairUp : a, b → a × b
     \\pairUp x y =
     \\    ( x, y )
     \\

@@ -9,8 +9,8 @@
 --! `Restart` releases the old request at once. The command form is
 --! `Cmd.task` over a request:
 --!
---!     Search q ->
---!         ( model, Cmd.keyed SearchKey Cmd.Restart λsend ->
+--!     Search q →
+--!         ( model, Cmd.keyed SearchKey Cmd.Restart λsend →
 --!             send (Found (Http.get { url = "/api/search?q=" ++ q, expect = Http.expectString })) )
 
 import Dict exposing (Dict)

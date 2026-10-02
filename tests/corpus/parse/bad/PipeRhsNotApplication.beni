@@ -1,29 +1,29 @@
--- pipe_rhs_not_application at 8:11 (the `λ`), 12:10 (the `if`), 16:10
--- (the `case`), 25:14 (the `+`) and 29:13 (the `?`):
+-- pipe_rhs_not_application at 8:10 (the `λ`), 12:9 (the `if`), 16:9
+-- (the `case`), 25:13 (the `+`) and 29:12 (the `?`):
 -- the right operand of `|>` must be an application (§6.7), because the
 -- left operand becomes its FIRST argument and a block form, an operator
 -- chain and a `?` have no argument list to insert into. §3's rule letting
 -- a block be the last operand of a chain does not extend to `|>`.
 lambdaRhs xs =
-    xs |> λx -> x
+    xs ▷ λx → x
 
 
 ifRhs c a b =
-    a |> if c then b else a
+    a ▷ if c then b else a
 
 
 caseRhs f m =
-    f |> case m of
-        Just v ->
+    f ▷ case m of
+        Just v →
             v
 
-        Nothing ->
+        Nothing →
             f
 
 
 chainRhs x f =
-    x |> f 1 + 2
+    x ▷ f 1 + 2
 
 
 questionRhs x f =
-    x |> f 1?
+    x ▷ f 1?

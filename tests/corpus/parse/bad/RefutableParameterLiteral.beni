@@ -2,16 +2,16 @@
 -- `String` literal each match some arguments and not others whatever their type
 -- is, so the PARSER refuses them — no types needed, unlike a constructor
 -- (§7, `check/bad/RefutableParameterCtor`). Before this rule `f 5` returned 99.
-f : Int -> Int
+f : Int → Int
 f 0 =
     99
 
 
-isA : Char -> Bool
+isA : Char → Bool
 isA 'a' =
     True
 
 
-isNil : String -> Bool
+isNil : String → Bool
 isNil "" =
     True

@@ -53,7 +53,7 @@ pub foreign pure printLines : List String → Program
 --|
 --|     main : Program
 --|     main =
---|         formatError err |> Node.exitWith 1
+--|         formatError err ▷ Node.exitWith 1
 pub foreign pure exitWith : String, Int → Program
 
 

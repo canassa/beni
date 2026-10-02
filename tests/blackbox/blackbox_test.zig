@@ -67,7 +67,7 @@ test "layout declaration bodies have byte-identical AST and BIR dumps to braces"
         \\      name : String
         \\    , --| The postal address.
         \\      address : { street : String, city : String }
-        \\    , greet : String, Int -> String
+        \\    , greet : String, Int → String
         \\    , result :
         \\          Result
         \\              String
@@ -95,7 +95,7 @@ test "layout declaration bodies have byte-identical AST and BIR dumps to braces"
         \\    address :
         \\        street : String
         \\        city : String
-        \\    greet : String, Int -> String
+        \\    greet : String, Int → String
         \\    result :
         \\        Result
         \\            String
@@ -313,7 +313,7 @@ test "`.` is a usable path for check, build and fmt, however it is spelled" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain = Node.printLines [ Sub.Hello.hello \"x\" ]\n");
-    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s = s\n");
+    try w.write("Sub/Hello.beni", "pub hello : String → String\nhello s = s\n");
     const absolute = try w.projectPath();
 
     // ┌─────────────────────────────────────────┐
@@ -391,7 +391,7 @@ test "`.` and the absolute path of the same directory emit byte-identical output
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain = Node.printLines [ Sub.Hello.hello \"x\" ]\n");
-    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s = s\n");
+    try w.write("Sub/Hello.beni", "pub hello : String → String\nhello s = s\n");
     const absolute = try w.projectPath();
 
     // ┌─────────────────────────────────────────┐
@@ -1384,18 +1384,18 @@ test "dump --stage=ast prints the tree as an S-expression with docs, imports and
         \\
         \\
         \\--| Greets.
-        \\pub greet : String -> String
+        \\pub greet : String → String
         \\greet name =
         \\    "hi ${name}" -- trailing
         \\
         \\
         \\sign n =
         \\    case n of
-        \\        0 ->
+        \\        0 →
         \\            -1
         \\
-        \\        _ ->
-        \\            n |> abs
+        \\        _ →
+        \\            n ▷ abs
         \\
     );
 
@@ -2652,7 +2652,7 @@ test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an ope
     defer w.deinit();
     try w.write("Main.beni",
         \\total xs =
-        \\    xs |> List.map (λx -> x * 2) |> List.sum
+        \\    xs ▷ List.map (λx → x * 2) ▷ List.sum
         \\
     );
 
@@ -2782,7 +2782,7 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     // module shadows it for the whole project (checker.md §2), and a file
     // called `Basics.beni` would therefore shadow the prelude's own home
     // and make `Int` unresolvable. That rule has its own scenario below.
-    try w.write("Prim.beni", "pub foreign pure add : Int -> Int -> Int\n");
+    try w.write("Prim.beni", "pub foreign pure add : Int → Int → Int\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -2861,7 +2861,7 @@ test "a two-module project resolves cleanly and writes nothing" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Util.beni",
-        \\pub double : Int -> Int
+        \\pub double : Int → Int
         \\double n =
         \\    n * 2
         \\
@@ -2893,7 +2893,7 @@ test "a two-module project resolves cleanly and writes nothing" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // `check` produces no artifact: the sources are exactly as written.
-    try testing.expectEqualStrings("pub double : Int -> Int\ndouble n =\n    n * 2\n", try w.read("src/Util.beni"));
+    try testing.expectEqualStrings("pub double : Int → Int\ndouble n =\n    n * 2\n", try w.read("src/Util.beni"));
 }
 
 test "unknown_module names the import that cannot be found" {
@@ -3058,7 +3058,7 @@ test "duplicate_module: two roots, one module name, reported on the second path"
 test "equatable is core's alone: the marker and the modifier outside core" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("src/Main.beni", "pub eq : equatable a -> a -> Bool\neq x y =\n    True\n");
+    try w.write("src/Main.beni", "pub eq : equatable a → a → Bool\neq x y =\n    True\n");
 
     const r = try w.run(&.{ "check", "src" });
 
@@ -3082,7 +3082,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
     // Not `Basics.beni`: a module of the app package named like a core
     // module shadows it (checker.md §2), and `Bool` would then be
     // unresolvable. The declared `Verdict` keeps this about the marker.
-    try w.write("Eq.beni", "pub type Verdict\n    = Yes\n\n\npub foreign pure eq : equatable a -> equatable a -> Verdict\n");
+    try w.write("Eq.beni", "pub type Verdict\n    = Yes\n\n\npub foreign pure eq : equatable a → equatable a → Verdict\n");
 
     const r = try w.run(&.{ "check", "--core", "Eq.beni" });
 
@@ -3091,7 +3091,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
     try testing.expectEqualDeep(diagnostic.Diagnostic{
         .code = .equatable_not_first_occurrence,
         .severity = .@"error",
-        .span = .{ .file = "Eq.beni", .start = .{ .line = 5, .col = 38 }, .end = .{ .line = 5, .col = 47 } },
+        .span = .{ .file = "Eq.beni", .start = .{ .line = 5, .col = 37 }, .end = .{ .line = 5, .col = 46 } },
         .title = "EQUATABLE MARKER REPEATED",
         .message = "This type variable is already marked `equatable`.\n" ++
             "\n" ++
@@ -3119,7 +3119,7 @@ test "dump --stage=interface prints a module's public face, exactly" {
         \\    | Empty
         \\
         \\
-        \\pub area : Shape Int -> Int
+        \\pub area : Shape Int → Int
         \\area shape =
         \\    0
         \\
@@ -3151,7 +3151,7 @@ test "dump --stage=interface prints a module's public face, exactly" {
 test "dump --stage=interface on a directory prints every module in path order" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("src/Util.beni", "pub helper : Int -> Int\nhelper n =\n    n\n");
+    try w.write("src/Util.beni", "pub helper : Int → Int\nhelper n =\n    n\n");
     try w.write("src/Main.beni", "import Util exposing (helper)\n\n\npub main : Int\nmain =\n    helper 1\n");
 
     const r = try w.runWith(&.{ "dump", "--stage=interface", "src" }, .{ .raw_diagnostics = true });
@@ -3236,14 +3236,14 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try w.write("myplat/beni.json",
         \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
     );
-    try w.write("myplat/Prog.beni", "pub foreign type Program\n\n\npub foreign pure say : Int -> Program\n");
+    try w.write("myplat/Prog.beni", "pub foreign type Program\n\n\npub foreign pure say : Int → Program\n");
     try w.write("myplat/Prog.js", "export const say = (n) => ({ n });\n");
     try w.write("myplat/run.js", "export const run = (program) => {};\n");
     try w.write("Main.beni",
         \\import Prog exposing (Program)
         \\
         \\
-        \\pub before : String, String -> Bool
+        \\pub before : String, String → Bool
         \\before a b =
         \\    a < b
         \\
@@ -3320,7 +3320,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\pub differ : Bool
         \\differ =
         \\    n = None
-        \\    n /= n
+        \\    n ≠ n
         \\
         \\
         \\main : Program
@@ -3364,7 +3364,7 @@ test "a file under --core-root may use foreign without --core" {
 test "resolution is identical at --jobs=1 and --jobs=8, on both streams" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("src/Util.beni", "pub helper : Int -> Int\nhelper n =\n    n\n");
+    try w.write("src/Util.beni", "pub helper : Int → Int\nhelper n =\n    n\n");
     try w.write("src/Broken.beni", "import Nope\n\n\npub x : Int\nx =\n    Util.absent\n");
     try w.write("src/Main.beni", "import Util exposing (helper)\n\n\npub main : Int\nmain =\n    helper 1\n");
 
@@ -3388,7 +3388,7 @@ test "a type mismatch names the definition, shows both types and hints" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
-        \\pub label : Int -> String
+        \\pub label : Int → String
         \\label n =
         \\    n
         \\
@@ -3436,12 +3436,12 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
         \\    { count : Int }
         \\
         \\
-        \\pub update : Int, Model -> Model
+        \\pub update : Int, Model → Model
         \\update n model =
         \\    { model | count = model.count + n }
         \\
         \\
-        \\pub step : Model -> Model
+        \\pub step : Model → Model
         \\step model =
         \\    update 1
         \\
@@ -3476,7 +3476,7 @@ test "`==` on functions is a compile error, not a runtime crash" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
-        \\pub same : (Int -> Int), (Int -> Int) -> Bool
+        \\pub same : (Int → Int), (Int → Int) → Bool
         \\same f g =
         \\    f == g
         \\
@@ -3520,7 +3520,7 @@ test "a dozen checker diagnostics, each by code and span" {
     const cases = [_]Case{
         .{
             .path = "A.beni",
-            .source = "pub wrong : a -> Int\nwrong value =\n    value\n",
+            .source = "pub wrong : a → Int\nwrong value =\n    value\n",
             .code = .rigid_mismatch,
             .start = .{ .line = 3, .col = 5 },
         },
@@ -3565,13 +3565,13 @@ test "a dozen checker diagnostics, each by code and span" {
         },
         .{
             .path = "H.beni",
-            .source = "pub coords : { r | x : Int } -> { r | x : Int }\ncoords point =\n    { x = point.x }\n",
+            .source = "pub coords : { r | x : Int } → { r | x : Int }\ncoords point =\n    { x = point.x }\n",
             .code = .record_not_closed,
             .start = .{ .line = 3, .col = 5 },
         },
         .{
             .path = "I.beni",
-            .source = "pub show : List Int -> String\nshow xs =\n    \"xs: ${xs}\"\n",
+            .source = "pub show : List Int → String\nshow xs =\n    \"xs: ${xs}\"\n",
             .code = .not_interpolatable,
             .start = .{ .line = 3, .col = 12 },
         },
@@ -3589,19 +3589,19 @@ test "a dozen checker diagnostics, each by code and span" {
         },
         .{
             .path = "L.beni",
-            .source = "pub third : ( Int, Int ) -> Int\nthird t =\n    t.2\n",
+            .source = "pub third : Int × Int → Int\nthird t =\n    t.2\n",
             .code = .tuple_index_out_of_range,
             .start = .{ .line = 3, .col = 6 },
         },
         .{
             .path = "M.beni",
-            .source = "pub type alias P =\n    { x : Int }\n\n\npub firstOf : P -> Int\nfirstOf p =\n    p.0\n",
+            .source = "pub type alias P =\n    { x : Int }\n\n\npub firstOf : P → Int\nfirstOf p =\n    p.0\n",
             .code = .not_a_tuple,
             .start = .{ .line = 7, .col = 6 },
         },
         .{
             .path = "N.beni",
-            .source = "pub step : Int -> Result String Int\nstep n =\n    Ok (n? + 1)\n",
+            .source = "pub step : Int → Result String Int\nstep n =\n    Ok (n? + 1)\n",
             .code = .try_shape,
             .start = .{ .line = 3, .col = 10 },
         },
@@ -3633,7 +3633,7 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
         \\    { x : Int, y : Int }
         \\
         \\
-        \\pub shift : Point -> Point
+        \\pub shift : Point → Point
         \\shift p =
         \\    { p | x = p.x + 1 }
         \\
@@ -3700,7 +3700,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\later =
-        \\    λ() -> logged 4
+        \\    λ() → logged 4
         \\
         \\
         \\each f xs =
@@ -3710,7 +3710,7 @@ test "dump --stage=types prints a declaration's effect classes, its locals', and
         \\
         \\
         \\quiet xs =
-        \\    List.map xs λx -> x + 1
+        \\    List.map xs λx → x + 1
         \\
     );
 
@@ -3760,7 +3760,7 @@ test "a derived compare compiles, and so does List's" {
         \\import Node exposing (Program)
         \\
         \\
-        \\shorter : List Int, List Int -> Bool
+        \\shorter : List Int, List Int → Bool
         \\shorter a b =
         \\    a < b
         \\
@@ -3800,7 +3800,7 @@ test "a derived compare compiles, and so does List's" {
         \\    = T Int
         \\
         \\
-        \\before : T, T -> Bool
+        \\before : T, T → Bool
         \\before a b =
         \\    a < b
         \\
@@ -3845,12 +3845,12 @@ test "a derived eq calls the user's own eq, across a module boundary" {
         \\    = Id Int Int
         \\
         \\
-        \\pub eq : Id, Id -> Bool
+        \\pub eq : Id, Id → Bool
         \\eq a b =
         \\    case a of
-        \\        Id majorA _ ->
+        \\        Id majorA _ →
         \\            case b of
-        \\                Id majorB _ ->
+        \\                Id majorB _ →
         \\                    majorA == majorB
         \\
     );
@@ -3859,7 +3859,7 @@ test "a derived eq calls the user's own eq, across a module boundary" {
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -3900,7 +3900,7 @@ test "a derived eq calls the user's own eq, across a module boundary" {
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -3941,12 +3941,12 @@ test "a list whose elements have an eq of their own calls it, across a module bo
         \\    = Id Int Int
         \\
         \\
-        \\pub eq : Id, Id -> Bool
+        \\pub eq : Id, Id → Bool
         \\eq a b =
         \\    case a of
-        \\        Id majorA _ ->
+        \\        Id majorA _ →
         \\            case b of
-        \\                Id majorB _ ->
+        \\                Id majorB _ →
         \\                    majorA == majorB
         \\
     );
@@ -3955,12 +3955,12 @@ test "a list whose elements have an eq of their own calls it, across a module bo
         \\import Node exposing (Program)
         \\
         \\
-        \\pub sameIds : List Id, List Id -> Bool
+        \\pub sameIds : List Id, List Id → Bool
         \\sameIds a b =
         \\    a == b
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -3994,7 +3994,7 @@ test "a list whose elements have an eq of their own calls it, across a module bo
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4043,7 +4043,7 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
         \\    = T Int
         \\
         \\
-        \\pub eq : T, T -> Bool
+        \\pub eq : T, T → Bool
         \\eq a b =
         \\    True
         \\
@@ -4116,12 +4116,12 @@ test "a constrained value in a part position is handed its own evidence" {
         \\    = Wrap a
         \\
         \\
-        \\pub eq : Wrap a, Wrap a -> Bool where a.eq : a, a -> Bool
+        \\pub eq : Wrap a, Wrap a → Bool where a.eq : a, a → Bool
         \\eq x y =
         \\    case x of
-        \\        Wrap a ->
+        \\        Wrap a →
         \\            case y of
-        \\                Wrap b ->
+        \\                Wrap b →
         \\                    a == b
         \\
     );
@@ -4130,7 +4130,7 @@ test "a constrained value in a part position is handed its own evidence" {
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4185,16 +4185,16 @@ test "a private eq wins inside its module and is private_method from every other
         \\    = Id Int Int
         \\
         \\
-        \\eq : Id, Id -> Bool
+        \\eq : Id, Id → Bool
         \\eq a b =
         \\    case a of
-        \\        Id majorA _ ->
+        \\        Id majorA _ →
         \\            case b of
-        \\                Id majorB _ ->
+        \\                Id majorB _ →
         \\                    majorA == majorB
         \\
         \\
-        \\pub sameMajor : Id, Id -> Bool
+        \\pub sameMajor : Id, Id → Bool
         \\sameMajor a b =
         \\    a == b
         \\
@@ -4314,7 +4314,7 @@ test "core/Basics carries the derived rows §3.2's table asks it for" {
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4370,7 +4370,7 @@ test "a derived method of a submodule's namesake type does not collide with its 
         \\
     );
     try w.write("src/Shapes/Box.beni",
-        \\pub eq : Int, Int -> Bool
+        \\pub eq : Int, Int → Bool
         \\eq a b =
         \\    a == b
         \\
@@ -4381,7 +4381,7 @@ test "a derived method of a submodule's namesake type does not collide with its 
         \\import Shapes.Box
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4431,7 +4431,7 @@ test "a type that is not pub still exports the method another module derives for
         \\    = Wrapped Int
         \\
         \\
-        \\pub wrap : Int -> Wrapped
+        \\pub wrap : Int → Wrapped
         \\wrap n =
         \\    Wrapped n
         \\
@@ -4441,7 +4441,7 @@ test "a type that is not pub still exports the method another module derives for
         \\import Node exposing (Program)
         \\
         \\
-        \\show : Bool -> String
+        \\show : Bool → String
         \\show b =
         \\    if b then
         \\        "True"
@@ -4505,11 +4505,11 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
         \\
-        \\pub foreign pure twice : a, Int -> a
-        \\    where a.scale : a, Int -> a
+        \\pub foreign pure twice : a, Int → a
+        \\    where a.scale : a, Int → a
         \\
     );
     // One export per `foreign` declaration, under the same name
@@ -4538,17 +4538,17 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
         \\    = Metre Int
         \\
         \\
-        \\pub scale : Metre, Int -> Metre
+        \\pub scale : Metre, Int → Metre
         \\scale m factor =
         \\    case m of
-        \\        Metre n ->
+        \\        Metre n →
         \\            Metre (n * factor)
         \\
         \\
-        \\width : Metre -> Int
+        \\width : Metre → Int
         \\width m =
         \\    case m of
-        \\        Metre n ->
+        \\        Metre n →
         \\            n
         \\
         \\
@@ -4626,7 +4626,7 @@ test "a constraint that rode out on an inferred interface is reported without --
         \\    a < b
         \\
         \\
-        \\pub annotated : Int, Int -> Bool
+        \\pub annotated : Int, Int → Bool
         \\annotated a b =
         \\    a < b
         \\
@@ -4777,7 +4777,7 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Main.beni",
-        \\pub good : Int -> Int
+        \\pub good : Int → Int
         \\good n =
         \\    n
         \\
@@ -4935,7 +4935,7 @@ test "a record's fields are laid out in the record by name text, not by symbol i
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
-        \\pub make : Int -> { zulu : Int, alpha : Int, middle : Int, bravo : Int }
+        \\pub make : Int → { zulu : Int, alpha : Int, middle : Int, bravo : Int }
         \\make n =
         \\    { zulu = n, alpha = n, middle = n, bravo = n }
         \\
@@ -4995,7 +4995,7 @@ fn writePurityProject(w: *World) !void {
         \\    = Pair a a
         \\
         \\
-        \\pub mk : Int, Tag -> Pair Tag
+        \\pub mk : Int, Tag → Pair Tag
         \\mk _ t =
         \\    Pair t t
         \\
@@ -5147,7 +5147,7 @@ test "a change to a type a module's interface DOES mention moves its bytes" {
         \\    = Pair a a
         \\
         \\
-        \\pub mk : Int, Label -> Pair Label
+        \\pub mk : Int, Label → Pair Label
         \\mk _ t =
         \\    Pair t t
         \\
@@ -5184,7 +5184,7 @@ test "a change to a type a module's interface DOES mention moves its bytes" {
         \\    = Pair a b
         \\
         \\
-        \\pub mk : Int, Label -> Pair Label Label
+        \\pub mk : Int, Label → Pair Label Label
         \\mk _ t =
         \\    Pair t t
         \\
@@ -5281,14 +5281,14 @@ test "interface v3's rows are in the record: record-alias field names, payload p
         \\
         \\
         \\pub opaque type Hidden a
-        \\    = Hidden (Int -> a)
+        \\    = Hidden (Int → a)
         \\
         \\
         \\pub type Own a
         \\    = Own a
         \\
         \\
-        \\pub eq : Own a, Own a -> Bool
+        \\pub eq : Own a, Own a → Bool
         \\eq _ _ =
         \\    True
         \\
@@ -5525,10 +5525,10 @@ test "one level under the reading limit checks clean and publishes a real scheme
 /// above a handful of steps decides it, so the two scenarios below differ
 /// only in the flag.
 const undecidable_case =
-    \\pub f : Maybe Int -> Int
+    \\pub f : Maybe Int → Int
     \\f m =
     \\    case m of
-    \\        Just n ->
+    \\        Just n →
     \\            n
     \\
 ;
@@ -5612,13 +5612,13 @@ test "the same `case` with budget to spare gets the real answer instead of the r
     defer w.deinit();
     try w.write("M.beni", undecidable_case);
     try w.write("Ok.beni",
-        \\pub f : Maybe Int -> Int
+        \\pub f : Maybe Int → Int
         \\f m =
         \\    case m of
-        \\        Just n ->
+        \\        Just n →
         \\            n
         \\
-        \\        Nothing ->
+        \\        Nothing →
         \\            0
         \\
     );
@@ -5654,13 +5654,13 @@ test "a `case` the checker could not decide never reaches the default-free decis
         \\import Node exposing (Program)
         \\
         \\
-        \\name : Int -> String
+        \\name : Int → String
         \\name k =
         \\    case k of
-        \\        0 ->
+        \\        0 →
         \\            "zero"
         \\
-        \\        7 ->
+        \\        7 →
         \\            "seven"
         \\
         \\
@@ -5708,16 +5708,16 @@ test "a `case` the checker could not decide never reaches the default-free decis
         \\import Node exposing (Program)
         \\
         \\
-        \\name : Int -> String
+        \\name : Int → String
         \\name k =
         \\    case k of
-        \\        0 ->
+        \\        0 →
         \\            "zero"
         \\
-        \\        7 ->
+        \\        7 →
         \\            "seven"
         \\
-        \\        _ ->
+        \\        _ →
         \\            "other"
         \\
         \\
@@ -6508,7 +6508,7 @@ test "the checker writes the annotation escape and the infinite type as checker.
     defer w.deinit();
     try w.write("Texts.beni",
         \\f x =
-        \\    g : a -> a
+        \\    g : a → a
         \\    g y =
         \\        x
         \\    g "hello"
@@ -6641,7 +6641,7 @@ test "an infinite type through a schema alias's `err` is still refused" {
         \\import Models
         \\
         \\
-        \\h : Models.PrivRecW -> Int
+        \\h : Models.PrivRecW → Int
         \\h w =
         \\    y7 =
         \\        ( w, w )
@@ -6696,12 +6696,12 @@ test "a cycle closed between a receiver's test and its positions' is found" {
         \\    = P a
         \\
         \\
-        \\pub eq : P (Q b b), P (Q b b) -> Bool
+        \\pub eq : P (Q b b), P (Q b b) → Bool
         \\eq p q =
         \\    True
         \\
         \\
-        \\pub compare : P (Q b b), P (Q b b) -> Order
+        \\pub compare : P (Q b b), P (Q b b) → Order
         \\compare p q =
         \\    EQ
         \\
@@ -6761,7 +6761,7 @@ test "a record merge past a proved `err` row end voids the proofs" {
         \\    { r | a : Int }
         \\
         \\
-        \\h : R Models.PrivRecW -> Int
+        \\h : R Models.PrivRecW → Int
         \\h w0 =
         \\    q =
         \\        { w0 | a = 1 }
@@ -6772,10 +6772,10 @@ test "a record merge past a proved `err` row end voids the proofs" {
         \\    p =
         \\        [ q, { a = 1, b = ee } ]
         \\    case p of
-        \\        [ r, ..._ ] ->
+        \\        [ r, …_ ] →
         \\            List.length [ r.b, [ r.b ] ]
         \\
-        \\        [] ->
+        \\        [] →
         \\            0
         \\
     );
@@ -6810,7 +6810,7 @@ test "an interior node that became `err` and then structure voids the proofs" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
-        \\fst : ( a, b ) -> a
+        \\fst : a × b → a
         \\fst ( a, _ ) =
         \\    a
         \\
@@ -6907,13 +6907,13 @@ test "a library build of a module that declares a type writes its derived rows" 
         \\    = Pair a b
         \\
         \\
-        \\name : Colour -> String
+        \\name : Colour → String
         \\name c =
         \\    case c of
-        \\        Red ->
+        \\        Red →
         \\            "red"
         \\
-        \\        Green ->
+        \\        Green →
         \\            "green"
         \\
         \\
@@ -6979,7 +6979,7 @@ test "a private type reached only through a pub alias body gets a hidden row: th
         \\import A
         \\
         \\
-        \\pub same : A.Pub String, A.Pub String -> Bool
+        \\pub same : A.Pub String, A.Pub String → Bool
         \\same x y =
         \\    x == y
         \\
@@ -7047,7 +7047,7 @@ test "a payload's equatable requirement survives a derived context, for == and <
     const cases = [_]Case{
         .{ .h = holder_eq, .main = try std.fmt.allocPrint(w.arena.allocator(), own, .{"=="}), .mid = false, .code = .not_equatable, .line = 15, .col = 20 },
         .{ .h = holder_compare, .main = try std.fmt.allocPrint(w.arena.allocator(), own, .{"<"}), .mid = false, .code = .no_methods_on_shape, .line = 15, .col = 20 },
-        .{ .h = holder_eq, .main = "import H\nimport Mid\n\n\nf : Int -> Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    Mid.Box (H.Holder f) == Mid.Box (H.Holder f)\n", .mid = true, .code = .not_equatable, .line = 12, .col = 26 },
+        .{ .h = holder_eq, .main = "import H\nimport Mid\n\n\nf : Int → Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    Mid.Box (H.Holder f) == Mid.Box (H.Holder f)\n", .mid = true, .code = .not_equatable, .line = 12, .col = 26 },
     };
 
     for (cases) |c| {

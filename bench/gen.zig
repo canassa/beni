@@ -354,7 +354,7 @@ const Wide = struct {
             if (i != 0) try g.declGap();
             try g.line(0, "pub type alias Chain{d} =", .{i});
             if (i + 1 == g.shape.chain) {
-                try g.line(4, "Int -> Int", .{});
+                try g.line(4, "Int → Int", .{});
             } else {
                 try g.line(4, "Chain{d}", .{i + 1});
             }
@@ -372,13 +372,13 @@ const Wide = struct {
     /// step at every size, and the chain is what `settleEquatable` walks
     /// whether or not a value names its head.
     fn applyFn(g: *Wide) Io.Writer.Error!void {
-        try g.line(0, "pub apply : Chain{d}, Int -> Int", .{g.shape.chain - 1});
+        try g.line(0, "pub apply : Chain{d}, Int → Int", .{g.shape.chain - 1});
         try g.line(0, "apply f n =", .{});
         try g.line(4, "f n", .{});
     }
 
     fn builderFn(g: *Wide, n: u32) Io.Writer.Error!void {
-        try g.line(0, "pub wideOf{d} : Int -> Wide", .{n});
+        try g.line(0, "pub wideOf{d} : Int → Wide", .{n});
         try g.line(0, "wideOf{d} n =", .{n});
         try g.line(4, "{{ f0 = n + {d}", .{g.konst()});
         var i: u32 = 1;
@@ -387,7 +387,7 @@ const Wide = struct {
     }
 
     fn updateFn(g: *Wide, n: u32) Io.Writer.Error!void {
-        try g.line(0, "pub bump{d} : Wide -> Wide", .{n});
+        try g.line(0, "pub bump{d} : Wide → Wide", .{n});
         try g.line(0, "bump{d} w =", .{n});
         try g.line(4, "{{ w", .{});
         try g.line(8, "| f0 = w.f0 + {d}", .{g.konst()});
@@ -411,7 +411,7 @@ const Wide = struct {
             try g.line(4, "bulk{d} {d}", .{ n - 1, g.konst() });
             return;
         }
-        try g.line(0, "pub bulk{d} : Int -> Int", .{n});
+        try g.line(0, "pub bulk{d} : Int → Int", .{n});
         try g.line(0, "bulk{d} n =", .{n});
         if (n >= 8 and g.rng.uintLessThan(u8, 100) < 50) {
             try g.line(4, "n + tally{d} + {d}", .{ (n / 8) * 8 - 1, g.konst() });
@@ -565,7 +565,7 @@ pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!voi
         },
         .@"deep-lambdas" => {
             try w.writeAll("main =\n    ");
-            for (0..100_000) |_| try w.writeAll("λx -> ");
+            for (0..100_000) |_| try w.writeAll("λx → ");
             try w.writeAll("1\n");
         },
         .@"constraint-chain" => try writeConstraintChain(w, which.n),
@@ -1130,18 +1130,18 @@ const Module = struct {
     fn updateFn(g: *Module) Io.Writer.Error!void {
         const mark = g.scopeMark();
         defer g.scopeReset(mark);
-        try g.line(0, "pub update{d} : Msg{d}, Model{d} -> Model{d}", .{ g.index, g.index, g.index, g.index });
+        try g.line(0, "pub update{d} : Msg{d}, Model{d} → Model{d}", .{ g.index, g.index, g.index, g.index });
         try g.line(0, "update{d} msg model =", .{g.index});
         _ = g.push("msg");
         _ = g.push("model");
         try g.line(4, "case msg of", .{});
-        try g.line(8, "Increment ->", .{});
+        try g.line(8, "Increment →", .{});
         try g.line(12, "{{ model | count = model.count + 1 }}", .{});
         try g.blank();
-        try g.line(8, "Decrement ->", .{});
+        try g.line(8, "Decrement →", .{});
         try g.line(12, "{{ model | count = model.count - 1 }}", .{});
         try g.blank();
-        try g.line(8, "SetName newName ->", .{});
+        try g.line(8, "SetName newName →", .{});
         if (g.chance(50)) {
             try g.line(12, "if String.length newName > {d} then", .{g.rng.uintLessThan(u32, 40)});
             try g.line(16, "model", .{});
@@ -1151,7 +1151,7 @@ const Module = struct {
             try g.line(12, "{{ model | name = newName, count = 0 }}", .{});
         }
         try g.blank();
-        try g.line(8, "_ ->", .{});
+        try g.line(8, "_ →", .{});
         try g.line(12, "init{d}", .{g.index});
     }
 
@@ -1174,11 +1174,11 @@ const Module = struct {
         // (§7 compares the two corpora per byte). What is being measured is
         // the call and its resolution, and both are unaffected.
         if (g.dispatch()) {
-            try g.line(0, "pub helper{d} : Msg{d}, Int -> Int", .{ g.index, g.index });
+            try g.line(0, "pub helper{d} : Msg{d}, Int → Int", .{ g.index, g.index });
             try g.line(0, "helper{d} msg n =", .{g.index});
             _ = g.pushFunction("msg");
         } else {
-            try g.line(0, "pub helper{d} : Int -> Int", .{g.index});
+            try g.line(0, "pub helper{d} : Int → Int", .{g.index});
             try g.line(0, "helper{d} n =", .{g.index});
         }
         _ = g.push("n");
@@ -1201,21 +1201,21 @@ const Module = struct {
         // `insert`/`get` reach `k.compare` through the `where` clause on
         // their own annotations. Draws nothing, so the stream is untouched.
         if (g.usesDict()) {
-            try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
+            try g.line(0, "pub sum{d} : List Int → Int", .{g.index});
             try g.line(0, "sum{d} xs =", .{g.index});
-            try g.line(4, "counts = List.foldl xs Dict.empty λx acc -> acc.insert x 1", .{});
-            try g.line(4, "unique = List.foldl xs Set.empty λx acc -> acc.insert x", .{});
+            try g.line(4, "counts = List.foldl xs Dict.empty λx acc → acc.insert x 1", .{});
+            try g.line(4, "unique = List.foldl xs Set.empty λx acc → acc.insert x", .{});
             try g.line(4, "Maybe.withDefault (counts.get 3) 0 + Set.size unique", .{});
             return;
         }
-        try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
+        try g.line(0, "pub sum{d} : List Int → Int", .{g.index});
         try g.line(0, "sum{d} xs =", .{g.index});
         _ = g.push("xs");
         try g.line(4, "case xs of", .{});
-        try g.line(8, "[] ->", .{});
+        try g.line(8, "[] →", .{});
         try g.line(12, "0", .{});
         try g.blank();
-        try g.line(8, "[ first, ...rest ] ->", .{});
+        try g.line(8, "[ first, …rest ] →", .{});
         try g.line(12, "first + sum{d} rest", .{g.index});
     }
 
@@ -1272,11 +1272,11 @@ const Module = struct {
         if (g.dispatch() and isWhereSlot(n) and g.canAffordWhere(n)) {
             const via_update = g.updateWhere();
             if (annotated) {
-                try g.line(0, "{s} : a, Int -> Int", .{name});
+                try g.line(0, "{s} : a, Int → Int", .{name});
                 if (via_update) {
-                    try g.line(4, "where a.update{d} : a, Model{d} -> Model{d}", .{ g.index, g.index, g.index });
+                    try g.line(4, "where a.update{d} : a, Model{d} → Model{d}", .{ g.index, g.index, g.index });
                 } else {
-                    try g.line(4, "where a.helper{d} : a, Int -> Int", .{g.index});
+                    try g.line(4, "where a.helper{d} : a, Int → Int", .{g.index});
                 }
             }
             try g.line(0, "{s} x n =", .{name});
@@ -1301,7 +1301,7 @@ const Module = struct {
             g.recordWhere(name);
             return;
         }
-        if (annotated) try g.line(0, "{s} : Int -> Int", .{name});
+        if (annotated) try g.line(0, "{s} : Int → Int", .{name});
         try g.line(0, "{s} n =", .{name});
         _ = g.push("n");
         try g.w.splatByteAll(' ', 4);
@@ -1320,7 +1320,7 @@ const Module = struct {
     fn letFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "compute");
-        try g.line(0, "{s} : Int, Int -> Int", .{name});
+        try g.line(0, "{s} : Int, Int → Int", .{name});
         try g.line(0, "{s} left right =", .{name});
         _ = g.push("left");
         _ = g.push("right");
@@ -1387,7 +1387,7 @@ const Module = struct {
         // module's own `init<i>` rather than a new parameter: a parameter
         // would change the declaration's TYPE in every pipeline, including
         // the ones whose steps never draw a map, and pay bytes for nothing.
-        try g.line(0, "{s} : List Int -> Int", .{name});
+        try g.line(0, "{s} : List Int → Int", .{name});
         try g.line(0, "{s} xs =", .{name});
         _ = g.push("xs");
         try g.line(4, "xs", .{});
@@ -1395,23 +1395,23 @@ const Module = struct {
         var i: u32 = 0;
         while (i < steps) : (i += 1) {
             switch (g.rng.uintLessThan(u8, 4)) {
-                0 => try g.line(8, "|> List.filter λx -> x > {d}", .{g.rng.uintLessThan(u32, 50)}),
-                1 => try g.line(8, "|> List.map λx -> x * {d}", .{1 + g.rng.uintLessThan(u32, 9)}),
+                0 => try g.line(8, "▷ List.filter λx → x > {d}", .{g.rng.uintLessThan(u32, 50)}),
+                1 => try g.line(8, "▷ List.map λx → x * {d}", .{1 + g.rng.uintLessThan(u32, 9)}),
                 2 => if (g.dispatch())
                     // `x.m _` is the placeholder over a method call
                     // (`static-dispatch-spike.md` §1.1, the `x.m _ b` row):
                     // a lambda over `method_call`, and shorter than writing
                     // the lambda out.
-                    try g.line(8, "|> List.map ({s}.helper{d} _)", .{ receiver, g.index })
+                    try g.line(8, "▷ List.map ({s}.helper{d} _)", .{ receiver, g.index })
                 else
-                    try g.line(8, "|> List.map helper{d}", .{g.index}),
-                else => try g.line(8, "|> List.reverse", .{}),
+                    try g.line(8, "▷ List.map helper{d}", .{g.index}),
+                else => try g.line(8, "▷ List.reverse", .{}),
             }
         }
         if (g.chance(50)) {
-            try g.line(8, "|> List.foldl 0 λx acc -> acc + x", .{});
+            try g.line(8, "▷ List.foldl 0 λx acc → acc + x", .{});
         } else {
-            try g.line(8, "|> sum{d}", .{g.index});
+            try g.line(8, "▷ sum{d}", .{g.index});
         }
     }
 
@@ -1423,11 +1423,11 @@ const Module = struct {
         // is one of the two shapes M4 and M5's R4 are about.
         const custom_eq = g.dispatch() and n % 3 == 0;
         if (custom_eq) {
-            try g.line(0, "{s} : Msg{d}, Int -> String", .{ name, g.index });
+            try g.line(0, "{s} : Msg{d}, Int → String", .{ name, g.index });
             try g.line(0, "{s} msg n =", .{name});
             _ = g.pushFunction("msg");
         } else {
-            try g.line(0, "{s} : Int -> String", .{name});
+            try g.line(0, "{s} : Int → String", .{name});
             try g.line(0, "{s} n =", .{name});
         }
         _ = g.push("n");
@@ -1455,7 +1455,7 @@ const Module = struct {
     fn recordFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "rename");
-        try g.line(0, "{s} : String, Model{d} -> Model{d}", .{ name, g.index, g.index });
+        try g.line(0, "{s} : String, Model{d} → Model{d}", .{ name, g.index, g.index });
         try g.line(0, "{s} label model =", .{name});
         _ = g.push("label");
         _ = g.push("model");
@@ -1481,14 +1481,14 @@ const Module = struct {
     fn tupleFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "split");
-        try g.line(0, "{s} : ( Int, String ) -> ( String, Int )", .{name});
+        try g.line(0, "{s} : Int × String → String × Int", .{name});
         try g.line(0, "{s} pair =", .{name});
         _ = g.push("pair");
         if (g.chance(50)) {
             try g.line(4, "( pair.1, pair.0 * {d} )", .{1 + g.rng.uintLessThan(u32, 4)});
         } else {
             try g.line(4, "case pair of", .{});
-            try g.line(8, "( count, label ) ->", .{});
+            try g.line(8, "( count, label ) →", .{});
             try g.line(12, "( label ++ \"!\", count )", .{});
         }
     }
@@ -1496,7 +1496,7 @@ const Module = struct {
     fn stringFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "greet");
-        try g.line(0, "{s} : String, Int -> String", .{name});
+        try g.line(0, "{s} : String, Int → String", .{name});
         try g.line(0, "{s} who times =", .{name});
         _ = g.push("who");
         _ = g.push("times");
@@ -1520,25 +1520,25 @@ const Module = struct {
     fn questionFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "parseTwice");
-        try g.line(0, "{s} : String -> Result String Int", .{name});
+        try g.line(0, "{s} : String → Result String Int", .{name});
         try g.line(0, "{s} s =", .{name});
         _ = g.push("s");
         try g.line(4, "Ok (parseOne{d}_{d} s? * 2)", .{ g.index, n });
         try g.declGap();
-        try g.line(0, "parseOne{d}_{d} : String -> Result String Int", .{ g.index, n });
+        try g.line(0, "parseOne{d}_{d} : String → Result String Int", .{ g.index, n });
         try g.line(0, "parseOne{d}_{d} s =", .{ g.index, n });
         try g.line(4, "case String.toInt s of", .{});
-        try g.line(8, "Just value ->", .{});
+        try g.line(8, "Just value →", .{});
         try g.line(12, "Ok value", .{});
         try g.blank();
-        try g.line(8, "Nothing ->", .{});
+        try g.line(8, "Nothing →", .{});
         try g.line(12, "Err \"not a number: ${{s}}\"", .{});
     }
 
     fn bigCaseFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "describe");
-        try g.line(0, "{s} : Int -> String", .{name});
+        try g.line(0, "{s} : Int → String", .{name});
         try g.line(0, "{s} code =", .{name});
         _ = g.push("code");
         try g.line(4, "case code of", .{});
@@ -1547,16 +1547,16 @@ const Module = struct {
         while (i < arms) : (i += 1) {
             if (i != 0) try g.blank();
             if (i == 0) {
-                try g.line(8, "-1 ->", .{});
+                try g.line(8, "-1 →", .{});
             } else if (g.chance(20)) {
                 // The same VALUE as the decimal arm would have been, spelled
                 // in hex: the point is to exercise the lexer's hex path, and
                 // `i * 16` made arm 1 (`0x10`) and arm 16 collide, which is
                 // a `redundant_pattern` in generated code — a generator bug
                 // (checker.md §9).
-                try g.line(8, "0x{X} ->", .{i});
+                try g.line(8, "0x{X} →", .{i});
             } else {
-                try g.line(8, "{d} ->", .{i});
+                try g.line(8, "{d} →", .{i});
             }
             if (g.chance(15)) {
                 // A nested construct inside the branch: layout rule 2.
@@ -1571,7 +1571,7 @@ const Module = struct {
             }
         }
         try g.blank();
-        try g.line(8, "_ ->", .{});
+        try g.line(8, "_ →", .{});
         try g.line(12, "\"unknown\"", .{});
     }
 
@@ -1629,7 +1629,7 @@ const Module = struct {
                 try g.w.print("List.foldl [ ", .{});
                 g.scopeReset(mark);
                 try g.atom();
-                try g.w.print(" ] 0 (λ{s} carry -> carry + {s})", .{ param, param });
+                try g.w.print(" ] 0 (λ{s} carry → carry + {s})", .{ param, param });
             },
             5 => {
                 try g.w.writeAll("Maybe.withDefault (Just ");
@@ -1646,7 +1646,7 @@ const Module = struct {
                 // The condition is a comparison, so it really is a `Bool`.
                 try g.w.writeAll("if ");
                 try g.operand(depth - 1);
-                try g.w.print(" {s} ", .{g.pick([]const u8, &.{ "==", "/=", "<", ">", "<=", ">=" })});
+                try g.w.print(" {s} ", .{g.pick([]const u8, &.{ "==", "≠", "<", ">", "≤", "≥" })});
                 try g.operand(depth - 1);
                 try g.w.writeAll(" then ");
                 try g.atom();
@@ -1968,9 +1968,9 @@ test "the dispatch tree is the same project as the plain one, written with dispa
         if (std.mem.indexOf(u8, text, "    where a.helper") != null) found.where_method = true;
         if (std.mem.indexOf(u8, text, "if model == init") != null) found.record_eq = true;
         if (std.mem.indexOf(u8, text, "if msg == Reset then") != null) found.custom_eq = true;
-        if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty λx acc -> acc.insert x 1") != null) found.dict = true;
-        if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty λx acc -> acc.insert x") != null) found.set = true;
-        if (std.mem.indexOf(u8, text, "|> List.map ((Reset).helper") != null) found.placeholder = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty λx acc → acc.insert x 1") != null) found.dict = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty λx acc → acc.insert x") != null) found.set = true;
+        if (std.mem.indexOf(u8, text, "▷ List.map ((Reset).helper") != null) found.placeholder = true;
     }
     // Every part of the M1b shape is really in the tree. A flag that
     // silently stopped firing would leave a corpus that measures the
@@ -2157,9 +2157,9 @@ test "the wide module is a pure function of seed and size, and holds the shape i
     // each asserted by its last member: a count that silently fell to zero
     // would still `check` clean and measure nothing.
     try testing.expect(std.mem.indexOf(u8, text, "\n    , f99 : Int\n") != null);
-    try testing.expect(std.mem.indexOf(u8, text, "\npub bump19 : Wide -> Wide\n") != null);
-    try testing.expect(std.mem.indexOf(u8, text, "\npub type alias Chain199 =\n    Int -> Int\n") != null);
-    try testing.expect(std.mem.indexOf(u8, text, "\npub bulk1752 : Int -> Int\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub bump19 : Wide → Wide\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub type alias Chain199 =\n    Int → Int\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub bulk1752 : Int → Int\n") != null);
     // EVERY declaration is `pub`: `fillInterface`'s cost is per exported
     // value, and the same module without `pub` was two orders of magnitude
     // cheaper, which is the whole point of the shape.

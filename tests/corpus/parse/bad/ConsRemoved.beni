@@ -14,8 +14,8 @@ literal x y =
 
 pairs xs =
     case xs of
-        ( a, b ) :: _ ->
+        ( a, b ) :: _ →
             a
 
-        _ ->
+        _ →
             List.foldr xs [] (::)

@@ -6,13 +6,13 @@
 --! work after the render: `Cmd.afterRender` runs it once the page is
 --! patched, and a fiber waits for that moment with `rendered`.
 --!
---!     Edit id ->
+--!     Edit id →
 --!         ( { model | editing = Just id }, Cmd.afterRender (focusEditor id _) )
 --!
 --!     focusEditor id send =
 --!         case Dom.focus "edit-${id}" of
---!             Ok () -> ()
---!             Err why -> send (FocusFailed why)
+--!             Ok () → ()
+--!             Err why → send (FocusFailed why)
 
 import Browser
 import Task

@@ -2,11 +2,11 @@
 -- spread nor a fixed-length one covers every list, WHATEVER its element type
 -- is, so the parser refuses both without waiting for the checker (§7). The
 -- `as` is there to show the walk looks through one. Before this rule `head []` returned `null`.
-head : List Int -> Int
-head [ x, ..._ ] =
+head : List Int → Int
+head [ x, …_ ] =
     x
 
 
-pair : List Int -> Int
+pair : List Int → Int
 pair ([ a, b ] as both) =
     a + b + List.length both

@@ -648,7 +648,7 @@ test "message: a name with an earlier occurrence quotes its line" {
     try expectMessage(
         "The name `k` is already bound on line 1.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope, whether\nfrom an enclosing binding, a top-level declaration, an `exposing` list or the\nprelude. Rename one of them.",
         .{ .code = .shadowing, .start = 8, .end = 9, .other_start = 2, .other_end = 3 },
-        "f k = λk -> k\n",
+        "f k = λk → k\n",
     );
 }
 

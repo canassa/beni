@@ -4617,7 +4617,7 @@ test "two module-doc blocks merge, the space after the marker is inserted, plain
 
 test "annotation directly above its definition with pub on the annotation line" {
     try check(
-        \\pub   f:Int->Int
+        \\pub   f:Int→Int
         \\
         \\-- between
         \\
@@ -4626,7 +4626,7 @@ test "annotation directly above its definition with pub on the annotation line" 
         \\g = 2
         \\
     ,
-        \\pub f : Int -> Int
+        \\pub f : Int → Int
         \\-- between
         \\f x = x
         \\
@@ -4643,10 +4643,10 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\pub type Msg = | Inc | Dec | Set Int | Batch (List Msg)
         \\pub opaque type Id = Id Int
         \\type   alias   Point   =   { x : Float, y : Float }
-        \\pub type alias Handler model msg = msg -> model -> ( model, List msg )
+        \\pub type alias Handler model msg = msg → model → model × List msg
         \\--|Add.
-        \\pub   foreign   pure   add : number ->
-        \\    number -> number
+        \\pub   foreign   pure   add : number →
+        \\    number → number
         \\foreign   type   Table   k   v
         \\
     ,
@@ -4668,14 +4668,14 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\
         \\
         \\pub type alias Handler model msg =
-        \\    msg -> model -> ( model, List msg )
+        \\    msg → model → model × List msg
         \\
         \\
         \\--| Add.
         \\pub foreign pure add :
         \\      number
-        \\    -> number
-        \\    -> number
+        \\    → number
+        \\    → number
         \\
         \\
         \\foreign type Table k v
@@ -4714,28 +4714,28 @@ test "a block: items at 4, the value last, a nested block indented 4 more, runs 
 
 test "case: head on its own line, branches indented 4, arrow at line end, bodies indented 4 more" {
     try check(
-        \\describe x = case x of 0 -> "zero"
+        \\describe x = case x of 0 → "zero"
         \\                       1
-        \\                         -> "one"
+        \\                         → "one"
         \\
         \\
-        \\                       _ -> case x of
-        \\                                  2 -> "two"
-        \\                                  _ -> "many"
+        \\                       _ → case x of
+        \\                                  2 → "two"
+        \\                                  _ → "many"
         \\
     ,
         \\describe x =
         \\    case x of
-        \\        0 ->
+        \\        0 →
         \\            "zero"
-        \\        1 ->
+        \\        1 →
         \\            "one"
         \\
-        \\        _ ->
+        \\        _ →
         \\            case x of
-        \\                2 ->
+        \\                2 →
         \\                    "two"
-        \\                _ ->
+        \\                _ →
         \\                    "many"
         \\
     );
@@ -4746,14 +4746,14 @@ test "an if written across lines is vertical; else-if chains continue on the els
         \\tiny b = if b
         \\  then 1
         \\    else 0
-        \\grade s = if s >= 90 then "A"
-        \\  else if s >= 80 then "B" else "F"
+        \\grade s = if s ≥ 90 then "A"
+        \\  else if s ≥ 80 then "B" else "F"
         \\nested a b = if a then if b then 2
         \\  else 1 else 0
         \\inList flag = [ if flag then 1
         \\  else 0, case flag of
-        \\    True -> 1
-        \\    False -> 0 ]
+        \\    True → 1
+        \\    False → 0 ]
         \\
     ,
         \\tiny b =
@@ -4764,9 +4764,9 @@ test "an if written across lines is vertical; else-if chains continue on the els
         \\
         \\
         \\grade s =
-        \\    if s >= 90 then
+        \\    if s ≥ 90 then
         \\        "A"
-        \\    else if s >= 80 then
+        \\    else if s ≥ 80 then
         \\        "B"
         \\    else
         \\        "F"
@@ -4788,9 +4788,9 @@ test "an if written across lines is vertical; else-if chains continue on the els
         \\      else
         \\        0
         \\    , case flag of
-        \\        True ->
+        \\        True →
         \\            1
-        \\        False ->
+        \\        False →
         \\            0
         \\    ]
         \\
@@ -4843,7 +4843,7 @@ test "a condition or scrutinee that does not fit goes on its own line between th
     try check(
         \\f = if aVeryLongConditionName && anotherVeryLongConditionName && yetAnotherVeryLongConditionName1 then 1 else 2
         \\g = case aVeryLongScrutineeName + anotherVeryLongScrutineeName + yetAnotherVeryLongScrutineeName12 of
-        \\  _ -> 1
+        \\  _ → 1
         \\h = if aVeryLongConditionName && anotherVeryLongConditionName && yetAnotherVeryLongConditionName1 && more then 1 else 2
         \\
     ,
@@ -4860,7 +4860,7 @@ test "a condition or scrutinee that does not fit goes on its own line between th
         \\    case
         \\        aVeryLongScrutineeName + anotherVeryLongScrutineeName + yetAnotherVeryLongScrutineeName12
         \\    of
-        \\        _ ->
+        \\        _ →
         \\            1
         \\
         \\
@@ -4954,16 +4954,17 @@ test "lists, records and tuples: one line when they fit and were written so, emp
 
 test "nested breaking: a pipeline inside a list inside a record, and a field value on its own line" {
     try check(
-        \\view model = { title = "Board", body = [ model.items |> List.filter (λi -> i.done) |> List.map (λi -> viewItem model i) |> List.reverse, footer model ] }
+        \\view model = { title = "Board", body = [ model.items ▷ List.filter (λi → i.done) ▷ List.map (λi → viewItem model i) ▷ List.reverse ▷ List.take 10, footer model ] }
         \\
     ,
         \\view model =
         \\    { title = "Board"
         \\    , body =
         \\        [ model.items
-        \\            |> List.filter λi -> i.done
-        \\            |> List.map λi -> viewItem model i
-        \\            |> List.reverse
+        \\            ▷ List.filter λi → i.done
+        \\            ▷ List.map λi → viewItem model i
+        \\            ▷ List.reverse
+        \\            ▷ List.take 10
         \\        , footer model
         \\        ]
         \\    }
@@ -4974,10 +4975,10 @@ test "nested breaking: a pipeline inside a list inside a record, and a field val
 test "operator chains: one line when they fit and were written so, else broken before the operator at one precedence level" {
     try check(
         \\area w h = w   *   h
-        \\valid r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)
+        \\valid r = String.length r.name > 0 && String.length r.name < 100 && r.age ≥ 0 && r.age < 150 && not (String.isEmpty r.email)
         \\sum r = r.width * r.height + r.padding * 2 * (r.width + r.height) + r.margin * 2 * (r.width + r.height + r.padding * 4)
-        \\process xs = xs |>
-        \\    List.map (λx -> x * 2) |>
+        \\process xs = xs ▷
+        \\    List.map (λx → x * 2) ▷
         \\    List.sum
         \\negated x y = -x - -y
         \\
@@ -4988,7 +4989,7 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\valid r =
         \\    String.length r.name > 0
         \\        && String.length r.name < 100
-        \\        && r.age >= 0
+        \\        && r.age ≥ 0
         \\        && r.age < 150
         \\        && not (String.isEmpty r.email)
         \\
@@ -5001,8 +5002,8 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\
         \\process xs =
         \\    xs
-        \\        |> List.map λx -> x * 2
-        \\        |> List.sum
+        \\        ▷ List.map λx → x * 2
+        \\        ▷ List.sum
         \\
         \\
         \\negated x y = -x - -y
@@ -5012,16 +5013,16 @@ test "operator chains: one line when they fit and were written so, else broken b
 
 test "a chain of two operands ending in a block keeps the operator at the end of the first line" {
     try check(
-        \\f = text <| if a then b
+        \\f = text ◁ if a then b
         \\    else c
-        \\g = (decode a) <|
-        \\      λx -> x + 1
-        \\h = foo <| case x of
-        \\     A -> 1
+        \\g = (decode a) ◁
+        \\      λx → x + 1
+        \\h = foo ◁ case x of
+        \\     A → 1
         \\
     ,
         \\f =
-        \\    text <|
+        \\    text ◁
         \\        if a then
         \\            b
         \\        else
@@ -5029,14 +5030,14 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\
         \\
         \\g =
-        \\    (decode a) <| λx ->
+        \\    (decode a) ◁ λx →
         \\    x + 1
         \\
         \\
         \\h =
-        \\    foo <|
+        \\    foo ◁
         \\        case x of
-        \\            A ->
+        \\            A →
         \\                1
         \\
     );
@@ -5046,10 +5047,10 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
     try check(
         \\partial xs = List.map (add    1    _) xs
         \\pipeline r =
-        \\  scope <- Task.scope
-        \\  conn   <-   Task.bracket (λ() -> Db.open r.url) Db.close
+        \\  scope ← Task.scope
+        \\  conn   ←   Task.bracket (λ() → Db.open r.url) Db.close
         \\  a = 1
-        \\  h <- Result.andThen (readHeader r)
+        \\  h ← Result.andThen (readHeader r)
         \\  render scope conn a h
         \\
     ,
@@ -5057,10 +5058,10 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
         \\
         \\
         \\pipeline r =
-        \\    scope <- Task.scope
-        \\    conn <- Task.bracket (λ() -> Db.open r.url) Db.close
+        \\    scope ← Task.scope
+        \\    conn ← Task.bracket (λ() → Db.open r.url) Db.close
         \\    a = 1
-        \\    h <- Result.andThen (readHeader r)
+        \\    h ← Result.andThen (readHeader r)
         \\    render scope conn a h
         \\
     );
@@ -5068,11 +5069,11 @@ test "`_` is an ordinary argument, and `<-` bindings print on one line and are n
 
 test "`f a <| λx ->` is written as a trailing lambda, whose body is a block below (§12.5)" {
     try check(
-        \\chain url = Task.attempt (Http.get url) <| λresponse -> Task.attempt (Json.decode response) <| λvalue -> renderTheDecodedValue value withSomeContext andAnotherArgument
+        \\chain url = Task.attempt (Http.get url) ◁ λresponse → Task.attempt (Json.decode response) ◁ λvalue → renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     ,
-        \\chain url = Task.attempt (Http.get url) λresponse ->
-        \\    Task.attempt (Json.decode response) λvalue ->
+        \\chain url = Task.attempt (Http.get url) λresponse →
+        \\    Task.attempt (Json.decode response) λvalue →
         \\        renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     );
@@ -5080,11 +5081,11 @@ test "`f a <| λx ->` is written as a trailing lambda, whose body is a block bel
 
 test "a trailing `<|` lambda that cannot be a trailing lambda keeps its body at the indentation of the `<|` line (§9)" {
     try check(
-        \\chain url = (Task.attempt (Http.get url)) <| λresponse -> renderTheDecodedValue response withSomeContext andAnotherArgument
+        \\chain url = (Task.attempt (Http.get url)) ◁ λresponse → renderTheDecodedValue response withSomeContext andAnotherArgument
         \\
     ,
         \\chain url =
-        \\    (Task.attempt (Http.get url)) <| λresponse ->
+        \\    (Task.attempt (Http.get url)) ◁ λresponse →
         \\    renderTheDecodedValue response withSomeContext andAnotherArgument
         \\
     );
@@ -5092,26 +5093,26 @@ test "a trailing `<|` lambda that cannot be a trailing lambda keeps its body at 
 
 test "lambdas: `λx y ->` with the body inline when it fits, else on the next line indented 4" {
     try check(
-        \\f=λx->x+1
-        \\h = λ(a,b) {c} _->
+        \\f=λx→x+1
+        \\h = λ(a,b) {c} _→
         \\  a+b+c
-        \\describe = λx -> case x of
-        \\  0 -> "zero"
-        \\  _ -> "other"
+        \\describe = λx → case x of
+        \\  0 → "zero"
+        \\  _ → "other"
         \\
     ,
-        \\f = λx -> x + 1
+        \\f = λx → x + 1
         \\
         \\
-        \\h = λ( a, b ) { c } _ -> a + b + c
+        \\h = λ( a, b ) { c } _ → a + b + c
         \\
         \\
         \\describe =
-        \\    λx ->
+        \\    λx →
         \\        case x of
-        \\            0 ->
+        \\            0 →
         \\                "zero"
-        \\            _ ->
+        \\            _ →
         \\                "other"
         \\
     );
@@ -5123,7 +5124,7 @@ test "application: one line when it fits and was written so; a last list, record
         \\  max
         \\      1
         \\   2
-        \\long = List.foldl (λitem acc -> acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
+        \\long = List.foldl (λitem acc → acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
         \\nestedCall = f (g (h 1
         \\  2) 3)
         \\
@@ -5135,7 +5136,7 @@ test "application: one line when it fits and was written so; a last list, record
         \\
         \\
         \\long =
-        \\    List.foldl (λitem acc -> acc + String.length item) 0
+        \\    List.foldl (λitem acc → acc + String.length item) 0
         \\        [ "a very long string literal", "another very long string literal", "and one more" ]
         \\
         \\
@@ -5201,10 +5202,10 @@ test "grouping parentheses are kept as written, without inner spaces, and close 
         \\d x = ( x + 1 ) * 2
         \\e2 fn x = fn ( -x )
         \\g x = [ ( x ) ]
-        \\run k = (λk2 ->
+        \\run k = (λk2 →
         \\   case k2 of
-        \\     0 -> 1
-        \\     _ -> k2) k
+        \\     0 → 1
+        \\     _ → k2) k
         \\
     ,
         \\a x = (x)
@@ -5223,11 +5224,11 @@ test "grouping parentheses are kept as written, without inner spaces, and close 
         \\
         \\
         \\run k =
-        \\    (λk2 ->
+        \\    (λk2 →
         \\        case k2 of
-        \\            0 ->
+        \\            0 →
         \\                1
-        \\            _ ->
+        \\            _ →
         \\                k2
         \\    )
         \\        k
@@ -5495,41 +5496,41 @@ test "strings, chars, numbers, interpolations and multiline strings are printed 
 test "every pattern form with canonical spacing" {
     try check(
         \\f v = case v of
-        \\  [(a,b),...rest] -> a
-        \\  [x,y] -> x
-        \\  [({c} as r) , ... _] -> c
-        \\  [...init,Just(Just(z))] -> z
-        \\  Maybe.Just 'c' -> 1
-        \\  ( -1 ) -> 2
-        \\  "s" -> 3
-        \\  () -> 4
-        \\  _ -> 0
+        \\  [(a,b),…rest] → a
+        \\  [x,y] → x
+        \\  [({c} as r) , … _] → c
+        \\  […init,Just(Just(z))] → z
+        \\  Maybe.Just 'c' → 1
+        \\  ( -1 ) → 2
+        \\  "s" → 3
+        \\  () → 4
+        \\  _ → 0
         \\g p =
         \\  (a,b)=p
         \\  a
-        \\h = λ(a,b)->a
+        \\h = λ(a,b)→a
         \\k (Just x) { a } ( b, c ) = -x
         \\
     ,
         \\f v =
         \\    case v of
-        \\        [ ( a, b ), ...rest ] ->
+        \\        [ ( a, b ), …rest ] →
         \\            a
-        \\        [ x, y ] ->
+        \\        [ x, y ] →
         \\            x
-        \\        [ ({ c } as r), ..._ ] ->
+        \\        [ ({ c } as r), …_ ] →
         \\            c
-        \\        [ ...init, Just (Just (z)) ] ->
+        \\        [ …init, Just (Just (z)) ] →
         \\            z
-        \\        Maybe.Just 'c' ->
+        \\        Maybe.Just 'c' →
         \\            1
-        \\        (-1) ->
+        \\        (-1) →
         \\            2
-        \\        "s" ->
+        \\        "s" →
         \\            3
-        \\        () ->
+        \\        () →
         \\            4
-        \\        _ ->
+        \\        _ →
         \\            0
         \\
         \\
@@ -5538,7 +5539,7 @@ test "every pattern form with canonical spacing" {
         \\    a
         \\
         \\
-        \\h = λ( a, b ) -> a
+        \\h = λ( a, b ) → a
         \\
         \\
         \\k (Just x) { a } ( b, c ) = -x
@@ -5555,26 +5556,26 @@ test "a pattern that does not fit overflows the guide instead of wrapping" {
     // on one line.
     try check(
         \\f x = case x of
-        \\  Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) -> 2
-        \\  ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) -> 3
+        \\  Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) → 2
+        \\  ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) → 3
         \\  [ aLongFieldName
         \\      , anotherLongFieldName
         \\      , aThirdLongFieldName
         \\      , moreStuffHere
         \\      , extraLongNameHere
-        \\      ] -> 4
-        \\  _ -> 5
+        \\      ] → 4
+        \\  _ → 5
         \\
     ,
         \\f x =
         \\    case x of
-        \\        Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) ->
+        \\        Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) →
         \\            2
-        \\        ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) ->
+        \\        ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) →
         \\            3
-        \\        [ aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ] ->
+        \\        [ aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ] →
         \\            4
-        \\        _ ->
+        \\        _ →
         \\            5
         \\
     );
@@ -5615,11 +5616,11 @@ test "an annotation whose one-line form is 96 to 100 columns wide stays on one l
 
 test "every type form; annotations broken at every arrow when they do not fit; record types like records" {
     try check(
-        \\h : (Int->Int)->List Int->List Int
+        \\h : (Int→Int)→List Int→List Int
         \\h fn xs = List.map fn xs
-        \\ext : { r | x : Int, y : Int } -> ( ) -> ( a, Maybe.Maybe b ) -> {}
+        \\ext : { r | x : Int, y : Int } → ( ) → a × Maybe.Maybe b → {}
         \\ext _ _ _ = {}
-        \\pub update : Msg -> { host : String, port : Int, retries : Int, onError : String -> Msg } -> ( Model, List String )
+        \\pub update : Msg → { host : String, port : Int, retries : Int, onError : String → Msg } → Model × List String
         \\update msg config = ( config, [] )
         \\type alias Config = { host : String, port : Int, user : String, password : String, timeout : Int, verbose : Bool, more : Int }
         \\type Event = Click Int
@@ -5627,18 +5628,18 @@ test "every type form; annotations broken at every arrow when they do not fit; r
         \\   height : Int }
         \\
     ,
-        \\h : (Int -> Int) -> List Int -> List Int
+        \\h : (Int → Int) → List Int → List Int
         \\h fn xs = List.map fn xs
         \\
         \\
-        \\ext : { r | x : Int, y : Int } -> () -> ( a, Maybe.Maybe b ) -> {}
+        \\ext : { r | x : Int, y : Int } → () → a × Maybe.Maybe b → {}
         \\ext _ _ _ = {}
         \\
         \\
         \\pub update :
         \\      Msg
-        \\    -> { host : String, port : Int, retries : Int, onError : String -> Msg }
-        \\    -> ( Model, List String )
+        \\    → { host : String, port : Int, retries : Int, onError : String → Msg }
+        \\    → Model × List String
         \\update msg config = ( config, [] )
         \\
         \\
@@ -5687,9 +5688,9 @@ test "comments in every position stay attached, own-line at their block's indent
         \\         -- in else
         \\         case x of -- after of
         \\                -- before branch
-        \\             True -> 1 -- after branch
+        \\             True → 1 -- after branch
         \\                   -- between branches
-        \\             False -> { a = [ 1 -- in list
+        \\             False → { a = [ 1 -- in list
         \\                      , 2
         \\
         \\                      -- before an element
@@ -5728,10 +5729,10 @@ test "comments in every position stay attached, own-line at their block's indent
         \\        -- in else
         \\        case x of -- after of
         \\            -- before branch
-        \\            True ->
+        \\            True →
         \\                1 -- after branch
         \\            -- between branches
-        \\            False ->
+        \\            False →
         \\                { a =
         \\                    [ 1 -- in list
         \\                    , 2
@@ -5756,14 +5757,14 @@ test "a trailing comment before `of` or a comma is kept, and the rest of the lin
     try check(
         \\f x = case x -- after the scrutinee
         \\  of
-        \\   _ -> 1
+        \\   _ → 1
         \\
     ,
         \\f x =
         \\    case
         \\        x -- after the scrutinee
         \\    of
-        \\        _ ->
+        \\        _ →
         \\            1
         \\
     );
@@ -5927,32 +5928,32 @@ const stress_decls = [_][]const u8{
     "pub opaque type Q{d} = Q{d} Int\n",
     "foreign pure h{d} : Int -> Int\n",
     "foreign type Ft{d} a b\n",
-    "c{d} m =\n    case m of\n        Just n ->\n            n\n\n        Nothing ->\n            0\n",
-    "c2{d} m = case m of\n  Just n -> n\n  Nothing -> 0\n",
+    "c{d} m =\n    case m of\n        Just n →\n            n\n\n        Nothing →\n            0\n",
+    "c2{d} m = case m of\n  Just n → n\n  Nothing → 0\n",
     "l{d} =\n    a = 1\n\n    b : Int\n    b = 2\n    ( p, q ) = ( a, b )\n    a + b + p + q\n",
     "i{d} x = if x then 1 else if not x then 2 else 3\n",
     "i2{d} x = if aVeryLongConditionNameNumberOne x && aVeryLongConditionNameNumberTwo x then aVeryLongThenBranch x else 0\n",
     "col{d} = ( [ 1, 2, 3 ], { a = 1, b = \"${x} and ${ y }\" }, ( 1, 2 ), [], {}, () )\n",
     "long{d} = [ \"alpha\", \"bravo\", \"charlie\", \"delta\", \"echo\", \"foxtrot\", \"golf\", \"hotel\", \"india\", \"juliet\", \"kilo\" ]\n",
-    "s{d} = λa b -> a\n",
-    "s2{d} = λ( a, b ) { c } _ -> a + b + c\n",
-    "t{d} = f <| g <| h x\n",
-    "t2{d} = text <| if a then b else c\n",
-    "pipe{d} xs = xs\n    |> List.map (λx -> x * 2)\n    |> List.filter (λx -> x > 10)\n    |> List.sum\n",
-    "q{d} s = parse s? |> f\n",
+    "s{d} = λa b → a\n",
+    "s2{d} = λ( a, b ) { c } _ → a + b + c\n",
+    "t{d} = f ◁ g ◁ h x\n",
+    "t2{d} = text ◁ if a then b else c\n",
+    "pipe{d} xs = xs\n    ▷ List.map (λx → x * 2)\n    ▷ List.filter (λx → x > 10)\n    ▷ List.sum\n",
+    "q{d} s = parse s? ▷ f\n",
     "acc{d} r t = r.a.b + t.0.1 + (f r).x + List.map .name []\n",
     "m{d} =\n    \\\\a\n    \\\\b   \n",
     "p{d} (Just x) { a } ( b, c ) = -x\n",
     "u{d} m = { m | count = m.count + 1, aVeryLongFieldNameToMakeItWide = m.aVeryLongFieldNameToMakeItWide + 1 }\n",
-    "op{d} = ( + ) 1 2 + (++) [ 1 ] [ ...[], 2 ] + ( ^ ) 1 2\n",
-    "app{d} = List.foldl (λitem acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
+    "op{d} = ( + ) 1 2 + (++) [ 1 ] [ …[], 2 ] + ( ^ ) 1 2\n",
+    "app{d} = List.foldl (λitem acc → acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
     "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
-    "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)\n",
-    "cmt{d} x = -- after equals\n    -- before binding\n    y = 1 -- after body\n    -- before the value\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True -> 1 -- after branch\n            -- between branches\n            False -> [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
+    "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age ≥ 0 && r.age < 150 && not (String.isEmpty r.email)\n",
+    "cmt{d} x = -- after equals\n    -- before binding\n    y = 1 -- after body\n    -- before the value\n    if x then -- after then\n        y\n        -- before else\n    else\n        -- in else\n        case x of -- after of\n            -- before branch\n            True → 1 -- after branch\n            -- between branches\n            False → [ 1 -- in list\n                     , 2\n                     -- before close\n                     ]\n",
     "str{d} = \"tab\\there \\u{0041} \\$ \\' \\\"q\\\"\" ++ \"${a}\"\n",
     "num{d} = ( 0xDeadBEEF, 1.50e+03, '\\u{00041}', -1 )\n",
     "par{d} = ( ( x ) )\n",
-    "nest{d} m flag =\n  case m of\n     Just n ->\n       if flag then\n             doubled = n * 2\n             doubled\n       else (λk ->\n              case k of\n                   0 -> 1\n                   _ -> k\n             ) n\n     Nothing ->\n              0\n",
+    "nest{d} m flag =\n  case m of\n     Just n →\n       if flag then\n             doubled = n * 2\n             doubled\n       else (λk →\n              case k of\n                   0 → 1\n                   _ → k\n             ) n\n     Nothing →\n              0\n",
 };
 
 const stress_imports = [_][]const u8{

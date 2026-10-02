@@ -8,7 +8,7 @@ call : List Int
 call =
         List.map
             [ 1 ]
-  (λx -> x)
+  (λx → x)
 
 
 closing =

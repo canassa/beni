@@ -23,9 +23,9 @@
 --!     user =
 --!         Schema.record
 --!             (Schema.fields
---!                 |> Schema.field "userId" Schema.int
---!                 |> Schema.key "user-id"
---!                 |> Schema.optional "nickname" Schema.string)
+--!                 ▷ Schema.field "userId" Schema.int
+--!                 ▷ Schema.key "user-id"
+--!                 ▷ Schema.optional "nickname" Schema.string)
 --!             (Schema.mapping toUser fromUser)
 --!             (Schema.mapping toUser fromUser)
 --!
@@ -337,7 +337,7 @@ cast x = fromHost (toHost x)
 -- them with `===` and hands them back. A function is one of them: the
 -- builders park a mapping's, an injection's and a conversion's functions in
 -- the host and the engine calls them from beni, so they cross here too — a
--- `Js.from` at `b -> Result (List Issue) a` kept `Issue`'s field names and
+-- `Js.from` at `b → Result (List Issue) a` kept `Issue`'s field names and
 -- the string tags of every type it names in every schema program.
 toHost : a → Js.Value
 toHost x = Js.from x

@@ -2,10 +2,10 @@
 -- an expression (5:5) and as a pattern (10:9) is unexpected_token with the
 -- stray-spread message, which shows both bracketed forms.
 whole xs =
-    ...xs
+    …xs
 
 
 first xs =
     case xs of
-        ...rest ->
+        …rest →
             0

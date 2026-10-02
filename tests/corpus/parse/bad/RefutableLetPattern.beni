@@ -21,16 +21,16 @@ listLiteral m =
 
 
 spread l =
-    [ h, ...r ] =
+    [ h, …r ] =
         l
     h
 
 
-withCallback : Maybe Int, (Maybe Int -> Int) -> Int
+withCallback : Maybe Int, (Maybe Int → Int) → Int
 withCallback m body =
     body m
 
 
 bound =
-    [ v ] <- withCallback (Just 1)
+    [ v ] ← withCallback (Just 1)
     v

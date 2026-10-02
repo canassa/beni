@@ -38,7 +38,7 @@ const testing = std.testing;
 // ---------------------------------------------------------------------------
 
 const leaf_source =
-    \\pub foreign pure twice : Int -> Int
+    \\pub foreign pure twice : Int → Int
     \\
     \\
     \\-- A PRIVATE type a `pub` signature names, so its NAME is in the record
@@ -53,7 +53,7 @@ const leaf_source =
     \\-- declares a constructor, whose argument types and — since interface v3
     \\-- (checker-v2.md §14.2) — field names ARE in the record.
     \\pub type alias Pair =
-    \\    ( Int, Int )
+    \\    Int × Int
     \\
     \\
     \\-- A `pub type alias` a `pub` scheme DOES mention, for the contrast.
@@ -66,12 +66,12 @@ const leaf_source =
     \\    | Blue
     \\
     \\
-    \\pub make : Int -> Hidden
+    \\pub make : Int → Hidden
     \\make x =
     \\    H x
     \\
     \\
-    \\pub counted : Count -> Count
+    \\pub counted : Count → Count
     \\counted n =
     \\    n
     \\
@@ -91,29 +91,29 @@ const mid_source =
     \\import Leaf exposing (Blue, Pair, Red, Tag)
     \\
     \\
-    \\pub same : Int, Int -> Bool
+    \\pub same : Int, Int → Bool
     \\same x y =
     \\    Leaf.make x == Leaf.make y
     \\
     \\
-    \\pub firstOf : Pair -> Int
+    \\pub firstOf : Pair → Int
     \\firstOf ( a, _ ) =
     \\    a
     \\
     \\
-    \\pub name : Tag -> Int
+    \\pub name : Tag → Int
     \\name t =
     \\    case t of
-    \\        Red ->
+    \\        Red →
     \\            0
     \\
-    \\        Blue ->
+    \\        Blue →
     \\            1
     \\
     \\
     \\-- `Side` reaches `Leaf.Pair` through THIS declaration without importing
     \\-- `Leaf`: the reference in the record is to the DECLARING module.
-    \\pub passThrough : Pair -> Pair
+    \\pub passThrough : Pair → Pair
     \\passThrough p =
     \\    p
     \\
@@ -490,7 +490,7 @@ test "renaming a PRIVATE type a pub signature names moves both" {
     // the digest's own set is keyed by that name, so it moves too.
     try runRow(.{
         .what = "a private type a pub signature names, renamed",
-        .leaf = replace(replace(leaf_source, "type Hidden", "type Secret"), "pub make : Int -> Hidden", "pub make : Int -> Secret"),
+        .leaf = replace(replace(leaf_source, "type Hidden", "type Secret"), "pub make : Int → Hidden", "pub make : Int → Secret"),
         .hashes = &.{"app:Leaf"},
         .digests = digest_wave_from_leaf,
     });
@@ -505,7 +505,7 @@ test "a PRIVATE type's payload becomes a function — the digest moves and the h
     // This row FAILS before the digest exists, which is what it is for.
     try runRow(.{
         .what = "a private type's payload becomes a function",
-        .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
+        .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int → Int)"),
         // Under v1 NOT ONE interface hash in the project moved, so the digest
         // was the only thing in the build that could see this edit at all.
         // The record DOES state it (checker-v2.md §14.2): `make`'s scheme names
@@ -548,7 +548,7 @@ test "a pub type alias NO scheme names — the digest moves and the hash does NO
     // This row FAILS before the digest exists.
     try runRow(.{
         .what = "an alias body no scheme names",
-        .leaf = replace(leaf_source, "pub type alias Pair =\n    ( Int, Int )", "pub type alias Pair =\n    ( Float, Int )"),
+        .leaf = replace(leaf_source, "pub type alias Pair =\n    Int × Int", "pub type alias Pair =\n    Float × Int"),
         // `Mid`'s OWN hash moves, because the `alias` term in its published
         // `firstOf` scheme carries the expansion — and that is exactly why
         // this is a miscompile and not a near miss: `Mid` is re-checked only
@@ -710,7 +710,7 @@ test "the coarsening invariant, on a pub signature: an unmoved OLD key never mov
 }
 
 test "the coarsening invariant, on a private payload made a function: an unmoved OLD key never moves the NEW one" {
-    try expectCoarser("a private payload becomes a function", replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"), true, false);
+    try expectCoarser("a private payload becomes a function", replace(leaf_source, "    | Extra Int", "    | Extra (Int → Int)"), true, false);
 }
 
 test "the coarsening invariant, on a private type made pub: an unmoved OLD key never moves the NEW one" {
@@ -745,7 +745,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\    { first : a, second : a }
         \\
         \\
-        \\pub greet : Int -> Int
+        \\pub greet : Int → Int
         \\greet x =
         \\    x + 1
         \\
@@ -754,7 +754,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\import L exposing (Pair)
         \\
         \\
-        \\peak : Pair a -> a where a.compare : a, a -> Order
+        \\peak : Pair a → a where a.compare : a, a → Order
         \\peak p =
         \\    if p.first < p.second then
         \\        p.second
@@ -778,7 +778,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\    { first : a, other : a }
         \\
         \\
-        \\pub greet : Int -> Int
+        \\pub greet : Int → Int
         \\greet x =
         \\    x + 1
         \\
@@ -787,7 +787,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\import L exposing (Pair)
         \\
         \\
-        \\peak : Pair a -> a where a.compare : a, a -> Order
+        \\peak : Pair a → a where a.compare : a, a → Order
         \\peak p =
         \\    if p.first < p.other then
         \\        p.other
@@ -810,7 +810,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\    { first : a, other : a }
         \\
         \\
-        \\pub greet : Int -> Int
+        \\pub greet : Int → Int
         \\greet x =
         \\    x + 1
         \\
@@ -819,7 +819,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
         \\import L exposing (Duo)
         \\
         \\
-        \\peak : Duo a -> a where a.compare : a, a -> Order
+        \\peak : Duo a → a where a.compare : a, a → Order
         \\peak p =
         \\    if p.first < p.other then
         \\        p.other
@@ -873,7 +873,7 @@ test "a private record schema's field behind a pub alias moves the digest, and a
         \\import S
         \\
         \\
-        \\field : S.Wrap -> Int
+        \\field : S.Wrap → Int
         \\field r =
         \\    r.z
         \\

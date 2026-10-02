@@ -22,7 +22,7 @@ annotation =
     n : Int
 
 
-bind : Int -> Result String Int
+bind : Int → Result String Int
 bind r =
     a = r
-    x <- Result.andThen (Ok a)
+    x ← Result.andThen (Ok a)

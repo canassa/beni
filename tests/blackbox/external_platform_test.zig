@@ -33,7 +33,7 @@ test "an external platform's markup lowering compiles a view the program then pr
         \\import Toy
         \\
         \\
-        \\view : String -> Html msg
+        \\view : String → Html msg
         \\view name =
         \\    <p>Hi {name}<br /><b>{Html.text "!"}</b><b>?</b></p>
         \\
@@ -93,7 +93,7 @@ test "a release application calls the runtime's start and run inside its one fil
         \\import Toy
         \\
         \\
-        \\view : String -> Html msg
+        \\view : String → Html msg
         \\view name =
         \\    <p>Hi {name}</p>
         \\

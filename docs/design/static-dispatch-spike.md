@@ -340,14 +340,14 @@ annotation's own line, and never reordered — the source order is kept, as ever
   for the same reason a pattern is never broken (`language.md` §9, "patterns").
 
 ```elm
-pub insert : Dict k v, k, v -> Dict k v
-    where k.compare : k, k -> Order
+pub insert : Dict k v, k, v → Dict k v
+    where k.compare : k, k → Order
 
 
-pub pairUp : List a, List b -> List ( a, b )
+pub pairUp : List a, List b → List (a × b)
     where
-        a.eq : a, a -> Bool
-        , b.compare : b, b -> Order
+        a.eq : a, a → Bool
+        , b.compare : b, b → Order
 ```
 
 The renderer that prints a *type* (§6.6) is a different thing and prints on one line with `, `
@@ -525,8 +525,8 @@ error in beni (`language.md` §7), so no value binding can ever be hidden by thi
 readings never overlap.
 
 ```elm
-pub decode : String -> Result String a
-    where a.decode : String -> Result String a
+pub decode : String → Result String a
+    where a.decode : String → Result String a
 decode s =
     a.decode s
 ```
@@ -643,11 +643,11 @@ what serves them, and moving five more types is churn the spike does not need. A
 
 ```elm
 -- core/List.beni
-pub foreign eq : List a, List a -> Bool
-    where a.eq : a, a -> Bool
+pub foreign eq : List a, List a → Bool
+    where a.eq : a, a → Bool
 
-pub foreign compare : List a, List a -> Order
-    where a.compare : a, a -> Order
+pub foreign compare : List a, List a → Order
+    where a.compare : a, a → Order
 ```
 
 Implemented in `core/List.js` as loops, not recursion (§9.5). `List a`'s well-known methods are
@@ -1156,7 +1156,7 @@ at different types are `method_constraint_mismatch` (§10.5), not two instantiat
 
 ```elm
 -- tests/corpus/check/bad/LetConstrainedTwice.beni
-pub report : Int, String -> String
+pub report : Int, String → String
 report n s =
     show x = "${x.render}"
     show n ++ show s
@@ -1667,9 +1667,9 @@ Worked example. Source:
 import Dict exposing (Dict)
 
 
-pub tally : List String -> Dict String Int
+pub tally : List String → Dict String Int
 tally names =
-    List.foldl names Dict.empty λn d -> Dict.insert d n 1
+    List.foldl names Dict.empty λn d → Dict.insert d n 1
 ```
 
 ```
@@ -1699,7 +1699,7 @@ A second example, with a `method_call`, where the callee site **is** present and
 starts at 1:
 
 ```elm
-pub bigger : Shape, Shape -> Bool
+pub bigger : Shape, Shape → Bool
 bigger a b =
     a.wider b
 ```
@@ -2318,7 +2318,7 @@ pub type Shape
     | Rect Point Point
 
 
-pub sorted : List Shape -> List Shape
+pub sorted : List Shape → List Shape
 sorted shapes =
     List.sort shapes
 ```
@@ -2406,12 +2406,12 @@ evidence, so none of them can be passed by name.
 
 ```elm
 -- Nested.beni
-pub sameRows : List (List Int), List (List Int) -> Bool
+pub sameRows : List (List Int), List (List Int) → Bool
 sameRows a b =
     a == b
 
 
-pub sorted : List { x : Int, y : Maybe Int } -> List { x : Int, y : Maybe Int }
+pub sorted : List { x : Int, y : Maybe Int } → List { x : Int, y : Maybe Int }
 sorted rows =
     List.sort rows
 ```
@@ -2563,7 +2563,7 @@ pub type Shape
     = Circle Float
 
 
-pub area : Shape -> Float
+pub area : Shape → Float
 area s =
     s.volume 2
 ```
@@ -2623,7 +2623,7 @@ friends.
 
 ```elm
 -- tests/corpus/check/bad/CompareOnFunction.beni
-pub later : (Int -> Int), (Int -> Int) -> Bool
+pub later : (Int → Int), (Int → Int) → Bool
 later f g =
     f < g
 ```
@@ -2671,7 +2671,7 @@ reports a caller's missing constraint inside the callee, and report 20 §7.2 con
 
 ```elm
 -- tests/corpus/check/bad/MissingWhereConstraint.beni
-pub biggest : List a -> List a
+pub biggest : List a → List a
 biggest xs =
     List.sort xs
 ```
@@ -2763,8 +2763,8 @@ Two triggers, both from §2.4.
 
 ```elm
 -- tests/corpus/parse/bad/WhereVariableUnbound.beni
-pub render : Int -> String
-    where a.show : a -> String
+pub render : Int → String
+    where a.show : a → String
 render n =
     "x"
 ```
@@ -2792,8 +2792,8 @@ declaration" for the same reason: naming it would need a third range.
 
 ```elm
 -- tests/corpus/parse/bad/WhereConstraintFreeVariable.beni
-pub total : List a -> a
-    where a.fold : a, (x, s -> s), s -> s
+pub total : List a → a
+    where a.fold : a, (x, s → s), s → s
 total xs =
     List.foldl xs
 ```
@@ -2813,10 +2813,10 @@ the type are one mistake, and one mistake gets one message.
 
 ```elm
 -- tests/corpus/parse/bad/DuplicateWhereConstraint.beni
-pub pick : a, a -> Bool
+pub pick : a, a → Bool
     where
-        a.eq : a, a -> Bool
-        , a.eq : a, a -> Bool
+        a.eq : a, a → Bool
+        , a.eq : a, a → Bool
 pick x y =
     x == y
 ```
@@ -2835,7 +2835,7 @@ pick x y =
 
 ```elm
 -- tests/corpus/check/bad/TypeDispatchUnannotated.beni
-pub decode : String -> Result String a
+pub decode : String → Result String a
 decode s =
     a.decode s
 ```
@@ -3320,7 +3320,7 @@ both were instantiated, which is exactly `Dict.insert (Dict.insert d k v) k v`:
 
 ```elm
 pub type Box k = Box k
-pub put : Box k, k -> Box k where k.compare : k, k -> Order
+pub put : Box k, k → Box k where k.compare : k, k → Order
 
 nested : Int
 nested = size (put (put (Box "z") "a") "b")     -- two sites per instruction, one expected

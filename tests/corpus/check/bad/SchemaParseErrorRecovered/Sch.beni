@@ -8,7 +8,7 @@
 -- is the brace form of the same mistake.
 pub schema P =
     x : Int
-    y : Int -> Int
+    y : Int → Int
 
 
-pub schema Q = { x : Int, y : Int -> Int }
+pub schema Q = { x : Int, y : Int → Int }

@@ -688,9 +688,9 @@ fromUser u =
 user =
     Schema.record
         (Schema.fields
-            |> Schema.field "userId" Schema.int
-            |> Schema.key "user-id"
-            |> Schema.optional "nickname" (Schema.nullable Schema.string))
+            ▷ Schema.field "userId" Schema.int
+            ▷ Schema.key "user-id"
+            ▷ Schema.optional "nickname" (Schema.nullable Schema.string))
         (Schema.mapping toUser fromUser)
         (Schema.mapping toUser fromUser)
 ```
@@ -1364,8 +1364,8 @@ and a suspending one makes it suspend (§13).
 ```elm
 -- NEW SYNTAX (§11.6).
 case Settings.make { pageSize = 50, theme = "dark", retries = 3, locale = "pt" } of
-    Ok settings -> settings.createdAt   -- filled by `initial`
-    Err issues -> …
+    Ok settings → settings.createdAt   -- filled by `initial`
+    Err issues → …
 ```
 
 In this slice `initial` is accepted only in a record-bodied schema, including its nested inline
@@ -1574,12 +1574,12 @@ format from a Type"). A.8 is the owner's reversal of it.
 `core/Json` is a new core module, not in the prelude, so a program writes `import Json`:
 
 ```elm
-decode      : String -> Result (List Issue) a                 where a.codec : () -> Codec a
-encode      : a -> Result (List Issue) String                 where a.codec : () -> Codec a
-decodeWith  : Options, String -> Result (List Issue) a        where a.codec : () -> Codec a
-encodeWith  : Options, a -> Result (List Issue) String        where a.codec : () -> Codec a
-decodeValue : Value -> Result (List Issue) a                  where a.codec : () -> Codec a
-encodeValue : a -> Result (List Issue) Value                  where a.codec : () -> Codec a
+decode      : String → Result (List Issue) a                 where a.codec : () → Codec a
+encode      : a → Result (List Issue) String                 where a.codec : () → Codec a
+decodeWith  : Options, String → Result (List Issue) a        where a.codec : () → Codec a
+encodeWith  : Options, a → Result (List Issue) String        where a.codec : () → Codec a
+decodeValue : Value → Result (List Issue) a                  where a.codec : () → Codec a
+encodeValue : a → Result (List Issue) Value                  where a.codec : () → Codec a
 ```
 
 `Schema.derived : () -> Codec a where a.codec : () -> Codec a` hands the derived schema to ordinary
@@ -1686,12 +1686,12 @@ applies:
 
 ```elm
 -- NEW (§12). `article` is inferred as { author : String, tags : List String, title : String, views : Int }.
-summarize : String -> String
+summarize : String → String
 summarize text =
     case Json.decode text of
-        Ok article -> article.title ++ " by " ++ article.author ++ ", " ++ String.fromInt article.views
+        Ok article → article.title ++ " by " ++ article.author ++ ", " ++ String.fromInt article.views
                         ++ " views: " ++ String.join ", " article.tags
-        Err issues -> Schema.formatIssues issues
+        Err issues → Schema.formatIssues issues
 ```
 
 Closing happens after unification has seen every use in the declaration, so a record passed to
@@ -1886,7 +1886,7 @@ This closes Q6's "check identifiers/parameters … explicit opaque-check marker"
 ### 14.2 JSON Schema
 
 ```elm
-toJsonSchema : Schema e a, JsonSchemaOptions -> Result (List Issue) JsonSchema
+toJsonSchema : Schema e a, JsonSchemaOptions → Result (List Issue) JsonSchema
 type alias JsonSchema = { document : Value, opaque : List OpaqueSite }
 type alias JsonSchemaOptions = { dialect : Dialect, unknownKeys : UnknownKeys, endpoint : Endpoint }
 ```
@@ -1913,9 +1913,9 @@ type alias JsonSchemaOptions = { dialect : Dialect, unknownKeys : UnknownKeys, e
 ### 14.3 Generators
 
 ```elm
-sample  : Schema e a, Seed -> Result (List Issue) ( a, Seed )
-samples : Schema e a, Int, Seed -> Result (List Issue) ( List a, Seed )
-shrink  : Schema e a, a -> List a
+sample  : Schema e a, Seed → Result (List Issue) (a × Seed)
+samples : Schema e a, Int, Seed → Result (List Issue) (List a × Seed)
+shrink  : Schema e a, a → List a
 ```
 
 - `Seed` comes from a core `Random` module. The pure half of `platforms/browser/Random.beni`

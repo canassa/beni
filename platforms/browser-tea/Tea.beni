@@ -102,10 +102,10 @@ document app =
 --|
 --|     main =
 --|         Tea.application
---|             { init = λurl key -> ( { key = key, route = toRoute url }, Cmd.none )
+--|             { init = λurl key → ( { key = key, route = toRoute url }, Cmd.none )
 --|             , update = update
 --|             , view = view
---|             , subscriptions = λ_ -> Sub.none
+--|             , subscriptions = λ_ → Sub.none
 --|             , onUrlRequest = ClickedLink
 --|             , onUrlChange = UrlChanged
 --|             }

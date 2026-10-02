@@ -6,8 +6,8 @@
 -- unexpected_token with the stray-spread message (8:21, 12:7). `Card` is not
 -- imported (8:6).
 view a =
-    <Card {a ...a}>{...a}</Card>
+    <Card {a …a}>{…a}</Card>
 
 
 plain a =
-    a ...a
+    a …a

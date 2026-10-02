@@ -133,7 +133,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : { title : String, children : Html msg } -> Html msg
+        \\pub view : { title : String, children : Html msg } → Html msg
         \\view props =
         \\    <section><h2>{props.title}</h2>{props.children}</section>
         \\
@@ -148,13 +148,13 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
         \\    | Typed String
         \\
         \\
-        \\pub view : List { id : Int, label : String }, Maybe String -> Html Msg
+        \\pub view : List { id : Int, label : String }, Maybe String → Html Msg
         \\view rows title =
         \\    <Card title="Rows">
         \\        <input onInput={Typed} class={[ ( "wide", True ) ]} "formaction"="/rows" />
-        \\        <For each={rows}>{λr -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
-        \\        <Show when={title} keyed>{λt -> <p>{t}</p>}</Show>
-        \\        {List.map rows λr -> <p>{r.label}</p>}
+        \\        <For each={rows}>{λr → <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
+        \\        <Show when={title} keyed>{λt → <p>{t}</p>}</Show>
+        \\        {List.map rows λr → <p>{r.label}</p>}
         \\    </Card>
         \\
     );
@@ -237,7 +237,7 @@ test "a record full of <error> travels through the format unchanged" {
         \\    x + "text"
         \\
         \\
-        \\pub fine : Int -> Int
+        \\pub fine : Int → Int
         \\fine n =
         \\    n
         \\
@@ -410,14 +410,14 @@ test "a module's hash does not depend on which files the interner saw first" {
         \\    = Tag String
         \\
         \\
-        \\pub label : Tag -> String
+        \\pub label : Tag → String
         \\label t =
         \\    case t of
-        \\        Tag s ->
+        \\        Tag s →
         \\            s
         \\
         \\
-        \\pub pair : a, b -> ( a, b )
+        \\pub pair : a, b → a × b
         \\pair x y =
         \\    ( x, y )
         \\
@@ -490,7 +490,7 @@ fn writePurityProject(w: *World) !void {
         \\    = Pair a a
         \\
         \\
-        \\pub mk : Int, Tag -> Pair Tag
+        \\pub mk : Int, Tag → Pair Tag
         \\mk _ t =
         \\    Pair t t
         \\
@@ -603,7 +603,7 @@ test "the converse, by hash: a change the record DOES describe moves its line" {
         \\    = Pair a a
         \\
         \\
-        \\pub mk : Int, Label -> Pair Label
+        \\pub mk : Int, Label → Pair Label
         \\mk _ t =
         \\    Pair t t
         \\
@@ -649,7 +649,7 @@ test "the converse, by hash: a change the record DOES describe moves its line" {
         \\    = Pair a a a
         \\
         \\
-        \\pub mk : Int, Tag -> Pair Tag
+        \\pub mk : Int, Tag → Pair Tag
         \\mk _ t =
         \\    Pair t t t
         \\
@@ -678,13 +678,13 @@ test "a build's emitted JavaScript is byte-identical under --roundtrip-interface
         \\    | Rect Float Float
         \\
         \\
-        \\pub area : Shape -> Float
+        \\pub area : Shape → Float
         \\area s =
         \\    case s of
-        \\        Circle r ->
+        \\        Circle r →
         \\            r * r
         \\
-        \\        Rect x y ->
+        \\        Rect x y →
         \\            x * y
         \\
     );
@@ -758,13 +758,13 @@ fn writeDispatching(w: *World) !void {
         \\    { name : String, value : a }
         \\
         \\
-        \\pub bigger : a, a -> a
-        \\    where a.compare : a, a -> Order
+        \\pub bigger : a, a → a
+        \\    where a.compare : a, a → Order
         \\bigger a b =
         \\    if a < b then b else a
         \\
         \\
-        \\pub named : String, a -> Named a
+        \\pub named : String, a → Named a
         \\named name value =
         \\    { name = name, value = value }
         \\
@@ -965,10 +965,10 @@ test "a vocabulary module's tables and markup primitives travel through the form
         \\pub foreign type Event
         \\
         \\
-        \\pub foreign pure targetValue : Event -> String
+        \\pub foreign pure targetValue : Event → String
         \\
         \\
-        \\pub markup map : Html a, (a -> b) -> Html b
+        \\pub markup map : Html a, (a → b) → Html b
         \\
         \\
         \\pub element "input" void

@@ -4,9 +4,9 @@
 -- follows it has no reading at all. This is the example the message has to
 -- carry, because it is the one that traps people.
 type alias Handler =
-    ((Int, Int) -> Int, String)
+    ((Int, Int) → Int, String)
 
 
-pub run : Handler -> Int
+pub run : Handler → Int
 run h =
     0

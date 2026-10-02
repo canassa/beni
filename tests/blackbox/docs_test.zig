@@ -18,7 +18,7 @@
 //! checked.
 //!
 //! **The mechanism.** Every assertion of `core/<M>.beni` is appended to a
-//! temp COPY of `<M>.beni` as `pub docExample_<line> : () -> Bool` over
+//! temp COPY of `<M>.beni` as `pub docExample_<line> : () → Bool` over
 //! `(<left>) == (<right>)`, so it is read in the module's OWN scope:
 //! unqualified names resolve the way the reader of that doc comment
 //! resolves them, and no qualifier is invented. A generated `Main.beni`
@@ -26,7 +26,7 @@
 //! `False`, so one `beni build --platform=node --core-root=<temp>` checks
 //! that every example COMPILES as a `Bool` equality and one `node
 //! out/_main.mjs` checks that every one of them is TRUE. They are
-//! `() -> Bool` and not `Bool` so that nothing is forced at module load.
+//! `() → Bool` and not `Bool` so that nothing is forced at module load.
 //!
 //! **The skip list.** An example the mechanism cannot take is named in
 //! `skips` with a reason, the whole list is printed on every run, and the
@@ -78,7 +78,7 @@ const skips = [_]Skip{
     .{ .module = "Basics", .text = "append \"butter\" \"fly\" == \"butterfly\"", .reason = cycle_reason },
     .{ .module = "Basics", .text = "append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]", .reason = cycle_reason },
     .{ .module = "Basics", .text = "List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]", .reason = cycle_reason },
-    .{ .module = "List", .text = "indexedMap [ \"a\", \"b\" ] (λi x -> ( i, x )) == [ ( 0, \"a\" ), ( 1, \"b\" ) ]", .reason = cycle_reason },
+    .{ .module = "List", .text = "indexedMap [ \"a\", \"b\" ] (λi x → ( i, x )) == [ ( 0, \"a\" ), ( 1, \"b\" ) ]", .reason = cycle_reason },
     .{ .module = "List", .text = "intersperse [ \"turtles\", \"turtles\" ] \"on\" == [ \"turtles\", \"on\", \"turtles\" ]", .reason = cycle_reason },
 };
 
@@ -261,7 +261,7 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
             try text.print(arena,
                 \\
                 \\
-                \\pub docExample_{d} : () -> Bool
+                \\pub docExample_{d} : () → Bool
                 \\docExample_{d} _ =
                 \\    ({s}) == ({s})
                 \\
@@ -309,9 +309,9 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         \\main : Program
         \\main =
         \\    Node.printLines
-        \\        (List.filterMap entries λentry ->
+        \\        (List.filterMap entries λentry →
         \\            case entry of
-        \\                ( origin, ok ) ->
+        \\                ( origin, ok ) →
         \\                    if ok then
         \\                        Nothing
         \\                    else

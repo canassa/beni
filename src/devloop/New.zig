@@ -23,17 +23,17 @@ pub const browser_tea_main =
     \\    | Decrement
     \\
     \\
-    \\update : Msg, Int -> Int
+    \\update : Msg, Int → Int
     \\update msg count =
     \\    case msg of
-    \\        Increment ->
+    \\        Increment →
     \\            count + 1
     \\
-    \\        Decrement ->
+    \\        Decrement →
     \\            count - 1
     \\
     \\
-    \\view : Int -> Html Msg
+    \\view : Int → Html Msg
     \\view count =
     \\    <main>
     \\        <h1>Hello, beni</h1>
@@ -53,7 +53,7 @@ pub const node_main =
     \\import Node
     \\
     \\
-    \\greeting : String -> String
+    \\greeting : String → String
     \\greeting name = "Hello, ${name}!"
     \\
     \\

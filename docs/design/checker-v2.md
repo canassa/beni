@@ -467,7 +467,7 @@ obligation share one rank") over-constrains a `?`. In
 ```elm
 f u =
     g k = k (u?)
-    ( g λv -> Ok v, g λv -> Ok (String.fromInt v) )
+    ( g λv → Ok v, g λv → Ok (String.fromInt v) )
 ```
 
 the subject `u` is `f`'s and the target is `g`'s own result. Sharing one rank lowered the target

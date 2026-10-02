@@ -5,9 +5,9 @@
 -- reading — and this shape used to slip past in silence, parsing as a nested
 -- function type nobody wrote. Parenthesise each element.
 type alias Pair =
-    (Int -> Int, Bool -> Bool)
+    (Int → Int, Bool → Bool)
 
 
-pub run : Pair -> Int
+pub run : Pair → Int
 run _ =
     0

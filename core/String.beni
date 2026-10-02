@@ -3,12 +3,12 @@
 --! primitive value into one.
 --!
 --! Argument order here is **subject first and function last**: the string
---! comes first, so `str |> split ","` inserts it at the front and reads as
+--! comes first, so `str ▷ split ","` inserts it at the front and reads as
 --! "split this string on commas", and a function argument comes last, so a
 --! lambda you write inline is the final argument.
 --!
---! `compare` below is `String`'s own `compare` method, so `<`, `>`, `<=`
---! and `>=` on two strings call it and `"a" < "b"` means what it reads as.
+--! `compare` below is `String`'s own `compare` method, so `<`, `>`, `≤`
+--! and `≥` on two strings call it and `"a" < "b"` means what it reads as.
 --! It stays callable by name as well, which is what you want when you are
 --! ordering by something other than the string itself.
 --!
@@ -224,7 +224,7 @@ lines s = Js.pure λ() → Js.to (Js.call (Js.from s) "split" [ Js.regExp "\r\n|
 
 
 --| Split a string using a given separator. The string being split comes
---| first, so `csv |> split ","` reads as "split this on commas".
+--| first, so `csv ▷ split ","` reads as "split this on commas".
 --|
 --|     split "cat,dog,cow" "," == [ "cat", "dog", "cow" ]
 --|     split "abc" "" == [ "a", "b", "c" ]
@@ -433,7 +433,7 @@ repeat chunk n = concat (List.repeat chunk n)
 
 --| Replace all occurrences of some substring. The string being rewritten
 --| comes first, then the substring to look for, then what to put in its
---| place, so `path |> replace "/" "."` reads in the order you say it.
+--| place, so `path ▷ replace "/" "."` reads in the order you say it.
 --|
 --|     replace "a,b,c" "," "/" == "a/b/c"
 --|
@@ -458,7 +458,7 @@ concat strings = join strings ""
 
 
 --| Put many strings together with a given separator. The list is the subject
---| here, so `names |> join ", "` puts the separator between its elements.
+--| here, so `names ▷ join ", "` puts the separator between its elements.
 --|
 --|     join [ "cat", "dog" ] ", " == "cat, dog"
 pub join : List String, String → String
@@ -516,7 +516,7 @@ dropRight str n =
 
 
 --| See if a string contains a substring. The string being searched comes
---| first, so `word |> contains "the"` asks about `word`.
+--| first, so `word ▷ contains "the"` asks about `word`.
 --|
 --|     contains "theory" "the" == True
 --|     contains "theory" "hat" == False
@@ -574,7 +574,7 @@ indices str sub = indexes str sub
 
 
 --| Add a character to the beginning of a string. The string is the subject,
---| so `"he truth is out there" |> cons 'T'` puts the `'T'` on the front.
+--| so `"he truth is out there" ▷ cons 'T'` puts the `'T'` on the front.
 --|
 --|     cons "he truth is out there" 'T' == "The truth is out there"
 pub cons : String, Char → String
@@ -620,7 +620,7 @@ padRight str n char = str ++ repeat (fromChar char) (n - length str)
 
 --| Transform every character in a string.
 --|
---|     map "a/b/c" (λchar -> if char == '/' then '.' else char) == "a.b.c"
+--|     map "a/b/c" (λchar → if char == '/' then '.' else char) == "a.b.c"
 pub map : String, (Char → Char) → String
 map str func = fromList (List.map (toList str) func)
 
@@ -634,14 +634,14 @@ filter str isGood = fromList (List.filter (toList str) isGood)
 
 --| Reduce a string from the left, starting from an initial value.
 --|
---|     foldl "time" "" (λchar acc -> cons acc char) == "emit"
+--|     foldl "time" "" (λchar acc → cons acc char) == "emit"
 pub foldl : String, b, (Char, b → b) → b
 foldl str acc func = List.foldl (toList str) acc func
 
 
 --| Reduce a string from the right, starting from an initial value.
 --|
---|     foldr "time" "" (λchar acc -> cons acc char) == "time"
+--|     foldr "time" "" (λchar acc → cons acc char) == "time"
 pub foldr : String, b, (Char, b → b) → b
 foldr str acc func = List.foldr (toList str) acc func
 

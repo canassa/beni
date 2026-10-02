@@ -3,12 +3,12 @@
 -- that DOES desugar to a call keeps one, which parse/good/OperatorsAll
 -- pins.
 pipeRight =
-    (|>)
+    (▷)
 
 
 pipeLeft =
-    (<|)
+    (◁)
 
 
 passedAlong xs =
-    List.foldl xs 0 (|>)
+    List.foldl xs 0 (▷)

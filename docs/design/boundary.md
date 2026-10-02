@@ -729,9 +729,9 @@ that thunk is wrapped in is this package's business, and none of it needs a lang
 ```elm
 type Policy = Restart | Ignore | Queue | Concurrent
 
-Cmd.run    : (() -> a), (a -> msg) -> Cmd msg               -- fire and forget
-Cmd.keyed  : k, Policy, (() -> a), (a -> msg) -> Cmd msg    -- k equatable
-Cmd.cancel : k -> Cmd msg
+Cmd.run    : (() → a), (a → msg) → Cmd msg               -- fire and forget
+Cmd.keyed  : k, Policy, (() → a), (a → msg) → Cmd msg    -- k equatable
+Cmd.cancel : k → Cmd msg
 ```
 
 **Commands must be cancellable or the runtime's justification stops at this boundary.** The fiber
@@ -750,8 +750,8 @@ later. Cancelling runs the fiber's finalisers, so a cancelled command releases w
 ```elm
 update msg model =
     case msg of
-        Typed q       -> ( { model | q = q }, Cmd.keyed "search" Restart (λ() -> search q) GotHits )
-        NavigatedAway -> ( model, Cmd.cancel "search" )
+        Typed q       → ( { model | q = q }, Cmd.keyed "search" Restart (λ() → search q) GotHits )
+        NavigatedAway → ( model, Cmd.cancel "search" )
 ```
 
 **Why a key and not a handle.** `update` is `sync` and pure, and between the update that starts the
@@ -1794,19 +1794,19 @@ the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` a
 #### 9.8.2 The command API and the four policies
 
 ```elm
-pub type alias Send msg = msg -> ()
+pub type alias Send msg = msg → ()
 pub type Policy = Restart | Ignore | Queue | Concurrent
 
 pub none : Cmd msg
-pub batch : List (Cmd msg) -> Cmd msg
-pub perform : (Send msg -> ()) -> Cmd msg                        -- a fiber in the program's scope
-pub keyed : k, Policy, (Send msg -> ()) -> Cmd msg               where k.compare : k, k -> Order
-pub cancel : k -> Cmd msg                                         where k.compare : k, k -> Order
+pub batch : List (Cmd msg) → Cmd msg
+pub perform : (Send msg → ()) → Cmd msg                        -- a fiber in the program's scope
+pub keyed : k, Policy, (Send msg → ()) → Cmd msg               where k.compare : k, k → Order
+pub cancel : k → Cmd msg                                         where k.compare : k, k → Order
 pub cancelAll : Cmd msg                                           -- every keyed body at this path and below
-pub map : Cmd a, k, (a -> msg) -> Cmd msg                         where k.compare : k, k -> Order
-pub afterRender : (Send msg -> ()) -> Cmd msg                     -- §9.8.6
-pub task : (() -> a), (a -> msg) -> Cmd msg                       -- perform λsend -> send (tag (work ()))
-pub do : (() -> ()) -> Cmd msg                                    -- perform λ_ -> work ()
+pub map : Cmd a, k, (a → msg) → Cmd msg                         where k.compare : k, k → Order
+pub afterRender : (Send msg → ()) → Cmd msg                     -- §9.8.6
+pub task : (() → a), (a → msg) → Cmd msg                       -- perform λsend -> send (tag (work ()))
+pub do : (() → ()) → Cmd msg                                    -- perform λ_ -> work ()
 ```
 
 A keyed body arriving at a key path under which bodies still run (the architecture keeps, per path,
@@ -1891,9 +1891,9 @@ when its key leaves the set.
 ```elm
 pub type Sub msg
 pub none : Sub msg
-pub batch : List (Sub msg) -> Sub msg
-pub map : Sub a, (a -> msg) -> Sub msg
-pub listen : k, (Send a -> ()), (a -> msg) -> Sub msg          where k.compare : k, k -> Order
+pub batch : List (Sub msg) → Sub msg
+pub map : Sub a, (a → msg) → Sub msg
+pub listen : k, (Send a → ()), (a → msg) → Sub msg          where k.compare : k, k → Order
 ```
 
 `listen key body tag`: while `key` is in the set, one fiber runs `body`, and each value it sends
@@ -1939,14 +1939,14 @@ so no render sees a half-handled message.
 ```elm
 pub foreign type Host msg
 pub foreign pure hosted :
-    { init : sync (Host msg -> model)
-    , update : sync (Host msg, msg, model -> model)
-    , settle : sync (Host msg, model -> model)
-    , view : sync (model -> Html msg)
+    { init : sync (Host msg → model)
+    , update : sync (Host msg, msg, model → model)
+    , settle : sync (Host msg, model → model)
+    , view : sync (model → Html msg)
     }
-    -> Program
-pub foreign impure flush : () -> ()
-pub foreign impure onRendered : Resume () -> (() -> ())     -- `Dom.rendered` is `Task.callback` over it
+    → Program
+pub foreign impure flush : () → ()
+pub foreign impure onRendered : Resume () → (() → ())     -- `Dom.rendered` is `Task.callback` over it
 ```
 
 `init` is called once, at mount, with the program's `Host`; `update` for each message; `settle` once
@@ -2413,21 +2413,21 @@ pub type Problem
     | UnprintableBody (List Schema.Issue)   -- `jsonBody`'s value the schema does not print
 
 pub type Header                -- opaque
-pub header : String, String -> Header
+pub header : String, String → Header
 
 pub type Body                  -- opaque
 pub emptyBody : Body
-pub stringBody : String, String -> Body          -- the MIME type, then the text
-pub jsonBody : Schema e a, a -> Body              -- `Schema.print`, sent as application/json
-pub multipartBody : List Part -> Body
+pub stringBody : String, String → Body          -- the MIME type, then the text
+pub jsonBody : Schema e a, a → Body              -- `Schema.print`, sent as application/json
+pub multipartBody : List Part → Body
 pub type Part                  -- opaque
-pub stringPart : String, String -> Part           -- the field's name, then its value
+pub stringPart : String, String → Part           -- the field's name, then its value
 
 pub type Expect x a            -- opaque: how the answer is read
 pub expectString : Expect Error String
-pub expectJson : Schema e a -> Expect Error a
+pub expectJson : Schema e a → Expect Error a
 pub expectWhatever : Expect Error ()
-pub expectStringResponse : (Response String -> Result x a) -> Expect x a
+pub expectStringResponse : (Response String → Result x a) → Expect x a
 
 pub type Response body
     = BadUrl_ String
@@ -2446,8 +2446,8 @@ pub type alias Metadata =
 pub type Progress
     = Sending { sent : Int, size : Int }
     | Receiving { received : Int, size : Maybe Int }
-pub fractionSent : { sent : Int, size : Int } -> Float
-pub fractionReceived : { received : Int, size : Maybe Int } -> Float
+pub fractionSent : { sent : Int, size : Int } → Float
+pub fractionReceived : { received : Int, size : Maybe Int } → Float
 
 pub request :
       { method : String
@@ -2456,12 +2456,12 @@ pub request :
       , body : Body
       , expect : Expect x a
       , timeout : Maybe Duration          -- `Time.Duration`
-      , tracker : Maybe (Progress -> ())
+      , tracker : Maybe (Progress → ())
       }
-    -> Result x a                                                       -- suspends
+    → Result x a                                                       -- suspends
 pub riskyRequest : <the same record> -> Result x a                      -- suspends
-pub get : { url : String, expect : Expect x a } -> Result x a           -- suspends
-pub post : { url : String, body : Body, expect : Expect x a } -> Result x a   -- suspends
+pub get : { url : String, expect : Expect x a } → Result x a           -- suspends
+pub post : { url : String, body : Body, expect : Expect x a } → Result x a   -- suspends
 ```
 
 `get` is `request` with `"GET"`, no headers, `emptyBody`, no timeout and no tracker; `post` the
@@ -2472,12 +2472,12 @@ those are `request` with their method. **The command form** is `Cmd.task`, `Cmd.
 ```elm
 update msg model =
     case msg of
-        Search q ->
+        Search q →
             ( model
-            , Cmd.keyed SearchKey Cmd.Restart λsend ->
+            , Cmd.keyed SearchKey Cmd.Restart λsend →
                 send (Found (Http.get { url = Url.Builder.absolute [ "api", "search" ] [ Url.Builder.string "q" q ], expect = Http.expectJson results }))
             )
-        Leave ->
+        Leave →
             ( model, Cmd.cancel SearchKey )   -- aborts the request: Elm's `Http.cancel "search"`
 ```
 
@@ -2688,21 +2688,21 @@ them, `slash` and `questionMark`.
 ```elm
 -- module Url.Parser (core)
 pub type Parser a b                                           -- opaque
-pub string : Parser (String -> a) a
-pub int : Parser (Int -> a) a
-pub s : String -> Parser a a
-pub custom : String, (String -> Maybe a) -> Parser (a -> b) b
+pub string : Parser (String → a) a
+pub int : Parser (Int → a) a
+pub s : String → Parser a a
+pub custom : String, (String → Maybe a) → Parser (a → b) b
 pub top : Parser a a
-pub slash : Parser a b, Parser b c -> Parser a c              -- Elm's </>
-pub map : Parser a b, a -> Parser (b -> c) c
-pub map2 : Parser (a -> b -> r) r, (a, b -> r) -> Parser (r -> c) c
-pub map3 : Parser (a -> b -> d -> r) r, (a, b, d -> r) -> Parser (r -> c) c
+pub slash : Parser a b, Parser b c → Parser a c              -- Elm's </>
+pub map : Parser a b, a → Parser (b → c) c
+pub map2 : Parser (a → b → r) r, (a, b → r) → Parser (r → c) c
+pub map3 : Parser (a → b → d → r) r, (a, b, d → r) → Parser (r → c) c
 -- … map4 to map8, the same pattern
-pub oneOf : List (Parser a b) -> Parser a b
-pub questionMark : Parser a (query -> b), Query.Parser query -> Parser a b   -- Elm's <?>
-pub query : Query.Parser query -> Parser (query -> a) a
-pub fragment : (Maybe String -> fragment) -> Parser (fragment -> a) a
-pub parse : Parser (a -> a) a, Url -> Maybe a
+pub oneOf : List (Parser a b) → Parser a b
+pub questionMark : Parser a (query → b), Query.Parser query → Parser a b   -- Elm's <?>
+pub query : Query.Parser query → Parser (query → a) a
+pub fragment : (Maybe String → fragment) → Parser (fragment → a) a
+pub parse : Parser (a → a) a, Url → Maybe a
 ```
 
 `map` is Elm's, subject first: its second argument is a value for a parser that captures nothing
@@ -2719,16 +2719,16 @@ type Route
     | Search (Maybe String)
     | NotFound
 
-route : Parser (Route -> a) a
+route : Parser (Route → a) a
 route =
     Parser.oneOf
         [ Parser.map Parser.top Home
-        , Parser.s "blog" |> Parser.slash Parser.int |> Parser.map Blog
-        , Parser.s "user" |> Parser.slash Parser.string |> Parser.slash (Parser.s "comment") |> Parser.slash Parser.int |> Parser.map2 Comment
-        , Parser.s "search" |> Parser.questionMark (Query.string "q") |> Parser.map Search
+        , Parser.s "blog" ▷ Parser.slash Parser.int ▷ Parser.map Blog
+        , Parser.s "user" ▷ Parser.slash Parser.string ▷ Parser.slash (Parser.s "comment") ▷ Parser.slash Parser.int ▷ Parser.map2 Comment
+        , Parser.s "search" ▷ Parser.questionMark (Query.string "q") ▷ Parser.map Search
         ]
 
-toRoute : Url -> Route
+toRoute : Url → Route
 toRoute url = Maybe.withDefault (Parser.parse route url) NotFound
 ```
 
@@ -2750,12 +2750,12 @@ because Elm's answer is a silent wrong one:
 ```elm
 -- module Url.Parser.Query (core)
 pub type Parser a                                              -- opaque
-pub string : String -> Parser (Maybe String)
-pub int : String -> Parser (Maybe Int)
-pub enum : String, Dict String a -> Parser (Maybe a)
-pub custom : String, (List String -> a) -> Parser a
-pub map : Parser a, (a -> b) -> Parser b
-pub map2 : Parser a, Parser b, (a, b -> r) -> Parser r
+pub string : String → Parser (Maybe String)
+pub int : String → Parser (Maybe Int)
+pub enum : String, Dict String a → Parser (Maybe a)
+pub custom : String, (List String → a) → Parser a
+pub map : Parser a, (a → b) → Parser b
+pub map2 : Parser a, Parser b, (a, b → r) → Parser r
 -- … map3 to map8, the same pattern, the function last
 ```
 
@@ -2766,13 +2766,13 @@ value that converts; `custom` gets every value of the key, in order.
 -- module Url.Builder (core)
 pub type Root = Absolute | Relative | CrossOrigin String
 pub type QueryParameter                                        -- opaque
-pub absolute : List String, List QueryParameter -> String
-pub relative : List String, List QueryParameter -> String
-pub crossOrigin : String, List String, List QueryParameter -> String
-pub custom : Root, List String, List QueryParameter, Maybe String -> String
-pub string : String, String -> QueryParameter
-pub int : String, Int -> QueryParameter
-pub toQuery : List QueryParameter -> String
+pub absolute : List String, List QueryParameter → String
+pub relative : List String, List QueryParameter → String
+pub crossOrigin : String, List String, List QueryParameter → String
+pub custom : Root, List String, List QueryParameter, Maybe String → String
+pub string : String, String → QueryParameter
+pub int : String, Int → QueryParameter
+pub toQuery : List QueryParameter → String
 ```
 
 Elm's, with one change (H8): **each path segment is percent-encoded** (`Url.percentEncode`), as
@@ -2785,23 +2785,23 @@ back the segments it was built from. `custom`'s fragment is written as given.
 ```elm
 -- module Browser.Navigation (browser), re-exported by browser-tea
 pub type Key                                                    -- opaque, equatable: a model may hold it
-pub key : () -> Key                                             -- impure: the page's key
+pub key : () → Key                                             -- impure: the page's key
 pub type Error = BadUrl String | CrossOrigin String | Throttled
 
-pub pushUrl : Key, String -> Result Error ()                    -- impure
-pub replaceUrl : Key, String -> Result Error ()                 -- impure
-pub back : Key, Int -> Result Error ()                          -- impure
-pub forward : Key, Int -> Result Error ()                       -- impure
-pub load : String -> Result Error ()                            -- impure
-pub reload : () -> ()                                           -- impure
+pub pushUrl : Key, String → Result Error ()                    -- impure
+pub replaceUrl : Key, String → Result Error ()                 -- impure
+pub back : Key, Int → Result Error ()                          -- impure
+pub forward : Key, Int → Result Error ()                       -- impure
+pub load : String → Result Error ()                            -- impure
+pub reload : () → ()                                           -- impure
 
 -- §9.8.10 (b), kept
-pub currentUrl : () -> Maybe Url
-pub eachUrlChange : (Url -> ()) -> ()                           -- suspends
-pub onUrlChange : (Url -> msg) -> Sub msg
+pub currentUrl : () → Maybe Url
+pub eachUrlChange : (Url → ()) → ()                           -- suspends
+pub onUrlChange : (Url → msg) → Sub msg
 -- new
-pub eachUrlRequest : (Browser.UrlRequest -> ()) -> ()           -- suspends
-pub onUrlRequest : (Browser.UrlRequest -> msg) -> Sub msg
+pub eachUrlRequest : (Browser.UrlRequest → ()) → ()           -- suspends
+pub onUrlRequest : (Browser.UrlRequest → msg) → Sub msg
 
 -- module Browser (browser)
 pub type UrlRequest
@@ -2894,22 +2894,22 @@ pub type alias Document msg =
     body : Html msg
 
 pub document :
-      { init : ( model, Cmd msg )
-      , update : msg, model -> ( model, Cmd msg )
-      , view : model -> Document msg
-      , subscriptions : model -> Sub msg
+      { init : model × Cmd msg
+      , update : msg, model → model × Cmd msg
+      , view : model → Document msg
+      , subscriptions : model → Sub msg
       }
-    -> Program
+    → Program
 
 pub application :
-      { init : Url, Key -> ( model, Cmd msg )
-      , update : msg, model -> ( model, Cmd msg )
-      , view : model -> Document msg
-      , subscriptions : model -> Sub msg
-      , onUrlRequest : UrlRequest -> msg
-      , onUrlChange : Url -> msg
+      { init : Url, Key → model × Cmd msg
+      , update : msg, model → model × Cmd msg
+      , view : model → Document msg
+      , subscriptions : model → Sub msg
+      , onUrlRequest : UrlRequest → msg
+      , onUrlChange : Url → msg
       }
-    -> Program
+    → Program
 ```
 
 Elm's three programs, minus flags (beni has none). `document` is `element` whose render also sets
@@ -2932,16 +2932,16 @@ the render that renders the body, so the title and the body never disagree after
 ```elm
 update msg model =
     case msg of
-        ClickedLink (Browser.Internal url) ->
-            ( model, Cmd.task (λ() -> Navigation.pushUrl model.key (Url.toString url)) Pushed )
+        ClickedLink (Browser.Internal url) →
+            ( model, Cmd.task (λ() → Navigation.pushUrl model.key (Url.toString url)) Pushed )
 
-        ClickedLink (Browser.External href) ->
-            ( model, Cmd.task (λ() -> Navigation.load href) Pushed )
+        ClickedLink (Browser.External href) →
+            ( model, Cmd.task (λ() → Navigation.load href) Pushed )
 
-        UrlChanged url ->
+        UrlChanged url →
             ( { model | route = toRoute url }, Cmd.none )
 
-        Pushed _ ->
+        Pushed _ →
             ( model, Cmd.none )
 ```
 
@@ -3050,7 +3050,7 @@ work outside any fiber. One new kernel operation closes them all:
 --| work, and start nothing new. Cleanup that suspends is given `deadline` milliseconds from the
 --| call; `done` is called once every fiber has ended, with how many cleanups were cut short.
 --| What a platform calls when its program stops; a program never does.
-pub foreign impure shutdown : Int, sync (Int -> ()) -> ()
+pub foreign impure shutdown : Int, sync (Int → ()) → ()
 ```
 
 **`shutdown` itself does only phase 1's part**: it enters *stopping* and schedules the teardown's

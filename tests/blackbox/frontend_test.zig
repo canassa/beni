@@ -67,24 +67,24 @@ const every_section =
     \\    right : String
     \\
     \\
-    \\pub area : Shape -> Float
+    \\pub area : Shape → Float
     \\area shape =
     \\    case shape of
-    \\        Circle r ->
+    \\        Circle r →
     \\            3.5 * r * r
     \\
-    \\        Square s ->
+    \\        Square s →
     \\            toFloat (s * s)
     \\
     \\
-    \\pub member : D.Dict k v, k -> Bool
-    \\    where k.compare : k, k -> Order
+    \\pub member : D.Dict k v, k → Bool
+    \\    where k.compare : k, k → Order
     \\member d k =
     \\    d.member k
     \\
     \\
     \\-- A plain comment between declarations.
-    \\label : Point, String -> String
+    \\label : Point, String → String
     \\label p name =
     \\    ( a, b ) =
     \\        ( p.x, p.y )
@@ -93,12 +93,12 @@ const every_section =
     \\        { p | x = a + 1 }
     \\
     \\    twice =
-    \\        λn -> n * 2
+    \\        λn → n * 2
     \\    "${name}: ${twice moved.x} \t ${b}"
     \\
     \\
     \\tail =
-    \\    [ 1, 2, 3 ] |> List.map λn -> n + 1
+    \\    [ 1, 2, 3 ] ▷ List.map λn → n + 1
     \\
 ;
 

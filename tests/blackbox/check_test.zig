@@ -47,7 +47,7 @@ fn writeUserPlatform(w: *World) !void {
         \\pub foreign type Program
         \\
         \\
-        \\pub foreign pure say : String -> Program
+        \\pub foreign pure say : String → Program
         \\
     );
     try w.write("myplat/Prog.js",
@@ -229,7 +229,7 @@ test "dump --stage=interface --platform=node prints the interface of a program" 
         \\import Node exposing (Program)
         \\
         \\
-        \\pub run : String -> Program
+        \\pub run : String → Program
         \\run line =
         \\    Node.print line
         \\
@@ -329,7 +329,7 @@ test "check --platform does not require a main, and does not mind two" {
         \\import Node exposing (Program)
         \\
         \\
-        \\pub greet : String -> Program
+        \\pub greet : String → Program
         \\greet name =
         \\    Node.print name
         \\
@@ -635,19 +635,19 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\pub foreign type Value
         \\
         \\
-        \\pub foreign pure from : a -> Value
+        \\pub foreign pure from : a → Value
         \\
         \\
-        \\pub foreign pure to : Value -> a
+        \\pub foreign pure to : Value → a
         \\
         \\
-        \\pub foreign impure global : name -> Value
+        \\pub foreign impure global : name → Value
         \\
         \\
-        \\pub foreign impure get : Value, name -> Value
+        \\pub foreign impure get : Value, name → Value
         \\
         \\
-        \\pub foreign impure call : Value, name, args -> Value
+        \\pub foreign impure call : Value, name, args → Value
         \\
     );
     try w.write("jscore/Basics.beni",
@@ -660,7 +660,7 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\pub foreign type Float
         \\
         \\
-        \\pub floor : Float -> Int
+        \\pub floor : Float → Int
         \\floor x = Js.to (Js.call (Js.global "Math") "floor" [ Js.from x ])
         \\
     );
@@ -668,7 +668,7 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\pub foreign type List a
         \\
         \\
-        \\pub foreign pure length : List a -> Int
+        \\pub foreign pure length : List a → Int
         \\
     );
     try w.write("jscore/String.beni",
@@ -678,7 +678,7 @@ fn writeJsCore(w: *World, lower_name: []const u8) !void {
         \\pub foreign type String
         \\
         \\
-        \\pub upper : Lower.Text -> Lower.Text
+        \\pub upper : Lower.Text → Lower.Text
         \\upper t = Lower.upper t
         \\
     );

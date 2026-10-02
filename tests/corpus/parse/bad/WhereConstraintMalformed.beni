@@ -1,6 +1,6 @@
 -- A malformed constraint (§2.3, last row, and Appendix A.41 for why the
--- message names the arrow): expected_token at 4:33.
-pub pick : a, b -> Bool
-    where a.eq : a, a -> Bool, b.x
+-- message names the arrow): expected_token at 4:32.
+pub pick : a, b → Bool
+    where a.eq : a, a → Bool, b.x
 pick x y =
     True

@@ -5,17 +5,17 @@
 --! A list is **array-backed** (`language.md` §6.8, `backend.md` §4, *Lists
 --! are arrays*): reading an element by index is O(1) — O(log₃₂ n), "near
 --! O(1)", on a list that has been written to — `length` is O(1), and a list
---! grows at either end in amortised O(1): `push` at the end, `[ x, ...xs ]`
+--! grows at either end in amortised O(1): `push` at the end, `[ x, …xs ]`
 --! at the front. Each function's doc comment says what it costs, and which
 --! results are the very list it was given rather than an equal copy
 --! (`backend.md` §4, *Identity*), which is what lets a view skip what did
 --! not change.
 --!
 --! Argument order here is **subject first and function last**: the value the
---! function is about comes first, so `xs |> map f` inserts it at the front,
+--! function is about comes first, so `xs ▷ map f` inserts it at the front,
 --! and the function comes last, so a lambda you write inline is the final
 --! argument. Two kinds of declaration sit outside that sentence, in opposite
---! directions. `cons` is ordered by the list syntax instead — `[ x, ...xs ]`
+--! directions. `cons` is ordered by the list syntax instead — `[ x, …xs ]`
 --! is a call of it, so it is element before list rather than something you
 --! pipe into. And the builders take no list at all, so "the list comes first"
 --! cannot be what subject first means for them: `repeat` is still subject
@@ -48,7 +48,7 @@
 --| spread puts the elements of one list into another.
 --|
 --|     [ 1, 2, 3 ]
---|     [ 1, ...[ 2, 3 ] ]
+--|     [ 1, …[ 2, 3 ] ]
 --|
 --| Equatable when the element type is.
 pub equatable foreign type List a
@@ -66,7 +66,7 @@ foreign type Builder a
 --|
 --|     cons 1 [ 2, 3 ] == [ 1, 2, 3 ]
 --|
---| This is what `[ x, ...xs ]` desugars to, which is why the element comes
+--| This is what `[ x, …xs ]` desugars to, which is why the element comes
 --| first here while every other function in this module takes the list first.
 --|
 --| Amortised O(1), as `push` is at the other end: a list that has been
@@ -76,7 +76,7 @@ foreign type Builder a
 pub foreign pure cons : a, List a → List a
 
 
---| Put two lists together. `[ ...xs, ...ys ]` is this function, and `++` on
+--| Put two lists together. `[ …xs, …ys ]` is this function, and `++` on
 --| two lists calls it too.
 --|
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
@@ -84,7 +84,7 @@ pub foreign pure cons : a, List a → List a
 --| `append xs []` is `xs` itself and `append [] ys` is `ys` itself. When `xs`
 --| has been written to, or has 32 elements or more while `ys` has fewer,
 --| each element of `ys` is pushed onto it: O(length of `ys`), so
---| `[ ...xs, x ]` costs what `push xs x` does. Otherwise the result is a
+--| `[ …xs, x ]` costs what `push xs x` does. Otherwise the result is a
 --| fresh list, O(length of both).
 pub foreign pure append : List a, List a → List a
 
@@ -112,7 +112,7 @@ pub foreign pure eq : List a, List a → Bool
 --|
 --|     compare [ 1, 2 ] [ 1, 2, 3 ] == LT
 --|
---| This is what `<`, `<=`, `>` and `>=` on a list call. Like `eq` it is
+--| This is what `<`, `≤`, `>` and `≥` on a list call. Like `eq` it is
 --| written here rather than derived, because `List a` has no constructors
 --| to walk.
 pub foreign pure compare : List a, List a → Order
@@ -193,16 +193,16 @@ pub foreign pure removeAt : List a, Int → List a
 pub foreign pure swap : List a, Int, Int → List a
 
 
---| Element `i`, for `0 <= i < length xs`, which the caller guarantees: out
+--| Element `i`, for `0 ≤ i < length xs`, which the caller guarantees: out
 --| of range it would read `undefined` as a value of any type, which is why
 --| it is not `pub` (`backend.md` §4). The code generator imports it for a
 --| list pattern's elements.
 foreign pure unsafeGet : List a, Int → a
 
 
---| The list without its first `k` elements, `0 <= k <= length`: the list
+--| The list without its first `k` elements, `0 ≤ k ≤ length`: the list
 --| itself at 0, `[]` at the end, O(1) otherwise. What a pattern's
---| `[ x, ...rest ]` binds `rest` to; the code generator imports it.
+--| `[ x, …rest ]` binds `rest` to; the code generator imports it.
 foreign pure view : List a, Int → List a
 
 
@@ -352,7 +352,7 @@ rangeHelp lo i n b =
 --| Create a list of `n` elements, calling `func` on each index from 0 to
 --| `n - 1` in that order. A count of zero or less is `[]`.
 --|
---|     initialize 4 (λi -> i * i) == [ 0, 1, 4, 9 ]
+--|     initialize 4 (λi → i * i) == [ 0, 1, 4, 9 ]
 --|
 --| O(n).
 pub initialize : Int, (Int → a) → List a
@@ -396,7 +396,7 @@ mapHelp xs a o i n func b same =
 --| starting at zero. The result is `xs` itself when every result is the
 --| element it was given, as `map`'s is.
 --|
---|     indexedMap [ "a", "b" ] (λi x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
+--|     indexedMap [ "a", "b" ] (λi x → ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a → b) → List b
 indexedMap xs func =
     indexedMapHelp xs (base xs) (offset xs) 0 (length xs) func (builder (length xs)) True
@@ -414,7 +414,7 @@ indexedMapHelp xs a o i n func b same =
 
 --| Keep the elements that pass the test.
 --|
---|     filter [ 1, 2, 3, 4 ] (λn -> Int.mod n 2 == 0) == [ 2, 4 ]
+--|     filter [ 1, 2, 3, 4 ] (λn → Int.mod n 2 == 0) == [ 2, 4 ]
 --|
 --| `isGood` is asked about the first element first. When it keeps every
 --| element the result is `xs` itself, not an equal copy (`backend.md` §4,
@@ -508,16 +508,16 @@ member xs value = any xs λx → x == value
 
 --| Determine if all elements satisfy some test.
 --|
---|     all [ 2, 4 ] (λn -> Int.mod n 2 == 0) == True
---|     all [] (λn -> Int.mod n 2 == 0) == True
+--|     all [ 2, 4 ] (λn → Int.mod n 2 == 0) == True
+--|     all [] (λn → Int.mod n 2 == 0) == True
 pub all : List a, (a → Bool) → Bool
 all xs isOkay = not (any xs λx → not (isOkay x))
 
 
 --| Determine if any elements satisfy some test.
 --|
---|     any [ 2, 3 ] (λn -> Int.mod n 2 == 0) == True
---|     any [] (λn -> Int.mod n 2 == 0) == False
+--|     any [ 2, 3 ] (λn → Int.mod n 2 == 0) == True
+--|     any [] (λn → Int.mod n 2 == 0) == False
 pub any : List a, (a → Bool) → Bool
 any xs isOkay = anyFrom (base xs) (offset xs) (offset xs + length xs) isOkay
 
@@ -595,7 +595,7 @@ pub foreign pure concat : List (List a) → List a
 
 --| Map a given function onto a list and flatten the resulting lists.
 --|
---|     concatMap [ 1, 2 ] (λx -> [ x, x ]) == [ 1, 1, 2, 2 ]
+--|     concatMap [ 1, 2 ] (λx → [ x, x ]) == [ 1, 1, 2, 2 ]
 --|
 --| `func` is called on the first element first, and once per element. It
 --| is `concat (map xs func)`: when exactly one of the answers is not empty
@@ -839,7 +839,7 @@ sort xs = sortWith xs λx y → x.compare y
 --| first** (`checker.md` Appendix B), which is what decorate–sort–undecorate
 --| buys: `map` reads the keys in list order, the pairs are sorted by their
 --| first component alone, and `map` reads the elements back out. The
---| spelling this replaced, `sortWith xs (λx y -> (toKey x).compare (toKey
+--| spelling this replaced, `sortWith xs (λx y → (toKey x).compare (toKey
 --| y))`, called `toKey` once per COMPARISON — six times for a three-element
 --| list, and not at all for a one-element one — so an expensive key was
 --| recomputed and an effectful one would run its effect a number of times
@@ -863,7 +863,7 @@ sortBy xs toKey =
 --| Sort values with an ordering function you write yourself, which is how
 --| you sort by something that is not the type's own order.
 --|
---|     sortWith [ 1, 2, 3 ] (λx y -> Basics.compare y x) == [ 3, 2, 1 ]
+--|     sortWith [ 1, 2, 3 ] (λx y → Basics.compare y x) == [ 3, 2, 1 ]
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in, and that is a contract rather than an accident of the merge
@@ -1003,7 +1003,7 @@ last xs = get xs (length xs - 1)
 --| called once in range and not at all out of range, where the result is
 --| the list itself.
 --|
---|     update [ 1, 2, 3 ] 1 (λx -> x * 10) == [ 1, 20, 3 ]
+--|     update [ 1, 2, 3 ] 1 (λx → x * 10) == [ 1, 20, 3 ]
 --|
 --| The cost of `set`, and its identities.
 pub update : List a, Int, (a → a) → List a
@@ -1018,7 +1018,7 @@ update xs i func =
 --| that satisfy the test, and the second list contains all the value that do
 --| not.
 --|
---|     partition [ 1, 2, 3, 4 ] (λn -> Int.mod n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
+--|     partition [ 1, 2, 3, 4 ] (λn → Int.mod n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
 --|
 --| `pred` is asked about each element once, the first element first. O(n).
 pub partition : List a, (a → Bool) → List a × List a

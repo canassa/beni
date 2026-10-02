@@ -385,7 +385,7 @@ test "check --platform=html types a view module against the one Html type" {
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : String -> Html msg
+        \\pub view : String → Html msg
         \\view s =
         \\    Html.map (Html.text s) identity
         \\
@@ -450,12 +450,12 @@ test "a library for a platform with no program builds, and one that keeps a mark
         \\import Html exposing (Html)
         \\
         \\
-        \\pub label : String -> String
+        \\pub label : String → String
         \\label s =
         \\    "[${s}]"
         \\
         \\
-        \\pub placeholder : Html msg -> Html msg
+        \\pub placeholder : Html msg → Html msg
         \\placeholder h =
         \\    h
         \\
@@ -464,7 +464,7 @@ test "a library for a platform with no program builds, and one that keeps a mark
         \\import Html exposing (Html)
         \\
         \\
-        \\pub view : String -> Html msg
+        \\pub view : String → Html msg
         \\view s =
         \\    Html.text s
         \\
@@ -550,14 +550,14 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
         \\import Html exposing (Html)
         \\
         \\
-        \\view : {} -> Html {}
+        \\view : {} → Html {}
         \\view _ =
         \\    <p>hi</p>
         \\
         \\
         \\main : Browser.Program
         \\main =
-        \\    Browser.program { init = {}, update = λ_ m -> m, view = view }
+        \\    Browser.program { init = {}, update = λ_ m → m, view = view }
         \\
     );
 
@@ -618,7 +618,7 @@ test "a platform with no runtime file whose runtime module has no run is refused
         \\    = Program String
         \\
         \\
-        \\pub program : String -> Program
+        \\pub program : String → Program
         \\program s =
         \\    Program s
         \\
@@ -742,7 +742,7 @@ test "a foreign that mentions the markup type is legal in the platform that name
         \\import Html exposing (Html)
         \\
         \\
-        \\pub foreign pure render : Html msg -> String
+        \\pub foreign pure render : Html msg → String
         \\
     );
     try w.write("top/Render.js", "export const render = (html) => String(html);\n");

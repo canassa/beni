@@ -1310,10 +1310,10 @@ test "a module's references to itself are not a self-loop" {
             \\pub foreign type Int
             \\
             \\
-            \\pub foreign pure add : Int -> Int -> Int
+            \\pub foreign pure add : Int → Int → Int
             \\
             \\
-            \\pub twice : Int -> Int
+            \\pub twice : Int → Int
             \\twice n =
             \\    n + n
             \\

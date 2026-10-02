@@ -4,4 +4,4 @@
 -- rather than read as the markup around it, which ended the `For` and the
 -- `ul` with unclosed_element each and the declaration with unexpected_token.
 view items =
-    <ul><For each={items}>{λr, i -> <li>{r}</li>}</For></ul>
+    <ul><For each={items}>{λr, i → <li>{r}</li>}</For></ul>

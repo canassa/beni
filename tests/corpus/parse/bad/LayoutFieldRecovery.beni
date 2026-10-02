@@ -1,7 +1,7 @@
 -- The malformed field recovers at `kept` on the exact field column, and the
 -- column-1 declaration after the block must survive too.
 schema Broken =
-    malformed : ->
+    malformed : →
     kept : String
 
 
