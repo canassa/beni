@@ -1370,7 +1370,8 @@ owner on 2026-10-02; each slice below lands with `zig build gates` green and its
 | **3. Browser wiring** | `Rt.beni`'s `teardown` reference and fifth mount argument; `Browser.beni`'s `host` hands it the after-render queue's emptying and `Task.shutdown` with the deadline; the `console.warn` for abandoned cleanups; the crash screen's later-throw list and abandoned line, its listener kept until the end | `DefectRunsReleases`, `DefectReleasesHost`, `DefectQueuedDropped`, `DefectInViewReleases`, `DefectEveryProgram`, `browser/dom/HostedRootReleases`; `DefectInFiber`'s `(timers: 1)` becomes `(timers: 0)` |
 | **4. The hard cases** | nothing new in the code if slices 2–3 are right; this slice is the fixtures that would catch them wrong, and the measurement | `DefectReleaseSuspends`, `DefectReleaseThrows`, `DefectReleaseRunning`; `bench/size.mjs` lines for the `Http` + `Time` page and the empty `Tea.element` (the latter must not move); `zig build test-browser` in Chrome for every new page; the *As built* note in §9.8.14 |
 
-Slices 2 and 1 are independent; 3 needs both; 4 needs 3. Estimated size: about 70 lines of
+*Landed 2026-10-02, all four slices: `boundary.md` §9.8.14's As built note has the precisions,
+the one gap against Effect and the measurements.* Slices 2 and 1 are independent; 3 needs both; 4 needs 3. Estimated size: about 70 lines of
 `Task.js`, 25 of beni, 40 of driver, and ten pages. If the owner reverses a choice: 1 changes
 `Exit` and every `case` on it (before slice 2); 2 adds per-root attribution (slice 3); 3 and 8 are
 constants; 5 adds a page `AbortController` (slice 3); 6 moves the close into `Tea` (slice 3); 7 adds

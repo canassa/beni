@@ -1,0 +1,54 @@
+-- A release that throws during a defect's teardown is reported on its own,
+-- and never replaces the defect (boundary.md §9.8.14 (g), choice 4). Three
+-- bodies sleep in fibers, each inside a `bracket`; the second's release
+-- throws. A defect in `update` stops the page: the host reports it first,
+-- then, a task later, the release's throw. The other two releases run.
+-- The development crash screen keeps the defect as its message and lists
+-- the release's throw beneath it.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Boom
+
+
+sleepIn : (() -> ()) -> Cmd Msg
+sleepIn release = Cmd.perform λ_ ->
+    Task.bracket (λ() -> ()) (λ_ _ -> release ()) λ_ -> Time.sleep (Time.seconds 60)
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        Start ->
+            ( n
+            , Cmd.batch
+                [ sleepIn λ() -> Log.info "first released"
+                , sleepIn λ() -> Debug.todo "the second release threw"
+                , sleepIn λ() -> Log.info "third released"
+                ]
+            )
+
+        Boom ->
+            Debug.todo "update threw"
+
+
+view : Int -> Html Msg
+view _ =
+    <main>
+        <button id="start" onClick={Start}>start</button>
+        <button id="boom" onClick={Boom}>boom</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ -> Sub.none }

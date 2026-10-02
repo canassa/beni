@@ -3237,6 +3237,47 @@ used to fire into a stopped scheduler. Every page also runs under `zig build tes
 | 7 | Node | **Unchanged**: report, exit 1, no finaliser; no `uncaughtException` hook | an `uncaughtException` hook that prints Node's report, runs the teardown under the same deadline, then exits 1 |
 | 8 | The abandoned-cleanup warning | **`console.warn` in both builds**, and on the screen in development | development only, so a release ships no string for it |
 
+*As built, 2026-10-02* (`core/Task.js`, `core/Task.beni`; `platforms/browser/Rt.beni`,
+`Browser.beni`; `tests/browser/driver.mjs`), as specified above, with these precisions:
+
+- **A build with no fiber keeps none of the teardown.** The drain's guard and `shutdown` reach it
+  through two hooks the fiber record's constructor sets, so a build that makes no fiber and keeps
+  no finaliser outside one — a `Tea.element` whose commands never wait — keeps only the state flag:
+  `shutdown` there stops the queue and runs nothing, and never calls `done`, there being nothing to
+  end. The registry is still filled by `openRoot`.
+- **The drain's guard tears down on its own.** A fiber's throw schedules the teardown whether or
+  not a platform calls `shutdown`; with no call there is no deadline. On Node the process ends first
+  (`run/TaskDefectOnNode`), as (k) says.
+- **`Rt`'s `stop` calls the teardown just before it sets `dead`**, through a separate function that
+  reads `dead` first: the teardown reads nothing of the page, and the shape lets a release build
+  that knows the teardown is null (a page of `Browser.program`s) keep `stop` the one write it was.
+- **A throw that stopped the page on its way to the drain's guard** (a body's `send` whose `update`
+  threw, `shutdown` already called) is still the defect: its fiber is the culprit.
+- **`Task.soon` queues while stopping**, and the drain drops the entry; `queued` turns `False` when
+  it is dropped. A fiber started while stopping is cancelled before it runs.
+- The warning is `console.warn("Cleanups cut short while stopping:", n)`; the screen adds the same
+  line.
+- Driver steps `timers` and `listeners` (`tests/corpus/README.md`); fixtures as (n) lists, plus
+  `browser/tea/WindowEvents`' listener counts. `DefectRunsReleases` and `DefectQueuedDropped` pass
+  on the kernel alone (a fiber's or `soon` work's throw); the four of the synchronous path were red
+  until the wiring. Every page passes `zig build test-browser` in Chrome.
+
+**Against Effect, where it still falls short.** One gap that (l) does not choose: a `bracket` opened
+*inside* a finaliser that the deadline then cuts short loses its own release, since the cut
+discards that finaliser's continuations whole, where Effect, having no deadline, would run it. A
+fiber parked inside an uninterruptible acquire that never answers keeps the teardown from ending
+(`done` is never called), as it would keep an Effect scope from closing.
+
+**Measured** (`bench/size.mjs`, `--release`, brotli 11, against `master` before the slices): the
+empty `browser` page **446 → 446** and the empty `Tea.sandbox` **446 → 446**, byte for byte the
+same file; the empty `Tea.element` **1 222 → 1 347** (+125: `shutdown`, the state checks, the
+registry push in `openRoot`, and `Rt`'s teardown reference and warning — the element still ships no
+fiber); `Random.generate` (no fiber) **1 955 → 2 121** (+166); the `Http` + `Time` page **5 306 →
+6 012** (+706, against (m)'s estimate of 250–350: the sweep and its resumable guard, the deadline
+and its abandonment, finaliser boundaries, the culprit's recovery and the registry). The `bench/ui`
+table app is a `Tea.sandbox` and builds to the same bytes; the fiber benchmark (`bench/fiber`,
+Node) moved within its run-to-run noise.
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,
