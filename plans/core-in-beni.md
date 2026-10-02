@@ -893,3 +893,44 @@ the counts the sibling gave.
 `HttpFailures` exceed 4 300** (4 358–4 462; master's `TodoMVC` is 4 273 then). The gates pass
 with hashes recorded, as committed, but any change that re-runs those pages before
 `test-run-hashes` will trip the budget: a wall, reported, not worked around (rule 10).
+
+*2026-10-02, after rebasing onto the fiber runtime in beni and the core checked once at build
+(`c95eadb9`, `9657967f`).* **The budget wall is gone.** With Node running (the page's run hash
+removed), master's `List.js` against the port: `TodoMVC` 2 999 → 3 104 million, `Router` 2 811 →
+2 986, `HttpFailures` 2 943 → 3 058, and the two pages master added since, `HttpJson` 3 864 →
+4 075 and `HttpJsonBody` 3 998 → **4 207** — every one under 4 300, the last with 93 million to
+spare. With hashes recorded the three are 2 313–2 417. `abuse_wide`'s release case 3 594.
+
+**Why `List` is "compiled twice" per page.** Every `run/` and `browser/` fixture is built twice
+by contract — development, and `--release --allow-debug` — and the two must print the same
+(`tests/corpus/README.md`); that is the pair. Within one build nothing about `List` is done
+twice, and since `c95eadb9` it is not checked at all: core's check is carried in the binary. What
+the beni `List` costs a build is lowering and printing the part of its runtime the page reaches,
+and, under `--release`, the specialiser over it. `HttpJsonBody`, one process each, instructions:
+
+| | master `List.js` | `List` in beni | Δ |
+|---|--:|--:|--:|
+| development build | 878 M | 948 M | +70 M |
+| release build | 2 473 M | 2 614 M | +141 M |
+| `check` alone | 242 M | 244 M | +2 M |
+
+`--self-profile` (`--jobs=1`) places the release delta in `specialise` (283 → 321 ms) and the
+development one in `emit_module` (87 → 104 ms) and `eliminate` (23 → 27 ms). The frontend
+cache does not cover emission — a second development build in the same directory costs the
+same — so the one avoidable part is the development build re-lowering core modules whose
+output depends only on core and the build's reachable set; the release build's specialisation is
+whole-program and is not. Neither is needed to fit the budget now.
+
+**The loop-printing rule, built and measured, not landed.** An exit-first loop whose iteration
+ends, on every path that reaches its end, with assignments `x = x op e` of its own counters,
+printed `for(;c;i++,j++){…}` under `--release` (no `continue` of its own, no function made in
+it, no update reading a name the body declares, a body left that is not empty). `NestingEvidence`
+falls 763 → 752 and `ListElementEq` 808 → 801 as priced by hand, but `bench/size.mjs` over every
+program grows **+424** (91 smaller, 113 larger, worst `bench/corpus` +45, `SchemaDeclRecords`
++39, `NestingChains` +31), and restricted to two or more `++`/`--` updates **+482** (35 smaller,
+105 larger). A `for(;` among a file's `while` loops is distinct text: `List`'s copy loop
+`while(d<e){c[d]=a[b];b++;d++}` matches the program's other `while`s, and the shorter
+`for(;d<e;b++,d++)c[d]=a[b]` matches nothing. It only pays where the file's other loops are
+`for` loops already (`_derived`'s), which the printer cannot see per module. Not built: the
+spec amendment stays unwritten, and `NestingEvidence` +34, `ListElementEq` +6 and
+`ConsPatterns` +1 stand as the residue for the owner.
