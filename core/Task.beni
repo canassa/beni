@@ -139,50 +139,6 @@ park w intr = Js.suspending λ() →
     Js.to sentinel
 
 
--- ---- Fibers ----------------------------------------------------------------
-
--- §6.4's record, with the continuation stack §6.4 says comes back under this
--- lowering: one literal, so one hidden class. `stack` holds continuations,
--- innermost last; `outcome` is null while it runs, then its `Exit`;
--- `observers` are called with it when it ends; `children` are what `spawn`
--- started from it, still running; `finalizers` what `bracket` and `scope`
--- registered, run last first on cancellation; `masks` how many
--- `uninterruptible` regions it is inside; `interrupted` that an interrupt
--- arrived, delivered at its next suspension point; `unwinding` that it is
--- cancelling or finishing, when interrupts are ignored; `parked` the wait it
--- is parked on; `scope` the scope that started it.
---
--- And the four slots of `transparent-effects-proposal.md` §17.5, as one
--- immutable record `{ clock, scheduler, logContext, seed }` in a field
--- `slots` that `fork` adds only once a slot has been set anywhere
--- (`slotted`), so a program that sets none pays nothing (§17.5's
--- amendment). Undefined, or a field of the record undefined, is that slot
--- at its default (`clock`: the real clock; `scheduler`: reserved, nothing
--- writes it yet). Changing a slot makes a new record, so sharing one is
--- safe.
---
--- A build that makes one — a fiber, or the record of finalisers outside any
--- — has something to tear down, and so keeps the teardown (`boundary.md`
--- §9.8.14): `fibered` is set here, so a build that makes none keeps none of
--- it.
-newFiber : V → V
-newFiber parent =
-    _ = Js.write fibered True
-    Js.from
-        { children = Js.null
-        , finalizers = Js.null
-        , interrupted = False
-        , masks = 0
-        , observers = Js.null
-        , outcome = Js.null
-        , parent = parent
-        , parked = Js.null
-        , scope = Js.null
-        , stack = Js.array []
-        , unwinding = False
-        }
-
-
 cancelled : V
 cancelled = host Cancelled
 
@@ -379,6 +335,50 @@ fibered = Js.ref False
 -- platform's call of it is nothing at all there.
 soonQueued : Js.Ref Bool
 soonQueued = Js.ref False
+
+
+-- ---- Fibers ----------------------------------------------------------------
+
+-- §6.4's record, with the continuation stack §6.4 says comes back under this
+-- lowering: one literal, so one hidden class. `stack` holds continuations,
+-- innermost last; `outcome` is null while it runs, then its `Exit`;
+-- `observers` are called with it when it ends; `children` are what `spawn`
+-- started from it, still running; `finalizers` what `bracket` and `scope`
+-- registered, run last first on cancellation; `masks` how many
+-- `uninterruptible` regions it is inside; `interrupted` that an interrupt
+-- arrived, delivered at its next suspension point; `unwinding` that it is
+-- cancelling or finishing, when interrupts are ignored; `parked` the wait it
+-- is parked on; `scope` the scope that started it.
+--
+-- And the four slots of `transparent-effects-proposal.md` §17.5, as one
+-- immutable record `{ clock, scheduler, logContext, seed }` in a field
+-- `slots` that `fork` adds only once a slot has been set anywhere
+-- (`slotted`), so a program that sets none pays nothing (§17.5's
+-- amendment). Undefined, or a field of the record undefined, is that slot
+-- at its default (`clock`: the real clock; `scheduler`: reserved, nothing
+-- writes it yet). Changing a slot makes a new record, so sharing one is
+-- safe.
+--
+-- A build that makes one — a fiber, or the record of finalisers outside any
+-- — has something to tear down, and so keeps the teardown (`boundary.md`
+-- §9.8.14): `fibered` is set here, so a build that makes none keeps none of
+-- it.
+newFiber : V → V
+newFiber parent =
+    _ = Js.write fibered True
+    Js.from
+        { children = Js.null
+        , finalizers = Js.null
+        , interrupted = False
+        , masks = 0
+        , observers = Js.null
+        , outcome = Js.null
+        , parent = parent
+        , parked = Js.null
+        , scope = Js.null
+        , stack = Js.array []
+        , unwinding = False
+        }
 
 
 -- Queued work is dropped from now on (`runSoon`).
@@ -1840,8 +1840,11 @@ slotRecord () =
 --| calls; the `Js.Value` it answers is of no use anywhere else.
 pub currentClock : () → Js.Value
 currentClock () =
-    r = slotRecord ()
-    if Js.isNullish r then Js.undefined else Js.get r "clock"
+    if Js.read slotted then
+        r = slotRecord ()
+        if Js.isNullish r then Js.undefined else Js.get r "clock"
+    else
+        Js.undefined
 
 
 --| Run `work` with the calling fiber's clock slot set to `clock`, and put
