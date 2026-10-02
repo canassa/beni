@@ -16,7 +16,7 @@
   </main>
 </body>
 -- timers
-(timers: 1)
+(timers: 0)
 (the DOM did not change)
 -- click #inc
 (the DOM did not change)

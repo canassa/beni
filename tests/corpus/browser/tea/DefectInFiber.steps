@@ -1,6 +1,6 @@
 throws click #go
-# The timer the other body waits on is still held: nothing closes the
-# program's scope yet.
+# The defect closed the program's scope (boundary.md §9.8.14): the timer
+# the other body waited on was cleared.
 timers
 click #inc
 advance 50

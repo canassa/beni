@@ -2,9 +2,10 @@
 -- the throw is a fiber's, out of core's scheduler, which stops — no fiber
 -- runs again — and calls the hook the hosted mount gave `Task.onDefect`.
 -- The click's render happened first (a body runs after the flush that
--- shows its message); the next click is not applied, and the timer the
--- other body waits on fires into a stopped scheduler. The release build
--- adds no crash screen (`.release-expected`).
+-- shows its message); the next click is not applied, and the other body,
+-- waiting on a timer, is cancelled in the teardown that closes the
+-- program's scope (§9.8.14), its timer cleared. The release build adds no
+-- crash screen (`.release-expected`).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub

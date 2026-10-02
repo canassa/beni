@@ -132,11 +132,22 @@ pub foreign impure soon : sync (() -> ()) -> Soon
 pub foreign impure queued : Soon -> Bool
 
 
---| What runs when a fiber throws: a defect, after which no fiber runs again
---| (`boundary.md` §9.8.10 (c)). A platform hands it what stops its program —
---| the browser stops the page — and the throw goes on to the host. The last
---| one given is the one called.
+--| What runs when a fiber throws: a defect, after which no program code runs
+--| again (`boundary.md` §9.8.10 (c)). A platform hands it what stops its
+--| program — the browser stops the page — and the throw goes on to the
+--| host; then every fiber is cancelled and its cleanup run, as `shutdown`
+--| does (§9.8.14). The last one given is the one called.
 pub foreign impure onDefect : (() -> ()) -> ()
+
+
+--| Stop every fiber: close every root scope, cancel every fiber and run its
+--| cleanup, drop queued work, and start nothing new. Cleanup that suspends
+--| is given `deadline` milliseconds from the call; `done` is called once
+--| every fiber has ended, with how many cleanups were cut short. What a
+--| platform calls when its program stops (`boundary.md` §9.8.14); a
+--| program never does. It returns at once — the cleanup runs in a later
+--| task — and a second call does nothing.
+pub foreign impure shutdown : Int, sync (Int -> ()) -> ()
 
 
 --| Run `work` in a root fiber, and call `done` with how it ended. What a

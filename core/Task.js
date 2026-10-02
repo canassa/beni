@@ -36,30 +36,37 @@ export const isWaiting = (value) => value === Y;
 // ---- Fibers -----------------------------------------------------------------
 
 // §6.4's record, with the continuation stack §6.4 says comes back under this
-// lowering. One literal, keys always in this order, so one hidden class.
-const newFiber = (parent) => ({
-  // Continuations, innermost last.
-  stack: [],
-  // null while it runs; then `{ $: "Done", a }` or `{ $: "Cancelled", a: null }`.
-  outcome: null,
-  // Functions called with the fiber when it ends.
-  observers: null,
-  parent,
-  // The fibers `spawn` started from it, still running.
-  children: null,
-  // What `bracket` and `scope` registered, run last first on cancellation.
-  finalizers: null,
-  // How many `uninterruptible` regions it is inside.
-  masks: 0,
-  // An interrupt arrived: delivered at the next suspension point.
-  interrupted: false,
-  // Cancelling, or finishing: interrupts are ignored.
-  unwinding: false,
-  // The wait it is parked on, or null.
-  parked: null,
-  // The scope that started it, or null.
-  scope: null,
-});
+// lowering. One literal, keys always in this order, so one hidden class. A
+// build that makes one — a fiber, or the record of finalisers outside any —
+// has something to tear down, and so keeps the teardown (boundary.md
+// §9.8.14): the two hooks are set here.
+const newFiber = (parent) => {
+  failure = failed;
+  closing = closeAll;
+  return {
+    // Continuations, innermost last.
+    stack: [],
+    // null while it runs; then `{ $: "Done", a }` or `{ $: "Cancelled", a: null }`.
+    outcome: null,
+    // Functions called with the fiber when it ends.
+    observers: null,
+    parent,
+    // The fibers `spawn` started from it, still running.
+    children: null,
+    // What `bracket` and `scope` registered, run last first on cancellation.
+    finalizers: null,
+    // How many `uninterruptible` regions it is inside.
+    masks: 0,
+    // An interrupt arrived: delivered at the next suspension point.
+    interrupted: false,
+    // Cancelling, or finishing: interrupts are ignored.
+    unwinding: false,
+    // The wait it is parked on, or null.
+    parked: null,
+    // The scope that started it, or null.
+    scope: null,
+  };
+};
 
 const cancelled = { $: "Cancelled", a: null };
 
@@ -129,21 +136,35 @@ const resumeFiber = (fiber, value, wait) => {
 const enqueue = (fiber, value, wait) => schedule(resumeFiber, fiber, value, wait);
 
 // A fiber that throws is a defect (boundary.md §9.8.10 (c)): the scheduler
-// stops — `scheduled` stays set, so nothing drains again — the platform's
-// hook runs, and the throw goes on to the host. Not a `catch`: nothing is
-// caught (CLAUDE.md rule 9).
+// stops, the platform's hook runs, and the throw goes on to the host; the
+// teardown starts in a macrotask after it (§9.8.14). Not a `catch`: nothing
+// is caught (CLAUDE.md rule 9).
 let defect = null;
 export const onDefect = (f) => {
   defect = f;
   return null;
 };
 
+// The runtime's state (boundary.md §9.8.14 (b)): 0 running; 1 stopping, when
+// nothing runs until the teardown starts; 2 tearing down, when only fibers
+// unwinding run; 3 stopped for good. A drain runs only at 0 and 2.
+let phase = 0;
+
+// The teardown's part of a throw out of the drain, and of `shutdown`: set by
+// the first fiber or finaliser made (`newFiber`), so a build with neither —
+// which has nothing to tear down — keeps none of it.
+let failure = null;
+let closing = null;
+
 const drain = () => {
+  if (phase & 1) return;
   let count = 0;
   let ok = false;
   try {
     while (head < queue.length) {
-      if (count === budget) {
+      // Stopped by the work just run (`shutdown`): the rest waits for the
+      // teardown, the drain this queues finding nothing to do until then.
+      if (count === budget || phase === 1) {
         ok = true;
         macrotask(drain);
         return;
@@ -158,11 +179,57 @@ const drain = () => {
     }
     ok = true;
   } finally {
-    if (!ok && defect !== null) defect(null);
+    if (!ok) {
+      if (failure !== null) failure();
+      else {
+        phase = 1;
+        if (defect !== null) defect(null);
+      }
+    }
   }
   queue.length = 0;
   head = 0;
   scheduled = false;
+};
+
+// What stops the runtime, whoever asks: `shutdown` from a platform, or a
+// throw out of the drain. Nothing runs from now on but the teardown, which
+// starts in a macrotask, after the host has reported a throw in flight
+// (§9.8.14 (b)); in a build with no fiber there is none.
+export const shutdown = (ms, done) => {
+  if (phase === 0) {
+    phase = 1;
+    scheduled = true;
+  }
+  if (closing !== null) closing(ms, done);
+  return null;
+};
+
+// The drain's guard saw a throw, which goes on to the host once this
+// returns. The state the throw left behind is reset first. The first one
+// is the defect: the runtime stops and the teardown is scheduled, the
+// fiber that threw (the culprit) noted for it, and the platform's hook
+// stops the page. One while tearing down is a cleanup's (§9.8.14 (g)): the
+// fiber goes on to its next finaliser, the drain in a new macrotask.
+const failed = () => {
+  const fiber = current;
+  current = null;
+  pending = null;
+  soonRunning = null;
+  if (outside !== null) outside.masks = 0;
+  // A throw that stopped the page on its way here — an `update` a body's
+  // send ran — has already made the runtime stop: it is still the defect.
+  if (phase < 2) {
+    culprit = fiber;
+    stopping();
+    if (defect !== null) defect(null);
+    return;
+  }
+  if (fiber !== null && fiber.outcome === null) {
+    recover(fiber);
+    enqueue(fiber, null, null);
+  }
+  macrotask(drain);
 };
 
 // ---- The run loop -----------------------------------------------------------
@@ -189,6 +256,13 @@ const run = (fiber, start) => {
         // interrupt delivered at this suspension point: unwind now,
         // whatever the masks say, since there is no value to go on with.
         unwind(fiber);
+        value = null;
+        continue;
+      }
+      if (expired && cleaning !== null && cleaning.has(fiber)) {
+        // Past the teardown's deadline a finaliser runs only to its first
+        // wait, and the fiber goes on to its next (§9.8.14 (f)).
+        abandon(fiber, p.wait);
         value = null;
         continue;
       }
@@ -241,11 +315,15 @@ const done = (value) => ({ $: "Done", a: value });
 const complete = (fiber, outcome) => {
   fiber.outcome = outcome;
   fiber.stack = null;
+  live -= 1;
   if (fiber.scope !== null) fiber.scope.children.delete(fiber);
-  else if (fiber.parent !== null && fiber.parent.children !== null) fiber.parent.children.delete(fiber);
+  else if (fiber.parent !== null) {
+    if (fiber.parent.children !== null) fiber.parent.children.delete(fiber);
+  } else unlist(fiber);
   const observers = fiber.observers;
   fiber.observers = null;
   if (observers !== null) for (const o of observers) o(fiber);
+  if (live === 0 && phase === 2) allEnded();
 };
 
 const observe = (fiber, observer) => {
@@ -269,8 +347,10 @@ const interrupt = (fiber) => {
   if (wait === null || fiber.masks !== 0) return;
   fiber.parked = null;
   wait.done = true;
-  if (wait.cancel !== null) wait.cancel(null);
+  // Queued before its canceller runs, so a canceller that throws cannot
+  // leave a fiber that never unwinds (boundary.md §9.8.14 (d) step 1).
   enqueue(fiber, null, null);
+  if (wait.cancel !== null) wait.cancel(null);
 };
 
 // Park until every one of `fibers` has ended; null at once when they have.
@@ -321,7 +401,10 @@ const finished = (value) => {
 };
 
 // Replace `fiber`'s stack with its cancellation: its children first, then
-// its finalisers, last first, then its end (§16.4, the owner's A11).
+// its finalisers, last first, then its end (§16.4, the owner's A11). Each
+// finaliser runs above a boundary, so a teardown can cut what it left on
+// the stack back to the next one (boundary.md §9.8.14 (d) step 3); the
+// fibers inside one are `cleaning`.
 const unwind = (fiber) => {
   fiber.unwinding = true;
   fiber.parked = null;
@@ -329,8 +412,30 @@ const unwind = (fiber) => {
   fiber.stack.push(ended);
   const fins = fiber.finalizers;
   fiber.finalizers = null;
-  if (fins !== null) for (const fin of fins) fiber.stack.push(() => fin(null));
+  if (fins !== null) {
+    for (const fin of fins) {
+      fiber.stack.push(boundary, () => {
+        (cleaning ??= new Set()).add(current);
+        return fin(null);
+      });
+    }
+  }
   fiber.stack.push(stopChildren);
+};
+
+let cleaning = null;
+
+const boundary = (value) => {
+  cleaning.delete(current);
+  return value;
+};
+
+// Discard what the finaliser `fiber` is inside left on its stack: it goes
+// on to its next finaliser, the one it was in counting as run.
+const cutBack = (fiber) => {
+  const stack = fiber.stack;
+  while (stack.length !== 0 && stack.pop() !== boundary);
+  cleaning.delete(fiber);
 };
 
 const stopChildren = () => {
@@ -349,6 +454,7 @@ const ended = () => {
 const fork = (parent, work, scope) => {
   const fiber = newFiber(parent);
   fiber.stack.push(finish, () => work(null));
+  live += 1;
   if (scope !== null) {
     fiber.scope = scope;
     scope.children.add(fiber);
@@ -356,7 +462,9 @@ const fork = (parent, work, scope) => {
   } else if (parent !== null) {
     if (parent.children === null) parent.children = new Set();
     parent.children.add(fiber);
-  }
+  } else roots.push(fiber);
+  // Started while the runtime stops: cancelled before it runs.
+  if (phase !== 0) fiber.interrupted = true;
   enqueue(fiber, null, null);
   return fiber;
 };
@@ -476,6 +584,8 @@ let soonRunning = null;
 const runSoon = (s) => {
   const w = s.w;
   s.w = null;
+  // Program code, which no longer runs once the runtime stops: dropped.
+  if (phase !== 0) return false;
   const outer = soonRunning;
   soonRunning = s;
   w(null);
@@ -493,13 +603,170 @@ export const soon = (work) => {
 export const queued = (s) => s.w !== null;
 
 // A scope that no fiber's finalisers close, for a platform whose program
-// outlives every call: one literal, the shape of `openScope`'s.
-export const openRoot = (unit) => ({ children: new Set(), finalizer: null, closed: false });
+// outlives every call: one literal, the shape of `openScope`'s. It is a
+// root until `closeRoot` closes it.
+export const openRoot = (unit) => {
+  const scope = { children: new Set(), finalizer: null, closed: false };
+  roots.push(scope);
+  return scope;
+};
 
 export const closeRoot = (scope) => {
+  unlist(scope);
   scope.closed = true;
   for (const f of [...scope.children]) interrupt(f);
   return null;
+};
+
+// ---- Shutdown (boundary.md §9.8.14) -----------------------------------------
+
+// Every root, in the order it was made: each scope `openRoot` made that
+// `closeRoot` has not closed, and each fiber with neither a parent nor a
+// scope — `start`'s, and `spawn`'s outside any fiber — that has not ended.
+const roots = [];
+
+const unlist = (root) => {
+  const i = roots.indexOf(root);
+  if (i >= 0) roots.splice(i, 1);
+};
+
+// The fibers that have not ended, so the teardown knows when it is over.
+let live = 0;
+
+// The teardown's: the fiber whose throw was the defect, the deadline and
+// `done` `shutdown` was given, its timer, whether it has passed, how many
+// finalisers it cut short, and the fibers the sweep has still to reach.
+let culprit = null;
+let deadline = -1;
+let whenDone = null;
+let deadlineTimer = null;
+let expired = false;
+let abandoned = 0;
+let sweeping = null;
+let swept = 0;
+
+// Stop, and schedule the teardown once.
+let torn = false;
+const stopping = () => {
+  if (phase === 0) phase = 1;
+  scheduled = true;
+  if (torn) return;
+  torn = true;
+  macrotask(teardown);
+};
+
+// `shutdown`'s part here: the first call's deadline and `done`; a second
+// call does nothing.
+const closeAll = (ms, done) => {
+  if (whenDone !== null || phase === 3) return;
+  whenDone = done;
+  deadline = ms;
+  if (phase === 2) deadlineTimer = globalThis.setTimeout(expire, deadline);
+  stopping();
+};
+
+// The sweep (§9.8.14 (d) step 1): every root scope closed and every fiber
+// of every root interrupted, in the order they were made — each parked
+// fiber's canceller runs now, so what the host holds is released before any
+// finaliser runs — then the culprit unwound, and a fiber started for the
+// finalisers a throw left outside any fiber. A canceller that throws is
+// reported by the host; the sweep goes on at the next fiber, in a new
+// macrotask. Then the drain unwinds them all.
+const teardown = () => {
+  if (phase === 1) {
+    phase = 2;
+    if (whenDone !== null) deadlineTimer = globalThis.setTimeout(expire, deadline);
+    sweeping = [];
+    for (const root of roots) {
+      if (root.stack !== undefined) sweeping.push(root);
+      else {
+        root.closed = true;
+        for (const f of root.children) sweeping.push(f);
+      }
+    }
+  }
+  let ok = false;
+  try {
+    while (swept < sweeping.length) interrupt(sweeping[swept++]);
+    ok = true;
+  } finally {
+    if (!ok) macrotask(teardown);
+  }
+  if (culprit !== null) {
+    const fiber = culprit;
+    culprit = null;
+    if (fiber.outcome === null) {
+      recover(fiber);
+      enqueue(fiber, null, null);
+    }
+  }
+  if (outside !== null && outside.finalizers !== null && outside.finalizers.length !== 0) {
+    const fiber = newFiber(null);
+    live += 1;
+    fiber.finalizers = outside.finalizers;
+    outside.finalizers = null;
+    outside.masks = 0;
+    unwind(fiber);
+    enqueue(fiber, null, null);
+  }
+  if (live === 0) allEnded();
+  else drain();
+};
+
+// Put a fiber whose code threw back on the road to its end: out of the
+// finaliser it was in, to the next; or, if it was not unwinding, unwound.
+const recover = (fiber) => {
+  fiber.interrupted = true;
+  fiber.parked = null;
+  fiber.masks = 0;
+  if (cleaning !== null && cleaning.has(fiber)) cutBack(fiber);
+  else if (!fiber.unwinding) unwind(fiber);
+  else {
+    // Thrown out of a canceller while it cancelled its children.
+    if (fiber.stack.length === 0) fiber.stack.push(ended);
+    fiber.stack.push(stopChildren);
+  }
+};
+
+// The deadline (§9.8.14 (f)): each fiber waiting inside a finaliser stops
+// waiting and goes on to its next, and from now on a finaliser runs only to
+// its first wait.
+const expire = () => {
+  deadlineTimer = null;
+  expired = true;
+  if (cleaning === null) return;
+  // A canceller that throws is reported by the host; the rest go on in a
+  // new macrotask.
+  let ok = false;
+  try {
+    for (const fiber of [...cleaning]) {
+      const wait = fiber.parked;
+      if (wait === null) continue;
+      fiber.parked = null;
+      enqueue(fiber, null, null);
+      abandon(fiber, wait);
+    }
+    ok = true;
+  } finally {
+    if (!ok) macrotask(expire);
+  }
+};
+
+const abandon = (fiber, wait) => {
+  wait.done = true;
+  abandoned += 1;
+  cutBack(fiber);
+  if (wait.cancel !== null) wait.cancel(null);
+};
+
+// Every fiber has ended: the runtime stops for good, and `done` is told how
+// many finalisers the deadline cut short.
+const allEnded = () => {
+  phase = 3;
+  if (deadlineTimer !== null) globalThis.clearTimeout(deadlineTimer);
+  deadlineTimer = null;
+  const told = whenDone;
+  if (told !== null) told(abandoned);
 };
 
 export const mask = (unit) => {

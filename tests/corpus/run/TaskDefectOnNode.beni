@@ -1,0 +1,31 @@
+-- run: a fiber that throws ends the program on Node, unchanged by the
+-- browser's teardown (boundary.md §9.8.14 (k); transparent-effects-proposal.md
+-- §16.5, *A defect on Node*). The fiber's throw is an uncaught exception:
+-- the program exits 1 with Node's report, what it logged before stands, and
+-- no release runs — the one around the throw, nor the one of the fiber
+-- still sleeping.
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String -> ()
+say line = Debug.log line ()
+
+
+main : Program
+main = Io.run λ() ->
+    root = Task.openRoot ()
+
+    _ = Task.spawnIn root λ() ->
+        Task.bracket (λ() -> ()) (λ_ _ -> say "sleeper released") λ_ -> Io.sleep 100000
+
+    _ = Task.spawnIn root λ() ->
+        Task.bracket (λ() -> ()) (λ_ _ -> say "thrower released") λ_ ->
+            _ = say "about to throw"
+            Debug.todo "the fiber threw"
+
+    _ = Task.yieldNow ()
+    _ = Task.yieldNow ()
+    _ = say "not reached"
+    Node.done
